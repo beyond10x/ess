@@ -126,6 +126,18 @@ pub fn grants_checked_on(ir: &EssIr, component: &ResolvedComponent) -> bool {
     !ir.actors().is_empty() && component.reached_by == Reach::Network
 }
 
+/// Whether any served surface checks a read grant (beyond10x/ess#286): it checks grants, and some
+/// actor's `may:` names a view. A model naming no view keeps every view open and its bytes.
+pub fn checks_read_grants(ir: &EssIr) -> bool {
+    checks_grants(ir) && ir.grants_reads()
+}
+
+/// Whether reading `view` on a served surface checks its read grant (beyond10x/ess#286): the
+/// surface checks grants and some actor's `may:` names the view. A view no actor names is open.
+pub fn read_checked(ir: &EssIr, view: &ess_domain::name::QualifiedName) -> bool {
+    checks_grants(ir) && ir.read_granted(view)
+}
+
 /// The command could not be carried through because the realization is unfinished: a port it runs
 /// reported an unmet obligation, or the command's effect was committed and delivering what it
 /// published to a binding failed.
@@ -176,6 +188,8 @@ pub fn status(outcome: &ResolvedOutcome) -> &'static str {
             | ResolvedCondition::StateChange { .. }
             // And so is one decided by a stored row of another entity (ess/18, `when_related:`).
             | ResolvedCondition::Related { .. }
+            // And by the rows a selector selects (ess/22, `when_related: {entity, where, …}`).
+            | ResolvedCondition::RelatedSet { .. }
             // A duplicate of a record that exists conflicts with that record (ess/16).
             | ResolvedCondition::ExistingInstance,
             true,
@@ -186,6 +200,41 @@ pub fn status(outcome: &ResolvedOutcome) -> &'static str {
         // An external branch that emits rather than errors is still a branch that was taken; what
         // decided it does not change what happened.
         (_, false) => TAKEN,
+    }
+}
+
+/// The branch was taken and its answer is the command's response (`returns: true`, from
+/// [`DIRECT_ANSWER_FORMAT`]).
+///
+/// A `200` and not a `202`: `202` tells a client the request was queued for later processing, and
+/// a branch that returns its result in the same response was carried out, not queued
+/// (beyond10x/ess#424).
+pub const ANSWERED: &str = "200";
+
+/// The first source format whose `returns: true` outcome is answered [`ANSWERED`], with the
+/// command's declared response under `response` (beyond10x/ess#423, beyond10x/ess#424).
+///
+/// Below it the branch keeps the [`TAKEN`] status and the body it was published with, so a client
+/// of an `ess/17` to `ess/21` contract keeps the answer it was told about.
+pub const DIRECT_ANSWER_FORMAT: u32 = 22;
+
+/// Whether `outcome` answers its caller with the command's response, under [`ANSWERED`].
+///
+/// The one answer for the document that declares the body and the servers that write it.
+pub fn answers_with_response(ir: &EssIr, outcome: &ResolvedOutcome) -> bool {
+    outcome.returns && outcome.error.is_none() && ir.format().major() >= DIRECT_ANSWER_FORMAT
+}
+
+/// Which status one declared outcome of `ir` is answered with: [`status`], except that a branch
+/// that [answers with the response](answers_with_response) is [`ANSWERED`].
+///
+/// Every surface that writes or declares a command's status reads this, so the document and the
+/// served Rust and Go applications cannot disagree about it.
+pub fn outcome_status(ir: &EssIr, outcome: &ResolvedOutcome) -> &'static str {
+    if answers_with_response(ir, outcome) {
+        ANSWERED
+    } else {
+        status(outcome)
     }
 }
 

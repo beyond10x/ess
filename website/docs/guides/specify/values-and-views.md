@@ -1,7 +1,7 @@
 ---
 title: Values, credentials and views
 sidebar_position: 5
-description: Value expressions, the caller's credential, inputs present after defaulting, and view consistency, paging and aggregates.
+description: Value expressions, the caller's credential, inputs present after defaulting, and view consistency and paging.
 ---
 
 # Values, credentials and views
@@ -36,7 +36,8 @@ the input or a literal:
 | `{increment: <number>}` | `sets:` | the target is a required `Integer` (a whole number) or `Decimal`; a negative number decrements |
 | `{input: <field>, else: {generated: true}}` | `payload:`, `sets:` | the input is `Optional<…>` |
 | `{input: <field>, else: <literal>}` | `payload:`, `sets:` | source `ess/16`; the input is `Optional<…>` and the literal is one the target admits |
-| `{related: {via: <field>, field: <field>}}` | `payload:`, `sets:` | source `ess/16`; `via` is a field of an existing subject, or `input.<field>`, typed as exactly one entity's identity |
+| `{related: {via: <field>, field: <field>}}` | `payload:`, `sets:` | source `ess/16`; `via` is a field of an existing subject, or `input.<field>`, typed as exactly one entity's identity; from `ess/22` also `Optional<…>` of it, or a list of two references |
+| `{related: {entity: <Entity>, where: <predicate>, field: <field>}}` | `payload:`, `sets:` | source `ess/22`; `field` of the one row of `<Entity>` that `where` selects, read before the outcome, at the field's declared type the target admits; none or several selected rows supply no value. `where` reads as a [row-set guard](../../reference/predicates.md#a-guard-over-the-rows-a-selector-selects)'s; below `ess/22` the same mapping is the nested mapping it always was |
 | `{caller: <attribute>}` | `payload:`, `sets:` | source `ess/16`; every actor that may invoke the command declares the attribute, at one type the target admits |
 | a nested mapping | `payload:`, `sets:` | the target is a struct; every struct field has a source |
 | `{generated: true}` | `sets:` | always (`payload:` has admitted it since `ess/4`) |
@@ -68,6 +69,40 @@ both halves: it first sends the input and asserts the sent value, then invokes t
 without the input and asserts the literal. An implementation that ignores the input fails the
 first check, and one that stores another default fails the second.
 
+From source `ess/22` a value can be read from a member of a struct input, and a fallback can be
+another input:
+
+```yaml
+input:
+  - {name: opening, type: leases.pool.Opening}             # struct {generation_id, label}
+  - {name: previous, type: Optional<leases.pool.Opening>}
+  - {name: settings, type: leases.pool.Settings}           # struct {defaults: {label}}
+outcomes:
+  - name: opened
+    creates: leases.pool.Lease
+    instance: lease_id
+    sets:
+      generation_id: input.opening.generation_id           # through a required struct
+      previous_generation: input.previous.generation_id    # absent where `previous` is
+      label: {input: previous.label, else: input.settings.defaults.label}
+```
+
+A path names declared fields: its first segment is an input, and each further segment a member of
+the struct before it, through any `Optional` and newtype around that struct. A primitive, enum,
+list, map or union has no members. The value is the last member's; an absent `Optional` anywhere
+before it leaves the value absent, so such a path fills an `Optional<…>` target and is refused
+with `type_mismatch` for a required one. `{input: <path>, else: …}` falls back wherever any
+`Optional` on the path is absent. `else: input.<path>` reads an input that must be present
+whenever the request is valid — required along its whole route — and fills the target as a plain
+`input.` source would; there is no second fallback. A path may supply a creation's identity, or
+the address another row is read through, only where nothing on it may be absent.
+
+The same paths work in an event's `payload:`, an error's `payload:` and a nested mapping's
+leaves. Synthesis sends every path present, then sends the branch again with the shallowest
+`Optional` on each path left out, and asserts the absent value and the fallback. Below `ess/22`
+each form keeps the refusal it had: `input.a.b` is an input the command does not declare, and
+`{input: a.b, else: …}` names more than one field. Entity Runtime lowering refuses a path by name.
+
 From source `ess/16` a value can come from a field of the row the subject references:
 
 ```yaml
@@ -90,16 +125,46 @@ of the subject's owner; an input is settled by the relation on the field the bra
 or on the identity the branch names its instance by. The field may be the subject's identity: an
 entity keyed by `user_id` that declares `{name: user, kind: references, target: User,
 cardinality: one, via: user_id}` reads the user with the same id. `field` is a field of that
-entity, typed as the target admits. One hop only. `{related: …}` is written alone and holds
-exactly `via` and `field`; any other mapping under `related` is a nested mapping, and below
-`ess/16` so is this one.
+entity, typed as the target admits. `{related: …}` is written alone and holds exactly `via` and
+`field`; any other mapping under `related` is a nested mapping, and below `ess/16` so is this one.
+
+From source `ess/22` the reference may be `Optional<…>`, and `via` may name a second reference —
+a field of the row the first one names — as a list of two:
+
+```yaml
+- name: booked
+  creates: demo.costs.CostEntry
+  instance: entry_id
+  sets:
+    objective_id: input.objective_id
+    # the outcome of the initiative of the entry's objective; absent where the objective has none
+    outcome_id: {related: {via: [objective_id, initiative_id], field: outcome_id}}
+```
+
+Each reference is resolved as `via` is: the relation on the field says which entity it names, or
+the one entity identified by its type. Where any reference may be absent the value may be too,
+so the target must be `Optional<…>`; a required target is refused with `type_mismatch`. An absent
+reference reads no row and copies an absent value. A present reference that names no row is still
+a missing row, never an absent value. Two references is the limit: a list of one or of three is
+refused when the document is read. Below `ess/22` an `Optional<…>` reference is refused with
+`type_mismatch` and a list with `unsupported_format_version`, both naming `ess/22`. A view still
+reads one entity: group by the copied field rather than by a field of another entity.
 
 The scenario creates the referenced row between two others of its entity, points the subject at
 it, and asserts that row's value, so an implementation that reads another row, the first or the
 last, fails. Where the specification has an `updates:` branch that changes the field read, the
 scenario runs it on the referenced row just before the branch and asserts the new value, so an
-implementation that copied the value earlier fails too. Below `ess/16` the source is refused with
-`unsupported_format_version`, and Entity Runtime lowering refuses it.
+implementation that copied the value earlier fails too. A chained read gets the same between-decoys
+arrangement for each entity it passes through, and a branch that changes the middle row's reference
+is run on it just before the branch, so an implementation following the reference as first written
+fails. For each reference that may be absent, the scenario runs the branch once more with that
+reference left out and every other present, and asserts the value absent on the row it writes and
+on the event (left out or `null`), so an implementation that reads absence as a missing row, or
+copies some row's value anyway, fails. A reference that may be absent and that no run can leave
+absent is reported as `ESS-SYNTH-020`, naming it; the scenario stands.
+Below `ess/16` the source is refused with `unsupported_format_version`, and Entity
+Runtime lowering refuses it. Generated Rust and Go behaviour keeps a command with a `{related: …}`
+value an obligation.
 
 A literal over a `Decimal` target is admitted in every format, quoted (`'0.25'`) or unquoted
 (`0.25`): an optional `-`, digits without a leading zero, optionally a point and digits.
@@ -241,6 +306,30 @@ still checks each of its fields against the source entity. Compiled IR carries b
 and the checked expansion; OpenAPI uses the handle as a real `$ref`, so the row schema is emitted
 once rather than copied per view.
 
+## Who may read a view
+
+From source `ess/22` an actor's `may:` names the views it may read as well as the commands it may
+invoke. There is one grant table: a view named there is read-granted, and only the actors naming it
+may read it.
+
+```yaml
+actors:
+  - name: desk.tickets.Clerk
+    may:
+      - desk.tickets.OpenTicket
+      - desk.tickets.Board
+  - name: desk.tickets.Watcher
+    may:
+      - desk.tickets.OpenTicket
+```
+
+Here the Clerk may read `Board` and the Watcher may not. A view no actor names stays open to every
+caller, so a specification that names no view means what it meant before. A grant naming something
+that is neither a command nor a view is refused as `undeclared_reference`. Under `ess/21` and
+earlier a grant naming a view is refused with `unsupported_format_version`, naming `ess/22`. A
+served component refuses a read the grant does not admit with the same `403` it answers an
+ungranted command; see [synthesis](../synthesize.md).
+
 ## A view can be paged
 
 A list endpoint that answers one page of its rows at a time declares `paging:` beside its
@@ -278,45 +367,3 @@ continues the first — ranked no earlier, and not the same row. Each claim hold
 users share. A free-form filter expression the caller supplies is not something `paging:` or
 `params:` can declare; a closed set of filter fields can still be declared one optional parameter
 at a time. [Design](https://github.com/beyond10x/ess/blob/main/docs/design/view-paging.md).
-
-## Aggregate views
-
-A read API that reports counts, sums and extremes over one entity's rows is a view with `group_by:`
-and a field-level `aggregate:`. It needs `format: ess/10`.
-
-```yaml
-views:
-  - name: metrics.session.TalkTimeByAgent
-    source: metrics.session.Session
-    consistency: eventual
-    filter: state == Completed
-    group_by: [agent_id]
-    fields:
-      - {name: agent_id, type: String}
-      - {name: sessions, type: Integer, aggregate: {count: {}}}
-      - {name: talk_seconds, type: Integer, aggregate: {sum: talk_seconds}}
-      - {name: longest_wait, type: Optional<Integer>, aggregate: {max: wait_seconds}}
-      - {name: distinct_callers, type: Integer, aggregate: {count_distinct: caller}}
-      - {name: mean_talk, type: Optional<Decimal>, aggregate: {avg: talk_seconds}}
-```
-
-The filter runs on each source row first, the admitted rows are grouped by the `group_by` fields,
-and each aggregate is computed per group. A group with no admitted row is absent. A view without
-`group_by` returns exactly one row: `count` is `0` and `min`, `max` and `avg` are absent when no row
-passes the filter. Every field without `aggregate:` must be listed in `group_by`.
-
-Each field declares its result type exactly, and validation names the one it expects: `Integer`
-for `count`, `count_distinct` and `sum` of an `Integer`; `Decimal` for `sum` of a `Decimal`;
-`Optional<T>` for `min` and `max`, keeping a newtype; `Optional<Decimal>` for `avg`, which is
-rounded to 6 fractional digits, ties to even. An aggregate reads one top-level field of the source
-that every row holds, so an `Optional` argument or group key is refused, and so is grouping by a
-`Timestamp` or ranking an aggregate view with `order_by:`.
-
-Conformance creates the rows itself, through the declared creating outcome, and asserts every
-group's exact numbers. Because a target may be shared, the rows are kept apart from every other
-scenario's by a group key or a parameter compared with one (`queue_id == param.queue_id`) that is a
-`String` or `Uuid` the creating command sets from its input. An ungrouped view with no parameter
-is over every row, including other scenarios' rows, so conformance reads it before creating its rows
-and asserts only how much each `count` and `sum` changed; its other aggregates are not asserted. A
-grouped view with neither, or an ungrouped one with no `count` or `sum`, gets no scenario and the
-refusal `ESS-SYNTH-016`.

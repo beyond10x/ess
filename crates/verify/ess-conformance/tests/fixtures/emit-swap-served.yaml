@@ -1,0 +1,128 @@
+format: ess/16
+system: demo
+version: v1
+domain: demo.items
+types:
+  - {name: demo.items.ItemId, kind: newtype, of: String}
+  - {name: demo.items.Label, kind: newtype, of: String}
+entities:
+  - name: demo.items.Item
+    identity: {name: item_id, type: demo.items.ItemId}
+    fields:
+      - {name: label, type: demo.items.Label}
+    lifecycle:
+      initial: Active
+      states: [Active, Archived]
+      terminal: [Archived]
+      transitions:
+        - {name: archive, from: [Active], to: Archived}
+  - name: demo.items.Slot
+    identity: {name: slot_id, type: demo.items.ItemId}
+    fields:
+      - {name: label, type: demo.items.Label}
+    lifecycle:
+      initial: Open
+      states: [Open]
+      terminal: [Open]
+      transitions: []
+events:
+  - name: demo.items.ItemArchived
+    fields:
+      - {name: item_id, type: demo.items.ItemId}
+  - name: demo.items.ItemLabelled
+    fields:
+      - {name: item_id, type: demo.items.ItemId}
+      - {name: label, type: Optional<demo.items.Label>}
+  - name: demo.items.ItemRestored
+    fields:
+      - {name: item_id, type: demo.items.ItemId}
+      - {name: label, type: demo.items.Label}
+  - name: demo.items.ItemReviewed
+    fields:
+      - {name: item_id, type: demo.items.ItemId}
+  - name: demo.items.ItemStored
+    fields:
+      - {name: item_id, type: demo.items.ItemId}
+      - {name: label, type: demo.items.Label}
+  - name: demo.items.SlotBooked
+    fields:
+      - {name: slot_id, type: demo.items.ItemId}
+      - {name: label, type: demo.items.Label}
+errors:
+  - name: demo.items.SlotTaken
+    summary: A slot with this id is already booked.
+    fields: []
+  - name: demo.items.NotActive
+    summary: The item is not active.
+    fields: []
+actors:
+  - {name: demo.items.Admin, may: [demo.items.PutItem, demo.items.BookSlot, demo.items.ArchiveItem]}
+commands:
+  - name: demo.items.PutItem
+    input:
+      - {name: item_id, type: demo.items.ItemId}
+      - {name: label, type: demo.items.Label}
+    outcomes:
+      - name: updated
+        updates: demo.items.Item
+        instance: item_id
+        emits: [demo.items.ItemStored]
+        payload:
+          demo.items.ItemStored: {item_id: input.item_id, label: input.label}
+        sets:
+          label: input.label
+        summary: An item with this id exists; its label is replaced.
+      - name: created
+        unknown_instance: true
+        creates: demo.items.Item
+        instance: item_id
+        emits: [demo.items.ItemStored]
+        payload:
+          demo.items.ItemStored: {item_id: input.item_id, label: input.label}
+        sets:
+          label: input.label
+        summary: No item with this id exists; one is created.
+  - name: demo.items.ArchiveItem
+    input:
+      - {name: item_id, type: demo.items.ItemId}
+    outcomes:
+      - name: archived
+        moves: demo.items.Item.archive
+        instance: item_id
+        emits: [demo.items.ItemArchived]
+        payload:
+          demo.items.ItemArchived: {item_id: input.item_id}
+      - {name: wrong-state, wrong_state: true, error: demo.items.NotActive}
+  - name: demo.items.BookSlot
+    input:
+      - {name: slot_id, type: demo.items.ItemId}
+      - {name: label, type: demo.items.Label}
+    outcomes:
+      - name: booked
+        creates: demo.items.Slot
+        instance: slot_id
+        emits: [demo.items.SlotBooked]
+        payload:
+          demo.items.SlotBooked: {slot_id: input.slot_id, label: input.label}
+        sets:
+          label: input.label
+      - {name: already-booked, existing_instance: true, error: demo.items.SlotTaken}
+views:
+  - name: demo.items.ItemDetails
+    source: demo.items.Item
+    consistency: read_your_writes
+    fields:
+      - {name: item_id, type: demo.items.ItemId}
+      - {name: label, type: demo.items.Label}
+  - name: demo.items.SlotDetails
+    source: demo.items.Slot
+    consistency: read_your_writes
+    fields:
+      - {name: slot_id, type: demo.items.ItemId}
+      - {name: label, type: demo.items.Label}
+components:
+  - component: items-service
+    owns: {domains: [demo.items]}
+    accepts: {commands: [demo.items.PutItem, demo.items.BookSlot, demo.items.ArchiveItem]}
+    publishes: {events: [demo.items.ItemArchived, demo.items.ItemLabelled, demo.items.ItemRestored, demo.items.ItemReviewed, demo.items.ItemStored, demo.items.SlotBooked]}
+    reached_by: network

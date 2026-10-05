@@ -67,7 +67,7 @@ fn suite() -> ConformanceSuite {
     assert!(synthesis.refusals.is_empty(), "{:#?}", synthesis.refusals);
     assert_eq!(
         synthesis.suite.provenance.suite_version.to_string(),
-        "ess-conformance/24"
+        "ess-conformance/34"
     );
     synthesis.suite
 }
@@ -190,7 +190,7 @@ fn go_gives_the_reference_verdict_on_the_coverage_input_25() {
             .provenance
             .suite_version
             .to_string(),
-        "ess-conformance/25"
+        "ess-conformance/35"
     );
     for mode in [Mode::Correct, Mode::Swapped] {
         let label = format!("presence-coverage-{mode:?}").to_lowercase();
@@ -307,7 +307,7 @@ fn go_gives_the_reference_verdict_for_every_response_presence_spelling() {
     let suite = synthesis.suite;
     assert_eq!(
         suite.provenance.suite_version.to_string(),
-        "ess-conformance/24"
+        "ess-conformance/34"
     );
     for reply in [Reply::Correct, Reply::OmitsReference, Reply::NullCode] {
         let verdicts = support_go::assert_parity(

@@ -155,68 +155,17 @@ impl ConformanceSuite {
     /// Call only for newly generated suites, never to rewrite admitted bytes or a caller-pinned
     /// legacy document. Coverage builders select their inventory-bearing counterpart separately.
     pub fn select_fresh_format(&mut self) {
-        self.provenance.suite_version = if crate::structured_values::used_by(self) {
-            SuiteFormat::parse(&format!(
-                "ess-conformance/{}",
-                crate::structured_values::ORDINARY
-            ))
-            .expect("constant suite version")
-        } else if crate::delivery_context::used_by(self) {
-            SuiteFormat::parse(&format!(
-                "ess-conformance/{}",
-                crate::delivery_context::ORDINARY
-            ))
-            .expect("constant suite version")
-        } else if crate::direct_response::used_by(self) {
-            SuiteFormat::parse("ess-conformance/28").expect("constant suite version")
-        } else if crate::leaf_payloads::used_by(self)
-            || crate::absent_input::used_by(self)
-            || crate::aggregate_delta::used_by(self)
-            || crate::now_offset::used_by(self)
-            || crate::caller_values::used_by(self)
-            || crate::view_paging::used_by(self)
-            || crate::bounded_retry::used_by(self)
-            || crate::grant::used_by(self)
-        {
-            SuiteFormat::parse(&format!(
-                "ess-conformance/{}",
-                crate::leaf_payloads::ORDINARY
-            ))
-            .expect("constant suite version")
-        } else if crate::presence::used_by(self) {
-            SuiteFormat::parse(&format!("ess-conformance/{}", crate::presence::ORDINARY))
-                .expect("constant suite version")
-        } else if crate::outcome_shapes::used_by(self) {
-            SuiteFormat::parse(&format!(
-                "ess-conformance/{}",
-                crate::outcome_shapes::ORDINARY
-            ))
-            .expect("constant suite version")
-        } else if crate::text_match_format::case_fold_used_by(self) {
-            SuiteFormat::parse(&format!(
-                "ess-conformance/{}",
-                crate::text_match_format::CASE_FOLD_ORDINARY
-            ))
-            .expect("constant suite version")
-        } else if crate::fixtures::used_by(self) {
-            SuiteFormat::parse(&format!("ess-conformance/{}", crate::fixtures::ORDINARY))
-                .expect("constant suite version")
-        } else if crate::aggregate::used_by(self) {
-            SuiteFormat::parse(&format!("ess-conformance/{}", crate::aggregate::ORDINARY))
-                .expect("constant suite version")
-        } else if crate::text_match_format::used_by(self) {
-            SuiteFormat::parse("ess-conformance/14").expect("constant suite version")
-        } else if crate::replay::used_by(self) {
-            SuiteFormat::parse("ess-conformance/12").expect("constant suite version")
-        } else if self.requires_preservation_format() {
-            SuiteFormat::parse("ess-conformance/10").expect("constant suite version")
-        } else if crate::response::used_by(self) || crate::quoted_predicate_format::used_by(self) {
-            SuiteFormat::parse("ess-conformance/8").expect("constant suite version")
-        } else if self.requires_extended_format() {
-            SuiteFormat::parse("ess-conformance/6").expect("constant suite version")
-        } else {
-            SuiteFormat::CURRENT
-        };
+        self.provenance.scenario_initial_state = Some(ScenarioInitialState::Empty);
+        // A seeded suite stays suite/42 whatever a later fresh pass appends (beyond10x/ess#413).
+        self.provenance.suite_version = SuiteFormat::parse(&format!(
+            "ess-conformance/{}",
+            if crate::synthesis_seeds::used_by(self) {
+                crate::synthesis_seeds::ORDINARY
+            } else {
+                34
+            }
+        ))
+        .expect("constant suite version");
     }
 
     /// [`select_fresh_format`](Self::select_fresh_format), with the constructs only the model can
@@ -227,6 +176,26 @@ impl ConformanceSuite {
     /// selection over the same suite cannot lower the number again.
     pub fn select_fresh_format_for(&mut self, ir: &ess_compiler::EssIr) {
         self.select_fresh_format();
+        // A seeded suite is suite/42 (beyond10x/ess#413), the newest pair, cumulative over every
+        // vocabulary below it; nothing here may lower it.
+        if crate::synthesis_seeds::used_by(self) {
+            return;
+        }
+        // Zero-invocation observation (ess/22, beyond10x/ess#268) and a scenario per selected
+        // refusal (beyond10x/ess#269) imply every major below them. A conditional aggregate measure
+        // (beyond10x/ess#363) ranks above them, and the expression vocabulary above both; without
+        // one, the binding pair's number stands as it always has.
+        let conditional = crate::conditional_measures::ordinary_floor(ir, self);
+        if crate::no_invocation::used_by(self) || crate::refusal_policy::used_by(self) {
+            self.provenance.suite_version = SuiteFormat::parse(&format!(
+                "ess-conformance/{}",
+                crate::no_invocation::ORDINARY
+            ))
+            .expect("constant suite version");
+            if conditional.is_none() {
+                return;
+            }
+        }
         if self.provenance.suite_version.major() < crate::defined_aggregates::ORDINARY
             && crate::defined_aggregates::used_by(ir, self)
         {
@@ -235,6 +204,24 @@ impl ConformanceSuite {
                 crate::defined_aggregates::ORDINARY
             ))
             .expect("constant suite version");
+        }
+        // A conditional aggregate measure (`docs/design/conditional-aggregate-measures.md`): `/38`
+        // is cumulative over everything above, so it is the floor whatever selected a lower number.
+        if let Some(floor) = conditional {
+            if self.provenance.suite_version.major() < floor {
+                self.provenance.suite_version =
+                    SuiteFormat::parse(&format!("ess-conformance/{floor}"))
+                        .expect("constant suite version");
+            }
+        }
+        // The persisted expression vocabulary (`docs/design/expression-family-source22.md`):
+        // `/40` is cumulative, so it is the floor whatever else selected a lower number.
+        if let Some(floor) = crate::expression_format::ordinary_floor(self) {
+            if self.provenance.suite_version.major() < floor {
+                self.provenance.suite_version =
+                    SuiteFormat::parse(&format!("ess-conformance/{floor}"))
+                        .expect("constant suite version");
+            }
         }
     }
 
@@ -398,6 +385,23 @@ pub struct SuiteProvenance {
     /// other field here is text: a suite is read back, and validated names do not deserialize.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub component: Option<String>,
+    /// Required logical namespace before each scenario's setup. Legacy suites leave this absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scenario_initial_state: Option<ScenarioInitialState>,
+    /// The explicit synthesis seeds this suite was generated with, and where each was used
+    /// (suite/42 and /43, beyond10x/ess#413, `docs/design/synthesis-seeds.md`).
+    ///
+    /// Left out of the document when it is `None`, so every seed-free suite keeps its bytes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub synthesis_seeds: Option<crate::synthesis_seeds::SynthesisSeeds>,
+}
+
+/// The lifecycle precondition of a newly synthesized suite, not a physical database reset.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ScenarioInitialState {
+    /// No modeled rows, observations or invocation history in this scenario's logical namespace.
+    Empty,
 }
 
 impl SuiteProvenance {
@@ -427,6 +431,8 @@ impl SuiteProvenance {
             spec_digest: digest(projection.source_digest.as_str()),
             contract_digest: digest(projection.contract_digest.as_str()),
             component: None,
+            scenario_initial_state: None,
+            synthesis_seeds: None,
         }
     }
 }
@@ -438,7 +444,7 @@ impl SuiteProvenance {
 /// refuse a suite it understands perfectly.
 pub const SUPPORTED_SUITE_FORMATS: &[u32] = &[
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
-    27, 28, 29, 30, 31, 32, 33,
+    27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43,
 ];
 
 /// The version of the *document shape* a suite is written in — `ess-conformance/1`.
@@ -603,6 +609,11 @@ impl<'de> serde::Deserialize<'de> for SuiteFormat {
 /// reproduces the file byte for byte instead of producing a diff.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ScenarioId {
+    /// A generated finite disclosure obligation, admitted only with suite/34 or /35 authority.
+    Disclosure {
+        /// Source origin, marked field, follow-up and actual caller identity.
+        cell: Box<crate::one_time_response::Cell>,
+    },
     /// One declared outcome of one command: `billing.invoice.CreateInvoice/outcome/rejected`.
     ///
     /// The primary unit (§10). An `external` outcome needs no separate spelling — it is still that
@@ -702,6 +713,18 @@ pub enum ScenarioId {
         /// Which of its clauses.
         aspect: BindingAspect,
     },
+    /// One declared refusal of a binding's invoked command, answered by the policy a
+    /// refusal-selected `on_failure:` chooses for it: `notify-ledger/binding/refusal/at-limit`
+    /// (suite/36 and /37, ess/22, beyond10x/ess#269, [`crate::refusal_policy`]).
+    ///
+    /// A variant rather than a [`BindingAspect`]: the refusal is part of the identity, and a
+    /// scenario per refusal is what lets a report say which refusal a target answered wrongly.
+    BindingRefusal {
+        /// Which binding.
+        binding: BindingRef,
+        /// The refusal, an outcome of the binding's invoked command that carries an `error:`.
+        outcome: OutcomeName,
+    },
     /// A check a person wrote: `billing.invoice/authored/two-issued-invoices-rank-latest-first`.
     ///
     /// The one id in this type that names no construct the model obliges, and that is exactly what
@@ -774,6 +797,29 @@ pub enum ScenarioId {
         /// The granted actor that sends it.
         actor: ActorRef,
     },
+    /// A read-granted view read as an actor the specification does not grant it, answered with the
+    /// standard refusal: `desk.tickets.Board/grant/read/denied` (beyond10x/ess#286).
+    ///
+    /// One per view some actor's `may:` names and some declared actor does not, in a model that
+    /// serves a component (`reached_by: network`). `read` keeps the id apart from a command's
+    /// [`Grant`](Self::Grant), which the rendered name alone could not tell from a view's. Carried
+    /// by suite majors [`crate::view_grant::ORDINARY`] and [`crate::view_grant::COVERAGE`].
+    ReadGrant {
+        /// The view no grant admits the reader to.
+        view: ViewRef,
+    },
+    /// A read-granted view read as one of the actors the specification grants it, and served:
+    /// `desk.tickets.Board/grant/read/admitted/desk.tickets.Clerk` (beyond10x/ess#286).
+    ///
+    /// One per actor whose `may:` names the view, so a surface whose read grants drop one fails.
+    /// Carried by suite majors [`crate::view_grant::ORDINARY`] and
+    /// [`crate::view_grant::COVERAGE`].
+    ReadGrantAdmitted {
+        /// The view.
+        view: ViewRef,
+        /// The granted actor that reads it.
+        actor: ActorRef,
+    },
 }
 
 impl ScenarioId {
@@ -793,12 +839,18 @@ impl ScenarioId {
     /// `a_scenario_id_round_trips_through_its_rendered_form` asserts for every variant: an id
     /// written into a fault matrix, a report or a terminal is an id this can turn back into the
     /// construct it names.
+    #[allow(clippy::too_many_lines)]
     pub fn parse(value: &str) -> Result<Self, ParseError> {
         let reject = |reason: &str| ParseError::identifier("scenario id", value, reason.to_owned());
         let parts: Vec<&str> = value.split('/').collect();
         let name = |raw: &str| QualifiedName::new(raw).map_err(|_| reject("has a malformed name"));
 
         match parts.as_slice() {
+            [_, "disclosure", ..] => crate::one_time_response::Cell::parse(value)
+                .map(|cell| Self::Disclosure {
+                    cell: Box::new(cell),
+                })
+                .map_err(reject),
             [command, Self::OUTCOME, outcome] => Ok(Self::Outcome {
                 outcome: OutcomeRef::new(
                     CommandRef::new(name(command)?),
@@ -854,10 +906,25 @@ impl ScenarioId {
                 command: CommandRef::new(name(command)?),
                 actor: ActorRef::new(name(actor)?),
             }),
+            [view, Self::GRANT, "read", "denied"] => Ok(Self::ReadGrant {
+                view: ViewRef::new(name(view)?),
+            }),
+            [view, Self::GRANT, "read", "admitted", actor] => Ok(Self::ReadGrantAdmitted {
+                view: ViewRef::new(name(view)?),
+                actor: ActorRef::new(name(actor)?),
+            }),
             [domain, Self::AUTHORED, authored] => Ok(Self::Authored {
                 domain: DomainRef::new(name(domain)?),
                 name: AuthoredName::new(authored)
                     .map_err(|_| reject("has a malformed authored scenario name"))?,
+            }),
+            [binding, Self::BINDING, "refusal", outcome] => Ok(Self::BindingRefusal {
+                binding: BindingRef::new(
+                    BindingName::new(binding)
+                        .map_err(|_| reject("has a malformed binding name"))?,
+                ),
+                outcome: OutcomeName::new(outcome)
+                    .map_err(|_| reject("has a malformed outcome name"))?,
             }),
             [binding, Self::BINDING, aspect] => Ok(Self::Binding {
                 binding: BindingRef::new(
@@ -877,7 +944,9 @@ impl ScenarioId {
                  `<entity>/state/<state>/refuses/<command>`, \
                  `<entity>/invariant/after/<command>/<outcome>`, \
                  `<type>/invariant/at/<view>/<field>`, `<binding>/binding/<aspect>`, \
-                 `<view>/aggregate`, `<command>/grant/denied`, `<command>/grant/admitted/<actor>` or \
+                 `<binding>/binding/refusal/<outcome>`, \
+                 `<view>/aggregate`, `<command>/grant/denied`, `<command>/grant/admitted/<actor>`, \
+                 `<view>/grant/read/denied`, `<view>/grant/read/admitted/<actor>` or \
                  `<domain>/authored/<name>`",
             )),
         }
@@ -887,6 +956,7 @@ impl ScenarioId {
 impl fmt::Display for ScenarioId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Disclosure { cell } => cell.fmt(f),
             Self::Outcome { outcome } => write!(
                 f,
                 "{}/{}/{}",
@@ -927,6 +997,9 @@ impl fmt::Display for ScenarioId {
             Self::Binding { binding, aspect } => {
                 write!(f, "{binding}/{}/{aspect}", Self::BINDING)
             }
+            Self::BindingRefusal { binding, outcome } => {
+                write!(f, "{binding}/{}/refusal/{outcome}", Self::BINDING)
+            }
             Self::Authored { domain, name } => {
                 write!(f, "{domain}/{}/{name}", Self::AUTHORED)
             }
@@ -934,6 +1007,10 @@ impl fmt::Display for ScenarioId {
             Self::Grant { command } => write!(f, "{command}/{}/denied", Self::GRANT),
             Self::GrantAdmitted { command, actor } => {
                 write!(f, "{command}/{}/admitted/{actor}", Self::GRANT)
+            }
+            Self::ReadGrant { view } => write!(f, "{view}/{}/read/denied", Self::GRANT),
+            Self::ReadGrantAdmitted { view, actor } => {
+                write!(f, "{view}/{}/read/admitted/{actor}", Self::GRANT)
             }
         }
     }
@@ -1015,6 +1092,14 @@ pub enum BindingAspect {
     /// [`ALL`](Self::ALL) produces it beside the four for exactly those bindings, as a scenario or
     /// as a named refusal.
     FinalFailure,
+    /// The binding's event-payload condition does not hold while every Optional member it reads is
+    /// present, and the binding invokes nothing for the whole window (suite/36, ess/22,
+    /// beyond10x/ess#268). Not in [`ALL`](Self::ALL): only a binding with a condition makes it.
+    ConditionFalse,
+    /// An Optional member the condition proves present is absent, and the binding invokes nothing
+    /// for the whole window, before any mapping (suite/36, ess/22, beyond10x/ess#194). Not in
+    /// [`ALL`](Self::ALL).
+    ConditionAbsent,
 }
 
 impl BindingAspect {
@@ -1044,6 +1129,8 @@ impl BindingAspect {
             Self::Delivery => "delivery",
             Self::OnFailure => "on-failure",
             Self::FinalFailure => "final-failure",
+            Self::ConditionFalse => "condition-false",
+            Self::ConditionAbsent => "condition-absent",
         }
     }
 
@@ -1055,6 +1142,8 @@ impl BindingAspect {
             "delivery" => Ok(Self::Delivery),
             "on-failure" => Ok(Self::OnFailure),
             "final-failure" => Ok(Self::FinalFailure),
+            "condition-false" => Ok(Self::ConditionFalse),
+            "condition-absent" => Ok(Self::ConditionAbsent),
             _ => Err(()),
         }
     }
@@ -1064,7 +1153,11 @@ impl BindingAspect {
         Self::ALL
             .iter()
             .map(|(_, written)| *written)
-            .chain([Self::FinalFailure.written()])
+            .chain([
+                Self::FinalFailure.written(),
+                Self::ConditionFalse.written(),
+                Self::ConditionAbsent.written(),
+            ])
             .map(|written| format!("`{written}`"))
             .collect::<Vec<_>>()
             .join(", ")
@@ -1094,6 +1187,9 @@ impl<'de> serde::Deserialize<'de> for BindingAspect {
 /// One check, as a sequence of steps over an isolated execution context.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ConformanceScenario {
+    /// Scenario-wide one-time observation authority; absent on every legacy suite.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub one_time_response: Option<crate::one_time_response::Trace>,
     /// What this scenario proves, in one line, for the person reading a report.
     pub purpose: ScenarioPurpose,
     /// What to do, in order.
@@ -1126,6 +1222,7 @@ impl ConformanceScenario {
     ) -> Self {
         Self {
             purpose,
+            one_time_response: None,
             steps: steps.into_iter().collect(),
             source: source.into_iter().collect(),
         }
@@ -2055,15 +2152,19 @@ pub enum ScenarioStep {
         outcome: OutcomeRef,
     },
     /// Require that the immediately preceding command was refused before it ran, with the standard
-    /// refusal for an actor no grant admits, naming this actor (beyond10x/ess#265).
+    /// refusal for an actor no grant admits, naming this actor (beyond10x/ess#265) — or, right after
+    /// a [`QueryView`](Self::QueryView), that the read was refused so (beyond10x/ess#286).
     ///
     /// Not an outcome: the refusal is the served contract's, the same for every command, and no
     /// branch the specification declares. A target answers it as
     /// [`TargetError::NotGranted`](crate::target::TargetError::NotGranted). Carried by suite majors
     /// [`crate::grant::ORDINARY`] and [`crate::grant::COVERAGE`].
     ExpectNotGranted {
-        /// The actor the command was sent as, and the refusal names.
-        actor: ActorRef,
+        /// The actor the command or read was sent as, and the refusal names; `null` for a read sent
+        /// as no actor after `read_as` with no actor (suite/34, beyond10x/ess#286), whose refusal
+        /// names none. Always written, so the no-actor form is `"actor": null`.
+        #[serde(default)]
+        actor: Option<ActorRef>,
         /// Events no occurrence of which may appear anywhere in the target's log after the refused
         /// send: each is observed once, and an occurrence the scenario had not seen before fails
         /// the step.
@@ -2072,6 +2173,24 @@ pub enum ScenarioStep {
         /// about those could not fail a target that ran the command and refused afterwards.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         unpublished: Vec<EventRef>,
+    },
+    /// Read every later view of this scenario as this actor, until the next such step
+    /// (beyond10x/ess#286).
+    ///
+    /// A view some actor's `may:` names is read-granted: a served surface answers it only to an
+    /// actor the grant names, and the standard refusal to anyone else. So a read of one is sent as
+    /// an actor, as a command is; a read before any such step is sent as no actor, which is how
+    /// every view no grant names is read. A target reads as this actor through
+    /// [`query_view_as`](crate::target::ConformanceTarget::query_view_as); with `actor: null` it
+    /// reads as no actor at all, an unauthenticated request, through
+    /// [`query_view_anonymous`](crate::target::ConformanceTarget::query_view_anonymous). After a
+    /// [`QueryView`](Self::QueryView) read as an actor the grant does not name,
+    /// [`ExpectNotGranted`](Self::ExpectNotGranted) requires the read's refusal. Carried by suite
+    /// majors [`crate::view_grant::ORDINARY`] and [`crate::view_grant::COVERAGE`].
+    ReadAs {
+        /// The actor later reads are sent as; `null` for no actor. Always written.
+        #[serde(default)]
+        actor: Option<ActorRef>,
     },
     /// Require that the immediately preceding command returned without an error.
     ExpectNoError,
@@ -2267,6 +2386,53 @@ pub enum ScenarioStep {
         selecting: BTreeMap<String, ScenarioValue>,
         /// What every selected invocation must have received, by declared field name.
         input: BTreeMap<String, ScenarioValue>,
+    },
+    /// Require that a binding made **no** invocation of its command under this scenario's
+    /// correlation, for the step's whole eventual window (suite/[`ORDINARY`](crate::no_invocation::ORDINARY),
+    /// ess/22, beyond10x/ess#268).
+    ///
+    /// What a binding whose event-payload condition does not hold owes: any attempt, a refused one
+    /// or one with the wrong input included, fails at once; none passes only at the deadline. No
+    /// input filter, and no inference from absent events: a target that cannot expose invocations
+    /// answers unsupported, never pass.
+    ExpectNoInvocation {
+        /// Whose invocations.
+        binding: BindingRef,
+        /// The command it invokes.
+        command: CommandRef,
+        /// The unmet obligation the binding owes for the occurrence instead, where its condition is
+        /// Unknown there (`binding condition`, [`crate::no_invocation::UNKNOWN_CONDITION`]): a target
+        /// that reports it leaves the check unsupported, as every unmet obligation does, and one
+        /// that skips silently through the window fails. Absent, no obligation is owed.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        obligation: Option<String>,
+    },
+    /// Require that this event was **not** published under this scenario's correlation, for the
+    /// step's whole eventual window (suite/[`ORDINARY`](crate::refusal_policy::ORDINARY), ess/22,
+    /// beyond10x/ess#269).
+    ///
+    /// What a refusal answered by `drop` or `retry` owes where its binding escalates another one:
+    /// [`ExpectNoEvent`](Self::ExpectNoEvent) reads only the last command's direct events, and an
+    /// escalation is the binding's, published after that command returned. Any occurrence seen
+    /// fails at once; none passes only at the deadline. A target that cannot observe the event
+    /// answers unsupported, never pass.
+    ExpectNoPublication {
+        /// The event that must not be published.
+        event: EventRef,
+    },
+    /// Require that this event was published **exactly** `count` times under this scenario's
+    /// correlation, for the step's whole eventual window (suite/[`ORDINARY`](crate::refusal_policy::ORDINARY),
+    /// ess/22, beyond10x/ess#269).
+    ///
+    /// What an escalated refusal owes: one escalation per escalating attempt, so a sender that
+    /// publishes it twice for one attempt fails. More than `count` seen fails at once; exactly
+    /// `count` passes only at the deadline. A target that cannot observe the event answers
+    /// unsupported, never pass.
+    ExpectPublicationCount {
+        /// The event.
+        event: EventRef,
+        /// Exactly how many times it is published.
+        count: NonZeroU32,
     },
     /// Read a view (§14).
     ///
@@ -2899,6 +3065,19 @@ mod tests {
     }
 
     #[test]
+    fn a_selected_refusal_scenario_id_round_trips_and_refuses_a_malformed_outcome() {
+        let id = ScenarioId::BindingRefusal {
+            binding: BindingRef::new(BindingName::new("notify-ledger").expect("valid")),
+            outcome: OutcomeName::new("at-limit").expect("valid"),
+        };
+        let rendered = id.to_string();
+        assert_eq!(rendered, "notify-ledger/binding/refusal/at-limit");
+        assert_eq!(ScenarioId::parse(&rendered).expect("it parses"), id);
+        ScenarioId::parse("notify-ledger/binding/refusal/At_Limit").expect_err("not an outcome");
+        ScenarioId::parse("notify-ledger/binding/refusal").expect_err("no aspect of that name");
+    }
+
+    #[test]
     fn every_binding_aspect_is_in_the_list_that_is_walked_to_produce_them() {
         // `ALL` is what synthesis iterates, so an aspect missing from it is a scenario nothing
         // produces and nothing refuses — the silent omission §36 exists to rule out, arriving as an
@@ -3095,12 +3274,18 @@ mod tests {
             "ess-conformance/31",
             "ess-conformance/32",
             "ess-conformance/33",
+            "ess-conformance/34",
+            "ess-conformance/35",
+            "ess-conformance/36",
+            "ess-conformance/37",
+            "ess-conformance/38",
+            "ess-conformance/39",
         ] {
             let earlier = SuiteFormat::parse(earlier).expect("well formed");
             assert!(earlier.is_supported());
         }
 
-        let later = SuiteFormat::parse("ess-conformance/34").expect("well formed");
+        let later = SuiteFormat::parse("ess-conformance/44").expect("well formed");
         assert!(
             !later.is_supported(),
             "a later format may mean something different by the same words"
@@ -3162,6 +3347,8 @@ mod tests {
             )
             .expect("a digest"),
             component: None,
+            scenario_initial_state: None,
+            synthesis_seeds: None,
         }
     }
 }

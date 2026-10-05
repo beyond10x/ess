@@ -1,13 +1,7 @@
 //! An operator can select the interpreter target, and it executes the model it is handed.
 //!
-//! `--target interpreted` was introduced as a seam that decided nothing
-//! (`story:interpreted-target-selection`); `story:interpreted-command-execution` fills its command
-//! path. What is checked here: the value is offered beside the existing targets, it requires the
-//! specification by `--path` and refuses one the suite was not synthesized from, and a run of
-//! `examples/billing`'s committed suite against it passes every scenario that needs only command
-//! execution while every other scenario is an unsatisfied obligation naming what is not interpreted
-//! yet. Not one is an `error` or a failure, because nothing went wrong — §28's fourth word is the
-//! honest answer for what the target cannot yet derive.
+//! The complete committed Billing suite executes, including views and bindings. The target still
+//! requires the matching specification and reports unsupported facts without guessing them.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -122,30 +116,33 @@ fn each_target_reports_the_implementation_name_it_declares() {
             .args(["--path", "examples/billing"])
             .arg("--suite")
             .arg(&suite)
-            .args(["--format", "json"])
+            .args(["--report-format", "2", "--format", "json"])
             .output()
             .expect("the `ess` binary runs");
         let report: serde_json::Value = serde_json::from_slice(&output.stdout)
-            .unwrap_or_else(|error| panic!("{target} renders report/1 as JSON: {error}"));
+            .unwrap_or_else(|error| panic!("{target} renders report/2 as JSON: {error}"));
         assert_eq!(
-            report["implementation"]["name"], implementation,
+            implementation_name(&report),
+            implementation,
             "`--target {target}` reports `{implementation}`"
         );
     }
 }
 
+/// The implementation a report/2 summary names, which it writes as `<name> <version>`.
+fn implementation_name(report: &serde_json::Value) -> &str {
+    let named = report["summary"]["implementation"]
+        .as_str()
+        .expect("the summary names the implementation");
+    named.split_once(' ').map_or(named, |(name, _)| name)
+}
+
 /// What `ess verify conform run --target interpreted` answers for the committed billing suite.
 ///
-/// Rewritten for `story:interpreted-command-execution`; the name keeps the obligation half of the
-/// claim, which still holds for every scenario the interpreter does not cover. The earlier form
-/// asserted that **every** scenario and check was `unsupported`, because the seam derived nothing.
-/// Now: the scenarios that need only command execution, transitions, `sets:` writes, emitted events,
-/// declared refusals and a forced external outcome pass; every other scenario is `unsupported`, and
-/// each unsupported check names what is not interpreted yet. No scenario and no check is `failed`
-/// or `error`, and the run still fails conformance (exit 1), because §28 counts an unsatisfied
-/// obligation as a failure of the run.
+/// Every committed scenario and every check must pass; an empty or partial execution cannot
+/// satisfy this comparison with the exact committed scenario identities.
 #[test]
-fn the_committed_billing_suite_runs_against_interpreted_as_unsatisfied_obligations() {
+fn the_complete_committed_billing_suite_passes_against_interpreted() {
     let suite = root().join("suites/generated/billing/suite.json");
     let output = Command::new(env!("CARGO_BIN_EXE_ess"))
         .current_dir(root())
@@ -153,23 +150,24 @@ fn the_committed_billing_suite_runs_against_interpreted_as_unsatisfied_obligatio
         .args(["--path", "examples/billing"])
         .arg("--suite")
         .arg(&suite)
-        .args(["--format", "json"])
+        .args(["--report-format", "2", "--format", "json"])
         .output()
         .expect("the `ess` binary runs");
     assert_eq!(
         output.status.code(),
-        Some(1),
-        "an unsupported obligation fails conformance (1) and is not an execution error (3): {}",
+        Some(0),
+        "the actual interpreter executes the complete billing contract: {}",
         unwrapped(&output.stderr)
     );
 
     let report: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("report/1 is rendered as JSON");
+        serde_json::from_slice(&output.stdout).expect("report/2 is rendered as JSON");
     assert_eq!(
-        report["implementation"]["name"], "interpreted",
+        implementation_name(&report),
+        "interpreted",
         "the report names which implementation answered"
     );
-    assert_eq!(report["status"], "failed");
+    assert_eq!(report["summary"]["execution_status"], "passed");
 
     let scenarios = report["scenarios"].as_array().expect("scenarios");
     assert_eq!(
@@ -184,49 +182,33 @@ fn the_committed_billing_suite_runs_against_interpreted_as_unsatisfied_obligatio
             .map(|scenario| scenario["scenario"].as_str().expect("a scenario id"))
             .collect()
     };
-    let passed: BTreeSet<&str> = BTreeSet::from([
-        "billing.email.SendEmail/outcome/failed",
-        "billing.email.SendEmail/outcome/sent",
-        "billing.invoice.CancelInvoice/outcome/wrong-state",
-        "billing.invoice.CreateInvoice/outcome/rejected",
-        "billing.invoice.Invoice/state/Cancelled/refuses/billing.invoice.CancelInvoice",
-        "billing.invoice.Invoice/state/Cancelled/refuses/billing.invoice.IssueInvoice",
-        "billing.invoice.Invoice/state/Cancelled/refuses/billing.invoice.PayInvoice",
-        "billing.invoice.Invoice/state/Draft/refuses/billing.invoice.PayInvoice",
-        "billing.invoice.Invoice/state/Issued/refuses/billing.invoice.IssueInvoice",
-        "billing.invoice.Invoice/state/Paid/refuses/billing.invoice.CancelInvoice",
-        "billing.invoice.Invoice/state/Paid/refuses/billing.invoice.IssueInvoice",
-        "billing.invoice.Invoice/state/Paid/refuses/billing.invoice.PayInvoice",
-        "billing.invoice.IssueInvoice/outcome/wrong-state",
-        "billing.invoice.PayInvoice/outcome/rejected",
-        "billing.invoice.PayInvoice/outcome/wrong-state",
-    ]);
+    let committed: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&suite).unwrap()).unwrap();
+    let passed: BTreeSet<&str> = committed["scenarios"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
     assert_eq!(
         with_status("passed"),
         passed,
-        "command execution is interpreted"
+        "every committed identity executes successfully"
     );
     assert_eq!(
         with_status("unsupported").len(),
-        34 - passed.len(),
-        "everything else is an unsatisfied obligation"
+        0,
+        "billing needs no unsupported capability"
     );
 
     for scenario in scenarios {
         let id = &scenario["scenario"];
         for check in scenario["checks"].as_array().expect("checks") {
             let status = check["status"].as_str().expect("a check status");
-            assert!(
-                status == "passed" || status == "unsupported",
+            assert_eq!(
+                status, "passed",
                 "`{id}` holds no failed or errored check: {check:#}"
             );
-            if status == "unsupported" {
-                let observed = check["diagnostic"]["observed"].to_string();
-                assert!(
-                    observed.contains("not interpreted yet"),
-                    "`{id}`'s unsupported check names what is not interpreted: {observed}"
-                );
-            }
         }
     }
 }
@@ -347,14 +329,17 @@ fn the_interpreted_target_runs_a_specification_that_reads_the_caller() {
             && ran.contains("demo.notes.EditNote/outcome/not-the-author"),
         "the run executed the caller model's suite: {ran:?}"
     );
-    // What the interpreter cannot carry out yet (a caller value source, a stored-field guard) is
-    // an unsatisfied obligation, never a failure; the run's exit says so as it does for billing.
+    // The interpreter reads the invocation's caller and the subject's stored fields
+    // (`interpret/execute/caller.rs`, story:feature-request-292), so the caller value source and
+    // the stored-field guard this model holds are carried out: every scenario and check passes.
+    assert_eq!(output.status.code(), Some(0), "{stderr}");
+    assert_eq!(scenarios.len(), 3, "{ran:?}");
     for scenario in scenarios {
+        assert_eq!(scenario["status"], "passed", "{scenario:#}");
         for check in scenario["checks"].as_array().expect("checks") {
-            let status = check["status"].as_str().expect("a check status");
-            assert!(
-                status == "passed" || status == "unsupported",
-                "`{}` holds no failed or errored check: {check:#}",
+            assert_eq!(
+                check["status"], "passed",
+                "`{}` holds no unsupported, failed or errored check: {check:#}",
                 scenario["scenario"]
             );
         }

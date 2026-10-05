@@ -120,7 +120,7 @@ bindings:
 
 /// The Rust realization both harness binaries link: the generated behaviours, except `Ping`, whose
 /// behaviour answers an unmet obligation.
-const REALIZATION: &str = r#"use ops_types::behaviour::{Context, Generated};
+const REALIZATION: &str = r#"use ops_types::behaviour::{Context, ExternalCommand, Generated};
 use ops_types::core;
 use ops_types::core::obligations::{NoteBehavior, OpenBehavior, PingBehavior, TallyBehavior};
 use ops_types::obligation::UnmetObligation;
@@ -129,7 +129,8 @@ use ops_types::obligation::UnmetObligation;
 pub struct Desk;
 
 impl Context for Desk {
-    fn external(&mut self, command: &'static str, outcome: &'static str) -> bool {
+    fn external(&mut self, command: ExternalCommand<'_>, outcome: &'static str) -> bool {
+        let command = command.name();
         // The notebook stays full.
         matches!((command, outcome), ("ops.core.Note", "busy"))
     }

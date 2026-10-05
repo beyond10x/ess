@@ -38,14 +38,20 @@ fn checked_envelope_preserves_exact_source_and_legacy_bytes() {
         value["schema_dialect"],
         "https://spec.openapis.org/oas/3.1/dialect/base"
     );
-    assert!(value["accounting"]["coverage_gaps"]
-        .as_array()
-        .unwrap()
-        .is_empty());
-    assert!(!value["accounting"]["normalizations"]
-        .as_array()
-        .unwrap()
-        .is_empty());
+    assert_eq!(
+        value["accounting"]["coverage_gaps"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
+    assert_ne!(
+        value["accounting"]["normalizations"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
     assert_eq!(read_import(&bytes).unwrap().to_canonical_json(), bytes);
     assert_eq!(
         read_import(&serde_yaml::to_string(&value).unwrap()).unwrap(),

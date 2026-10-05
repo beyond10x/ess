@@ -1,8 +1,8 @@
 # Generated conformance suites
 
 **Do not edit these files.** They are generated from the specifications under
-[`examples/`](../../examples) by `cargo xtask suite`, and CI fails if they differ from what
-those specifications oblige.
+[`examples/`](../../examples) by `ess verify conform synthesize`. Regenerate them with the
+commands below when the specification or the suite format changes.
 
 A suite is the other half of a specification: every check an implementation has to pass for
 the word *conformant* to mean anything about it. One JSON document per specification, keyed by
@@ -14,20 +14,24 @@ a sibling is added.
 ess verify conform run --suite suites/generated/billing/suite.json --target billing
 ```
 
-The billing suite is regenerated with the authored scenarios named, because a specification
-directory holds `ess/1` documents and nothing else:
+The billing suite is regenerated with the authored scenarios named separately from the
+specification directory:
 
 ```console
 ess verify conform synthesize --path examples/billing \
   --scenarios examples/billing-scenarios \
   --target ir --out suites/generated/billing/suite.json
+ess verify conform synthesize --path examples/gatepass \
+  --target ir --out suites/generated/gatepass/suite.json
+ess verify conform synthesize --path examples/oracle-fixture \
+  --target ir --out suites/generated/oracle-fixture/suite.json
 ```
 
 | suite | checks | scenarios | authored | no scenario | generated from |
 | --- | --- | --- | --- | --- | --- |
-| [`billing/suite.json`](billing/suite.json) | billing v3 (model digest 096efa38ec46e97a32f81b72193e43114df1156464648a885134ffafc9ac9648, contract digest c9ecfdf5bed1bcb88068dad060895f16ca73de361204ae488d6f0d39477f6f79) | 34 | 2 | 0 | [`examples/billing`](../../examples/billing) |
+| [`billing/suite.json`](billing/suite.json) | billing v3 (model digest 096efa38ec46e97a32f81b72193e43114df1156464648a885134ffafc9ac9648, contract digest c9ecfdf5bed1bcb88068dad060895f16ca73de361204ae488d6f0d39477f6f79) | 33 | 1 | 0 | [`examples/billing`](../../examples/billing) |
 | [`gatepass/suite.json`](gatepass/suite.json) | gatepass v1 (model digest 7d021b6ebe1c4715096f165d6564389be0f46311f67d791ed748f627314d611c, contract digest 2668f3034afb388a33d7add462e15a830b6010fbfe83101f1dd2526fa18d52ed) | 17 | 0 | 5 | [`examples/gatepass`](../../examples/gatepass) |
-| [`oracle-fixture/suite.json`](oracle-fixture/suite.json) | oracle v1 (model digest 7ca8e1ba4935adbffad0c3e57e1d7651c7397a5c9b52f6d0cd54488cba83fb2b, contract digest 003eb0f2aab6cc1251288e3dc03526173e257f09b6a592df36618cff9d431d67) | 34 | 0 | 6 | [`examples/oracle-fixture`](../../examples/oracle-fixture) |
+| [`oracle-fixture/suite.json`](oracle-fixture/suite.json) | oracle v1 (model digest f8b3f1c9fa884017968b683a76b8636b8d8933cd31818603c1035603883e4656, contract digest 4108a14f183b15988a40f260f1cc260bf1e516d8b6ab768d31f600bd73ab60eb) | 34 | 0 | 6 | [`examples/oracle-fixture`](../../examples/oracle-fixture) |
 
 ## Authored, and counted apart
 
@@ -47,7 +51,9 @@ Synthesis emits the claim that `OutstandingInvoices` is *in* its declared order 
 which row is first, because §8 permits a target to be shared and a row this scenario did not create
 could outrank both. A person who knows that is not the case for this system says so there. The
 second issues the later instant first and spells the earlier one with an offset, so a target that
-ranks `issued_at` by issue order or by its text fails it.
+ranks `issued_at` by issue order or by its text fails it. Fresh suites declare
+`scenario_initial_state: empty`: each scenario begins with an empty logical namespace before its
+arrangement, even when the implementation shares a physical target.
 
 ## What no scenario covers
 

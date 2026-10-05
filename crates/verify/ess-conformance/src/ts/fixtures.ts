@@ -1,7 +1,7 @@
 // Independently supplied values resolved before scenario activity.
 import { array, closed, goMarshal, isObject, SelectionObservation, strictJSON } from './runtime.js';
 import type { AccessorField, Node, SelectionDeclaration } from './runtime.js';
-import { admitTypedDeclarations, decodeDeclaration, validateTypedFields } from './response.js';
+import { admitTypedDeclarations, decodeDeclaration, validateFixtureTypes } from './response.js';
 
 export interface FixtureContract {
   fields: AccessorField[];
@@ -36,7 +36,7 @@ export function admitFixtures(value: unknown): FixtureContract {
   if (fields.length === 0 || fields.length > 256 || Object.keys(declarations).length > 4096) {
     throw new Error('fixture field/declaration bound');
   }
-  validateTypedFields([fields], declarations);
+  validateFixtureTypes(fields, declarations);
   if (new TextEncoder().encode(goMarshal(value)).length > 1048576)
     throw new Error('fixture contract byte limit');
   return { fields, declarations };
@@ -87,6 +87,9 @@ export function admitFixtureSteps(steps: Node[]): void {
     }
     const groups: Record<string, Node>[] = [];
     switch (step.step) {
+      case 'expect_every_invocation':
+        groups.push(step.selecting ?? {}, step.input ?? {});
+        break;
       case 'execute_command':
       case 'expect_invocation':
         groups.push(step.input ?? {});

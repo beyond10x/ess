@@ -16,6 +16,8 @@ The value vocabulary gains Fixture. A resolved event assertion combines literal 
 
 Nested records, lists, maps, enums and nominal types reuse the independently admitted declaration/value checker used by typed response observations. Unsupported invariants or reading semantics are refused explicitly; a primitive-only shape check must not certify a constrained type.
 
+A declared type that reaches itself only behind `Optional`, `List` or `Map` has finite values, by the model's own inhabitation rule, and a fixture may supply one (beyond10x/ess#416). The supplied value is checked structurally against the recursive declarations under the value depth guard, and a refusal names the member path where it failed (`children[1].text`). A recursion with no such boundary has no finite value: the contract is refused, naming the fixture input and the members that close the cycle. A typed response observation still refuses every recursive type.
+
 ## Compatibility
 
 New specification meaning, authored syntax and suite vocabulary require new format admission. Unused fixture support must leave old canonical suite bytes unchanged. Old readers reject the new format before target activity. Both ordinary and inventory-bearing suite formats require equivalent admission. Rust, emitted Go and emitted TypeScript must agree on valid values, malformed input, missing capabilities, immutability and failures. No report is promoted into a baseline until every previous named passing and answered scenario remains so.

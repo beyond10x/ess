@@ -10,6 +10,7 @@ mod client;
 mod coverage;
 mod git_checkout;
 mod input_discovery;
+mod known_failures;
 mod load;
 mod model_types;
 mod normalize;
@@ -236,8 +237,8 @@ struct GenerateArgs {
     /// projection is legal, and the note is what tells it apart from a clean one.
     #[arg(long)]
     strict: bool,
-    /// An `ess-transport/1` document binding events to brokers, subjects and streams; only with
-    /// `--kind asyncapi`.
+    /// An `ess-transport/1` or `ess-transport/2` document binding events to brokers, subjects
+    /// and streams; only with `--kind asyncapi`.
     #[arg(long)]
     transport: Option<PathBuf>,
 }
@@ -330,6 +331,26 @@ enum VerifyCommand {
         to: PathBuf,
         #[arg(long, value_enum, default_value_t = MachineFormat::Text)]
         format: MachineFormat,
+        /// Classify each change as breaking, unknown or compatible for callers, readers and
+        /// history; JSON output is then `ess-diff/14`.
+        #[arg(long)]
+        compatibility: bool,
+        /// Exit 4 when an unacknowledged change is at or above this level, 0 otherwise; a
+        /// refused input or acknowledgements file still exits 1. Implies `--compatibility`.
+        #[arg(long, value_enum)]
+        fail_on: Option<DiffFailOn>,
+        /// The dimensions `--fail-on` considers; repeatable. Default: all three.
+        #[arg(
+            long = "dimension",
+            value_name = "DIMENSION",
+            value_enum,
+            requires = "fail_on"
+        )]
+        dimensions: Vec<DiffDimension>,
+        /// An `ess-diff-acknowledgements/1` JSON file naming change ids `--fail-on` lets pass,
+        /// bound to the `before` and `after` digests of this comparison.
+        #[arg(long, requires = "fail_on")]
+        acknowledgements: Option<PathBuf>,
     },
     /// Report conformance and generated artifacts invalidated by a semantic change.
     Impact {
@@ -428,6 +449,26 @@ enum Format {
 enum MachineFormat {
     Text,
     Json,
+}
+
+/// What `ess verify diff --fail-on` fails on.
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum DiffFailOn {
+    /// A change breaking in a considered dimension.
+    Breaking,
+    /// A change breaking or unknown in a considered dimension.
+    BreakingOrUnknown,
+}
+
+/// A compatibility dimension `ess verify diff --dimension` selects.
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum DiffDimension {
+    /// Callers written against `--from` invoking `--to`.
+    Callers,
+    /// Readers written against `--from` reading what `--to` produces.
+    Readers,
+    /// `--to` reading what `--from` already stored or emitted.
+    History,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -540,6 +581,22 @@ enum ConformCommand {
         /// Write fresh IR as compact JSON with one trailing newline; requires --target ir.
         #[arg(long)]
         compact: bool,
+        /// Offer the `setup` row of arrangement INSTANCE in the authored document FILE as an
+        /// explicit synthesis seed; repeatable.
+        ///
+        /// A seed supplies only that nominated initial row: never the document's timeline,
+        /// assertions or any state its timeline reaches, and it appends no authored scenario
+        /// (`--scenarios` does that, independently). Ordinary arrangement is tried first; a row is
+        /// established only for a generated obligation no bounded arrangement reaches, and the
+        /// real command and assertions follow it. Any seed selects suite/42 (or /43 with
+        /// `--suite-format 5`) and records its source, row and uses.
+        #[arg(
+            long = "synthesis-seed",
+            num_args = 2,
+            value_names = ["FILE", "INSTANCE"],
+            action = clap::ArgAction::Append
+        )]
+        synthesis_seed: Vec<String>,
     },
     /// Compile the scenarios an author wrote, and nothing the specification obliges.
     ///
@@ -559,30 +616,32 @@ enum ConformCommand {
         #[arg(long, default_value = "4", value_parser = ["4", "5"])]
         suite_format: String,
     },
-    /// Render the scenarios as a page somebody can press play on.
+    /// Emit a browser conformance product for the scenarios.
     ///
-    /// Emits a specification-neutral player and one generated `model.json`: the entities and their
-    /// lifecycles, what each command outcome does, what each view selects, who may ask, and what a
-    /// binding reacts to. Serve the directory and open `index.html`.
+    /// Writes the original specification files, the admitted suite (`suite.json`) or coverage
+    /// input (`input.json`), a Rust-derived `declarations.json` and a `browser.json` manifest that
+    /// binds them all by digest. Serve the directory and open `index.html` to navigate every
+    /// declaration; the page labels them admitted at emission and not executed.
     ///
-    /// It replays rather than executes. A scenario declares which outcome each command took and the
-    /// page displays declarations and explicit unknowns for unavailable assignment, subject and view
-    /// semantics. Replay establishes no specification coherence, fills no obligation and produces no
-    /// implementation execution report or qualifying conformance evidence.
+    /// Execution needs `rust/browser_host.rs` built for `wasm32-unknown-unknown` with your own
+    /// target installation and copied beside `index.html` as `runner.wasm`; the emitted
+    /// `README.md` gives the commands. The module re-admits the original bytes before any target
+    /// call, and only its Rust runner produces reports.
     Web {
         #[command(flatten)]
         input: SpecPath,
         /// One scenario file, or a directory using `ess-inputs.yaml` or shallow `.yaml`/`.yml` selection.
         #[arg(long)]
         scenarios: Option<PathBuf>,
-        /// Where to write the player.
+        /// Where to write the product.
         #[arg(long)]
         out: Option<PathBuf>,
-        /// Ordinary (4) or declared coverage (5); coverage emits the paired replay document.
+        /// Ordinary (4) or declared coverage (5); coverage emits the complete coverage input.
         #[arg(long, default_value = "4", value_parser = ["4", "5"])]
         suite_format: String,
-        /// An `ess-history/1` document: draw it, checked against the specification, as one lane
-        /// per client in a single self-contained `index.html`, printed when `--out` is absent.
+        /// An `ess-history/1` or `ess-history/2` document: draw it, checked against the
+        /// specification, as one lane per client in a single self-contained `index.html`, printed
+        /// when `--out` is absent.
         /// `--out` replaces the files `ess` owns in that directory, the player's included, so
         /// write history pages and the player to different directories.
         #[arg(long, conflicts_with_all = ["scenarios", "suite_format"])]
@@ -641,6 +700,18 @@ enum ConformCommand {
         /// Explicitly retain diagnostic execution exit behavior.
         #[arg(long)]
         allow_incomplete: bool,
+        /// An `ess-known-failures/1` declaration: scenarios this build of the target is known to
+        /// fail, bound to the exact suite bytes, specification, implementation and build (the
+        /// running `ess` executable's SHA-256). Accounted in `--accounting-out`; the report, its
+        /// verdict and the exit status are unchanged. Requires `--report-format 2` and
+        /// `--report-out`. A declaration that does not bind this run, or names a scenario that did
+        /// not fail, exits 2 and writes nothing.
+        #[arg(long, requires_all = ["accounting_out", "report_out"])]
+        known_failing: Option<PathBuf>,
+        /// Where to write the `ess-known-failure-accounting/1` document: a new file, not an input
+        /// and not `--report-out`.
+        #[arg(long, requires = "known_failing")]
+        accounting_out: Option<PathBuf>,
         #[arg(long, value_enum, default_value_t = Format::Text)]
         format: Format,
     },
@@ -658,22 +729,67 @@ enum ConformCommand {
     /// unsupported, and a `suite_digest` that is not the admitted suite's.
     ///
     /// Exit 0: the report was written, whatever its verdict. Exit 2: an input was refused.
+    ///
+    /// Known failures (`--known-failing`, an `ess-known-failures/1` declaration) are accounted in a
+    /// separate `ess-known-failure-accounting/1` document and never change a report or its verdict.
+    /// With `--results`, they also need `--implementation-build` (the SHA-256 of the immutable
+    /// target build, known to the host before the run) and `--execution-context-out`, where the
+    /// `ess-conformance-execution/1` context binding that build to the report is written. A runner
+    /// that wrote report/2 and its own context itself — the generated Go and TypeScript runners,
+    /// given `ESS_IMPLEMENTATION_BUILD` and `ESS_EXECUTION_CONTEXT_OUT` — is accounted with
+    /// `--observed-report`, `--execution-context`, `--known-failing` and `--accounting-out`, which
+    /// rewrite nothing and write only the accounting. Every output is a new file; refused inputs
+    /// exit 2 before anything is written.
     Report {
         /// The suite the runner executed, exactly the bytes it was given.
         #[arg(long)]
         suite: PathBuf,
         /// The runner's `ess-conformance-results/1` document.
-        #[arg(long)]
-        results: PathBuf,
+        #[arg(
+            long,
+            required_unless_present = "observed_report",
+            conflicts_with = "observed_report"
+        )]
+        results: Option<PathBuf>,
         /// The implementation the runner held to the suite, as the report names it.
-        #[arg(long)]
-        implementation: String,
+        #[arg(
+            long,
+            required_unless_present = "observed_report",
+            conflicts_with = "observed_report"
+        )]
+        implementation: Option<String>,
         /// Where to write the canonical `ess-conformance-report/2`.
-        #[arg(long)]
-        report_out: PathBuf,
+        #[arg(
+            long,
+            required_unless_present = "observed_report",
+            conflicts_with = "observed_report"
+        )]
+        report_out: Option<PathBuf>,
         /// The runner that produced the results, as `<name>@<version>`.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "observed_report")]
         runner: Option<String>,
+        /// Account a report/2 a runner wrote itself, from its original bytes; writes only
+        /// `--accounting-out`.
+        #[arg(long, requires_all = ["execution_context", "known_failing", "accounting_out"])]
+        observed_report: Option<PathBuf>,
+        /// The `ess-conformance-execution/1` context the runner's host wrote beside
+        /// `--observed-report`.
+        #[arg(long, requires = "observed_report")]
+        execution_context: Option<PathBuf>,
+        /// An `ess-known-failures/1` declaration to account the report's failures against.
+        #[arg(long, requires = "accounting_out")]
+        known_failing: Option<PathBuf>,
+        /// Where to write the `ess-known-failure-accounting/1` document, as a new file.
+        #[arg(long, requires = "known_failing")]
+        accounting_out: Option<PathBuf>,
+        /// With `--results` and `--known-failing`: the `sha256:` identity of the target build the
+        /// results came from, which the host knew before the run.
+        #[arg(long, requires = "known_failing", conflicts_with = "observed_report")]
+        implementation_build: Option<String>,
+        /// With `--results` and `--known-failing`: where to write the execution context, as a new
+        /// file.
+        #[arg(long, requires = "known_failing", conflicts_with = "observed_report")]
+        execution_context_out: Option<PathBuf>,
     },
     /// Audit the suite with specification mutants, each replayed against a reference target.
     ///
@@ -696,20 +812,38 @@ enum ConformCommand {
     /// perform. It survives when every scored scenario passed and each scenario it left unscored
     /// is the baseline's own, unchanged.
     ///
+    /// emit-swap replaces an outcome's only event with another declared event of exactly the same
+    /// fields that every component accepting the command publishes. A site with no such event is
+    /// listed as unavailable (`no_compatible_event_alternative`): single-event substitution was not
+    /// audited there, which is neither a kill nor a stillborn mutant.
+    ///
     /// Exit 0: no baseline scenario failed or ended error, at least one mutant ran and was not
-    /// equivalent, every scored mutant was killed or equivalent, and none is inconclusive or
-    /// unwitnessed. Exit 1: the specification did not load, or at least one mutant survived. Exit 3:
-    /// a baseline scenario failed or ended error (ESS-MUTATE-001), the baseline executed nothing
-    /// (nothing scored), the classes found no site (ESS-MUTATE-003), or no mutant survived and at
-    /// least one was unwitnessed or inconclusive, or none ran that was not equivalent.
+    /// equivalent, every scored mutant was killed or equivalent, none is inconclusive or
+    /// unwitnessed, and no selected in-scope site is unavailable. Exit 1: the specification did not
+    /// load, or at least one mutant survived. Exit 3: a baseline scenario failed or ended error
+    /// (ESS-MUTATE-001), the baseline executed nothing (nothing scored), the classes found no site
+    /// (ESS-MUTATE-003), or no mutant survived and at least one was unwitnessed or inconclusive, a
+    /// selected in-scope site was unavailable, or none ran that was not equivalent. Exit 2: the
+    /// `--known-failing` declaration was refused. Known failures are listed first in the text and
+    /// never count as a pass: the audit makes no conformance claim.
     ///
     /// For an implementation of your own, split the audit in two. `--emit DIR` writes the
     /// baseline suite to `DIR/baseline/suite.json`, every mutant's suite to
     /// `DIR/<mutant-id>/suite.json` and a manifest, and runs nothing (exit 0, or 3 on
     /// ESS-MUTATE-003). Run your runner over each suite and write its conformance report to
     /// `report.json` beside it. `--collect DIR` scores those reports with the exit statuses above;
-    /// a missing report makes its mutant inconclusive. `--emit` writes an ess-mutation-manifest/3;
-    /// `--collect` also reads the /2 and /1 manifests earlier releases wrote.
+    /// a missing report makes its mutant inconclusive. `--emit` writes an ess-mutation-manifest/3,
+    /// or /4 where it holds a sets-drop, precedence-swap or emit-swap mutant or an unavailable
+    /// site, or names a component; `--collect` also reads the /2 and /1 manifests earlier releases
+    /// wrote.
+    ///
+    /// For a repository that implements one component, `--emit --component NAME` writes the
+    /// component's suites, as `synthesize --component` writes them, and marks out of scope every
+    /// mutant whose site belongs to another component (a command that component handles, a view
+    /// it owns, a transition its commands perform): it has no suite, and `--collect` lists it in an
+    /// ess-mutation-report/4 naming the component rather than scoring it. A survivor on the
+    /// component's own site is scored and counted. `--collect --component NAME` refuses an emission made for another component or for none.
+    /// `--target` takes no `--component`: the built-in targets implement whole systems.
     #[command(group(
         clap::ArgGroup::new("mode").required(true).args(["target", "emit", "collect"])
     ))]
@@ -729,16 +863,32 @@ enum ConformCommand {
         /// Score the `report.json` a runner wrote beside each suite of an emitted directory.
         #[arg(long, conflicts_with = "path")]
         collect: Option<PathBuf>,
-        /// Where to write the `ess-mutation-report/3` document.
+        /// With `--emit`, scope every suite to this declared component; with `--collect`, require
+        /// the emission to have been scoped to it.
+        #[arg(long, conflicts_with = "target")]
+        component: Option<String>,
+        /// Where to write the `ess-mutation-report/3` document (`/4` for a component, a
+        /// declaration or unavailable sites).
         #[arg(long)]
         report_out: Option<PathBuf>,
+        /// An `ess-known-failures/1` declaration of baseline scenarios the target is known to fail.
+        /// They are excluded from scoring rather than refused, and each mutant is scored on the
+        /// scenarios the baseline passed: a declared scenario, or one the baseline's suite does not
+        /// hold, never kills. Every failure it does not name still refuses with ESS-MUTATE-001.
+        /// With `--target` it binds the running `ess` executable's SHA-256 as the build; `--emit`
+        /// copies it into the emission and binds it there (ess-mutation-manifest/4); `--collect`
+        /// uses only the declaration the emission bound, and refuses any other. A refused
+        /// declaration exits 2.
+        #[arg(long)]
+        known_failing: Option<PathBuf>,
         #[arg(long, value_enum, default_value_t = Format::Text)]
         format: Format,
     },
     /// Check a recorded concurrent history for linearizability against the specification's model.
     ///
-    /// Reads an `ess-history/1` document recorded against the specification at `--path`, and
-    /// searches for an order of its operations the interpreter accepts, answer for answer. The
+    /// Reads an `ess-history/1` or `ess-history/2` document recorded against the specification at
+    /// `--path`, and searches for an order of its operations the interpreter accepts, answer for
+    /// answer, reading an operation's recorded `decision_time` as the current time. The
     /// history records no inputs, so an operation is explained by any candidate input synthesis
     /// would submit for its command. Reads of views are not judged and are listed. A violation is
     /// reported with the longest partial linearization found and a shrunk history that is still a
@@ -752,7 +902,7 @@ enum ConformCommand {
         /// One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml`.
         #[arg(long, default_value = ".")]
         path: PathBuf,
-        /// The `ess-history/1` document.
+        /// The `ess-history/1` or `ess-history/2` document.
         #[arg(long)]
         history: PathBuf,
         /// How many executions of the model the search may spend; the same history and budget
@@ -817,6 +967,9 @@ enum MutateClass {
     ErrorSwap,
     EmitDrop,
     OrderFlip,
+    SetsDrop,
+    PrecedenceSwap,
+    EmitSwap,
 }
 
 impl From<MutateClass> for ess_conformance::mutate::MutantClass {
@@ -831,6 +984,9 @@ impl From<MutateClass> for ess_conformance::mutate::MutantClass {
             MutateClass::ErrorSwap => Self::ErrorSwap,
             MutateClass::EmitDrop => Self::EmitDrop,
             MutateClass::OrderFlip => Self::OrderFlip,
+            MutateClass::SetsDrop => Self::SetsDrop,
+            MutateClass::PrecedenceSwap => Self::PrecedenceSwap,
+            MutateClass::EmitSwap => Self::EmitSwap,
         }
     }
 }
@@ -1445,7 +1601,25 @@ fn verify_area(command: VerifyCommand) -> Result<ExitCode> {
         VerifyCommand::Protocol { command } => protocol::verify(&command),
         VerifyCommand::Bindings(args) => observed_bindings::run(&args),
         VerifyCommand::Conform { command } => conform(command),
-        VerifyCommand::Diff { from, to, format } => diff(&from, &to, format),
+        VerifyCommand::Diff {
+            from,
+            to,
+            format,
+            compatibility,
+            fail_on,
+            dimensions,
+            acknowledgements,
+        } => diff(
+            &from,
+            &to,
+            format,
+            &DiffGateArgs {
+                compatibility,
+                fail_on,
+                dimensions,
+                acknowledgements,
+            },
+        ),
         VerifyCommand::Impact {
             from,
             to,
@@ -2300,6 +2474,20 @@ fn resolved(path: &Path, format: Format) -> Result<Result<(Box<EssIr>, usize), E
     }
 }
 
+/// A compiled specification with the exact original documents it was compiled from.
+type BrowserSpecification = (
+    Box<EssIr>,
+    Vec<ess_conformance::web_execution::bundle::SourceDocument>,
+);
+
+fn resolved_browser(path: &Path, format: Format) -> Result<Result<BrowserSpecification, ExitCode>> {
+    let (loaded, sources) = load::browser_specification(path)?;
+    match loaded {
+        load::LoadedSpec::Compiled { ir, .. } => Ok(Ok((ir, sources))),
+        refusal @ load::LoadedSpec::Refused { .. } => Ok(Err(refused(path, format, &refusal)?)),
+    }
+}
+
 fn validate(path: &Path, format: Format) -> Result<ExitCode> {
     let Ok((ir, files_read)) = resolved(path, format)? else {
         return Ok(ExitCode::from(1));
@@ -2635,7 +2823,20 @@ fn graph(path: &Path, format: GraphFormat) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-fn diff(from: &Path, to: &Path, format: MachineFormat) -> Result<ExitCode> {
+/// The compatibility options of `ess verify diff` (beyond10x/ess#290). All opt-in: without them the
+/// command prints what it always printed and exits as it always exited.
+struct DiffGateArgs {
+    compatibility: bool,
+    fail_on: Option<DiffFailOn>,
+    dimensions: Vec<DiffDimension>,
+    acknowledgements: Option<PathBuf>,
+}
+
+/// The exit status of `ess verify diff --fail-on` finding an unacknowledged change: distinct from
+/// a refused input (1) and a usage error (2).
+const DIFF_GATE_FAILED: u8 = 4;
+
+fn diff(from: &Path, to: &Path, format: MachineFormat, gate: &DiffGateArgs) -> Result<ExitCode> {
     let diagnostic = if matches!(format, MachineFormat::Json) {
         Format::Json
     } else {
@@ -2647,17 +2848,73 @@ fn diff(from: &Path, to: &Path, format: MachineFormat) -> Result<ExitCode> {
     let Ok((after, _)) = resolved(to, diagnostic)? else {
         return Ok(ExitCode::from(1));
     };
-    match ess_diff::diff(&before, &after) {
-        Ok(delta) => match format {
-            MachineFormat::Text => print!("{}", ess_diff::render::text(&delta)),
-            MachineFormat::Json => print!("{}", delta.to_canonical_json()),
-        },
+    let compared = if gate.compatibility || gate.fail_on.is_some() {
+        ess_diff::classified(&before, &after)
+    } else {
+        ess_diff::diff(&before, &after)
+    };
+    let delta = match compared {
+        Ok(delta) => delta,
         Err(error) => {
             eprintln!("refused: {error}");
             return Ok(ExitCode::from(1));
         }
+    };
+    let acknowledged = match &gate.acknowledgements {
+        None => None,
+        Some(path) => {
+            let text =
+                fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+            match ess_diff::compatibility::Acknowledgements::from_json(&text, &delta) {
+                Ok(acknowledged) => Some(acknowledged),
+                Err(error) => {
+                    eprintln!("refused: {}: {error}", path.display());
+                    return Ok(ExitCode::from(1));
+                }
+            }
+        }
+    };
+    match format {
+        MachineFormat::Text => print!("{}", ess_diff::render::text(&delta)),
+        MachineFormat::Json => print!("{}", delta.to_canonical_json()),
     }
-    Ok(ExitCode::SUCCESS)
+    let Some(fail_on) = gate.fail_on else {
+        return Ok(ExitCode::SUCCESS);
+    };
+    let (threshold, word) = match fail_on {
+        DiffFailOn::Breaking => (ess_diff::FailOn::Breaking, "breaking"),
+        DiffFailOn::BreakingOrUnknown => {
+            (ess_diff::FailOn::BreakingOrUnknown, "breaking-or-unknown")
+        }
+    };
+    let mut judge = ess_diff::Gate::new(threshold);
+    if !gate.dimensions.is_empty() {
+        judge = judge.dimensions(gate.dimensions.iter().map(|dimension| match dimension {
+            DiffDimension::Callers => ess_diff::Dimension::Callers,
+            DiffDimension::Readers => ess_diff::Dimension::Readers,
+            DiffDimension::History => ess_diff::Dimension::History,
+        }));
+    }
+    let outcome = judge.judge(&delta, acknowledged.as_ref())?;
+    for id in outcome.acknowledged() {
+        eprintln!("acknowledged: {id}");
+    }
+    for id in outcome.failing() {
+        eprintln!("fails --fail-on {word}: {id}");
+    }
+    if outcome.passed() {
+        eprintln!(
+            "gate --fail-on {word}: passed ({} acknowledged)",
+            outcome.acknowledged().len()
+        );
+        Ok(ExitCode::SUCCESS)
+    } else {
+        eprintln!(
+            "gate --fail-on {word}: {} unacknowledged change(s) fail",
+            outcome.failing().len()
+        );
+        Ok(ExitCode::from(DIFF_GATE_FAILED))
+    }
 }
 
 fn impact(
@@ -3160,14 +3417,15 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
             scenarios,
             suite_format,
             compact,
+            synthesis_seed,
         } => synthesize_suite(
             &input,
             target,
             out.as_deref(),
             component.as_deref(),
             scenarios.as_deref(),
-            &suite_format,
-            compact,
+            (&suite_format, compact),
+            &synthesis_seed,
         ),
         ConformCommand::Author {
             input,
@@ -3195,19 +3453,7 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
             out,
         } => coverage::select(suite.as_deref(), suite_input.as_deref(), &ids, &out),
         command @ ConformCommand::Run { .. } => conform_run(command),
-        ConformCommand::Report {
-            suite,
-            results,
-            implementation,
-            report_out,
-            runner,
-        } => Ok(conform_report(
-            &suite,
-            &results,
-            &implementation,
-            &report_out,
-            runner.as_deref(),
-        )),
+        command @ ConformCommand::Report { .. } => Ok(conform_report_mode(command)),
         command @ ConformCommand::Mutate { .. } => conform_mutate_mode(command),
         ConformCommand::CheckHistory {
             path,
@@ -3226,6 +3472,71 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
 }
 
 /// `ess verify conform report`: 0 written, 2 refused.
+/// `ess verify conform report`, by its mode: supplied results (with known-failure accounting where
+/// a declaration is given), or the accounting alone of a report a runner wrote itself.
+fn conform_report_mode(command: ConformCommand) -> ExitCode {
+    let ConformCommand::Report {
+        suite,
+        results,
+        implementation,
+        report_out,
+        runner,
+        observed_report,
+        execution_context,
+        known_failing,
+        accounting_out,
+        implementation_build,
+        execution_context_out,
+    } = command
+    else {
+        unreachable!("dispatched on `Report` only");
+    };
+    if let Some(observed) = observed_report {
+        let (Some(context), Some(declaration), Some(out)) =
+            (execution_context, known_failing, accounting_out)
+        else {
+            unreachable!("clap requires them with --observed-report");
+        };
+        return known_failures::report_observed(&suite, &observed, &context, &declaration, &out);
+    }
+    let (Some(results), Some(implementation), Some(report_out)) =
+        (results, implementation, report_out)
+    else {
+        unreachable!("clap requires them without --observed-report");
+    };
+    let Some(declaration) = known_failing else {
+        return conform_report(
+            &suite,
+            &results,
+            &implementation,
+            &report_out,
+            runner.as_deref(),
+        );
+    };
+    let (Some(build), Some(context), Some(accounting)) =
+        (implementation_build, execution_context_out, accounting_out)
+    else {
+        eprintln!(
+            "known-failures.provenance: --known-failing with --results also needs \
+             --implementation-build, --execution-context-out and --accounting-out: the build the \
+             results came from is the host's to state, before the run"
+        );
+        return ExitCode::from(known_failures::REFUSED);
+    };
+    known_failures::report_results(
+        &suite,
+        &results,
+        &implementation,
+        runner.as_deref(),
+        (&declaration, &build),
+        &known_failures::ResultsOutputs {
+            report: &report_out,
+            context: &context,
+            accounting: &accounting,
+        },
+    )
+}
+
 fn conform_report(
     suite: &Path,
     results: &Path,
@@ -3292,6 +3603,12 @@ fn import_history(path: &Path, log: &Path, adapter: &Path, output: Option<&Path>
             return ExitCode::from(REFUSED);
         }
     };
+    if ess_conformance::one_time_response::marked_model(&loaded) {
+        eprintln!(
+            "UnsupportedOneTimeDisclosure: history import cannot preserve one_time_response policy"
+        );
+        return ExitCode::from(REFUSED);
+    }
     if output.is_some_and(|output| import_output_clashes(output, path, log, adapter)) {
         return ExitCode::from(REFUSED);
     }
@@ -3580,6 +3897,8 @@ fn conform_run(command: ConformCommand) -> Result<ExitCode> {
         report_format,
         strict,
         allow_incomplete: _,
+        known_failing,
+        accounting_out,
         format,
     } = command
     else {
@@ -3588,6 +3907,7 @@ fn conform_run(command: ConformCommand) -> Result<ExitCode> {
     if strict && report_format != "2" {
         bail!("strict conformance requires explicit --report-format 2; use --allow-incomplete for diagnostic report/1");
     }
+    let inputs: Vec<PathBuf> = suite.iter().chain(suite_input.iter()).cloned().collect();
     if matches!(target, ReferenceTarget::Interpreted) && path.is_none() {
         bail!(
             "`--target interpreted` requires `--path`: the interpreter executes the \
@@ -3618,6 +3938,21 @@ fn conform_run(command: ConformCommand) -> Result<ExitCode> {
         }
     };
     let suite = admitted.suite();
+    if suite.provenance.scenario_initial_state.is_some() {
+        eprintln!("Requires an empty logical modeled-instance/event/invocation namespace before each scenario setup; unrelated physical data need not be deleted.");
+    }
+    // The declaration binds this run before the target is made (beyond10x/ess#296).
+    let known = match known_failures::RunRequest::from_flags(
+        known_failing.zip(accounting_out),
+        report_out.as_deref(),
+        inputs.iter(),
+        &report_format,
+    )
+    .and_then(|request| request.map(|request| request.bind(&admitted)).transpose())
+    {
+        Ok(known) => known,
+        Err(code) => return Ok(code),
+    };
     let interpreted = match target {
         ReferenceTarget::Interpreted => match interpreter_for(&path, suite, format)? {
             Ok(interpreter) => Some(interpreter),
@@ -3637,14 +3972,20 @@ fn conform_run(command: ConformCommand) -> Result<ExitCode> {
                 .expect("the interpreted target was built from `--path` above"),
         ),
     })?;
-    render_conformance_report(
-        &report,
-        &admitted,
-        &report_format,
-        strict,
-        report_out.as_deref(),
-        format,
-    )
+    let render = || {
+        render_conformance_report(
+            &report,
+            &admitted,
+            &report_format,
+            strict,
+            report_out.as_deref(),
+            format,
+        )
+    };
+    match known {
+        None => render(),
+        Some(known) => known.finish(&report, &admitted, render),
+    }
 }
 
 /// The interpreter over the specification at `path`, refused unless the suite was synthesized from it.
@@ -3668,6 +4009,11 @@ fn interpreter_for(
             path.display(),
             suite.provenance.spec_digest
         );
+    }
+    // A conditioned measure's observation under a major below its pair (beyond10x/ess#363): the
+    // model is in hand here, so the suite is refused before the interpreter runs a step.
+    if let Err(error) = ess_conformance::conditional_measures::admit_for(&ir, suite) {
+        bail!("`--target interpreted` refuses the suite: {error}");
     }
     Ok(Ok(ess_conformance::interpret::Interpreted::for_model(*ir)))
 }
@@ -3711,20 +4057,50 @@ fn conform_mutate_mode(command: ConformCommand) -> Result<ExitCode> {
         class,
         emit,
         collect,
+        component,
         report_out,
+        known_failing,
         format,
     } = command
     else {
         unreachable!("dispatched on `Mutate` only");
     };
+    let component = component.as_deref();
+    let declaration = match known_failing.as_deref().map(|file| {
+        fs::read_to_string(file).map_err(|error| {
+            format!(
+                "known-failures.unreadable: reading the known-failure declaration {}: {error}",
+                file.display()
+            )
+        })
+    }) {
+        None => None,
+        Some(Ok(text)) => Some(text),
+        Some(Err(message)) => {
+            eprintln!("{message}");
+            return Ok(ExitCode::from(known_failures::REFUSED));
+        }
+    };
+    let declaration = declaration.as_deref();
     match (target, emit, collect) {
-        (Some(target), None, None) => {
-            conform_mutate(&path, target, &class, report_out.as_deref(), format)
+        (Some(target), None, None) => conform_mutate(
+            &path,
+            target,
+            &class,
+            report_out.as_deref(),
+            format,
+            declaration,
+        ),
+        (None, Some(emit), None) => {
+            conform_mutate_emit(&path, &class, &emit, component, format, declaration)
         }
-        (None, Some(emit), None) => conform_mutate_emit(&path, &class, &emit, format),
-        (None, None, Some(collect)) => {
-            conform_mutate_collect(&collect, report_out.as_deref(), format)
-        }
+        (None, None, Some(collect)) => conform_mutate_collect(
+            &collect,
+            component,
+            report_out.as_deref(),
+            format,
+            declaration,
+        ),
         _ => unreachable!("clap requires exactly one of --target, --emit and --collect"),
     }
 }
@@ -3736,8 +4112,9 @@ fn conform_mutate(
     classes: &[MutateClass],
     report_out: Option<&Path>,
     format: Format,
+    declaration: Option<&str>,
 ) -> Result<ExitCode> {
-    use ess_conformance::mutate;
+    use ess_conformance::mutate::{self, KnownFailing};
 
     // The loader's own refusal path first, so a specification that does not compile is reported
     // exactly as `run` reports it, and exits 1.
@@ -3746,25 +4123,43 @@ fn conform_mutate(
     };
     let raw = load::raw_specification(path)?;
     let classes = mutant_classes(classes);
+    // The built-in targets run inside this executable, so its bytes are their build, read before
+    // any target is made.
+    let build = match declaration
+        .map(|_| known_failures::executable_build())
+        .transpose()
+    {
+        Ok(build) => build,
+        Err(message) => {
+            eprintln!("{message}");
+            return Ok(ExitCode::from(known_failures::REFUSED));
+        }
+    };
+    let known = declaration
+        .zip(build.as_deref())
+        .map(|(declaration, build)| KnownFailing { declaration, build });
     let audited = match target {
-        ReferenceTarget::Billing => mutate::audit(
+        ReferenceTarget::Billing => mutate::audit_with(
             &raw.parsed,
             &raw.texts,
             &classes,
             ess_conformance::reference::Billing::new,
+            known,
         ),
-        ReferenceTarget::OracleFixture => mutate::audit(
+        ReferenceTarget::OracleFixture => mutate::audit_with(
             &raw.parsed,
             &raw.texts,
             &classes,
             ess_conformance::reference::Oracle::new,
+            known,
         ),
-        ReferenceTarget::Interpreted => mutate::audit(
+        ReferenceTarget::Interpreted => mutate::audit_with(
             &raw.parsed,
             &raw.texts,
             &classes,
             // The unchanged specification, as every mutant's target implements it.
             || ess_conformance::interpret::Interpreted::for_model((*ir).clone()),
+            known,
         ),
     };
     finish_mutation_audit(audited, report_out, format)
@@ -3786,7 +4181,9 @@ fn conform_mutate_emit(
     path: &Path,
     classes: &[MutateClass],
     dir: &Path,
+    component: Option<&str>,
     format: Format,
+    declaration: Option<&str>,
 ) -> Result<ExitCode> {
     use ess_conformance::mutate;
 
@@ -3801,11 +4198,21 @@ fn conform_mutate_emit(
             dir.display()
         );
     }
-    let emission = match mutate::emit(&raw.parsed, &raw.texts, &mutant_classes(classes)) {
+    let emission = match mutate::emit_with(
+        &raw.parsed,
+        &raw.texts,
+        &mutant_classes(classes),
+        component,
+        declaration,
+    ) {
         Ok(emission) => emission,
         Err(refusal) if refusal.is_inconclusive() => {
             eprintln!("{refusal}");
             return Ok(ExitCode::from(3));
+        }
+        Err(refusal @ mutate::AuditRefusal::KnownFailures(_)) => {
+            eprintln!("{refusal}");
+            return Ok(ExitCode::from(known_failures::REFUSED));
         }
         Err(refusal) => return Err(refusal.into()),
     };
@@ -3818,65 +4225,93 @@ fn conform_mutate_emit(
     }
     let manifest = &emission.manifest;
     match format {
-        Format::Text => {
-            let stillborn = manifest
-                .mutants
-                .iter()
-                .filter(|mutant| mutant.stillborn.is_some())
-                .count();
-            let gained = manifest
-                .mutants
-                .iter()
-                .filter(|mutant| {
-                    mutant.refused.as_ref().is_some_and(|refused| {
-                        refused.iter().any(|key| {
-                            !manifest
-                                .baseline
-                                .refused
-                                .as_ref()
-                                .is_some_and(|baseline| baseline.contains(key))
-                        })
-                    })
-                })
-                .count();
-            let dead = manifest
-                .mutants
-                .iter()
-                .filter(|mutant| mutant.unsatisfiable_guard.is_some())
-                .count();
-            println!(
-                "emitted {} mutant(s) of {} ({} stillborn, no suite; {} with synthesis refusals \
-                 the baseline does not have; {} with a guard no input satisfies) and the baseline \
-                 to {}",
-                manifest.mutants.len(),
-                manifest.specification,
-                stillborn,
-                gained,
-                dead,
-                dir.display()
-            );
-            println!(
-                "run each <dir>/{} and write its conformance report to <dir>/{}, then \
-                 `ess verify conform mutate --collect {}`",
-                mutate::SUITE_FILE,
-                mutate::REPORT_FILE,
-                dir.display()
-            );
-        }
+        Format::Text => print_emission(manifest, dir),
         Format::Json => print!("{}", manifest.to_canonical_json()),
         Format::Yaml => render(manifest, format)?,
     }
     Ok(ExitCode::SUCCESS)
 }
 
+/// The text `mutate --emit` prints: what it wrote, and what to run next.
+fn print_emission(manifest: &ess_conformance::mutate::Manifest, dir: &Path) {
+    use ess_conformance::mutate;
+
+    let stillborn = manifest
+        .mutants
+        .iter()
+        .filter(|mutant| mutant.stillborn.is_some())
+        .count();
+    let gained = manifest
+        .mutants
+        .iter()
+        .filter(|mutant| {
+            mutant.refused.as_ref().is_some_and(|refused| {
+                refused.iter().any(|key| {
+                    !manifest
+                        .baseline
+                        .refused
+                        .as_ref()
+                        .is_some_and(|baseline| baseline.contains(key))
+                })
+            })
+        })
+        .count();
+    let dead = manifest
+        .mutants
+        .iter()
+        .filter(|mutant| mutant.unsatisfiable_guard.is_some())
+        .count();
+    let scope = match &manifest.component {
+        Some(component) => format!(
+            " for component `{component}`, {} out of scope, no suite;",
+            manifest
+                .mutants
+                .iter()
+                .filter(|mutant| mutant.out_of_scope)
+                .count()
+        ),
+        None => String::new(),
+    };
+    println!(
+        "emitted {} mutant(s) of {}{scope} ({} stillborn, no suite; {} with synthesis \
+         refusals the baseline does not have; {} with a guard no input satisfies) and the \
+         baseline to {}",
+        manifest.mutants.len(),
+        manifest.specification,
+        stillborn,
+        gained,
+        dead,
+        dir.display()
+    );
+    if let Some(sites) = &manifest.unavailable_sites {
+        println!(
+            "{} selected site(s) have no mutant and are listed as unavailable_sites: \
+             single-event substitution is not audited there",
+            sites.len()
+        );
+    }
+    println!(
+        "run each <dir>/{} and write its conformance report to <dir>/{}, then \
+         `ess verify conform mutate --collect {}`",
+        mutate::SUITE_FILE,
+        mutate::REPORT_FILE,
+        dir.display()
+    );
+}
+
 /// `mutate --collect`: the reports a runner wrote beside an emission's suites, scored.
 fn conform_mutate_collect(
     dir: &Path,
+    component: Option<&str>,
     report_out: Option<&Path>,
     format: Format,
+    declaration: Option<&str>,
 ) -> Result<ExitCode> {
-    let collected =
-        ess_conformance::mutate::collect(|relative| fs::read_to_string(dir.join(relative)).ok());
+    let collected = ess_conformance::mutate::collect_with(
+        |relative| fs::read_to_string(dir.join(relative)).ok(),
+        component,
+        declaration,
+    );
     finish_mutation_audit(collected, report_out, format)
 }
 
@@ -3893,6 +4328,10 @@ fn finish_mutation_audit(
         Err(refusal) if refusal.is_inconclusive() => {
             eprintln!("{refusal}");
             return Ok(ExitCode::from(3));
+        }
+        Err(refusal @ ess_conformance::mutate::AuditRefusal::KnownFailures(_)) => {
+            eprintln!("{refusal}");
+            return Ok(ExitCode::from(known_failures::REFUSED));
         }
         Err(refusal) => return Err(refusal.into()),
     };
@@ -3912,9 +4351,12 @@ fn finish_mutation_audit(
         .iter()
         .filter(|entry| !matches!(entry.verdict, Verdict::Stillborn | Verdict::Equivalent))
         .count();
+    // A selected site with no admissible mutant was not audited (beyond10x/ess#295): never a
+    // success, but no survivor either.
+    let unaudited = report.unaudited_sites();
     Ok(if counts.survived > 0 {
         ExitCode::from(1)
-    } else if counts.unwitnessed > 0 || counts.inconclusive > 0 || ran == 0 {
+    } else if counts.unwitnessed > 0 || counts.inconclusive > 0 || ran == 0 || unaudited > 0 {
         ExitCode::from(3)
     } else {
         ExitCode::SUCCESS
@@ -4042,28 +4484,40 @@ fn synthesize_suite(
     out: Option<&Path>,
     component: Option<&str>,
     scenarios: Option<&Path>,
-    suite_format: &str,
-    compact: bool,
+    (suite_format, compact): (&str, bool),
+    seeds: &[String],
 ) -> Result<ExitCode> {
     if compact && target != SuiteTarget::Ir {
         bail!("--compact requires --target ir");
     }
     if suite_format == "5" {
-        return coverage::generate(input, target, out, component, scenarios, false, compact);
+        return coverage::generate(
+            input,
+            target,
+            out,
+            (component, scenarios),
+            (false, compact),
+            seeds,
+        );
     }
     let Ok((ir, _)) = resolved(&input.path, input.format)? else {
         return Ok(ExitCode::from(1));
     };
     ess_conformance::admission::model(&ir)?;
+    // Every explicit seed is admitted before anything is synthesized or written.
+    let seeds = synthesis_seeds(&ir, seeds)?;
     let mut synthesis = match component {
-        None => ess_conformance::synthesize(&ir),
-        Some(name) => match ess_conformance::synthesize::synthesize_for(&ir, name) {
-            Ok(synthesis) => synthesis,
-            Err(unknown) => {
-                eprintln!("{unknown}");
-                return Ok(ExitCode::from(1));
+        None => ess_conformance::synthesize::synthesize_with_seeds(&ir, &seeds)?,
+        Some(name) => {
+            match ess_conformance::synthesize::synthesize_for_with_seeds(&ir, name, &seeds) {
+                Ok(synthesis) => synthesis,
+                Err(ess_conformance::synthesize::SeedAdmissionError::UnknownComponent(unknown)) => {
+                    eprintln!("{unknown}");
+                    return Ok(ExitCode::from(1));
+                }
+                Err(refused) => return Err(refused.into()),
             }
-        },
+        }
     };
     // The authored half, compiled against the same model and filed in the same suite. Refused
     // rather than merged where a scenario names something the specification does not declare: a
@@ -4116,6 +4570,15 @@ fn synthesize_suite(
             for note in &synthesis.notes {
                 println!("note: {note}");
             }
+            // Explicit seeds, apart from every count: a selection is an input, an application a
+            // use in an emitted generated scenario, and neither is an executed case.
+            if let Some(seeds) = &synthesis.suite.provenance.synthesis_seeds {
+                println!(
+                    "synthesis seeds: {} selected, {} applied",
+                    seeds.selections.len(),
+                    seeds.applications.len()
+                );
+            }
             let written = written.unwrap_or_else(|| "nothing written".to_owned());
             // Counted apart, because they are not the same claim. A generated scenario is an
             // obligation the specification derived; an authored one is what a person asserted about
@@ -4158,7 +4621,7 @@ fn conform_web(
     if suite_format == "5" {
         return coverage::web(input, scenarios, out);
     }
-    let Ok((ir, _)) = resolved(&input.path, input.format)? else {
+    let Ok((ir, original_sources)) = resolved_browser(&input.path, input.format)? else {
         return Ok(ExitCode::from(1));
     };
     ess_conformance::admission::model(&ir)?;
@@ -4180,7 +4643,11 @@ fn conform_web(
     }
 
     suite.select_fresh_format_for(&ir);
-    let artifacts = ess_conformance::web::emit(&ir, &suite)?;
+    let admitted = ess_conformance::AdmittedSuite::from_json(&suite.to_canonical_json()?)?;
+    let artifacts = ess_conformance::web::emit_product(
+        &original_sources,
+        &ess_conformance::web_execution::bundle::Execution::Ordinary(admitted),
+    )?;
     write_owned_artifacts(out, "conformance-browser", &artifacts)?;
     println!(
         "{} scenario(s), {} artifact(s){}",
@@ -4236,7 +4703,14 @@ fn author_suite(
     suite_format: &str,
 ) -> Result<ExitCode> {
     if suite_format == "5" {
-        return coverage::generate(input, SuiteTarget::Ir, out, None, scenarios, true, false);
+        return coverage::generate(
+            input,
+            SuiteTarget::Ir,
+            out,
+            (None, scenarios),
+            (true, false),
+            &[],
+        );
     }
     let Ok((ir, _)) = resolved(&input.path, input.format)? else {
         return Ok(ExitCode::from(1));
@@ -4303,6 +4777,53 @@ fn authored_sources(scenarios: Option<&Path>) -> Result<Vec<ess_conformance::aut
         .into_iter()
         .map(authored_source)
         .collect())
+}
+
+/// The explicit `--synthesis-seed FILE INSTANCE` selections, admitted against `ir` before anything
+/// is synthesized or written (beyond10x/ess#413). No selection is the seed-free set.
+///
+/// FILE is one regular, non-symlink authored document, read with the same safeguards coverage
+/// discovery applies to one file and identified, as there, by its name relative to its directory;
+/// no directory is scanned and no manifest consulted.
+pub(crate) fn synthesis_seeds(
+    ir: &EssIr,
+    values: &[String],
+) -> Result<ess_conformance::synthesize::AdmittedSeeds> {
+    if values.is_empty() {
+        return Ok(ess_conformance::synthesize::AdmittedSeeds::empty());
+    }
+    // clap holds every occurrence to exactly two values, so the flat list pairs up in order.
+    if values.len() % 2 != 0 {
+        bail!("--synthesis-seed takes exactly FILE and INSTANCE");
+    }
+    let mut selections = Vec::new();
+    for pair in values.chunks(2) {
+        let [file, instance] = pair else {
+            bail!("--synthesis-seed takes exactly FILE and INSTANCE");
+        };
+        let path = Path::new(file);
+        let metadata = fs::symlink_metadata(path)
+            .with_context(|| format!("synthesis seed source {} is missing", path.display()))?;
+        if !metadata.is_file() || metadata.file_type().is_symlink() {
+            bail!(
+                "synthesis seed source {} is not a regular non-symlink file; name one authored \
+                 document",
+                path.display()
+            );
+        }
+        let instance = ess_conformance::InstanceName::new(instance)
+            .map_err(|error| anyhow::anyhow!("synthesis seed instance `{instance}`: {error}"))?;
+        for input in input_discovery::acquire(path, input_discovery::Kind::Coverage)? {
+            selections.push(ess_conformance::synthesize::SeedSelection {
+                source: ess_conformance::authored::Source::new(input.identity, input.text),
+                instance: instance.clone(),
+            });
+        }
+    }
+    Ok(ess_conformance::synthesize::AdmittedSeeds::compile(
+        ir,
+        &selections,
+    )?)
 }
 
 fn authored_source(input: input_discovery::Input) -> ess_conformance::authored::Source {

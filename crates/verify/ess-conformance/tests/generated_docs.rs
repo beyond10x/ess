@@ -20,7 +20,9 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-use ess_conformance::scenario::{SuiteFormat, SuiteProvenance, SUPPORTED_SUITE_FORMATS};
+use ess_conformance::scenario::{
+    ScenarioInitialState, SuiteFormat, SuiteProvenance, SUPPORTED_SUITE_FORMATS,
+};
 use ess_conformance::ConformanceSuite;
 use ess_primitives::evidence::SpecDigest;
 
@@ -32,7 +34,31 @@ fn suite(major: u32) -> ConformanceSuite {
         spec_digest: SpecDigest::new("ab".repeat(32)).expect("a digest"),
         contract_digest: SpecDigest::new("cd".repeat(32)).expect("a digest"),
         component: None,
+        scenario_initial_state: (major >= 34).then_some(ScenarioInitialState::Empty),
+        // The seed-bearing pair requires its record (beyond10x/ess#413): one selection, no use.
+        synthesis_seeds: matches!(major, 42 | 43).then(seed_record),
     })
+}
+
+/// The smallest valid `synthesis_seeds` record: one source and one unused selection.
+fn seed_record() -> ess_conformance::synthesis_seeds::SynthesisSeeds {
+    use ess_conformance::coverage::SourceIdentity;
+    use ess_conformance::synthesis_seeds::{SeedRecord, SynthesisSeeds};
+    let source = SourceIdentity::new("seed.yaml").expect("a source identity");
+    SynthesisSeeds {
+        sources: [(source.clone(), format!("sha256:{}", "0".repeat(64)))].into(),
+        selections: vec![SeedRecord {
+            source,
+            instance: ess_conformance::InstanceName::new("row").expect("an instance"),
+            entity: "billing.invoice.Invoice".parse().expect("an entity"),
+            identity: ess_primitives::node::Node::Text(
+                "00000000-0000-4000-8000-000000000001".into(),
+            ),
+            fields: std::collections::BTreeMap::new(),
+            state: "Draft".parse().expect("a state"),
+        }],
+        applications: Vec::new(),
+    }
 }
 
 /// One emitted package as `(path, contents)` pairs, or the emitter's refusal.
@@ -479,7 +505,10 @@ fn generated_docs_typescript_format_refusal_names_the_rule() {
         "the TypeScript runner still says only suite/8 and /9 need ESS_REPORT_FORMAT=2"
     );
     assert!(
-        runtime.contains("suite/8 through /27 require explicit ESS_REPORT_FORMAT=2"),
+        runtime.contains(&format!(
+            "suite/8 through /{} require explicit ESS_REPORT_FORMAT=2",
+            SUPPORTED_SUITE_FORMATS.iter().max().unwrap()
+        )),
         "the TypeScript runner's refusal does not name the versions it refuses"
     );
 }

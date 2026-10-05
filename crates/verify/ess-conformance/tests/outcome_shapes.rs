@@ -228,10 +228,11 @@ fn issue_342_guarded_delete_never_asserts_the_removed_subject() {
         .keys()
         .any(|id| id.to_string() == "repro.cart.Cart/invariant/after/repro.cart.CloseCart/closed"));
     assert!(closed.steps[absent + 1..].iter().any(|step| matches!(step, ScenarioStep::ExpectOutcome { outcome } if outcome.to_string() == "repro.cart.CloseCart/missing")));
-    assert!(closed
-        .steps
-        .iter()
-        .any(|step| matches!(step, ScenarioStep::ExpectEvent { .. })));
+    // Either form: the event also carries the closed cart's identity (beyond10x/ess#273).
+    assert!(closed.steps.iter().any(|step| matches!(
+        step,
+        ScenarioStep::ExpectEvent { .. } | ScenarioStep::ExpectEventValues { .. }
+    )));
 }
 
 #[test]
@@ -586,7 +587,7 @@ fn every_scenario_passes_against_the_behaviour_the_issues_describe() {
     );
     assert_eq!(
         synthesis.suite.provenance.suite_version.to_string(),
-        "ess-conformance/22"
+        "ess-conformance/34"
     );
     let statuses = run(&synthesis.suite, Mode::Correct);
     assert!(
@@ -738,7 +739,7 @@ fn issue_152_every_scenario_runs_inside_the_preconditions() {
     let without = synthesis_of(&MODEL.replace(PRECONDITION, ""));
     assert_eq!(
         without.suite.provenance.suite_version.to_string(),
-        "ess-conformance/22"
+        "ess-conformance/34"
     );
     let statuses = run(&without.suite, Mode::Correct);
     assert!(
@@ -764,7 +765,7 @@ fn the_coverage_suite_takes_the_coverage_major() {
             .provenance
             .suite_version
             .to_string(),
-        "ess-conformance/23"
+        "ess-conformance/35"
     );
 }
 
@@ -773,6 +774,7 @@ fn an_older_suite_label_is_refused_before_any_target_activity() {
     let mut suite = synthesis_of(MODEL).suite;
     suite.provenance.suite_version =
         ess_conformance::scenario::SuiteFormat::parse("ess-conformance/19").unwrap();
+    suite.provenance.scenario_initial_state = None;
     let error = AdmittedSuite::from_suite(&suite).expect_err("absence needs suite/22");
     assert!(error.to_string().contains("suite/22"), "{error}");
 }
@@ -793,5 +795,5 @@ commands:
 ",
     );
     let synthesis = ess_conformance::synthesize::synthesize(&ir);
-    assert!(synthesis.suite.provenance.suite_version.major() < 20);
+    assert_eq!(synthesis.suite.provenance.suite_version.major(), 34);
 }

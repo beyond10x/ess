@@ -162,6 +162,22 @@ fn lead_set(scenario: &ConformanceScenario) -> (BTreeMap<String, Node>, Vec<Stri
             } if event.to_string() == "demo.dialer.LeadSet" => {
                 Some((payload.clone(), shape.leaves().keys().cloned().collect()))
             }
+            // The literal half of an expectation that also compares a captured identity
+            // (beyond10x/ess#273).
+            ScenarioStep::ExpectEventValues {
+                event,
+                payload,
+                shape,
+            } if event.to_string() == "demo.dialer.LeadSet" => Some((
+                payload
+                    .iter()
+                    .filter_map(|(key, value)| match value {
+                        ScenarioValue::Literal { value } => Some((key.clone(), value.clone())),
+                        _ => None,
+                    })
+                    .collect(),
+                shape.leaves().keys().cloned().collect(),
+            )),
             _ => None,
         })
         .expect("the event is expected")
@@ -228,7 +244,7 @@ fn a_suite_with_a_partly_determined_struct_is_written_as_suite_26_and_its_covera
     let suite = suite(DIALER);
     assert_eq!(
         suite.provenance.suite_version.to_string(),
-        "ess-conformance/26"
+        "ess-conformance/34"
     );
     assert!(ess_conformance::leaf_payloads::used_by(&suite));
     let input = ess_conformance::coverage_build::build(
@@ -239,7 +255,7 @@ fn a_suite_with_a_partly_determined_struct_is_written_as_suite_26_and_its_covera
     )
     .unwrap_or_else(|error| panic!("{error}"));
     let original = input.selected().original_json().to_owned();
-    assert!(original.contains("\"ess-conformance/27\""), "{original}");
+    assert!(original.contains("\"ess-conformance/35\""), "{original}");
     AdmittedSuite::from_json(&original).unwrap_or_else(|error| panic!("{error}"));
 }
 
@@ -249,7 +265,7 @@ fn a_suite_whose_structs_are_fully_determined_keeps_its_format_and_the_whole_val
     let suite = suite(&text);
     assert!(!ess_conformance::leaf_payloads::used_by(&suite));
     assert!(
-        suite.provenance.suite_version.major() < 26,
+        suite.provenance.suite_version.major() == 34,
         "{}",
         suite.provenance.suite_version
     );
@@ -314,7 +330,7 @@ fn released_suite_formats_26_and_27_remain_supported_and_future_versions_refuse(
             "{version}"
         );
     }
-    assert!(!SuiteFormat::parse("ess-conformance/34")
+    assert!(!SuiteFormat::parse("ess-conformance/44")
         .unwrap()
         .is_supported());
 }
@@ -337,6 +353,14 @@ fn a_leaf_payload_key_naming_no_leaf_of_the_shape_is_refused() {
     for scenario in suite.scenarios.values_mut() {
         for step in &mut scenario.steps {
             if let ScenarioStep::ExpectEvent { payload, .. } = step {
+                if let Some(value) = payload.remove("lead.number") {
+                    payload.insert("lead.numbr".to_owned(), value);
+                    renamed = true;
+                }
+            }
+            // The same leaf, where the expectation also compares a captured identity
+            // (beyond10x/ess#273).
+            if let ScenarioStep::ExpectEventValues { payload, .. } = step {
                 if let Some(value) = payload.remove("lead.number") {
                     payload.insert("lead.numbr".to_owned(), value);
                     renamed = true;

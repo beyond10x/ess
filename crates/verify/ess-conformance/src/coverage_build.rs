@@ -128,9 +128,58 @@ fn merge_inventory(
     origins: Origins,
     known_generated: bool,
 ) -> Result<AdmittedInput, AdmissionError> {
+    merge_seeded(
+        ir,
+        batches,
+        (scope, origins),
+        known_generated,
+        &crate::synthesize::AdmittedSeeds::empty(),
+    )
+}
+/// [`build`], with explicitly admitted synthesis seeds (beyond10x/ess#413,
+/// `docs/design/synthesis-seeds.md`): the generated half is synthesized with them, and the suite
+/// records their sources, selections and the uses its emitted generated scenarios hold, as
+/// coverage suite/43. A seed source is not an authored input: it adds nothing to
+/// `authored_sources`, and the same file passed in `sources` as well keeps both roles apart.
+///
+/// # Errors
+///
+/// An [`AdmissionError`] for authored-only acquisition, which generates nothing a seed could
+/// serve, and for seeds the model refuses, besides every refusal of [`build`].
+pub fn build_with_seeds(
+    ir: &EssIr,
+    sources: &[CoverageSource],
+    scope: Scope,
+    origins: Origins,
+    seeds: &crate::synthesize::AdmittedSeeds,
+) -> Result<AdmittedInput, AdmissionError> {
+    if !seeds.is_empty() && !origins.includes(Origin::Generated) {
+        return Err(seed_error(
+            &crate::synthesize::SeedAdmissionError::AuthoredOnly,
+        ));
+    }
+    seeds.bound_to(ir).map_err(|error| seed_error(&error))?;
+    merge_seeded(
+        ir,
+        &[compile_sources(ir, sources)?],
+        (scope, origins),
+        false,
+        seeds,
+    )
+}
+fn seed_error(error: &crate::synthesize::SeedAdmissionError) -> AdmissionError {
+    AdmissionError::new("InvalidSynthesisSeeds", "$seeds", error.to_string())
+}
+fn merge_seeded(
+    ir: &EssIr,
+    batches: &[AuthoredBatch],
+    (scope, origins): (Scope, Origins),
+    known_generated: bool,
+    seeds: &crate::synthesize::AdmittedSeeds,
+) -> Result<AdmittedInput, AdmissionError> {
     crate::admission::model(ir)?;
     let synthesis = if known_generated || origins.includes(Origin::Generated) {
-        crate::synthesize(ir)
+        crate::synthesize::synthesize_with_seeds(ir, seeds).map_err(|error| seed_error(&error))?
     } else {
         crate::Synthesis {
             suite: ConformanceSuite::new(crate::SuiteProvenance::of(ir)),
@@ -139,14 +188,14 @@ fn merge_inventory(
             notes: Vec::new(),
         }
     };
-    finish_inventory(ir, batches, scope, origins, synthesis)
+    finish_inventory(ir, batches, scope, origins, (synthesis, seeds))
 }
 fn finish_inventory(
     ir: &EssIr,
     batches: &[AuthoredBatch],
     scope: Scope,
     origins: Origins,
-    synthesis: crate::Synthesis,
+    (synthesis, seeds): (crate::Synthesis, &crate::synthesize::AdmittedSeeds),
 ) -> Result<AdmittedInput, AdmissionError> {
     crate::admission::model(ir)?;
     let component = match &scope {
@@ -236,8 +285,11 @@ fn finish_inventory(
         &owners,
         component.map(|c| (ir, c)),
     );
+    // Uses are read off the scenarios this inventory emits, after scope and origin selection.
+    seeds.attach(ir, &mut suite);
     classify(&mut inventory, &owners, &rejected_needs);
     inventory.sort_and_count()?;
+    suite.select_fresh_format_for(ir);
     suite.provenance.suite_version = coverage_version(ir, &suite, &inventory);
     let original = coverage::suite_document(&suite, &inventory)?;
     AdmittedInput::from_suite(AdmittedSuite::from_json(&original)?)
@@ -398,7 +450,9 @@ fn generated_effect(cause: &crate::RefusalCause) -> Effect {
         | RefusalCause::AggregateUnscoped { .. }
         | RefusalCause::AggregateUnwitnessed { .. }
         | RefusalCause::InvariantUnobservable { .. }
-        | RefusalCause::RefusalUndeclared { .. } => Effect::CheckNotEmitted,
+        | RefusalCause::RefusalUndeclared { .. }
+        | RefusalCause::InstantComparisonUntagged { .. }
+        | RefusalCause::AbsenceUnwitnessed { .. } => Effect::CheckNotEmitted,
         RefusalCause::NoWitness(_)
         | RefusalCause::GuardUnevaluable(_)
         | RefusalCause::GuardUnsatisfiable { .. }
@@ -463,7 +517,8 @@ fn authored_refusal(
         | Cause::AmbiguousWindow { .. }
         | Cause::HaltsAtNothing { .. }
         | Cause::InvalidPredicate { .. }
-        | Cause::ExternalAnswerUnstated { .. } => Effect::CandidateNotEmitted,
+        | Cause::ExternalAnswerUnstated { .. }
+        | Cause::GuardsContradictOutcome { .. } => Effect::CandidateNotEmitted,
     };
     Ok(Refusal {
         origin: Origin::Authored,
@@ -496,7 +551,24 @@ fn coverage_version(
         || crate::bounded_retry::used_by(suite)
         || crate::grant::used_by(suite)
         || crate::bounded_retry::refused_in(inventory);
-    crate::scenario::SuiteFormat::parse(if crate::structured_values::used_by(suite) {
+    crate::scenario::SuiteFormat::parse(if crate::synthesis_seeds::used_by(suite) {
+        "ess-conformance/43"
+    } else if crate::expression_format::coverage_floor(suite).is_some() {
+        "ess-conformance/41"
+    } else if crate::conditional_measures::coverage_floor(ir, suite).is_some() {
+        "ess-conformance/39"
+    } else if crate::no_invocation::used_by(suite)
+        || crate::no_invocation::refused_in(inventory)
+        || crate::refusal_policy::used_by(suite)
+        || crate::refusal_policy::refused_in(inventory)
+    {
+        "ess-conformance/37"
+    } else if suite.provenance.scenario_initial_state.is_some()
+        || crate::one_time_response::used_by(suite)
+        || crate::view_grant::used_by(suite)
+    {
+        "ess-conformance/35"
+    } else if crate::structured_values::used_by(suite) {
         "ess-conformance/33"
     } else if crate::delivery_context::used_by(suite) {
         "ess-conformance/31"
@@ -584,7 +656,7 @@ mod tests {
         let mut synthesis = crate::synthesize(&ir);
         let id = ScenarioId::parse("billing.invoice.CreateInvoice/outcome/accepted").unwrap();
         let first = synthesis.suite.scenarios[&id].clone();
-        assert!(synthesis.refusals.is_empty());
+        assert_eq!(synthesis.refusals.len(), 0, "{:?}", synthesis.refusals);
         crate::synthesize::insert(
             &mut synthesis.suite,
             id.clone(),
@@ -598,8 +670,14 @@ mod tests {
             crate::RefusalCause::DuplicateScenario
         );
         let original_message = synthesis.refusals[0].to_string();
-        let input =
-            finish_inventory(&ir, &[], Scope::System, Origins::Generated, synthesis).unwrap();
+        let input = finish_inventory(
+            &ir,
+            &[],
+            Scope::System,
+            Origins::Generated,
+            (synthesis, &crate::synthesize::AdmittedSeeds::empty()),
+        )
+        .unwrap();
         let inventory = input.selected().coverage().unwrap();
         assert_eq!(inventory.counts.generated, 32);
         assert_eq!(inventory.counts.refused, 1);

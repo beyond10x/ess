@@ -144,6 +144,8 @@ impl fmt::Display for ConformanceStatus {
 )]
 #[serde(into = "String", try_from = "String")]
 pub enum CheckCode {
+    /// A one-time response value appears only in its actual originating field.
+    Disclosure,
     /// Reading coordinates agree with a declared comparison under observed clock authority.
     Reading,
     /// A command took the branch the specification says it takes.
@@ -186,7 +188,8 @@ impl CheckCode {
     ///
     /// Public for the reason `BindingAspect::ALL` is: a list nobody iterates is a list that goes
     /// stale, and this is what makes "every rule the runner checks has a name" assertable.
-    pub const ALL: [Self; 17] = [
+    pub const ALL: [Self; 18] = [
+        Self::Disclosure,
         Self::Reading,
         Self::Outcome,
         Self::Error,
@@ -209,6 +212,7 @@ impl CheckCode {
     /// How the code is written: `ESS-CF-OUTCOME`.
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::Disclosure => "ESS-CF-DISCLOSURE",
             Self::Reading => "ESS-CF-READING",
             Self::Outcome => "ESS-CF-OUTCOME",
             Self::Error => "ESS-CF-ERROR",
@@ -232,6 +236,7 @@ impl CheckCode {
     /// The semantic rule this code stands for, as §29's first question asks it.
     pub fn rule(self) -> &'static str {
         match self {
+            Self::Disclosure => "a one-time response value is disclosed only by its originating field and never reused",
             Self::Reading => {
                 "clock-reading coordinates compare only under matching observed source and epoch"
             }
@@ -624,6 +629,9 @@ impl ConformanceReport {
 
 impl fmt::Display for ConformanceReport {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.suite.scenario_initial_state.is_some() {
+            writeln!(f, "Requires an empty logical modeled-instance/event/invocation namespace before each scenario setup; unrelated physical data need not be deleted.")?;
+        }
         writeln!(
             f,
             "{} {} against {} — {}",

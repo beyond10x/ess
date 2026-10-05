@@ -74,7 +74,7 @@ function groupSteps(steps) {
     if (outcomes.length === 1 && outcomes[0].command === act.command) act.outcome = outcomes[0].outcome
     else if (act.command) act.diagnostics.push('Unknown: a single matching outcome declaration is required.')
     act.captures = act.steps.filter((s) => s.declaration.step === 'capture_instance').map((s) => s.declaration)
-    act.events = act.steps.filter((s) => s.declaration.step === 'expect_event').map((s) => s.declaration)
+    act.events = act.steps.filter((s) => ['expect_event', 'expect_event_values'].includes(s.declaration.step)).map((s) => s.declaration)
     act.inputs = Object.entries(act.input).map(([name, value]) => ({ name, value, text: valueText(value) }))
     const outcome = commandsByName.get(act.command)?.outcomes.find((o) => o.name === act.outcome)
     for (const event of outcome?.emits ?? []) for (const b of model.bindings.filter((b) => b.event === event)) {
@@ -153,6 +153,19 @@ function applyAct(world, act, index) {
       }
     }
   }
+  // Whether the act sends the input `from` names: a field, or (ess/22) a member a path reaches
+  // inside a literal struct input.
+  const carries = (input, from) => {
+    const [root, ...members] = from.split('.')
+    if (!Object.hasOwn(input, root)) return false
+    if (members.length === 0) return true
+    let value = input[root]?.kind === 'literal' ? input[root].value : undefined
+    for (const member of members) {
+      if (value === null || typeof value !== 'object' || !Object.hasOwn(value, member)) return false
+      value = value[member]
+    }
+    return true
+  }
   // replay/1 drops every literal and all assignment types/conversions, including on moves.
   // A named input is a declaration, never proof of the post-assignment value.
   for (const set of outcome.sets ?? []) {
@@ -160,7 +173,7 @@ function applyAct(world, act, index) {
     effect(reason, set.target, created?.instance)
     const entry = world.unknownEffects[world.unknownEffects.length - 1]
     entry.from = set.from
-    if (set.from !== null && !Object.hasOwn(act.input, set.from)) {
+    if (set.from !== null && !carries(act.input, set.from)) {
       entry.missingInput = `Unknown: assignment input ${JSON.stringify(set.from)} is missing.`
     }
     const affected = created ? [created] : subject.kind === 'creates' ? []
@@ -230,8 +243,9 @@ const app = createApp({
       return entity ? { states: entity.states, terminal: entity.terminal } : null
     }
     Object.assign(api, { scenario, acts, lanes, instances, liveViews, lifecycle, play, step, back, reset, select })
-    return { state, scenarios, groups, scenario, acts, lanes, done, instances, changed, liveViews,
+    return { state, scenarios, groups, scenario, acts, lanes, done, instances, changed, liveViews, oneTimePolicies: [],
       play, step, back, reset, select, rowState, mark, lifecycle, short,
+      initialState: suite.provenance?.scenario_initial_state ?? null,
       system: model.system, version: model.version, spec: (suite.provenance?.spec_digest ?? '').slice(0, 12), scenarioCount: scenarios.length }
   },
 })

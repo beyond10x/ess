@@ -72,17 +72,28 @@ func TestStrictDiagnostic(t *testing.T) {
         format!("{:?}\n", output.status.code()),
     )
     .unwrap();
-    assert!(!output.status.success(), "strict skipped run must fail");
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "strict unsupported run must fail"
+    );
     let original_report = fs::read_to_string(report).unwrap();
     let count =
         ess_conformance::CountReport::from_json(&original_report, input.selected()).unwrap();
     assert_eq!(count.counts().total, 1);
-    assert_eq!(count.counts().skipped, 1);
+    assert_eq!(count.counts().unsupported, 1);
+    assert_eq!(count.counts().skipped, 0);
     assert_eq!(
         count.conformance_status(),
-        ess_conformance::CountStatus::Inconclusive
+        ess_conformance::CountStatus::Failed
     );
     let wire: Value = serde_json::from_str(&original_report).unwrap();
+    assert_eq!(wire["producer_profile"], "go-scenario-status/2");
+    assert_eq!(
+        wire["counts"],
+        json!({"total":1,"passed":0,"failed":0,"error":0,"unsupported":1,"skipped":0})
+    );
+    assert_eq!(wire["execution_status"], "failed");
     assert_eq!(wire["coverage"]["knowledge"], "complete_inventory");
     let diagnostic = String::from_utf8(output.stdout).unwrap();
     println!("{diagnostic}");
@@ -119,6 +130,7 @@ fn browser_refuses_a_command_name_with_a_final_line_feed_before_replay_state() {
     )
     .unwrap();
     assert!(output.status.success(), "{output:?}");
+    browser::legacy_replay_fixture(&site);
     let original = fs::read_to_string(site.join("replay.json")).unwrap();
     ess_conformance::web_replay::AdmittedReplay::from_json(&original).unwrap();
     fs::write(evidence.join("original-replay.json"), &original).unwrap();

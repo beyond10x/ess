@@ -286,8 +286,14 @@
           }
         },
         {
-          "step": "expect_event",
+          "step": "expect_event_values",
           "event": "billing.invoice.InvoiceCancelled",
+          "payload": {
+            "invoice_id": {
+              "kind": "instance",
+              "instance": "invoice"
+            }
+          },
           "shape": {
             "invoice_id": {
               "holds": "primitive",
@@ -3133,8 +3139,14 @@
           }
         },
         {
-          "step": "expect_event",
+          "step": "expect_event_values",
           "event": "billing.invoice.InvoiceCancelled",
+          "payload": {
+            "invoice_id": {
+              "kind": "instance",
+              "instance": "invoice"
+            }
+          },
           "shape": {
             "invoice_id": {
               "holds": "primitive",
@@ -3406,8 +3418,14 @@
           }
         },
         {
-          "step": "expect_event",
+          "step": "expect_event_values",
           "event": "billing.invoice.InvoiceCancelled",
+          "payload": {
+            "invoice_id": {
+              "kind": "instance",
+              "instance": "invoice-4"
+            }
+          },
           "shape": {
             "invoice_id": {
               "holds": "primitive",
@@ -3573,8 +3591,14 @@
           }
         },
         {
-          "step": "expect_event",
+          "step": "expect_event_values",
           "event": "billing.invoice.InvoiceIssued",
+          "payload": {
+            "invoice_id": {
+              "kind": "instance",
+              "instance": "invoice"
+            }
+          },
           "shape": {
             "invoice_id": {
               "holds": "primitive",
@@ -3876,12 +3900,19 @@
           }
         },
         {
-          "step": "expect_event",
+          "step": "expect_event_values",
           "event": "billing.invoice.InvoicePaid",
           "payload": {
             "amount": {
-              "amount": 1.0,
-              "currency": "amount.currency"
+              "kind": "literal",
+              "value": {
+                "amount": 1.0,
+                "currency": "amount.currency"
+              }
+            },
+            "invoice_id": {
+              "kind": "instance",
+              "instance": "invoice"
             }
           },
           "shape": {
@@ -4230,8 +4261,14 @@
           }
         },
         {
-          "step": "expect_event",
+          "step": "expect_event_values",
           "event": "billing.invoice.InvoiceIssued",
+          "payload": {
+            "invoice_id": {
+              "kind": "instance",
+              "instance": "invoice"
+            }
+          },
           "shape": {
             "invoice_id": {
               "holds": "primitive",
@@ -4958,12 +4995,19 @@
           }
         },
         {
-          "step": "expect_event",
+          "step": "expect_event_values",
           "event": "billing.invoice.InvoicePaid",
           "payload": {
             "amount": {
-              "amount": 1.0,
-              "currency": "amount.currency"
+              "kind": "literal",
+              "value": {
+                "amount": 1.0,
+                "currency": "amount.currency"
+              }
+            },
+            "invoice_id": {
+              "kind": "instance",
+              "instance": "invoice"
             }
           },
           "shape": {

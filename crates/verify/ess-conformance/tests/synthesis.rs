@@ -332,6 +332,7 @@ fn shape(synthesis: &Synthesis, id: &str) -> Vec<&'static str> {
             ScenarioStep::ExecuteCommandWithoutInput { .. } => "execute without input",
             ScenarioStep::ExpectOutcome { .. } => "outcome",
             ScenarioStep::ExpectNotGranted { .. } => "not granted",
+            ScenarioStep::ReadAs { .. } => "read as",
             ScenarioStep::ExpectError { .. } => "error",
             ScenarioStep::ExpectEvent { .. } => "event",
             ScenarioStep::ExpectNoEvent { .. } => "no-event",
@@ -365,6 +366,9 @@ fn shape(synthesis: &Synthesis, id: &str) -> Vec<&'static str> {
             ScenarioStep::ExpectDirectResponse { .. } => "direct response",
             ScenarioStep::DeliverEvent { .. } => "deliver",
             ScenarioStep::ExpectEveryInvocation { .. } => "every invocation",
+            ScenarioStep::ExpectNoInvocation { .. } => "no invocation",
+            ScenarioStep::ExpectNoPublication { .. } => "no publication",
+            ScenarioStep::ExpectPublicationCount { .. } => "publication count",
         })
         .collect()
 }
@@ -423,6 +427,7 @@ fn under_test(steps: &[ScenarioStep]) -> &[ScenarioStep] {
                 step,
                 ScenarioStep::ExpectError { .. }
                     | ScenarioStep::ExpectEvent { .. }
+                    | ScenarioStep::ExpectEventValues { .. }
                     | ScenarioStep::ExpectNoEvent { .. }
                     | ScenarioStep::EventuallyEvent { .. }
                     | ScenarioStep::QueryView { .. }
@@ -1227,7 +1232,9 @@ fn a_scenario_that_moves_an_instance_names_the_one_an_earlier_step_created() {
             "outcome",
             "execute",
             "outcome",
-            "event",
+            // `InvoicePaid` carries the invoice the run paid, compared with the captured instance
+            // (beyond10x/ess#273).
+            "event values",
             // `settle` leaves the invoice `Paid`, which `OutstandingInvoices` does not hold — so
             // both rows its declared order is compared over are further invoices, each created and
             // issued after the branch has been required and before the view is read.
@@ -4247,7 +4254,7 @@ fn a_whole_system_suite_does_not_mention_a_component() {
     let ir = example("billing");
     let whole = synthesize(&ir);
     assert_eq!(whole.suite.provenance.component, None);
-    assert!(whole.outside.is_empty());
+    assert_eq!(whole.outside.len(), 0, "{:?}", whole.outside);
     let document: serde_json::Value =
         serde_json::from_str(&whole.suite.to_canonical_json().unwrap()).expect("the suite is JSON");
     assert!(

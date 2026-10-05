@@ -102,8 +102,5 @@ fn presentation_moves_are_reported_apart_from_the_wire_move() {
 
 #[test]
 fn a_bare_variant_list_that_did_not_move_reports_nothing() {
-    assert!(diff(&model(BARE), &model(BARE))
-        .unwrap()
-        .changes()
-        .is_empty());
+    assert_eq!(diff(&model(BARE), &model(BARE)).unwrap().changes().len(), 0);
 }

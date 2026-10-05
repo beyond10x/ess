@@ -46,6 +46,8 @@
 mod accessor_output;
 mod alias;
 pub mod clap;
+mod codec_names;
+mod condition;
 pub(crate) mod determined;
 mod failure;
 pub mod go;
@@ -53,6 +55,7 @@ pub(crate) mod paging;
 pub mod plan;
 pub mod rust;
 mod selection;
+mod served;
 pub(crate) mod set_effects;
 pub(crate) mod view_query;
 pub mod web;
@@ -414,9 +417,10 @@ fn emit(ir: &EssIr, target: Target, layout: OutputLayout) -> Result<Synthesis, T
     }
     failure::binary64(ir, &plan, target)?;
     failure::input_absent(ir, &plan, target)?;
+    failure::one_time_response(ir, &plan, target)?;
     set_effects::refuse(ir, &plan, target)?;
     paging::refuse(ir, &plan, target)?;
-    failure::retry_bound(ir, &plan, target)?;
+    failure::binding_policies(ir, &plan, target)?;
     let mut artifacts = BTreeMap::new();
     insert(
         &mut artifacts,

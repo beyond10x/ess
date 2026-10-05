@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-03T19:07:02Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-312",
+  "kind": "story",
+  "revision": 2,
+  "change": {
+    "change": "evidence",
+    "kind": "approval",
+    "source": "Accepted full-bundle continuation reconciles canonical active story312 and its suite34/35 isolation contract; combined compatibility verification remains required",
+    "reference": "runbook:ui-live-apps-serial-integration-20261003"
+  }
+}

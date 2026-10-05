@@ -17,9 +17,8 @@
 //!
 //! The comparison is of the reports: the Rust [`ConformanceReport`](ess_conformance::report) and
 //! the TypeScript `ess-conformance-report/2` document. A run that writes no report is a
-//! disagreement, whatever it printed. Report/2 books a scenario the target could not expose as
-//! `skipped`, which is the Rust runner's `Unsupported`; no scenario of these suites is refused by
-//! name, so a `skipped` on only one side is a disagreement like any other.
+//! disagreement, whatever it printed. Report/2 preserves the native unsupported category;
+//! a category difference is a disagreement like any other.
 //!
 //! Skipped, and said out loud, where the machine has no `tsc` or no `node`, as
 //! `tests/typescript_runtime.rs` is.
@@ -34,6 +33,7 @@ use ess_compiler::refs::{CommandRef, ErrorRef, OutcomeRef};
 use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
 use ess_conformance::now_offset::WithWall;
 use ess_conformance::report::Status;
+use ess_conformance::scenario::ScenarioInitialState;
 use ess_conformance::target::*;
 use ess_conformance::{AdmittedSuite, AdvancingClock, Ids, Runner, RunnerConfig};
 use ess_domain::{command::OutcomeName, spec::RawSpecFile, system::Source, Specification};
@@ -167,13 +167,12 @@ impl Package {
         .scenarios
         .into_iter()
         .map(|result| {
-            // Report/2 books a scenario the target could not expose as `skipped`, which is
-            // the Rust runner's `Unsupported`.
+            // The current producer profile preserves native status categories.
             let status = match result.status {
                 Status::Passed => "passed",
                 Status::Failed => "failed",
                 Status::Error => "error",
-                Status::Unsupported => "skipped",
+                Status::Unsupported => "unsupported",
             };
             (result.scenario.to_string(), status.to_owned())
         })
@@ -203,6 +202,12 @@ impl Case<'_> {
         for refusal in &synthesis.refusals {
             println!("{}: synthesis refused {}", self.name, refusal.code());
         }
+        assert_eq!(
+            synthesis.suite.provenance.scenario_initial_state,
+            Some(ScenarioInitialState::Empty),
+            "{}: fresh ordinary suite initial state",
+            self.name
+        );
         let admitted =
             AdmittedSuite::from_suite(&synthesis.suite).unwrap_or_else(|error| panic!("{error}"));
         self.check(&admitted, || {
@@ -675,11 +680,11 @@ fn presence_target() -> String {
 /// and passes it. The reverse for `omitted_when_absent`: Rust sees it left out and passes, the
 /// TypeScript runtime reads it as "sent as null" and fails it.
 #[test]
-fn adversary_typescript_presence_undefined_leaf_gets_the_rust_verdict() {
+fn adversary_typescript_fresh_presence_suite_gets_the_rust_verdict() {
     let target = presence_target();
     Case {
         name: "adv-presence-undefined",
-        version: "ess-conformance/24",
+        version: "ess-conformance/34",
         target: &target,
         modes: &[
             "correct",

@@ -44,7 +44,7 @@ fn uses_of(ir: &EssIr, primitive: Primitive) -> BTreeMap<String, EssSemanticRef>
                 &mut found,
             ),
             ResolvedBody::Union { variants, .. } => {
-                for (name, ty) in variants {
+                for (name, ty) in variants.iter().filter_map(|(n, t)| Some((n, t.as_ref()?))) {
                     reference(
                         primitive,
                         ty,

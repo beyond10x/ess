@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-04T12:37:02Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-290",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-diff --test adversary_290_pass1 / --test compatibility; ess-cli --test verify_diff_gate (integration tree)",
+    "reference": "baseline: plain diff only, no gate (verify_diff_gate 0 passed 7 failed on base main.rs; adversary 3 failed before correction); treatment: adversary 6/6, compatibility 21/21, verify_diff_gate 7/7, ess-diff package 294 passed 1 pre-existing failure"
+  }
+}

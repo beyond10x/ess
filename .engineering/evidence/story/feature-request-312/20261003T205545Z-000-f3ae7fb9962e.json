@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-03T20:55:45Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-312",
+  "kind": "story",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "CORRECTION: record20261003T205407Z-000-aa6d70315aec asserted fmt success before terminal output was inspected. That assertion is invalid and must not satisfy acceptance. Actual task fmt-check at4ecd55469 exited201; cargo fmt child exited1, naming subject_guard_copied_field.rs import ordering. No pass claimed.",
+    "reference": "local-evidence:bundle-compatibility/integrated-fmt-check.log"
+  }
+}

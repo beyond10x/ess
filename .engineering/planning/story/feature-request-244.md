@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-244
 kind: story
-status: draft
+status: active
 title: Guards over elapsed time since a stored instant and over calendar windows
 tags:
 - feature-request
@@ -11,7 +11,10 @@ refs:
   reference: beyond10x/ess#244
 relations:
 - serves: vision:O2
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-04T15:27:21Z", actor: "human:timo", revision: 5}
+- {from: "proposed", to: "active", at: "2026-10-04T15:27:21Z", actor: "human:timo", revision: 6}
 ---
 ## Outcome
 

@@ -305,19 +305,6 @@ impl State {
         format!("00000000-0000-4000-8000-{:012}", self.tick())
     }
 
-    /// The instant a write happened at, of the shape the model's `Timestamp` primitive takes.
-    ///
-    /// Counted, not read off a clock. §37 puts every source of variation on the runner's side, and a
-    /// reference target that reached for the wall clock would make the declared order of its own
-    /// view depend on how fast the machine ran the commands that filled it.
-    fn instant(&mut self) -> String {
-        format!(
-            "2020-01-01T00:{:02}:{:02}Z",
-            self.sequence / 60,
-            self.tick() % 60
-        )
-    }
-
     /// The token a read may demand a view no older than.
     ///
     /// # Panics
@@ -576,18 +563,12 @@ fn issue_invoice(
     if current != Lifecycle::Draft {
         return wrong_state(ISSUE_INVOICE, current);
     }
-    // The `issued` outcome records the instant the caller sent (`sets: {issued_at:
-    // input.issued_at}`). A suite synthesized before the input existed sends none, and then the
-    // counted instant stands in, so such a suite still ranks the invoices in the order it issued
-    // them.
-    let issued_at = request
-        .input
-        .get("issued_at")
-        .and_then(|value| value.as_text())
-        .map_or_else(|| state.instant(), ToOwned::to_owned);
+    let Some(Node::Text(issued_at)) = request.input.get("issued_at") else {
+        return SemanticCommandResult::undeclared();
+    };
     if let Some(invoice) = state.invoices.get_mut(&id) {
         invoice.state = Lifecycle::Issued;
-        invoice.issued_at = Some(issued_at);
+        invoice.issued_at = Some(issued_at.clone());
     }
     state.touch(&id, lag);
 
@@ -1708,7 +1689,7 @@ impl ConformanceTarget for Retained {
 ///
 /// It works by not implementing
 /// [`observe_invocations`](ConformanceTarget::observe_invocations) — the trait's own default body is
-/// the refusal — so this type is nothing but the eight forwarding methods, and it cannot drift from
+/// the refusal — so this type is nothing but forwarding methods, and it cannot drift from
 /// what the default says.
 #[derive(Debug)]
 pub struct Untraced<T>(pub T);
@@ -1734,6 +1715,14 @@ impl<T: ConformanceTarget> ConformanceTarget for Untraced<T> {
         self.0.execute_command(request)
     }
 
+    /// Forwarded: the same implementation, with the instant its own decision observed.
+    fn execute_command_recorded(
+        &self,
+        request: SemanticCommandRequest,
+    ) -> crate::target::RecordedCommandCompletion {
+        self.0.execute_command_recorded(request)
+    }
+
     fn execute_command_without_input(
         &self,
         request: crate::target::AbsentInputRequest,
@@ -1743,6 +1732,21 @@ impl<T: ConformanceTarget> ConformanceTarget for Untraced<T> {
 
     fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
         self.0.query_view(request)
+    }
+
+    fn query_view_as(
+        &self,
+        request: SemanticViewRequest,
+        reader: &crate::scenario::ActorRef,
+    ) -> Result<SemanticViewResult, TargetError> {
+        self.0.query_view_as(request, reader)
+    }
+
+    fn query_view_anonymous(
+        &self,
+        request: SemanticViewRequest,
+    ) -> Result<SemanticViewResult, TargetError> {
+        self.0.query_view_anonymous(request)
     }
 
     fn observe_events(

@@ -8,8 +8,7 @@
 // ports the implementor supplies.
 //
 // Storage is a port: one interface per entity, get, put and delete of a snapshot by
-// identity, and list where a generated query reads every row. ess generates the interface
-// and never a store. Context is the other port: the caller's attributes, every identity and
+// identity, and list where a generated query reads every row. ess generates the interface. Network entries supply ephemeral stores. Context carries the caller's attributes, every identity and
 // value the model says the implementation assigns, and the answer to each `external:` branch.
 // Owed is every behaviour and query the plan still owes, which [Generated] forwards to.
 //
@@ -18,8 +17,8 @@
 // branch answers it), or — as `entity invariant` — the declared outcome would leave an
 // entity breaking an invariant.
 //
-// Every port a generated method reads must be set: a nil field of [Ports] is a nil-pointer
-// panic at the first call that reads it.
+// Every storage and owed port a generated method reads must be set. Context uses the
+// fallible companion when supplied, otherwise the legacy port; absence is a typed refusal.
 package behaviour
 
 import (
@@ -29,7 +28,7 @@ import (
 
 // VisitStorage is where `gatepass.visit.Visit` is stored — a port the implementor provides.
 //
-// Keyed by the identity `visit_id`. ess generates this interface and never an implementation of it.
+// Keyed by the identity `visit_id`. Network entries supply ephemeral stores; durable storage stays a port.
 type VisitStorage interface {
 	// Get is the instance with this identity and true, or false where none is stored.
 	Get(identity visit.VisitId) (visit.VisitSnapshot, bool)
@@ -97,8 +96,9 @@ func (b *Generated) AdmitVisitor(input visit.AdmitVisitor) (visit.AdmitVisitorOu
 	if broken, breaks := next.Data.BrokenInvariant(); breaks {
 		return nil, &obligation.UnmetObligation{Capability: "entity invariant", Source: broken}
 	}
+	answer0 := visit.AdmitVisitorOutcomeAdmitted{VisitorAdmitted: visit.VisitorAdmitted{VisitId: input.VisitId, Badge: input.Badge}}
 	b.ports.VisitStorage.Put(next)
-	return visit.AdmitVisitorOutcomeAdmitted{VisitorAdmitted: visit.VisitorAdmitted{VisitId: input.VisitId, Badge: input.Badge}}, nil
+	return answer0, nil
 }
 
 // RegisterVisit forwards the owed behaviour `gatepass.visit.RegisterVisit` to the ports.
@@ -127,8 +127,9 @@ func (b *Generated) SignOutVisitor(input visit.SignOutVisitor) (visit.SignOutVis
 	if broken, breaks := next.Data.BrokenInvariant(); breaks {
 		return nil, &obligation.UnmetObligation{Capability: "entity invariant", Source: broken}
 	}
+	answer0 := visit.SignOutVisitorOutcomeSignedOut{VisitorDeparted: visit.VisitorDeparted{VisitId: input.VisitId}}
 	b.ports.VisitStorage.Put(next)
-	return visit.SignOutVisitorOutcomeSignedOut{VisitorDeparted: visit.VisitorDeparted{VisitId: input.VisitId}}, nil
+	return answer0, nil
 }
 
 // ExpectedVisits is `gatepass.visit.ExpectedVisits`, generated: every row is one the specification fully determines from the

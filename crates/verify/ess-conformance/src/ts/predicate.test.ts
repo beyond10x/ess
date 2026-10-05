@@ -20,12 +20,16 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  CalendarWindow,
   Operand,
+  compareInstants,
+  parseInstant,
   Predicate,
   admitPredicateExpression,
   admitPredicateLeaf,
   admitPredicatePath,
   admitQuotedOperand,
+  distinctKey,
   facts,
   factPath,
   fromNode,
@@ -47,7 +51,13 @@ import {
   TruthUnknown,
 } from './predicate.js';
 import type { FactSource, Truth } from './predicate.js';
-import { admitPredicateVersion, admitSuite } from './runtime.js';
+import {
+  admitPredicateVersion,
+  admitSuite,
+  exactDecimal,
+  predicateNumbers,
+  strictJSON,
+} from './runtime.js';
 import type { Node, Row } from './runtime.js';
 
 const source = (entries: Record<string, Node>): FactSource => new Map(Object.entries(entries));
@@ -1066,13 +1076,13 @@ test('the runtime admits the new suite majors and a fold in them', () => {
     /case-insensitive text operators require suite\/20 or \/21/,
   );
   // A fold is admitted by every later major too (beyond10x/ess#188), and the first major this
-  // runtime does not read — direct returns — is still refused by version.
+  // runtime does not read is still refused by version.
   assert.equal(
     admitSuite(document('ess-conformance/26', false)).provenance.suite_version,
     'ess-conformance/26',
   );
   assert.match(
-    raised(() => admitSuite(document('ess-conformance/28', false))),
+    raised(() => admitSuite(document('ess-conformance/44', false))),
     /unsupported suite version/,
   );
 });
@@ -1110,5 +1120,674 @@ test('a bare word naming a binder in scope reads the binder, and every other spe
   ];
   for (const [name, predicate, values, want] of vectors) {
     assert.equal(parsePredicate(predicate).evaluate(facts(values)), want, name);
+  }
+});
+
+// ---- the explicit fact operand (docs/design/expression-family-source22.md, A1) --------------
+
+test('the explicit fact operand answers the shared vectors', () => {
+  // `crates/specify/ess-primitives/tests/vectors/root-fact-operand.json`, which
+  // `tests/root_fact_operand.rs` and `tests/fixtures/root-fact-operand.go` answer too.
+  const relative = 'crates/specify/ess-primitives/tests/vectors/root-fact-operand.json';
+  let directory = import.meta.dirname;
+  let vectors:
+    | {
+        evaluate: { name: string; predicate: Node; row: Row; truth: string }[];
+        refused: { name: string; predicate: Node }[];
+      }
+    | undefined;
+  for (let depth = 0; depth < 12 && vectors === undefined; depth += 1) {
+    const candidate = join(directory, relative);
+    if (existsSync(candidate)) vectors = JSON.parse(readFileSync(candidate, 'utf8'));
+    directory = dirname(directory);
+  }
+  assert.ok(vectors, `the vectors are at ${relative}`);
+  const names = new Map<Truth, string>([
+    [TruthTrue, 'true'],
+    [TruthFalse, 'false'],
+    [TruthUnknown, 'unknown'],
+  ]);
+  assert.ok(vectors.evaluate.length > 0 && vectors.refused.length > 0);
+  for (const vector of vectors.evaluate) {
+    const truth = parsePredicate(vector.predicate).evaluate(facts(vector.row));
+    assert.equal(names.get(truth), vector.truth, vector.name);
+  }
+  for (const vector of vectors.refused) {
+    assert.throws(() => parsePredicate(vector.predicate), vector.name);
+  }
+});
+
+// ---- instants and the tagged comparison (decisions 2 and 14) --------------------------------
+
+test('a1_timestamp_sibling_instant_order: the shared instant vectors', () => {
+  // `crates/specify/ess-primitives/tests/vectors/rfc3339-instants.json`, which
+  // `tests/instant_comparison.rs` and `tests/fixtures/instant-comparison.go` answer too.
+  const relative = 'crates/specify/ess-primitives/tests/vectors/rfc3339-instants.json';
+  let directory = import.meta.dirname;
+  let vectors:
+    | {
+        parse: { text: string; valid: boolean }[];
+        order: { left: string; right: string; ordering: string }[];
+        tagged: { name: string; predicate: Node; row: Row; truth: string }[];
+        refused: { name: string; predicate: Node }[];
+      }
+    | undefined;
+  for (let depth = 0; depth < 12 && vectors === undefined; depth += 1) {
+    const candidate = join(directory, relative);
+    if (existsSync(candidate)) vectors = JSON.parse(readFileSync(candidate, 'utf8'));
+    directory = dirname(directory);
+  }
+  assert.ok(vectors, `the vectors are at ${relative}`);
+  for (const vector of vectors.parse) {
+    assert.equal(parseInstant(vector.text) !== undefined, vector.valid, vector.text);
+  }
+  const orderings = new Map([
+    ['less', -1],
+    ['equal', 0],
+    ['greater', 1],
+  ]);
+  for (const vector of vectors.order) {
+    const left = parseInstant(vector.left);
+    const right = parseInstant(vector.right);
+    assert.ok(left && right, `${vector.left} ${vector.right}`);
+    assert.equal(compareInstants(left, right), orderings.get(vector.ordering));
+  }
+  const names = new Map<Truth, string>([
+    [TruthTrue, 'true'],
+    [TruthFalse, 'false'],
+    [TruthUnknown, 'unknown'],
+  ]);
+  for (const vector of vectors.tagged) {
+    const truth = parsePredicate(vector.predicate).evaluate(facts(vector.row));
+    assert.equal(names.get(truth), vector.truth, vector.name);
+  }
+  for (const vector of vectors.refused) {
+    assert.throws(() => parsePredicate(vector.predicate), vector.name);
+  }
+});
+
+// ---- one constant offset (docs/design/expression-family-source22.md, A2) ---------------------
+
+/** The shared offset vectors, read without rounding a number through binary64. */
+function offsetVectors(): {
+  integer: OffsetRow[];
+  timestamp: OffsetRow[];
+  evaluate: { name: string; predicate: Node; row: Row; truth: string }[];
+  refused: { name: string; predicate: Node }[];
+} {
+  // `crates/specify/ess-primitives/tests/vectors/offset-operand.json`, which
+  // `tests/offset_operand.rs` and `tests/fixtures/offset-operand.go` answer too.
+  const relative = 'crates/specify/ess-primitives/tests/vectors/offset-operand.json';
+  let directory = import.meta.dirname;
+  for (let depth = 0; depth < 12; depth += 1) {
+    const candidate = join(directory, relative);
+    if (existsSync(candidate)) {
+      return strictJSON(readFileSync(candidate, 'utf8')) as unknown as ReturnType<
+        typeof offsetVectors
+      >;
+    }
+    directory = dirname(directory);
+  }
+  throw new Error(`the vectors are at ${relative}`);
+}
+
+interface OffsetRow {
+  name: string;
+  left: Node;
+  base: Node;
+  direction: string;
+  magnitude: Node;
+  op: string;
+  truth: string;
+}
+
+const offsetTruths = new Map<Truth, string>([
+  [TruthTrue, 'true'],
+  [TruthFalse, 'false'],
+  [TruthUnknown, 'unknown'],
+]);
+
+test('a2: the offset operand answers the shared vectors', () => {
+  const vectors = offsetVectors();
+  let answered = 0;
+  for (const vector of [...vectors.integer, ...vectors.timestamp]) {
+    const predicate = predicateNumbers({
+      left: { [vector.op]: { offset: { fact: 'base', [vector.direction]: vector.magnitude } } },
+    });
+    const truth = parsePredicate(predicate).evaluate(
+      facts({ left: vector.left, base: vector.base }),
+    );
+    assert.equal(offsetTruths.get(truth), vector.truth, vector.name);
+    answered += 1;
+  }
+  for (const vector of vectors.evaluate) {
+    const truth = parsePredicate(predicateNumbers(vector.predicate)).evaluate(facts(vector.row));
+    assert.equal(offsetTruths.get(truth), vector.truth, vector.name);
+    answered += 1;
+  }
+  for (const vector of vectors.refused) {
+    assert.throws(() => parsePredicate(predicateNumbers(vector.predicate)), vector.name);
+    answered += 1;
+  }
+  assert.ok(answered >= 60, `${answered} vectors answered`);
+});
+
+test('a2: every paired fault disagrees with an offset vector', () => {
+  const vectors = offsetVectors();
+  const int = (node: Node): bigint => BigInt(String(node));
+  const order = (left: bigint, right: bigint): number => (left < right ? -1 : left > right ? 1 : 0);
+  const accepts = (op: string, ordering: number): boolean =>
+    ({
+      eq: ordering === 0,
+      ne: ordering !== 0,
+      lt: ordering < 0,
+      lte: ordering <= 0,
+      gt: ordering > 0,
+    })[op] ?? ordering >= 0;
+  const wrap = (value: bigint): bigint => BigInt.asIntN(64, value);
+  const max = 2n ** 63n - 1n;
+  const min = -(2n ** 63n);
+  type Arithmetic = (base: bigint, magnitude: bigint, left: bigint, add: boolean) => number | null;
+  const exact: Arithmetic = (base, magnitude, left, add) =>
+    order(left, add ? base + magnitude : base - magnitude);
+  const faults: [string, Arithmetic][] = [
+    [
+      'wrap',
+      (base, magnitude, left, add) => order(left, wrap(add ? base + magnitude : base - magnitude)),
+    ],
+    [
+      'clamp',
+      (base, magnitude, left, add) => {
+        const sum = add ? base + magnitude : base - magnitude;
+        return order(left, sum > max ? max : sum < min ? min : sum);
+      },
+    ],
+    [
+      'binary64',
+      (base, magnitude, left, add) => {
+        const sum = add ? Number(base) + Number(magnitude) : Number(base) - Number(magnitude);
+        return Number(left) < sum ? -1 : Number(left) > sum ? 1 : 0;
+      },
+    ],
+    [
+      'unknown on overflow',
+      (base, magnitude, left, add) => {
+        const sum = add ? base + magnitude : base - magnitude;
+        return sum > max || sum < min ? null : order(left, sum);
+      },
+    ],
+    ['ignored sign', (base, magnitude, left) => order(left, base + magnitude)],
+    ['ignored base', (_base, magnitude, left) => order(left, magnitude)],
+    [
+      'field minus field',
+      (base, magnitude, left, add) => order(wrap(left - base), add ? magnitude : wrap(-magnitude)),
+    ],
+  ];
+  const answer = (arithmetic: Arithmetic, vector: OffsetRow): string => {
+    const ordering = arithmetic(
+      int(vector.base),
+      int(vector.magnitude),
+      int(vector.left),
+      vector.direction === 'add',
+    );
+    if (ordering === null) return 'unknown';
+    return accepts(vector.op, ordering) ? 'true' : 'false';
+  };
+  for (const vector of vectors.integer) {
+    assert.equal(answer(exact, vector), vector.truth, `the exact reference: ${vector.name}`);
+  }
+  for (const [fault, arithmetic] of faults) {
+    assert.ok(
+      vectors.integer.some((vector) => answer(arithmetic, vector) !== vector.truth),
+      `no vector tells the ${fault} fault apart`,
+    );
+  }
+});
+
+// ---- distinct list members (docs/design/expression-family-source22.md, `distinct`) ------------
+
+interface DistinctVector {
+  name: string;
+  predicate: Node;
+  row: Row;
+  truth: string;
+}
+
+/** The shared distinct vectors, read without rounding a number through binary64. */
+function distinctVectors(): {
+  evaluate: DistinctVector[];
+  refused: DistinctVector[];
+  unkinded: DistinctVector[];
+} {
+  // `crates/specify/ess-primitives/tests/vectors/distinct.json`, which `tests/distinct.rs` and
+  // `tests/fixtures/distinct.go` answer too.
+  const relative = 'crates/specify/ess-primitives/tests/vectors/distinct.json';
+  let directory = import.meta.dirname;
+  for (let depth = 0; depth < 12; depth += 1) {
+    const candidate = join(directory, relative);
+    if (existsSync(candidate)) {
+      return strictJSON(readFileSync(candidate, 'utf8')) as unknown as ReturnType<
+        typeof distinctVectors
+      >;
+    }
+    directory = dirname(directory);
+  }
+  throw new Error(`the vectors are at ${relative}`);
+}
+
+test('distinct: the shared vectors are answered', () => {
+  const vectors = distinctVectors();
+  let answered = 0;
+  for (const vector of vectors.evaluate) {
+    const truth = parsePredicate(predicateNumbers(vector.predicate)).evaluate(facts(vector.row));
+    assert.equal(offsetTruths.get(truth), vector.truth, vector.name);
+    answered += 1;
+  }
+  for (const vector of [...vectors.refused, ...vectors.unkinded]) {
+    assert.throws(() => parsePredicate(predicateNumbers(vector.predicate)), vector.name);
+    answered += 1;
+  }
+  assert.ok(answered >= 50, `${answered} vectors answered`);
+});
+
+test('distinct: suite/40 admits it and an older major refuses it', () => {
+  const canonical = { distinct: { in: 'files', as: 'file', by: 'file.path', kind: 'string' } };
+  admitPredicateVersion(canonical, 40);
+  assert.match(
+    raised(() => admitPredicateVersion(canonical, 39)),
+    /suite\/40 or \/41/,
+  );
+  const nested = {
+    not: {
+      forall: {
+        in: 'groups',
+        as: 'g',
+        that: { distinct: { in: 'g.tags', as: 't', kind: 'string' } },
+      },
+    },
+  };
+  assert.match(
+    raised(() => admitPredicateVersion(nested, 39)),
+    /suite\/40 or \/41/,
+  );
+  assert.throws(() => admitPredicateVersion({ distinct: { in: 'tags', as: 'tag' } }, 40));
+  admitPredicateVersion({ distinct: { in: ['a', 'b'] } }, 39);
+});
+
+test('distinct: every paired fault disagrees with a vector', () => {
+  interface Keyed {
+    name: string;
+    keys: Node[];
+    elements: Node[];
+    kind: string;
+    truth: string;
+  }
+  const rows: Keyed[] = [];
+  for (const vector of distinctVectors().evaluate) {
+    const fields = (vector.predicate as { [key: string]: Node }).distinct as
+      | { [key: string]: Node }
+      | undefined;
+    if (fields === undefined) continue;
+    const elements = (vector.row as { [key: string]: Node })[fields.in as string];
+    if (!Array.isArray(elements)) continue;
+    const by = typeof fields.by === 'string' ? fields.by.split('.').slice(1) : [];
+    const keys = elements.map((element) => {
+      let at: Node = element;
+      for (const segment of by) {
+        at =
+          at !== null && typeof at === 'object' && !Array.isArray(at)
+            ? ((at as { [key: string]: Node })[segment] ?? null)
+            : null;
+      }
+      return at;
+    });
+    rows.push({
+      name: vector.name,
+      keys,
+      elements,
+      kind: fields.kind as string,
+      truth: vector.truth,
+    });
+  }
+  assert.ok(rows.length >= 30, `${rows.length} rows`);
+  const spelled = (keys: Node[], kind: string): (string | null)[] =>
+    keys.map((key) => (key === null ? null : distinctKey(kind, key)));
+  const pairwise = (keys: (string | null)[], adjacentOnly = false): string => {
+    if (keys.length < 2) return 'true';
+    let unknown = false;
+    for (let left = 0; left < keys.length; left += 1) {
+      for (let right = left + 1; right < keys.length; right += 1) {
+        if (adjacentOnly && right > left + 1) break;
+        if (keys[left] === null || keys[right] === null) unknown = true;
+        else if (keys[left] === keys[right]) return 'false';
+      }
+    }
+    return unknown ? 'unknown' : 'true';
+  };
+  const reference = (row: Keyed): string => pairwise(spelled(row.keys, row.kind));
+  for (const row of rows) assert.equal(reference(row), row.truth, `the reference: ${row.name}`);
+  const numbers = (row: Keyed, spell: (key: Node) => string): (string | null)[] =>
+    row.keys.map((key, index) =>
+      exactDecimal(key) !== null && (row.kind === 'integer' || row.kind === 'decimal')
+        ? spell(key)
+        : spelled([row.keys[index]!], row.kind)[0]!,
+    );
+  const faults: [string, (row: Keyed) => string][] = [
+    ['neighbours only', (row) => pairwise(spelled(row.keys, row.kind), true)],
+    [
+      '`by` ignored',
+      (row) =>
+        pairwise(
+          row.elements.map((element) => (element === null ? null : JSON.stringify(element))),
+        ),
+    ],
+    [
+      'spellings compared',
+      (row) => pairwise(spelled(row.keys, row.kind === 'timestamp' ? 'string' : row.kind)),
+    ],
+    [
+      'instants for text',
+      (row) =>
+        pairwise(
+          row.kind === 'string'
+            ? row.keys.map((key) =>
+                key === null ? null : (distinctKey('timestamp', key) ?? distinctKey('string', key)),
+              )
+            : spelled(row.keys, row.kind),
+        ),
+    ],
+    [
+      'Unknown read as distinct',
+      (row) => pairwise(spelled(row.keys, row.kind).filter((key) => key !== null)),
+    ],
+    [
+      'one shared null',
+      (row) =>
+        pairwise(
+          row.keys.map((key, index) =>
+            key === null ? 'null' : spelled(row.keys, row.kind)[index]!,
+          ),
+        ),
+    ],
+    ['binary64 numbers', (row) => pairwise(numbers(row, (key) => String(Number(String(key)))))],
+    [
+      'lexical decimals',
+      (row) =>
+        pairwise(
+          row.kind === 'decimal' ? numbers(row, (key) => String(key)) : spelled(row.keys, row.kind),
+        ),
+    ],
+    ['any two accepted', (row) => (row.keys.length === 2 ? 'true' : reference(row))],
+  ];
+  for (const [fault, judge] of faults) {
+    assert.ok(
+      rows.some((row) => judge(row) !== row.truth),
+      `no vector tells the ${fault} fault apart`,
+    );
+  }
+});
+
+// ---- the UTF-8 byte length of a String (docs/design/expression-family-source22.md) -----------
+
+interface Utf8Text {
+  name: string;
+  units: number[];
+  bytes: number | null;
+  count: number | null;
+}
+
+/** The shared byte-length vectors. */
+function utf8Vectors(): {
+  texts: Utf8Text[];
+  evaluate: { name: string; predicate: Node; row: Row; truth: string }[];
+  refused: { name: string; predicate: Node }[];
+} {
+  // `crates/specify/ess-primitives/tests/vectors/utf8-bytes.json`, which `tests/utf8_bytes.rs`
+  // and `tests/fixtures/utf8-bytes.go` answer too.
+  const relative = 'crates/specify/ess-primitives/tests/vectors/utf8-bytes.json';
+  let directory = import.meta.dirname;
+  for (let depth = 0; depth < 12; depth += 1) {
+    const candidate = join(directory, relative);
+    if (existsSync(candidate)) {
+      const document = strictJSON(readFileSync(candidate, 'utf8')) as unknown as {
+        texts: { name: string; units: Node[]; bytes: Node; count: Node }[];
+      } & Omit<ReturnType<typeof utf8Vectors>, 'texts'>;
+      return {
+        ...document,
+        texts: document.texts.map((text) => ({
+          name: text.name,
+          units: text.units.map((unit) => Number(unit)),
+          bytes: text.bytes === null ? null : Number(text.bytes),
+          count: text.count === null ? null : Number(text.count),
+        })),
+      };
+    }
+    directory = dirname(directory);
+  }
+  throw new Error(`the vectors are at ${relative}`);
+}
+
+test('utf8: the byte-length selector answers the shared vectors', () => {
+  const vectors = utf8Vectors();
+  let answered = 0;
+  for (const vector of vectors.texts) {
+    // A JavaScript string is UTF-16 code units, so a lone surrogate is a string like any other:
+    // the byte length of one is Unknown, never the three bytes of the U+FFFD an encoder writes.
+    const label = String.fromCharCode(...vector.units);
+    const row = source({ label });
+    if (vector.bytes === null) {
+      const any = parsePredicate(
+        predicateNumbers({ compare: { left: { utf8_bytes: 'label' }, op: 'gte', right: 0 } }),
+      );
+      assert.equal(any.evaluate(row), TruthUnknown, vector.name);
+    } else {
+      const bytes = parsePredicate(
+        predicateNumbers({
+          compare: { left: { utf8_bytes: 'label' }, op: 'eq', right: vector.bytes },
+        }),
+      );
+      assert.equal(bytes.evaluate(row), TruthTrue, `${vector.name}: ${vector.bytes} bytes`);
+      const count = parsePredicate(predicateNumbers({ 'label.count': { eq: vector.count } }));
+      assert.equal(count.evaluate(row), TruthTrue, `${vector.name}: ${vector.count} scalars`);
+    }
+    answered += 1;
+  }
+  for (const vector of vectors.evaluate) {
+    const truth = parsePredicate(predicateNumbers(vector.predicate)).evaluate(facts(vector.row));
+    assert.equal(offsetTruths.get(truth), vector.truth, vector.name);
+    answered += 1;
+  }
+  for (const vector of vectors.refused) {
+    assert.throws(() => parsePredicate(predicateNumbers(vector.predicate)), vector.name);
+    assert.throws(() => admitPredicateVersion(vector.predicate, 40), vector.name);
+    answered += 1;
+  }
+  assert.ok(answered >= 40, `${answered} vectors answered`);
+});
+
+test('utf8: every faulty measure disagrees with a byte-length vector', () => {
+  const vectors = utf8Vectors();
+  type Measure = (text: string) => number | null;
+  const wellFormed = (text: string): boolean => {
+    for (let index = 0; index < text.length; index += 1) {
+      const unit = text.charCodeAt(index);
+      if (unit >= 0xdc00 && unit <= 0xdfff) return false;
+      if (unit >= 0xd800 && unit <= 0xdbff) {
+        const low = text.charCodeAt(index + 1);
+        if (!(low >= 0xdc00 && low <= 0xdfff)) return false;
+        index += 1;
+      }
+    }
+    return true;
+  };
+  const exact: Measure = (text) =>
+    wellFormed(text) ? new TextEncoder().encode(text).length : null;
+  const faults: [string, Measure][] = [
+    ['UTF-16 units (`length`)', (text) => text.length],
+    ['code points (`[...text]`)', (text) => [...text].length],
+    ['an encoder that replaces a lone surrogate', (text) => new TextEncoder().encode(text).length],
+    ['graphemes', (text) => [...text].filter((character) => !/[̀-ͯ]/u.test(character)).length],
+  ];
+  const answer = (measure: Measure, vector: Utf8Text): number | null =>
+    measure(String.fromCharCode(...vector.units));
+  for (const vector of vectors.texts) {
+    assert.equal(answer(exact, vector), vector.bytes, `the reference: ${vector.name}`);
+  }
+  for (const [fault, measure] of faults) {
+    assert.ok(
+      vectors.texts.some((vector) => answer(measure, vector) !== vector.bytes),
+      `no vector tells the ${fault} fault apart`,
+    );
+  }
+});
+
+test('utf8: below suite/40 the selector is refused before it is read', () => {
+  const derived = strictJSON(
+    '{"compare": {"left": {"utf8_bytes": "label"}, "op": "lte", "right": 4}}',
+  );
+  assert.match(
+    raised(() => admitPredicateVersion(derived, 39)),
+    /suite\/40/,
+  );
+  const right = strictJSON('{"limit": {"gte": {"utf8_bytes": "label"}}}');
+  assert.match(
+    raised(() => admitPredicateVersion(right, 39)),
+    /suite\/40/,
+  );
+  admitPredicateVersion(derived, 40);
+  admitPredicateVersion(right, 41);
+});
+
+// ---- calendar windows (docs/design/calendar-window-guards.md) ------------------------------
+
+interface WindowVectors {
+  evaluate: { name: string; window: Node; t: Node; truth: string }[];
+  refused: { name: string; window: Node }[];
+  canonical: { name: string; written: Node; canonical: Node }[];
+}
+
+/** The shared window vectors, which `tests/calendar_window.rs` and the Go fixture answer too. */
+function windowVectors(): WindowVectors {
+  const relative = 'crates/specify/ess-primitives/tests/vectors/calendar-window.json';
+  let directory = import.meta.dirname;
+  for (let depth = 0; depth < 12; depth += 1) {
+    const candidate = join(directory, relative);
+    if (existsSync(candidate)) {
+      return JSON.parse(readFileSync(candidate, 'utf8')) as WindowVectors;
+    }
+    directory = dirname(directory);
+  }
+  throw new Error(`the vectors are at ${relative}`);
+}
+
+const windowRow = (t: Node): FactSource => (t === null ? facts({}) : facts({ t } as Row));
+
+test('window: a calendar window answers the shared vectors', () => {
+  const vectors = windowVectors();
+  let answered = 0;
+  for (const vector of vectors.evaluate) {
+    const truth = fromNode({ window: vector.window }).evaluate(windowRow(vector.t));
+    assert.equal(truth, vector.truth, vector.name);
+    answered += 1;
+  }
+  for (const vector of vectors.refused) {
+    assert.throws(() => fromNode({ window: vector.window }), vector.name);
+    answered += 1;
+  }
+  for (const vector of vectors.canonical) {
+    assert.equal(
+      fromNode({ window: vector.written }).toString(),
+      fromNode({ window: vector.canonical }).toString(),
+      vector.name,
+    );
+    answered += 1;
+  }
+  assert.ok(answered >= 60, `${answered} vectors answered`);
+  // `now` reads no clock here, and a field named `now` is no clock.
+  const now = fromNode({
+    window: { at: 'now', days: ['mon'], from: '08:00', to: '16:00', offset: 'Z' },
+  });
+  assert.equal(now.evaluate(facts({ now: '2020-01-06T09:00:00Z' } as Row)), TruthUnknown);
+});
+
+test('window: a suite carrying one is read from suite/40, and /39 refuses it', () => {
+  const node: Node = {
+    window: { at: 'ready_at', days: ['mon'], from: '08:00', to: '16:00', offset: 'Z' },
+  };
+  assert.throws(() => admitPredicateVersion(node, 39), /calendar window/);
+  admitPredicateVersion(node, 40);
+  admitPredicateVersion({ window: { eq: 'open' } }, 39);
+});
+
+test('window: every paired fault disagrees with a vector', () => {
+  const vectors = windowVectors();
+  type Fault = (window: CalendarWindow, text: string) => boolean | undefined;
+  const healthy: Fault = (window, text) => {
+    const at = parseInstant(text);
+    return at === undefined ? undefined : window.contains(at.seconds);
+  };
+  const shifted =
+    (minutes: number): Fault =>
+    (window, text) =>
+      healthy(
+        Object.assign(Object.create(CalendarWindow.prototype), window, { offset: minutes }),
+        text,
+      );
+  const faults: [string, Fault][] = [
+    ['host time at -07:00', shifted(-7 * 60)],
+    ['the offset ignored', shifted(0)],
+    [
+      'to inclusive',
+      (window, text) => {
+        const at = parseInstant(text);
+        if (at === undefined) return undefined;
+        const [day, second] = window.local(at.seconds);
+        if (window.from < window.to) {
+          return window.days[day]! && second >= window.from * 60 && second <= window.to * 60;
+        }
+        return healthy(window, text);
+      },
+    ],
+    [
+      "the crossing on the instant's own day",
+      (window, text) => {
+        const at = parseInstant(text);
+        if (at === undefined) return undefined;
+        const [day, second] = window.local(at.seconds);
+        if (window.from > window.to) {
+          return window.days[day]! && (second >= window.from * 60 || second < window.to * 60);
+        }
+        return healthy(window, text);
+      },
+    ],
+    [
+      'the written clock read',
+      (window, text) => {
+        if (text.length < 19) return undefined;
+        const at = parseInstant(`${text.slice(0, 19)}Z`);
+        if (at === undefined) return undefined;
+        const utc = Object.assign(Object.create(CalendarWindow.prototype), window, { offset: 0 });
+        return utc.contains(at.seconds);
+      },
+    ],
+  ];
+  const answer = (fault: Fault, window: CalendarWindow, value: Node): string => {
+    if (typeof value !== 'string') return 'unknown';
+    const inside = fault(window, value);
+    if (inside === undefined) return 'unknown';
+    return inside ? 'true' : 'false';
+  };
+  for (const vector of vectors.evaluate) {
+    const window = fromNode({ window: vector.window }).window!;
+    assert.equal(answer(healthy, window, vector.t), vector.truth, `the reference: ${vector.name}`);
+  }
+  for (const [name, fault] of faults) {
+    assert.ok(
+      vectors.evaluate.some(
+        (vector) =>
+          answer(fault, fromNode({ window: vector.window }).window!, vector.t) !== vector.truth,
+      ),
+      `no vector tells the ${name} fault apart`,
+    );
   }
 });

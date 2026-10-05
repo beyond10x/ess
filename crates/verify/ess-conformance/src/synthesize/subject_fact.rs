@@ -41,6 +41,8 @@ use ess_primitives::facts::Number;
 use ess_primitives::node::Node;
 use ess_primitives::predicate::{CompareOp, Operand};
 
+use crate::synthesis_seeds::SeedRecord;
+
 /// The most search nodes one arrangement visits before it refuses.
 const MAX_NODES: usize = 64;
 
@@ -69,6 +71,7 @@ fn stored(condition: &ResolvedCondition) -> Option<Predicate> {
     match condition {
         ResolvedCondition::SubjectPredicate { predicate, .. } => Some(predicate.clone()),
         ResolvedCondition::SubjectField { field, equals, .. } => Some(Predicate::Compare {
+            kind: ess_primitives::predicate::CompareKind::Value,
             left: Operand::Fact(FactPath::new(field).ok()?),
             op: CompareOp::Eq,
             right: Operand::Literal(ess_primitives::facts::FactValue::text(equals.clone())),
@@ -80,6 +83,7 @@ fn stored(condition: &ResolvedCondition) -> Option<Predicate> {
         | ResolvedCondition::ExternalWhen { .. }
         | ResolvedCondition::External { .. }
         | ResolvedCondition::Related { .. }
+        | ResolvedCondition::RelatedSet { .. }
         | ResolvedCondition::WrongState
         | ResolvedCondition::UnknownInstance
         | ResolvedCondition::InputAbsent
@@ -271,12 +275,13 @@ pub(super) fn reads_held_state(ir: &EssIr, entity: &EntityHandle, predicate: &Pr
 /// and that no bounded arrangement reaches refuses the whole with that cause: the state is never
 /// left silently unwitnessed.
 pub(super) fn state_answered_rows(
-    ir: &EssIr,
+    models: &super::caller::InvocationModels<'_>,
     command: &ResolvedCommand,
     entity: &EntityHandle,
     held: &super::StateName,
     actors: &BTreeMap<QualifiedName, ActorRef>,
 ) -> Result<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>), RefusalCause> {
+    let ir = models.arrangement;
     let mut steps = Vec::new();
     let mut source = BTreeSet::new();
     let Ok(path) = FactPath::new(EntitySpec::STATE) else {
@@ -301,7 +306,7 @@ pub(super) fn state_answered_rows(
             continue;
         }
         rows += 1;
-        let (arrangement, input) = search(
+        let (mut arrangement, input) = search(
             ir,
             entity,
             actors,
@@ -317,12 +322,17 @@ pub(super) fn state_answered_rows(
         )?;
         let (observed, view) =
             observe_fields(ir, entity, &read_by(ir, entity, &predicate), &arrangement)?;
+        models.mark(
+            super::caller::InvocationPhase::Arrange,
+            &mut arrangement.steps,
+        );
         steps.extend(arrangement.steps);
         steps.extend(observed);
         source.extend(arrangement.source);
         source.insert(view.into());
         let outcome_ref = OutcomeRef::new(command_ref.clone(), branch.name.clone());
         let supplied = supply(
+            ir,
             command,
             &input,
             reading(command, branch),
@@ -353,6 +363,7 @@ pub(super) fn state_answered_rows(
         }
         source.insert(outcome_ref.into());
     }
+    models.mark(super::caller::InvocationPhase::Act, &mut steps);
     Ok((steps, source))
 }
 
@@ -422,13 +433,35 @@ fn evaluate_row(
 ) -> Truth {
     let declared = ir.entity(entity);
     let mut fields = declared.fields.clone();
+    // A stored instant the predicate orders against the current time is held only as a
+    // `now_offset` its creator was sent, read at the reference instant the guards are decided at
+    // (ess/22, A3); a literal one would be decided at the reference and not at a run, so it is
+    // left undetermined, as a generated one is.
+    let now_roots: BTreeSet<&str> = crate::now_offset::now_compared(predicate)
+        .into_iter()
+        .filter(|(_, whole)| *whole)
+        .filter_map(|(path, _)| {
+            declared
+                .fields
+                .iter()
+                .find(|field| field.name == path.namespace())
+                .map(|field| field.name.as_str())
+        })
+        .collect();
     let mut values: BTreeMap<String, Node> = settled
         .iter()
-        .filter_map(|(name, determined)| {
-            determined
-                .value
+        .filter_map(|(name, determined)| match &determined.value {
+            ScenarioValue::NowOffset { seconds } => crate::now_offset::reference()
+                .plus_seconds(*seconds)
+                .map(|instant| (name.clone(), Node::Text(instant.to_rfc3339()))),
+            ScenarioValue::Literal { value }
+                if now_roots.contains(name.as_str()) && *value != Node::Null =>
+            {
+                None
+            }
+            other => other
                 .as_literal()
-                .map(|value| (name.clone(), value.clone()))
+                .map(|value| (name.clone(), value.clone())),
         })
         .collect();
     // An `Optional` field no step of the arrangement wrote holds nothing (beyond10x/ess#239): the
@@ -517,6 +550,7 @@ pub(super) fn links(
             left: Operand::Fact(left),
             op: CompareOp::Eq | CompareOp::Ne,
             right: Operand::Fact(right),
+            ..
         } = leaf
         else {
             continue;
@@ -591,7 +625,7 @@ fn compares_link(
                 left: Operand::Fact(left),
                 op: CompareOp::Eq | CompareOp::Ne,
                 right: Operand::Fact(right),
-            } if pair(left, right) || pair(right, left)
+             .. } if pair(left, right) || pair(right, left)
         )
     })
 }
@@ -740,6 +774,7 @@ fn only_compared(
             left: Operand::Fact(left),
             op: CompareOp::Eq | CompareOp::Ne,
             right: Operand::Fact(right),
+            ..
         } if (row(left) && input(right)) || (input(left) && row(right)) => true,
         Predicate::Defined(path) if row(path) => true,
         other => !other.fact_paths().into_iter().any(&touches),
@@ -815,6 +850,13 @@ impl ess_primitives::facts::FactSource for RowAndInput<'_> {
             None => self.row.orders_text_by_bytes(path),
         }
     }
+
+    /// The reference instant every guard of the decision is decided at, a stored row's ordering
+    /// against `now` included (ess/22, A3): the instant each `now_offset` a row holds is read
+    /// from, as an input guard's is ([`crate::now_offset::reference`]).
+    fn now(&self) -> Option<ess_primitives::time::Rfc3339Instant> {
+        Some(crate::now_offset::reference())
+    }
 }
 
 /// `predicate` with every comparison between the row and the input replaced by `Always`: what the
@@ -885,6 +927,28 @@ fn held_node(
     Some(node.clone())
 }
 
+/// A byte length of an input stays the byte length of that input; one of a stored text is the number
+/// the row's text measures, or grounds nothing where the row holds none (decision 11).
+fn ground_derived(
+    settled: &BTreeMap<String, super::Determined>,
+    bound: &[(&str, &Node)],
+    derived: &ess_primitives::predicate::Derived,
+) -> Option<Operand> {
+    let parent = derived.parent();
+    match input_path(parent) {
+        Some(rest) if !bound.iter().any(|(name, _)| *name == parent.namespace()) => {
+            Some(Operand::Derived(derived.with_parent(rest)))
+        }
+        _ => derived
+            .value_with(&|path| {
+                held_node(settled, bound, path)
+                    .as_ref()
+                    .and_then(super::fact_value)
+            })
+            .map(Operand::Literal),
+    }
+}
+
 /// One leaf of a row/input comparison, grounded on the row: a comparison with its stored side
 /// replaced by the value held there; a quantifier over a stored collection once per element the row
 /// holds, its binder read as that element (beyond10x/ess#240). A map's elements are its values in
@@ -892,6 +956,7 @@ fn held_node(
 /// redirect_uris: r == input.application` over a row holding `{k: v}` grounds `v == application`,
 /// and the input is tried at `v`, which satisfies it, and at its neighbours, which do not. An empty
 /// collection grounds nothing: the input cannot move a quantifier over it.
+#[allow(clippy::too_many_lines)]
 fn ground_leaf(
     settled: &BTreeMap<String, super::Determined>,
     bound: &[(&str, &Node)],
@@ -913,20 +978,87 @@ fn ground_leaf(
                 .as_ref()
                 .and_then(super::fact_value)
                 .map(Operand::Literal),
+            // An offset of an input stays an offset of that input; one of a stored value is the
+            // value it names (A2), or grounds nothing where the row holds no such value.
+            Operand::Offset(offset) => {
+                let base = &offset.base;
+                match input_path(base) {
+                    Some(rest) if !bound.iter().any(|(name, _)| *name == base.namespace()) => {
+                        Some(Operand::Offset(ess_primitives::predicate::OffsetOperand {
+                            base: rest,
+                            direction: offset.direction,
+                            magnitude: offset.magnitude,
+                        }))
+                    }
+                    _ => held_node(settled, bound, base)
+                        .as_ref()
+                        .and_then(super::fact_value)
+                        .and_then(|value| offset.value_at(&value))
+                        .map(Operand::Literal),
+                }
+            }
+            Operand::Derived(derived) => ground_derived(settled, bound, derived),
             Operand::Literal(value) => Some(Operand::Literal(value.clone())),
         }
     };
     match leaf {
-        Predicate::Compare { left, op, right } => {
+        Predicate::Compare {
+            left,
+            op,
+            right,
+            kind,
+        } => {
             if let (Some(left), Some(right)) = (side(left), side(right)) {
+                // A held value against an offset of an input (`upper == input.to + 5`) is the input
+                // against the held value moved back (`to == upper - 5`), with the operator turned
+                // round: one input leaf against a literal, whose boundary the ladders try exactly
+                // and a unit either side (A2). Where the moved value is past what the type holds,
+                // nothing is grounded.
+                let (left, op, right) = match (left, right) {
+                    (Operand::Literal(held), Operand::Offset(offset)) => {
+                        let Some(bound) = offset.reversed(offset.base.clone()).value_at(&held)
+                        else {
+                            return;
+                        };
+                        (
+                            Operand::Fact(offset.base.clone()),
+                            turned(*op),
+                            Operand::Literal(bound),
+                        )
+                    }
+                    (left, right) => (left, *op, right),
+                };
                 // Only a comparison the input takes part in steers the input.
-                if matches!(left, Operand::Fact(_)) || matches!(right, Operand::Fact(_)) {
+                if matches!(left, Operand::Fact(_))
+                    || matches!(right, Operand::Fact(_) | Operand::Offset(_))
+                {
                     out.push(Predicate::Compare {
+                        kind: *kind,
                         left,
-                        op: *op,
+                        op,
                         right,
                     });
                 }
+            }
+        }
+        Predicate::TextMatch {
+            path,
+            op,
+            value: ess_primitives::predicate::TextOperand::Fact { path: operand, .. },
+        } if !bound.iter().any(|(name, _)| *name == operand.namespace()) => {
+            ground_text_operand(settled, bound, path, *op, operand, out);
+        }
+        // A calendar window over the command's input (`at: input.<path>`) steers the input as a
+        // window over that input path: its boundaries are the values the input is tried at
+        // (`docs/design/calendar-window-guards.md`). One over a stored field reads no input.
+        Predicate::Window(window) => {
+            if let Some(rest) = window
+                .at
+                .fact_path()
+                .filter(|path| !bound.iter().any(|(name, _)| *name == path.namespace()))
+                .and_then(input_path)
+            {
+                out.push(Predicate::Window(Box::new(window.map_path(|_| rest))));
             }
         }
         Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
@@ -946,6 +1078,50 @@ fn ground_leaf(
             }
         }
         _ => {}
+    }
+}
+
+/// A held text against an input (`phone starts_with {input: prefix}`, beyond10x/ess#200), grounded
+/// on the row: the input tried at a text the operator holds of against the held one, and at one
+/// that differs from it at the deciding character. No predicate spells "a prefix of", so the two
+/// are grounded as the values the input is tried at.
+fn ground_text_operand(
+    settled: &BTreeMap<String, super::Determined>,
+    bound: &[(&str, &Node)],
+    path: &FactPath,
+    op: ess_primitives::predicate::TextOp,
+    operand: &FactPath,
+    out: &mut Vec<Predicate>,
+) {
+    let (Some(input), Some(Node::Text(held))) =
+        (input_path(operand), held_node(settled, bound, path))
+    else {
+        return;
+    };
+    let values: Vec<ess_primitives::facts::FactValue> = [
+        crate::witness::text_operand_witness(op, &held),
+        crate::witness::text_operand_refutation(op, &held),
+    ]
+    .into_iter()
+    .flatten()
+    .map(ess_primitives::facts::FactValue::text)
+    .collect();
+    if !values.is_empty() {
+        out.push(Predicate::AnyOf {
+            path: input,
+            values,
+        });
+    }
+}
+
+/// `op` with its two sides swapped: `a < b` is `b > a`.
+fn turned(op: CompareOp) -> CompareOp {
+    match op {
+        CompareOp::Lt => CompareOp::Gt,
+        CompareOp::Le => CompareOp::Ge,
+        CompareOp::Gt => CompareOp::Lt,
+        CompareOp::Ge => CompareOp::Le,
+        other => other,
     }
 }
 
@@ -1136,7 +1312,7 @@ fn spread(
         let Some(sent) = mapping.get(quantified.over.namespace()) else {
             continue;
         };
-        let mut path = vec![(*sent).to_owned()];
+        let mut path: Vec<String> = sent.split('.').map(str::to_owned).collect();
         path.extend(quantified.over.segments()[1..].iter().cloned());
         if !written.insert(path.clone()) {
             continue;
@@ -1571,8 +1747,11 @@ fn row_under(
                 .sets
                 .iter()
                 .find_map(|set| match &set.value {
+                    // A path (ess/22, A4) reads inside a literal, which holds no owner's reference.
                     ResolvedPayloadValue::InputField { field, .. }
-                        if set.target == via && set.conversion.is_none() =>
+                        if set.target == via
+                            && set.conversion.is_none()
+                            && !ess_domain::command::input_path::is_path(field) =>
                     {
                         Some(field.clone())
                     }
@@ -1869,8 +2048,47 @@ fn refusal_input(
                 ) == Truth::False
         })
     };
-    let row_guards: &[Predicate] = if on_row { &halves } else { &[] };
-    let inputs = refusal_candidates(ir, entity, arrangement, command, row_guards, distinction)?;
+    // A branch answered by state — the attempted one or a sibling — whose stored guard holds the
+    // command's input to a calendar window (`docs/design/calendar-window-guards.md`) is sent an
+    // input inside that window where one exists: the branch is then selected and answered by the
+    // wrong state, which is the answer whichever of the two a target takes first. Outside the
+    // window the command's default would answer instead.
+    let windowed: Vec<Predicate> = if on_row {
+        guarded(command)
+            .filter(|other| answered_by_state(other))
+            .filter_map(|other| stored(&other.condition))
+            .filter(|predicate| {
+                predicate.windows().iter().any(|window| {
+                    window
+                        .at
+                        .fact_path()
+                        .is_some_and(|path| input_path(path).is_some())
+                })
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let mut row_guards: Vec<Predicate> = if on_row { halves.clone() } else { Vec::new() };
+    row_guards.extend(windowed.iter().cloned());
+    let mut inputs =
+        refusal_candidates(ir, entity, arrangement, command, &row_guards, distinction)?;
+    if !windowed.is_empty() {
+        let inside = |input: &BTreeMap<String, Node>| {
+            windowed.iter().all(|predicate| {
+                guard_truth_with(
+                    ir,
+                    entity,
+                    &arrangement.settled,
+                    &arrangement.unwritten,
+                    Some(&arrangement.state),
+                    predicate,
+                    Some((command, input)),
+                ) == Truth::True
+            })
+        };
+        inputs.sort_by_key(|input| !inside(input));
+    }
     let mut through_row = None;
     let mut lost_on_row = false;
     'candidates: for input in &inputs {
@@ -2102,6 +2320,7 @@ fn admit_alike(ir: &EssIr, command: &ResolvedCommand, left: &Predicate, right: &
 fn one_value_equality(guard: &Predicate) -> Predicate {
     match guard {
         Predicate::AnyOf { path, values } if values.len() == 1 => Predicate::Compare {
+            kind: ess_primitives::predicate::CompareKind::Value,
             left: Operand::Fact(path.clone()),
             op: CompareOp::Eq,
             right: Operand::Literal(values[0].clone()),
@@ -2387,7 +2606,9 @@ fn hinted(
                 hint,
                 &|path: &FactPath| match mapping.get(path.namespace()) {
                     Some(input) => {
-                        let mut segments = vec![(*input).to_owned()];
+                        // A path (ess/22, A4) is its segments.
+                        let mut segments: Vec<String> =
+                            input.split('.').map(str::to_owned).collect();
                         segments.extend(path.segments()[1..].iter().cloned());
                         FactPath::from_segments(segments)
                     }
@@ -2434,6 +2655,7 @@ fn on_literal(leaf: &Predicate) -> Option<Predicate> {
     match (left, right) {
         (Operand::Fact(_), Operand::Literal(_)) | (Operand::Literal(_), Operand::Fact(_)) => {
             Some(Predicate::Compare {
+                kind: ess_primitives::predicate::CompareKind::Value,
                 left: left.clone(),
                 op: CompareOp::Eq,
                 right: right.clone(),
@@ -2519,7 +2741,8 @@ const MAX_REACHABLE: usize = 4096;
 /// Every value `counter` holds on some run that lies within [`COUNTER_REACH`] of `literal`, or
 /// between a start and that window, one widest step either side: the starts, and each start moved
 /// by any sequence of its amounts, never leaving that span. `None` where the starts are not known
-/// or the span holds more than [`MAX_REACHABLE`] values.
+/// or any required span arithmetic is unrepresentable, or the span holds more than
+/// [`MAX_REACHABLE`] values.
 fn reachable(counter: &Counter, literal: Number) -> Option<BTreeSet<Number>> {
     let starts = counter.starts.as_ref()?;
     if starts.is_empty() {
@@ -2529,18 +2752,22 @@ fn reachable(counter: &Counter, literal: Number) -> Option<BTreeSet<Number>> {
     let widest = counter
         .amounts
         .iter()
-        .filter_map(|by| Some((*by).max(negated(*by)?)))
+        .map(|by| Some((*by).max(negated(*by)?)))
+        .collect::<Option<Vec<_>>>()?
+        .into_iter()
         .max()?;
+    let lower_window = literal.checked_add(negated(reach)?)?;
+    let upper_window = literal.checked_add(reach)?;
     let low = starts
         .iter()
         .copied()
-        .chain(literal.checked_add(negated(reach)?))
+        .chain([lower_window])
         .min()?
         .checked_add(negated(widest)?)?;
     let high = starts
         .iter()
         .copied()
-        .chain(literal.checked_add(reach))
+        .chain([upper_window])
         .max()?
         .checked_add(widest)?;
     let mut seen = BTreeSet::new();
@@ -2667,7 +2894,10 @@ fn counter_leaf(
     leaf: &Predicate,
     counters: &BTreeMap<String, Counter>,
 ) -> Option<(String, CompareOp, Number)> {
-    let Predicate::Compare { left, op, right } = leaf else {
+    let Predicate::Compare {
+        left, op, right, ..
+    } = leaf
+    else {
         return None;
     };
     let (path, op, value) = match (left, right) {
@@ -2866,6 +3096,10 @@ struct Profile {
     /// For each [`elementwise`] quantifier, which of the collection's values repeat an earlier one:
     /// rows [`spread`] writes decide every hint alike and differ only here (beyond10x/ess#240).
     shapes: Vec<Vec<usize>>,
+    /// For each `distinct` over a stored list ([`stored_distincts`]), whether the row holds two or
+    /// more elements there: a decisive row and a vacuous one decide every hint alike and differ
+    /// only here (`docs/design/expression-family-source22.md`, `distinct`).
+    decisive: Vec<bool>,
 }
 
 /// One three-valued answer, ordered so a search node can be keyed on it.
@@ -2934,11 +3168,69 @@ fn profile(
                     .collect()
             })
             .collect(),
+        decisive: stored_distincts(ir, entity, hints)
+            .iter()
+            .map(|over| {
+                matches!(
+                    held_node(&arrangement.settled, &[], over),
+                    Some(Node::Seq(items)) if items.len() >= 2
+                )
+            })
+            .collect(),
     }
 }
 
-/// How close a row sits to the guards: satisfied leaves first, then leaves on their own literal.
-fn score(profile: &Profile) -> (usize, usize) {
+/// The stored lists a `distinct` among `hints` reads outside any quantifier, in leaf order.
+fn stored_distincts(ir: &EssIr, entity: &EntityHandle, hints: &[Predicate]) -> Vec<FactPath> {
+    let declared = ir.entity(entity);
+    let mut found = Vec::new();
+    for hint in hints {
+        for (distinct, scope) in hint.distincts() {
+            if scope.is_empty()
+                && input_path(&distinct.over).is_none()
+                && declared
+                    .fields
+                    .iter()
+                    .any(|field| field.name == distinct.over.namespace())
+            {
+                found.push(distinct.over.clone());
+            }
+        }
+    }
+    found
+}
+
+/// Refuses a row that reaches its branch with a stored list a `distinct` among `hints` reads
+/// holding fewer than two elements, where no row of the same depth held more: a `distinct` over
+/// none or one element holds vacuously, and a target that compares nothing passes it
+/// (`docs/design/expression-family-source22.md`, `distinct`). The named no-witness refusal, so the
+/// branch is reported rather than witnessed by a list that decides nothing.
+fn vacuous(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    row: &Arrangement,
+    hints: &[Predicate],
+) -> Result<(), RefusalCause> {
+    for over in stored_distincts(ir, entity, hints) {
+        if !matches!(
+            held_node(&row.settled, &[], &over),
+            Some(Node::Seq(items)) if items.len() >= 2
+        ) {
+            return Err(RefusalCause::NoWitness(WitnessGap {
+                path: over.to_string(),
+                type_ref: entity.to_string(),
+                reason: "holds fewer than two elements in every row the arrangement leaves for \
+                         this branch, so a `distinct` over it would be decided only vacuously",
+            }));
+        }
+    }
+    Ok(())
+}
+
+/// How close a row sits to the guards: satisfied leaves first, then leaves on their own literal,
+/// then stored lists a `distinct` reads that hold two or more elements, so the branch a `distinct`
+/// lets through is arranged decisively rather than over a list of none or one.
+fn score(profile: &Profile) -> (usize, usize, usize) {
     (
         profile
             .leaves
@@ -2946,6 +3238,7 @@ fn score(profile: &Profile) -> (usize, usize) {
             .filter(|truth| **truth == Decided::True)
             .count(),
         profile.on_literal.iter().filter(|on| **on).count(),
+        profile.decisive.iter().filter(|held| **held).count(),
     )
 }
 
@@ -3045,17 +3338,23 @@ fn creations(
 /// entity that row is of, and each target field with the related field it copies.
 type Copies<'a> = (&'a EntityHandle, Vec<(&'a str, &'a str)>);
 
-/// Every `{related: {via: input.f, field: g}}` of `outcome`'s `sets:`, by the input `f`.
+/// Every `{related: {via: input.f, field: g}}` of `outcome`'s `sets:`, by the input `f`. A chained
+/// read (ess/22, beyond10x/ess#285) names a row of another entity than the one it copies from, and
+/// is not one of them.
 fn copies_by_input(outcome: &ResolvedOutcome) -> BTreeMap<&str, Copies<'_>> {
     let mut out: BTreeMap<&str, Copies<'_>> = BTreeMap::new();
     for set in outcome.sets.iter().filter(|set| set.conversion.is_none()) {
         if let ResolvedPayloadValue::RelatedField {
             via: ess_compiler::ir::ResolvedRelatedVia::Input { field: via, .. },
+            through,
             entity: related,
             field,
             ..
         } = &set.value
         {
+            if !through.is_empty() {
+                continue;
+            }
             out.entry(via.as_str())
                 .or_insert_with(|| (related, Vec::new()))
                 .1
@@ -3085,7 +3384,7 @@ fn through_copies(
         .map(|hint| {
             map_paths(&hint, &|path: &FactPath| match onto.get(path.namespace()) {
                 Some(field) => {
-                    let mut segments = vec![(*field).to_owned()];
+                    let mut segments: Vec<String> = field.split('.').map(str::to_owned).collect();
                     segments.extend(path.segments()[1..].iter().cloned());
                     FactPath::from_segments(segments)
                 }
@@ -3278,6 +3577,22 @@ fn successors(
     follow: &Follow,
 ) -> Vec<Arrangement> {
     let mut out = Vec::new();
+    // A move reading a related row through a stored field of this row (ess/22,
+    // beyond10x/ess#304) is sent with that reference left out, or naming a row arranged for it.
+    if super::related_guard::stored::field(driver.command).is_some() {
+        if let Ok(mut next) = super::related_guard::stored::step(
+            ir,
+            driver,
+            arrangement,
+            actors,
+            Distinction::PLAIN,
+            arranging,
+        ) {
+            follow.raise(ir, driver, &arrangement.settled, &mut next.settled);
+            out.push(next);
+        }
+        return out;
+    }
     if uses(driver.command) {
         let own = self::hints(driver.command);
         let fields = read_fields(ir, entity, &own);
@@ -3598,7 +3913,7 @@ fn search_rows<T>(
         if fresh.is_empty() {
             break;
         }
-        let mut best: Option<((usize, usize), usize, T)> = None;
+        let mut best: Option<((usize, usize, usize), usize, T)> = None;
         for (index, node) in fresh.iter().enumerate() {
             match goal(node) {
                 Ok(Some(found)) => {
@@ -3614,6 +3929,7 @@ fn search_rows<T>(
             }
         }
         if let Some((_, index, found)) = best {
+            vacuous(ir, entity, &fresh[index], hints)?;
             return Ok((fresh.swap_remove(index), found));
         }
         let mut next = Vec::new();
@@ -3824,6 +4140,78 @@ fn unarrangeable(
         }
     }
     None
+}
+
+/// The refusal for a stored instant one of `predicates` orders against the current time that no
+/// arranging branch can carry (ess/22, `docs/design/expression-family-source22.md`, A3), naming the
+/// stored path; `None` where every such instant can be carried.
+///
+/// Synthesis decides a row's guards at the fixed reference instant, and only a value sent to the
+/// creator as a `now_offset` keeps that decision at a run: it travels through the creator's
+/// `sets:` into the row, resolved from the moment the run sends it. So such an instant is arranged
+/// only as a whole field some arranging branch writes from a whole input field without a
+/// conversion. One the implementation generates, a literal, a converted value, a member inside a
+/// structure and an element a quantifier binds cannot be, and are refused rather than decided at
+/// the reference: no clock value is fabricated.
+///
+/// `creating` counts only the branches that create the row: a stored instant every creator leaves
+/// to the implementation or to a literal may still be carried by a later branch writing it from its
+/// input, and where no arrangement reaches the branch that way the search's refusal is restated as
+/// this one.
+pub(super) fn now_uncarried(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    predicates: &[Predicate],
+    creating: bool,
+) -> Option<RefusalCause> {
+    let declared = ir.entity(entity);
+    let all = ir.drivers();
+    let drivers: Vec<&Driver<'_>> = all
+        .get(entity)
+        .map_or(&[][..], Vec::as_slice)
+        .iter()
+        .filter(|driver| !creating || matches!(driver.effect, ResolvedEffect::Creates))
+        .collect();
+    for predicate in predicates {
+        for (path, whole) in crate::now_offset::now_compared(predicate) {
+            let root = path.namespace();
+            if !declared.fields.iter().any(|field| field.name == root) {
+                continue;
+            }
+            let carried = whole
+                && drivers.iter().any(|driver| {
+                    driver.outcome.sets.iter().any(|set| {
+                        set.target == root
+                            && set.conversion.is_none()
+                            && matches!(set.value, ResolvedPayloadValue::InputField { .. })
+                    })
+                });
+            if !carried {
+                return Some(RefusalCause::NoWitness(WitnessGap {
+                    path: format!("{}.{path}", declared.name),
+                    type_ref: "Timestamp".into(),
+                    reason: "a stored instant ordered against the current time is arranged only \
+                             as a whole field an arranging branch writes from a whole input \
+                             field, sent as a now_offset; this one is generated, a literal, \
+                             converted or inside a value, and no clock value is fabricated",
+                }));
+            }
+        }
+    }
+    None
+}
+
+/// [`now_uncarried`] over every arranging branch, as the refusal; otherwise over the creators only,
+/// as the refusal a failed search is restated as.
+fn now_refusal(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    predicates: &[Predicate],
+) -> Result<Option<RefusalCause>, RefusalCause> {
+    match now_uncarried(ir, entity, predicates, false) {
+        Some(refusal) => Err(refusal),
+        None => Ok(now_uncarried(ir, entity, predicates, true)),
+    }
 }
 
 /// Records, for a row no input selects `outcome` on, every input whose own stored and input guards
@@ -4065,11 +4453,15 @@ pub(super) fn prepare(
     if let Some(refusal) = unarrangeable(ir, entity, &fields) {
         return Err(refusal);
     }
+    // A stored instant ordered against `now` no arranging branch carries is refused by name; one
+    // no creator carries names the search's refusal where no later branch reached it (A3).
+    let named = now_refusal(ir, entity, &hints)?;
     // Where a quantifier over a stored collection compares its elements with the input, the row
     // and input witness it element by element wherever some arrangement does ([`arranged_row`]),
     // and every refinement below keeps that.
     let ((arrangement, input), found) =
-        arranged_row(ir, command, outcome, entity, actors, &hints, &label)?;
+        arranged_row(ir, command, outcome, entity, actors, &hints, &label)
+            .map_err(|cause| named.unwrap_or(cause))?;
     let order = found.order();
     let strict = |node: &Arrangement, input: &BTreeMap<String, Node>| {
         witnesses_elements(ir, command, entity, &hints, node, input)
@@ -4461,7 +4853,7 @@ pub(super) fn absent(
         caller: std::collections::BTreeMap::new(),
         command: command_ref.clone(),
         actor: actors.get(&command.name).cloned(),
-        input: supply(command, &input, None, None, &BTreeMap::new()),
+        input: supply(ir, command, &input, None, None, &BTreeMap::new()),
     }];
     let forbidden = not_emitted(ir, &[]);
     for event in &forbidden {
@@ -4498,13 +4890,14 @@ pub(super) fn absent(
 /// default is further witnessed against come last, with the further rows refused on their own under
 /// the scenario while it stands (a side of a counter limit, beyond10x/ess#226).
 pub(super) fn around(
-    ir: &EssIr,
+    models: &super::caller::InvocationModels<'_>,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     setup: &mut Setup,
     supplied: &BTreeMap<String, ScenarioValue>,
 ) -> Result<(Vec<ScenarioStep>, Vec<RefusalCause>), RefusalCause> {
+    let ir = models.arrangement;
     // Whether the scenario already arranged the second owner a link comparison names (#193).
     let mut present = reading(command, outcome)
         .and_then(|subject| other_owner(ir, &subject.entity))
@@ -4514,17 +4907,18 @@ pub(super) fn around(
     taken.extend(setup.instance.iter().cloned());
     let mut refused = Vec::new();
     let (further, source) = boundaries(
-        ir,
+        models,
         command,
         outcome,
         actors,
         (&setup.settled, setup.before.as_ref()),
         (&mut present, &mut taken),
-        &mut refused,
+        (&setup.steps, &mut refused),
     )?;
     let (overlapping, overlap_source) =
-        overlaps(ir, command, outcome, actors, (&mut present, &mut taken))?;
-    let mut steps = around_row(ir, command, outcome, actors, setup, supplied)?;
+        overlaps(models, command, outcome, actors, (&mut present, &mut taken))?;
+    let mut steps = around_row(models, command, outcome, actors, setup, supplied)?;
+    models.mark(super::caller::InvocationPhase::Act, &mut steps);
     steps.extend(further);
     steps.extend(overlapping);
     setup.source.extend(source);
@@ -4561,13 +4955,14 @@ fn leaves_changed(
 }
 
 fn around_row(
-    ir: &EssIr,
+    models: &super::caller::InvocationModels<'_>,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     setup: &mut Setup,
     supplied: &BTreeMap<String, ScenarioValue>,
 ) -> Result<Vec<ScenarioStep>, RefusalCause> {
+    let ir = models.arrangement;
     let Some(subject) = reading(command, outcome) else {
         return Ok(Vec::new());
     };
@@ -4575,7 +4970,8 @@ fn around_row(
     // generated before this construct, and its moving branch is observed as it always was.
     let changes = uses_predicate(command) && moves_row(outcome);
     if outcome.subject.is_none() {
-        let (steps, source) = absent(ir, command, subject, actors)?;
+        let (mut steps, source) = absent(ir, command, subject, actors)?;
+        models.mark(super::caller::InvocationPhase::Act, &mut steps);
         setup.steps.splice(0..0, steps);
         setup.source.extend(source);
     } else if !changes {
@@ -4677,15 +5073,17 @@ fn positive(
                 Predicate::Any(children)
             }
         }
-        Predicate::Compare { left, op, right }
-            if negate && counter_leaf(predicate, counters).is_some() =>
-        {
-            Predicate::Compare {
-                left: left.clone(),
-                op: negated_op(*op),
-                right: right.clone(),
-            }
-        }
+        Predicate::Compare {
+            left,
+            op,
+            right,
+            kind,
+        } if negate && counter_leaf(predicate, counters).is_some() => Predicate::Compare {
+            kind: *kind,
+            left: left.clone(),
+            op: negated_op(*op),
+            right: right.clone(),
+        },
         other if negate => Predicate::Not(Box::new(other.clone())),
         other => other.clone(),
     }
@@ -4745,6 +5143,7 @@ pub(super) fn limit_goals(
                     continue;
                 }
                 let pin = Predicate::Compare {
+                    kind: ess_primitives::predicate::CompareKind::Value,
                     left: Operand::Fact(path.clone()),
                     op: CompareOp::Eq,
                     right: Operand::Literal(ess_primitives::facts::FactValue::Number(value)),
@@ -4843,6 +5242,52 @@ fn further_goals(
             goals.push((goal, kind));
         }
     }
+    for goal in window_goals(ir, entity, hints) {
+        if !goals.iter().any(|(known, _)| known == &goal) {
+            goals.push((goal, Further::Plain));
+        }
+    }
+    goals
+}
+
+/// One further row per deciding instant of each calendar window a stored-field predicate holds a
+/// stored field, or the command's `input.<path>`, to (`docs/design/calendar-window-guards.md`):
+/// that field at that instant. A row is kept for the branch it selects, so the inside instants
+/// witness the guarded branch and the outside ones its default — an inclusive `to`, an extra or a
+/// dropped day, a moved `from` and an ignored offset each decide one of them otherwise.
+fn window_goals(ir: &EssIr, entity: &EntityHandle, hints: &[Predicate]) -> Vec<Goal> {
+    let declared = ir.entity(entity);
+    let mut goals: Vec<Goal> = Vec::new();
+    for hint in hints {
+        for window in hint.windows() {
+            let Some(path) = window.at.fact_path() else {
+                continue;
+            };
+            let stored = path.segments().len() == 1
+                && declared
+                    .fields
+                    .iter()
+                    .any(|field| field.name == path.namespace());
+            if !stored && input_path(path).is_none() {
+                continue;
+            }
+            for instant in window.deciding_instants() {
+                let goal = (
+                    Vec::new(),
+                    vec![Predicate::compare(
+                        Operand::Fact(path.clone()),
+                        CompareOp::Eq,
+                        Operand::Literal(ess_primitives::facts::FactValue::Text(
+                            instant.to_rfc3339(),
+                        )),
+                    )],
+                );
+                if !goals.contains(&goal) {
+                    goals.push(goal);
+                }
+            }
+        }
+    }
     goals
 }
 
@@ -4935,6 +5380,47 @@ fn conjunct_goals(
                 witnessed,
                 witnessed_state,
             ));
+            // `defined(flag) && flag == true` cannot isolate absence while also holding the
+            // comparison true. Keep the independent conjuncts (including command input), omit
+            // only comparisons reading this Optional field, and let full branch selection check
+            // the resulting row. Present false and absent remain distinct witnesses (#307).
+            for child in conjuncts {
+                let Predicate::Defined(path) = child else {
+                    continue;
+                };
+                if path.segments().len() != 1
+                    || !ir
+                        .entity(entity)
+                        .fields
+                        .iter()
+                        .any(|field| field.name == path.namespace() && field.type_ref.is_optional())
+                    || row_truth(
+                        ir,
+                        entity,
+                        witnessed,
+                        &BTreeSet::new(),
+                        witnessed_state,
+                        child,
+                    ) == Truth::False
+                {
+                    continue;
+                }
+                let dependent = |predicate: &&Predicate| {
+                    matches!(predicate, Predicate::Compare { .. })
+                        && predicate
+                            .fact_paths()
+                            .iter()
+                            .any(|read| read.segments().starts_with(path.segments()))
+                };
+                if conjuncts.iter().any(|predicate| dependent(&predicate)) {
+                    let held = conjuncts
+                        .iter()
+                        .filter(|predicate| *predicate != child && !dependent(predicate))
+                        .cloned()
+                        .collect();
+                    goals.push((vec![child.clone()], held));
+                }
+            }
         }
     }
     goals
@@ -5072,7 +5558,7 @@ const MAX_BOUNDARIES: usize = 8;
 /// refused, under the scenario, and the branch's own witness stands.
 #[allow(clippy::too_many_lines)]
 pub(super) fn boundaries(
-    ir: &EssIr,
+    models: &super::caller::InvocationModels<'_>,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
@@ -5081,8 +5567,9 @@ pub(super) fn boundaries(
         Option<&super::StateName>,
     ),
     (present, taken): (&mut bool, &mut BTreeSet<super::InstanceName>),
-    refused: &mut Vec<RefusalCause>,
+    (known, refused): (&[ScenarioStep], &mut Vec<RefusalCause>),
 ) -> Result<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>), RefusalCause> {
+    let ir = models.arrangement;
     let mut steps = Vec::new();
     let mut source = BTreeSet::new();
     // A branch naming no subject of its own — a refusal — reads the row its siblings name.
@@ -5104,13 +5591,79 @@ pub(super) fn boundaries(
     );
     let command_ref = CommandRef::new(command.name.clone());
     let outcome_ref = OutcomeRef::new(command_ref.clone(), outcome.name.clone());
-    // A command comparing a link with an input decides every guard with the input bound: `selects`
-    // reads every branch, so a goal of its own reads the link through a sibling too.
-    let decided_with_input = !links(ir, command, entity).is_empty();
+    // A boundary may isolate a stored flag while holding an input conjunct true. Decide the
+    // complete goal with that input bound, including ordinary scalar inputs, not only links.
+    // `selects` reads every branch, so a goal can also read input through a sibling.
+    let decided_with_input = !links(ir, command, entity).is_empty()
+        || hints.iter().any(|hint| reads_input(ir, entity, hint));
     let mut rows = 0;
+    // The absent-row witness a branch naming no subject of its own is opened with: a literal
+    // identity the scenario sends, which no seeded row may carry (beyond10x/ess#413).
+    let opened = if models.seeds.is_empty() || outcome.subject.is_some() {
+        Vec::new()
+    } else {
+        absent(ir, command, read, actors).map_or_else(|_| Vec::new(), |(opened, _)| opened)
+    };
+    // A calendar window's further row is a stored field at one instant: the search is steered to it
+    // by that instant, which the guard's own candidates need not reach.
+    let windowed = window_goals(ir, entity, &hints);
     for ((refuted, held), kind) in goals {
+        let steered: Vec<Predicate>;
+        let hints: &[Predicate] = if windowed.contains(&(refuted.clone(), held.clone())) {
+            steered = hints.iter().chain(&held).cloned().collect();
+            &steered
+        } else {
+            &hints
+        };
+        let limit = kind != Further::Plain;
+        let linked = compares_link(
+            ir,
+            command,
+            entity,
+            &refuted.iter().chain(&held).cloned().collect::<Vec<_>>(),
+        );
+        let undecided = std::cell::Cell::new(false);
+        let mut decide = |node: &Arrangement| {
+            if !decided_with_input {
+                let truth = |predicate: &Predicate| {
+                    row_truth(
+                        ir,
+                        entity,
+                        &node.settled,
+                        &node.unwritten,
+                        Some(&node.state),
+                        predicate,
+                    )
+                };
+                if refuted.iter().any(|child| truth(child) != Truth::False)
+                    || held.iter().any(|child| truth(child) != Truth::True)
+                {
+                    return Ok(None);
+                }
+                if limit {
+                    return answer_at(ir, command, entity, node);
+                }
+                return Ok(
+                    reach_at(ir, command, outcome, entity, node)?.map(|input| (input, outcome))
+                );
+            }
+            let mut unsure = undecided.get();
+            let found = goal_input(
+                ir,
+                (command, outcome),
+                (entity, node),
+                (linked_inputs(ir, command, entity, node)?, &|_| Ok(true)),
+                (&refuted, &held),
+                &mut unsure,
+            );
+            // Kept whatever the goal answered, as the flag it replaces was.
+            undecided.set(unsure);
+            Ok(found?.map(|input| (input, outcome)))
+        };
+        // A side of a counter limit whose nearest value lies past the search's reach is not
+        // searched; an explicitly admitted seed row is offered before it is refused (#413).
         if let Further::Past(why) = &kind {
-            refused.push(limit_unreached(
+            let refusal = limit_unreached(
                 entity,
                 command,
                 outcome,
@@ -5119,87 +5672,101 @@ pub(super) fn boundaries(
                     predicate: why.clone(),
                     tried: 0,
                 }),
-            ));
+            );
+            // Past the bound a goal adds no row, seeded or not.
+            if rows >= MAX_BOUNDARIES {
+                refused.push(refusal);
+                continue;
+            }
+            let known = [known, &opened, &steps].concat();
+            match seeded(
+                models,
+                command,
+                (entity, read),
+                (&known, &free_instance(ir, entity, rows + 1, taken), 0),
+                &mut decide,
+            ) {
+                Ok((arrangement, (input, answering))) => {
+                    rows += 1;
+                    if answering.name != outcome.name {
+                        source.insert(
+                            OutcomeRef::new(command_ref.clone(), answering.name.clone()).into(),
+                        );
+                    }
+                    send_for_row(
+                        models,
+                        command,
+                        answering,
+                        actors,
+                        (read, &fields),
+                        arrangement,
+                        (&input, (&mut *present, &mut *taken)),
+                        (&mut steps, &mut source),
+                    )?;
+                }
+                Err(notes) => refused.push(annotated(refusal, &notes)),
+            }
             continue;
         }
-        let limit = kind == Further::Limit;
-        let linked = compares_link(
-            ir,
-            command,
-            entity,
-            &refuted.iter().chain(&held).cloned().collect::<Vec<_>>(),
-        );
-        // A side of a counter limit is refused on its own; any other goal refuses the branch.
-        let mut left = |cause: Option<(&RefusalCause, bool)>| -> Result<(), RefusalCause> {
+        if rows >= MAX_BOUNDARIES {
+            // Past the bound a goal adds no row; one isolating a link comparison was not searched,
+            // so whether a row meets it is unknown, and it is refused rather than left unwitnessed.
             match left_unwitnessed(
                 (entity, command, outcome),
                 (&refuted, &held),
                 (linked, limit),
-                cause,
+                None,
             ) {
-                Some(refusal) if limit => {
-                    refused.push(refusal);
-                    Ok(())
-                }
-                Some(refusal) => Err(refusal),
-                None => Ok(()),
+                Some(refusal) if limit => refused.push(refusal),
+                Some(refusal) => return Err(refusal),
+                None => {}
             }
-        };
-        if rows >= MAX_BOUNDARIES {
-            // Past the bound a goal adds no row; one isolating a link comparison was not searched,
-            // so whether a row meets it is unknown, and it is refused rather than left unwitnessed.
-            left(None)?;
             continue;
         }
-        let mut undecided = false;
         let found = search_unbound(
             ir,
             entity,
             actors,
-            &hints,
+            hints,
             rows + 1,
             "boundary",
             taken,
-            |node| {
-                if !decided_with_input {
-                    let truth = |predicate: &Predicate| {
-                        row_truth(
-                            ir,
-                            entity,
-                            &node.settled,
-                            &node.unwritten,
-                            Some(&node.state),
-                            predicate,
-                        )
-                    };
-                    if refuted.iter().any(|child| truth(child) != Truth::False)
-                        || held.iter().any(|child| truth(child) != Truth::True)
-                    {
-                        return Ok(None);
-                    }
-                    if limit {
-                        return answer_at(ir, command, entity, node);
-                    }
-                    return Ok(
-                        reach_at(ir, command, outcome, entity, node)?.map(|input| (input, outcome))
-                    );
-                }
-                Ok(goal_input(
-                    ir,
-                    (command, outcome),
-                    (entity, node),
-                    (linked_inputs(ir, command, entity, node)?, &|_| Ok(true)),
-                    (&refuted, &held),
-                    &mut undecided,
-                )?
-                .map(|input| (input, outcome)))
-            },
+            &mut decide,
         )?;
         let (arrangement, (input, answering)) = match found {
             Ok(found) => found,
             Err(cause) => {
-                left(Some((&cause, undecided)))?;
-                continue;
+                // A side of a counter limit is refused on its own; any other goal refuses the
+                // branch. Only a side actually refused is offered an explicitly admitted seed row.
+                match left_unwitnessed(
+                    (entity, command, outcome),
+                    (&refuted, &held),
+                    (linked, limit),
+                    Some((&cause, undecided.get())),
+                ) {
+                    Some(refusal) if limit => {
+                        let known = [known, &opened, &steps].concat();
+                        match seeded(
+                            models,
+                            command,
+                            (entity, read),
+                            (
+                                &known,
+                                &free_instance(ir, entity, rows + 1, taken),
+                                spent(&cause),
+                            ),
+                            &mut decide,
+                        ) {
+                            Ok(found) => found,
+                            Err(notes) => {
+                                refused.push(annotated(refusal, &notes));
+                                continue;
+                            }
+                        }
+                    }
+                    Some(refusal) => return Err(refusal),
+                    None => continue,
+                }
             }
         };
         rows += 1;
@@ -5207,7 +5774,7 @@ pub(super) fn boundaries(
             source.insert(OutcomeRef::new(command_ref.clone(), answering.name.clone()).into());
         }
         send_for_row(
-            ir,
+            models,
             command,
             answering,
             actors,
@@ -5340,7 +5907,7 @@ fn unreached(
 /// name the row binds is added to `taken`, so no later further row of the scenario binds it again.
 #[allow(clippy::too_many_arguments)]
 fn send_for_row(
-    ir: &EssIr,
+    models: &super::caller::InvocationModels<'_>,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
@@ -5352,6 +5919,7 @@ fn send_for_row(
     ),
     (steps, source): (&mut Vec<ScenarioStep>, &mut BTreeSet<EssSemanticRef>),
 ) -> Result<(), RefusalCause> {
+    let ir = models.arrangement;
     let entity = &read.entity;
     let bound = &bind_links(
         ir,
@@ -5368,10 +5936,15 @@ fn send_for_row(
     let outcome_ref = OutcomeRef::new(command_ref.clone(), outcome.name.clone());
     let (observed, view) = observe_fields(ir, entity, fields, &arrangement)?;
     arrangement.steps.extend(observed);
+    models.mark(
+        super::caller::InvocationPhase::Arrange,
+        &mut arrangement.steps,
+    );
     steps.append(&mut arrangement.steps);
     source.append(&mut arrangement.source);
     source.insert(view.into());
     let supplied = supply(
+        ir,
         command,
         input,
         Some(read),
@@ -5384,6 +5957,8 @@ fn send_for_row(
         actor: actors.get(&command.name).cloned(),
         input: supplied.clone(),
     });
+    let sent = steps.len() - 1;
+    models.mark(super::caller::InvocationPhase::Act, &mut steps[sent..]);
     steps.push(ScenarioStep::ExpectOutcome {
         outcome: outcome_ref,
     });
@@ -5436,12 +6011,13 @@ fn send_for_row(
 /// The row-free half of the rule — a refusal over the identity, and every command reading no
 /// stored field — is `overlap_inputs` in the parent module.
 fn overlaps(
-    ir: &EssIr,
+    models: &super::caller::InvocationModels<'_>,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     (present, taken): (&mut bool, &mut BTreeSet<super::InstanceName>),
 ) -> Result<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>), RefusalCause> {
+    let ir = models.arrangement;
     let mut steps = Vec::new();
     let mut source = BTreeSet::new();
     let Some(own) = super::is_input_guarded_refusal(outcome)
@@ -5531,7 +6107,7 @@ fn overlaps(
         };
         rows += 1;
         send_for_row(
-            ir,
+            models,
             command,
             outcome,
             actors,
@@ -5840,5 +6416,498 @@ fn eventual_observation(
         after,
         source,
         unobserved: Vec::new(),
+    }
+}
+
+// ---- explicit synthesis seeds (beyond10x/ess#413, `docs/design/synthesis-seeds.md`) -----------
+
+/// A seeded arrangement and the input that selects the branch on it, or why each admitted row of
+/// the entity could not be offered.
+pub(super) type Seeded = Result<(Setup, BTreeMap<String, Node>), Vec<String>>;
+
+/// [`prepare`] from an explicitly admitted seed row, where no bounded arrangement selects the
+/// branch: the first eligible row, in admitted order, on which an input grounded from the row
+/// itself selects it. The row is established, observed, and then sent the command, exactly as an
+/// arranged row is. `Err` carries why rows of the entity could not be offered.
+pub(super) fn prepare_seeded(
+    models: &super::caller::InvocationModels<'_>,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    ordinary: &RefusalCause,
+) -> Result<Seeded, RefusalCause> {
+    let ir = models.arrangement;
+    let Some(subject) = reading(command, outcome) else {
+        return Ok(Err(Vec::new()));
+    };
+    let entity = &subject.entity;
+    let hints = hints(command);
+    let fields = read_fields(ir, entity, &hints);
+    // The absent-row witness this branch is opened with, where it names no subject of its own.
+    let opened = if outcome.subject.is_none() {
+        absent(ir, command, subject, actors).map_or_else(|_| Vec::new(), |(opened, _)| opened)
+    } else {
+        Vec::new()
+    };
+    let instance = super::instance_name(&ir.entity(entity).name, Distinction::PLAIN);
+    let found = seeded(
+        models,
+        command,
+        (entity, subject),
+        (&opened, &instance, spent(ordinary)),
+        &mut |node: &Arrangement| {
+            if let Some(input) = reach_linked(
+                ir,
+                command,
+                outcome,
+                entity,
+                node,
+                &|_, _| true,
+                Order::Unique,
+            )? {
+                return Ok(Some((input, false)));
+            }
+            if super::is_input_guarded_refusal(outcome) {
+                return Ok(
+                    refusal_first(ir, command, outcome, entity, node)?.map(|input| (input, true))
+                );
+            }
+            Ok(None)
+        },
+    );
+    let (mut arrangement, (input, before_row)) = match found {
+        Ok(found) => found,
+        Err(notes) => return Ok(Err(notes)),
+    };
+    let bound = bind_links(
+        ir,
+        command,
+        outcome,
+        entity,
+        actors,
+        &mut arrangement,
+        &input,
+        &mut false,
+    )?;
+    observe_prepared(ir, entity, fields, before_row, &mut arrangement)?;
+    let after = match outcome.subject.as_ref().map(|own| &own.effect) {
+        Some(ResolvedEffect::Deletes) => None,
+        effect => Some(effect.and_then(ResolvedEffect::transition).map_or_else(
+            || arrangement.state.clone(),
+            |transition| transition.to.clone(),
+        )),
+    };
+    Ok(Ok((
+        Setup {
+            steps: arrangement.steps,
+            instance: Some(arrangement.instance),
+            bound,
+            source: arrangement.source,
+            after,
+            before: Some(arrangement.state),
+            settled: arrangement.settled,
+        },
+        input,
+    )))
+}
+
+/// The rows the bounded search of an obligation visited before it was refused: what its seed
+/// attempts leave of the arrangement budget ([`MAX_NODES`]) they share with that search.
+pub(super) fn spent(cause: &RefusalCause) -> usize {
+    match cause {
+        RefusalCause::GuardUnsatisfiable { tried, .. } => *tried,
+        _ => 0,
+    }
+}
+
+/// The first admitted seed row of `entity`, in admitted order, that `goal` accepts, established as
+/// `instance` — or why each row of the entity that could not be offered was not. A row the goal
+/// merely does not hold adds no note: it answers another obligation. Each row offered to `goal` is
+/// one node of the arrangement budget the obligation's own search already `spent` some of; no seed
+/// is offered once the budget is gone.
+fn seeded<T>(
+    models: &super::caller::InvocationModels<'_>,
+    command: &ResolvedCommand,
+    (entity, subject): (&EntityHandle, &ResolvedSubject),
+    (known, instance, spent): (&[ScenarioStep], &super::InstanceName, usize),
+    goal: &mut impl FnMut(&Arrangement) -> Result<Option<T>, RefusalCause>,
+) -> Result<(Arrangement, T), Vec<String>> {
+    let ir = models.arrangement;
+    let declared = EntityRef::from(entity);
+    let mut notes = Vec::new();
+    let mut budget = MAX_NODES.saturating_sub(spent);
+    for seed in models
+        .seeds
+        .rows()
+        .iter()
+        .filter(|seed| seed.entity == declared)
+    {
+        let name = format!("`{}#{}`", seed.source.as_str(), seed.instance);
+        let why = seed_unsupported(ir, command, entity, subject)
+            .map(str::to_owned)
+            .or_else(|| {
+                collides(known, &declared, &seed.identity).then(|| {
+                    "its identity collides with an identity the scenario already establishes, \
+                     sends or observes"
+                        .to_owned()
+                })
+            });
+        if let Some(why) = why {
+            notes.push(format!("synthesis seed {name} not applied: {why}"));
+            continue;
+        }
+        if budget == 0 {
+            notes.push(format!(
+                "synthesis seed {name} not applied: the arrangement budget of {MAX_NODES} rows \
+                 this obligation shares with its bounded search is spent"
+            ));
+            break;
+        }
+        budget -= 1;
+        let node = seed_arrangement(ir, entity, seed, instance.clone());
+        match goal(&node) {
+            Ok(Some(found)) => return Ok((node, found)),
+            Ok(None) => {}
+            Err(cause) => notes.push(format!("synthesis seed {name} not applied: {cause}")),
+        }
+    }
+    Err(notes)
+}
+
+/// Why no seed row can be offered for `command` reading `subject`: a row that belongs to an owner,
+/// a command comparing a link to one, or a row the command does not name by an input. Seeds
+/// establish one independent row; related and owned arrangements stay ordinary or refused.
+fn seed_unsupported(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    entity: &EntityHandle,
+    subject: &ResolvedSubject,
+) -> Option<&'static str> {
+    if ir.owner_of(entity).is_some() {
+        return Some("the row belongs to an owner, which a seed does not establish");
+    }
+    if !links(ir, command, entity).is_empty() {
+        return Some("the command compares a link to an owner, which a seed does not establish");
+    }
+    if !matches!(subject.instance, ResolvedInstance::Supplied { .. }) {
+        return Some("the command does not name the row it reads by an input");
+    }
+    None
+}
+
+/// Whether `identity` of `entity` is already established by a step the scenario holds, or is sent
+/// or observed anywhere in one as a value: a seeded row never shares an identity with another row
+/// or an absence witness of the same scenario, and is never renamed to avoid one.
+fn collides(known: &[ScenarioStep], entity: &EntityRef, identity: &Node) -> bool {
+    fn holds(value: &serde_json::Value, wanted: &serde_json::Value) -> bool {
+        value == wanted
+            || match value {
+                serde_json::Value::Array(items) => items.iter().any(|item| holds(item, wanted)),
+                serde_json::Value::Object(members) => {
+                    members.values().any(|member| holds(member, wanted))
+                }
+                _ => false,
+            }
+    }
+    let Ok(wanted) = serde_json::to_value(identity) else {
+        return true;
+    };
+    known.iter().any(|step| match step {
+        ScenarioStep::EstablishEntity {
+            entity: other,
+            identity: held,
+            ..
+        } => other == entity && held == identity,
+        other => serde_json::to_value(other).is_ok_and(|value| holds(&value, &wanted)),
+    })
+}
+
+/// The row an admitted seed is, as an arrangement: established by one `establish_entity` step,
+/// every literal field settled at its declared type, and every Optional field it leaves out absent.
+fn seed_arrangement(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    seed: &SeedRecord,
+    instance: super::InstanceName,
+) -> Arrangement {
+    let declared = ir.entity(entity);
+    let mut types = BTreeSet::new();
+    for field in declared
+        .fields
+        .iter()
+        .chain(std::iter::once(&declared.identity))
+    {
+        super::reachable_types(ir, &field.type_ref, &mut types);
+    }
+    let mut source = BTreeSet::from([EssSemanticRef::from(EntityRef::from(entity))]);
+    source.extend(types.into_iter().map(EssSemanticRef::from));
+    Arrangement {
+        instance: instance.clone(),
+        state: seed.state.clone(),
+        steps: vec![ScenarioStep::EstablishEntity {
+            instance,
+            entity: seed.entity.clone(),
+            identity: seed.identity.clone(),
+            fields: seed.fields.clone(),
+            state: seed.state.clone(),
+        }],
+        source,
+        settled: declared
+            .fields
+            .iter()
+            .filter_map(|field| {
+                seed.fields.get(&field.name).map(|value| {
+                    (
+                        field.name.clone(),
+                        super::Determined {
+                            value: ScenarioValue::literal(value.clone()),
+                            type_ref: field.type_ref.clone(),
+                        },
+                    )
+                })
+            })
+            .collect(),
+        unwritten: declared
+            .fields
+            .iter()
+            .filter(|field| field.type_ref.is_optional() && !seed.fields.contains_key(&field.name))
+            .map(|field| field.name.clone())
+            .collect(),
+    }
+}
+
+/// The first further instance name from `first` no step of the scenario binds yet: where a seeded
+/// further row is established, numbered as [`search_unbound`] numbers its rows.
+fn free_instance(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    first: usize,
+    taken: &BTreeSet<super::InstanceName>,
+) -> super::InstanceName {
+    let name = &ir.entity(entity).name;
+    // Of `taken.len() + 1` distinct names, at least one is not taken.
+    (first..=first + taken.len())
+        .map(|nth| super::instance_name(name, Distinction::further(nth)))
+        .find(|instance| !taken.contains(instance))
+        .expect("one of more names than are taken is free")
+}
+
+/// `refusal`, saying why each admitted seed row of its entity was not applied.
+pub(super) fn annotated(refusal: RefusalCause, notes: &[String]) -> RefusalCause {
+    match refusal {
+        RefusalCause::GuardUnsatisfiable { predicate, tried } if !notes.is_empty() => {
+            RefusalCause::GuardUnsatisfiable {
+                predicate: format!("{predicate}; {}", notes.join("; ")),
+                tried,
+            }
+        }
+        other => other,
+    }
+}
+
+#[cfg(test)]
+mod counter413a_arithmetic_completeness {
+    use super::{reachable, BTreeSet, Counter, Number};
+
+    fn counter(amounts: &[i64]) -> Counter {
+        Counter {
+            starts: Some(vec![Number::from(0_i64)]),
+            amounts: amounts.iter().copied().map(Number::from).collect(),
+        }
+    }
+
+    #[test]
+    fn max_literal_cannot_drop_the_required_upper_window() {
+        let result = reachable(&counter(&[1]), Number::from(i64::MAX));
+        assert!(
+            result.is_none(),
+            "overflowing upper window must be incomplete, not a complete tiny set: {result:?}"
+        );
+    }
+
+    #[test]
+    fn min_literal_cannot_drop_the_required_lower_window() {
+        let result = reachable(&counter(&[-1]), Number::from(i64::MIN));
+        assert!(
+            result.is_none(),
+            "overflowing lower window must be incomplete, not a complete tiny set: {result:?}"
+        );
+    }
+
+    #[test]
+    fn representable_windows_with_unrepresentable_padding_remain_incomplete() {
+        for (literal, step) in [(i64::MAX - 16, 1), (i64::MIN + 16, -1)] {
+            let result = reachable(&counter(&[step]), Number::from(literal));
+            assert!(
+                result.is_none(),
+                "widest-step padding at {literal} must remain checked: {result:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_unrepresentable_negative_magnitude_cannot_be_omitted_from_the_widest_step() {
+        // The positive sibling makes filter_map's silent omission observable: it cannot stand in
+        // for the larger negative step whose magnitude does not fit the signed arithmetic.
+        let result = reachable(&counter(&[i64::MIN, 1]), Number::from(0_i64));
+        assert!(
+            result.is_none(),
+            "every step's required magnitude must be representable: {result:?}"
+        );
+    }
+
+    #[test]
+    fn finite_two_and_empty_start_completeness_are_unchanged() {
+        let result = reachable(&counter(&[1]), Number::from(2_i64));
+        let expected: BTreeSet<_> = (0_i64..=19).map(Number::from).collect();
+        assert_eq!(result, Some(expected));
+        let mut empty = counter(&[i64::MIN, 1]);
+        empty.starts = Some(Vec::new());
+        assert_eq!(
+            reachable(&empty, Number::from(i64::MAX)),
+            Some(BTreeSet::new())
+        );
+    }
+}
+
+#[cfg(test)]
+mod seed_budget {
+    use super::{reading, seeded, spent, Arrangement, RefusalCause, MAX_NODES};
+    use crate::authored::Source;
+    use crate::synthesize::caller::InvocationModels;
+    use crate::synthesize::{AdmittedSeeds, SeedSelection};
+
+    const MODEL: &str = "format: ess/20
+system: counter
+version: v1
+domain: counter.model
+entities:
+  - name: counter.model.Counter
+    identity: {name: id, type: Uuid}
+    fields:
+      - {name: revision, type: Integer}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+commands:
+  - name: counter.model.Create
+    outcomes:
+      - name: created
+        creates: counter.model.Counter
+        instance: id
+        sets: {revision: 0}
+        emits: [counter.model.Created]
+        payload:
+          counter.model.Created: {id: {generated: true}}
+  - name: counter.model.Authorize
+    input:
+      - {name: id, type: Uuid}
+    outcomes:
+      - name: exhausted
+        when_subject: {predicate: revision >= 100}
+        error: counter.model.Exhausted
+      - name: authorized
+        updates: counter.model.Counter
+        instance: id
+        sets: {revision: {increment: 1}}
+        emits: [counter.model.Authorized]
+        payload:
+          counter.model.Authorized: {id: input.id}
+errors:
+  - {name: counter.model.Exhausted, fields: []}
+events:
+  - name: counter.model.Created
+    fields: [{name: id, type: Uuid}]
+  - name: counter.model.Authorized
+    fields: [{name: id, type: Uuid}]
+views:
+  - name: counter.model.Counters
+    source: counter.model.Counter
+    consistency: read_your_writes
+    fields:
+      - {name: id, type: Uuid}
+      - {name: revision, type: Integer}
+";
+
+    const SEED: &str = "type: ess-scenario/2
+domain: counter.model
+scenario: counter-row
+summary: One counter row.
+arrange:
+  - instance: row
+    entity: counter.model.Counter
+    setup:
+      identity: 00000000-0000-4000-8000-00000000e001
+      fields: {revision: 7}
+      state: Active
+assert:
+  - view: counter.model.Counters
+    contains: {id: {$instance: row}, revision: 7}
+";
+
+    /// Seed attempts share the arrangement budget their obligation's bounded search spent part of
+    /// (beyond10x/ess#413, `docs/design/synthesis-seeds.md`): with the budget left, a row is
+    /// offered; with it gone, none is, and the refusal says why.
+    #[test]
+    fn a_seed_attempt_is_one_node_of_the_budget_its_search_spent() {
+        use ess_compiler::{resolve::compile, source::SourceMap};
+        use ess_domain::{spec::RawSpecFile, system::Source as File, Specification};
+        let spec = Specification::assemble([(
+            File::new("counter.yaml"),
+            RawSpecFile::parse(MODEL).unwrap(),
+        )])
+        .unwrap_or_else(|errors| panic!("{errors}"));
+        let ir = compile(&spec, &SourceMap::new()).unwrap_or_else(|error| panic!("{error:?}"));
+        let seeds = AdmittedSeeds::compile(
+            &ir,
+            &[SeedSelection {
+                source: Source::new("row.yaml", SEED),
+                instance: crate::InstanceName::new("row").unwrap(),
+            }],
+        )
+        .unwrap_or_else(|error| panic!("{error}"));
+        let models = InvocationModels::seeded(&ir, &seeds);
+        let command = ir
+            .commands()
+            .values()
+            .find(|command| command.name.to_string() == "counter.model.Authorize")
+            .unwrap();
+        let outcome = command
+            .outcomes
+            .iter()
+            .find(|outcome| outcome.name.to_string() == "authorized")
+            .unwrap();
+        let subject = reading(command, outcome).unwrap();
+        let instance = crate::InstanceName::new("counter").unwrap();
+        let mut offered = 0;
+        let mut accept = |_: &Arrangement| -> Result<Option<()>, RefusalCause> {
+            offered += 1;
+            Ok(Some(()))
+        };
+        let left = seeded(
+            &models,
+            command,
+            (&subject.entity, subject),
+            (&[], &instance, MAX_NODES - 1),
+            &mut accept,
+        );
+        assert!(left.is_ok());
+        let spent_all = seeded(
+            &models,
+            command,
+            (&subject.entity, subject),
+            (&[], &instance, MAX_NODES),
+            &mut accept,
+        );
+        let Err(notes) = spent_all else {
+            panic!("a seed was offered past the budget")
+        };
+        assert_eq!(offered, 1, "no row is offered once the budget is spent");
+        assert!(notes[0].contains("budget"), "{notes:?}");
+        assert_eq!(
+            spent(&RefusalCause::GuardUnsatisfiable {
+                predicate: String::new(),
+                tried: 9
+            }),
+            9
+        );
     }
 }

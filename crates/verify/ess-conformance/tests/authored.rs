@@ -263,8 +263,6 @@ fn adversary_entity_setup_null_identity_is_refused_at_source_validation() {
     let result = authoring(&ir, &source);
     if result.is_complete() {
         let mut suite = ess_conformance::synthesize::synthesize(&ir).suite;
-        suite.provenance.suite_version =
-            ess_conformance::scenario::SuiteFormat::parse("ess-conformance/6").unwrap();
         suite.scenarios = result.scenarios.clone();
         let error = ess_conformance::AdmittedSuite::from_suite(&suite).unwrap_err();
         assert!(
@@ -380,8 +378,6 @@ mod entity_setup_execution {
 
     fn suite(ir: &EssIr) -> ConformanceSuite {
         let mut result = ess_conformance::synthesize::synthesize(ir).suite;
-        result.provenance.suite_version =
-            ess_conformance::scenario::SuiteFormat::parse("ess-conformance/6").unwrap();
         let first = authoring(ir, CALL_HISTORY_SETUP);
         assert!(first.is_complete(), "{:?}", first.refusals);
         result.scenarios = first.scenarios;
@@ -471,6 +467,7 @@ mod entity_setup_execution {
         let mut old = suite;
         old.provenance.suite_version =
             ess_conformance::scenario::SuiteFormat::parse("ess-conformance/4").unwrap();
+        old.provenance.scenario_initial_state = None;
         assert!(ess_conformance::AdmittedSuite::from_suite(&old).is_err());
         assert!(old.to_canonical_json().is_err());
         assert!(ess_conformance::go::emit(&old).is_err());
@@ -551,7 +548,7 @@ mod entity_setup_execution {
             );
             assert_eq!(
                 output.status.success(),
-                matches!(behavior, "good" | "unsupported" | "absent-capability"),
+                behavior == "good",
                 "{behavior}: {}",
                 String::from_utf8_lossy(&output.stderr)
             );
@@ -562,7 +559,6 @@ mod entity_setup_execution {
             .unwrap();
             let expected = match behavior {
                 "good" => "passed",
-                "unsupported" | "absent-capability" => "inconclusive",
                 _ => "failed",
             };
             assert_eq!(report["execution_status"], expected, "{behavior}: {report}");
@@ -571,12 +567,11 @@ mod entity_setup_execution {
                 ess_conformance::CountReport::from_json(&report.to_string(), &admitted).unwrap();
             let checked_status = match behavior {
                 "good" => ess_conformance::CountStatus::Passed,
-                "unsupported" | "absent-capability" => ess_conformance::CountStatus::Inconclusive,
                 _ => ess_conformance::CountStatus::Failed,
             };
             assert_eq!(checked.execution_status(), checked_status);
             if matches!(behavior, "unsupported" | "absent-capability") {
-                assert_eq!(report["counts"]["skipped"], 2);
+                assert_eq!(report["counts"]["unsupported"], 2);
                 assert_eq!(report["counts"]["passed"], 0);
                 assert_ne!(report["conformance_status"], "passed");
             }
@@ -1546,17 +1541,44 @@ fn a_value_read_off_an_event_nothing_required_is_refused() {
 #[test]
 fn a_reference_where_the_suite_compares_a_value_it_carries_is_refused() {
     // `ExpectEvent`'s payload is compared against values the suite holds, so a reference there is a
-    // claim the format cannot make — refused rather than silently dropped.
+    // claim the format cannot make — refused rather than silently dropped — at any field that is
+    // not the instance's identity.
     let ir = example("billing");
     let body = format!(
         "arrange:\n  - instance: made\n    entity: billing.invoice.Invoice\n\
          {CREATED}    events:\n      - event: billing.invoice.InvoiceCreated\n        \
-         payload: {{invoice_id: {{$instance: made}}}}\n"
+         payload: {{amount: {{$instance: made}}}}\n"
     );
     assert!(matches!(
         cause(&ir, &document(&body)),
-        Cause::NotComparable { field, .. } if field == "invoice_id"
+        Cause::NotComparable { field, .. } if field == "amount"
     ));
+}
+
+#[test]
+fn a_captured_instance_at_an_event_field_typed_as_its_identity_is_compared() {
+    // beyond10x/ess#273: the identity resolves as an input's does, so the event's `invoice_id` is
+    // compared with the invoice the run captured, in an `expect_event_values` step.
+    let ir = example("billing");
+    let body = format!(
+        "{ARRANGED}{CREATED}{CAPTURED}  - at: 2026-01-05T09:00:01Z\n    \
+         command: billing.invoice.IssueInvoice\n    input:\n      \
+         invoice_id: {{$instance: made}}\n      issued_at: 2026-01-05T09:00:01Z\n    \
+         outcome: issued\n    events:\n      - event: billing.invoice.InvoiceIssued\n        \
+         payload: {{invoice_id: {{$instance: made}}}}\n"
+    );
+    let authoring = authoring(&ir, &document(&body));
+    assert!(authoring.is_complete(), "{:#?}", authoring.refusals);
+    let scenario = authoring.scenarios.values().next().expect("one scenario");
+    assert!(scenario.steps.iter().any(|step| matches!(
+        step,
+        ScenarioStep::ExpectEventValues { event, payload, .. }
+            if event.to_string() == "billing.invoice.InvoiceIssued"
+                && payload.get("invoice_id")
+                    == Some(&ess_conformance::ScenarioValue::instance(
+                        ess_conformance::InstanceName::new("made").unwrap()
+                    ))
+    )));
 }
 
 #[test]
@@ -1926,7 +1948,7 @@ fn refusable() -> Vec<(&'static str, Vec<String>)> {
         )),
         billing(format!(
             "{ARRANGED}{CREATED}    events:\n      - event: billing.invoice.InvoiceCreated\n        \
-             payload: {{invoice_id: {{$instance: made}}}}\n"
+             payload: {{amount: {{$instance: made}}}}\n"
         )),
         billing(format!(
             "{ARRANGED}{CREATED}{CAPTURED}  - at: 2026-01-05T09:00:01Z\n    \
@@ -2097,7 +2119,8 @@ fn an_ungranted_actor_is_accepted_where_the_act_expects_the_refusal() {
                 actor.as_ref().map(ToString::to_string).unwrap_or_default()
             ),
             ScenarioStep::ExpectNotGranted { actor, unpublished } => format!(
-                "not granted to {actor}, publishing no {}",
+                "not granted to {}, publishing no {}",
+                actor.as_ref().map(ToString::to_string).unwrap_or_default(),
                 unpublished
                     .iter()
                     .map(ToString::to_string)
@@ -2395,6 +2418,6 @@ fn authored_aggregate_presence_keeps_026_and_valid_scalar_reads_keep_the_predica
         );
     }
     let authored = authoring(&ir, &body("total.amount > 0"));
-    assert!(authored.refusals.is_empty());
+    assert_eq!(authored.refusals.len(), 0);
     assert_eq!(authored.scenarios.len(), 1);
 }

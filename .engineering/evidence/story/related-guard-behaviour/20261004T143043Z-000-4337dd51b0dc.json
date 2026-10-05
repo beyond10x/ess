@@ -1,0 +1,14 @@
+{
+  "at": "2026-10-04T14:30:43Z",
+  "actor": "human:timo",
+  "artifact": "story:related-guard-behaviour",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:related-guard-behaviour-319-20261004-r1",
+    "review": "review-result:related-guard-behaviour-319-20261004-r1",
+    "outcome": "fixed"
+  }
+}

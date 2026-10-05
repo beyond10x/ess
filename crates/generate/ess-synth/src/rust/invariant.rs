@@ -21,7 +21,9 @@ use ess_compiler::ir::{EssIr, ResolvedBody, ResolvedEntity, ResolvedTypeRef};
 use ess_domain::entity::Invariant;
 use ess_domain::Primitive;
 use ess_primitives::facts::{FactPath, FactValue};
-use ess_primitives::predicate::{CompareOp, FoldOp, Operand, Predicate, Quantified, TextOp};
+use ess_primitives::predicate::{
+    CompareOp, FoldOp, Operand, Predicate, Quantified, TextOp, TextOperand,
+};
 
 use super::{name, Emit};
 use crate::failure::{TargetFailure, TargetFailureCause, TargetFailureCode};
@@ -260,7 +262,9 @@ impl<'a> Check<'a> {
             Predicate::All(children) => format!("iv::all([{}])", self.children(children)?),
             Predicate::Any(children) => format!("iv::any([{}])", self.children(children)?),
             Predicate::Not(inner) => format!("iv::not({})", self.predicate(inner)?),
-            Predicate::Compare { left, op, right } => self.compare(left, *op, right)?,
+            Predicate::Compare {
+                left, op, right, ..
+            } => self.compare(left, *op, right)?,
             Predicate::Truthy(path) => format!("iv::truthy({})", self.fact(path)?),
             Predicate::Defined(path) => match self.walk(path)? {
                 Walked::Value { reach, .. } => reach.defined(),
@@ -280,8 +284,15 @@ impl<'a> Check<'a> {
                     TextOp::Contains => "Contains",
                 };
                 let literal = match value {
-                    FactValue::Text(text) => format!("Some({text:?})"),
-                    _ => "None".to_owned(),
+                    TextOperand::Literal(FactValue::Text(text)) => format!("Some({text:?})"),
+                    TextOperand::Literal(_) => "None".to_owned(),
+                    // No invariant reads a parameter or an input (beyond10x/ess#200).
+                    TextOperand::Fact { .. } => {
+                        return Err(format!(
+                            "`{predicate}` compares with a parameter or an input, which no \
+                             invariant reads"
+                        ))
+                    }
                 };
                 format!(
                     "iv::text_match({}, iv::TextOp::{op}, {literal})",
@@ -305,6 +316,22 @@ impl<'a> Check<'a> {
             }
             Predicate::Forall(quantified) => self.quantified("forall", quantified)?,
             Predicate::Exists(quantified) => self.quantified("exists", quantified)?,
+            // The shared invariant evaluator compares no keys across a list's elements: refused by
+            // name rather than dropped from the check.
+            Predicate::Distinct(_) => {
+                return Err(format!(
+                    "`{predicate}` requires distinct list members, which the generated invariant \
+                     check does not evaluate"
+                ))
+            }
+            // Validation admits a calendar window only in a command guard, and the shared invariant
+            // evaluator reads no window: refused by name rather than rendered as something else.
+            Predicate::Window(window) => {
+                return Err(format!(
+                    "`{window}` is a calendar window, which the generated invariant check does not \
+                     evaluate"
+                ))
+            }
         })
     }
 
@@ -330,6 +357,33 @@ impl<'a> Check<'a> {
         let mut operand = |this: &mut Self, operand: &Operand| -> Result<String, String> {
             match operand {
                 Operand::Literal(value) => Ok(literal(value)),
+                // The shared invariant evaluator moves no value by a constant (A2): refused by
+                // name rather than read as the text it is spelled like.
+                Operand::Offset(offset) => Err(format!(
+                    "`{offset}` moves a fact by a constant, which the generated invariant check \
+                     does not evaluate"
+                )),
+                // The UTF-8 byte length of a `String` (decision 11): `str::len`, which a Rust
+                // string — UTF-8 by type — always has.
+                Operand::Derived(derived) => {
+                    let parent = derived.parent();
+                    match this.walk(parent)? {
+                        Walked::Value {
+                            reach,
+                            terminal:
+                                ResolvedTypeRef::Primitive {
+                                    name: Primitive::String,
+                                },
+                        } => {
+                            let length = |at: &str| format!("iv::Fact::count({at}.as_str().len())");
+                            Ok(reach.map(length, length))
+                        }
+                        Walked::Absent => Ok("None".to_owned()),
+                        _ => Err(format!(
+                            "`{derived}` measures `{parent}`, which is no String"
+                        )),
+                    }
+                }
                 Operand::Fact(path) => {
                     let walked = this.walk(path)?;
                     if let Walked::Value { terminal, .. } = &walked {

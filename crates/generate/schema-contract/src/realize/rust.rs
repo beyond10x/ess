@@ -76,7 +76,7 @@ pub(super) fn emit(plan: &Plan, package: &str) -> Result<Realization, Refused> {
         ", \"raw_value\""
     };
     let time = if plan.has_timestamp() {
-        "time = { version = \"=0.3.55\", features = [\"formatting\", \"parsing\"] }\n"
+        "time = { version = \"=0.3.45\", features = [\"formatting\", \"parsing\"] }\n"
     } else {
         ""
     };

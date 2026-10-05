@@ -2,9 +2,14 @@
 //!
 //! This crate performs no IO and chooses no host-owned value or policy. A successful projection
 //! contains validated runtime definitions plus the complete typed binding obligations that remain
-//! for a host. Unsupported source shapes are returned together in deterministic semantic order.
+//! for a host. Unsupported source shapes are returned together in deterministic semantic order:
+//! a command refused as a whole still has each of its branches checked, and an entity with no
+//! definition version still has its fields and rules checked. [`subset`] is the catalogue of what
+//! lowers and what is refused.
 
 #![allow(missing_docs)]
+
+pub mod subset;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
@@ -30,8 +35,8 @@ use ess_domain::name::QualifiedName;
 use ess_domain::types::Primitive;
 use ess_primitives::facts::{FactPath, FactValue};
 use ess_primitives::predicate::{CompareOp, Operand, Predicate, Quantified, TextOp};
-use ess_service_contract::ServiceIr;
-use ess_synth::PlannedCapability;
+use ess_service_contract::{ServiceDiagnostic, ServiceIr};
+use ess_synth::{PlannedCapability, SynthesisPlan};
 use serde_json::{Map, Number, Value};
 use sha2::{Digest, Sha256};
 
@@ -384,8 +389,44 @@ impl LoweringDiagnostics {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoweringDiagnostic {
     pub code: LoweringCode,
+    /// Where the refused construct is in the model, such as `ns.Command.outcome.sets.field`.
     pub path: String,
+    /// The refused construct, as a row of [`subset::CONSTRUCTS`] names it.
+    pub construct: &'static str,
     pub message: String,
+}
+
+impl std::fmt::Display for LoweringDiagnostic {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}: {} ({}): {}",
+            self.path, self.code, self.construct, self.message
+        )
+    }
+}
+
+/// Why [`lower_component`] lowered nothing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ComponentLoweringError {
+    /// The component's service contract could not be extracted, for example because the model
+    /// declares no component of that name.
+    Component(Vec<ServiceDiagnostic>),
+    /// The component was extracted and lowering refused it, with every refusal.
+    Lowering(LoweringDiagnostics),
+}
+
+/// Lowers one component of a compiled model: its service contract is extracted against the model's
+/// own synthesis plan, then [`lower`]ed.
+pub fn lower_component(
+    ir: &EssIr,
+    component: &ComponentName,
+    options: &LoweringOptions,
+) -> Result<LoweredService, ComponentLoweringError> {
+    let plan = SynthesisPlan::of(ir);
+    let service = ess_service_contract::extract(ir, &plan, component)
+        .map_err(ComponentLoweringError::Component)?;
+    lower(&service, options).map_err(ComponentLoweringError::Lowering)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -453,6 +494,38 @@ pub enum LoweringCode {
     /// entity-core decides from a command's arguments and the one row its request addresses, and
     /// has no read of another entity's row.
     RelatedGuardUnsupported,
+    /// A union lowered as a field declares a unit variant (ess/22, beyond10x/ess#418): its value is
+    /// the tag alone, and every entity-core union variant admits a payload member, so a lowered
+    /// definition would accept `{"kind": "Open", "value": …}`, which ESS refuses.
+    UnitVariantUnsupported,
+    /// A predicate compares a fact with one constant offset of another (ess/22, `upper == lower +
+    /// 5`, `expires_at <= issued_at - 24h`): entity-core has no operand that moves a value by a
+    /// constant, and lowering the offset as the text it is spelled like, or as its base alone,
+    /// would decide a different rule.
+    OffsetUnsupported,
+    /// A predicate requires that no two elements of a list share a key (ess/22, `distinct: {in,
+    /// as, by}`): entity-core has no condition that compares keys across a list's elements, and
+    /// a quantifier over one element at a time decides a different rule.
+    DistinctUnsupported,
+    /// A predicate compares the UTF-8 byte length of a text (ess/22, `label.utf8_bytes <= 255`,
+    /// `{utf8_bytes: label}`): entity-core resolves `count` on arrays and maps only and has no
+    /// address for a text's byte length, and lowering it as a read of the text, or of a field
+    /// spelled `label.utf8_bytes`, would decide a different rule.
+    Utf8BytesUnsupported,
+    /// A branch guarded by the rows a selector selects, or a value read from the one row it selects
+    /// (ess/22, `when_related: {entity, where, …}`, `{related: {entity, where, field}}`,
+    /// beyond10x/ess#228, #299): entity-core decides from a command's arguments and the one row its
+    /// request addresses, and has neither a query over other rows nor the atomic authority to read
+    /// them in one decision.
+    RowSetUnsupported,
+    /// A guard holds an instant to a calendar window (ess/22, `window: {at, days, from, to,
+    /// offset}`): entity-core has no weekday or time-of-day operand, and no clock for `at: now`, so
+    /// any lowering would decide a different rule.
+    CalendarWindowUnsupported,
+    /// A refusal changes its addressed row before answering its error (ess/22, `compensates:
+    /// true`, beyond10x/ess#197): an entity-core refusal changes nothing, and lowering the branch
+    /// as a refusal would drop the change the specification promises.
+    CompensatingRefusalUnsupported,
 }
 
 /// Projects one admitted component-scoped service contract.
@@ -470,6 +543,7 @@ pub fn lower(
                 return Err(LoweringDiagnostics(vec![LoweringDiagnostic {
                     code: LoweringCode::TargetDefinitionRefused,
                     path: "determinism.definitions".to_owned(),
+                    construct: LoweringCode::TargetDefinitionRefused.construct(),
                     message: "repeated lowering produced different canonical definition bytes"
                         .to_owned(),
                 }]));
@@ -480,6 +554,7 @@ pub fn lower(
     Err(LoweringDiagnostics(vec![LoweringDiagnostic {
         code: LoweringCode::TargetDefinitionRefused,
         path: "determinism".to_owned(),
+        construct: LoweringCode::TargetDefinitionRefused.construct(),
         message: "repeated lowering produced different typed output or diagnostic order".to_owned(),
     }]))
 }
@@ -546,9 +621,21 @@ impl Projector<'_> {
         path: impl Into<String>,
         message: impl Into<String>,
     ) {
+        self.diagnostic_naming(code, code.construct(), path, message);
+    }
+
+    /// [`Self::diagnostic`] for a code that refuses more than one construct, naming which.
+    fn diagnostic_naming(
+        &mut self,
+        code: LoweringCode,
+        construct: &'static str,
+        path: impl Into<String>,
+        message: impl Into<String>,
+    ) {
         self.diagnostics.push(LoweringDiagnostic {
             code,
             path: path.into(),
+            construct,
             message: message.into(),
         });
     }
@@ -570,6 +657,50 @@ impl Projector<'_> {
         predicate: &Predicate,
         at: &str,
     ) {
+        for window in predicate.windows() {
+            self.diagnostic(
+                LoweringCode::CalendarWindowUnsupported,
+                at,
+                format!(
+                    "`{window}` holds an instant to a calendar window, and Entity Runtime has no \
+                     weekday, time-of-day or clock operand; any lowering would decide a different \
+                     rule"
+                ),
+            );
+        }
+        if predicate.reads_offset() {
+            self.diagnostic(
+                LoweringCode::OffsetUnsupported,
+                at,
+                format!(
+                    "`{predicate}` compares with one constant offset of a fact, and Entity Runtime \
+                     has no operand that moves a value by a constant; lowering the offset as text, \
+                     or as its base alone, would decide a different rule"
+                ),
+            );
+        }
+        if predicate.reads_distinct() {
+            self.diagnostic(
+                LoweringCode::DistinctUnsupported,
+                at,
+                format!(
+                    "`{predicate}` requires distinct list members, and Entity Runtime has no \
+                     condition that compares keys across a list's elements; a quantifier over one \
+                     element at a time would decide a different rule"
+                ),
+            );
+        }
+        if predicate.reads_utf8_bytes() {
+            self.diagnostic(
+                LoweringCode::Utf8BytesUnsupported,
+                at,
+                format!(
+                    "`{predicate}` compares the UTF-8 byte length of a text, and Entity Runtime \
+                     has no address for one; lowering it as a read of the text, or of a field of \
+                     that name, would decide a different rule"
+                ),
+            );
+        }
         if predicate.uses_case_fold() {
             self.diagnostic(
                 LoweringCode::CaseFoldUnsupported,
@@ -690,9 +821,10 @@ impl Projector<'_> {
                 .entities()
                 .get(&name)
                 .expect("closure names a resolved entity");
-            let Some(version) = self.options.definition_versions.get(&name).copied() else {
-                continue;
-            };
+            // An entity with no version (`MissingDefinitionVersion`) is still lowered, for the
+            // refusals in its fields and rules, and then dropped with its binding obligations.
+            let version = self.options.definition_versions.get(&name).copied();
+            let requirements = self.requirements.len();
             let mut fields = BTreeMap::new();
             let identity_location = SemanticLocation::EntityIdentity {
                 entity: name.clone(),
@@ -795,6 +927,10 @@ impl Projector<'_> {
                         values: values.clone(),
                     });
             }
+            let Some(version) = version else {
+                self.requirements.truncate(requirements);
+                continue;
+            };
             self.definitions.insert(
                 name.clone(),
                 EntityDefinition {
@@ -968,6 +1104,17 @@ impl Projector<'_> {
                     ResolvedBody::Union { tag, variants } => {
                         let mut lowered = BTreeMap::new();
                         for (variant, shape) in variants {
+                            let Some(shape) = shape else {
+                                self.diagnostic(
+                                    LoweringCode::UnitVariantUnsupported,
+                                    format!("{path}.{variant}"),
+                                    format!(
+                                        "`{variant}` is a unit variant, the tag alone; an Entity \
+                                         Runtime union variant always admits a payload member"
+                                    ),
+                                );
+                                continue;
+                            };
                             lowered.insert(
                                 variant.clone(),
                                 self.lower_field_inner(
@@ -1074,7 +1221,7 @@ impl Projector<'_> {
                                     path: FactPath::new(ess_domain::NamedType::VALUE)
                                         .expect("the newtype pseudo-field is a fact path"),
                                     op: TextOp::StartsWith,
-                                    value: FactValue::text(prefix.clone()),
+                                    value: FactValue::text(prefix.clone()).into(),
                                 },
                                 &PathRewrite::Nominal {
                                     base: base.to_owned(),
@@ -1192,6 +1339,8 @@ impl Projector<'_> {
                     ResolvedBody::Union { tag, variants } => {
                         let content = if tag == "value" { "content" } else { "value" };
                         for (variant, shape) in variants {
+                            // A unit variant carries no invariant; lowering refuses it above.
+                            let Some(shape) = shape else { continue };
                             let before = out.len();
                             self.lower_nominal_invariants(
                                 shape,
@@ -1243,6 +1392,29 @@ impl Projector<'_> {
         }
     }
 
+    /// Refuses every branch of `command` that changes its row before answering its error (ess/22,
+    /// `compensates: true`, beyond10x/ess#197), and says whether it refused one: such a command is
+    /// not lowered further. An entity-core refusal produces nothing durable, so lowering the branch
+    /// would drop the change the specification promises.
+    fn refuse_compensating_refusals(&mut self, command: &ResolvedCommand) -> bool {
+        let mut refused = false;
+        for outcome in command
+            .outcomes
+            .iter()
+            .filter(|outcome| outcome.compensates)
+        {
+            self.diagnostic(
+                LoweringCode::CompensatingRefusalUnsupported,
+                format!("{}.{}", command.name, outcome.name.as_str()),
+                "a refusal that changes its addressed row before answering (ess/22, \
+                 `compensates: true`) has no Entity Runtime definition; an entity-core refusal \
+                 changes nothing",
+            );
+            refused = true;
+        }
+        refused
+    }
+
     /// Refuses every set effect of `command` by name (ess/16, beyond10x/ess#167, #175), and says
     /// whether it refused one: such a command is not lowered further.
     fn refuse_set_effects(&mut self, command: &ResolvedCommand) -> bool {
@@ -1273,11 +1445,26 @@ impl Projector<'_> {
         refused
     }
 
-    /// Refuses every branch of `command` guarded by a related row (ess/18, beyond10x/ess#211), and
+    /// Refuses every branch of `command` guarded by a related row (ess/18, beyond10x/ess#211) or by
+    /// a row set, or reading the one row a selector selects (ess/22, beyond10x/ess#228, #299), and
     /// says whether it refused one: such a command is not lowered further.
     fn refuse_related_guards(&mut self, command: &ResolvedCommand) -> bool {
         let mut refused = false;
         for outcome in &command.outcomes {
+            if matches!(outcome.condition, ResolvedCondition::RelatedSet { .. })
+                || outcome_reads_selection(outcome)
+            {
+                self.diagnostic(
+                    LoweringCode::RowSetUnsupported,
+                    format!("{}.{}.when_related", command.name, outcome.name.as_str()),
+                    "a branch reading the rows a selector selects (ess/22, `when_related: {entity, \
+                     where, …}` or `{related: {entity, where, field}}`) has no Entity Runtime \
+                     definition; an entity-core operation reads its arguments and the one row its \
+                     request names, and has no query over other rows",
+                );
+                refused = true;
+                continue;
+            }
             if matches!(outcome.condition, ResolvedCondition::Related { .. }) {
                 self.diagnostic(
                     LoweringCode::RelatedGuardUnsupported,
@@ -1292,14 +1479,105 @@ impl Projector<'_> {
         refused
     }
 
-    #[allow(clippy::too_many_lines)]
+    /// Lowers `command`, or — when it is refused as a whole — still walks each of its branches, so
+    /// that one refusal does not hide another (beyond10x/ess#231).
     fn build_command(&mut self, command: &ResolvedCommand) {
-        let command_path = command.name.to_string();
-        if self.refuse_set_effects(command) {
-            return;
+        let first = self.diagnostics.len();
+        if !self.lower_command(command) {
+            self.walk_refused_command(command, first);
         }
-        if self.refuse_related_guards(command) {
-            return;
+    }
+
+    /// Walks every branch of a command refused as a whole, for the refusals inside its branches.
+    /// Nothing walked is kept: the command already carries a diagnostic, so the lowering returns
+    /// no output. A branch without a subject is walked against the command's first subject entity;
+    /// a command with none (`StatelessCommandUnsupported`) has only its input and response walked.
+    /// A construct the command level already refused, at the same path or one enclosing it or
+    /// enclosed by it, is not reported a second time.
+    fn walk_refused_command(&mut self, command: &ResolvedCommand, first: usize) {
+        let refused = self.diagnostics[first..]
+            .iter()
+            .map(|diagnostic| (diagnostic.code, diagnostic.path.clone()))
+            .collect::<Vec<_>>();
+        let walked_from = self.diagnostics.len();
+        let requirements = self.requirements.len();
+        let command_path = command.name.to_string();
+        self.schema_for_fields(
+            &command.input,
+            |field| SemanticLocation::CommandInput {
+                command: command.name.clone(),
+                field: field.to_owned(),
+            },
+            &format!("{command_path}.input"),
+        );
+        self.schema_for_fields(
+            &command.response,
+            |field| SemanticLocation::CommandResponse {
+                command: command.name.clone(),
+                field: field.to_owned(),
+            },
+            &format!("{command_path}.response"),
+        );
+        let entities = self.service.source().entities();
+        let fallback = command
+            .outcomes
+            .iter()
+            .find_map(|outcome| outcome.subject.as_ref())
+            .map(|subject| subject.entity.name());
+        for (index, outcome) in command.outcomes.iter().enumerate() {
+            let Some(entity) = outcome
+                .subject
+                .as_ref()
+                .map(|subject| subject.entity.name())
+                .or(fallback)
+                .and_then(|name| entities.get(name))
+            else {
+                continue;
+            };
+            let is_create = outcome
+                .subject
+                .as_ref()
+                .is_some_and(|subject| subject.effect == ResolvedEffect::Creates);
+            self.lower_outcome(
+                command,
+                entity,
+                outcome,
+                index,
+                is_create,
+                None,
+                None,
+                &mut SlotBook::default(),
+                &mut BTreeMap::new(),
+            );
+        }
+        self.requirements.truncate(requirements);
+        let encloses = |outer: &str, inner: &str| {
+            inner
+                .strip_prefix(outer)
+                .is_some_and(|rest| rest.is_empty() || rest.starts_with('.'))
+        };
+        for diagnostic in self.diagnostics.split_off(walked_from) {
+            let repeated = refused.iter().any(|(code, path)| {
+                *code == diagnostic.code
+                    && (encloses(path, &diagnostic.path) || encloses(&diagnostic.path, path))
+            });
+            if !repeated {
+                self.diagnostics.push(diagnostic);
+            }
+        }
+    }
+
+    /// Lowers `command` into its target definition and says whether it did; `false` when the
+    /// command was refused as a whole before any branch was lowered.
+    #[allow(clippy::too_many_lines)]
+    fn lower_command(&mut self, command: &ResolvedCommand) -> bool {
+        let command_path = command.name.to_string();
+        // Every one is asked before any returns, so one does not hide another.
+        let set_effects = self.refuse_set_effects(command);
+        let related_guards = self.refuse_related_guards(command);
+        let compensating = self.refuse_compensating_refusals(command);
+        if set_effects || related_guards || compensating {
+            return false;
         }
         let mut targets = BTreeSet::new();
         for outcome in &command.outcomes {
@@ -1321,7 +1599,7 @@ impl Projector<'_> {
                 &command_path,
                 "the selected command has no subject-bearing outcome and Entity Runtime has no stateless decision type",
             );
-            return;
+            return false;
         }
         if targets.len() != 1 {
             self.diagnostic(
@@ -1329,11 +1607,11 @@ impl Projector<'_> {
                 &command_path,
                 "one Entity Runtime operation cannot select outcomes for more than one entity",
             );
-            return;
+            return false;
         }
         let entity_name = targets.into_iter().next().expect("one target");
         if !self.definitions.contains_key(&entity_name) {
-            return;
+            return false;
         }
         let entity = self
             .service
@@ -1369,7 +1647,7 @@ impl Projector<'_> {
                 "a creation taken for an identity no record carries (ess/16, `unknown_instance:` on \
                  `creates:`) selects its branch by existence, which entity-core does not",
             );
-            return;
+            return false;
         }
         if has_create && has_operation {
             self.diagnostic(
@@ -1377,7 +1655,7 @@ impl Projector<'_> {
                 &command_path,
                 "creation and existing-instance effects require different Entity Runtime entrypoints",
             );
-            return;
+            return false;
         }
         let is_create = has_create;
 
@@ -1392,7 +1670,7 @@ impl Projector<'_> {
             self.supplied_identity(command)
         };
         if (is_create && observed.is_none()) || (!is_create && supplied.is_none()) {
-            return;
+            return false;
         }
 
         let mut slots = SlotBook::default();
@@ -1606,7 +1884,7 @@ impl Projector<'_> {
                     entity_name.to_string(),
                     "Entity Runtime has one unnamed creation entrypoint for an entity",
                 );
-                return;
+                return true;
             }
             definition.create = CreateDefinition {
                 emit: None,
@@ -1628,6 +1906,7 @@ impl Projector<'_> {
                 },
             );
         }
+        true
     }
 
     fn schema_for_fields(
@@ -1803,8 +2082,9 @@ impl Projector<'_> {
                 IdentityValue::Literal { value: Value::Null }
             }
             Some(mapped) if is_value_expression(&mapped.value) => {
-                self.diagnostic(
+                self.diagnostic_naming(
                     LoweringCode::ValueExpressionUnsupported,
+                    subset::value_expression(&mapped.value),
                     format!("{}.{}.identity", command.name, outcome.name.as_str()),
                     "a logical identity is not lowered from an ess/14 value expression",
                 );
@@ -1860,6 +2140,7 @@ impl Projector<'_> {
                         | ResolvedPayloadValue::InputOrGenerated { .. }
                         | ResolvedPayloadValue::Struct { .. }
                         | ResolvedPayloadValue::RelatedField { .. }
+                        | ResolvedPayloadValue::RelatedSelection { .. }
                         | ResolvedPayloadValue::CallerAttribute { .. }
                         | ResolvedPayloadValue::ChangedCount => {
                             unreachable!(
@@ -2019,9 +2300,11 @@ impl Projector<'_> {
                 };
                 when = Some(with_input_guard(held, predicate.as_ref(), &input));
             }
-            // A related-row guard is refused for the whole command before any branch is lowered
-            // (`refuse_related_guards`).
-            ResolvedCondition::Otherwise | ResolvedCondition::Related { .. } => {}
+            // A related-row guard is refused for the whole command (`refuse_related_guards`); its
+            // branches are only walked for their own refusals, and nothing of them is kept.
+            ResolvedCondition::Otherwise
+            | ResolvedCondition::Related { .. }
+            | ResolvedCondition::RelatedSet { .. } => {}
             ResolvedCondition::External { cause } => {
                 when = Some(external_evidence(command, outcome, cause, slots));
             }
@@ -2042,8 +2325,9 @@ impl Projector<'_> {
             {
                 by_existence = true;
             }
-            ResolvedCondition::UnknownInstance => self.diagnostic(
+            ResolvedCondition::UnknownInstance => self.diagnostic_naming(
                 LoweringCode::OutcomeShapeUnsupported,
+                subset::UNKNOWN_REFUSAL,
                 &path,
                 "an `unknown_instance:` branch (ess/15) has no Entity Runtime definition; a missing \
                  row is the runtime's own answer"
@@ -2110,22 +2394,26 @@ impl Projector<'_> {
         // The ess/15 outcome shapes entity-core cannot state: refused by name, like an ess/14
         // value expression, rather than lowered to a definition that means something else.
         let unsupported_shape = match outcome.subject.as_ref() {
-            Some(subject) if subject.effect == ResolvedEffect::Deletes => Some(
+            Some(subject) if subject.effect == ResolvedEffect::Deletes => Some((
+                subset::DELETES,
                 "a `deletes:` outcome (ess/15) removes its row, and entity-core has no removal",
-            ),
-            Some(subject) if subject.into.is_some() => Some(
+            )),
+            Some(subject) if subject.into.is_some() => Some((
+                subset::INTO,
                 "a creation `into:` a declared state (ess/15) starts past the lifecycle's initial \
                  state, and entity-core creates every row in its initial state",
-            ),
-            _ if outcome.accepts_nothing => Some(
+            )),
+            _ if outcome.accepts_nothing => Some((
+                subset::ACCEPTS_NOTHING,
                 "an `accepts: nothing` outcome (ess/15) is accepted with no subject, and \
                  entity-core has no stateless acceptance",
-            ),
+            )),
             _ => None,
         };
-        if let Some(message) = unsupported_shape {
-            self.diagnostic(
+        if let Some((construct, message)) = unsupported_shape {
+            self.diagnostic_naming(
                 LoweringCode::OutcomeShapeUnsupported,
+                construct,
                 &path,
                 message.to_owned(),
             );
@@ -2592,9 +2880,20 @@ impl Projector<'_> {
             | ResolvedPayloadValue::Increment { .. }
             | ResolvedPayloadValue::InputOrGenerated { .. }
             | ResolvedPayloadValue::Struct { .. }
-            | ResolvedPayloadValue::RelatedField { .. }) => {
-                self.diagnostic(
+            | ResolvedPayloadValue::RelatedField { .. }
+            | ResolvedPayloadValue::RelatedSelection { .. }) => {
+                self.diagnostic_naming(
                     LoweringCode::ValueExpressionUnsupported,
+                    subset::value_expression(value),
+                    format!("{}.{}", command.name, outcome.name.as_str()),
+                    format!("`{}` has no entity-core lowering", value.describe()),
+                );
+                None
+            }
+            value @ ResolvedPayloadValue::InputField { .. } if is_input_path(value) => {
+                self.diagnostic_naming(
+                    LoweringCode::ValueExpressionUnsupported,
+                    subset::value_expression(value),
                     format!("{}.{}", command.name, outcome.name.as_str()),
                     format!("`{}` has no entity-core lowering", value.describe()),
                 );
@@ -3432,7 +3731,35 @@ fn is_value_expression(value: &ResolvedPayloadValue) -> bool {
             | ResolvedPayloadValue::InputOrGenerated { .. }
             | ResolvedPayloadValue::Struct { .. }
             | ResolvedPayloadValue::RelatedField { .. }
-    )
+            | ResolvedPayloadValue::RelatedSelection { .. }
+    ) || is_input_path(value)
+}
+
+/// A value read through an input path (ess/22, Family F A4, `input.opening.label`): entity-core
+/// is not known to reach a member of a structured argument, so it is refused by name rather than
+/// lowered as an argument whose name merely contains dots.
+fn is_input_path(value: &ResolvedPayloadValue) -> bool {
+    matches!(value, ResolvedPayloadValue::InputField { field, .. }
+        if ess_domain::command::input_path::is_path(field))
+}
+
+/// Whether any value of `outcome` reads the one row a selector selects (ess/22).
+fn outcome_reads_selection(outcome: &ResolvedOutcome) -> bool {
+    fn reads(value: &ResolvedPayloadValue) -> bool {
+        match value {
+            ResolvedPayloadValue::RelatedSelection { .. } => true,
+            ResolvedPayloadValue::Struct { fields } => {
+                fields.iter().any(|field| reads(&field.value))
+            }
+            _ => false,
+        }
+    }
+    outcome
+        .sets
+        .iter()
+        .chain(&outcome.error_payload)
+        .chain(outcome.payload.iter().flat_map(|payload| &payload.fields))
+        .any(|field| reads(&field.value))
 }
 
 fn decode_literal(scalar: Option<&Scalar>, text: &str) -> Result<Value, LoweringCode> {
@@ -3624,8 +3951,12 @@ fn lower_typed(predicate: &Predicate, rewrite: &PathRewrite, typing: &Typing<'_>
         Predicate::Always => Condition::Literal(true),
         // A fold never reaches a lowered definition: every lowered predicate site carrying one is
         // refused as `CaseFoldUnsupported` first (`refuse_text_lengths`), and a refusal returns no
-        // output.
-        Predicate::Never | Predicate::FoldMatch { .. } => Condition::Literal(false),
+        // output. So does `distinct`, refused as `DistinctUnsupported`, and a calendar window, as
+        // `CalendarWindowUnsupported`.
+        Predicate::Never
+        | Predicate::FoldMatch { .. }
+        | Predicate::Distinct(_)
+        | Predicate::Window(_) => Condition::Literal(false),
         Predicate::All(children) if children.is_empty() => Condition::Literal(true),
         Predicate::All(children) => Condition::All {
             all: children
@@ -3643,12 +3974,14 @@ fn lower_typed(predicate: &Predicate, rewrite: &PathRewrite, typing: &Typing<'_>
         Predicate::Not(child) => Condition::Not {
             not: Box::new(lower_typed(child, rewrite, typing)),
         },
-        Predicate::Compare { left, op, right }
-            if op.needs_ordering() && typing.orders(left, right) != Ordering::Plain =>
-        {
+        Predicate::Compare {
+            left, op, right, ..
+        } if op.needs_ordering() && typing.orders(left, right) != Ordering::Plain => {
             ordered(left, *op, right, rewrite, typing)
         }
-        Predicate::Compare { left, op, right } => Condition::Compare {
+        Predicate::Compare {
+            left, op, right, ..
+        } => Condition::Compare {
             compare: Box::new(Comparison {
                 left: lower_operand(left, rewrite),
                 op: match op {
@@ -3687,9 +4020,16 @@ fn lower_typed(predicate: &Predicate, rewrite: &PathRewrite, typing: &Typing<'_>
         // Byte-wise and case-sensitive under every semantics key, `Unknown` for an unrecorded or null
         // operand and `false` for a resolved non-string, which is the ESS table, so no guard wraps
         // the condition. `fact_value` escapes a `$`-leading literal entity-core would otherwise read
-        // as a reference.
+        // as a reference. A parameter or an input (beyond10x/ess#200) is the reference operand its
+        // path rewrites to — `$args.input.<name>` in a guard — tested the same way.
         Predicate::TextMatch { path, op, value } => {
-            let operands = [rewrite.path(path), fact_value(value)];
+            let operand = match value {
+                ess_primitives::predicate::TextOperand::Literal(value) => fact_value(value),
+                ess_primitives::predicate::TextOperand::Fact { path: read, .. } => {
+                    rewrite.path(read)
+                }
+            };
+            let operands = [rewrite.path(path), operand];
             match op {
                 TextOp::StartsWith => Condition::StartsWith {
                     starts_with: operands,
@@ -3735,6 +4075,12 @@ fn lower_operand(operand: &Operand, rewrite: &PathRewrite) -> Value {
     match operand {
         Operand::Fact(path) => rewrite.path(path),
         Operand::Literal(value) => fact_value(value),
+        // Refused before lowering (`OffsetUnsupported`), so no definition carrying this is ever
+        // returned; the base alone is a reference, never the text the offset is spelled like.
+        Operand::Offset(offset) => rewrite.path(&offset.base),
+        // Refused before lowering (`Utf8BytesUnsupported`), so no definition carrying this is ever
+        // returned; the parent alone is a reference, never a field spelled `<parent>.utf8_bytes`.
+        Operand::Derived(derived) => rewrite.path(derived.parent()),
     }
 }
 
@@ -3860,6 +4206,7 @@ fn ordered(
     if typing.orders(left, right) == Ordering::Text {
         typing.refused.borrow_mut().push(
             Predicate::Compare {
+                kind: ess_primitives::predicate::CompareKind::Value,
                 left: left.clone(),
                 op,
                 right: right.clone(),

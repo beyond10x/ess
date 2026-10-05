@@ -22,6 +22,21 @@ pub(super) fn fresh(
     component: Option<&str>,
     authored: bool,
 ) -> Result<AdmittedInput> {
+    fresh_seeded(
+        ir,
+        path,
+        (component, authored),
+        &ess_conformance::synthesize::AdmittedSeeds::empty(),
+    )
+}
+/// [`fresh`], with explicitly admitted synthesis seeds (beyond10x/ess#413); the empty set is
+/// [`fresh`] itself.
+fn fresh_seeded(
+    ir: &EssIr,
+    path: Option<&Path>,
+    (component, authored): (Option<&str>, bool),
+    seeds: &ess_conformance::synthesize::AdmittedSeeds,
+) -> Result<AdmittedInput> {
     let sources = sources(path)?;
     let scope = component.map_or(Ok(Scope::System), Scope::component)?;
     let origins = if authored {
@@ -31,21 +46,26 @@ pub(super) fn fresh(
     } else {
         Origins::Generated
     };
-    Ok(coverage_build::build(ir, &sources, scope, origins)?)
+    if seeds.is_empty() {
+        return Ok(coverage_build::build(ir, &sources, scope, origins)?);
+    }
+    Ok(coverage_build::build_with_seeds(
+        ir, &sources, scope, origins, seeds,
+    )?)
 }
 pub(super) fn generate(
     input: &SpecPath,
     target: SuiteTarget,
     out: Option<&Path>,
-    component: Option<&str>,
-    scenarios: Option<&Path>,
-    authored: bool,
-    compact: bool,
+    (component, scenarios): (Option<&str>, Option<&Path>),
+    (authored, compact): (bool, bool),
+    seeds: &[String],
 ) -> Result<ExitCode> {
     let Ok((ir, _)) = super::resolved(&input.path, input.format)? else {
         return Ok(ExitCode::from(1));
     };
-    let admitted = fresh(&ir, scenarios, component, authored)?;
+    let seeds = super::synthesis_seeds(&ir, seeds)?;
+    let admitted = fresh_seeded(&ir, scenarios, (component, authored), &seeds)?;
     let suite = admitted.selected();
     let inventory = suite.coverage().expect("coverage builder");
     let compact_json;
@@ -130,11 +150,14 @@ pub(super) fn web(
     scenarios: Option<&Path>,
     out: Option<&Path>,
 ) -> Result<ExitCode> {
-    let Ok((ir, _)) = super::resolved(&input.path, input.format)? else {
+    let Ok((ir, original_sources)) = super::resolved_browser(&input.path, input.format)? else {
         return Ok(ExitCode::from(1));
     };
     let admitted = fresh(&ir, scenarios, None, true)?;
-    let artifacts = ess_conformance::web::emit_input(&ir, &admitted)?;
+    let artifacts = ess_conformance::web::emit_product(
+        &original_sources,
+        &ess_conformance::web_execution::bundle::Execution::Coverage(admitted.clone()),
+    )?;
     super::write_owned_artifacts(out, "conformance-browser", &artifacts)?;
     Ok(
         if admitted
@@ -157,7 +180,11 @@ pub(super) fn execute<R>(
     target_run: impl FnOnce() -> R,
 ) -> Result<R> {
     if suite.suite().provenance.suite_version.major() >= 8 && report_format != "2" {
-        bail!("suite/8 and /9 require explicit --report-format 2 before execution");
+        let newest = ess_conformance::scenario::SUPPORTED_SUITE_FORMATS
+            .iter()
+            .max()
+            .expect("at least one supported suite format");
+        bail!("suite/8 through /{newest} require explicit --report-format 2 before execution");
     }
     if suite.suite().provenance.suite_version.major() >= 5 && report_format != "2" {
         bail!("suite/5, /6 and /7 require explicit --report-format 2 before execution");
@@ -213,5 +240,30 @@ mod tests {
         assert_eq!(constructed.get(), 0);
         execute(&suite, "2", || constructed.set(constructed.get() + 1)).unwrap();
         assert_eq!(constructed.get(), 1);
+    }
+
+    /// The refusal names the versions it applies to, not the two it was first written for — the
+    /// rule the generated Go and TypeScript runners already state (beyond10x/ess#186).
+    #[test]
+    fn a_fresh_suite_refusal_names_every_version_it_refuses() {
+        let original = serde_json::json!({
+            "provenance":{"suite_version":"ess-conformance/34","system":"example","specification_version":"v1",
+                "spec_digest":"a".repeat(64),"contract_digest":"b".repeat(64),
+                "scenario_initial_state":"empty"},
+            "scenarios":{}
+        })
+        .to_string();
+        let suite = AdmittedSuite::from_json(&original).unwrap();
+        let newest = ess_conformance::scenario::SUPPORTED_SUITE_FORMATS
+            .iter()
+            .max()
+            .unwrap();
+        let refused = execute(&suite, "1", || ()).unwrap_err().to_string();
+        assert_eq!(
+            refused,
+            format!(
+                "suite/8 through /{newest} require explicit --report-format 2 before execution"
+            )
+        );
     }
 }

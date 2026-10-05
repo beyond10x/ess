@@ -47,9 +47,6 @@ pub const PACKAGE: &str = "essconform";
 /// Deterministic: the same suite produces the same bytes, because the three Go files are constants
 /// and the fourth is the suite's own canonical JSON.
 pub fn emit(suite: &ConformanceSuite) -> Result<Vec<GoArtifact>, crate::admission::AdmissionError> {
-    crate::direct_response::refuse_generation(suite, "Go")?;
-    crate::delivery_context::refuse_generation(suite, "Go")?;
-    crate::structured_values::refuse_generation(suite, "Go")?;
     refuse_unadmitted(suite, "Go")?;
     let json = suite.to_canonical_json()?;
     let file = |name: &str, contents: String| GoArtifact {
@@ -71,9 +68,6 @@ pub fn emit_input(
     input: &crate::coverage::AdmittedInput,
 ) -> Result<Vec<GoArtifact>, crate::admission::AdmissionError> {
     let suite = input.selected();
-    crate::direct_response::refuse_generation(suite.suite(), "Go")?;
-    crate::delivery_context::refuse_generation(suite.suite(), "Go")?;
-    crate::structured_values::refuse_generation(suite.suite(), "Go")?;
     refuse_unadmitted(suite.suite(), "Go")?;
     let file = |name: &str, contents: String| GoArtifact {
         path: format!("{PACKAGE}/{name}"),
@@ -189,6 +183,17 @@ scenario ends. `External` reports each external branch as `reached`, `unreached`
 `unarrangeable` (the target returned `ErrUnsupported` when asked to arrange it). An unarrangeable
 branch is not a disagreement and not `Unreached`; `AssertExplored` fails on it unless
 `AllowExcluded` is set. `External` is absent when the specification declares no external branch.
+
+A target whose implementation keeps durable state can implement `RestartTarget`: `Restart` stops
+every process of the implementation and starts it again over the same state. `RestartEvery: n`
+restarts the target after every `n` commands of a sequence and reads every view again, so a row
+lost in the restart fails, and so does a later creation that mints an identity already stored, as
+a counter kept only in the process does. A restart after a sequence's last command is followed by
+one more command, and `Restarts.Performed` counts only restarts a command followed. A target
+without `RestartTarget`, or whose `Restart` returns `ErrUnsupported`, is reported in
+`Restarts.Unsupported`; `AssertExplored` fails on it, and on restarts no sequence was long enough
+to reach, whatever `AllowExcluded` says. `Restarts` is absent when `RestartEvery` is zero.
+Restarts are sequential-only: `ConcurrentOptions` has none.
 
 ## Concurrent histories
 
@@ -347,19 +352,40 @@ ESS_REPORT_OUT=$PWD/report.json go test ./...
                 "ESS_REPORT_OUT=$PWD/report.json go test ./...",
                 "ESS_REPORT_FORMAT=2 ESS_REPORT_OUT=$PWD/report.json go test ./...",
             )
+            .replace(
+                "reported as skipped, which is a different fact from a failed one",
+                "reported as unsupported under `go-scenario-status/2`, with a nonzero test exit",
+            )
+            .replace(
+                "run `inconclusive`, because a target that could not answer a question has not shown the answer.",
+                "run `inconclusive`. Report/2 preserves all five categories: unsupported makes execution failed, while an ordinary target error makes execution inconclusive; both exit nonzero.",
+            )
     } else {
         readme
     }
 }
 
-/// The newest suite major the generated Go and TypeScript runners admit.
-///
-/// The Rust side of `newestSuiteMajor` in `runtime.go` and of the `SUITE_MAJORS` table in
-/// `runtime.ts`. `/28` and `/29` carry direct-return observations neither runner executes, so a
-/// package for them would be refused by its own runner at admission; [`refuse_unadmitted`] refuses
-/// it at generation instead, and `tests/generated_docs.rs` runs both emitted runners over every
-/// major and fails when either disagrees (beyond10x/ess#186).
-pub(crate) const NEWEST_ADMITTED_SUITE_MAJOR: u32 = 27;
+/// The newest suite major the generated Go runtime admits and executes.
+/// Keep this with `newestSuiteMajor` in the embedded runtime; TypeScript owns its admission cap.
+pub(crate) const NEWEST_ADMITTED_SUITE_MAJOR: u32 = 43;
+
+/// Whether the generated runtimes admit `major`: `/1` through `/37`, the conditional aggregate
+/// measure pair `/38` and `/39` (beyond10x/ess#363), the expression pair `/40` and `/41`, and the
+/// seed-bearing pair `/42` and `/43` (beyond10x/ess#413).
+pub(crate) fn admitted_major(major: u32) -> bool {
+    (1..=37).contains(&major)
+        || crate::conditional_measures::ADMITTED.contains(&major)
+        || crate::expression_format::ADMITTED.contains(&major)
+        || crate::synthesis_seeds::seed_major(major)
+}
+
+/// The refusal both emitters write for a suite major their runtime does not admit.
+pub(crate) fn unadmitted_message(target: &str, version: crate::scenario::SuiteFormat) -> String {
+    format!(
+        "the generated {target} runner admits suite versions up to `ess-conformance/43`, and \
+         would refuse `{version}`; regenerate using a supported suite version"
+    )
+}
 
 /// The oldest suite major the generated runners execute only under an explicit
 /// `ESS_REPORT_FORMAT=2`: `/5` through `/7` and `/8` onwards, the two gates in `Run` / `runWith`.
@@ -371,6 +397,7 @@ pub(crate) const REPORT_FORMAT_2_FROM_SUITE_MAJOR: u32 = 5;
 /// `tests/generated_docs.rs` holds against both runners' observed behaviour.
 pub(crate) fn requires_report_format_2(version: crate::scenario::SuiteFormat) -> bool {
     (REPORT_FORMAT_2_FROM_SUITE_MAJOR..=NEWEST_ADMITTED_SUITE_MAJOR).contains(&version.major())
+        && admitted_major(version.major())
 }
 
 /// Refuses a package whose suite version its own generated runner would refuse at admission.
@@ -382,15 +409,11 @@ pub(crate) fn refuse_unadmitted(
     target: &str,
 ) -> Result<(), crate::admission::AdmissionError> {
     let version = suite.provenance.suite_version;
-    if version.major() > NEWEST_ADMITTED_SUITE_MAJOR {
+    if !admitted_major(version.major()) {
         return Err(crate::admission::AdmissionError::new(
             "UnsupportedTarget",
             "$.provenance.suite_version",
-            format!(
-                "the generated {target} runner admits suite versions up to \
-                 `ess-conformance/{NEWEST_ADMITTED_SUITE_MAJOR}` and would refuse `{version}`; \
-                 use the Rust runner"
-            ),
+            unadmitted_message(target, version),
         ));
     }
     Ok(())
@@ -429,12 +452,16 @@ pub(crate) fn report_format_requirement(
 
 fn runtime() -> String {
     format!(
-        "{}\n{}\n{}\n{}\n{}\n{}",
+        "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
         include_str!("runtime.go"),
         include_str!("reading.go"),
         include_str!("response.go"),
         include_str!("replay.go"),
         include_str!("fixtures.go"),
+        include_str!("prerequisites.go"),
+        include_str!("one_time.go"),
+        include_str!("one_time_identity.go"),
+        include_str!("one_time_execution.go"),
         include_str!("../../../../specify/ess-domain/src/reading/coordinate.go")
     )
 }
@@ -459,6 +486,8 @@ mod tests {
                 "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
             ),
             component: None,
+            scenario_initial_state: None,
+            synthesis_seeds: None,
         })
     }
 

@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-04T11:38:40Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-347",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-conformance --locked --test grant_denied (two temporary runner.rs mutations)",
+    "reference": "baseline: send moved before pre-send count -> 7 passed 1 failed; unsupported counted as zero -> 7 passed 1 failed; treatment: unmodified runner 8 passed 0 failed; package 2605 passed 0 failed 8 ignored; task site-build exit 0"
+  }
+}

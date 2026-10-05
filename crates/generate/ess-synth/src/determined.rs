@@ -12,14 +12,28 @@
 //! which struct a dotted fact names.
 
 use ess_compiler::ir::{
-    EssIr, ResolvedBody, ResolvedCommand, ResolvedCondition, ResolvedEffect, ResolvedEntity,
-    ResolvedField, ResolvedInstance, ResolvedOutcome, ResolvedPayloadField, ResolvedPayloadValue,
+    EntityHandle, EssIr, ResolvedBody, ResolvedCommand, ResolvedCondition, ResolvedEffect,
+    ResolvedEntity, ResolvedFallback, ResolvedField, ResolvedInstance, ResolvedOutcome,
+    ResolvedPayloadField, ResolvedPayloadValue, ResolvedRelatedTest, ResolvedRelatedVia,
     ResolvedSubject, ResolvedTypeRef,
 };
 use ess_domain::types::Primitive;
 use ess_primitives::facts::{FactPath, FactValue};
-use ess_primitives::predicate::{CompareOp, Operand, Predicate};
+use ess_primitives::predicate::{CompareOp, Derived, Operand, Predicate};
 use ess_primitives::time::CurrentTime;
+
+/// `Err` for a command with a refusal that changes its addressed row before answering (ess/22,
+/// `compensates: true`, beyond10x/ess#197): no emitter writes a refusal with an effect, and one
+/// that answered the error alone would be the service that stopped rolling back. Owed by name.
+fn uncompensated(command: &ResolvedCommand) -> Result<(), String> {
+    match command.outcomes.iter().find(|outcome| outcome.compensates) {
+        Some(outcome) => Err(format!(
+            "a refusal that compensates (`compensates: true`), on `{}`",
+            outcome.name
+        )),
+        None => Ok(()),
+    }
+}
 
 /// `Ok` when every outcome of `command` is expressible; `Err` names the construct that keeps the
 /// whole command an obligation, in a phrase that reads after "kept an obligation by".
@@ -27,6 +41,7 @@ pub(crate) fn command(ir: &EssIr, command: &ResolvedCommand) -> Result<(), Strin
     if !command.response.is_empty() {
         return Err("a typed response (`response:`)".to_owned());
     }
+    uncompensated(command)?;
     let guarded = subject_guarded(command);
     let lifecycle = command.outcomes.iter().any(|outcome| {
         matches!(
@@ -117,6 +132,7 @@ pub(crate) fn command(ir: &EssIr, command: &ResolvedCommand) -> Result<(), Strin
         }
     }
     existence_identity(command)?;
+    related_composition(ir, command)?;
     for outcome in &command.outcomes {
         self::outcome(ir, command, outcome, guarded, selection)
             .map_err(|construct| format!("{construct}, in `{}`", outcome.name))?;
@@ -145,7 +161,30 @@ fn outcome(
     }
     let selection_entity = selection.map(|subject| ir.entity(&subject.entity));
     match &outcome.condition {
-        ResolvedCondition::Related { .. } => return Err("`when_related:`".to_owned()),
+        // Generated storage enumerates no rows by a selector in this cut (ess/22, beyond10x/ess#228,
+        // #299): the command stays an obligation, named.
+        ResolvedCondition::RelatedSet { .. } => {
+            return Err(
+                "a guard over the rows a selector selects (`when_related: {entity, where, \
+                 exists | count | forall}`)"
+                    .to_owned(),
+            )
+        }
+        ResolvedCondition::Related {
+            entity,
+            test,
+            input,
+            ..
+        } => {
+            // The predicate reads the related row as a `when_subject` predicate reads the
+            // addressed one: its stored fields and `state`, the input under `input.`, the caller.
+            if let ResolvedRelatedTest::Holds { predicate } = test {
+                supported(ir, &Env::Subject(command, ir.entity(entity)), predicate)?;
+            }
+            if let Some(input) = input {
+                supported(ir, &Env::Input(command), input)?;
+            }
+        }
         ResolvedCondition::InputAbsent => return Err("`input_absent:`".to_owned()),
         ResolvedCondition::When { predicate }
         | ResolvedCondition::ExternalWhen { predicate, .. } => {
@@ -275,20 +314,12 @@ fn outcome(
     }
     let held = !matches!(subject.effect, ResolvedEffect::Creates);
     for set in &outcome.sets {
-        let target = entity
+        entity
             .fields
             .iter()
             .find(|field| field.name == set.target)
             .ok_or_else(|| format!("a `sets:` of `{}`, not a field of the entity", set.target))?;
         value(ir, command, set, held.then_some(entity), true)?;
-        if matches!(set.value, ResolvedPayloadValue::Increment { .. })
-            && !integer(ir, &target.type_ref)
-        {
-            return Err(format!(
-                "`{{increment:}}` of `{}`, which is not an `Integer`",
-                set.target
-            ));
-        }
     }
     payloads(ir, command, outcome, held.then_some(entity))
 }
@@ -312,6 +343,8 @@ fn payloads(
 }
 
 /// One value source, checked against the field it fills.
+// One arm per value source a branch can write.
+#[allow(clippy::too_many_lines)]
 fn value(
     ir: &EssIr,
     command: &ResolvedCommand,
@@ -356,6 +389,12 @@ fn value(
             }
             by.parse::<i64>()
                 .map_err(|_| format!("`{{increment: {by}}}`, which is not a whole number"))?;
+            if !integer(ir, target) {
+                return Err(format!(
+                    "`{{increment:}}` of `{}`, which is not an `Integer`",
+                    field.target
+                ));
+            }
         }
         ResolvedPayloadValue::InputOrGenerated {
             type_ref,
@@ -366,9 +405,7 @@ fn value(
             if inner != target.required() {
                 return Err(format!("a value of another type for `{}`", field.target));
             }
-            if let Some(otherwise) = otherwise {
-                literal(ir, target, otherwise)?;
-            }
+            fallback(ir, field, otherwise.as_ref())?;
         }
         ResolvedPayloadValue::Struct { fields } => {
             let ResolvedTypeRef::Declared { name } = target.required() else {
@@ -394,11 +431,28 @@ fn value(
                 value(ir, command, source, held, sets)?;
             }
         }
-        ResolvedPayloadValue::RelatedField { .. } => {
-            return Err(format!("`{{related:}}` for `{}`", field.target));
+        // Every `{related:}` value stays owed; an ess/22 form (beyond10x/ess#285) says which, so a
+        // reader knows the generated behaviour would have to follow two rows or an absent one.
+        ResolvedPayloadValue::RelatedField { via, through, .. } => {
+            let form = if !through.is_empty() {
+                " across two references"
+            } else if via.type_ref().is_optional() {
+                " through an Optional reference"
+            } else {
+                ""
+            };
+            return Err(format!("`{{related:}}`{form} for `{}`", field.target));
         }
         ResolvedPayloadValue::ChangedCount => {
             return Err(format!("`{{count: changed}}` for `{}`", field.target));
+        }
+        // Generated storage enumerates no rows by a selector in this cut (ess/22, beyond10x/ess#299).
+        ResolvedPayloadValue::RelatedSelection { .. } => {
+            return Err(format!(
+                "a read of the one row a selector selects (`{{related: {{entity, where, field}}}}`) \
+                 for `{}`",
+                field.target
+            ));
         }
         ResolvedPayloadValue::ResponseField { .. } => {
             return Err(format!("a response field for `{}`", field.target));
@@ -409,6 +463,25 @@ fn value(
 }
 
 /// `true` where a value of `source` fills a field of `target` as it is, or wrapped as present.
+/// Whether what stands in for an absent input after `else:` fills `field`: a literal its type
+/// reads, or (ess/22, A4) another input of its type.
+fn fallback(
+    ir: &EssIr,
+    field: &ResolvedPayloadField,
+    otherwise: Option<&ResolvedFallback>,
+) -> Result<(), String> {
+    let target = &field.target_type;
+    match otherwise {
+        Some(ResolvedFallback::Literal(otherwise)) => literal(ir, target, otherwise),
+        Some(ResolvedFallback::Input { input })
+            if !assignable(&input.type_ref, target.required()) =>
+        {
+            Err(format!("a fallback of another type for `{}`", field.target))
+        }
+        Some(ResolvedFallback::Input { .. }) | None => Ok(()),
+    }
+}
+
 pub(crate) fn assignable(source: &ResolvedTypeRef, target: &ResolvedTypeRef) -> bool {
     source == target || matches!(target, ResolvedTypeRef::Optional { of } if of.as_ref() == source)
 }
@@ -587,6 +660,9 @@ pub(crate) enum Root {
     State,
     /// An attribute of the authenticated caller.
     Caller(String),
+    /// A parameter of the view whose query reads it, compared with by a string operator
+    /// (beyond10x/ess#200).
+    Param(String),
 }
 
 /// One step from a value to the next.
@@ -600,6 +676,9 @@ pub(crate) enum Step {
     Field(String),
     /// How many elements a list or map holds.
     Count,
+    /// How many bytes the UTF-8 encoding of a `String` takes (`docs/design/expression-family-source22.md`,
+    /// decision 11): `str::len` in Rust, `len` of a string that is UTF-8 in Go.
+    Utf8Bytes,
 }
 
 /// What a path reads, as a guard compares it.
@@ -615,6 +694,9 @@ pub(crate) enum Kind {
     State,
     /// A `Boolean`.
     Bool,
+    /// A `Timestamp`, compared with another by the instant each names
+    /// (`docs/design/expression-family-source22.md`, decision 2).
+    Instant,
     /// Anything else: only `defined()` reads it.
     Opaque,
 }
@@ -715,6 +797,35 @@ pub(crate) fn resolve(ir: &EssIr, env: &Env<'_>, path: &FactPath) -> Result<Reso
         }
         (_, []) => return Err(unknown()),
     };
+    walk(ir, path, root, root_type, rest)
+}
+
+/// A view parameter a string operator compares with (beyond10x/ess#200), resolved as a fact path
+/// rooted at the generated query's argument of that name.
+pub(crate) fn resolve_param(ir: &EssIr, param: &ResolvedField) -> Result<Resolved, String> {
+    let path = FactPath::from_segments([ess_domain::view::ViewSpec::PARAM, param.name.as_str()]);
+    walk(
+        ir,
+        &path,
+        Root::Param(param.name.clone()),
+        param.type_ref.clone(),
+        &[],
+    )
+}
+
+/// The steps from `root`, of type `root_type`, along the segments `rest` of `path`.
+// One walk of a dotted path through every type shape it can cross, kept together so the rules
+// an emitter renders are read in one place.
+#[allow(clippy::too_many_lines)]
+fn walk(
+    ir: &EssIr,
+    path: &FactPath,
+    root: Root,
+    root_type: ResolvedTypeRef,
+    rest: &[String],
+) -> Result<Resolved, String> {
+    let segments = path.segments();
+    let unknown = || format!("the guard path `{path}`");
     let mut steps = Vec::new();
     let mut current = root_type.clone();
     let mut remaining = rest.iter();
@@ -803,6 +914,14 @@ pub(crate) fn resolve(ir: &EssIr, env: &Env<'_>, path: &FactPath) -> Result<Reso
                     Primitive::Integer | Primitive::Decimal => Kind::Number(*name),
                     Primitive::String | Primitive::Uuid => Kind::Text,
                     Primitive::Boolean => Kind::Bool,
+                    // From ess/22 a `Timestamp` compares by its instant (decision 2); below it, it
+                    // stays the value no guard compares, with every reason it had.
+                    Primitive::Timestamp
+                        if ir.format().major()
+                            >= ess_domain::system::FormatVersion::V22.major() =>
+                    {
+                        Kind::Instant
+                    }
                     _ => Kind::Opaque,
                 };
                 return Ok(Resolved {
@@ -815,6 +934,69 @@ pub(crate) fn resolve(ir: &EssIr, env: &Env<'_>, path: &FactPath) -> Result<Reso
         }
     }
     Err(unknown())
+}
+
+/// Resolves a derived operand (`docs/design/expression-family-source22.md`, decision 11): the UTF-8
+/// byte length of a `String` read at its parent, one [`Step::Utf8Bytes`] past it, compared as an
+/// `Integer`. A view filter's is refused by name: no generated query measures text.
+pub(crate) fn resolve_derived(
+    ir: &EssIr,
+    env: &Env<'_>,
+    derived: &Derived,
+) -> Result<Resolved, String> {
+    if matches!(env, Env::Row(_)) {
+        return Err(format!(
+            "`{derived}`, a byte length the generated view query does not compare"
+        ));
+    }
+    let Derived::Utf8Bytes(parent) = derived;
+    let mut resolved = resolve(ir, env, parent)?;
+    if resolved.kind != Kind::Text || leaf_primitive(ir, &resolved) != Some(Primitive::String) {
+        return Err(format!(
+            "`{derived}`, the byte length of a value that is no String"
+        ));
+    }
+    resolved.steps.push(Step::Utf8Bytes);
+    resolved.kind = Kind::Number(Primitive::Integer);
+    Ok(resolved)
+}
+
+/// Whether any predicate of the model compares the UTF-8 byte length of a text, `{utf8_bytes: …}`
+/// (decision 11). Read off the canonical IR, where that mapping is the one `utf8_bytes` key whose
+/// value is a path: a member named `utf8_bytes` is written inside a path or as a field's name.
+pub(crate) fn reads_utf8_bytes(ir: &EssIr) -> bool {
+    serde_json::to_string(ir).is_ok_and(|text| text.contains("{\"utf8_bytes\":\""))
+}
+
+/// The primitive a resolved path ends in, under its newtypes and `Optional`s.
+pub(crate) fn leaf_primitive(ir: &EssIr, resolved: &Resolved) -> Option<Primitive> {
+    let mut current = resolved.root_type.clone();
+    for step in &resolved.steps {
+        current = match (step, &current) {
+            (Step::Optional, ResolvedTypeRef::Optional { of }) => (**of).clone(),
+            (Step::Newtype, ResolvedTypeRef::Declared { name }) => {
+                match &ir.named_type(name).body {
+                    ResolvedBody::Newtype { of, .. } => of.clone(),
+                    _ => return None,
+                }
+            }
+            (Step::Field(field), ResolvedTypeRef::Declared { name }) => {
+                match &ir.named_type(name).body {
+                    ResolvedBody::Struct { fields, .. } => fields
+                        .iter()
+                        .find(|member| &member.name == field)?
+                        .type_ref
+                        .clone(),
+                    _ => return None,
+                }
+            }
+            _ => return None,
+        };
+    }
+    match current {
+        ResolvedTypeRef::Primitive { name } => Some(name),
+        _ => None,
+    }
 }
 
 /// `Ok` where every part of `predicate` is something an emitter decides with the evaluator's
@@ -833,13 +1015,34 @@ pub(crate) fn supported(ir: &EssIr, env: &Env<'_>, predicate: &Predicate) -> Res
                 "a truthiness test of `{path}`, which is not a `Boolean`"
             )),
         },
-        Predicate::Compare { left, op, right } => {
+        Predicate::Compare {
+            right: Operand::Offset(offset),
+            left,
+            ..
+        } => offset_supported(ir, env, predicate, left, offset),
+        Predicate::Compare {
+            left: Operand::Offset(_),
+            ..
+        } => Err(format!("`{predicate}`, an offset on the left")),
+        Predicate::Compare {
+            left, op, right, ..
+        } => {
             let kind = |operand: &Operand| match operand {
                 Operand::Fact(path) => resolve(ir, env, path).map(|it| Some(it.kind)),
-                Operand::Literal(_) => Ok(None),
+                Operand::Derived(derived) => {
+                    resolve_derived(ir, env, derived).map(|it| Some(it.kind))
+                }
+                Operand::Literal(_) | Operand::Offset(_) => Ok(None),
             };
             let (left_kind, right_kind) = (kind(left)?, kind(right)?);
             let compared = match (&left_kind, &right_kind) {
+                // An instant (ess/22, see `resolve`) is ordered against the current time on its
+                // right, read from the decision's one instant ([`reads_clock`], family F A3), or
+                // compared with another fact; a literal instant has no generated reading here.
+                (Some(Kind::Instant), None) if current_time(right, *op).is_some() => return Ok(()),
+                (Some(Kind::Instant), None) | (None, Some(Kind::Instant)) => {
+                    return Err(format!("`{predicate}`, over a value no guard compares"))
+                }
                 (Some(kind), None) => {
                     literal_matches(kind, literal_of(right))?;
                     kind
@@ -857,7 +1060,7 @@ pub(crate) fn supported(ir: &EssIr, env: &Env<'_>, predicate: &Predicate) -> Res
                 (None, None) => return Err(format!("`{predicate}`, comparing two literals")),
             };
             match (compared, op) {
-                (Kind::Number(_), _)
+                (Kind::Number(_) | Kind::Instant, _)
                 | (
                     Kind::Text | Kind::Enum(..) | Kind::State | Kind::Bool,
                     CompareOp::Eq | CompareOp::Ne,
@@ -872,21 +1075,164 @@ pub(crate) fn supported(ir: &EssIr, env: &Env<'_>, predicate: &Predicate) -> Res
                 .iter()
                 .try_for_each(|value| literal_matches(&kind, Some(value)))
         }
-        Predicate::TextMatch { path, value, .. } => match (resolve(ir, env, path)?.kind, value) {
-            (Kind::Text, FactValue::Text(_)) => Ok(()),
-            _ => Err(format!(
-                "`{predicate}`, a text test over a value that is not text"
-            )),
-        },
+        Predicate::TextMatch { path, value, .. } => {
+            text_match_supported(ir, env, predicate, path, value)
+        }
+        // No generated guard, filter or selection compares keys across a list's elements (ess/22,
+        // `docs/design/expression-family-source22.md`, `distinct`): owed by name, never decided.
+        Predicate::Distinct(_) => Err(format!(
+            "`{predicate}`, distinct list members no generated behaviour compares"
+        )),
+        // No generated behaviour evaluates a calendar window (`docs/design/calendar-window-guards.md`):
+        // the command stays owed, naming it, rather than rendered without it.
+        Predicate::Window(_) => Err(format!(
+            "`{predicate}`, a calendar window no generated guard evaluates"
+        )),
         _ => Err(format!("the guard `{predicate}`")),
     }
+}
+
+/// `Ok` where a string operator tests a text against a text literal, or against an operand the
+/// generated code reads where the predicate sits (beyond10x/ess#200): a command's input in its
+/// guards, a view's parameter in its query's filter.
+fn text_match_supported(
+    ir: &EssIr,
+    env: &Env<'_>,
+    predicate: &Predicate,
+    path: &FactPath,
+    value: &ess_primitives::predicate::TextOperand,
+) -> Result<(), String> {
+    use ess_primitives::predicate::{TextNamespace, TextOperand};
+    let not_text = || format!("`{predicate}`, a text test over a value that is not text");
+    if resolve(ir, env, path)?.kind != Kind::Text {
+        return Err(not_text());
+    }
+    match (value, env) {
+        // A view's parameter: the query takes it as an argument, and `view_query` holds it to a
+        // text the query string carries.
+        (TextOperand::Literal(FactValue::Text(_)), _)
+        | (
+            TextOperand::Fact {
+                namespace: TextNamespace::Param,
+                ..
+            },
+            Env::Row(_),
+        ) => Ok(()),
+        (TextOperand::Literal(_), _) => Err(not_text()),
+        // A command's input, compared with as it is read.
+        (
+            TextOperand::Fact {
+                namespace: TextNamespace::Input,
+                path: read,
+                ..
+            },
+            Env::Input(_) | Env::Subject(..),
+        ) => match resolve(ir, env, read)?.kind {
+            Kind::Text => Ok(()),
+            _ => Err(not_text()),
+        },
+        (TextOperand::Fact { .. }, _) => Err(format!(
+            "`{predicate}`, a text test against an operand the generated code does not read here"
+        )),
+    }
+}
+
+/// `Ok` where a guard compares a fact with one constant offset of another the way a generated
+/// behaviour decides it (`docs/design/expression-family-source22.md`, A2): an Integer magnitude
+/// between two `Integer` reads, compared exactly; an elapsed one between two `Timestamp` reads, as
+/// instants. A view filter's offset is refused by name: no generated query compares one.
+fn offset_supported(
+    ir: &EssIr,
+    env: &Env<'_>,
+    predicate: &Predicate,
+    left: &Operand,
+    offset: &ess_primitives::predicate::OffsetOperand,
+) -> Result<(), String> {
+    use ess_primitives::predicate::OffsetMagnitude;
+    if matches!(env, Env::Row(_)) {
+        return Err(format!(
+            "`{predicate}`, an offset the generated view query does not compare"
+        ));
+    }
+    let Operand::Fact(path) = left else {
+        return Err(format!("`{predicate}`, an offset compared with a literal"));
+    };
+    let (left, base) = (
+        resolve(ir, env, path)?.kind,
+        resolve(ir, env, &offset.base)?.kind,
+    );
+    let integer = Kind::Number(Primitive::Integer);
+    match offset.magnitude {
+        OffsetMagnitude::Integer(_) if left == integer && base == integer => Ok(()),
+        OffsetMagnitude::ElapsedSeconds { .. }
+            if left == Kind::Instant && base == Kind::Instant =>
+        {
+            Ok(())
+        }
+        _ => Err(format!(
+            "`{predicate}`, an offset over values no generated guard moves"
+        )),
+    }
+}
+
+/// The current-time operand an ordering's right-hand literal is, where it is one: `now`, moved by
+/// a whole number of seconds (ess/16 in an input guard; ess/22 in a stored row's predicate too).
+pub(crate) fn current_time(operand: &Operand, op: CompareOp) -> Option<CurrentTime> {
+    match operand {
+        Operand::Literal(FactValue::Text(text)) if op.needs_ordering() => CurrentTime::parse(text),
+        _ => None,
+    }
+}
+
+/// Whether a guard reads the current time anywhere in it.
+fn predicate_reads_clock(predicate: &Predicate) -> bool {
+    match predicate {
+        Predicate::All(children) | Predicate::Any(children) => {
+            children.iter().any(predicate_reads_clock)
+        }
+        Predicate::Not(child) => predicate_reads_clock(child),
+        Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
+            predicate_reads_clock(&quantified.body)
+        }
+        Predicate::Compare { op, right, .. } => current_time(right, *op).is_some(),
+        _ => false,
+    }
+}
+
+/// `true` where a generated behaviour of `command` reads the decision's one instant: some guard of
+/// it — an input guard, a `when_subject:` predicate or a `when_related:` predicate — orders an
+/// instant against the current time (`docs/design/expression-family-source22.md`, A3). The
+/// behaviour reads the command clock once, before any guard, and every such guard reads that one
+/// instant.
+pub(crate) fn reads_clock(command: &ResolvedCommand) -> bool {
+    command.outcomes.iter().any(|outcome| {
+        let (stored, input) = match &outcome.condition {
+            ResolvedCondition::When { predicate }
+            | ResolvedCondition::ExternalWhen { predicate, .. } => (None, Some(predicate)),
+            ResolvedCondition::SubjectState { predicate, .. }
+            | ResolvedCondition::StateChange { predicate, .. }
+            | ResolvedCondition::SubjectField { predicate, .. } => (None, predicate.as_ref()),
+            ResolvedCondition::SubjectPredicate { predicate, input } => {
+                (Some(predicate), input.as_ref())
+            }
+            ResolvedCondition::Related { test, input, .. } => (
+                match test {
+                    ResolvedRelatedTest::Holds { predicate } => Some(predicate),
+                    ResolvedRelatedTest::Absent => None,
+                },
+                input.as_ref(),
+            ),
+            _ => (None, None),
+        };
+        stored.into_iter().chain(input).any(predicate_reads_clock)
+    })
 }
 
 /// The literal an operand is, where it is one.
 fn literal_of(operand: &Operand) -> Option<&FactValue> {
     match operand {
         Operand::Literal(value) => Some(value),
-        Operand::Fact(_) => None,
+        Operand::Fact(_) | Operand::Offset(_) | Operand::Derived(_) => None,
     }
 }
 
@@ -917,6 +1263,7 @@ fn comparable(left: &Kind, right: &Kind) -> bool {
         (Kind::Number(_), Kind::Number(_))
         | (Kind::Text, Kind::Text)
         | (Kind::Bool, Kind::Bool)
+        | (Kind::Instant, Kind::Instant)
         | (Kind::State, Kind::State) => true,
         (Kind::Enum(left, _), Kind::Enum(right, _)) => left == right,
         _ => false,
@@ -993,6 +1340,22 @@ pub(crate) fn identity_input(outcome: &ResolvedOutcome) -> Option<(&str, bool)> 
 /// creating half of create-or-update reads it from a required input field. Anything else keeps the
 /// command an obligation, since the lookup would read an identity the creation does not take.
 fn existence_identity(command: &ResolvedCommand) -> Result<(), String> {
+    // ess/22 (A4): the generated lookup reads a top-level input; an identity read through a path
+    // keeps the command an obligation, by name.
+    let decided =
+        existing_instance(command).is_some() || command.outcomes.iter().any(creates_unknown);
+    if let Some(outcome) = command.outcomes.iter().find(|outcome| {
+        decided
+            && identity_input(outcome)
+                .is_some_and(|(field, _)| ess_domain::command::input_path::is_path(field))
+    }) {
+        return Err(format!(
+            "a creation selected by existence whose identity is read through the input path \
+             `{}`, in `{}`",
+            identity_input(outcome).map_or_else(String::new, |(field, _)| field.to_owned()),
+            outcome.name
+        ));
+    }
     for outcome in command.outcomes.iter().filter(|it| creates_unknown(it)) {
         if !matches!(identity_input(outcome), Some((_, false))) {
             return Err(format!(
@@ -1036,6 +1399,138 @@ fn existence_identity(command: &ResolvedCommand) -> Result<(), String> {
                 );
             }
             read = Some(field);
+        }
+    }
+    Ok(())
+}
+
+// ---- a related row (`when_related:`, ess/18, ess/22; beyond10x/ess#319) -------------------------
+
+/// The one related row a command reads: where its identity is named and whose row it is. A
+/// generated command reads one; one reading several (ess/22, beyond10x/ess#283) stays owed
+/// ([`related_composition`]), so the first branch naming it names it for all.
+pub(crate) fn related(command: &ResolvedCommand) -> Option<(&ResolvedRelatedVia, &EntityHandle)> {
+    command
+        .outcomes
+        .iter()
+        .find_map(|outcome| match &outcome.condition {
+            ResolvedCondition::Related { via, entity, .. } => Some((via, entity)),
+            _ => None,
+        })
+}
+
+/// Whether the command's `when_related:` branches read more than one row (ess/22,
+/// beyond10x/ess#283): two `via` fields.
+pub(crate) fn several_rows(command: &ResolvedCommand) -> bool {
+    let mut fields = command
+        .outcomes
+        .iter()
+        .filter_map(|outcome| match &outcome.condition {
+            ResolvedCondition::Related { via, .. } => Some(via.field()),
+            _ => None,
+        });
+    fields
+        .next()
+        .is_some_and(|first| fields.any(|other| other != first))
+}
+
+/// The command's `exists: false` branch, which answers a missing related row.
+pub(crate) fn related_absent(command: &ResolvedCommand) -> Option<&ResolvedOutcome> {
+    command.outcomes.iter().find(|outcome| {
+        matches!(
+            outcome.condition,
+            ResolvedCondition::Related {
+                test: ResolvedRelatedTest::Absent,
+                ..
+            }
+        )
+    })
+}
+
+/// A present-related predicate refusal: a `when_related:` predicate branch carrying an error.
+pub(crate) fn is_present_related_refusal(outcome: &ResolvedOutcome) -> bool {
+    outcome.error.is_some()
+        && matches!(
+            outcome.condition,
+            ResolvedCondition::Related {
+                test: ResolvedRelatedTest::Holds { .. },
+                ..
+            }
+        )
+}
+
+/// Whether the present-related predicate refusals answer before every accepting branch, once the
+/// addressed row's existence and held state have answered, as the interpreter orders them: for
+/// every stored reference, and from ess/22 beside a `wrong_state:` branch (beyond10x/ess#282,
+/// #304).
+pub(crate) fn orders_present_related_refusal(ir: &EssIr, command: &ResolvedCommand) -> bool {
+    let stored = matches!(
+        related(command),
+        Some((ResolvedRelatedVia::Subject { .. }, _))
+    );
+    stored
+        || (ir.format().major() >= ess_domain::system::FormatVersion::V22.major()
+            && command.outcomes.iter().any(is_present_related_refusal)
+            && command
+                .outcomes
+                .iter()
+                .any(|outcome| outcome.condition == ResolvedCondition::WrongState))
+}
+
+/// The subject a stored reference is read from: the first branch addressing an existing row.
+pub(crate) fn addressed_subject(command: &ResolvedCommand) -> Option<&ResolvedSubject> {
+    command
+        .outcomes
+        .iter()
+        .filter_map(|outcome| outcome.subject.as_ref())
+        .find(|subject| subject.effect != ResolvedEffect::Creates)
+}
+
+/// The compositions a generated related read answers as the interpreter does: the row is stored
+/// where every component accepting the command stores it, no `external:` branch is asked beside
+/// it, and a stored reference is read from a subject the input names.
+fn related_composition(ir: &EssIr, command: &ResolvedCommand) -> Result<(), String> {
+    let Some((via, entity)) = related(command) else {
+        return Ok(());
+    };
+    // The generated read names one row per command; several rows, each with its own
+    // `exists: false`, answered in the order the interpreter applies (ess/22, beyond10x/ess#283),
+    // stay owed.
+    if several_rows(command) {
+        return Err(
+            "`when_related:` reading several related rows in one command (beyond10x/ess#283)"
+                .to_owned(),
+        );
+    }
+    if command.outcomes.iter().any(|outcome| {
+        matches!(
+            outcome.condition,
+            ResolvedCondition::External { .. } | ResolvedCondition::ExternalWhen { .. }
+        )
+    }) {
+        return Err("`external:` beside `when_related:` in one command".to_owned());
+    }
+    let related = ir.entity(entity);
+    let unstored = ir.components().values().any(|component| {
+        component
+            .accepts
+            .iter()
+            .any(|accepted| accepted.name() == &command.name)
+            && !component.owns.contains(&related.domain)
+    });
+    if unstored {
+        return Err(format!(
+            "a `when_related:` row of `{}`, which no component accepting the command stores",
+            related.name
+        ));
+    }
+    if let ResolvedRelatedVia::Subject { .. } = via {
+        let supplied = addressed_subject(command)
+            .is_some_and(|subject| matches!(subject.instance, ResolvedInstance::Supplied { .. }));
+        if !supplied {
+            return Err(
+                "a stored `when_related:` reference on no subject the input names".to_owned(),
+            );
         }
     }
     Ok(())

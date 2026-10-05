@@ -203,7 +203,8 @@ targets; the separate structural data libraries have their own support boundary.
 What the specification fully determines is generated; what it cannot determine is an obligation.
 A command whose every outcome the specification spells out gets a generated behaviour, and a view
 whose rows it determines gets a generated query, both written against storage and context ports the
-implementor provides — ESS never generates a store. The generated billing workspace, linked with
+implementor can replace. Network-served components also get ephemeral stores and runnable entries
+with explicit caller modes; durable storage and production authentication remain ports. The generated billing workspace, linked with
 its hand-written realization, passes the committed 29-scenario suite unchanged — and a
 deliberately corrupted linkage fails exactly the scenario that exists to catch it. See
 [Synthesize code from a specification](../guides/synthesize.md).

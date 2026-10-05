@@ -1052,7 +1052,8 @@ impl EntitySpec {
 /// [`CommandSpec::validate`](crate::command::CommandSpec::validate) as [`RefusalMutatedState`](ValidationCode::RefusalMutatedState), and it
 /// is *not* counted here as performing its transition. So an author whose only mover is a refusal
 /// learns both facts in one run rather than one per run: the refusal must lose its subject, and the
-/// transition still needs a cause.
+/// transition still needs a cause. A refusal marked `compensates: true` (ess/22, beyond10x/ess#197)
+/// is admitted with its subject and does perform its move, so it is counted.
 pub fn validate_lifecycle_causes(
     entities: &BTreeMap<QualifiedName, EntitySpec>,
     commands: &BTreeMap<QualifiedName, crate::command::CommandSpec>,
@@ -1139,7 +1140,8 @@ pub(crate) fn validate_lifecycle_causes_after(
                 );
                 continue;
             }
-            if outcome.is_refusal() {
+            // A compensating refusal (ess/22, beyond10x/ess#197) does take its move: it is a cause.
+            if outcome.is_refusal() && !outcome.compensates {
                 continue;
             }
             performed.insert((&subject.entity, transition));
@@ -2513,6 +2515,8 @@ lifecycle:
                 refuses: true,
                 accepts_nothing: false,
                 returns: false,
+                compensates: false,
+                one_time_response: Vec::new(),
                 set_effects: crate::command::SetEffects::default(),
                 summary: None,
                 refs: crate::refs::Refs::new(),

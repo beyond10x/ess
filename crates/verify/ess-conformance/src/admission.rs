@@ -60,16 +60,32 @@ impl std::error::Error for AdmissionError {}
 /// suites this repository already writes, which is a different rule from the one being fixed. The
 /// browser adapter's `primitiveAdmits` applies the identical rule to the identical document, so the
 /// two admitters cannot disagree about one suite.
+///
+/// An `expect_event_values` step's literals are held to the same rule (beyond10x/ess#273 writes an
+/// event's literals there whenever it also compares a captured identity); a reference resolves at
+/// run time and has no value to check here.
 fn payload_agrees_with_its_shape(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
     for (id, scenario) in &suite.scenarios {
         for (position, step) in scenario.steps.iter().enumerate() {
-            let (ScenarioStep::ExpectEvent { payload, shape, .. }
-            | ScenarioStep::EventuallyEvent { payload, shape, .. }) = step
-            else {
-                continue;
+            let (literals, shape): (std::collections::BTreeMap<&String, &Node>, _) = match step {
+                ScenarioStep::ExpectEvent { payload, shape, .. }
+                | ScenarioStep::EventuallyEvent { payload, shape, .. } => {
+                    (payload.iter().collect(), shape)
+                }
+                ScenarioStep::ExpectEventValues { payload, shape, .. } => (
+                    payload
+                        .iter()
+                        .filter_map(|(field, value)| match value {
+                            crate::ScenarioValue::Literal { value } => Some((field, value)),
+                            _ => None,
+                        })
+                        .collect(),
+                    shape,
+                ),
+                _ => continue,
             };
             for (field, leaf) in shape.leaves() {
-                let Some(value) = payload.get(field) else {
+                let Some(value) = literals.get(field).copied() else {
                     continue;
                 };
                 if matches!(value, Node::Null) || leaf.holds.admits(value) {
@@ -135,6 +151,7 @@ impl AdmittedSuite {
             .get("coverage")
             .map(|c| crate::coverage::parse_inventory(c, &suite))
             .transpose()?;
+        crate::synthesis_seeds::admit(&suite, coverage.as_ref())?;
         let digest = Sha256::digest(original.as_bytes()).iter().fold(
             "sha256:".to_owned(),
             |mut text, byte| {
@@ -181,28 +198,88 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
             "spec_digest",
             "contract_digest",
         ],
-        &["component"],
+        &["component", "scenario_initial_state", "synthesis_seeds"],
     )?;
     let version = SuiteFormat::parse(p["suite_version"].text()?)
         .map_err(|e| p["suite_version"].error("UnsupportedSuiteVersion", e.to_string()))?;
-    if !matches!(version.major(), 1..=33) {
+    // The majors every execution reader admits, the generated runtimes' own table.
+    if !crate::go::admitted_major(version.major()) {
         return Err(p["suite_version"].error(
             "UnsupportedSuiteVersion",
-            "execution readers admit suite majors 1–33",
+            "execution readers admit suite majors 1–43",
+        ));
+    }
+    match p.get("synthesis_seeds") {
+        Some(seeds) if crate::synthesis_seeds::seed_major(version.major()) => {
+            crate::synthesis_seeds::admit_json(seeds)?;
+        }
+        Some(seeds) => {
+            return Err(seeds.error(
+                "UnsupportedVocabulary",
+                "synthesis seeds require suite/42 or /43",
+            ))
+        }
+        None if crate::synthesis_seeds::seed_major(version.major()) => {
+            return Err(root["provenance"].error(
+                "UnsupportedVocabulary",
+                "suite/42 and /43 require synthesis_seeds",
+            ))
+        }
+        None => {}
+    }
+    if version.major() >= 34 {
+        if p.get("scenario_initial_state")
+            .map(|state| state.text())
+            .transpose()?
+            != Some("empty")
+        {
+            return Err(root["provenance"].error(
+                "InvalidSuite",
+                "scenario_initial_state must be empty from suite/34",
+            ));
+        }
+    } else if p.contains_key("scenario_initial_state") {
+        return Err(p["scenario_initial_state"].error(
+            "InvalidSuite",
+            "scenario_initial_state requires suite/34 or later",
         ));
     }
     if matches!(
         version.major(),
-        5 | 7 | 9 | 11 | 13 | 15 | 17 | 19 | 21 | 23 | 25 | 27 | 29 | 31 | 33
+        5 | 7
+            | 9
+            | 11
+            | 13
+            | 15
+            | 17
+            | 19
+            | 21
+            | 23
+            | 25
+            | 27
+            | 29
+            | 31
+            | 33
+            | 35
+            | 37
+            | 39
+            | 41
+            | 43
     ) != root.contains_key("coverage")
     {
         return Err(value.error(
             "InvalidCoverage",
-            "coverage is required exactly for odd suite majors from /5 through /33",
+            "coverage is required exactly for odd suite majors from /5 through /43",
         ));
     }
     for scenario in root["scenarios"].object()?.values() {
-        let s = scenario.closed(&["purpose", "steps", "source"], &[])?;
+        let s = scenario.closed(&["purpose", "steps", "source"], &["one_time_response"])?;
+        if version.major() < 34 && s.contains_key("one_time_response") {
+            return Err(scenario.error(
+                "UnsupportedVocabulary",
+                "one-time response authority requires suite/34 or /35",
+            ));
+        }
         for step in s["steps"].array()? {
             step_value(step, version.major())?;
         }
@@ -267,6 +344,7 @@ fn values(value: &Json, major: u32, accessors: bool) -> Result<(), AdmissionErro
                         .map_err(|error| v.error("InvalidSelection", error.to_string()))?;
                 crate::quoted_predicate_format::admit_selection(&fields["selection"].raw, major)?;
                 crate::text_match_format::admit_selection(&fields["selection"].raw, major)?;
+                crate::expression_format::admit_selection(&fields["selection"].raw, major)?;
             }
             "observed_accessor" => {
                 if major < 6 || !accessors {
@@ -410,6 +488,7 @@ fn expectation(value: &Json, major: u32) -> Result<(), AdmissionError> {
             f["predicate"].payload()?;
             crate::quoted_predicate_format::admit_predicate(&f["predicate"].raw, major)?;
             crate::text_match_format::admit_predicate(&f["predicate"].raw, major)?;
+            crate::expression_format::admit_predicate(&f["predicate"].raw, major)?;
         }
         "counts" => {
             value.closed(&["expect"], &["at_least", "at_most"])?;
@@ -463,13 +542,22 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
         || crate::outcome_shapes::needs_newer(tag, major)
         || crate::absent_input::needs_newer(tag, major)
         || crate::delivery_context::needs_newer(tag, major)
+        || crate::no_invocation::needs_newer(tag, major)
+        || crate::refusal_policy::needs_newer(tag, major)
         || (major < crate::grant::ORDINARY && tag == "expect_not_granted")
+        || crate::view_grant::needs_newer(tag, major)
     {
         return Err(value.error("UnsupportedVocabulary", "step requires a newer suite major"));
     }
     let (required, optional): (&[&str], &[&str]) = match tag {
         _ if crate::delivery_context::step_keys(tag).is_some() => {
             crate::delivery_context::step_keys(tag).unwrap_or_default()
+        }
+        _ if crate::no_invocation::step_keys(tag).is_some() => {
+            crate::no_invocation::step_keys(tag).unwrap_or_default()
+        }
+        _ if crate::refusal_policy::step_keys(tag).is_some() => {
+            crate::refusal_policy::step_keys(tag).unwrap_or_default()
         }
         _ if crate::bounded_retry::step_keys(tag, major).is_some() => {
             crate::bounded_retry::step_keys(tag, major).unwrap_or_default()
@@ -493,6 +581,7 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
         "execute_command_without_input" => (&["step", "command"], &["actor", "caller"]),
         "expect_outcome" => (&["step", "outcome"], &[]),
         "expect_not_granted" => (&["step", "actor"], &["unpublished"]),
+        "read_as" => (&["step", "actor"], &[]),
         "expect_no_error" if major >= 10 => (&["step"], &[]),
         "snapshot_subject" if major >= 10 => (&["step", "view", "subject"], &[]),
         "expect_subject_unchanged" if major >= 10 => (&["step", "view"], &[]),
@@ -525,7 +614,7 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
                     .map_err(|error| field.error("InvalidReplay", error.to_string()))?;
             }
             "response" if matches!(tag, "expect_response_payload" | "expect_direct_response") => {
-                response_observation(field, tag == "expect_direct_response")?;
+                response_observation(field, tag == "expect_direct_response", major)?;
             }
             "left" | "right" if tag == "expect_reading_order" => {
                 let reference: crate::reading::ReadingReference = serde_json::from_str(&field.raw)
@@ -552,6 +641,14 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
                 field.object()?;
                 field.payload()?;
             }
+            // A refusal naming no actor is suite/34 vocabulary (beyond10x/ess#286).
+            "actor"
+                if tag == "expect_not_granted"
+                    && field.raw.trim() == "null"
+                    && major < crate::view_grant::ORDINARY =>
+            {
+                return Err(field.error("UnsupportedVocabulary", crate::view_grant::REQUIRES));
+            }
             "identity" => field.payload()?,
             "fields" | "payload" | "caller" => {
                 field.object()?;
@@ -569,17 +666,56 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
     Ok(())
 }
 
-fn response_observation(field: &Json, direct: bool) -> Result<(), AdmissionError> {
+fn response_observation(field: &Json, direct: bool, major: u32) -> Result<(), AdmissionError> {
     if direct {
         field
             .decode_checked_depth::<crate::direct_response::Observation>()
             .map(|_| ())
             .map_err(|error| field.error("InvalidResponse", error.to_string()))
     } else {
+        if field.object()?.contains_key("nested") {
+            if major < 34 {
+                return Err(field.error(
+                    "UnsupportedVocabulary",
+                    "nested response authority requires suite/34 or /35",
+                ));
+            }
+            nested_response_metadata(field)?;
+        }
         serde_json::from_str::<crate::response::Observation>(&field.raw)
             .map(|_| ())
             .map_err(|error| field.error("InvalidResponse", error.to_string()))
     }
+}
+
+/// Check original names before the general field reader can normalize naming aliases.
+fn nested_response_metadata(field: &Json) -> Result<(), AdmissionError> {
+    let root = field.object()?;
+    for key in ["fields", "targets"] {
+        if let Some(fields) = root.get(key) {
+            for item in fields.array()? {
+                let member = item.closed(
+                    &["name", "type"],
+                    if key == "fields" { &["presence"] } else { &[] },
+                )?;
+                if let Some(presence) = member.get("presence") {
+                    if !matches!(presence.text()?, "null_when_absent" | "omitted_when_absent") {
+                        return Err(presence.error("InvalidPresence", presence.text()?));
+                    }
+                }
+            }
+        }
+    }
+    if let Some(declarations) = root.get("declarations") {
+        for declaration in declarations.object()?.values() {
+            if let Some(fields) = declaration.object()?.get("fields") {
+                for item in fields.array()? {
+                    item.closed(&["name", "type"], &[])?;
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Check the model even when synthesis would omit unsupported fields or whole scenarios.
@@ -594,6 +730,13 @@ fn response_payloads(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
         .flat_map(|scenario| &scenario.steps)
     {
         if let ScenarioStep::ExpectResponsePayload { response } = step {
+            if response.nested.is_some() && suite.provenance.suite_version.major() < 34 {
+                return Err(AdmissionError::new(
+                    "UnsupportedVocabulary",
+                    "$suite",
+                    "nested response authority requires suite/34 or /35",
+                ));
+            }
             if suite.provenance.suite_version.major() < 8 {
                 return Err(AdmissionError::new(
                     "UnsupportedVocabulary",
@@ -612,8 +755,12 @@ fn response_payloads(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
 /// The construct-owned format gates: each refuses an explicitly pinned older suite version that
 /// carries the vocabulary it owns.
 fn construct_formats(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
+    crate::synthesis_seeds::admit(suite, None)?;
+    crate::one_time_response::admit(suite)?;
     crate::direct_response::admit(suite)?;
     crate::delivery_context::admit(suite)?;
+    crate::no_invocation::admit(suite)?;
+    crate::refusal_policy::admit(suite)?;
     crate::structured_values::admit(suite)?;
     crate::fixtures::admit_format(suite)?;
     crate::absent_input::admit_format(suite)?;
@@ -624,12 +771,14 @@ fn construct_formats(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
     crate::caller_values::admit_format(suite)?;
     crate::bounded_retry::admit_format(suite)?;
     crate::grant::admit_format(suite)?;
+    crate::view_grant::admit_format(suite)?;
     crate::outcome_shapes::admit_suite(suite)?;
     crate::presence::admit_format(suite)?;
     crate::replay::admit_suite(suite)?;
     crate::aggregate::admit_suite(suite)?;
     crate::quoted_predicate_format::admit_suite(suite)?;
-    crate::text_match_format::admit_suite(suite)
+    crate::text_match_format::admit_suite(suite)?;
+    crate::expression_format::admit_suite(suite)
 }
 
 /// Check directly constructed suites before artifact creation or target effects.
@@ -711,8 +860,11 @@ pub fn suite(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
     let mut found = Vec::new();
     for (id, scenario) in &suite.scenarios {
         for (index, step) in scenario.steps.iter().enumerate() {
+            // `expect_event_values` carries the same declared shape (beyond10x/ess#273 synthesizes
+            // one wherever an event carries a captured identity).
             if let ScenarioStep::ExpectEvent { shape, .. }
-            | ScenarioStep::EventuallyEvent { shape, .. } = step
+            | ScenarioStep::EventuallyEvent { shape, .. }
+            | ScenarioStep::ExpectEventValues { shape, .. } = step
             {
                 for (name, leaf) in shape.leaves() {
                     if matches!(
@@ -832,6 +984,37 @@ pub(crate) fn entity_setup(suite: &ConformanceSuite) -> Result<(), AdmissionErro
                 "setup must be followed by an assertion",
             ));
         }
+    }
+    Ok(())
+}
+
+/// The structural rules one setup row obeys wherever a suite carries it: finite, bounded literals,
+/// a non-null identity and local field names.
+pub(crate) fn setup_row(
+    identity: &Node,
+    fields: &std::collections::BTreeMap<String, Node>,
+    path: &str,
+) -> Result<(), AdmissionError> {
+    setup_literal(identity, 0, path)?;
+    for value in fields.values() {
+        setup_literal(value, 0, path)?;
+    }
+    if matches!(identity, Node::Null) {
+        return Err(AdmissionError::new(
+            "InvalidEntitySetup",
+            path,
+            "identity cannot be null",
+        ));
+    }
+    if fields
+        .keys()
+        .any(|key| !ess_domain::types::is_field_name(key))
+    {
+        return Err(AdmissionError::new(
+            "InvalidEntitySetup",
+            path,
+            "field names must be local identifiers",
+        ));
     }
     Ok(())
 }

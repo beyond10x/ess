@@ -152,10 +152,11 @@ fn complete_non_binary64_output_maps_remain_identical() {
             output
         });
     assert_eq!(
-        digest, "1783cb022e838cd25ba90f0dbadb0674de513970f974ef904b8e360a98972852",
+        digest, "8537c51db75f2994ed6679511dec7edc870ae7462eb9911619908c74cebe583b",
         "complete old output map SHA-256 frozen at c4ba992, refrozen for beyond10x/ess#394 (`score >= 0` \
-         publishes `minimum`) and for beyond10x/ess#406/#407 (model `Timestamp` is native, model \
-         anonymous shapes are named by position; bundle output keeps its hash names)"
+         publishes `minimum`), for beyond10x/ess#406/#407 (model `Timestamp` is native, model \
+         anonymous shapes are named by position; bundle output keeps its hash names) and at 48d5cc77b \
+         (a generated model crate pins `time =0.3.45`, the version generated servers pin)"
     );
 }
 

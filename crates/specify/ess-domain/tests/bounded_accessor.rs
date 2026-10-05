@@ -242,6 +242,39 @@ fn unavailable_union_branch_is_distinct_from_missing_everywhere() {
 }
 
 #[test]
+fn a_unit_variant_has_no_plan_so_a_read_through_it_is_unavailable() {
+    // ess/22 (beyond10x/ess#418): a unit variant carries nothing, so its branch of the union
+    // operation is `null` rather than a node, and the projection may miss.
+    let text = model(22, "example.flow.Choice", "Optional<String>", "event.data.status")
+        .replace("events:\n", "  - name: example.flow.Choice\n    kind: union\n    tag: kind\n    variants:\n      ready: example.flow.Body\n      gone:\nevents:\n")
+        // From ess/4 an emitted payload field names its source.
+        .replace(
+            "        emits: [example.flow.Done]\n",
+            "        emits: [example.flow.Done]\n        payload:\n          example.flow.Done:\n            result: input.result\n",
+        );
+    let spec = admit(&text).unwrap();
+    let plan = plan(&spec, "event.data.status");
+    let variants = plan
+        .nodes
+        .iter()
+        .find_map(|n| match &n.operation {
+            ess_domain::accessor::Operation::Union { variants, .. } => Some(variants),
+            _ => None,
+        })
+        .expect("a union operation");
+    assert_eq!(variants["gone"], None);
+    assert!(variants["ready"].is_some());
+    assert!(plan.may_miss());
+    let json = serde_json::to_string(&plan).unwrap();
+    assert!(json.contains(r#""gone":null"#), "{json}");
+    let raw = serde_json::from_str(&json).unwrap();
+    assert_eq!(
+        ess_domain::accessor::AccessorPlan::admit(raw).unwrap(),
+        plan
+    );
+}
+
+#[test]
 fn nominal_unwrap_and_wire_names_are_retained_as_distinct_operations() {
     let text = model(3, "example.flow.Wrapped", "String", "event.data.status")
         .replace("events:\n", "  - name: example.flow.Wrapped\n    kind: newtype\n    of: example.flow.Body\nevents:\n")

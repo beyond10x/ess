@@ -44,8 +44,12 @@ const sidebars: SidebarsConfig = {
             'guides/specify/fields-and-invariants',
             'guides/specify/guards-and-predicates',
             'guides/specify/commands-and-outcomes',
+            'guides/specify/selection-effects',
             'guides/specify/values-and-views',
+            'guides/specify/aggregate-views',
             'guides/specify/bindings-and-components',
+            'guides/specify/binding-conditions',
+            'guides/specify/wire-names',
           ],
         },
         {
@@ -55,7 +59,9 @@ const sidebars: SidebarsConfig = {
           items: [
             'guides/verify/synthesize-a-suite',
             'guides/verify/author-scenarios',
+            'guides/verify/observations',
             'guides/verify/runners',
+            'guides/verify/one-time-responses',
             'guides/verify/mutation-audit',
             'guides/verify/explore',
           ],
@@ -76,6 +82,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'reference/cli',
         'reference/diagnostics',
+        'reference/entity-runtime-lowering',
         'reference/formats',
         'reference/ess-ui',
         'reference/ess-ui-test',

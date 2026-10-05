@@ -1,0 +1,57 @@
+format: ess/20
+system: demo
+version: v1
+domain: demo.ledger
+types:
+  - {name: demo.ledger.AccountId, kind: newtype, of: Uuid}
+  - {name: demo.ledger.EntryId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.ledger.Account
+    identity: {name: account_id, type: demo.ledger.AccountId}
+    fields: [{name: holder, type: String}]
+    relations:
+      - {name: entries, kind: owns, target: demo.ledger.Entry, cardinality: many, via: account_id}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: demo.ledger.Entry
+    identity: {name: entry_id, type: demo.ledger.EntryId}
+    fields:
+      - {name: account_id, type: demo.ledger.AccountId}
+      - {name: cents, type: Integer}
+    lifecycle: {initial: Posted, states: [Posted], terminal: [Posted]}
+events:
+  - name: demo.ledger.AccountOpened
+    fields: [{name: account_id, type: demo.ledger.AccountId}]
+  - name: demo.ledger.EntryPosted
+    fields: [{name: entry_id, type: demo.ledger.EntryId}]
+commands:
+  - name: demo.ledger.OpenAccount
+    input: [{name: holder, type: String}]
+    outcomes:
+      - name: opened
+        creates: demo.ledger.Account
+        instance: account_id
+        sets: {holder: input.holder}
+        emits: [demo.ledger.AccountOpened]
+        payload: {demo.ledger.AccountOpened: {account_id: {generated: true}}}
+  - name: demo.ledger.PostEntry
+    input:
+      - {name: account_id, type: demo.ledger.AccountId}
+      - {name: cents, type: Integer}
+    outcomes:
+      - name: posted
+        creates: demo.ledger.Entry
+        instance: entry_id
+        sets: {account_id: input.account_id, cents: input.cents}
+        emits: [demo.ledger.EntryPosted]
+        payload: {demo.ledger.EntryPosted: {entry_id: {generated: true}}}
+views:
+  - name: demo.ledger.ByAccount
+    source: demo.ledger.Entry
+    consistency: read_your_writes
+    params: [{name: account_id, type: demo.ledger.AccountId}]
+    filter: account_id == param.account_id
+    group_by: [account_id]
+    fields:
+      - {name: account_id, type: demo.ledger.AccountId}
+      - {name: count, type: Integer, aggregate: {count: {}}}
+      - {name: total, type: Integer, aggregate: {sum: cents}}

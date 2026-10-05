@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-03T17:38:27Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-294",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:mutation-audit-design-20261003-r1",
+    "reference": "docs/design/mutation-scope-and-known-failures.md#mutation-scoring-and-persistence",
+    "review": "review-result:mutation-audit-design-20261003-r1",
+    "outcome": "fixed"
+  }
+}

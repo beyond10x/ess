@@ -225,7 +225,7 @@ mod tests {
         .unwrap();
         let mut player = Player::new(vec![Script::parse("c", &value).unwrap()]);
         assert_eq!(player.due(Duration::ZERO).len(), 1);
-        assert!(player.due(Duration::from_secs(3)).is_empty());
+        assert_eq!(player.due(Duration::from_secs(3)).len(), 0);
         let beats = player.due(Duration::from_secs(8));
         let times: Vec<u64> = beats.iter().map(|beat| beat.at.as_secs()).collect();
         assert_eq!(times, [4, 4, 8, 8]);

@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-04T19:11:37Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-285",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test ess-domain, ess-compiler (full), 67 ess-conformance related/aggregate/captured/binding targets, ess-synth (full); xtask docs/schema/diagnostics/generate (integration tree)",
+    "reference": "baseline: a list via and an Optional reference refused (related_values_chained 12 red on base), adversary 8 red before correction; treatment: conformance 670 passed 0 failed after re-pinning suite digests moved by #273 (42 digests identical with and without #285), synth 458 passed; xtask checks exit 0"
+  }
+}

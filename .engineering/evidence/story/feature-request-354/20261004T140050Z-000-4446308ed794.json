@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-04T14:00:50Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-354",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test six UI packages and ess-cli ui_commands (integration tree)",
+    "reference": "baseline: node_live does not compile and live_composites fail on base (loader refuses nested live); adversary 6 red before correction; treatment: UI packages 603 passed, 5 failed only for missing esbuild, ui_commands 17/17"
+  }
+}

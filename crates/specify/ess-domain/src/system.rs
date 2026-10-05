@@ -51,7 +51,7 @@ use crate::types::{NamedType, TypeBody, TypeRef, TypeRegistry};
 
 /// Specification format major versions this build implements.
 pub const SUPPORTED_FORMATS: &[u32] = &[
-    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
 ];
 
 /// `true` when this build implements `format`.
@@ -115,6 +115,11 @@ impl FormatVersion {
     /// Constructs of the downstream-gaps round: `state`, the related row's held lifecycle state, in
     /// a `when_related` predicate (beyond10x/ess#229).
     pub const V20: Self = Self(20);
+    /// Outcome-scoped one-time response disclosure authority.
+    pub const V21: Self = Self(21);
+    /// Present-related predicate refusals compose after a held-row `wrong_state` refusal; a union
+    /// variant may carry no payload (beyond10x/ess#418).
+    pub const V22: Self = Self(22);
 
     /// How a format version is written.
     pub const PREFIX: &'static str = "ess/";
@@ -626,10 +631,12 @@ fn body_inhabited(declared: &NamedType, inhabited: &BTreeSet<QualifiedName>) -> 
         // A variant is a name, not a reference to another type; an enum with no variants is refused
         // by `NamedType`'s own conversion, so anything reaching here has at least one.
         TypeBody::Enum { .. } => true,
-        // One buildable variant is enough.
-        TypeBody::Union { variants, .. } => variants
-            .values()
-            .any(|variant| reference_inhabited(variant, inhabited)),
+        // One buildable variant is enough, and a unit variant (ess/22) is always buildable.
+        TypeBody::Union { variants, .. } => variants.values().any(|variant| {
+            variant
+                .as_ref()
+                .is_none_or(|variant| reference_inhabited(variant, inhabited))
+        }),
     }
 }
 
@@ -711,6 +718,21 @@ impl Inhabitation {
     }
 }
 
+impl TypeRegistry {
+    /// Every declaration `check_inhabitation` refuses: the ones no finite value can inhabit.
+    ///
+    /// The one termination rule, for a reader outside this crate that holds a closed registry of
+    /// its own — a conformance fixture contract, say (beyond10x/ess#416). `Optional`, `List` and
+    /// `Map` are base cases and a union needs one buildable variant, so a type that reaches itself
+    /// only through one of those is absent from this set. Like `Inhabitation::refuses_declaration`
+    /// it answers about declarations, and it is silent about one whose only blocker is a name the
+    /// registry does not hold.
+    #[must_use]
+    pub fn without_finite_value(&self) -> BTreeSet<QualifiedName> {
+        Inhabitation::of(self).refused
+    }
+}
+
 /// Reports every type no value can inhabit.
 ///
 /// The set is [`Inhabitation::refused`], and every other pass that stays silent because this one
@@ -775,7 +797,7 @@ fn unmet_requirements(
         }
         TypeBody::Enum { .. } => {}
         TypeBody::Union { variants, .. } => {
-            for variant in variants.values() {
+            for variant in variants.values().flatten() {
                 consider(variant);
             }
         }
@@ -807,6 +829,7 @@ fn names_something_undeclared(declared: &NamedType, registry: &TypeRegistry) -> 
         TypeBody::Enum { .. } => false,
         TypeBody::Union { variants, .. } => variants
             .values()
+            .flatten()
             .any(|variant| undeclared(variant, registry)),
     }
 }
@@ -1354,6 +1377,12 @@ domains:
         assert!(FormatVersion::V11.is_supported());
         assert!(FormatVersion::V12.is_supported());
         assert!(FormatVersion::V13.is_supported());
+        assert!(
+            FormatVersion::parse("ess/22")
+                .expect("ess/22 parses")
+                .is_supported(),
+            "the coordinated syntax bundle admits ess/22"
+        );
         assert!(!FormatVersion::parse("ess/99")
             .expect("parses")
             .is_supported());

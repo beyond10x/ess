@@ -1248,6 +1248,26 @@ pub enum Cause {
         /// The command.
         command: CommandRef,
     },
+    /// The act expects a branch the command's own guards decidedly do not take for the input it
+    /// sends literally (beyond10x/ess#222).
+    ///
+    /// Read under the precedence order (`docs/design/input-guard-overlap-precedence.md`): an
+    /// input-guarded refusal answers first, the first declared of them; then the accepting `when:`
+    /// branches and the external ones in declaration order; the default only where no `when:`
+    /// holds. Only a `when:` over the input is decided. A guard reading an `{$instance}`, a held
+    /// state, a stored or related row, an external answer or anything but the command's input
+    /// claims nothing, so the act is accepted wherever the input leaves the answer open.
+    GuardsContradictOutcome {
+        /// The command the act invokes.
+        command: CommandRef,
+        /// What the act expects, as a reader sees it: the branch under `outcome:`, or the error
+        /// under `error:` where no `outcome:` is written.
+        claim: String,
+        /// The input the act sends, by field, as it reads.
+        input: String,
+        /// Why each branch the claim could mean is not taken, in declaration order.
+        reasons: Vec<String>,
+    },
 }
 
 /// Whether `code` is one a refusal of one authored file can carry: every cause [`Cause::code`]
@@ -1323,6 +1343,220 @@ fn in_order<'a>(names: impl Iterator<Item = &'a String>) -> Vec<String> {
     once
 }
 
+/// Why `command` decidedly does not take `outcome` for an input, where `decided` reads its guards
+/// that way; `None` where the input leaves it open (beyond10x/ess#222). `decided` answers whether a
+/// guard holds at every run ([`at_every_run`]), and `None` where it is not one answer.
+///
+/// The precedence order (`docs/design/cross-record-and-stored-field-guards.md#the-precedence-order`):
+/// every input-guarded refusal answers before any other branch, and of two the first declared
+/// (`synthesize::sibling_refusals`); an accepting `when:` branch declared before an accepting
+/// `when:` or external one answers first; the default is what no `when:` claims. The branch's own
+/// input guard — its `when:`, or the one beside its `when_subject_state:` — must hold. On a command
+/// guarded by a related row, `existing_instance:` and the `exists: false` branch answer before any
+/// input refusal, and an `input_absent:` branch is answered before any input is read, so neither is
+/// read here. Whatever else a branch reads — the held state, a stored or related row, a provider —
+/// is not decided, and a `when:` the literals leave undecided claims nothing.
+fn not_taken(
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    decided: &impl Fn(&Predicate) -> Option<bool>,
+) -> Option<String> {
+    use crate::decision::when;
+    use ess_compiler::ir::{ResolvedCondition, ResolvedRelatedTest};
+
+    let related = command.outcomes.iter().any(|it| {
+        // A row set (ess/22) is read after `existing_instance:` as a related row is.
+        matches!(
+            it.condition,
+            ResolvedCondition::Related { .. } | ResolvedCondition::RelatedSet { .. }
+        )
+    });
+    match &outcome.condition {
+        ResolvedCondition::InputAbsent => return None,
+        ResolvedCondition::ExistingInstance
+        | ResolvedCondition::Related {
+            test: ResolvedRelatedTest::Absent,
+            ..
+        } if related => return None,
+        _ => {}
+    }
+    let accepting_when = |other: &ResolvedOutcome| {
+        other.error.is_none() && matches!(other.condition, ResolvedCondition::When { .. })
+    };
+    let external = matches!(
+        outcome.condition,
+        ResolvedCondition::External { .. } | ResolvedCondition::ExternalWhen { .. }
+    );
+    let earlier_accepting: Vec<&ResolvedOutcome> = command
+        .outcomes
+        .iter()
+        .take_while(|other| {
+            // The default yields to every accepting `when:` that holds, wherever it is declared.
+            matches!(outcome.condition, ResolvedCondition::Otherwise) || other.name != outcome.name
+        })
+        .filter(|other| other.name != outcome.name && accepting_when(other))
+        .filter(|_| {
+            accepting_when(outcome)
+                || external
+                || matches!(outcome.condition, ResolvedCondition::Otherwise)
+        })
+        .collect();
+    let before = crate::synthesize::sibling_refusals(command, outcome).chain(earlier_accepting);
+    for first in before {
+        let Some(guard) = when(first) else {
+            continue;
+        };
+        if decided(guard) == Some(true) {
+            return Some(format!(
+                "`{}` ({guard}) answers it first, so `{}` is not taken",
+                first.name, outcome.name
+            ));
+        }
+    }
+    let own = when(outcome)?;
+    (decided(own) == Some(false)).then(|| {
+        format!(
+            "`{}` is not taken: its own guard ({own}) refutes it",
+            outcome.name
+        )
+    })
+}
+
+/// Whether `guard` holds of `facts` at every moment a target may handle the act, where that is one
+/// answer; `None` where it is not, or where the literals leave the guard undecided.
+///
+/// A guard over the current-time operand (`now`, beyond10x/ess#171) is decided by the target against
+/// its own clock, at a moment no authored file knows. Each comparison with `now` moves at most once
+/// as the clock advances, so where every such comparison reads alike at the earliest run
+/// ([`crate::now_offset::earliest_run`]) and in the far future, it reads alike at every run between,
+/// and so does the guard. A comparison that is an equality, or sits inside a quantifier, is not
+/// read that way and leaves the guard undecided. Synthesis's fixed reference instant is never used
+/// here: an act is not refused for what a clock no target reads would say.
+fn at_every_run(guard: &Predicate, facts: &dyn ess_primitives::facts::FactSource) -> Option<bool> {
+    use ess_primitives::predicate::{CompareOp, Operand, Truth};
+    use ess_primitives::time::{CurrentTime, Rfc3339Instant};
+
+    fn reads_now(operand: &Operand) -> bool {
+        matches!(operand, Operand::Literal(ess_primitives::facts::FactValue::Text(text))
+            if CurrentTime::parse(text).is_some())
+    }
+    /// Every comparison with `now`, or `None` where one cannot be read on its own.
+    fn clocked<'p>(guard: &'p Predicate, found: &mut Vec<&'p Predicate>) -> Option<()> {
+        match guard {
+            Predicate::All(children) | Predicate::Any(children) => {
+                children.iter().try_for_each(|child| clocked(child, found))
+            }
+            Predicate::Not(inner) => clocked(inner, found),
+            Predicate::Compare {
+                left, op, right, ..
+            } if reads_now(left) || reads_now(right) => {
+                if matches!(op, CompareOp::Eq | CompareOp::Ne) {
+                    return None;
+                }
+                found.push(guard);
+                Some(())
+            }
+            Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
+                let mut inside = Vec::new();
+                clocked(&quantified.body, &mut inside)?;
+                inside.is_empty().then_some(())
+            }
+            _ => Some(()),
+        }
+    }
+    let decided = |truth: Truth| match truth {
+        Truth::True => Some(true),
+        Truth::False => Some(false),
+        Truth::Unknown => None,
+    };
+    let mut comparisons = Vec::new();
+    clocked(guard, &mut comparisons)?;
+    if comparisons.is_empty() {
+        return decided(guard.evaluate(&Clocked { facts, now: None }));
+    }
+    let earliest = Clocked {
+        facts,
+        now: Some(crate::now_offset::earliest_run()),
+    };
+    let far = Clocked {
+        facts,
+        now: Some(Rfc3339Instant::parse_rfc3339("9000-01-01T00:00:00Z")?),
+    };
+    for comparison in comparisons {
+        let first = decided(comparison.evaluate(&earliest))?;
+        if decided(comparison.evaluate(&far))? != first {
+            return None;
+        }
+    }
+    decided(guard.evaluate(&earliest))
+}
+
+/// `facts`, read against the clock `now`; with `None`, a guard over the current time is undecided.
+struct Clocked<'a> {
+    facts: &'a dyn ess_primitives::facts::FactSource,
+    now: Option<ess_primitives::time::Rfc3339Instant>,
+}
+
+impl ess_primitives::facts::FactSource for Clocked<'_> {
+    fn fact(
+        &self,
+        path: &ess_primitives::facts::FactPath,
+    ) -> Option<ess_primitives::facts::FactValue> {
+        self.facts.fact(path)
+    }
+
+    fn observe(
+        &self,
+        path: &ess_primitives::facts::FactPath,
+    ) -> Option<ess_primitives::facts::FactValue> {
+        self.facts.observe(path)
+    }
+
+    fn present(&self, path: &ess_primitives::facts::FactPath) -> bool {
+        self.facts.present(path)
+    }
+
+    fn observed_presence(&self, path: &ess_primitives::facts::FactPath) -> Option<bool> {
+        self.facts.observed_presence(path)
+    }
+
+    fn scales(&self) -> &ess_primitives::facts::Scales {
+        self.facts.scales()
+    }
+
+    fn orders_as_instant(&self, path: &ess_primitives::facts::FactPath) -> bool {
+        self.facts.orders_as_instant(path)
+    }
+
+    fn now(&self) -> Option<ess_primitives::time::Rfc3339Instant> {
+        self.now
+    }
+
+    fn orders_text_by_bytes(&self, path: &ess_primitives::facts::FactPath) -> bool {
+        self.facts.orders_text_by_bytes(path)
+    }
+
+    fn cardinality(&self, path: &ess_primitives::facts::FactPath) -> Option<usize> {
+        self.facts.cardinality(path)
+    }
+}
+
+/// `input` as it reads in a refusal: each field and its literal as JSON, so an empty text still
+/// reads as one, or `<reference>` for a value the act does not write literally.
+fn sent_as_text(input: &BTreeMap<String, ScenarioValue>) -> String {
+    let fields: Vec<String> = input
+        .iter()
+        .map(|(field, value)| match value.as_literal() {
+            Some(literal) => format!(
+                "{field}: {}",
+                serde_json::to_string(literal).unwrap_or_else(|_| literal.to_string())
+            ),
+            None => format!("{field}: <reference>"),
+        })
+        .collect();
+    format!("{{{}}}", fields.join(", "))
+}
+
 impl Cause {
     /// The family every refusal here belongs to.
     pub const FAMILY: &'static str = "AUTHOR";
@@ -1344,7 +1578,7 @@ impl Cause {
     }
 }
 
-// One arm per cause, and long because there are forty of them. A reader comparing two
+// One arm per cause, and long because there are forty-one of them. A reader comparing two
 // repairs reads them side by side or not at all, and splitting the list would put half of it
 // somewhere else. The meaning is the variant's own first line of documentation.
 diagnostic_catalogue! {
@@ -1502,6 +1736,12 @@ diagnostic_catalogue! {
             "An act sends a served command no actor is granted, which every caller is refused.",
             "grant the command to an actor with `may:` and send the act as that actor, or write \
              `refused: not_granted` with an `actor:` the specification declares";
+        Self::GuardsContradictOutcome { .. } => 41,
+            "An act expects a branch the command's guards do not take for the input it sends.",
+            "send an input the expected branch's `when:` admits and no branch answered before it \
+             claims, or expect the branch that input takes: input-guarded refusals answer first, \
+             the first declared of them, then accepting `when:` and external branches in \
+             declaration order, and the default only where no `when:` holds";
     }
 }
 
@@ -1565,6 +1805,17 @@ impl fmt::Display for Cause {
                 f,
                 "`{command}` is expected refused as not granted, which contradicts {}",
                 claims.join(", ")
+            ),
+            Self::GuardsContradictOutcome {
+                command,
+                claim,
+                input,
+                reasons,
+            } => write!(
+                f,
+                "`{command}` is expected to answer {claim} for {input}, which its guards decide \
+                 otherwise: {}",
+                reasons.join("; ")
             ),
             Self::UndeclaredEvent { event } => {
                 write!(f, "`{event}` is not an event this specification declares")
@@ -1808,6 +2059,23 @@ fn map_key_newtypes(ir: &EssIr) -> ess_domain::types::MapKeyNewtypes {
     ))
 }
 
+/// Every arrangement a document declares, in order, with whether it carries a `setup` — what an
+/// explicit synthesis seed selects from (beyond10x/ess#413). Read exactly as [`compile_one`] reads
+/// the document; call it only for a source that compiled.
+pub(crate) fn arrangements(
+    ir: &EssIr,
+    source: &Source,
+) -> Result<Vec<(InstanceName, bool)>, String> {
+    let document: Document = map_key_newtypes(ir)
+        .scope(|| serde_yaml::from_str(&source.text))
+        .map_err(|error| error.to_string())?;
+    Ok(document
+        .arrange
+        .iter()
+        .map(|arrangement| (arrangement.instance.clone(), arrangement.setup.is_some()))
+        .collect())
+}
+
 /// One file, or every reason it produced nothing.
 pub(crate) fn compile_one(
     ir: &EssIr,
@@ -1898,10 +2166,15 @@ pub(crate) fn compile_one(
         other => unreachable!("`{other}` is an authored scenario id"),
     }));
     dependencies.extend(compiler.types.into_iter().map(EssSemanticRef::from));
-    Ok((
-        id,
-        ConformanceScenario::new(document.summary, compiler.steps, dependencies),
-    ))
+    let mut scenario = ConformanceScenario::new(document.summary, compiler.steps, dependencies);
+    crate::one_time_response::produce::attach(ir, &mut scenario).map_err(|detail| {
+        vec![Refusal {
+            origin: source.origin.clone(),
+            scenario: Some(id.clone()),
+            cause: Cause::Unreadable { detail },
+        }]
+    })?;
+    Ok((id, scenario))
 }
 
 fn document_format_refusal(document: &Document) -> Option<Cause> {
@@ -2112,12 +2385,14 @@ impl Compiler<'_> {
             return;
         }
         let actor = self.sender(act, &command_ref);
+        let refused_before = self.refusals.len();
         let input = self.values(
             &act.input,
             &input_fields,
             &Surface::Input(command_ref.clone()),
             Completeness::Total,
         );
+        let sent = (self.refusals.len() == refused_before).then(|| input.clone());
         self.external_answer(&command_ref, command, act);
         self.steps.push(ScenarioStep::ExecuteCommand {
             caller: std::collections::BTreeMap::new(),
@@ -2144,6 +2419,7 @@ impl Compiler<'_> {
                 }),
             }
         }
+        self.guarded_outcome(&command_ref, command, act, sent.as_ref());
 
         if let Some(claim) = &act.error {
             self.error(claim);
@@ -2211,6 +2487,87 @@ impl Compiler<'_> {
                 times: None,
             });
         }
+    }
+
+    /// Refuses an act whose expected branch the command's guards decidedly do not take for the
+    /// input it sends (beyond10x/ess#222).
+    ///
+    /// The branch is the one under `outcome:`; where none is written, the branches reporting the
+    /// error under `error:`, and the act is refused only where every one of them is decidedly not
+    /// taken. A misspelt branch or error is refused by its own code and not read here. `input` is
+    /// `None` where the act's input was itself refused: what it would select is a question about a
+    /// call that could not be made.
+    fn guarded_outcome(
+        &mut self,
+        command_ref: &CommandRef,
+        command: &ResolvedCommand,
+        act: &Act,
+        input: Option<&BTreeMap<String, ScenarioValue>>,
+    ) {
+        let Some(input) = input else {
+            return;
+        };
+        let (claim, candidates): (String, Vec<&ResolvedOutcome>) = match (&act.outcome, &act.error)
+        {
+            (Some(written), _) => {
+                let Some(outcome) = command
+                    .outcomes
+                    .iter()
+                    .find(|outcome| outcome.name.as_str() == written)
+                else {
+                    return;
+                };
+                (format!("`{written}`"), vec![outcome])
+            }
+            (None, Some(claim)) => {
+                let Ok(error) = QualifiedName::new(&claim.name) else {
+                    return;
+                };
+                let reporting: Vec<&ResolvedOutcome> = command
+                    .outcomes
+                    .iter()
+                    .filter(|outcome| outcome.error.as_ref().is_some_and(|it| it.name() == &error))
+                    .collect();
+                (format!("error `{error}`"), reporting)
+            }
+            (None, None) => return,
+        };
+        if candidates.is_empty() {
+            return;
+        }
+        let Ok(facts) = crate::input::replay_facts(self.ir, command, input) else {
+            return;
+        };
+        let opaque: BTreeSet<&str> = input
+            .iter()
+            .filter(|(_, value)| value.as_literal().is_none())
+            .map(|(field, _)| field.as_str())
+            .collect();
+        // What the literals decide of `guard`; nothing where it reads an opaque field or anything
+        // but the command's input — a caller attribute, a binder — which `defined()` would read
+        // as absent.
+        let decided = |guard: &Predicate| {
+            let input_only = guard.fact_paths().iter().all(|path| {
+                path.segments().first().is_some_and(|root| {
+                    !opaque.contains(root.as_str())
+                        && command.input.iter().any(|field| field.name == *root)
+                })
+            });
+            input_only.then(|| at_every_run(guard, &facts)).flatten()
+        };
+        let mut reasons = Vec::new();
+        for outcome in candidates {
+            match not_taken(command, outcome, &decided) {
+                Some(reason) => reasons.push(reason),
+                None => return,
+            }
+        }
+        self.refuse(Cause::GuardsContradictOutcome {
+            command: command_ref.clone(),
+            claim,
+            input: sent_as_text(input),
+            reasons,
+        });
     }
 
     /// Refuses each claim of an act that only an external answer the act does not state satisfies.
@@ -2632,8 +2989,10 @@ impl Compiler<'_> {
             }
         }
         if let Some(actor) = actor {
-            self.steps
-                .push(ScenarioStep::ExpectNotGranted { actor, unpublished });
+            self.steps.push(ScenarioStep::ExpectNotGranted {
+                actor: Some(actor),
+                unpublished,
+            });
         }
         self.mark(act);
     }
@@ -2728,14 +3087,17 @@ impl Compiler<'_> {
         let fields = declared.fields.clone();
         self.reach(&fields);
         self.source.insert(event.clone().into());
-        let (fixtures, literals): (BTreeMap<_, _>, BTreeMap<_, _>) = claim
+        let (references, literals): (BTreeMap<_, _>, BTreeMap<_, _>) = claim
             .payload
             .iter()
             .map(|(field, value)| (field.clone(), value.clone()))
-            .partition(|(_, value)| matches!(value, Written::Fixture(_)));
+            .partition(|(field, value)| {
+                matches!(value, Written::Fixture(_))
+                    || self.compares_identity(field, value, &fields)
+            });
         let payload = self.literals(&literals, &fields, &Surface::Payload(event.clone()));
         let mut dynamic = self.values(
-            &fixtures,
+            &references,
             &fields,
             &Surface::Payload(event.clone()),
             Completeness::Partial,
@@ -2760,6 +3122,28 @@ impl Compiler<'_> {
                 shape,
             });
         }
+    }
+
+    /// Whether an event payload's `value` for `field` is an identity the run captured, compared as
+    /// the identity it resolves to (beyond10x/ess#273): a whole-field `{$instance: …}` naming an
+    /// arranged instance, written for a declared field typed as that instance's identity. Every
+    /// other reference stays with [`literals`](Self::literals), which refuses it as
+    /// `NotComparable` as before.
+    fn compares_identity(&self, field: &str, value: &Written, fields: &[ResolvedField]) -> bool {
+        let Written::Instance(instance) = value else {
+            return false;
+        };
+        let Some(identity) = self
+            .arranged
+            .get(instance)
+            .and_then(|entity| self.ir.entity_identity(entity))
+        else {
+            return false;
+        };
+        fields
+            .iter()
+            .find(|declared| declared.name == field)
+            .is_some_and(|declared| declared.type_ref.required() == identity.required())
     }
 
     /// Binding an identity an act published.
@@ -2926,6 +3310,25 @@ impl Compiler<'_> {
             });
         }
         if let Some(predicate) = &assertion.satisfies {
+            // A calendar window is admitted only in a command outcome's guard
+            // (`docs/design/calendar-window-guards.md`), never in a suite predicate: refused by name.
+            if let Some(window) = predicate.windows().first() {
+                self.refuse(Cause::InvalidPredicate {
+                    view: view.clone(),
+                    diagnostic: ess_domain::expression::ExpressionError {
+                        code: ess_primitives::error::ValidationCode::TypeMismatch,
+                        owner: format!("authored row {view}.satisfies"),
+                        path: window.at.fact_path().cloned(),
+                        segment: None,
+                        boundary: None,
+                        message: format!(
+                            "`{window}` is a calendar window, which is admitted only in a command \
+                             outcome's guard and never in a suite predicate such as `satisfies:`"
+                        ),
+                    },
+                });
+                return None;
+            }
             let checked = ess_compiler::expression::check_predicate(
                 self.ir,
                 fields,
@@ -2954,6 +3357,7 @@ impl Compiler<'_> {
             for read in &checked.reads {
                 if !projection_target(self.ir, &read.resolution).is_scalar()
                     && !crate::input::aggregate_presence(self.ir, read, &presence)
+                    && !crate::input::lifted_text_length(self.ir, read, predicate)
                 {
                     self.refuse(Cause::UnreadablePredicate {
                         view: view.clone(),
@@ -3273,18 +3677,28 @@ impl Compiler<'_> {
                     Slot::Inside(name.clone())
                 } else if key == payload {
                     let variant = entries.get(tag).and_then(Node::as_text);
-                    if let Some(type_ref) = variant.and_then(|variant| variants.get(variant)) {
+                    if let Some(Some(type_ref)) = variant.and_then(|variant| variants.get(variant))
+                    {
                         Slot::Typed(type_ref.clone())
                     } else {
                         if holds_reference(member) {
-                            self.refuse(Cause::ValueRejected {
-                                surface: surface.clone(),
-                                detail: format!(
+                            let detail = if variant.is_some_and(|v| variants.contains_key(v)) {
+                                format!(
+                                    "{}: `{}` of `{name}` is a unit variant and carries nothing",
+                                    place.written,
+                                    variant.unwrap_or("nothing"),
+                                )
+                            } else {
+                                format!(
                                     "{}: `{}` names no variant of `{name}`; it declares {}",
                                     place.written,
                                     variant.unwrap_or("nothing"),
                                     variants.keys().cloned().collect::<Vec<_>>().join(", ")
-                                ),
+                                )
+                            };
+                            self.refuse(Cause::ValueRejected {
+                                surface: surface.clone(),
+                                detail,
                             });
                         }
                         Slot::Undeclared
@@ -3586,8 +4000,9 @@ enum Container {
         name: String,
         /// The field carrying the variant's name.
         tag: String,
-        /// The payload type of each variant.
-        variants: BTreeMap<String, ResolvedTypeRef>,
+        /// The payload type of each variant; `None` for a unit variant, which carries nothing
+        /// (ess/22).
+        variants: BTreeMap<String, Option<ResolvedTypeRef>>,
     },
     /// A value whose parts are not typed one by one, by the name of its type.
     Opaque(String),

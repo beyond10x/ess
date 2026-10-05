@@ -385,8 +385,15 @@ impl SemanticChange {
     ///
     /// Not `const`: a cause change is `ess-diff/10` vocabulary when either side is an `external`
     /// cause (ess/18, beyond10x/ess#195), and that is read through the boxed cause.
+    #[allow(clippy::too_many_lines)]
     pub fn minimum_format(&self) -> u32 {
         match self {
+            Self::Command { changed, .. } if changed.is_compensation() => 14,
+            Self::Binding { changed, .. } if changed.is_refusal_policy() => 14,
+            Self::Binding {
+                changed: BindingChange::PredicateChanged { .. },
+                ..
+            } => crate::compatibility::CLASSIFIED_DELTA_FORMAT,
             Self::Binding {
                 changed: BindingChange::CauseChanged { before, after },
                 ..
@@ -401,6 +408,7 @@ impl SemanticChange {
                     | BindingChange::ContextFieldSummaryChanged { .. },
                 ..
             } => 10,
+            Self::Command { changed, .. } if changed.is_one_time_response() => 13,
             Self::Command { changed, .. } if changed.is_diff_12() => 12,
             Self::Type { changed, .. } if changed.is_prefix() => 11,
             Self::View {
@@ -627,6 +635,14 @@ fn optional(value: Option<&String>) -> String {
     value.map_or_else(|| "(none)".to_owned(), |text| format!("`{text}`"))
 }
 
+/// Which occurrences a binding with this event-payload condition invokes for (ess/22).
+fn occurrences(condition: Option<&ess_primitives::predicate::Predicate>) -> String {
+    condition.map_or_else(
+        || "for every occurrence".to_owned(),
+        |predicate| format!("where `{predicate}` holds"),
+    )
+}
+
 /// What moved about the specification itself.
 ///
 /// Two variants, and the second one is why: [`EssIr`](ess_compiler::ir::EssIr) has four fields that
@@ -705,6 +721,12 @@ impl SystemChange {
         }
     }
 }
+
+/// What a unit variant carries, as [`TypeChange::VariantTypeChanged`] writes it (ess/22,
+/// beyond10x/ess#418).
+///
+/// Not a type spelling: no declared or primitive type is called `unit`, so it cannot be read as one.
+pub const UNIT_PAYLOAD: &str = "unit";
 
 /// What moved about a declared type.
 ///
@@ -851,12 +873,16 @@ pub enum TypeChange {
         after: String,
     },
     /// A union variant carries a different payload type.
+    ///
+    /// A unit variant (ess/22) carries [`UNIT_PAYLOAD`]: a unit variant that gains a payload, or a
+    /// payload variant that loses one, is written with it on that side, and is breaking wherever the
+    /// union is used ([`crate::compatibility`]).
     VariantTypeChanged {
         /// Which variant.
         variant: String,
-        /// What it carried.
+        /// What it carried: a type, or [`UNIT_PAYLOAD`].
         before: String,
-        /// What it carries.
+        /// What it carries: a type, or [`UNIT_PAYLOAD`].
         after: String,
     },
     /// A union's tag field is spelt differently.
@@ -2299,8 +2325,30 @@ pub enum CommandChange {
         /// Whether it accepts nothing.
         after: bool,
     },
-    /// Whether a branch returns the command's typed response (ess/17 `returns:`) moved.
-    /// `ess-diff/12`.
+    /// Which fields a branch may disclose only on its originating response moved (ess-diff/13).
+    OutcomeOneTimeResponseChanged {
+        /// Which originating outcome.
+        outcome: String,
+        /// Previously restricted response fields.
+        before: Vec<String>,
+        /// Now restricted response fields.
+        after: Vec<String>,
+    },
+    /// Whether a refusal declares the compensating change it makes to its addressed row before
+    /// answering (`compensates: true`, ess/22, beyond10x/ess#197) moved. `ess-diff/14`.
+    ///
+    /// Breaking for callers and readers either way: a caller retrying after the refusal, and a
+    /// reader of the row, meet a different state. The change itself is reported beside it as the
+    /// branch's `outcome-subject-changed`.
+    OutcomeCompensatesChanged {
+        /// Which branch.
+        outcome: String,
+        /// Whether it compensated.
+        before: bool,
+        /// Whether it compensates.
+        after: bool,
+    },
+    /// Whether the outcome returns its response (ess-diff/12).
     OutcomeReturnsChanged {
         /// Which branch.
         outcome: String,
@@ -2431,6 +2479,8 @@ impl CommandChange {
             Self::OutcomeErrorPayloadChanged { .. } => "outcome-error-payload-changed",
             Self::OutcomeAcceptsNothingChanged { .. } => "outcome-accepts-nothing-changed",
             Self::OutcomeReturnsChanged { .. } => "outcome-returns-changed",
+            Self::OutcomeCompensatesChanged { .. } => "outcome-compensates-changed",
+            Self::OutcomeOneTimeResponseChanged { .. } => "outcome-one-time-response-changed",
             Self::OutcomeDecidedByCallerChanged { .. } => "outcome-decided-by-caller-changed",
             Self::OutcomeErrorChanged { .. } => "outcome-error-changed",
             Self::OutcomeSummaryChanged { .. } => "outcome-summary-changed",
@@ -2468,6 +2518,8 @@ impl CommandChange {
             | Self::OutcomeErrorPayloadChanged { outcome, .. }
             | Self::OutcomeAcceptsNothingChanged { outcome, .. }
             | Self::OutcomeReturnsChanged { outcome, .. }
+            | Self::OutcomeCompensatesChanged { outcome, .. }
+            | Self::OutcomeOneTimeResponseChanged { outcome, .. }
             | Self::OutcomeDecidedByCallerChanged { outcome, .. }
             | Self::OutcomeErrorChanged { outcome, .. }
             | Self::OutcomeSummaryChanged { outcome, .. } => Some(outcome.clone()),
@@ -2475,10 +2527,16 @@ impl CommandChange {
         }
     }
 
-    /// How it relates the revisions. No command change decides a direction: an outcome added looks
-    /// like a widening and is not one — whether callers can reach it depends on every other
-    /// branch's condition, which is exactly the proof this slice refuses to attempt.
-    pub const fn relation(&self) -> SemanticRelation {
+    /// Disclosure restrictions have a set direction; other command edits remain changed.
+    pub fn relation(&self) -> SemanticRelation {
+        if let Self::OutcomeOneTimeResponseChanged { before, after, .. } = self {
+            if before.iter().all(|field| after.contains(field)) {
+                return SemanticRelation::Narrowed;
+            }
+            if after.iter().all(|field| before.contains(field)) {
+                return SemanticRelation::Expanded;
+            }
+        }
         SemanticRelation::Changed
     }
 
@@ -2497,8 +2555,30 @@ impl CommandChange {
         )
     }
 
+    const fn is_one_time_response(&self) -> bool {
+        matches!(self, Self::OutcomeOneTimeResponseChanged { .. })
+    }
+
+    /// Whether this is a refusal's compensating change moving (`ess-diff/14`, ess/22,
+    /// beyond10x/ess#197).
+    pub const fn is_compensation(&self) -> bool {
+        matches!(self, Self::OutcomeCompensatesChanged { .. })
+    }
+
     /// The clause for an outcome flag or error payload change, and empty for every other change.
     fn flag_clause(&self) -> String {
+        if let Self::OutcomeOneTimeResponseChanged {
+            outcome,
+            before,
+            after,
+        } = self
+        {
+            return format!(
+                "outcome `{outcome}` one-time response fields: {} → {}",
+                before.join(", "),
+                after.join(", ")
+            );
+        }
         let (outcome, flag, before, after) = match self {
             Self::OutcomeAcceptsNothingChanged {
                 outcome,
@@ -2515,6 +2595,11 @@ impl CommandChange {
                 before,
                 after,
             } => (outcome, "decided by the caller", before, after),
+            Self::OutcomeCompensatesChanged {
+                outcome,
+                before,
+                after,
+            } => (outcome, "compensates its refusal", before, after),
             _ => return self.error_payload_clause(),
         };
         format!("outcome `{outcome}` {flag} {before} → {after}")
@@ -2673,7 +2758,7 @@ impl CommandChange {
                 optional(before.as_ref()),
                 optional(after.as_ref())
             ),
-            // The `ess-diff/12` outcome kinds: error payload sources and outcome flags.
+            // Later outcome kinds: error payloads, flags and one-time restrictions.
             _ => self.flag_clause(),
         }
     }
@@ -3104,6 +3189,19 @@ pub enum BindingChange {
         /// The policy it has.
         after: String,
     },
+    /// A failure policy selected per refusal of the invoked command differs, or one appeared or
+    /// went away (ess/22, beyond10x/ess#269). `ess-diff/14` vocabulary.
+    ///
+    /// The complete resolved table and fallback on each side, `None` for a universal policy —
+    /// whose own change is [`FailureChanged`](Self::FailureChanged), reported beside this one.
+    /// Aliases are resolved before the comparison, so naming the same refusals differently is no
+    /// change. No direction is decided: a table is a wiring of work, as every binding is.
+    RefusalPolicyChanged {
+        /// The table it had.
+        before: Option<crate::refusal_policy::RefusalPolicyContent>,
+        /// The table it has.
+        after: Option<crate::refusal_policy::RefusalPolicyContent>,
+    },
     /// The binding's wire name moved.
     WireNameChanged {
         /// What it was.
@@ -3145,6 +3243,20 @@ pub enum BindingChange {
         /// What it says.
         after: Option<String>,
     },
+    /// The event-payload condition (ess/22, beyond10x/ess#268) was added, removed or changed: the
+    /// occurrences the binding invokes for moved. `ess-diff/14` vocabulary, and so always written
+    /// classified.
+    ///
+    /// [`SemanticRelation::Changed`] like every binding change: whether a predicate admits more or
+    /// fewer occurrences is not decided here, and no equivalence of two spellings is guessed.
+    PredicateChanged {
+        /// The condition it had, as written; `None` where it had none.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        before: Option<ess_primitives::predicate::Predicate>,
+        /// The condition it has; `None` where it has none.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        after: Option<ess_primitives::predicate::Predicate>,
+    },
 }
 
 impl BindingChange {
@@ -3162,12 +3274,20 @@ impl BindingChange {
             Self::MappingValueChanged { .. } => "mapping-value-changed",
             Self::DeliveryChanged { .. } => "delivery-changed",
             Self::FailureChanged { .. } => "failure-changed",
+            Self::RefusalPolicyChanged { .. } => "refusal-policy-changed",
             Self::WireNameChanged { .. } => "wire-name-changed",
             Self::DisplayNameChanged { .. } => "display-name-changed",
             Self::SummaryChanged { .. } => "summary-changed",
             Self::ContextFieldDisplayChanged { .. } => "context-field-display-changed",
             Self::ContextFieldSummaryChanged { .. } => "context-field-summary-changed",
+            Self::PredicateChanged { .. } => "predicate-changed",
         }
+    }
+
+    /// Whether this is `ess-diff/14` vocabulary: a refusal-selected failure policy (ess/22,
+    /// beyond10x/ess#269), the coordinated `/14` allocation every earlier reader refuses.
+    pub const fn is_refusal_policy(&self) -> bool {
+        matches!(self, Self::RefusalPolicyChanged { .. })
     }
 
     /// The command input a mapping change is about, or the context field a context-field change
@@ -3217,6 +3337,15 @@ impl BindingChange {
             Self::FailureChanged { before, after } => {
                 format!("on failure {after}, was {before}")
             }
+            Self::RefusalPolicyChanged { before, after } => {
+                let side = |content: &Option<crate::refusal_policy::RefusalPolicyContent>| {
+                    content.as_ref().map_or_else(
+                        || "one universal policy".to_owned(),
+                        crate::refusal_policy::RefusalPolicyContent::describe,
+                    )
+                };
+                format!("policy per refusal: {}, was: {}", side(after), side(before))
+            }
             Self::WireNameChanged { before, after } => format!("wire name `{before}` → `{after}`"),
             Self::DisplayNameChanged { before, after } => {
                 format!("display name `{before}` → `{after}`")
@@ -3239,6 +3368,11 @@ impl BindingChange {
                 "context field `{field}` summary {} → {}",
                 optional(before.as_ref()),
                 optional(after.as_ref())
+            ),
+            Self::PredicateChanged { before, after } => format!(
+                "invokes {}, invoked {}",
+                occurrences(after.as_ref()),
+                occurrences(before.as_ref())
             ),
         }
     }

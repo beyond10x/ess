@@ -208,7 +208,7 @@ compatibility clause. Nothing here is a silent omission.
 | `ess-domain/src/wire.rs:30`, one `command.…` location | 1 | **deferred with a stated reason** | `wire.rs`'s `Namespace` helper is shared by five heads, one of which is `types.` — a head no `ConstructKind` renders. Migrating only its command caller needs the helper to accept "a site or a string", which is the shape this story is removing. It moves with the `type` family. Pinned at 1 by the head census. |
 | `ess-domain/src/primitive_admission.rs`, two `command.…` locations: the input fields (`:460`) and, since 0.37.0, a response field's `presence` (`:468`) | 2 | **not this unit** | `story:review-primitive-semantics` owns the file. A ready patch for the first is at `target/review-boundaries-21/scratch/primitive-admission-command-site.patch`; it is not applied. The second goes through the same text-located `presence` helper as the struct and event fields. Pinned at 2 by the head census, so it cannot grow unnoticed. |
 | `command.rs` `validate_sets` (`:1727`) + `field_shape` (`:1987`) + the eight admission sites above | 11 | see rows above | `grep -c 'ValidationError::new' crates/specify/ess-domain/src/command.rs` = 11, which is 2 + 1 + 8. |
-| `ess-domain/src/actor.rs` | 1 | deferred | An `actor`-family site the story's own scope does not list; recorded here so the inventory is complete rather than equal to the scope. |
+| `ess-domain/src/actor.rs` | 3 | deferred | `actor`-family sites the story's own scope does not list: the undeclared-grant refusal, and since beyond10x/ess#286 the view-grant format refusal and the undeclared command-or-view refusal, which keep its `actor <name>.may` location. Recorded here so the inventory is complete rather than equal to the scope. |
 | `ess-domain/src/expression.rs` (1), `primitive_admission.rs` (2) | 3 | **not this unit** | `story:review-primitive-semantics`, same wave. `CommandSpec::validate_typed_guard` hands `check_predicate` the *rendered* form of its own site, so the two spellings cannot drift while that file waits. |
 | `ess-primitives/src/error.rs:78` `ParseError::Shape { location: String }` | — | deferred | The same pattern on the *parse* side. A parse error has a real `serde_yaml` position, so its typed form is a `SyntaxSpan`, not a `ConstructRef`; different work. |
 | A positional segment choosing a source line | — | **explicitly unsupported** | `Segment::Index` contributes a token and no needle: an index always sits behind a `STRUCTURAL` key in the paths the migrated producers write, so it never reaches the trailing-key test. `command.…input[1]` is cited at the command's own declaration, not at the second input field. Making the index choose the line means counting occurrences of a key inside a block, which `Locator`'s whole-file substring search cannot do; it is parser-position work, beside `SyntaxSpan`. The arm is kept and pinned by `typed_tokens_are_the_string_tokens_for_every_segment_shape`, which fails if it stops contributing (adversary pass 2, F7). |
@@ -254,24 +254,29 @@ Every `ValidationError` construction site in `crates/specify/ess-domain/src/`, a
 by `crates/specify/ess-compiler/tests/typed_diagnostics.rs`; a file with sites that is missing from
 this block, a count that does not match, and a listed file that has none, are each a failing test.
 
+`command.rs` rose from 50 to 55 typed sites with beyond10x/ess#197
+(`docs/design/refusal-with-effect.md`): `validate_compensation`'s four refusals of a misused
+`compensates: true` and its `ess/22` format gate `compensation_format`, all written with
+`ValidationError::at` under the `command` head. No string-located site was added.
+
 <!-- inventory:begin -->
 ```text
 accessor.rs 1 0
-actor.rs 1 2
-binding.rs 34 0
-command.rs 13 50
+actor.rs 3 2
+binding.rs 35 0
+command.rs 13 55
 component.rs 15 9
 domain.rs 5 0
 entity.rs 17 4
 expression.rs 1 0
 outcome_group.rs 17 0
-primitive_admission.rs 15 8
+primitive_admission.rs 16 8
 selection.rs 2 0
 spec.rs 7 0
 system.rs 10 0
 topology.rs 10 0
 types.rs 16 1
-view.rs 28 0
+view.rs 29 0
 wire.rs 1 0
 ```
 <!-- inventory:end -->
@@ -288,9 +293,9 @@ reason in the table above.** There are two, both pinned at 1.
 
 <!-- heads:begin -->
 ```text
-actor actor.rs 1
+actor actor.rs 3
 actors actor.rs 1
-binding binding.rs 23
+binding binding.rs 24
 binding primitive_admission.rs 2
 command primitive_admission.rs 2
 command wire.rs 1
@@ -322,7 +327,7 @@ types system.rs 3
 types types.rs 8
 types wire.rs 1
 view primitive_admission.rs 3
-view view.rs 11
+view view.rs 13
 view wire.rs 2
 ```
 <!-- heads:end -->

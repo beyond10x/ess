@@ -35,6 +35,11 @@ pub enum ProducerProfile {
     /// Go skipped semantics; errors and unsupported are unavailable categories.
     #[serde(rename = "go-scenario-status/1")]
     Go,
+    /// Generated Go/TypeScript semantics with distinct error, unsupported and skipped categories.
+    ///
+    /// Version 1 remains readable with its original three-category restriction.
+    #[serde(rename = "go-scenario-status/2")]
+    GoV2,
     /// Results a runner outside ESS supplied (`ess-conformance-results/1`); ESS executed nothing.
     ///
     /// Rust's category semantics: skipped is unavailable. On the wire it may name the runner, as
@@ -64,6 +69,7 @@ impl TryFrom<String> for Profile {
         match text.as_str() {
             "rust-scenario-status/1" => Ok(Self::of(ProducerProfile::Rust)),
             "go-scenario-status/1" => Ok(Self::of(ProducerProfile::Go)),
+            "go-scenario-status/2" => Ok(Self::of(ProducerProfile::GoV2)),
             EXTERNAL_PROFILE => Ok(Self::of(ProducerProfile::External)),
             other => match other
                 .strip_prefix(EXTERNAL_PROFILE)
@@ -83,6 +89,7 @@ impl From<Profile> for String {
         match (profile.kind, profile.runner) {
             (ProducerProfile::Rust, _) => "rust-scenario-status/1".into(),
             (ProducerProfile::Go, _) => "go-scenario-status/1".into(),
+            (ProducerProfile::GoV2, _) => "go-scenario-status/2".into(),
             (ProducerProfile::External, None) => EXTERNAL_PROFILE.into(),
             (ProducerProfile::External, Some(runner)) => {
                 format!("{EXTERNAL_PROFILE}{RUNNER_MARK}{runner}")
@@ -100,11 +107,11 @@ pub struct ScenarioCounts {
     pub passed: u64,
     /// Final failures only.
     pub failed: u64,
-    /// Rust runner/target errors.
+    /// Runner/target execution errors, when available under the producer profile.
     pub error: u64,
-    /// Rust unsupported observations.
+    /// Unsupported required observations, when available under the producer profile.
     pub unsupported: u64,
-    /// Go skipped scenarios.
+    /// Explicit skipped scenarios, when available under the producer profile.
     pub skipped: u64,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -424,6 +431,29 @@ impl CountReport {
     /// The runner the report names, only ever for [`ProducerProfile::External`].
     pub fn runner(&self) -> Option<&Runner> {
         self.0.producer_profile.runner.as_ref()
+    }
+}
+
+impl CountReport {
+    /// The implementation label the report names, exactly as written.
+    pub fn implementation(&self) -> &str {
+        &self.0.implementation
+    }
+
+    /// Every scenario of the report, by ID, with the category it ended in: `passed`, `failed`,
+    /// `error`, `unsupported` or `skipped`, as the producer wrote it (beyond10x/ess#296).
+    pub fn statuses(&self) -> std::collections::BTreeMap<String, &'static str> {
+        let o = &self.0.outcomes;
+        [
+            ("passed", &o.passed),
+            ("failed", &o.failed),
+            ("error", &o.error),
+            ("unsupported", &o.unsupported),
+            ("skipped", &o.skipped),
+        ]
+        .into_iter()
+        .flat_map(|(status, ids)| ids.iter().map(move |id| (id.to_string(), status)))
+        .collect()
     }
 }
 fn execution(profile: ProducerProfile, c: &ScenarioCounts) -> Result<CountStatus, AdmissionError> {

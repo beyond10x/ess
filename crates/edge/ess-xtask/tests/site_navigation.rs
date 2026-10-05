@@ -258,6 +258,7 @@ fn the_sidebar_has_the_adopter_categories_in_order_collapsed() {
         [
             "reference/cli",
             "reference/diagnostics",
+            "reference/entity-runtime-lowering",
             "reference/formats",
             "reference/ess-ui",
             "reference/ess-ui-test",

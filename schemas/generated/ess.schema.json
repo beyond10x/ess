@@ -215,7 +215,7 @@
       ]
     },
     "BindingFailure": {
-      "description": "What happens when the invoked command does not run: `retry`, `drop`, an `escalate:` block naming the event the escalation emits, or a `retry:` block stating its attempts and final refusals (ess/16).",
+      "description": "What happens when the invoked command does not run: `retry`, `drop`, an `escalate:` block naming the event the escalation emits, a `retry:` block stating its attempts and final refusals (ess/16), or `drop`, `retry` and `escalate` keyed, each selecting the refusals it answers with `outcomes:` or `except:` (ess/22).",
       "oneOf": [
         {
           "$ref": "#/definitions/Failure"
@@ -240,6 +240,146 @@
           "properties": {
             "retry": {
               "$ref": "#/definitions/RetryBound"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "A failure policy selected per refusal of the invoked command (ess/22): `drop`, `retry` and `escalate`, each at most once, each with `outcomes:` or `except:`; exactly one has `except:` and is the fallback for a failure carrying no declared outcome.",
+          "type": "object",
+          "minProperties": 1,
+          "properties": {
+            "drop": {
+              "oneOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "uniqueItems": true
+                },
+                {
+                  "type": "object",
+                  "anyOf": [
+                    {
+                      "required": [
+                        "outcomes"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "except"
+                      ]
+                    }
+                  ],
+                  "properties": {
+                    "except": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "uniqueItems": true
+                    },
+                    "outcomes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "uniqueItems": true
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "escalate": {
+              "type": "object",
+              "anyOf": [
+                {
+                  "required": [
+                    "outcomes"
+                  ]
+                },
+                {
+                  "required": [
+                    "except"
+                  ]
+                }
+              ],
+              "properties": {
+                "emits": {
+                  "type": "string"
+                },
+                "except": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "uniqueItems": true
+                },
+                "outcomes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "uniqueItems": true
+                }
+              },
+              "additionalProperties": false
+            },
+            "retry": {
+              "oneOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "uniqueItems": true
+                },
+                {
+                  "type": "object",
+                  "anyOf": [
+                    {
+                      "required": [
+                        "outcomes"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "except"
+                      ]
+                    }
+                  ],
+                  "properties": {
+                    "attempts": {
+                      "type": "integer",
+                      "minimum": 2.0
+                    },
+                    "except": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "uniqueItems": true
+                    },
+                    "final": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "uniqueItems": true
+                    },
+                    "outcomes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "uniqueItems": true
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
             }
           },
           "additionalProperties": false
@@ -1084,10 +1224,17 @@
               "type": "string"
             },
             "variants": {
-              "description": "The variants, by tag value.",
+              "description": "The variants, by tag value, each with the payload it carries.\n\nA variant written with no type (`Open:` or `Open: ~`) is a unit variant (ess/22, beyond10x/ess#418): it carries nothing, and its value on the wire is the tag alone.",
               "type": "object",
               "additionalProperties": {
-                "$ref": "#/definitions/TypeRef"
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/TypeRef"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             }
           },
@@ -1373,7 +1520,7 @@
       "additionalProperties": false
     },
     "Predicate": {
-      "description": "A condition over facts: the compact expression form (`tests.unit.failed == 0`), a list (implicit `all`), or a mapping using `all`, `any`, `not`, `none`, `forall`, `exists` or a fact path with an operator constraint. A text fact is tested against a text literal, map form only, with `starts_with`, `ends_with` or `contains`, and without ASCII case with `equals_ignore_case` (one literal) or `in_ignore_case` (a list).",
+      "description": "A condition over facts: the compact expression form (`tests.unit.failed == 0`), a list (implicit `all`), or a mapping using `all`, `any`, `not`, `none`, `forall`, `exists` or a fact path with an operator constraint. A text fact is tested against a text literal, map form only, with `starts_with`, `ends_with` or `contains`, and without ASCII case with `equals_ignore_case` (one literal) or `in_ignore_case` (a list). From `ess/22` a comparison operand may be the explicit fact `{fact: <path>}`, two `Timestamp` facts compare as instants in the closed form `{compare: {left, op, right, as: timestamp}}`, and a comparison operand may be one fact moved by one constant, `{offset: {fact: <path>, add|subtract: <magnitude>}}` — a whole number for an `Integer`, a whole number of `s`, `m` or `h` for a `Timestamp`. Either operand may be the UTF-8 byte length of a `String`, `{utf8_bytes: <path>}`, with the comparison written `{compare: {left, op, right}}` where it stands on the left. From `ess/22` `distinct: {in: <list>, as: <name>, by: <name>.<member>}` holds when no two elements of a list share a key: the element, or the one scalar member `by` names. A string operator may compare with a view parameter, `{param: <name>}`, or a command input, `{input: <name>}`. A command guard may hold an instant to a calendar window at UTC or a fixed offset, `{window: {at: now | <path>, days: [mon, …], from: \"HH:MM\", to: \"HH:MM\", offset: Z | ±HH:MM}}`; a named time zone is refused.",
       "anyOf": [
         {
           "type": "string"
@@ -1502,7 +1649,7 @@
           ]
         },
         "moves": {
-          "description": "Read so it can be refused by name: a move inside `affects:` is not in this cut.",
+          "description": "The move every selected row resting in its `from` states takes, written `<Entity>.<transition>` over `entity` (ess/22, beyond10x/ess#229); a selected row resting elsewhere is skipped.",
           "anyOf": [
             {
               "$ref": "#/definitions/QualifiedName"
@@ -1531,7 +1678,7 @@
       "additionalProperties": false
     },
     "RawAggregate": {
-      "description": "An aggregate as written: a map with exactly one function key and, beside a function that reads a value, `skip_absent: true`.",
+      "description": "An aggregate as written: a map with exactly one function key and, beside a function that reads a value, `skip_absent: true`; beside any function, `where:`, the rows of the group this measure reads (ess/22).",
       "oneOf": [
         {
           "description": "`{count: {}}`.",
@@ -1542,6 +1689,9 @@
           "properties": {
             "count": {
               "$ref": "#/definitions/Empty"
+            },
+            "where": {
+              "$ref": "#/definitions/Predicate"
             }
           },
           "additionalProperties": false
@@ -1560,6 +1710,9 @@
               "description": "Absent values of the argument are skipped, as SQL skips NULL (ess/15). Written `true` or not at all.",
               "type": "boolean",
               "const": true
+            },
+            "where": {
+              "$ref": "#/definitions/Predicate"
             }
           },
           "additionalProperties": false
@@ -1578,6 +1731,9 @@
             },
             "sum": {
               "type": "string"
+            },
+            "where": {
+              "$ref": "#/definitions/Predicate"
             }
           },
           "additionalProperties": false
@@ -1596,6 +1752,9 @@
               "description": "Absent values of the argument are skipped, as SQL skips NULL (ess/15). Written `true` or not at all.",
               "type": "boolean",
               "const": true
+            },
+            "where": {
+              "$ref": "#/definitions/Predicate"
             }
           },
           "additionalProperties": false
@@ -1614,6 +1773,9 @@
               "description": "Absent values of the argument are skipped, as SQL skips NULL (ess/15). Written `true` or not at all.",
               "type": "boolean",
               "const": true
+            },
+            "where": {
+              "$ref": "#/definitions/Predicate"
             }
           },
           "additionalProperties": false
@@ -1632,6 +1794,9 @@
               "description": "Absent values of the argument are skipped, as SQL skips NULL (ess/15). Written `true` or not at all.",
               "type": "boolean",
               "const": true
+            },
+            "where": {
+              "$ref": "#/definitions/Predicate"
             }
           },
           "additionalProperties": false
@@ -2375,6 +2540,10 @@
             "$ref": "#/definitions/RawAffect"
           }
         },
+        "compensates": {
+          "description": "`true` marks an `external:` refusal that changes the one row its `instance:` names before it answers its `error:` (ess/22, beyond10x/ess#197, `docs/design/refusal-with-effect.md`). The change is spelled with `moves:` or `updates:` and `sets:`; `false` is the document without the key.",
+          "type": "boolean"
+        },
         "creates": {
           "description": "The entity a new instance of which this outcome brings into existence.",
           "anyOf": [
@@ -2477,6 +2646,13 @@
               "$ref": "#/definitions/OutcomeName"
             }
           ]
+        },
+        "one_time_response": {
+          "description": "Outcome-local names of required String response fields (ess/21).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         },
         "payload": {
           "description": "Where the emitted events' payload fields come from, for the fields the author determines.\n\nKeyed by emitted event, then by that event's field, and sparse on both levels — see [`PayloadSource`] for why an absent field is a statement rather than an omission. From `ess/19` a block keyed by the error the outcome reports says where that error's fields come from ([`Outcome::error_payload`]).",
@@ -2721,6 +2897,14 @@
         },
         {
           "$ref": "#/definitions/RawNestedSources"
+        },
+        {
+          "description": "`{related: {entity, where, field}}` (ess/22, beyond10x/ess#299).",
+          "allOf": [
+            {
+              "$ref": "#/definitions/RawRelatedSelection"
+            }
+          ]
         }
       ]
     },
@@ -2737,24 +2921,58 @@
           "type": "string"
         },
         "via": {
-          "description": "A field of the subject, or `input.<field>`.",
-          "type": "string"
+          "description": "A field of the subject, or `input.<field>`; from `ess/22` (beyond10x/ess#285) also a list of two: that, then a field of the row it names.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/RawRelatedVia"
+            }
+          ]
         }
       },
       "additionalProperties": false
     },
     "RawRelatedGuard": {
-      "description": "`when_related:` as a document writes it.",
+      "description": "`when_related:` as a document writes it: one row named by an input identity (`via`), or, from `ess/22`, the rows a selector selects (`entity`, `where`) with one test of them.",
       "type": "object",
-      "required": [
-        "via"
-      ],
       "properties": {
+        "count": {
+          "description": "Over a selector (ess/22): one comparison of the number of rows selected with a nonnegative whole number, `{eq: 1}`; the operator is `eq`, `ne`, `lt`, `lte`, `gt` or `gte`.",
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "entity": {
+          "description": "The entity whose rows a selector selects (ess/22). Written with `where`, never beside `via`.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/QualifiedName"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "exists": {
-          "description": "`false`: the branch is taken when no row carries that identity. Written instead of `predicate`, never beside it.",
+          "description": "`false`: the branch is taken when no row carries that identity. Written instead of `predicate`, never beside it. Over a selector (ess/22): whether any row is selected.",
           "type": [
             "boolean",
             "null"
+          ]
+        },
+        "forall": {
+          "description": "Over a selector (ess/22): what every selected row satisfies; true of no rows.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Predicate"
+            },
+            {
+              "type": "null"
+            }
           ]
         },
         "predicate": {
@@ -2769,8 +2987,35 @@
           ]
         },
         "via": {
-          "description": "The input field that carries the other entity's identity, written `input.<field>`.",
-          "type": "string"
+          "description": "The input field that carries the other entity's identity, written `input.<field>`. Never beside `entity`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "where": {
+          "description": "What a row of `entity` must satisfy to be selected (ess/22): its fields bare, the input under `input.`, the addressed subject under `subject.`.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Predicate"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "RawRelatedSelection": {
+      "description": "`{related: {entity, where, field}}` (ess/22, beyond10x/ess#299): one field of the one row a selector selects. Recognised by its exact shape — one key, `related`, holding exactly `entity` (a qualified name), `where` and `field` — and nothing else; below `ess/22` the same shape is read back as the nested mapping it was.",
+      "type": "object",
+      "required": [
+        "related"
+      ],
+      "properties": {
+        "related": {
+          "$ref": "#/definitions/RawSelected"
         }
       },
       "additionalProperties": false
@@ -2787,6 +3032,22 @@
         }
       },
       "additionalProperties": false
+    },
+    "RawRelatedVia": {
+      "description": "`via:` as written: one reference, or (ess/22, beyond10x/ess#285) a chain of them.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      ]
     },
     "RawReplicas": {
       "description": "A replica range.",
@@ -2810,6 +3071,38 @@
           "type": "integer",
           "format": "uint32",
           "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "RawSelected": {
+      "description": "What `related:` holds in a filtered read: the entity, the selector, and the field read.",
+      "type": "object",
+      "required": [
+        "entity",
+        "field",
+        "where"
+      ],
+      "properties": {
+        "entity": {
+          "description": "The entity whose rows are candidates.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/QualifiedName"
+            }
+          ]
+        },
+        "field": {
+          "description": "The field of the one selected row.",
+          "type": "string"
+        },
+        "where": {
+          "description": "What a candidate must satisfy: its fields bare, the input under `input.`, the addressed subject under `subject.`.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Predicate"
+            }
+          ]
         }
       },
       "additionalProperties": false
@@ -2976,6 +3269,18 @@
           "anyOf": [
             {
               "$ref": "#/definitions/PeriodicCause"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "where": {
+          "description": "A finite typed predicate over the event payload; the binding invokes only when it holds (ess/22, beyond10x/ess#268). Only for an event cause; see the `condition` module.",
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Predicate"
             },
             {
               "type": "null"

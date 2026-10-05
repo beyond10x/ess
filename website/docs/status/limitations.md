@@ -25,9 +25,11 @@ lede: What ESS deliberately does not infer, apply, or attest.
 - An implementation outside this repository is held to its suite through the generated Go or
   TypeScript package. A Rust implementation needs a checkout of this repository, because the
   `ess-conformance` crate is not published. No runner reaches a target in another process.
-- A scenario a target cannot answer is never a pass. The Rust runner fails the run; the generated
-  Go and TypeScript packages report it as skipped and the run as `inconclusive`, while the test
-  command itself can still exit 0. Read the report, not the exit code.
+- A scenario a target cannot answer is never a pass. With report/2, Rust and newly generated Go
+  and TypeScript runners retain `unsupported` separately and fail execution. An ordinary adapter
+  error is `error` and makes execution inconclusive unless a failure already dominates. Older
+  generated packages and report/1 retain their historical skipped/failed presentation; regenerate
+  and use report/2 for precise outcome counts.
 - `--target interpreted` runs a command's outcomes, transitions, `sets:`, events and invariants
   from the model. Views, bindings, time, redelivery and established entities come back
   `unsupported`.

@@ -77,7 +77,7 @@ fn integer_zero_normalization_preserves_nested_values_quoted_keys_and_text() {
         let mut recorder = Recorder::default();
         let result = run(&binding(shape), text, &mut recorder);
         assert_eq!(result.exit_code, 0, "{shape}: {result:?}");
-        assert!(result.stderr.is_empty());
+        assert_eq!(result.stderr.len(), 0);
         assert_eq!(recorder.0, [expected]);
         assert_eq!(
             serde_json::from_str::<Value>(&result.stdout).unwrap(),
@@ -101,8 +101,8 @@ fn integer_arguments_still_refuse_fraction_exponent_and_malformed_number_spellin
             let mut recorder = Recorder::default();
             let output = run(&binding, &text, &mut recorder);
             assert_eq!(output.exit_code, 2, "{shape} {token}: {output:?}");
-            assert!(output.stdout.is_empty());
-            assert!(recorder.0.is_empty());
+            assert_eq!(output.stdout.len(), 0);
+            assert_eq!(recorder.0.len(), 0);
             assert_eq!(
                 serde_json::from_str::<Value>(&output.stderr).unwrap(),
                 json!({"ok":false,"error":{"code":"cli_input","data":{}}}),

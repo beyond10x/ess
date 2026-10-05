@@ -179,6 +179,39 @@ impl ViewSpec {
         errors
     }
 
+    /// No measure's condition reads a paging parameter (`docs/design/conditional-aggregate-measures.md`):
+    /// a page and its size slice the rows, they never select them. `measure_reads` holds each
+    /// parameter a `where:` reads, at that `where:`.
+    pub(super) fn validate_condition_paging(
+        &self,
+        measure_reads: &std::collections::BTreeMap<String, String>,
+    ) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
+        let Some(paging) = &self.paging else {
+            return errors;
+        };
+        for name in [&paging.page, &paging.size] {
+            if let Some(site) = measure_reads.get(name.as_str()) {
+                errors.push(
+                    ValidationError::new(
+                        ValidationCode::ConflictingDeclaration,
+                        site.clone(),
+                        format!(
+                            "`{}` reads the paging parameter `{name}` in a measure's `where:`, so \
+                             it would both select rows and slice them",
+                            self.name
+                        ),
+                    )
+                    .with_hint(format!(
+                        "declare a separate parameter for the condition, or drop `param.{name}` \
+                         from it"
+                    )),
+                );
+            }
+        }
+        errors
+    }
+
     /// The source-format gate: `paging:` is refused below `ess/16` at the key the author wrote.
     ///
     /// Beside [`Self::absent_value_admission`] in `primitive_admission::specification`, the one

@@ -37,10 +37,7 @@ fn ir(text: &str) -> EssIr {
 fn suite_of(text: &str) -> ConformanceSuite {
     let synthesis = synthesize(&ir(text));
     assert!(synthesis.refusals.is_empty(), "{:#?}", synthesis.refusals);
-    assert_eq!(
-        synthesis.suite.provenance.suite_version.major(),
-        ess_conformance::defined_aggregates::ORDINARY
-    );
+    assert_eq!(synthesis.suite.provenance.suite_version.major(), 34);
     synthesis.suite
 }
 

@@ -386,7 +386,7 @@ fn a_fixture_program_is_compiled_once_per_source_rather_than_once_per_process() 
     let edited = compiled_fixture::compiled(&source, &compiler, &["--edition=2021"]);
     assert_ne!(edited, first, "an edited source reused the stale program");
     let ran = Command::new(&edited).output().unwrap();
-    assert!(ran.stdout.is_empty());
+    assert_eq!(ran.stdout.len(), 0);
     for program in [first, edited] {
         std::fs::remove_file(program).unwrap();
     }

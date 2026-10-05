@@ -611,7 +611,7 @@ fn the_suite_needs_no_new_vocabulary_and_every_lane_admits_it() {
     let suite = synthesis(PARCELS).suite;
     assert_eq!(
         suite.provenance.suite_version.to_string(),
-        "ess-conformance/10",
+        "ess-conformance/34",
         "the format `expect_no_error` and the subject-fact observations already select; this \
          construct adds no step"
     );

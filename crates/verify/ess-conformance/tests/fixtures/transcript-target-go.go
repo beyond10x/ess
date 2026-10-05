@@ -148,6 +148,8 @@ type recordedResult struct {
 	Consistency  *string         `json:"consistency"`
 	DirectEvents []recordedEvent `json:"direct_events"`
 	Response     map[string]Node `json:"response"`
+	// ErrorPayload is the declared error's payload the reference target carried.
+	ErrorPayload map[string]Node `json:"error_payload"`
 	// NotGranted is the standard refusal for an actor no grant admits (beyond10x/ess#265).
 	NotGranted      bool    `json:"not_granted"`
 	NotGrantedActor *string `json:"not_granted_actor"`
@@ -160,6 +162,7 @@ func (r recordedResult) result() CommandResult {
 	}
 	if r.Error != nil {
 		result.Error = *r.Error
+		result.ErrorPayload = r.ErrorPayload
 	}
 	if r.Consistency != nil {
 		result.Consistency = *r.Consistency
@@ -225,18 +228,32 @@ func (b *transcriptTarget) ExecuteCommandWithoutInput(r AbsentInputRequest) (Com
 	})
 }
 func (b *transcriptTarget) QueryView(r ViewRequest) (ViewResult, error) {
-	entry, err := b.next("query_view", r.View, map[string]any{"params": orEmpty(r.Params)})
+	request := map[string]any{"params": orEmpty(r.Params), "at_least": r.AtLeast}
+	// A read sent as an actor (beyond10x/ess#286) was recorded with it, and only then.
+	if r.Actor != "" {
+		request["actor"] = r.Actor
+	}
+	if r.Anonymous {
+		request["anonymous"] = true
+	}
+	entry, err := b.next("query_view", r.View, request)
 	if err != nil {
 		return ViewResult{}, err
 	}
 	var recorded struct {
-		Rows  []Row   `json:"rows"`
-		Total *uint64 `json:"total"`
+		Rows            []Row   `json:"rows"`
+		Total           *uint64 `json:"total"`
+		NotGranted      bool    `json:"not_granted"`
+		NotGrantedActor *string `json:"not_granted_actor"`
 	}
 	if err := decodeInto(entry.Result, &recorded); err != nil {
 		return ViewResult{}, err
 	}
-	return ViewResult{Rows: recorded.Rows, Total: recorded.Total}, nil
+	result := ViewResult{Rows: recorded.Rows, Total: recorded.Total, NotGranted: recorded.NotGranted}
+	if recorded.NotGrantedActor != nil {
+		result.NotGrantedActor = *recorded.NotGrantedActor
+	}
+	return result, nil
 }
 func (b *transcriptTarget) ObserveEvents(r EventObservationRequest) ([]ObservedEvent, error) {
 	entry, err := b.next("observe_events", r.Event, map[string]any{})
@@ -263,6 +280,12 @@ func (b *transcriptTarget) ConfigureExternalOutcomeRepeatedly(c ExternalOutcomeC
 }
 func (b *transcriptTarget) RedeliverEvent(r RedeliveryRequest) error {
 	_, err := b.next("redeliver_event", r.Event, map[string]any{})
+	return err
+}
+
+// DeliverEvent replays an event an external channel delivered (ess/18).
+func (b *transcriptTarget) DeliverEvent(r EventDeliveryRequest) error {
+	_, err := b.next("deliver_event", r.Event+"|"+r.Authority, map[string]any{})
 	return err
 }
 func (b *transcriptTarget) ObserveInvocations(r InvocationObservationRequest) ([]Invocation, error) {

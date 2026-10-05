@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-04T18:12:53Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-294",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-conformance (22 mutation, known-failure, count, parity, coverage targets) and ess-cli mutate/count/known-failure targets (integration tree)",
+    "reference": "baseline: one declared failing scenario refused the whole audit (ESS-MUTATE-001), mutation_known_failures 13 red on stubs; treatment: conformance 350 passed, ess-cli 92 passed, 0 failed; outputs without a declaration byte-identical to base"
+  }
+}

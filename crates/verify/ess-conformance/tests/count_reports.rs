@@ -15,6 +15,56 @@ use std::{cell::Cell, collections::BTreeMap, fmt::Write, path::Path};
 const DIGEST: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 #[test]
+fn generated_profile_v2_preserves_native_terminal_categories() {
+    for name in ["passed", "failed", "error", "unsupported"] {
+        let suite = admitted(&[name]);
+        let native = CountReport::from_run(&execute(&suite, 7), &suite).unwrap();
+        let mut value: Value = serde_json::from_str(&native.to_canonical_json().unwrap()).unwrap();
+        value["producer_profile"] = json!("go-scenario-status/2");
+        let generated = CountReport::from_json(&value.to_string(), &suite)
+            .unwrap_or_else(|error| panic!("{name}: {error}"));
+        assert_eq!(generated.counts(), native.counts());
+        assert_eq!(generated.execution_status(), native.execution_status());
+        assert_eq!(generated.conformance_status(), native.conformance_status());
+        let encoded: Value = serde_json::from_str(&generated.to_canonical_json().unwrap()).unwrap();
+        assert_eq!(encoded["producer_profile"], "go-scenario-status/2");
+        assert_eq!(encoded["outcomes"], value["outcomes"]);
+
+        value["producer_profile"] = json!("go-scenario-status/1");
+        assert_eq!(
+            CountReport::from_json(&value.to_string(), &suite).is_ok(),
+            matches!(name, "passed" | "failed"),
+            "legacy profile category semantics changed for {name}"
+        );
+        value["producer_profile"] = json!("go-scenario-status/3");
+        assert!(CountReport::from_json(&value.to_string(), &suite).is_err());
+    }
+}
+
+#[test]
+fn generated_profile_v2_keeps_explicit_skips_inconclusive() {
+    let suite = admitted(&["passed"]);
+    let native = CountReport::from_run(&execute(&suite, 7), &suite).unwrap();
+    let mut value: Value = serde_json::from_str(&native.to_canonical_json().unwrap()).unwrap();
+    value["outcomes"]["skipped"] = value["outcomes"]["passed"].take();
+    value["outcomes"]["passed"] = json!([]);
+    value["counts"]["passed"] = json!(0);
+    value["counts"]["skipped"] = json!(1);
+    value["execution_status"] = json!("inconclusive");
+    for profile in ["go-scenario-status/1", "go-scenario-status/2"] {
+        value["producer_profile"] = json!(profile);
+        let report = CountReport::from_json(&value.to_string(), &suite).unwrap();
+        assert_eq!(report.counts().skipped, 1);
+        assert_eq!(report.counts().error, 0);
+        assert_eq!(report.counts().unsupported, 0);
+        assert_eq!(report.execution_status(), CountStatus::Inconclusive);
+        assert_eq!(report.conformance_status(), CountStatus::Inconclusive);
+    }
+    value["producer_profile"] = json!("rust-scenario-status/1");
+    assert!(CountReport::from_json(&value.to_string(), &suite).is_err());
+}
+
+#[test]
 fn suite_six_keeps_unknown_coverage_and_binds_report_two_to_original_bytes() {
     let mut value = document(&["passed"]);
     value["provenance"]["suite_version"] = json!("ess-conformance/6");
@@ -467,7 +517,7 @@ fn suite_admission_closes_structural_variants_before_target_identity() {
         "ess-conformance/29",
         "ess-conformance/31",
         "ess-conformance/33",
-        "ess-conformance/34",
+        "ess-conformance/44",
         "ess-conformance/99",
     ] {
         let mut value = document(&["passed"]);

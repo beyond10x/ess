@@ -226,7 +226,7 @@ fn documented_mixed_root_preserves_default_model_and_omitted_scenarios() {
         ]));
         assert_eq!(selected.stdout, default.stdout);
         if version == "5" {
-            assert!(identities(&omitted).is_empty());
+            assert_eq!(identities(&omitted).len(), 0);
             assert_eq!(identities(&selected), [SCENARIOS[1], SCENARIOS[0]]);
         }
         snapshots.push(omitted.stdout);
@@ -287,7 +287,7 @@ fn assert_after_generation(f: &Fixture, explicit: &Output, snapshots: Vec<Vec<u8
     ]));
     assert!(!refused.status.success());
     assert!(String::from_utf8_lossy(&refused.stderr).contains("missing/inactive"));
-    assert!(refused.stdout.is_empty());
+    assert_eq!(refused.stdout.len(), 0);
     assert_eq!(fs::read(f.0.join("output/sentinel")).unwrap(), b"owned");
 }
 
@@ -323,6 +323,6 @@ fn string_filenames_keep_their_yaml_scalar_spelling_and_inactive_types_are_check
             "{out:?}"
         );
         assert!(!diagnostic.contains("reading missing"), "{out:?}");
-        assert!(out.stdout.is_empty());
+        assert_eq!(out.stdout.len(), 0);
     }
 }

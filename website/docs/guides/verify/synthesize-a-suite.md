@@ -35,3 +35,57 @@ indentation, followed by one newline. The decoded suite is unchanged; its exact
 byte digest changes, so retain that original compact file when producing reports
 or selecting child suites. Pretty output remains the default. This option does
 not rewrite an already committed suite.
+
+## Explicit synthesis seeds
+
+Some valid states no bounded arrangement of commands reaches: a compare-and-swap revision counter
+at `9223372036854775807`, or one revision below it. Synthesis refuses those obligations with
+`ESS-SYNTH-003` rather than walking a counter a quintillion times. An explicit seed supplies the
+initial row instead:
+
+```shell-session
+$ ess verify conform synthesize --path model \
+    --synthesis-seed seeds/max.yaml at-max \
+    --synthesis-seed seeds/below.yaml below-max \
+    --out suite.json
+```
+
+Each `--synthesis-seed FILE INSTANCE` names one authored `ess-scenario/2` document and one of its
+arrangements that has a `setup`:
+
+```yaml
+type: ess-scenario/2
+domain: counter.model
+scenario: counter-at-max
+summary: A counter held at its signed maximum.
+arrange:
+  - instance: at-max
+    entity: counter.model.Counter
+    setup:
+      identity: 00000000-0000-4000-8000-00000000a001
+      fields: {revision: 9223372036854775807}
+      state: Active
+assert:
+  - view: counter.model.Counters
+    contains: {id: {$instance: at-max}, revision: 9223372036854775807}
+```
+
+The whole document is compiled and validated against the model, but **a seed supplies only the
+nominated initial setup row**. The document's timeline, its assertions and any state its timeline
+would reach are never used, and the document adds no authored scenario; pass it with `--scenarios`
+as well if you also want it run as one.
+
+Ordinary arrangement is always tried first. A seed row is offered only where a generated
+obligation reading the stored row was left unmet, and only to the exact obligation: the scenario
+establishes the row, observes it, sends the real command with the input grounded from the row (a
+compare-and-swap's expected revision is the row's own), and asserts the outcome the guards select
+there, with its error, events and resulting state. A successful ordinary witness is never replaced,
+and a seed that answers no unmet obligation adds nothing. A row that needs an owner or a related row,
+or whose identity the scenario already uses, is not applied, and the refusal says so.
+
+A request with seeds writes suite `ess-conformance/42` (`/43` with `--suite-format 5`) and records
+in its provenance which files were read, the exact rows admitted, and where each row was used. A
+target needs the entity setup capability to run those scenarios. Without `--synthesis-seed` the
+suite is what it was, except that a guard over an integer beyond 2^53 that synthesis used to refuse
+is now witnessed exactly. The binding contract is
+[`docs/design/synthesis-seeds.md`](https://github.com/beyond10x/ess/blob/main/docs/design/synthesis-seeds.md).

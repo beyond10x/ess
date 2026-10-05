@@ -101,7 +101,7 @@ fn execute(binding: &CompiledBinding, query: bool, result: Value) -> (ProcessOut
         None,
     );
     assert_eq!(output.exit_code, 0, "{output:?}");
-    assert!(output.stderr.is_empty());
+    assert_eq!(output.stderr.len(), 0);
     assert_eq!(handler.calls.len(), 1);
     assert_eq!(
         serde_json::from_str::<Value>(&output.stdout).unwrap(),

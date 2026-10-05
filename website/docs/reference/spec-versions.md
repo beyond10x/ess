@@ -57,6 +57,8 @@ constructs keeps its bytes and its compiled digest under the older header.
 | `ess/18` | [0.41.0][r41] | Several states in `when_subject_state:`, `state` in `when_subject`, `when_related:`, and a binding's delivery context. |
 | `ess/19` | [0.46.0][r46] | `payload:` sources for the fields of the error an outcome reports. |
 | `ess/20` | [0.49.0][r49] | `state`, the related row's held lifecycle state, in a `when_related:` predicate. |
+| `ess/21` | [0.53.0][r53] | `one_time_response:` names required String response fields whose values may be disclosed only by their originating response. |
+| `ess/22` | [0.53.0][r53] | A `when_related:` guard's `via: input.<field>` may name an `Optional<…>` input, checked only when present; a command may guard on several related rows named by its input, each with its own `exists: false`. A `{related: …}` value may read through an `Optional<…>` reference, absent where it is, or across two references: `via: [<field>, <field of the row it names>]`. An outcome declaring `returns: true` is answered `200` with the command's response under `response`, in the `OpenAPI` projection and the synthesized Rust and Go servers; below `ess/22` it keeps `202` and no `response` member. An `affects:` entry may move the records it selects: `moves: <Entity>.<transition>`, skipping a selected record outside the move's `from` states (beyond10x/ess#229); below `ess/22` it is refused naming `ess/22`. An event binding may carry `when.where`, a finite condition over the event payload; it invokes only when the condition holds, and an Optional member the condition proves present may fill a required input. An actor's `may:` may name a view, which only the actors naming it may read. On the right of a comparison an unquoted word naming a field of the place is that field (`{fact: x}` written back); a plain `when:` reads `input.<field>`; two `Timestamp` fields compare as instants (`as: timestamp`); identity inputs compare only by `==` and `!=`; the right side may be one fact moved by one constant, `upper <= lower + 5` or `expires_at <= issued_at - 24h` (`{offset: {fact, add\|subtract}}` written back), compared exactly for an `Integer` and by elapsed seconds for a `Timestamp`; `<text>.utf8_bytes` on either side of a comparison is the UTF-8 byte length of a `String` (`{utf8_bytes: <text>}` written back), refused in every other position and below `ess/22`, while a struct member named `utf8_bytes` keeps its meaning. A union variant may be declared with no payload (`Open:`): a unit variant, written on the wire as its tag alone (`{"kind": "Open"}`) and generated as a unit enum variant; below `ess/22` it is refused naming `ess/22`. `on_failure:` may select its policy per refusal of the invoked command: `drop`, `retry` and `escalate` keyed, each with `outcomes:` or `except:`, exactly one `except:` as the explicit fallback. An aggregate may declare `where:`, the rows of its group one measure reads (beyond10x/ess#363); below `ess/22` it is refused at the `where:` naming `ess/22`. A `sets:` or `payload:` value may read `input.<path>`, a member of a struct input, absent where an `Optional` on the path is; `{input: <path>, else: …}` falls back where it is, and `else:` may read another input required along its whole route. `distinct: {in, as, by}` holds when no two elements of a list share a key, the element or one scalar member, compared exactly or as instants (`kind:` written back); below `ess/22` it is refused naming `ess/22`. A `when_related:` guard may test the rows a selector selects — `{entity, where}` with `exists`, `count` or `forall` — and a value may read one field of the one row a selector selects — `{related: {entity, where, field}}` (beyond10x/ess#228, #299); below `ess/22` the guard is refused naming `ess/22`, and the value keeps its nested-mapping meaning. A command guard — its `when:`, `when_subject:` or `when_related:` predicate — may hold an instant to a calendar window at UTC or a fixed offset, `window: {at: now \| <Timestamp field>, days: [mon, …], from: "HH:MM", to: "HH:MM", offset: Z \| ±HH:MM}`; a named time zone is refused, so a window does not follow daylight saving. An `external:` refusal marked `compensates: true` changes the record its `instance:` names — `moves:` or `updates:` with `sets:` — and then answers its error (beyond10x/ess#197); every unmarked refusal still changes nothing, and below `ess/22` the marker is refused naming `ess/22`. |
 
 The paragraphs below give each version's rules.
 
@@ -117,7 +119,7 @@ declares its result type exactly: `Integer` for the counts and for `sum` of an `
 for `min` and `max`, and `Optional<Decimal>` for `avg`, rounded to 6 places half-even. An older build
 refuses the header, and this build refuses the construct under an earlier header with
 `unsupported_format_version`. A model without it keeps its bytes and its compiled digest. See
-[aggregate views](../guides/specify/values-and-views.md#aggregate-views).
+[aggregate views](../guides/specify/aggregate-views.md).
 
 `ess/11`, introduced in [0.34.0][r34], admits three things. A newtype of `String` may declare `alphabet:`, the
 characters every value is drawn from. A command input may declare `example:`, the value synthesis
@@ -164,7 +166,7 @@ Under `ess/16` a view with `order_by:` may declare `paging: {page: <param>, size
 
 Under `ess/16` a binding may bound its retry: `on_failure: {retry: {attempts: 3, final: [<refusal>]}}` (beyond10x/ess#165). `attempts` counts invocations including the first and is at least 2; `final` names refusals of the invoked command, by outcome or by error, that end the retry at once. The block is refused below `ess/16` with `unsupported_format_version`; `on_failure: retry` written bare keeps its meaning.
 
-Under `ess/16` a `moves:` or `updates:` outcome may declare `instances: {where: <predicate>}` instead of `instance:`, changing every stored record the predicate selects over the entity's fields and `input.<field>` (beyond10x/ess#167), with `{count: changed}` as the number it changed; and an outcome with one existing subject may declare `affects:`, a list of `{entity, where, sets}` changing the records each filter selects, which may also read `subject.<field>` (beyond10x/ess#175). Each is refused below `ess/16` with `unsupported_format_version`, and `{count: changed}` stays a nested mapping there. See [set effects](../guides/specify/commands-and-outcomes.md#an-outcome-can-change-every-record-a-filter-selects).
+Under `ess/16` a `moves:` or `updates:` outcome may declare `instances: {where: <predicate>}` instead of `instance:`, changing every stored record the predicate selects over the entity's fields and `input.<field>` (beyond10x/ess#167), with `{count: changed}` as the number it changed; and an outcome with one existing subject may declare `affects:`, a list of `{entity, where, sets}` changing the records each filter selects, which may also read `subject.<field>` (beyond10x/ess#175). Each is refused below `ess/16` with `unsupported_format_version`, and `{count: changed}` stays a nested mapping there. See [set effects](../guides/specify/selection-effects.md).
 
 `ess/3` and `ess/4` both arrived in 0.23.0. There was never a release that implemented `3` and not
 `4`, and there is no missing release between them.
@@ -227,6 +229,17 @@ in a state that selects each side, between decoy rows in the other. Where the mo
 into a state reads a related row of the same entity, synthesis arranges that row one level deep,
 fresh in its initial state, from `ess/20` only; an earlier document synthesizes the suite it did.
 
+From `ess/22` an actor's `may:` may name a view as well as a command (beyond10x/ess#286): one
+grant table, with no second `readable_by:` on the view. A view some actor names is read-granted,
+and only the actors naming it may read it; a view no actor names stays open to every caller, so a
+document naming no view keeps its meaning, its IR bytes and its generated code. Under `ess/21` and
+earlier a grant naming a view is refused once, with `unsupported_format_version` naming `ess/22`.
+The IR carries the views as the actor's `may_read`, left out where it is empty. A served
+component (`reached_by: network`) answers a read of a read-granted view by an actor the grant
+does not name, or by no actor, with the standard refusal a command answers an ungranted actor —
+`403` `{"refused": "not granted", "actor": <name or null>}` — before the view is read, and its
+contract names the readers as `x-ess-may-read`.
+
 ## `ess-diff/` — what moved between two revisions
 
 | Version | Released in | What changed | An older reader |
@@ -275,8 +288,8 @@ Missing or duplicate rows fail. Legacy suite formats refuse these steps.
 `ess-conformance/12` and `/13`, introduced in [0.29.0][r29], add exact retained-result capture and
 comparison, plus an explicit empty-direct-event assertion. Version 12 is ordinary;
 13 carries the same declared coverage and exact-parent rules as earlier coverage
-formats. Rust and Go execute these steps with report/2; TypeScript/browser readers
-refuse these envelopes before target callbacks. Older envelopes refuse the new
+formats. Rust, Go and TypeScript execute these steps with report/2. Browser replay
+refuses these envelopes. Older envelopes refuse the new
 steps even if the rest of their document is well shaped.
 
 A write-once snapshot binds the actual original response, command/outcome, subject
@@ -291,9 +304,9 @@ test later-head and restart retries through their real handlers.
 
 `ess-conformance/14` and `/15`, introduced in [0.34.0][r34], carry a string operator where a suite carries a
 predicate: a `satisfies` expectation or an observed selection plan. Version 14 is ordinary and 15
-carries declared coverage; each implies every major below it. Rust and Go admit and evaluate them,
+carries declared coverage; each implies every major below it. Rust, Go and TypeScript evaluate them,
 and refuse an operand that is not a JSON string. Older envelopes refuse the operators, and the
-TypeScript and browser readers refuse these envelopes by their version. A string guard over
+browser replay refuses these envelopes by their version. A string guard over
 command input is decided at synthesis and never reaches the suite, so such a suite keeps its
 earlier format.
 
@@ -302,8 +315,8 @@ through the declared creating outcome with values only that scenario uses, and o
 every group's exact aggregates and the absence of every group whose rows the filter refuses.
 Version 16 is ordinary and 17 carries declared coverage; each implies every major below it.
 Coverage 17 also carries the refusals `ESS-SYNTH-016` (no group key or parameter scopes the
-view's rows) and `ESS-SYNTH-017` (the rows cannot be arranged). Rust and Go admit and run them;
-older envelopes refuse an aggregate scenario or refusal, and the TypeScript and browser readers
+view's rows) and `ESS-SYNTH-017` (the rows cannot be arranged). Rust, Go and TypeScript run them;
+older envelopes refuse an aggregate scenario or refusal, and browser replay readers
 refuse these envelopes by their version.
 
 `ess-conformance/18` and `/19`, introduced in [0.35.0][r35], carry fixture values: a leading `resolve_fixtures`
@@ -313,8 +326,7 @@ name, with literal and fixture values, so a later correct occurrence cannot hide
 one. Version 18 is ordinary and 19 carries declared coverage; each implies every major below it.
 Rust, Go and TypeScript resolve and validate the values before `BeginScenario` with report/2: a
 malformed, incomplete or wrongly typed value stops before any target activity, and a missing
-provider is an explicit skip. TypeScript admits these envelopes and still refuses the
-retained-result steps, string operators and aggregate scenarios of 12–17 by name. Browser replay
+provider is an explicit unsupported result. Browser replay
 refuses fixtures. A suite without fixtures keeps its earlier format, and older envelopes refuse
 the new steps.
 
@@ -330,8 +342,8 @@ suite without one in a view expectation keeps its earlier format.
 `ess-conformance/22` and `ess-conformance/23`, introduced in [0.37.0][r37], add three steps for the outcome
 shapes of `ess/15`: `expect_subject_absent` after a `deletes:` outcome, and `snapshot_view` /
 `expect_view_unchanged` around an `accepts: nothing` outcome. Version 22 is ordinary and 23
-carries declared coverage; each implies every major below it. The Rust runner evaluates them; Go and
-TypeScript refuse these envelopes by their version.
+carries declared coverage; each implies every major below it. Rust, Go and
+TypeScript execute these steps with report/2.
 
 `ess-conformance/24` and `/25`, introduced in [0.37.0][r37], carry a field's presence policy (`ess/15`, beyond10x/ess#139) as `presence: null_when_absent` or `omitted_when_absent` on a payload leaf, and a runner holding the suite fails an implementation that leaves a `null_when_absent` field out or sends an `omitted_when_absent` field as `null`. Version 24 is ordinary and 25 carries declared coverage; each implies every major below it. The Go and TypeScript runtimes execute both from 0.40.0 (beyond10x/ess#188); earlier runtimes refuse them by version. A suite without a policy keeps its earlier format.
 
@@ -347,7 +359,7 @@ A bounded retry (beyond10x/ess#165) belongs to this pair too: `configure_externa
 `expect_direct_response`, which checks the immediately preceding invocation's actual return
 against its complete typed response schema and any authored literals. Version 28 is ordinary;
 29 carries declared coverage and exact-parent lineage. The Rust runner requires report/2.
-Go and TypeScript generation refuse the observation, and older readers refuse these envelopes
+Go and TypeScript also execute the observation with report/2. Older readers refuse these envelopes
 before target callbacks. Released suites 26 and 27 retain their meaning and bytes.
 Direct responses preserve exact integers, nested presence policies, collection order and
 duplicate multiplicity; Binary64 remains outside the admitted profile. Responses are bounded
@@ -357,17 +369,64 @@ to 1 MiB, depth 128 and 65,536 members per collection, without truncation.
 (beyond10x/ess#195): `deliver_event` delivers one occurrence of an event from its external
 channel with the context that channel binds, and `expect_every_invocation` requires every
 invocation for one occurrence to carry what it was delivered with. Version 30 is ordinary; 31
-carries declared coverage. The Rust runner executes both; Go and TypeScript generation refuse
-them, and older readers refuse these envelopes before target callbacks. A suite without them
+carries declared coverage. Rust, Go and TypeScript execute both with report/2;
+older readers refuse these envelopes before target callbacks. A suite without them
 keeps its earlier format.
 
 `ess-conformance/32` and `ess-conformance/33`, introduced in [0.43.0][r43], carry instance references inside a structured value (beyond10x/ess#242): a `list` value's
 `items` and a `members` value's `members` are values of their own, each a `literal`, an `instance`
 or another `list` or `members`, and the runner resolves each one before it sends the whole. An
 authored `{$instance: …}` inside a list element, a map value or a struct member is written this
-way. Version 32 is ordinary; 33 carries declared coverage. The Rust runner resolves both; Go and
-TypeScript generation refuse them, and older readers refuse these envelopes before target
+way. Version 32 is ordinary; 33 carries declared coverage. Rust, Go and TypeScript resolve both
+with report/2. Older readers refuse these envelopes before target
 callbacks. A suite without them keeps its earlier format.
+
+`ess-conformance/34` and `ess-conformance/35` also carry `read_as` (beyond10x/ess#286): every later
+read of the scenario is sent as that actor, as a command is sent as one, so a view an actor's grant
+names is read as an actor it names; `read_as` with `actor: null` sends later reads as no actor at
+all, and `expect_not_granted` with `actor: null` requires a refusal naming none. Synthesis files
+`<view>/grant/read/denied`: the view read as an actor the grant does not name, where one is
+declared, and then as no actor, each followed by `expect_not_granted`, which then requires the
+read's standard refusal; and `<view>/grant/read/admitted/<actor>` for each actor naming it. A read
+the scenario needed answered and the target refused is `failed` in every runner. A Rust
+target reads as the actor through `query_view_as`, whose default reads as `query_view` does — so
+a target that checks no read grant fails the denied scenario, as does a Go or TypeScript target that
+ignores the actor a generated runtime sends on the read. Older readers refuse `read_as`. A suite
+without it keeps its earlier bytes.
+
+`ess-conformance/36` and `ess-conformance/37` ship in 0.53.0. They carry the `ess/22` binding
+condition (beyond10x/ess#268): `expect_no_invocation` requires zero invocations of a binding's
+command for the whole eventual window, and the `condition-false` and `condition-absent` binding
+aspects file the scenarios that use it. Where the condition is Unknown on the occurrence the step
+carries `obligation: binding condition`: the binding must report that unmet obligation
+(`unsupported`), and an invocation or a silent window fails. Version 36 is ordinary; 37 carries declared coverage.
+Each implies every major below it. Rust, Go and TypeScript execute the step with report/2. Older
+readers refuse these envelopes before target callbacks. They also file one scenario per refusal a
+refusal-selected `on_failure:` answers (beyond10x/ess#269), `<binding>/binding/refusal/<outcome>`,
+witnessed with the existing count and event steps, `expect_no_publication` and
+`expect_publication_count`, which require that an event is published no times, or exactly `count`
+times, for the whole eventual window. A suite without them keeps its
+earlier format.
+
+`ess-conformance/38` and `ess-conformance/39` ship in 0.53.0. They carry the aggregate observation
+of a conditional measure (beyond10x/ess#363): an `<view>/aggregate` scenario over a view one of whose
+measures declares `where:`. The expected rows are ordinary rows; the number moves because a reader
+that does not know the construct would call a correct implementation broken. Which views those are
+is a fact about the model, so a reader holding the model — browser execution, replay — refuses such
+a suite labelled earlier before target callbacks. Version 38 is ordinary; 39 carries declared
+coverage. Each implies every major below it. Rust, Go and TypeScript execute them with report/2.
+Older readers refuse these envelopes before target callbacks. A suite without such a scenario keeps
+its earlier format.
+
+`ess-conformance/42` and `ess-conformance/43`, added in 0.53.0, carry explicit synthesis seeds
+(beyond10x/ess#413): the provenance member `synthesis_seeds` records each selected source's digest,
+each admitted setup row, and where each row was used in a generated scenario. They are written only
+for a request that selected seeds, even when no seed was used; a seed-free suite keeps its earlier
+format and bytes. Version 42 is ordinary; 43 carries declared coverage. Each implies every major below it
+that readers implement. Rust, Go
+and TypeScript admit both, run their `establish_entity` steps through the existing setup
+capability with report/2, and refuse the record under any other major. Older readers refuse these
+envelopes before target callbacks.
 
 For `ess/7`, generated held-state refusals include ordinary `wrong_state` outcomes:
 they compare the complete subject before and after the call and refuse every
@@ -449,6 +508,12 @@ completion and outcome, the rows a view read answered, and the `retry_of` of a r
 The document is specified in `models/concurrent-history/` and published as
 `schemas/ess-history.schema.json`.
 
+`ess-history/2`, added in 0.53.0, adds one optional operation field, `decision_time`: the UTC instant the
+call's command decision observed. A writer selects it exactly when an operation records one, so a
+history with none is still written as `ess-history/1`, byte for byte; `check-history` reads both,
+and refuses a `decision_time` in an `ess-history/1` document. A reader of `ess-history/1` only
+refuses `ess-history/2` by its `format`.
+
 `ess-history-adapter/1`, introduced in [0.39.0][r39], maps each field of a JSON Lines call log to a
 JSON pointer or declares it `absent`, for `ess verify conform import-history`.
 
@@ -472,6 +537,16 @@ transition only such outcomes perform, is `unwitnessed` rather than `survived`. 
 each mutant's `unsatisfiable_guard`. `--collect` still reads `/2` and `/1` manifests, and refuses
 either when it carries `unsatisfiable_guard`.
 
+`ess-mutation-manifest/4` and `ess-mutation-report/4` are unreleased. The manifest adds the
+`sets-drop`, `precedence-swap` and `emit-swap` classes, the `component` an emission was scoped to,
+each mutant's `out_of_scope`, and `unavailable_sites`, the `emit-swap` sites with no admissible
+alternative (beyond10x/ess#295); an emission declares `/4` only where it holds one of these, and
+`/3` otherwise, so a `/3` reader still collects it. The report adds `component`, the
+`out_of_scope` list and `unavailable_sites`, and is written only for an emission scoped to a
+component, under a known-failure declaration, or with an unavailable site; every other report stays
+`/3`. `--collect` still reads `/3`, `/2` and `/1`, and refuses any of them that carries a `/4`
+class, a `component`, an `out_of_scope` mutant or `unavailable_sites`, naming `/4`.
+
 ## Every other family
 
 Each family below is read by a build that admits only the versions listed, and refuses a document
@@ -490,8 +565,9 @@ claiming a higher number. [Formats and digests](./formats.md) says what each doc
 | `ess-realization/1` | [0.8.0][r8] | An authored realization: one exact ESS system bound to its implementations. `ess-realization/2`, introduced in [0.21.0][r21], admits implementation-only selections. |
 | `ess-realization-ir/1` | [0.8.0][r8] | A compiled realization. `ess-realization-ir/2`, introduced in [0.21.0][r21], compiles `ess-realization/2`. |
 | `ess-transport/1`, `ess-transport-ir/1` | [0.52.0][r52] | How the events of one exact ESS travel: broker, subject, envelope, delivery and the stream that captures each subject, and its compiled form. |
-| `ess-protospec/1` | Unreleased (experimental) | Finite communicating participants with typed state and messages, bounded channels, logical timers and safety properties. |
-| `ess-prototrace/1` | Unreleased (experimental) | Ordered protocol actions and observations bound to a model digest, with explicit model or target origin and capture completeness. |
+| `ess-transport/2`, `ess-transport-ir/2` | [0.53.0][r53] | Adds channel subjects whose whole-token `{name}` expressions are bound to required String event payload paths, and its compiled form. A reader of the previous version refuses it. |
+| `ess-protospec/1` | [0.53.0][r53] (experimental) | Finite communicating participants with typed state and messages, bounded channels, logical timers and safety properties. |
+| `ess-prototrace/1` | [0.53.0][r53] (experimental) | Ordered protocol actions and observations bound to a model digest, with explicit model or target origin and capture completeness. |
 | `ess-build/1`, `ess-build-ir/1` | [0.9.0][r9] | An authored build and its compiled form. |
 | `ess-runtime/1`, `ess-runtime-ir/1` | [0.9.0][r9] | An authored runtime mapping and its compiled form. |
 | `ess-release/1`, `ess-release-catalog/1` | [0.9.0][r9] | A release manifest, and the catalog of candidate releases. |
@@ -501,6 +577,7 @@ claiming a higher number. [Formats and digests](./formats.md) says what each doc
 | `ess-release-bundle/1` | [0.13.0][r13] | Independently released runtime and chart releases, bundled. |
 | `ess-types-report/3` | [0.19.0][r19] | Structural target accounting for a generated type library. The family's first published version is `/3`. |
 | `ess-client-report/1` | [0.52.0][r52] | Accounting for a generated event publisher: its operations and the obligations it leaves to the application. |
+| `ess-client-report/2` | [0.53.0][r53] | Accounting for a generated event publisher with at least one parameterized subject: each such operation adds its normalized `parameters`. |
 | `ess-normalization-target/1` | [0.19.0][r19] | A normalization library report. `ess-normalization-target/2` and `ess-normalization-target/3`, introduced in [0.20.0][r20], report format-3 recipes and format-4, 5 and 6 recipes respectively. |
 | `ess-openapi-import/1`, `ess-openapi-service-subset/1` | [0.20.0][r20] | An OpenAPI import envelope, and the fixed import profile it names. |
 | `ess-conformance-input/1`, `ess-conformance-replay/1` | [0.21.0][r21] | A retained original suite and its parents, and a paired browser replay. |
@@ -573,3 +650,4 @@ published release that carries them.
 [r461]: https://github.com/beyond10x/ess/releases/tag/0.46.1
 [r49]: https://github.com/beyond10x/ess/releases/tag/0.49.0
 [r52]: https://github.com/beyond10x/ess/releases/tag/0.52.0
+[r53]: https://github.com/beyond10x/ess/releases/tag/0.53.0

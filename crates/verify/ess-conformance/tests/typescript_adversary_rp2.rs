@@ -17,9 +17,8 @@
 //!
 //! The comparison is of the reports: the Rust [`ConformanceReport`](ess_conformance::report) and
 //! the TypeScript `ess-conformance-report/2` document. A run that writes no report is a
-//! disagreement, whatever it printed. Report/2 books a scenario the target could not expose as
-//! `skipped`, which is the Rust runner's `Unsupported`; no scenario of these suites is refused by
-//! name, so a `skipped` on only one side is a disagreement like any other.
+//! disagreement, whatever it printed. Report/2 preserves the native unsupported category;
+//! a category difference is a disagreement like any other.
 //!
 //! Skipped, and said out loud, where the machine has no `tsc` or no `node`, as
 //! `tests/typescript_runtime.rs` is.
@@ -169,13 +168,12 @@ impl Package {
         .scenarios
         .into_iter()
         .map(|result| {
-            // Report/2 books a scenario the target could not expose as `skipped`, which is
-            // the Rust runner's `Unsupported`.
+            // The current producer profile preserves native status categories.
             let status = match result.status {
                 Status::Passed => "passed",
                 Status::Failed => "failed",
                 Status::Error => "error",
-                Status::Unsupported => "skipped",
+                Status::Unsupported => "unsupported",
             };
             (result.scenario.to_string(), status.to_owned())
         })

@@ -128,21 +128,3 @@ pub(crate) fn resolve(
         other => leaf(other),
     }
 }
-
-/// Refuses to generate a runner that does not read this vocabulary.
-pub(crate) fn refuse_generation(
-    suite: &ConformanceSuite,
-    target: &str,
-) -> Result<(), AdmissionError> {
-    if used_by(suite) {
-        return Err(AdmissionError::new(
-            "UnsupportedTarget",
-            "$suite",
-            format!(
-                "the generated {target} runner does not read instance references inside a list \
-                 or mapping (suite/{ORDINARY}); use the Rust runner"
-            ),
-        ));
-    }
-    Ok(())
-}

@@ -1,0 +1,18 @@
+# Illustrative proposed source/21. Current source/20 executables must refuse it.
+# This is a design fixture, not evidence of successful validation or conformance.
+# A successful reissue originates a fresh value; it cannot replay an old one.
+format: ess/21
+system: credentials
+version: v1
+domain: credentials.api
+commands:
+  - name: credentials.api.Issue
+    response:
+      - {name: secret, type: String}
+    outcomes:
+      - name: issued
+        returns: true
+        one_time_response: [secret]
+# The minimal example declares no persistence, views or actors. A credential
+# service adds its own verifier fields, lifecycle, reads and authority; this
+# example neither invents those contracts nor proves private storage is safe.

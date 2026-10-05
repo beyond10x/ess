@@ -546,6 +546,7 @@ mod issue_298 {
         let ir = assemble(&boolean_model().replace("        when: pause == false\n", "")).unwrap();
         let command = ir.commands().values().next().unwrap();
         let reversed = Predicate::Compare {
+            kind: ess_primitives::predicate::CompareKind::Value,
             left: ess_primitives::predicate::Operand::Literal(FactValue::Bool(true)),
             op: ess_primitives::predicate::CompareOp::Eq,
             right: ess_primitives::predicate::Operand::Fact("pause".parse().unwrap()),
@@ -555,7 +556,7 @@ mod issue_298 {
             &[&reversed],
         )
         .unwrap();
-        assert!(cases[0].selected.is_empty());
+        assert_eq!(cases[0].selected.len(), 0);
         assert_eq!(cases[1].selected, [0]);
     }
 
@@ -789,14 +790,14 @@ mod issue_298 {
     fn generated_go_runner_executes_boolean_partition() {
         let ir = assemble(&boolean_model()).unwrap();
         let result = ess_conformance::synthesize::synthesize(&ir);
-        assert!(result.refusals.is_empty());
+        assert_eq!(result.refusals.len(), 0);
         let (rust, go) =
             support_go::compare("finite-boolean", &result.suite, Interpreted::for_model(ir));
         eprintln!("{}", go.go.log);
         assert!(go.go.success, "{}", go.go.log);
         let outcomes = support_go::assert_compared("finite-boolean", (rust, go));
         assert_eq!(outcomes.len(), 2);
-        assert!(support_go::not_passed(&outcomes).is_empty());
+        assert_eq!(support_go::not_passed(&outcomes).len(), 0);
     }
 
     #[test]
@@ -804,7 +805,7 @@ mod issue_298 {
         use std::process::Command;
         let ir = assemble(&boolean_model()).unwrap();
         let result = ess_conformance::synthesize::synthesize(&ir);
-        assert!(result.refusals.is_empty());
+        assert_eq!(result.refusals.len(), 0);
         let root = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
             .join(format!("finite-boolean-ts-{}", std::process::id()));
         for artifact in ess_conformance::ts::emit(&result.suite).unwrap() {

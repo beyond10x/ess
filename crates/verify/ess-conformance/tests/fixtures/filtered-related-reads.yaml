@@ -1,0 +1,161 @@
+format: ess/22
+system: demo
+version: v1
+domain: demo.jobs
+summary: Attempts retried with the delay of the one earlier attempt of the same worker and batch, read through a row set.
+types:
+  - {name: demo.jobs.AttemptId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.jobs.Attempt
+    identity: {name: attempt_id, type: demo.jobs.AttemptId}
+    fields:
+      - {name: worker_id, type: String}
+      - {name: batch_id, type: String}
+      - {name: delay, type: Integer}
+      - {name: note, type: Optional<String>}
+    lifecycle:
+      initial: Open
+      states: [Open, Closed]
+      terminal: [Closed]
+      transitions:
+        - {name: close, from: [Open], to: Closed}
+errors:
+  - {name: demo.jobs.Ambiguous, summary: More than one earlier attempt of the worker and batch matches., fields: []}
+  - {name: demo.jobs.OverLimit, summary: An earlier attempt of the worker and batch waited longer than the limit., fields: []}
+  - {name: demo.jobs.Crowded, summary: Another attempt of the worker and batch is still recorded., fields: []}
+  - {name: demo.jobs.UnknownAttempt, summary: No attempt carries the identity., fields: []}
+  - {name: demo.jobs.AlreadyClosed, summary: The attempt is closed already., fields: []}
+events:
+  - name: demo.jobs.AttemptRecorded
+    fields:
+      - {name: attempt_id, type: demo.jobs.AttemptId}
+  - name: demo.jobs.AttemptStarted
+    fields:
+      - {name: attempt_id, type: demo.jobs.AttemptId}
+  - name: demo.jobs.AttemptRetried
+    fields:
+      - {name: attempt_id, type: demo.jobs.AttemptId}
+      - {name: delay, type: Integer}
+      - {name: note, type: Optional<String>}
+  - name: demo.jobs.WithinLimit
+    fields:
+      - {name: worker_id, type: String}
+  - name: demo.jobs.AttemptClosed
+    fields:
+      - {name: attempt_id, type: demo.jobs.AttemptId}
+commands:
+  - name: demo.jobs.Record
+    input:
+      - {name: worker_id, type: String}
+      - {name: batch_id, type: String}
+      - {name: delay, type: Integer}
+      - {name: note, type: Optional<String>}
+    outcomes:
+      - name: recorded
+        creates: demo.jobs.Attempt
+        instance: attempt_id
+        sets: {worker_id: input.worker_id, batch_id: input.batch_id, delay: input.delay, note: input.note}
+        emits: [demo.jobs.AttemptRecorded]
+        payload:
+          demo.jobs.AttemptRecorded: {attempt_id: {generated: true}}
+  - name: demo.jobs.Retry
+    input:
+      - {name: worker_id, type: String}
+      - {name: batch_id, type: String}
+    outcomes:
+      - name: ambiguous
+        when_related:
+          entity: demo.jobs.Attempt
+          where: {all: [worker_id == input.worker_id, batch_id == input.batch_id]}
+          count: {gt: 1}
+        error: demo.jobs.Ambiguous
+      - name: started
+        when_related:
+          entity: demo.jobs.Attempt
+          where: {all: [worker_id == input.worker_id, batch_id == input.batch_id]}
+          count: {eq: 0}
+        creates: demo.jobs.Attempt
+        instance: attempt_id
+        sets: {worker_id: input.worker_id, batch_id: input.batch_id, delay: 0}
+        emits: [demo.jobs.AttemptStarted]
+        payload:
+          demo.jobs.AttemptStarted: {attempt_id: {generated: true}}
+      - name: retried
+        creates: demo.jobs.Attempt
+        instance: attempt_id
+        sets:
+          worker_id: input.worker_id
+          batch_id: input.batch_id
+          delay:
+            related:
+              entity: demo.jobs.Attempt
+              where: {all: [worker_id == input.worker_id, batch_id == input.batch_id]}
+              field: delay
+          note:
+            related:
+              entity: demo.jobs.Attempt
+              where: {all: [worker_id == input.worker_id, batch_id == input.batch_id]}
+              field: note
+        emits: [demo.jobs.AttemptRetried]
+        payload:
+          demo.jobs.AttemptRetried:
+            attempt_id: {generated: true}
+            delay:
+              related:
+                entity: demo.jobs.Attempt
+                where: {all: [worker_id == input.worker_id, batch_id == input.batch_id]}
+                field: delay
+            note:
+              related:
+                entity: demo.jobs.Attempt
+                where: {all: [worker_id == input.worker_id, batch_id == input.batch_id]}
+                field: note
+  - name: demo.jobs.CheckLimit
+    input:
+      - {name: worker_id, type: String}
+      - {name: batch_id, type: String}
+      - {name: limit, type: Integer}
+    outcomes:
+      - name: within-limit
+        when_related:
+          entity: demo.jobs.Attempt
+          where: {all: [worker_id == input.worker_id, batch_id == input.batch_id]}
+          forall: delay <= input.limit
+        emits: [demo.jobs.WithinLimit]
+        payload:
+          demo.jobs.WithinLimit: {worker_id: input.worker_id}
+      - name: over-limit
+        error: demo.jobs.OverLimit
+  - name: demo.jobs.Close
+    input:
+      - {name: attempt_id, type: demo.jobs.AttemptId}
+    outcomes:
+      - name: unknown-attempt
+        unknown_instance: true
+        error: demo.jobs.UnknownAttempt
+      - name: already-closed
+        wrong_state: true
+        error: demo.jobs.AlreadyClosed
+      - name: crowded
+        when_related:
+          entity: demo.jobs.Attempt
+          where: {all: [worker_id == subject.worker_id, batch_id == subject.batch_id]}
+          count: {gt: 1}
+        error: demo.jobs.Crowded
+      - name: closed
+        moves: demo.jobs.Attempt.close
+        instance: attempt_id
+        emits: [demo.jobs.AttemptClosed]
+        payload:
+          demo.jobs.AttemptClosed: {attempt_id: input.attempt_id}
+views:
+  - name: demo.jobs.Attempts
+    source: demo.jobs.Attempt
+    consistency: read_your_writes
+    fields:
+      - {name: attempt_id, type: demo.jobs.AttemptId}
+      - {name: worker_id, type: String}
+      - {name: batch_id, type: String}
+      - {name: delay, type: Integer}
+      - {name: note, type: Optional<String>}
+      - {name: state, type: demo.jobs.Attempt.State}

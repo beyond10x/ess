@@ -4,6 +4,7 @@
 //! number asserted here is the page's own worked example, read off the page and not off the
 //! implementation.
 use std::collections::BTreeMap;
+mod support_versions;
 
 use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
 use ess_conformance::{
@@ -161,7 +162,7 @@ fn the_example_yields_one_aggregate_scenario_per_view_and_selects_suite_16() {
     assert!(aggregate_refusals.is_empty(), "{aggregate_refusals:?}");
     assert_eq!(
         result.suite.provenance.suite_version,
-        SuiteFormat::parse("ess-conformance/16").unwrap()
+        SuiteFormat::parse("ess-conformance/34").unwrap()
     );
     assert!(aggregate::used_by(&result.suite));
     assert_eq!(
@@ -317,24 +318,51 @@ fn with_views(views: &str) -> String {
     format!("{head}views:\n{views}")
 }
 
+/// Under a fresh suite's `scenario_initial_state: empty`, a view keyed by an enum alone is no
+/// longer `ESS-SYNTH-016`: its rows are all the view holds, so every group and the number of rows
+/// are asserted exactly (`docs/design/aggregate-group-selection.md`). Without that authority the
+/// refusal stands (`synthesize::aggregate`'s legacy unit test).
 #[test]
-fn an_enum_only_keyed_view_is_refused_as_unscoped() {
+fn an_enum_only_keyed_view_is_observed_exactly_under_empty_authority() {
     let model = with_views(
         "  - name: metrics.session.ByChannel\n    source: metrics.session.Session\n    group_by: [channel]\n    fields:\n      - {name: channel, type: metrics.session.Channel}\n      - {name: sessions, type: Integer, aggregate: {count: {}}}\n",
     );
     let result = synthesis(&model);
+    assert_eq!(
+        result.suite.provenance.scenario_initial_state,
+        Some(ess_conformance::scenario::ScenarioInitialState::Empty)
+    );
     let refused: Vec<String> = result
         .refusals
         .iter()
-        .filter(|refusal| refusal.code().to_string() == "ESS-SYNTH-016")
-        .map(|refusal| refusal.scenario.as_ref().unwrap().to_string())
+        .filter(|refusal| {
+            matches!(
+                refusal.code().to_string().as_str(),
+                "ESS-SYNTH-016" | "ESS-SYNTH-017"
+            )
+        })
+        .map(ToString::to_string)
         .collect();
-    assert_eq!(refused, ["metrics.session.ByChannel/aggregate"]);
-    assert!(!result
-        .suite
-        .scenarios
-        .keys()
-        .any(|id| id.to_string().starts_with("metrics.session.ByChannel")));
+    assert_eq!(refused, Vec::<String>::new());
+    let by_channel = scenario(&result.suite, "metrics.session.ByChannel/aggregate");
+    assert_eq!(
+        reads(by_channel, "metrics.session.ByChannel")
+            .into_iter()
+            .map(|(_, expectation)| expectation)
+            .collect::<Vec<_>>(),
+        vec![
+            ViewExpectation::Contains {
+                fields: row(&[("channel", text("Voice")), ("sessions", number("3"))])
+            },
+            ViewExpectation::Contains {
+                fields: row(&[("channel", text("Chat")), ("sessions", number("1"))])
+            },
+            ViewExpectation::Counts {
+                at_least: Some(2),
+                at_most: Some(2)
+            },
+        ]
+    );
 }
 
 #[test]
@@ -558,7 +586,7 @@ fn an_extreme_or_mean_over_the_identity_is_refused_and_its_distinct_count_is_not
     let model = with_views(
         "  - name: metrics.session.Ids\n    source: metrics.session.Session\n    consistency: read_your_writes\n    filter: state == Completed\n    group_by: [agent_id]\n    fields:\n      - {name: agent_id, type: String}\n      - {name: ids, type: Integer, aggregate: {count_distinct: session_id}}\n",
     );
-    assert!(unwitnessed(&model, "metrics.session.Ids").is_empty());
+    assert_eq!(unwitnessed(&model, "metrics.session.Ids").len(), 0);
     let rows = contains(
         scenario(&synthesis(&model).suite, "metrics.session.Ids/aggregate"),
         "metrics.session.Ids",
@@ -636,8 +664,12 @@ fn a_non_scoped_first_key_gets_its_own_b_row() {
 
 #[test]
 fn an_explicitly_pinned_older_suite_with_an_aggregate_scenario_is_refused() {
-    let mut suite = synthesis(METRICS).suite;
+    // As a pre-#273 synthesizer wrote it: suite/15 has no step comparing a captured identity.
+    let synthesized = serde_json::to_string(&synthesis(METRICS).suite).unwrap();
+    let mut suite: ess_conformance::ConformanceSuite =
+        serde_json::from_str(&support_versions::without_captured_identities(&synthesized)).unwrap();
     suite.provenance.suite_version = SuiteFormat::parse("ess-conformance/15").unwrap();
+    suite.provenance.scenario_initial_state = None;
     let error = ess_conformance::admission::suite(&suite).expect_err("refused");
     assert_eq!(error.issues[0].reason, "UnsupportedVocabulary");
     assert!(error.to_string().contains("suite/16"), "{error}");
@@ -646,21 +678,25 @@ fn an_explicitly_pinned_older_suite_with_an_aggregate_scenario_is_refused() {
     assert!(aggregate::admit_suite(&suite).is_ok());
 }
 
+/// A view whose parameter is read other than by one top-level equality: still an aggregate
+/// refusal (`ESS-SYNTH-017`) under a fresh suite's `Empty` authority, which lifts `ESS-SYNTH-016`.
+const FLOORED: &str = "  - name: metrics.session.LongTalks\n    source: metrics.session.Session\n    params: [{name: floor, type: Integer}]\n    filter: talk_seconds > param.floor\n    group_by: [channel]\n    fields:\n      - {name: channel, type: metrics.session.Channel}\n      - {name: sessions, type: Integer, aggregate: {count: {}}}\n";
+
 #[test]
 fn a_refusal_only_suite_carrying_an_aggregate_refusal_is_written_at_coverage_17() {
-    let model = with_views(
-        "  - name: metrics.session.ByChannel\n    source: metrics.session.Session\n    group_by: [channel]\n    fields:\n      - {name: channel, type: metrics.session.Channel}\n      - {name: sessions, type: Integer, aggregate: {count: {}}}\n",
-    );
+    let model = with_views(FLOORED);
     let input = coverage_build::build(&ir(&model), &[], Scope::System, Origins::Generated)
         .unwrap_or_else(|error| panic!("{error:?}"));
     assert_eq!(
         input.selected().suite().provenance.suite_version.major(),
-        aggregate::COVERAGE
+        35
     );
     let original = input.selected().original_json();
-    assert!(original.contains("ESS-SYNTH-016"), "{original}");
-    // The same document labelled with the coverage major before the construct is refused.
-    let older = original.replace("\"ess-conformance/17\"", "\"ess-conformance/15\"");
+    assert!(original.contains("ESS-SYNTH-017"), "{original}");
+    // The same document labelled with the coverage major before the construct is refused, as a
+    // pre-#273 synthesizer wrote it (no step comparing a captured identity).
+    let older =
+        support_versions::legacy_json(&support_versions::without_captured_identities(original), 15);
     assert_ne!(older, original);
     let error = AdmittedSuite::from_json(&older).expect_err("an aggregate refusal needs suite/17");
     assert!(error.to_string().contains("suite/17"), "{error}");

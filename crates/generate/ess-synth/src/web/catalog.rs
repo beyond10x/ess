@@ -172,7 +172,32 @@ fn commands(bridge: &Bridge<'_>) -> Value {
                 &source
             )),
         );
-        if let Some(component) = bridge.acceptors.get(&command.name) {
+        if command
+            .outcomes
+            .iter()
+            .any(|outcome| !outcome.one_time_response.is_empty())
+        {
+            let origins = command
+                .outcomes
+                .iter()
+                .filter(|outcome| !outcome.one_time_response.is_empty())
+                .map(|outcome| {
+                    format!("{}: {}", outcome.name, outcome.one_time_response.join(", "))
+                })
+                .collect::<Vec<_>>()
+                .join("; ");
+            let refusal = format!("one_time_response ({origins}) requires implementation-owned atomic durable consumption and fresh issuance; this browser target does not implement the policy");
+            entry.insert(
+                "component".to_owned(),
+                json!(bridge.acceptors.get(&command.name)),
+            );
+            entry.insert("dispatchable".to_owned(), json!(false));
+            entry.insert(
+                "behavior".to_owned(),
+                json!({"disposition": "refused", "why": refusal}),
+            );
+            entry.insert("refusal".to_owned(), json!(refusal));
+        } else if let Some(component) = bridge.acceptors.get(&command.name) {
             entry.insert("component".to_owned(), json!(component.to_string()));
             entry.insert("dispatchable".to_owned(), json!(true));
         } else {
@@ -357,6 +382,11 @@ fn bindings(bridge: &Bridge<'_>) -> Value {
             ResolvedFailure::Retry | ResolvedFailure::BoundedRetry { .. } => ("retry", None),
             ResolvedFailure::Drop => ("drop", None),
             ResolvedFailure::Escalate { emits } => ("escalate", Some(emits.to_string())),
+            // Refused before a catalog is written (`failure::refusal_policy`); named rather than
+            // given one word if it ever were not.
+            ResolvedFailure::ByRefusal { policy } => {
+                ("by_refusal", policy.escalation().map(ToString::to_string))
+            }
         };
         let mut value = json!({
             "name": source,
@@ -373,6 +403,11 @@ fn bindings(bridge: &Bridge<'_>) -> Value {
         }
         if let Some(periodic) = binding.cause.periodic() {
             value["periodic"] = json!(periodic);
+        }
+        // The event-payload condition (ess/22), only where one is declared, so every other
+        // catalogue keeps its bytes.
+        if let Some(condition) = &binding.condition {
+            value["where"] = json!(condition.plan.predicate.to_string());
         }
         out.push(value);
     }
@@ -452,14 +487,16 @@ fn types(bridge: &Bridge<'_>) -> Value {
                 );
                 let mut branches = Map::new();
                 for (label, payload) in variants {
-                    branches.insert(
-                        label.clone(),
-                        json!({
+                    // A unit variant (ess/22) carries nothing: no spelling and no type.
+                    let branch = match payload {
+                        Some(payload) => json!({
                             "spelling": payload.to_string(),
                             "type": serde_json::to_value(payload)
                                 .unwrap_or_else(|error| panic!("a type reference serialises: {error}")),
                         }),
-                    );
+                        None => json!({"spelling": null, "type": null}),
+                    };
+                    branches.insert(label.clone(), branch);
                 }
                 entry.insert("variants".to_owned(), Value::Object(branches));
             }

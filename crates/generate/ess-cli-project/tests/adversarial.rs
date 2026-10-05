@@ -163,9 +163,9 @@ fn invalid_ordinary_values_are_refused_before_protected_acquisition() {
     );
     assert_eq!(output.exit_code, 2);
     assert_eq!(sources.0, 0);
-    assert!(handler.0.is_empty());
+    assert_eq!(handler.0.len(), 0);
     assert!(!output.stderr.contains("wrong"));
-    assert!(output.stdout.is_empty());
+    assert_eq!(output.stdout.len(), 0);
 }
 
 #[test]

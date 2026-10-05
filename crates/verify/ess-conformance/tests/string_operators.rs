@@ -320,7 +320,7 @@ fn a_suite_carrying_a_string_operator_takes_the_new_ordinary_major() {
         "a pinned older suite refuses to serialise the construct"
     );
     typed.select_fresh_format();
-    assert_eq!(typed.provenance.suite_version.major(), 14);
+    assert_eq!(typed.provenance.suite_version.major(), 34);
     AdmittedSuite::from_json(&typed.to_canonical_json().unwrap()).unwrap();
 
     for below in 1..=13 {
@@ -348,8 +348,8 @@ fn a_suite_carrying_a_string_operator_takes_the_new_ordinary_major() {
     typed.select_fresh_format();
     assert_eq!(
         typed.provenance.suite_version.major(),
-        4,
-        "a suite without the construct keeps its format and bytes"
+        34,
+        "every fresh suite states its initial-state requirement"
     );
 }
 
@@ -455,7 +455,7 @@ console.log(JSON.stringify({current: await answer('current.json'), forged: await
     assert!(
         answer["current"]
             .as_str()
-            .is_some_and(|error| error.contains("replay requires suite/5 or /9")),
+            .is_some_and(|error| error.contains("replay requires suite/5, /9 or /35")),
         "{record}"
     );
     assert!(

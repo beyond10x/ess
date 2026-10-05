@@ -15,6 +15,13 @@
 //!
 //! A mapping this module cannot turn into an exact expectation — through a declared conversion, a
 //! bounded accessor, a selection — refuses its scenario with the reason, never a guess.
+//!
+//! A binding with an event-payload condition (ess/22, beyond10x/ess#268) gets its delivered
+//! payloads chosen for the condition as well, varying only the members it reads
+//! (`binding_condition::delivered`): the four aspects above deliver payloads it holds for, and
+//! `condition-false` and `condition-absent` deliver one it fails for with every member present and
+//! one per proved Optional level left out, each then requiring zero invocations for the whole
+//! window. Where no value set makes it hold, each aspect is refused naming why.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -471,6 +478,7 @@ fn complete(
 }
 
 /// Every scenario of one binding that declares a delivery context.
+#[allow(clippy::too_many_lines)]
 pub(super) fn synthesize(
     ir: &EssIr,
     binding: &ResolvedBinding,
@@ -485,6 +493,20 @@ pub(super) fn synthesize(
         .cause
         .event()
         .expect("a delivery context is on an event cause");
+    // A policy selected per refusal (ess/22, beyond10x/ess#269) of a delivered event: each refusal
+    // is refused by name, as a bounded retry's failure scenario is here, whatever else follows.
+    if let Some(policy) = &binding.refusal_policy {
+        super::refusal_policy::refuse_all(
+            binding,
+            policy,
+            &BindingGap::AccessorObservation {
+                reason: "DeliveryContext: a failure policy selected per refusal of a delivered \
+                         event is not synthesized yet"
+                    .into(),
+            },
+            refusals,
+        );
+    }
     let event = EventRef::from(event_handle);
     let mapped: BTreeSet<&str> = binding
         .mapping
@@ -494,7 +516,7 @@ pub(super) fn synthesize(
             _ => None,
         })
         .collect();
-    let (first, second, admitted) =
+    let (mut first, mut second, admitted) =
         match occurrences(ir, &ir.event(event_handle).fields, &context.fields, &mapped) {
             Ok(chosen) => chosen,
             Err(gap) => {
@@ -506,6 +528,27 @@ pub(super) fn synthesize(
                 return;
             }
         };
+    // An event-payload condition (ess/22, beyond10x/ess#268): the delivered payloads are chosen for
+    // it too, varying only the members it reads — made to hold for the four positive aspects, and
+    // to fail, or to leave a proved Optional level out, for its two witnesses.
+    let witnessed = binding.condition.as_ref().map(|condition| {
+        super::binding_condition::delivered(
+            ir,
+            event_handle,
+            condition,
+            &[first.payload.clone(), second.payload.clone()],
+        )
+    });
+    let mut unheld = None;
+    if let Some(witnessed) = &witnessed {
+        match &witnessed.holds {
+            Ok(holding) => {
+                first.payload = holding[0].clone();
+                second.payload = holding[1].clone();
+            }
+            Err(gap) => unheld = Some(gap.clone()),
+        }
+    }
     let delivered = Delivered {
         binding,
         invoked: ir.command(&binding.command),
@@ -522,12 +565,19 @@ pub(super) fn synthesize(
             binding: subject.clone(),
             aspect,
         };
-        let built = match aspect {
-            BindingAspect::Flow => flow(ir, &delivered),
-            BindingAspect::Mapping => mapping(&delivered),
-            BindingAspect::Delivery => delivery(ir, &delivered),
-            BindingAspect::OnFailure => on_failure(ir, &delivered),
-            BindingAspect::FinalFailure => continue,
+        let built = match (aspect, &unheld) {
+            (
+                BindingAspect::FinalFailure
+                | BindingAspect::ConditionFalse
+                | BindingAspect::ConditionAbsent,
+                _,
+            ) => continue,
+            (BindingAspect::OnFailure, _) if binding.refusal_policy.is_some() => continue,
+            (_, Some(gap)) => Err(gap.clone()),
+            (BindingAspect::Flow, None) => flow(ir, &delivered),
+            (BindingAspect::Mapping, None) => mapping(&delivered),
+            (BindingAspect::Delivery, None) => delivery(ir, &delivered),
+            (BindingAspect::OnFailure, None) => on_failure(ir, &delivered),
         };
         let (steps, purpose, extra) = match built {
             Ok(built) => built,
@@ -551,6 +601,119 @@ pub(super) fn synthesize(
             refusals,
         );
     }
+    if let Some(witnessed) = witnessed {
+        negative_witnesses(ir, &delivered, witnessed, &source, suite, refusals);
+    }
+}
+
+/// A conditioned external binding's `condition-false` and `condition-absent` scenarios, or the
+/// refusal naming why each could not be delivered (ess/22, beyond10x/ess#268).
+fn negative_witnesses(
+    ir: &EssIr,
+    delivered: &Delivered<'_>,
+    witnessed: super::binding_condition::Delivered,
+    source: &BTreeSet<EssSemanticRef>,
+    suite: &mut ConformanceSuite,
+    refusals: &mut Vec<Refusal>,
+) {
+    let subject = BindingRef::new(delivered.binding.name.clone());
+    for (aspect, witness) in [
+        (
+            BindingAspect::ConditionFalse,
+            Some(witnessed.fails.map(|payload| vec![payload])),
+        ),
+        (BindingAspect::ConditionAbsent, witnessed.absent),
+    ] {
+        let Some(witness) = witness else {
+            continue;
+        };
+        let id = ScenarioId::Binding {
+            binding: subject.clone(),
+            aspect,
+        };
+        match witness {
+            Ok(payloads) => {
+                let (steps, purpose, siblings) = never_invoked(ir, delivered, payloads);
+                let mut depends = source.clone();
+                depends.extend(siblings.into_iter().map(EssSemanticRef::from));
+                insert(
+                    suite,
+                    id,
+                    ConformanceScenario::new(purpose, steps, depends),
+                    refusals,
+                );
+            }
+            Err(gap) => refusals.push(Refusal::about(
+                &id,
+                RefusalCause::BindingUnobservable {
+                    binding: subject.clone(),
+                    gap,
+                },
+            )),
+        }
+    }
+}
+
+/// A conditioned external binding's negative witness (ess/22, beyond10x/ess#268): each payload,
+/// one its condition does not hold for, delivered under the first context, and zero invocations of
+/// the binding for the whole eventual window. The suite delivers every occurrence itself, so no
+/// other one can arrive to blur it.
+fn never_invoked(
+    ir: &EssIr,
+    delivered: &Delivered<'_>,
+    payloads: Vec<BTreeMap<String, Node>>,
+) -> (Vec<ScenarioStep>, super::ScenarioPurpose, Vec<BindingRef>) {
+    let context = &delivered.first.context;
+    // Where the condition is Unknown on a delivered payload, the binding owes its unmet
+    // obligation for it, and a target that skips silently fails.
+    let unknown = delivered
+        .binding
+        .condition
+        .as_ref()
+        .is_some_and(|condition| {
+            payloads.iter().any(|payload| {
+                condition.plan.evaluate(payload) == Ok(ess_primitives::predicate::Truth::Unknown)
+            })
+        });
+    // `other_binding_still_invokes`, as for an event a command publishes: every binding beside
+    // this one that the channel delivers the occurrence to still invokes, before the window.
+    let siblings = super::siblings(
+        ir,
+        delivered.binding,
+        &payloads,
+        Some((delivered.context.authority.as_str(), context)),
+    );
+    let mut steps: Vec<ScenarioStep> = payloads
+        .into_iter()
+        .map(|payload| {
+            delivered.deliver(&Occurrence {
+                payload,
+                context: context.clone(),
+            })
+        })
+        .collect();
+    for sibling in &siblings {
+        steps.push(ScenarioStep::ExpectInvocation {
+            binding: BindingRef::new(sibling.name.clone()),
+            command: CommandRef::new(ir.command(&sibling.command).name.clone()),
+            input: BTreeMap::new(),
+            count: None,
+        });
+    }
+    steps.push(ScenarioStep::ExpectNoInvocation {
+        binding: BindingRef::new(delivered.binding.name.clone()),
+        command: delivered.command(),
+        obligation: unknown.then(|| crate::no_invocation::UNKNOWN_CONDITION.to_owned()),
+    });
+    let text = format!(
+        "`{}` invokes `{}` no times for a delivered `{}` its condition does not hold for",
+        delivered.binding.name, delivered.invoked.name, delivered.event
+    );
+    let siblings = siblings
+        .iter()
+        .map(|sibling| BindingRef::new(sibling.name.clone()))
+        .collect();
+    (steps, clipped(&text), siblings)
 }
 
 /// What every scenario of the binding rests on: the binding, the event and its field types, the
@@ -697,7 +860,10 @@ fn on_failure(ir: &EssIr, delivered: &Delivered<'_>) -> Built {
     if matches!(policy, ResolvedFailure::Drop) {
         return Err(BindingGap::PolicySilent);
     }
-    if matches!(policy, ResolvedFailure::BoundedRetry { .. }) {
+    if matches!(
+        policy,
+        ResolvedFailure::BoundedRetry { .. } | ResolvedFailure::ByRefusal { .. }
+    ) {
         return Err(BindingGap::AccessorObservation {
             reason: "DeliveryContext: a bounded retry of a delivered event is not synthesized yet"
                 .into(),
@@ -750,7 +916,9 @@ fn on_failure(ir: &EssIr, delivered: &Delivered<'_>) -> Built {
                 invoked.name, delivered.binding.name
             )
         }
-        ResolvedFailure::Drop | ResolvedFailure::BoundedRetry { .. } => {
+        ResolvedFailure::Drop
+        | ResolvedFailure::BoundedRetry { .. }
+        | ResolvedFailure::ByRefusal { .. } => {
             unreachable!("refused above, before anything was forced")
         }
     };

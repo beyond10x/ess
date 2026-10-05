@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-04T15:13:39Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-283",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test ess-domain, ess-compiler (full), related ess-conformance targets, ess-synth (full) on the integration tree",
+    "reference": "baseline: a second exists:false branch refused ESS-COMMAND-004; related_guard_multiple_vias 9 of 9 red; adversary 5 red before correction; treatment: domain+compiler 1372 passed, conformance 487 passed, synth 456 passed, 0 failed"
+  }
+}

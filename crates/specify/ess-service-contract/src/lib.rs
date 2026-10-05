@@ -449,12 +449,21 @@ fn include_payload_field(
     field: &ResolvedPayloadField,
 ) {
     include_type_ref(types, &field.target_type);
+    // An input fallback (ess/22, A4) reads a second input at its own type.
+    if let ResolvedPayloadValue::InputOrGenerated {
+        otherwise: Some(ess_compiler::ir::ResolvedFallback::Input { input }),
+        ..
+    } = &field.value
+    {
+        include_type_ref(types, &input.type_ref);
+    }
     let source = match &field.value {
         ResolvedPayloadValue::ResponseField { type_ref, .. }
         | ResolvedPayloadValue::InputField { type_ref, .. }
         | ResolvedPayloadValue::SubjectField { type_ref, .. }
         | ResolvedPayloadValue::InputOrGenerated { type_ref, .. }
-        | ResolvedPayloadValue::CallerAttribute { type_ref, .. } => Some(type_ref),
+        | ResolvedPayloadValue::CallerAttribute { type_ref, .. }
+        | ResolvedPayloadValue::RelatedSelection { type_ref, .. } => Some(type_ref),
         ResolvedPayloadValue::RelatedField { via, type_ref, .. } => {
             include_type_ref(types, via.type_ref());
             Some(type_ref)
@@ -664,7 +673,7 @@ fn include_type_closure(
             ResolvedBody::Struct { fields, .. } => include_fields(&mut reached, fields),
             ResolvedBody::Enum { .. } => {}
             ResolvedBody::Union { variants, .. } => {
-                for variant in variants.values() {
+                for variant in variants.values().flatten() {
                     include_type_ref(&mut reached, variant);
                 }
             }

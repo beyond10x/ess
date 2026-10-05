@@ -200,7 +200,7 @@ fn assert_same_cli(control: &Model, changed: &Model) {
     let after_output = execute(&after);
     assert_eq!(before_output, after_output);
     assert_eq!(before_output.exit_code, 0);
-    assert!(before_output.stderr.is_empty());
+    assert_eq!(before_output.stderr.len(), 0);
     assert_eq!(before_output.stdout, "{\"ok\":true,\"result\":17}\n");
     assert_eq!(
         before_output.calls,

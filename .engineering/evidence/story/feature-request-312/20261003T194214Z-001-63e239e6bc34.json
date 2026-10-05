@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-03T19:42:14Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-312",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Report migration candidate c5682d541: scoped three complete binaries5/5,4/4,10/10, zero ignored, exit0; strict affected-target Clippy0 and owning fmt/check0. Actual legacy mixed-reader and invalid digest/count/status controls execute. Candidate awaits independent review; no broader conformance success claimed. Publication-safe copy of the same observation; private original retained locally, not a new test run.",
+    "reference": "sha256:899e984130bef2531d772fc4f558da365031fff8806dd549e1d92668e7d670ab"
+  }
+}

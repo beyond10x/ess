@@ -127,11 +127,29 @@ pub fn diff(before: &EssIr, after: &EssIr) -> Result<EssDelta, DiffRefusal> {
         });
     }
 
-    Ok(EssDelta::new(
+    let delta = EssDelta::new(
         EssRevisionRef::of(before),
         EssRevisionRef::of(after),
         changes,
-    ))
+    );
+    // A change only `ess-diff/14` can carry (a refusal-selected policy or a binding's payload
+    // condition, ess/22) makes the delta `/14`, and `/14` is classified by definition, so such a
+    // delta carries its classification even when nobody asked; every other delta keeps its format
+    // and bytes.
+    if delta.format.major() >= crate::compatibility::CLASSIFIED_DELTA_FORMAT {
+        return Ok(delta.classify(&crate::compatibility::UseIndex::new(before, after)));
+    }
+    Ok(delta)
+}
+
+/// What moved, and whom each change breaks (beyond10x/ess#290).
+///
+/// The same changes [`diff`] reports, each carrying a
+/// [`ChangeCompatibility`](crate::compatibility::ChangeCompatibility) derived from both revisions,
+/// written as `ess-diff/14` or later. Opt-in: [`diff`] keeps its format and bytes.
+pub fn classified(before: &EssIr, after: &EssIr) -> Result<EssDelta, DiffRefusal> {
+    let delta = diff(before, after)?;
+    Ok(delta.classify(&crate::compatibility::UseIndex::new(before, after)))
 }
 
 // ---- shared comparisons ----------------------------------------------------------------------
@@ -340,15 +358,44 @@ fn body_kind(body: &ResolvedBody) -> &'static str {
 }
 
 /// The conditions a body states, as the author wrote them.
-fn invariants(body: &ResolvedBody) -> Vec<String> {
+fn invariants(body: &ResolvedBody) -> &[ess_domain::entity::Invariant] {
     match body {
         ResolvedBody::Newtype { invariants, .. } | ResolvedBody::Struct { invariants, .. } => {
             invariants
-                .iter()
-                .map(|invariant| invariant.statement.clone())
-                .collect()
         }
-        ResolvedBody::Enum { .. } | ResolvedBody::Union { .. } => Vec::new(),
+        ResolvedBody::Enum { .. } | ResolvedBody::Union { .. } => &[],
+    }
+}
+
+/// Two lists of invariants that differ, each rendered as the author wrote it — unless the two
+/// renderings would then be equal, in which case each is rendered canonically.
+///
+/// The second case is a change of meaning with no change of spelling: from `ess/22` a bare word on
+/// the right of a comparison names a field once one of that name is declared, so `status !=
+/// pending` moves from the text to the field without a byte of it moving
+/// (`docs/design/expression-family-source22.md`, A1, decision 7). Reporting that with identical
+/// before and after would hide the behaviour change it is.
+fn written_invariants(
+    was: &[ess_domain::entity::Invariant],
+    is: &[ess_domain::entity::Invariant],
+) -> (Vec<String>, Vec<String>) {
+    let statements = |invariants: &[ess_domain::entity::Invariant]| -> Vec<String> {
+        invariants
+            .iter()
+            .map(|invariant| invariant.statement.clone())
+            .collect()
+    };
+    let canonical = |invariants: &[ess_domain::entity::Invariant]| -> Vec<String> {
+        invariants
+            .iter()
+            .map(|invariant| invariant.predicate.to_string())
+            .collect()
+    };
+    let (before, after) = (statements(was), statements(is));
+    if before == after {
+        (canonical(was), canonical(is))
+    } else {
+        (before, after)
     }
 }
 
@@ -436,13 +483,23 @@ fn enum_changes(was: &[EnumVariant], is: &[EnumVariant], push: &mut impl FnMut(T
     }
 }
 
+/// What a union variant carries, as a change writes it: its type, or the unit spelling.
+fn payload(carried: Option<&ResolvedTypeRef>) -> String {
+    carried.map_or_else(
+        || crate::change::UNIT_PAYLOAD.to_owned(),
+        ToString::to_string,
+    )
+}
+
 /// Every difference between two unions' variants.
 ///
 /// Keyed by tag value, which is a union's own identity for a variant, so a payload type that moved
-/// is reported as a moved payload rather than as one variant removed and another added.
+/// is reported as a moved payload rather than as one variant removed and another added. A unit
+/// variant (ess/22) carries [`UNIT_PAYLOAD`](crate::change::UNIT_PAYLOAD), so one that gains a payload, or a payload variant that
+/// loses its own, is a moved payload too.
 fn union_changes(
-    was: &BTreeMap<String, ResolvedTypeRef>,
-    is: &BTreeMap<String, ResolvedTypeRef>,
+    was: &BTreeMap<String, Option<ResolvedTypeRef>>,
+    is: &BTreeMap<String, Option<ResolvedTypeRef>>,
     push: &mut impl FnMut(TypeChange),
 ) {
     for variant in keys(was, is) {
@@ -455,8 +512,8 @@ fn union_changes(
             }),
             (Some(old), Some(new)) if old != new => push(TypeChange::VariantTypeChanged {
                 variant: variant.clone(),
-                before: old.to_string(),
-                after: new.to_string(),
+                before: payload(old.as_ref()),
+                after: payload(new.as_ref()),
             }),
             _ => {}
         }
@@ -565,10 +622,8 @@ fn body_changes(before: &ResolvedBody, after: &ResolvedBody, mut push: impl FnMu
 
     let (was, is) = (invariants(before), invariants(after));
     if was != is {
-        push(TypeChange::InvariantsChanged {
-            before: was,
-            after: is,
-        });
+        let (before, after) = written_invariants(was, is);
+        push(TypeChange::InvariantsChanged { before, after });
     }
 }
 
@@ -963,10 +1018,27 @@ fn component_changes(before: &EssIr, after: &EssIr, changes: &mut Vec<SemanticCh
 ///
 /// A `when:` renders through [`Predicate`](ess_primitives::predicate::Predicate)'s own `Display`, which
 /// is the canonical compact form — the IR keeps no author spelling for a guard, so two guards that
-/// differ only in formatting are one predicate and never reach a renderer at all.
+/// differ only in formatting are one predicate and never reach a renderer at all. It renders the
+/// resolved operand, not the source word: a one-segment fact on the right reads `{fact: …}`, so a
+/// literal that became a fact renders differently from the literal it was
+/// (`docs/design/expression-family-source22.md`, A1, decision 7).
 fn written_condition(condition: &ResolvedCondition) -> String {
     match condition {
         ResolvedCondition::When { predicate } => format!("when {predicate}"),
+        // The selector, the test and the input guard: a change to any is a change to which rows the
+        // branch answers (ess/22, beyond10x/ess#228, #299).
+        ResolvedCondition::RelatedSet {
+            selection,
+            test,
+            input,
+        } => format!(
+            "when, of the {} rows satisfying {}, {test}{}",
+            selection.entity.name(),
+            selection.filter,
+            input
+                .as_ref()
+                .map_or(String::new(), |guard| format!(" and {guard}")),
+        ),
         ResolvedCondition::SubjectPredicate { predicate, input } => format!(
             "when subject fields satisfy {predicate}{}",
             input
@@ -1101,6 +1173,7 @@ fn written_fields(owner: &str, fields: &[ess_compiler::ir::ResolvedPayloadField]
                 | ess_compiler::ir::ResolvedPayloadValue::InputOrGenerated { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::Struct { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::RelatedField { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::RelatedSelection { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::CallerAttribute { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::ChangedCount) => other.describe(),
             };
@@ -1204,6 +1277,12 @@ fn written_mapping(mapping: &ess_compiler::ir::ResolvedMapping) -> String {
 /// A binding's failure policy in one word, with the event an escalation publishes beside it.
 fn written_failure(binding: &ResolvedBinding) -> String {
     match binding.on_failure() {
+        ess_compiler::ir::ResolvedFailure::ByRefusal { policy } => format!(
+            "selected per refusal, otherwise {}",
+            crate::refusal_policy::RefusalPolicyContent::of(policy)
+                .fallback
+                .describe()
+        ),
         ess_compiler::ir::ResolvedFailure::Retry => "retry".to_owned(),
         ess_compiler::ir::ResolvedFailure::Drop => "drop".to_owned(),
         ess_compiler::ir::ResolvedFailure::Escalate { emits } => {
@@ -1370,18 +1449,8 @@ fn compare_entities(
     // the cheap error. The comparison never reads the predicates' content beyond equality, so no
     // direction can come out of it (gap register D-1).
     if was.invariants != is.invariants {
-        push(EntityChange::InvariantsChanged {
-            before: was
-                .invariants
-                .iter()
-                .map(|invariant| invariant.statement.clone())
-                .collect(),
-            after: is
-                .invariants
-                .iter()
-                .map(|invariant| invariant.statement.clone())
-                .collect(),
-        });
+        let (before, after) = written_invariants(&was.invariants, &is.invariants);
+        push(EntityChange::InvariantsChanged { before, after });
     }
 
     for delta in naming_deltas(&was.naming, &is.naming, name.local()) {
@@ -1754,6 +1823,16 @@ fn compare_views(
     }
 }
 
+/// What the field `field` of `view` computes, where it is an aggregate.
+fn computes<'v>(
+    view: &'v ResolvedView,
+    field: &str,
+) -> Option<&'v ess_compiler::ir::ResolvedAggregate> {
+    view.aggregation
+        .as_ref()
+        .and_then(|aggregation| aggregation.functions.get(field))
+}
+
 /// Aggregate views (`docs/design/aggregate-views.md`): the grouping, then what each field
 /// computes, over the union of field names. A view with no aggregation on either side reports
 /// nothing here, so its delta keeps its format.
@@ -1770,11 +1849,19 @@ fn compare_aggregations(was: &ResolvedView, is: &ResolvedView, push: &mut impl F
             after: grouping(is),
         });
     }
-    let computes = |view: &ResolvedView, field: &str| {
-        view.aggregation
-            .as_ref()
-            .and_then(|aggregation| aggregation.functions.get(field))
-            .map(ToString::to_string)
+    // Compared as typed values — the function, the input field's name, `skip_absent` and the
+    // resolved condition (beyond10x/ess#363) — and rendered only to report the change: two
+    // spellings of one resolved condition are one aggregate, an explicit `where: true` is not an
+    // omitted one, and how the source field is shown or described is no computation at all.
+    let identity = |aggregate: Option<&ess_compiler::ir::ResolvedAggregate>| {
+        aggregate.map(|aggregate| {
+            (
+                aggregate.function,
+                aggregate.input.as_ref().map(|input| input.name.clone()),
+                aggregate.skip_absent,
+                aggregate.r#where.clone(),
+            )
+        })
     };
     let names: std::collections::BTreeSet<&str> = was
         .fields
@@ -1784,11 +1871,11 @@ fn compare_aggregations(was: &ResolvedView, is: &ResolvedView, push: &mut impl F
         .collect();
     for field in names {
         let (before, after) = (computes(was, field), computes(is, field));
-        if before != after {
+        if identity(before) != identity(after) {
             push(ViewChange::FieldAggregateChanged {
                 field: field.to_owned(),
-                before,
-                after,
+                before: before.map(ToString::to_string),
+                after: after.map(ToString::to_string),
             });
         }
     }
@@ -1875,12 +1962,30 @@ fn compare_causes(
 /// is still there. The mapping's *order* is the invoked command's declaration order by
 /// construction, so it is not compared either: a mapping reordered without an entry changing is a
 /// command input reordered, reported on the command.
+#[allow(clippy::too_many_lines)]
 fn compare_bindings(
     was: &ResolvedBinding,
     is: &ResolvedBinding,
     push: &mut impl FnMut(BindingChange),
 ) {
     compare_causes(was, is, push);
+    // The event-payload condition (ess/22, beyond10x/ess#268), compared as written: the paths it
+    // reads and what it proves present are derived from it and the event's declared types, which
+    // are compared where they are declared.
+    let (was_condition, is_condition) = (
+        was.condition
+            .as_ref()
+            .map(|condition| &condition.plan.predicate),
+        is.condition
+            .as_ref()
+            .map(|condition| &condition.plan.predicate),
+    );
+    if was_condition != is_condition {
+        push(BindingChange::PredicateChanged {
+            before: was_condition.cloned(),
+            after: is_condition.cloned(),
+        });
+    }
     let (was_invoked, is_invoked) = (
         CommandRef::from(&was.command),
         CommandRef::from(&is.command),
@@ -1943,10 +2048,34 @@ fn compare_bindings(
         });
     }
 
-    if was.failure != is.failure || was.escalation != is.escalation || was.retry != is.retry {
+    // A policy selected per refusal (ess/22, beyond10x/ess#269) is compared as its complete
+    // resolved table, whose universal fields are only a view of it; a universal policy keeps its
+    // own kind, reported beside the table where one side is universal.
+    let tables = (
+        was.refusal_policy
+            .as_ref()
+            .map(crate::refusal_policy::RefusalPolicyContent::of),
+        is.refusal_policy
+            .as_ref()
+            .map(crate::refusal_policy::RefusalPolicyContent::of),
+    );
+    let universal_moved =
+        was.failure != is.failure || was.escalation != is.escalation || was.retry != is.retry;
+    let both_universal = tables.0.is_none() && tables.1.is_none();
+    let one_side_universal = tables.0.is_none() || tables.1.is_none();
+    // Two universal policies compare exactly as they always did.
+    if universal_moved
+        && (both_universal || (one_side_universal && written_failure(was) != written_failure(is)))
+    {
         push(BindingChange::FailureChanged {
             before: written_failure(was),
             after: written_failure(is),
+        });
+    }
+    if tables.0 != tables.1 {
+        push(BindingChange::RefusalPolicyChanged {
+            before: tables.0,
+            after: tables.1,
         });
     }
 
@@ -2050,6 +2179,7 @@ fn written_sets(fields: &[ess_compiler::ir::ResolvedPayloadField]) -> Vec<String
                 | ess_compiler::ir::ResolvedPayloadValue::InputOrGenerated { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::Struct { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::RelatedField { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::RelatedSelection { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::CallerAttribute { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::ChangedCount) => other.describe(),
             };
@@ -2334,6 +2464,24 @@ fn outcome_state_changes(
             after: new.returns,
         });
     }
+    if old.compensates != new.compensates {
+        push(CommandChange::OutcomeCompensatesChanged {
+            outcome: name.to_owned(),
+            before: old.compensates,
+            after: new.compensates,
+        });
+    }
+    let mut before = old.one_time_response.clone();
+    let mut after = new.one_time_response.clone();
+    before.sort();
+    after.sort();
+    if before != after {
+        push(CommandChange::OutcomeOneTimeResponseChanged {
+            outcome: name.to_owned(),
+            before,
+            after,
+        });
+    }
     if old.decided_by_caller != new.decided_by_caller {
         push(CommandChange::OutcomeDecidedByCallerChanged {
             outcome: name.to_owned(),
@@ -2400,6 +2548,9 @@ fn residual_construct(declaration: &mut serde_json::Value, family: &str) {
                     "failure",
                     "escalation",
                     "retry",
+                    // `refusal-policy-changed` (ess/22, beyond10x/ess#269).
+                    "on_refusal",
+                    "where",
                 ],
             );
             // The delivery context's channel and fields are compared by the cause and by the
@@ -2458,7 +2609,7 @@ fn residual_command(declaration: &mut serde_json::Value) {
 /// they are a pure function of one that does. `refs` is deliberately absent: it stays residual.
 ///
 /// [`outcome_keys_accounted`] names every field of the struct, so the two cannot drift silently.
-const OUTCOME_KEYS_ACCOUNTED: [&str; 19] = [
+const OUTCOME_KEYS_ACCOUNTED: [&str; 21] = [
     "name",
     "condition",
     "subject",
@@ -2473,6 +2624,8 @@ const OUTCOME_KEYS_ACCOUNTED: [&str; 19] = [
     "refuses",
     "accepts_nothing",
     "returns",
+    "compensates",
+    "one_time_response",
     "summary",
     "sets",
     "decided_by_caller",
@@ -2502,6 +2655,8 @@ fn outcome_keys_accounted(outcome: &ResolvedOutcome) -> &'static [&'static str] 
         refuses: _,        // OutcomeRefusesChanged
         accepts_nothing: _, // OutcomeAcceptsNothingChanged
         returns: _,        // OutcomeReturnsChanged
+        compensates: _,    // OutcomeCompensatesChanged
+        one_time_response: _, // Accounted by the one-time contract comparison below.
         summary: _,        // OutcomeSummaryChanged
         refs: _,           // residual, deliberately
         sets: _,           // OutcomeSetsChanged
@@ -2619,7 +2774,8 @@ fn paging_contract(paging: &ess_domain::view::Paging) -> crate::change::PagingCo
 }
 
 /// A branch's set effects (ess/16), one line per construct: `instances:` with its verb and filter,
-/// then each `affects:` entry with its filter and what it sets.
+/// then each `affects:` entry with its filter, its move where it takes one (ess/22), and what it
+/// sets.
 fn written_set_effects(outcome: &ResolvedOutcome) -> Vec<String> {
     let mut lines = Vec::new();
     if let Some(set) = &outcome.instances {
@@ -2631,8 +2787,16 @@ fn written_set_effects(outcome: &ResolvedOutcome) -> Vec<String> {
         ));
     }
     for affect in &outcome.affects {
+        // From ess/22 an entry may move its rows (beyond10x/ess#229); a line without one reads as
+        // it always did.
+        let moves = affect
+            .moves
+            .as_ref()
+            .map_or_else(String::new, |transition| {
+                format!(", moves along `{}` to `{}`", transition.name, transition.to)
+            });
         lines.push(format!(
-            "affects every `{}` where `{}`: {}",
+            "affects every `{}` where `{}`{moves}: {}",
             affect.entity.name(),
             affect.filter,
             written_sets(&affect.sets).join(", ")
@@ -2647,9 +2811,12 @@ mod tests {
     use std::collections::BTreeSet;
 
     /// Specifications whose outcomes, together, write every optional `ResolvedOutcome` key.
-    const MODELS: [&str; 6] = [
+    const MODELS: [&str; 8] = [
+        include_str!("../../../../docs/design/one-time-response-values.example.yaml"),
         include_str!("../../../specify/ess-compiler/tests/fixtures/outcome-shapes.yaml"),
         include_str!("../../../specify/ess-compiler/tests/fixtures/set-effects.yaml"),
+        // `compensates` (ess/22, beyond10x/ess#197).
+        include_str!("../../../specify/ess-compiler/tests/fixtures/refusal-with-effect.yaml"),
         include_str!("../../ess-conformance/tests/fixtures/error-payload-sources.yaml"),
         include_str!("../../ess-conformance/tests/fixtures/retained-replay.yaml"),
         "format: ess/17\nsystem: library\nversion: v1\ndomain: library.api\ncommands:\n  \

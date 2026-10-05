@@ -4,7 +4,9 @@
 //! green while an eventual view's #176 invariant is written below suite/26 again.
 use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
 use ess_conformance::{
-    scenario::ViewExpectation, synthesize::synthesize, ConformanceSuite, ScenarioStep,
+    scenario::{ScenarioInitialState, ViewExpectation},
+    synthesize::synthesize,
+    ConformanceSuite, ScenarioStep,
 };
 use ess_domain::{
     spec::{RawSpecFile, Specification},
@@ -46,7 +48,7 @@ fn only_eventually(suite: &ConformanceSuite) -> bool {
 }
 
 #[test]
-fn adversary_w1fix_pass2_an_eventual_view_invariant_over_an_optional_struct_selects_suite_26() {
+fn adversary_w1fix_pass2_an_eventual_view_invariant_keeps_its_26_minimum_in_fresh_suite_34() {
     let text = QUEUE.replace(
         "    consistency: read_your_writes\n",
         "    consistency: eventual\n",
@@ -66,7 +68,16 @@ fn adversary_w1fix_pass2_an_eventual_view_invariant_over_an_optional_struct_sele
     );
     assert!(ess_conformance::defined_aggregates::used_by(&ir, &suite));
     assert_eq!(
+        ess_conformance::defined_aggregates::ORDINARY,
+        26,
+        "the detected construct retains its historical minimum vocabulary"
+    );
+    assert_eq!(
         suite.provenance.suite_version.to_string(),
-        "ess-conformance/26"
+        "ess-conformance/34"
+    );
+    assert_eq!(
+        suite.provenance.scenario_initial_state,
+        Some(ScenarioInitialState::Empty)
     );
 }

@@ -118,7 +118,7 @@ use std::rc::Rc;
 
 use ops_server::ops_service as surface;
 use ops_server::http;
-use ops_types::behaviour::{Context, Generated};
+use ops_types::behaviour::{Context, ExternalCommand, Generated};
 use ops_types::core;
 use ops_types::obligation::UnmetObligation;
 
@@ -133,7 +133,8 @@ struct State {
 struct Desk(Rc<RefCell<State>>);
 
 impl Context for Desk {
-    fn external(&mut self, command: &'static str, outcome: &'static str) -> bool {
+    fn external(&mut self, command: ExternalCommand<'_>, outcome: &'static str) -> bool {
+        let command = command.name();
         let mut state = self.0.borrow_mut();
         match (command, outcome) {
             ("ops.core.Note", "busy") => state.busy,

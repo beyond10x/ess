@@ -80,7 +80,8 @@ type Target interface {
 The methods answer the same questions as the TypeScript runner's; its
 [method table](./typescript.md#what-your-implementation-provides) says what each one answers. A
 method the implementation cannot answer returns `essconform.ErrUnsupported`, and the scenario is
-reported as skipped. Specifications that declare more ask for optional interfaces a target may
+reported as `unsupported` in report/2; the default strict run fails. Ordinary target errors remain
+`error` and make execution inconclusive. Specifications that declare more ask for optional interfaces a target may
 also implement: `EntitySetupTarget`, `AbsentInputTarget`, `RepeatedOutcomeTarget`,
 `PeriodicTarget`, `ClockReadingTarget` and `InterleavedTarget`. The generated `README.md` names
 the ones its suite needs.
@@ -109,8 +110,9 @@ type task struct {
 // memory is an in-memory implementation of the tasks specification. A real target calls your
 // service here.
 type memory struct {
-	tasks map[string]*task
-	order []string
+	tasks  map[string]*task
+	order  []string
+	writes int
 }
 
 func newTarget() *memory { return &memory{tasks: map[string]*task{}} }
@@ -131,17 +133,21 @@ func (m *memory) BeginScenario(essconform.ScenarioContext) error { return nil }
 func (m *memory) EndScenario(essconform.ScenarioContext) error   { return nil }
 
 func (m *memory) ExecuteCommand(r essconform.CommandRequest) (essconform.CommandResult, error) {
+	// Every answer names the write a read_your_writes read of tasks.list.Tasks is made no older than.
+	m.writes++
+	token := strconv.Itoa(m.writes)
 	switch r.Command {
 	case "tasks.list.AddTask":
 		priority, err := strconv.ParseFloat(fmt.Sprint(r.Input["priority"]), 64)
 		if err != nil || priority < 0 {
-			return essconform.CommandResult{Outcome: "rejected", Error: "tasks.list.InvalidPriority"}, nil
+			return essconform.CommandResult{Outcome: "rejected", Error: "tasks.list.InvalidPriority", Consistency: token}, nil
 		}
 		t := &task{id: newID(), title: r.Input["title"], priority: r.Input["priority"], state: "Open"}
 		m.tasks[t.id] = t
 		m.order = append(m.order, t.id)
 		return essconform.CommandResult{
-			Outcome: "added",
+			Outcome:     "added",
+			Consistency: token,
 			DirectEvents: []essconform.ObservedEvent{{
 				Event:   "tasks.list.TaskAdded",
 				Payload: map[string]essconform.Node{"task_id": t.id, "title": t.title},
@@ -150,11 +156,12 @@ func (m *memory) ExecuteCommand(r essconform.CommandRequest) (essconform.Command
 	case "tasks.list.CompleteTask":
 		t, ok := m.tasks[fmt.Sprint(r.Input["task_id"])]
 		if !ok || t.state != "Open" {
-			return essconform.CommandResult{Outcome: "already-done", Error: "tasks.list.AlreadyDone"}, nil
+			return essconform.CommandResult{Outcome: "already-done", Error: "tasks.list.AlreadyDone", Consistency: token}, nil
 		}
 		t.state = "Done"
 		return essconform.CommandResult{
-			Outcome: "completed",
+			Outcome:     "completed",
+			Consistency: token,
 			DirectEvents: []essconform.ObservedEvent{{
 				Event:   "tasks.list.TaskCompleted",
 				Payload: map[string]essconform.Node{"task_id": t.id},
@@ -199,7 +206,9 @@ func TestConformance(t *testing.T) {
 }
 ```
 
-`Run` builds one target per scenario, so no scenario sees another's tasks.
+`Run` builds one target per scenario, so no scenario sees another's tasks. `tasks.list.Tasks` is
+`read_your_writes`, so every command answer carries a `Consistency` token, refusals included, and
+the runner reads the view no older than it; an answer without one fails the view's next check.
 
 ## Run it
 

@@ -1,0 +1,80 @@
+format: ess/22
+system: demo
+version: v1
+domain: demo.messages
+summary: A message names its order only sometimes; only a shipping message that names one is recorded against it.
+types:
+  - name: demo.messages.Ref
+    kind: struct
+    fields:
+      - {name: id, type: String}
+      - {name: note, type: Optional<String>}
+  - name: demo.messages.Kind
+    kind: enum
+    variants: [note, ship]
+errors:
+  - name: demo.messages.Unavailable
+    summary: The order log could not record the message this time.
+    fields: []
+events:
+  - name: demo.messages.MessageReceived
+    fields:
+      - {name: message_id, type: String}
+      - {name: kind, type: demo.messages.Kind}
+      - {name: order, type: Optional<demo.messages.Ref>}
+  - name: demo.messages.OrderMessaged
+    fields:
+      - {name: message_id, type: String}
+      - {name: order_id, type: String}
+  - name: demo.messages.MessageLogged
+    fields:
+      - {name: message_id, type: String}
+commands:
+  - name: demo.messages.ReceiveMessage
+    input:
+      - {name: message_id, type: String}
+      - {name: kind, type: demo.messages.Kind}
+      - {name: order, type: Optional<demo.messages.Ref>}
+    outcomes:
+      - name: received
+        emits: [demo.messages.MessageReceived]
+        payload:
+          demo.messages.MessageReceived: {message_id: input.message_id, kind: input.kind, order: input.order}
+  - name: demo.messages.MessageEvent
+    input:
+      - {name: message_id, type: String}
+      - {name: order_id, type: String}
+    outcomes:
+      - name: messaged
+        emits: [demo.messages.OrderMessaged]
+        payload:
+          demo.messages.OrderMessaged: {message_id: input.message_id, order_id: input.order_id}
+      - name: unavailable
+        external: the order log answers a server error
+        error: demo.messages.Unavailable
+  - name: demo.messages.LogMessage
+    input:
+      - {name: message_id, type: String}
+    outcomes:
+      - name: logged
+        emits: [demo.messages.MessageLogged]
+        payload:
+          demo.messages.MessageLogged: {message_id: input.message_id}
+bindings:
+  - id: received
+    when:
+      event: demo.messages.MessageReceived
+      where: [defined(event.order), event.kind == ship]
+    invoke: {command: demo.messages.MessageEvent}
+    mapping:
+      message_id: event.message_id
+      order_id: event.order.id
+    delivery: at_least_once
+    on_failure: retry
+  - id: logged
+    when: {event: demo.messages.MessageReceived}
+    invoke: {command: demo.messages.LogMessage}
+    mapping:
+      message_id: event.message_id
+    delivery: at_least_once
+    on_failure: retry

@@ -139,6 +139,15 @@ pub(super) fn server_crate(
     let mut artifacts = vec![
         manifest(ir, layout, provenance),
         lib_module(ir, layout, &components, provenance),
+        super::store::module(ir, plan, layout),
+        Artifact::new(
+            format!("crates/{package}/src/static_assets.rs"),
+            format!(
+                "{}{}",
+                provenance.commented_for("//", REGENERATE),
+                super::entry::STATIC
+            ),
+        ),
         Artifact::new(
             format!("crates/{package}/src/json.rs"),
             format!(
@@ -193,6 +202,7 @@ pub(super) fn server_crate(
             source: component.name.to_string(),
         });
         artifacts.push(surface_module(&server, component, &components));
+        artifacts.push(super::entry::binary(ir, plan, layout, component));
         artifacts.push(Artifact::new(
             format!("crates/{package}/src/{}.openapi.json", component.name),
             ess_gen::openapi::json(ir, component),
@@ -235,7 +245,7 @@ fn system_event_encoder(server: &Server<'_>) -> String {
             out,
             "        {system_crate}::SystemEvent::{variant}(event) => \
              encode_event_{}(event, &mut out),",
-            wire::ident(event.name())
+            wire::ident(server.layout, event.name())
         );
     }
     out.push_str("    }\n    out.push('}');\n    out\n}\n");
@@ -243,7 +253,7 @@ fn system_event_encoder(server: &Server<'_>) -> String {
 }
 
 /// The server crate's manifest: the types crate, every component crate and the system crate, by
-/// path — the workspace stays self-contained and zero third-party dependencies.
+/// path, plus the generated executable's explicit command-line and context dependencies.
 fn manifest(ir: &EssIr, layout: &Layout, provenance: &Provenance) -> Artifact {
     let package = layout.server_package();
     let mut out = provenance.commented_for("#", REGENERATE);
@@ -265,6 +275,7 @@ fn manifest(ir: &EssIr, layout: &Layout, provenance: &Provenance) -> Artifact {
     for dependency in dependencies {
         let _ = writeln!(out, "{dependency} = {{ path = \"../{dependency}\" }}");
     }
+    out.push_str("clap = { version = \"=4.6.7\", features = [\"derive\"] }\nuuid = { version = \"=1.26.1\", features = [\"v4\"] }\ntime = { version = \"=0.3.45\", features = [\"formatting\"] }\n");
     Artifact::new(format!("crates/{package}/Cargo.toml"), out)
 }
 
@@ -304,14 +315,23 @@ fn lib_module(
     for component in components {
         let _ = writeln!(out, "pub mod {};", module_ident(component));
     }
+    out.push_str("pub mod memory;\nmod static_assets;\n");
     Artifact::new(format!("crates/{package}/src/lib.rs"), out)
 }
 
-/// Whether any route serves a command: the only routes a grant check guards.
+/// Whether any route serves a command: the routes a command grant check guards.
 fn commands_served(routes: &[http::Route<'_>]) -> bool {
     routes
         .iter()
         .any(|route| matches!(route.serves, Served::Command(_)))
+}
+
+/// Whether any route serves a read-granted view: the views a read grant guards (beyond10x/ess#286).
+fn reads_checked(ir: &EssIr, routes: &[http::Route<'_>]) -> bool {
+    routes.iter().any(|route| match route.serves {
+        Served::View(handle) => http::read_checked(ir, handle.name()),
+        Served::Command(_) => false,
+    })
 }
 
 /// The caller parameter `dispatch` and `handle` take in a model that declares an actor, named
@@ -322,7 +342,11 @@ fn caller_parameter(server: &Server<'_>, routes: &[http::Route<'_>]) -> String {
     }
     format!(
         "{}caller: Option<&{}::actor::Caller>, ",
-        if commands_served(routes) { "" } else { "_" },
+        if commands_served(routes) || reads_checked(server.ir, routes) {
+            ""
+        } else {
+            "_"
+        },
         server.types
     )
 }
@@ -366,8 +390,11 @@ fn surface_module(
     serve_function(&mut out, server, component);
     dispatch(&mut out, server, &routes);
     entry_point(&mut out, server, component, &routes);
-    if http::checks_grants(ir) && commands_served(&routes) {
+    if http::checks_grants(ir) && (commands_served(&routes) || reads_checked(ir, &routes)) {
         grant_check(&mut out, server);
+    }
+    if reads_checked(ir, &routes) {
+        read_grant_check(&mut out, server);
     }
     handlers(&mut out, server, component, &routes);
 
@@ -638,13 +665,17 @@ fn serve_function(out: &mut String, server: &Server<'_>, component: &ResolvedCom
         }
     );
     out.push_str(&where_clause(server));
+    let authentication = if grants { ", authenticate" } else { "" };
+    let _ = writeln!(out, "{{ serve_with_static(system, address{authentication}, None) }}\n\n/// Serves the declared surface, with files only for paths outside its route table.\n///\n/// # Errors\n/// Returns a listener or static-root error before announcing readiness.\npub fn serve_with_static{angled}(system: &mut {system_crate}::System{angled}, address: &str{}, static_root: Option<&std::path::Path>) -> std::io::Result<()>", if grants { format!(", authenticate: impl Fn(&http::Request) -> Option<{}::actor::Caller>", server.types) } else { String::new() });
+    out.push_str(&where_clause(server));
+    let body = SERVE_BODY.replace("    let listener", "    let static_root = static_root.map(std::fs::canonicalize).transpose()?;\n    if static_root.as_ref().is_some_and(|root| !root.is_dir()) { return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, \"static root is not a directory\")); }\n    let listener").replace("Ok(request) => (dispatch(system, &request), false),", "Ok(request) => {\n                if !ROUTES.iter().any(|(_, path)| *path == request.path) {\n                    if let Some(root) = &static_root {\n                        let _ = crate::static_assets::answer(reader.get_mut(), root, &request);\n                        continue;\n                    }\n                }\n                (dispatch(system, &request), false)\n            },");
     out.push_str(&if grants {
-        SERVE_BODY.replace(
+        body.replace(
             "dispatch(system, &request)",
             "dispatch(system, authenticate(&request).as_ref(), &request)",
         )
     } else {
-        SERVE_BODY.to_owned()
+        body
     });
 }
 
@@ -672,6 +703,25 @@ fn grant_check(out: &mut String, server: &Server<'_>) {
          http::Response::new({status}, http::JSON, body)\n}}\n",
         not_granted = http::NOT_GRANTED,
         status = http::FORBIDDEN,
+    );
+}
+
+/// The read-grant check every read-granted view's route and `handle` arm runs first
+/// (beyond10x/ess#286). Emitted only for a surface serving a view some actor's `may:` names; a view
+/// no actor names is open and runs no check.
+fn read_grant_check(out: &mut String, server: &Server<'_>) {
+    let types = &server.types;
+    let _ = write!(
+        out,
+        "\n/// Nothing, where `caller` may read `view`, a view some actor's grant names; otherwise \
+         the actor\n/// the standard refusal names, `None` where the request was authenticated as \
+         no actor.\n///\n/// Checked before the view is read, on the caller the realization \
+         authenticated the request as.\n/// Public, so code that reads the system in process \
+         checks the grant exactly as every route does.\npub fn admit_read(caller: \
+         Option<&{types}::actor::Caller>, view: &str) -> Result<(), Option<&'static str>> \
+         {{\n    match caller {{\n        Some(caller) if caller.may_read(view) => Ok(()),\n        \
+         Some(caller) => Err(Some(caller.actor.name())),\n        None => Err(None),\n    \
+         }}\n}}\n",
     );
 }
 
@@ -758,6 +808,12 @@ fn dispatch(out: &mut String, server: &Server<'_>, routes: &[http::Route<'_>]) {
              command.\n",
         );
     }
+    if reads_checked(ir, routes) {
+        out.push_str(
+            "/// A view some actor's grant names checks the reader's grant the same way before \
+             it is read.\n",
+        );
+    }
     let _ = writeln!(
         out,
         "pub fn dispatch{angled}(system: &mut {system_crate}::System{angled}, {}request: \
@@ -788,20 +844,20 @@ fn dispatch(out: &mut String, server: &Server<'_>, routes: &[http::Route<'_>]) {
                          return not_granted(actor);\n            }}\n            {}(system, \
                          &request.body)\n        }}\n",
                         ir.command(handle).name.to_string(),
-                        handler_ident(&ir.command(handle).name)
+                        handler_ident(server.layout, &ir.command(handle).name)
                     ),
                     Served::Command(handle) => format!(
                         "            {}(system, &request.body)\n        }}\n",
-                        handler_ident(&ir.command(handle).name)
+                        handler_ident(server.layout, &ir.command(handle).name)
                     ),
-                    Served::View(handle) if !ir.view(handle).params.is_empty() => format!(
-                        "            {}(system, &request.query)\n        }}\n",
-                        handler_ident(&ir.view(handle).name)
+                    // A read-granted view checks the reader first (beyond10x/ess#286).
+                    Served::View(handle) if http::read_checked(ir, handle.name()) => format!(
+                        "            if let Err(actor) = admit_read(caller, {:?}) {{\n                \
+                         return not_granted(actor);\n            }}\n{}",
+                        ir.view(handle).name.to_string(),
+                        view_call(ir, server.layout, handle)
                     ),
-                    Served::View(handle) => format!(
-                        "            http::answer({}(system))\n        }}\n",
-                        runner_ident(&ir.view(handle).name)
-                    ),
+                    Served::View(handle) => view_call(ir, server.layout, handle),
                 };
                 out.push_str(&call);
             }
@@ -814,15 +870,31 @@ fn dispatch(out: &mut String, server: &Server<'_>, routes: &[http::Route<'_>]) {
     );
 }
 
+/// One view route's read and answer, the arm's closing brace included.
+fn view_call(ir: &EssIr, layout: &Layout, handle: &ess_compiler::ir::ViewHandle) -> String {
+    let view = ir.view(handle);
+    if view.params.is_empty() {
+        format!(
+            "            http::answer({}(system))\n        }}\n",
+            runner_ident(layout, &view.name)
+        )
+    } else {
+        format!(
+            "            {}(system, &request.query)\n        }}\n",
+            handler_ident(layout, &view.name)
+        )
+    }
+}
+
 /// The handler function name for one construct: its whole qualified name, snake-cased.
-fn handler_ident(declared: &QualifiedName) -> String {
-    format!("serve_{}", wire::ident(declared))
+fn handler_ident(layout: &Layout, declared: &QualifiedName) -> String {
+    format!("serve_{}", wire::ident(layout, declared))
 }
 
 /// The transport-free half of one construct's handler — decode, port, declared outcome — which
 /// both the route and [`entry_point`]'s `handle` call, so the two cannot answer differently.
-fn runner_ident(declared: &QualifiedName) -> String {
-    format!("run_{}", wire::ident(declared))
+fn runner_ident(layout: &Layout, declared: &QualifiedName) -> String {
+    format!("run_{}", wire::ident(layout, declared))
 }
 
 /// `handle`: every command and view of this surface by qualified name, with no transport.
@@ -884,6 +956,12 @@ fn entry_point(
              command; checked before\n/// the command runs (the route's `403`).\n",
         );
     }
+    if reads_checked(ir, routes) {
+        out.push_str(
+            "/// A view some actor's grant names answers the same refusal, checked before it \
+             is read.\n",
+        );
+    }
     let _ = writeln!(
         out,
         "pub fn handle{angled}({system}: &mut {system_crate}::System{angled}, {}name: &str, \
@@ -908,7 +986,7 @@ fn entry_point(
                          &input),\n            Err(actor) => \
                          Err(entry::Refused::NotGranted(actor.map(str::to_owned))),\n        }}",
                         declared.to_string(),
-                        runner_ident(declared)
+                        runner_ident(server.layout, declared)
                     ),
                 )
             }
@@ -916,19 +994,10 @@ fn entry_point(
                 let declared = &ir.command(handle).name;
                 (
                     declared.to_string(),
-                    format!("{}(system, &input)", runner_ident(declared)),
+                    format!("{}(system, &input)", runner_ident(server.layout, declared)),
                 )
             }
-            Served::View(handle) => {
-                let view = ir.view(handle);
-                let declared = &view.name;
-                let call = if view.params.is_empty() {
-                    format!("{}(system)", runner_ident(declared))
-                } else {
-                    format!("{}(system, &input)", runner_ident(declared))
-                };
-                (declared.to_string(), call)
-            }
+            Served::View(handle) => handle_view_arm(ir, server.layout, handle),
         })
         .collect();
     arms.sort();
@@ -939,6 +1008,32 @@ fn entry_point(
         "        other => return Err(entry::Refused::Unknown(other.to_owned())),\n    };\n    \
          let (_, body) = answered?;\n    Ok(entry::read(&body))\n}\n",
     );
+}
+
+/// One view's `handle` arm: its qualified name, and the call answering it — behind the read grant
+/// check where some actor's `may:` names the view (beyond10x/ess#286).
+fn handle_view_arm(
+    ir: &EssIr,
+    layout: &Layout,
+    handle: &ess_compiler::ir::ViewHandle,
+) -> (String, String) {
+    let view = ir.view(handle);
+    let declared = &view.name;
+    let call = if view.params.is_empty() {
+        format!("{}(system)", runner_ident(layout, declared))
+    } else {
+        format!("{}(system, &input)", runner_ident(layout, declared))
+    };
+    let call = if http::read_checked(ir, declared) {
+        format!(
+            "match admit_read(caller, {:?}) {{\n            Ok(()) => {call},\n            \
+             Err(actor) => Err(entry::Refused::NotGranted(actor.map(str::to_owned))),\n        }}",
+            declared.to_string()
+        )
+    } else {
+        call
+    };
+    (declared.to_string(), call)
 }
 
 /// One handler per route: decode, call the port, render what the contract declares.
@@ -968,8 +1063,8 @@ fn command_handler(
     let system_crate = Layout::crate_ident(layout.system_package());
     let angled = generic_list(server);
     let bounds = where_clause(server);
-    let ident = wire::ident(&command.name);
-    let run = runner_ident(&command.name);
+    let ident = wire::ident(layout, &command.name);
+    let run = runner_ident(layout, &command.name);
     let field = name::value_ident(&component.name.to_string());
     let method = name::value_ident(&layout.type_name(&command.name));
     let outcome_type = format!(
@@ -1027,7 +1122,7 @@ fn command_handler(
 }}
 "
     );
-    outcome_renderer(out, server, command, &ident, &outcome_type);
+    outcome_renderer(out, server, command, ident, &outcome_type);
 }
 
 /// What a served command does between its port answering and the answer being rendered: pump, so
@@ -1104,6 +1199,9 @@ fn outcome_renderer(
         if matches!(&outcome.error, Some(handle) if !ir.error(handle).fields.is_empty()) {
             bindings.push("error".to_owned());
         }
+        if http::answers_with_response(ir, outcome) {
+            bindings.insert(0, "response".to_owned());
+        }
         let pattern = if !bindings.is_empty() {
             format!(
                 "{outcome_type}::{variant} {{ {}, .. }}",
@@ -1121,7 +1219,8 @@ fn outcome_renderer(
              json::push_text(&mut body, {:?});",
             outcome.name.as_str()
         );
-        wire::published_list(out, &SERVED, &carried);
+        wire::published_list(out, server.layout, &SERVED, &carried);
+        direct_response(out, server.layout, ir, command, outcome);
         if let Some(handle) = &outcome.error {
             let declared = ir.error(handle);
             let _ = writeln!(
@@ -1135,14 +1234,38 @@ fn outcome_renderer(
                     out,
                     "            json::member(&mut body, \"payload\");\n            \
                      wire::encode_error_{}(error, &mut body);",
-                    wire::ident(&declared.name)
+                    wire::ident(server.layout, &declared.name)
                 );
             }
         }
-        let _ = writeln!(out, "            {}\n        }}", http::status(outcome));
+        let _ = writeln!(
+            out,
+            "            {}\n        }}",
+            http::outcome_status(ir, outcome)
+        );
     }
     unknown_instance_arm(out, ir, command, outcome_type);
     out.push_str("    };\n    body.push('}');\n    (status, body)\n}\n");
+}
+
+/// The `response` member of a branch that answers its caller with the command's response
+/// (`returns: true`, from `ess/22`, beyond10x/ess#423): the variant's own `response`, through the
+/// `wire` module's encoder. Nothing for any other branch.
+fn direct_response(
+    out: &mut String,
+    layout: &Layout,
+    ir: &ess_compiler::EssIr,
+    command: &ess_compiler::ir::ResolvedCommand,
+    outcome: &ess_compiler::ir::ResolvedOutcome,
+) {
+    if http::answers_with_response(ir, outcome) {
+        let _ = writeln!(
+            out,
+            "            json::member(&mut body, \"response\");\n            \
+             wire::{}(response, &mut body);",
+            wire::response_encoder_name(layout, &command.name)
+        );
+    }
 }
 
 /// Where a served answer's `published` list is written: the handler's own `body`, through the
@@ -1201,8 +1324,8 @@ fn view_handler(
     let layout = server.layout;
     let system_crate = Layout::crate_ident(layout.system_package());
     let angled = generic_list(server);
-    let ident = wire::ident(&view.name);
-    let run = runner_ident(&view.name);
+    let ident = wire::ident(layout, &view.name);
+    let run = runner_ident(layout, &view.name);
     let field = name::value_ident(&component.name.to_string());
     let method = name::value_ident(&layout.type_name(&view.name));
 
@@ -1253,8 +1376,8 @@ fn params_route(out: &mut String, server: &Server<'_>, view: &ResolvedView) -> (
     let system_crate = Layout::crate_ident(server.layout.system_package());
     let angled = generic_list(server);
     let bounds = where_clause(server);
-    let ident = wire::ident(&view.name);
-    let run = runner_ident(&view.name);
+    let ident = wire::ident(server.layout, &view.name);
+    let run = runner_ident(server.layout, &view.name);
     let _ = write!(
         out,
         "\n/// `GET` `{}`: reads the declared parameters from the query string by their wire \

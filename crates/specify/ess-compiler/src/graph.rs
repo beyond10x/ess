@@ -565,7 +565,8 @@ impl SemanticDependencyGraph {
                 // Nothing: a variant is a name, and a name is not a reference to a declaration.
                 ResolvedBody::Enum { .. } => {}
                 ResolvedBody::Union { variants, .. } => {
-                    for payload in variants.values() {
+                    // A unit variant (ess/22) carries nothing, so it reaches no declaration.
+                    for payload in variants.values().flatten() {
                         self.type_edges(&subject, DependencyRelation::VariantType, payload);
                     }
                 }

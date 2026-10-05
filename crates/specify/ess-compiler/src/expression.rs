@@ -59,6 +59,20 @@ impl TypeEnvironment for Environment<'_> {
             }
         )
     }
+    fn is_integer(&self, reference: &ResolvedTypeRef) -> bool {
+        matches!(
+            reference,
+            ResolvedTypeRef::Primitive {
+                name: ess_domain::Primitive::Integer
+            }
+        )
+    }
+    fn primitive(&self, reference: &ResolvedTypeRef) -> Option<ess_domain::Primitive> {
+        match reference {
+            ResolvedTypeRef::Primitive { name } => Some(*name),
+            _ => None,
+        }
+    }
     fn is_clock_reading(&self, reference: &ResolvedTypeRef) -> bool {
         matches!(reference, ResolvedTypeRef::Declared { name } if self.ir.types().get(name.name()).is_some_and(|declared| declared.reading.is_some()))
     }
@@ -350,7 +364,8 @@ fn input_predicate(condition: &ResolvedCondition) -> Option<&Predicate> {
         | ResolvedCondition::StateChange { predicate, .. }
         | ResolvedCondition::SubjectField { predicate, .. } => predicate.as_ref(),
         ResolvedCondition::SubjectPredicate { input, .. }
-        | ResolvedCondition::Related { input, .. } => input.as_ref(),
+        | ResolvedCondition::Related { input, .. }
+        | ResolvedCondition::RelatedSet { input, .. } => input.as_ref(),
         ResolvedCondition::Otherwise
         | ResolvedCondition::External { .. }
         | ResolvedCondition::WrongState

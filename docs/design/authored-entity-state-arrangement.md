@@ -103,3 +103,5 @@ legacy arrangement behavior, deterministic serialization and old-reader rejectio
 
 Implementation and real consumer-adapter adoption remain proof obligations after design review.
 This unit does not automatically populate synthesized scenarios or implement a storage backend.
+An operator may instead select one setup row by file and instance as an explicit synthesis seed
+(`synthesis-seeds.md`); `--scenarios` never makes a document a seed source.

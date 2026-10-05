@@ -39,12 +39,18 @@ direction can and cannot show.
 - **Kill condition.** The suite synthesized from mutant specification *S′* fails against the
   target that implements *S*. The mutant is killed only if the synthesized suite asks a question
   whose answer differs between *S* and *S′*, and the target gives the *S* answer.
-- **A weakening mutant can never be killed.** Dropping a `sets` entry says the field is the
-  implementation's to choose (`crates/specify/ess-compiler/src/ir.rs:813-823`: "Empty is the common
-  case and a statement, not a gap"). The mutant's suite then asserts nothing about the field, and a
-  correct target satisfies a weaker specification by definition. Such a mutant tells a reader
-  nothing, so no weakening class is generated. Each issue class is replaced by the altering version
-  of the same fault (see "The classes").
+- **A weakening mutant can never be killed.** Dropping a `sets` entry from a branch that creates
+  its row says the field is the implementation's to choose (`crates/specify/ess-compiler/src/ir.rs:813-823`:
+  "Empty is the common case and a statement, not a gap"). The mutant's suite then asserts nothing
+  about the field, and a correct target satisfies a weaker specification by definition. Such a
+  mutant tells a reader nothing, so no weakening class is generated. Each issue class is replaced
+  by the altering version of the same fault (see "The classes").
+- **Correction (beyond10x/ess#212): a dropped write on an existing row is altering, not
+  weakening.** This page said dropping any `sets` entry weakens the specification. On a branch
+  that updates or moves a row that already exists, it does not: the field keeps the value the row
+  held instead of taking the input, and the mutant's suite still reads the row back. It survived
+  only because synthesis sent the input equal to the stored value. `sets-drop` is therefore a class
+  on such branches, with the witness separation below; it stays out of creating branches.
 - **Authored scenarios cannot kill a specification mutant.** An authored scenario's expectations are
   written by its author, not derived from the model. `act` (`crates/verify/ess-conformance/src/
   authored.rs:1723-1797`) resolves the names a step uses, and then it pushes the author's own
@@ -161,6 +167,10 @@ order of id. Where the site rule says "first", it means byte order of the name.
 | wrong error | `error-swap` | outcome with an `error:` | `error` := the first declared error in the command's domain that is not the current one | the `ExpectError` step of the outcome or refusal scenario |
 | wrong event | `emit-drop` | (outcome, event in its `emits`) | remove the event from `emits`, and remove its `payload:` entry if there is one | the absent-event assertion (`synthesize.rs:1377-1383`), because the target still emits it |
 | wrong order | `order-flip` | (view, key in `order_by`) | flip that key's direction | the ordering scenario. Where synthesis refuses to witness ordering (`OrderUnwitnessed`, `ESS-SYNTH-014`, `synthesize.rs:376`, `:546`), the mutant survives, and that survival is the finding. |
+| move a guard boundary outward (beyond10x/ess#212) | `guard-boundary` (`<leaf>-outward`) | ordering leaf `x >= L` or `x <= L` (either side) with an integer literal | `L` := `L - 1` for `>=`, `L + 1` for `<=`: the step the strictness swap does not take | the boundary witness of the mutant's own accepting side, which the target refuses |
+| flip an equality (beyond10x/ess#212) | `guard-boundary` (`equality-<n>`) | `==` or `!=` leaf, in pre-order, unless it, or its negation, is the whole guard | `==`↔`!=` | the outcome scenario |
+| drop a write on an existing row (beyond10x/ess#212) | `sets-drop` | `sets` entry whose source is `input.<f>`, on an outcome that `updates:` or `moves:` and does not `creates:`, whose field is not `Optional<…>` | remove the entry | the view scenario reading the field: synthesis sends each input no `sets:` entry reads apart from what the row holds in the field of the same name and type, where the branch leaves it alone (`unread_apart`), so the row the target shows differs from the one the mutant keeps |
+| declaration-order precedence (beyond10x/ess#212) | `precedence-swap` | two adjacent outcomes, both guarded by a `when:` alone (no `when_subject`, `when_subject_state`, `when_related`, `when_state_changes`, `external`, `replays` or existence flag), both accepting or both refusing | swap them | the overlap point synthesis sends the first-declared branch (`overlap_inputs`, #217); where no input satisfies both guards (decided as `ESS-MUTATE-005` decides a dead guard), the mutant is `equivalent` and names the overlap as `unsatisfiable_guard` |
 
 Why the site rules are shaped this way:
 
@@ -309,6 +319,33 @@ ess verify conform mutate --collect DIR [--report-out FILE] [--format text|json|
   report the built-in audit writes (the implementation spelled `<name> <version>`, as a report
   names it). `crates/edge/ess-cli/tests/mutate_external.rs` holds the verb to fabricated reports:
   two red, two green, one missing, and a baseline that did not pass.
+- **`--component NAME`** (beyond10x/ess#236, `mutate::emit_for` and `mutate::collect_for`). A
+  repository that implements one component runs only that component's scenarios, so every suite
+  `--emit` writes is the one `synthesize --component` writes (`synthesize_for`), less the grant
+  scenarios no class alters. A mutant is in scope when the site it mutates belongs to the
+  component by the membership `synthesize --component` scopes with (`mutate::in_component`): an
+  outcome's guard, `sets`, error or events, and two outcomes' order, belong to the component that
+  handles the command (accepts it, or owns its domain); a view's ranking to the one that owns the
+  view; a transition to one that handles a command performing it. A survivor on the component's
+  own site is scored and counted, so the component gate fails on it. Every other mutant is that
+  other component's to answer: it is written to the manifest as `out_of_scope: true` with no suite
+  and is not compiled, and `--collect` lists it in the report's `out_of_scope` instead of scoring
+  or counting it. Two rules were not taken. The request's "site in an owned domain" misses a
+  command a component accepts from another domain. The first cut's "the component suite differs
+  from the baseline's" put a survivor on the component's own command out of scope, since a
+  survivor is exactly a mutant whose suite asks nothing new (adversary pass 1, F1). The manifest names the `component` (`ess-mutation-manifest/4`),
+  and so does the report (`ess-mutation-report/4`); `--collect --component NAME` refuses an
+  emission made for another component or for none. `--target` refuses `--component` by name: the
+  built-in targets implement whole systems. Refusals are the whole system's, as
+  `synthesize_for` leaves them. Checked by `crates/verify/ess-conformance/tests/mutation_component.rs`
+  over billing's two components.
+- **Manifest versions.** An emission declares the oldest manifest that can say it: `/4` where it
+  names a component or holds a `sets-drop` or `precedence-swap` mutant, `/3` otherwise, so a `/3`
+  reader still collects every emission that needs nothing newer. `--collect` reads `/4` to `/1`,
+  refuses a format it does not know by name before reading any field, and refuses a `/3` or older
+  manifest carrying a `component`, an `out_of_scope` mutant or a `/4` class, naming `/4`. A
+  released `/3` reader refuses a `/4` manifest that uses either: serde refuses the unknown class
+  or field, as it refused `unsatisfiable_guard` before `/3`.
 
 ### The mutants Part 1 must kill
 
@@ -320,7 +357,7 @@ These are defects the implementation could have, and each has a deciding test (l
 | counts a baseline failure as a kill | inflated kills against a wrong target | P1-4: a `Faulty` Billing baseline is refused with `ESS-MUTATE-001` |
 | treats a stillborn mutant as killed or survived | counts that misstate the suite | P1-6: a crafted `to: Nowhere` is `stillborn` with `ESS-MUTATE-002` |
 | collapses `Unsupported` into `Passed` | false survivors | P1-7: the classification table over synthetic `ExecutedRun`s |
-| ships a weakening class | survivors that are certain in advance | P1-8: `MutantClass::ALL` is exactly the nine names |
+| ships a weakening class | survivors that are certain in advance | P1-8: `MutantClass::ALL` is exactly the eleven names (nine until beyond10x/ess#212) |
 | exits 0 with no mutants | a green exit that ran nothing | P1-9: `--class order-flip` on a fixture without `order_by` gives `ESS-MUTATE-003`, exit 3 |
 | enumerates in hash order | reports that differ between runs | P1-5: two audits, identical bytes |
 
@@ -415,12 +452,12 @@ Go decodes it with `UseNumber`.
 
 | Type | Value |
 |---|---|
-| `Integer` (or a newtype of it) | with `chance(0.7)`, `pick` from the pool, where the pool is the sorted distinct `{L-1, L, L+1}` for every integer literal `L` in this command's `when` guards, together with `{-1, 0, 1, 2, 3, 100}`. Otherwise `int(-10, 10000)`. |
+| `Integer` (or a newtype of it) | with `chance(0.7)`, `pick` from the pool, where the pool is the sorted distinct `{L-1, L, L+1}` for every integer literal `L` in this command's guards, together with `{-1, 0, 1, 2, 3, 100}` and the input's own `example:` (beyond10x/ess#223). Otherwise `int(-10, 10000)`. |
 | `Boolean` | `chance(0.5)` |
-| `String` (or a newtype of it) | `pick` from the sorted distinct text literals of this command's guards, together with `{"", "a", "b"}` |
+| `String` (or a newtype of it) | `pick` from the sorted distinct text literals of this command's guards, together with `{"", "a", "b"}`, the input's own `example:`, and, for every whole literal `n` a guard compares the input's `.count` with, that example (or, without one, the input's own path) cut or cycled to `n-1`, `n` and `n+1` characters, from 0 to 1,024 (beyond10x/ess#223). That is synthesis's rule (`witness.rs` `resize`, `count_lengths`), and characters are counted as the predicate counts them, in Unicode scalar values. The pool is the input's own: another input of the command does not draw its example or its lengths. |
 | `Uuid` (or a newtype of it) that is not an entity identity | `00000000-0000-4000-8000-` followed by `int(0, 999999)` zero-padded to 12 digits |
-| a newtype that is some entity's identity type | reuse an existing record's id with `chance(0.8)`, and always when the field is the command's supplied instance field; otherwise a fresh value as for its base type |
-| `enum` | `pick` from its variants in declared order |
+| a newtype that is some entity's identity type | reuse an existing record's id with `chance(0.8)`, and always when the field is the command's supplied instance field; otherwise a fresh value as for its base type. Where an `unknown_instance` branch reads the field, or an `existing_instance` branch reads the identity a creation takes from it, `chance(0.5)` names an existing record and otherwise a value no record carries (beyond10x/ess#221) |
+| `enum` | `pick` from its variants in declared order, and the input's own `example:` where it is not one of them (beyond10x/ess#223; validation admits only a declared variant, so for a validated specification the pool is the variants) |
 | `struct` whose every field is in this table | each field, in declaration order |
 
 The pool takes guard literals one either side for the reason witness rule 3 gives
@@ -435,7 +472,13 @@ lifecycle `state`, plus the fields the model has determined. A field no outcome 
 
 **The subset.** A command is included when all of these hold:
 
-- every outcome's condition is `when`, `otherwise` or `wrong_state` (`ir.rs:537-588`);
+- every outcome's condition is `when`, `otherwise`, `wrong_state`, `unknown_instance`, `external`,
+  `external_when`, `existing_instance`, or one read from the stored row — `subject_state`,
+  `state_change`, `subject_field`, `subject_predicate` (beyond10x/ess#221). `related` reads a row
+  of another entity the model does not follow, and `input_absent` sends no input at all; both stay
+  excluded by name. Concurrent exploration keeps the set it had before #221;
+- an `existing_instance` branch reads one address: every creation of the command puts its identity
+  in the same entity, from the same input;
 - every effect is `creates` with instance `observed`, or `moves`/`updates` with instance `supplied`
   (`ir.rs:690-728`);
 - no outcome `replays`;
@@ -468,9 +511,24 @@ wrong state.
    identity, the state it rests in, and every accepting branch the refusal overlaps
    ([input-guard overlap precedence](input-guard-overlap-precedence.md)). No external branch is
    eligible beside it.
-2. **Exactly one other `when` holds**: that outcome. **None holds**: the `otherwise` outcome. If
-   there is none, the draw is ambiguous.
-3. **The outcome from step 2 moves the subject from a state that no move of this command starts
+2. **Existence** (beyond10x/ess#221): where a creation takes its identity from an input that names
+   a record already held, the `existing_instance` branch. Where the command reads the stored row
+   and no record carries the supplied identity, the `unknown_instance` branch, or, without one, an
+   ambiguous draw.
+3. **The held row, then the accepting guards** (beyond10x/ess#221). First the branches selected by
+   the stored row whose input guard holds too — `subject_state` and `state_change` by the held
+   state, the latter's states resolved in the IR; `subject_field` by one stored field;
+   `subject_predicate` by a predicate over the stored fields that reads the input under `input.` —
+   the first declared that holds answering, before any accepting `when` (the precedence order,
+   step 4); a branch after it is not read, as `interpret::execute::select` stops there. Where an
+   accepting `when` declared before that branch holds as well, the interpreter, which reads
+   declaration order, and the precedence order answer differently: that draw, and only that one,
+   is ambiguous. Where no stored-row branch holds, **exactly one accepting `when` holds**: that
+   outcome. **None holds**: the `otherwise` outcome. If there is none, the draw is ambiguous. A
+   stored-row predicate over a stored field the row does not hold, or holds as null, is reported in
+   `undetermined` and the draw redrawn, the command kept; only where a path of the input is missing,
+   or an input guard is Unknown, is the command excluded, as below.
+4. **The outcome from step 3 moves the subject from a state that no move of this command starts
    from**: the command's `wrong_state` outcome. This is how `RawOutcome` defines the branch: "taken
    because the subject is in a state no move starts from" (`command.rs:3025-3032`). An outcome that
    moves nothing answers in every state, and that includes an eligible external branch that moves
@@ -479,8 +537,8 @@ wrong state.
    holds and every one of them moves, each would be the wrong-state answer, so the draw is not
    ambiguous. If the command
    declares no `wrong_state` branch, the model cannot say what happens, and the draw is
-   *ambiguous* (item 4).
-4. **More than one accepting `when` holds, or the selected outcome moves from a state the subject is
+   *ambiguous* (item 5).
+5. **More than one accepting `when` holds, or an accepting `when` holds before the stored-row branch that answers, or the selected outcome moves from a state the subject is
    not in** (although another move of the command starts from it): the draw is **ambiguous**. It is not
    executed. It is counted in `ambiguous` as `command` with the outcome names, and the attempt is
    redrawn. The draft took the first match in declaration order. That is a choice the
@@ -549,6 +607,45 @@ same text in both languages. `originalLength` records the length before shrinkin
 - `unreached` is every declared outcome of an **included** command that is not in `reached`.
 - `excludedOutcomes` is every declared outcome of an excluded command.
 
+### Restarts (beyond10x/ess#297)
+
+Every sequence above runs in one process lifetime, so an implementation that mints identities from
+a counter kept only in its process passes, and its first creation after a restart reuses an
+identity it has already stored. A scenario reset does not show it: `beginScenario` makes a fresh
+context, and a fresh context is what the counter starts from anyway.
+
+- **Opt-in, twice.** The caller asks with `restartEvery` (`RestartEvery`), a whole number of
+  commands; absent or zero is the exploration that existed before, and the result then carries no
+  `restarts` key, so its bytes do not change. The target offers `restart(scenario)` (Go:
+  `RestartTarget`), a method neither `Target` nor the suite runtime declares, so no existing target
+  stops compiling. A negative or fractional interval is refused like an unusable model.
+- **What a restart is.** Stop every process of the implementation and start it again over the
+  same durable state, inside the scenario already begun; return once it answers. Clearing memory
+  inside a process that keeps running is not one. ESS cannot see a process, so this is the
+  contract the target signs, and a `restart` that answers without restarting is reported as
+  performed: that defect is the target author's to rule out; the fixtures run their implementation as a child process and count
+  the process ids they start.
+- **Where.** After every `restartEvery`-th command of a sequence, the last one included. A restart
+  is a check only once a command has followed it, so one after the last command is followed by one
+  more drawn command, and `performed` counts only restarts a command followed. A restart
+  draws no random number, so one seed names the same commands with and without restarts and in
+  both languages. It is a step of the trace, written `restart`, and the shrinker may remove it
+  like any other.
+- **What is checked.** After a restart, every view is read again with the last command's
+  consistency token; the model does not move, so a lost row is `view-rows` at the restart step.
+  The creation after it is checked as every creation is: an identity a record already carries is
+  `identity: the target created … again, over an existing record`.
+- **Unsupported is never a pass.** A target without `restart`, or whose `restart` answers
+  `ErrUnsupported`, stops restarts for the rest of the exploration, which goes on without them;
+  `restarts.unsupported` says why. `assertExplored` fails on it, and on `performed: 0`,
+  `allowExcluded` or not: the caller asked for restarts, and a caller whose target cannot restart
+  does not ask.
+- **Not here.** Concurrent exploration still has no restart (decision 6 of
+  [concurrent-history conformance](concurrent-history-conformance.md)); TypeScript
+  `exploreConcurrent` refuses options carrying `restartEvery`, and Go `ConcurrentOptions` has no
+  such field, and the synthesized suite
+  has no restart step: that would be a new suite format with a step every runtime implements.
+
 ### The mutants Part 2 must kill
 
 The four engine mutants from the issue, in a toy target over a fixture specification, in both
@@ -587,7 +684,7 @@ And defects the explorer itself could have:
 
 | Site | Part | Render or refuse |
 |---|---|---|
-| `ess verify conform mutate --help` (clap) | 1 | render: synopsis, the nine classes, the exit table |
+| `ess verify conform mutate --help` (clap) | 1 | render: synopsis, the eleven classes, the exit table |
 | `website/docs/reference/cli.md:303-314` (`ess verify` table) | 1 | render: one row for `mutate` |
 | `website/docs/guides/verify-conformance.md` | 1, 2 | render: a section "Audit the suite with specification mutants", which states that a survivor is not answered by an authored scenario, and a section "Explore random command sequences" covering the options, `assertExplored` and `allowExcluded` |
 | `website/docs/reference/formats.md` | 1, 2 | render: an `ess-mutation-report/1` row (writer only, no reader, no timestamp), the `ESS-MUTATE-*` codes, and on the compiled-IR row (`:109`) the emitted `ir.json` (compact, digest-bound) |
@@ -620,7 +717,8 @@ And defects the explorer itself could have:
 - **P1-7.** The verdict classification over synthetic scenario-status sets: all passed gives
   survived; any failed gives killed; none failed with any error or unsupported gives inconclusive.
 - **P1-8.** `MutantClass::ALL` is exactly `from-drop, transition-to, guard-boundary, sets-retarget,
-  guard-negate, guard-connective, error-swap, emit-drop, order-flip`.
+  guard-negate, guard-connective, error-swap, emit-drop, order-flip, sets-drop, precedence-swap`
+  (the last two since beyond10x/ess#212).
 - **P1-9.** A class with no site gives `ESS-MUTATE-003` and exit 3.
 - **P1-10.** A fixture `tests/fixtures/mutation-survivor.yaml`, where a `sets` field has a
   same-typed sibling and no view reads it, has exactly one survivor: that `sets-retarget`.
@@ -697,9 +795,11 @@ Each of these is **inferred** and is confirmed with one measurement before it is
 | The dual direction: the unchanged suite, authored scenarios included, against a mutant implementation | needs an executing interpreter; `interpret.rs` derives nothing | a Rust reference model (Part 2's, ported), selected as a target |
 | Mutating subject guards, view filters, invariants, binding mappings, payload values and literal `sets`; "add a `from` state"; an empty `from` | each has its own synthesis family; the first cut is the issue's classes | one class each, with its killer family named |
 | An accepted-survivors file for equivalent mutants | needs an identity story for a mutant across edits of the specification | a stable site id that survives renumbering |
-| Coverage suites (`/5` and above) and `--component` for `mutate` | parent chains and scope would have to be re-derived per mutant | `coverage_build` per mutant |
+| Coverage suites (`/5` and above) for `mutate` | parent chains and scope would have to be re-derived per mutant | `coverage_build` per mutant |
+| `sets-drop` of a literal or other non-input source, and of an `Optional<…>` field | a row nothing wrote holds an `Optional` absent, and no synthesized row expectation states an absence; a literal's prior value is arranged apart only while the literal is written | a row expectation for an absent field; an arrangement apart from a literal the mutant no longer names |
+| `precedence-swap` of `when_subject:` branches, and of an accepting branch beside an external one | two overlapping `when_subject` branches have no stated order (`cross-record-and-stored-field-guards.md:614`); the external pair needs a provider-arranged overlap | a stated order; an overlap witness through `ConfigureExternalOutcome` |
 | Explorer inputs: `Decimal`, lists, `Optional`, unions, maps, timestamps, and types with invariants | exact-number generation and invariant-respecting draws | a generator per type, the same in TS and Go |
-| Explorer conditions: subject fields, subject state, state changes, replays, `preserves` (external outcomes are taken since beyond10x/ess#156: a seeded choice, arranged through `ConfigureExternalOutcome`, reported per branch in `external`) | each needs arranged state | the arranging steps synthesis already has |
+| Explorer conditions: replays, `preserves`, `related` and `input_absent`. Subject fields, subject state, state changes, stored predicates and `existing_instance` are drawn since beyond10x/ess#221, decided from the model's rows; external outcomes are taken since beyond10x/ess#156: a seeded choice, arranged through `ConfigureExternalOutcome`, reported per branch in `external` | each needs arranged state | the arranging steps synthesis already has |
 | Views with `params` or `group_by`; binding-driven events; a persisted exploration report; an explorer in Rust against the reference targets | out of the issue's measured scope | — |
 
 ## What was rejected

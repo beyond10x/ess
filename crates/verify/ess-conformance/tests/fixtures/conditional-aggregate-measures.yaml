@@ -1,0 +1,101 @@
+format: ess/22
+system: demo
+version: v1
+domain: demo.cases
+types:
+  - {name: demo.cases.Priority, kind: enum, variants: [Low, High]}
+events:
+  - name: demo.cases.Opened
+    fields: [{name: case_id, type: Uuid}]
+  - name: demo.cases.Completed
+    fields: [{name: case_id, type: Uuid}]
+entities:
+  - name: demo.cases.Case
+    identity: {name: case_id, type: Uuid}
+    fields:
+      - {name: team, type: String}
+      - {name: cents, type: Integer}
+      - {name: label, type: String}
+      - {name: escalated, type: Boolean}
+      - {name: priority, type: demo.cases.Priority}
+      - {name: tags, type: List<String>}
+    lifecycle:
+      initial: Open
+      states: [Open, Completed]
+      terminal: [Completed]
+      transitions: [{name: complete, from: [Open], to: Completed}]
+commands:
+  - name: demo.cases.Open
+    input:
+      - {name: team, type: String}
+      - {name: cents, type: Integer}
+      - {name: label, type: String}
+      - {name: escalated, type: Boolean}
+      - {name: priority, type: demo.cases.Priority}
+      - {name: tags, type: List<String>}
+    outcomes:
+      - name: opened
+        creates: demo.cases.Case
+        instance: case_id
+        sets:
+          team: input.team
+          cents: input.cents
+          label: input.label
+          escalated: input.escalated
+          priority: input.priority
+          tags: input.tags
+        emits: [demo.cases.Opened]
+        payload: {demo.cases.Opened: {case_id: {generated: true}}}
+  - name: demo.cases.Complete
+    input: [{name: case_id, type: Uuid}]
+    outcomes:
+      - name: completed
+        moves: demo.cases.Case.complete
+        instance: case_id
+        emits: [demo.cases.Completed]
+        payload: {demo.cases.Completed: {case_id: input.case_id}}
+      - {name: unavailable, wrong_state: true, refuses: false}
+views:
+  - name: demo.cases.Scorecard
+    source: demo.cases.Case
+    consistency: read_your_writes
+    group_by: [team]
+    fields:
+      - {name: team, type: String}
+      - {name: total, type: Integer, aggregate: {count: {}}}
+      - {name: completed, type: Integer, aggregate: {count: {}, where: state == Completed}}
+      - {name: escalated_cost, type: Integer, aggregate: {sum: cents, where: escalated == true}}
+  - name: demo.cases.Escalations
+    source: demo.cases.Case
+    consistency: read_your_writes
+    group_by: [team]
+    fields:
+      - {name: team, type: String}
+      - {name: cases, type: Integer, aggregate: {count: {}}}
+      - {name: escalated, type: Integer, aggregate: {count: {}, where: escalated == true}}
+      - {name: labels, type: Integer, aggregate: {count_distinct: label, where: escalated == true}}
+      - {name: cost, type: Integer, aggregate: {sum: cents, where: escalated == true}}
+      - {name: cheapest, type: Optional<Integer>, aggregate: {min: cents, where: escalated == true}}
+      - {name: dearest, type: Optional<Integer>, aggregate: {max: cents, where: escalated == true}}
+      - {name: mean, type: Optional<Decimal>, aggregate: {avg: cents, where: priority == High}}
+  - name: demo.cases.Urgent
+    source: demo.cases.Case
+    consistency: read_your_writes
+    group_by: [team]
+    fields:
+      - {name: team, type: String}
+      - {name: cases, type: Integer, aggregate: {count: {}}}
+      - name: urgent
+        type: Integer
+        aggregate: {count: {}, where: {any: [priority == High, {all: [escalated == true, state == Completed]}]}}
+      - {name: urgent_cost, type: Integer, aggregate: {sum: cents, where: {not: priority == Low}}}
+  - name: demo.cases.Tagged
+    source: demo.cases.Case
+    consistency: read_your_writes
+    group_by: [team]
+    fields:
+      - {name: team, type: String}
+      - {name: cases, type: Integer, aggregate: {count: {}}}
+      - name: rushed
+        type: Integer
+        aggregate: {count: {}, where: {exists: {in: tags, as: t, that: t == "rush"}}}

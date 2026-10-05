@@ -1,0 +1,35 @@
+domain: fixtureprobe.recursive
+types:
+  - name: fixtureprobe.recursive.Value
+    kind: struct
+    fields:
+      - name: text
+        type: String
+      - name: children
+        type: List<fixtureprobe.recursive.Value>
+actors:
+  - name: fixtureprobe.recursive.Caller
+    may:
+      - fixtureprobe.recursive.Submit
+events:
+  - name: fixtureprobe.recursive.Accepted
+    fields:
+      - name: accepted
+        type: Boolean
+commands:
+  - name: fixtureprobe.recursive.Submit
+    input:
+      - name: value
+        type: fixtureprobe.recursive.Value
+    fixture_inputs:
+      value: finite-value
+    response:
+      - name: accepted
+        type: Boolean
+    outcomes:
+      - name: accepted
+        emits:
+          - fixtureprobe.recursive.Accepted
+        payload:
+          fixtureprobe.recursive.Accepted:
+            accepted: true

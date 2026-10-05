@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-04T13:32:34Z",
+  "actor": "human:timo",
+  "artifact": "story:related-via-stored-reference",
+  "kind": "story",
+  "revision": 12,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test ess-domain, ess-compiler (full), 49 ess-conformance related/interpreted/synthesis targets, ess-synth declared_behaviour and related_guard_obligation (integration tree)",
+    "reference": "baseline: 11 named acceptance tests red on base (type_mismatch on stored via), adversary 3 red before correction; treatment: domain+compiler 1357 passed, conformance 506 passed, synth 21 passed, 0 failed"
+  }
+}

@@ -35,9 +35,11 @@ tasks:
         --package ess-kubernetes
         --package ess-openapi
         --package ess-primitives
+        --package ess-publisher
         --package ess-realization
         --package ess-service-contract
         --package ess-synth
+        --package ess-transport
         --package ess-ui
         --package ess-ui-check
         --package ess-ui-docs
@@ -92,6 +94,17 @@ tasks:
       # serde_json's `arbitrary_precision` is off, so these are different binaries.
       - cargo nextest archive --locked {{.FEATURE_OFF_PACKAGES}} {{if eq .FEATURE_OFF "number-semantics"}}-E '{{.FEATURE_OFF_NUMBER_SEMANTICS}}'{{end}} --archive-file {{.NEXTEST_ARCHIVES}}/feature-off.tar.zst
 
+  test-browser-product:
+    desc: Run the browser-product Firefox tests a 30-minute CI shard cannot hold; run before tagging a release.
+    cmds:
+      - cargo test --locked -p ess-cli --test browser_response_conformance --test browser_product_adversary -- --include-ignored --test-threads=1
+
+  test-slow-probes:
+    desc: Run the slow byte-identity and WASM-parity probes the 30-minute CI shards leave out; run before tagging a release.
+    cmds:
+      - cargo test --locked -p ess-synth --test adversary_e_u2_bytes --test adversary_e_u6_bytes -- --ignored --test-threads=1
+      - cargo test --locked -p ess-conformance --test adversary_244b_window_free_bytes --test adversary_w3_266_267_dump --test adversary_287_pass1 -- --ignored --test-threads=1
+
   # The shards extract into the checkout's own `target/`: test binaries bake
   # `env!("CARGO_BIN_EXE_…")` and `env!("CARGO_TARGET_TMPDIR")` in at build time, so extracted
   # anywhere else those paths name nothing. That holds only where the archive was built in
@@ -102,6 +115,12 @@ tasks:
       vars: [SHARD]
     cmds:
       - cargo nextest run --archive-file {{.NEXTEST_ARCHIVES}}/workspace.tar.zst --workspace-remap . --extract-to . --extract-overwrite --no-fail-fast --partition slice:{{.SHARD}}
+
+  test-transport-network:
+    desc: Validate AsyncAPI and execute both generated publishers against real JetStream; requires explicit external test tooling.
+    cmds:
+      - cargo test --offline --locked -p ess-gen --test asyncapi_transport the_official_asyncapi_cli_accepts_the_parameterized_document -- --ignored --exact --nocapture
+      - cargo test --offline --locked -p ess-publisher --test generated both_generated_adapters_publish_parameterized_batches_to_actual_nats -- --ignored --exact --nocapture
 
   test-doc:
     desc: Run the workspace doc-tests, which nextest does not.

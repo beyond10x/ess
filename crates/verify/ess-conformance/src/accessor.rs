@@ -234,9 +234,17 @@ pub(crate) fn project<'a>(
                 let Some(Node::Text(label)) = fields.get(tag) else {
                     return Err("accessor union discriminator missing or not text".into());
                 };
-                id = *variants
+                let Some(next) = *variants
                     .get(label)
-                    .ok_or("accessor union discriminator is unknown")?;
+                    .ok_or("accessor union discriminator is unknown")?
+                else {
+                    // A unit variant (ess/22) is the tag alone: nothing is read through it.
+                    if fields.contains_key(ess_gen::schema::union_content_key(tag)) {
+                        return Err("accessor unit variant carries a payload".into());
+                    }
+                    return Ok(Projected::Unavailable);
+                };
+                id = next;
                 value = Some(
                     fields
                         .get(ess_gen::schema::union_content_key(tag))

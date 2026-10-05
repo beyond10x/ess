@@ -38,6 +38,24 @@
 //! containing a dot is read as a fact path and anything else as a literal; quote a literal
 //! that contains dots (`version == "1.2.3"`).
 //!
+//! A one-segment fact on the right — `depends_on` in a guard that compares two inputs — cannot be
+//! told from the text it is spelled like without knowing what the place it is written in declares,
+//! so the canonical form writes it as an explicit operand, `task_id: {eq: {fact: depends_on}}`, and
+//! this reader takes that mapping as the fact. Which bare words of an authored source are such facts
+//! is decided by the source format and its declarations, in `ess-domain`, never here
+//! (`docs/design/expression-family-source22.md`, A1). [`Predicate::from_node_spelled`] keeps the one
+//! bit that decision needs: which right-hand sides were written as an unquoted, undotted word.
+//!
+//! One fact moved by one constant — `upper == lower + 5`, `expires_at <= issued_at - 24h` — is
+//! [`Operand::Offset`] (A2), canonically `upper: {eq: {offset: {fact: lower, add: 5}}}`. The compact
+//! spelling is text to this reader for the same reason a bare word is, and
+//! [`Spelled::offsets`] marks where it was written unquoted.
+//!
+//! The UTF-8 byte length of a text — `label.utf8_bytes <= 255` — is [`Operand::Derived`], canonically
+//! `{compare: {left: {utf8_bytes: label}, op: lte, right: 255}}`, or `limit: {gte: {utf8_bytes:
+//! label}}` on the right. This reader reads `label.utf8_bytes` as the path it is spelled like: only
+//! the source format and the declarations say there is no member of that name, in `ess-domain`.
+//!
 //! # Quantifiers
 //!
 //! Everything above asks about one value. A claim about a *collection* — every element, or some
@@ -75,6 +93,36 @@ use std::fmt;
 use crate::error::ParseError;
 use crate::facts::{FactPath, FactSource, FactValue, Scales};
 use crate::node::Node;
+
+std::thread_local! {
+    /// Whether the `ess/22` operand grammar is read: `{fact: <path>}` on the right of a comparison
+    /// and the tagged `{compare: …}` form (`docs/design/expression-family-source22.md`). A parser
+    /// that knows its source is older turns it off with [`reading_source22_operands`], and the
+    /// mapping is then refused as the non-scalar it always was. With no format known it is read,
+    /// and assembly refuses it below `ess/22`.
+    static SOURCE22_OPERANDS: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
+}
+
+/// Runs `read` with the `ess/22` operand grammar read or not, restoring what was set before.
+pub fn reading_source22_operands<T>(admitted: bool, read: impl FnOnce() -> T) -> T {
+    let before = SOURCE22_OPERANDS.with(|cell| cell.replace(admitted));
+    let value = read();
+    SOURCE22_OPERANDS.with(|cell| cell.set(before));
+    value
+}
+
+/// Whether the `ess/22` operand grammar is read here; see [`reading_source22_operands`].
+fn source22_operands() -> bool {
+    SOURCE22_OPERANDS.with(std::cell::Cell::get)
+}
+
+/// Whether the source being read admits the `ess/22` grammar: on, unless a parser that knows its
+/// source is older turned it off with [`reading_source22_operands`]. Read by the value-source
+/// parser too, so an `ess/22` input path (`{input: a.b, else: input.c}`) is admitted where the
+/// predicate grammar is (`docs/design/expression-family-source22.md`, A4).
+pub fn reads_source22_operands() -> bool {
+    source22_operands()
+}
 
 /// The result of evaluating a predicate.
 ///
@@ -188,6 +236,19 @@ impl CompareOp {
         }
     }
 
+    /// The keyword the canonical writer uses in a structured comparison: `eq`, `ne`, `lt`, `lte`,
+    /// `gt` or `gte`. [`Self::from_keyword`] reads each of them back.
+    pub fn keyword(self) -> &'static str {
+        match self {
+            Self::Eq => "eq",
+            Self::Ne => "ne",
+            Self::Lt => "lt",
+            Self::Le => "lte",
+            Self::Gt => "gt",
+            Self::Ge => "gte",
+        }
+    }
+
     /// `true` when this operator needs an ordering, not just equality.
     pub fn needs_ordering(self) -> bool {
         !matches!(self, Self::Eq | Self::Ne)
@@ -278,6 +339,163 @@ impl fmt::Display for TextOp {
     }
 }
 
+/// Where a typed text operand reads its value (beyond10x/ess#200): a view's parameter or a
+/// command's input.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum TextNamespace {
+    /// `{param: <name>}`: a parameter the view's caller sends.
+    Param,
+    /// `{input: <name>}`: a field of the command's input.
+    Input,
+}
+
+impl TextNamespace {
+    /// Both namespaces, in the order the design names them.
+    pub const ALL: [Self; 2] = [Self::Param, Self::Input];
+
+    /// The mapping key, and the namespace a read under it is rooted at before resolution.
+    pub fn keyword(self) -> &'static str {
+        match self {
+            Self::Param => "param",
+            Self::Input => "input",
+        }
+    }
+
+    /// Parses the mapping key.
+    pub fn from_keyword(keyword: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|namespace| namespace.keyword() == keyword)
+    }
+}
+
+impl fmt::Display for TextNamespace {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.keyword())
+    }
+}
+
+/// The right side of a string operator (beyond10x/ess#200): a text literal, read byte for byte, or
+/// one declared top-level parameter or input, `{param: <name>}` / `{input: <name>}`.
+///
+/// `path` is the fact the evaluator reads, which depends on where the predicate sits: a view's
+/// filter reads `param.<name>`, a stored row's predicate `input.<name>`, and a command's plain
+/// `when:` the input root `<name>` itself, as the domain resolver rewrites it. The canonical form
+/// writes only the namespace and the name, so it reads the same wherever it is written.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TextOperand {
+    /// The literal, verbatim as written: never a fact path, never read as a number.
+    Literal(FactValue),
+    /// A parameter or an input, by its declared top-level name.
+    Fact {
+        /// Which namespace the name is declared in.
+        namespace: TextNamespace,
+        /// The declared name.
+        name: String,
+        /// The fact read for it where the predicate sits.
+        path: FactPath,
+    },
+}
+
+impl TextOperand {
+    /// The operand `{namespace: name}`, read at `namespace.name` until a resolver places it.
+    ///
+    /// # Errors
+    ///
+    /// When `name` is not one fact-path segment.
+    pub fn fact(namespace: TextNamespace, name: &str) -> Result<Self, ParseError> {
+        let single = FactPath::new(name)?;
+        if single.segments().len() != 1 {
+            return Err(ParseError::predicate(
+                &format!("{{{namespace}: {name}}}"),
+                TEXT_OPERAND_SHAPE,
+            ));
+        }
+        let path = FactPath::from_segments([namespace.keyword(), name]);
+        Ok(Self::Fact {
+            namespace,
+            name: name.to_owned(),
+            path,
+        })
+    }
+
+    /// The literal, where this is one.
+    pub fn as_literal(&self) -> Option<&FactValue> {
+        match self {
+            Self::Literal(value) => Some(value),
+            Self::Fact { .. } => None,
+        }
+    }
+
+    /// The fact this operand reads, where it reads one.
+    pub fn fact_path(&self) -> Option<&FactPath> {
+        match self {
+            Self::Literal(_) => None,
+            Self::Fact { path, .. } => Some(path),
+        }
+    }
+
+    /// This operand with its fact read at `map(path)`; a literal is unchanged.
+    #[must_use]
+    pub fn map_path(&self, map: impl FnOnce(&FactPath) -> FactPath) -> Self {
+        match self {
+            Self::Literal(value) => Self::Literal(value.clone()),
+            Self::Fact {
+                namespace,
+                name,
+                path,
+            } => Self::Fact {
+                namespace: *namespace,
+                name: name.clone(),
+                path: map(path),
+            },
+        }
+    }
+
+    /// The canonical document form: the literal as written, or `{param: <name>}`.
+    pub fn to_node(&self) -> Node {
+        match self {
+            Self::Literal(value) => value_node(value),
+            Self::Fact {
+                namespace, name, ..
+            } => Node::Map([(namespace.keyword().to_owned(), Node::Text(name.clone()))].into()),
+        }
+    }
+
+    /// The value this operand compares with: the literal, or what `facts` observe at its path.
+    fn resolve(&self, facts: &dyn FactSource) -> Option<FactValue> {
+        match self {
+            Self::Literal(value) => Some(value.clone()),
+            Self::Fact { path, .. } => facts.observe(path),
+        }
+    }
+}
+
+impl From<FactValue> for TextOperand {
+    fn from(value: FactValue) -> Self {
+        Self::Literal(value)
+    }
+}
+
+/// For a reader and the semantic diff, never read back: a text literal is quoted by `Debug`, a
+/// number or a Boolean is bare, and a parameter or an input is its mapping.
+impl fmt::Display for TextOperand {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Literal(FactValue::Text(text)) => write!(f, "{text:?}"),
+            Self::Literal(value) => write!(f, "{value}"),
+            Self::Fact {
+                namespace, name, ..
+            } => write!(f, "{{{namespace}: {name}}}"),
+        }
+    }
+}
+
+/// What a string operator's mapping operand must be.
+const TEXT_OPERAND_SHAPE: &str = "a comparison operand must be a scalar, or for a string \
+     operator `{param: <name>}` naming one view parameter or `{input: <name>}` naming one command \
+     input: exactly one key and one top-level name";
+
 /// A case-insensitive text operator (beyond10x/ess#140): a text fact equal, under ASCII case
 /// folding, to one text literal or to one of a list of them.
 ///
@@ -336,22 +554,445 @@ pub enum Operand {
     Fact(FactPath),
     /// A constant written in the document.
     Literal(FactValue),
+    /// One fact moved by one constant, `lower + 5` or `issued_at - 24h`
+    /// (`docs/design/expression-family-source22.md`, A2). Legal on the right of a comparison only.
+    Offset(OffsetOperand),
+    /// A value derived from a fact rather than read at its path: the UTF-8 byte length of a text,
+    /// `{utf8_bytes: label}` (`docs/design/expression-family-source22.md`, "String `.utf8_bytes`",
+    /// final review decision 11). Legal as either operand of a comparison, and nowhere else.
+    Derived(Derived),
+}
+
+/// A value an evaluator derives from the fact at a path, never reads at a path of its own.
+///
+/// The resolved predicate carries it as this closed operand rather than as the path
+/// `label.utf8_bytes`, so a declared member named `utf8_bytes` keeps meaning that member and no
+/// evaluator decides what a path is by its last segment. Its canonical form is the one-key mapping
+/// `{utf8_bytes: <parent>}`, which suite `/40` and specification format `ess/22` introduce.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Derived {
+    /// The number of bytes the UTF-8 encoding of the text at the parent path takes, an `Integer`.
+    ///
+    /// A bound full-path observation, `<parent>.utf8_bytes`, wins over the parent — the rule a
+    /// text's `.count` follows (`FactSource::observe`) — but, unlike a `.count`, only a whole
+    /// number from zero is a byte length: any other bound value is `Unknown`, with no fallback to
+    /// the parent. Otherwise the parent's text is measured; an unobserved parent, an absent
+    /// `Optional` and a value that is no text are `Unknown`. Empty text is zero, and no Unicode
+    /// normalization occurs. A text holding a lone surrogate is no Unicode text and its byte length
+    /// is `Unknown` in every lane; a Rust `str` cannot hold one, so here it never arrives.
+    Utf8Bytes(FactPath),
+}
+
+impl Derived {
+    /// The key of the canonical mapping `{utf8_bytes: <parent>}`, and the path segment a source
+    /// format reads it from (`label.utf8_bytes`).
+    pub const UTF8_BYTES: &'static str = "utf8_bytes";
+
+    /// The fact this value is derived from.
+    pub fn parent(&self) -> &FactPath {
+        match self {
+            Self::Utf8Bytes(parent) => parent,
+        }
+    }
+
+    /// The same derivation of another fact.
+    #[must_use]
+    pub fn with_parent(&self, parent: FactPath) -> Self {
+        match self {
+            Self::Utf8Bytes(_) => Self::Utf8Bytes(parent),
+        }
+    }
+
+    /// The path a full-path observation of this value is bound at: `<parent>.utf8_bytes`.
+    pub fn observed_at(&self) -> FactPath {
+        match self {
+            Self::Utf8Bytes(parent) => parent.child(Self::UTF8_BYTES),
+        }
+    }
+
+    /// The value this derivation reads from `facts`, or `None` where it is `Unknown`.
+    pub fn value(&self, facts: &dyn FactSource) -> Option<FactValue> {
+        self.value_with(&|path| facts.fact(path))
+    }
+
+    /// [`Self::value`], reading each fact through `fact`: what a synthesizer writes in for a derived
+    /// operand whose parent it already knows. One rule for both, so a witness never measures text
+    /// differently from the evaluator that decides it.
+    pub fn value_with(&self, fact: &dyn Fn(&FactPath) -> Option<FactValue>) -> Option<FactValue> {
+        match self {
+            Self::Utf8Bytes(parent) => {
+                if let Some(bound) = fact(&self.observed_at()) {
+                    let length = bound.as_number()?;
+                    return (length.as_i64()? >= 0).then_some(FactValue::Number(length));
+                }
+                match fact(parent)? {
+                    FactValue::Text(text) => Some(FactValue::count(text.len())),
+                    FactValue::Bool(_) | FactValue::Number(_) => None,
+                }
+            }
+        }
+    }
+
+    /// The canonical mapping, `{utf8_bytes: <parent>}`.
+    pub fn to_node(&self) -> Node {
+        match self {
+            Self::Utf8Bytes(parent) => {
+                Node::Map([(Self::UTF8_BYTES.to_owned(), Node::Text(parent.to_string()))].into())
+            }
+        }
+    }
+}
+
+impl fmt::Display for Derived {
+    /// The canonical mapping in one line, never the path `label.utf8_bytes`: that spelling names a
+    /// declared member wherever there is one.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Utf8Bytes(parent) => write!(f, "{{{}: {parent}}}", Self::UTF8_BYTES),
+        }
+    }
+}
+
+impl serde::Serialize for Derived {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.to_node().serialize(serializer)
+    }
+}
+
+/// Which way an offset moves its base.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum OffsetDirection {
+    /// `+`, written `add`.
+    Add,
+    /// `-`, written `subtract`.
+    Subtract,
+}
+
+impl OffsetDirection {
+    /// The key the canonical mapping writes the magnitude under.
+    pub fn keyword(self) -> &'static str {
+        match self {
+            Self::Add => "add",
+            Self::Subtract => "subtract",
+        }
+    }
+
+    /// The sign the compact spelling writes.
+    pub fn symbol(self) -> char {
+        match self {
+            Self::Add => '+',
+            Self::Subtract => '-',
+        }
+    }
+}
+
+/// The constant an offset moves its base by.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OffsetMagnitude {
+    /// A whole number, from zero to `i64::MAX`, added to or taken from an `Integer`. The sum is the
+    /// exact mathematical integer, never wrapped, clamped, rounded or turned `Unknown`.
+    Integer(crate::facts::Number),
+    /// Elapsed UTC seconds added to or taken from a `Timestamp`, with the unit they were written in.
+    ElapsedSeconds {
+        /// How many seconds, from zero to [`crate::time::CurrentTime::MAX_OFFSET_SECONDS`].
+        seconds: i64,
+        /// `s`, `m` or `h`, as written.
+        written_unit: crate::time::ElapsedUnit,
+    },
+}
+
+impl OffsetMagnitude {
+    /// Reads a magnitude as a source writes it: a whole number without a sign, fraction or
+    /// leading zero that fits `i64` (an Integer magnitude), or the same digits followed by `s`, `m`
+    /// or `h` under the current-time bound (an elapsed one). `None` for anything else.
+    pub fn parse(text: &str) -> Option<Self> {
+        if let Some((seconds, written_unit)) = crate::time::ElapsedUnit::parse_magnitude(text) {
+            return Some(Self::ElapsedSeconds {
+                seconds,
+                written_unit,
+            });
+        }
+        if text.is_empty()
+            || !text.bytes().all(|byte| byte.is_ascii_digit())
+            || (text.len() > 1 && text.starts_with('0'))
+        {
+            return None;
+        }
+        text.parse::<i64>()
+            .ok()
+            .map(|value| Self::Integer(crate::facts::Number::from(value)))
+    }
+
+    /// The Integer magnitude as an `i64`, where it is a whole number from zero to `i64::MAX`.
+    pub fn integer(self) -> Option<i64> {
+        match self {
+            Self::Integer(number) => number.as_i64().filter(|value| *value >= 0),
+            Self::ElapsedSeconds { .. } => None,
+        }
+    }
+
+    /// The canonical node: the number, or the elapsed text in its written unit (`24h`).
+    fn node(self) -> Node {
+        match self {
+            Self::Integer(number) => Node::Number(number),
+            Self::ElapsedSeconds { .. } => Node::Text(self.to_string()),
+        }
+    }
+
+    /// Reads the canonical node back: a number that is a whole number from zero to `i64::MAX`, or
+    /// an elapsed text. A whole number written as text is refused: the canonical form writes it
+    /// as a number.
+    fn from_node(node: &Node) -> Option<Self> {
+        match node {
+            Node::Number(number) => number
+                .as_i64()
+                .filter(|value| *value >= 0)
+                .map(|value| Self::Integer(crate::facts::Number::from(value))),
+            Node::Text(text) => match Self::parse(text)? {
+                elapsed @ Self::ElapsedSeconds { .. } => Some(elapsed),
+                Self::Integer(_) => None,
+            },
+            _ => None,
+        }
+    }
+}
+
+impl fmt::Display for OffsetMagnitude {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Integer(number) => write!(f, "{}", number.exact_text()),
+            Self::ElapsedSeconds {
+                seconds,
+                written_unit,
+            } => write!(
+                f,
+                "{}{}",
+                seconds / written_unit.seconds(),
+                written_unit.letter()
+            ),
+        }
+    }
+}
+
+/// One fact moved by one constant: `lower + 5`, `issued_at - 24h`
+/// (`docs/design/expression-family-source22.md`, A2).
+///
+/// Its canonical form is the closed mapping `{offset: {fact: <path>, add|subtract: <magnitude>}}`,
+/// which suite `/40` and specification format `ess/22` introduce. No offset nests: the base is one
+/// fact.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OffsetOperand {
+    /// The fact moved.
+    pub base: FactPath,
+    /// Which way.
+    pub direction: OffsetDirection,
+    /// By how much.
+    pub magnitude: OffsetMagnitude,
+}
+
+impl OffsetOperand {
+    /// Every way an unquoted right side splits into `<base> ws? (+|-) ws? <magnitude>`, left to
+    /// right: one per `+` or `-` whose text before it, without the spaces beside the sign, is a
+    /// fact path, with the text after it. Whether the base resolves and the magnitude reads is
+    /// for the caller to decide (final review decision 4, rule 3a): `my-field-5` splits after
+    /// `my` and after `my-field`.
+    pub fn spellings(text: &str) -> Vec<(FactPath, OffsetDirection, &str)> {
+        let mut found = Vec::new();
+        for (at, byte) in text.bytes().enumerate() {
+            let direction = match byte {
+                b'+' => OffsetDirection::Add,
+                b'-' => OffsetDirection::Subtract,
+                _ => continue,
+            };
+            let base = text[..at].trim_end_matches(' ');
+            if base.is_empty() {
+                continue;
+            }
+            if let Ok(path) = FactPath::new(base) {
+                found.push((path, direction, text[at + 1..].trim_start_matches(' ')));
+            }
+        }
+        found
+    }
+
+    /// The same offset the other way: `base - k` for `base + k`. Where `left == base + k`,
+    /// `base == left - k`: the offset that reads the base back from the left side.
+    #[must_use]
+    pub fn reversed(&self, base: FactPath) -> Self {
+        Self {
+            base,
+            direction: match self.direction {
+                OffsetDirection::Add => OffsetDirection::Subtract,
+                OffsetDirection::Subtract => OffsetDirection::Add,
+            },
+            magnitude: self.magnitude,
+        }
+    }
+
+    /// `base ± magnitude` for an Integer magnitude, exactly: every sum of two `i64`s fits `i128`.
+    /// `None` for an elapsed magnitude, or a magnitude that is not a whole number in `i64`.
+    pub fn integer_at(&self, base: i64) -> Option<i128> {
+        let magnitude = i128::from(self.magnitude.integer()?);
+        Some(match self.direction {
+            OffsetDirection::Add => i128::from(base) + magnitude,
+            OffsetDirection::Subtract => i128::from(base) - magnitude,
+        })
+    }
+
+    /// `base ± seconds` for an elapsed magnitude, through the arithmetic the current time shares
+    /// ([`crate::time::Rfc3339Instant::plus_elapsed`]): `None` for an Integer magnitude, or where
+    /// the instant is past the years a `date-time` spells.
+    pub fn instant_at(
+        &self,
+        base: crate::time::Rfc3339Instant,
+    ) -> Option<crate::time::Rfc3339Instant> {
+        let OffsetMagnitude::ElapsedSeconds { seconds, .. } = self.magnitude else {
+            return None;
+        };
+        match self.direction {
+            OffsetDirection::Add => base.plus_elapsed(seconds),
+            OffsetDirection::Subtract => base.plus_elapsed(seconds.checked_neg()?),
+        }
+    }
+
+    /// The value this offset names where its base holds `base`: the exact sum where it is an
+    /// `i64`, the moved instant in UTC, and `None` where the base is of the wrong kind or the
+    /// value is past what a stored `Integer` or a `date-time` holds. What a synthesizer writes in
+    /// for an offset whose base it already knows; evaluation never goes through it.
+    pub fn value_at(&self, base: &FactValue) -> Option<FactValue> {
+        match self.magnitude {
+            OffsetMagnitude::Integer(_) => {
+                let sum = self.integer_at(base.as_number()?.as_i64()?)?;
+                i64::try_from(sum)
+                    .ok()
+                    .map(|value| FactValue::Number(crate::facts::Number::from(value)))
+            }
+            OffsetMagnitude::ElapsedSeconds { .. } => {
+                let instant = crate::time::Rfc3339Instant::parse_rfc3339(base.as_text()?)?;
+                self.instant_at(instant)
+                    .map(|moved| FactValue::Text(moved.to_rfc3339()))
+            }
+        }
+    }
+
+    /// The canonical mapping, `{offset: {fact: <path>, add|subtract: <magnitude>}}`.
+    pub fn to_node(&self) -> Node {
+        Node::Map(
+            [(
+                "offset".to_owned(),
+                Node::Map(
+                    [
+                        ("fact".to_owned(), Node::Text(self.base.to_string())),
+                        (self.direction.keyword().to_owned(), self.magnitude.node()),
+                    ]
+                    .into(),
+                ),
+            )]
+            .into(),
+        )
+    }
+
+    /// Reads the inside of `{offset: …}`: exactly `fact` and one of `add` and `subtract`.
+    fn from_entries(fields: &std::collections::BTreeMap<String, Node>) -> Option<Self> {
+        if fields.len() != 2 {
+            return None;
+        }
+        let Some(Node::Text(base)) = fields.get("fact") else {
+            return None;
+        };
+        let base = FactPath::new(base).ok()?;
+        let (direction, magnitude) = match (fields.get("add"), fields.get("subtract")) {
+            (Some(magnitude), None) => (OffsetDirection::Add, magnitude),
+            (None, Some(magnitude)) => (OffsetDirection::Subtract, magnitude),
+            _ => return None,
+        };
+        Some(Self {
+            base,
+            direction,
+            magnitude: OffsetMagnitude::from_node(magnitude)?,
+        })
+    }
+}
+
+impl fmt::Display for OffsetOperand {
+    /// The canonical mapping in one line, never the compact `lower + 5`: that spelling reads back
+    /// as text wherever no declaration says `lower` is a fact.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{{offset: {{fact: {}, {}: {}}}}}",
+            self.base,
+            self.direction.keyword(),
+            self.magnitude
+        )
+    }
+}
+
+impl serde::Serialize for OffsetOperand {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.to_node().serialize(serializer)
+    }
 }
 
 impl Operand {
-    /// Resolves this operand, returning `None` when a referenced fact is unobserved.
+    /// Resolves this operand, returning `None` when a referenced fact is unobserved. An offset has
+    /// no value of its own: [`Predicate::evaluate_offset`] compares with it.
     fn resolve(&self, facts: &dyn FactSource) -> Option<FactValue> {
         match self {
             Self::Fact(path) => facts.observe(path),
             Self::Literal(value) => Some(value.clone()),
+            Self::Offset(_) => None,
+            Self::Derived(derived) => derived.value(facts),
         }
     }
 
-    /// The fact path this operand reads, if any.
-    fn fact_path(&self) -> Option<&FactPath> {
+    /// The fact path this operand reads, if any: an offset reads its base, and a derived value the
+    /// fact it is derived from.
+    pub fn fact_path(&self) -> Option<&FactPath> {
         match self {
             Self::Fact(path) => Some(path),
+            Self::Offset(offset) => Some(&offset.base),
+            Self::Derived(derived) => Some(derived.parent()),
             Self::Literal(_) => None,
+        }
+    }
+
+    /// This operand with the path it reads — a fact, or an offset's base — moved by `map`; a
+    /// literal is kept. What every rewrite of a predicate's reads uses, so an offset's base is
+    /// never left behind.
+    #[must_use]
+    pub fn map_path(&self, map: impl FnOnce(&FactPath) -> FactPath) -> Self {
+        match self {
+            Self::Fact(path) => Self::Fact(map(path)),
+            Self::Offset(offset) => Self::Offset(OffsetOperand {
+                base: map(&offset.base),
+                direction: offset.direction,
+                magnitude: offset.magnitude,
+            }),
+            Self::Derived(derived) => Self::Derived(derived.with_parent(map(derived.parent()))),
+            Self::Literal(value) => Self::Literal(value.clone()),
+        }
+    }
+
+    /// Whether `raw`, read by [`Self::parse_in`] under `binders`, is unquoted text with a `+` or a
+    /// `-` after a fact path: a text literal today, and the spelling a source format may read as
+    /// an offset (`docs/design/expression-family-source22.md`, A2, rule 3a).
+    ///
+    /// A dotted spelling with an unspaced `-` — `window.lower-5` — reads as a fact path here, because
+    /// `-` may stand inside a segment; it is marked too, so a format whose declarations name no such
+    /// field may read it as the offset it also spells.
+    fn is_offset_spelling(raw: &str, binders: &[String]) -> bool {
+        let unquoted = !raw.trim().starts_with(['"', '\'']);
+        match Self::parse_in(raw, binders) {
+            Self::Literal(FactValue::Text(text)) => {
+                unquoted && !OffsetOperand::spellings(&text).is_empty()
+            }
+            Self::Fact(path) => {
+                unquoted
+                    && path.segments().len() > 1
+                    && !OffsetOperand::spellings(&path.to_string()).is_empty()
+            }
+            _ => false,
         }
     }
 
@@ -383,6 +1024,85 @@ impl Operand {
         }
         Self::Literal(FactValue::parse_literal(trimmed))
     }
+
+    /// Whether `raw`, read by [`Self::parse_in`] under `binders`, is an unquoted, undotted word: a
+    /// text literal today, and the one spelling a source format may read as a root fact instead
+    /// (`docs/design/expression-family-source22.md`, A1). A quoted text, a Boolean, a number, a
+    /// dotted path, a binder and text that is no fact-path segment are not words.
+    fn is_word(raw: &str, binders: &[String]) -> bool {
+        match Self::parse_in(raw, binders) {
+            Self::Literal(FactValue::Text(text)) => {
+                let trimmed = raw.trim();
+                !trimmed.starts_with(['"', '\''])
+                    && FactPath::new(&text).is_ok_and(|path| path.segments().len() == 1)
+            }
+            _ => false,
+        }
+    }
+
+    /// The fact this operand reads when it is one segment that no binder in `binders` names: the
+    /// operand only the explicit `{fact: …}` mapping can spell.
+    fn root_fact<'a>(&'a self, binders: &[&str]) -> Option<&'a FactPath> {
+        match self {
+            Self::Fact(path)
+                if path.segments().len() == 1 && !binders.contains(&path.namespace()) =>
+            {
+                Some(path)
+            }
+            _ => None,
+        }
+    }
+
+    /// Reads the explicit fact operand `{fact: <path>}`, the canonical spelling of a fact on the
+    /// right of a comparison. Exactly one key; anything else is refused rather than compared as
+    /// the mapping it is.
+    fn fact_mapping(
+        entries: &std::collections::BTreeMap<String, Node>,
+        written: impl Fn() -> String,
+    ) -> Result<Self, ParseError> {
+        // Below `ess/22` a mapping is no operand at all, and is refused in the words it always was.
+        if !source22_operands() {
+            return Err(ParseError::predicate(
+                &written(),
+                "a comparison operand must be a scalar",
+            ));
+        }
+        let refuse = || {
+            ParseError::predicate(
+                &written(),
+                "a comparison operand must be a scalar, `{fact: <path>}` naming a fact, \
+                 `{offset: {fact: <path>, add|subtract: <magnitude>}}`, or `{utf8_bytes: <path>}` \
+                 naming a text",
+            )
+        };
+        match entries.iter().next() {
+            Some((key, Node::Text(path))) if entries.len() == 1 && key == "fact" => {
+                FactPath::new(path).map(Self::Fact).map_err(|error| {
+                    ParseError::predicate(&written(), format!("`{{fact: …}}`: {error}"))
+                })
+            }
+            Some((key, Node::Text(path))) if entries.len() == 1 && key == Derived::UTF8_BYTES => {
+                FactPath::new(path)
+                    .map(|parent| Self::Derived(Derived::Utf8Bytes(parent)))
+                    .map_err(|error| {
+                        ParseError::predicate(&written(), format!("`{{utf8_bytes: …}}`: {error}"))
+                    })
+            }
+            Some((key, Node::Map(fields))) if entries.len() == 1 && key == "offset" => {
+                OffsetOperand::from_entries(fields)
+                    .map(Self::Offset)
+                    .ok_or_else(|| {
+                        ParseError::predicate(
+                            &written(),
+                            "`{offset: …}` takes exactly `fact`, a fact path, and one of `add` \
+                             and `subtract`: a whole number from 0 to 9223372036854775807, or a \
+                             whole number of `s`, `m` or `h` without a leading zero",
+                        )
+                    })
+            }
+            _ => Err(refuse()),
+        }
+    }
 }
 
 /// The instant one side of an ordering over a declared `Timestamp` names: an RFC 3339 `date-time`,
@@ -396,7 +1116,7 @@ fn instant_operand(
 ) -> Option<crate::time::Rfc3339Instant> {
     crate::time::Rfc3339Instant::parse_rfc3339(text).or_else(|| match operand {
         Operand::Literal(_) => crate::time::CurrentTime::parse(text)?.at(facts.now()?),
-        Operand::Fact(_) => None,
+        Operand::Fact(_) | Operand::Offset(_) | Operand::Derived(_) => None,
     })
 }
 
@@ -428,6 +1148,10 @@ impl FactSource for WithNow<'_> {
 
     fn present(&self, path: &FactPath) -> bool {
         self.facts.present(path)
+    }
+
+    fn observed_presence(&self, path: &FactPath) -> Option<bool> {
+        self.facts.observed_presence(path)
     }
 
     fn scales(&self) -> &Scales {
@@ -466,6 +1190,8 @@ impl fmt::Display for Operand {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Fact(path) => write!(f, "{path}"),
+            Self::Offset(offset) => write!(f, "{offset}"),
+            Self::Derived(derived) => write!(f, "{derived}"),
             Self::Literal(FactValue::Text(text))
                 if text.contains('.')
                     || text.is_empty()
@@ -514,6 +1240,30 @@ fn shallow(node: &Node) -> String {
     }
 }
 
+/// How a comparison compares its two operands (`docs/design/expression-family-source22.md`, final
+/// review decision 2).
+///
+/// [`CompareKind::Value`] is every comparison there was before: the evaluator compares by the
+/// representation it reads, and orders a declared `Timestamp` by its instant only where the fact
+/// source says the path is one. [`CompareKind::Instant`] says so in the predicate itself — both
+/// operands are `Timestamp` facts and compare as the instants they name under every operator — so a
+/// reader with no declared types (a suite runner over view rows) compares instants, never spellings.
+/// The domain's resolver tags it from `ess/22`; its canonical form is
+/// `{compare: {left, op, right, as: timestamp}}`, which only suite `/40` and later read.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum CompareKind {
+    /// The representation the evaluator reads.
+    #[default]
+    Value,
+    /// The instants two `Timestamp` operands name (`as: timestamp`).
+    Instant,
+}
+
+impl CompareKind {
+    /// The canonical spelling of [`CompareKind::Instant`]'s tag.
+    pub const TIMESTAMP: &'static str = "timestamp";
+}
+
 /// A condition over facts.
 ///
 /// # Depth
@@ -545,6 +1295,8 @@ pub enum Predicate {
         op: CompareOp,
         /// Right-hand side.
         right: Operand,
+        /// How the operands compare: by value, or as instants (decision 2).
+        kind: CompareKind,
     },
     /// The fact is observed and truthy.
     Truthy(FactPath),
@@ -564,18 +1316,20 @@ pub enum Predicate {
         /// Rejected values.
         values: Vec<FactValue>,
     },
-    /// The text fact begins with, ends with or contains a literal (beyond10x/ess#95).
+    /// The text fact begins with, ends with or contains a literal (beyond10x/ess#95), or a view
+    /// parameter or command input (beyond10x/ess#200).
     ///
-    /// Unobserved is [`Truth::Unknown`]; an observed value that is not text is [`Truth::False`],
-    /// and so is any observed value against a literal that is not text. Validation refuses such a
-    /// literal, so only an unchecked caller reaches that row.
+    /// Unobserved — the fact, or the parameter or input — is [`Truth::Unknown`]; an observed value
+    /// that is not text is [`Truth::False`], and so is any observed value against an operand that
+    /// is not text. Validation refuses such an operand, so only an unchecked caller reaches that
+    /// row.
     TextMatch {
         /// The fact to read.
         path: FactPath,
         /// Which of the three tests.
         op: TextOp,
-        /// The literal, verbatim as written: never a fact path, never read as a number.
-        value: FactValue,
+        /// What it is tested against: a literal, verbatim as written, or a typed operand.
+        value: TextOperand,
     },
     /// The text fact equals a literal, or one of a list of them, under ASCII case folding
     /// (beyond10x/ess#140).
@@ -600,6 +1354,60 @@ pub enum Predicate {
     ///
     /// Empty does not hold; unobserved is [`Truth::Unknown`].
     Exists(Box<Quantified>),
+    /// No two elements of a list share a key (`ess/22`).
+    ///
+    /// Empty and one element hold; unobserved is [`Truth::Unknown`]. See [`Distinct`].
+    Distinct(Box<Distinct>),
+    /// An instant falls inside a weekly calendar window at UTC or a fixed offset (`ess/22`,
+    /// beyond10x/ess#244, `docs/design/calendar-window-guards.md`).
+    ///
+    /// An unobserved instant, text that names none, and `now` read without a clock are
+    /// [`Truth::Unknown`].
+    Window(Box<crate::window::CalendarWindow>),
+}
+
+/// A predicate as read from a document, with the one fact about its spelling that the reading
+/// itself discards (`docs/design/expression-family-source22.md`, A1).
+///
+/// `words` holds one flag per comparison, in the order a pre-order walk of `predicate` meets them:
+/// `true` where the right-hand side was written as an unquoted, undotted word that no binder in
+/// scope names, which the reader keeps as a text literal. A quoted `"b"` and the bare `b` read as the
+/// same literal, and only the second may name a root fact under a source format that says so.
+/// Nothing here decides that; the domain's resolver does, with the declarations in hand. This is
+/// not a predicate and is never persisted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Spelled {
+    /// The predicate every reader of this crate reads, with every word a text literal.
+    pub predicate: Predicate,
+    /// Per comparison, in pre-order: whether its right-hand side was a bare word.
+    pub words: Vec<bool>,
+    /// Per comparison, in pre-order: whether its right-hand side was unquoted text with a `+` or a
+    /// `-` after a fact path, or a dotted path with a `-` in it — the spelling a source format may
+    /// read as one constant offset of that fact (`docs/design/expression-family-source22.md`, A2,
+    /// rule 3a), and text or the dotted fact otherwise.
+    pub offsets: Vec<bool>,
+}
+
+/// What the spelled readers record per comparison, in pre-order: [`Spelled::words`] and
+/// [`Spelled::offsets`].
+#[derive(Default)]
+struct Spellings {
+    words: Vec<bool>,
+    offsets: Vec<bool>,
+}
+
+impl Spellings {
+    /// One comparison whose right side is not text an author could have meant as a fact.
+    fn literal(&mut self) {
+        self.words.push(false);
+        self.offsets.push(false);
+    }
+
+    /// One comparison whose right side was written as `raw` under `binders`.
+    fn written(&mut self, raw: &str, binders: &[String]) {
+        self.words.push(Operand::is_word(raw, binders));
+        self.offsets.push(Operand::is_offset_spelling(raw, binders));
+    }
 }
 
 /// A quantified claim: a collection, the name its elements are bound to, and the body.
@@ -679,8 +1487,16 @@ impl FactSource for Element<'_> {
         self.inner.fact(&self.rebind(path))
     }
 
+    fn observe(&self, path: &FactPath) -> Option<FactValue> {
+        self.inner.observe(&self.rebind(path))
+    }
+
     fn present(&self, path: &FactPath) -> bool {
         self.inner.present(&self.rebind(path))
+    }
+
+    fn observed_presence(&self, path: &FactPath) -> Option<bool> {
+        self.inner.observed_presence(&self.rebind(path))
     }
 
     fn scales(&self) -> &Scales {
@@ -701,6 +1517,180 @@ impl FactSource for Element<'_> {
 
     fn cardinality(&self, path: &FactPath) -> Option<usize> {
         self.inner.cardinality(&self.rebind(path))
+    }
+}
+
+/// The equality a [`Distinct`] key is compared under: the scalar domain its declared type resolves
+/// to, through newtypes and `Optional` (`docs/design/expression-family-source22.md`, `distinct`).
+///
+/// The domains `count_distinct` already compares (`docs/design/aggregate-views.md`): a whole struct,
+/// list, map, union or `Json` value has no key equality, so a struct list names one member with
+/// `by`. The resolver in `ess-domain` decides the kind from the declarations and the canonical form
+/// carries it, so a reader with no declared types — a suite runner over view rows — never infers an
+/// instant from a spelling.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum DistinctKeyKind {
+    /// `Boolean`: `true` and `false`.
+    Boolean,
+    /// `Integer`: exact whole numbers, never through a binary64.
+    Integer,
+    /// `Decimal`: exact numeric equality, so `1` and `1.0` are one key.
+    Decimal,
+    /// `String`: exact text.
+    String,
+    /// `Uuid`: exact text.
+    Uuid,
+    /// `Timestamp`: the instant, so two spellings of one instant are one key.
+    Timestamp,
+    /// An enum, through any newtype: exact variant text.
+    Enum,
+}
+
+impl DistinctKeyKind {
+    /// Every kind, in declaration order.
+    pub const ALL: [Self; 7] = [
+        Self::Boolean,
+        Self::Integer,
+        Self::Decimal,
+        Self::String,
+        Self::Uuid,
+        Self::Timestamp,
+        Self::Enum,
+    ];
+
+    /// The canonical spelling of this kind, the value of `kind:`.
+    pub fn keyword(self) -> &'static str {
+        match self {
+            Self::Boolean => "boolean",
+            Self::Integer => "integer",
+            Self::Decimal => "decimal",
+            Self::String => "string",
+            Self::Uuid => "uuid",
+            Self::Timestamp => "timestamp",
+            Self::Enum => "enum",
+        }
+    }
+
+    /// The kind a canonical spelling names.
+    pub fn from_keyword(keyword: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|kind| kind.keyword() == keyword)
+    }
+
+    /// The key an observed value is under this kind, or `None` where the value lies outside it —
+    /// a fraction under `Integer`, a text under a number, a text no `date-time` spells under
+    /// `Timestamp` — which the comparison reads as `Unknown` rather than coercing.
+    fn key(self, value: &FactValue) -> Option<DistinctKey> {
+        match (self, value) {
+            (Self::Boolean, FactValue::Bool(flag)) => Some(DistinctKey::Bool(*flag)),
+            (Self::Integer, FactValue::Number(number)) if number.is_integral() => {
+                Some(DistinctKey::Number(*number))
+            }
+            (Self::Decimal, FactValue::Number(number)) => Some(DistinctKey::Number(*number)),
+            (Self::String | Self::Uuid | Self::Enum, FactValue::Text(text)) => {
+                Some(DistinctKey::Text(text.clone()))
+            }
+            (Self::Timestamp, FactValue::Text(text)) => {
+                crate::time::Rfc3339Instant::parse_rfc3339(text).map(DistinctKey::Instant)
+            }
+            _ => None,
+        }
+    }
+}
+
+impl fmt::Display for DistinctKeyKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.keyword())
+    }
+}
+
+/// One observed key, under the equality of its [`DistinctKeyKind`]. [`crate::facts::Number`]'s
+/// order is exact, and an instant's is the UTC line's.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum DistinctKey {
+    Bool(bool),
+    Number(crate::facts::Number),
+    Text(String),
+    Instant(crate::time::Rfc3339Instant),
+}
+
+/// No two elements of a list share a key (`docs/design/expression-family-source22.md`,
+/// `distinct`): `distinct: {in: files, as: file, by: file.path}`.
+///
+/// The key is the element itself, or the one scalar member `key` names under the binder. A present
+/// empty or one-element list holds. For two or more, two known equal keys make it `False` wherever
+/// they stand; every key known and pairwise unequal makes it `True`; anything else is `Unknown`. An
+/// absent list is `Unknown`, not empty, and an absent key is neither skipped nor one shared null.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Distinct {
+    /// The list.
+    pub over: FactPath,
+    /// The name each element is read under. One fact-path segment.
+    pub bind: String,
+    /// The member of the element that is its key, rooted at `bind`; `None` keys the element.
+    pub key: Option<FactPath>,
+    /// The equality the keys compare under. `None` only as an authored source writes it, before the
+    /// domain's resolver reads it off the declarations; nothing compares an unresolved key, and no
+    /// suite reader admits one.
+    pub key_kind: Option<DistinctKeyKind>,
+}
+
+impl Distinct {
+    /// The path each element's key is read at: `key`, or the binder itself.
+    pub fn key_path(&self) -> FactPath {
+        self.key
+            .clone()
+            .unwrap_or_else(|| FactPath::from_segments([self.bind.as_str()]))
+    }
+
+    /// The canonical document form, `{distinct: {in, as, by, kind}}`. There is no compact form;
+    /// `kind` is written once resolved and left out before, so a source reads back as written.
+    pub fn to_node(&self) -> Node {
+        let mut fields = std::collections::BTreeMap::new();
+        fields.insert("in".to_owned(), Node::Text(self.over.to_string()));
+        fields.insert("as".to_owned(), Node::Text(self.bind.clone()));
+        if let Some(key) = &self.key {
+            fields.insert("by".to_owned(), Node::Text(key.to_string()));
+        }
+        if let Some(kind) = self.key_kind {
+            fields.insert("kind".to_owned(), Node::Text(kind.keyword().to_owned()));
+        }
+        Node::Map([("distinct".to_owned(), Node::Map(fields))].into())
+    }
+
+    fn evaluate(&self, facts: &dyn FactSource) -> Truth {
+        let Some(kind) = self.key_kind else {
+            return Truth::Unknown;
+        };
+        let Some(count) = facts.cardinality(&self.over) else {
+            return Truth::Unknown;
+        };
+        if count < 2 {
+            return Truth::True;
+        }
+        let key = self.key_path();
+        let mut seen = std::collections::BTreeSet::new();
+        let mut unknown = false;
+        for index in 0..count {
+            let element = Element {
+                inner: facts,
+                bind: &self.bind,
+                prefix: self.over.child(&index.to_string()),
+            };
+            match element.observe(&key).and_then(|value| kind.key(&value)) {
+                // Every pair, not neighbours only: a duplicate anywhere settles it.
+                Some(observed) => {
+                    if !seen.insert(observed) {
+                        return Truth::False;
+                    }
+                }
+                None => unknown = true,
+            }
+        }
+        if unknown {
+            Truth::Unknown
+        } else {
+            Truth::True
+        }
     }
 }
 
@@ -765,11 +1755,18 @@ impl Predicate {
                 .iter()
                 .fold(Truth::False, |acc, child| acc.or(child.evaluate(facts))),
             Self::Not(inner) => inner.evaluate(facts).not(),
-            Self::Compare { left, op, right } => Self::evaluate_compare(left, *op, right, facts).0,
+            Self::Compare {
+                left,
+                op,
+                right,
+                kind,
+            } => Self::evaluate_compare(left, *op, right, *kind, facts).0,
             Self::Truthy(path) => facts
                 .observe(path)
                 .map_or(Truth::Unknown, |value| Truth::from_bool(value.is_truthy())),
-            Self::Defined(path) => Truth::from_bool(facts.present(path)),
+            Self::Defined(path) => facts
+                .observed_presence(path)
+                .map_or(Truth::Unknown, Truth::from_bool),
             Self::AnyOf { path, values } => {
                 facts.observe(path).map_or(Truth::Unknown, |observed| {
                     Truth::from_bool(values.contains(&observed))
@@ -780,15 +1777,16 @@ impl Predicate {
                     Truth::from_bool(!values.contains(&observed))
                 })
             }
+            // A parameter or an input nobody observed is unknown, as the fact is: never the empty
+            // text, which every text would begin with, end with and contain.
             Self::TextMatch { path, op, value } => {
-                facts
-                    .observe(path)
-                    .map_or(Truth::Unknown, |observed| match (&observed, value) {
-                        (FactValue::Text(text), FactValue::Text(literal)) => {
-                            Truth::from_bool(op.holds(text, literal))
-                        }
-                        _ => Truth::False,
-                    })
+                match (facts.observe(path), value.resolve(facts)) {
+                    (None, _) | (_, None) => Truth::Unknown,
+                    (Some(FactValue::Text(text)), Some(FactValue::Text(operand))) => {
+                        Truth::from_bool(op.holds(&text, &operand))
+                    }
+                    _ => Truth::False,
+                }
             }
             Self::FoldMatch { path, op, values } => {
                 facts.observe(path).map_or(Truth::Unknown, |observed| {
@@ -802,6 +1800,8 @@ impl Predicate {
             }
             Self::Forall(quantified) => quantified.evaluate(facts, true),
             Self::Exists(quantified) => quantified.evaluate(facts, false),
+            Self::Distinct(distinct) => distinct.evaluate(facts),
+            Self::Window(window) => window.evaluate(facts).0,
         }
     }
 
@@ -810,12 +1810,41 @@ impl Predicate {
         left: &Operand,
         op: CompareOp,
         right: &Operand,
+        kind: CompareKind,
         facts: &dyn FactSource,
     ) -> (Truth, Option<String>) {
+        if let Some(offset) = Self::offset_compare(left, op, right, facts) {
+            return offset;
+        }
         let (Some(left_value), Some(right_value)) = (left.resolve(facts), right.resolve(facts))
         else {
             return (Truth::Unknown, None);
         };
+
+        // A tagged comparison (decision 2) compares the instants its two `Timestamp` operands
+        // name, whatever the fact source knows of their types. A text that names no instant is
+        // `Unknown`: an instant nobody can read has no order, and sorting its spelling would
+        // invent one.
+        if kind == CompareKind::Instant {
+            let instant = |value: &FactValue| {
+                value
+                    .as_text()
+                    .and_then(crate::time::Rfc3339Instant::parse_rfc3339)
+            };
+            return match (instant(&left_value), instant(&right_value)) {
+                (Some(left_instant), Some(right_instant)) => (
+                    Truth::from_bool(op.accepts(left_instant.cmp(&right_instant))),
+                    None,
+                ),
+                _ => (
+                    Truth::Unknown,
+                    Some(format!(
+                        "cannot compare {left_value} with {right_value} as instants: each side \
+                         must be an RFC 3339 date-time"
+                    )),
+                ),
+            };
+        }
 
         // A declared Timestamp compares by the instant it names under every operator, so `==`
         // agrees with `<=` and `>=` on two spellings of one instant.
@@ -891,6 +1920,92 @@ impl Predicate {
                     None,
                 )
             }
+        }
+    }
+
+    /// A comparison with an offset on either side, or `None` where neither side is one: one on
+    /// the right is [`Self::evaluate_offset`]; one on the left, which no reader builds, is `Unknown`.
+    fn offset_compare(
+        left: &Operand,
+        op: CompareOp,
+        right: &Operand,
+        facts: &dyn FactSource,
+    ) -> Option<(Truth, Option<String>)> {
+        match (left, right) {
+            (_, Operand::Offset(offset)) => Some(Self::evaluate_offset(left, op, offset, facts)),
+            (Operand::Offset(offset), _) => Some((
+                Truth::Unknown,
+                Some(format!(
+                    "`{offset}` stands on the left of `{op}`; an offset is legal on the right of a \
+                     comparison only"
+                )),
+            )),
+            _ => None,
+        }
+    }
+
+    /// `left <op> base ± magnitude` (`docs/design/expression-family-source22.md`, A2).
+    ///
+    /// An Integer magnitude compares two `Integer` values with the exact mathematical sum: every
+    /// `i64 ± i64` fits `i128`, so nothing wraps, saturates, rounds through binary64 or turns
+    /// `Unknown` at the ends of the stored range. An elapsed magnitude moves a `Timestamp` by UTC
+    /// seconds and compares instants under all six operators. An unobserved or absent operand is
+    /// `Unknown`, and so is a value of the wrong kind or an instant no `date-time` spells, with a
+    /// note saying which.
+    fn evaluate_offset(
+        left: &Operand,
+        op: CompareOp,
+        offset: &OffsetOperand,
+        facts: &dyn FactSource,
+    ) -> (Truth, Option<String>) {
+        let (Some(left_value), Some(base_value)) =
+            (left.resolve(facts), facts.observe(&offset.base))
+        else {
+            return (Truth::Unknown, None);
+        };
+        let ordering = match offset.magnitude {
+            OffsetMagnitude::Integer(_) => {
+                let integer =
+                    |value: &FactValue| value.as_number().and_then(crate::facts::Number::as_i64);
+                match (integer(&left_value), integer(&base_value)) {
+                    (Some(left_integer), Some(base_integer)) => offset
+                        .integer_at(base_integer)
+                        .map(|bound| i128::from(left_integer).cmp(&bound)),
+                    _ => None,
+                }
+                .ok_or_else(|| {
+                    format!(
+                        "cannot compare {left_value} with `{offset}` of {base_value}: an Integer \
+                         offset compares two whole numbers"
+                    )
+                })
+            }
+            OffsetMagnitude::ElapsedSeconds { .. } => {
+                let instant = |value: &FactValue| {
+                    value
+                        .as_text()
+                        .and_then(crate::time::Rfc3339Instant::parse_rfc3339)
+                };
+                match (instant(&left_value), instant(&base_value)) {
+                    (Some(left_instant), Some(base_instant)) => offset
+                        .instant_at(base_instant)
+                        .map(|bound| left_instant.cmp(&bound))
+                        .ok_or_else(|| {
+                            format!(
+                                "`{offset}` of {base_value} is no instant an RFC 3339 date-time \
+                                 spells"
+                            )
+                        }),
+                    _ => Err(format!(
+                        "cannot compare {left_value} with `{offset}` of {base_value} as instants: \
+                         each side must be an RFC 3339 date-time"
+                    )),
+                }
+            }
+        };
+        match ordering {
+            Ok(ordering) => (Truth::from_bool(op.accepts(ordering)), None),
+            Err(note) => (Truth::Unknown, Some(note)),
         }
     }
 
@@ -989,7 +2104,13 @@ impl Predicate {
     /// Evaluates a leaf, returning any note about an ill-defined comparison.
     fn evaluate_leaf(&self, facts: &dyn FactSource) -> (Truth, Option<String>) {
         match self {
-            Self::Compare { left, op, right } => Self::evaluate_compare(left, *op, right, facts),
+            Self::Compare {
+                left,
+                op,
+                right,
+                kind,
+            } => Self::evaluate_compare(left, *op, right, *kind, facts),
+            Self::Window(window) => window.evaluate(facts),
             other => (other.evaluate(facts), None),
         }
     }
@@ -1039,10 +2160,17 @@ impl Predicate {
             | Self::Defined(path)
             | Self::AnyOf { path, .. }
             | Self::NoneOf { path, .. }
-            | Self::TextMatch { path, .. }
             | Self::FoldMatch { path, .. } => {
                 if !bound.contains(&path.namespace()) {
                     visit(path);
+                }
+            }
+            // A parameter or an input is read as the fact is (beyond10x/ess#200).
+            Self::TextMatch { path, value, .. } => {
+                for path in std::iter::once(path).chain(value.fact_path()) {
+                    if !bound.contains(&path.namespace()) {
+                        visit(path);
+                    }
                 }
             }
             Self::Forall(quantified) | Self::Exists(quantified) => {
@@ -1052,6 +2180,19 @@ impl Predicate {
                 bound.push(&quantified.bind);
                 quantified.body.visit_free_paths(bound, visit);
                 bound.pop();
+            }
+            // The key is read under the binder, so only the list is a free read.
+            Self::Distinct(distinct) => {
+                if !bound.contains(&distinct.over.namespace()) {
+                    visit(&distinct.over);
+                }
+            }
+            Self::Window(window) => {
+                if let Some(path) = window.at.fact_path() {
+                    if !bound.contains(&path.namespace()) {
+                        visit(path);
+                    }
+                }
             }
         }
     }
@@ -1086,6 +2227,11 @@ impl Predicate {
                 quantified.body.visit_quantified(bound, found);
                 bound.pop();
             }
+            Self::Distinct(distinct) => {
+                if !bound.contains(&distinct.over.namespace()) {
+                    found.push(&distinct.over);
+                }
+            }
             Self::Always
             | Self::Never
             | Self::Compare { .. }
@@ -1094,7 +2240,8 @@ impl Predicate {
             | Self::AnyOf { .. }
             | Self::NoneOf { .. }
             | Self::TextMatch { .. }
-            | Self::FoldMatch { .. } => {}
+            | Self::FoldMatch { .. }
+            | Self::Window(_) => {}
         }
     }
 
@@ -1117,7 +2264,291 @@ impl Predicate {
             | Self::Defined(_)
             | Self::AnyOf { .. }
             | Self::NoneOf { .. }
-            | Self::FoldMatch { .. } => false,
+            | Self::FoldMatch { .. }
+            | Self::Distinct(_)
+            | Self::Window(_) => false,
+        }
+    }
+
+    /// Whether any string operator, at any depth, compares with a parameter or an input rather than
+    /// a literal (beyond10x/ess#200): the question every lane that executes only literal operands
+    /// asks before refusing by name.
+    pub fn uses_text_operand(&self) -> bool {
+        match self {
+            Self::TextMatch { value, .. } => value.fact_path().is_some(),
+            Self::All(children) | Self::Any(children) => {
+                children.iter().any(Self::uses_text_operand)
+            }
+            Self::Not(inner) => inner.uses_text_operand(),
+            Self::Forall(quantified) | Self::Exists(quantified) => {
+                quantified.body.uses_text_operand()
+            }
+            Self::Always
+            | Self::Never
+            | Self::Compare { .. }
+            | Self::Truthy(_)
+            | Self::Defined(_)
+            | Self::AnyOf { .. }
+            | Self::NoneOf { .. }
+            | Self::FoldMatch { .. }
+            | Self::Distinct(_)
+            | Self::Window(_) => false,
+        }
+    }
+
+    /// Whether any string operator, at any depth, compares with the view parameter `name`,
+    /// `{param: <name>}` (beyond10x/ess#200).
+    pub fn reads_text_parameter(&self, name: &str) -> bool {
+        match self {
+            Self::TextMatch {
+                value:
+                    TextOperand::Fact {
+                        namespace: TextNamespace::Param,
+                        name: read,
+                        ..
+                    },
+                ..
+            } => read == name,
+            Self::All(children) | Self::Any(children) => children
+                .iter()
+                .any(|child| child.reads_text_parameter(name)),
+            Self::Not(inner) => inner.reads_text_parameter(name),
+            Self::Forall(quantified) | Self::Exists(quantified) => {
+                quantified.body.reads_text_parameter(name)
+            }
+            Self::Always
+            | Self::Never
+            | Self::Compare { .. }
+            | Self::Truthy(_)
+            | Self::Defined(_)
+            | Self::AnyOf { .. }
+            | Self::NoneOf { .. }
+            | Self::TextMatch { .. }
+            | Self::FoldMatch { .. }
+            | Self::Distinct(_)
+            | Self::Window(_) => false,
+        }
+    }
+
+    /// Whether any comparison, at any depth, reads a one-segment fact on its right that no binder in
+    /// scope names: the operand the canonical form writes as `{fact: …}`
+    /// (`docs/design/expression-family-source22.md`, A1).
+    ///
+    /// The question the `ess/22` source gate and the suite pair `/40` and `/41` ask. A binder and a
+    /// dotted path are not such operands: their compact spelling was always read as a fact.
+    pub fn reads_root_fact_operand(&self) -> bool {
+        self.reads_root_fact_in(&mut Vec::new())
+    }
+
+    fn reads_root_fact_in<'a>(&'a self, binders: &mut Vec<&'a str>) -> bool {
+        match self {
+            Self::Compare {
+                right,
+                kind: CompareKind::Value,
+                ..
+            } => right.root_fact(binders).is_some(),
+            Self::All(children) | Self::Any(children) => children
+                .iter()
+                .any(|child| child.reads_root_fact_in(binders)),
+            Self::Not(inner) => inner.reads_root_fact_in(binders),
+            Self::Forall(quantified) | Self::Exists(quantified) => {
+                binders.push(&quantified.bind);
+                let found = quantified.body.reads_root_fact_in(binders);
+                binders.pop();
+                found
+            }
+            // The tagged form always writes its fact operand explicitly.
+            Self::Compare {
+                kind: CompareKind::Instant,
+                ..
+            }
+            | Self::Always
+            | Self::Never
+            | Self::Truthy(_)
+            | Self::Defined(_)
+            | Self::AnyOf { .. }
+            | Self::NoneOf { .. }
+            | Self::TextMatch { .. }
+            | Self::FoldMatch { .. }
+            | Self::Distinct(_)
+            | Self::Window(_) => false,
+        }
+    }
+
+    /// Whether any comparison, at any depth, is tagged to compare instants (decision 2): the
+    /// question the `ess/22` source gate and the suite pair `/40` and `/41` ask beside
+    /// [`Self::reads_root_fact_operand`].
+    pub fn compares_instants(&self) -> bool {
+        match self {
+            Self::Compare { kind, .. } => *kind == CompareKind::Instant,
+            Self::All(children) | Self::Any(children) => {
+                children.iter().any(Self::compares_instants)
+            }
+            Self::Not(inner) => inner.compares_instants(),
+            Self::Forall(quantified) | Self::Exists(quantified) => {
+                quantified.body.compares_instants()
+            }
+            Self::Always
+            | Self::Never
+            | Self::Truthy(_)
+            | Self::Defined(_)
+            | Self::AnyOf { .. }
+            | Self::NoneOf { .. }
+            | Self::TextMatch { .. }
+            | Self::FoldMatch { .. }
+            | Self::Distinct(_)
+            | Self::Window(_) => false,
+        }
+    }
+
+    /// Whether any comparison, at any depth, compares with one constant offset of a fact
+    /// (`docs/design/expression-family-source22.md`, A2): the question the `ess/22` source gate and
+    /// the suite pair `/40` and `/41` ask beside [`Self::reads_root_fact_operand`].
+    pub fn reads_offset(&self) -> bool {
+        match self {
+            Self::Compare { left, right, .. } => {
+                matches!(left, Operand::Offset(_)) || matches!(right, Operand::Offset(_))
+            }
+            Self::All(children) | Self::Any(children) => children.iter().any(Self::reads_offset),
+            Self::Not(inner) => inner.reads_offset(),
+            Self::Forall(quantified) | Self::Exists(quantified) => quantified.body.reads_offset(),
+            Self::Always
+            | Self::Never
+            | Self::Truthy(_)
+            | Self::Defined(_)
+            | Self::AnyOf { .. }
+            | Self::NoneOf { .. }
+            | Self::TextMatch { .. }
+            | Self::FoldMatch { .. }
+            | Self::Distinct(_)
+            | Self::Window(_) => false,
+        }
+    }
+
+    /// Whether any leaf, at any depth, is a [`Predicate::Distinct`]
+    /// (`docs/design/expression-family-source22.md`, `distinct`): the question the `ess/22` source
+    /// gate and the suite pair `/40` and `/41` ask beside [`Self::reads_offset`].
+    pub fn reads_distinct(&self) -> bool {
+        match self {
+            Self::Distinct(_) => true,
+            Self::All(children) | Self::Any(children) => children.iter().any(Self::reads_distinct),
+            Self::Not(inner) => inner.reads_distinct(),
+            Self::Forall(quantified) | Self::Exists(quantified) => quantified.body.reads_distinct(),
+            Self::Always
+            | Self::Never
+            | Self::Compare { .. }
+            | Self::Truthy(_)
+            | Self::Defined(_)
+            | Self::AnyOf { .. }
+            | Self::NoneOf { .. }
+            | Self::TextMatch { .. }
+            | Self::FoldMatch { .. }
+            | Self::Window(_) => false,
+        }
+    }
+
+    /// Whether any leaf, at any depth, is a calendar window (`ess/22`,
+    /// `docs/design/calendar-window-guards.md`): the question the source gate asks.
+    pub fn reads_window(&self) -> bool {
+        !self.windows().is_empty()
+    }
+
+    /// Every calendar window of this predicate, at any depth, in pre-order.
+    pub fn windows(&self) -> Vec<&crate::window::CalendarWindow> {
+        fn walk<'a>(predicate: &'a Predicate, found: &mut Vec<&'a crate::window::CalendarWindow>) {
+            match predicate {
+                Predicate::Window(window) => found.push(window),
+                Predicate::All(children) | Predicate::Any(children) => {
+                    for child in children {
+                        walk(child, found);
+                    }
+                }
+                Predicate::Not(inner) => walk(inner, found),
+                Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
+                    walk(&quantified.body, found);
+                }
+                Predicate::Always
+                | Predicate::Never
+                | Predicate::Compare { .. }
+                | Predicate::Truthy(_)
+                | Predicate::Defined(_)
+                | Predicate::AnyOf { .. }
+                | Predicate::NoneOf { .. }
+                | Predicate::TextMatch { .. }
+                | Predicate::FoldMatch { .. }
+                | Predicate::Distinct(_) => {}
+            }
+        }
+        let mut found = Vec::new();
+        walk(self, &mut found);
+        found
+    }
+
+    /// Every [`Distinct`] in this predicate, at any depth, outermost first, each with the binders
+    /// in scope where it stands, outermost first: what a checker or a producer asks of each one.
+    pub fn distincts(&self) -> Vec<(&Distinct, Vec<&Quantified>)> {
+        fn walk<'a>(
+            predicate: &'a Predicate,
+            scope: &mut Vec<&'a Quantified>,
+            found: &mut Vec<(&'a Distinct, Vec<&'a Quantified>)>,
+        ) {
+            match predicate {
+                Predicate::Distinct(distinct) => found.push((distinct, scope.clone())),
+                Predicate::All(children) | Predicate::Any(children) => {
+                    for child in children {
+                        walk(child, scope, found);
+                    }
+                }
+                Predicate::Not(inner) => walk(inner, scope, found),
+                Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
+                    scope.push(quantified);
+                    walk(&quantified.body, scope, found);
+                    scope.pop();
+                }
+                _ => {}
+            }
+        }
+        let mut found = Vec::new();
+        walk(self, &mut Vec::new(), &mut found);
+        found
+    }
+
+    /// Whether any comparison, at any depth, reads a derived operand — the UTF-8 byte length of a
+    /// text, `{utf8_bytes: <path>}` (`docs/design/expression-family-source22.md`, decision 11): the
+    /// question the `ess/22` source gate and the suite pair `/40` and `/41` ask beside
+    /// [`Self::reads_offset`]. A path that merely ends in `utf8_bytes` is a field, and is not one.
+    pub fn reads_utf8_bytes(&self) -> bool {
+        match self {
+            Self::Compare { left, right, .. } => {
+                matches!(left, Operand::Derived(_)) || matches!(right, Operand::Derived(_))
+            }
+            Self::All(children) | Self::Any(children) => {
+                children.iter().any(Self::reads_utf8_bytes)
+            }
+            Self::Not(inner) => inner.reads_utf8_bytes(),
+            Self::Forall(quantified) | Self::Exists(quantified) => {
+                quantified.body.reads_utf8_bytes()
+            }
+            Self::Always
+            | Self::Never
+            | Self::Truthy(_)
+            | Self::Defined(_)
+            | Self::AnyOf { .. }
+            | Self::NoneOf { .. }
+            | Self::TextMatch { .. }
+            | Self::FoldMatch { .. }
+            | Self::Distinct(_)
+            | Self::Window(_) => false,
+        }
+    }
+
+    /// A comparison by value: what every comparison was before decision 2's tag.
+    pub fn compare(left: Operand, op: CompareOp, right: Operand) -> Self {
+        Self::Compare {
+            left,
+            op,
+            right,
+            kind: CompareKind::Value,
         }
     }
 
@@ -1139,7 +2570,9 @@ impl Predicate {
             | Self::Defined(_)
             | Self::AnyOf { .. }
             | Self::NoneOf { .. }
-            | Self::TextMatch { .. } => false,
+            | Self::TextMatch { .. }
+            | Self::Distinct(_)
+            | Self::Window(_) => false,
         }
     }
 
@@ -1150,11 +2583,41 @@ impl Predicate {
     /// not a.b"}}` is four levels of one predicate written two ways, and two counters would let a
     /// document alternate between them to buy twice the depth.
     pub fn from_node(node: &Node) -> Result<Self, ParseError> {
-        Self::from_node_nested(node, 0, &[])
+        Self::from_node_nested(node, 0, &[], &mut Spellings::default())
+    }
+
+    /// [`Self::from_node`], also saying which comparisons' right-hand sides were bare words.
+    ///
+    /// The predicate is exactly the one [`Self::from_node`] reads; see [`Spelled`].
+    pub fn from_node_spelled(node: &Node) -> Result<Spelled, ParseError> {
+        let mut spellings = Spellings::default();
+        let predicate = Self::from_node_nested(node, 0, &[], &mut spellings)?;
+        Ok(Spelled {
+            predicate,
+            words: spellings.words,
+            offsets: spellings.offsets,
+        })
+    }
+
+    /// [`Self::parse_expression`], also saying which comparisons' right-hand sides were bare
+    /// words. The predicate is exactly the one [`Self::parse_expression`] reads; see [`Spelled`].
+    pub fn parse_expression_spelled(expression: &str) -> Result<Spelled, ParseError> {
+        let mut spellings = Spellings::default();
+        let predicate = Self::parse_expression_nested(expression, 0, &[], &mut spellings)?;
+        Ok(Spelled {
+            predicate,
+            words: spellings.words,
+            offsets: spellings.offsets,
+        })
     }
 
     /// [`Self::from_node`], counting how deep it already is.
-    fn from_node_nested(node: &Node, depth: usize, binders: &[String]) -> Result<Self, ParseError> {
+    fn from_node_nested(
+        node: &Node,
+        depth: usize,
+        binders: &[String],
+        words: &mut Spellings,
+    ) -> Result<Self, ParseError> {
         if depth > MAX_PREDICATE_DEPTH {
             return Err(ParseError::too_deep(
                 "predicate",
@@ -1165,18 +2628,20 @@ impl Predicate {
         match node {
             Node::Bool(true) => Ok(Self::Always),
             Node::Bool(false) => Ok(Self::Never),
-            Node::Text(expression) => Self::parse_expression_nested(expression, depth, binders),
+            Node::Text(expression) => {
+                Self::parse_expression_nested(expression, depth, binders, words)
+            }
             Node::Seq(items) => {
                 let children = items
                     .iter()
-                    .map(|item| Self::from_node_nested(item, depth + 1, binders))
+                    .map(|item| Self::from_node_nested(item, depth + 1, binders, words))
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(Self::all(children))
             }
             Node::Map(entries) => {
                 let mut children = Vec::new();
                 for (key, value) in entries {
-                    children.push(Self::from_entry(key, value, depth, binders)?);
+                    children.push(Self::from_entry(key, value, depth, binders, words)?);
                 }
                 Ok(Self::all(children))
             }
@@ -1199,14 +2664,15 @@ impl Predicate {
         value: &Node,
         depth: usize,
         binders: &[String],
+        words: &mut Spellings,
     ) -> Result<Self, ParseError> {
-        let nested = |node: &Node| Self::from_node_nested(node, depth + 1, binders);
+        let mut nested = |node: &Node| Self::from_node_nested(node, depth + 1, binders, words);
         match key {
             "all" | "and" | "all_of" => {
                 let children = value
                     .as_seq_or_single()
                     .into_iter()
-                    .map(nested)
+                    .map(&mut nested)
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(Self::all(children))
             }
@@ -1214,22 +2680,56 @@ impl Predicate {
                 let children = value
                     .as_seq_or_single()
                     .into_iter()
-                    .map(nested)
+                    .map(&mut nested)
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(Self::any(children))
             }
             "not" => Ok(Self::not(nested(value)?)),
             "forall" => Ok(Self::Forall(Box::new(Self::quantifier(
-                value, depth, binders,
+                value, depth, binders, words,
             )?))),
             "exists" => Ok(Self::Exists(Box::new(Self::quantifier(
-                value, depth, binders,
+                value, depth, binders, words,
             )?))),
+            // `as` is no operator, so a mapping holding it under `distinct` was never a constraint
+            // on a fact of that name: `distinct: {in: [a, b]}` keeps its meaning.
+            "distinct" if matches!(value, Node::Map(fields) if fields.contains_key("as")) => {
+                if !source22_operands() {
+                    return Err(ParseError::predicate(
+                        &format!("distinct: {}", shallow(value)),
+                        "`distinct: {in, as, by}` requires specification format ess/22",
+                    ));
+                }
+                Self::distinct(value).map(|distinct| Self::Distinct(Box::new(distinct)))
+            }
+            "compare"
+                if source22_operands()
+                    && matches!(value, Node::Map(fields) if fields.contains_key("left")) =>
+            {
+                words.literal();
+                Self::tagged_compare(value, binders)
+            }
+            // A calendar window (`docs/design/calendar-window-guards.md`). A mapping under `window`
+            // without `at` is a constraint on a fact named `window`, as it always was; one with it
+            // was never a constraint, `at` being no operator, and is refused below `ess/22` naming
+            // the format that reads it.
+            "window" if matches!(value, Node::Map(fields) if fields.contains_key("at")) => {
+                if !source22_operands() {
+                    return Err(ParseError::predicate(
+                        &format!("window: {}", shallow(value)),
+                        "a calendar window, `window: {at, days, from, to, offset}`, requires \
+                         specification format ess/22",
+                    ));
+                }
+                Ok(Self::Window(Box::new(
+                    crate::window::CalendarWindow::parse_mapping(value)?,
+                )))
+            }
             "none" | "none_of_these" => {
                 let children = value
                     .as_seq_or_single()
                     .into_iter()
-                    .map(nested)
+                    .map(&mut nested)
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(Self::not(Self::any(children)))
             }
@@ -1243,7 +2743,7 @@ impl Predicate {
                         ),
                     )
                 })?;
-                Self::from_constraint(path, value, binders)
+                Self::from_constraint(path, value, binders, words)
             }
         }
     }
@@ -1253,6 +2753,7 @@ impl Predicate {
         value: &Node,
         depth: usize,
         binders: &[String],
+        words: &mut Spellings,
     ) -> Result<Quantified, ParseError> {
         let Node::Map(entries) = value else {
             return Err(ParseError::shape(
@@ -1280,7 +2781,7 @@ impl Predicate {
             match key.as_str() {
                 "in" => over = Some(Self::quantifier_collection(node)?),
                 "as" => bind = Some(Self::quantifier_binder(node)?),
-                "that" => body = Some(Self::from_node_nested(node, depth + 1, &scope)?),
+                "that" => body = Some(Self::from_node_nested(node, depth + 1, &scope, words)?),
                 other => {
                     return Err(ParseError::predicate(
                         other,
@@ -1301,6 +2802,158 @@ impl Predicate {
             over: over.ok_or_else(|| missing("in"))?,
             bind: bind.ok_or_else(|| missing("as"))?,
             body: body.ok_or_else(|| missing("that"))?,
+        })
+    }
+
+    /// Parses the closed canonical `{compare: …}` form of a comparison: tagged to compare instants
+    /// (decision 2), `{compare: {left: <path>, op: <keyword>, right: <operand>, as: timestamp}}`, or
+    /// untagged with a derived operand (decision 11),
+    /// `{compare: {left: {utf8_bytes: <path>}, op: <keyword>, right: <operand>}}`.
+    ///
+    /// Exactly those keys. `left` is a fact path or `{utf8_bytes: <path>}`; `right` is a fact path,
+    /// the explicit `{fact: <path>}`, an operand mapping or a scalar; `as` is `timestamp`, the one
+    /// kind a tag names, and never beside a derived operand, which compares as a number. The untagged
+    /// form carries a derived operand: every other comparison has a form of its own. A mapping under
+    /// `compare` without `left` is a constraint on a fact named `compare`, as it always was.
+    fn tagged_compare(value: &Node, binders: &[String]) -> Result<Self, ParseError> {
+        let written = || format!("compare: {}", shallow(value));
+        let Node::Map(fields) = value else {
+            unreachable!("dispatched on a mapping");
+        };
+        let refuse = |reason: &str| ParseError::predicate(&written(), reason.to_owned());
+        let tagged = fields.contains_key("as");
+        if fields.len() != if tagged { 4 } else { 3 }
+            || ["left", "op", "right"]
+                .iter()
+                .any(|key| !fields.contains_key(*key))
+        {
+            return Err(refuse(
+                "a `{compare: …}` comparison takes exactly `left`, `op` and `right`, and `as` \
+                 where it is tagged",
+            ));
+        }
+        let left = match &fields["left"] {
+            Node::Text(path) => Operand::Fact(FactPath::new(path)?),
+            Node::Map(entries)
+                if entries.len() == 1 && entries.contains_key(Derived::UTF8_BYTES) =>
+            {
+                Operand::fact_mapping(entries, written)?
+            }
+            _ => return Err(refuse("`left` names a fact path or `{utf8_bytes: <path>}`")),
+        };
+        let op = match &fields["op"] {
+            Node::Text(keyword) => CompareOp::from_keyword(keyword)
+                .ok_or_else(|| refuse("`op` is one of eq, ne, lt, lte, gt, gte"))?,
+            _ => return Err(refuse("`op` is one of eq, ne, lt, lte, gt, gte")),
+        };
+        let right = match &fields["right"] {
+            Node::Text(text) => Operand::parse_in(text, binders),
+            Node::Bool(value) => Operand::Literal(FactValue::Bool(*value)),
+            Node::Number(number) => Operand::Literal(FactValue::Number(*number)),
+            Node::Map(entries) => Operand::fact_mapping(entries, written)?,
+            _ => return Err(refuse("`right` is a scalar or `{fact: <path>}`")),
+        };
+        let derived = [&left, &right]
+            .into_iter()
+            .any(|operand| matches!(operand, Operand::Derived(_)));
+        if !tagged {
+            if !derived {
+                return Err(refuse(
+                    "an untagged `{compare: …}` carries a derived operand, `{utf8_bytes: <path>}`; \
+                     compare two facts as `<path>: {<op>: …}`",
+                ));
+            }
+            return Ok(Self::Compare {
+                left,
+                op,
+                right,
+                kind: CompareKind::Value,
+            });
+        }
+        if fields["as"] != Node::Text(CompareKind::TIMESTAMP.to_owned()) {
+            return Err(refuse(
+                "`as` names the one kind a comparison is tagged with, `timestamp`",
+            ));
+        }
+        if derived || !matches!(left, Operand::Fact(_)) {
+            return Err(refuse(
+                "a derived operand compares as a number, never `as: timestamp`",
+            ));
+        }
+        Ok(Self::Compare {
+            left,
+            op,
+            right,
+            kind: CompareKind::Instant,
+        })
+    }
+
+    /// Parses the body of a `distinct:` entry: `{in: <list>, as: <binder>, by: <binder>.<member>,
+    /// kind: <key kind>}`, `by` and `kind` optional. A source leaves `kind` to the domain's resolver;
+    /// the canonical form writes it, and a suite reader requires it.
+    fn distinct(value: &Node) -> Result<Distinct, ParseError> {
+        let Node::Map(entries) = value else {
+            unreachable!("dispatched on a mapping");
+        };
+        let written = || format!("distinct: {}", shallow(value));
+        let refuse = |reason: String| ParseError::predicate(&written(), reason);
+        let mut over = None;
+        let mut bind = None;
+        let mut key = None;
+        let mut key_kind = None;
+        for (field, node) in entries {
+            match field.as_str() {
+                "in" => over = Some(Self::quantifier_collection(node)?),
+                "as" => bind = Some(Self::quantifier_binder(node)?),
+                "by" => {
+                    let text = node.as_text().ok_or_else(|| {
+                        refuse("`by` names one member of the element, a fact path".to_owned())
+                    })?;
+                    key = Some(FactPath::new(text)?);
+                }
+                "kind" => {
+                    key_kind = Some(
+                        node.as_text()
+                            .and_then(DistinctKeyKind::from_keyword)
+                            .ok_or_else(|| {
+                                refuse(format!(
+                                    "`kind` is one of {}",
+                                    DistinctKeyKind::ALL
+                                        .iter()
+                                        .map(|kind| kind.keyword())
+                                        .collect::<Vec<_>>()
+                                        .join(", ")
+                                ))
+                            })?,
+                    );
+                }
+                other => {
+                    return Err(refuse(format!(
+                        "`{other}`: `distinct` takes `in`, `as`, `by` and `kind`, and nothing else"
+                    )));
+                }
+            }
+        }
+        let (Some(over), Some(bind)) = (over, bind) else {
+            return Err(ParseError::shape(
+                "distinct",
+                "`in` and `as`, with an optional `by`",
+                "no `in`",
+            ));
+        };
+        if let Some(key) = &key {
+            if key.namespace() != bind || key.segments().len() < 2 {
+                return Err(refuse(format!(
+                    "`by: {key}` names one member under the binder, such as `{bind}.path`; without \
+                     `by` the element itself is the key"
+                )));
+            }
+        }
+        Ok(Distinct {
+            over,
+            bind,
+            key,
+            key_kind,
         })
     }
 
@@ -1337,23 +2990,22 @@ impl Predicate {
         path: FactPath,
         value: &Node,
         binders: &[String],
+        words: &mut Spellings,
     ) -> Result<Self, ParseError> {
+        // The equality shorthand is always a literal, so no right-hand side of it is a word.
+        let shorthand = |right: FactValue, words: &mut Spellings| {
+            words.literal();
+            Ok(Self::Compare {
+                kind: CompareKind::Value,
+                left: Operand::Fact(path.clone()),
+                op: CompareOp::Eq,
+                right: Operand::Literal(right),
+            })
+        };
         match value {
-            Node::Bool(expected) => Ok(Self::Compare {
-                left: Operand::Fact(path),
-                op: CompareOp::Eq,
-                right: Operand::Literal(FactValue::Bool(*expected)),
-            }),
-            Node::Number(number) => Ok(Self::Compare {
-                left: Operand::Fact(path),
-                op: CompareOp::Eq,
-                right: Operand::Literal(FactValue::Number(*number)),
-            }),
-            Node::Text(text) => Ok(Self::Compare {
-                left: Operand::Fact(path),
-                op: CompareOp::Eq,
-                right: Operand::Literal(FactValue::parse_literal(text)),
-            }),
+            Node::Bool(expected) => shorthand(FactValue::Bool(*expected), words),
+            Node::Number(number) => shorthand(FactValue::Number(*number), words),
+            Node::Text(text) => shorthand(FactValue::parse_literal(text), words),
             Node::Seq(items) => Ok(Self::AnyOf {
                 path,
                 values: literal_values(items)?,
@@ -1366,6 +3018,7 @@ impl Predicate {
                         operator,
                         operand,
                         binders,
+                        words,
                     )?);
                 }
                 Ok(Self::all(children))
@@ -1386,12 +3039,16 @@ impl Predicate {
         operator: &str,
         operand: &Node,
         binders: &[String],
+        words: &mut Spellings,
     ) -> Result<Self, ParseError> {
         if let Some(op) = CompareOp::from_keyword(operator) {
             let right = match operand {
                 Node::Text(text) => Operand::parse_in(text, binders),
                 Node::Bool(value) => Operand::Literal(FactValue::Bool(*value)),
                 Node::Number(number) => Operand::Literal(FactValue::Number(*number)),
+                Node::Map(entries) => {
+                    Operand::fact_mapping(entries, || format!("{path}: {{{operator}: {operand}}}"))?
+                }
                 Node::Null => {
                     return Err(ParseError::NullComparison {
                         expression: format!("{path}: {{{operator}: null}}"),
@@ -1400,14 +3057,19 @@ impl Predicate {
                         spelling: "null".to_owned(),
                     })
                 }
-                other => {
+                other @ Node::Seq(_) => {
                     return Err(ParseError::predicate(
                         &format!("{path}: {{{operator}: {other}}}"),
                         "a comparison operand must be a scalar",
                     ))
                 }
             };
+            match operand {
+                Node::Text(text) => words.written(text, binders),
+                _ => words.literal(),
+            }
             return Ok(Self::Compare {
+                kind: CompareKind::Value,
                 left: Operand::Fact(path),
                 op,
                 right,
@@ -1458,15 +3120,29 @@ impl Predicate {
     /// [`Operand::parse`], so `"+44"` stays text and `"a.b"` is no fact path. A number or a Boolean
     /// is kept as that value, for validation to refuse with a code and a site; anything else is not
     /// a scalar.
+    ///
+    /// From `ess/22` the operand may instead be the mapping `{param: <name>}` or `{input: <name>}`
+    /// (beyond10x/ess#200): one key, one top-level name. Below it a mapping is refused in the words
+    /// it always was.
     fn text_match(path: FactPath, operator: &str, operand: &Node) -> Result<Self, ParseError> {
         let op = TextOp::from_keyword(operator).expect("dispatched on a string operator keyword");
+        let written = || format!("{path}: {{{operator}: {operand}}}");
         let value = match operand {
-            Node::Text(text) => FactValue::Text(text.clone()),
-            Node::Number(number) => FactValue::Number(*number),
-            Node::Bool(value) => FactValue::Bool(*value),
-            other => {
+            Node::Text(text) => FactValue::Text(text.clone()).into(),
+            Node::Number(number) => FactValue::Number(*number).into(),
+            Node::Bool(value) => FactValue::Bool(*value).into(),
+            Node::Map(entries) if source22_operands() => match entries.iter().next() {
+                Some((key, Node::Text(name))) if entries.len() == 1 => {
+                    let namespace = TextNamespace::from_keyword(key)
+                        .ok_or_else(|| ParseError::predicate(&written(), TEXT_OPERAND_SHAPE))?;
+                    TextOperand::fact(namespace, name)
+                        .map_err(|_| ParseError::predicate(&written(), TEXT_OPERAND_SHAPE))?
+                }
+                _ => return Err(ParseError::predicate(&written(), TEXT_OPERAND_SHAPE)),
+            },
+            _ => {
                 return Err(ParseError::predicate(
-                    &format!("{path}: {{{operator}: {other}}}"),
+                    &written(),
                     "a comparison operand must be a scalar",
                 ))
             }
@@ -1516,7 +3192,7 @@ impl Predicate {
     /// [`ParseError::TooDeep`]. This is the string half of the same budget
     /// [`Self::from_node`] spends.
     pub fn parse_expression(expression: &str) -> Result<Self, ParseError> {
-        Self::parse_expression_nested(expression, 0, &[])
+        Self::parse_expression_nested(expression, 0, &[], &mut Spellings::default())
     }
 
     /// [`Self::parse_expression`], counting how deep it already is.
@@ -1524,6 +3200,7 @@ impl Predicate {
         expression: &str,
         depth: usize,
         binders: &[String],
+        words: &mut Spellings,
     ) -> Result<Self, ParseError> {
         let trimmed = expression.trim();
         if depth > MAX_PREDICATE_DEPTH {
@@ -1546,6 +3223,7 @@ impl Predicate {
                 rest,
                 depth + 1,
                 binders,
+                words,
             )?));
         }
         for (function, negate) in [("defined", false), ("exists", false), ("missing", true)] {
@@ -1604,7 +3282,9 @@ impl Predicate {
                     ),
                 ));
             }
+            words.written(right, binders);
             return Ok(Self::Compare {
+                kind: CompareKind::Value,
                 left: Operand::Fact(left_path),
                 op,
                 right: Operand::parse_in(right, binders),
@@ -1672,68 +3352,58 @@ impl Predicate {
     }
 
     /// Renders this predicate back into document form.
+    ///
+    /// A one-segment fact on the right of a comparison that no binder in scope names is written as
+    /// the explicit operand `{fact: …}` (`docs/design/expression-family-source22.md`, A1): its
+    /// compact spelling reads back as text. A binder and a dotted path keep their compact bytes.
     pub fn to_node(&self) -> Node {
+        self.node_in(&mut Vec::new())
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn node_in<'a>(&'a self, binders: &mut Vec<&'a str>) -> Node {
+        let seq = |children: &'a [Self], binders: &mut Vec<&'a str>| {
+            let mut nodes = Vec::with_capacity(children.len());
+            for child in children {
+                nodes.push(child.node_in(binders));
+            }
+            Node::Seq(nodes)
+        };
         match self {
             Self::Always => Node::Bool(true),
             Self::Never => Node::Bool(false),
             Self::All(children) => Node::Map(
-                [(
-                    "all".to_owned(),
-                    Node::Seq(children.iter().map(Self::to_node).collect()),
-                )]
-                .into_iter()
-                .collect(),
+                [("all".to_owned(), seq(children, binders))]
+                    .into_iter()
+                    .collect(),
             ),
             Self::Any(children) => Node::Map(
-                [(
-                    "any".to_owned(),
-                    Node::Seq(children.iter().map(Self::to_node).collect()),
-                )]
-                .into_iter()
-                .collect(),
+                [("any".to_owned(), seq(children, binders))]
+                    .into_iter()
+                    .collect(),
             ),
-            Self::Not(inner) => {
-                Node::Map([("not".to_owned(), inner.to_node())].into_iter().collect())
-            }
-            Self::AnyOf { path, values } => Node::Map(
-                [(
-                    path.to_string(),
-                    Node::Map(
-                        [(
-                            "any_of".to_owned(),
-                            Node::Seq(values.iter().map(value_node).collect()),
-                        )]
-                        .into_iter()
-                        .collect(),
-                    ),
-                )]
-                .into_iter()
-                .collect(),
+            Self::Not(inner) => Node::Map(
+                [("not".to_owned(), inner.node_in(binders))]
+                    .into_iter()
+                    .collect(),
             ),
-            Self::NoneOf { path, values } => Node::Map(
-                [(
-                    path.to_string(),
-                    Node::Map(
-                        [(
-                            "none_of".to_owned(),
-                            Node::Seq(values.iter().map(value_node).collect()),
-                        )]
-                        .into_iter()
-                        .collect(),
-                    ),
-                )]
-                .into_iter()
-                .collect(),
-            ),
-            Self::Forall(quantified) => quantifier_node("forall", quantified),
-            Self::Exists(quantified) => quantifier_node("exists", quantified),
+            Self::AnyOf { path, values } => values_constraint_node(path, "any_of", values),
+            Self::NoneOf { path, values } => values_constraint_node(path, "none_of", values),
+            Self::Forall(quantified) => quantifier_node("forall", quantified, binders),
+            Self::Exists(quantified) => quantifier_node("exists", quantified, binders),
+            // Explicit: there is no compact form. `kind` is written once resolved and left out
+            // before, so a source document reads back as written.
+            Self::Distinct(distinct) => distinct.to_node(),
+            // Explicit: a window has no compact form.
+            Self::Window(window) => Node::Map([("window".to_owned(), window.to_node())].into()),
             // Explicit, never the compact fallback below: there is no compact form, so a string
             // operator rendered as text would be a document no reader parses back. A text operand
-            // is written as the text, with no quotes added, because the reader takes it verbatim.
+            // is written as the text, with no quotes added, because the reader takes it verbatim; a
+            // parameter or an input as its mapping, `{param: <name>}` (beyond10x/ess#200).
             Self::TextMatch { path, op, value } => Node::Map(
                 [(
                     path.to_string(),
-                    Node::Map([(op.keyword().to_owned(), value_node(value))].into()),
+                    Node::Map([(op.keyword().to_owned(), value.to_node())].into()),
                 )]
                 .into(),
             ),
@@ -1754,13 +3424,143 @@ impl Predicate {
                 )
             }
             Self::Compare {
+                left,
+                op,
+                right,
+                kind: CompareKind::Instant,
+            } => tagged_comparison_node(left, *op, right),
+            Self::Compare {
+                left,
+                op,
+                right,
+                kind: CompareKind::Value,
+            } if [left, right]
+                .into_iter()
+                .any(|operand| matches!(operand, Operand::Derived(_))) =>
+            {
+                derived_comparison_node(left, *op, right)
+            }
+            // Always the closed mapping: `lower + 5` reads back as text wherever no declaration
+            // says `lower` is a fact (A2).
+            Self::Compare {
+                left: Operand::Fact(path),
+                op,
+                right: Operand::Offset(offset),
+                kind: CompareKind::Value,
+            } => Node::Map(
+                [(
+                    path.to_string(),
+                    Node::Map([(op.keyword().to_owned(), offset.to_node())].into()),
+                )]
+                .into(),
+            ),
+            Self::Compare {
                 left: Operand::Fact(path),
                 op,
                 right: Operand::Literal(FactValue::Text(text)),
+                kind: CompareKind::Value,
             } => comparison_text_node(self, path, *op, text),
-            leaf => Node::Text(leaf.to_string()),
+            Self::Compare {
+                left: Operand::Fact(path),
+                op,
+                right,
+                kind: CompareKind::Value,
+            } if right.root_fact(binders).is_some() => {
+                fact_comparison_node(path, *op, right.root_fact(binders).expect("the guard"))
+            }
+            leaf => Node::Text(
+                InScope {
+                    predicate: leaf,
+                    binders,
+                }
+                .to_string(),
+            ),
         }
     }
+}
+
+/// `path: {<keyword>: [values…]}`: a value-list constraint.
+fn values_constraint_node(path: &FactPath, keyword: &str, values: &[FactValue]) -> Node {
+    Node::Map(
+        [(
+            path.to_string(),
+            Node::Map(
+                [(
+                    keyword.to_owned(),
+                    Node::Seq(values.iter().map(value_node).collect()),
+                )]
+                .into_iter()
+                .collect(),
+            ),
+        )]
+        .into_iter()
+        .collect(),
+    )
+}
+
+/// `{compare: {left, op, right, as: timestamp}}`: the closed canonical form of a tagged comparison
+/// (decision 2). A fact on the right is always the explicit `{fact: …}`, so the form never depends
+/// on what a binder or a root is called.
+fn tagged_comparison_node(left: &Operand, op: CompareOp, right: &Operand) -> Node {
+    compare_node(left, op, right, Some(CompareKind::TIMESTAMP))
+}
+
+/// A comparison holding a derived operand (decision 11): on the right of a fact it is the tagged
+/// operand where an operand goes, `path: {<op>: {utf8_bytes: …}}`; anywhere else the comparison
+/// takes the untagged `{compare: …}` form, because a mapping cannot stand where the compact grammar
+/// wants a path.
+fn derived_comparison_node(left: &Operand, op: CompareOp, right: &Operand) -> Node {
+    match (left, right) {
+        (Operand::Fact(path), Operand::Derived(derived)) => Node::Map(
+            [(
+                path.to_string(),
+                Node::Map([(op.keyword().to_owned(), derived.to_node())].into()),
+            )]
+            .into(),
+        ),
+        _ => compare_node(left, op, right, None),
+    }
+}
+
+/// `{compare: {left, op, right}}`, and `as: <tag>` where the comparison is tagged: the closed
+/// canonical `{compare: …}` form (decisions 2 and 11). A fact on the left is its path and on the
+/// right always the explicit `{fact: …}`; an offset and a derived operand are their mappings.
+fn compare_node(left: &Operand, op: CompareOp, right: &Operand, tag: Option<&str>) -> Node {
+    let operand = |operand: &Operand| match operand {
+        Operand::Fact(path) => {
+            Node::Map([("fact".to_owned(), Node::Text(path.to_string()))].into())
+        }
+        Operand::Offset(offset) => offset.to_node(),
+        Operand::Derived(derived) => derived.to_node(),
+        Operand::Literal(value) => value_node(value),
+    };
+    let left = match left {
+        Operand::Fact(path) => Node::Text(path.to_string()),
+        other => operand(other),
+    };
+    let mut fields: std::collections::BTreeMap<String, Node> = [
+        ("left".to_owned(), left),
+        ("op".to_owned(), Node::Text(op.keyword().to_owned())),
+        ("right".to_owned(), operand(right)),
+    ]
+    .into();
+    if let Some(tag) = tag {
+        fields.insert("as".to_owned(), Node::Text(tag.to_owned()));
+    }
+    Node::Map([("compare".to_owned(), Node::Map(fields))].into())
+}
+
+/// `path: {<op>: {fact: <fact>}}`: the canonical comparison with a one-segment fact on its right
+/// (`docs/design/expression-family-source22.md`, A1).
+fn fact_comparison_node(path: &FactPath, op: CompareOp, fact: &FactPath) -> Node {
+    let operand = Node::Map([("fact".to_owned(), Node::Text(fact.to_string()))].into());
+    Node::Map(
+        [(
+            path.to_string(),
+            Node::Map([(op.keyword().to_owned(), operand)].into()),
+        )]
+        .into(),
+    )
 }
 
 /// Preserve legacy compact bytes when they preserve the typed literal. Otherwise use the existing
@@ -1794,7 +3594,14 @@ fn compact_comparison_roundtrips(predicate: &Predicate, compact: &str) -> bool {
 /// Explicit rather than falling through to the string arm below, because there is no string form
 /// to fall through to: a quantifier that rendered as text would be a document this parser refuses
 /// to read back.
-fn quantifier_node(keyword: &str, quantified: &Quantified) -> Node {
+fn quantifier_node<'a>(
+    keyword: &str,
+    quantified: &'a Quantified,
+    binders: &mut Vec<&'a str>,
+) -> Node {
+    binders.push(&quantified.bind);
+    let body = quantified.body.node_in(binders);
+    binders.pop();
     Node::Map(
         [(
             keyword.to_owned(),
@@ -1802,7 +3609,7 @@ fn quantifier_node(keyword: &str, quantified: &Quantified) -> Node {
                 [
                     ("in".to_owned(), Node::Text(quantified.over.to_string())),
                     ("as".to_owned(), Node::Text(quantified.bind.clone())),
-                    ("that".to_owned(), quantified.body.to_node()),
+                    ("that".to_owned(), body),
                 ]
                 .into_iter()
                 .collect(),
@@ -1935,27 +3742,63 @@ fn split_comparison(expression: &str) -> Option<(&str, CompareOp, &str)> {
 
 impl fmt::Display for Predicate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Always => f.write_str("always"),
-            Self::Never => f.write_str("never"),
-            Self::All(children) => write_joined(f, children, " and "),
-            Self::Any(children) => write_joined(f, children, " or "),
-            Self::Not(inner) => write!(f, "not ({inner})"),
-            Self::Compare { left, op, right } => write!(f, "{left} {op} {right}"),
-            Self::Truthy(path) => write!(f, "{path}"),
-            Self::Defined(path) => write!(f, "defined({path})"),
-            Self::AnyOf { path, values } => write!(f, "{path} in [{}]", join_values(values)),
-            Self::NoneOf { path, values } => write!(f, "{path} not in [{}]", join_values(values)),
-            // For a reader and the semantic diff, never read back: a text literal is quoted by
-            // `Debug`, a number or a Boolean is bare.
-            Self::TextMatch {
-                path,
+        InScope {
+            predicate: self,
+            binders: &[],
+        }
+        .fmt(f)
+    }
+}
+
+/// A predicate rendered for a reader inside the quantifier bodies whose binders are `binders`.
+///
+/// A one-segment fact on the right of a comparison that no binder names reads `a == {fact: b}`, so
+/// the rendering of a comparison of two facts never equals the rendering of a comparison with the
+/// text `b` (`docs/design/expression-family-source22.md`, A1, decision 7). A binder reads as
+/// itself, as it always did.
+struct InScope<'a, 'b> {
+    predicate: &'a Predicate,
+    binders: &'b [&'a str],
+}
+
+impl fmt::Display for InScope<'_, '_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let binders = self.binders;
+        let nested = |predicate| InScope { predicate, binders };
+        match self.predicate {
+            Predicate::Always => f.write_str("always"),
+            Predicate::Never => f.write_str("never"),
+            Predicate::All(children) => write_joined(f, children, binders, " and "),
+            Predicate::Any(children) => write_joined(f, children, binders, " or "),
+            Predicate::Not(inner) => write!(f, "not ({})", nested(inner)),
+            Predicate::Compare {
+                left,
                 op,
-                value: FactValue::Text(text),
-            } => write!(f, "{path} {op} {text:?}"),
-            Self::TextMatch { path, op, value } => write!(f, "{path} {op} {value}"),
+                right,
+                kind,
+            } => {
+                match right.root_fact(binders) {
+                    Some(fact) => write!(f, "{left} {op} {{fact: {fact}}}")?,
+                    None => write!(f, "{left} {op} {right}")?,
+                }
+                match kind {
+                    CompareKind::Instant => write!(f, " as {}", CompareKind::TIMESTAMP),
+                    CompareKind::Value => Ok(()),
+                }
+            }
+            Predicate::Truthy(path) => write!(f, "{path}"),
+            Predicate::Defined(path) => write!(f, "defined({path})"),
+            Predicate::AnyOf { path, values } => {
+                write!(f, "{path} in [{}]", join_values(values))
+            }
+            Predicate::NoneOf { path, values } => {
+                write!(f, "{path} not in [{}]", join_values(values))
+            }
+            // For a reader and the semantic diff, never read back: a text literal is quoted by
+            // `Debug`, a number or a Boolean is bare, a parameter or an input is its mapping.
+            Predicate::TextMatch { path, op, value } => write!(f, "{path} {op} {value}"),
             // For a reader and the semantic diff, never read back: each text quoted by `Debug`.
-            Self::FoldMatch { path, op, values } => {
+            Predicate::FoldMatch { path, op, values } => {
                 let quoted = |value: &FactValue| match value {
                     FactValue::Text(text) => format!("{text:?}"),
                     other => other.to_string(),
@@ -1969,8 +3812,20 @@ impl fmt::Display for Predicate {
                     ),
                 }
             }
-            Self::Forall(quantified) => write_quantified(f, "forall", quantified),
-            Self::Exists(quantified) => write_quantified(f, "exists", quantified),
+            Predicate::Forall(quantified) => write_quantified(f, "forall", quantified, binders),
+            Predicate::Exists(quantified) => write_quantified(f, "exists", quantified, binders),
+            // For a reader and the semantic diff, never read back.
+            Predicate::Distinct(distinct) => {
+                write!(f, "distinct {} in {}", distinct.bind, distinct.over)?;
+                if let Some(key) = &distinct.key {
+                    write!(f, " by {key}")?;
+                }
+                match distinct.key_kind {
+                    Some(kind) => write!(f, " as {kind}"),
+                    None => Ok(()),
+                }
+            }
+            Predicate::Window(window) => write!(f, "{window}"),
         }
     }
 }
@@ -1980,11 +3835,19 @@ fn write_quantified(
     f: &mut fmt::Formatter<'_>,
     keyword: &str,
     quantified: &Quantified,
+    binders: &[&str],
 ) -> fmt::Result {
+    let mut scope = binders.to_vec();
+    scope.push(&quantified.bind);
     write!(
         f,
         "{keyword} {} in {}: ({})",
-        quantified.bind, quantified.over, quantified.body
+        quantified.bind,
+        quantified.over,
+        InScope {
+            predicate: &quantified.body,
+            binders: &scope,
+        }
     )
 }
 
@@ -1992,6 +3855,7 @@ fn write_quantified(
 fn write_joined(
     f: &mut fmt::Formatter<'_>,
     children: &[Predicate],
+    binders: &[&str],
     separator: &str,
 ) -> fmt::Result {
     f.write_str("(")?;
@@ -1999,7 +3863,14 @@ fn write_joined(
         if index > 0 {
             f.write_str(separator)?;
         }
-        write!(f, "{child}")?;
+        write!(
+            f,
+            "{}",
+            InScope {
+                predicate: child,
+                binders,
+            }
+        )?;
     }
     f.write_str(")")
 }
@@ -2053,7 +3924,20 @@ impl schemars::JsonSchema for Predicate {
              `exists` or a fact path with an operator constraint. A text fact is tested against a \
              text literal, map form only, with `starts_with`, `ends_with` or `contains`, and \
              without ASCII case with `equals_ignore_case` (one literal) or `in_ignore_case` (a \
-             list)."
+             list). From `ess/22` a comparison operand may be the explicit fact `{fact: <path>}`, \
+             two `Timestamp` facts compare as instants in the closed form `{compare: {left, op, \
+             right, as: timestamp}}`, and a comparison operand may be one fact moved by one \
+             constant, `{offset: {fact: <path>, add|subtract: <magnitude>}}` — a whole number for \
+             an `Integer`, a whole number of `s`, `m` or `h` for a `Timestamp`. Either operand may \
+             be the UTF-8 byte length of a `String`, `{utf8_bytes: <path>}`, with the comparison \
+             written `{compare: {left, op, right}}` where it stands on the left. From `ess/22` \
+             `distinct: {in: <list>, as: <name>, by: <name>.<member>}` holds when no two elements \
+             of a list share a key: the element, or the one scalar member `by` names. A \
+             string operator may compare with a view parameter, `{param: <name>}`, or a command \
+             input, `{input: <name>}`. A command guard may hold an instant to a calendar \
+             window at UTC or a fixed offset, `{window: {at: now | <path>, days: [mon, …], \
+             from: \"HH:MM\", to: \"HH:MM\", offset: Z | ±HH:MM}}`; a named time zone is \
+             refused."
                 .to_owned(),
         );
         schema.into()
@@ -2129,6 +4013,75 @@ mod tests {
     fn quantifier(yaml: &str) -> Predicate {
         let node: Node = serde_yaml::from_str(yaml).expect("yaml");
         Predicate::from_node(&node).expect("parses")
+    }
+
+    struct UnobservedPresence;
+    impl FactSource for UnobservedPresence {
+        fn fact(&self, path: &FactPath) -> Option<FactValue> {
+            matches!(
+                path.to_string().as_str(),
+                "groups.count" | "groups.0.members.count"
+            )
+            .then(|| FactValue::count(1))
+        }
+        fn observe(&self, path: &FactPath) -> Option<FactValue> {
+            if path.to_string() == "groups.0.members.0.virtual" {
+                Some(FactValue::count(7))
+            } else {
+                self.fact(path)
+            }
+        }
+        fn observed_presence(&self, path: &FactPath) -> Option<bool> {
+            match path.segments().last().map(String::as_str) {
+                Some("optional") => None,
+                Some("required") => Some(true),
+                _ => Some(false),
+            }
+        }
+    }
+
+    #[test]
+    fn unobserved_presence_keeps_kleene_logic_and_current_time_wrapping() {
+        let now =
+            crate::time::Rfc3339Instant::parse_rfc3339("2026-10-03T12:00:00Z").expect("valid time");
+        let wrapped = WithNow::new(&UnobservedPresence, now);
+        for facts in [&UnobservedPresence as &dyn FactSource, &wrapped] {
+            let unknown = parse("defined(optional)");
+            assert_eq!(unknown.evaluate(facts), Truth::Unknown);
+            assert_eq!(
+                Predicate::not(unknown.clone()).evaluate(facts),
+                Truth::Unknown
+            );
+            assert_eq!(parse("defined(required)").evaluate(facts), Truth::True);
+            assert_eq!(parse("defined(absent)").evaluate(facts), Truth::False);
+            for children in [
+                vec![unknown.clone(), Predicate::Never],
+                vec![Predicate::Never, unknown.clone()],
+            ] {
+                assert_eq!(Predicate::All(children).evaluate(facts), Truth::False);
+            }
+            for children in [
+                vec![unknown.clone(), Predicate::Always],
+                vec![Predicate::Always, unknown.clone()],
+            ] {
+                assert_eq!(Predicate::Any(children).evaluate(facts), Truth::True);
+            }
+        }
+    }
+
+    #[test]
+    fn nested_binders_forward_unobserved_presence_and_observation() {
+        for (body, expected) in [
+            ("defined(member.optional)", Truth::Unknown),
+            ("defined(member.required)", Truth::True),
+            ("defined(member.absent)", Truth::False),
+            ("member.virtual == 7", Truth::True),
+        ] {
+            let predicate = quantifier(&format!(
+                "forall: {{in: groups, as: group, that: {{forall: {{in: group.members, as: member, that: '{body}'}}}}}}"
+            ));
+            assert_eq!(predicate.evaluate(&UnobservedPresence), expected, "{body}");
+        }
     }
 
     /// Two slots, the first matched and the second not.
@@ -2305,6 +4258,7 @@ mod tests {
         assert_eq!(
             parse("tests.unit.failed == 0"),
             Predicate::Compare {
+                kind: CompareKind::Value,
                 left: Operand::Fact("tests.unit.failed".parse().expect("path")),
                 op: CompareOp::Eq,
                 right: Operand::Literal(FactValue::count(0)),
@@ -2803,6 +4757,7 @@ mod tests {
             assert_eq!(
                 predicate,
                 Predicate::Compare {
+                    kind: CompareKind::Value,
                     left: Operand::Fact("sku".parse().expect("path")),
                     op: CompareOp::Eq,
                     right: Operand::Literal(FactValue::text(text)),

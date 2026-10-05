@@ -47,8 +47,20 @@
 //     their UTF-8 bytes and JavaScript orders them by UTF-16 code units, which disagree above the
 //     basic plane.
 
+import { admitDirectResponse, compareDirectResponse } from './direct_response.js';
+import type { DirectResponse } from './direct_response.js';
+import {
+  admitOneTimeTrace,
+  admitDisclosureId,
+  parseDisclosureId,
+  DisclosureCaptures,
+  DisclosureViolation,
+} from './one_time_response.js';
+import type { OneTimeTrace } from './one_time_response.js';
+
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
+import { normalize } from 'node:path';
 
 import {
   admitPredicateLeaf,
@@ -58,6 +70,9 @@ import {
   fromNode,
   meaningDecimal,
   parseOperand,
+  parseDistinct,
+  parseTaggedCompare,
+  parseWindow,
   TruthTrue,
   TruthUnknown,
   TEXT_OPERATORS,
@@ -412,11 +427,13 @@ const NUMBER_TOKEN = /^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?/;
 
 class Reader {
   private readonly raw: string;
+  private readonly maxDepth: number;
   private index = 0;
   readonly spans: WeakMap<object, [number, number]>;
 
-  constructor(raw: string, spans: WeakMap<object, [number, number]>) {
+  constructor(raw: string, spans: WeakMap<object, [number, number]>, maxDepth = 128) {
     this.raw = raw;
+    this.maxDepth = maxDepth;
     this.spans = spans;
   }
 
@@ -502,8 +519,8 @@ class Reader {
   }
 
   value(depth: number): Node {
-    if (depth > 128) {
-      throw new Error('JSON nesting exceeds 128');
+    if (depth > this.maxDepth) {
+      throw new Error(`JSON nesting exceeds ${this.maxDepth}`);
     }
     this.space();
     const start = this.index;
@@ -606,12 +623,69 @@ export function strictJSONWithSpans(raw: string): {
   value: Node;
   spans: WeakMap<object, [number, number]>;
 } {
-  if (!validUTF8(raw)) {
-    throw new Error('input is not UTF-8');
+  return parseJSON(raw, 128);
+}
+
+/** A payload's depth128 plus its response map and command-result envelope. */
+export function strictResponseJSON(raw: string): Node {
+  return parseJSON(raw, 130).value;
+}
+
+type SuiteJSONScope =
+  | 'plain'
+  | 'suite'
+  | 'scenarios'
+  | 'scenario'
+  | 'steps'
+  | 'step'
+  | 'response'
+  | 'expected';
+
+/** Match the native reader's finite path to payload-local expected-value depth. */
+function strictSuiteJSONWithSpans(raw: string): {
+  value: Node;
+  spans: WeakMap<object, [number, number]>;
+} {
+  // Seven envelope levels precede a direct expected field. Keep parsing bounded before
+  // checking the narrower scope-dependent limit, without rewriting its original bytes.
+  const decoded = parseJSON(raw, 135);
+  const root = decoded.value;
+  const version =
+    isObject(root) && isObject(root.provenance) ? root.provenance.suite_version : undefined;
+  const direct = typeof version === 'string' && (SUITE_MAJORS[version] ?? 0) >= 28;
+  function visit(value: Node, depth: number, scope: SuiteJSONScope): void {
+    if (depth > 128) throw new Error('JSON nesting exceeds 128');
+    if (Array.isArray(value)) {
+      for (const child of value) visit(child, depth + 1, scope === 'steps' ? 'step' : 'plain');
+    } else if (isObject(value)) {
+      for (const [key, child] of Object.entries(value)) {
+        let next: SuiteJSONScope = 'plain';
+        if (scope === 'suite' && key === 'scenarios') next = 'scenarios';
+        else if (scope === 'scenarios') next = 'scenario';
+        else if (scope === 'scenario' && key === 'steps') next = 'steps';
+        else if (scope === 'step' && key === 'response' && value.step === 'expect_direct_response')
+          next = 'response';
+        else if (scope === 'response' && key === 'expected') next = 'expected';
+        visit(child, scope === 'expected' ? 0 : depth + 1, next);
+      }
+    }
   }
+  visit(root, 0, direct ? 'suite' : 'plain');
+  return decoded;
+}
+
+function strictSuiteJSON(raw: string): Node {
+  return strictSuiteJSONWithSpans(raw).value;
+}
+
+function parseJSON(
+  raw: string,
+  maxDepth: number,
+): { value: Node; spans: WeakMap<object, [number, number]> } {
+  if (!validUTF8(raw)) throw new Error('input is not UTF-8');
   scalarStrings(raw);
   const spans = new WeakMap<object, [number, number]>();
-  const reader = new Reader(raw, spans);
+  const reader = new Reader(raw, spans, maxDepth);
   const value = reader.value(0);
   reader.done();
   return { value, spans };
@@ -785,6 +859,36 @@ export function plainNumbers(value: Node): Node {
     return result;
   }
   return value;
+}
+
+/**
+ * A predicate's numbers as [`plainNumbers`] reads them, but for an offset's magnitude
+ * (`{offset: {fact, add|subtract}}`, suite/40, A2), which keeps its exact digits: `i64::MAX` is a
+ * magnitude, and a binary64 would round it. Go's `offsetMagnitudes`.
+ */
+export function predicateNumbers(value: Node): Node {
+  if (Array.isArray(value)) {
+    return value.map(predicateNumbers);
+  }
+  if (isObject(value)) {
+    const result: { [key: string]: Node } = {};
+    for (const key of Object.keys(value)) {
+      const child = value[key] ?? null;
+      if (key === 'offset' && isObject(child)) {
+        const offset: { [key: string]: Node } = {};
+        for (const field of Object.keys(child)) {
+          const magnitude = child[field] ?? null;
+          offset[field] =
+            field === 'add' || field === 'subtract' ? magnitude : predicateNumbers(magnitude);
+        }
+        result[key] = offset;
+      } else {
+        result[key] = predicateNumbers(child);
+      }
+    }
+    return result;
+  }
+  return plainNumbers(value);
 }
 
 // ---- exact coverage inventory and original parent admission ------------------------------------
@@ -1102,7 +1206,7 @@ export function checkedRefusal(
     case 'authored': {
       sourceIdentity(refusal.source);
       let valid = false;
-      for (let n = 1; n <= 40; n += 1) {
+      for (let n = 1; n <= 41; n += 1) {
         if (n === 36) {
           continue;
         }
@@ -1319,7 +1423,7 @@ export function completeCoverage(coverage: { [key: string]: Node } | undefined):
 }
 
 export function admitRunInput(raw: string): Suite {
-  const value = strictJSON(raw);
+  const value = strictSuiteJSON(raw);
   if (!isObject(value)) {
     throw coverageError();
   }
@@ -1933,9 +2037,17 @@ export interface Target {
    * `delivery: at_least_once` makes.
    */
   redeliverEvent(request: RedeliveryRequest): Answer<void>;
+  /** Deliver an actual external occurrence with its separately supplied context. */
+  deliverEvent?(request: EventDeliveryRequest): Answer<void>;
 
   /**
    * observeInvocations reports the commands one binding invoked and what it passed.
+   *
+   * The answer is a cumulative, non-consuming snapshot of every attempt the binding made of the
+   * command under the request's correlation since it began, recorded before the command answers:
+   * a refused attempt is one, and identical repeated attempts are each one. Do not filter by
+   * expected input or success, deduplicate, drain, restart at a new deadline, or mix in another
+   * correlation. Mapping, exact retry counts and drop's single attempt are proved only through it.
    *
    * Throw ErrUnsupported where the implementation cannot expose this; the scenario is reported as
    * unsupported rather than failed, which is a different fact.
@@ -2014,6 +2126,8 @@ export interface CommandResult {
   outcome?: string | undefined;
   /** The declared error it refused with, empty when it did not. */
   error?: string | undefined;
+  /** Complete declared-error payload, including fields unknown to this runner. */
+  errorPayload?: Record<string, Node> | undefined;
   /** A token a later read_your_writes query may demand, empty when the target has no such token. */
   consistency?: string | undefined;
   /** The events emitted as part of the command returning. */
@@ -2043,6 +2157,15 @@ export interface EventObservationRequest {
   deadline: Deadline;
 }
 
+/** One external occurrence, with authority and context independent of its payload. */
+export interface EventDeliveryRequest {
+  event: string;
+  authority: string;
+  payload: Record<string, Node>;
+  context: Record<string, Node>;
+  correlation: string;
+}
+
 /** RedeliveryRequest asks for one event to be delivered again. */
 export interface RedeliveryRequest {
   event: string;
@@ -2064,16 +2187,46 @@ export interface ViewRequest {
   atLeast: string;
   correlation: string;
   deadline: Deadline;
+  /**
+   * Who the read is sent as: the actor the last `read_as` step named (suite/34,
+   * beyond10x/ess#286); unset before one. A view some actor's grant names is answered only to an
+   * actor it names; read it as `actor`, and answer `notGranted` otherwise, before reading anything.
+   */
+  actor?: string | undefined;
+  /**
+   * True for a read sent as no actor at all, after a `read_as` naming none (beyond10x/ess#286): an
+   * unauthenticated request, which a read-granted view refuses naming no actor. A target that
+   * ignores it serves the read and fails the scenario that requires the refusal.
+   */
+  anonymous?: boolean | undefined;
 }
 
 /** ViewResult is what a view holds. */
 export interface ViewResult {
+  /**
+   * True when the target refused the read before reading anything, with the standard refusal for
+   * an actor no grant admits (beyond10x/ess#286). Leave `rows` unset. A target that checks no read
+   * grant never sets it, and fails every `.../grant/read/denied` scenario.
+   */
+  notGranted?: boolean | undefined;
+  /** The qualified name of the actor the refusal names, unset where it names none. */
+  notGrantedActor?: string | undefined;
   rows?: Row[] | undefined;
   /**
    * How many rows the view's filter admits, for a paged view that declares `total: true`
    * (suite/26, beyond10x/ess#174). Unset where the target reports none.
    */
   total?: number | undefined;
+}
+
+/** The answer to a read the next step requires refused (beyond10x/ess#286). */
+interface ReadAnswer {
+  view: string;
+  /** The read was not made: the command before it returned no consistency token. */
+  unread: boolean;
+  refused: boolean;
+  /** The actor the refusal named, empty where it named none. */
+  actor: string;
 }
 
 /** InvocationObservationRequest asks what one binding invoked. */
@@ -2149,6 +2302,10 @@ export interface ScanRequest {
   atLeast: string;
   correlation: string;
   deadline: Deadline;
+  /** Who the read is sent as, as `ViewRequest.actor` (beyond10x/ess#286). */
+  actor?: string | undefined;
+  /** A read sent as no actor, as `ViewRequest.anonymous`. */
+  anonymous?: boolean | undefined;
 }
 
 /** ScanObservation is what one ordered read did, as the target that performed it saw it. */
@@ -2266,6 +2423,15 @@ export class Harness {
   deadline(): Deadline {
     return { attempts: this.attempts };
   }
+
+  /**
+   * noInvocationDeadline is the window `expect_no_invocation` observes (suite/36): the native and
+   * Go runners' 5000 ms eventual budget read every 100 ms, fifty asks, so a target firing late in
+   * the window fails here exactly as it does there.
+   */
+  noInvocationDeadline(): Deadline {
+    return { attempts: 5000 / 100 };
+  }
 }
 
 /** newHarness returns the harness a run uses, seeded from the specification's own system name. */
@@ -2329,10 +2495,12 @@ export interface Provenance {
   specification_version: string;
   spec_digest: string;
   contract_digest: string;
+  scenario_initial_state?: 'empty';
 }
 
 /** Scenario is one thing the specification obliges an implementation to do. */
 export interface Scenario {
+  oneTimeResponse?: OneTimeTrace;
   purpose: string;
   steps: Step[];
   /** Why admission refused this scenario by name, when it did. It is skipped, never run. */
@@ -2348,6 +2516,10 @@ export interface Scenario {
 export interface Step {
   fixtures?: FixtureContract;
   response?: ResponseObservation;
+  directResponse?: DirectResponse;
+  authority?: string;
+  context?: Record<string, Node>;
+  selecting?: Record<string, Value>;
   check?: PeriodicCheck;
   left?: ReadingReference;
   right?: ReadingReference;
@@ -2388,6 +2560,8 @@ export interface Step {
   params?: { [parameter: string]: Value };
   expectation?: Expectation;
   binding: string;
+  /** The obligation an Unknown condition owes instead of an answer (`expect_no_invocation`). */
+  obligation?: string;
   instance: string;
   entity: string;
   field: string;
@@ -2432,6 +2606,8 @@ export interface OutcomeRef {
 
 /** Value is one value a step carries: written down, captured earlier, or read from an event. */
 export interface Value {
+  items?: Value[];
+  members?: Record<string, Value>;
   fixture?: string;
   selection?: SelectionObservation;
   accessor?: AccessorObservation;
@@ -2543,6 +2719,9 @@ export async function runWith(
   suiteJSON: string,
 ): Promise<void> {
   const config = reportConfiguration();
+  // The host's public build identity is fixed here, before the suite is admitted and before any
+  // target is made, and never derived from what a target answers (beyond10x/ess#296).
+  const execution = executionContextConfiguration(config.version);
   let suite: Suite;
   try {
     suite = admitRunInput(suiteJSON);
@@ -2551,7 +2730,7 @@ export async function runWith(
   }
   const version = suite.provenance.suite_version;
   if ((SUITE_MAJORS[version] ?? 0) >= 8 && config.version !== '2') {
-    throw new Error('suite/8 through /27 require explicit ESS_REPORT_FORMAT=2 before execution');
+    throw new Error('suite/8 through /43 require explicit ESS_REPORT_FORMAT=2 before execution');
   }
   if (
     (version === 'ess-conformance/5' ||
@@ -2571,6 +2750,12 @@ export async function runWith(
   // machine.
   const ids = sortStrings(Object.keys(suite.scenarios));
 
+  if (suite.provenance.scenario_initial_state === 'empty') {
+    t.diagnostic(
+      'Requires an empty logical modeled-instance/event/invocation namespace before each scenario setup; unrelated physical data need not be deleted.',
+    );
+  }
+
   t.diagnostic(
     `${suite.provenance.system} ${suite.provenance.specification_version}, ${ids.length} scenario(s), ` +
       `spec digest ${suite.provenance.spec_digest}`,
@@ -2580,11 +2765,16 @@ export async function runWith(
   // that cannot name itself fails the run here, with that message, rather than leaving a report
   // that says nothing about what was tested.
   let identity: Identity;
+  const protectedRun = Object.values(suite.scenarios).some(
+    (scenario) => scenario.oneTimeResponse !== undefined,
+  );
   try {
     identity = normalizeIdentity(await newTarget().identity());
   } catch (error) {
-    throw new Error(`the target does not name itself: ${errorText(error)}`);
+    if (!protectedRun) throw new Error(`the target does not name itself: ${errorText(error)}`);
+    identity = { name: 'one-time-protected-target', version: '' };
   }
+  if (protectedRun) identity = { name: 'one-time-protected-target', version: '' };
 
   const harness = newHarness(suite.provenance.system);
   const results: ScenarioResult[] = [];
@@ -2614,20 +2804,26 @@ export async function runWith(
     let status = statusPassed;
     let terminal = false;
     await t.test(id, async (subtest: TestScope) => {
-      const scenarioRun = new ScenarioRun(subtest, newTarget(), harness, harness.correlation());
+      const scenarioRun = new ScenarioRun(
+        subtest,
+        newTarget(),
+        harness,
+        harness.correlation(),
+        SUITE_MAJORS[suite.provenance.suite_version]! >= 28,
+      );
       let returned = false;
       let thrown: unknown;
       try {
         await scenarioRun.execute(id, scenario);
         returned = true;
       } catch (error) {
-        thrown = error;
+        thrown =
+          scenario.oneTimeResponse === undefined
+            ? error
+            : new FatalSignal('ESS-CF-TARGET: protected target observation');
       }
       status = scenarioRun.status;
       terminal = scenarioRun.callbacksComplete && (returned || status !== statusPassed);
-      if (config.version === '2' && scenarioRun.failures.length > 0) {
-        status = statusFailed;
-      }
       if (
         thrown !== undefined &&
         !(thrown instanceof SkipSignal) &&
@@ -2641,7 +2837,12 @@ export async function runWith(
       if (thrown instanceof FatalSignal) {
         throw new Error(thrown.message);
       }
+      if (thrown === undefined && status === statusUnsupported) {
+        if (config.version === '2') throw new Error('required target observation is unsupported');
+        subtest.skip('required target observation is unsupported');
+      }
       if (thrown instanceof SkipSignal) {
+        if (config.version === '2') throw new Error(thrown.message);
         subtest.skip(thrown.message);
       }
     });
@@ -2653,9 +2854,19 @@ export async function runWith(
     }
   }
   if (config.version === '2') {
-    writeCountReport(t, suite, identity, results, terminated, config.strict);
+    writeCountReport(t, suite, identity, results, terminated, config.strict, execution);
   } else {
-    writeReport(t, suite, identity, results, terminated);
+    // report/1 retains its frozen three-category diagnostic vocabulary.
+    const legacy = results.map((result) => ({
+      ...result,
+      status:
+        result.status === statusError
+          ? statusFailed
+          : result.status === statusUnsupported
+            ? statusSkipped
+            : result.status,
+    }));
+    writeReport(t, suite, identity, legacy, terminated);
   }
 }
 
@@ -2665,6 +2876,8 @@ export async function runWith(
 export const statusPassed = 'passed';
 export const statusFailed = 'failed';
 export const statusSkipped = 'skipped';
+export const statusError = 'error';
+export const statusUnsupported = 'unsupported';
 
 /** ScenarioResult is one scenario's verdict, for the report. */
 export interface ScenarioResult {
@@ -2779,7 +2992,7 @@ export function writeReport(
     if (result.status === statusPassed) {
       continue;
     }
-    if (result.status === statusFailed) {
+    if ([statusFailed, statusError, statusUnsupported].includes(result.status)) {
       anyFailed = true;
     } else if (result.status === statusSkipped) {
       skipped += 1;
@@ -2833,6 +3046,7 @@ export interface ObservedCommandResult {
   response: { [field: string]: Node } | undefined;
   outcome: string;
   error: string;
+  errorPayload?: Record<string, Node> | undefined;
   consistency: string;
   directEvents: ObservedEvent[];
   notGranted: boolean;
@@ -2918,7 +3132,13 @@ function jsonValue(held: Node, key: string, open: Set<object>): Node {
     for (const field of Object.keys(object)) {
       const item = jsonValue((object as { [key: string]: Node })[field], field, open);
       if (item !== undefined) {
-        result[field] = item;
+        // JSON keys are data, including __proto__; assignment would invoke its inherited setter.
+        Object.defineProperty(result, field, {
+          value: item,
+          enumerable: true,
+          configurable: true,
+          writable: true,
+        });
       }
     }
     return result;
@@ -2961,6 +3181,7 @@ function normalizeResult(result: CommandResult | undefined): ObservedCommandResu
     response: result?.response,
     outcome: result?.outcome ?? '',
     error: result?.error ?? '',
+    errorPayload: result?.errorPayload,
     consistency: result?.consistency ?? '',
     directEvents: result?.directEvents ?? [],
     notGranted: result?.notGranted === true,
@@ -3001,6 +3222,15 @@ export class ScenarioRun {
   /** What the most recent command did, for the assertions that read it. */
   last: ObservedCommandResult = normalizeResult(undefined);
   lastCommand = '';
+  /**
+   * The actor every read is sent as since the last `read_as` step, empty before one; whether the
+   * read about to be made is one the next step requires refused; and that read's answer
+   * (beyond10x/ess#286).
+   */
+  reader = '';
+  readerSet = false;
+  readRefusalExpected = false;
+  readAnswer: ReadAnswer | undefined;
   /** The input and actor of the last command, as sent, which a retained replay repeats. */
   lastInput: { [field: string]: Node } | undefined;
   lastActor = '';
@@ -3015,6 +3245,9 @@ export class ScenarioRun {
   readonly nowFixed = new Map<number, string>();
   /** The token the last command returned, for a read_your_writes query. */
   consistency = '';
+  /** A read-your-writes query suppressed because the preceding command returned no token. */
+  unreadableView = '';
+  unreadableCommand = '';
   /** What the last query_view returned, for the expect_view after it. */
   lastView: Row[] = [];
   /** The total the last read carried, for a paged view (suite/26). */
@@ -3030,15 +3263,37 @@ export class ScenarioRun {
    * cannot complete the earlier step's verdict.
    */
   callbacksComplete = false;
+  private directResponseCommands = new Set<string>();
+  private disclosure: DisclosureCaptures | undefined;
+  private disclosureStopped = false;
+  private disclosureIncomplete = false;
+  private stepTargetError = false;
+  private readonly continuedAssertions: boolean;
 
-  constructor(t: TestScope, target: Target, harness: Harness, correlation: string) {
+  constructor(
+    t: TestScope,
+    target: Target,
+    harness: Harness,
+    correlation: string,
+    continuedAssertions = false,
+  ) {
     this.t = t;
     this.target = readAsJSON(target);
     this.harness = harness;
     this.correlation = correlation;
+    this.continuedAssertions = continuedAssertions;
   }
 
   async execute(id: string, scenario: Scenario): Promise<void> {
+    this.disclosure =
+      scenario.oneTimeResponse === undefined
+        ? undefined
+        : new DisclosureCaptures(scenario.oneTimeResponse);
+    this.directResponseCommands = new Set(
+      scenario.steps
+        .filter((step) => step.step === 'expect_direct_response')
+        .map((step) => step.directResponse!.command),
+    );
     const context: ScenarioContext = { scenario: id, correlation: this.correlation };
     const first = scenario.steps[0];
     if (first?.step === 'resolve_fixtures') {
@@ -3052,8 +3307,8 @@ export class ScenarioRun {
         this.fixtures = fixtureValues(contract, provided);
       } catch (error) {
         this.callbacksComplete = true;
-        if (isUnsupported(error)) this.skip(`fixture values: ${errorText(error)}`);
-        this.status = statusFailed;
+        if (isUnsupported(error)) this.unsupported(`fixture values: ${errorText(error)}`);
+        this.status = statusError;
         throw new FatalSignal(`fixture values: ${errorText(error)}`);
       }
     }
@@ -3062,13 +3317,15 @@ export class ScenarioRun {
     } catch (error) {
       this.callbacksComplete = true; // begin returned; no teardown is required
       if (isUnsupported(error)) {
-        this.skip(`the target does not support this scenario: ${errorText(error)}`);
+        this.unsupported(
+          `ESS-CF-TARGET: the target does not support this scenario: ${errorText(error)}`,
+        );
       }
-      this.status = statusFailed;
-      throw new FatalSignal(`begin: ${errorText(error)}`);
+      this.status = statusError;
+      throw new FatalSignal(`ESS-CF-TARGET: begin: ${errorText(error)}`);
     }
     try {
-      if (scenario.purpose !== '') {
+      if (scenario.purpose !== '' && this.disclosure === undefined) {
         this.t.diagnostic(scenario.purpose);
       }
       for (
@@ -3087,11 +3344,30 @@ export class ScenarioRun {
         ) {
           return;
         }
-        if (!(await this.step(index, step))) {
-          return;
-        }
+        // A read the next step requires refused keeps its answer for that step (beyond10x/ess#286).
+        this.readRefusalExpected =
+          step.step === 'query_view' && next?.step === 'expect_not_granted';
+        this.stepTargetError = false;
+        const continued = await this.step(index, step);
+        if (
+          this.disclosureStopped ||
+          (!continued &&
+            !(
+              (this.disclosure !== undefined || this.continuedAssertions) &&
+              !this.stepTargetError &&
+              this.status === statusFailed &&
+              step.step.startsWith('expect_')
+            ))
+        )
+          break;
+        if (!(await this.disclosureWindows(index, scenario))) break;
       }
     } finally {
+      if (this.disclosure !== undefined && !this.disclosureStopped) {
+        for (const event of this.disclosure.policy.events) {
+          if (!(await this.disclosureEvents(event.event))) break;
+        }
+      }
       let teardown: unknown;
       try {
         await this.target.endScenario(context);
@@ -3100,10 +3376,129 @@ export class ScenarioRun {
       }
       this.callbacksComplete = true;
       if (teardown !== undefined) {
-        this.status = statusFailed;
-        this.failures.push(`end: ${errorText(teardown)}`);
+        this.disclosureIncomplete = true;
+        this.recordStatus(isUnsupported(teardown) ? statusUnsupported : statusError);
+        this.failures.push(
+          this.disclosure === undefined
+            ? `end: ${errorText(teardown)}`
+            : 'ESS-CF-TARGET: protected target observation',
+        );
+      }
+      if (
+        this.disclosure !== undefined &&
+        !this.disclosureIncomplete &&
+        this.status !== statusError &&
+        this.status !== statusUnsupported
+      ) {
+        if (this.disclosure.complete())
+          this.t.diagnostic('ESS-CF-DISCLOSURE: protected observation completed');
+        else this.disclosureFailure(new DisclosureViolation('disclosure'));
       }
     }
+  }
+
+  private disclosureFailure(error: unknown): boolean {
+    const violation =
+      error instanceof DisclosureViolation ? error : new DisclosureViolation('resource');
+    this.disclosureStopped = true;
+    if (violation.kind === 'resource') this.disclosureIncomplete = true;
+    this.recordStatus(violation.kind === 'resource' ? statusUnsupported : statusFailed);
+    this.failures.push(
+      `${violation.message}: protected observation did not satisfy the declared rule`,
+    );
+    return false;
+  }
+  private disclosureMaps(rows: Record<string, Node>[]): boolean {
+    try {
+      this.disclosure?.maps(rows);
+      return true;
+    } catch (error) {
+      return this.disclosureFailure(error);
+    }
+  }
+  private async disclosureEvents(event: string, attempts = 0): Promise<boolean> {
+    try {
+      const observed =
+        (await this.target.observeEvents({
+          event,
+          correlation: this.correlation,
+          deadline: { attempts },
+        })) ?? [];
+      if (!this.disclosureMaps(observed.map((value) => value.payload))) return false;
+      for (const value of observed) this.remember(value);
+      return !this.disclosureStopped;
+    } catch (error) {
+      this.recordStatus(isUnsupported(error) ? statusUnsupported : statusError);
+      this.stepTargetError = true;
+      this.disclosureIncomplete = true;
+      this.failures.push('ESS-CF-TARGET: protected target observation');
+      return false;
+    }
+  }
+  private async disclosureWindows(index: number, scenario: Scenario): Promise<boolean> {
+    if (this.disclosure === undefined) return true;
+    let elapsedTicks = 0n;
+    for (const window of this.disclosure.policy.event_windows.filter(
+      (window) => window.after_step === index,
+    )) {
+      if (window.within_ms === 0n) {
+        if (!(await this.disclosureEvents(window.event))) return false;
+        continue;
+      }
+      const clock = this.target as Target & Partial<Clock>;
+      try {
+        if (!clock.markInstant || !clock.observeElapsed)
+          throw unsupported('protected clock capability');
+        let instant = '';
+        for (let serial = 0; serial < 65536; serial += 1) {
+          const candidate = `one-time-window-${index}-${serial}`;
+          if (
+            !scenario.steps.some(
+              (step) => step.step === 'mark_instant' && step.instant === candidate,
+            )
+          ) {
+            instant = candidate;
+            break;
+          }
+        }
+        if (instant === '') throw unsupported('protected instant bound');
+        await clock.markInstant({ instant, correlation: this.correlation });
+        // Match the native advancing observation clock; elapsed target evidence still establishes
+        // actual completion before the final scan, including early harmless log answers.
+        const deadlineTicks = (window.within_ms + 99n) / 100n;
+        const scans = deadlineTicks > elapsedTicks ? deadlineTicks - elapsedTicks : 1n;
+        for (let scan = 0n; scan < scans; scan += 1n) {
+          const remaining = scans - scan;
+          if (
+            !(await this.disclosureEvents(
+              window.event,
+              Number(remaining > 65536n ? 65536n : remaining),
+            ))
+          )
+            return false;
+          if (scan === 65535n) throw unsupported('protected observation bound');
+          elapsedTicks += 1n;
+        }
+        const seconds = (window.within_ms + 999n) / 1000n;
+        if (seconds > 4294967295n) throw unsupported('protected hold bound');
+        const observed = await clock.observeElapsed({
+          instant,
+          hold: Number(seconds),
+          watching: window.event,
+          correlation: this.correlation,
+        });
+        if (unsigned(observed.elapsedMillis ?? 0) < window.within_ms)
+          throw unsupported('protected window incomplete');
+        if (!(await this.disclosureEvents(window.event))) return false;
+      } catch (error) {
+        this.recordStatus(isUnsupported(error) ? statusUnsupported : statusError);
+        this.stepTargetError = true;
+        this.disclosureIncomplete = true;
+        this.failures.push('ESS-CF-TARGET: protected target observation');
+        return false;
+      }
+    }
+    return true;
   }
 
   /**
@@ -3121,6 +3516,43 @@ export class ScenarioRun {
         const payload = this.resolveAll(index, step.payload as Record<string, Value>);
         return payload !== null && this.expectEventValues(index, { ...step, payload });
       }
+      case 'expect_direct_response':
+        try {
+          const contract = step.directResponse!;
+          if (this.lastCommand !== contract.command || !this.last)
+            throw new Error('direct response command');
+          if (contract.outcome && this.last.outcome !== contract.outcome.outcome)
+            throw new Error('direct response outcome');
+          if (this.last.error) throw new Error('direct response returned error');
+          compareDirectResponse(contract, this.last.response);
+          return true;
+        } catch (error) {
+          return this.fail(index, errorText(error));
+        }
+      case 'deliver_event':
+        try {
+          if (!this.target.deliverEvent)
+            throw unsupported('target cannot deliver an external event');
+          await this.target.deliverEvent({
+            event: step.event,
+            authority: step.authority!,
+            payload: copyFixtureValue(step.payload ?? {}),
+            context: copyFixtureValue(step.context ?? {}),
+            correlation: this.correlation,
+          });
+          return true;
+        } catch (error) {
+          if (isUnsupported(error)) this.unsupported(`delivery: ${errorText(error)}`);
+          return this.targetError(index, `delivery: ${errorText(error)}`);
+        }
+      case 'expect_every_invocation':
+        return this.expectEveryInvocation(index, step);
+      case 'expect_no_invocation':
+        return this.expectNoInvocation(index, step);
+      case 'expect_no_publication':
+        return this.expectPublications(index, step, 0);
+      case 'expect_publication_count':
+        return this.expectPublications(index, step, step.count ?? 0);
       case 'expect_response_payload':
         return expectResponsePayload(this, index, step);
       case 'check_periodic':
@@ -3136,6 +3568,11 @@ export class ScenarioRun {
         return this.expectOutcome(index, step);
       case 'expect_not_granted':
         return this.expectNotGranted(index, step);
+      case 'read_as':
+        // Every later read is sent as this actor (beyond10x/ess#286).
+        this.reader = step.actor ?? '';
+        this.readerSet = true;
+        return true;
       case 'snapshot_subject':
       case 'expect_subject_unchanged':
       case 'snapshot_complete_subject':
@@ -3202,7 +3639,7 @@ export class ScenarioRun {
       default:
         // A step this build does not know is a suite written by a newer generator. Reporting it as
         // a failure would blame the implementation for the tool's age.
-        this.skip(
+        this.unsupported(
           `step ${index} is \`${step.step}\`, which this generated runner does not implement`,
         );
         return false;
@@ -3250,18 +3687,25 @@ export class ScenarioRun {
       }
     } catch (error) {
       if (isUnsupported(error)) {
-        this.skip(
+        this.unsupported(
           withoutInput
             ? `step ${index}: the target cannot invoke \`${step.command}\` with no input: ${errorText(error)}`
             : `step ${index}: the target does not expose \`${step.command}\`: ${errorText(error)}`,
         );
       }
-      return this.fail(index, `executing \`${step.command}\`: ${errorText(error)}`);
+      return this.targetError(index, `executing \`${step.command}\`: ${errorText(error)}`);
     }
     let normalized = normalizeResult(result);
     if (normalized.response !== undefined && normalized.response !== null) {
       try {
-        normalized = normalizeResult(snapshotResponseResult(normalized));
+        const errorPayload = normalized.errorPayload;
+        normalized = normalizeResult(
+          snapshotResponseResult(
+            normalized,
+            this.disclosure === undefined && !this.directResponseCommands.has(step.command),
+          ),
+        );
+        normalized.errorPayload = errorPayload;
       } catch (error) {
         return this.fail(index, `response observation: ${errorText(error)}`);
       }
@@ -3271,6 +3715,13 @@ export class ScenarioRun {
     this.lastCommand = step.command;
     this.lastInput = withoutInput ? undefined : input;
     this.lastActor = step.actor;
+    if (this.disclosure !== undefined) {
+      try {
+        this.disclosure.command(step.command, normalized);
+      } catch (error) {
+        return this.disclosureFailure(error);
+      }
+    }
     // Cleared, not accumulated. Every `expect_no_event` in a scenario is a claim about *this*
     // command.
     this.observed = {};
@@ -3288,6 +3739,7 @@ export class ScenarioRun {
 
   /** remember records an occurrence for the whole scenario, without recording one twice. */
   remember(event: ObservedEvent): void {
+    if (!this.disclosureMaps([event.payload])) return;
     for (const held of this.seen) {
       if (held.event === event.event && equal(held.payload, event.payload)) {
         return;
@@ -3309,10 +3761,39 @@ export class ScenarioRun {
       );
     }
     if (this.last.outcome !== step.outcome.outcome) {
+      this.fail(
+        index,
+        `ESS-CF-OUTCOME: \`${step.outcome.command}\` took \`${orNone(this.last.outcome)}\`, and the specification ` +
+          `says \`${step.outcome.outcome}\``,
+      );
+      return this.continuedAssertions;
+    }
+    return true;
+  }
+
+  /**
+   * Requires that the read just made was refused before anything was read, with the standard
+   * refusal for an actor no grant admits, naming the actor it was read as (beyond10x/ess#286).
+   */
+  expectReadNotGranted(index: number, step: Step, answer: ReadAnswer): boolean {
+    if (answer.unread) {
       return this.fail(
         index,
-        `\`${step.outcome.command}\` took \`${orNone(this.last.outcome)}\`, and the specification ` +
-          `says \`${step.outcome.outcome}\``,
+        `\`${answer.view}\` was not read: the command before it returned no consistency token, ` +
+          `so the refusal of the read as \`${step.actor}\` was not observed`,
+      );
+    }
+    if (!answer.refused) {
+      return this.fail(
+        index,
+        `\`${answer.view}\` was served to \`${step.actor}\`; the specification refuses it as not granted`,
+      );
+    }
+    if (answer.actor !== (step.actor ?? '')) {
+      return this.fail(
+        index,
+        `reading \`${answer.view}\` was refused as not granted to \`${orNone(answer.actor)}\`, ` +
+          `and it was read as \`${step.actor}\``,
       );
     }
     return true;
@@ -3323,6 +3804,11 @@ export class ScenarioRun {
    * actor no grant admits, naming the actor it was sent as (beyond10x/ess#265).
    */
   async expectNotGranted(index: number, step: Step): Promise<boolean> {
+    const answer = this.readAnswer;
+    if (answer !== undefined) {
+      this.readAnswer = undefined;
+      return this.expectReadNotGranted(index, step, answer);
+    }
     if (this.lastCommand === '') {
       return this.fail(index, 'no command preceded the refusal an ungranted actor gets');
     }
@@ -3333,7 +3819,7 @@ export class ScenarioRun {
           `refuses it as not granted to \`${step.actor}\``,
       );
     }
-    if ((this.last.notGrantedActor ?? '') !== step.actor) {
+    if ((this.last.notGrantedActor ?? '') !== (step.actor ?? '')) {
       return this.fail(
         index,
         `\`${this.lastCommand}\` was refused as not granted to ` +
@@ -3381,11 +3867,15 @@ export class ScenarioRun {
         })) ?? [];
     } catch (error) {
       if (isUnsupported(error)) {
-        this.skip(`step ${index}: the target cannot observe \`${event}\``);
+        this.unsupported(`step ${index}: the target cannot observe \`${event}\``);
       }
-      this.fail(index, `observing \`${event}\` ${when} the refused send: ${errorText(error)}`);
+      this.targetError(
+        index,
+        `observing \`${event}\` ${when} the refused send: ${errorText(error)}`,
+      );
       return undefined;
     }
+    if (!this.disclosureMaps(observed.map((event) => event.payload))) return undefined;
     for (const seen of observed) {
       this.remember(seen);
     }
@@ -3409,18 +3899,28 @@ export class ScenarioRun {
     if (this.last.error !== step.error) {
       return this.fail(
         index,
-        `refused with \`${orNone(this.last.error)}\`, and the specification says \`${step.error}\``,
+        `ESS-CF-ERROR: refused with \`${orNone(this.last.error)}\`, and the specification says \`${step.error}\``,
       );
     }
+    // The declared fields the branch determines (ess/19), each carried and equal, as the Rust
+    // runner's `expect_error` compares them.
+    if (!matches(this.last.errorPayload ?? {}, step.fields ?? {}))
+      return this.fail(
+        index,
+        `ESS-CF-ERROR: refused with \`${step.error}\`, and it did not carry ${describe(step.fields ?? {})}`,
+      );
     return true;
   }
 
   expectEventValues(index: number, step: Step): boolean {
     // Match the Rust runner: select the first direct occurrence by name, never by its values.
     const event = this.last.directEvents?.find((observed) => observed.event === step.event);
-    if (!event) return this.fail(index, `\`${step.event}\` was not emitted`);
+    if (!event) return this.fail(index, `ESS-CF-EVENT: \`${step.event}\` was not emitted`);
     if (!matches(event.payload, step.payload ?? {}))
-      return this.fail(index, `\`${step.event}\` carried different fixture values`);
+      return this.fail(
+        index,
+        `ESS-CF-PAYLOAD: \`${step.event}\` was emitted, and it did not carry ${describe(step.payload ?? {})}`,
+      );
     const reason = holds(event.payload, step.shape ?? {});
     return reason === '' || this.fail(index, `\`${step.event}\` was emitted, and ${reason}`);
   }
@@ -3428,7 +3928,7 @@ export class ScenarioRun {
   expectEvent(index: number, step: Step): boolean {
     const seen = this.observed[step.event] ?? [];
     if (seen.length === 0) {
-      return this.fail(index, `\`${step.event}\` was not emitted`);
+      return this.fail(index, `ESS-CF-EVENT: \`${step.event}\` was not emitted`);
     }
     let mismatch = '';
     for (const event of seen) {
@@ -3449,13 +3949,16 @@ export class ScenarioRun {
     }
     return this.fail(
       index,
-      `\`${step.event}\` was emitted, and no instance of it carried ${describe(step.payload ?? {})}`,
+      `ESS-CF-PAYLOAD: \`${step.event}\` was emitted, and no instance of it carried ${describe(step.payload ?? {})}`,
     );
   }
 
   expectNoEvent(index: number, step: Step): boolean {
     if ((this.observed[step.event] ?? []).length > 0) {
-      return this.fail(index, `\`${step.event}\` was emitted, and this branch does not emit it`);
+      return this.fail(
+        index,
+        `ESS-CF-NO-EVENT: \`${step.event}\` was emitted, and this branch does not emit it`,
+      );
     }
     return true;
   }
@@ -3473,10 +3976,11 @@ export class ScenarioRun {
           })) ?? [];
       } catch (error) {
         if (isUnsupported(error)) {
-          this.skip(`step ${index}: the target cannot observe \`${step.event}\``);
+          this.unsupported(`step ${index}: the target cannot observe \`${step.event}\``);
         }
-        return this.fail(index, `observing \`${step.event}\`: ${errorText(error)}`);
+        return this.targetError(index, `observing \`${step.event}\`: ${errorText(error)}`);
       }
+      if (!this.disclosureMaps(events.map((event) => event.payload))) return false;
       for (const event of events) {
         (this.observed[event.event] ??= []).push(event);
         this.remember(event);
@@ -3498,7 +4002,7 @@ export class ScenarioRun {
       }
     }
     if (!isEntitySetupTarget(this.target)) {
-      this.skip('target cannot validate and establish entity state');
+      this.unsupported('target cannot validate and establish entity state');
       return false;
     }
     const request: EntitySetupRequest = {
@@ -3512,15 +4016,18 @@ export class ScenarioRun {
       await this.target.establishEntity(request);
     } catch (error) {
       if (isUnsupported(error)) {
-        this.skip(`entity setup unsupported: ${errorText(error)}`);
+        this.unsupported(`entity setup unsupported: ${errorText(error)}`);
       }
-      return this.fail(index, `entity setup failed: ${errorText(error)}`);
+      return this.targetError(index, `entity setup failed: ${errorText(error)}`);
     }
     this.established.push(request);
     this.instances[step.instance] = step.identity;
     // A pre-setup query cannot establish facts about the newly acknowledged state.
     this.queried = '';
     this.lastView = [];
+    this.lastTotal = undefined;
+    this.unreadableView = '';
+    this.unreadableCommand = '';
     return true;
   }
 
@@ -3533,7 +4040,7 @@ export class ScenarioRun {
     }
     return this.fail(
       index,
-      `nothing bound \`${step.instance}\`: \`${step.event}\` did not carry \`${step.field}\``,
+      `ESS-CF-INSTANCE: nothing bound \`${step.instance}\`: \`${step.event}\` did not carry \`${step.field}\``,
     );
   }
 
@@ -3541,6 +4048,19 @@ export class ScenarioRun {
     const params = this.resolveAll(index, step.params);
     if (params === null) {
       return false;
+    }
+    const expected = this.readRefusalExpected;
+    this.readRefusalExpected = false;
+    if (this.lastCommand !== '' && this.consistency === '') {
+      if (expected) this.readAnswer = { view: step.view, unread: true, refused: false, actor: '' };
+      // Current is weaker than the read-your-writes claim. Keep the cause for expect_view, and
+      // discard any earlier query so it cannot satisfy the assertion after this command.
+      this.unreadableView = step.view;
+      this.unreadableCommand = this.lastCommand;
+      this.queried = '';
+      this.lastView = [];
+      this.lastTotal = undefined;
+      return true;
     }
     let result: ViewResult;
     try {
@@ -3550,22 +4070,56 @@ export class ScenarioRun {
         atLeast: this.consistency,
         correlation: this.correlation,
         deadline: this.harness.deadline(),
+        actor: this.reader === '' ? undefined : this.reader,
+        anonymous: this.readerSet && this.reader === '' ? true : undefined,
       });
     } catch (error) {
       if (isUnsupported(error)) {
-        this.skip(
+        this.unsupported(
           `step ${index}: the target does not expose \`${step.view}\`: ${errorText(error)}`,
         );
       }
-      return this.fail(index, `querying \`${step.view}\`: ${errorText(error)}`);
+      return this.targetError(index, `querying \`${step.view}\`: ${errorText(error)}`);
     }
+    // A read the next step requires refused keeps its answer for that step; any other refused read
+    // is a read the scenario needed answered (beyond10x/ess#286).
+    const refused = result?.notGranted === true;
+    if (expected) {
+      this.readAnswer = {
+        view: step.view,
+        unread: false,
+        refused,
+        actor: result?.notGrantedActor ?? '',
+      };
+    }
+    if (refused) {
+      this.queried = '';
+      this.lastView = [];
+      this.lastTotal = undefined;
+      if (expected) return true;
+      return this.fail(
+        index,
+        `reading \`${step.view}\` as \`${orNone(this.reader)}\` was refused as not granted to ` +
+          `\`${orNone(result?.notGrantedActor ?? '')}\``,
+      );
+    }
+    this.unreadableView = '';
+    this.unreadableCommand = '';
     this.lastView = result?.rows ?? [];
+    if (!this.disclosureMaps(this.lastView)) return false;
     this.lastTotal = typeof result?.total === 'number' ? result.total : undefined;
     this.queried = step.view;
     return true;
   }
 
   snapshotSubject(index: number, step: Step): boolean {
+    if (this.queried === '') {
+      this.recordStatus(statusError);
+      this.failures.push(
+        `step ${index}: ESS-CF-SUITE: no consistent view query preceded the subject snapshot`,
+      );
+      return false;
+    }
     if (this.queried !== step.view)
       return this.fail(index, `subject snapshot requires a preceding query of ${step.view}`);
     const capture = step.step === 'snapshot_subject' || step.step === 'snapshot_complete_subject';
@@ -3587,7 +4141,7 @@ export class ScenarioRun {
     if (rows.length !== 1)
       return this.fail(
         index,
-        `subject snapshot ${step.view} matched ${rows.length} rows, want exactly one`,
+        `ESS-CF-VIEW: subject snapshot ${step.view} matched ${rows.length} rows, want exactly one`,
       );
     if (shape !== undefined) {
       try {
@@ -3685,6 +4239,23 @@ export class ScenarioRun {
   }
 
   async expectView(index: number, step: Step, retry: boolean): Promise<boolean> {
+    if (!retry && this.unreadableView === step.view) {
+      return this.fail(
+        index,
+        `ESS-CF-VIEW: \`${this.unreadableCommand}\` returned no consistency token, so ` +
+          `\`${step.view}\` was not read; asking at Current would answer a weaker question than ` +
+          'read-your-writes',
+      );
+    }
+    if (!retry && this.queried !== step.view) {
+      this.recordStatus(statusError);
+      this.failures.push(
+        this.queried === ''
+          ? `step ${index}: ESS-CF-SUITE: no view had been read before expecting \`${step.view}\``
+          : `step ${index}: ESS-CF-SUITE: the view last read was \`${this.queried}\`, not \`${step.view}\``,
+      );
+      return false;
+    }
     const attempts = retry ? this.harness.deadline().attempts : 1;
     let last = '';
     for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -3701,16 +4272,26 @@ export class ScenarioRun {
             atLeast: '',
             correlation: this.correlation,
             deadline: { attempts: attempts - attempt },
+            actor: this.reader === '' ? undefined : this.reader,
+            anonymous: this.readerSet && this.reader === '' ? true : undefined,
           });
         } catch (error) {
           if (isUnsupported(error)) {
-            this.skip(
+            this.unsupported(
               `step ${index}: the target does not expose \`${step.view}\`: ${errorText(error)}`,
             );
           }
-          return this.fail(index, `querying \`${step.view}\`: ${errorText(error)}`);
+          return this.targetError(index, `querying \`${step.view}\`: ${errorText(error)}`);
+        }
+        if (result?.notGranted === true) {
+          return this.fail(
+            index,
+            `reading \`${step.view}\` as \`${orNone(this.reader)}\` was refused as not granted to ` +
+              `\`${orNone(result.notGrantedActor ?? '')}\``,
+          );
         }
         this.lastView = result?.rows ?? [];
+        if (!this.disclosureMaps(this.lastView)) return false;
         this.lastTotal = typeof result?.total === 'number' ? result.total : undefined;
         this.queried = step.view;
       }
@@ -3726,7 +4307,7 @@ export class ScenarioRun {
       }
       last = reason;
     }
-    return this.fail(index, last);
+    return this.fail(index, `${retry ? 'ESS-CF-EVENTUAL-VIEW' : 'ESS-CF-VIEW'}: ${last}`);
   }
 
   /** decide answers whether the view expectation holds, why not, and whether it could be decided. */
@@ -4009,11 +4590,15 @@ export class ScenarioRun {
       if (isUnsupported(error)) {
         // The one method the model explicitly refuses to require. Unsupported is a fact about the
         // target, not a failure of the specification.
-        this.skip(
-          `step ${index}: the target does not expose what \`${step.binding}\` invoked: ${errorText(error)}`,
+        this.recordStatus(statusUnsupported);
+        this.t.diagnostic(
+          this.disclosure === undefined
+            ? errorText(error)
+            : 'ESS-CF-TARGET: protected target observation',
         );
+        return true;
       }
-      return this.fail(index, `observing \`${step.binding}\`: ${errorText(error)}`);
+      return this.targetError(index, `observing \`${step.binding}\`: ${errorText(error)}`);
     }
     const want: { [field: string]: Node } = {};
     const absent: string[] = [];
@@ -4023,7 +4608,7 @@ export class ScenarioRun {
       try {
         [node, present] = this.resolveAccessorExpected(written);
       } catch (error) {
-        return this.fail(index, `\`${field}\`: ${errorText(error)}`);
+        return this.targetError(index, `ESS-CF-SUITE: \`${field}\`: ${errorText(error)}`);
       }
       if (present) {
         want[field] = node;
@@ -4042,10 +4627,11 @@ export class ScenarioRun {
         return true;
       }
     }
-    return this.fail(
+    this.fail(
       index,
       `\`${step.binding}\` did not invoke \`${step.command}\` with ${describe(want)}`,
     );
+    return true;
   }
 
   /**
@@ -4062,7 +4648,7 @@ export class ScenarioRun {
       try {
         [node, present] = this.resolveAccessorExpected(written);
       } catch (error) {
-        return this.fail(index, `\`${field}\`: ${errorText(error)}`);
+        return this.targetError(index, `\`${field}\`: ${errorText(error)}`);
       }
       if (present) {
         want[field] = node;
@@ -4084,11 +4670,11 @@ export class ScenarioRun {
           })) ?? [];
       } catch (error) {
         if (isUnsupported(error)) {
-          this.skip(
+          this.unsupported(
             `step ${index}: the target does not expose what \`${step.binding}\` invoked: ${errorText(error)}`,
           );
         }
-        return this.fail(index, `observing \`${step.binding}\`: ${errorText(error)}`);
+        return this.targetError(index, `observing \`${step.binding}\`: ${errorText(error)}`);
       }
       matching = seen.filter(
         (invocation) =>
@@ -4115,11 +4701,11 @@ export class ScenarioRun {
       await this.target.redeliverEvent({ event: step.event, correlation: this.correlation });
     } catch (error) {
       if (isUnsupported(error)) {
-        this.skip(
+        this.unsupported(
           `step ${index}: the target cannot redeliver \`${step.event}\`, so \`at_least_once\` is unchecked`,
         );
       }
-      return this.fail(index, `redelivering \`${step.event}\`: ${errorText(error)}`);
+      return this.targetError(index, `redelivering \`${step.event}\`: ${errorText(error)}`);
     }
     return true;
   }
@@ -4146,14 +4732,14 @@ export class ScenarioRun {
       }
     } catch (error) {
       if (isUnsupported(error)) {
-        this.skip(
+        this.unsupported(
           step.times === undefined
             ? `step ${index}: the target cannot force \`${step.force.outcome}\``
             : `step ${index}: the target cannot force \`${step.force.outcome}\` on the next ` +
                 `${step.times} invocations: ${errorText(error)}`,
         );
       }
-      return this.fail(index, `forcing \`${step.force.outcome}\`: ${errorText(error)}`);
+      return this.targetError(index, `forcing \`${step.force.outcome}\`: ${errorText(error)}`);
     }
     return true;
   }
@@ -4165,7 +4751,7 @@ export class ScenarioRun {
    */
   clock(index: number): Target & Clock {
     if (!isClock(this.target)) {
-      this.skip(
+      this.unsupported(
         `step ${index} claims a length of time, and this target implements no Clock, so the claim ` +
           'cannot be checked. It is reported unanswered rather than satisfied.',
       );
@@ -4180,9 +4766,12 @@ export class ScenarioRun {
       await clock.markInstant({ instant: step.instant, correlation: this.correlation });
     } catch (error) {
       if (isUnsupported(error)) {
-        this.skip(`step ${index}: the target cannot mark the instant \`${step.instant}\``);
+        this.unsupported(`step ${index}: the target cannot mark the instant \`${step.instant}\``);
       }
-      return this.fail(index, `marking the instant \`${step.instant}\`: ${errorText(error)}`);
+      return this.targetError(
+        index,
+        `marking the instant \`${step.instant}\`: ${errorText(error)}`,
+      );
     }
     this.marked[step.instant] = true;
     return true;
@@ -4214,9 +4803,14 @@ export class ScenarioRun {
       });
     } catch (error) {
       if (isUnsupported(error)) {
-        this.skip(`step ${index}: the target cannot let time pass since \`${step.instant}\``);
+        this.unsupported(
+          `step ${index}: the target cannot let time pass since \`${step.instant}\``,
+        );
       }
-      this.fail(index, `letting ${hold}s pass since \`${step.instant}\`: ${errorText(error)}`);
+      this.targetError(
+        index,
+        `letting ${hold}s pass since \`${step.instant}\`: ${errorText(error)}`,
+      );
       return null;
     }
     return { elapsedMillis: observed?.elapsedMillis ?? 0, published: observed?.published ?? 0 };
@@ -4290,7 +4884,7 @@ export class ScenarioRun {
    */
   async expectHalt(index: number, step: Step, retry: boolean): Promise<boolean> {
     if (!isOrderedReader(this.target)) {
-      this.skip(
+      this.unsupported(
         `step ${index} claims a reader stopped an ordered scan, and this target implements no ` +
           'OrderedReader, so the claim cannot be checked. It is reported unanswered rather than ' +
           'satisfied.',
@@ -4321,12 +4915,19 @@ export class ScenarioRun {
           atLeast,
           correlation: this.correlation,
           deadline: { attempts: attempts - attempt },
+          actor: this.reader === '' ? undefined : this.reader,
+          anonymous: this.readerSet && this.reader === '' ? true : undefined,
         });
       } catch (error) {
         if (isUnsupported(error)) {
-          this.skip(`step ${index}: the target cannot read \`${step.view}\` a row at a time`);
+          this.unsupported(
+            `step ${index}: the target cannot read \`${step.view}\` a row at a time`,
+          );
         }
-        return this.fail(index, `reading \`${step.view}\` a row at a time: ${errorText(error)}`);
+        return this.targetError(
+          index,
+          `reading \`${step.view}\` a row at a time: ${errorText(error)}`,
+        );
       }
       const produced = observed?.produced ?? 0;
       const halted = observed?.halted ?? false;
@@ -4347,26 +4948,190 @@ export class ScenarioRun {
     );
   }
 
-  /** fail records one failed assertion and stops the scenario. */
-  fail(index: number, message: string): boolean {
-    this.status = statusFailed;
-    this.failures.push(`step ${index}: ${message}`);
-    return false;
+  /** Observe the whole finite window; an early correct invocation cannot hide a late wrong retry. */
+  async expectEveryInvocation(index: number, step: Step): Promise<boolean> {
+    const selected: Record<string, Node> = {};
+    const wanted: Record<string, Node> = {};
+    const absent: string[] = [];
+    try {
+      for (const [field, value] of Object.entries(step.selecting ?? {})) {
+        const [node, present] = this.resolveAccessorExpected(value);
+        if (present) selected[field] = node;
+      }
+      for (const [field, value] of Object.entries(step.input ?? {})) {
+        const [node, present] = this.resolveAccessorExpected(value);
+        if (present) wanted[field] = node;
+        else absent.push(field);
+      }
+    } catch (error) {
+      return this.targetError(index, `invocation values: ${errorText(error)}`);
+    }
+    const deadline = this.harness.deadline();
+    let chosen: Invocation[] = [];
+    for (let attempt = 0; attempt < deadline.attempts; attempt += 1) {
+      try {
+        const seen = await this.target.observeInvocations({
+          binding: step.binding,
+          command: step.command,
+          correlation: this.correlation,
+          deadline: { attempts: deadline.attempts - attempt },
+        });
+        chosen = (seen ?? []).filter(
+          (invocation) =>
+            invocation.command === step.command && matches(invocation.input, selected),
+        );
+      } catch (error) {
+        if (isUnsupported(error)) {
+          this.recordStatus(statusUnsupported);
+          this.t.diagnostic(
+            this.disclosure === undefined
+              ? errorText(error)
+              : 'ESS-CF-TARGET: protected target observation',
+          );
+          return true;
+        }
+        return this.targetError(index, `observing every invocation: ${errorText(error)}`);
+      }
+      if (
+        chosen.some(
+          (invocation) =>
+            !matches(invocation.input, wanted) ||
+            absent.some((field) => Object.hasOwn(invocation.input, field)),
+        )
+      ) {
+        this.fail(index, 'an invocation for the occurrence disagrees with its delivery');
+        return true;
+      }
+    }
+    if (chosen.length === 0) this.fail(index, 'no invocation for the delivered occurrence');
+    return true;
   }
 
   /**
-   * skip ends the scenario as one the target could not answer, and records that it did.
-   *
-   * Every skip in this runtime goes through here so the report and the test log cannot disagree
-   * about what the scenario came to.
-   *
-   * EVERY CALLER PASSES THE TARGET'S OWN ERROR. A target throws `unsupported()` around the
-   * sentence explaining what it could not answer, and printing only the construct's name throws
-   * that away, leaving different causes rendered identically.
+   * The binding invoked its command no times under this scenario for the whole observation window
+   * (suite/36, beyond10x/ess#268): any invocation seen fails at once; none passes only once the
+   * window has been read to its end.
    */
+  async expectNoInvocation(index: number, step: Step): Promise<boolean> {
+    const deadline = this.harness.noInvocationDeadline();
+    for (let attempt = 0; attempt < deadline.attempts; attempt += 1) {
+      let seen: Invocation[];
+      try {
+        seen =
+          (await this.target.observeInvocations({
+            binding: step.binding,
+            command: step.command,
+            correlation: this.correlation,
+            deadline: { attempts: deadline.attempts - attempt },
+          })) ?? [];
+      } catch (error) {
+        if (isUnsupported(error)) {
+          this.recordStatus(statusUnsupported);
+          this.t.diagnostic(
+            this.disclosure === undefined
+              ? errorText(error)
+              : 'ESS-CF-TARGET: protected target observation',
+          );
+          return true;
+        }
+        return this.targetError(index, `observing zero invocations: ${errorText(error)}`);
+      }
+      if (seen.some((invocation) => invocation.command === step.command)) {
+        this.fail(index, 'an invocation the condition does not admit');
+        return true;
+      }
+    }
+    if (step.obligation !== undefined) {
+      // The condition is Unknown on this occurrence: the binding owes its unmet obligation, and a
+      // silent answer through the window is a successful skip.
+      this.fail(index, `no ${step.obligation} obligation reported for an Unknown condition`);
+    }
+    return true;
+  }
+
+  /**
+   * The event was published exactly `count` times under this scenario for the whole observation
+   * window, none where `count` is zero (suite/36, beyond10x/ess#269): more seen fails at once;
+   * exactly `count` passes only once the window has been read to its end.
+   */
+  async expectPublications(index: number, step: Step, count: number): Promise<boolean> {
+    const deadline = this.harness.noInvocationDeadline();
+    let seen: ObservedEvent[] = [];
+    for (let attempt = 0; attempt < deadline.attempts; attempt += 1) {
+      try {
+        seen =
+          (await this.target.observeEvents({
+            event: step.event,
+            correlation: this.correlation,
+            deadline: { attempts: deadline.attempts - attempt },
+          })) ?? [];
+      } catch (error) {
+        if (isUnsupported(error)) {
+          this.recordStatus(statusUnsupported);
+          this.t.diagnostic(
+            this.disclosure === undefined
+              ? errorText(error)
+              : 'ESS-CF-TARGET: protected target observation',
+          );
+          return true;
+        }
+        return this.targetError(
+          index,
+          `observing how often an event was published: ${errorText(error)}`,
+        );
+      }
+      if (seen.filter((event) => event.event === step.event).length > count) {
+        this.fail(index, `\`${step.event}\` was published more than ${count} time(s)`);
+        return true;
+      }
+    }
+    if (seen.filter((event) => event.event === step.event).length !== count) {
+      this.fail(index, `\`${step.event}\` was not published exactly ${count} time(s)`);
+    }
+    return true;
+  }
+
+  recordStatus(status: string): void {
+    const rank = [statusPassed, statusSkipped, statusUnsupported, statusError, statusFailed];
+    if (rank.indexOf(status) > rank.indexOf(this.status)) this.status = status;
+  }
+
+  targetError(index: number, message: string): boolean {
+    this.stepTargetError = true;
+    this.disclosureIncomplete = true;
+    this.recordStatus(statusError);
+    this.failures.push(
+      this.disclosure === undefined
+        ? `step ${index}: ${message}`
+        : 'ESS-CF-TARGET: protected target observation',
+    );
+    return false;
+  }
+
+  /** fail records one failed assertion and stops the scenario. */
+  fail(index: number, message: string): boolean {
+    this.status = statusFailed;
+    this.failures.push(
+      this.disclosure === undefined
+        ? `step ${index}: ${message}`
+        : 'ESS-CF-PAYLOAD: protected observation did not satisfy the declared rule',
+    );
+    return false;
+  }
+
+  /** Existing reading helpers retain their capability-refusal method name. */
   skip(message: string): never {
-    this.status = statusSkipped;
-    throw new SkipSignal(message);
+    return this.unsupported(message);
+  }
+
+  /** Record a target capability gap without collapsing its report/2 category. */
+  unsupported(message: string): never {
+    this.stepTargetError = true;
+    this.disclosureIncomplete = true;
+    this.recordStatus(statusUnsupported);
+    throw new SkipSignal(
+      this.disclosure === undefined ? message : 'ESS-CF-TARGET: protected target observation',
+    );
   }
 
   /**
@@ -4389,6 +5154,10 @@ export class ScenarioRun {
       }
     };
     switch (step.step) {
+      case 'expect_every_invocation':
+        visit(step.selecting);
+        visit(step.input);
+        break;
       case 'execute_command':
       case 'expect_invocation':
         visit(step.input);
@@ -4438,7 +5207,7 @@ export class ScenarioRun {
       try {
         resolved[field] = this.resolve(written);
       } catch (error) {
-        this.fail(index, `\`${field}\`: ${errorText(error)}`);
+        this.targetError(index, `ESS-CF-SUITE: \`${field}\`: ${errorText(error)}`);
         return null;
       }
     }
@@ -4449,6 +5218,12 @@ export class ScenarioRun {
 
   resolve(value: Value): Node {
     switch (value.kind) {
+      case 'list':
+        return value.items!.map((item) => this.resolve(item));
+      case 'members':
+        return Object.fromEntries(
+          Object.entries(value.members!).map(([key, member]) => [key, this.resolve(member)]),
+        );
       case 'fixture':
         if (!Object.hasOwn(this.fixtures, value.fixture as string))
           throw new Error('fixture was not resolved');
@@ -4522,7 +5297,7 @@ export class ScenarioRun {
 
   async checkPeriodic(index: number, step: Step): Promise<boolean> {
     if (!isPeriodicTarget(this.target)) {
-      this.skip(`step ${index}: target has no periodic authority`);
+      this.unsupported(`step ${index}: target has no periodic authority`);
     }
     const clock = this.clock(index);
     if (step.check === undefined) {
@@ -4537,9 +5312,11 @@ export class ScenarioRun {
       );
     } catch (error) {
       if (isUnsupported(error)) {
-        this.skip(`step ${index}: periodic authority/observation unsupported: ${errorText(error)}`);
+        this.unsupported(
+          `step ${index}: periodic authority/observation unsupported: ${errorText(error)}`,
+        );
       }
-      return this.fail(index, `periodic contract: ${errorText(error)}`);
+      return this.targetError(index, `periodic contract: ${errorText(error)}`);
     }
     return true;
   }
@@ -5400,6 +6177,11 @@ export function scenarioIdentity(id: string, major = 21): void {
   const parts = id.split('/');
   const segment = (index: number): string => parts[index] ?? '';
   let valid = false;
+  if (parts[1] === 'disclosure') {
+    // Inventory/refusal IDs use native grammar; executable policy admission owns the major gate.
+    parseDisclosureId(id);
+    return;
+  }
   const q = (value: string): boolean => qualifiedName.test(value);
   const k = (value: string): boolean => kebabName.test(value);
   if (parts.length === 3 && segment(1) === 'outcome') {
@@ -5410,19 +6192,39 @@ export function scenarioIdentity(id: string, major = 21): void {
     if (segment(2) === 'final-failure' && major < 26) {
       throw new Error('a final-failure binding scenario requires suite/26 or /27');
     }
+    if ((segment(2) === 'condition-false' || segment(2) === 'condition-absent') && major < 36) {
+      throw new Error('zero-invocation observation requires suite/36 or /37');
+    }
     valid =
       k(segment(0)) &&
       (segment(2) === 'delivery' ||
         segment(2) === 'flow' ||
         segment(2) === 'mapping' ||
         segment(2) === 'on-failure' ||
-        segment(2) === 'final-failure');
+        segment(2) === 'final-failure' ||
+        segment(2) === 'condition-false' ||
+        segment(2) === 'condition-absent');
+  } else if (parts.length === 4 && segment(1) === 'binding' && segment(2) === 'refusal') {
+    // One declared refusal a refusal-selected failure policy answers (beyond10x/ess#269) is
+    // suite/36 vocabulary.
+    if (major < 36) {
+      throw new Error('a scenario per selected refusal requires suite/36 or /37');
+    }
+    valid = k(segment(0)) && k(segment(3));
   } else if (parts.length === 3 && segment(1) === 'grant') {
     // The refusal an ungranted actor gets (beyond10x/ess#265) is suite/26 vocabulary.
     if (major < 26) {
       throw new Error('the refusal an ungranted actor gets requires suite/26 or /27');
     }
     valid = q(segment(0)) && segment(2) === 'denied';
+  } else if (parts.length === 4 && segment(1) === 'grant' && segment(2) === 'read') {
+    // A read-granted view read as an actor its grant does not name (beyond10x/ess#286).
+    if (major < 34) throw new Error('a read sent as an actor requires suite/34 or /35');
+    valid = q(segment(0)) && segment(3) === 'denied';
+  } else if (parts.length === 5 && segment(1) === 'grant' && segment(2) === 'read') {
+    // A read-granted view read as an actor its grant names (beyond10x/ess#286).
+    if (major < 34) throw new Error('a read sent as an actor requires suite/34 or /35');
+    valid = q(segment(0)) && segment(3) === 'admitted' && q(segment(4));
   } else if (parts.length === 4 && segment(1) === 'grant') {
     // Each granted actor sends its command (beyond10x/ess#265): suite/26 vocabulary as well.
     if (major < 26) {
@@ -5489,10 +6291,36 @@ const SUITE_MAJORS: { [version: string]: number } = {
   'ess-conformance/25': 25,
   'ess-conformance/26': 26,
   'ess-conformance/27': 27,
+  'ess-conformance/28': 28,
+  'ess-conformance/29': 29,
+  'ess-conformance/30': 30,
+  'ess-conformance/31': 31,
+  'ess-conformance/32': 32,
+  'ess-conformance/33': 33,
+  'ess-conformance/34': 34,
+  'ess-conformance/35': 35,
+  // Zero-invocation observation of a conditioned binding (beyond10x/ess#268).
+  'ess-conformance/36': 36,
+  'ess-conformance/37': 37,
+  // Conditional aggregate measures (`docs/design/conditional-aggregate-measures.md`,
+  // beyond10x/ess#363): ordinary expected rows, cumulative over every major below.
+  'ess-conformance/38': 38,
+  'ess-conformance/39': 39,
+  // The persisted expression vocabulary (`docs/design/expression-family-source22.md`), cumulative
+  // over /36–/39.
+  'ess-conformance/40': 40,
+  'ess-conformance/41': 41,
+  // Explicit synthesis seeds (beyond10x/ess#413): the seed-bearing pair.
+  'ess-conformance/42': 42,
+  'ess-conformance/43': 43,
 };
 
 /** The suite majors that carry a coverage inventory, each beside the ordinary major below it. */
-const COVERAGE_MAJORS = new Set([5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27]);
+const COVERAGE_MAJORS = new Set([
+  5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 33, 35, 37,
+  // The coverage majors of the conditional measure, expression and seed-bearing pairs.
+  39, 41, 43,
+]);
 
 /** coverageMajor reports whether a suite major carries a coverage inventory. */
 export function coverageMajor(major: number): boolean {
@@ -5510,17 +6338,23 @@ export function admitSuite(raw: string): Suite {
 
 export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
   accessorPreflight(raw);
-  const value = strictJSON(raw);
+  const value = strictSuiteJSON(raw);
   const root = closed(value, 'provenance scenarios', 'coverage');
   const provenance = closed(
     root.provenance,
     'suite_version system specification_version spec_digest contract_digest',
-    'component',
+    'component scenario_initial_state synthesis_seeds',
   );
   const version = text(provenance.suite_version);
   const major = SUITE_MAJORS[version];
   if (major === undefined) {
     throw new Error(`unsupported suite version ${quoteGo(version)}`);
+  }
+  if (
+    (major >= 34 && provenance.scenario_initial_state !== 'empty') ||
+    (major < 34 && Object.prototype.hasOwnProperty.call(provenance, 'scenario_initial_state'))
+  ) {
+    throw new Error('scenario_initial_state must be empty exactly from suite/34');
   }
   const carriesCoverage = Object.prototype.hasOwnProperty.call(root, 'coverage');
   if (carriesCoverage !== coverageMajor(major)) {
@@ -5547,7 +6381,16 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
   const refused: { [id: string]: string } = {};
   for (const id of Object.keys(scenarios)) {
     scenarioIdentity(id, major);
-    const scenario = closed(scenarios[id], 'purpose steps source', '');
+    const scenario = closed(scenarios[id], 'purpose steps source', 'one_time_response');
+    let trace: OneTimeTrace | undefined;
+    if (scenario.one_time_response != null) {
+      if (major < 34) throw new Error('one-time response authority requires suite/34 or /35');
+      trace = admitOneTimeTrace(scenario.one_time_response, scenario);
+    }
+    if (id.split('/')[1] === 'disclosure') {
+      if (trace === undefined) throw new Error('disclosure identity requires policy');
+      admitDisclosureId(id, scenario, trace, version);
+    }
     const purpose = text(scenario.purpose);
     if (purpose.trim() === '' || [...purpose].length > 200) {
       throw new Error('invalid purpose');
@@ -5574,12 +6417,31 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
       try {
         admitEntitySetups(steps);
         admitFixtureSteps(steps);
+        let called: string | undefined;
+        for (const step of steps) {
+          if (step.step === 'execute_command' || step.step === 'execute_command_without_input')
+            called = step.command;
+          if (step.step === 'expect_direct_response' && step.response.command !== called)
+            throw new Error('direct response does not name preceding invocation');
+        }
       } catch (error) {
         throw new Error(`${id}: ${errorText(error)}`);
       }
     }
     for (const source of array(scenario.source)) {
       admitReference(source);
+    }
+  }
+  // Seed provenance (beyond10x/ess#413) belongs exactly to suite/42 and /43.
+  const carriesSeeds = Object.prototype.hasOwnProperty.call(provenance, 'synthesis_seeds');
+  if (carriesSeeds !== (major === 42 || major === 43)) {
+    throw new Error('synthesis_seeds is required exactly in suite/42 and /43');
+  }
+  if (carriesSeeds) {
+    try {
+      admitSynthesisSeeds(provenance.synthesis_seeds, scenarios, root.coverage);
+    } catch (error) {
+      throw new Error(`synthesis_seeds: ${errorText(error)}`);
     }
   }
   if (coverageMajor(major)) {
@@ -5622,6 +6484,7 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
       specification_version: provenance.specification_version as string,
       spec_digest: provenance.spec_digest as string,
       contract_digest: provenance.contract_digest as string,
+      ...(major >= 34 ? { scenario_initial_state: 'empty' as const } : {}),
     },
     scenarios: {},
     original: raw,
@@ -5729,6 +6592,9 @@ function decodeScenarios(
         ? {
             purpose: (scenario.purpose as string) ?? '',
             steps: (scenario.steps as Node[]).map(decodeStep),
+            ...(scenario.one_time_response == null
+              ? {}
+              : { oneTimeResponse: admitOneTimeTrace(scenario.one_time_response, scenario) }),
           }
         : { purpose: (scenario.purpose as string) ?? '', steps: [], refused: refusal };
   }
@@ -5777,6 +6643,9 @@ function decodeValues(value: Node): { [field: string]: Value } | undefined {
     if (Object.prototype.hasOwnProperty.call(written, 'selection')) {
       decoded.selection = new SelectionObservation(written.selection);
     }
+    if (written.kind === 'list')
+      decoded.items = array(written.items).map((item) => decodeValues({ item })!.item!);
+    if (written.kind === 'members') decoded.members = decodeValues(written.members)!;
     result[field] = decoded;
   }
   return result;
@@ -5817,7 +6686,7 @@ function decodeExpectation(value: Node): Expectation | undefined {
     expectation.fields = fields;
   }
   if (Object.prototype.hasOwnProperty.call(value, 'predicate')) {
-    expectation.predicate = plainNumbers(value.predicate);
+    expectation.predicate = predicateNumbers(value.predicate);
   }
   if (Object.prototype.hasOwnProperty.call(value, 'order_by')) {
     expectation.order_by = (value.order_by as Node[]).map((item) => item as string);
@@ -5948,9 +6817,19 @@ function decodeStep(value: Node): Step {
     step.check = plainNumbers(written.check) as PeriodicCheck;
   }
   if (Object.prototype.hasOwnProperty.call(written, 'response')) {
-    step.response = decodeResponseObservation(plainNumbers(written.response));
+    if (step.step === 'expect_direct_response')
+      step.directResponse = admitDirectResponse(written.response);
+    else step.response = decodeResponseObservation(plainNumbers(written.response));
   }
   if (Object.hasOwn(written, 'fixtures')) step.fixtures = admitFixtures(written.fixtures);
+  if (step.step === 'deliver_event') {
+    step.authority = written.authority;
+    step.context = written.context;
+  }
+  if (step.step === 'expect_no_invocation' && typeof written.obligation === 'string')
+    step.obligation = written.obligation;
+  if (step.step === 'expect_every_invocation')
+    step.selecting = decodeValues(written.selecting) ?? {};
   if (step.step === 'expect_event_values') step.payload = decodeValues(written.payload) ?? {};
   if (Object.prototype.hasOwnProperty.call(written, 'left')) {
     step.left = plainNumbers(written.left) as ReadingReference;
@@ -6018,6 +6897,11 @@ export function admitValues(value: Node, major: number, accessors: boolean): voi
     }
     const kind = text(written.kind);
     switch (kind) {
+      case 'list':
+      case 'members':
+        if (major < 32) throw new Error('structured values require suite/32');
+        admitStructuredValue(written, 1);
+        break;
       case 'fixture':
         if (major < 18) throw new Error('fixture references require suite/18 or /19');
         closed(written, 'kind fixture', '');
@@ -6077,6 +6961,26 @@ export function admitValues(value: Node, major: number, accessors: boolean): voi
       default:
         throw new Error(`unsupported scenario value ${kind}`);
     }
+  }
+}
+
+function admitStructuredValue(value: Node, depth: number): void {
+  if (depth > 64) throw new Error('structured value depth exceeds 64');
+  let children: Node[];
+  if (value.kind === 'list') {
+    closed(value, 'kind items', '');
+    children = array(value.items);
+  } else {
+    closed(value, 'kind members', '');
+    if (!isObject(value.members)) throw new Error('structured members must be object');
+    children = Object.values(value.members);
+  }
+  for (const child of children) {
+    if (!isObject(child)) throw new Error('structured child must be value');
+    if (child.kind === 'list' || child.kind === 'members') admitStructuredValue(child, depth + 1);
+    else if (child.kind === 'literal' || child.kind === 'instance')
+      admitValues({ child }, 32, false);
+    else throw new Error('structured child must be literal, instance or structure');
   }
 }
 
@@ -6393,6 +7297,31 @@ export function admitPredicateEnvelope(value: Node, depth: number): void {
         case 'not':
           admitPredicateEnvelope(child, depth + 1);
           break;
+        case 'compare':
+          if (isObject(child) && Object.hasOwn(child, 'left')) {
+            // A tagged comparison (suite/40); admitPredicateVersion gates the major.
+            parseTaggedCompare(child);
+            break;
+          }
+          admitPredicatePath(key);
+          admitPredicateConstraint(child);
+          break;
+        case 'distinct':
+          // Distinct list members (suite/40); admitPredicateVersion gates the major. A mapping
+          // without `as` is a constraint on a fact named `distinct`, as it always was.
+          if (isObject(child) && Object.hasOwn(child, 'as')) {
+            parseDistinct(child);
+            break;
+          }
+        case 'window':
+          if (isObject(child) && Object.hasOwn(child, 'at')) {
+            // A calendar window (suite/40); admitPredicateVersion gates the major.
+            parseWindow(child as { [key: string]: Node });
+            break;
+          }
+          admitPredicatePath(key);
+          admitPredicateConstraint(child);
+          break;
         case 'forall':
         case 'exists': {
           const fields = closed(child, 'in as that', '');
@@ -6427,6 +7356,30 @@ export function admitPredicateScalar(value: Node): void {
   throw new Error('predicate operand must be a boolean, number or string');
 }
 
+/**
+ * Admits a comparison operand mapping: one constant offset `{offset: {fact, add|subtract}}` (suite/40,
+ * A2), read by the predicate reader, or the explicit fact operand. The derived UTF-8 byte length
+ * `{utf8_bytes: <path>}` (suite/40, decision 11) is read the same way.
+ */
+function admitMappingOperand(operand: { [key: string]: Node }): void {
+  if (
+    Object.keys(operand).length === 1 &&
+    (Object.hasOwn(operand, 'offset') || Object.hasOwn(operand, 'utf8_bytes'))
+  ) {
+    fromNode({ admitted: { eq: operand } });
+    return;
+  }
+  admitFactOperand(operand);
+}
+
+/** Admits exactly `{fact: <path>}`, the canonical one-segment fact operand (suite/40). */
+function admitFactOperand(operand: { [key: string]: Node }): void {
+  const path = operand['fact'];
+  if (Object.keys(operand).length !== 1 || typeof path !== 'string' || !factPath.test(path)) {
+    throw new Error('a comparison operand must be a scalar, or {fact: <path>} naming a fact');
+  }
+}
+
 export function admitPredicateConstraint(value: Node): void {
   if (Array.isArray(value)) {
     for (const item of value) {
@@ -6455,7 +7408,13 @@ export function admitPredicateConstraint(value: Node): void {
         case 'ge':
         case 'gte':
         case '>=':
-          admitPredicateScalar(operand);
+          if (isObject(operand)) {
+            // The explicit fact operand or one constant offset (suite/40); admitPredicateVersion
+            // gates the major.
+            admitMappingOperand(operand);
+          } else {
+            admitPredicateScalar(operand);
+          }
           break;
         case 'any_of':
         case 'in':
@@ -6528,6 +7487,33 @@ export function admitStep(value: Node, major: number): void {
   let required = 'step';
   let optional = '';
   switch (tag) {
+    case 'expect_direct_response':
+      if (major < 28) throw new Error('direct response requires suite/28');
+      required += ' response';
+      break;
+    case 'deliver_event':
+      if (major < 30) throw new Error('delivery context requires suite/30');
+      required += ' event authority context';
+      optional = 'payload';
+      break;
+    case 'expect_every_invocation':
+      if (major < 30) throw new Error('delivery context requires suite/30');
+      required += ' binding command input';
+      optional = 'selecting';
+      break;
+    case 'expect_no_invocation':
+      if (major < 36) throw new Error('zero-invocation observation requires suite/36 or /37');
+      required += ' binding command';
+      optional = 'obligation';
+      break;
+    case 'expect_no_publication':
+      if (major < 36) throw new Error('a scenario per selected refusal requires suite/36 or /37');
+      required += ' event';
+      break;
+    case 'expect_publication_count':
+      if (major < 36) throw new Error('a scenario per selected refusal requires suite/36 or /37');
+      required += ' event count';
+      break;
     case 'resolve_fixtures':
       if (major < 18) throw new Error('fixture resolution requires suite/18 or /19');
       required += ' fixtures';
@@ -6584,8 +7570,21 @@ export function admitStep(value: Node, major: number): void {
       if (major < 26) {
         throw new Error('the refusal an ungranted actor gets requires suite/26 or /27');
       }
+      // A refusal naming no actor, of a read sent as no actor (beyond10x/ess#286).
+      if (
+        Object.prototype.hasOwnProperty.call(value, 'actor') &&
+        isNil(value.actor) &&
+        major < 34
+      ) {
+        throw new Error('a read sent as an actor requires suite/34 or /35');
+      }
       required += ' actor';
       optional = 'unpublished';
+      break;
+    case 'read_as':
+      // Every later read sent as this actor (beyond10x/ess#286).
+      if (major < 34) throw new Error('a read sent as an actor requires suite/34 or /35');
+      required += ' actor';
       break;
     case 'snapshot_subject':
       if (major < 10) throw new Error('subject snapshots require suite/10 or /11');
@@ -6705,7 +7704,8 @@ export function admitStep(value: Node, major: number): void {
         admitFixtures(held);
         break;
       case 'response':
-        admitResponse(held, major);
+        if (tag === 'expect_direct_response') admitDirectResponse(held);
+        else admitResponse(held, major);
         break;
       case 'check':
         admitPeriodic(held);
@@ -6765,10 +7765,20 @@ export function admitStep(value: Node, major: number): void {
       case 'field':
         text(held);
         break;
+      case 'authority':
+        text(held);
+        break;
+      case 'context':
+        if (!isObject(held)) throw new Error('delivery context must be object');
+        admitPayload(held);
+        break;
+      case 'selecting':
+        admitValues(held, major, true);
+        break;
       case 'input':
       case 'params':
       case 'subject':
-        admitValues(held, major, tag === 'expect_invocation');
+        admitValues(held, major, tag === 'expect_invocation' || tag === 'expect_every_invocation');
         break;
       case 'payload':
       case 'fields':
@@ -6917,6 +7927,220 @@ export function admitSetupLiteral(value: Node, depth: number): void {
   }
 }
 
+/** The original-byte digest a synthesis seed source is recorded with. */
+const seedSourceDigest = /^sha256:[0-9a-f]{64}$/;
+
+/** Refuse an identity that is not a checked root-relative path. */
+function seedSourceIdentity(identity: string): void {
+  if (identity === '' || identity.includes('\\') || identity.includes(':')) {
+    throw new Error('invalid seed source identity');
+  }
+  for (const segment of identity.split('/')) {
+    if (segment === '' || segment === '.' || segment === '..') {
+      throw new Error('invalid seed source identity');
+    }
+  }
+  for (const character of identity) {
+    const code = character.codePointAt(0) as number;
+    if (code < 32 || (code >= 127 && code <= 159)) {
+      throw new Error('invalid seed source identity');
+    }
+  }
+}
+
+/**
+ * The first command step after `at` sending `instance`, where the next step asserts that command's
+ * outcome, and -1 otherwise.
+ */
+function seedAddressed(steps: Node[], at: number, instance: string): number {
+  for (let position = at + 1; position < steps.length; position++) {
+    const step = steps[position] as { [key: string]: Node };
+    if (step.step !== 'execute_command') {
+      continue;
+    }
+    const input = isObject(step.input) ? step.input : {};
+    const sent = Object.keys(input).some((field) => {
+      const reference = input[field];
+      return (
+        isObject(reference) &&
+        reference.kind === 'instance' &&
+        reference.instance === instance &&
+        Object.keys(reference).length === 2
+      );
+    });
+    if (!sent) {
+      continue;
+    }
+    const next = steps[position + 1];
+    if (
+      !isObject(next) ||
+      next.step !== 'expect_outcome' ||
+      !isObject(next.outcome) ||
+      next.outcome.command !== step.command
+    ) {
+      return -1;
+    }
+    return position;
+  }
+  return -1;
+}
+
+/**
+ * Check suite/42 and /43 seed provenance (beyond10x/ess#413) before any target callback: closed
+ * members, sorted distinct selections and applications, and every application bound to a generated
+ * scenario's own setup and asserted command steps.
+ */
+export function admitSynthesisSeeds(
+  raw: Node,
+  scenarios: { [id: string]: Node },
+  coverage: Node,
+): void {
+  const seeds = closed(raw, 'sources selections applications', '');
+  const sources = seeds.sources;
+  if (!isObject(sources) || Object.keys(sources).length === 0) {
+    throw new Error('sources must be a nonempty object');
+  }
+  for (const identity of Object.keys(sources)) {
+    seedSourceIdentity(identity);
+    const digest = sources[identity];
+    if (typeof digest !== 'string' || !seedSourceDigest.test(digest)) {
+      throw new Error('invalid source digest');
+    }
+  }
+  const selections = array(seeds.selections);
+  if (selections.length === 0 || selections.length > 64) {
+    throw new Error('selections must hold 1 to 64 records');
+  }
+  const records = new Map<string, { [key: string]: Node }>();
+  const used = new Set<string>();
+  let previous: [string, string] | undefined;
+  for (const item of selections) {
+    const record = closed(item, 'source instance entity identity fields state', '');
+    const source = text(record.source);
+    const instance = text(record.instance);
+    if (
+      !kebabName.test(instance) ||
+      !qualifiedName.test(text(record.entity)) ||
+      !stateName.test(text(record.state))
+    ) {
+      throw new Error('invalid selection name');
+    }
+    if (
+      previous !== undefined &&
+      (byteCompare(source, previous[0]) < 0 ||
+        (source === previous[0] && byteCompare(instance, previous[1]) <= 0))
+    ) {
+      throw new Error('selections must be sorted and distinct');
+    }
+    previous = [source, instance];
+    if (!Object.prototype.hasOwnProperty.call(sources, source)) {
+      throw new Error('a selection names an unknown source');
+    }
+    used.add(source);
+    if (!isObject(record.fields)) {
+      throw new Error('selection fields must be an object');
+    }
+    if (isNil(record.identity)) {
+      throw new Error('selection identity cannot be null');
+    }
+    admitSetupLiteral(record.identity, 0);
+    for (const field of Object.keys(record.fields)) {
+      if (!qualifiedName.test(field) || field.includes('.') || field.includes('-')) {
+        throw new Error('invalid entity field name');
+      }
+      admitSetupLiteral(record.fields[field], 0);
+    }
+    for (const other of records.values()) {
+      if (other.entity === record.entity && equal(other.identity, record.identity)) {
+        throw new Error('two selections share one qualified identity');
+      }
+    }
+    records.set(JSON.stringify([source, instance]), record);
+  }
+  if (used.size !== Object.keys(sources).length) {
+    throw new Error('a source is selected by no selection');
+  }
+  const bound = new Set<string>();
+  let previousScenario = '';
+  let previousStep = -1n;
+  for (const item of array(seeds.applications)) {
+    const application = closed(item, 'source instance scenario establish_step command_step', '');
+    const source = text(application.source);
+    const instance = text(application.instance);
+    const id = text(application.scenario);
+    const establish = unsigned(application.establish_step);
+    const command = unsigned(application.command_step);
+    if (
+      previousStep >= 0n &&
+      (byteCompare(id, previousScenario) < 0 ||
+        (id === previousScenario && establish <= previousStep))
+    ) {
+      throw new Error('applications must be sorted and distinct');
+    }
+    previousScenario = id;
+    previousStep = establish;
+    const record = records.get(JSON.stringify([source, instance]));
+    if (record === undefined) {
+      throw new Error('an application names an unknown selection');
+    }
+    const parts = id.split('/');
+    if (parts.length === 3 && parts[1] === 'authored') {
+      throw new Error('an application names an authored scenario');
+    }
+    if (!Object.prototype.hasOwnProperty.call(scenarios, id)) {
+      const outside =
+        isObject(coverage) &&
+        Array.isArray(coverage.outside) &&
+        (coverage.outside as Node[]).some(
+          (row) => isObject(row) && row.scenario === id && row.reason === 'selection_filter',
+        );
+      if (!outside) {
+        throw new Error('an application names a scenario the suite does not hold');
+      }
+      continue;
+    }
+    const steps = array((scenarios[id] as { [key: string]: Node }).steps);
+    if (establish >= BigInt(steps.length)) {
+      throw new Error('establish_step is not an establish_entity step');
+    }
+    const step = steps[Number(establish)] as { [key: string]: Node };
+    if (step.step !== 'establish_entity') {
+      throw new Error('establish_step is not an establish_entity step');
+    }
+    if (
+      step.entity !== record.entity ||
+      step.state !== record.state ||
+      !equal(step.identity, record.identity) ||
+      !equal(step.fields, record.fields)
+    ) {
+      throw new Error('the established row differs from the selection');
+    }
+    if (
+      command <= establish ||
+      seedAddressed(steps, Number(establish), step.instance as string) !== Number(command)
+    ) {
+      throw new Error('command_step is not the asserted command sent to the established row');
+    }
+    bound.add(JSON.stringify([id, establish.toString()]));
+  }
+  for (const id of Object.keys(scenarios)) {
+    const parts = id.split('/');
+    if (parts.length === 3 && parts[1] === 'authored') {
+      continue;
+    }
+    const steps = array((scenarios[id] as { [key: string]: Node }).steps);
+    steps.forEach((step, at) => {
+      if (
+        isObject(step) &&
+        step.step === 'establish_entity' &&
+        !bound.has(JSON.stringify([id, at.toString()]))
+      ) {
+        throw new Error(`generated scenario ${quoteGo(id)} establishes a row no application binds`);
+      }
+    });
+  }
+}
+
 // ---- report/2 ---------------------------------------------------------------------------------------
 
 export function countDocument(
@@ -6961,11 +8185,13 @@ export function countDocument(
     if (
       result.status !== statusPassed &&
       result.status !== statusFailed &&
-      result.status !== statusSkipped
+      result.status !== statusSkipped &&
+      result.status !== statusError &&
+      result.status !== statusUnsupported
     ) {
       throw new Error('unsupported terminal status');
     }
-    const verdict = result.status as 'passed' | 'failed' | 'skipped';
+    const verdict = result.status as 'passed' | 'failed' | 'error' | 'unsupported' | 'skipped';
     counts[verdict] += 1;
     outcomes[verdict].push(result.id);
   }
@@ -6981,9 +8207,9 @@ export function countDocument(
     sortStrings(ids);
   }
   let execution = 'passed';
-  if (counts.failed > 0) {
+  if (counts.failed > 0 || counts.unsupported > 0) {
     execution = 'failed';
-  } else if (counts.skipped > 0) {
+  } else if (counts.skipped > 0 || counts.error > 0) {
     execution = 'inconclusive';
   }
   let conformance = 'inconclusive';
@@ -7005,7 +8231,7 @@ export function countDocument(
     specification: `${suite.provenance.system}/${suite.provenance.specification_version}`,
     spec_digest: suite.provenance.spec_digest,
     implementation: `${identity.name} ${identity.version}`,
-    producer_profile: 'go-scenario-status/1',
+    producer_profile: 'go-scenario-status/2',
     suite: {
       version: suite.provenance.suite_version,
       digest_profile: 'sha256-json-bytes/1',
@@ -7028,6 +8254,7 @@ export function writeCountReport(
   results: ScenarioResult[],
   terminated: number,
   strict: boolean,
+  execution?: ExecutionContextConfig,
 ): void {
   const refusal = accountForEveryScenario(suite, terminated);
   if (refusal !== null) {
@@ -7048,6 +8275,15 @@ export function writeCountReport(
   const path = process.env.ESS_REPORT_OUT ?? '';
   if (path !== '') {
     writeFileSync(path, encoded, 'utf8');
+    // Written before any strict verdict is thrown: the context states which build produced the
+    // report that was written, whatever that report says.
+    if (execution !== undefined) {
+      writeFileSync(
+        execution.out,
+        countCanonical(executionContextDocument(suite, identity, encoded, execution.build)),
+        'utf8',
+      );
+    }
   }
   if (strict && document.conformance_status !== 'passed') {
     if (suite.coverage === undefined) {
@@ -7060,6 +8296,82 @@ export function writeCountReport(
   t.diagnostic(
     `report/2: ${String(document.execution_status)}, written to ${path === '' ? '(nowhere)' : path}`,
   );
+}
+
+// ---- host execution provenance (`ess-conformance-execution/1`, beyond10x/ess#296) ----------------
+
+/** The host's public build identity, and where the context binding it to the report is written. */
+export interface ExecutionContextConfig {
+  build: string;
+  out: string;
+}
+
+/** Whether a build identity is `sha256:` and 64 lowercase hexadecimal digits. */
+export function publicBuild(build: string): boolean {
+  return /^sha256:[0-9a-f]{64}$/.test(build);
+}
+
+/**
+ * Reads ESS_IMPLEMENTATION_BUILD and ESS_EXECUTION_CONTEXT_OUT, which are given together or not at
+ * all, before the suite runs.
+ *
+ * The build is the SHA-256 of the immutable target build, which only the host knows: it is never
+ * derived from anything a target answers, and a protected one-time run's report label stays its
+ * fixed redacted label. The context binds the report written to ESS_REPORT_OUT, so it needs
+ * report/2 written there, and a file of its own. No variable here changes any verdict.
+ */
+export function executionContextConfiguration(version: string): ExecutionContextConfig | undefined {
+  const has = (name: string): boolean => Object.prototype.hasOwnProperty.call(process.env, name);
+  const buildSet = has('ESS_IMPLEMENTATION_BUILD');
+  const outSet = has('ESS_EXECUTION_CONTEXT_OUT');
+  if (!buildSet && !outSet) {
+    return undefined;
+  }
+  if (!buildSet || !outSet) {
+    throw new Error(
+      'ESS_IMPLEMENTATION_BUILD and ESS_EXECUTION_CONTEXT_OUT are given together or not at all',
+    );
+  }
+  if (version !== '2') {
+    throw new Error('an execution context requires explicit ESS_REPORT_FORMAT=2');
+  }
+  const report = process.env.ESS_REPORT_OUT ?? '';
+  if (report === '') {
+    throw new Error(
+      'an execution context requires ESS_REPORT_OUT: it binds the report written there',
+    );
+  }
+  const build = process.env.ESS_IMPLEMENTATION_BUILD as string;
+  if (!publicBuild(build)) {
+    throw new Error('ESS_IMPLEMENTATION_BUILD must be sha256: and 64 lowercase hexadecimal digits');
+  }
+  const out = process.env.ESS_EXECUTION_CONTEXT_OUT as string;
+  if (out === '' || normalize(out) === normalize(report)) {
+    throw new Error('ESS_EXECUTION_CONTEXT_OUT must name a file other than ESS_REPORT_OUT');
+  }
+  return { build, out };
+}
+
+/**
+ * The closed `ess-conformance-execution/1` envelope: the exact report and suite bytes' digests, the
+ * report's own implementation label and the host's build. No values, timestamps, host text or
+ * commands.
+ */
+export function executionContextDocument(
+  suite: Suite,
+  identity: Identity,
+  report: string,
+  build: string,
+): { [key: string]: Node } {
+  const sha = (text: string): string =>
+    `sha256:${createHash('sha256').update(text, 'utf8').digest('hex')}`;
+  return {
+    format: 'ess-conformance-execution/1',
+    implementation: `${identity.name} ${identity.version}`,
+    implementation_build: build,
+    report_digest: sha(report),
+    suite_digest: sha(suite.original),
+  };
 }
 
 /** Canonical report/2 contains only unsigned integer scalars; the digits avoid binary64 loss. */
@@ -7157,7 +8469,8 @@ export interface AccessorOperation {
   field: AccessorField;
   next: number;
   tag: string;
-  variants: { [label: string]: number };
+  /** A unit variant (ess/22) has no plan: `null`, and every member read through it is unavailable. */
+  variants: { [label: string]: number | null };
 }
 
 export interface AccessorNode {
@@ -7215,10 +8528,11 @@ function decodeAccessorShape(value: Node): AccessorShape {
 
 function decodeAccessorOperation(value: Node): AccessorOperation {
   const held = isObject(value) ? value : {};
-  const variants: { [label: string]: number } = {};
+  const variants: { [label: string]: number | null } = {};
   if (isObject(held.variants)) {
     for (const label of Object.keys(held.variants)) {
-      variants[label] = decodeNumber((held.variants as { [key: string]: Node })[label]);
+      const next = (held.variants as { [key: string]: Node })[label];
+      variants[label] = next === null ? null : decodeNumber(next);
     }
   }
   return {
@@ -7281,7 +8595,7 @@ export function decodeAccessorTypeFacts(value: Node): AccessorTypeFacts {
 export function accessorPreflight(raw: string): void {
   let decoded: { value: Node; spans: WeakMap<object, [number, number]> };
   try {
-    decoded = strictJSONWithSpans(raw);
+    decoded = strictSuiteJSONWithSpans(raw);
   } catch {
     return; // The ordinary closed admitter diagnoses malformed legacy documents.
   }
@@ -7535,9 +8849,9 @@ export function accessorChildren(operation: AccessorOperation): number[] {
     case 'newtype':
       return [operation.next];
     case 'union':
-      return sortStrings(Object.keys(operation.variants)).map(
-        (label) => operation.variants[label] as number,
-      );
+      return sortStrings(Object.keys(operation.variants))
+        .map((label) => operation.variants[label])
+        .filter((next): next is number => next !== null);
     default:
       return [];
   }
@@ -7686,9 +9000,16 @@ export class AccessorObservation {
           if (!Object.prototype.hasOwnProperty.call(operation.variants, tag)) {
             throw new Error('unknown accessor discriminator');
           }
-          const next = operation.variants[tag] as number;
+          const next = operation.variants[tag] as number | null;
           const content = operation.tag === 'value' ? 'content' : 'value';
           present = Object.prototype.hasOwnProperty.call(fields, content);
+          if (next === null) {
+            // A unit variant (ess/22) is the tag alone: nothing is read through it.
+            if (present) {
+              throw new Error('accessor unit variant carries a payload');
+            }
+            return [null, false];
+          }
           value = fields[content];
           if (!present) {
             throw new Error('accessor union payload missing');
@@ -8855,13 +10176,18 @@ function variantList(value: Node): string[] {
   });
 }
 
-function variantMap(value: Node): { [label: string]: string } {
+/** A union's variants by label; `null` is a unit variant (ess/22), the tag alone. */
+function variantMap(value: Node): { [label: string]: string | null } {
   if (!isObject(value)) {
     throw new Error('selection union variants must be an object');
   }
-  const result: { [label: string]: string } = {};
+  const result: { [label: string]: string | null } = {};
   for (const label of Object.keys(value)) {
     const target = value[label];
+    if (target === null) {
+      result[label] = null;
+      continue;
+    }
     if (typeof target !== 'string') {
       throw new Error('selection union variant must be text');
     }
@@ -9156,7 +10482,10 @@ export class SelectionObservation {
         case 'union': {
           const variants = variantMap(body.variants);
           for (const label of meaningKeys(variants)) {
-            const member = variants[label] as string;
+            const member = variants[label];
+            if (member === null || member === undefined) {
+              continue;
+            }
             node.members.push(member);
             pending.push(member);
           }
@@ -9232,8 +10561,11 @@ export class SelectionObservation {
             throw new Error('selection union differs');
           }
           for (const label of Object.keys(operation.variants)) {
+            const next = operation.variants[label] as number | null;
+            const declared = variants[label];
             if (
-              variants[label] !== itemAt(plan.nodes, operation.variants[label] as number).source
+              declared === undefined ||
+              (next === null ? declared !== null : declared !== itemAt(plan.nodes, next).source)
             ) {
               throw new Error('selection variant differs');
             }
@@ -9422,8 +10754,16 @@ export class SelectionObservation {
             }
           }
           const item = fields[key];
+          const carried = variants[label];
+          if (carried === null || carried === undefined) {
+            // A unit variant (ess/22) is the tag alone.
+            if (Object.prototype.hasOwnProperty.call(fields, key)) {
+              throw new Error('invalid_input');
+            }
+            return;
+          }
           this.validateValue(
-            variants[label] as string,
+            carried,
             item,
             Object.prototype.hasOwnProperty.call(fields, key),
             counter,
@@ -9899,6 +11239,203 @@ export function admitPredicateVersion(value: Node, major: number): void {
   if (major < 8 && predicateNeedsLosslessReader(value)) {
     throw new Error('normalized structured comparison operands require suite/8 or /9');
   }
+  if (major < 40 && predicateUsesUtf8Bytes(value)) {
+    throw new Error('the UTF-8 byte length {utf8_bytes: …} requires suite/40 or /41');
+  }
+  if (major < 40 && predicateUsesOffset(value)) {
+    throw new Error('one constant offset {offset: …} requires suite/40 or /41');
+  }
+  if (major < 40 && predicateUsesDistinct(value)) {
+    throw new Error('distinct list members {distinct: …} require suite/40 or /41');
+  }
+  if (major < 40 && predicateUsesFactOperand(value)) {
+    throw new Error('a one-segment fact operand {fact: …} requires suite/40 or /41');
+  }
+  if (major < 40 && predicateUsesOperator(value, ['left'])) {
+    throw new Error('a comparison tagged as: timestamp requires suite/40 or /41');
+  }
+  // A calendar window, `window: {at, …}` (docs/design/calendar-window-guards.md): `at` is no
+  // constraint operator, so a mapping carrying it under any key is one.
+  if (major < 40 && predicateUsesOperator(value, ['at'])) {
+    throw new Error(
+      'a calendar window {window: {at, days, from, to, offset}} requires suite/40 or /41',
+    );
+  }
+}
+
+/**
+ * Whether admitted predicate grammar carries distinct list members `{distinct: {in, as, …}}`
+ * (suite/40), Go's `predicateUsesDistinct`.
+ */
+export function predicateUsesDistinct(value: Node): boolean {
+  if (Array.isArray(value)) {
+    return value.some(predicateUsesDistinct);
+  }
+  if (!isObject(value)) {
+    return false;
+  }
+  for (const key of Object.keys(value)) {
+    const child = value[key] ?? null;
+    switch (key) {
+      case 'all':
+      case 'and':
+      case 'all_of':
+      case 'any':
+      case 'or':
+      case 'none':
+      case 'none_of_these':
+      case 'not':
+        if (predicateUsesDistinct(child)) return true;
+        break;
+      case 'forall':
+      case 'exists':
+        if (
+          isObject(child) &&
+          predicateUsesDistinct((child as { [key: string]: Node }).that ?? null)
+        ) {
+          return true;
+        }
+        break;
+      case 'distinct':
+        if (isObject(child) && Object.hasOwn(child, 'as')) return true;
+        break;
+    }
+  }
+  return false;
+}
+
+/**
+ * Whether admitted predicate grammar carries the derived UTF-8 byte length `{utf8_bytes: …}`
+ * (suite/40, `docs/design/expression-family-source22.md` decision 11): an operand of a constraint,
+ * or either side of the `{compare: …}` form. A member merely named `utf8_bytes` is a path, never a
+ * mapping, and selects nothing. Go's `predicateUsesUtf8Bytes`.
+ */
+export function predicateUsesUtf8Bytes(value: Node): boolean {
+  const derived = (operand: Node): boolean =>
+    isObject(operand) && Object.hasOwn(operand, 'utf8_bytes');
+  if (Array.isArray(value)) {
+    return value.some(predicateUsesUtf8Bytes);
+  }
+  if (!isObject(value)) {
+    return false;
+  }
+  for (const key of Object.keys(value)) {
+    const child = value[key] ?? null;
+    switch (key) {
+      case 'all':
+      case 'and':
+      case 'all_of':
+      case 'any':
+      case 'or':
+      case 'none':
+      case 'none_of_these':
+      case 'not':
+        if (predicateUsesUtf8Bytes(child)) return true;
+        break;
+      case 'forall':
+      case 'exists':
+        if (
+          isObject(child) &&
+          predicateUsesUtf8Bytes((child as { [key: string]: Node }).that ?? null)
+        ) {
+          return true;
+        }
+        break;
+      default:
+        if (isObject(child)) {
+          const operators = child as { [key: string]: Node };
+          if (key === 'compare' && Object.hasOwn(operators, 'left')) {
+            if (derived(operators['left'] ?? null) || derived(operators['right'] ?? null)) {
+              return true;
+            }
+            break;
+          }
+          for (const operand of Object.values(operators)) {
+            if (derived(operand)) return true;
+          }
+        }
+    }
+  }
+  return false;
+}
+
+/** Whether admitted predicate grammar carries one constant offset `{offset: …}` (suite/40, A2). */
+export function predicateUsesOffset(value: Node): boolean {
+  if (Array.isArray(value)) {
+    return value.some(predicateUsesOffset);
+  }
+  if (!isObject(value)) {
+    return false;
+  }
+  for (const key of Object.keys(value)) {
+    const child = value[key] ?? null;
+    switch (key) {
+      case 'all':
+      case 'and':
+      case 'all_of':
+      case 'any':
+      case 'or':
+      case 'none':
+      case 'none_of_these':
+      case 'not':
+        if (predicateUsesOffset(child)) return true;
+        break;
+      case 'forall':
+      case 'exists':
+        if (
+          isObject(child) &&
+          predicateUsesOffset((child as { [key: string]: Node }).that ?? null)
+        ) {
+          return true;
+        }
+        break;
+      default:
+        if (isObject(child)) {
+          for (const operand of Object.values(child as { [key: string]: Node })) {
+            if (isObject(operand) && Object.hasOwn(operand, 'offset')) return true;
+          }
+        }
+    }
+  }
+  return false;
+}
+
+/** Whether admitted predicate grammar carries the explicit fact operand `{fact: …}` (suite/40). */
+export function predicateUsesFactOperand(value: Node): boolean {
+  if (Array.isArray(value)) {
+    return value.some(predicateUsesFactOperand);
+  }
+  if (!isObject(value)) {
+    return false;
+  }
+  for (const key of Object.keys(value)) {
+    const child = value[key];
+    switch (key) {
+      case 'all':
+      case 'and':
+      case 'all_of':
+      case 'any':
+      case 'or':
+      case 'none':
+      case 'none_of_these':
+      case 'not':
+        if (predicateUsesFactOperand(child)) return true;
+        break;
+      case 'forall':
+      case 'exists':
+        if (isObject(child) && predicateUsesFactOperand((child as { [key: string]: Node }).that)) {
+          return true;
+        }
+        break;
+      default:
+        if (isObject(child)) {
+          for (const operand of Object.values(child as { [key: string]: Node })) {
+            if (isObject(operand) && Object.hasOwn(operand, 'fact')) return true;
+          }
+        }
+    }
+  }
+  return false;
 }
 
 /** Whether admitted predicate grammar carries a case-insensitive operator (beyond10x/ess#140). */

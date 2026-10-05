@@ -11,9 +11,14 @@ use ess_conformance::{
     },
     Clock, CountReport, CountRun, CountStatus, Ids, Runner, RunnerConfig,
 };
-use ess_primitives::time::Timestamp;
+use ess_primitives::{node::Node, time::Timestamp};
 use serde_json::{json, Value};
-use std::{cell::RefCell, fs, path::Path, rc::Rc};
+use std::{
+    cell::{Cell, RefCell},
+    fs,
+    path::Path,
+    rc::Rc,
+};
 
 struct LoggedClock {
     fixed: Option<u64>,
@@ -35,6 +40,7 @@ struct LoggedTarget {
     control: bool,
     mode: String,
     callbacks: RefCell<Vec<Value>>,
+    legacy_issue_sequence: Cell<u16>,
 }
 impl LoggedTarget {
     fn record(&self, method: &str, request: &Value) {
@@ -65,6 +71,7 @@ impl ConformanceTarget for LoggedTarget {
     }
     fn begin_scenario(&self, request: &ScenarioContext) -> Result<(), TargetError> {
         self.record("begin", &json!(request));
+        self.legacy_issue_sequence.set(0);
         match self.mode.as_str() {
             "error" => Err(TargetError::unavailable(
                 "begin",
@@ -83,7 +90,7 @@ impl ConformanceTarget for LoggedTarget {
     }
     fn execute_command(
         &self,
-        request: SemanticCommandRequest,
+        mut request: SemanticCommandRequest,
     ) -> Result<SemanticCommandResult, TargetError> {
         self.record("execute_command", &json!(request));
         if self.control {
@@ -98,6 +105,28 @@ impl ConformanceTarget for LoggedTarget {
                 ))
             }
         } else {
+            // The immutable coverage fixture predates the example's explicit issued_at input.
+            // Keep its target-owned monotonic issuance clock at this test boundary; production
+            // Billing still requires the new input, and the transcript above keeps original bytes.
+            if request.command.to_string() == "billing.invoice.IssueInvoice"
+                && !request.input.contains_key("issued_at")
+            {
+                let next = self
+                    .legacy_issue_sequence
+                    .get()
+                    .checked_add(1)
+                    .expect("the bounded legacy fixture cannot exhaust its issuance counter");
+                self.legacy_issue_sequence.set(next);
+                request.input.insert(
+                    "issued_at".into(),
+                    Node::Text(format!(
+                        "2020-01-01T{:02}:{:02}:{:02}Z",
+                        next / 3600,
+                        (next / 60) % 60,
+                        next % 60,
+                    )),
+                );
+            }
             self.billing.execute_command(request)
         }
     }
@@ -137,6 +166,7 @@ pub(super) fn run(instance: &Value, input: &AdmittedInput, out: &Path) {
         control: instance["target"] == "single_scenario_controls",
         mode: text(&instance["target_mode"]).into(),
         callbacks: RefCell::new(Vec::new()),
+        legacy_issue_sequence: Cell::new(0),
     };
     let run = Runner::new(
         RunnerConfig::default(),
@@ -211,4 +241,105 @@ pub(super) fn run(instance: &Value, input: &AdmittedInput, out: &Path) {
         "{}: report2, diagnostic {producer_exit}, strict {strict_exit}",
         instance["id"]
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ess_conformance::target::Deadline;
+    use ess_primitives::{consistency::QueryConsistency, ids::CorrelationId, node::Node};
+    use std::collections::BTreeMap;
+
+    fn request(command: &str, input: Value) -> SemanticCommandRequest {
+        SemanticCommandRequest {
+            command: command.parse().unwrap(),
+            actor: None,
+            caller: None,
+            input: serde_json::from_value(input).unwrap(),
+            correlation: CorrelationId::new("legacy-billing").unwrap(),
+        }
+    }
+    fn create(target: &impl ConformanceTarget) -> Node {
+        let mut request = request(
+            "billing.invoice.CreateInvoice",
+            json!({
+                "account_id":"3f1d5b7e-0000-4000-8000-000000000001",
+                "customer_email":"test@example.test", "amount":{"amount":1,"currency":"EUR"}
+            }),
+        );
+        request.actor = Some("billing.invoice.Customer".parse().unwrap());
+        target.execute_command(request).unwrap().direct_events[0].payload["invoice_id"].clone()
+    }
+
+    #[test]
+    fn legacy_billing_inputs_preserve_real_order_without_repairing_other_fields() {
+        let current = Billing::new();
+        let id = create(&current);
+        assert!(
+            current
+                .execute_command(request(
+                    "billing.invoice.IssueInvoice",
+                    json!({"invoice_id":id})
+                ))
+                .unwrap()
+                .outcome
+                .is_none(),
+            "the current example contract requires issued_at"
+        );
+        let target = LoggedTarget {
+            billing: Billing::new(),
+            control: false,
+            mode: "normal".into(),
+            callbacks: RefCell::new(Vec::new()),
+            legacy_issue_sequence: Cell::new(0),
+        };
+        let mut identities = Vec::new();
+        let mut token = None;
+        for _ in 0..2 {
+            let id = create(&target);
+            let result = target
+                .execute_command(request(
+                    "billing.invoice.IssueInvoice",
+                    json!({"invoice_id":id}),
+                ))
+                .unwrap();
+            assert_eq!(
+                result.outcome.as_ref().map(ToString::to_string).as_deref(),
+                Some("billing.invoice.IssueInvoice/issued")
+            );
+            token = result.consistency;
+            identities.push(id);
+        }
+        let rows = target
+            .query_view(SemanticViewRequest {
+                view: "billing.invoice.OutstandingInvoices".parse().unwrap(),
+                params: BTreeMap::new(),
+                consistency: QueryConsistency::at_least(token.unwrap()),
+                correlation: CorrelationId::new("legacy-billing").unwrap(),
+                deadline: Deadline::at(Timestamp::from_epoch_millis(u64::MAX)),
+            })
+            .unwrap()
+            .rows;
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0]["invoice_id"], identities[1]);
+        assert_eq!(rows[1]["invoice_id"], identities[0]);
+        assert_ne!(rows[0]["issued_at"], rows[1]["issued_at"]);
+        for callback in target.callbacks.borrow().iter().filter(|call| {
+            call["method"] == "execute_command"
+                && call["request"]["command"] == "billing.invoice.IssueInvoice"
+        }) {
+            assert!(
+                callback["request"]["input"].get("issued_at").is_none(),
+                "the transcript must retain the frozen source request"
+            );
+        }
+        assert!(
+            target
+                .execute_command(request("billing.invoice.IssueInvoice", json!({})))
+                .unwrap()
+                .outcome
+                .is_none(),
+            "missing identity must not be repaired"
+        );
+    }
 }

@@ -1,7 +1,10 @@
 //! Value expressions in `sets:` and `payload:` (`docs/design/value-expressions.md`): what a
 //! synthesized suite asserts for each source, read against the arranged row.
 use ess_compiler::{resolve::compile, source::SourceMap};
-use ess_conformance::{scenario::ViewExpectation, ConformanceSuite as Suite, ScenarioStep};
+use ess_conformance::{
+    interpret::Interpreted, report::Status, scenario::ViewExpectation, AdmittedSuite,
+    ConformanceSuite as Suite, Runner, ScenarioStep,
+};
 use ess_domain::{
     spec::{RawSpecFile, Specification},
     system::Source,
@@ -63,6 +66,25 @@ fn payload(steps: &[ScenarioStep], event: &str) -> std::collections::BTreeMap<St
                 payload,
                 ..
             } if seen.to_string() == event => Some(payload.clone()),
+            // The literal half of an expectation that also compares a captured identity
+            // (beyond10x/ess#273).
+            ScenarioStep::ExpectEventValues {
+                event: seen,
+                payload,
+                ..
+            } if seen.to_string() == event => {
+                let payload: std::collections::BTreeMap<String, ess_primitives::node::Node> =
+                    payload
+                        .iter()
+                        .filter_map(|(key, value)| match value {
+                            ess_conformance::ScenarioValue::Literal { value } => {
+                                Some((key.clone(), value.clone()))
+                            }
+                            _ => None,
+                        })
+                        .collect();
+                Some(payload.clone())
+            }
             _ => None,
         })
         .unwrap_or_else(|| panic!("no `{event}` expectation in {steps:#?}"))
@@ -220,6 +242,30 @@ views:
       - {name: state, type: demo.orders.Order.State}
 ";
 
+#[test]
+fn the_interpreter_executes_the_complete_value_expression_suite() {
+    let spec = Specification::assemble([(
+        Source::new("orders.yaml"),
+        RawSpecFile::parse(EXPRESSIONS).unwrap(),
+    )])
+    .unwrap();
+    let ir = compile(&spec, &SourceMap::new()).unwrap();
+    let synthesis = ess_conformance::synthesize::synthesize(&ir);
+    assert!(!synthesis.suite.scenarios.is_empty());
+    let admitted = ess_conformance::AdmittedSuite::from_suite(&synthesis.suite).unwrap();
+    let run = ess_conformance::Runner::for_suite(admitted.suite()).run_admitted(
+        &admitted,
+        &ess_conformance::interpret::Interpreted::for_model(ir),
+    );
+    assert!(
+        run.scenarios
+            .iter()
+            .all(|scenario| scenario.status == ess_conformance::report::Status::Passed),
+        "{:#?}",
+        run.scenarios
+    );
+}
+
 fn literal(value: Node) -> ess_conformance::ScenarioValue {
     ess_conformance::ScenarioValue::Literal { value }
 }
@@ -335,4 +381,112 @@ fn a_numeric_payload_literal_is_compared_as_the_number_it_spells() {
     );
     assert_eq!(values.get("retries"), Some(&Node::Number(0_i64.into())));
     assert_eq!(values.get("rate"), Some(&decimal("0.25")));
+}
+
+const NESTED_INCREMENT: &str = r"format: ess/20
+system: demo
+version: v1
+domain: demo.nested
+types:
+  - name: demo.nested.Packet
+    kind: struct
+    fields: [{name: amount, type: Integer}]
+entities:
+  - name: demo.nested.Counter
+    identity: {name: counter_id, type: Uuid}
+    fields:
+      - {name: amount, type: Integer}
+      - {name: packet, type: demo.nested.Packet}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+events:
+  - {name: demo.nested.Created, fields: [{name: counter_id, type: Uuid}]}
+  - {name: demo.nested.Advanced, fields: []}
+commands:
+  - name: demo.nested.Create
+    input: []
+    outcomes:
+      - name: created
+        creates: demo.nested.Counter
+        instance: counter_id
+        sets: {amount: 3, packet: {amount: 100}}
+        emits: [demo.nested.Created]
+        payload: {demo.nested.Created: {counter_id: {generated: true}}}
+  - name: demo.nested.Advance
+    input: [{name: counter_id, type: Uuid}]
+    outcomes:
+      - name: advanced
+        updates: demo.nested.Counter
+        instance: counter_id
+        sets: {packet: {amount: {increment: 1}}}
+        emits: [demo.nested.Advanced]
+views:
+  - name: demo.nested.Counters
+    source: demo.nested.Counter
+    consistency: read_your_writes
+    fields:
+      - {name: counter_id, type: Uuid}
+      - {name: amount, type: Integer}
+      - {name: packet, type: demo.nested.Packet}
+";
+
+#[test]
+fn nested_increment_expectation_uses_the_full_path() {
+    let mut suite = suite(NESTED_INCREMENT);
+    let row = last_row(scenario(&suite, "demo.nested.Advance/outcome/advanced"));
+    assert_eq!(
+        row.get("amount"),
+        Some(&literal(Node::Number(3_i64.into())))
+    );
+    assert_eq!(
+        row.get("packet"),
+        Some(&literal(Node::Map(std::collections::BTreeMap::from([(
+            "amount".into(),
+            Node::Number(101_i64.into()),
+        )])))),
+        "the expected leaf comes from packet.amount=100, never top-level amount=3"
+    );
+
+    let advanced = suite
+        .scenarios
+        .iter_mut()
+        .find(|(id, _)| id.to_string() == "demo.nested.Advance/outcome/advanced")
+        .expect("the nested increment scenario");
+    let fields = advanced
+        .1
+        .steps
+        .iter_mut()
+        .rev()
+        .find_map(|step| match step {
+            ScenarioStep::ExpectView {
+                expectation: ViewExpectation::Contains { fields },
+                ..
+            } if fields.contains_key("packet") => Some(fields),
+            _ => None,
+        })
+        .expect("the scenario expects its updated row");
+    fields.insert(
+        "packet".into(),
+        literal(Node::Map(std::collections::BTreeMap::from([(
+            "amount".into(),
+            Node::Number(4_i64.into()),
+        )]))),
+    );
+
+    let raw = RawSpecFile::parse(NESTED_INCREMENT).unwrap();
+    let spec = Specification::assemble([(Source::new("nested.yaml"), raw)]).unwrap();
+    let ir = compile(&spec, &SourceMap::new()).unwrap();
+    let admitted = AdmittedSuite::from_suite(&suite).unwrap();
+    let report = Runner::for_suite(&suite)
+        .run_admitted(&admitted, &Interpreted::for_model(ir))
+        .into_report();
+    let mutant = report
+        .scenarios
+        .iter()
+        .find(|scenario| scenario.scenario.to_string() == "demo.nested.Advance/outcome/advanced")
+        .expect("the mutant scenario ran");
+    assert_eq!(
+        mutant.status,
+        Status::Failed,
+        "the old top-level-leaf expectation must fail against location-correct execution"
+    );
 }

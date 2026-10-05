@@ -123,7 +123,9 @@ fn pinned(held: &[&Predicate], path: &[&str], integral: bool) -> bool {
                     return true;
                 }
             }
-            Predicate::Compare { left, op, right } => {
+            Predicate::Compare {
+                left, op, right, ..
+            } => {
                 // Read as `path <op> literal`, flipping a literal written first.
                 let (op, literal) = match (left, right) {
                     (fact, Operand::Literal(literal)) if at(fact) => (*op, literal),
@@ -246,6 +248,8 @@ pub(super) fn withdraw_second_creations(ir: &EssIr, synthesis: &mut Synthesis) {
             | Note::UnseparatedSources { scenario, .. }
             | Note::UnwitnessedOverlap { scenario, .. }
             | Note::UnswappedCallers { scenario, .. }
+            | Note::CrossCallerUnswapped { scenario, .. }
+            | Note::CrossCallerUnwitnessed { scenario, .. }
             | Note::UnaccompaniedRelatedCopy { scenario, .. } => *scenario != id,
             _ => true,
         });

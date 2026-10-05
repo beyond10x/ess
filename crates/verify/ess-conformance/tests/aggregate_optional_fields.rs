@@ -280,10 +280,7 @@ fn the_issues_ungrouped_total_is_asserted_as_the_change_its_rows_make() {
     );
     // No absolute value of the total is asserted anywhere.
     assert_eq!(contains(total, TOTAL), Vec::<BTreeMap<_, _>>::new());
-    assert_eq!(
-        suite.provenance.suite_version.major(),
-        ess_conformance::aggregate_delta::ORDINARY
-    );
+    assert_eq!(suite.provenance.suite_version.major(), 34);
 }
 
 #[test]

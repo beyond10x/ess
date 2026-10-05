@@ -61,7 +61,7 @@ fn suite() -> ConformanceSuite {
 #[test]
 fn pure_return_correct_literal_compiles_without_events() {
     let suite = suite();
-    assert_eq!(suite.provenance.suite_version.major(), 28);
+    assert_eq!(suite.provenance.suite_version.major(), 34);
     let bytes = suite.to_canonical_json().unwrap();
     assert!(bytes.contains("expect_direct_response"), "{bytes}");
     assert!(!bytes.contains("query_view"));
@@ -344,7 +344,7 @@ fn pure_return_source_requires_its_format_and_a_successful_typed_response() {
     ] {
         let raw = RawSpecFile::parse(&source).unwrap();
         let error = Specification::assemble([(Source::new("invalid.yaml"), raw)]).unwrap_err();
-        assert!(!error.to_string().is_empty());
+        assert_ne!(error.to_string().len(), 0);
     }
 }
 
@@ -482,13 +482,10 @@ fn pure_return_json_obeys_the_same_recursive_resource_bounds() {
 }
 
 #[test]
-fn pure_return_generators_refuse_unsupported_execution() {
-    for error in [
-        ess_conformance::go::emit(&suite()).unwrap_err(),
-        ess_conformance::ts::emit(&suite()).unwrap_err(),
-    ] {
-        assert_eq!(error.issues[0].reason, "UnsupportedTarget");
-    }
+fn pure_return_generators_preserve_supported_execution() {
+    // Actual healthy/faulty callback execution belongs to the shared runtime parity controls.
+    ess_conformance::go::emit(&suite()).expect("Go supports direct response observations");
+    ess_conformance::ts::emit(&suite()).expect("TypeScript supports direct response observations");
 }
 
 #[test]
@@ -522,7 +519,7 @@ fn pure_return_legacy_suite_bytes_unchanged() {
     let model = compile(&spec, &SourceMap::new()).unwrap();
     assert!(!model.to_compact_json().contains("\"returns\""));
     let synthesis = ess_conformance::synthesize(&model);
-    assert_eq!(synthesis.suite.provenance.suite_version.major(), 8);
+    assert_eq!(synthesis.suite.provenance.suite_version.major(), 34);
     assert!(!synthesis
         .suite
         .to_canonical_json()
@@ -546,7 +543,7 @@ fn pure_return_coverage_and_report_retain_exact_admitted_bytes() {
     )
     .unwrap();
     let admitted = input.selected();
-    assert_eq!(admitted.suite().provenance.suite_version.major(), 29);
+    assert_eq!(admitted.suite().provenance.suite_version.major(), 35);
     assert_eq!(admitted.suite().scenarios.len(), 2);
     let target = Library {
         response: Some(actual()),
@@ -559,12 +556,8 @@ fn pure_return_coverage_and_report_retain_exact_admitted_bytes() {
     assert_eq!(report.counts().unsupported, 0);
     assert_eq!(report.counts().skipped, 0);
     assert_eq!(report.counts().error, 0);
-    for error in [
-        ess_conformance::go::emit_input(&input).unwrap_err(),
-        ess_conformance::ts::emit_input(&input).unwrap_err(),
-    ] {
-        assert_eq!(error.issues[0].reason, "UnsupportedTarget");
-    }
+    ess_conformance::go::emit_input(&input).expect("Go executes direct return coverage");
+    ess_conformance::ts::emit_input(&input).expect("TypeScript executes direct return coverage");
     assert!(report
         .to_canonical_json()
         .unwrap()

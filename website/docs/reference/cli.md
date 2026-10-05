@@ -567,7 +567,7 @@ ess specify realization generate [OPTIONS] --path <PATH> --spec <SPECIFICATION> 
 
 #### `ess specify transport validate`
 
-Validate and resolve an `ess-transport/1` document
+Validate and resolve an `ess-transport/1` or `/2` document
 
 ```text
 ess specify transport validate [OPTIONS] --path <PATH> --spec <SPECIFICATION>
@@ -575,13 +575,13 @@ ess specify transport validate [OPTIONS] --path <PATH> --spec <SPECIFICATION>
 
 | Argument | Value | Required | Default | Description |
 |---|---|---|---|---|
-| `--path` | `<PATH>` | yes |  | An `ess-transport/1` JSON or YAML document |
+| `--path` | `<PATH>` | yes |  | An `ess-transport/1` or `/2` JSON or YAML document |
 | `--spec` | `<SPECIFICATION>` | yes |  | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
 | `--format` | `<FORMAT>` | no | `text` | Output and diagnostic rendering. One of `text`, `yaml`, `json`. |
 
 #### `ess specify transport compile`
 
-Compile a document into canonical `ess-transport-ir/1`
+Compile a document into its canonical `ess-transport-ir/1` or `/2` form
 
 ```text
 ess specify transport compile [OPTIONS] --path <PATH> --spec <SPECIFICATION>
@@ -589,7 +589,7 @@ ess specify transport compile [OPTIONS] --path <PATH> --spec <SPECIFICATION>
 
 | Argument | Value | Required | Default | Description |
 |---|---|---|---|---|
-| `--path` | `<PATH>` | yes |  | An `ess-transport/1` JSON or YAML document |
+| `--path` | `<PATH>` | yes |  | An `ess-transport/1` or `/2` JSON or YAML document |
 | `--spec` | `<SPECIFICATION>` | yes |  | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
 | `--format` | `<FORMAT>` | no | `text` | Output and diagnostic rendering. One of `text`, `yaml`, `json`. |
 | `--out` | `<OUT>` | no |  | Where to write canonical JSON IR |
@@ -668,7 +668,7 @@ ess generate <COMMAND>
 | `--out` | `<OUT>` | no |  |  |
 | `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
 | `--strict` |  | no |  | Refuse, writing nothing, where `openapi` or `asyncapi` has a domain no component owns.<br /><br />Without it the same condition is a note on stderr and the exit stays 0: an empty projection is legal, and the note is what tells it apart from a clean one. |
-| `--transport` | `<TRANSPORT>` | no |  | An `ess-transport/1` document binding events to brokers, subjects and streams; only with `--kind asyncapi` |
+| `--transport` | `<TRANSPORT>` | no |  | An `ess-transport/1` or `ess-transport/2` document binding events to brokers, subjects and streams; only with `--kind asyncapi` |
 
 #### `ess generate generate`
 
@@ -691,7 +691,7 @@ ess generate generate [OPTIONS]
 | `--out` | `<OUT>` | no |  |  |
 | `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
 | `--strict` |  | no |  | Refuse, writing nothing, where `openapi` or `asyncapi` has a domain no component owns.<br /><br />Without it the same condition is a note on stderr and the exit stays 0: an empty projection is legal, and the note is what tells it apart from a clean one. |
-| `--transport` | `<TRANSPORT>` | no |  | An `ess-transport/1` document binding events to brokers, subjects and streams; only with `--kind asyncapi` |
+| `--transport` | `<TRANSPORT>` | no |  | An `ess-transport/1` or `ess-transport/2` document binding events to brokers, subjects and streams; only with `--kind asyncapi` |
 
 #### `ess generate cli`
 
@@ -783,7 +783,7 @@ ess generate client [OPTIONS] --component <COMPONENT> --transport <TRANSPORT> --
 |---|---|---|---|---|
 | `--path` | `<PATH>` | no | `.` | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
 | `--component` | `<COMPONENT>` | yes |  | The component whose published events the publisher sends |
-| `--transport` | `<TRANSPORT>` | yes |  | The `ess-transport/1` document binding those events |
+| `--transport` | `<TRANSPORT>` | yes |  | The `ess-transport/1` or `ess-transport/2` document binding those events |
 | `--target` | `<TARGET>` | yes |  | The language to generate. One of `rust`, `go`. |
 | `--package` | `<PACKAGE>` | yes |  | Native package identity |
 | `--module` | `<MODULE>` | no |  | Go module identity, required only for Go |
@@ -1361,6 +1361,7 @@ ess verify conform synthesize [OPTIONS]
 | `--scenarios` | `<SCENARIOS>` | no |  | The `ess-scenario/1` documents to compile beside the generated scenarios.<br /><br />One file or a directory. Immediate `ess-inputs.yaml` selects its exact scenarios list. Otherwise only immediate `.yaml`/`.yml` files are read; subdirectories are not searched. An empty selection is refused. When omitted, no authored scenarios are selected. |
 | `--suite-format` | `<SUITE_FORMAT>` | no | `4` | Ordinary (4) or declared coverage (5); admitted features select newer required versions. One of `4`, `5`. |
 | `--compact` |  | no |  | Write fresh IR as compact JSON with one trailing newline; requires --target ir |
+| `--synthesis-seed` | `<FILE>`… | no |  | Offer the `setup` row of arrangement INSTANCE in the authored document FILE as an explicit synthesis seed; repeatable.<br /><br />A seed supplies only that nominated initial row: never the document's timeline, assertions or any state its timeline reaches, and it appends no authored scenario (`--scenarios` does that, independently). Ordinary arrangement is tried first; a row is established only for a generated obligation no bounded arrangement reaches, and the real command and assertions follow it. Any seed selects suite/42 (or /43 with `--suite-format 5`) and records its source, row and uses. |
 
 #### `ess verify conform author`
 
@@ -1382,11 +1383,11 @@ ess verify conform author [OPTIONS]
 
 #### `ess verify conform web`
 
-Render the scenarios as a page somebody can press play on.
+Emit a browser conformance product for the scenarios.
 
-Emits a specification-neutral player and one generated `model.json`: the entities and their lifecycles, what each command outcome does, what each view selects, who may ask, and what a binding reacts to. Serve the directory and open `index.html`.
+Writes the original specification files, the admitted suite (`suite.json`) or coverage input (`input.json`), a Rust-derived `declarations.json` and a `browser.json` manifest that binds them all by digest. Serve the directory and open `index.html` to navigate every declaration; the page labels them admitted at emission and not executed.
 
-It replays rather than executes. A scenario declares which outcome each command took and the page displays declarations and explicit unknowns for unavailable assignment, subject and view semantics. Replay establishes no specification coherence, fills no obligation and produces no implementation execution report or qualifying conformance evidence.
+Execution needs `rust/browser_host.rs` built for `wasm32-unknown-unknown` with your own target installation and copied beside `index.html` as `runner.wasm`; the emitted `README.md` gives the commands. The module re-admits the original bytes before any target call, and only its Rust runner produces reports.
 
 ```text
 ess verify conform web [OPTIONS]
@@ -1397,9 +1398,9 @@ ess verify conform web [OPTIONS]
 | `--path` | `<PATH>` | no | `.` | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
 | `--format` | `<FORMAT>` | no | `text` | Output rendering. One of `text`, `yaml`, `json`. |
 | `--scenarios` | `<SCENARIOS>` | no |  | One scenario file, or a directory using `ess-inputs.yaml` or shallow `.yaml`/`.yml` selection |
-| `--out` | `<OUT>` | no |  | Where to write the player |
-| `--suite-format` | `<SUITE_FORMAT>` | no | `4` | Ordinary (4) or declared coverage (5); coverage emits the paired replay document. One of `4`, `5`. |
-| `--history` | `<HISTORY>` | no |  | An `ess-history/1` document: draw it, checked against the specification, as one lane per client in a single self-contained `index.html`, printed when `--out` is absent. `--out` replaces the files `ess` owns in that directory, the player's included, so write history pages and the player to different directories |
+| `--out` | `<OUT>` | no |  | Where to write the product |
+| `--suite-format` | `<SUITE_FORMAT>` | no | `4` | Ordinary (4) or declared coverage (5); coverage emits the complete coverage input. One of `4`, `5`. |
+| `--history` | `<HISTORY>` | no |  | An `ess-history/1` or `ess-history/2` document: draw it, checked against the specification, as one lane per client in a single self-contained `index.html`, printed when `--out` is absent. `--out` replaces the files `ess` owns in that directory, the player's included, so write history pages and the player to different directories |
 
 #### `ess verify conform select`
 
@@ -1436,6 +1437,8 @@ ess verify conform run [OPTIONS] --target <TARGET>
 | `--report-format` | `<REPORT_FORMAT>` | no | `1` | Report contract version; JSON/YAML detailed v2 is ess-conformance-run/2. One of `1`, `2`. |
 | `--strict` |  | no |  | Require passed complete conformance (unavailable for legacy unknown coverage) |
 | `--allow-incomplete` |  | no |  | Explicitly retain diagnostic execution exit behavior |
+| `--known-failing` | `<KNOWN_FAILING>` | no |  | An `ess-known-failures/1` declaration: scenarios this build of the target is known to fail, bound to the exact suite bytes, specification, implementation and build (the running `ess` executable's SHA-256). Accounted in `--accounting-out`; the report, its verdict and the exit status are unchanged. Requires `--report-format 2` and `--report-out`. A declaration that does not bind this run, or names a scenario that did not fail, exits 2 and writes nothing |
+| `--accounting-out` | `<ACCOUNTING_OUT>` | no |  | Where to write the `ess-known-failure-accounting/1` document: a new file, not an input and not `--report-out` |
 | `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
 
 #### `ess verify conform report`
@@ -1448,17 +1451,25 @@ Refused, writing nothing: a result for a scenario the suite does not contain, a 
 
 Exit 0: the report was written, whatever its verdict. Exit 2: an input was refused.
 
+Known failures (`--known-failing`, an `ess-known-failures/1` declaration) are accounted in a separate `ess-known-failure-accounting/1` document and never change a report or its verdict. With `--results`, they also need `--implementation-build` (the SHA-256 of the immutable target build, known to the host before the run) and `--execution-context-out`, where the `ess-conformance-execution/1` context binding that build to the report is written. A runner that wrote report/2 and its own context itself — the generated Go and TypeScript runners, given `ESS_IMPLEMENTATION_BUILD` and `ESS_EXECUTION_CONTEXT_OUT` — is accounted with `--observed-report`, `--execution-context`, `--known-failing` and `--accounting-out`, which rewrite nothing and write only the accounting. Every output is a new file; refused inputs exit 2 before anything is written.
+
 ```text
-ess verify conform report [OPTIONS] --suite <SUITE> --results <RESULTS> --implementation <IMPLEMENTATION> --report-out <REPORT_OUT>
+ess verify conform report [OPTIONS] --suite <SUITE>
 ```
 
 | Argument | Value | Required | Default | Description |
 |---|---|---|---|---|
 | `--suite` | `<SUITE>` | yes |  | The suite the runner executed, exactly the bytes it was given |
-| `--results` | `<RESULTS>` | yes |  | The runner's `ess-conformance-results/1` document |
-| `--implementation` | `<IMPLEMENTATION>` | yes |  | The implementation the runner held to the suite, as the report names it |
-| `--report-out` | `<REPORT_OUT>` | yes |  | Where to write the canonical `ess-conformance-report/2` |
+| `--results` | `<RESULTS>` | no |  | The runner's `ess-conformance-results/1` document |
+| `--implementation` | `<IMPLEMENTATION>` | no |  | The implementation the runner held to the suite, as the report names it |
+| `--report-out` | `<REPORT_OUT>` | no |  | Where to write the canonical `ess-conformance-report/2` |
 | `--runner` | `<RUNNER>` | no |  | The runner that produced the results, as `<name>@<version>` |
+| `--observed-report` | `<OBSERVED_REPORT>` | no |  | Account a report/2 a runner wrote itself, from its original bytes; writes only `--accounting-out` |
+| `--execution-context` | `<EXECUTION_CONTEXT>` | no |  | The `ess-conformance-execution/1` context the runner's host wrote beside `--observed-report` |
+| `--known-failing` | `<KNOWN_FAILING>` | no |  | An `ess-known-failures/1` declaration to account the report's failures against |
+| `--accounting-out` | `<ACCOUNTING_OUT>` | no |  | Where to write the `ess-known-failure-accounting/1` document, as a new file |
+| `--implementation-build` | `<IMPLEMENTATION_BUILD>` | no |  | With `--results` and `--known-failing`: the `sha256:` identity of the target build the results came from, which the host knew before the run |
+| `--execution-context-out` | `<EXECUTION_CONTEXT_OUT>` | no |  | With `--results` and `--known-failing`: where to write the execution context, as a new file |
 
 #### `ess verify conform mutate`
 
@@ -1468,9 +1479,13 @@ Derives mutants from the specification — one altering edit each — synthesize
 
 A baseline scenario the target reports unsupported or skipped did not execute: it is listed, not scored, and each mutant is scored on the scenarios the baseline executed. A mutant that no scored scenario killed is inconclusive when a scenario it changed was not scored; otherwise equivalent (ESS-MUTATE-005) when it left its outcome's guard satisfied by no input, decided only for equality, membership and truth tests of input fields against literals; otherwise unwitnessed (ESS-MUTATE-004) when its suite gained synthesis refusals the baseline does not have, when it is on an outcome whose scenario the baseline refused, or when it is a from-drop or transition-to mutant on a transition only such outcomes perform. It survives when every scored scenario passed and each scenario it left unscored is the baseline's own, unchanged.
 
-Exit 0: no baseline scenario failed or ended error, at least one mutant ran and was not equivalent, every scored mutant was killed or equivalent, and none is inconclusive or unwitnessed. Exit 1: the specification did not load, or at least one mutant survived. Exit 3: a baseline scenario failed or ended error (ESS-MUTATE-001), the baseline executed nothing (nothing scored), the classes found no site (ESS-MUTATE-003), or no mutant survived and at least one was unwitnessed or inconclusive, or none ran that was not equivalent.
+emit-swap replaces an outcome's only event with another declared event of exactly the same fields that every component accepting the command publishes. A site with no such event is listed as unavailable (`no_compatible_event_alternative`): single-event substitution was not audited there, which is neither a kill nor a stillborn mutant.
 
-For an implementation of your own, split the audit in two. `--emit DIR` writes the baseline suite to `DIR/baseline/suite.json`, every mutant's suite to `DIR/<mutant-id>/suite.json` and a manifest, and runs nothing (exit 0, or 3 on ESS-MUTATE-003). Run your runner over each suite and write its conformance report to `report.json` beside it. `--collect DIR` scores those reports with the exit statuses above; a missing report makes its mutant inconclusive. `--emit` writes an ess-mutation-manifest/3; `--collect` also reads the /2 and /1 manifests earlier releases wrote.
+Exit 0: no baseline scenario failed or ended error, at least one mutant ran and was not equivalent, every scored mutant was killed or equivalent, none is inconclusive or unwitnessed, and no selected in-scope site is unavailable. Exit 1: the specification did not load, or at least one mutant survived. Exit 3: a baseline scenario failed or ended error (ESS-MUTATE-001), the baseline executed nothing (nothing scored), the classes found no site (ESS-MUTATE-003), or no mutant survived and at least one was unwitnessed or inconclusive, a selected in-scope site was unavailable, or none ran that was not equivalent. Exit 2: the `--known-failing` declaration was refused. Known failures are listed first in the text and never count as a pass: the audit makes no conformance claim.
+
+For an implementation of your own, split the audit in two. `--emit DIR` writes the baseline suite to `DIR/baseline/suite.json`, every mutant's suite to `DIR/<mutant-id>/suite.json` and a manifest, and runs nothing (exit 0, or 3 on ESS-MUTATE-003). Run your runner over each suite and write its conformance report to `report.json` beside it. `--collect DIR` scores those reports with the exit statuses above; a missing report makes its mutant inconclusive. `--emit` writes an ess-mutation-manifest/3, or /4 where it holds a sets-drop, precedence-swap or emit-swap mutant or an unavailable site, or names a component; `--collect` also reads the /2 and /1 manifests earlier releases wrote.
+
+For a repository that implements one component, `--emit --component NAME` writes the component's suites, as `synthesize --component` writes them, and marks out of scope every mutant whose site belongs to another component (a command that component handles, a view it owns, a transition its commands perform): it has no suite, and `--collect` lists it in an ess-mutation-report/4 naming the component rather than scoring it. A survivor on the component's own site is scored and counted. `--collect --component NAME` refuses an emission made for another component or for none. `--target` takes no `--component`: the built-in targets implement whole systems.
 
 ```text
 ess verify conform mutate [OPTIONS] <--target <TARGET>|--emit <EMIT>|--collect <COLLECT>>
@@ -1480,17 +1495,19 @@ ess verify conform mutate [OPTIONS] <--target <TARGET>|--emit <EMIT>|--collect <
 |---|---|---|---|---|
 | `--path` | `<PATH>` | no | `.` |  |
 | `--target` | `<TARGET>` | no |  | The reference implementation every suite runs against. One of `billing`, `oracle-fixture`, `interpreted`. |
-| `--class` | `<CLASS>`… | no |  | Only these classes; every class when absent. One of `from-drop`, `transition-to`, `guard-boundary`, `sets-retarget`, `guard-negate`, `guard-connective`, `error-swap`, `emit-drop`, `order-flip`. |
+| `--class` | `<CLASS>`… | no |  | Only these classes; every class when absent. One of `from-drop`, `transition-to`, `guard-boundary`, `sets-retarget`, `guard-negate`, `guard-connective`, `error-swap`, `emit-drop`, `order-flip`, `sets-drop`, `precedence-swap`, `emit-swap`. |
 | `--emit` | `<EMIT>` | no |  | Write the baseline's and every mutant's suite, and a manifest, into this new or empty directory; run nothing |
 | `--collect` | `<COLLECT>` | no |  | Score the `report.json` a runner wrote beside each suite of an emitted directory |
-| `--report-out` | `<REPORT_OUT>` | no |  | Where to write the `ess-mutation-report/3` document |
+| `--component` | `<COMPONENT>` | no |  | With `--emit`, scope every suite to this declared component; with `--collect`, require the emission to have been scoped to it |
+| `--report-out` | `<REPORT_OUT>` | no |  | Where to write the `ess-mutation-report/3` document (`/4` for a component, a declaration or unavailable sites) |
+| `--known-failing` | `<KNOWN_FAILING>` | no |  | An `ess-known-failures/1` declaration of baseline scenarios the target is known to fail. They are excluded from scoring rather than refused, and each mutant is scored on the scenarios the baseline passed: a declared scenario, or one the baseline's suite does not hold, never kills. Every failure it does not name still refuses with ESS-MUTATE-001. With `--target` it binds the running `ess` executable's SHA-256 as the build; `--emit` copies it into the emission and binds it there (ess-mutation-manifest/4); `--collect` uses only the declaration the emission bound, and refuses any other. A refused declaration exits 2 |
 | `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
 
 #### `ess verify conform check-history`
 
 Check a recorded concurrent history for linearizability against the specification's model.
 
-Reads an `ess-history/1` document recorded against the specification at `--path`, and searches for an order of its operations the interpreter accepts, answer for answer. The history records no inputs, so an operation is explained by any candidate input synthesis would submit for its command. Reads of views are not judged and are listed. A violation is reported with the longest partial linearization found and a shrunk history that is still a violation.
+Reads an `ess-history/1` or `ess-history/2` document recorded against the specification at `--path`, and searches for an order of its operations the interpreter accepts, answer for answer, reading an operation's recorded `decision_time` as the current time. The history records no inputs, so an operation is explained by any candidate input synthesis would submit for its command. Reads of views are not judged and are listed. A violation is reported with the longest partial linearization found and a shrunk history that is still a violation.
 
 Exit 0: linearizable. Exit 1: violation. Exit 3: unknown — the search spent `--budget` before it finished, which is never a pass. Exit 2: the specification or the history could not be read, the specification did not load, or the history or one of its operations was refused.
 
@@ -1501,7 +1518,7 @@ ess verify conform check-history [OPTIONS] --history <HISTORY>
 | Argument | Value | Required | Default | Description |
 |---|---|---|---|---|
 | `--path` | `<PATH>` | no | `.` | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
-| `--history` | `<HISTORY>` | yes |  | The `ess-history/1` document |
+| `--history` | `<HISTORY>` | yes |  | The `ess-history/1` or `ess-history/2` document |
 | `--budget` | `<BUDGET>` | no | `1000000` | How many executions of the model the search may spend; the same history and budget always give the same verdict |
 | `--settle` | `<READS>` | no | `4` | How many of a session's reads of an `eventual` view, invoked after the writes stop, may still be behind; every later read is judged converged. A count of reads, not of instants, so the clock a history was written on changes no verdict |
 | `--format` | `<FORMAT>` | no | `text` | One of `text`, `json`. |
@@ -1540,6 +1557,10 @@ ess verify diff [OPTIONS] --from <FROM> --to <TO>
 | `--from` | `<FROM>` | yes |  |  |
 | `--to` | `<TO>` | yes |  |  |
 | `--format` | `<FORMAT>` | no | `text` | One of `text`, `json`. |
+| `--compatibility` |  | no |  | Classify each change as breaking, unknown or compatible for callers, readers and history; JSON output is then `ess-diff/14` |
+| `--fail-on` | `<FAIL_ON>` | no |  | Exit 4 when an unacknowledged change is at or above this level, 0 otherwise; a refused input or acknowledgements file still exits 1. Implies `--compatibility`. One of `breaking`, `breaking-or-unknown`. |
+| `--dimension` | `<DIMENSION>`… | no |  | The dimensions `--fail-on` considers; repeatable. Default: all three. One of `callers`, `readers`, `history`. |
+| `--acknowledgements` | `<ACKNOWLEDGEMENTS>` | no |  | An `ess-diff-acknowledgements/1` JSON file naming change ids `--fail-on` lets pass, bound to the `before` and `after` digests of this comparison |
 
 #### `ess verify impact`
 
@@ -1648,6 +1669,7 @@ ess ui load [OPTIONS] --path <PATH>
 | Argument | Value | Required | Default | Description |
 |---|---|---|---|---|
 | `--path` | `<PATH>` | yes |  | The `ess-ui/1` document to load |
+| `--model` | `<MODEL>` | no |  | The ESS specification the document's `model:` names (a directory, its `ess-inputs.yaml`, or one file): a choice's `options` naming one of its enums list that enum's variants |
 
 #### `ess ui check`
 
@@ -1709,5 +1731,6 @@ ess ui test [OPTIONS] --path <PATH> <TESTS>...
 | `--path` | `<PATH>` | yes |  | The `ess-ui/1` document under test; every test file must name it |
 | `--format` | `<FORMAT>` | no | `text` | Report format. One of `text`, `json`. |
 | `--playwright` | `<OUT>` | no |  | Write the tests as a Playwright spec for the generated React project to this file, instead of running them |
+| `--model` | `<MODEL>` | no |  | The ESS specification the document's `model:` names (a directory, its `ess-inputs.yaml`, or one file): a choice's `options` naming one of its enums list that enum's variants. Reads still come from the fixtures |
 
 [ess-cli-end]: #

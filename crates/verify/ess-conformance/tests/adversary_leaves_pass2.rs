@@ -136,6 +136,21 @@ fn payload(scenario: &ConformanceScenario) -> BTreeMap<String, Node> {
             {
                 Some(payload.clone())
             }
+            // The literal half of an expectation that also compares a captured identity
+            // (beyond10x/ess#273).
+            ScenarioStep::ExpectEventValues { event, payload, .. }
+                if event.to_string() == "demo.dialer.LeadSet" =>
+            {
+                Some(
+                    payload
+                        .iter()
+                        .filter_map(|(key, value)| match value {
+                            ScenarioValue::Literal { value } => Some((key.clone(), value.clone())),
+                            _ => None,
+                        })
+                        .collect(),
+                )
+            }
             _ => None,
         })
         .expect("the event is expected")
@@ -756,7 +771,7 @@ fn a_struct_written_only_by_sets_moves_the_suite_to_26_and_its_coverage_to_27() 
     assert!(row.contains_key("lead.number"), "{row:?}");
     assert_eq!(
         suite.provenance.suite_version.to_string(),
-        "ess-conformance/26"
+        "ess-conformance/34"
     );
     let input = ess_conformance::coverage_build::build(
         &ir(&text),
@@ -769,7 +784,7 @@ fn a_struct_written_only_by_sets_moves_the_suite_to_26_and_its_coverage_to_27() 
         input
             .selected()
             .original_json()
-            .contains("\"ess-conformance/27\""),
+            .contains("\"ess-conformance/35\""),
         "coverage is written as /27"
     );
     let mut pinned = suite.clone();

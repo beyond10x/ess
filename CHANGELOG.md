@@ -2,7 +2,16 @@
 
 ## [Unreleased]
 
+## [0.53.0] — 2026-10-05
+
 ### Added
+
+- Synthesized Rust and Go network components include ephemeral in-memory stores and executable
+  server entry points, with `--listen`, explicit `--callers` selection and optional same-origin
+  static files. Startup refuses unresolved reachable obligations. The default authenticates no
+  caller; `actor-header` is an explicit demonstration mode. Generated Rust libraries retain their
+  dependency-free default and WASM support; the native server dependencies support Rust 1.85
+  (beyond10x/ess#318, beyond10x/ess#314).
 
 - Experimental `ess-protospec/1` models finite communicating peers, typed scalar messages,
   bounded channels, logical timers and safety properties. `ess specify protocol` validates and
@@ -12,8 +21,88 @@
   bounds. [Runnable examples](examples/protocols/README.md) cover terminal-response flushing and
   an RFC 3261 rejection with a lost ACK; existing ESS and conformance-suite formats are unchanged.
 
+- Source format `ess/22` extends the expression vocabulary: a comparison operand may be the
+  explicit fact `{fact: <path>}` or a bare typed root (beyond10x/ess#225), one fact moved by one
+  constant (`upper <= lower + 5`, `expires_at <= issued_at - 24h`), the UTF-8 byte length of a
+  `String` (`label.utf8_bytes`, beyond10x/ess#233), and two `Timestamp` facts compare as instants
+  (`as: timestamp`). Suites carrying these forms are `ess-conformance/40` and `/41`; the Rust, Go
+  and TypeScript runners share one vector file per form.
+- A command guard may hold an instant to a weekly calendar window at UTC or a fixed offset,
+  `window: {at: now | <Timestamp>, days, from, to, offset}`; a named time zone is refused, so a
+  window does not follow daylight saving (beyond10x/ess#244).
+- An `external:` refusal marked `compensates: true` changes the one record it addresses, by
+  `moves:` or `updates:`, before answering its error; every unmarked refusal still changes nothing
+  (beyond10x/ess#197).
+- `distinct: {in, as, by}` holds when no two elements of a list share a key, compared exactly or
+  as instants, with the key kind written back (beyond10x/ess#237).
+- A string operator may compare with a view parameter, `{param: <name>}`, or a command input,
+  `{input: <name>}`; generated Rust and Go view queries apply String parameters through the query
+  decoder (beyond10x/ess#200).
+- `when_related: {entity, where, …}` tests the rows a selector selects with `exists`, `count` or
+  `forall`, and `{related: {entity, where, field}}` reads one field of the one row a selector
+  selects; synthesis writes the uniqueness, decoy and `unknown_instance` scenarios
+  (beyond10x/ess#228, beyond10x/ess#299).
+- `sets:`, `payload:` and `else:` read dotted input paths, `input.<path>`, of struct inputs
+  (beyond10x/ess#233).
+- `now` reads one decision instant per command, recorded in `ess-history/2`, and is admitted over
+  stored subject and related rows (beyond10x/ess#244).
+- An aggregate may declare `where:`, the rows of its group one measure reads; suites observe
+  conditional measures at `ess-conformance/38` and `/39` (beyond10x/ess#363). Synthesis selects
+  aggregate groups by parameter and by lifecycle state alone (beyond10x/ess#361,
+  beyond10x/ess#362).
+- An event binding may carry a payload condition, evaluated in every lane, and
+  `expect_no_invocation` holds where it is false (`ess-conformance/36`, `/37`;
+  beyond10x/ess#268, beyond10x/ess#194). `on_failure:` may select its policy per refusal of the
+  invoked command (beyond10x/ess#269). Synthesis accounts for bindings in arrangement, flow and
+  drop, and admits flow into a command with a `wrong_state` branch (beyond10x/ess#266,
+  beyond10x/ess#267).
+- A union variant may be declared with no payload, written on the wire as its tag alone
+  (beyond10x/ess#418).
+- Explicit synthesis seeds arrange stored states no command reaches, carried by
+  `ess-conformance/42` and `/43` (beyond10x/ess#413).
+- An actor's `may:` may name a view (beyond10x/ess#286).
+- An `affects` entry may move the records it selects (beyond10x/ess#229).
+- Related reads follow Optional references and two hops (beyond10x/ess#285); a command may guard
+  on several related rows (beyond10x/ess#283); `when_related` may read through an Optional input,
+  checked only when present, or through a stored subject field (beyond10x/ess#304).
+- `ess verify conform web` emits a browser conformance product, and one-time response values get
+  non-disclosure checks (beyond10x/ess#389).
+- `ess-transport/2` binds parameterized NATS subjects to required String payload fields
+  (beyond10x/ess#391).
+- `ess verify diff --compatibility` and `--fail-on` gate on breaking changes, written as
+  `ess-diff/14` (beyond10x/ess#290).
+- Declared known failures (`ess-known-failures/1`) are counted apart in conformance and mutation,
+  so one known-failing baseline scenario no longer refuses a run (beyond10x/ess#294,
+  beyond10x/ess#296).
+- Mutation emits `sets-drop`, `outcome-order-flip`, the comparison-flip arms and `emit-swap`, and
+  `--component` scopes emit and collect (beyond10x/ess#212, beyond10x/ess#236,
+  beyond10x/ess#295).
+- The explorer draws commands guarded by `existing_instance`, `subject_state` and stored-row
+  conditions, reaches `.count` boundaries and `example:` values, draws Optional inputs, and can
+  restart the target process (beyond10x/ess#221, beyond10x/ess#223, beyond10x/ess#293,
+  beyond10x/ess#297).
+- `ess specify validate` refuses an authored scenario step whose expected outcome the guards
+  decide otherwise (beyond10x/ess#222).
+- An event expectation may compare an identity field with a captured instance
+  (beyond10x/ess#273).
+- Suites declare `scenario_initial_state: empty` and run from an empty logical namespace
+  (beyond10x/ess#312).
+- Generated Rust and Go behaviours cover commands guarded by `when_related`
+  (beyond10x/ess#319).
+- `ess ui check` checks that a page actor is granted the commands it binds (beyond10x/ess#284);
+  live updates reach nested composites and header titles (beyond10x/ess#354); a choice names its
+  value and label fields and options may name a model enum (beyond10x/ess#328,
+  beyond10x/ess#330).
+- OpenAPI answers a `returns: true` outcome with 200 and its response, and a synchronous read
+  outcome with 200 (beyond10x/ess#423, beyond10x/ess#424).
+- Entity Runtime lowering publishes its lowerable subset and accumulates every refusal; each new
+  `ess/22` construct is refused by name where entity-core has no equivalent (beyond10x/ess#231).
+
 ### Changed
 
+- Generated behaviour contexts expose fallible companion methods, so an unavailable context
+  answer refuses execution before storage or event effects. Existing context implementations keep
+  their original methods; generated memory contexts implement the fallible seam.
 - The `/ess/` site uses the shared docs-system product-site template, like the other product
   sites. Its landing page is `website/product.json`; its terminal sessions and the billing domain
   graph are recorded from the real `ess` binary by `cargo xtask site-data`, which
@@ -32,6 +121,23 @@
   billing realization sort `issued_at` the same way. A second authored billing scenario,
   `outstanding-invoices-rank-by-instant`, issues the later instant first and spells the earlier
   one with an offset, so a target that ranks by issue order or by text now fails the suite.
+
+### Fixed
+
+- `check-history` no longer finds every history uncheckable when a model generates a
+  `Timestamp` (beyond10x/ess#292).
+- Rust synthesis accepts EKR wire labels and recursive Optional value types, and refuses Go names
+  that are not identifiers (beyond10x/ess#400).
+- The Rust external decision port binds authorization to the actual command input, and a Go
+  component handler parameter no longer shadows an input domain package (beyond10x/ess#412,
+  beyond10x/ess#414).
+- Served Rust synthesis allocates collision-free codec names for distinct canonical commands
+  (beyond10x/ess#415).
+- Finite recursive typed input fixtures are admitted (beyond10x/ess#416).
+- A witness arrangement is refused only where its branch reaches other rows
+  (beyond10x/ess#287).
+- The custom-runner contract for unpublished events is stated, so `expect_not_granted` can be
+  checked (beyond10x/ess#347).
 
 ## [0.52.0] — 2026-10-03
 

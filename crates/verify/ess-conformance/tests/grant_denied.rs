@@ -8,6 +8,7 @@
 //! no grant runs the command instead, and fails exactly the denied scenarios.
 
 mod support_go;
+mod support_versions;
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -168,7 +169,7 @@ fn every_gatepass_command_the_auditor_lacks_gets_a_denied_scenario_sent_as_the_a
     );
     assert!(
         matches!(&scenario.steps[refused], ScenarioStep::ExpectNotGranted { actor, unpublished }
-            if actor.to_string() == "gatepass.visit.SecurityAuditor"
+            if actor.as_ref().is_some_and(|actor| actor.to_string() == "gatepass.visit.SecurityAuditor")
                 && unpublished.iter().any(|event| event.to_string() == "gatepass.visit.VisitRegistered")),
         "{:?}",
         scenario.steps
@@ -186,7 +187,7 @@ fn every_gatepass_command_the_auditor_lacks_gets_a_denied_scenario_sent_as_the_a
     );
     assert_eq!(
         synthesis.suite.provenance.suite_version.to_string(),
-        "ess-conformance/26"
+        "ess-conformance/34"
     );
     assert_eq!(enforced_by_caller(&synthesis.notes), 0);
 }
@@ -199,7 +200,7 @@ fn a_model_that_serves_nothing_gets_a_coverage_fact_and_no_denied_scenario() {
     assert!(grant_ids(&synthesis.suite).is_empty());
     assert_eq!(
         synthesis.suite.provenance.suite_version.to_string(),
-        "ess-conformance/4"
+        "ess-conformance/34"
     );
     assert_eq!(enforced_by_caller(&synthesis.notes), 1);
     let fact = synthesis
@@ -274,7 +275,7 @@ fn a_denied_scenario_round_trips_through_the_document_and_an_older_major_is_refu
     let admitted = AdmittedSuite::from_json(&json).expect("admits");
     assert_eq!(admitted.suite(), &suite);
 
-    let pinned = json.replace("ess-conformance/26", "ess-conformance/24");
+    let pinned = support_versions::legacy_json(&json, 24);
     let refused = AdmittedSuite::from_json(&pinned).expect_err("an older major is refused");
     assert!(
         refused.to_string().contains("newer suite major")
@@ -334,6 +335,157 @@ fn go_gives_the_reference_verdict_for_every_denied_scenario() {
         ["desk.ops.Ping/grant/denied"],
         "{ungated:?}"
     );
+}
+
+/// The runner's side of `expect_not_granted`, the one a custom runner has to reproduce
+/// (beyond10x/ess#347): before sending a command whose next step is `expect_not_granted`, it
+/// observes each `unpublished` event; after the refusal it observes each again; every observation
+/// and the send carry the scenario's one correlation. A target that cannot observe its log never
+/// has the refused command sent, and the scenario is `unsupported`, not passed.
+#[test]
+fn the_runner_observes_each_unpublished_event_before_the_refused_send_and_again_after_it() {
+    let mut suite = ess_conformance::synthesize(&compiled(&desk())).suite;
+    suite
+        .scenarios
+        .retain(|id, _| id.to_string() == "desk.ops.Ping/grant/denied");
+    assert_eq!(suite.scenarios.len(), 1, "the denied `Ping` scenario");
+    let ScenarioStep::ExpectNotGranted { unpublished, .. } = suite
+        .scenarios
+        .values()
+        .next()
+        .unwrap()
+        .steps
+        .last()
+        .unwrap()
+    else {
+        panic!("the denied scenario ends in `expect_not_granted`");
+    };
+    let unpublished: Vec<String> = unpublished.iter().map(ToString::to_string).collect();
+    assert_eq!(unpublished, ["desk.ops.Pinged", "desk.ops.Tallied"]);
+    let admitted = AdmittedSuite::from_suite(&suite).expect("admits");
+
+    let observing = Recorder::new(true);
+    let report = Runner::for_suite(&suite)
+        .run_admitted(&admitted, &observing)
+        .into_report();
+    assert_eq!(report.scenarios[0].status, Status::Passed, "{report:#?}");
+    assert_eq!(
+        observing.calls(),
+        [
+            "observe desk.ops.Pinged",
+            "observe desk.ops.Tallied",
+            "execute desk.ops.Ping as desk.ops.Watcher",
+            "observe desk.ops.Pinged",
+            "observe desk.ops.Tallied",
+        ],
+        "observed before the send and again after the refusal"
+    );
+    let correlations = observing.correlations.borrow();
+    assert_eq!(correlations.len(), 6, "the context, five requests");
+    assert!(
+        correlations.iter().all(|seen| *seen == correlations[0]),
+        "every observation and the send carry the scenario's correlation: {correlations:?}"
+    );
+
+    let blind = Recorder::new(false);
+    let report = Runner::for_suite(&suite)
+        .run_admitted(&admitted, &blind)
+        .into_report();
+    assert_eq!(
+        report.scenarios[0].status,
+        Status::Unsupported,
+        "{report:#?}"
+    );
+    assert_eq!(
+        blind.calls(),
+        ["observe desk.ops.Pinged"],
+        "a target that cannot observe its log never has the refused command sent"
+    );
+}
+
+/// The gated `Desk`, recording each request the runner makes of it.
+struct Recorder {
+    desk: Desk,
+    observes: bool,
+    calls: std::cell::RefCell<Vec<String>>,
+    correlations: std::cell::RefCell<Vec<String>>,
+}
+
+impl Recorder {
+    fn new(observes: bool) -> Self {
+        Self {
+            desk: Desk::gated(),
+            observes,
+            calls: std::cell::RefCell::default(),
+            correlations: std::cell::RefCell::default(),
+        }
+    }
+
+    fn calls(&self) -> Vec<String> {
+        self.calls.borrow().clone()
+    }
+}
+
+impl ConformanceTarget for Recorder {
+    fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
+        self.desk.identity()
+    }
+    fn begin_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
+        self.correlations
+            .borrow_mut()
+            .push(format!("{:?}", scenario.correlation));
+        self.desk.begin_scenario(scenario)
+    }
+    fn end_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
+        self.desk.end_scenario(scenario)
+    }
+    fn execute_command(
+        &self,
+        request: SemanticCommandRequest,
+    ) -> Result<SemanticCommandResult, TargetError> {
+        self.calls.borrow_mut().push(format!(
+            "execute {} as {}",
+            request.command,
+            request
+                .actor
+                .as_ref()
+                .map_or_else(|| "nobody".to_owned(), ToString::to_string)
+        ));
+        self.correlations
+            .borrow_mut()
+            .push(format!("{:?}", request.correlation));
+        self.desk.execute_command(request)
+    }
+    fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
+        self.desk.query_view(request)
+    }
+    fn observe_events(
+        &self,
+        request: EventObservationRequest,
+    ) -> Result<Vec<ObservedEvent>, TargetError> {
+        self.calls
+            .borrow_mut()
+            .push(format!("observe {}", request.event));
+        self.correlations
+            .borrow_mut()
+            .push(format!("{:?}", request.correlation));
+        if !self.observes {
+            return Err(TargetError::unsupported(
+                format!("observing `{}`", request.event),
+                "this target cannot read its event log",
+            ));
+        }
+        self.desk.observe_events(request)
+    }
+    fn configure_external_outcome(
+        &self,
+        control: ExternalOutcomeControl,
+    ) -> Result<(), TargetError> {
+        self.desk.configure_external_outcome(control)
+    }
+    fn redeliver_event(&self, request: RedeliveryRequest) -> Result<(), TargetError> {
+        self.desk.redeliver_event(request)
+    }
 }
 
 struct Desk {

@@ -2,7 +2,7 @@ format: ess/18
 system: mini
 version: v1
 domain: mini.m
-summary: A run copies a policy flag from its target at creation, and a later report reads it.
+summary: A run copies both policy flags from its target at creation, and a later report reads them.
 types:
   - {name: mini.m.TargetId, kind: newtype, of: Uuid}
   - {name: mini.m.RunId, kind: newtype, of: Uuid}
@@ -12,18 +12,21 @@ entities:
     identity: {name: target_id, type: mini.m.TargetId}
     fields:
       - {name: auto_promote, type: Optional<Boolean>}
+      - {name: automatic_rollback, type: Optional<Boolean>}
     lifecycle: {initial: Listed, states: [Listed], terminal: [Listed]}
   - name: mini.m.Run
     identity: {name: run_id, type: mini.m.RunId}
     fields:
       - {name: target_id, type: mini.m.TargetId}
       - {name: auto_promote, type: Optional<Boolean>}
+      - {name: automatic_rollback, type: Optional<Boolean>}
     lifecycle:
       initial: Running
-      states: [Running, Promoted, Done]
-      terminal: [Promoted, Done]
+      states: [Running, Promoted, RolledBack, Done]
+      terminal: [Promoted, RolledBack, Done]
       transitions:
         - {name: promote, from: [Running], to: Promoted}
+        - {name: rollback, from: [Running], to: RolledBack}
         - {name: finish, from: [Running], to: Done}
 errors:
   - {name: mini.m.Conflict, summary: The run has finished., fields: []}
@@ -40,6 +43,9 @@ events:
   - name: mini.m.Finished
     fields:
       - {name: run_id, type: mini.m.RunId}
+  - name: mini.m.RolledBack
+    fields:
+      - {name: run_id, type: mini.m.RunId}
 actors:
   - name: mini.m.Operator
     may: [mini.m.AddTarget, mini.m.CreateRun, mini.m.Report]
@@ -47,6 +53,7 @@ commands:
   - name: mini.m.AddTarget
     input:
       - {name: auto_promote, type: Optional<Boolean>}
+      - {name: automatic_rollback, type: Optional<Boolean>}
     outcomes:
       - name: added
         creates: mini.m.Target
@@ -56,6 +63,7 @@ commands:
           mini.m.TargetAdded: {target_id: {generated: true}}
         sets:
           auto_promote: input.auto_promote
+          automatic_rollback: input.automatic_rollback
   - name: mini.m.CreateRun
     input:
       - {name: target_id, type: mini.m.TargetId}
@@ -69,6 +77,7 @@ commands:
         sets:
           target_id: input.target_id
           auto_promote: {related: {via: input.target_id, field: auto_promote}}
+          automatic_rollback: {related: {via: input.target_id, field: automatic_rollback}}
   - name: mini.m.Report
     input:
       - {name: run_id, type: mini.m.RunId}
@@ -81,6 +90,13 @@ commands:
         emits: [mini.m.Promoted]
         payload:
           mini.m.Promoted: {run_id: input.run_id}
+      - name: rolled-back
+        when_subject: {predicate: {all: ["defined(automatic_rollback)", automatic_rollback == true, input.result == Failed]}}
+        moves: mini.m.Run.rollback
+        instance: run_id
+        emits: [mini.m.RolledBack]
+        payload:
+          mini.m.RolledBack: {run_id: input.run_id}
       - name: finished
         moves: mini.m.Run.finish
         instance: run_id
@@ -99,3 +115,4 @@ views:
       - {name: state, type: mini.m.Run.State}
       - {name: target_id, type: mini.m.TargetId}
       - {name: auto_promote, type: Optional<Boolean>}
+      - {name: automatic_rollback, type: Optional<Boolean>}

@@ -355,7 +355,7 @@ fn synthesized_tree(synthesis: &Synthesis) -> (Value, String, String, String) {
 
 /// One bounded context using existence selection (update-or-create and an existing-instance
 /// refusal), a held-state guard, an aggregate view and invariants together, beside one command a
-/// `when_related:` guard keeps owed.
+/// `when_related:` guard beside an `external:` branch keeps owed.
 const MIXED: &str = "format: ess/18
 system: mix
 version: v1
@@ -454,6 +454,7 @@ commands:
       - name: no-slot
         when_related: {via: input.slot_id, exists: false}
         error: mix.shop.NoSlot
+      - {name: provider-refused, external: the slot provider refuses the hold, error: mix.shop.NoSlot}
       - name: held
         emits: [mix.shop.SlotBooked]
         payload:
@@ -747,13 +748,12 @@ fn adversary_a_broken_invariant_field_keeps_its_wire_name_and_every_read_builds(
         let model = flagged_model(invariant);
         let ir = fixture(&[("model.yaml", &model)]);
         let go = synthesize_for(&ir, Target::Go).expect("the model synthesizes to Go");
-        for source in ["flag.work.LogTask"] {
-            if !go
-                .plan
-                .is_generated(CapabilityKind::CommandBehavior, source)
-            {
-                problems.push(format!("{label}: `{source}` is not generated"));
-            }
+        let source = "flag.work.LogTask";
+        if !go
+            .plan
+            .is_generated(CapabilityKind::CommandBehavior, source)
+        {
+            problems.push(format!("{label}: `{source}` is not generated"));
         }
         for source in ["flag.work.Tasks", "flag.work.Flags"] {
             if !go.plan.is_generated(CapabilityKind::ViewQuery, source) {

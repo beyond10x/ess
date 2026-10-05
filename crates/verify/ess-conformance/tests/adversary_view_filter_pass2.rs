@@ -959,7 +959,7 @@ impl Package {
                     Status::Passed => "passed",
                     Status::Failed => "failed",
                     Status::Error => "error",
-                    Status::Unsupported => "skipped",
+                    Status::Unsupported => "unsupported",
                 };
                 (result.scenario.to_string(), status.to_owned())
             })

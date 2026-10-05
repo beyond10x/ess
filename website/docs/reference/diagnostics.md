@@ -165,6 +165,7 @@ refusal[ESS-AUTHOR-012]: `billing.invoice/authored/a-scenario` in a.yaml
 | `ESS-AUTHOR-038` | An act expects the refusal an ungranted actor gets, and the actor holds the grant. | Act as an actor the specification does not grant the command, or drop `refused: not_granted` and claim what the command answers. |
 | `ESS-AUTHOR-039` | An act expects the refusal an ungranted actor gets, and names no actor or claims what only a command that ran answers. | A refused command takes no branch, reports no declared error and returns nothing: keep `actor:` beside `refused: not_granted`, drop `outcome`, `error`, `response`, `events` and `capture`, and list under `no_events:` what must not appear anywhere in the target's log after the refused send. |
 | `ESS-AUTHOR-040` | An act sends a served command no actor is granted, which every caller is refused. | Grant the command to an actor with `may:` and send the act as that actor, or write `refused: not_granted` with an `actor:` the specification declares. |
+| `ESS-AUTHOR-041` | An act expects a branch the command's guards do not take for the input it sends. | Send an input the expected branch's `when:` admits and no branch answered before it claims, or expect the branch that input takes: input-guarded refusals answer first, the first declared of them, then accepting `when:` and external branches in declaration order, and the default only where no `when:` holds. |
 
 ## Synthesis: `ESS-SYNTH`
 
@@ -198,6 +199,8 @@ refusal[ESS-SYNTH-011]: entity billing.invoice.Invoice has no scenario `…`
 | `ESS-SYNTH-017` | An aggregate view the arrangement cannot produce rows for as the page's pattern requires. | Let the creating command set every field the view groups by or aggregates from its input, and read a parameter only as `field == param.name` at the top of the filter. |
 | `ESS-SYNTH-018` | A guard compares a `.count` with a number whose boundary lies past what this synthesizer builds. | The guard compares `.count` with a value above the 1024 this synthesizer builds; cover the branch with an authored scenario (ess-scenario/1), or lower the bound. |
 | `ESS-SYNTH-019` | A synthesized step requires a branch for an input its own guard refutes, or another branch answers first under the precedence order. | Nothing to change in the specification; this is a defect in ess to report, with the specification that produced it. |
+| `ESS-SYNTH-020` | A reference a `{related: …}` value follows may be absent, and no arrangement leaves it absent to witness the absent value; the branch's scenario stands without it. | Fill the reference from an Optional input that the branch, or the branch creating the row that holds it, can be sent without; or cover the absent value with an authored scenario (ess-scenario/1). |
+| `ESS-SYNTH-021` | An invariant compares two Timestamp facts without the tag that compares them as instants. | Write the comparison in an ess/22 source, which tags it, or write `{compare: {left, op, right, as: timestamp}}`. |
 
 ## Mutation audit: `ESS-MUTATE`
 
@@ -213,7 +216,7 @@ refusal[ESS-SYNTH-011]: entity billing.invoice.Invoice has no scenario `…`
 
 ## Recorded histories: `history.*`
 
-`ess verify conform check-history` and `ess verify conform import-history` refuse an `ess-history/1` document they cannot admit under one of these names, before any operation is checked. The message is the name, a colon and the detail:
+`ess verify conform check-history` and `ess verify conform import-history` refuse an `ess-history/1` or `ess-history/2` document they cannot admit under one of these names, before any operation is checked. The message is the name, a colon and the detail:
 
 ```text
 history.no-clients: `clients` is 0
@@ -221,8 +224,8 @@ history.no-clients: `clients` is 0
 
 | Name | Meaning | Repair |
 |---|---|---|
-| `history.malformed` | The bytes are not an `ess-history/1` document: not JSON, an unknown or missing field, or a value outside its declared type. | Write the document as the `ess-history/1` schema describes; the detail names the field or the position. |
-| `history.unsupported-format` | The `format` is absent, or names a format this build does not read. | Write `format: ess-history/1`. |
+| `history.malformed` | The bytes are not an `ess-history/1` or `ess-history/2` document: not JSON, an unknown or missing field, a value outside its declared type, or a `decision_time` that is `null`, not the one spelling of an instant, or in an `ess-history/1` document. | Write the document as `schemas/ess-history.schema.json` describes; the detail names the field or the position. |
+| `history.unsupported-format` | The `format` is absent, or names a format this build does not read. | Write `format: ess-history/1`, or `ess-history/2` where an operation records a `decision_time`. |
 | `history.spec-digest-mismatch` | The history was recorded against another specification. | Check the history against the specification it was recorded against, or record it again against this one. |
 | `history.no-clients` | The history counts no clients. | Set `clients` to the number of clients that sent operations. |
 | `history.duplicate-operation` | Two operations carry one identity. | Give every operation its own identity. |

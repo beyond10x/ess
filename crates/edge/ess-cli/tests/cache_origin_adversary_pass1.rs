@@ -415,7 +415,7 @@ fn warm_frame_extremes_and_cross_profile_entries_never_fetch_or_consume() {
             g.warm(&f, bytes);
             g.refuse(&f, "truncated OCI proof", n % 2 == 0);
             assert_eq!(std::fs::read(g.entry(&f)).unwrap(), bytes);
-            assert!(f.calls().is_empty());
+            assert_eq!(f.calls().len(), 0);
         }
         for n in [0, u32::MAX] {
             let mut b = full.clone();
@@ -440,7 +440,7 @@ fn warm_frame_extremes_and_cross_profile_entries_never_fetch_or_consume() {
                 let f = Fixture::new();
                 g.warm(&f, &b);
                 g.refuse(&f, "frame length exceeds local limit", true);
-                assert!(f.calls().is_empty());
+                assert_eq!(f.calls().len(), 0);
             }
             cursor += 8 + blob.len();
         }
@@ -457,13 +457,13 @@ fn warm_frame_extremes_and_cross_profile_entries_never_fetch_or_consume() {
             },
             false,
         );
-        assert!(f.calls().is_empty());
+        assert_eq!(f.calls().len(), 0);
         let mut b = full.clone();
         b.extend(full);
         let f = Fixture::new();
         g.warm(&f, &b);
         g.refuse(&f, "trailing bytes", true);
-        assert!(f.calls().is_empty());
+        assert_eq!(f.calls().len(), 0);
     }
 }
 

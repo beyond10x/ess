@@ -34,6 +34,10 @@ pub(crate) struct Load {
     /// The `ess-ui/1` document to load.
     #[arg(long)]
     path: PathBuf,
+    /// The ESS specification the document's `model:` names (a directory, its `ess-inputs.yaml`,
+    /// or one file): a choice's `options` naming one of its enums list that enum's variants.
+    #[arg(long)]
+    model: Option<PathBuf>,
 }
 
 /// Which renderer `ess ui run` runs the document in, and the document.
@@ -71,10 +75,17 @@ enum Target {
 /// Runs an `ess ui` command.
 pub(crate) fn run(command: &Command) -> ExitCode {
     match command {
-        Command::Load(load) => match ess_ui::check(&load.path) {
-            Ok(summary) => success(&summary.to_string()),
-            Err(error) => refusal(&format!("{}: {}", error.path(), error.message())),
-        },
+        Command::Load(load) => {
+            let loaded = match load.model.as_deref().map(model).transpose() {
+                Ok(Some(model)) => ess_ui::check_with(&load.path, &model),
+                Ok(None) => ess_ui::check(&load.path),
+                Err(error) => return refusal(&format!("{error:#}")),
+            };
+            match loaded {
+                Ok(summary) => success(&summary.to_string()),
+                Err(error) => refusal(&format!("{}: {}", error.path(), error.message())),
+            }
+        }
         Command::Check(args) => {
             let checked = match args.model.as_deref().map(model).transpose() {
                 Ok(model) => ess_ui_check::run_with_model(args, model.as_ref()),
@@ -106,10 +117,21 @@ pub(crate) fn run(command: &Command) -> ExitCode {
                 Err(error) => refusal(&error.to_string()),
             }
         }
-        Command::Test(args) => match ess_ui_test::run(args) {
-            Ok(code) => code,
-            Err(error) => refusal(&error.to_string()),
-        },
+        Command::Test(args) => {
+            let tested = match args.model.as_deref().map(model).transpose() {
+                Ok(model) => ess_ui_test::run_with_model(
+                    args,
+                    model
+                        .as_ref()
+                        .map(|model| model as &dyn ess_ui::binding::ModelEnums),
+                ),
+                Err(error) => return refusal(&format!("{error:#}")),
+            };
+            match tested {
+                Ok(code) => code,
+                Err(error) => refusal(&error.to_string()),
+            }
+        }
     }
 }
 
@@ -149,11 +171,13 @@ pub(crate) fn generate(arguments: &Generate) -> ExitCode {
 }
 
 /// The route table the document at `document` binds to on the surface the specification at
-/// `model` serves, through `ess_ui_check::binding`.
+/// `model` serves, through `ess_ui_check::binding`. The document is loaded with the model's enums,
+/// so a choice's `options` may name one (beyond10x/ess#330).
 fn bind(document: &Path, model: &Path) -> anyhow::Result<ess_ui::binding::Binding> {
-    let loaded = ess_ui::load_path(document)
+    let (sources, shown) = sources(model)?;
+    let enums = ess_ui_check::model_from_sources(&sources, shown)?;
+    let loaded = ess_ui::load_path_with(document, &enums)
         .map_err(|error| anyhow::anyhow!("{}: {error}", document.display()))?;
-    let (sources, _) = sources(model)?;
     Ok(ess_ui_check::binding(&loaded, &sources)?)
 }
 

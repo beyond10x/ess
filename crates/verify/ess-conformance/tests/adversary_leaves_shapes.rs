@@ -44,6 +44,23 @@ fn event_payload(scenario: &ConformanceScenario, event: &str) -> BTreeMap<String
                 payload,
                 ..
             } if name.to_string() == event => Some(payload.clone()),
+            // The literal half of an expectation that also compares a captured identity
+            // (beyond10x/ess#273).
+            ScenarioStep::ExpectEventValues {
+                event: name,
+                payload,
+                ..
+            } if name.to_string() == event => Some(
+                payload
+                    .iter()
+                    .filter_map(|(key, value)| match value {
+                        ess_conformance::ScenarioValue::Literal { value } => {
+                            Some((key.clone(), value.clone()))
+                        }
+                        _ => None,
+                    })
+                    .collect(),
+            ),
             _ => None,
         })
         .expect("the event is expected")

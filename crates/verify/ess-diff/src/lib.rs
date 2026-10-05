@@ -72,6 +72,14 @@
 //! (`docs/reviews/2026-08-20-guard-efficacy-review.md`). They arrive with the constructs that need
 //! them.
 //!
+//! # Whom a change breaks
+//!
+//! A relation says which way a set moved, not who is hurt by the move. [`classified()`] adds a
+//! [`ChangeCompatibility`] to every change — breaking, unknown or compatible for callers, readers
+//! and history, a type change read through where the type is used — and writes `ess-diff/14`.
+//! [`Gate`] fails on it, minus the changes an acknowledgements document bound to the same pair
+//! names. [`diff()`] is unchanged and stays below `/14`; [`mod@crate::compatibility`] has the rules.
+//!
 //! # One refusal
 //!
 //! [`DiffRefusal::DifferentSystem`]. Comparing two revisions of one system is what this answers;
@@ -117,11 +125,13 @@
 //! break the claim.
 
 pub mod change;
+pub mod compatibility;
 pub mod delta;
 pub mod diff;
 pub mod graph;
 pub mod impact;
 pub mod raw;
+pub mod refusal_policy;
 pub mod render;
 
 pub use change::{
@@ -129,10 +139,13 @@ pub use change::{
     EntityChange, ErrorChange, EventChange, SemanticChange, SemanticRelation, SystemChange,
     TypeChange, ViewChange,
 };
+pub use compatibility::{
+    ChangeCompatibility, Compatibility, Dimension, FailOn, Gate, GateOutcome, TypeUse,
+};
 pub use delta::{
     DeltaFormat, DeltaWriteRefusal, EssDelta, EssRevisionRef, SUPPORTED_DELTA_FORMATS,
 };
-pub use diff::{diff, DiffRefusal};
+pub use diff::{classified, diff, DiffRefusal};
 pub use graph::{DependencyEdge, DependencyRelation, ImpactClass, Reach, SemanticDependencyGraph};
 pub use impact::{
     impact, impact_input, ArtifactAnswer, ArtifactId, ArtifactObligation, Churn, CoverageImpact,

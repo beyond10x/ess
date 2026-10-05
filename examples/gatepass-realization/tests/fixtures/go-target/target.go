@@ -24,9 +24,19 @@ import (
 	"example.invalid/gatepass/types/visit"
 )
 
-// Target is the linked gatepass system, relinked for every scenario.
+// Target is the linked gatepass system, relinked for every scenario, plus the adapter's own token
+// mint.
 type Target struct {
 	assembled *realization.Assembled
+	sequence  int
+}
+
+// token is the next consistency token of this scenario, from a counter rather than a clock. Both
+// projections are served straight off the store, so every token a later read_your_writes read
+// demands is already met; without one the runner does not read the view at all.
+func (t *Target) token() string {
+	t.sequence++
+	return fmt.Sprintf("seq:%d", t.sequence)
 }
 
 // New is a target with no scenario open.
@@ -44,6 +54,7 @@ func (t *Target) BeginScenario(essconform.ScenarioContext) error {
 		return err
 	}
 	t.assembled = assembled
+	t.sequence = 0
 	return nil
 }
 
@@ -117,6 +128,7 @@ func (t *Target) registerVisit(input map[string]essconform.Node) (essconform.Com
 	case visit.RegisterVisitOutcomeRegistered:
 		return essconform.CommandResult{
 			Outcome:      "registered",
+			Consistency:  t.token(),
 			DirectEvents: []essconform.ObservedEvent{observed(system.SystemEventVisitRegistered{Event: taken.VisitRegistered})},
 		}, nil
 	case visit.RegisterVisitOutcomeRefused:
@@ -142,6 +154,7 @@ func (t *Target) admitVisitor(input map[string]essconform.Node) (essconform.Comm
 	case visit.AdmitVisitorOutcomeAdmitted:
 		return essconform.CommandResult{
 			Outcome:      "admitted",
+			Consistency:  t.token(),
 			DirectEvents: []essconform.ObservedEvent{observed(system.SystemEventVisitorAdmitted{Event: taken.VisitorAdmitted})},
 		}, nil
 	case visit.AdmitVisitorOutcomeWrongState:
@@ -165,6 +178,7 @@ func (t *Target) signOutVisitor(input map[string]essconform.Node) (essconform.Co
 	case visit.SignOutVisitorOutcomeSignedOut:
 		return essconform.CommandResult{
 			Outcome:      "signed-out",
+			Consistency:  t.token(),
 			DirectEvents: []essconform.ObservedEvent{observed(system.SystemEventVisitorDeparted{Event: taken.VisitorDeparted})},
 		}, nil
 	case visit.SignOutVisitorOutcomeWrongState:

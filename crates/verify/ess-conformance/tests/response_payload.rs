@@ -1,4 +1,5 @@
 //! Response values are observed from the implementation, never synthesized as expected values.
+mod support_versions;
 use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
 use ess_conformance::{
     report::Status, target::*, AdmittedSuite, ConformanceSuite, Runner, ScenarioStep,
@@ -142,14 +143,11 @@ fn exact_invocation_response_cannot_be_replaced_by_stale_observations() {
 #[test]
 fn response_persistence_versions_and_runtime_artifacts() {
     let suite = suite();
-    assert_eq!(suite.provenance.suite_version.major(), 8);
+    assert_eq!(suite.provenance.suite_version.major(), 34);
     let json = suite.to_canonical_json().unwrap();
     AdmittedSuite::from_json(&json).unwrap();
     for major in 1..8 {
-        assert!(AdmittedSuite::from_json(
-            &json.replace("ess-conformance/8", &format!("ess-conformance/{major}"))
-        )
-        .is_err());
+        assert!(AdmittedSuite::from_json(&support_versions::legacy_json(&json, major)).is_err());
     }
     let mut document: serde_json::Value = serde_json::from_str(&json).unwrap();
     let steps = document["scenarios"]
@@ -222,4 +220,22 @@ fn browser_response_vocabulary_is_explicitly_refused() {
     assert!(error
         .to_string()
         .contains("browser replay does not support observed command response payloads"));
+}
+
+#[test]
+fn native_target_executes_legacy_response_payload_suite() {
+    let model = ir();
+    let admitted = AdmittedSuite::from_suite(&suite()).unwrap();
+    let run = ess_conformance::Runner::for_suite(admitted.suite()).run_admitted(
+        &admitted,
+        &ess_conformance::interpret::Interpreted::for_model(model),
+    );
+    assert_ne!(run.scenarios.len(), 0);
+    assert!(
+        run.scenarios
+            .iter()
+            .all(|result| result.status == Status::Passed),
+        "{:#?}",
+        run.scenarios
+    );
 }

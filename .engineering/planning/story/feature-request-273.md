@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-273
 kind: story
-status: proposed
+status: active
 title: An event expectation checks identity fields against captured instances
 tags:
 - feature-request
@@ -33,9 +33,10 @@ scope:
   path: crates/verify/ess-conformance/tests/authored_structured_instances.rs
 - confidence: cited
   path: website/docs/guides/verify/author-scenarios.md
-revision: 15
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T13:04:17Z", actor: "human:timo", revision: 13}
+- {from: "proposed", to: "active", at: "2026-10-04T14:01:06Z", actor: "human:timo", revision: 16}
 ---
 ## Outcome
 

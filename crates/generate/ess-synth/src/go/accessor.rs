@@ -28,6 +28,35 @@ pub(super) fn expression(
     )
 }
 
+/// The body of a union node's projection: the variant's own plan, or — for a unit variant (ess/22),
+/// which carries nothing to read — unavailable.
+fn union_projection(
+    out: &mut crate::accessor_output::Output,
+    emit: &Emit<'_>,
+    owner: &QualifiedName,
+    variants: &BTreeMap<String, Option<usize>>,
+    result: &str,
+) {
+    // Go refuses a type-switch binding no clause reads.
+    if variants.values().any(Option::is_some) {
+        out.push_str("switch branch := value.(type) {\n");
+    } else {
+        out.push_str("switch value.(type) {\n");
+    }
+    for (label, next) in variants {
+        let variant = emit.reference_variant(owner, label);
+        match next {
+            Some(next) => {
+                let _ = writeln!(out, "case {variant}: return project{next}(branch.Value)");
+            }
+            None => {
+                let _ = writeln!(out, "case {variant}: var zero {result}; return zero, false");
+            }
+        }
+    }
+    out.push_str("default: panic(\"invalid native union accessor value\")\n}");
+}
+
 pub(super) fn expression_from(
     plan: &AccessorPlan,
     handles: &BTreeMap<QualifiedName, TypeHandle>,
@@ -78,15 +107,7 @@ pub(super) fn expression_from(
                 let TypeRef::Named(owner) = &node.source else {
                     unreachable!("union accessor")
                 };
-                out.push_str("switch branch := value.(type) {\n");
-                for (label, next) in variants {
-                    let _ = writeln!(
-                        out,
-                        "case {}: return project{next}(branch.Value)",
-                        emit.reference_variant(owner, label)
-                    );
-                }
-                out.push_str("default: panic(\"invalid native union accessor value\")\n}");
+                union_projection(&mut out, emit, owner, variants, &result);
             }
         }
         out.push_str("\n}\n");
@@ -124,6 +145,95 @@ pub(super) fn expression_from(
         format!("wrapped{}", depth - 1)
     };
     let _ = write!(out, "return {value}\n}}()");
+    out.finish()
+}
+
+/// A required input read through Optional levels the binding's condition proves present
+/// (beyond10x/ess#194), as `func() (T, bool)`: every level checked, `false` where one is absent
+/// anyway, and never a dereference of `nil`.
+pub(super) fn proved(
+    plan: &AccessorPlan,
+    handles: &BTreeMap<QualifiedName, TypeHandle>,
+    target: &ResolvedTypeRef,
+    conversion: Option<&TypeHandle>,
+    emit: &Emit<'_>,
+    root: &str,
+) -> Result<String, String> {
+    let leaf = accessor_type(plan.leaf(), handles);
+    let result = emit.go_type(&leaf);
+    let wanted = emit.go_type(target);
+    let mut out = crate::accessor_output::Output::default();
+    let _ = writeln!(out, "func() ({wanted}, bool) {{");
+    for (id, node) in plan.nodes.iter().enumerate() {
+        out.check()?;
+        let _ = writeln!(
+            out,
+            "var project{id} func({}) ({result}, bool)",
+            emit.go_type(&accessor_type(&node.source, handles))
+        );
+    }
+    for (id, node) in plan.nodes.iter().enumerate() {
+        out.check()?;
+        let source = emit.go_type(&accessor_type(&node.source, handles));
+        let _ = writeln!(
+            out,
+            "project{id} = func(value {source}) ({result}, bool) {{"
+        );
+        match &node.operation {
+            Operation::Leaf => out.push_str("return value, true"),
+            Operation::Missing => {
+                let _ = write!(out, "var zero {result}; return zero, false");
+            }
+            Operation::Field { field, next } => {
+                let ident = field_identifier(emit, handles, &node.source, &field.name);
+                let _ = write!(out, "return project{next}(value.{ident})");
+            }
+            Operation::Newtype { next } => {
+                let _ = write!(out, "return project{next}(value.Value())");
+            }
+            Operation::Optional { next } => {
+                let _ = write!(
+                    out,
+                    "if value == nil {{ var zero {result}; return zero, false }}; return project{next}(*value)"
+                );
+            }
+            Operation::Union { variants, .. } => {
+                let TypeRef::Named(owner) = &node.source else {
+                    unreachable!("union accessor")
+                };
+                union_projection(&mut out, emit, owner, variants, &result);
+            }
+        }
+        out.push_str("\n}\n");
+    }
+    let _ = writeln!(
+        out,
+        "value, available := project{}(event.{root})\nif !available {{ var zero {wanted}; return zero, \
+         false }}",
+        plan.start
+    );
+    // The proof covers the terminal's own Optional levels too: each is checked, none dereferenced
+    // blind.
+    let mut present = &leaf;
+    let mut depth = 0;
+    let mut value = "value".to_owned();
+    while let (ResolvedTypeRef::Optional { of }, false) = (present, present == target) {
+        let _ = writeln!(
+            out,
+            "if {value} == nil {{ var zero {wanted}; return zero, false }}\npresent{depth} := \
+             *{value}"
+        );
+        value = format!("present{depth}");
+        depth += 1;
+        present = of.as_ref();
+    }
+    if let Some(to) = conversion {
+        let key = format!("{present} -> {target}");
+        let function = emit.qualify(emit.layout.package_of(to.name()), emit.layout.convert(&key));
+        let _ = write!(out, "return {function}({value}), true\n}}()");
+        return out.finish();
+    }
+    let _ = write!(out, "return {value}, true\n}}()");
     out.finish()
 }
 
@@ -181,16 +291,21 @@ pub(super) fn preflight(
             {
                 let source = binding.name.to_string();
                 let root = root_identifier(&emit, binding, &accessor.root.name);
-                let output = expression(accessor, types, target, conversion, &emit, &root)
-                    .map_err(|reason| {
-                        crate::accessor_output::failure(
-                            ir,
-                            crate::Target::Go,
-                            plan,
-                            &source,
-                            reason,
-                        )
-                    })?;
+                let determined = crate::plan::DeterminedInput::Accessor {
+                    plan: accessor,
+                    types,
+                    target,
+                    conversion,
+                };
+                let emitted =
+                    if crate::condition::proved_levels(ir, binding, &determined, target) > 0 {
+                        proved(accessor, types, target, conversion, &emit, &root)
+                    } else {
+                        expression(accessor, types, target, conversion, &emit, &root)
+                    };
+                let output = emitted.map_err(|reason| {
+                    crate::accessor_output::failure(ir, crate::Target::Go, plan, &source, reason)
+                })?;
                 bytes = bytes.saturating_add(output.len());
                 if bytes > 32 * 1024 * 1024 {
                     return Err(crate::accessor_output::failure(

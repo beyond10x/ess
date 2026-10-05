@@ -1,10 +1,11 @@
 {
   "provenance": {
-    "suite_version": "ess-conformance/4",
+    "suite_version": "ess-conformance/34",
     "system": "oracle",
     "specification_version": "v1",
-    "spec_digest": "7ca8e1ba4935adbffad0c3e57e1d7651c7397a5c9b52f6d0cd54488cba83fb2b",
-    "contract_digest": "003eb0f2aab6cc1251288e3dc03526173e257f09b6a592df36618cff9d431d67"
+    "spec_digest": "f8b3f1c9fa884017968b683a76b8636b8d8933cd31818603c1035603883e4656",
+    "contract_digest": "4108a14f183b15988a40f260f1cc260bf1e516d8b6ab768d31f600bd73ab60eb",
+    "scenario_initial_state": "empty"
   },
   "scenarios": {
     "handoff-on-held/binding/delivery": {
@@ -1860,7 +1861,7 @@
             },
             "weight_grams": {
               "kind": "literal",
-              "value": 1.0
+              "value": 2.0
             }
           }
         },
@@ -1932,6 +1933,10 @@
           "expectation": {
             "expect": "contains",
             "fields": {
+              "contact": {
+                "kind": "literal",
+                "value": "contact"
+              },
               "order_id": {
                 "kind": "instance",
                 "instance": "order"
@@ -2522,6 +2527,10 @@
           "expectation": {
             "expect": "contains",
             "fields": {
+              "contact": {
+                "kind": "literal",
+                "value": "contact"
+              },
               "order_id": {
                 "kind": "instance",
                 "instance": "order"
@@ -4507,6 +4516,10 @@
           "expectation": {
             "expect": "contains",
             "fields": {
+              "contact": {
+                "kind": "literal",
+                "value": "contact"
+              },
               "order_id": {
                 "kind": "instance",
                 "instance": "order"
@@ -4893,6 +4906,10 @@
           "expectation": {
             "expect": "contains",
             "fields": {
+              "contact": {
+                "kind": "literal",
+                "value": "contact"
+              },
               "order_id": {
                 "kind": "observed",
                 "event": "oracle.order.OrderPlaced",

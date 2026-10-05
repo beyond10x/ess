@@ -79,3 +79,35 @@ fn a_delta_that_moves_nothing_about_set_effects_keeps_its_format() {
     assert!(!json.contains("outcome-set-effect-changed"), "{json}");
     assert!(delta.format.major() < 9, "{json}");
 }
+
+/// The desk model at ess/22 with `Invite`'s `affects:` entry parking the rows it selects
+/// (beyond10x/ess#229).
+fn parking() -> (String, String) {
+    let before = DESK.replacen("format: ess/16", "format: ess/22", 1);
+    let from = "            where: team == subject.team\n";
+    assert!(before.contains(from), "{from}");
+    let after = before.replacen(
+        from,
+        "            where: team == subject.team\n            moves: demo.desk.Session.park\n",
+        1,
+    );
+    (before, after)
+}
+
+#[test]
+fn issue_229_a_move_added_to_an_affects_entry_is_set_effect_changed() {
+    let (before, after) = parking();
+    let delta = diff(&ir(&before), &ir(&after)).unwrap();
+    let json = delta.to_canonical_json();
+    assert!(
+        json.contains(r#""kind": "outcome-set-effect-changed""#),
+        "{json}"
+    );
+    assert!(
+        delta
+            .changes()
+            .iter()
+            .any(|change| change.describe().contains("moves along `park`")),
+        "the entry's move is on the line that changed: {json}"
+    );
+}

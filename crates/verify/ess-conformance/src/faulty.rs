@@ -127,8 +127,8 @@ use crate::sessions::{self, Act};
 use crate::target::{
     ConformanceTarget, DeclaredErrorValue, EventObservationRequest, ExternalOutcomeControl,
     ImplementationIdentity, InvocationObservationRequest, ObservedEvent, ObservedInvocation,
-    RedeliveryRequest, ScenarioContext, SemanticCommandRequest, SemanticCommandResult,
-    SemanticViewRequest, SemanticViewResult, TargetError,
+    RecordedCommandCompletion, RedeliveryRequest, ScenarioContext, SemanticCommandRequest,
+    SemanticCommandResult, SemanticViewRequest, SemanticViewResult, TargetError,
 };
 
 // ---- the vocabulary --------------------------------------------------------------------------
@@ -555,33 +555,14 @@ pub fn retry(fault: Fault) -> Faulty<Retained> {
     Faulty::new(Retained::new(), fault)
 }
 
-impl<T: ConformanceTarget> ConformanceTarget for Faulty<T> {
-    /// The implementation underneath, named for the defect it carries.
-    ///
-    /// A report that said `billing-reference` for a build that is deliberately wrong would attest
-    /// the opposite of what happened (§30).
-    fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
-        let inner = self.inner.identity()?;
-        Ok(ImplementationIdentity::new(
-            format!("{}-{}", inner.name, self.fault.written()),
-            inner.version,
-        ))
-    }
-
-    fn begin_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
-        // Isolation covers the fault's own memory too, or a stale answer from the previous scenario
-        // would be a second, undeclared defect (§8).
-        self.memory.borrow_mut().clear();
-        self.applied.borrow_mut().clear();
-        *self.newest.borrow_mut() = None;
-        *self.copy.borrow_mut() = SemanticViewResult::default();
-        self.inner.begin_scenario(scenario)
-    }
-
-    fn execute_command(
+impl<T: ConformanceTarget> Faulty<T> {
+    /// One command through the fault: `run` answers it from the inner target, once, and the fault
+    /// is applied to that answer. The receipt's instant passes through untouched, an error's too.
+    fn faulted(
         &self,
         mut request: SemanticCommandRequest,
-    ) -> Result<SemanticCommandResult, TargetError> {
+        run: impl FnOnce(&T, SemanticCommandRequest) -> RecordedCommandCompletion,
+    ) -> RecordedCommandCompletion {
         let command = request.command.to_string();
         if self.fault == Fault::AcceptInvalidAmount && command == CREATE_INVOICE {
             // On the way in, as `aep_conformance`'s `ReplayApplies` rewrites an idempotency key: the
@@ -592,7 +573,19 @@ impl<T: ConformanceTarget> ConformanceTarget for Faulty<T> {
         }
         let input = request.input.clone();
         let logged = request.clone();
-        let mut result = self.inner.execute_command(request)?;
+        let RecordedCommandCompletion {
+            answer,
+            decision_time,
+        } = run(&self.inner, request);
+        let mut result = match answer {
+            Ok(result) => result,
+            Err(error) => {
+                return RecordedCommandCompletion {
+                    answer: Err(error),
+                    decision_time,
+                }
+            }
+        };
         self.applied.borrow_mut().push(logged);
         if let Some(token) = &result.consistency {
             *self.newest.borrow_mut() = Some(token.clone());
@@ -656,7 +649,56 @@ impl<T: ConformanceTarget> ConformanceTarget for Faulty<T> {
             Fault::DropConsistencyToken => result.consistency = None,
             _ => {}
         }
-        Ok(result)
+        RecordedCommandCompletion {
+            answer: Ok(result),
+            decision_time,
+        }
+    }
+}
+
+impl<T: ConformanceTarget> ConformanceTarget for Faulty<T> {
+    /// The implementation underneath, named for the defect it carries.
+    ///
+    /// A report that said `billing-reference` for a build that is deliberately wrong would attest
+    /// the opposite of what happened (§30).
+    fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
+        let inner = self.inner.identity()?;
+        Ok(ImplementationIdentity::new(
+            format!("{}-{}", inner.name, self.fault.written()),
+            inner.version,
+        ))
+    }
+
+    fn begin_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
+        // Isolation covers the fault's own memory too, or a stale answer from the previous scenario
+        // would be a second, undeclared defect (§8).
+        self.memory.borrow_mut().clear();
+        self.applied.borrow_mut().clear();
+        *self.newest.borrow_mut() = None;
+        *self.copy.borrow_mut() = SemanticViewResult::default();
+        self.inner.begin_scenario(scenario)
+    }
+
+    fn execute_command(
+        &self,
+        request: SemanticCommandRequest,
+    ) -> Result<SemanticCommandResult, TargetError> {
+        self.faulted(request, |inner, request| RecordedCommandCompletion {
+            answer: inner.execute_command(request),
+            decision_time: None,
+        })
+        .answer
+    }
+
+    /// The inner target's recorded command, called once, with the same fault applied to its
+    /// answer: the receipt's `decision_time` is the inner decision's, kept as it is.
+    fn execute_command_recorded(
+        &self,
+        request: SemanticCommandRequest,
+    ) -> RecordedCommandCompletion {
+        self.faulted(request, |inner, request| {
+            inner.execute_command_recorded(request)
+        })
     }
 
     /// Forwarded unchanged: no fault this wrapper carries is about a request with no input.
@@ -939,7 +981,14 @@ pub fn lost_update_workload() -> Workload {
     Workload {
         prefix: vec![
             Call::new(CREATE_INVOICE, create, Subject::Creates),
-            Call::new(ISSUE_INVOICE, BTreeMap::new(), Subject::Created(0)),
+            Call::new(
+                ISSUE_INVOICE,
+                BTreeMap::from([(
+                    "issued_at".to_owned(),
+                    Node::Text("2026-01-05T09:00:01Z".to_owned()),
+                )]),
+                Subject::Created(0),
+            ),
         ],
         clients: vec![vec![pay()], vec![pay()]],
     }
@@ -965,7 +1014,10 @@ pub fn stale_read_workload() -> sessions::Workload {
         vec![
             Act::Call(Call::new(
                 ISSUE_INVOICE,
-                BTreeMap::new(),
+                BTreeMap::from([(
+                    "issued_at".to_owned(),
+                    Node::Text(format!("2026-01-05T09:00:0{}Z", prefix + 1)),
+                )]),
                 Subject::Created(prefix),
             )),
             Act::Read(OUTSTANDING.to_owned()),

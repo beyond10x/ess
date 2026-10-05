@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"math/big"
 	"regexp"
 	"sort"
 	"strconv"
@@ -114,20 +115,112 @@ type predicate struct {
 	left  operand
 	op    string
 	right operand
-	path  string
+	// instant is a tagged comparison (`as: timestamp`, suite/40): the operands compare as the
+	// RFC 3339 instants they name, never by their spelling.
+	instant bool
+	path    string
 	// any_of / none_of
 	values []Node
 	// quantifier
 	over string
 	bind string
 	body *predicate
+	// distinct (suite/40): the key under `bind`, empty for the element itself, and its kind.
+	key     string
+	keyKind string
+	// window is a calendar window (docs/design/calendar-window-guards.md); `path` holds the fact
+	// it reads, empty for `now`.
+	window *windowPredicate
 }
 
-// operand is one side of a comparison: a fact to look up, or a constant.
+// windowPredicate is a calendar window at UTC or a fixed offset, as Rust's `CalendarWindow`: the
+// instant moved by the offset falls on a listed weekday at or after `from` and before `to`; a
+// window with `from` after `to` crosses midnight and belongs to the day it opens. No zone data.
+type windowPredicate struct {
+	// now is `at: now`: the decision's current time, which a runner never has.
+	now bool
+	// days is Monday first.
+	days [7]bool
+	// from and to are minutes after midnight; to may be 1440, the end of the day.
+	from int64
+	to   int64
+	// offset is minutes east of UTC.
+	offset int64
+}
+
+var windowDays = [7]string{"mon", "tue", "wed", "thu", "fri", "sat", "sun"}
+
+// local is the weekday (Monday 0) and the second of the day of `seconds` moved by the offset.
+func (w *windowPredicate) local(seconds int64) (int, int64) {
+	local := seconds + w.offset*60
+	day := floorDiv(local, 86400)
+	return int(((day+3)%7 + 7) % 7), local - day*86400
+}
+
+func floorDiv(a, b int64) int64 {
+	quotient := a / b
+	if (a%b != 0) && ((a < 0) != (b < 0)) {
+		quotient--
+	}
+	return quotient
+}
+
+// contains is whether the instant `seconds` after the epoch falls inside the window.
+func (w *windowPredicate) contains(seconds int64) bool {
+	day, second := w.local(seconds)
+	from, to := w.from*60, w.to*60
+	if w.from > w.to {
+		return (w.days[day] && second >= from) || (w.days[(day+6)%7] && second < to)
+	}
+	return w.days[day] && from <= second && second < to
+}
+
+func (w *windowPredicate) String(path string) string {
+	at := path
+	if w.now {
+		at = "now"
+	}
+	days := []string{}
+	for index, listed := range w.days {
+		if listed {
+			days = append(days, windowDays[index])
+		}
+	}
+	offset := "Z"
+	if w.offset != 0 {
+		sign, magnitude := '+', w.offset
+		if magnitude < 0 {
+			sign, magnitude = '-', -magnitude
+		}
+		offset = fmt.Sprintf("%c%02d:%02d", sign, magnitude/60, magnitude%60)
+	}
+	return fmt.Sprintf("window(at %s, %s, %02d:%02d-%02d:%02d, %s)", at, strings.Join(days, " "), w.from/60, w.from%60, w.to/60, w.to%60, offset)
+}
+
+// operand is one side of a comparison: a fact to look up, a constant, or one fact moved by a
+// constant.
 type operand struct {
 	path    string
 	literal Node
 	isFact  bool
+	offset  *offsetOperand
+	// utf8Bytes is the derived UTF-8 byte length of the text at `path` (suite/40,
+	// docs/design/expression-family-source22.md decision 11): `{utf8_bytes: <path>}`. Not a fact: no
+	// value is read at `path` itself, and a selection never reads one.
+	utf8Bytes bool
+}
+
+// offsetOperand is one fact moved by one constant (suite/40, docs/design/expression-family-source22.md
+// A2): an exact integer, or elapsed seconds.
+type offsetOperand struct {
+	base string
+	add  bool
+	// integer is the Integer magnitude, or nil for an elapsed one.
+	integer *big.Int
+	// seconds is the elapsed magnitude; 0 for an Integer one.
+	seconds int64
+	// spelled is the magnitude as written: `5`, `24h`.
+	spelled string
 }
 
 func (p predicate) String() string {
@@ -149,6 +242,9 @@ func (p predicate) String() string {
 	case "not":
 		return "not (" + p.body.String() + ")"
 	case "compare":
+		if p.instant {
+			return fmt.Sprintf("%s %s %s as timestamp", p.left, p.op, p.right)
+		}
 		return fmt.Sprintf("%s %s %s", p.left, p.op, p.right)
 	case "truthy":
 		return p.path
@@ -179,12 +275,30 @@ func (p predicate) String() string {
 		return p.path + " " + p.kind + " [" + strings.Join(parts, ", ") + "]"
 	case "forall", "exists":
 		return fmt.Sprintf("%s %s in %s: (%s)", p.kind, p.bind, p.over, p.body)
+	case "distinct":
+		rendered := fmt.Sprintf("distinct %s in %s", p.bind, p.over)
+		if p.key != "" {
+			rendered += " by " + p.key
+		}
+		return rendered + " as " + p.keyKind
+	case "window":
+		return p.window.String(p.path)
 	default:
 		return p.kind
 	}
 }
 
 func (o operand) String() string {
+	if o.utf8Bytes {
+		return fmt.Sprintf("{utf8_bytes: %s}", o.path)
+	}
+	if o.offset != nil {
+		direction := "subtract"
+		if o.offset.add {
+			direction = "add"
+		}
+		return fmt.Sprintf("{offset: {fact: %s, %s: %s}}", o.offset.base, direction, o.offset.spelled)
+	}
 	if o.isFact {
 		return o.path
 	}
@@ -201,7 +315,55 @@ func parsePredicate(raw json.RawMessage) (predicate, error) {
 	if err := decoder.Decode(&node); err != nil {
 		return predicate{}, err
 	}
+	// An offset's magnitude is read from its own digits: `i64::MAX` is a magnitude, and the binary64
+	// every other number of a predicate is read as would round it (suite/40, A2).
+	if strings.Contains(string(raw), `"offset"`) {
+		exact := json.NewDecoder(strings.NewReader(string(raw)))
+		exact.UseNumber()
+		var kept any
+		if exact.Decode(&kept) == nil {
+			node = offsetMagnitudes(kept)
+		}
+	}
 	return fromNode(node)
+}
+
+// offsetMagnitudes is a predicate decoded with every number a float64, as it always was, but an
+// offset's `add` or `subtract`, which keeps the token it was written as. TypeScript's
+// `predicateNumbers`.
+func offsetMagnitudes(node any) any {
+	switch value := node.(type) {
+	case []any:
+		kept := make([]any, len(value))
+		for index, child := range value {
+			kept[index] = offsetMagnitudes(child)
+		}
+		return kept
+	case map[string]any:
+		kept := make(map[string]any, len(value))
+		for key, child := range value {
+			fields, isOffset := child.(map[string]any)
+			if key != "offset" || !isOffset {
+				kept[key] = offsetMagnitudes(child)
+				continue
+			}
+			offset := make(map[string]any, len(fields))
+			for field, magnitude := range fields {
+				if field == "add" || field == "subtract" {
+					offset[field] = magnitude
+				} else {
+					offset[field] = offsetMagnitudes(magnitude)
+				}
+			}
+			kept[key] = offset
+		}
+		return kept
+	case json.Number:
+		parsed, _ := value.Float64()
+		return parsed
+	default:
+		return value
+	}
 }
 
 func fromNode(node any) (predicate, error) {
@@ -288,9 +450,221 @@ func fromEntry(key string, value any, binders []string) (predicate, error) {
 		return predicate{kind: "not", body: &inner}, nil
 	case "forall", "exists":
 		return parseQuantifier(key, value, binders)
+	case "distinct":
+		// `as` is no operator, so a mapping holding it was never a constraint on a fact named
+		// `distinct`, as Rust's `from_entry` reads it.
+		if fields, ok := value.(map[string]any); ok {
+			if _, keyed := fields["as"]; keyed {
+				return parseDistinct(fields)
+			}
+		}
+		return parseConstraint(key, value, binders)
+	case "compare":
+		if fields, ok := value.(map[string]any); ok {
+			if _, tagged := fields["left"]; tagged {
+				return parseTaggedCompare(fields, binders)
+			}
+		}
+		return parseConstraint(key, value, binders)
+	case "window":
+		// A mapping under `window` carrying `at` is a calendar window; any other is a constraint on a
+		// fact named `window`, as it always was.
+		if fields, ok := value.(map[string]any); ok {
+			if _, window := fields["at"]; window {
+				return parseWindow(fields)
+			}
+		}
+		return parseConstraint(key, value, binders)
 	default:
 		return parseConstraint(key, value, binders)
 	}
+}
+
+// parseWindow reads `{window: {at, days, from, to, offset}}` as Rust's
+// `CalendarWindow::parse_mapping` does, refusing what it refuses: another key, a missing one, a
+// named time zone, an offset that is not `Z` or `±HH:MM` within 14 hours, a time that is not quoted
+// `HH:MM`, `from` equal to `to`, `to` 00:00, no day, a day twice or a day not spelled `mon` to `sun`.
+func parseWindow(fields map[string]any) (predicate, error) {
+	refuse := func(reason string) (predicate, error) {
+		return predicate{}, fmt.Errorf("window: %s", reason)
+	}
+	for key := range fields {
+		switch key {
+		case "zone", "tz", "timezone", "time_zone":
+			return refuse(fmt.Sprintf("`%s` names a time zone, and a calendar window takes a fixed offset", key))
+		case "at", "days", "from", "to", "offset":
+		default:
+			return refuse(fmt.Sprintf("a window takes `at`, `days`, `from`, `to` and `offset`, and nothing else; `%s` is none of them", key))
+		}
+	}
+	for _, key := range []string{"at", "days", "from", "to", "offset"} {
+		if _, ok := fields[key]; !ok {
+			return refuse(fmt.Sprintf("a window takes `%s`, and this one has none", key))
+		}
+	}
+	window := &windowPredicate{}
+	path := ""
+	at, ok := fields["at"].(string)
+	switch {
+	case !ok:
+		return refuse("`at` is `now` or the fact path of a Timestamp")
+	case at == "now":
+		window.now = true
+	case factPath.MatchString(at):
+		path = at
+	default:
+		return refuse("`at` is `now` or the fact path of a Timestamp")
+	}
+	days, ok := fields["days"].([]any)
+	if !ok || len(days) == 0 {
+		return refuse("`days` lists at least one of `mon` to `sun`")
+	}
+	for _, day := range days {
+		name, _ := day.(string)
+		index := -1
+		for candidate, spelled := range windowDays {
+			if spelled == name {
+				index = candidate
+			}
+		}
+		if index < 0 {
+			return refuse(fmt.Sprintf("`%v` is no day", day))
+		}
+		if window.days[index] {
+			return refuse(fmt.Sprintf("`days` lists `%s` twice", name))
+		}
+		window.days[index] = true
+	}
+	clock := func(key string) (int64, error) {
+		text, ok := fields[key].(string)
+		if !ok || len(text) != 5 || text[2] != ':' {
+			return 0, fmt.Errorf("window: `%s` is a time written as quoted text, \"HH:MM\"", key)
+		}
+		hours, hoursErr := strconv.Atoi(text[:2])
+		minutes, minutesErr := strconv.Atoi(text[3:])
+		if hoursErr != nil || minutesErr != nil || text[0] < '0' || text[0] > '9' || text[3] < '0' || text[3] > '9' || minutes > 59 || hours > 24 || (hours == 24 && minutes != 0) {
+			return 0, fmt.Errorf("window: `%s: %s` is no time of day", key, text)
+		}
+		return int64(hours*60 + minutes), nil
+	}
+	var err error
+	if window.from, err = clock("from"); err != nil {
+		return predicate{}, err
+	}
+	if window.to, err = clock("to"); err != nil {
+		return predicate{}, err
+	}
+	switch {
+	case window.from == 1440:
+		return refuse("`from` is at most 23:59")
+	case window.to == 0:
+		return refuse("`to` 00:00 is the end of the day, which a window writes `24:00`")
+	case window.from == window.to:
+		return refuse("`from` and `to` are equal: a window is either empty or the whole day")
+	}
+	offset, ok := fields["offset"].(string)
+	if !ok {
+		return refuse("`offset` is `Z` or `±HH:MM`")
+	}
+	if offset != "Z" {
+		valid := len(offset) == 6 && (offset[0] == '+' || offset[0] == '-') && offset[3] == ':'
+		for _, index := range []int{1, 2, 4, 5} {
+			valid = valid && offset[index] >= '0' && offset[index] <= '9'
+		}
+		if !valid {
+			return refuse(fmt.Sprintf("`offset: %s` is no fixed offset: write `Z` or `±HH:MM`; a named time zone is refused", offset))
+		}
+		hours, _ := strconv.Atoi(offset[1:3])
+		minutes, _ := strconv.Atoi(offset[4:6])
+		magnitude := int64(hours*60 + minutes)
+		switch {
+		case minutes > 59 || magnitude > 14*60:
+			return refuse(fmt.Sprintf("`offset: %s` is past 14:00 either way", offset))
+		case magnitude == 0 && offset[0] == '-':
+			return refuse("`offset: -00:00` is the unknown local offset; write `Z`")
+		}
+		if offset[0] == '-' {
+			magnitude = -magnitude
+		}
+		window.offset = magnitude
+	}
+	return predicate{kind: "window", path: path, window: window}, nil
+}
+
+// parseTaggedCompare reads the closed `{compare: …}` form of a comparison (suite/40,
+// docs/design/expression-family-source22.md), as Rust's `Predicate::tagged_compare` does: tagged to
+// compare instants (decision 2), `{compare: {left, op, right, as: timestamp}}`, or untagged with a
+// derived operand (decision 11), `{compare: {left: {utf8_bytes: <path>}, op, right}}` — exactly
+// those keys. `as` never stands beside a derived operand, and the untagged form carries one. A
+// mapping under `compare` without `left` is a constraint on a fact named `compare`, as it always was.
+func parseTaggedCompare(fields map[string]any, binders []string) (predicate, error) {
+	refuse := func(reason string) (predicate, error) {
+		return predicate{}, fmt.Errorf("compare: %s", reason)
+	}
+	_, tagged := fields["as"]
+	_, hasOp := fields["op"]
+	_, hasRight := fields["right"]
+	want := 3
+	if tagged {
+		want = 4
+	}
+	if len(fields) != want || !hasOp || !hasRight {
+		return refuse("a `{compare: …}` comparison takes exactly `left`, `op` and `right`, and `as` where it is tagged")
+	}
+	var left operand
+	switch value := fields["left"].(type) {
+	case string:
+		if !factPath.MatchString(value) {
+			return refuse("`left` names a fact path or `{utf8_bytes: <path>}`")
+		}
+		left = operand{path: value, isFact: true}
+	case map[string]any:
+		inner, ok := value["utf8_bytes"]
+		if !ok || len(value) != 1 {
+			return refuse("`left` names a fact path or `{utf8_bytes: <path>}`")
+		}
+		derived, err := parseUtf8BytesOperand("compare", "left", inner)
+		if err != nil {
+			return predicate{}, err
+		}
+		left = derived
+	default:
+		return refuse("`left` names a fact path or `{utf8_bytes: <path>}`")
+	}
+	spelled, _ := fields["op"].(string)
+	op, ok := compareSpellings[spelled]
+	if !ok {
+		return refuse("`op` is one of eq, ne, lt, lte, gt, gte")
+	}
+	if kind, _ := fields["as"].(string); tagged && kind != "timestamp" {
+		return refuse("`as` names the one kind a comparison is tagged with, `timestamp`")
+	}
+	var right operand
+	switch value := fields["right"].(type) {
+	case string:
+		right = parseOperandIn(value, binders)
+	case map[string]any:
+		fact, err := parseMappingOperand("compare", "right", value)
+		if err != nil {
+			return predicate{}, err
+		}
+		right = fact
+	case bool, json.Number, float64:
+		right = operand{literal: value}
+	default:
+		return refuse("`right` is a scalar or `{fact: <path>}`")
+	}
+	derived := left.utf8Bytes || right.utf8Bytes
+	if !tagged {
+		if !derived {
+			return refuse("an untagged `{compare: …}` carries a derived operand, `{utf8_bytes: <path>}`; compare two facts as `<path>: {<op>: …}`")
+		}
+		return predicate{kind: "compare", left: left, op: op, right: right}, nil
+	}
+	if derived {
+		return refuse("a derived operand compares as a number, never `as: timestamp`")
+	}
+	return predicate{kind: "compare", left: left, op: op, right: right, instant: true}, nil
 }
 
 func parseQuantifier(kind string, value any, binders []string) (predicate, error) {
@@ -308,6 +682,45 @@ func parseQuantifier(kind string, value any, binders []string) (predicate, error
 		return predicate{}, err
 	}
 	return predicate{kind: kind, over: over, bind: bind, body: &body}, nil
+}
+
+// distinctKinds are the key kinds a `distinct` names, Rust's `DistinctKeyKind`.
+var distinctKinds = map[string]bool{
+	"boolean": true, "integer": true, "decimal": true, "string": true, "uuid": true,
+	"timestamp": true, "enum": true,
+}
+
+// parseDistinct reads `{distinct: {in, as, by, kind}}` (suite/40,
+// docs/design/expression-family-source22.md `distinct`), as Rust's `Predicate::distinct` does, and
+// requires `kind`: a suite never carries a key whose equality its reader would have to infer.
+func parseDistinct(fields map[string]any) (predicate, error) {
+	for field := range fields {
+		switch field {
+		case "in", "as", "by", "kind":
+		default:
+			return predicate{}, fmt.Errorf("distinct: `%s`: `distinct` takes `in`, `as`, `by` and `kind`, and nothing else", field)
+		}
+	}
+	over, ok := fields["in"].(string)
+	if !ok || !factPath.MatchString(over) {
+		return predicate{}, fmt.Errorf("distinct: `in` names the list, a fact path")
+	}
+	bind, ok := fields["as"].(string)
+	if !ok || !factPath.MatchString(bind) || strings.Contains(bind, ".") {
+		return predicate{}, fmt.Errorf("distinct: `as` names each element, one fact path segment")
+	}
+	key := ""
+	if by, present := fields["by"]; present {
+		key, ok = by.(string)
+		if !ok || !factPath.MatchString(key) || !strings.HasPrefix(key, bind+".") {
+			return predicate{}, fmt.Errorf("distinct: `by` names one member under the binder `%s`", bind)
+		}
+	}
+	kind, ok := fields["kind"].(string)
+	if !ok || !distinctKinds[kind] {
+		return predicate{}, fmt.Errorf("distinct: `kind` names the key kind: boolean, integer, decimal, string, uuid, timestamp or enum")
+	}
+	return predicate{kind: "distinct", over: over, bind: bind, key: key, keyKind: kind}, nil
 }
 
 func parseConstraint(path string, value any, binders []string) (predicate, error) {
@@ -358,8 +771,15 @@ var compareSpellings = map[string]string{
 func parseOperator(path, key string, raw any, binders []string) (predicate, error) {
 	if op, ok := compareSpellings[key]; ok {
 		right := operand{literal: raw}
-		if text, ok := raw.(string); ok {
-			right = parseOperandIn(text, binders)
+		switch value := raw.(type) {
+		case string:
+			right = parseOperandIn(value, binders)
+		case map[string]any:
+			fact, err := parseMappingOperand(path, key, value)
+			if err != nil {
+				return predicate{}, err
+			}
+			right = fact
 		}
 		return predicate{kind: "compare", left: operand{path: path, isFact: true}, op: op, right: right}, nil
 	}
@@ -421,6 +841,102 @@ func parseOperator(path, key string, raw any, binders []string) (predicate, erro
 		return predicate{kind: "truthy", path: path}, nil
 	}
 	return predicate{}, fmt.Errorf("`%s` carries the operator %q, which this runner does not know", path, key)
+}
+
+// parseFactOperand reads the explicit fact operand `{fact: <path>}`, the canonical spelling of a
+// one-segment fact on the right of a comparison (suite/40, docs/design/expression-family-source22.md
+// A1), as Rust's `Operand::fact_mapping` does: exactly one key, naming a fact path. Anything else
+// is refused rather than compared as the mapping it is. Which suite majors may carry it is the
+// runtime's admission to decide; this reader only reads it.
+func parseMappingOperand(path, key string, value map[string]any) (operand, error) {
+	if inner, ok := value["offset"]; ok && len(value) == 1 {
+		return parseOffsetOperand(path, key, inner)
+	}
+	if inner, ok := value["utf8_bytes"]; ok && len(value) == 1 {
+		return parseUtf8BytesOperand(path, key, inner)
+	}
+	return parseFactOperand(path, key, value)
+}
+
+// parseUtf8BytesOperand reads the derived UTF-8 byte length of a text, `{utf8_bytes: <path>}`
+// (suite/40, docs/design/expression-family-source22.md decision 11), as Rust's `Operand::fact_mapping`
+// does: one key, naming a fact path. Which suite majors may carry it is the runtime's admission to
+// decide; this reader only reads it.
+func parseUtf8BytesOperand(path, key string, value any) (operand, error) {
+	parent, ok := value.(string)
+	if !ok || !factPath.MatchString(parent) {
+		return operand{}, fmt.Errorf("`%s: {%s: {utf8_bytes: …}}` names the fact path of a text", path, key)
+	}
+	return operand{path: parent, utf8Bytes: true}, nil
+}
+
+// elapsedMagnitude is the current-time grammar of an elapsed magnitude: a whole number without a
+// leading zero, of at most ten digits, then `s`, `m` or `h`.
+var elapsedMagnitude = regexp.MustCompile(`^([1-9][0-9]{0,9}|0)([smh])$`)
+
+// parseOffsetOperand reads one constant offset, `{offset: {fact: <path>, add|subtract:
+// <magnitude>}}` (suite/40, docs/design/expression-family-source22.md A2), as Rust's
+// `OffsetOperand::from_entries` does: exactly `fact` and one of `add` and `subtract`; a number
+// that is a whole number from 0 to `i64::MAX`, or a text `<digits><s|m|h>` under the current-time
+// bound. A whole number written as text is refused.
+func parseOffsetOperand(path, key string, value any) (operand, error) {
+	refuse := fmt.Errorf("`%s: {%s: {offset: …}}` takes exactly `fact`, a fact path, and one of `add` and `subtract`", path, key)
+	fields, ok := value.(map[string]any)
+	if !ok || len(fields) != 2 {
+		return operand{}, refuse
+	}
+	base, ok := fields["fact"].(string)
+	added, add := fields["add"]
+	subtracted, subtract := fields["subtract"]
+	if !ok || !factPath.MatchString(base) || add == subtract {
+		return operand{}, refuse
+	}
+	magnitude := subtracted
+	if add {
+		magnitude = added
+	}
+	offset := &offsetOperand{base: base, add: add}
+	if text, isText := magnitude.(string); isText {
+		matched := elapsedMagnitude.FindStringSubmatch(text)
+		if matched == nil {
+			return operand{}, refuse
+		}
+		digits, _ := strconv.ParseInt(matched[1], 10, 64)
+		unit := map[string]int64{"s": 1, "m": 60, "h": 3600}[matched[2]]
+		if digits*unit > 3155760000 {
+			return operand{}, refuse
+		}
+		offset.seconds = digits * unit
+		offset.spelled = text
+		return operand{offset: offset}, nil
+	}
+	if _, isFlag := magnitude.(bool); isFlag {
+		return operand{}, refuse
+	}
+	integer, ok := integerOf(magnitude)
+	if !ok || integer.Sign() < 0 {
+		return operand{}, refuse
+	}
+	offset.integer = integer
+	offset.spelled = integer.String()
+	return operand{offset: offset}, nil
+}
+
+// integerOf is an Integer value: a number whose exact value is a whole number within int64.
+func integerOf(value Node) (*big.Int, bool) {
+	exact, ok := numberValue(value)
+	if !ok || !exact.IsInt() || !exact.Num().IsInt64() {
+		return nil, false
+	}
+	return new(big.Int).Set(exact.Num()), true
+}
+
+func parseFactOperand(path, key string, value map[string]any) (operand, error) {
+	fact, ok := value["fact"].(string)
+	if len(value) != 1 || !ok || !factPath.MatchString(fact) {
+		return operand{}, fmt.Errorf("`%s: {%s: …}`: a comparison operand must be a scalar, or `{fact: <path>}` naming a fact", path, key)
+	}
+	return operand{path: fact, isFact: true}, nil
 }
 
 // parseLeaf reads compact expressions. Unrepresentable literal data uses structured comparisons.
@@ -694,16 +1210,49 @@ func (p predicate) evaluate(source factSource) truth {
 		return p.foldMatch(source)
 	case "forall", "exists":
 		return p.quantify(source)
+	case "distinct":
+		return p.distinct(source)
+	case "window":
+		// `now` is the decision's current time, which a runner never reads: Unknown. A fact is
+		// read as the instant it names, never its spelling; text that names none is Unknown.
+		if p.window.now {
+			return truthUnknown
+		}
+		value, ok := readLeaf(source, p.path)
+		text, isText := value.(string)
+		if !ok || !isText {
+			return truthUnknown
+		}
+		at, ok := parseInstant(text)
+		if !ok {
+			return truthUnknown
+		}
+		return truthOf(p.window.contains(at.seconds))
 	default:
 		return truthUnknown
 	}
 }
 
 func (p predicate) compare(source factSource) truth {
+	if p.right.offset != nil {
+		return p.compareOffset(source, p.right.offset)
+	}
 	left, leftOk := p.left.resolve(source)
 	right, rightOk := p.right.resolve(source)
 	if !leftOk || !rightOk {
 		return truthUnknown
+	}
+	if p.instant {
+		// Decision 2: the instants the two operands name, under every operator. A text that names
+		// no instant is Unknown, never ordered by its spelling.
+		leftText, leftIsText := left.(string)
+		rightText, rightIsText := right.(string)
+		leftInstant, leftOk := parseInstant(leftText)
+		rightInstant, rightOk := parseInstant(rightText)
+		if !leftIsText || !rightIsText || !leftOk || !rightOk {
+			return truthUnknown
+		}
+		return truthOf(acceptsOrder(p.op, leftInstant.compare(rightInstant)))
 	}
 	if p.op == "==" || p.op == "!=" {
 		return truthOf(equal(left, right) == (p.op == "=="))
@@ -724,6 +1273,194 @@ func (p predicate) compare(source factSource) truth {
 	default:
 		return truthUnknown
 	}
+}
+
+// compareOffset is `left <op> base ± magnitude` (A2), as Rust's `Predicate::evaluate_offset`: an
+// Integer magnitude compares two whole numbers with the exact sum, in `math/big`, so nothing wraps,
+// saturates or rounds; an elapsed one moves the base instant by seconds and compares instants. An
+// unread value, a value of the wrong kind, or a moved instant past what a `date-time` spells is
+// Unknown.
+func (p predicate) compareOffset(source factSource, offset *offsetOperand) truth {
+	left, leftOk := p.left.resolve(source)
+	base, baseOk := readLeaf(source, offset.base)
+	if !leftOk || !baseOk {
+		return truthUnknown
+	}
+	if offset.integer != nil {
+		leftValue, leftOk := integerOf(left)
+		baseValue, baseOk := integerOf(base)
+		if !leftOk || !baseOk {
+			return truthUnknown
+		}
+		if offset.add {
+			baseValue.Add(baseValue, offset.integer)
+		} else {
+			baseValue.Sub(baseValue, offset.integer)
+		}
+		return truthOf(acceptsOrder(p.op, leftValue.Cmp(baseValue)))
+	}
+	leftText, leftIsText := left.(string)
+	baseText, baseIsText := base.(string)
+	leftInstant, leftOk := parseInstant(leftText)
+	baseInstant, baseOk := parseInstant(baseText)
+	if !leftIsText || !baseIsText || !leftOk || !baseOk {
+		return truthUnknown
+	}
+	moved := baseInstant
+	if offset.add {
+		moved.seconds += offset.seconds
+	} else {
+		moved.seconds -= offset.seconds
+	}
+	if moved.seconds < -62167219200 || moved.seconds > 253402300799 {
+		return truthUnknown
+	}
+	return truthOf(acceptsOrder(p.op, leftInstant.compare(moved)))
+}
+
+// acceptsOrder applies a comparison operator to an ordering, as Rust's `CompareOp::accepts` does.
+func acceptsOrder(op string, order int) bool {
+	switch op {
+	case "==":
+		return order == 0
+	case "!=":
+		return order != 0
+	case "<":
+		return order < 0
+	case "<=":
+		return order <= 0
+	case ">":
+		return order > 0
+	default:
+		return order >= 0
+	}
+}
+
+// instant is one RFC 3339 `date-time` as a point on the UTC line: whole seconds since the epoch
+// and nanoseconds, as Rust's `Rfc3339Instant` holds it.
+type instant struct {
+	seconds int64
+	nanos   int64
+}
+
+func (a instant) compare(b instant) int {
+	switch {
+	case a.seconds < b.seconds:
+		return -1
+	case a.seconds > b.seconds:
+		return 1
+	case a.nanos < b.nanos:
+		return -1
+	case a.nanos > b.nanos:
+		return 1
+	}
+	return 0
+}
+
+// parseInstant is Rust's `Rfc3339Instant::parse_rfc3339` (decision 14): the `date-time`
+// production and nothing wider — `T` or `t`, seconds 00–59 (no leap second), up to nine fraction
+// digits, and `Z`, `z` or a `±HH:MM` offset; years 0000–9999 with real month lengths. The vectors
+// it answers are `crates/specify/ess-primitives/tests/vectors/rfc3339-instants.json`.
+func parseInstant(text string) (instant, bool) {
+	digits := func(from, to int) (int64, bool) {
+		if from >= to || to > len(text) {
+			return 0, false
+		}
+		var total int64
+		for index := from; index < to; index++ {
+			c := text[index]
+			if c < '0' || c > '9' {
+				return 0, false
+			}
+			total = total*10 + int64(c-'0')
+		}
+		return total, true
+	}
+	at := func(index int, expected string) bool {
+		return index < len(text) && strings.IndexByte(expected, text[index]) >= 0
+	}
+	if !(at(4, "-") && at(7, "-") && at(10, "Tt") && at(13, ":") && at(16, ":")) {
+		return instant{}, false
+	}
+	year, ok1 := digits(0, 4)
+	month, ok2 := digits(5, 7)
+	day, ok3 := digits(8, 10)
+	hour, ok4 := digits(11, 13)
+	minute, ok5 := digits(14, 16)
+	second, ok6 := digits(17, 19)
+	if !(ok1 && ok2 && ok3 && ok4 && ok5 && ok6) || month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month) || hour > 23 || minute > 59 || second > 59 {
+		return instant{}, false
+	}
+	position := 19
+	var nanos int64
+	if at(position, ".") {
+		end := position + 1
+		for end < len(text) && text[end] >= '0' && text[end] <= '9' {
+			end++
+		}
+		width := end - position - 1
+		if width == 0 || width > 9 {
+			return instant{}, false
+		}
+		fraction, _ := digits(position+1, end)
+		for scale := width; scale < 9; scale++ {
+			fraction *= 10
+		}
+		nanos = fraction
+		position = end
+	}
+	var offset int64
+	rest := text[position:]
+	switch {
+	case rest == "Z" || rest == "z":
+	case len(rest) == 6 && (rest[0] == '+' || rest[0] == '-') && rest[3] == ':':
+		hours, okH := digits(position+1, position+3)
+		minutes, okM := digits(position+4, position+6)
+		if !okH || !okM || hours > 23 || minutes > 59 {
+			return instant{}, false
+		}
+		offset = hours*3600 + minutes*60
+		if rest[0] == '-' {
+			offset = -offset
+		}
+	default:
+		return instant{}, false
+	}
+	return instant{seconds: daysFromCivil(year, month, day)*86400 + hour*3600 + minute*60 + second - offset, nanos: nanos}, true
+}
+
+func daysInMonth(year, month int64) int64 {
+	switch month {
+	case 2:
+		if (year%4 == 0 && year%100 != 0) || year%400 == 0 {
+			return 29
+		}
+		return 28
+	case 4, 6, 9, 11:
+		return 30
+	default:
+		return 31
+	}
+}
+
+// daysFromCivil counts days from 1970-01-01 to a proleptic Gregorian date.
+func daysFromCivil(year, month, day int64) int64 {
+	if month <= 2 {
+		year--
+	}
+	era := year
+	if era < 0 {
+		era -= 399
+	}
+	era /= 400
+	yoe := year - era*400
+	shifted := month + 9
+	if month > 2 {
+		shifted = month - 3
+	}
+	doy := (153*shifted+2)/5 + day - 1
+	doe := yoe*365 + yoe/4 - yoe/100 + doy
+	return era*146097 + doe - 719468
 }
 
 // textMatch is a string operator (beyond10x/ess#95): byte-wise and case-sensitive, as
@@ -827,11 +1564,96 @@ func (p predicate) quantify(source factSource) truth {
 	return result
 }
 
+// distinct is `distinct: {in, as, by, kind}` (suite/40), as Rust's `Distinct::evaluate`: a present
+// empty or one-element list holds; for more, two known equal keys anywhere make it false, every key
+// known and pairwise unequal makes it true, and anything else is unknown. An absent list is unknown,
+// not empty, and an absent key is neither skipped nor one shared null.
+func (p predicate) distinct(source factSource) truth {
+	size, ok := source[p.over+".count"]
+	if !ok {
+		return truthUnknown
+	}
+	count, ok := asNumber(size)
+	if !ok || count < 0 || count != float64(int(count)) {
+		return truthUnknown
+	}
+	if count < 2 {
+		return truthTrue
+	}
+	key := p.key
+	if key == "" {
+		key = p.bind
+	}
+	seen := map[string]bool{}
+	unknown := false
+	for index := 0; index < int(count); index++ {
+		element := rebind(source, p.bind, fmt.Sprintf("%s.%d", p.over, index))
+		value, ok := readLeaf(element, key)
+		spelled, known := "", false
+		if ok && value != nil {
+			spelled, known = distinctKey(p.keyKind, value)
+		}
+		if !known {
+			unknown = true
+			continue
+		}
+		if seen[spelled] {
+			return truthFalse
+		}
+		seen[spelled] = true
+	}
+	if unknown {
+		return truthUnknown
+	}
+	return truthTrue
+}
+
+// distinctKey spells a value under its key kind so that equal keys spell alike: exact numbers, the
+// instant of a timestamp, exact text. A value outside the kind is no key.
+func distinctKey(kind string, value Node) (string, bool) {
+	switch kind {
+	case "boolean":
+		flag, ok := value.(bool)
+		return strconv.FormatBool(flag), ok
+	case "integer":
+		number, ok := integerOf(value)
+		if !ok {
+			return "", false
+		}
+		return number.String(), true
+	case "decimal":
+		number, ok := numberValue(value)
+		if !ok {
+			return "", false
+		}
+		return number.RatString(), true
+	case "string", "uuid", "enum":
+		text, ok := value.(string)
+		return text, ok
+	case "timestamp":
+		text, ok := value.(string)
+		if !ok {
+			return "", false
+		}
+		at, ok := parseInstant(text)
+		if !ok {
+			return "", false
+		}
+		return fmt.Sprintf("%d.%09d", at.seconds, at.nanos), true
+	}
+	return "", false
+}
+
 // rebind is the source seen from inside one element: reads of `<bind>.rest` become reads of
-// `<prefix>.rest`, and every other path passes through.
+// `<prefix>.rest`, and every other path passes through. A root of the same name as `bind`, and
+// everything under it, is out of sight, as Rust's `Element::rebind` hides it: an element without
+// the member read is Unknown, never the root field's value.
 func rebind(source factSource, bind, prefix string) factSource {
 	bound := factSource{}
 	for path, value := range source {
+		if path == bind || strings.HasPrefix(path, bind+".") {
+			continue
+		}
 		bound[path] = value
 	}
 	for path, value := range source {
@@ -847,10 +1669,37 @@ func rebind(source factSource, bind, prefix string) factSource {
 }
 
 func (o operand) resolve(source factSource) (Node, bool) {
+	if o.utf8Bytes {
+		return utf8BytesOf(source, o.path)
+	}
 	if !o.isFact {
 		return o.literal, true
 	}
 	return readLeaf(source, o.path)
+}
+
+// utf8BytesOf is the UTF-8 byte length of the text at path, as Rust's `Derived::value`: a bound
+// `<path>.utf8_bytes` wins, and only a whole number from zero within int64 is a byte length — any
+// other bound value is Unknown, with no fallback to the text. Otherwise the text at path is
+// measured; an unbound path, null and a value that is no text are Unknown. A string that is no
+// UTF-8 — the bytes a lone surrogate leaves — is no Unicode text and its length is Unknown, never the
+// count of its bytes.
+func utf8BytesOf(source factSource, path string) (Node, bool) {
+	if bound, ok := source[path+".utf8_bytes"]; ok && bound != nil {
+		if _, aggregate := bound.(aggregatePresent); aggregate {
+			return nil, false
+		}
+		length, ok := numberValue(bound)
+		if !ok || !length.IsInt() || length.Sign() < 0 || !length.Num().IsInt64() {
+			return nil, false
+		}
+		return bound, true
+	}
+	text, isText := source[path].(string)
+	if !isText || !utf8.ValidString(text) {
+		return nil, false
+	}
+	return float64(len(text)), true
 }
 
 // readLeaf is one leaf read, the rule every evaluator lane shares (beyond10x/ess#104): a bound fact

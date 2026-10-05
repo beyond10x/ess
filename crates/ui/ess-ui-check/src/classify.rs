@@ -65,6 +65,8 @@ fn classify(message: &str) -> &'static str {
                 || message.contains("needs the argument")))
     {
         "widget_expands"
+    } else if message.starts_with("choice options: ") {
+        "options_enum"
     } else if message.contains("cannot stand here") {
         "layer_rules"
     } else if is_foreign_primitive_prop(message) {

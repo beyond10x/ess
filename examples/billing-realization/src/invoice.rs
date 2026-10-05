@@ -359,6 +359,7 @@ fn by_instant(left: Option<&Timestamp>, right: Option<&Timestamp>) -> Ordering {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use billing_types::primitives::Timestamp;
 
     /// The store the tests drive commands against.
     fn realization() -> (SharedInvoices, InvoiceRealization) {
@@ -448,7 +449,7 @@ mod tests {
         realization
             .issue_invoice(IssueInvoice {
                 invoice_id: kept.clone(),
-                issued_at: billing_types::primitives::Timestamp("2026-01-05T09:00:01Z".to_owned()),
+                issued_at: Timestamp("2026-01-05T09:00:01Z".to_owned()),
             })
             .expect("the obligation is satisfied");
         let rows = realization
@@ -476,7 +477,7 @@ mod tests {
         assert_eq!(
             realization.issue_invoice(IssueInvoice {
                 invoice_id: stranger.clone(),
-                issued_at: billing_types::primitives::Timestamp("2026-01-05T09:00:01Z".to_owned()),
+                issued_at: Timestamp("2026-01-05T09:00:01Z".to_owned()),
             }),
             Ok(IssueInvoiceOutcome::WrongStateUnknownInstance)
         );

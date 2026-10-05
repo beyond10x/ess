@@ -93,10 +93,45 @@ pub(crate) fn module(ir: &EssIr, layout: &Layout, provenance: &Provenance) -> Op
     }
     out.push_str("    }\n}\n");
     out.push_str(CALLER);
+    if ir.grants_reads() {
+        reads(ir, &variants, &mut out);
+    }
     Some(Artifact::new(
         format!("crates/{}/src/{MODULE}.rs", layout.package()),
         out,
     ))
+}
+
+/// The views each actor's `may:` names, as data, and the question a surface asks of a caller
+/// before it reads one (beyond10x/ess#286). Emitted only for a model naming a view in a grant, so a
+/// model naming none keeps its bytes.
+fn reads(ir: &EssIr, variants: &BTreeMap<&QualifiedName, String>, out: &mut String) {
+    out.push_str(
+        "\n/// The qualified names of the views `actor` may read, ordered by name: the views its \
+         grant\n/// names. A view no actor's grant names is open to every caller and listed for \
+         none.\npub fn may_read(actor: Actor) -> &'static [&'static str] {\n    match actor {\n",
+    );
+    for (actor, variant) in variants {
+        let views = &ir
+            .actors()
+            .get(*actor)
+            .expect("a variant names a declared actor")
+            .may_read;
+        if views.is_empty() {
+            let _ = writeln!(out, "        Actor::{variant} => &[],");
+            continue;
+        }
+        let _ = writeln!(out, "        Actor::{variant} => &[");
+        for view in views {
+            let _ = writeln!(out, "            \"{view}\",");
+        }
+        out.push_str("        ],\n");
+    }
+    out.push_str(
+        "    }\n}\n\nimpl Caller {\n    /// `true` when this caller may read `view`, a view some \
+         actor's grant names, named by\n    /// its qualified name.\n    pub fn may_read(&self, \
+         view: &str) -> bool {\n        may_read(self.actor).contains(&view)\n    }\n}\n",
+    );
 }
 
 /// The authenticated caller, and the one question a surface asks of it (beyond10x/ess#265).

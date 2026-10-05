@@ -70,10 +70,20 @@ impl Observation {
                 result
             })
             .collect();
+        let protected = outcome.as_ref().is_some_and(|selected| {
+            command.outcomes.iter().any(|branch| {
+                branch.name == selected.outcome && !branch.one_time_response.is_empty()
+            })
+        });
+        let declarations = if protected {
+            crate::one_time_response::Response::of(ir, command)?.declarations
+        } else {
+            crate::typed_fields::direct_response_declarations(ir, &fields)?
+        };
         let result = Self {
             command: CommandRef::new(command.name.clone()),
             outcome,
-            declarations: crate::typed_fields::direct_response_declarations(ir, &fields)?,
+            declarations,
             fields,
             expected,
         };
@@ -216,20 +226,6 @@ pub(crate) fn admit(suite: &crate::ConformanceSuite) -> Result<(), crate::Admiss
                 })?;
             }
         }
-    }
-    Ok(())
-}
-
-pub(crate) fn refuse_generation(
-    suite: &crate::ConformanceSuite,
-    target: &str,
-) -> Result<(), crate::AdmissionError> {
-    if used_by(suite) {
-        return Err(crate::AdmissionError::new(
-            "UnsupportedTarget",
-            "$suite",
-            format!("{target} does not execute direct response observations; use the Rust runner"),
-        ));
     }
     Ok(())
 }

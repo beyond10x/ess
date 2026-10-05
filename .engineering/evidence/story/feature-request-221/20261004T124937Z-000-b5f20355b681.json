@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-04T12:49:37Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-221",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-conformance (15 explorer targets, integration tree)",
+    "reference": "baseline: explore_stored_rows 0 passed 5 failed on base explorers; adversary 3 failed before correction; treatment: 75 passed 0 failed 1 pre-existing ignored"
+  }
+}

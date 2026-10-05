@@ -149,8 +149,14 @@ fn helpers_file(
     } else {
         SURFACE_HELPERS.to_owned()
     };
+    if crate::determined::reads_utf8_bytes(ir) {
+        helpers = refusing_lone_surrogates(&helpers);
+    }
     if http::checks_grants(ir) {
         helpers.push_str(&grant_helpers(ir));
+        if http::checks_read_grants(ir) {
+            helpers.push_str(&read_grant_helpers(ir));
+        }
     }
     if serves_params(ir, refusals) {
         emit.import("net/url");
@@ -160,6 +166,76 @@ fn helpers_file(
     }
     emit.file(provenance, SERVER_DOC, &helpers)
 }
+
+/// The opening of `readJSON` in [`SURFACE_HELPERS`], which [`refusing_lone_surrogates`] extends.
+const READ_JSON: &str = "func readJSON(body []byte) (any, *response) {\n";
+
+/// The surface helpers of a model that measures text in UTF-8 bytes
+/// (`docs/design/expression-family-source22.md`, decision 19): `readJSON` refuses a body escaping a
+/// lone UTF-16 surrogate, which `encoding/json` would read as U+FFFD — three bytes of valid UTF-8
+/// nobody sent. The Rust surface's reader refuses it already. Only such a model gets the check, so
+/// every other surface keeps its bytes.
+///
+/// # Panics
+///
+/// When `readJSON` is not where it is expected: the fixed text and this edit cannot drift apart.
+fn refusing_lone_surrogates(helpers: &str) -> String {
+    assert!(
+        helpers.contains(READ_JSON),
+        "the surface helpers declare readJSON"
+    );
+    let refused = "\tif err := loneSurrogates(body); err != nil {\n\t\tanswer := refusal(400, \
+                   fmt.Sprintf(\"the body is not JSON text: %s\", err))\n\t\treturn nil, \
+                   &answer\n\t}\n";
+    let mut out = helpers.replacen(READ_JSON, &format!("{READ_JSON}{refused}"), 1);
+    out.push_str(LONE_SURROGATES);
+    out
+}
+
+/// The check [`refusing_lone_surrogates`] adds: the conformance runner's `scalarStrings`.
+const LONE_SURROGATES: &str = r#"
+// loneSurrogates refuses a `\u` escape of a lone UTF-16 surrogate, which the standard decoder
+// would replace with U+FFFD: a text nobody sent, and three bytes of valid UTF-8 where the text
+// has no byte length at all.
+func loneSurrogates(raw []byte) error {
+	quoted := false
+	for i := 0; i < len(raw); i++ {
+		if raw[i] == '"' {
+			quoted = !quoted
+			continue
+		}
+		if !quoted || raw[i] != '\\' {
+			continue
+		}
+		i++
+		if i >= len(raw) || raw[i] != 'u' {
+			continue
+		}
+		if i+4 >= len(raw) {
+			return fmt.Errorf("an unfinished Unicode escape")
+		}
+		code, err := strconv.ParseUint(string(raw[i+1:i+5]), 16, 16)
+		if err != nil {
+			return fmt.Errorf("a Unicode escape that is not four hexadecimal digits")
+		}
+		i += 4
+		if code >= 0xdc00 && code <= 0xdfff {
+			return fmt.Errorf("a lone low surrogate")
+		}
+		if code >= 0xd800 && code <= 0xdbff {
+			if i+6 >= len(raw) || string(raw[i+1:i+3]) != `\u` {
+				return fmt.Errorf("a lone high surrogate")
+			}
+			low, err := strconv.ParseUint(string(raw[i+3:i+7]), 16, 16)
+			if err != nil || low < 0xdc00 || low > 0xdfff {
+				return fmt.Errorf("a high surrogate without its low half")
+			}
+			i += 6
+		}
+	}
+	return nil
+}
+"#;
 
 /// The Go identifier of one declared actor's constant: every segment of its qualified name,
 /// pascal-joined, so two domains declaring one local name cannot collide.
@@ -244,6 +320,61 @@ fn grant_helpers(ir: &EssIr) -> String {
     out
 }
 
+/// Every declared actor's read grants — the views its `may:` names — and the check every
+/// read-granted view's route runs first (beyond10x/ess#286). Emitted only for a model naming a
+/// view in a grant, so a model naming none keeps its bytes; a view no actor names is open.
+fn read_grant_helpers(ir: &EssIr) -> String {
+    let width = ir
+        .actors()
+        .keys()
+        .map(|actor| actor_ident(actor).len())
+        .max()
+        .unwrap_or(0);
+    let mut out = String::from(
+        "\n// readGrants is every declared actor's read grants: the qualified names of the views \
+         its grant\n// names. A view no actor's grant names is open to every caller.\nvar \
+         readGrants = map[Actor][]string{\n",
+    );
+    for (actor, declared) in ir.actors() {
+        let views: Vec<String> = declared
+            .may_read
+            .iter()
+            .map(|view| format!("{:?}", view.name().to_string()))
+            .collect();
+        let key = format!("{}:", actor_ident(actor));
+        let _ = writeln!(
+            out,
+            "\t{key:<pad$} {{{}}},",
+            views.join(", "),
+            pad = width + 1
+        );
+    }
+    let _ = write!(
+        out,
+        "}}\n\n// MayRead reports whether the caller may read view, a view some actor's grant \
+         names, named by\n// its qualified name.\nfunc (c Caller) MayRead(view string) bool \
+         {{\n\tfor _, granted := range readGrants[c.Actor] {{\n\t\tif granted == view \
+         {{\n\t\t\treturn true\n\t\t}}\n\t}}\n\treturn false\n}}\n\n// AdmitRead reports whether \
+         caller may read view, a view some actor's grant names, checked\n// as its route checks \
+         it before the view is read. Where it may not, it also names the actor the\n// standard \
+         refusal names: the caller's declared actor, or \"\" where the request was\n// \
+         authenticated as no actor or as an actor the specification does not declare.\nfunc \
+         AdmitRead(caller *Caller, view string) (bool, Actor) {{\n\tif caller == nil \
+         {{\n\t\treturn false, \"\"\n\t}}\n\tif caller.MayRead(view) {{\n\t\treturn true, \
+         \"\"\n\t}}\n\tif _, declared := grants[caller.Actor]; !declared {{\n\t\treturn false, \
+         \"\"\n\t}}\n\treturn false, caller.Actor\n}}\n\n// admitRead is nil where caller may read \
+         view, and otherwise the standard refusal the\n// contract declares: {status}, \
+         {{\"refused\": \"not granted\", \"actor\": <name or null>}}.\nfunc admitRead(caller \
+         *Caller, view string) *response {{\n\tadmitted, named := AdmitRead(caller, view)\n\tif \
+         admitted {{\n\t\treturn nil\n\t}}\n\tvar actor any\n\tif named != \"\" {{\n\t\tactor = \
+         string(named)\n\t}}\n\tanswer := rendered({status}, map[string]any{{\"refused\": \
+         {not_granted:?}, \"actor\": actor}})\n\treturn &answer\n}}\n",
+        status = http::FORBIDDEN,
+        not_granted = http::NOT_GRANTED,
+    );
+    out
+}
+
 // ---- the codecs -------------------------------------------------------------------------------
 
 /// Every generated declaration, as JSON, in both directions.
@@ -306,6 +437,7 @@ fn wire_file(
     for command in ir.commands().values() {
         if presents(CapabilityKind::CommandContract, &command.name) {
             command_decoder(&mut body, &emit, command);
+            response_encoder(&mut body, &emit, command);
         }
     }
     emit.file_at(format!("{}/wire.go", package.dir), provenance, "", &body)
@@ -315,17 +447,20 @@ fn wire_file(
 ///
 /// The whole name and never the local one, for the reason the Rust wire gives: two declarations in
 /// two contexts can share a last segment, and a codec that named only that would silently be one
-/// function. Not run through the layout's name table, deliberately — every identifier this package
-/// declares is either `encode`/`decode` plus a unique qualified name, or one of the fixed
-/// lower-case helpers below, and the two families cannot collide.
-fn ident(declared: &QualifiedName) -> String {
-    name::type_fragment(&declared.to_string())
+/// function. Pascal-casing still drops separators (`renewal.input.AB` and `renewal.input.A_B` are
+/// both `RenewalInputAB`), so the fragment is the layout's allocated codec stem, which suffixes
+/// the later of two such declarations rather than declaring one function twice
+/// (`crate::codec_names`). The lower-case helpers below never start with `encode`/`decode` plus
+/// an upper-case letter, so the two families cannot collide.
+fn ident<'a>(layout: &'a Layout, declared: &QualifiedName) -> &'a str {
+    layout.codec(declared)
 }
 
 /// One declared type, written.
 fn type_encoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType) {
+    let layout = emit.layout;
     let go = emit.reference(&declared.name);
-    let function = format!("encode{}", ident(&declared.name));
+    let function = format!("encode{}", ident(layout, &declared.name));
     let _ = write!(
         out,
         "\n// {function} writes `{}` as JSON.\nfunc {function}(value {go}) any {{\n",
@@ -334,7 +469,7 @@ fn type_encoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType) {
     match &declared.body {
         ResolvedBody::Newtype { of, .. } => {
             let mut slot = 0;
-            let expression = encode_into(out, "\t", "value.Value()", of, &mut slot);
+            let expression = encode_into(out, layout, "\t", "value.Value()", of, &mut slot);
             let _ = writeln!(out, "\treturn {expression}");
         }
         ResolvedBody::Struct { fields, .. } => {
@@ -343,6 +478,7 @@ fn type_encoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType) {
             for field in fields {
                 encode_member(
                     out,
+                    layout,
                     "\t",
                     ess_gen::schema::wire_field_name(field),
                     &format!("value.{}", super::items::member_ident(fields, &field.name)),
@@ -366,6 +502,7 @@ fn type_encoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType) {
         }
         ResolvedBody::Union { tag, variants } => {
             let content = ess_gen::schema::union_content_key(tag);
+            // Bound even where every variant is a unit variant: the default clause reads `shape`.
             out.push_str("\tswitch shape := value.(type) {\n");
             for (label, payload) in variants {
                 let _ = writeln!(
@@ -375,8 +512,19 @@ fn type_encoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType) {
                 );
                 let _ = writeln!(out, "\t\tout := map[string]any{{}}");
                 let _ = writeln!(out, "\t\tout[{tag:?}] = {label:?}");
-                let mut slot = 0;
-                encode_member(out, "\t\t", content, "shape.Value", payload, &mut slot);
+                // A unit variant (ess/22) is written as its tag alone.
+                if let Some(payload) = payload {
+                    let mut slot = 0;
+                    encode_member(
+                        out,
+                        layout,
+                        "\t\t",
+                        content,
+                        "shape.Value",
+                        payload,
+                        &mut slot,
+                    );
+                }
                 out.push_str("\t\treturn out\n");
             }
             out.push_str(UNREACHABLE_SHAPE);
@@ -388,7 +536,7 @@ fn type_encoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType) {
 /// One declared type, read.
 fn type_decoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType) {
     let go = emit.reference(&declared.name);
-    let function = format!("decode{}", ident(&declared.name));
+    let function = format!("decode{}", ident(emit.layout, &declared.name));
     let _ = write!(
         out,
         "\n// {function} reads `{}` from JSON, or refuses at the path it was reached \
@@ -462,6 +610,10 @@ fn type_decoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType) {
             );
             for (label, payload) in variants {
                 let _ = writeln!(out, "\tcase {label:?}:");
+                let Some(payload) = payload else {
+                    unit_variant_decoder(out, emit, &declared.name, content, label);
+                    continue;
+                };
                 let carried = ResolvedField {
                     name: content.to_owned(),
                     type_ref: payload.clone(),
@@ -485,6 +637,26 @@ fn type_decoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType) {
     out.push_str("}\n");
 }
 
+/// One unit variant's arm of a union decoder (ess/22): the tag alone. A content member beside it,
+/// `null` included, is refused in the Rust reader's words.
+fn unit_variant_decoder(
+    out: &mut String,
+    emit: &Emit<'_>,
+    union: &QualifiedName,
+    content: &str,
+    label: &str,
+) {
+    let _ = writeln!(
+        out,
+        "\t\tif object, ok := value.(map[string]any); ok {{\n\t\t\tif member, present := \
+         object[{content:?}]; present {{\n\t\t\t\treturn out, DecodeError{{At: nested(at, \
+         {content:?}), Expected: {:?}, Found: describes(member)}}\n\t\t\t}}\n\t\t}}\n\t\treturn \
+         {}{{}}, nil",
+        format!("no `{content}`: `{label}` carries nothing"),
+        emit.reference_variant(union, label)
+    );
+}
+
 /// The set of legal spellings, as one phrase a refusal can carry.
 fn variant_list<T: AsRef<str>>(variants: &[T]) -> String {
     format!(
@@ -501,7 +673,8 @@ fn variant_list<T: AsRef<str>>(variants: &[T]) -> String {
 fn event_encoder(out: &mut String, emit: &Emit<'_>, event: &ResolvedEvent) {
     record_encoder(
         out,
-        &format!("encodeEvent{}", ident(&event.name)),
+        emit.layout,
+        &format!("encodeEvent{}", ident(emit.layout, &event.name)),
         &emit.reference(&event.name),
         &format!("the event `{}`", event.name),
         &event.fields,
@@ -512,7 +685,8 @@ fn event_encoder(out: &mut String, emit: &Emit<'_>, event: &ResolvedEvent) {
 fn error_encoder(out: &mut String, emit: &Emit<'_>, error: &ResolvedError) {
     record_encoder(
         out,
-        &format!("encodeError{}", ident(&error.name)),
+        emit.layout,
+        &format!("encodeError{}", ident(emit.layout, &error.name)),
         &emit.reference(&error.name),
         &format!("the declared error `{}`", error.name),
         &error.fields,
@@ -523,7 +697,8 @@ fn error_encoder(out: &mut String, emit: &Emit<'_>, error: &ResolvedError) {
 fn view_encoder(out: &mut String, emit: &Emit<'_>, view: &ResolvedView) {
     record_encoder(
         out,
-        &format!("encodeView{}", ident(&view.name)),
+        emit.layout,
+        &format!("encodeView{}", ident(emit.layout, &view.name)),
         &emit.reference(&view.name),
         &format!("one row of the view `{}`", view.name),
         &view.fields,
@@ -533,6 +708,7 @@ fn view_encoder(out: &mut String, emit: &Emit<'_>, view: &ResolvedView) {
 /// An encoder over a fixed list of fields.
 fn record_encoder(
     out: &mut String,
+    layout: &Layout,
     function: &str,
     go: &str,
     describes: &str,
@@ -547,6 +723,7 @@ fn record_encoder(
     for field in fields {
         encode_member(
             out,
+            layout,
             "\t",
             ess_gen::schema::wire_field_name(field),
             &format!("value.{}", super::items::member_ident(fields, &field.name)),
@@ -569,7 +746,7 @@ fn record_encoder(
 /// One command input's decoder.
 fn command_decoder(out: &mut String, emit: &Emit<'_>, command: &ResolvedCommand) {
     let go = emit.reference(&command.name);
-    let function = format!("decodeCommand{}", ident(&command.name));
+    let function = format!("decodeCommand{}", ident(emit.layout, &command.name));
     let _ = write!(
         out,
         "\n// {function} reads the input of `{}` from JSON.\nfunc {function}(value any, at string) \
@@ -599,6 +776,7 @@ fn command_decoder(out: &mut String, emit: &Emit<'_>, command: &ResolvedCommand)
 /// One member of an object being written — or nothing at all where an optional value is absent.
 fn encode_member(
     out: &mut String,
+    layout: &Layout,
     indent: &str,
     wire: &str,
     source: &str,
@@ -610,18 +788,19 @@ fn encode_member(
         let _ = writeln!(out, "{indent}if {source} != nil {{");
         let _ = writeln!(out, "{indent}\t{held} := *{source}");
         let inner = format!("{indent}\t");
-        let expression = encode_into(out, &inner, &held, of, slot);
+        let expression = encode_into(out, layout, &inner, &held, of, slot);
         let _ = writeln!(out, "{indent}\tout[{wire:?}] = {expression}");
         let _ = writeln!(out, "{indent}}}");
         return;
     }
-    let expression = encode_into(out, indent, source, type_ref, slot);
+    let expression = encode_into(out, layout, indent, source, type_ref, slot);
     let _ = writeln!(out, "{indent}out[{wire:?}] = {expression}");
 }
 
 /// Emits whatever statements one value needs and returns the expression that is its JSON.
 fn encode_into(
     out: &mut String,
+    layout: &Layout,
     indent: &str,
     source: &str,
     type_ref: &ResolvedTypeRef,
@@ -630,7 +809,7 @@ fn encode_into(
     match type_ref {
         ResolvedTypeRef::Primitive { name } => encode_primitive(*name, source),
         ResolvedTypeRef::Declared { name } => {
-            format!("encode{}({source})", ident(name.name()))
+            format!("encode{}({source})", ident(layout, name.name()))
         }
         // An absent optional inside a list or a map is `null`, which is the one place this
         // rendering differs from an absent *member*: a member is omitted, because that is what the
@@ -642,7 +821,7 @@ fn encode_into(
             let inner = format!("{indent}\t");
             let held = format!("{target}Some");
             let _ = writeln!(out, "{indent}\t{held} := *{source}");
-            let expression = encode_into(out, &inner, &held, of, slot);
+            let expression = encode_into(out, layout, &inner, &held, of, slot);
             let _ = writeln!(out, "{indent}\t{target} = {expression}");
             let _ = writeln!(out, "{indent}}}");
             target
@@ -655,7 +834,7 @@ fn encode_into(
                  range {source} {{"
             );
             let inner = format!("{indent}\t");
-            let expression = encode_into(out, &inner, "element", of, slot);
+            let expression = encode_into(out, layout, &inner, "element", of, slot);
             let _ = writeln!(out, "{indent}\t{target} = append({target}, {expression})");
             let _ = writeln!(out, "{indent}}}");
             target
@@ -668,7 +847,7 @@ fn encode_into(
                  {source} {{"
             );
             let inner = format!("{indent}\t");
-            let expression = encode_into(out, &inner, "element", value, slot);
+            let expression = encode_into(out, layout, &inner, "element", value, slot);
             let _ = writeln!(
                 out,
                 "{indent}\t{target}[{}] = {expression}",
@@ -725,6 +904,14 @@ fn decode_member(
     let position = next(slot);
     let member = format!("member{position}");
     let at = format!("at{position}");
+    // An optional union payload must remain in the case scope even when absent.
+    let target = if target.is_empty() && matches!(&field.type_ref, ResolvedTypeRef::Optional { .. })
+    {
+        let _ = writeln!(out, "{indent}var shape {}", emit.go_type(&field.type_ref));
+        "shape"
+    } else {
+        target
+    };
     let assign = |out: &mut String, indent: &str, expression: &str| {
         if target.is_empty() {
             let _ = writeln!(out, "{indent}shape := {expression}");
@@ -794,7 +981,7 @@ fn decode_into(
                 out,
                 "{indent}{held}, err := decode{}({source}, {at})\n{indent}if err != nil \
                  {{\n{indent}\treturn out, err\n{indent}}}",
-                ident(name.name())
+                ident(emit.layout, name.name())
             );
             held
         }
@@ -986,7 +1173,9 @@ fn surface_file(
         },
     );
 
-    dispatch(&mut body, ir, &routes, &rows, &system, &exported);
+    serve_static(&mut body, &system, &exported, grants);
+
+    dispatch(&mut body, ir, layout, &routes, &rows, &system, &exported);
 
     for route in &routes {
         match route.serves {
@@ -1032,10 +1221,56 @@ fn surface_file(
     )
 }
 
+fn serve_static(body: &mut String, system: &str, exported: &str, grants: bool) {
+    let authenticate = if grants {
+        ", authenticate func(*http.Request) *Caller"
+    } else {
+        ""
+    };
+    let caller = if grants {
+        "authenticate(request), "
+    } else {
+        ""
+    };
+    let _ = writeln!(
+        body,
+        r#"
+// Serve{exported}WithStatic adds files only for paths outside this surface's route table.
+func Serve{exported}WithStatic(system *{system}, address string{authenticate}, staticRoot string) error {{
+	root, err := memoryStaticRoot(staticRoot)
+	if err != nil {{
+		return err
+	}}
+	listener, err := net.Listen("tcp", address)
+	if err != nil {{
+		return err
+	}}
+	bound := listener.Addr().(*net.TCPAddr)
+	announce{exported}(bound)
+	return http.Serve(listener, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {{
+		known := false
+		for _, route := range Routes{exported} {{
+			if route[1] == request.URL.Path {{
+				known = true
+				break
+			}}
+		}}
+		if !known && root != "" {{
+			memoryStatic(writer, request, root)
+			return
+		}}
+		answer := dispatch{exported}(system, {caller}request)
+		answer.write(writer)
+	}}))
+}}"#
+    );
+}
+
 /// The route match: one arm per path, and one arm for everything else.
 fn dispatch(
     body: &mut String,
     ir: &EssIr,
+    layout: &Layout,
     routes: &[http::Route<'_>],
     rows: &[Row],
     system: &str,
@@ -1100,15 +1335,24 @@ fn dispatch(
                     let _ = writeln!(
                         body,
                         "\t\treturn serve{}(system, body)",
-                        ident(&ir.command(handle).name)
+                        ident(layout, &ir.command(handle).name)
                     );
                 }
                 Served::View(handle) => {
                     let view = ir.view(handle);
+                    // A read-granted view checks the reader first (beyond10x/ess#286).
+                    if http::read_checked(ir, &view.name) {
+                        let _ = writeln!(
+                            body,
+                            "\t\tif refused := admitRead(caller, {:?}); refused != nil {{\n\t\t\treturn \
+                             *refused\n\t\t}}",
+                            view.name.to_string()
+                        );
+                    }
                     let _ = writeln!(
                         body,
                         "\t\treturn serve{}(system{})",
-                        ident(&view.name),
+                        ident(layout, &view.name),
                         if view.params.is_empty() {
                             ""
                         } else {
@@ -1269,7 +1513,7 @@ fn published_list(out: &mut String, emit: &Emit<'_>, outcome: &ResolvedOutcome) 
             out,
             "\n\t\t\tmap[string]any{{\"event\": {:?}, \"payload\": encodeEvent{}(taken.{})}},",
             field.event.name().to_string(),
-            ident(field.event.name()),
+            ident(emit.layout, field.event.name()),
             field.field
         );
     }
@@ -1278,6 +1522,68 @@ fn published_list(out: &mut String, emit: &Emit<'_>, outcome: &ResolvedOutcome) 
     } else {
         "\n\t\t}\n"
     });
+}
+
+/// The `response` member of a branch that answers its caller with the command's response
+/// (`returns: true`, from `ess/22`, beyond10x/ess#423): the variant's own `Response`, through the
+/// wire file's encoder. Nothing for any other branch.
+fn direct_response(
+    out: &mut String,
+    emit: &Emit<'_>,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+) {
+    if http::answers_with_response(emit.ir, outcome) {
+        let _ = writeln!(
+            out,
+            "\t\tbody[\"response\"] = {}(taken.Response)",
+            response_encoder_name(emit.layout, &command.name)
+        );
+    }
+}
+
+/// The end of one declared branch's answer: its `response` member where it answers with one, and
+/// the status the contract declares for it ([`http::outcome_status`]).
+fn answered(
+    out: &mut String,
+    emit: &Emit<'_>,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+) {
+    direct_response(out, emit, command, outcome);
+    let _ = writeln!(
+        out,
+        "\t\treturn rendered({}, body)",
+        http::outcome_status(emit.ir, outcome)
+    );
+}
+
+/// The name of the wire file's encoder for a command's declared response.
+fn response_encoder_name(layout: &Layout, command: &QualifiedName) -> String {
+    format!("encodeResponse{}", ident(layout, command))
+}
+
+/// A command's declared response, for the `response` member of a branch that answers with it.
+/// Only for a command with such a branch, so every other wire file keeps its bytes.
+fn response_encoder(out: &mut String, emit: &Emit<'_>, command: &ResolvedCommand) {
+    let answers = command
+        .outcomes
+        .iter()
+        .any(|outcome| http::answers_with_response(emit.ir, outcome));
+    if !answers {
+        return;
+    }
+    record_encoder(
+        out,
+        emit.layout,
+        &response_encoder_name(emit.layout, &command.name),
+        &emit.qualify(
+            emit.layout.package_of(&command.name),
+            emit.layout.response(&command.name),
+        ),
+        &format!("the response of `{}`", command.name),
+        &command.response,
+    );
 }
 
 /// One accepted command: body in, declared outcome out, at the status the contract publishes.
@@ -1290,7 +1596,7 @@ fn command_handler(
     system: &str,
     records_invocations: bool,
 ) {
-    let function = ident(&command.name);
+    let function = ident(emit.layout, &command.name);
     let field = name::exported(&component.name.to_string());
     let method = layout.declared(&command.name);
     let read = if ess_gen::http::body_required(command) {
@@ -1358,13 +1664,13 @@ fn command_handler(
                 let _ = writeln!(
                     out,
                     "\t\tbody[\"payload\"] = encodeError{}(taken.Error)",
-                    ident(&declared.name)
+                    ident(emit.layout, &declared.name)
                 );
             }
         } else {
             out.push_str("\t\t_ = taken\n");
         }
-        let _ = writeln!(out, "\t\treturn rendered({}, body)", http::status(outcome));
+        answered(out, emit, command, outcome);
     }
     if let Some(declared) = ess_gen::unknown_instance::unknown_instance_answer(emit.ir, command) {
         // The declared branch, status and error, nothing published, and no payload: an instance
@@ -1405,7 +1711,7 @@ fn view_handler(
     system: &str,
 ) {
     let _ = emit;
-    let function = ident(&view.name);
+    let function = ident(emit.layout, &view.name);
     let field = name::exported(&component.name.to_string());
     let method = layout.declared(&view.name);
     let (doc, parameter, decoded, arguments) = if view.params.is_empty() {
@@ -1476,7 +1782,7 @@ fn query_table(ir: &EssIr, view: &ResolvedView) -> String {
 /// One view's declared parameters, decoded: the struct the route reads them into and its decoder,
 /// which reads an object keyed by their wire names exactly as a command input's decoder does.
 fn params_decoder(out: &mut String, emit: &Emit<'_>, view: &ResolvedView) {
-    let function = ident(&view.name);
+    let function = ident(emit.layout, &view.name);
     let _ = writeln!(
         out,
         "\n// params{function} is the declared parameters of `{}`, decoded.\ntype \

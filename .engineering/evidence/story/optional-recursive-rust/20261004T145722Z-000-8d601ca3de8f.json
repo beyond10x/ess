@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-04T14:57:22Z",
+  "actor": "human:timo",
+  "artifact": "story:optional-recursive-rust",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-synth incl. optional_recursive_codecs (integration tree)",
+    "reference": "baseline: Go emitted non-compiling code for a variant name that is not an identifier (go build: unexpected . in type declaration); treatment: Go refuses invalid-identifier like Rust; {name, wire} labels and self-recursive Optional values compile and round-trip in Rust (both layouts), Web (wasm under Node) and Go; ess-synth 454 passed 0 failed; billing/gatepass output unchanged"
+  }
+}

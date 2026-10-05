@@ -12,7 +12,10 @@
 //! * **`affects:`** adds a segment to the branch's own scenario ([`affects_segment`]): a subject
 //!   under a fresh name, three rows each entry's filter selects and one per conjunct it leaves
 //!   out, `subject.<field>` conjuncts included, the command, then the subject as the branch leaves
-//!   it, the selected rows with what the entry's `sets:` wrote, and the others as they were.
+//!   it, the selected rows with what the entry's `sets:` wrote, and the others as they were. An
+//!   entry that moves its rows (ess/22, beyond10x/ess#229) is witnessed as an `instances:` move
+//!   ([`affect_rows`]): its changed rows rest in the move's `from` states and are read back in its
+//!   arrival state, and one row the filter selects rests outside them and is read back unmoved.
 //!
 //! Every row is read from a view that publishes the entity's identity, unfiltered, whole and
 //! immediate, and that publishes the state a set move leaves and every field the effect writes
@@ -28,6 +31,7 @@ use ess_domain::view::Consistency;
 use ess_primitives::facts::{FactPath, FactValue, Number};
 use ess_primitives::predicate::{CompareOp, Operand, Predicate, Truth};
 
+use super::caller::{InvocationModels, InvocationPhase};
 use crate::witness::{Distinction, WitnessGap};
 
 use super::{
@@ -46,13 +50,13 @@ const MATCHING: usize = 3;
 
 /// Every set outcome's scenario, and every `affects:` segment.
 pub(super) fn set_effects(
-    ir: &EssIr,
+    models: &InvocationModels<'_>,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     focus: Focus<'_>,
     suite: &mut ConformanceSuite,
     refusals: &mut Vec<Refusal>,
 ) {
-    for command in ir.commands().values() {
+    for command in models.acting.commands().values() {
         if !focus.takes(&command.name) {
             continue;
         }
@@ -64,7 +68,7 @@ pub(super) fn set_effects(
                 ),
             };
             if let Some(set) = &outcome.instances {
-                match set_scenario(ir, command, outcome, set, actors) {
+                match set_scenario(models, command, outcome, set, actors) {
                     Ok(scenario) => insert(suite, id.clone(), scenario, refusals),
                     Err(cause) => refusals.push(Refusal::about(&id, cause)),
                 }
@@ -77,7 +81,7 @@ pub(super) fn set_effects(
                 continue;
             };
             let mut taken = captured(&scenario.steps);
-            match affects_segment(ir, command, outcome, actors, &mut taken) {
+            match affects_segment(models, command, outcome, actors, &mut taken) {
                 Ok((steps, source)) => {
                     let scenario = suite
                         .scenarios
@@ -187,7 +191,7 @@ fn gap(path: String, type_ref: String, reason: &'static str) -> RefusalCause {
 }
 
 /// The value a path under `input.` names in the input a scenario sends.
-fn input_value(path: &FactPath, input: &BTreeMap<String, Node>) -> Option<FactValue> {
+pub(super) fn input_value(path: &FactPath, input: &BTreeMap<String, Node>) -> Option<FactValue> {
     let (root, rest) = path.segments().split_first()?;
     if root != ess_domain::command::subject_fact::INPUT_NAMESPACE {
         return None;
@@ -204,7 +208,10 @@ fn input_value(path: &FactPath, input: &BTreeMap<String, Node>) -> Option<FactVa
 }
 
 /// The value a path under `subject.` names in what the subject held before the outcome.
-fn subject_value(path: &FactPath, before: &BTreeMap<String, Determined>) -> Option<FactValue> {
+pub(super) fn subject_value(
+    path: &FactPath,
+    before: &BTreeMap<String, Determined>,
+) -> Option<FactValue> {
     let (root, rest) = path.segments().split_first()?;
     if root != ess_domain::command::set_effects::SUBJECT_NAMESPACE {
         return None;
@@ -222,9 +229,18 @@ fn subject_value(path: &FactPath, before: &BTreeMap<String, Determined>) -> Opti
 
 /// `filter` with every comparison operand `read` answers written in as a literal; the other
 /// operands are kept.
-fn written_in(filter: &Predicate, read: &dyn Fn(&FactPath) -> Option<FactValue>) -> Predicate {
+pub(super) fn written_in(
+    filter: &Predicate,
+    read: &dyn Fn(&FactPath) -> Option<FactValue>,
+) -> Predicate {
     let operand = |it: &Operand| match it {
         Operand::Fact(path) => read(path).map_or_else(|| it.clone(), Operand::Literal),
+        Operand::Offset(offset) => read(&offset.base)
+            .and_then(|base| offset.value_at(&base))
+            .map_or_else(|| it.clone(), Operand::Literal),
+        Operand::Derived(derived) => derived
+            .value_with(read)
+            .map_or_else(|| it.clone(), Operand::Literal),
         Operand::Literal(_) => it.clone(),
     };
     match filter {
@@ -241,7 +257,13 @@ fn written_in(filter: &Predicate, read: &dyn Fn(&FactPath) -> Option<FactValue>)
                 .collect(),
         ),
         Predicate::Not(inner) => Predicate::Not(Box::new(written_in(inner, read))),
-        Predicate::Compare { left, op, right } => Predicate::Compare {
+        Predicate::Compare {
+            left,
+            op,
+            right,
+            kind,
+        } => Predicate::Compare {
+            kind: *kind,
             left: operand(left),
             op: *op,
             right: operand(right),
@@ -312,7 +334,9 @@ impl Selection<'_> {
                 })
             }
             Predicate::Not(inner) => return self.truth_of(inner, row).not(),
-            Predicate::Compare { left, op, right } if self.symbolic(predicate) => {
+            Predicate::Compare {
+                left, op, right, ..
+            } if self.symbolic(predicate) => {
                 let instance = |operand: &Operand| {
                     let Operand::Fact(path) = operand else {
                         return None;
@@ -384,6 +408,7 @@ impl Selection<'_> {
                 left: Operand::Fact(left),
                 op,
                 right: Operand::Fact(right),
+                ..
             } if matches!(op, CompareOp::Eq | CompareOp::Ne) => {
                 let (instance, field) = self
                     .symbols
@@ -451,10 +476,17 @@ impl Selection<'_> {
         rests: &dyn Fn(&StateName) -> bool,
         visible: bool,
     ) -> Option<Arrangement> {
+        // An arrangement is the row it arranges and nothing else: each act it sends is folded
+        // into that row's expected state. An act taking a branch with a set effect (`instances:`
+        // or `affects:`) also changes rows the arrangement does not account for, which the
+        // scenario then reads back as arranged, so such an arrangement is never a witness and
+        // another path, or none, is taken. Sending the command under test is otherwise allowed:
+        // a branch of it that changes only the row it names is accounted for like any other act.
         let accept = |row: &Arrangement| {
             self.truth_of(goal, row) == Truth::True
                 && rests(&row.state)
                 && (!visible || visibly_changed(self.ir, self.sets, self.supplied, &row.settled))
+                && !reaches_other_rows(self.ir, &row.steps)
         };
         let distinction = next(self.ir, self.entity, taken);
         if self.symbolic(goal) {
@@ -606,6 +638,7 @@ fn read_back(
 
 /// The invocation of the branch under test, and the answer it must give.
 fn invocation(
+    models: &InvocationModels<'_>,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
@@ -613,6 +646,7 @@ fn invocation(
     steps: &mut Vec<ScenarioStep>,
     source: &mut BTreeSet<EssSemanticRef>,
 ) {
+    let start = steps.len();
     let command_ref = CommandRef::new(command.name.clone());
     let branch = OutcomeRef::new(command_ref.clone(), outcome.name.clone());
     steps.push(ScenarioStep::ExecuteCommand {
@@ -624,6 +658,7 @@ fn invocation(
     steps.push(ScenarioStep::ExpectOutcome {
         outcome: branch.clone(),
     });
+    models.mark(InvocationPhase::Act, &mut steps[start..]);
     source.insert(command_ref.into());
     source.insert(branch.into());
     if let Some(actor) = actors.get(&command.name) {
@@ -739,18 +774,19 @@ fn answer(
 
 /// The `instances:` scenario.
 fn set_scenario(
-    ir: &EssIr,
+    models: &InvocationModels<'_>,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     set: &ResolvedSetSubject,
     actors: &BTreeMap<QualifiedName, ActorRef>,
 ) -> Result<ConformanceScenario, RefusalCause> {
+    let ir = models.arrangement;
     let entity = &set.entity;
     let at = || format!("{}.instances", outcome.name);
     let moves = matches!(set.effect, ResolvedEffect::Moves { .. });
     let views = observed(ir, entity, at(), (moves, &outcome.sets))?;
     let input = reach(ir, command, outcome, Distinction::PLAIN)?;
-    let supplied = supply(command, &input, None, None, &BTreeMap::new());
+    let supplied = supply(ir, command, &input, None, None, &BTreeMap::new());
     let selection = Selection {
         ir,
         command,
@@ -773,7 +809,9 @@ fn set_scenario(
         source.extend(row.source.iter().cloned());
     }
     source.insert(EntityRef::from(entity).into());
+    models.mark(InvocationPhase::Arrange, &mut steps);
     invocation(
+        models,
         command,
         outcome,
         actors,
@@ -804,7 +842,7 @@ fn set_scenario(
     let left = left_by(ir, outcome, &supplied, &arranged, to);
     if let Some(none) = matching_none(ir, command, outcome, &set.filter, entity, &left) {
         zero_match(
-            ir,
+            models,
             command,
             outcome,
             actors,
@@ -833,6 +871,157 @@ struct Entry<'o> {
     sets: ResolvedOutcome,
     views: Vec<&'o ResolvedView>,
     rows: Rows,
+    /// The entry's filter with the subject's values written in, and the same with the input's.
+    filter: Predicate,
+    closed: Predicate,
+}
+
+/// What one arranged row holds after the command: its state and its determined fields.
+type Left = (StateName, BTreeMap<String, Determined>);
+
+/// What every arranged row of every `affects:` entry holds after the command: what each entry, in
+/// the order written, does to it (beyond10x/ess#229). Each entry over the row's entity whose filter
+/// selects the row as arranged writes its `sets:` and — where it moves and the row rests in the
+/// move's `from` states — takes its move; the others leave it. One row two entries select thus
+/// gets one expectation, the one the interpreter answers. Per entry, its changed rows then its
+/// kept rows, as [`Rows`] holds them; or a refusal where an entry cannot tell whether it selects a
+/// row another entry arranged.
+#[allow(clippy::too_many_arguments)] // The selection context each entry is re-read under.
+fn combined(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    entries: &[Entry<'_>],
+    input: &BTreeMap<String, Node>,
+    supplied: &BTreeMap<String, ScenarioValue>,
+    symbols: &BTreeMap<FactPath, InstanceName>,
+    other: Option<&InstanceName>,
+    at: &dyn Fn(usize) -> String,
+) -> Result<Vec<Vec<Left>>, RefusalCause> {
+    let selections: Vec<Selection<'_>> = entries
+        .iter()
+        .map(|entry| Selection {
+            ir,
+            command,
+            entity: &entry.affect.entity,
+            filter: entry.filter.clone(),
+            closed: entry.closed.clone(),
+            input,
+            supplied,
+            sets: &entry.sets,
+            symbols: symbols.clone(),
+            other: other.cloned(),
+        })
+        .collect();
+    let mut out = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let mut left = Vec::new();
+        for row in entry.rows.changed.iter().chain(&entry.rows.kept) {
+            let mut state = row.state.clone();
+            let mut settled = row.settled.clone();
+            for (index, (other, selection)) in entries.iter().zip(&selections).enumerate() {
+                if other.affect.entity != entry.affect.entity {
+                    continue;
+                }
+                match selection.truth_of(&selection.filter, row) {
+                    Truth::True => {}
+                    Truth::False => continue,
+                    Truth::Unknown => {
+                        return Err(gap(
+                            at(index),
+                            other.affect.entity.to_string(),
+                            "cannot tell whether this entry selects a row another entry over the \
+                             same entity arranges, so what the rows hold after the command is \
+                             unknown",
+                        ))
+                    }
+                }
+                if let Some(transition) = &other.affect.moves {
+                    if !transition.from.contains(&row.state) {
+                        continue;
+                    }
+                    state = transition.to.clone();
+                }
+                settled = after(ir, &other.sets, supplied, &settled);
+            }
+            left.push((state, settled));
+        }
+        out.push(left);
+    }
+    Ok(out)
+}
+
+/// Every row of one entry read back from each of its views as [`combined`] leaves it: the same
+/// expectations [`read_back`] writes for an entry no other entry touches.
+fn read_back_left(
+    ir: &EssIr,
+    entry: &Entry<'_>,
+    left: &[Left],
+    steps: &mut Vec<ScenarioStep>,
+    source: &mut BTreeSet<EssSemanticRef>,
+) {
+    let entity = &entry.affect.entity;
+    for view in &entry.views {
+        let name = ViewRef::new(view.name.clone());
+        let mut reads = Vec::new();
+        for (row, (state, settled)) in entry.rows.changed.iter().chain(&entry.rows.kept).zip(left) {
+            let fields = row_fields(ir, entity, view, &row.instance, state, settled);
+            require(
+                view,
+                &name,
+                BTreeMap::new(),
+                ViewExpectation::Contains { fields },
+                &mut reads,
+            );
+        }
+        steps.extend(reads);
+        source.insert(name.into());
+    }
+}
+
+/// The rows one `affects:` entry is witnessed on (ess/22, beyond10x/ess#229). An entry that only
+/// sets fields is witnessed as it always was; a moving one as an `instances:` move is ([`set_rows`]):
+/// its changed rows rest in a `from` state other than the move's arrival wherever the arranging
+/// commands reach one, and one row the filter selects rests outside them, which the move skips.
+/// Where only the arrival state itself is reached, the move is seen through what `sets:` writes,
+/// and an entry writing nothing is refused by name.
+fn affect_rows(
+    selection: &Selection<'_>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    taken: &mut BTreeSet<InstanceName>,
+    affect: &ResolvedAffect,
+) -> Result<Rows, &'static str> {
+    let Some(transition) = &affect.moves else {
+        return rows(selection, actors, taken, &|_| true, None, true);
+    };
+    let (from, to) = (&transition.from, &transition.to);
+    // A row resting where the move arrives reads the same whether or not the move was taken, so
+    // the changed rows rest in a `from` state other than `to` wherever one is arranged.
+    let leaves = |state: &StateName| from.contains(state) && state != to;
+    let movable = |state: &StateName| from.contains(state);
+    let outside = |state: &StateName| !from.contains(state);
+    let skipped: Option<Outside<'_>> = Some((&outside, Some(to)));
+    let held = taken.clone();
+    let mut attempt = |rests: &dyn Fn(&StateName) -> bool, visible: bool| {
+        taken.clone_from(&held);
+        rows(selection, actors, taken, rests, skipped, visible)
+    };
+    attempt(&leaves, true)
+        // A move is observed by the state it leaves; where no row can show its `sets:` changing,
+        // the state alone still separates the changed rows from the others.
+        .or_else(|_| attempt(&leaves, false))
+        .or_else(|reason| {
+            // Only `to` itself is arranged among the `from` states: the move is seen only through
+            // what `sets:` writes, and with nothing written it is not seen at all.
+            if affect.sets.is_empty() {
+                Err(
+                    "is moved by its entry only from the state the move arrives in, as far as \
+                     the arranging commands reach, and the entry writes no field, so a target \
+                     that skips the move reads the same",
+                )
+            } else {
+                attempt(&movable, true).map_err(|_| reason)
+            }
+        })
 }
 
 /// Each `affects:` filter with the subject's values written in, or a refusal naming a subject field
@@ -955,13 +1144,15 @@ fn affect_inputs(
 }
 
 /// The `affects:` segment appended to the branch's own scenario.
+#[allow(clippy::too_many_lines)] // One complete set-effect witness, including invocation authority.
 fn affects_segment(
-    ir: &EssIr,
+    models: &InvocationModels<'_>,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     taken: &mut BTreeSet<InstanceName>,
 ) -> Result<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>), RefusalCause> {
+    let ir = models.arrangement;
     let at = |index: usize| format!("{}.affects[{index}]", outcome.name);
     let subject = outcome.subject.as_ref().ok_or_else(|| {
         gap(
@@ -984,6 +1175,7 @@ fn affects_segment(
         _ => reach(ir, command, outcome, Distinction::PLAIN)?,
     };
     let supplied = supply(
+        ir,
         command,
         &input,
         Some(subject),
@@ -1012,7 +1204,12 @@ fn affects_segment(
     let filters = subject_filters(outcome, &subject.entity, &setup.settled, &operands.symbols)?;
     for (index, (affect, filter)) in filters.into_iter().enumerate() {
         let sets = with_sets(outcome, affect);
-        let views = observed(ir, &affect.entity, at(index), (false, &affect.sets))?;
+        let views = observed(
+            ir,
+            &affect.entity,
+            at(index),
+            (affect.moves.is_some(), &affect.sets),
+        )?;
         let selection = Selection {
             ir,
             command,
@@ -1025,8 +1222,9 @@ fn affects_segment(
             symbols: operands.symbols.clone(),
             other: other.clone(),
         };
-        let rows = rows(&selection, actors, taken, &|_| true, None, true)
+        let rows = affect_rows(&selection, actors, taken, affect)
             .map_err(|reason| gap(at(index), affect.entity.to_string(), reason))?;
+        let (filter, closed) = (selection.filter.clone(), selection.closed.clone());
         for row in rows.changed.iter().chain(&rows.kept) {
             steps.extend(row.steps.iter().cloned());
             source.extend(row.source.iter().cloned());
@@ -1037,9 +1235,13 @@ fn affects_segment(
             sets,
             views,
             rows,
+            filter,
+            closed,
         });
     }
+    models.mark(InvocationPhase::Arrange, &mut steps);
     invocation(
+        models,
         command,
         outcome,
         actors,
@@ -1048,18 +1250,18 @@ fn affects_segment(
         &mut source,
     );
     steps.extend(reads);
-    for entry in &entries {
-        read_back(
-            ir,
-            &entry.affect.entity,
-            &entry.views,
-            &entry.rows,
-            None,
-            &entry.sets,
-            &supplied,
-            &mut steps,
-            &mut source,
-        );
+    let left = combined(
+        ir,
+        command,
+        &entries,
+        &input,
+        &supplied,
+        &operands.symbols,
+        other.as_ref(),
+        &at,
+    )?;
+    for (entry, left) in entries.iter().zip(&left) {
+        read_back_left(ir, entry, left, &mut steps, &mut source);
     }
     Ok((steps, source))
 }
@@ -1075,7 +1277,7 @@ fn with_sets(outcome: &ResolvedOutcome, affect: &ResolvedAffect) -> ResolvedOutc
 /// The predicates a row the filter leaves out is arranged to meet: for a conjunction, one per
 /// conjunct — that conjunct false and every other true — so a target dropping any one conjunct
 /// changes a row it must leave; for anything else, the whole filter false.
-fn misses(filter: &Predicate) -> Vec<Predicate> {
+pub(super) fn misses(filter: &Predicate) -> Vec<Predicate> {
     let not = |predicate: &Predicate| Predicate::Not(Box::new(predicate.clone()));
     match filter {
         Predicate::All(conjuncts) if conjuncts.len() > 1 => (0..conjuncts.len())
@@ -1148,7 +1350,7 @@ fn matching_none(
 /// accepted, `{count: changed}` is 0, and every row reads as the first call left it.
 #[allow(clippy::too_many_arguments)]
 fn zero_match(
-    ir: &EssIr,
+    models: &InvocationModels<'_>,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
@@ -1157,8 +1359,17 @@ fn zero_match(
     left: Vec<Arrangement>,
     (steps, source): (&mut Vec<ScenarioStep>, &mut BTreeSet<EssSemanticRef>),
 ) -> Result<(), RefusalCause> {
-    let supplied = supply(command, input, None, None, &BTreeMap::new());
-    invocation(command, outcome, actors, supplied.clone(), steps, source);
+    let ir = models.arrangement;
+    let supplied = supply(ir, command, input, None, None, &BTreeMap::new());
+    invocation(
+        models,
+        command,
+        outcome,
+        actors,
+        supplied.clone(),
+        steps,
+        source,
+    );
     answer(ir, command, outcome, &supplied, 0, steps, source)?;
     let unchanged = Rows {
         changed: Vec::new(),
@@ -1168,4 +1379,23 @@ fn zero_match(
         ir, entity, views, &unchanged, None, outcome, &supplied, steps, source,
     );
     Ok(())
+}
+
+/// Whether `steps` take a branch with a set effect (`instances:` or `affects:`): an act whose
+/// effect reaches rows beside the one it names, which an arrangement of one row does not account
+/// for.
+fn reaches_other_rows(ir: &EssIr, steps: &[ScenarioStep]) -> bool {
+    steps.iter().any(|step| {
+        let ScenarioStep::ExpectOutcome { outcome } = step else {
+            return false;
+        };
+        ir.commands()
+            .values()
+            .filter(|command| command.name.to_string() == outcome.command.to_string())
+            .flat_map(|command| &command.outcomes)
+            .any(|branch| {
+                branch.name == outcome.outcome
+                    && (branch.instances.is_some() || !branch.affects.is_empty())
+            })
+    })
 }

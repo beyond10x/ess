@@ -3,9 +3,7 @@
 //!
 //! Three questions, each answered by a program rather than a paragraph:
 //!
-//! - a direct-return suite (`/28`, `/29`) still meets the refusal that names direct returns, not
-//!   the new version refusal: both carry `UnsupportedTarget`, and the existing direct-return cases
-//!   assert only that reason, so swapping the two guards would pass every one of them;
+//! - a fresh direct-return suite (`/34`, `/35`) emits on both targets;
 //! - the new refusal itself names the version, the limit and the target, at
 //!   `$.provenance.suite_version`, for `emit` on both targets;
 //! - the emit boundary agrees with the admission limit written in each emitted runtime, read as
@@ -92,7 +90,31 @@ fn empty_suite(major: u32) -> ConformanceSuite {
         spec_digest: SpecDigest::new("ab".repeat(32)).expect("a digest"),
         contract_digest: SpecDigest::new("cd".repeat(32)).expect("a digest"),
         component: None,
+        scenario_initial_state: None,
+        // The seed-bearing pair requires its record (beyond10x/ess#413): one selection, no use.
+        synthesis_seeds: matches!(major, 42 | 43).then(seed_record),
     })
+}
+
+/// The smallest valid `synthesis_seeds` record: one source and one unused selection.
+fn seed_record() -> ess_conformance::synthesis_seeds::SynthesisSeeds {
+    use ess_conformance::coverage::SourceIdentity;
+    use ess_conformance::synthesis_seeds::{SeedRecord, SynthesisSeeds};
+    let source = SourceIdentity::new("seed.yaml").expect("a source identity");
+    SynthesisSeeds {
+        sources: [(source.clone(), format!("sha256:{}", "0".repeat(64)))].into(),
+        selections: vec![SeedRecord {
+            source,
+            instance: ess_conformance::InstanceName::new("row").expect("an instance"),
+            entity: "billing.invoice.Invoice".parse().expect("an entity"),
+            identity: ess_primitives::node::Node::Text(
+                "00000000-0000-4000-8000-000000000001".into(),
+            ),
+            fields: std::collections::BTreeMap::new(),
+            state: "Draft".parse().expect("a state"),
+        }],
+        applications: Vec::new(),
+    }
 }
 
 fn go(suite: &ConformanceSuite) -> Result<Vec<(String, String)>, AdmissionError> {
@@ -116,47 +138,27 @@ fn issue(error: &AdmissionError) -> (String, String, String) {
     )
 }
 
-/// The explicit direct-return refusal is what an adopter of an unreleased `ess/17` model sees,
-/// for `emit` and for `emit_input`, on both targets: not the version refusal the correction added
-/// behind it.
+/// Both ordinary and coverage direct-return suites reach their executing runtime.
 #[test]
-fn adversary2_direct_return_suite_meets_the_direct_return_refusal_first() {
+fn adversary2_direct_return_suite_emits_in_both_supported_runtimes() {
     let suite = direct_return_suite();
-    assert_eq!(suite.provenance.suite_version.major(), 28, "precondition");
+    assert_eq!(suite.provenance.suite_version.major(), 34, "precondition");
     let input = direct_return_input();
     assert_eq!(
         input.selected().suite().provenance.suite_version.major(),
-        29,
+        35,
         "precondition"
     );
-    for (target, error) in [
-        ("Go", ess_conformance::go::emit(&suite).unwrap_err()),
-        ("TypeScript", ess_conformance::ts::emit(&suite).unwrap_err()),
-        ("Go", ess_conformance::go::emit_input(&input).unwrap_err()),
-        (
-            "TypeScript",
-            ess_conformance::ts::emit_input(&input).unwrap_err(),
-        ),
-    ] {
-        let (reason, path, message) = issue(&error);
-        assert_eq!(reason, "UnsupportedTarget", "{target}: {error}");
-        assert_eq!(
-            path, "$suite",
-            "{target}: the direct-return refusal is not the first guard: {error}"
-        );
-        assert_eq!(
-            message,
-            format!("{target} does not execute direct response observations; use the Rust runner"),
-            "{target}: {error}"
-        );
-    }
+    ess_conformance::go::emit(&suite).expect("Go executes direct responses");
+    ess_conformance::ts::emit(&suite).expect("TypeScript executes direct responses");
+    ess_conformance::go::emit_input(&input).expect("Go executes direct response coverage");
+    ess_conformance::ts::emit_input(&input).expect("TypeScript executes direct response coverage");
 }
 
-/// A `/28` or `/29` suite that holds no direct-return observation (a loaded or pinned document)
-/// meets the new refusal, which names the version, the newest admitted one and the target.
+/// Future majors still name the version, newest admitted major and target in their refusal.
 #[test]
 fn adversary2_unadmitted_version_refusal_names_the_version_and_the_limit() {
-    for major in [28, 29] {
+    for major in [44, 45] {
         for (target, error) in [
             ("Go", go(&empty_suite(major)).unwrap_err()),
             ("TypeScript", typescript(&empty_suite(major)).unwrap_err()),
@@ -169,9 +171,9 @@ fn adversary2_unadmitted_version_refusal_names_the_version_and_the_limit() {
             );
             for needle in [
                 format!("generated {target} runner"),
-                "`ess-conformance/27`".to_owned(),
+                "`ess-conformance/43`".to_owned(),
                 format!("`ess-conformance/{major}`"),
-                "use the Rust runner".to_owned(),
+                "regenerate using a supported suite version".to_owned(),
             ] {
                 assert!(
                     message.contains(&needle),
@@ -229,12 +231,23 @@ fn adversary2_emit_boundary_is_the_limit_both_runtimes_declare() {
     let go_newest = go_newest(file(&go_runtime, "/runtime.go"));
     let ts_runtime = typescript(&empty_suite(4)).expect("suite/4 emits");
     let ts_majors = ts_majors(file(&ts_runtime, "/runtime.ts"));
+    // The registered majors up to the newest: contiguous, now that the conditional measure pair
+    // `/38`, `/39` has its readers beside the expression pair `/40`, `/41`.
+    let admitted: Vec<u32> = (1..=go_newest)
+        .filter(|major| ess_conformance::scenario::SUPPORTED_SUITE_FORMATS.contains(major))
+        .collect();
     assert_eq!(
-        ts_majors,
-        (1..=go_newest).collect::<Vec<_>>(),
-        "the TypeScript runtime admits other majors than the Go runtime's 1..={go_newest}"
+        ts_majors, admitted,
+        "the TypeScript runtime admits other majors than the Go runtime's {admitted:?}"
     );
-    for major in 1..=go_newest {
+    for major in (1..=go_newest).filter(|major| !admitted.contains(major)) {
+        let suite = empty_suite(major);
+        assert!(
+            go(&suite).is_err() && typescript(&suite).is_err(),
+            "a package is emitted for /{major}, which neither runtime reads"
+        );
+    }
+    for major in admitted {
         let suite = empty_suite(major);
         assert!(
             go(&suite).is_ok(),

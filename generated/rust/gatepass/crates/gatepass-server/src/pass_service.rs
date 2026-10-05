@@ -86,7 +86,18 @@ fn announce(address: &std::net::SocketAddr) {
 pub fn serve<PassServiceBehaviors>(system: &mut gatepass_system::System<PassServiceBehaviors>, address: &str, authenticate: impl Fn(&http::Request) -> Option<gatepass_types::actor::Caller>) -> std::io::Result<()>
 where
     PassServiceBehaviors: gatepass_types::visit::obligations::AdmitVisitorBehavior + gatepass_types::visit::obligations::RegisterVisitBehavior + gatepass_types::visit::obligations::SignOutVisitorBehavior + gatepass_types::visit::obligations::ExpectedVisitsQuery + gatepass_types::visit::obligations::VisitByIdQuery,
+{ serve_with_static(system, address, authenticate, None) }
+
+/// Serves the declared surface, with files only for paths outside its route table.
+///
+/// # Errors
+/// Returns a listener or static-root error before announcing readiness.
+pub fn serve_with_static<PassServiceBehaviors>(system: &mut gatepass_system::System<PassServiceBehaviors>, address: &str, authenticate: impl Fn(&http::Request) -> Option<gatepass_types::actor::Caller>, static_root: Option<&std::path::Path>) -> std::io::Result<()>
+where
+    PassServiceBehaviors: gatepass_types::visit::obligations::AdmitVisitorBehavior + gatepass_types::visit::obligations::RegisterVisitBehavior + gatepass_types::visit::obligations::SignOutVisitorBehavior + gatepass_types::visit::obligations::ExpectedVisitsQuery + gatepass_types::visit::obligations::VisitByIdQuery,
 {
+    let static_root = static_root.map(std::fs::canonicalize).transpose()?;
+    if static_root.as_ref().is_some_and(|root| !root.is_dir()) { return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "static root is not a directory")); }
     let listener = std::net::TcpListener::bind(address)?;
     announce(&listener.local_addr()?);
     for connection in listener.incoming() {
@@ -102,7 +113,15 @@ where
         let _ = connection.set_write_timeout(Some(http::WRITE_TIMEOUT));
         let mut reader = std::io::BufReader::new(connection);
         let (answer, refused) = match http::read(&mut reader) {
-            Ok(request) => (dispatch(system, authenticate(&request).as_ref(), &request), false),
+            Ok(request) => {
+                if !ROUTES.iter().any(|(_, path)| *path == request.path) {
+                    if let Some(root) = &static_root {
+                        let _ = crate::static_assets::answer(reader.get_mut(), root, &request);
+                        continue;
+                    }
+                }
+                (dispatch(system, authenticate(&request).as_ref(), &request), false)
+            },
             Err(refusal) => (refusal, true),
         };
         let mut stream = reader.into_inner();

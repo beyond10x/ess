@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/source-22-expressions-0.53.0
+repository: ess
+publishedAt: 2026-10-05T00:00:00Z
+title: Source format ess/22, row sets and calendar windows
+summary: >-
+  `ess/22` adds fact operands, constant offsets, instant comparison, UTF-8 byte length, distinct
+  list members, typed text operands, row sets with filtered related reads, calendar windows at a
+  fixed offset, binding payload conditions and conditional aggregate measures, each checked by
+  synthesized conformance scenarios in the Rust, Go and TypeScript runners.
+kind: capability
+impact: significant
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.53.0
+  version: 0.53.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

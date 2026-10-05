@@ -17,7 +17,9 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/caller.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize/existence.rs
-revision: 6
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/adversary_275_pass2.rs
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T06:31:25Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-10-01T06:31:54Z", actor: "human:timo", revision: 6}
@@ -53,3 +55,7 @@ Derived 2026-10-01 by `aep:story-scoper`; **cited** = read in the tree, **inferr
 - **Confidence:** high
 - **Would collide with:** none within this epic (no sibling names `caller.rs` or `existence.rs`)
 - **Safety fact:** the swapped copy is built only when `caller::uses(ir)` (`synthesize.rs:1514`), so models whose actors declare no attributes are untouched — unproven
+
+## Bundle isolation compatibility correction — 2026-10-03
+
+Candidate `ba4591de292f8b0db3b337ad359c04b8c7fea37a` corrects only the stale global identity-uniqueness assertion in `adversary_275_pass2.rs`. The accepted suite 34/35 contract starts each scenario in an empty logical namespace, so two independent scenarios may each use identities 1 and 2. The existing assertion also fails on pre-282 baseline `72167e08`; no production regression is inferred from that result. Within each scenario the fresh-identity requirement remains unchanged. The replacement preserves swapped/unswapped accounting and includes actual native execution plus an injected within-scenario identity collision that must fail with ESS-CF-OUTCOME. The complete target passes 8/8, strict focused Clippy passes, and independent review pass 1 approves with no findings. Review publication SHA256: `91fba5b06d80067c022942f083f2be5517878fd3995a9917b9e89665ddeeda75`. Broader bundle verification remains pending.

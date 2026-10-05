@@ -2,8 +2,8 @@
 format: aep.planning-md/3
 id: story:feature-request-268
 kind: story
-status: proposed
-title: A binding may react to one outcome of its source command
+status: active
+title: A binding invokes only when its event payload condition holds
 tags:
 - feature-request
 refs:
@@ -12,6 +12,7 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
+- depends_on: story:feature-request-267
 scope:
 - confidence: inferred
   path: crates/generate/ess-gen/src/asyncapi.rs
@@ -33,28 +34,42 @@ scope:
   path: crates/specify/ess-compiler/src/resolve.rs
 - confidence: inferred
   path: crates/specify/ess-domain/src/binding.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/selection.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/go
+- confidence: cited
+  path: crates/verify/ess-conformance/src/runner.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/scenario.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/ts
 - confidence: inferred
   path: crates/verify/ess-diff/src/change.rs
 - confidence: inferred
   path: crates/verify/ess-diff/src/diff.rs
 - confidence: inferred
   path: docs/design/binding-delivery-guarantees.md
-revision: 24
+- confidence: cited
+  path: docs/design/conditional-binding-failure-policies.md
+revision: 32
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T13:04:16Z", actor: "human:timo", revision: 20, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-10-04T15:32:47Z", actor: "human:timo", revision: 32, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Outcome
 
-A binding may react to one outcome of its source command, so one branch can be bound without a separate event per branch.
+A binding invokes its command only when a finite typed predicate over the published event payload is true. The condition can prove an Optional path present for a required mapped input, covering #194. It cannot distinguish source-command outcomes that publish identical payloads; those events need a declared discriminator if consumers must tell them apart.
 
 ## Acceptance
 
-- A binding cause may carry `where:` over the event payload (`when: {event: E, where: <predicate>}`), using the existing bounded binding predicate fragment; `ess specify validate` refuses a predicate reading a field `E` does not carry.
-- Synthesis emits the binding's flow scenario for a payload that satisfies `where:` and a scenario in which a payload that does not satisfy it triggers nothing (`ExpectQuiet`).
-- The generated Rust and Go servers dispatch the binding only when `where:` holds; a mutant that ignores `where:` fails the second scenario. The published-event log keeps its shape.
-- #194 (a binding that invokes only when an Optional path is present) is expressible with `where:` and its story says so.
+- Source22 admits `when: {event: E, where: <finite event-payload predicate>}` for local/external event bindings; old source versions and undeclared/unsupported paths refuse. Periodic causes reject where.
+- The predicate is evaluated before selection/conversion/mapping/invocation. True invokes, false skips only this binding, Unknown remains a reported unmet obligation. Existing event logs retain their shape.
+- #194 is implemented by a sound presence implication from the condition to every Optional ancestor/leaf required by a mapped command input; absent values skip before mapping and unsafe sibling/child refinements refuse.
+- Positive and negative scenarios observe actual command attempts. New ExpectNoInvocation in suite36/37 waits the full eventual window, refuses old readers, and fails unwanted or late attempts even when they emit no event. No ExpectQuiet event-log proxy is accepted.
+- Named controls and required real native/generated Rust/generated Go, native/Go/TypeScript suite execution and browser composition are bound in docs/design/conditional-binding-failure-policies.md. Independent design review precedes implementation.
 
 ## Origin
 
@@ -82,3 +97,15 @@ Fit review from `docs/design/review-external-requests-2026-09.md` (2026-09-30), 
 ## Decisions
 
 - **accept, redesigned (coordinator, 2026-09-30; supersedes the outcome filter):** a binding cause may carry `where:` over the event payload (`when: {event: E, where: <predicate>}`), using the existing bounded predicate fragment; this also closes #194. Where two branches publish identical payloads, the event lacks the field its consumers need, and the answer is to add it to the event, not to filter on the outcome. The generated event log keeps its shape.
+
+## Current coordinated binding contract
+
+For the operator-authorized remaining bundle, docs/design/conditional-binding-failure-policies.md resolves the pending binding syntax, presence proof, observation, refusal alias, fallback and retry decisions. Source22 is the shared syntax allocation. New zero-invocation suite vocabulary uses ordinary36/inventory37; new predicate/refusal-policy diff kinds use diff14. Existing source21, held suites34/35, universal policies and unchanged projections retain their meanings/bytes. Historical illustrative syntax and scope doubts are superseded by that explicit contract. Independent design review is pending; this paragraph is not implementation evidence.
+
+## Design revision 2
+
+Review-result:conditional-binding-design-20261003-r1 is answered in docs/design/conditional-binding-failure-policies.md. Refusal policies apply only after a valid mapped input reaches the command port, where every logical attempt is counted once before the call. Untyped port failures consume this budget. Pre-input mapping/host/selection failures are explicit obligations with zero attempts and no policy/retry/escalation, avoiding an unadvanceable budget and fabricated escalation input. Escalation uses the actual complete failed input and the existing typed host builder; builder failure neither publishes nor reenters retry. Named controls cover these boundaries. Story268's Outcome/title now promise event-payload conditioning, not indistinguishable source-outcome selection. All three design findings are fixed; second independent design review remains due, implementation remains pending.
+
+## Current design disposition
+
+Final independent design reviews at aec396fe6 approved the arrangement/drop contract and the conditional/per-refusal contract (review-result:binding-arrangement-drop-design-20261003-r2 and review-result:conditional-binding-design-20261003-r2). All four and three first-round findings, respectively, were fixed. The matching docs/design pages now bind implementation. Prior pending-design wording is historical; implementation, decisive target controls and independent source review are still required. Serial #266 -> #267 -> #268/#194 -> #269 order and the one bundle PR remain unchanged.

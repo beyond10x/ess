@@ -39,6 +39,7 @@ import (
 	"math"
 	"math/big"
 	"os"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"sort"
@@ -87,15 +88,24 @@ func suiteReference(value any) error {
 
 // newestSuiteMajor is the highest `ess-conformance/N` this runtime reads.
 //
-// The generator refuses the direct-response majors (/28 and /29) before it writes a package, so
-// every major the synthesizer writes for a Go package is at most this one.
-const newestSuiteMajor = 27
+// Keep this aligned with the emitter's capability boundary. New majors require admission,
+// execution and report parity; changing this number alone supplies none of those semantics.
+const newestSuiteMajor = 43
+
+// suiteMajorsNotRead are the majors below newestSuiteMajor that other work has allocated and this
+// runtime has no reader for yet. A suite labelled with one is refused by version, never read as
+// the next lower major. None is left: /38 and /39 carry conditional aggregate measures
+// (docs/design/conditional-aggregate-measures.md), whose suites hold ordinary expected rows.
+var suiteMajorsNotRead = map[int]bool{}
 
 // suiteMajor is N for an `ess-conformance/N` this runtime reads, spelled exactly, and 0 otherwise.
-// Each major implies every major below it, so one number answers every "does this suite carry X"
-// question the admission asks.
+// Each major implies every major below it that this runtime reads, so one number answers every
+// "does this suite carry X" question the admission asks.
 func suiteMajor(version string) int {
 	for major := 1; major <= newestSuiteMajor; major++ {
+		if suiteMajorsNotRead[major] {
+			continue
+		}
 		if version == "ess-conformance/"+strconv.Itoa(major) {
 			return major
 		}
@@ -344,7 +354,7 @@ func checkedRefusal(value any, selection map[string]any, sources map[string]any,
 			return nil, err
 		}
 		valid := false
-		for n := 1; n <= 40; n++ {
+		for n := 1; n <= 41; n++ {
 			if n == 36 {
 				continue
 			}
@@ -548,7 +558,7 @@ func completeCoverage(c map[string]any) bool {
 	return true
 }
 func admitRunInput(raw string) (Suite, error) {
-	value, err := strictJSON(raw)
+	value, err := strictSuiteJSON(raw)
 	if err != nil {
 		return Suite{}, err
 	}
@@ -924,6 +934,7 @@ func scenarioMeaning(value any) any {
 			"execute_command": "input caller", "execute_command_without_input": "caller", "expect_error": "fields", "expect_event": "payload shape",
 			"query_view": "params", "eventually_view": "params", "eventually_event": "payload shape",
 			"expect_invocation": "input", "expect_duration": "", "expect_halt": "params", "eventually_halt": "params",
+			"deliver_event": "payload", "expect_every_invocation": "input selecting",
 		}
 		for _, key := range strings.Fields(defaults[step["step"].(string)]) {
 			if _, ok := step[key]; !ok {
@@ -935,15 +946,25 @@ func scenarioMeaning(value any) any {
 				step["actor"] = nil
 			}
 		}
-		for _, key := range []string{"input", "params"} {
+		for _, key := range []string{"input", "params", "selecting"} {
 			if values, ok := step[key].(map[string]any); ok {
 				step[key] = valuesMeaning(values)
 			}
 		}
-		for _, key := range []string{"payload", "fields", "caller"} {
+		for _, key := range []string{"payload", "fields", "caller", "context"} {
 			if values, ok := step[key]; ok {
 				step[key] = nodeMeaning(values)
 			}
+		}
+		if step["step"] == "expect_direct_response" {
+			response := copyObject(step["response"].(map[string]any))
+			if _, ok := response["outcome"]; !ok {
+				response["outcome"] = nil
+			}
+			if expected, ok := response["expected"]; ok {
+				response["expected"] = nodeMeaning(expected)
+			}
+			step["response"] = response
 		}
 		if shape, ok := step["shape"].(map[string]any); ok && step["step"] != "snapshot_complete_subject" {
 			shapes := map[string]any{}
@@ -1020,6 +1041,16 @@ func valuesMeaning(values map[string]any) any {
 		field := copyObject(value.(map[string]any))
 		if field["kind"] == "literal" {
 			field["value"] = nodeMeaning(field["value"])
+		}
+		if field["kind"] == "list" {
+			items := []any{}
+			for _, item := range field["items"].([]any) {
+				items = append(items, valuesMeaning(map[string]any{"item": item}).(map[string]any)["item"])
+			}
+			field["items"] = items
+		}
+		if field["kind"] == "members" {
+			field["members"] = valuesMeaning(field["members"].(map[string]any))
 		}
 		result[name] = field
 	}
@@ -1155,6 +1186,12 @@ type Target interface {
 
 	// ObserveInvocations reports the commands one binding invoked and what it passed.
 	//
+	// The answer is a cumulative, non-consuming snapshot of every attempt the binding made of the
+	// command under the request's correlation since it began, recorded before the command answers:
+	// a refused attempt is one, and identical repeated attempts are each one. Do not filter by
+	// expected input or success, deduplicate, drain, restart at a new deadline, or mix in another
+	// correlation. Mapping, exact retry counts and drop's single attempt are proved only through it.
+	//
 	// Return ErrUnsupported where the implementation cannot expose this; the scenario is reported
 	// as unsupported rather than failed, which is a different fact.
 	ObserveInvocations(request InvocationObservationRequest) ([]Invocation, error)
@@ -1245,6 +1282,9 @@ type CommandResult struct {
 	Outcome string
 	// Error is the declared error it refused with, empty when it did not.
 	Error string
+	// ErrorPayload is the actual declared-error payload, including undeclared keys. Empty
+	// preserves legacy adapters; callers using unkeyed CommandResult literals must add it.
+	ErrorPayload map[string]Node
 	// Consistency is a token a later read_your_writes query may demand, empty when the target has
 	// no such token.
 	Consistency string
@@ -1294,11 +1334,28 @@ type ViewRequest struct {
 	AtLeast     string
 	Correlation string
 	Deadline    Deadline
+	// Actor is who the read is sent as: the actor the last `read_as` step named (suite/34,
+	// beyond10x/ess#286), empty before one. A view some actor's grant names is answered only to an
+	// actor it names; read it as Actor, and answer NotGranted otherwise, before reading anything.
+	Actor string
+	// Anonymous is true for a read sent as no actor at all, after a `read_as` naming none
+	// (beyond10x/ess#286): an unauthenticated request, which a read-granted view refuses naming no
+	// actor. A target that ignores it serves the read and fails the scenario that requires the
+	// refusal.
+	Anonymous bool
 }
 
 // ViewResult is what a view holds.
 type ViewResult struct {
-	Rows []Row
+	// NotGranted is true when the target refused the read before reading anything, with the standard
+	// refusal for an actor no grant admits (beyond10x/ess#286): on a served surface, 403 {"refused":
+	// "not granted", "actor": ...}. Leave Rows empty. A target that checks no read grant never sets
+	// it, and fails every `.../grant/read/denied` scenario, which is the point of them.
+	NotGranted bool
+	// NotGrantedActor is the qualified name of the actor the refusal names, empty where it names
+	// none.
+	NotGrantedActor string
+	Rows            []Row
 	// Total is the number of rows the view's filter admits, where the answer carries one: a view
 	// declaring `paging: {total: true}` (suite/26, beyond10x/ess#174) answers it beside a page. Nil
 	// for every other answer. The page and the size a read asks for travel in ViewRequest.Params
@@ -1414,6 +1471,10 @@ type ScanRequest struct {
 	AtLeast     string
 	Correlation string
 	Deadline    Deadline
+	// Actor is who the read is sent as, as ViewRequest.Actor (beyond10x/ess#286).
+	Actor string
+	// Anonymous is a read sent as no actor, as ViewRequest.Anonymous.
+	Anonymous bool
 }
 
 // ScanObservation is what one ordered read did, as the target that performed it saw it.
@@ -1524,6 +1585,7 @@ type Suite struct {
 	original   string
 	document   map[string]any
 	coverage   map[string]any
+	oneTime    map[string]*oneTimeTrace
 }
 
 // Provenance says which specification this suite came from.
@@ -1536,6 +1598,7 @@ type Provenance struct {
 	SpecificationVersion string `json:"specification_version"`
 	SpecDigest           string `json:"spec_digest"`
 	ContractDigest       string `json:"contract_digest"`
+	ScenarioInitialState string `json:"scenario_initial_state,omitempty"`
 }
 
 // Scenario is one thing the specification obliges an implementation to do.
@@ -1546,20 +1609,24 @@ type Scenario struct {
 
 // Step is one step of a scenario. Which fields are set depends on Step.
 type Step struct {
-	Fixtures      *FixtureContract     `json:"fixtures,omitempty"`
-	CompleteShape *subjectShape        `json:"-"`
-	Capture       *replayObservation   `json:"capture,omitempty"`
-	Response      *responseObservation `json:"response,omitempty"`
-	Check         *PeriodicCheck       `json:"check,omitempty"`
-	ReadingLeft   *ReadingReference    `json:"left,omitempty"`
-	ReadingRight  *ReadingReference    `json:"right,omitempty"`
-	ReadingOrder  string               `json:"order,omitempty"`
-	Identity      Node                 `json:"identity,omitempty"`
-	Fields        map[string]Node      `json:"fields,omitempty"`
-	State         string               `json:"state,omitempty"`
-	Step          string               `json:"step"`
-	Command       string               `json:"command,omitempty"`
-	Actor         string               `json:"actor,omitempty"`
+	Fixtures       *FixtureContract           `json:"fixtures,omitempty"`
+	CompleteShape  *subjectShape              `json:"-"`
+	Capture        *replayObservation         `json:"capture,omitempty"`
+	DirectResponse *directResponseObservation `json:"-"`
+	Authority      string                     `json:"authority,omitempty"`
+	Context        map[string]Node            `json:"context,omitempty"`
+	Selecting      map[string]Value           `json:"selecting,omitempty"`
+	Response       *responseObservation       `json:"response,omitempty"`
+	Check          *PeriodicCheck             `json:"check,omitempty"`
+	ReadingLeft    *ReadingReference          `json:"left,omitempty"`
+	ReadingRight   *ReadingReference          `json:"right,omitempty"`
+	ReadingOrder   string                     `json:"order,omitempty"`
+	Identity       Node                       `json:"identity,omitempty"`
+	Fields         map[string]Node            `json:"fields,omitempty"`
+	State          string                     `json:"state,omitempty"`
+	Step           string                     `json:"step"`
+	Command        string                     `json:"command,omitempty"`
+	Actor          string                     `json:"actor,omitempty"`
 	// Unpublished names the events no new occurrence of which may appear in the target's log after a
 	// refused send (`expect_not_granted`, beyond10x/ess#265).
 	Unpublished []string         `json:"unpublished,omitempty"`
@@ -1581,6 +1648,7 @@ type Step struct {
 	Params      map[string]Value `json:"params,omitempty"`
 	Expectation *Expectation     `json:"expectation,omitempty"`
 	Binding     string           `json:"binding,omitempty"`
+	Obligation  string           `json:"obligation,omitempty"`
 	Instance    string           `json:"instance,omitempty"`
 	Entity      string           `json:"entity,omitempty"`
 	Field       string           `json:"field,omitempty"`
@@ -1642,6 +1710,8 @@ type OutcomeRef struct {
 
 // Value is one value a step carries: written down, captured earlier, or read from an event.
 type Value struct {
+	Items     []Value               `json:"items,omitempty"`
+	Members   map[string]Value      `json:"members,omitempty"`
 	Fixture   string                `json:"fixture,omitempty"`
 	Selection *selectionObservation `json:"selection,omitempty"`
 	Accessor  *accessorObservation  `json:"accessor,omitempty"`
@@ -1700,12 +1770,18 @@ func Run(t *testing.T, newTarget func() Target) {
 	if err != nil {
 		t.Fatalf("report configuration: %v", err)
 	}
+	// The host's public build identity is fixed here, before the suite is admitted and before any
+	// target is made, and never derived from what a target answers (beyond10x/ess#296).
+	execution, err := executionContextConfiguration(config.version)
+	if err != nil {
+		t.Fatalf("execution context configuration: %v", err)
+	}
 	suite, err := admitRunInput(suiteJSON)
 	if err != nil {
 		t.Fatalf("suite admission: %v", err)
 	}
 	if suiteMajor(suite.Provenance.SuiteVersion) >= 8 && config.version != "2" {
-		t.Fatalf("suite/8 through /27 require explicit ESS_REPORT_FORMAT=2 before execution")
+		t.Fatalf("suite/8 through /43 require explicit ESS_REPORT_FORMAT=2 before execution")
 	}
 	if (suite.Provenance.SuiteVersion == "ess-conformance/5" || suite.Provenance.SuiteVersion == "ess-conformance/6" || suite.Provenance.SuiteVersion == "ess-conformance/7") && config.version != "2" {
 		t.Fatalf("suite/5, /6 and /7 require explicit ESS_REPORT_FORMAT=2 before execution")
@@ -1723,6 +1799,9 @@ func Run(t *testing.T, newTarget func() Target) {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
+	if suite.Provenance.ScenarioInitialState == "empty" {
+		t.Log("Requires an empty logical modeled-instance/event/invocation namespace before each scenario setup; unrelated physical data need not be deleted.")
+	}
 
 	t.Logf(
 		"%s %s, %d scenario(s), spec digest %s",
@@ -1736,7 +1815,11 @@ func Run(t *testing.T, newTarget func() Target) {
 	// target that cannot name itself fails the run here, with that message, rather than leaving a
 	// report that says nothing about what was tested.
 	identity, err := newTarget().Identity()
-	if err != nil {
+	if len(suite.oneTime) != 0 {
+		// Identity is observed before captures exist. Successful metadata can contain a
+		// value disclosed later too, so protected reports never carry target strings.
+		identity = Identity{Name: "one-time-protected-target", Version: ""}
+	} else if err != nil {
 		t.Fatalf("the target does not name itself: %v", err)
 	}
 
@@ -1754,20 +1837,23 @@ func Run(t *testing.T, newTarget func() Target) {
 		terminal := false
 		t.Run(id, func(t *testing.T) {
 			run := &run{
-				t:           t,
-				target:      newTarget(),
-				harness:     harness,
-				correlation: harness.Correlation(),
-				instances:   map[string]Node{},
-				marked:      map[string]bool{},
-				observed:    map[string][]ObservedEvent{},
-				status:      statusPassed,
+				t:                   t,
+				target:              newTarget(),
+				harness:             harness,
+				correlation:         harness.Correlation(),
+				instances:           map[string]Node{},
+				marked:              map[string]bool{},
+				observed:            map[string][]ObservedEvent{},
+				status:              statusPassed,
+				continuedAssertions: suiteMajor(suite.Provenance.SuiteVersion) >= 28,
+				preciseStatuses:     config.version == "2",
+				disclosure:          newOneTimeCaptures(suite.oneTime[id]),
 			}
 			returned := false
 			defer func() {
 				status = run.status
 				terminal = run.callbacksComplete && (returned || status != statusPassed)
-				if config.version == "2" && t.Failed() {
+				if config.version == "2" && t.Failed() && status == statusPassed {
 					status = statusFailed
 				}
 			}()
@@ -1782,7 +1868,10 @@ func Run(t *testing.T, newTarget func() Target) {
 		}
 	}
 	if config.version == "2" {
-		writeCountReport(t, suite, identity, results, terminated, config.strict)
+		encoded := writeCountReport(t, suite, identity, results, terminated, config.strict)
+		if execution != nil && encoded != nil {
+			writeExecutionContext(t, suite, identity, encoded, *execution)
+		}
 	} else {
 		writeReport(t, suite, identity, results, terminated)
 	}
@@ -1792,9 +1881,11 @@ func Run(t *testing.T, newTarget func() Target) {
 
 // What one scenario came to, in the words the report uses.
 const (
-	statusPassed  = "passed"
-	statusFailed  = "failed"
-	statusSkipped = "skipped"
+	statusPassed      = "passed"
+	statusFailed      = "failed"
+	statusSkipped     = "skipped"
+	statusUnsupported = "unsupported"
+	statusError       = "error"
 )
 
 // scenarioResult is one scenario's verdict, for the report.
@@ -1866,6 +1957,13 @@ func writeReport(t *testing.T, suite Suite, identity Identity, results []scenari
 	failed := make([]string, 0)
 	anyFailed, skipped := false, 0
 	for _, result := range results {
+		// Report/1 retains its frozen three-category diagnostic presentation.
+		if result.status == statusUnsupported {
+			result.status = statusSkipped
+		}
+		if result.status == statusError {
+			result.status = statusFailed
+		}
 		switch result.status {
 		case statusPassed:
 			continue
@@ -1923,10 +2021,18 @@ type subjectSnapshot struct {
 
 type run struct {
 	fixtures    map[string]Node
-	t           *testing.T
+	t           oneTimeLogger
 	target      Target
 	harness     *Harness
 	correlation string
+
+	// reader is the actor every read is sent as since the last `read_as` step, empty before one
+	// (beyond10x/ess#286). readRefusalExpected says the read about to be made is one the next step
+	// requires refused, and readAnswer keeps that read's answer for it.
+	reader              string
+	readerSet           bool
+	readRefusalExpected bool
+	readAnswer          *readAnswer
 
 	// instances are what `capture_instance` bound, by name.
 	instances   map[string]Node
@@ -1957,6 +2063,10 @@ type run struct {
 	replayMode  bool
 	// consistency is the token the last command returned, for a read_your_writes query.
 	consistency string
+	// unreadableView is the read-your-writes query suppressed because the preceding command returned
+	// no token; unreadableCommand names the command that owed it.
+	unreadableView    string
+	unreadableCommand string
 	// lastView is what the last query_view returned, for the expect_view after it.
 	lastView  ViewResult
 	snapshots map[string]subjectSnapshot
@@ -1970,11 +2080,25 @@ type run struct {
 	status string
 	// callbacksComplete records returned callbacks, independently of a provisional skip/failure.
 	// A Goexit or panic inside teardown cannot complete the earlier step's verdict.
-	callbacksComplete bool
+	callbacksComplete     bool
+	continuedAssertions   bool
+	preciseStatuses       bool
+	directResponseMode    bool
+	disclosure            *oneTimeCaptures
+	disclosureStopped     bool
+	disclosureUnavailable bool
 }
 
 func (r *run) execute(id string, scenario Scenario) {
+	if r.disclosure != nil {
+		r.t = protectedOneTimeLogger{r.t}
+		r.directResponseMode = true
+		defer r.disclosureComplete()
+	}
 	for _, step := range scenario.Steps {
+		if step.DirectResponse != nil {
+			r.directResponseMode = true
+		}
 		if step.Capture != nil {
 			r.replayMode = true
 		}
@@ -1987,28 +2111,33 @@ func (r *run) execute(id string, scenario Scenario) {
 			if errors.Is(err, ErrUnsupported) {
 				r.skip("fixture values: %v", err)
 			}
-			r.status = statusFailed
+			r.recordStatus(statusError)
 			r.t.Fatalf("fixture values: %v", err)
 		}
 	}
 	if err := r.target.BeginScenario(context); err != nil {
 		r.callbacksComplete = true // begin returned; no teardown is required
 		if errors.Is(err, ErrUnsupported) {
-			r.skip("the target does not support this scenario: %v", err)
+			r.skip("ESS-CF-TARGET: the target does not support this scenario: %v", err)
 		}
-		r.status = statusFailed
-		r.t.Fatalf("begin: %v", err)
+		r.recordStatus(statusError)
+		r.t.Fatalf("ESS-CF-TARGET: begin: %v", err)
 	}
 	defer func() {
 		err := r.target.EndScenario(context)
 		r.callbacksComplete = true
 		if err != nil {
-			r.status = statusFailed
+			if errors.Is(err, ErrUnsupported) {
+				r.recordStatus(statusUnsupported)
+			} else {
+				r.recordStatus(statusError)
+			}
 			r.t.Errorf("end: %v", err)
 		}
 	}()
+	defer r.disclosureFinal()
 
-	if scenario.Purpose != "" {
+	if r.disclosure == nil && scenario.Purpose != "" {
 		r.t.Log(scenario.Purpose)
 	}
 	for index, step := range scenario.Steps {
@@ -2022,7 +2151,12 @@ func (r *run) execute(id string, scenario Scenario) {
 				return
 			}
 		}
-		if !r.step(index, step) {
+		// A read the next step requires refused keeps its answer for that step (beyond10x/ess#286).
+		r.readRefusalExpected = step.Step == "query_view" && index+1 < len(scenario.Steps) && scenario.Steps[index+1].Step == "expect_not_granted"
+		if !r.step(index, step) || r.disclosureStopped {
+			return
+		}
+		if !r.disclosureWindows(index, scenario) {
 			return
 		}
 	}
@@ -2040,7 +2174,10 @@ func (r *run) logCount(index int, event, when string) (int, bool) {
 		return 0, false
 	}
 	if err != nil {
-		return 0, r.fail(index, "observing `%s` %s the refused send: %v", event, when, err)
+		return 0, r.targetFailure(index, err, "target callback")
+	}
+	if !r.disclosureObserved(observed) {
+		return 0, false
 	}
 	count := 0
 	for _, seen := range observed {
@@ -2092,6 +2229,18 @@ func (r *run) step(index int, step Step) bool {
 			return r.fail(index, "expected a command with no direct events")
 		}
 		return true
+	case "expect_direct_response":
+		return r.expectDirectResponse(index, step)
+	case "deliver_event":
+		return r.deliverEvent(index, step)
+	case "expect_every_invocation":
+		return r.expectEveryInvocation(index, step)
+	case "expect_no_invocation":
+		return r.expectNoInvocation(index, step)
+	case "expect_no_publication":
+		return r.expectPublications(index, step, 0)
+	case "expect_publication_count":
+		return r.expectPublications(index, step, step.Count)
 	case "expect_response_payload":
 		return r.expectResponsePayload(index, step)
 	case "check_periodic":
@@ -2106,6 +2255,10 @@ func (r *run) step(index int, step Step) bool {
 		return r.expectOutcome(index, step)
 	case "expect_not_granted":
 		return r.expectNotGranted(index, step)
+	case "read_as":
+		// Every later read is sent as this actor (beyond10x/ess#286).
+		r.reader, r.readerSet = step.Actor, true
+		return true
 	case "snapshot_subject", "expect_subject_unchanged":
 		return r.snapshotSubject(index, step)
 	case "snapshot_complete_subject", "expect_complete_subject_unchanged":
@@ -2189,13 +2342,16 @@ func (r *run) executeCommand(index int, step Step) bool {
 		return false
 	}
 	if err != nil {
-		return r.fail(index, "executing `%s`: %v", step.Command, err)
+		return r.targetFailure(index, err, "executing command")
 	}
 	return r.took(index, step.Command, result)
 }
 
 // remember records an occurrence for the whole scenario, without recording one twice.
 func (r *run) remember(event ObservedEvent) {
+	if !r.disclosureMaps([]map[string]Node{event.Payload}) {
+		return
+	}
 	for _, held := range r.seen {
 		if held.Event == event.Event && equal(held.Payload, event.Payload) {
 			return
@@ -2212,11 +2368,34 @@ func (r *run) expectOutcome(index int, step Step) bool {
 		return r.fail(index, "`%s` was refused as not granted to `%s`, and the specification says `%s`", step.Outcome.Command, orNone(r.last.NotGrantedActor), step.Outcome.Outcome)
 	}
 	if r.last.Outcome != step.Outcome.Outcome {
-		return r.fail(
+		return r.assertionFailure(
 			index,
-			"`%s` took `%s`, and the specification says `%s`",
+			"ESS-CF-OUTCOME: `%s` took `%s`, and the specification says `%s`",
 			step.Outcome.Command, orNone(r.last.Outcome), step.Outcome.Outcome,
 		)
+	}
+	return true
+}
+
+// readAnswer is the answer to a read the next step requires refused (beyond10x/ess#286).
+type readAnswer struct {
+	view    string
+	unread  bool
+	refused bool
+	actor   string
+}
+
+// expectReadNotGranted requires that the read just made was refused before anything was read, with
+// the standard refusal for an actor no grant admits, naming the actor it was read as
+// (beyond10x/ess#286).
+func (r *run) expectReadNotGranted(index int, step Step, answer readAnswer) bool {
+	switch {
+	case answer.unread:
+		return r.fail(index, "`%s` was not read: the command before it returned no consistency token, so the refusal of the read as `%s` was not observed", answer.view, orNone(step.Actor))
+	case !answer.refused:
+		return r.fail(index, "`%s` was served to `%s`; the specification refuses it as not granted", answer.view, orNone(step.Actor))
+	case answer.actor != step.Actor:
+		return r.fail(index, "reading `%s` was refused as not granted to `%s`, and it was read as `%s`", answer.view, orNone(answer.actor), orNone(step.Actor))
 	}
 	return true
 }
@@ -2224,6 +2403,10 @@ func (r *run) expectOutcome(index int, step Step) bool {
 // expectNotGranted requires that the last command was refused before it ran, with the standard
 // refusal for an actor no grant admits, naming the actor it was sent as (beyond10x/ess#265).
 func (r *run) expectNotGranted(index int, step Step) bool {
+	if answer := r.readAnswer; answer != nil {
+		r.readAnswer = nil
+		return r.expectReadNotGranted(index, step, *answer)
+	}
 	if r.lastCommand == "" {
 		return r.fail(index, "no command preceded the refusal an ungranted actor gets")
 	}
@@ -2253,7 +2436,13 @@ func (r *run) expectNotGranted(index int, step Step) bool {
 
 func (r *run) expectError(index int, step Step) bool {
 	if r.last.Error != step.Error {
-		return r.fail(index, "refused with `%s`, and the specification says `%s`", orNone(r.last.Error), step.Error)
+		return r.assertionFailure(index, "ESS-CF-ERROR: refused with `%s`, and the specification says `%s`", orNone(r.last.Error), step.Error)
+	}
+	// The declared fields the branch determines (ess/19), each carried and equal, as
+	// ess_conformance::runner's `expect_error` compares them: naming the right error with the wrong
+	// payload is a different repair from naming the wrong error.
+	if reason := payloadCarries(r.last.ErrorPayload, step.Fields); reason != "" {
+		return r.assertionFailure(index, "ESS-CF-ERROR: refused with `%s`, and %s", step.Error, reason)
 	}
 	return true
 }
@@ -2264,16 +2453,16 @@ func (r *run) expectEvent(index int, step Step) bool {
 	// carrying the wrong value" are two different repairs.
 	for _, event := range r.observed[step.Event] {
 		if reason := payloadCarries(event.Payload, step.Payload); reason != "" {
-			return r.fail(index, "`%s` was emitted, and %s", step.Event, reason)
+			return r.assertionFailure(index, "ESS-CF-PAYLOAD: `%s` was emitted, and %s", step.Event, reason)
 		}
 		// The declared fields, and what each holds. Asserting only that the event arrived would
 		// pass an implementation that published it empty.
 		if reason := holds(event.Payload, step.Shape); reason != "" {
-			return r.fail(index, "`%s` was emitted, and %s", step.Event, reason)
+			return r.assertionFailure(index, "`%s` was emitted, and %s", step.Event, reason)
 		}
 		return true
 	}
-	return r.fail(index, "`%s` was not emitted", step.Event)
+	return r.assertionFailure(index, "ESS-CF-EVENT: `%s` was not emitted", step.Event)
 }
 
 // payloadCarries is why a payload does not carry every value an event assertion names, or "": each
@@ -2299,7 +2488,7 @@ func payloadCarries(payload, want map[string]Node) string {
 
 func (r *run) expectNoEvent(index int, step Step) bool {
 	if len(r.observed[step.Event]) > 0 {
-		return r.fail(index, "`%s` was emitted, and this branch does not emit it", step.Event)
+		return r.fail(index, "ESS-CF-NO-EVENT: `%s` was emitted, and this branch does not emit it", step.Event)
 	}
 	return true
 }
@@ -2317,9 +2506,12 @@ func (r *run) eventuallyEvent(index int, step Step) bool {
 			return false
 		}
 		if err != nil {
-			return r.fail(index, "observing `%s`: %v", step.Event, err)
+			return r.targetFailure(index, err, "target callback")
 		}
 		// Remembered for the whole scenario, where an `observed` value reads it, and nowhere else:
+		if !r.disclosureObserved(events) {
+			return false
+		}
 		// `expect_event`, `expect_no_event` and `capture_instance` read only the last command's
 		// direct events, as ess_conformance::runner reads them.
 		for _, event := range events {
@@ -2362,13 +2554,15 @@ func (r *run) establishEntity(index int, step Step) bool {
 		return false
 	}
 	if err != nil {
-		return r.fail(index, "entity setup failed: %v", err)
+		return r.targetFailure(index, err, "target callback")
 	}
 	r.established = append(r.established, request)
 	r.instances[step.Instance] = step.Identity
 	// A pre-setup query cannot establish facts about the newly acknowledged state.
 	r.queried = ""
 	r.lastView = ViewResult{}
+	r.unreadableView = ""
+	r.unreadableCommand = ""
 	return true
 }
 
@@ -2381,7 +2575,7 @@ func (r *run) captureInstance(index int, step Step) bool {
 	}
 	return r.fail(
 		index,
-		"nothing bound `%s`: `%s` did not carry `%s`",
+		"ESS-CF-INSTANCE: nothing bound `%s`: `%s` did not carry `%s`",
 		step.Instance, step.Event, step.Field,
 	)
 }
@@ -2391,27 +2585,67 @@ func (r *run) queryView(index int, step Step) bool {
 	if !ok {
 		return false
 	}
+	expected := r.readRefusalExpected
+	r.readRefusalExpected = false
+	if r.lastCommand != "" && r.consistency == "" {
+		if expected {
+			r.readAnswer = &readAnswer{view: step.View, unread: true}
+		}
+		// Asking at Current would answer a weaker question than read-your-writes. Remember why no read
+		// was made so expect_view can report the implementation contradiction rather than reusing an
+		// earlier query.
+		r.unreadableView = step.View
+		r.unreadableCommand = r.lastCommand
+		r.queried = ""
+		r.lastView = ViewResult{}
+		return true
+	}
 	result, err := r.target.QueryView(ViewRequest{
 		View:        step.View,
 		Params:      params,
 		AtLeast:     r.consistency,
 		Correlation: r.correlation,
 		Deadline:    r.harness.Deadline(),
+		Actor:       r.reader,
+		Anonymous:   r.readerSet && r.reader == "",
 	})
 	if errors.Is(err, ErrUnsupported) {
 		r.skip("step %d: the target does not expose `%s`: %v", index, step.View, err)
 		return false
 	}
 	if err != nil {
-		return r.fail(index, "querying `%s`: %v", step.View, err)
+		return r.targetFailure(index, err, "target callback")
 	}
+	// A read the next step requires refused keeps its answer for that step; any other refused read
+	// is a read the scenario needed answered (beyond10x/ess#286).
+	if expected {
+		r.readAnswer = &readAnswer{view: step.View, refused: result.NotGranted, actor: result.NotGrantedActor}
+	}
+	if result.NotGranted {
+		r.queried = ""
+		r.lastView = ViewResult{}
+		if expected {
+			return true
+		}
+		return r.fail(index, "reading `%s` as `%s` was refused as not granted to `%s`", step.View, orNone(r.reader), orNone(result.NotGrantedActor))
+	}
+	r.unreadableView = ""
+	r.unreadableCommand = ""
 	r.lastView = result
+	if !r.disclosureRows(result.Rows) {
+		return false
+	}
 	r.queried = step.View
 	return true
 }
 
 // Snapshots own a deep copy: targets may reuse or mutate row maps between queries.
 func (r *run) snapshotSubject(index int, step Step) bool {
+	if r.queried == "" {
+		r.recordStatus(statusError)
+		r.t.Errorf("step %d: ESS-CF-SUITE: no consistent view query preceded the subject snapshot", index)
+		return false
+	}
 	if r.queried != step.View {
 		return r.fail(index, "subject snapshot requires a preceding query of %s", step.View)
 	}
@@ -2440,7 +2674,7 @@ func (r *run) snapshotSubject(index int, step Step) bool {
 		}
 	}
 	if len(rows) != 1 {
-		return r.fail(index, "subject snapshot %s matched %d rows, want exactly one", step.View, len(rows))
+		return r.fail(index, "ESS-CF-VIEW: subject snapshot %s matched %d rows, want exactly one", step.View, len(rows))
 	}
 	encoded, err := json.Marshal(rows[0])
 	if err != nil {
@@ -2460,6 +2694,23 @@ func (r *run) snapshotSubject(index int, step Step) bool {
 }
 
 func (r *run) expectView(index int, step Step, retry bool) bool {
+	if !retry && r.unreadableView == step.View {
+		return r.assertionFailure(
+			index,
+			"ESS-CF-VIEW: `%s` returned no consistency token, so `%s` was not read; asking at Current would answer a weaker question than read-your-writes",
+			r.unreadableCommand,
+			step.View,
+		)
+	}
+	if !retry && r.queried != step.View {
+		r.recordStatus(statusError)
+		if r.queried == "" {
+			r.t.Errorf("step %d: ESS-CF-SUITE: no view had been read before expecting `%s`", index, step.View)
+		} else {
+			r.t.Errorf("step %d: ESS-CF-SUITE: the view last read was `%s`, not `%s`", index, r.queried, step.View)
+		}
+		return false
+	}
 	attempts := 1
 	if retry {
 		attempts = r.harness.Deadline().Attempts
@@ -2476,15 +2727,23 @@ func (r *run) expectView(index int, step Step, retry bool) bool {
 				Params:      params,
 				Correlation: r.correlation,
 				Deadline:    Deadline{Attempts: attempts - attempt},
+				Actor:       r.reader,
+				Anonymous:   r.readerSet && r.reader == "",
 			})
 			if errors.Is(err, ErrUnsupported) {
 				r.skip("step %d: the target does not expose `%s`: %v", index, step.View, err)
 				return false
 			}
 			if err != nil {
-				return r.fail(index, "querying `%s`: %v", step.View, err)
+				return r.targetFailure(index, err, "target callback")
+			}
+			if result.NotGranted {
+				return r.fail(index, "reading `%s` as `%s` was refused as not granted to `%s`", step.View, orNone(r.reader), orNone(result.NotGrantedActor))
 			}
 			r.lastView = result
+			if !r.disclosureRows(result.Rows) {
+				return false
+			}
 			r.queried = step.View
 		}
 		held, reason, undecidable := r.decide(index, step)
@@ -2499,7 +2758,11 @@ func (r *run) expectView(index int, step Step, retry bool) bool {
 		}
 		last = reason
 	}
-	return r.fail(index, "%s", last)
+	code := "ESS-CF-VIEW"
+	if retry {
+		code = "ESS-CF-EVENTUAL-VIEW"
+	}
+	return r.assertionFailure(index, "%s: %s", code, last)
 }
 
 // decide answers whether the view expectation holds, why not, and whether it could be decided.
@@ -2624,11 +2887,11 @@ func (r *run) decide(index int, step Step) (bool, string, bool) {
 }
 
 func (r *run) expectInvocation(index int, step Step) bool {
+	want, absent, ok := r.invocationWanted(index, step)
+	if !ok {
+		return false
+	}
 	if step.Count > 0 {
-		want, absent, ok := r.invocationWanted(index, step)
-		if !ok {
-			return false
-		}
 		return r.expectInvocationCount(index, step, want, absent)
 	}
 	invocations, err := r.target.ObserveInvocations(InvocationObservationRequest{
@@ -2640,15 +2903,14 @@ func (r *run) expectInvocation(index int, step Step) bool {
 	if errors.Is(err, ErrUnsupported) {
 		// The one method the model explicitly refuses to require. Unsupported is a fact about the
 		// target, not a failure of the specification.
+		if r.continuedAssertions {
+			return r.unsupportedObservation(index, err)
+		}
 		r.skip("step %d: the target does not expose what `%s` invoked: %v", index, step.Binding, err)
 		return false
 	}
 	if err != nil {
-		return r.fail(index, "observing `%s`: %v", step.Binding, err)
-	}
-	want, absent, ok := r.invocationWanted(index, step)
-	if !ok {
-		return false
+		return r.targetFailure(index, err, "target callback")
 	}
 	for _, invocation := range invocations {
 		absenceOK := true
@@ -2661,9 +2923,9 @@ func (r *run) expectInvocation(index int, step Step) bool {
 			return true
 		}
 	}
-	return r.fail(
+	return r.assertionFailure(
 		index,
-		"`%s` did not invoke `%s` with %s",
+		"ESS-CF-INVOCATION: `%s` did not invoke `%s` with %s",
 		step.Binding, step.Command, describe(want),
 	)
 }
@@ -2676,7 +2938,7 @@ func (r *run) invocationWanted(index int, step Step) (map[string]Node, []string,
 	for field, value := range step.Input {
 		node, present, err := r.resolveAccessorExpected(value)
 		if err != nil {
-			return nil, nil, r.fail(index, "`%s`: %v", field, err)
+			return nil, nil, r.resolutionFailure(index, field, err)
 		}
 		if present {
 			want[field] = node
@@ -2694,7 +2956,7 @@ func (r *run) redeliver(index int, step Step) bool {
 		return false
 	}
 	if err != nil {
-		return r.fail(index, "redelivering `%s`: %v", step.Event, err)
+		return r.targetFailure(index, err, "target callback")
 	}
 	return true
 }
@@ -2716,7 +2978,7 @@ func (r *run) configure(index int, step Step) bool {
 		return false
 	}
 	if err != nil {
-		return r.fail(index, "forcing `%s`: %v", step.Force.Outcome, err)
+		return r.targetFailure(index, err, "target callback")
 	}
 	return true
 }
@@ -2747,7 +3009,7 @@ func (r *run) markInstant(index int, step Step) bool {
 			r.skip("step %d: the target cannot mark the instant `%s`", index, step.Instant)
 			return false
 		}
-		return r.fail(index, "marking the instant `%s`: %v", step.Instant, err)
+		return r.targetFailure(index, err, "target callback")
 	}
 	r.marked[step.Instant] = true
 	return true
@@ -2778,7 +3040,7 @@ func (r *run) elapsed(index int, step Step, hold int, watching string) (ElapsedO
 		return ElapsedObservation{}, false
 	}
 	if err != nil {
-		r.fail(index, "letting %ds pass since `%s`: %v", hold, step.Instant, err)
+		r.targetFailure(index, err, "letting time pass")
 		return ElapsedObservation{}, false
 	}
 	return observed, true
@@ -2884,13 +3146,15 @@ func (r *run) expectHalt(index int, step Step, retry bool) bool {
 			AtLeast:     atLeast,
 			Correlation: r.correlation,
 			Deadline:    Deadline{Attempts: attempts - attempt},
+			Actor:       r.reader,
+			Anonymous:   r.readerSet && r.reader == "",
 		})
 		if errors.Is(err, ErrUnsupported) {
 			r.skip("step %d: the target cannot read `%s` a row at a time", index, step.View)
 			return false
 		}
 		if err != nil {
-			return r.fail(index, "reading `%s` a row at a time: %v", step.View, err)
+			return r.targetFailure(index, err, "target callback")
 		}
 		if observed.Halted && observed.Produced == step.After {
 			return true
@@ -2917,7 +3181,7 @@ func (r *run) expectHalt(index int, step Step, retry bool) bool {
 
 // fail records one failed assertion and stops the scenario.
 func (r *run) fail(index int, format string, args ...any) bool {
-	r.status = statusFailed
+	r.recordStatus(statusFailed)
 	r.t.Errorf("step %d: "+format, append([]any{index}, args...)...)
 	return false
 }
@@ -2939,7 +3203,14 @@ func (r *run) fail(index int, format string, args ...any) bool {
 // — appending one would corrupt that field for every reader. Carrying the cause into the document
 // needs a new field in a new format, which is `story:a-report-says-why-a-scenario-was-skipped`.
 func (r *run) skip(format string, args ...any) {
-	r.status = statusSkipped
+	r.recordStatus(statusUnsupported)
+	if r.disclosure != nil {
+		format, args = "ESS-CF-TARGET: protected unavailable observation", nil
+	}
+	if r.preciseStatuses {
+		r.t.Fatalf(format, args...)
+		return
+	}
 	r.t.Skipf(format, args...)
 }
 
@@ -2949,7 +3220,7 @@ func (r *run) resolveAll(index int, values map[string]Value) (map[string]Node, b
 	for field, value := range values {
 		node, err := r.resolve(value)
 		if err != nil {
-			r.fail(index, "`%s`: %v", field, err)
+			r.resolutionFailure(index, field, err)
 			return nil, false
 		}
 		resolved[field] = node
@@ -2959,6 +3230,26 @@ func (r *run) resolveAll(index int, values map[string]Value) (map[string]Node, b
 
 func (r *run) resolve(value Value) (Node, error) {
 	switch value.Kind {
+	case "list":
+		items := make([]any, 0, len(value.Items))
+		for _, child := range value.Items {
+			item, err := r.resolve(child)
+			if err != nil {
+				return nil, err
+			}
+			items = append(items, item)
+		}
+		return items, nil
+	case "members":
+		members := map[string]any{}
+		for key, child := range value.Members {
+			item, err := r.resolve(child)
+			if err != nil {
+				return nil, err
+			}
+			members[key] = item
+		}
+		return members, nil
 	case "fixture":
 		resolved, ok := r.fixtures[value.Fixture]
 		if !ok {
@@ -3573,137 +3864,13 @@ func rankOrder(left, right Node) (int, bool) {
 	leftText, leftIsText := left.(string)
 	rightText, rightIsText := right.(string)
 	if leftIsText && rightIsText {
-		leftSeconds, leftNanos, leftOk := instant(leftText)
-		rightSeconds, rightNanos, rightOk := instant(rightText)
+		leftAt, leftOk := parseInstant(leftText)
+		rightAt, rightOk := parseInstant(rightText)
 		if leftOk && rightOk {
-			switch {
-			case leftSeconds < rightSeconds:
-				return -1, true
-			case leftSeconds > rightSeconds:
-				return 1, true
-			case leftNanos < rightNanos:
-				return -1, true
-			case leftNanos > rightNanos:
-				return 1, true
-			}
-			return 0, true
+			return leftAt.compare(rightAt), true
 		}
 	}
 	return compare(left, right)
-}
-
-// instant is the instant an RFC 3339 `date-time` names, as seconds from the epoch and nanoseconds;
-// ok is false where it names none. The production `ess_primitives::time::Rfc3339Instant` parses
-// and nothing wider: a `T` or `t` separator, seconds 00–59, up to nine fraction digits, and `Z`,
-// `z` or a `±HH:MM` offset.
-func instant(value string) (int64, int64, bool) {
-	digits := func(from int, to int) (int64, bool) {
-		if from >= to || to > len(value) {
-			return 0, false
-		}
-		var total int64
-		for index := from; index < to; index++ {
-			if value[index] < '0' || value[index] > '9' {
-				return 0, false
-			}
-			total = total*10 + int64(value[index]-'0')
-		}
-		return total, true
-	}
-	at := func(index int, expected string) bool {
-		return index < len(value) && strings.IndexByte(expected, value[index]) >= 0
-	}
-	if !at(4, "-") || !at(7, "-") || !at(10, "Tt") || !at(13, ":") || !at(16, ":") {
-		return 0, 0, false
-	}
-	year, yearOk := digits(0, 4)
-	month, monthOk := digits(5, 7)
-	day, dayOk := digits(8, 10)
-	if !yearOk || !monthOk || !dayOk {
-		return 0, 0, false
-	}
-	leap := (year%4 == 0 && year%100 != 0) || year%400 == 0
-	var length int64
-	switch month {
-	case 1, 3, 5, 7, 8, 10, 12:
-		length = 31
-	case 4, 6, 9, 11:
-		length = 30
-	case 2:
-		length = 28
-		if leap {
-			length = 29
-		}
-	default:
-		return 0, 0, false
-	}
-	if day < 1 || day > length {
-		return 0, 0, false
-	}
-	hour, hourOk := digits(11, 13)
-	minute, minuteOk := digits(14, 16)
-	second, secondOk := digits(17, 19)
-	if !hourOk || !minuteOk || !secondOk || hour > 23 || minute > 59 || second > 59 {
-		return 0, 0, false
-	}
-	position := 19
-	var nanos int64
-	if at(position, ".") {
-		start := position + 1
-		end := start
-		for end < len(value) && value[end] >= '0' && value[end] <= '9' {
-			end++
-		}
-		width := end - start
-		if width == 0 || width > 9 {
-			return 0, 0, false
-		}
-		fraction, ok := digits(start, end)
-		if !ok {
-			return 0, 0, false
-		}
-		for padding := width; padding < 9; padding++ {
-			fraction *= 10
-		}
-		nanos = fraction
-		position = end
-	}
-	var offset int64
-	rest := value[position:]
-	switch {
-	case rest == "Z" || rest == "z":
-		offset = 0
-	case len(rest) == 6 && (rest[0] == '+' || rest[0] == '-') && rest[3] == ':':
-		hours, hoursOk := digits(position+1, position+3)
-		minutes, minutesOk := digits(position+4, position+6)
-		if !hoursOk || !minutesOk || hours > 23 || minutes > 59 {
-			return 0, 0, false
-		}
-		offset = hours*3600 + minutes*60
-		if rest[0] == '-' {
-			offset = -offset
-		}
-	default:
-		return 0, 0, false
-	}
-	shifted := year
-	if month <= 2 {
-		shifted--
-	}
-	era := shifted
-	if era < 0 {
-		era -= 399
-	}
-	era /= 400
-	yearOfEra := shifted - era*400
-	shiftedMonth := month - 3
-	if month <= 2 {
-		shiftedMonth = month + 9
-	}
-	dayOfYear := (153*shiftedMonth+2)/5 + day - 1
-	dayOfEra := yearOfEra*365 + yearOfEra/4 - yearOfEra/100 + dayOfYear
-	days := era*146097 + dayOfEra - 719468
-	return days*86400 + hour*3600 + minute*60 + second - offset, nanos, true
 }
 
 // compare orders two row values, reporting false where nothing orders them.
@@ -3952,6 +4119,10 @@ func name(value any, kebab bool) error {
 	return nil
 }
 func scenarioIdentity(id string) error {
+	if parts := strings.Split(id, "/"); len(parts) > 1 && parts[1] == "disclosure" {
+		_, err := oneTimeCellIdentity(id)
+		return err
+	}
 	p := strings.Split(id, "/")
 	valid := false
 	q := func(s string) bool { return qualifiedName.MatchString(s) }
@@ -3962,7 +4133,10 @@ func scenarioIdentity(id string) error {
 	case len(p) == 3 && p[1] == "authored":
 		valid = q(p[0]) && k(p[2])
 	case len(p) == 3 && p[1] == "binding":
-		valid = k(p[0]) && (p[2] == "delivery" || p[2] == "flow" || p[2] == "mapping" || p[2] == "on-failure" || p[2] == "final-failure")
+		valid = k(p[0]) && (p[2] == "delivery" || p[2] == "flow" || p[2] == "mapping" || p[2] == "on-failure" || p[2] == "final-failure" || p[2] == "condition-false" || p[2] == "condition-absent")
+	case len(p) == 4 && p[1] == "binding" && p[2] == "refusal":
+		// One declared refusal a refusal-selected failure policy answers (beyond10x/ess#269).
+		valid = k(p[0]) && k(p[3])
 	case len(p) == 5 && p[1] == "state" && (p[3] == "refuses" || p[3] == "accepts"):
 		valid = q(p[0]) && stateName.MatchString(p[2]) && q(p[4])
 	case len(p) == 6 && p[1] == "transition" && p[3] == "by":
@@ -3975,8 +4149,14 @@ func scenarioIdentity(id string) error {
 		valid = q(p[0])
 	case len(p) == 3 && p[1] == "grant":
 		valid = q(p[0]) && p[2] == "denied"
+	case len(p) == 4 && p[1] == "grant" && p[2] == "read":
+		// A read-granted view read as an actor its grant does not name (beyond10x/ess#286).
+		valid = q(p[0]) && p[3] == "denied"
 	case len(p) == 4 && p[1] == "grant":
 		valid = q(p[0]) && p[2] == "admitted" && q(p[3])
+	case len(p) == 5 && p[1] == "grant" && p[2] == "read":
+		// A read-granted view read as an actor its grant names (beyond10x/ess#286).
+		valid = q(p[0]) && p[3] == "admitted" && q(p[4])
 	}
 	if !valid {
 		return fmt.Errorf("malformed scenario ID %q", id)
@@ -3991,7 +4171,7 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 	if err := accessorPreflight(raw); err != nil {
 		return suite, err
 	}
-	value, err := strictJSON(raw)
+	value, err := strictSuiteJSON(raw)
 	if err != nil {
 		return suite, err
 	}
@@ -3999,7 +4179,7 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 	if err != nil {
 		return suite, err
 	}
-	p, err := closed(root["provenance"], "suite_version system specification_version spec_digest contract_digest", "component")
+	p, err := closed(root["provenance"], "suite_version system specification_version spec_digest contract_digest", "component scenario_initial_state synthesis_seeds")
 	if err != nil {
 		return suite, err
 	}
@@ -4011,8 +4191,12 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 	if major == 0 {
 		return suite, fmt.Errorf("unsupported suite version %q", version)
 	}
+	initial, declaresInitial := p["scenario_initial_state"]
+	if (major >= 34 && initial != "empty") || (major < 34 && declaresInitial) {
+		return suite, fmt.Errorf("scenario_initial_state must be empty exactly from suite/34")
+	}
 	if _, present := root["coverage"]; present != coverageMajor(major) {
-		return suite, fmt.Errorf("coverage is required exactly for the odd suite majors from /5 through /27")
+		return suite, fmt.Errorf("coverage is required exactly for the odd suite majors from /5")
 	}
 	for _, key := range []string{"system", "specification_version", "spec_digest", "contract_digest"} {
 		s, err := text(p[key])
@@ -4033,9 +4217,6 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		return suite, fmt.Errorf("scenarios must be an object")
 	}
 	for id, scenario := range scenarios {
-		if err := scenarioIdentity(id); err != nil {
-			return suite, err
-		}
 		// An aggregate scenario (beyond10x/ess#96) arrived in suite/16 and /17.
 		if strings.HasSuffix(id, "/aggregate") && major < 16 {
 			return suite, fmt.Errorf("aggregate views require suite/16 or /17")
@@ -4044,12 +4225,31 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		if strings.HasSuffix(id, "/binding/final-failure") && major < 26 {
 			return suite, fmt.Errorf("a bounded retry requires suite/26 or /27")
 		}
+		// A conditioned binding's negative witnesses (beyond10x/ess#268) arrived in suite/36 and /37.
+		if (strings.HasSuffix(id, "/binding/condition-false") || strings.HasSuffix(id, "/binding/condition-absent")) && major < 36 {
+			return suite, fmt.Errorf("zero-invocation observation requires suite/36 or /37")
+		}
+		// A scenario per selected refusal (beyond10x/ess#269) arrived in suite/36 and /37.
+		if strings.Contains(id, "/binding/refusal/") && major < 36 {
+			return suite, fmt.Errorf("a scenario per selected refusal requires suite/36 or /37")
+		}
 		// The refusal an ungranted actor gets (beyond10x/ess#265) arrived in suite/26 and /27.
 		if (strings.HasSuffix(id, "/grant/denied") || strings.Contains(id, "/grant/admitted/")) && major < 26 {
 			return suite, fmt.Errorf("the refusal an ungranted actor gets requires suite/26 or /27")
 		}
-		s, err := closed(scenario, "purpose steps source", "")
+		// A read of a read-granted view (beyond10x/ess#286) arrived in suite/34 and /35.
+		if strings.Contains(id, "/grant/read/") && major < 34 {
+			return suite, fmt.Errorf("a read sent as an actor requires suite/34 or /35")
+		}
+		s, err := closed(scenario, "purpose steps source", "one_time_response")
 		if err != nil {
+			return suite, err
+		}
+		policy, err := admitOneTimeTrace(s, major)
+		if err != nil {
+			return suite, err
+		}
+		if err := admitOneTimeCell(id, s, policy, major); err != nil {
 			return suite, err
 		}
 		purpose, err := text(s["purpose"])
@@ -4079,6 +4279,9 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		if err := admitFixtureSteps(steps); err != nil {
 			return suite, fmt.Errorf("%s: %w", id, err)
 		}
+		if err := admitDirectSteps(steps); err != nil {
+			return suite, fmt.Errorf("%s: %w", id, err)
+		}
 		if err := admitReplaySteps(steps); err != nil {
 			return suite, fmt.Errorf("%s: %w", id, err)
 		}
@@ -4090,6 +4293,15 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 			if err := admitReference(source); err != nil {
 				return suite, err
 			}
+		}
+	}
+	// Seed provenance (beyond10x/ess#413) belongs exactly to suite/42 and /43.
+	if seeds, carried := p["synthesis_seeds"]; carried != (major == 42 || major == 43) {
+		return suite, fmt.Errorf("synthesis_seeds is required exactly in suite/42 and /43")
+	} else if carried {
+		coverage, _ := root["coverage"].(map[string]any)
+		if err := admitSynthesisSeeds(seeds, scenarios, coverage); err != nil {
+			return suite, fmt.Errorf("synthesis_seeds: %w", err)
 		}
 	}
 	if coverageMajor(major) {
@@ -4128,6 +4340,9 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		suite.Provenance = Provenance{SuiteVersion: version, System: p["system"].(string),
 			SpecificationVersion: p["specification_version"].(string), SpecDigest: p["spec_digest"].(string),
 			ContractDigest: p["contract_digest"].(string)}
+		if major >= 34 {
+			suite.Provenance.ScenarioInitialState = "empty"
+		}
 		suite.Scenarios = make(map[string]Scenario, len(scenarios))
 		for id, value := range scenarios {
 			suite.Scenarios[id] = Scenario{Purpose: value.(map[string]any)["purpose"].(string)}
@@ -4143,6 +4358,9 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 	}
 	if err == nil {
 		err = decodeExactSuiteSteps(&suite)
+	}
+	if err == nil {
+		err = attachOneTimePolicies(&suite)
 	}
 	return suite, err
 }
@@ -4165,6 +4383,9 @@ func executionSuite(suite Suite) (Suite, error) {
 		if err := decodeExactSuiteSteps(&suite); err != nil {
 			return Suite{}, err
 		}
+	}
+	if err := attachOneTimePolicies(&suite); err != nil {
+		return Suite{}, err
 	}
 	return suite, nil
 }
@@ -4262,6 +4483,10 @@ func admitValues(value any, major int, accessors bool) error {
 			return err
 		}
 		switch kind {
+		case "list", "members":
+			if err := admitStructured(v, major, 1); err != nil {
+				return err
+			}
 		case "fixture":
 			if major < 18 {
 				return fmt.Errorf("fixture references require suite/18 or /19")
@@ -4575,6 +4800,38 @@ func admitPredicateEnvelope(value any, depth int) error {
 				if err := admitPredicateEnvelope(child, depth+1); err != nil {
 					return err
 				}
+			case "compare":
+				if fields, ok := child.(map[string]any); ok {
+					if _, tagged := fields["left"]; tagged {
+						// A tagged comparison (suite/40); admitPredicateVersion gates the major.
+						if _, err := parseTaggedCompare(fields, nil); err != nil {
+							return err
+						}
+						continue
+					}
+				}
+				if err := admitPredicatePath(key); err != nil {
+					return err
+				}
+				if err := admitPredicateConstraint(child); err != nil {
+					return err
+				}
+			case "window":
+				if fields, ok := child.(map[string]any); ok {
+					if _, window := fields["at"]; window {
+						// A calendar window (suite/40); admitPredicateVersion gates the major.
+						if _, err := parseWindow(fields); err != nil {
+							return err
+						}
+						continue
+					}
+				}
+				if err := admitPredicatePath(key); err != nil {
+					return err
+				}
+				if err := admitPredicateConstraint(child); err != nil {
+					return err
+				}
 			case "forall", "exists":
 				fields, err := closed(child, "in as that", "")
 				if err != nil {
@@ -4591,6 +4848,23 @@ func admitPredicateEnvelope(value any, depth int) error {
 				if err := admitPredicateEnvelope(fields["that"], depth+1); err != nil {
 					return err
 				}
+			case "distinct":
+				// Distinct list members (suite/40); admitPredicateVersion gates the major. A mapping
+				// without `as` is a constraint on a fact named `distinct`, as it always was.
+				if fields, ok := child.(map[string]any); ok {
+					if _, keyed := fields["as"]; keyed {
+						if _, err := parseDistinct(fields); err != nil {
+							return err
+						}
+						continue
+					}
+				}
+				if err := admitPredicatePath(key); err != nil {
+					return err
+				}
+				if err := admitPredicateConstraint(child); err != nil {
+					return err
+				}
 			default:
 				if err := admitPredicatePath(key); err != nil {
 					return err
@@ -4602,6 +4876,31 @@ func admitPredicateEnvelope(value any, depth int) error {
 		}
 	default:
 		return fmt.Errorf("predicate must be a boolean, expression, list or mapping")
+	}
+	return nil
+}
+
+// admitMappingOperand admits a comparison operand mapping: one constant offset `{offset: {fact,
+// add|subtract}}` (suite/40, A2), read by the predicate reader, or the explicit fact operand. The
+// derived UTF-8 byte length `{utf8_bytes: <path>}` (suite/40, decision 11) is read the same way.
+func admitMappingOperand(operand map[string]any) error {
+	if inner, ok := operand["offset"]; ok && len(operand) == 1 {
+		_, err := parseOffsetOperand("admitted", "eq", inner)
+		return err
+	}
+	if inner, ok := operand["utf8_bytes"]; ok && len(operand) == 1 {
+		_, err := parseUtf8BytesOperand("admitted", "eq", inner)
+		return err
+	}
+	return admitFactOperand(operand)
+}
+
+// admitFactOperand admits exactly `{fact: <path>}`, the canonical one-segment fact operand
+// (docs/design/expression-family-source22.md, A1).
+func admitFactOperand(operand map[string]any) error {
+	path, ok := operand["fact"].(string)
+	if len(operand) != 1 || !ok || !factPath.MatchString(path) {
+		return fmt.Errorf("a comparison operand must be a scalar, or {fact: <path>} naming a fact")
 	}
 	return nil
 }
@@ -4630,6 +4929,14 @@ func admitPredicateConstraint(value any) error {
 		for operator, operand := range node {
 			switch operator {
 			case "eq", "equals", "==", "ne", "not_equals", "!=", "lt", "<", "le", "lte", "<=", "gt", ">", "ge", "gte", ">=":
+				if fact, ok := operand.(map[string]any); ok {
+					// The explicit fact operand or one constant offset (suite/40);
+					// admitPredicateVersion gates the major.
+					if err := admitMappingOperand(fact); err != nil {
+						return err
+					}
+					continue
+				}
 				if err := admitPredicateScalar(operand); err != nil {
 					return err
 				}
@@ -4696,6 +5003,39 @@ func admitStep(value any, major int) error {
 	}
 	required, optional := "step", ""
 	switch tag {
+	case "expect_direct_response":
+		if major < 28 {
+			return fmt.Errorf("direct responses require suite/28 or /29")
+		}
+		required += " response"
+	case "deliver_event":
+		if major < 30 {
+			return fmt.Errorf("delivery context requires suite/30 or /31")
+		}
+		required += " event authority context"
+		optional = "payload"
+	case "expect_every_invocation":
+		if major < 30 {
+			return fmt.Errorf("delivery context requires suite/30 or /31")
+		}
+		required += " binding command input"
+		optional = "selecting"
+	case "expect_no_invocation":
+		if major < 36 {
+			return fmt.Errorf("zero-invocation observation requires suite/36 or /37")
+		}
+		required += " binding command"
+		optional = "obligation"
+	case "expect_no_publication":
+		if major < 36 {
+			return fmt.Errorf("a scenario per selected refusal requires suite/36 or /37")
+		}
+		required += " event"
+	case "expect_publication_count":
+		if major < 36 {
+			return fmt.Errorf("a scenario per selected refusal requires suite/36 or /37")
+		}
+		required += " event count"
 	case "resolve_fixtures":
 		if major < 18 {
 			return fmt.Errorf("fixture resolution requires suite/18 or /19")
@@ -4769,8 +5109,18 @@ func admitStep(value any, major int) error {
 		if major < 26 {
 			return fmt.Errorf("the refusal an ungranted actor gets requires suite/26 or /27")
 		}
+		// A refusal naming no actor, of a read sent as no actor (beyond10x/ess#286).
+		if actor, present := f["actor"]; present && actor == nil && major < 34 {
+			return fmt.Errorf("a read sent as an actor requires suite/34 or /35")
+		}
 		required += " actor"
 		optional = "unpublished"
+	case "read_as":
+		// Every later read sent as this actor (beyond10x/ess#286).
+		if major < 34 {
+			return fmt.Errorf("a read sent as an actor requires suite/34 or /35")
+		}
+		required += " actor"
 	case "snapshot_complete_subject":
 		if major < 12 {
 			return fmt.Errorf("complete subject snapshots require suite/12 or /13")
@@ -4853,7 +5203,11 @@ func admitStep(value any, major int) error {
 		case "fixtures":
 			err = admitFixtures(v)
 		case "response":
-			err = admitResponse(v)
+			if tag == "expect_direct_response" {
+				_, err = admitDirectResponse(v)
+			} else {
+				err = admitResponse(v, major)
+			}
 		case "check":
 			err = admitPeriodic(v)
 		case "left", "right":
@@ -4884,8 +5238,15 @@ func admitStep(value any, major int) error {
 			err = admitPayload(v)
 		case "field":
 			_, err = text(v)
-		case "input", "params", "subject":
+		case "input", "params", "subject", "selecting":
 			err = admitValues(v, major, tag == "expect_invocation")
+		case "authority":
+			_, err = text(v)
+		case "context":
+			if _, ok := v.(map[string]any); !ok {
+				return fmt.Errorf("context must be object")
+			}
+			err = admitPayload(v)
 		case "caller":
 			if _, ok := v.(map[string]any); !ok {
 				return fmt.Errorf("caller must be object")
@@ -5035,6 +5396,231 @@ func admitSetupLiteral(value any, depth int) error {
 	return nil
 }
 
+// seedSourceDigest is the original-byte digest a synthesis seed source is recorded with.
+var seedSourceDigest = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+
+// seedSourceIdentity refuses an identity that is not a checked root-relative path.
+func seedSourceIdentity(identity string) error {
+	if identity == "" || strings.ContainsAny(identity, "\\:") {
+		return fmt.Errorf("invalid seed source identity")
+	}
+	for _, segment := range strings.Split(identity, "/") {
+		if segment == "" || segment == "." || segment == ".." {
+			return fmt.Errorf("invalid seed source identity")
+		}
+	}
+	for _, r := range identity {
+		if unicode.IsControl(r) {
+			return fmt.Errorf("invalid seed source identity")
+		}
+	}
+	return nil
+}
+
+// seedAddressed is the first command step after `at` sending `instance`, where the next step asserts
+// that command's outcome, and -1 otherwise.
+func seedAddressed(steps []any, at int, instance string) int {
+	for position := at + 1; position < len(steps); position++ {
+		step, _ := steps[position].(map[string]any)
+		if step["step"] != "execute_command" {
+			continue
+		}
+		input, _ := step["input"].(map[string]any)
+		sent := false
+		for _, value := range input {
+			if reference, ok := value.(map[string]any); ok && reference["kind"] == "instance" && reference["instance"] == instance && len(reference) == 2 {
+				sent = true
+			}
+		}
+		if !sent {
+			continue
+		}
+		if position+1 >= len(steps) {
+			return -1
+		}
+		next, _ := steps[position+1].(map[string]any)
+		outcome, _ := next["outcome"].(map[string]any)
+		if next["step"] != "expect_outcome" || outcome == nil || outcome["command"] != step["command"] {
+			return -1
+		}
+		return position
+	}
+	return -1
+}
+
+// admitSynthesisSeeds checks suite/42 and /43 seed provenance (beyond10x/ess#413) before any
+// target callback: closed members, sorted distinct selections and applications, and every
+// application bound to a generated scenario's own setup and asserted command steps.
+func admitSynthesisSeeds(raw any, scenarios map[string]any, coverage map[string]any) error {
+	seeds, err := closed(raw, "sources selections applications", "")
+	if err != nil {
+		return err
+	}
+	sources, ok := seeds["sources"].(map[string]any)
+	if !ok || len(sources) == 0 {
+		return fmt.Errorf("sources must be a nonempty object")
+	}
+	for identity, digest := range sources {
+		if err := seedSourceIdentity(identity); err != nil {
+			return err
+		}
+		if text, ok := digest.(string); !ok || !seedSourceDigest.MatchString(text) {
+			return fmt.Errorf("invalid source digest")
+		}
+	}
+	selections, err := array(seeds["selections"])
+	if err != nil {
+		return err
+	}
+	if len(selections) == 0 || len(selections) > 64 {
+		return fmt.Errorf("selections must hold 1 to 64 records")
+	}
+	type key struct{ source, instance string }
+	records := map[key]map[string]any{}
+	used := map[string]bool{}
+	var previous *key
+	for _, item := range selections {
+		record, err := closed(item, "source instance entity identity fields state", "")
+		if err != nil {
+			return err
+		}
+		for _, member := range []string{"source", "instance", "entity", "state"} {
+			if _, err := text(record[member]); err != nil {
+				return fmt.Errorf("selection %s: %w", member, err)
+			}
+		}
+		if !kebabName.MatchString(record["instance"].(string)) || !qualifiedName.MatchString(record["entity"].(string)) || !stateName.MatchString(record["state"].(string)) {
+			return fmt.Errorf("invalid selection name")
+		}
+		current := key{record["source"].(string), record["instance"].(string)}
+		if previous != nil && (current.source < previous.source || (current.source == previous.source && current.instance <= previous.instance)) {
+			return fmt.Errorf("selections must be sorted and distinct")
+		}
+		previous = &current
+		if _, ok := sources[current.source]; !ok {
+			return fmt.Errorf("a selection names an unknown source")
+		}
+		used[current.source] = true
+		fields, ok := record["fields"].(map[string]any)
+		if !ok {
+			return fmt.Errorf("selection fields must be an object")
+		}
+		if record["identity"] == nil {
+			return fmt.Errorf("selection identity cannot be null")
+		}
+		if err := admitSetupLiteral(record["identity"], 0); err != nil {
+			return err
+		}
+		for name, value := range fields {
+			if !qualifiedName.MatchString(name) || strings.ContainsAny(name, ".-") {
+				return fmt.Errorf("invalid entity field name")
+			}
+			if err := admitSetupLiteral(value, 0); err != nil {
+				return err
+			}
+		}
+		for _, other := range records {
+			if other["entity"] == record["entity"] && equal(other["identity"], record["identity"]) {
+				return fmt.Errorf("two selections share one qualified identity")
+			}
+		}
+		records[current] = record
+	}
+	if len(used) != len(sources) {
+		return fmt.Errorf("a source is selected by no selection")
+	}
+	applications, err := array(seeds["applications"])
+	if err != nil {
+		return err
+	}
+	bound := map[string]map[uint64]bool{}
+	previousScenario, previousStep := "", uint64(0)
+	for index, item := range applications {
+		application, err := closed(item, "source instance scenario establish_step command_step", "")
+		if err != nil {
+			return err
+		}
+		source, err := text(application["source"])
+		if err != nil {
+			return err
+		}
+		instance, err := text(application["instance"])
+		if err != nil {
+			return err
+		}
+		id, err := text(application["scenario"])
+		if err != nil {
+			return err
+		}
+		establish, err := unsigned(application["establish_step"])
+		if err != nil {
+			return err
+		}
+		command, err := unsigned(application["command_step"])
+		if err != nil {
+			return err
+		}
+		if index > 0 && (id < previousScenario || (id == previousScenario && establish <= previousStep)) {
+			return fmt.Errorf("applications must be sorted and distinct")
+		}
+		previousScenario, previousStep = id, establish
+		record, ok := records[key{source, instance}]
+		if !ok {
+			return fmt.Errorf("an application names an unknown selection")
+		}
+		if parts := strings.Split(id, "/"); len(parts) == 3 && parts[1] == "authored" {
+			return fmt.Errorf("an application names an authored scenario")
+		}
+		scenario, present := scenarios[id].(map[string]any)
+		if !present {
+			outside := false
+			if list, ok := coverage["outside"].([]any); ok {
+				for _, entry := range list {
+					if row, ok := entry.(map[string]any); ok && row["scenario"] == id && row["reason"] == "selection_filter" {
+						outside = true
+					}
+				}
+			}
+			if !outside {
+				return fmt.Errorf("an application names a scenario the suite does not hold")
+			}
+			continue
+		}
+		steps, _ := scenario["steps"].([]any)
+		if establish >= uint64(len(steps)) {
+			return fmt.Errorf("establish_step is not an establish_entity step")
+		}
+		step, _ := steps[establish].(map[string]any)
+		if step["step"] != "establish_entity" {
+			return fmt.Errorf("establish_step is not an establish_entity step")
+		}
+		if step["entity"] != record["entity"] || step["state"] != record["state"] || !equal(step["identity"], record["identity"]) || !equal(step["fields"], record["fields"]) {
+			return fmt.Errorf("the established row differs from the selection")
+		}
+		established, _ := step["instance"].(string)
+		if command <= establish || command >= uint64(len(steps)) || seedAddressed(steps, int(establish), established) != int(command) {
+			return fmt.Errorf("command_step is not the asserted command sent to the established row")
+		}
+		if bound[id] == nil {
+			bound[id] = map[uint64]bool{}
+		}
+		bound[id][establish] = true
+	}
+	for id, raw := range scenarios {
+		if parts := strings.Split(id, "/"); len(parts) == 3 && parts[1] == "authored" {
+			continue
+		}
+		scenario, _ := raw.(map[string]any)
+		steps, _ := scenario["steps"].([]any)
+		for at, item := range steps {
+			if step, ok := item.(map[string]any); ok && step["step"] == "establish_entity" && !bound[id][uint64(at)] {
+				return fmt.Errorf("generated scenario %q establishes a row no application binds", id)
+			}
+		}
+	}
+	return nil
+}
+
 // The legacy clock remains signed; only report/2 uses this checked conversion seam.
 var countReportNow = func() int64 { return time.Now().UnixMilli() }
 
@@ -5056,7 +5642,7 @@ func countDocument(suite Suite, identity Identity, results []scenarioResult, now
 		if _, ok := suite.Scenarios[result.id]; !ok {
 			return nil, fmt.Errorf("unexpected terminal result")
 		}
-		if result.status != statusPassed && result.status != statusFailed && result.status != statusSkipped {
+		if result.status != statusPassed && result.status != statusFailed && result.status != statusSkipped && result.status != statusUnsupported && result.status != statusError {
 			return nil, fmt.Errorf("unsupported Go terminal status")
 		}
 		if counts[result.status] == ^uint64(0) {
@@ -5075,9 +5661,9 @@ func countDocument(suite Suite, identity Identity, results []scenarioResult, now
 		sort.Strings(ids)
 	}
 	execution := "passed"
-	if counts["failed"] > 0 {
+	if counts["failed"] > 0 || counts["unsupported"] > 0 {
 		execution = "failed"
-	} else if counts["skipped"] > 0 {
+	} else if counts["skipped"] > 0 || counts["error"] > 0 {
 		execution = "inconclusive"
 	}
 	conformance := "inconclusive"
@@ -5096,31 +5682,36 @@ func countDocument(suite Suite, identity Identity, results []scenarioResult, now
 	}
 	return map[string]any{
 		"format": "ess-conformance-report/2", "specification": suite.Provenance.System + "/" + suite.Provenance.SpecificationVersion, "spec_digest": suite.Provenance.SpecDigest, "implementation": identity.Name + " " + identity.Version,
-		"producer_profile": "go-scenario-status/1", "suite": map[string]any{"version": suite.Provenance.SuiteVersion, "digest_profile": "sha256-json-bytes/1", "digest": fmt.Sprintf("sha256:%x", digest)},
+		"producer_profile": "go-scenario-status/2", "suite": map[string]any{"version": suite.Provenance.SuiteVersion, "digest_profile": "sha256-json-bytes/1", "digest": fmt.Sprintf("sha256:%x", digest)},
 		"execution_status": execution, "conformance_status": conformance, "counts": counts, "outcomes": outcomes, "coverage": coverage, "policy": "complete-selection/1", "completed_at": uint64(now),
 	}, nil
 }
-func writeCountReport(t *testing.T, suite Suite, identity Identity, results []scenarioResult, terminated int, strict bool) {
+
+// writeCountReport writes report/2 where ESS_REPORT_OUT names, and returns the exact bytes it
+// wrote there; nil where it wrote nothing.
+func writeCountReport(t *testing.T, suite Suite, identity Identity, results []scenarioResult, terminated int, strict bool) []byte {
 	t.Helper()
 	if err := accountForEveryScenario(suite, terminated); err != nil {
 		t.Errorf("report/2 refused: %v", err)
-		return
+		return nil
 	}
 	document, err := countDocument(suite, identity, results, countReportNow())
 	if err != nil {
 		t.Errorf("report/2 refused: %v", err)
-		return
+		return nil
 	}
 	encoded, err := countCanonical(document)
 	if err != nil {
 		t.Errorf("report/2 encoding: %v", err)
-		return
+		return nil
 	}
+	var written []byte
 	if path := os.Getenv("ESS_REPORT_OUT"); path != "" {
 		if err := os.WriteFile(path, encoded, 0o644); err != nil {
 			t.Errorf("writing report/2: %v", err)
-			return
+			return nil
 		}
+		written = encoded
 	}
 	if strict && document["conformance_status"] != "passed" {
 		if suite.coverage == nil {
@@ -5128,6 +5719,88 @@ func writeCountReport(t *testing.T, suite Suite, identity Identity, results []sc
 		} else {
 			t.Errorf("strict conformance: %s", document["conformance_status"])
 		}
+	}
+	return written
+}
+
+// ---- host execution provenance (`ess-conformance-execution/1`, beyond10x/ess#296) -------------
+
+// executionContextConfig is the host's public build identity, and where the context binding it to
+// the report is written.
+type executionContextConfig struct {
+	build string
+	out   string
+}
+
+// publicBuild reports whether a build identity is `sha256:` and 64 lowercase hexadecimal digits.
+func publicBuild(build string) bool {
+	hex, ok := strings.CutPrefix(build, "sha256:")
+	if !ok || len(hex) != 64 {
+		return false
+	}
+	for _, r := range hex {
+		if !(r >= '0' && r <= '9') && !(r >= 'a' && r <= 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+// executionContextConfiguration reads ESS_IMPLEMENTATION_BUILD and ESS_EXECUTION_CONTEXT_OUT, which
+// are given together or not at all, before the suite runs.
+//
+// The build is the SHA-256 of the immutable target build, which only the host knows: it is never
+// derived from anything a target answers, and a protected one-time run's report label stays its
+// fixed redacted label. The context binds the report written to ESS_REPORT_OUT, so it needs
+// report/2 written there, and a file of its own. No variable here changes any verdict.
+func executionContextConfiguration(version string) (*executionContextConfig, error) {
+	build, buildSet := os.LookupEnv("ESS_IMPLEMENTATION_BUILD")
+	out, outSet := os.LookupEnv("ESS_EXECUTION_CONTEXT_OUT")
+	if !buildSet && !outSet {
+		return nil, nil
+	}
+	if !buildSet || !outSet {
+		return nil, fmt.Errorf("ESS_IMPLEMENTATION_BUILD and ESS_EXECUTION_CONTEXT_OUT are given together or not at all")
+	}
+	if version != "2" {
+		return nil, fmt.Errorf("an execution context requires explicit ESS_REPORT_FORMAT=2")
+	}
+	report := os.Getenv("ESS_REPORT_OUT")
+	if report == "" {
+		return nil, fmt.Errorf("an execution context requires ESS_REPORT_OUT: it binds the report written there")
+	}
+	if !publicBuild(build) {
+		return nil, fmt.Errorf("ESS_IMPLEMENTATION_BUILD must be sha256: and 64 lowercase hexadecimal digits")
+	}
+	if out == "" || filepath.Clean(out) == filepath.Clean(report) {
+		return nil, fmt.Errorf("ESS_EXECUTION_CONTEXT_OUT must name a file other than ESS_REPORT_OUT")
+	}
+	return &executionContextConfig{build: build, out: out}, nil
+}
+
+// executionContextDocument is the closed `ess-conformance-execution/1` envelope: the exact report
+// and suite bytes' digests, the report's own implementation label and the host's build. No values,
+// timestamps, host text or commands.
+func executionContextDocument(suite Suite, identity Identity, report []byte, build string) map[string]any {
+	return map[string]any{
+		"format":               "ess-conformance-execution/1",
+		"implementation":       identity.Name + " " + identity.Version,
+		"implementation_build": build,
+		"report_digest":        fmt.Sprintf("sha256:%x", sha256.Sum256(report)),
+		"suite_digest":         fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(suite.original))),
+	}
+}
+
+// writeExecutionContext writes the context of `report`, the bytes report/2 was written as.
+func writeExecutionContext(t *testing.T, suite Suite, identity Identity, report []byte, execution executionContextConfig) {
+	t.Helper()
+	encoded, err := countCanonical(executionContextDocument(suite, identity, report, execution.build))
+	if err != nil {
+		t.Errorf("execution context encoding: %v", err)
+		return
+	}
+	if err := os.WriteFile(execution.out, encoded, 0o644); err != nil {
+		t.Errorf("writing the execution context: %v", err)
 	}
 }
 
@@ -5462,11 +6135,22 @@ type accessorShape struct {
 	Of       *accessorShape `json:"of"`
 }
 type accessorOperation struct {
-	Kind     string         `json:"kind"`
-	Field    accessorField  `json:"field"`
-	Next     int            `json:"next"`
-	Tag      string         `json:"tag"`
-	Variants map[string]int `json:"variants"`
+	Kind  string        `json:"kind"`
+	Field accessorField `json:"field"`
+	Next  int           `json:"next"`
+	Tag   string        `json:"tag"`
+	// Variants is each label's plan; nil is a unit variant (ess/22), through which nothing is read.
+	Variants map[string]*int `json:"variants"`
+}
+
+// unionVariants reads a union declaration's variants by label; a nil type is a unit variant
+// (ess/22, beyond10x/ess#418), the tag alone.
+func unionVariants(raw json.RawMessage) (map[string]*string, error) {
+	var variants map[string]*string
+	if err := json.Unmarshal(raw, &variants); err != nil {
+		return nil, err
+	}
+	return variants, nil
 }
 
 func accessorOptional(source string) (string, bool) {
@@ -5526,7 +6210,9 @@ func accessorChildren(op accessorOperation) []int {
 		sort.Strings(keys)
 		out := make([]int, 0, len(keys))
 		for _, k := range keys {
-			out = append(out, op.Variants[k])
+			if next := op.Variants[k]; next != nil {
+				out = append(out, *next)
+			}
 		}
 		return out
 	default:
@@ -5884,10 +6570,17 @@ func (a accessorObservation) evaluate(payload map[string]Node) (Node, bool, erro
 				content = "content"
 			}
 			value, present = fields[content]
+			if next == nil {
+				// A unit variant (ess/22) is the tag alone: nothing is read through it.
+				if present {
+					return nil, false, fmt.Errorf("accessor unit variant carries a payload")
+				}
+				return nil, false, nil
+			}
 			if !present {
 				return nil, false, fmt.Errorf("accessor union payload missing")
 			}
-			id = next
+			id = *next
 		}
 	}
 	return nil, false, fmt.Errorf("accessor operation budget exceeded")
@@ -6449,6 +7142,7 @@ type selectionSelector struct {
 	} `json:"operation"`
 }
 type selectionObservation struct {
+	directMode   bool
 	responseMode bool
 	Raw          json.RawMessage `json:"-"`
 	EventType    string          `json:"event_type"`
@@ -6619,13 +7313,17 @@ func (s selectionObservation) typeFacts(source string) (accessorTypeFacts, error
 				pending = append(pending, field.Type)
 			}
 		case "union":
-			var variants map[string]string
-			if err := json.Unmarshal(body.Variants, &variants); err != nil {
+			variants, err := unionVariants(body.Variants)
+			if err != nil {
 				return facts, err
 			}
 			for _, name := range meaningKeys(selectionJSON(variants).(map[string]any)) {
-				node.Members = append(node.Members, variants[name])
-				pending = append(pending, variants[name])
+				// A unit variant (ess/22) reaches no type.
+				if variants[name] == nil {
+					continue
+				}
+				node.Members = append(node.Members, *variants[name])
+				pending = append(pending, *variants[name])
 			}
 		case "enum":
 		default:
@@ -6683,12 +7381,13 @@ func (s selectionObservation) checkPlan(plan accessorPlan, item bool) error {
 				return fmt.Errorf("selection alias differs")
 			}
 		case "union":
-			var variants map[string]string
-			if body.Kind != "union" || body.Tag != op.Tag || json.Unmarshal(body.Variants, &variants) != nil || len(variants) != len(op.Variants) {
+			variants, err := unionVariants(body.Variants)
+			if body.Kind != "union" || body.Tag != op.Tag || err != nil || len(variants) != len(op.Variants) {
 				return fmt.Errorf("selection union differs")
 			}
 			for label, index := range op.Variants {
-				if variants[label] != plan.Nodes[index].Source {
+				declared, ok := variants[label]
+				if !ok || (index == nil) != (declared == nil) || (index != nil && *declared != plan.Nodes[*index].Source) {
 					return fmt.Errorf("selection variant differs")
 				}
 			}
@@ -6897,7 +7596,7 @@ func CheckPeriodic(check PeriodicCheck, correlation string, target PeriodicTarge
 	}
 	mark := InstantMark{Instant: "periodic-anchor", Correlation: correlation}
 	if err := clock.MarkInstant(mark); err != nil {
-		return err
+		return fromCallback(err)
 	}
 	requestCheck, err := periodicSnapshot(check)
 	if err != nil {
@@ -6905,14 +7604,14 @@ func CheckPeriodic(check PeriodicCheck, correlation string, target PeriodicTarge
 	}
 	opened, err := target.OpenPeriodic(PeriodicOpen{Check: requestCheck, Mark: mark})
 	if err != nil {
-		return err
+		return fromCallback(err)
 	}
 	stopped := false
 	defer func() {
 		if !stopped {
 			_, closeErr := target.ClosePeriodic(opened.Scope)
 			if result == nil {
-				result = closeErr
+				result = fromCallback(closeErr)
 			}
 		}
 	}()
@@ -6939,7 +7638,7 @@ func CheckPeriodic(check PeriodicCheck, correlation string, target PeriodicTarge
 		seconds := anchor + offset
 		o, e := target.ObservePeriodic(PeriodicObserve{Scope: opened.Scope, Elapsed: ElapsedRequest{Instant: mark.Instant, Hold: int(seconds), Correlation: correlation}, After: ledger.cursor})
 		if e != nil {
-			return e
+			return fromCallback(e)
 		}
 		if e = ledger.observe(o, seconds*1000, nil); e != nil {
 			return e
@@ -6948,7 +7647,7 @@ func CheckPeriodic(check PeriodicCheck, correlation string, target PeriodicTarge
 	closed, err := target.ClosePeriodic(opened.Scope)
 	stopped = true
 	if err != nil {
-		return err
+		return fromCallback(err)
 	}
 	if closed.Scope != opened.Scope || closed.AtMillis < ledger.through {
 		return fmt.Errorf("PeriodicLifetime: invalid stop acknowledgement")
@@ -6959,7 +7658,7 @@ func CheckPeriodic(check PeriodicCheck, correlation string, target PeriodicTarge
 	hold := (closed.AtMillis + p*1000 + 999) / 1000
 	o, err := target.ObservePeriodic(PeriodicObserve{Scope: opened.Scope, Elapsed: ElapsedRequest{Instant: mark.Instant, Hold: int(hold), Correlation: correlation}, After: ledger.cursor})
 	if err != nil {
-		return err
+		return fromCallback(err)
 	}
 	return ledger.observe(o, hold*1000, &closed.AtMillis)
 }
@@ -6977,6 +7676,10 @@ func (r *run) checkPeriodic(index int, step Step) bool {
 		return r.fail(index, "missing periodic check")
 	}
 	if err := CheckPeriodic(*step.Check, r.correlation, target, clock); err != nil {
+		var callback callbackError
+		if errors.As(err, &callback) {
+			return r.targetFailure(index, err, "periodic callback")
+		}
 		if errors.Is(err, ErrUnsupported) {
 			r.skip("step %d: periodic authority/observation unsupported: %v", index, err)
 			return false
@@ -7079,7 +7782,7 @@ func admitSelection(value any) (*selectionObservation, error) {
 		return nil, fmt.Errorf("selection selector bound")
 	}
 	raw, err := json.Marshal(value)
-	if err != nil || accessorCompactBytes(raw) > 1048576 {
+	if err != nil || len(raw) > 1048576 {
 		return nil, fmt.Errorf("selection byte bound")
 	}
 	var s selectionObservation
@@ -7330,6 +8033,9 @@ func (s selectionObservation) validateValue(source string, value Node, present b
 		}
 		return s.validateValue(inner, value, true, bytes, depth+1)
 	}
+	if s.directMode && source == "Json" && present {
+		return directJSON(value, bytes, depth)
+	}
 	if !present || value == nil {
 		return fmt.Errorf("invalid_input")
 	}
@@ -7372,6 +8078,11 @@ func (s selectionObservation) validateValue(source string, value Node, present b
 			for _, field := range body.Fields {
 				*bytes += len(field.Name)
 				item, present := fields[field.Name]
+				if s.directMode {
+					if err := directPresence(field, item, present); err != nil {
+						return err
+					}
+				}
 				if err := s.validateValue(field.Type, item, present, bytes, depth+1); err != nil {
 					return err
 				}
@@ -7386,8 +8097,8 @@ func (s selectionObservation) validateValue(source string, value Node, present b
 			if !ok {
 				return fmt.Errorf("invalid_input")
 			}
-			var variants map[string]string
-			if json.Unmarshal(body.Variants, &variants) != nil {
+			variants, err := unionVariants(body.Variants)
+			if err != nil {
 				return fmt.Errorf("invalid_input")
 			}
 			target, ok := variants[label]
@@ -7406,7 +8117,14 @@ func (s selectionObservation) validateValue(source string, value Node, present b
 				}
 			}
 			item, present := fields[key]
-			return s.validateValue(target, item, present, bytes, depth+1)
+			if target == nil {
+				// A unit variant (ess/22) is the tag alone.
+				if present {
+					return fmt.Errorf("invalid_input")
+				}
+				return nil
+			}
+			return s.validateValue(*target, item, present, bytes, depth+1)
 		}
 	}
 	if strings.HasPrefix(source, "List<") && strings.HasSuffix(source, ">") {
@@ -7414,7 +8132,11 @@ func (s selectionObservation) validateValue(source string, value Node, present b
 		if !ok {
 			return fmt.Errorf("invalid_input")
 		}
-		if len(values) > 64 {
+		limit := 64
+		if s.directMode {
+			limit = 65536
+		}
+		if len(values) > limit {
 			return fmt.Errorf("resource")
 		}
 		for _, item := range values {
@@ -7429,7 +8151,11 @@ func (s selectionObservation) validateValue(source string, value Node, present b
 		if !ok {
 			return fmt.Errorf("invalid_input")
 		}
-		if len(values) > 64 {
+		limit := 64
+		if s.directMode {
+			limit = 65536
+		}
+		if len(values) > limit {
 			return fmt.Errorf("resource")
 		}
 		for key, child := range values {
@@ -7455,7 +8181,11 @@ func (s selectionObservation) validateValue(source string, value Node, present b
 		}
 		if text, ok := value.(string); ok {
 			*bytes += len(text)
-			if len(text) > 4096 {
+			limit := 4096
+			if s.directMode {
+				limit = 1048576
+			}
+			if len(text) > limit {
 				return fmt.Errorf("resource")
 			}
 		}
@@ -7614,7 +8344,187 @@ func admitPredicateVersion(value any, major int) error {
 	if major < 14 && predicateUsesTextMatch(value) {
 		return fmt.Errorf("string predicate operators require suite/14 or /15")
 	}
+	if major < 40 && predicateUsesUtf8Bytes(value) {
+		return fmt.Errorf("the UTF-8 byte length {utf8_bytes: …} requires suite/40 or /41")
+	}
+	if major < 40 && predicateUsesOffset(value) {
+		return fmt.Errorf("one constant offset {offset: …} requires suite/40 or /41")
+	}
+	if major < 40 && predicateUsesDistinct(value) {
+		return fmt.Errorf("distinct list members {distinct: …} require suite/40 or /41")
+	}
+	if major < 40 && predicateUsesFactOperand(value) {
+		return fmt.Errorf("a one-segment fact operand {fact: …} requires suite/40 or /41")
+	}
+	if major < 40 && predicateUsesOperator(value, "left") {
+		return fmt.Errorf("a comparison tagged as: timestamp requires suite/40 or /41")
+	}
+	// A calendar window, `window: {at, …}` (docs/design/calendar-window-guards.md): `at` is no
+	// constraint operator, so a mapping carrying it under any key is one.
+	if major < 40 && predicateUsesOperator(value, "at") {
+		return fmt.Errorf("a calendar window {window: {at, days, from, to, offset}} requires suite/40 or /41")
+	}
 	return nil
+}
+
+// predicateUsesDistinct walks the admitted grammar for distinct list members `{distinct: {in, as,
+// …}}` (suite/40, docs/design/expression-family-source22.md `distinct`).
+func predicateUsesDistinct(value any) bool {
+	switch node := value.(type) {
+	case []any:
+		for _, child := range node {
+			if predicateUsesDistinct(child) {
+				return true
+			}
+		}
+	case map[string]any:
+		for key, child := range node {
+			switch key {
+			case "all", "and", "all_of", "any", "or", "none", "none_of_these", "not":
+				if predicateUsesDistinct(child) {
+					return true
+				}
+			case "forall", "exists":
+				if fields, ok := child.(map[string]any); ok && predicateUsesDistinct(fields["that"]) {
+					return true
+				}
+			case "distinct":
+				if fields, ok := child.(map[string]any); ok {
+					if _, keyed := fields["as"]; keyed {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
+}
+
+// predicateUsesUtf8Bytes walks the admitted grammar for the derived UTF-8 byte length
+// `{utf8_bytes: …}` (suite/40, docs/design/expression-family-source22.md decision 11): an operand of
+// a constraint, or either side of the `{compare: …}` form. A member merely named `utf8_bytes` is a
+// path, never a mapping, and selects nothing.
+func predicateUsesUtf8Bytes(value any) bool {
+	derived := func(operand any) bool {
+		mapping, ok := operand.(map[string]any)
+		if !ok {
+			return false
+		}
+		_, found := mapping["utf8_bytes"]
+		return found
+	}
+	switch node := value.(type) {
+	case []any:
+		for _, child := range node {
+			if predicateUsesUtf8Bytes(child) {
+				return true
+			}
+		}
+	case map[string]any:
+		for key, child := range node {
+			switch key {
+			case "all", "and", "all_of", "any", "or", "none", "none_of_these", "not":
+				if predicateUsesUtf8Bytes(child) {
+					return true
+				}
+			case "forall", "exists":
+				if fields, ok := child.(map[string]any); ok && predicateUsesUtf8Bytes(fields["that"]) {
+					return true
+				}
+			default:
+				operators, ok := child.(map[string]any)
+				if !ok {
+					continue
+				}
+				if _, compared := operators["left"]; key == "compare" && compared {
+					if derived(operators["left"]) || derived(operators["right"]) {
+						return true
+					}
+					continue
+				}
+				for _, operand := range operators {
+					if derived(operand) {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
+}
+
+// predicateUsesOffset walks the admitted grammar for one constant offset `{offset: …}` (suite/40,
+// docs/design/expression-family-source22.md A2).
+func predicateUsesOffset(value any) bool {
+	switch node := value.(type) {
+	case []any:
+		for _, child := range node {
+			if predicateUsesOffset(child) {
+				return true
+			}
+		}
+	case map[string]any:
+		for key, child := range node {
+			switch key {
+			case "all", "and", "all_of", "any", "or", "none", "none_of_these", "not":
+				if predicateUsesOffset(child) {
+					return true
+				}
+			case "forall", "exists":
+				if fields, ok := child.(map[string]any); ok && predicateUsesOffset(fields["that"]) {
+					return true
+				}
+			default:
+				if operators, ok := child.(map[string]any); ok {
+					for _, operand := range operators {
+						if mapping, ok := operand.(map[string]any); ok {
+							if _, offset := mapping["offset"]; offset {
+								return true
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	return false
+}
+
+// predicateUsesFactOperand walks the admitted grammar for the explicit fact operand `{fact: …}`
+// (suite/40, docs/design/expression-family-source22.md A1).
+func predicateUsesFactOperand(value any) bool {
+	switch node := value.(type) {
+	case []any:
+		for _, child := range node {
+			if predicateUsesFactOperand(child) {
+				return true
+			}
+		}
+	case map[string]any:
+		for key, child := range node {
+			switch key {
+			case "all", "and", "all_of", "any", "or", "none", "none_of_these", "not":
+				if predicateUsesFactOperand(child) {
+					return true
+				}
+			case "forall", "exists":
+				if fields, ok := child.(map[string]any); ok && predicateUsesFactOperand(fields["that"]) {
+					return true
+				}
+			default:
+				if operators, ok := child.(map[string]any); ok {
+					for _, operand := range operators {
+						if mapping, ok := operand.(map[string]any); ok {
+							if _, fact := mapping["fact"]; fact {
+								return true
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	return false
 }
 
 // predicateUsesOperator walks the admitted grammar for a constraint operator named in operators:
@@ -7727,7 +8637,7 @@ func predicateNeedsLosslessReader(value any) bool {
 	return false
 }
 
-// ---- suite/22 through /27 ----------------------------------------------------------------------
+// ---- suite/22 through /35 ----------------------------------------------------------------------
 //
 // The constructs 0.37.0 and 0.38.0 added to the suite vocabulary (beyond10x/ess#188). Each runs
 // the way ess_conformance::runner runs it. A construct a given target cannot answer skips that one
@@ -7832,16 +8742,25 @@ func (r *run) executeCommandWithoutInput(index int, step Step) bool {
 		return false
 	}
 	if err != nil {
-		return r.fail(index, "executing `%s` with no input: %v", step.Command, err)
+		return r.targetFailure(index, err, "target callback")
 	}
 	return r.took(index, step.Command, result)
 }
 
 // took records what a command did, for the assertions that read it.
 func (r *run) took(index int, command string, result CommandResult) bool {
+	if r.disclosure != nil {
+		if code := r.disclosure.command(command, result); code != "" {
+			return r.disclosureViolation(code)
+		}
+	}
 	if result.Response != nil {
 		var err error
-		result, err = snapshotResponseResult(result)
+		if r.directResponseMode {
+			result, err = snapshotDirectResult(result)
+		} else {
+			result, err = snapshotResponseResult(result)
+		}
 		if err != nil {
 			return r.fail(index, "response observation: %v", err)
 		}
@@ -8205,7 +9124,7 @@ func (r *run) configureRepeatedly(index int, step Step) bool {
 		return false
 	}
 	if err != nil {
-		return r.fail(index, "forcing `%s` on the next %d invocations: %v", step.Force.Outcome, step.Times, err)
+		return r.targetFailure(index, err, "target callback")
 	}
 	return true
 }
@@ -8223,11 +9142,14 @@ func (r *run) expectInvocationCount(index int, step Step, want map[string]Node, 
 			Deadline:    Deadline{Attempts: deadline.Attempts - attempt},
 		})
 		if errors.Is(err, ErrUnsupported) {
+			if r.continuedAssertions {
+				return r.unsupportedObservation(index, err)
+			}
 			r.skip("step %d: the target does not expose what `%s` invoked: %v", index, step.Binding, err)
 			return false
 		}
 		if err != nil {
-			return r.fail(index, "observing `%s`: %v", step.Binding, err)
+			return r.targetFailure(index, err, "target callback")
 		}
 		matching := 0
 		for _, invocation := range invocations {
@@ -8245,11 +9167,11 @@ func (r *run) expectInvocationCount(index int, step Step, want map[string]Node, 
 			continue
 		}
 		if matching != step.Count {
-			return r.fail(index, "`%s` invoked `%s` with %s %d time(s) after %d observation(s), and the specification requires exactly %d", step.Binding, step.Command, describe(want), matching, attempt+1, step.Count)
+			return r.assertionFailure(index, "ESS-CF-INVOCATION: `%s` invoked `%s` with %s %d time(s) after %d observation(s), and the specification requires exactly %d", step.Binding, step.Command, describe(want), matching, attempt+1, step.Count)
 		}
 		return true
 	}
-	return r.fail(index, "`%s` was never observed", step.Binding)
+	return r.assertionFailure(index, "ESS-CF-INVOCATION: `%s` was never observed", step.Binding)
 }
 
 // presenceAdmits is ess_conformance::scenario's `LeafShape::admits` for an absent or null value:

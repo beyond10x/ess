@@ -124,6 +124,7 @@ impl RawGroupOutcome {
     /// The outcome a member gains: exactly what the author would have written by hand.
     fn written(&self) -> RawOutcome {
         RawOutcome {
+            one_time_response: None,
             name: self.name.clone(),
             when: None,
             when_subject: None,
@@ -144,6 +145,7 @@ impl RawGroupOutcome {
             into: None,
             accepts: None,
             returns: false,
+            compensates: false,
             replays: None,
             instance: None,
             instances: None,

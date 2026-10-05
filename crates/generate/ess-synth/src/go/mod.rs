@@ -39,7 +39,10 @@
 
 mod accessor;
 mod behaviour;
+mod condition;
+mod context;
 mod entity;
+mod entry;
 mod http;
 mod invariant;
 mod items;
@@ -51,6 +54,7 @@ mod port;
 mod reading;
 mod refusal;
 mod selection;
+mod store;
 mod system;
 
 use std::cell::RefCell;
@@ -291,14 +295,15 @@ impl<'a> Emit<'a> {
 pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::TargetFailure> {
     crate::failure::binary64(ir, plan, crate::Target::Go)?;
     crate::failure::input_absent(ir, plan, crate::Target::Go)?;
+    crate::failure::one_time_response(ir, plan, crate::Target::Go)?;
     crate::set_effects::refuse(ir, plan, crate::Target::Go)?;
     crate::paging::refuse(ir, plan, crate::Target::Go)?;
     crate::view_query::refuse_unqueryable(ir, plan, crate::Target::Go)?;
     crate::view_query::refuse_colliding_params(ir, plan, crate::Target::Go, port::param_base)?;
-    crate::failure::retry_bound(ir, plan, crate::Target::Go)?;
+    crate::failure::binding_policies(ir, plan, crate::Target::Go)?;
     type_owners(ir, plan)?;
     let refusals = TargetRefusals::of(ir, plan);
-    let layout = Layout::of(ir, plan, &refusals);
+    let layout = Layout::admitted(ir, plan, &refusals)?;
     accessor::preflight(ir, plan, &layout)?;
     let seams = behaviour::Seams::of(ir, plan, &layout, &refusals);
     invariant::preflight(ir, plan, &layout)?;
@@ -373,6 +378,7 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::Ta
         &refusals,
         &mut covered,
     ));
+    artifacts.extend(entry::artifacts(ir, plan, &layout, &seams));
 
     assert_bijection(plan, &refusals, &seams, &covered, &stubbed);
 

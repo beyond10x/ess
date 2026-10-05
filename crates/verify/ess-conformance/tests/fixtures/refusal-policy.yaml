@@ -1,0 +1,79 @@
+format: ess/22
+system: demo
+version: v1
+domain: demo.ledger
+summary: A ledger refuses a record for several reasons, and the binding that records each placed order answers each refusal its own way.
+types:
+  - {name: demo.ledger.OrderId, kind: newtype, of: String}
+errors:
+  - name: demo.ledger.Unavailable
+    summary: The ledger could not answer this time.
+    fields: []
+  - name: demo.ledger.Unknown
+    summary: The ledger does not know the order.
+    fields: []
+  - name: demo.ledger.AtLimit
+    summary: The ledger holds as many open records as it may.
+    fields: []
+  - name: demo.ledger.WrongState
+    summary: The order is already recorded.
+    fields: []
+events:
+  - name: demo.ledger.OrderPlaced
+    fields:
+      - {name: order_id, type: demo.ledger.OrderId}
+  - name: demo.ledger.Recorded
+    fields:
+      - {name: order_id, type: demo.ledger.OrderId}
+  - name: demo.ledger.RecordEscalated
+    fields:
+      - {name: order_id, type: demo.ledger.OrderId}
+actors:
+  - {name: demo.ledger.Clerk, may: [demo.ledger.Place, demo.ledger.Record]}
+commands:
+  - name: demo.ledger.Place
+    input:
+      - {name: order_id, type: demo.ledger.OrderId}
+    outcomes:
+      - name: placed
+        emits: [demo.ledger.OrderPlaced]
+        payload:
+          demo.ledger.OrderPlaced: {order_id: input.order_id}
+  - name: demo.ledger.Record
+    input:
+      - {name: order_id, type: demo.ledger.OrderId}
+    outcomes:
+      - name: recorded
+        emits: [demo.ledger.Recorded]
+        payload:
+          demo.ledger.Recorded: {order_id: input.order_id}
+      - name: unavailable
+        external: the ledger answers a server error
+        error: demo.ledger.Unavailable
+      - name: busy
+        external: the ledger is overloaded
+        error: demo.ledger.Unavailable
+      - name: rejected
+        external: the ledger answers a client error
+        error: demo.ledger.Unknown
+      - name: at-limit
+        external: the ledger holds too many open records
+        error: demo.ledger.AtLimit
+      - name: wrong-state
+        external: the order is already recorded
+        error: demo.ledger.WrongState
+bindings:
+  - id: notify-ledger
+    when:
+      event: demo.ledger.OrderPlaced
+    invoke:
+      command: demo.ledger.Record
+    mapping:
+      order_id: event.order_id
+    delivery: at_least_once
+    on_failure:
+      drop: [wrong-state]
+      retry: {outcomes: [demo.ledger.Unavailable, rejected], attempts: 3, final: [rejected]}
+      escalate:
+        emits: demo.ledger.RecordEscalated
+        except: [wrong-state, demo.ledger.Unavailable, rejected]

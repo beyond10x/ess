@@ -326,6 +326,9 @@ impl<'a> SystemGraph<'a> {
                     &edge.label,
                     &format!("{} / {}", delivery_word(delivery), failure_word(failure)),
                 ]),
+                (EdgeKind::Binding, Some(delivery), None) => {
+                    dot_label(&[&edge.label, delivery_word(delivery)])
+                }
                 (EdgeKind::Emission, _, _) => dot_label(&["emits", &edge.label]),
                 _ => dot_label(&[&edge.label]),
             };
@@ -535,14 +538,27 @@ fn edges(ir: &EssIr) -> Vec<GraphEdge<'_>> {
                         _ => None,
                     })
                     .collect();
-                if mappings.is_empty() {
+                let label = if mappings.is_empty() {
                     binding.name.as_str().to_owned()
                 } else {
                     format!("{}: {}", binding.name, mappings.join(", "))
+                };
+                // Only a binding with an event-payload condition (ess/22) says so, so every other
+                // edge keeps its bytes.
+                let label = match &binding.condition {
+                    Some(condition) => format!("{label} when {}", condition.plan.predicate),
+                    None => label,
+                };
+                // A policy selected per refusal (ess/22) has no one word for the edge: saying the
+                // fallback's would claim it for every refusal.
+                if binding.refusal_policy.is_some() {
+                    format!("{label} (on failure: policy per refusal)")
+                } else {
+                    label
                 }
             },
             delivery: Some(binding.delivery),
-            on_failure: Some(binding.failure),
+            on_failure: binding.refusal_policy.is_none().then_some(binding.failure),
         });
     }
     out

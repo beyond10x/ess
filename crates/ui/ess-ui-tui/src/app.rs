@@ -105,12 +105,67 @@ pub(crate) enum ReadState {
     Failed(String),
 }
 
+/// What the screen shown needs: its reads, and the nested live nodes it shows.
+#[derive(Debug, Default)]
+struct Wanted {
+    reads: Vec<ReadRequest>,
+    live: Vec<ShownLive>,
+}
+
+/// A nested node with `live` that the screen shows (beyond10x/ess#354): the channel's events
+/// change its own rows — the read's answer with its own `live` applied — while it is shown.
+#[derive(Debug, Clone)]
+struct ShownLive {
+    /// The node's canonical path.
+    path: String,
+    /// Where the node's `Reads` sits in the document: what the screen draws the node's rows
+    /// through, so the rows it draws are this reader's own.
+    reads_at: usize,
+    live: Live,
+    request: ReadRequest,
+    /// The read's client predicate, which a live insert must pass.
+    filter: Option<ess_ui::Expr>,
+    /// The section, or overlay, the node is shown in.
+    section: Option<String>,
+    overlay: bool,
+}
+
+impl ShownLive {
+    /// The node shown over one request: a node shown again over another request (an expand for
+    /// another row) is another showing, and reads again.
+    fn id(&self) -> String {
+        format!("{}|{}", self.path, self.request.key())
+    }
+
+    /// The reader whose rows the screen draws: [`reader_key`] of the node's `Reads`.
+    fn reader(&self) -> String {
+        format!("{}|{}", self.reads_at, self.request.key())
+    }
+}
+
+/// The key of a nested live node's own rows: where its `Reads` sits, and its request.
+fn reader_key(reads_at: usize, request: &ReadRequest) -> String {
+    format!("{reads_at}|{}", request.key())
+}
+
+/// A nested live node's own rows: the answer of one read (its `generation`) with only that
+/// node's `live` applied, as each reader in the generated React project holds its own.
+#[derive(Debug, Clone)]
+struct OwnRows {
+    generation: u64,
+    result: ReadResult,
+}
+
 #[derive(Debug, Clone)]
 struct CacheEntry {
     request: ReadRequest,
     state: ReadState,
     /// When the read last answered.
     answered: Duration,
+    /// The rows the read last answered, before any section's live change.
+    answer: Option<ReadResult>,
+    /// Which answer `answer` is; a nested live node reseeds its own rows when it changes.
+    generation: u64,
 }
 
 /// A command that was not done, shown where the user acted.
@@ -135,8 +190,8 @@ impl Refused {
     }
 }
 
-/// How often each `live:` section of a bound document polls, by its node path: the served
-/// surface streams no events, so the section takes its `no_live` fallback and polls at its read's
+/// How often each `live:` section or nested node of a bound document polls, by its node path: the
+/// served surface streams no events, so it takes its `no_live` fallback and polls at its read's
 /// `refresh:` (5 s without one), unless it says `degrades: {no_live: refuse}`.
 fn poll_intervals(document: &Document) -> Result<BTreeMap<String, Duration>, profile::Refusal> {
     let mut polls = BTreeMap::new();
@@ -150,46 +205,78 @@ fn poll_intervals(document: &Document) -> Result<BTreeMap<String, Duration>, pro
                 .child(page_name)
                 .child("sections")
                 .child(&section.name);
-            if section.common.degrades.get("no_live").map(String::as_str) == Some("refuse") {
-                return Err(profile::Refusal {
-                    path: at.child("live"),
-                    message: "the served surface streams no events, and this section's \
-                              `degrades: {no_live: refuse}` refuses to poll instead"
-                        .to_owned(),
-                });
-            }
-            let every = match body_reads(&section.body).and_then(|reads| reads.refresh.as_ref()) {
-                None => POLL,
-                Some(refresh) => {
-                    let at = at.child("reads").child("refresh");
-                    let Some(every) = parse_duration(&refresh.0) else {
-                        return Err(profile::Refusal {
-                            path: at,
-                            message: format!(
-                                "a live section bound to the served surface polls at its \
-                                 `refresh:`, and `{}` is not a whole number of ms, s, m or h \
-                                 the terminal can poll at",
-                                refresh.0
-                            ),
-                        });
-                    };
-                    if !(POLL_RANGE.0..=POLL_RANGE.1).contains(&every) {
-                        return Err(profile::Refusal {
-                            path: at,
-                            message: format!(
-                                "a live section bound to the served surface polls at its \
-                                 `refresh:`, and {} ms is outside 1 s to 24 h",
-                                every.as_millis()
-                            ),
-                        });
-                    }
-                    every
-                }
-            };
+            let every = poll_interval(
+                &at,
+                &section.common.degrades,
+                body_reads(&section.body),
+                "section",
+            )?;
             polls.insert(at.to_string(), every);
         }
     }
+    // A nested node with `live` polls its own read (beyond10x/ess#354).
+    for located in document.nodes() {
+        let ess_ui::NodeRef::Node(node) = located.node else {
+            continue;
+        };
+        if node.live.is_none()
+            || located.path.segments().first().map(String::as_str) != Some("pages")
+        {
+            continue;
+        }
+        let every = poll_interval(
+            &located.path,
+            &node.common.degrades,
+            body_reads(&node.body),
+            "node",
+        )?;
+        polls.insert(located.path.to_string(), every);
+    }
     Ok(polls)
+}
+
+/// How often one bound `live:` section or nested node (`what`) at `at` polls: its read's
+/// `refresh:`, 5 s without one; refused when it says `degrades: {no_live: refuse}`.
+fn poll_interval(
+    at: &NodePath,
+    degrades: &BTreeMap<String, String>,
+    reads: Option<&Reads>,
+    what: &str,
+) -> Result<Duration, profile::Refusal> {
+    if degrades.get("no_live").map(String::as_str) == Some("refuse") {
+        return Err(profile::Refusal {
+            path: at.child("live"),
+            message: format!(
+                "the served surface streams no events, and this {what}'s \
+                 `degrades: {{no_live: refuse}}` refuses to poll instead"
+            ),
+        });
+    }
+    let Some(refresh) = reads.and_then(|reads| reads.refresh.as_ref()) else {
+        return Ok(POLL);
+    };
+    let at = at.child("reads").child("refresh");
+    let Some(every) = parse_duration(&refresh.0) else {
+        return Err(profile::Refusal {
+            path: at,
+            message: format!(
+                "a live {what} bound to the served surface polls at its `refresh:`, and `{}` is \
+                 not a whole number of ms, s, m or h the terminal can poll at",
+                refresh.0
+            ),
+        });
+    };
+    if !(POLL_RANGE.0..=POLL_RANGE.1).contains(&every) {
+        return Err(profile::Refusal {
+            path: at,
+            message: format!(
+                "a live {what} bound to the served surface polls at its `refresh:`, and {} ms is \
+                 outside 1 s to 24 h",
+                every.as_millis()
+            ),
+        });
+    }
+    Ok(every)
 }
 
 /// How often a bound `live:` section reads again when its read declares no `refresh:`.
@@ -308,8 +395,20 @@ pub struct App {
     cache: BTreeMap<String, CacheEntry>,
     pub(crate) channels: BTreeMap<String, ChannelState>,
     demanded: BTreeSet<String>,
+    /// Coalesced live payloads by target: a section's name, or a nested node's path.
     batches: BTreeMap<String, (Duration, Vec<Value>)>,
+    /// Live payloads waiting for a read, by target: a section's name, or a nested node's path.
     deferred: Vec<(String, Value)>,
+    /// The nested live nodes shown at the last pump, by [`ShownLive::id`]: one newly shown reads
+    /// again.
+    shown_live: BTreeSet<String>,
+    /// The own rows of each nested live node shown, by [`ShownLive::reader`].
+    own: BTreeMap<String, OwnRows>,
+    /// How many answers the cache has taken: each answer's [`CacheEntry::generation`].
+    generations: u64,
+    /// While a view draws a nested graph editor or references list through a collection built
+    /// from it: where that collection's `Reads` sits, and where the node's own sits.
+    pub(crate) alias: std::cell::RefCell<Option<(usize, usize)>>,
     signed_out: bool,
     quit: bool,
     /// The served surface the run is bound to ([`App::bound`]); `None` for a fixture run.
@@ -414,6 +513,10 @@ impl App {
             demanded: BTreeSet::new(),
             batches: BTreeMap::new(),
             deferred: Vec::new(),
+            shown_live: BTreeSet::new(),
+            own: BTreeMap::new(),
+            generations: 0,
+            alias: std::cell::RefCell::default(),
             signed_out: false,
             quit: false,
             bound,
@@ -842,7 +945,7 @@ impl App {
         reads: &Reads,
         ctx: &Ctx<'_>,
     ) -> Option<std::borrow::Cow<'_, ReadResult>> {
-        let result = self.rows_of(&self.request(reads, ctx))?;
+        let result = self.reader_result(reads, &self.request(reads, ctx))?;
         if reads.filter.is_none() {
             return Some(std::borrow::Cow::Borrowed(result));
         }
@@ -909,7 +1012,24 @@ impl App {
         self.poll();
         for _ in 0..8 {
             let mut changed = false;
-            for request in self.needed_reads() {
+            let wanted = self.needed_reads();
+            // A nested live node shown again (its tab chosen, its row expanded, its condition
+            // true), or shown over another request (an expand for another row), has missed the
+            // events played while it was hidden: it reads again.
+            let shown: BTreeSet<String> = wanted.live.iter().map(ShownLive::id).collect();
+            for node in &wanted.live {
+                if self.shown_live.contains(&node.id()) {
+                    continue;
+                }
+                if let Some(entry) = self.cache.get_mut(&node.request.key()) {
+                    if !matches!(entry.state, ReadState::Loading { .. }) {
+                        entry.state = ReadState::Loading { since: self.now };
+                        changed = true;
+                    }
+                }
+            }
+            self.shown_live = shown;
+            for request in wanted.reads {
                 let key = request.key();
                 if !self.cache.contains_key(&key) {
                     self.cache.insert(
@@ -918,6 +1038,8 @@ impl App {
                             request,
                             state: ReadState::Loading { since: self.now },
                             answered: self.now,
+                            answer: None,
+                            generation: 0,
                         },
                     );
                     changed = true;
@@ -933,9 +1055,15 @@ impl App {
                 .map(|(key, _)| key.clone())
                 .collect();
             for key in due {
+                self.generations += 1;
+                let generation = self.generations;
                 let entry = self.cache.get_mut(&key).expect("a due read is cached");
                 entry.state = match self.adapter.read(&entry.request) {
-                    Ok(result) => ReadState::Ready(result),
+                    Ok(result) => {
+                        entry.answer = Some(result.clone());
+                        entry.generation = generation;
+                        ReadState::Ready(result)
+                    }
                     Err(error) => ReadState::Failed(error),
                 };
                 entry.answered = self.now;
@@ -945,10 +1073,64 @@ impl App {
                 break;
             }
         }
+        self.seed_own_rows();
         if !self.deferred.is_empty() {
             self.apply_deferred();
         }
         self.prune_filtered_selections();
+    }
+
+    /// Gives each nested live node shown its own rows, seeded from its read's latest answer, and
+    /// drops the rows of nodes no longer shown (beyond10x/ess#354).
+    fn seed_own_rows(&mut self) {
+        let shown = self.needed_reads().live;
+        let readers: BTreeSet<String> = shown.iter().map(ShownLive::reader).collect();
+        self.own.retain(|reader, _| readers.contains(reader));
+        for node in &shown {
+            self.own_rows(node);
+        }
+    }
+
+    /// The own rows of a nested live node shown, seeded (again) from its read's latest answer
+    /// when they hold none or an older one; `None` while the read has not answered.
+    fn own_rows(&mut self, node: &ShownLive) -> Option<&mut ReadResult> {
+        let entry = self.cache.get(&node.request.key())?;
+        let answer = entry.answer.as_ref()?;
+        let generation = entry.generation;
+        let reader = node.reader();
+        let stale = self
+            .own
+            .get(&reader)
+            .is_none_or(|own| own.generation != generation);
+        if stale {
+            let result = answer.clone();
+            self.own
+                .insert(reader.clone(), OwnRows { generation, result });
+        }
+        self.own.get_mut(&reader).map(|own| &mut own.result)
+    }
+
+    /// The rows the screen draws for `reads` over `request`: a nested live node's own rows, else
+    /// the cached read with any section's live changes.
+    pub(crate) fn reader_result(
+        &self,
+        reads: &Reads,
+        request: &ReadRequest,
+    ) -> Option<&ReadResult> {
+        let mut at = std::ptr::from_ref(reads) as usize;
+        if let Some((built, origin)) = *self.alias.borrow() {
+            if built == at {
+                at = origin;
+            }
+        }
+        let entry = self.cache.get(&request.key())?;
+        if !matches!(entry.state, ReadState::Ready(_)) {
+            return None;
+        }
+        match self.own.get(&reader_key(at, request)) {
+            Some(own) if own.generation == entry.generation => Some(&own.result),
+            _ => self.rows_of(request),
+        }
     }
 
     /// Reads each shown bound `live:` section again once its interval has passed since its read
@@ -958,14 +1140,25 @@ impl App {
         if self.polls.is_empty() {
             return;
         }
-        let due: Vec<String> = self
+        let mut held: Vec<(String, String)> = self
             .visible_sections()
             .into_iter()
             .filter_map(|(_, section)| {
-                let every = self
-                    .polls
-                    .get(&self.section_path(&section.name).to_string())?;
                 let key = self.section_request(section)?.key();
+                Some((self.section_path(&section.name).to_string(), key))
+            })
+            .collect();
+        // A bound nested live node polls its own read while shown (beyond10x/ess#354).
+        held.extend(
+            self.needed_reads()
+                .live
+                .into_iter()
+                .map(|node| (node.path, node.request.key())),
+        );
+        let due: Vec<String> = held
+            .into_iter()
+            .filter_map(|(path, key)| {
+                let every = self.polls.get(&path)?;
                 let entry = self.cache.get(&key)?;
                 let settled = !matches!(entry.state, ReadState::Loading { .. });
                 (settled && self.now.saturating_sub(entry.answered) >= *every).then_some(key)
@@ -983,8 +1176,8 @@ impl App {
         self.cache.clear();
     }
 
-    fn needed_reads(&self) -> Vec<ReadRequest> {
-        let mut out = Vec::new();
+    fn needed_reads(&self) -> Wanted {
+        let mut out = Wanted::default();
         let page = self.page_def();
         if let Some(shell) = self.doc.shells.get(&page.shell) {
             if let Some(preload) = &shell.preload {
@@ -996,7 +1189,7 @@ impl App {
                                 params.insert(name.clone(), value);
                             }
                         }
-                        out.push(ReadRequest {
+                        out.reads.push(ReadRequest {
                             view: view.view.clone(),
                             fixture: None,
                             params,
@@ -1008,7 +1201,7 @@ impl App {
         if self.has_navigation() {
             for section in &self.doc.navigation.sections {
                 if let NavPages::Dynamic(dynamic) = &section.pages {
-                    out.push(ReadRequest {
+                    out.reads.push(ReadRequest {
                         view: dynamic.from_view.clone(),
                         fixture: None,
                         params: BTreeMap::new(),
@@ -1017,9 +1210,15 @@ impl App {
             }
         }
         if let Some(header) = &page.header {
-            for node in &header.metrics {
-                self.node_reads(&node.body, "header", &Ctx::default(), &mut out);
-            }
+            let at = self.page_path().child("header");
+            self.nodes_reads(
+                &at,
+                "metrics",
+                &header.metrics,
+                "header",
+                &Ctx::default(),
+                &mut out,
+            );
         }
         for (_, section) in self.visible_sections() {
             if self.lifecycle(section) == Lifecycle::NotLoaded {
@@ -1030,10 +1229,9 @@ impl App {
                 ..Ctx::default()
             };
             let ui = format!("s:{}", section.name);
-            self.node_reads(&section.body, &ui, &ctx, &mut out);
-            for child in &section.children {
-                self.node_reads(&child.body, &ui, &ctx, &mut out);
-            }
+            let at = self.section_path(&section.name);
+            self.node_reads(&at, &section.body, &ui, &ctx, &mut out);
+            self.nodes_reads(&at, "children", &section.children, &ui, &ctx, &mut out);
         }
         if let Some(open) = &self.overlay {
             let ctx = Ctx {
@@ -1041,6 +1239,7 @@ impl App {
                 ..Ctx::default()
             };
             self.node_reads(
+                &open.path,
                 &open.overlay.body,
                 &format!("o:{}", open.name),
                 &ctx,
@@ -1050,20 +1249,91 @@ impl App {
         out
     }
 
-    fn node_reads(&self, body: &Body, ui: &str, ctx: &Ctx<'_>, out: &mut Vec<ReadRequest>) {
-        let each = |nodes: &[ess_ui::Node], ctx: &Ctx<'_>, out: &mut Vec<ReadRequest>| {
-            for node in nodes {
-                self.node_reads(&node.body, ui, ctx, out);
+    /// The reads of the nodes listed under `at/<key>`, each at `at/<key>/<name>`.
+    fn nodes_reads(
+        &self,
+        at: &NodePath,
+        key: &str,
+        nodes: &[ess_ui::Node],
+        ui: &str,
+        ctx: &Ctx<'_>,
+        out: &mut Wanted,
+    ) {
+        for node in nodes {
+            let here = at
+                .child(key)
+                .child(node.common.name.as_deref().unwrap_or(""));
+            self.one_node_reads(&here, node, ui, ctx, out);
+        }
+    }
+
+    /// A nested node's reads, and its `live` when it is shown (beyond10x/ess#354).
+    fn one_node_reads(
+        &self,
+        at: &NodePath,
+        node: &ess_ui::Node,
+        ui: &str,
+        ctx: &Ctx<'_>,
+        out: &mut Wanted,
+    ) {
+        if let (Some(live), Some(reads)) = (&node.live, node.body.live_reads()) {
+            let shown = self.visible(
+                node.common.visible.as_ref().map(|expr| expr.0.as_str()),
+                ctx,
+            );
+            if shown {
+                out.live.push(ShownLive {
+                    path: at.to_string(),
+                    reads_at: std::ptr::from_ref(reads) as usize,
+                    live: live.clone(),
+                    request: self.request(reads, ctx),
+                    filter: reads.filter.clone(),
+                    section: ctx.section.map(str::to_owned),
+                    overlay: ctx.overlay,
+                });
             }
+        }
+        self.node_reads(at, &node.body, ui, ctx, out);
+    }
+
+    /// A record's nested reads: its items' and the shown tab's, as the screen draws them, each in
+    /// the scope of the record's row. A tab not shown holds nothing (beyond10x/ess#354).
+    fn record_reads(
+        &self,
+        at: &NodePath,
+        record: &ess_ui::Record,
+        ui: &str,
+        ctx: &Ctx<'_>,
+        out: &mut Wanted,
+    ) {
+        let row = record
+            .reads
+            .as_ref()
+            .and_then(|reads| self.reader_result(reads, &self.request(reads, ctx)))
+            .and_then(|result| result.rows.first().cloned());
+        let inner = Ctx {
+            row: row.as_ref().or(ctx.row),
+            ..*ctx
         };
+        let tab = self.ui(ui).tab.min(record.tabs.len().saturating_sub(1));
+        if let Some(current) = record.tabs.get(tab) {
+            if let Some(ess_ui::TabForm::Node(node)) = &current.form {
+                let here = at.child("tabs").child(&current.name).child("form");
+                self.one_node_reads(&here, node, ui, &inner, out);
+            }
+        }
+        self.nodes_reads(at, "item", &record.item, ui, &inner, out);
+    }
+
+    fn node_reads(&self, at: &NodePath, body: &Body, ui: &str, ctx: &Ctx<'_>, out: &mut Wanted) {
         match body {
-            Body::Widget(widget) => each(&widget.body, ctx, out),
+            Body::Widget(widget) => self.nodes_reads(at, "body", &widget.body, ui, ctx, out),
             Body::Primitive(_) => {}
             Body::Composite(composite) => {
                 if let Some(reads) = body_reads(body) {
-                    out.push(self.request(reads, ctx));
+                    out.reads.push(self.request(reads, ctx));
                 }
-                Self::composite_label_reads(composite, out);
+                Self::composite_label_reads(composite, &mut out.reads);
                 match composite {
                     Composite::Collection(collection) => {
                         if let Some(expand) = &collection.expand {
@@ -1073,47 +1343,52 @@ impl App {
                                         row: Some(&row),
                                         ..*ctx
                                     };
-                                    self.node_reads(&expand.body, ui, &inner, out);
+                                    self.one_node_reads(
+                                        &at.child("expand"),
+                                        expand,
+                                        ui,
+                                        &inner,
+                                        out,
+                                    );
                                 }
                             }
                         }
                     }
-                    Composite::Record(record) => {
-                        let request = record.reads.as_ref().map(|reads| self.request(reads, ctx));
-                        let row = request
-                            .as_ref()
-                            .and_then(|request| self.rows_of(request))
-                            .and_then(|result| result.rows.first().cloned());
-                        let inner = Ctx {
-                            row: row.as_ref().or(ctx.row),
-                            ..*ctx
-                        };
-                        each(&record.item, &inner, out);
-                    }
+                    Composite::Record(record) => self.record_reads(at, record, ui, ctx, out),
                     Composite::Form(form) => {
-                        for field in form_fields(form, 0) {
-                            if let Some(choice) = &field.choice {
-                                self.node_reads(&choice.body, ui, ctx, out);
-                            }
+                        // Each field's choice is a nested node, so a choice's `live` is kept
+                        // like any other's (beyond10x/ess#354).
+                        let mut lists = vec![(at.clone(), &form.fields)];
+                        for group in &form.groups {
+                            lists.push((at.child("groups").child(&group.name), &group.fields));
                         }
                         for tab in &form.tabs {
                             if let Some(TabFields::Fields(fields)) = &tab.fields {
-                                for field in fields {
-                                    if let Some(choice) = &field.choice {
-                                        self.node_reads(&choice.body, ui, ctx, out);
-                                    }
+                                lists.push((at.child("tabs").child(&tab.name), fields));
+                            }
+                        }
+                        for (owner, fields) in lists {
+                            for field in fields {
+                                if let Some(choice) = &field.choice {
+                                    let here =
+                                        owner.child("fields").child(&field.name).child("choice");
+                                    self.one_node_reads(&here, choice, ui, ctx, out);
                                 }
                             }
                         }
-                        each(&form.parts, ctx, out);
-                        for node in [&form.record, &form.result].into_iter().flatten() {
-                            self.node_reads(&node.body, ui, ctx, out);
+                        self.nodes_reads(at, "parts", &form.parts, ui, ctx, out);
+                        for (key, node) in [("record", &form.record), ("result", &form.result)] {
+                            if let Some(node) = node {
+                                self.one_node_reads(&at.child(key), node, ui, ctx, out);
+                            }
                         }
                     }
-                    Composite::FilterBar(bar) => each(&bar.choices, ctx, out),
+                    Composite::FilterBar(bar) => {
+                        self.nodes_reads(at, "choices", &bar.choices, ui, ctx, out);
+                    }
                     Composite::Confirm(confirm) => {
                         if let Some(view) = &confirm.references {
-                            out.push(ReadRequest {
+                            out.reads.push(ReadRequest {
                                 view: view.clone(),
                                 fixture: None,
                                 params: self.overlay_params(),
@@ -1121,19 +1396,25 @@ impl App {
                         }
                     }
                     Composite::Board(board) => {
-                        for node in board.widgets.values() {
-                            self.node_reads(&node.body, ui, ctx, out);
+                        for (kind, node) in &board.widgets {
+                            self.one_node_reads(
+                                &at.child("widgets").child(kind),
+                                node,
+                                ui,
+                                ctx,
+                                out,
+                            );
                         }
                     }
                     Composite::GraphEditor(editor) => {
                         if let Some(reads) = editor.edges.as_ref().and_then(|e| e.reads.as_ref()) {
-                            out.push(self.request(reads, ctx));
+                            out.reads.push(self.request(reads, ctx));
                         }
-                        each(&editor.toolbar, ctx, out);
+                        self.nodes_reads(at, "toolbar", &editor.toolbar, ui, ctx, out);
                     }
                     Composite::RichText(text) => {
                         if let Some(view) = &text.completes {
-                            out.push(ReadRequest {
+                            out.reads.push(ReadRequest {
                                 view: view.clone(),
                                 fixture: None,
                                 params: BTreeMap::new(),
@@ -1381,10 +1662,15 @@ impl App {
         {
             for entry in self.cache.values_mut() {
                 if entry.request.view == carried.view {
-                    entry.state = ReadState::Ready(ReadResult {
+                    let result = ReadResult {
                         rows: vec![payload.clone()],
                         total: None,
-                    });
+                    };
+                    // The carried view is a new answer to every reader of it.
+                    self.generations += 1;
+                    entry.answer = Some(result.clone());
+                    entry.generation = self.generations;
+                    entry.state = ReadState::Ready(result);
                 }
             }
         }
@@ -1402,6 +1688,7 @@ impl App {
             }
             targets.push((section.name.clone(), live.clone()));
         }
+        let nested = self.nested_targets(&played.channel, played.session.as_ref(), &name);
         for (section, live) in targets {
             // A reader paged away sees a count, not the rows, so there is no burst to batch.
             let paged_away = self.ui(&format!("s:{section}")).page > 0;
@@ -1416,6 +1703,114 @@ impl App {
                 _ => self.apply_live(&section, &live, &payload),
             }
         }
+        for node in nested {
+            match node.live.coalesce.as_deref().and_then(parse_duration) {
+                Some(window) if window > Duration::ZERO => {
+                    let batch = self
+                        .batches
+                        .entry(node.id())
+                        .or_insert_with(|| (played.at + window, Vec::new()));
+                    batch.1.push(payload.clone());
+                }
+                _ => self.apply_node_live(&node, &payload),
+            }
+        }
+    }
+
+    /// The nested live nodes shown that the event `name` reaches (beyond10x/ess#354). Each
+    /// reader applies its own `live` to its own rows, whatever a section or another node over the
+    /// same read does with the event; a reader drawn twice (a board widget per row over one
+    /// request) is one target, so no reader takes an event twice.
+    fn nested_targets(&self, channel: &str, session: Option<&Value>, name: &str) -> Vec<ShownLive> {
+        let mut taken = BTreeSet::new();
+        let mut nested = Vec::new();
+        for node in self.needed_reads().live {
+            let live = &node.live;
+            let named = live.on.is_empty() || live.on.iter().any(|event| event == name);
+            if live.channel != channel || !named {
+                continue;
+            }
+            if !self.in_session(channel, session, &node.request) {
+                continue;
+            }
+            if taken.insert(node.reader()) {
+                nested.push(node);
+            }
+        }
+        nested
+    }
+
+    /// The nested live node shown under `id` ([`ShownLive::id`]), if the screen shows it now.
+    fn shown_node(&self, id: &str) -> Option<ShownLive> {
+        self.needed_reads()
+            .live
+            .into_iter()
+            .find(|node| node.id() == id)
+    }
+
+    /// Applies one live event to the own rows of a nested node shown (beyond10x/ess#354): as a
+    /// section applies it to its rows, on rows no section pages.
+    fn apply_node_live(&mut self, node: &ShownLive, payload: &Value) {
+        let live = &node.live;
+        let key = node.request.key();
+        match self.read_state(&node.request) {
+            Some(ReadState::Ready(_)) => {}
+            // A refetch arriving while a read is outstanding is answered by that read.
+            None | Some(ReadState::Loading { .. }) if live.effect == Effect::Refetch => return,
+            None | Some(ReadState::Loading { .. }) => {
+                self.deferred.push((node.id(), payload.clone()));
+                return;
+            }
+            Some(ReadState::Failed(_)) => return,
+        }
+        if live.effect == Effect::Refetch {
+            if let Some(entry) = self.cache.get_mut(&key) {
+                entry.state = ReadState::Loading { since: self.now };
+            }
+            return;
+        }
+        let Some(rows) = self.own_rows(node).map(|result| result.rows.clone()) else {
+            return;
+        };
+        let match_field = live.match_field.as_deref().unwrap_or("id");
+        let identity = payload.get(match_field).map(display);
+        let existing = identity.as_ref().and_then(|identity| {
+            rows.iter()
+                .find(|row| row.get(match_field).map(display).as_ref() == Some(identity))
+        });
+        // The event is judged as the row it would leave behind: the current row patched by it.
+        let mut candidate = existing.cloned().unwrap_or(Value::Mapping(Mapping::new()));
+        merge(&mut candidate, payload);
+        if !self.passes(live, &node.request, &candidate) {
+            return;
+        }
+        let inserts =
+            existing.is_none() && matches!(live.effect, Effect::InsertOrPatch | Effect::InsertTop);
+        let ctx = Ctx {
+            section: node.section.as_deref(),
+            overlay: node.overlay,
+            row: Some(&candidate),
+            ..Ctx::default()
+        };
+        if inserts && !self.keeps(node.filter.as_ref(), &ctx) {
+            return;
+        }
+        if let Some(own) = self.own_rows(node) {
+            apply(live, &mut own.rows, payload);
+        }
+    }
+
+    /// Applies one payload to a target: a section of the page by name, else the nested live node
+    /// shown under that id ([`ShownLive::id`]); a target no longer shown takes nothing.
+    fn apply_to(&mut self, target: &str, payload: &Value) {
+        if let Some(live) = self
+            .section_by_name(target)
+            .and_then(|section| section.live.clone())
+        {
+            self.apply_live(target, &live, payload);
+        } else if let Some(node) = self.shown_node(target) {
+            self.apply_node_live(&node, payload);
+        }
     }
 
     /// Applies every coalesced batch whose window closed at or before `until`, as one change.
@@ -1426,18 +1821,12 @@ impl App {
             .filter(|(_, (deadline, _))| *deadline <= until)
             .map(|(section, _)| section.clone())
             .collect();
-        for section in due {
-            let Some((_, payloads)) = self.batches.remove(&section) else {
-                continue;
-            };
-            let Some(live) = self
-                .section_by_name(&section)
-                .and_then(|section| section.live.clone())
-            else {
+        for target in due {
+            let Some((_, payloads)) = self.batches.remove(&target) else {
                 continue;
             };
             for payload in payloads {
-                self.apply_live(&section, &live, &payload);
+                self.apply_to(&target, &payload);
             }
         }
     }
@@ -1515,6 +1904,14 @@ impl App {
             .filter_map(|(_, section)| self.section_request(section))
             .map(|request| request.key())
             .collect();
+        // And every nested live node shown that the channel feeds (beyond10x/ess#354).
+        keys.extend(
+            self.needed_reads()
+                .live
+                .into_iter()
+                .filter(|node| node.live.channel == channel)
+                .map(|node| node.request.key()),
+        );
         keys.extend(
             self.cache
                 .iter()
@@ -1643,14 +2040,8 @@ impl App {
     /// Applies the live events that waited for a read, in arrival order; those whose read is
     /// still outstanding wait again.
     fn apply_deferred(&mut self) {
-        for (section, payload) in std::mem::take(&mut self.deferred) {
-            let Some(live) = self
-                .section_by_name(&section)
-                .and_then(|section| section.live.clone())
-            else {
-                continue;
-            };
-            self.apply_live(&section, &live, &payload);
+        for (target, payload) in std::mem::take(&mut self.deferred) {
+            self.apply_to(&target, &payload);
         }
     }
 
@@ -2473,8 +2864,9 @@ impl App {
         Vec::new()
     }
 
-    /// The options of a choice: `(value, label)`. A row's value is its `field` key when the
-    /// choice belongs to a form field and the row carries one, else its `id`, else the row.
+    /// The options of a choice: `(value, label)`, each row's as [`ess_ui::Choice::row_option`]
+    /// says, with `field` the form field the choice picks for and the view's identity from the
+    /// binding of a bound run (beyond10x/ess#328).
     pub(crate) fn choice_options(
         &self,
         choice: &ess_ui::Choice,
@@ -2491,23 +2883,17 @@ impl App {
         let Some(reads) = &choice.reads else {
             return Vec::new();
         };
+        let identity = reads
+            .view
+            .as_deref()
+            .and_then(|view| self.bound.as_ref()?.view(view)?.identity.as_deref());
         self.read_rows(reads, ctx)
             .map(|result| {
                 result
                     .rows
                     .iter()
-                    .map(|row| {
-                        let value = field
-                            .and_then(|field| row.get(field))
-                            .or_else(|| row.get("id"))
-                            .cloned()
-                            .unwrap_or_else(|| row.clone());
-                        let label = row
-                            .get("label")
-                            .or_else(|| row.get("name"))
-                            .map_or_else(|| display(&value), display);
-                        (value, label)
-                    })
+                    .filter_map(|row| choice.row_option(row, field, identity))
+                    .map(|(value, label)| (value, display(&label)))
                     .collect()
             })
             .unwrap_or_default()

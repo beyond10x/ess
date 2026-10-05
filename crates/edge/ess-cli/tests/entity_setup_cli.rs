@@ -34,7 +34,7 @@ fn fresh_entity_setup_selects_executable_formats_and_requires_report_two() {
             let admitted = AdmittedSuite::from_json(&original).unwrap();
             assert_eq!(
                 admitted.suite().provenance.suite_version.major(),
-                if coverage { 7 } else { 6 }
+                if coverage { 35 } else { 34 }
             );
             assert!(original.contains("establish_entity"));
             let report = dir.path().join("report.json");
@@ -84,7 +84,7 @@ fn fresh_entity_setup_selects_executable_formats_and_requires_report_two() {
                     .unwrap();
                 assert_eq!(
                     selected.selected().suite().provenance.suite_version.major(),
-                    7
+                    35
                 );
                 assert_eq!(selected.parents()[0].original_json(), original);
             }

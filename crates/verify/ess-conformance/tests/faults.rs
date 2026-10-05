@@ -125,18 +125,13 @@ fn suite(system: System) -> ConformanceSuite {
     synthesize(&model_at(system.path())).suite
 }
 
-/// The report a run of `system`'s suite against `target` produces.
-///
-/// The retry fixture's suite observes retained results, which only an admitted run executes.
+/// The report an admitted run of `system`'s current suite against `target` produces.
 fn run<T: ConformanceTarget>(system: System, target: &T) -> ConformanceReport {
     let suite = suite(system);
-    if system == System::Retry {
-        let admitted = AdmittedSuite::from_suite(&suite).expect("the retry suite is admitted");
-        return Runner::for_suite(admitted.suite())
-            .run_admitted(&admitted, target)
-            .into_report();
-    }
-    Runner::for_suite(&suite).run(&suite, target).unwrap()
+    let admitted = AdmittedSuite::from_suite(&suite).expect("the synthesized suite is admitted");
+    Runner::for_suite(admitted.suite())
+        .run_admitted(&admitted, target)
+        .into_report()
 }
 
 /// The report a run against the implementation carrying `fault` produces.

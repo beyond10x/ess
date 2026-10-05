@@ -146,6 +146,7 @@ fn predicate(predicate: &Predicate, reads: &BTreeMap<String, usize>) -> String {
             left: Operand::Fact(path),
             op,
             right: Operand::Literal(value),
+            ..
         } => {
             let ess_primitives::facts::FactValue::Text(value) = value else {
                 unreachable!()
@@ -174,7 +175,10 @@ fn predicate(predicate: &Predicate, reads: &BTreeMap<String, usize>) -> String {
         Predicate::TextMatch {
             path,
             op,
-            value: ess_primitives::facts::FactValue::Text(literal),
+            value:
+                ess_primitives::predicate::TextOperand::Literal(ess_primitives::facts::FactValue::Text(
+                    literal,
+                )),
         } => {
             let id = reads[&path.to_string()];
             format!(
@@ -196,7 +200,17 @@ pub(super) fn prelude(
     out.push_str(&validators(emit, selection)?);
     let input_types = crate::selection::input_types(emit.ir, selection)?;
     let input_ids = crate::selection::type_ids(&input_types);
-    let zero = format!("{}{{}}", emit.reference(binding.command.name()));
+    // A transformation that also checks a member the condition proves present answers whether it
+    // was (beyond10x/ess#194) beside its selection failure.
+    let zero = format!(
+        "{}{{}}{}",
+        emit.reference(binding.command.name()),
+        if crate::condition::checks_presence(emit.ir, binding) {
+            ", false"
+        } else {
+            ""
+        }
+    );
     input_prelude(&mut out, emit, binding, selection, &zero)?;
     let _ = writeln!(out, "selected := [{}]int{{}}\nfor index := range selected {{ selected[index] = -1 }}\nselectionBytes := 0\n_ = selectionBytes", selection.plan.selectors.len());
     for (selector, plan) in selection.plan.selectors.iter().enumerate() {
@@ -361,9 +375,26 @@ fn validators(emit: &Emit<'_>, selection: &ResolvedSelectionPlan) -> Result<Stri
                     out.push_str("default: return SelectionInvalidInput\n}\n");
                 }
                 ResolvedBody::Union { variants, .. } => {
-                    out.push_str("switch branch := value.(type) {\n");
+                    // A unit variant (ess/22) carries nothing to validate, and Go refuses a
+                    // type-switch binding no clause reads.
+                    if variants.values().any(Option::is_some) {
+                        out.push_str("switch branch := value.(type) {\n");
+                    } else {
+                        out.push_str("switch value.(type) {\n");
+                    }
                     for (label, child) in variants {
-                        let _ = writeln!(out, "case {}: if cause := selectionValidate{}(branch.Value, bytes, depth+1); cause != \"\" {{ return cause }}", emit.reference_variant(handle.name(), label), ids[child]);
+                        match child {
+                            Some(child) => {
+                                let _ = writeln!(out, "case {}: if cause := selectionValidate{}(branch.Value, bytes, depth+1); cause != \"\" {{ return cause }}", emit.reference_variant(handle.name(), label), ids[child]);
+                            }
+                            None => {
+                                let _ = writeln!(
+                                    out,
+                                    "case {}:",
+                                    emit.reference_variant(handle.name(), label)
+                                );
+                            }
+                        }
                     }
                     out.push_str("default: return SelectionInvalidInput\n}\n");
                 }

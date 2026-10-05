@@ -7,7 +7,7 @@
 //! lists as generated, written against ports the implementor supplies.
 //!
 //! Storage is a port: one trait per entity, get, put and delete of a snapshot by identity. ess
-//! generates the trait and never a store. `Context` is the other port: the caller's attributes,
+//! preserves the trait; generated network entries supply an ephemeral store. `Context` carries the caller's attributes,
 //! every identity and value the model says the implementation assigns, and the answer to each
 //! `external:` branch. [`Generated`] implements every generated `…Behavior` trait over those ports
 //! and forwards every behaviour and query the plan still owes to them, so it is a complete bundle
@@ -22,7 +22,7 @@ use crate::obligation::UnmetObligation;
 
 /// Where `billing.invoice.Invoice` is stored — a port the implementor provides.
 ///
-/// Keyed by the identity `invoice_id`. ess generates this trait and never an implementation of it.
+/// Keyed by the identity `invoice_id`. Generated network entries supply an ephemeral implementation; durable storage remains a port.
 pub trait InvoiceStorage {
     /// The instance with this identity, or `None` where none is stored.
     fn get(&self, identity: &crate::invoice::InvoiceId) -> Option<crate::invoice::InvoiceSnapshot>;
@@ -36,6 +36,24 @@ pub trait InvoiceStorage {
     /// Every stored instance, in the order the store keeps them: the order a generated query
     /// answers an unordered view in.
     fn list(&self) -> Vec<crate::invoice::InvoiceSnapshot>;
+}
+
+/// The exact executing command input supplied to an external decision.
+///
+/// This supplies facts, not authority: the context must verify its request-bound proof.
+#[derive(Debug, Clone, Copy)]
+pub enum ExternalCommand<'a> {
+    /// The executing `billing.email.SendEmail` input.
+    BillingEmailSendEmail(&'a crate::email::SendEmail),
+}
+
+impl ExternalCommand<'_> {
+    /// The canonical qualified identity of this command.
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::BillingEmailSendEmail(_) => "billing.email.SendEmail",
+        }
+    }
 }
 
 /// What the specification leaves to the implementor's context — a port the implementor provides.
@@ -52,13 +70,30 @@ pub trait Context {
     /// Asked in declaration order, before the branch's input guard is read; the first branch
     /// answered `true` whose guard holds is taken. A test forces a branch by answering `true`
     /// for it alone; a deployment asks whatever decides it.
-    fn external(&mut self, command: &'static str, outcome: &'static str) -> bool;
+    fn external(&mut self, command: ExternalCommand<'_>, outcome: &'static str) -> bool;
 }
+
+/// Context answers that may be unavailable, without fabricated values.
+/// Existing `Context` implementations receive the blanket adapter.
+pub trait TryContext {
+/// Assigns the value, or names the unavailable answer.
+fn try_generate_billing_email_message_id(&mut self) -> Result<crate::email::MessageId, UnmetObligation>;
+/// Decides the named external branch, or names the unavailable answer.
+fn try_external(&mut self, command: ExternalCommand<'_>, outcome: &'static str) -> Result<bool, UnmetObligation>;
+}
+
+impl<T: Context + ?Sized> TryContext for T {
+fn try_generate_billing_email_message_id(&mut self) -> Result<crate::email::MessageId, UnmetObligation> { Ok(Context::generate_billing_email_message_id(self)) }
+fn try_external(&mut self, command: ExternalCommand<'_>, outcome: &'static str) -> Result<bool, UnmetObligation> { Ok(Context::external(self, command, outcome)) }
+}
+
+/// An unavailable runtime context answer, rather than a new planned capability.
+pub fn unmet_context(source: &'static str) -> UnmetObligation { UnmetObligation { capability: "context answer", source } }
 
 /// Every generated behaviour of this workspace, over the ports `P` supplies.
 ///
 /// `P` implements the storage trait of each entity a generated behaviour reads or writes,
-/// `Context` where one asks it anything, and every `…Behavior` and `…Query` trait the plan still
+/// `TryContext` (or its legacy `Context` blanket adapter) where one asks it anything, and every `…Behavior` and `…Query` trait the plan still
 /// owes; `Generated<P>` forwards those to it.
 pub struct Generated<P> {
     /// The storage and context ports, and every behaviour or query still owed.
@@ -75,16 +110,16 @@ impl<P> Generated<P> {
 /// `billing.email.SendEmail`, generated: every outcome is one the specification fully determines.
 impl<P> crate::email::obligations::SendEmailBehavior for Generated<P>
 where
-    P: Context,
+    P: TryContext,
 {
     fn send_email(&mut self, input: crate::email::SendEmail) -> Result<crate::email::SendEmailOutcome, UnmetObligation> {
         let _ = &input;
         // `failed`: an external branch, where the context takes it.
-        if self.ports.external("billing.email.SendEmail", "failed") {
+        if self.ports.try_external(ExternalCommand::BillingEmailSendEmail(&input), "failed")? {
             return Ok(crate::email::SendEmailOutcome::Failed { error: crate::email::Undeliverable });
         }
         // `sent`: the default.
-        return Ok(crate::email::SendEmailOutcome::Sent { email_sent: crate::email::EmailSent { message_id: self.ports.generate_billing_email_message_id(), recipient: input.recipient.clone() } });
+        return Ok(crate::email::SendEmailOutcome::Sent { email_sent: crate::email::EmailSent { message_id: self.ports.try_generate_billing_email_message_id()?, recipient: input.recipient.clone() } });
     }
 }
 
@@ -111,8 +146,9 @@ where
             let capability = "entity invariant";
             return Err(UnmetObligation { capability, source: broken });
         }
+        let answer = crate::invoice::CancelInvoiceOutcome::Cancelled { invoice_cancelled: crate::invoice::InvoiceCancelled { invoice_id: input.invoice_id.clone() } };
         InvoiceStorage::put(&mut self.ports, next);
-        return Ok(crate::invoice::CancelInvoiceOutcome::Cancelled { invoice_cancelled: crate::invoice::InvoiceCancelled { invoice_id: input.invoice_id.clone() } });
+        return Ok(answer);
     }
 }
 
@@ -145,8 +181,9 @@ where
             let capability = "entity invariant";
             return Err(UnmetObligation { capability, source: broken });
         }
+        let answer = crate::invoice::IssueInvoiceOutcome::Issued { invoice_issued: crate::invoice::InvoiceIssued { invoice_id: input.invoice_id.clone() } };
         InvoiceStorage::put(&mut self.ports, next);
-        return Ok(crate::invoice::IssueInvoiceOutcome::Issued { invoice_issued: crate::invoice::InvoiceIssued { invoice_id: input.invoice_id.clone() } });
+        return Ok(answer);
     }
 }
 

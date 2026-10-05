@@ -20,18 +20,19 @@
 //!
 //! # What the generated workspace is
 //!
-//! A standalone Cargo workspace with its own `[workspace]` root and zero third-party
-//! dependencies: one types crate with a module per bounded context, one crate per component
+//! A standalone Cargo workspace with its own `[workspace]` root: one types crate with a module per bounded context, one crate per component
 //! holding its port, and one system crate holding the bindings and the transport — the transport
-//! itself standard-library only, because an in-process delivery does not need a crate. Zero dependencies is a property of the
-//! *gate*, not a style preference: `cargo check` inside the generated tree is a step of
-//! `task check`, and a step that resolves crates is a step that reaches the network
-//! (AGENTS.md § Dependencies).
+//! itself standard-library only, because an in-process delivery does not need a crate. Network
+//! entries additionally use clap, uuid and time. The test crate admits those same dependencies
+//! so generated builds remain offline on a freshly populated gate cache.
 
 mod accessor;
 mod actor;
 pub(crate) mod behaviour;
+mod condition;
+mod context;
 mod entity;
+mod entry;
 pub(crate) mod feasibility;
 pub(crate) mod http;
 mod invariant;
@@ -44,6 +45,7 @@ pub(crate) mod port;
 mod reading;
 mod selection;
 pub(crate) mod single;
+mod store;
 pub(crate) mod system;
 pub(crate) mod wire;
 
@@ -153,11 +155,12 @@ fn emitted(
 ) -> Result<(Layout, Vec<Artifact>), crate::TargetFailure> {
     crate::failure::binary64(ir, plan, crate::Target::Rust)?;
     crate::failure::input_absent(ir, plan, crate::Target::Rust)?;
+    crate::failure::one_time_response(ir, plan, crate::Target::Rust)?;
     crate::set_effects::refuse(ir, plan, crate::Target::Rust)?;
     crate::paging::refuse(ir, plan, crate::Target::Rust)?;
     crate::view_query::refuse_unqueryable(ir, plan, crate::Target::Rust)?;
     crate::view_query::refuse_colliding_params(ir, plan, crate::Target::Rust, name::value_ident)?;
-    crate::failure::retry_bound(ir, plan, crate::Target::Rust)?;
+    crate::failure::binding_policies(ir, plan, crate::Target::Rust)?;
     let layout = feasibility::checked_shaped(ir, plan, crate::Target::Rust, single_crate)?;
     accessor::preflight(ir, plan, &layout)?;
     invariant::preflight(ir, plan, &layout)?;

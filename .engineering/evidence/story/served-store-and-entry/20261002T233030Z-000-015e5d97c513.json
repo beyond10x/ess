@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-02T23:30:30Z",
+  "actor": "human:timo",
+  "artifact": "story:served-store-and-entry",
+  "kind": "story",
+  "revision": 21,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "cargo test -p ess-synth --locked --no-fail-fast: 404 passed, 0 failed, 1 pre-existing ignored; exit 0",
+    "reference": "candidate:4a17f69b62f53e80bda3c32cdecd79f06fca1ac0; serial-20261003/318/package-after.log"
+  }
+}

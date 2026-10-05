@@ -1,0 +1,133 @@
+format: ess/22
+system: demo
+version: v1
+domain: demo.releases
+summary: Releases scheduled, maintained, promoted and deployed only inside calendar windows at fixed offsets.
+types:
+  - {name: demo.releases.ReleaseId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.releases.Release
+    identity: {name: release_id, type: demo.releases.ReleaseId}
+    fields:
+      - {name: ready_at, type: Timestamp}
+    lifecycle:
+      initial: Ready
+      states: [Ready, Promoted, Deployed]
+      terminal: [Deployed]
+      transitions:
+        - {name: promote, from: [Ready], to: Promoted}
+        - {name: deploy, from: [Promoted], to: Deployed}
+errors:
+  - {name: demo.releases.OutsideHours, summary: A change starts Monday to Thursday between 08:00 and 16:00 at +01:00., fields: []}
+  - {name: demo.releases.OutsideMaintenance, summary: Maintenance runs Friday 22:00 to Saturday 02:00 at -05:00., fields: []}
+  - {name: demo.releases.NotReady, summary: A release is promoted only if it became ready inside promotion hours., fields: []}
+  - {name: demo.releases.NotPromotable, summary: Only a ready release is promoted., fields: []}
+  - {name: demo.releases.UnknownRelease, summary: No release carries the identity., fields: []}
+  - {name: demo.releases.Frozen, summary: Deployments run Monday to Thursday between 08:00 and 16:00 at +01:00., fields: []}
+  - {name: demo.releases.TooEarly, summary: A release is deployed an hour after it became ready at the earliest., fields: []}
+  - {name: demo.releases.NotDeployable, summary: Only a promoted release is deployed., fields: []}
+events:
+  - name: demo.releases.Scheduled
+    fields:
+      - {name: starts_at, type: Timestamp}
+  - name: demo.releases.MaintenanceAllowed
+    fields:
+      - {name: requested_at, type: Timestamp}
+  - name: demo.releases.Prepared
+    fields:
+      - {name: release_id, type: demo.releases.ReleaseId}
+  - name: demo.releases.Promoted
+    fields:
+      - {name: release_id, type: demo.releases.ReleaseId}
+  - name: demo.releases.Deployed
+    fields:
+      - {name: release_id, type: demo.releases.ReleaseId}
+commands:
+  - name: demo.releases.Schedule
+    input:
+      - {name: starts_at, type: Timestamp}
+    outcomes:
+      - name: scheduled
+        when:
+          window: {at: starts_at, days: [mon, tue, wed, thu], from: "08:00", to: "16:00", offset: "+01:00"}
+        emits: [demo.releases.Scheduled]
+        payload:
+          demo.releases.Scheduled: {starts_at: input.starts_at}
+      - name: outside-hours
+        error: demo.releases.OutsideHours
+  - name: demo.releases.Maintain
+    input:
+      - {name: requested_at, type: Timestamp}
+    outcomes:
+      - name: allowed
+        when:
+          window: {at: requested_at, days: [fri], from: "22:00", to: "02:00", offset: "-05:00"}
+        emits: [demo.releases.MaintenanceAllowed]
+        payload:
+          demo.releases.MaintenanceAllowed: {requested_at: input.requested_at}
+      - name: outside-maintenance
+        error: demo.releases.OutsideMaintenance
+  - name: demo.releases.Prepare
+    input:
+      - {name: ready_at, type: Timestamp}
+    outcomes:
+      - name: prepared
+        creates: demo.releases.Release
+        instance: release_id
+        sets: {ready_at: input.ready_at}
+        emits: [demo.releases.Prepared]
+        payload:
+          demo.releases.Prepared: {release_id: {generated: true}}
+  - name: demo.releases.Promote
+    input:
+      - {name: release_id, type: demo.releases.ReleaseId}
+    outcomes:
+      - name: promoted
+        when_subject:
+          predicate:
+            window: {at: ready_at, days: [mon, tue, wed, thu], from: "08:00", to: "16:00", offset: "+01:00"}
+        moves: demo.releases.Release.promote
+        instance: release_id
+        emits: [demo.releases.Promoted]
+        payload:
+          demo.releases.Promoted: {release_id: input.release_id}
+      - name: not-ready
+        error: demo.releases.NotReady
+      - name: not-promotable
+        wrong_state: true
+        error: demo.releases.NotPromotable
+      - name: unknown-release
+        unknown_instance: true
+        error: demo.releases.UnknownRelease
+  - name: demo.releases.Deploy
+    input:
+      - {name: release_id, type: demo.releases.ReleaseId}
+    outcomes:
+      - name: frozen
+        when:
+          not:
+            window: {at: now, days: [mon, tue, wed, thu], from: "08:00", to: "16:00", offset: "+01:00"}
+        error: demo.releases.Frozen
+      - name: deployed
+        when_subject: {predicate: ready_at <= now - 1h}
+        moves: demo.releases.Release.deploy
+        instance: release_id
+        emits: [demo.releases.Deployed]
+        payload:
+          demo.releases.Deployed: {release_id: input.release_id}
+      - name: too-early
+        error: demo.releases.TooEarly
+      - name: not-deployable
+        wrong_state: true
+        error: demo.releases.NotDeployable
+      - name: unknown-release-to-deploy
+        unknown_instance: true
+        error: demo.releases.UnknownRelease
+views:
+  - name: demo.releases.Releases
+    source: demo.releases.Release
+    consistency: read_your_writes
+    fields:
+      - {name: release_id, type: demo.releases.ReleaseId}
+      - {name: ready_at, type: Timestamp}
+      - {name: state, type: demo.releases.Release.State}

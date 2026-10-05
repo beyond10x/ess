@@ -15,6 +15,67 @@ fn model_wire_mapping_builds_with_native_roundtrips() {
     );
 }
 
+/// The model types of a union mixing a unit variant with a payload variant (ess/22,
+/// beyond10x/ess#418), selected through the event that carries it.
+fn unit_variant_plan() -> Plan {
+    let text =
+        include_str!("../../../specify/ess-compiler/tests/fixtures/union-unit-variants.yaml");
+    let specification = ess_domain::spec::Specification::assemble([(
+        ess_domain::system::Source::new("work.yaml"),
+        ess_domain::spec::RawSpecFile::parse(text).unwrap(),
+    )])
+    .unwrap();
+    let ir =
+        ess_compiler::resolve::compile(&specification, &ess_compiler::source::SourceMap::new())
+            .unwrap();
+    let selected = ess_gen::schema::ModelTypes::select(
+        &ir,
+        &BTreeSet::from(["demo.work.StatusReported".to_owned()]),
+    )
+    .unwrap();
+    Plan::from_model(&selected).unwrap()
+}
+
+/// A unit variant is the tag alone: both variants round-trip, and a unit variant written with a
+/// content member, a payload variant written without one, and an undeclared tag are refused.
+const UNIT_VARIANT_WIRE: &str = r#"
+#[cfg(test)]
+mod unit_variant_wire {
+    use model_types::*;
+    use serde_json::json;
+
+    #[test]
+    fn a_unit_variant_round_trips_as_its_tag_alone() {
+        for status in [json!({"kind": "Open"}), json!({"kind": "Complete", "value": {"outcome": "shipped"}})] {
+            let decoded: DemoWorkStatus = serde_json::from_value(status.clone()).unwrap();
+            assert_eq!(serde_json::to_value(&decoded).unwrap(), status);
+            let event = json!({"status": status});
+            let decoded: DemoWorkStatusReported = serde_json::from_value(event.clone()).unwrap();
+            assert_eq!(serde_json::to_value(&decoded).unwrap(), event);
+        }
+        for malformed in [
+            json!({"kind": "Open", "value": {"outcome": "shipped"}}),
+            json!({"kind": "Open", "value": null}),
+            json!({"kind": "Complete"}),
+            json!({"kind": "Closed"}),
+        ] {
+            assert!(serde_json::from_value::<DemoWorkStatus>(malformed.clone()).is_err(), "{malformed}");
+        }
+    }
+}
+"#;
+
+#[test]
+fn model_unit_variant_round_trips_natively_and_refuses_the_malformed_shapes() {
+    let plan = unit_variant_plan();
+    let result = plan.rust("model_types").unwrap();
+    compile(
+        &result.supporting["Cargo.toml"],
+        &result.declarations,
+        UNIT_VARIANT_WIRE,
+    );
+}
+
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;

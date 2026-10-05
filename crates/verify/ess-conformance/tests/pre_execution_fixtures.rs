@@ -1,4 +1,6 @@
 //! Fixture inputs are chosen before execution, independently of observed output.
+mod support_versions;
+
 use ess_compiler::{resolve::compile, source::SourceMap};
 use ess_domain::{
     spec::{RawSpecFile, Specification},
@@ -8,7 +10,8 @@ use ess_domain::{
 const MODEL: &str = include_str!("fixtures/pre-execution-fixtures.yaml");
 
 use ess_conformance::{
-    report::Status, target::*, AdmittedSuite, ConformanceSuite, Runner, ScenarioStep,
+    report::Status, scenario::ScenarioInitialState, target::*, AdmittedSuite, ConformanceSuite,
+    Runner, ScenarioStep,
 };
 use ess_primitives::node::Node;
 use std::{
@@ -229,14 +232,31 @@ fn values_are_resolved_once_and_isolated_per_scenario() {
 fn fixture_admission_refuses_old_versions_unbound_references_and_late_preludes() {
     let suite = suite();
     let json = suite.to_canonical_json().unwrap();
-    assert_eq!(suite.provenance.suite_version.major(), 18);
-    for major in 1..18 {
+    assert_eq!(suite.provenance.suite_version.major(), 34);
+    assert_eq!(
+        suite.provenance.scenario_initial_state,
+        Some(ScenarioInitialState::Empty)
+    );
+    AdmittedSuite::from_json(&json).expect("fresh fixture suite is admitted");
+
+    assert_eq!(ess_conformance::fixtures::ORDINARY, 18);
+    assert_eq!(ess_conformance::fixtures::COVERAGE, 19);
+    let historical = support_versions::legacy_json(&json, ess_conformance::fixtures::ORDINARY);
+    let admitted = AdmittedSuite::from_json(&historical).expect("historical suite/18 is admitted");
+    assert_eq!(admitted.suite().provenance.suite_version.major(), 18);
+    assert_eq!(admitted.suite().provenance.scenario_initial_state, None);
+    assert_eq!(run(admitted.suite(), &Target::default()), Status::Passed);
+
+    // Only ordinary legacy envelopes: an odd post-/5 major without `coverage` would be refused for
+    // the envelope before the fixture vocabulary this case is meant to isolate.
+    for major in [1, 2, 3, 4, 6, 8, 10, 12, 14, 16] {
+        let older = support_versions::legacy_json(&historical, major);
+        assert!(older.contains(&format!("\"suite_version\":\"ess-conformance/{major}\"")));
+        assert!(!older.contains("scenario_initial_state"));
+        let refused = AdmittedSuite::from_json(&older).expect_err("fixtures need suite/18");
         assert!(
-            AdmittedSuite::from_json(
-                &json.replace("ess-conformance/18", &format!("ess-conformance/{major}"))
-            )
-            .is_err(),
-            "{major}"
+            refused.to_string().contains("newer suite major"),
+            "{major}: {refused}"
         );
     }
     for mutation in ["missing", "late", "duplicate", "unreferenced"] {
@@ -303,15 +323,44 @@ fn fixture_inventory_and_filtered_parent_retain_new_vocabulary() {
         .unwrap();
     assert_eq!(
         input.selected().suite().provenance.suite_version.major(),
-        19
+        35
     );
+    assert_eq!(
+        input.selected().suite().provenance.scenario_initial_state,
+        Some(ScenarioInitialState::Empty)
+    );
+
+    let historical = support_versions::legacy_json(
+        input.selected().original_json(),
+        ess_conformance::fixtures::COVERAGE,
+    );
+    let historical =
+        AdmittedSuite::from_json(&historical).expect("historical coverage suite/19 is admitted");
+    assert_eq!(historical.suite().provenance.suite_version.major(), 19);
+    assert_eq!(historical.suite().provenance.scenario_initial_state, None);
+    assert_eq!(
+        Runner::for_suite(historical.suite())
+            .run_admitted(&historical, &Target::default())
+            .scenarios[0]
+            .status,
+        Status::Passed
+    );
+
     let ids: Vec<_> = input.selected().suite().scenarios.keys().cloned().collect();
     let filtered = input.select(&ids).unwrap();
     let json = filtered.document().to_canonical_json().unwrap();
     let reparsed = AdmittedInput::from_json(&json).unwrap();
     assert_eq!(
         reparsed.selected().suite().provenance.suite_version.major(),
-        19
+        35
+    );
+    assert_eq!(
+        reparsed
+            .selected()
+            .suite()
+            .provenance
+            .scenario_initial_state,
+        Some(ScenarioInitialState::Empty)
     );
     assert_eq!(
         Runner::for_suite(reparsed.selected().suite())
@@ -470,6 +519,11 @@ fn authored_fixtures_refuse_old_formats_wrong_types_unknown_names_and_unused_dec
 #[test]
 fn emitted_runtimes_preserve_independent_fixture_values_and_reject_mutations() {
     let suite = suite();
+    assert_eq!(suite.provenance.suite_version.major(), 34);
+    assert_eq!(
+        suite.provenance.scenario_initial_state,
+        Some(ScenarioInitialState::Empty)
+    );
     native_fixture_cases(
         "ordinary",
         ess_conformance::go::emit(&suite).unwrap(),
@@ -487,6 +541,14 @@ fn emitted_coverage_runtimes_preserve_fixtures_with_exact_parent_lineage() {
         Origins::Generated,
     )
     .unwrap();
+    assert_eq!(
+        input.selected().suite().provenance.suite_version.major(),
+        35
+    );
+    assert_eq!(
+        input.selected().suite().provenance.scenario_initial_state,
+        Some(ScenarioInitialState::Empty)
+    );
     let ids: Vec<_> = input.selected().suite().scenarios.keys().cloned().collect();
     let filtered = input.select(&ids).unwrap();
     native_fixture_cases(
@@ -537,7 +599,7 @@ fn native_fixture_cases(
             std::fs::write(root.join(format!("{tool}-{mode}.log")), &log).unwrap();
             assert_eq!(
                 output.status.success(),
-                matches!(mode, "valid" | "unsupported"),
+                mode == "valid",
                 "{label} {tool} {mode}: {log}"
             );
             let executes = matches!(

@@ -86,6 +86,11 @@ impl<'d> Runner<'d> {
         })
     }
 
+    /// The page on screen.
+    pub(crate) fn current_page(&self) -> &str {
+        self.app.page()
+    }
+
     /// Runs one step.
     pub fn step(&mut self, step: &Step) -> Result<(), String> {
         match step {
@@ -280,7 +285,7 @@ impl<'d> Runner<'d> {
         let Body::Composite(Composite::Choice(definition)) = &bar.choices[position].body else {
             return Err(unsupported());
         };
-        let options = self.choice_options(definition);
+        let options = self.choice_options(definition, None);
         let index = options
             .iter()
             .position(|(value, label)| scalar(value) == option || label == option)
@@ -319,7 +324,7 @@ impl<'d> Runner<'d> {
         else {
             return Err(format!("{}: the field offers no options", target.written));
         };
-        let options = self.choice_options(choice);
+        let options = self.choice_options(choice, Some(&field.field));
         let (value, _) = options
             .iter()
             .find(|(value, label)| scalar(value) == option || label == option)
@@ -842,7 +847,10 @@ impl<'d> Runner<'d> {
         }
     }
 
-    fn choice_options(&self, choice: &ess_ui::Choice) -> Vec<(Value, String)> {
+    /// The options of a choice as the terminal lists them ([`ess_ui::Choice::row_option`]), with
+    /// `field` the form field it picks for (beyond10x/ess#328). A test run reads fixtures, so no
+    /// binding gives a view's identity.
+    fn choice_options(&self, choice: &ess_ui::Choice, field: Option<&str>) -> Vec<(Value, String)> {
         if !choice.options.is_empty() {
             return choice
                 .options
@@ -869,14 +877,8 @@ impl<'d> Runner<'d> {
                 result
                     .rows
                     .iter()
-                    .map(|row| {
-                        let value = row.get("id").cloned().unwrap_or_else(|| row.clone());
-                        let label = row
-                            .get("label")
-                            .or_else(|| row.get("name"))
-                            .map_or_else(|| scalar(&value), scalar);
-                        (value, label)
-                    })
+                    .filter_map(|row| choice.row_option(row, field, None))
+                    .map(|(value, label)| (value, scalar(&label)))
                     .collect()
             })
             .unwrap_or_default()

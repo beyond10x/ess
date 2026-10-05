@@ -184,7 +184,7 @@ const ordered = (values, check, key = value => value) => {
 }
 const suiteReference = value => {
   closed(value, 'version digest_profile digest')
-  require(['ess-conformance/5', 'ess-conformance/9'].includes(value.version) && value.digest_profile === 'sha256-json-bytes/1', 'unsupported suite reference')
+  require(['ess-conformance/5', 'ess-conformance/9', 'ess-conformance/35'].includes(value.version) && value.digest_profile === 'sha256-json-bytes/1', 'unsupported suite reference')
   sha(value.digest); return value
 }
 const referenceFor = suite => ({ version: suite.document.provenance.suite_version, digest_profile: 'sha256-json-bytes/1', digest: suite.digest })
@@ -402,7 +402,7 @@ const payloadAgreesWithShape = (payload, declared) => {
 }
 const stepFields = {
   configure_external_outcome: ['force', ''], execute_command: ['command', 'actor input'], expect_outcome: ['outcome', ''],
-  expect_error: ['error', 'fields'], expect_event: ['event', 'payload shape'], eventually_event: ['event', 'payload shape'],
+  expect_error: ['error', 'fields'], expect_event: ['event', 'payload shape'], expect_event_values: ['event payload', 'shape'], eventually_event: ['event', 'payload shape'],
   expect_no_event: ['event', ''], redeliver_event: ['event', ''], capture_instance: ['instance entity event field', ''],
   expect_invocation: ['binding command', 'input'], query_view: ['view', 'params'], expect_view: ['view expectation', ''],
   eventually_view: ['view expectation', 'params'], mark_instant: ['instant', ''], expect_not_before: ['instant elapsed', ''],
@@ -422,7 +422,16 @@ function step(value, major) {
       case 'step': break
       case 'actor': nullable(field, qualified); break
       case 'input': case 'params': result[key] = values(field); break
-      case 'fields': case 'payload': object(field); result[key] = node(field); break
+      case 'fields': case 'payload':
+        // Captured identities and literals an event must carry (suite/18, beyond10x/ess#273), as the
+        // references a command input holds; a fixture value is not one this replay can resolve.
+        if (value.step === 'expect_event_values') {
+          require(major >= 18, 'event value expectations require suite/18')
+          result[key] = values(field)
+          require(keys(result[key]).length > 0, 'an event value assertion must compare at least one field')
+          break
+        }
+        object(field); result[key] = node(field); break
       case 'shape': result[key] = shape(field); break
       case 'expectation':
         result[key] = expectation(field)
@@ -436,7 +445,11 @@ function step(value, major) {
       default: qualified(field)
     }
   }
-  if (own(result, 'payload') && own(result, 'shape')) payloadAgreesWithShape(result.payload, result.shape)
+  // An `expect_event_values` step's literals are held to its shape as `expect_event`'s are (#273); a
+  // reference resolves at run time and has no value to check here. `admission.rs` applies the same rule.
+  if (own(result, 'payload') && own(result, 'shape')) payloadAgreesWithShape(value.step === 'expect_event_values'
+    ? Object.fromEntries(Object.entries(result.payload).filter(([, held]) => held.kind === 'literal').map(([key, held]) => [key, held.value]))
+    : result.payload, result.shape)
   return result
 }
 const includes = (selection, origin) => selection.origins === 'generated_and_authored' || selection.origins === origin
@@ -495,7 +508,7 @@ function inventory(suite) {
       require(number !== undefined && r.subject !== null && r.source === null, 'invalid generated refusal')
       require(r.effect === ([5, 11, 12, 14].includes(number) ? 'check_not_emitted' : 'candidate_not_emitted'), 'refusal effect differs from code')
     } else {
-      require(Array.from({ length: 40 }, (_, i) => `ESS-AUTHOR-${String(i + 1).padStart(3, '0')}`).filter(c => c !== 'ESS-AUTHOR-036').includes(r.code) && r.effect === 'candidate_not_emitted', 'invalid authored refusal')
+      require(Array.from({ length: 41 }, (_, i) => `ESS-AUTHOR-${String(i + 1).padStart(3, '0')}`).filter(c => c !== 'ESS-AUTHOR-036').includes(r.code) && r.effect === 'candidate_not_emitted', 'invalid authored refusal')
       const source = c.authored_sources[r.source]
       require(r.source !== null && source !== undefined && source.disposition === 'refused' && source.scenario === r.scenario, 'refusal source disagrees')
       refusedSources.add(r.source)
@@ -517,8 +530,9 @@ function inventory(suite) {
 }
 export async function admitSuite(original) {
   const document = closed(parse(original), 'provenance scenarios coverage')
-  const p = closed(document.provenance, 'suite_version system specification_version spec_digest contract_digest', 'component')
-  require(['ess-conformance/5', 'ess-conformance/9'].includes(p.suite_version), 'replay requires suite/5 or /9')
+  const p = closed(document.provenance, 'suite_version system specification_version spec_digest contract_digest', 'component scenario_initial_state')
+  require(['ess-conformance/5', 'ess-conformance/9', 'ess-conformance/35'].includes(p.suite_version), 'replay requires suite/5, /9 or /35 with supported replay steps')
+  require(p.suite_version === 'ess-conformance/35' ? p.scenario_initial_state === 'empty' : !own(p, 'scenario_initial_state'), 'invalid scenario_initial_state')
   text(p.system); text(p.specification_version)
   modelDigest(p.spec_digest); modelDigest(p.contract_digest); if (own(p, 'component')) nullable(p.component, text)
   const meaning = Object.create(null)
@@ -527,7 +541,7 @@ export async function admitSuite(original) {
     const purpose = text(scenario.purpose)
     require(trim(purpose) !== '' && [...purpose].length <= 200 && !/[\x00-\x1f\x7f-\x9f]/.test(purpose), 'invalid scenario purpose')
     array(scenario.source).forEach(reference)
-    meaning[id] = { purpose, steps: array(scenario.steps).map(value => step(value, p.suite_version === 'ess-conformance/9' ? 9 : 5)), source: [...new Set(scenario.source.map(referenceKey))].sort(compare) }
+    meaning[id] = { purpose, steps: array(scenario.steps).map(value => step(value, Number(p.suite_version.slice('ess-conformance/'.length)))), source: [...new Set(scenario.source.map(referenceKey))].sort(compare) }
   }
   inventory(document)
   return { original, document, meaning, digest: await digest(original) }
@@ -613,7 +627,7 @@ export async function admitReplay(original) {
   const scenarios = Object.fromEntries(keys(selected.document.scenarios).map(id => [id, { ...selected.document.scenarios[id], steps: selected.document.scenarios[id].steps.map(value => {
     const result = { ...value }
     for (const key of ['input', 'params']) if (own(result, key)) result[key] = values(result[key])
-    for (const key of ['payload', 'fields']) if (own(result, key)) result[key] = node(result[key])
+    for (const key of ['payload', 'fields']) if (own(result, key)) result[key] = value.step === 'expect_event_values' ? values(result[key]) : node(result[key])
     return result
   }) }]))
   return { model: projection, suite: { provenance: p, scenarios }, description }

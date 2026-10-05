@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-04T13:57:45Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-222",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-conformance authored targets and ess-cli authored targets (integration tree)",
+    "reference": "baseline: authored_outcome_guards fails on base (no 041); adversary 3 red before correction (now-guards refused); treatment: conformance 262 passed 0 failed, ess-cli authored targets 64 passed 0 failed, diagnostics --check exit 0"
+  }
+}

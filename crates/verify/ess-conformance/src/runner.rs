@@ -54,6 +54,9 @@
 
 mod bounded_retry;
 mod delivery_context;
+mod disclosure;
+mod no_invocation;
+mod no_publication;
 
 use ess_domain::view::{Direction, Ranking};
 use std::cmp::Ordering;
@@ -376,9 +379,14 @@ impl<C: Clock> Runner<C> {
     ) -> ExecutedRun {
         let suite = admitted.suite();
         let started_at = self.clock.now();
-        let implementation = target
-            .identity()
-            .unwrap_or_else(|error| ImplementationIdentity::new("unidentified", error.to_string()));
+        let identity = target.identity();
+        let implementation = if crate::one_time_response::used_by(suite) {
+            ImplementationIdentity::new("one-time-protected-target", "")
+        } else {
+            identity.unwrap_or_else(|error| {
+                ImplementationIdentity::new("unidentified", error.to_string())
+            })
+        };
 
         let mut scenarios = Vec::with_capacity(suite.len());
         for (id, scenario) in &suite.scenarios {
@@ -409,6 +417,10 @@ impl<C: Clock> Runner<C> {
         let started = self.clock.now();
         let context = ScenarioContext::new(id.clone(), self.ids.correlation());
         let mut run = Run::new(id.clone(), context);
+        run.disclosure = scenario
+            .one_time_response
+            .clone()
+            .map(disclosure::Captures::new);
 
         let fixture_ready = match scenario.steps.first() {
             Some(ScenarioStep::ResolveFixtures { fixtures }) => {
@@ -444,16 +456,46 @@ impl<C: Clock> Runner<C> {
                         break;
                     }
                 }
-                if self.step(step, &mut run, target) == Flow::Stop {
+                // A read the next step requires refused keeps its answer for that step
+                // (beyond10x/ess#286).
+                run.read_refusal_expected = matches!(
+                    (step, scenario.steps.get(index + 1)),
+                    (
+                        ScenarioStep::QueryView { .. },
+                        Some(ScenarioStep::ExpectNotGranted { .. })
+                    )
+                );
+                if self.step(step, &mut run, target) == Flow::Stop || run.disclosure_stopped {
+                    break;
+                }
+                if self.disclosure_windows(scenario, index, &mut run, target) == Flow::Stop {
                     break;
                 }
             }
+            self.disclosure_final(scenario, &mut run, target);
             if let Err(error) = target.end_scenario(&run.context) {
                 run.record(target_failure(
                     &run.id,
                     "closing the execution context",
                     &error,
                 ));
+            }
+        }
+
+        if let Some(captures) = &run.disclosure {
+            if !run
+                .checks
+                .iter()
+                .any(|check| matches!(check.status, Status::Error | Status::Unsupported))
+            {
+                if captures.complete() {
+                    run.record(CheckResult::passed(
+                        CheckCode::Disclosure,
+                        "one-time disclosure trace",
+                    ));
+                } else {
+                    run.disclosure_violation(disclosure::Violation::Disclosure);
+                }
             }
         }
 
@@ -540,8 +582,15 @@ impl<C: Clock> Runner<C> {
             } => execute_command_without_input(command, (actor.as_ref(), caller), run, target),
             ScenarioStep::ExpectOutcome { outcome } => expect_outcome(outcome, run),
             ScenarioStep::ExpectNotGranted { actor, unpublished } => {
+                if let Some((view, answer)) = run.read_answer.take() {
+                    return expect_read_not_granted(actor.as_ref(), &view, &answer, run);
+                }
                 let now = self.clock.now();
-                expect_not_granted(actor, unpublished, Deadline::at(now), run, target)
+                expect_not_granted(actor.as_ref(), unpublished, Deadline::at(now), run, target)
+            }
+            ScenarioStep::ReadAs { actor } => {
+                run.reader = Some(actor.clone().map_or(Reader::Anonymous, Reader::Actor));
+                Flow::Continue
             }
             ScenarioStep::ExpectNoError => expect_no_error(run),
             ScenarioStep::SnapshotSubject { view, subject } => {
@@ -587,6 +636,17 @@ impl<C: Clock> Runner<C> {
                 selecting,
                 input,
             } => self.expect_every_invocation(binding, command, selecting, input, run, target),
+            ScenarioStep::ExpectNoInvocation {
+                binding,
+                command,
+                obligation,
+            } => self.expect_no_invocation(binding, command, obligation.as_deref(), run, target),
+            ScenarioStep::ExpectNoPublication { event } => {
+                self.expect_publications(event, None, run, target)
+            }
+            ScenarioStep::ExpectPublicationCount { event, count } => {
+                self.expect_publications(event, Some(*count), run, target)
+            }
             ScenarioStep::ExpectInvocation {
                 binding,
                 command,
@@ -707,7 +767,12 @@ impl<C: Clock> Runner<C> {
                 correlation: run.context.correlation.clone(),
                 deadline,
             };
-            let scan = match target.scan_view(request) {
+            let scan = match run.reader.as_ref() {
+                Some(Reader::Actor(reader)) => target.scan_view_as(request, reader),
+                Some(Reader::Anonymous) => target.scan_view_anonymous(request),
+                None => target.scan_view(request),
+            };
+            let scan = match scan {
                 Ok(scan) => scan,
                 Err(error) => {
                     run.record(target_failure(
@@ -878,12 +943,16 @@ impl<C: Clock> Runner<C> {
         let Ok(bound) = resolve_params(view, params, run) else {
             return Flow::Stop;
         };
+        let expected = std::mem::take(&mut run.read_refusal_expected);
         let consistency = match run.last_command.as_ref() {
             // Nothing has been written in this scenario, so there is no write to read no older
             // than. Synthesis never produces this, and a suite that does means it.
             None => QueryConsistency::Current,
             Some(executed) => {
                 let Some(token) = executed.result.consistency.clone() else {
+                    if expected {
+                        run.read_answer = Some((view.clone(), ReadAnswer::Unread));
+                    }
                     run.unreadable = Some((view.clone(), executed.command.clone()));
                     run.last_view = None;
                     return Flow::Continue;
@@ -899,11 +968,32 @@ impl<C: Clock> Runner<C> {
             correlation: run.context.correlation.clone(),
             deadline,
         };
-        match target.query_view(request) {
+        let answered = read(target, request, run.reader.as_ref());
+        match answered {
             Ok(result) => {
+                if !run.disclosure_rows(&result.rows) {
+                    return Flow::Stop;
+                }
                 run.unreadable = None;
+                if expected {
+                    run.read_answer = Some((view.clone(), ReadAnswer::Served));
+                }
                 run.last_view = Some((view.clone(), result));
                 Flow::Continue
+            }
+            // The refusal the next step requires, kept for it (beyond10x/ess#286).
+            Err(TargetError::NotGranted { actor }) if expected => {
+                run.unreadable = None;
+                run.last_view = None;
+                run.read_answer = Some((view.clone(), ReadAnswer::Refused(NotGranted { actor })));
+                Flow::Continue
+            }
+            // A refused read the scenario needed answered: failed, as the Go and TypeScript runners
+            // report it (beyond10x/ess#286).
+            Err(TargetError::NotGranted { actor }) => {
+                let refused = read_refused(view, run.reader.as_ref(), actor.as_deref(), run);
+                run.record(refused);
+                Flow::Stop
             }
             Err(error) => {
                 run.record(target_failure(
@@ -946,6 +1036,9 @@ impl<C: Clock> Runner<C> {
                 }
             };
             run.remember(&observed);
+            if run.disclosure_stopped {
+                return Flow::Stop;
+            }
             let carried = observed
                 .iter()
                 .find(|seen| &seen.event == event && matches(&seen.payload, payload))
@@ -1016,8 +1109,15 @@ impl<C: Clock> Runner<C> {
                 correlation: run.context.correlation.clone(),
                 deadline,
             };
-            let result = match target.query_view(request) {
+            let result = match read(target, request, run.reader.as_ref()) {
                 Ok(result) => result,
+                // A refused read is the target's answer, and not the one the scenario needed
+                // (beyond10x/ess#286): failed, as the Go and TypeScript runners report it.
+                Err(TargetError::NotGranted { actor }) => {
+                    let refused = read_refused(view, run.reader.as_ref(), actor.as_deref(), run);
+                    run.record(refused);
+                    return Flow::Stop;
+                }
                 Err(error) => {
                     run.record(target_failure(
                         &run.id,
@@ -1027,6 +1127,9 @@ impl<C: Clock> Runner<C> {
                     return Flow::Stop;
                 }
             };
+            if !run.disclosure_rows(&result.rows) {
+                return Flow::Stop;
+            }
             let verdict = decide(&required, &result);
             match verdict {
                 Verdict::Satisfied | Verdict::Undecidable { .. } => {
@@ -1207,6 +1310,12 @@ fn execute_command<T: ConformanceTarget>(
     };
     match target.execute_command(request) {
         Ok(result) => {
+            if let Some(captures) = &mut run.disclosure {
+                if let Err(violation) = captures.command(command, &result) {
+                    run.disclosure_violation(violation);
+                    return Flow::Stop;
+                }
+            }
             run.remember(&result.direct_events);
             run.last_command = Some(Executed {
                 command: command.to_string(),
@@ -1263,6 +1372,12 @@ fn execute_command_without_input<T: ConformanceTarget>(
     };
     match target.execute_command_without_input(request) {
         Ok(result) => {
+            if let Some(captures) = &mut run.disclosure {
+                if let Err(violation) = captures.command(command, &result) {
+                    run.disclosure_violation(violation);
+                    return Flow::Stop;
+                }
+            }
             run.remember(&result.direct_events);
             run.last_command = Some(Executed {
                 command: command.to_string(),
@@ -1337,7 +1452,7 @@ fn not_granted_seen(named: Option<&str>) -> String {
 /// The refusal must name that actor: a surface that refused a command sent as the ungranted actor
 /// while naming another — or none — refused a request the scenario did not send.
 fn expect_not_granted<T: ConformanceTarget>(
-    actor: &ActorRef,
+    actor: Option<&ActorRef>,
     unpublished: &[EventRef],
     deadline: Deadline,
     run: &mut Run,
@@ -1347,10 +1462,14 @@ fn expect_not_granted<T: ConformanceTarget>(
         run.record(no_command(&run.id, "the refusal an ungranted actor gets"));
         return Flow::Stop;
     };
-    let about = format!("not granted to {actor}");
-    let expected = not_granted_seen(Some(&actor.to_string()));
+    let actor_name = actor.map(ToString::to_string);
+    let about = format!(
+        "not granted to {}",
+        actor_name.as_deref().unwrap_or("no actor")
+    );
+    let expected = not_granted_seen(actor_name.as_deref());
     match &executed.not_granted {
-        Some(NotGranted { actor: Some(named) }) if *named == actor.to_string() => {
+        Some(NotGranted { actor: named }) if *named == actor_name => {
             run.record(CheckResult::passed(CheckCode::Outcome, about));
             // Only a refused send is held to having set nothing in motion; one that ran has
             // already failed, and the Go and TypeScript runners stop there too.
@@ -1369,14 +1488,100 @@ fn expect_not_granted<T: ConformanceTarget>(
                     },
                 ),
             };
-            let diagnostic = Diagnostic::new(CheckCode::Outcome, run.id.clone())
-                .declared_by(actor.clone())
+            let diagnostic = declared(Diagnostic::new(CheckCode::Outcome, run.id.clone()), actor)
                 .executing(executed.quoted())
                 .expected(expected)
                 .observed(seen);
             run.record(CheckResult::failed(about, diagnostic));
         }
     }
+    Flow::Continue
+}
+
+/// `diagnostic`, declared by `actor` where the step names one.
+fn declared(diagnostic: Diagnostic, actor: Option<&ActorRef>) -> Diagnostic {
+    match actor {
+        Some(actor) => diagnostic.declared_by(actor.clone()),
+        None => diagnostic,
+    }
+}
+
+/// Who reads are sent as, after a `ReadAs` step (beyond10x/ess#286).
+enum Reader {
+    /// The declared actor the step named.
+    Actor(ActorRef),
+    /// No actor: an unauthenticated read.
+    Anonymous,
+}
+
+/// One read: as the actor a `ReadAs` step named, as no actor after one naming none, and as the
+/// harness before any (beyond10x/ess#286).
+fn read<T: ConformanceTarget>(
+    target: &T,
+    request: SemanticViewRequest,
+    reader: Option<&Reader>,
+) -> Result<SemanticViewResult, TargetError> {
+    match reader {
+        Some(Reader::Actor(reader)) => target.query_view_as(request, reader),
+        Some(Reader::Anonymous) => target.query_view_anonymous(request),
+        None => target.query_view(request),
+    }
+}
+
+/// A read the scenario needed answered, refused as not granted (beyond10x/ess#286): a failed
+/// check, as the Go and TypeScript runners report it, and not a target error.
+fn read_refused(
+    view: &ViewRef,
+    reader: Option<&Reader>,
+    named: Option<&str>,
+    run: &Run,
+) -> CheckResult {
+    let sent = match reader {
+        Some(Reader::Actor(actor)) => format!("`{actor}`"),
+        Some(Reader::Anonymous) => "no actor".to_owned(),
+        None => "the harness, as no actor".to_owned(),
+    };
+    let diagnostic = Diagnostic::new(CheckCode::Outcome, run.id.clone())
+        .declared_by(view.clone())
+        .expected(format!("`{view}` read as {sent} answers its rows"))
+        .observed(not_granted_seen(named));
+    CheckResult::failed(format!("reading {view}"), diagnostic)
+}
+
+/// Requires that the read just made of `view` was refused with the standard refusal for an actor
+/// no grant admits, naming the actor it was read as (beyond10x/ess#286).
+///
+/// A view that was served is the defect the scenario exists to catch: the target read a read-granted
+/// view to an actor its grant does not name. One that was not read at all is not a refusal either.
+fn expect_read_not_granted(
+    actor: Option<&ActorRef>,
+    view: &ViewRef,
+    answer: &ReadAnswer,
+    run: &mut Run,
+) -> Flow {
+    let actor_name = actor.map(ToString::to_string);
+    let about = format!(
+        "reading {view} not granted to {}",
+        actor_name.as_deref().unwrap_or("no actor")
+    );
+    if let ReadAnswer::Refused(NotGranted { actor: named }) = answer {
+        if *named == actor_name {
+            run.record(CheckResult::passed(CheckCode::Outcome, about));
+            return Flow::Continue;
+        }
+    }
+    let seen = match answer {
+        ReadAnswer::Refused(refused) => not_granted_seen(refused.actor.as_deref()),
+        ReadAnswer::Served => format!("`{view}` was served; the target checked no read grant"),
+        ReadAnswer::Unread => format!(
+            "`{view}` was not read: the command before it returned no consistency token, so the \
+             refusal of the read was not observed"
+        ),
+    };
+    let diagnostic = declared(Diagnostic::new(CheckCode::Outcome, run.id.clone()), actor)
+        .expected(not_granted_seen(actor_name.as_deref()))
+        .observed(seen);
+    run.record(CheckResult::failed(about, diagnostic));
     Flow::Continue
 }
 
@@ -1399,7 +1604,7 @@ fn log_count<T: ConformanceTarget>(
         Ok(observed) => {
             let count = observed.iter().filter(|seen| &seen.event == event).count();
             run.remember(&observed);
-            Some(count)
+            (!run.disclosure_stopped).then_some(count)
         }
         Err(error) => {
             run.record(target_failure(
@@ -2612,6 +2817,16 @@ struct Executed {
     not_granted: Option<NotGranted>,
 }
 
+/// The answer to a read the next step requires refused (beyond10x/ess#286).
+enum ReadAnswer {
+    /// The view was served: the target checked no read grant.
+    Served,
+    /// The read was refused with the standard refusal.
+    Refused(NotGranted),
+    /// The read was not made: the command before it returned no consistency token.
+    Unread,
+}
+
 /// The standard refusal a target answered for a command (beyond10x/ess#265).
 struct NotGranted {
     /// The actor it names; `None` where it names none.
@@ -2661,6 +2876,8 @@ fn resolve_fixtures<T: ConformanceTarget>(
 
 /// What one scenario has established so far.
 struct Run {
+    disclosure: Option<disclosure::Captures>,
+    disclosure_stopped: bool,
     id: ScenarioId,
     context: ScenarioContext,
     last_command: Option<Executed>,
@@ -2684,12 +2901,21 @@ struct Run {
     /// How many occurrences of each event a refused send must not add were in the target's log just
     /// before that send (beyond10x/ess#265).
     log_before: BTreeMap<EventRef, usize>,
+    /// The actor every read is sent as since the last `ReadAs` step; `None` before one
+    /// (beyond10x/ess#286).
+    reader: Option<Reader>,
+    /// Whether the read about to be made is one the next step requires refused (beyond10x/ess#286).
+    read_refusal_expected: bool,
+    /// The answer to that read, and the view it was of.
+    read_answer: Option<(ViewRef, ReadAnswer)>,
     checks: Vec<CheckResult>,
 }
 
 impl Run {
     fn new(id: ScenarioId, context: ScenarioContext) -> Self {
         Self {
+            disclosure: None,
+            disclosure_stopped: false,
             id,
             context,
             last_command: None,
@@ -2706,21 +2932,73 @@ impl Run {
             now: crate::now_offset::Resolved::default(),
             seen: Vec::new(),
             log_before: BTreeMap::new(),
+            reader: None,
+            read_refusal_expected: false,
+            read_answer: None,
             checks: Vec::new(),
         }
     }
 
-    fn record(&mut self, check: CheckResult) {
+    fn record(&mut self, mut check: CheckResult) {
+        if self.disclosure.is_some() {
+            check.about = "one-time protected observation".into();
+            if check.diagnostic.is_some() {
+                check.diagnostic = Some(
+                    Diagnostic::new(check.code, self.id.clone())
+                        .expected(check.code.rule())
+                        .observed("protected observation did not satisfy the declared rule"),
+                );
+            }
+        }
         self.checks.push(check);
+    }
+
+    fn disclosure_violation(&mut self, violation: disclosure::Violation) {
+        let check = match violation {
+            disclosure::Violation::Resource => target_failure(
+                &self.id,
+                "one-time observation bound",
+                &TargetError::unsupported("one-time observation", "finite resource bound exceeded"),
+            ),
+            disclosure::Violation::Disclosure | disclosure::Violation::Payload => {
+                let code = if matches!(violation, disclosure::Violation::Payload) {
+                    CheckCode::Payload
+                } else {
+                    CheckCode::Disclosure
+                };
+                CheckResult::failed(
+                    "one-time observation",
+                    Diagnostic::new(code, self.id.clone()),
+                )
+            }
+        };
+        self.record(check);
+        self.disclosure_stopped = true;
     }
 
     /// Remembers occurrences observed away from a command, without recording one twice.
     fn remember(&mut self, observed: &[ObservedEvent]) {
+        if let Some(captures) = &self.disclosure {
+            if let Err(violation) = captures.maps(observed.iter().map(|event| &event.payload)) {
+                self.disclosure_violation(violation);
+                return;
+            }
+        }
         for event in observed {
             if !self.seen.contains(event) {
                 self.seen.push(event.clone());
             }
         }
+    }
+
+    fn disclosure_rows(&mut self, rows: &[ViewRow]) -> bool {
+        if let Some(captures) = &self.disclosure {
+            if let Err(violation) = captures.maps(rows) {
+                self.disclosure_violation(violation);
+                return false;
+            }
+        }
+        true
     }
 
     /// Turns a suite's reference into the value this run bound for it.
@@ -3238,8 +3516,13 @@ fn satisfies(predicate: &Predicate, result: &SemanticViewResult) -> Verdict {
     if result.rows.is_empty() {
         return Verdict::Unsatisfied("the view holds no rows".to_owned());
     }
+    let sequences = crate::expression_format::binds_sequences(predicate);
     for row in &result.rows {
-        let facts = row_facts(row);
+        let facts = if sequences {
+            row_facts_with_sequences(row)
+        } else {
+            row_facts(row)
+        };
         let outcome = predicate.outcome(&facts);
         match outcome.truth {
             Truth::True => {}
@@ -3426,7 +3709,7 @@ fn quote_row(row: &ViewRow) -> String {
 /// spell. A mapping or a sequence is present at its own path (beyond10x/ess#176). A row that does
 /// not publish what a predicate reads makes that predicate `Unknown`, which
 /// [`decide`] reports rather than retries.
-fn row_facts(row: &ViewRow) -> FactStore {
+pub(crate) fn row_facts(row: &ViewRow) -> FactStore {
     let mut facts = FactStore::new();
     for (field, value) in row {
         if let Ok(path) = FactPath::new(field) {
@@ -3434,6 +3717,41 @@ fn row_facts(row: &ViewRow) -> FactStore {
         }
     }
     facts
+}
+
+/// [`row_facts`], with every sequence also bound element by element at `<path>.<index>` beside its
+/// `<path>.count` — the binding the Go and TypeScript runners give every row — for a predicate whose
+/// collection reads suite `/40` admits (final review decision 1, [`binds_sequences`]).
+///
+/// [`binds_sequences`]: crate::expression_format::binds_sequences
+pub(crate) fn row_facts_with_sequences(row: &ViewRow) -> FactStore {
+    let mut facts = FactStore::new();
+    for (field, value) in row {
+        if let Ok(path) = FactPath::new(field) {
+            bind_sequences(&path, value, &mut facts);
+        }
+    }
+    facts
+}
+
+/// [`bind`], walking into a sequence as well.
+fn bind_sequences(path: &FactPath, value: &Node, facts: &mut FactStore) {
+    match value {
+        Node::Seq(items) => {
+            facts.mark_present(path.clone());
+            facts.set(path.child("count"), FactValue::count(items.len()));
+            for (index, item) in items.iter().enumerate() {
+                bind_sequences(&path.child(&index.to_string()), item, facts);
+            }
+        }
+        Node::Map(entries) => {
+            facts.mark_present(path.clone());
+            for (key, entry) in entries {
+                bind_sequences(&path.child(key), entry, facts);
+            }
+        }
+        scalar => bind(path, scalar, facts),
+    }
 }
 
 /// Binds one scalar leaf, or walks into a mapping.
@@ -3550,6 +3868,8 @@ mod tests {
             )
             .expect("a digest"),
             component: None,
+            scenario_initial_state: None,
+            synthesis_seeds: None,
         }));
 
         assert_eq!(

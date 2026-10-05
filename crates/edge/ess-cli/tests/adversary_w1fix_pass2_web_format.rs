@@ -65,7 +65,7 @@ fn adversary_w1fix_pass2_the_web_verb_writes_an_authored_presence_predicate_in_s
         "the authored predicate is in the emitted suite ({listing:?}): {suite}"
     );
     assert!(
-        suite.contains("\"ess-conformance/26\""),
-        "the emitted suite is suite/26: {suite}"
+        suite.contains("\"ess-conformance/34\""),
+        "the emitted suite is suite/34: {suite}"
     );
 }

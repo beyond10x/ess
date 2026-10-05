@@ -7,6 +7,7 @@
 package billing
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -493,9 +494,18 @@ func reached(transition string) string {
 	}
 }
 
+// positive reads the amount as either number carrier a suite input holds: `float64`, or the
+// `json.Number` an exactly decoded suite (suite/12 and later) passes through.
 func positive(amount map[string]any) bool {
-	value, ok := amount["amount"].(float64)
-	return ok && value > 0
+	switch value := amount["amount"].(type) {
+	case float64:
+		return value > 0
+	case json.Number:
+		parsed, err := value.Float64()
+		return err == nil && parsed > 0
+	default:
+		return false
+	}
 }
 
 func sortStrings(values []string) {

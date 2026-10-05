@@ -1,0 +1,196 @@
+format: ess/22
+system: demo
+version: v1
+domain: demo.leases
+summary: Leases renewed, and books lent, by the moment each decision is made against the rows it reads.
+types:
+  - {name: demo.leases.LeaseId, kind: newtype, of: Uuid}
+  - {name: demo.leases.MemberId, kind: newtype, of: Uuid}
+  - {name: demo.leases.BookId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.leases.Member
+    identity: {name: member_id, type: demo.leases.MemberId}
+    fields:
+      - {name: banned_until, type: Timestamp}
+    lifecycle:
+      initial: Registered
+      states: [Registered]
+      terminal: [Registered]
+  - name: demo.leases.Book
+    identity: {name: book_id, type: demo.leases.BookId}
+    fields:
+      - {name: embargo_until, type: Timestamp}
+    lifecycle:
+      initial: Shelved
+      states: [Shelved]
+      terminal: [Shelved]
+  - name: demo.leases.Lease
+    identity: {name: lease_id, type: demo.leases.LeaseId}
+    fields:
+      - {name: expires_at, type: Timestamp}
+      - {name: grace_until, type: Timestamp}
+    lifecycle:
+      initial: Active
+      states: [Active, Renewed]
+      terminal: [Renewed]
+      transitions:
+        - {name: renew, from: [Active], to: Renewed}
+errors:
+  - {name: demo.leases.BlankNote, summary: A renewal names why it is asked for., fields: []}
+  - {name: demo.leases.Lapsed, summary: The lease and its grace have both run out., fields: []}
+  - {name: demo.leases.NotActive, summary: Only an active lease is renewed., fields: []}
+  - {name: demo.leases.UnknownLease, summary: No lease carries the identity., fields: []}
+  - {name: demo.leases.NoMember, summary: No member carries the identity., fields: []}
+  - {name: demo.leases.NoBook, summary: No book carries the identity., fields: []}
+  - {name: demo.leases.TooFew, summary: A loan lends at least one copy., fields: []}
+  - {name: demo.leases.Banned, summary: The member is banned for more than half a minute yet., fields: []}
+  - {name: demo.leases.Embargoed, summary: The book's embargo ended less than two minutes ago., fields: []}
+events:
+  - name: demo.leases.MemberRegistered
+    fields:
+      - {name: member_id, type: demo.leases.MemberId}
+  - name: demo.leases.BookAdded
+    fields:
+      - {name: book_id, type: demo.leases.BookId}
+  - name: demo.leases.LeaseOpened
+    fields:
+      - {name: lease_id, type: demo.leases.LeaseId}
+  - name: demo.leases.LeaseRenewed
+    fields:
+      - {name: lease_id, type: demo.leases.LeaseId}
+  - name: demo.leases.LeaseGraced
+    fields:
+      - {name: lease_id, type: demo.leases.LeaseId}
+  - name: demo.leases.Joined
+    fields:
+      - {name: member_id, type: demo.leases.MemberId}
+  - name: demo.leases.Lent
+    fields:
+      - {name: book_id, type: demo.leases.BookId}
+commands:
+  - name: demo.leases.RegisterMember
+    input:
+      - {name: banned_until, type: Timestamp}
+    outcomes:
+      - name: registered
+        creates: demo.leases.Member
+        instance: member_id
+        sets: {banned_until: input.banned_until}
+        emits: [demo.leases.MemberRegistered]
+        payload:
+          demo.leases.MemberRegistered: {member_id: {generated: true}}
+  - name: demo.leases.AddBook
+    input:
+      - {name: embargo_until, type: Timestamp}
+    outcomes:
+      - name: added
+        creates: demo.leases.Book
+        instance: book_id
+        sets: {embargo_until: input.embargo_until}
+        emits: [demo.leases.BookAdded]
+        payload:
+          demo.leases.BookAdded: {book_id: {generated: true}}
+  - name: demo.leases.OpenLease
+    input:
+      - {name: expires_at, type: Timestamp}
+      - {name: grace_until, type: Timestamp}
+    outcomes:
+      - name: opened
+        creates: demo.leases.Lease
+        instance: lease_id
+        sets: {expires_at: input.expires_at, grace_until: input.grace_until}
+        emits: [demo.leases.LeaseOpened]
+        payload:
+          demo.leases.LeaseOpened: {lease_id: {generated: true}}
+  - name: demo.leases.RenewLease
+    input:
+      - {name: lease_id, type: demo.leases.LeaseId}
+      - {name: new_expires_at, type: Timestamp}
+      - {name: note, type: String}
+    outcomes:
+      - name: blank-note
+        when: note == ""
+        error: demo.leases.BlankNote
+      - name: renewed
+        when_subject: {predicate: expires_at >= now - 1h}
+        moves: demo.leases.Lease.renew
+        instance: lease_id
+        sets: {expires_at: input.new_expires_at}
+        emits: [demo.leases.LeaseRenewed]
+        payload:
+          demo.leases.LeaseRenewed: {lease_id: input.lease_id}
+      - name: graced
+        when_subject: {predicate: grace_until > now + 5m}
+        moves: demo.leases.Lease.renew
+        instance: lease_id
+        emits: [demo.leases.LeaseGraced]
+        payload:
+          demo.leases.LeaseGraced: {lease_id: input.lease_id}
+      - name: lapsed
+        error: demo.leases.Lapsed
+      - name: not-active
+        wrong_state: true
+        error: demo.leases.NotActive
+      - name: unknown-lease
+        unknown_instance: true
+        error: demo.leases.UnknownLease
+  - name: demo.leases.Join
+    input:
+      - {name: member_id, type: demo.leases.MemberId}
+    outcomes:
+      - name: no-member-to-join
+        when_related: {via: input.member_id, exists: false}
+        error: demo.leases.NoMember
+      - name: banned-from-joining
+        when_related: {via: input.member_id, predicate: banned_until > now + 30s}
+        error: demo.leases.Banned
+      - name: joined
+        emits: [demo.leases.Joined]
+        payload:
+          demo.leases.Joined: {member_id: input.member_id}
+  - name: demo.leases.Lend
+    input:
+      - {name: member_id, type: demo.leases.MemberId}
+      - {name: book_id, type: demo.leases.BookId}
+      - {name: copies, type: Integer}
+    outcomes:
+      - name: no-member
+        when_related: {via: input.member_id, exists: false}
+        error: demo.leases.NoMember
+      - name: no-book
+        when_related: {via: input.book_id, exists: false}
+        error: demo.leases.NoBook
+      - name: too-few
+        when: copies < 1
+        error: demo.leases.TooFew
+      - name: banned
+        when_related: {via: input.member_id, predicate: banned_until > now + 30s}
+        error: demo.leases.Banned
+      - name: embargoed
+        when_related: {via: input.book_id, predicate: embargo_until >= now - 2m}
+        error: demo.leases.Embargoed
+      - name: lent
+        emits: [demo.leases.Lent]
+        payload:
+          demo.leases.Lent: {book_id: input.book_id}
+views:
+  - name: demo.leases.Members
+    source: demo.leases.Member
+    consistency: read_your_writes
+    fields:
+      - {name: member_id, type: demo.leases.MemberId}
+      - {name: banned_until, type: Timestamp}
+  - name: demo.leases.Books
+    source: demo.leases.Book
+    consistency: read_your_writes
+    fields:
+      - {name: book_id, type: demo.leases.BookId}
+      - {name: embargo_until, type: Timestamp}
+  - name: demo.leases.Leases
+    source: demo.leases.Lease
+    consistency: read_your_writes
+    fields:
+      - {name: lease_id, type: demo.leases.LeaseId}
+      - {name: expires_at, type: Timestamp}
+      - {name: grace_until, type: Timestamp}
+      - {name: state, type: demo.leases.Lease.State}

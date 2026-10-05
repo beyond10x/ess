@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 )
 
 func recordFixture(method string, request any) {
@@ -19,7 +20,10 @@ func recordFixture(method string, request any) {
 	}
 }
 
-type fixtureTarget struct{ *Target }
+type fixtureTarget struct {
+	*Target
+	legacyIssued int
+}
 
 func (target *fixtureTarget) Identity() (essconform.Identity, error) {
 	recordFixture("identity", nil)
@@ -30,6 +34,7 @@ func (target *fixtureTarget) Identity() (essconform.Identity, error) {
 }
 func (target *fixtureTarget) BeginScenario(request essconform.ScenarioContext) error {
 	recordFixture("begin", request)
+	target.legacyIssued = 0
 	return target.Target.BeginScenario(request)
 }
 func (target *fixtureTarget) EndScenario(request essconform.ScenarioContext) error {
@@ -49,6 +54,20 @@ func (target *fixtureTarget) ExecuteCommand(request essconform.CommandRequest) (
 			return essconform.CommandResult{}, essconform.ErrUnsupported
 		default:
 			return essconform.CommandResult{Outcome: "accepted"}, nil
+		}
+	}
+	// These immutable coverage fixtures describe the older billing contract, whose host supplied
+	// issuance time. Keep that compatibility here, after recording the original callback; the
+	// current example target itself requires explicit input and never invents timestamps.
+	if request.Command == "billing.invoice.IssueInvoice" {
+		if _, present := request.Input["issued_at"]; !present {
+			target.legacyIssued++
+			input := make(map[string]essconform.Node, len(request.Input)+1)
+			for key, value := range request.Input {
+				input[key] = value
+			}
+			input["issued_at"] = time.Date(2020, 1, 1, 0, 0, target.legacyIssued, 0, time.UTC).Format(time.RFC3339)
+			request.Input = input
 		}
 	}
 	return target.Target.ExecuteCommand(request)
@@ -88,6 +107,6 @@ func (target *fixtureTarget) ScanView(request essconform.ScanRequest) (essconfor
 func TestConformance(t *testing.T) {
 	essconform.Run(t, func() essconform.Target {
 		recordFixture("target_factory", nil)
-		return &fixtureTarget{New("")}
+		return &fixtureTarget{Target: New("")}
 	})
 }

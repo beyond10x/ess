@@ -152,7 +152,7 @@ fn every_handle_in_the_ir_names_something_the_ir_holds() {
         );
     }
     for command in ir.commands().values() {
-        assert!(!ir.domain(&command.domain).name.to_string().is_empty());
+        assert_ne!(ir.domain(&command.domain).name.to_string().len(), 0);
         for field in &command.input {
             for leaf in field.type_ref.named_leaves() {
                 let _ = ir.named_type(leaf);
@@ -233,7 +233,11 @@ fn a_field_keeps_the_shape_of_its_type_rather_than_a_rendering_of_it() {
         panic!("the example declares Payee as a union");
     };
     assert_eq!(tag, "kind");
-    let person = variants.get("person").expect("a person variant");
+    let person = variants
+        .get("person")
+        .expect("a person variant")
+        .as_ref()
+        .expect("a payload variant");
     assert_eq!(
         person.declared().expect("a named type").name(),
         &name("billing.invoice.Email"),

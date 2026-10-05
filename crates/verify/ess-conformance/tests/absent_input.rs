@@ -276,7 +276,7 @@ fn the_issue_repro_synthesizes_a_scenario_that_sends_no_input_and_requires_the_e
     );
     assert_eq!(
         synthesis.suite.provenance.suite_version.to_string(),
-        "ess-conformance/26"
+        "ess-conformance/34"
     );
     let absent = scenario(&synthesis.suite, ID);
     let ScenarioStep::ExecuteCommandWithoutInput { command, actor, .. } = &absent.steps[0] else {
@@ -331,6 +331,102 @@ fn every_scenario_passes_against_the_behaviour_the_issue_describes() {
         not_passed(&statuses).is_empty(),
         "every scenario passes: {:#?}",
         not_passed(&statuses)
+    );
+}
+
+#[test]
+fn the_interpreter_executes_both_absent_and_supplied_input_scenarios() {
+    let ir = ir_of(MODEL);
+    let suite = ess_conformance::synthesize::synthesize(&ir).suite;
+    let statuses = run(
+        &suite,
+        &ess_conformance::interpret::Interpreted::for_model(ir),
+    );
+    assert_eq!(statuses.len(), 3, "{statuses:#?}");
+    assert_eq!(statuses[ID], Status::Passed);
+    assert!(not_passed(&statuses).is_empty(), "{statuses:#?}");
+}
+
+#[test]
+fn interpreted_absence_preserves_rows_and_differs_from_empty_and_ungranted_requests() {
+    use ess_primitives::{consistency::QueryConsistency, ids::CorrelationId};
+    let target = ess_conformance::interpret::Interpreted::for_model(ir_of(MODEL));
+    let correlation = CorrelationId::new("absent-control").unwrap();
+    target
+        .begin_scenario(&ScenarioContext::new(
+            "demo.notes/authored/absent-control".parse().unwrap(),
+            correlation.clone(),
+        ))
+        .unwrap();
+    let supplied = |input| SemanticCommandRequest {
+        command: "demo.notes.SubmitNote".parse().unwrap(),
+        actor: Some("demo.notes.Service".parse().unwrap()),
+        caller: None,
+        input,
+        correlation: correlation.clone(),
+    };
+    let created = target
+        .execute_command(supplied(BTreeMap::from([(
+            "text".into(),
+            Node::Text("kept".into()),
+        )])))
+        .unwrap();
+    assert_eq!(created.direct_events.len(), 1);
+    let empty = target.execute_command(supplied(BTreeMap::new()));
+    assert!(
+        matches!(empty, Err(TargetError::Unavailable { .. })),
+        "{empty:?}"
+    );
+    let absent = AbsentInputRequest {
+        command: "demo.notes.SubmitNote".parse().unwrap(),
+        actor: Some("demo.notes.Service".parse().unwrap()),
+        caller: None,
+        correlation: correlation.clone(),
+    };
+    let refused = target
+        .execute_command_without_input(absent.clone())
+        .unwrap();
+    assert_eq!(
+        refused.outcome.unwrap().to_string(),
+        "demo.notes.SubmitNote/body-missing"
+    );
+    assert_eq!(
+        refused.error.unwrap().error.to_string(),
+        "demo.notes.BodyMissing"
+    );
+    assert_eq!(refused.direct_events.len(), 0);
+    assert!(refused.response.is_none());
+    assert!(refused.consistency.is_some());
+    let undeclared = target
+        .execute_command_without_input(AbsentInputRequest {
+            command: "demo.notes.RewordNote".parse().unwrap(),
+            ..absent.clone()
+        })
+        .unwrap();
+    assert!(undeclared.outcome.is_none());
+    assert!(undeclared.error.is_none());
+    assert_eq!(undeclared.direct_events.len(), 0);
+    let ungranted = target.execute_command_without_input(AbsentInputRequest {
+        actor: Some("demo.notes.Stranger".parse().unwrap()),
+        ..absent
+    });
+    assert!(
+        matches!(ungranted, Err(TargetError::NotGranted { .. })),
+        "{ungranted:?}"
+    );
+    let view = target
+        .query_view(SemanticViewRequest {
+            view: "demo.notes.NoteDetails".parse().unwrap(),
+            params: BTreeMap::new(),
+            consistency: QueryConsistency::Current,
+            correlation,
+            deadline: Deadline::at(ess_primitives::time::Timestamp::from_epoch_millis(0)),
+        })
+        .unwrap();
+    assert_eq!(view.rows.len(), 1);
+    assert_eq!(
+        view.rows[0]["note_id"],
+        created.direct_events[0].payload["note_id"]
     );
 }
 

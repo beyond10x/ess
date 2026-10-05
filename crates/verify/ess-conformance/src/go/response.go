@@ -7,9 +7,17 @@ type responseObservation struct {
 	Declarations map[string]selectionDeclaration `json:"declarations"`
 	Mappings     map[string]string               `json:"mappings"`
 	Targets      []accessorField                 `json:"targets"`
+	Nested       *nestedResponseTargets          `json:"nested,omitempty"`
 }
 
 func (r *responseObservation) UnmarshalJSON(raw []byte) error {
+	var members map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &members); err != nil {
+		return err
+	}
+	if value, exists := members["nested"]; exists && bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+		return fmt.Errorf("nested response cannot be null")
+	}
 	type plain responseObservation
 	var value plain
 	decoder := json.NewDecoder(strings.NewReader(string(raw)))
@@ -18,10 +26,19 @@ func (r *responseObservation) UnmarshalJSON(raw []byte) error {
 		return err
 	}
 	*r = responseObservation(value)
+	if r.Nested != nil {
+		if err := normalizeNestedResponse(r); err != nil {
+			return err
+		}
+	}
 	return r.validate()
 }
 func (r responseObservation) validate() error {
-	if r.Command != r.Outcome.Command || r.Outcome.Outcome == "" || len(r.Fields) == 0 || len(r.Fields) > 256 || len(r.Targets) > 256 || len(r.Declarations) > 4096 || len(r.Mappings) == 0 || len(r.Mappings) != len(r.Targets) {
+	nestedCount := 0
+	if r.Nested != nil {
+		nestedCount = len(r.Nested.Mappings)
+	}
+	if r.Command != r.Outcome.Command || r.Outcome.Outcome == "" || len(r.Fields) == 0 || len(r.Fields) > 256 || len(r.Targets) > 256 || len(r.Declarations) > 4096 || len(r.Mappings)+nestedCount == 0 || len(r.Mappings)+nestedCount > 256 || len(r.Mappings) != len(r.Targets) {
 		return fmt.Errorf("invalid response contract bounds or owner")
 	}
 	for _, label := range []string{r.Command, r.Event} {
@@ -42,6 +59,15 @@ func (r responseObservation) validate() error {
 		if !ok || !declared || !responseAssignable(from, target.Type) {
 			return fmt.Errorf("invalid response mapping")
 		}
+	}
+	if r.Nested != nil {
+		if err := r.Nested.validate(r); err != nil {
+			return err
+		}
+		if len(nestedResponseCanonical(r)) > 1048576 {
+			return fmt.Errorf("response contract byte limit")
+		}
+		return nil
 	}
 	raw, err := json.Marshal(r)
 	if err != nil {
@@ -81,11 +107,18 @@ func responseAssignable(from, to string) bool {
 	return false
 }
 func checkResponseType(declarations map[string]selectionDeclaration, source string, used, stack map[string]bool, depth int) error {
+	return checkTypedGraph(declarations, source, used, stack, depth, false)
+}
+
+// checkTypedGraph walks a closed type graph. A response refuses every recursive type; a fixture
+// input (`input`) admits one here, and finiteDeclarations decides whether it has a finite value
+// (beyond10x/ess#416).
+func checkTypedGraph(declarations map[string]selectionDeclaration, source string, used, stack map[string]bool, depth int, input bool) error {
 	if depth > 128 {
 		return fmt.Errorf("response type depth limit")
 	}
 	if inner, ok := accessorOptional(source); ok {
-		return checkResponseType(declarations, inner, used, stack, depth+1)
+		return checkTypedGraph(declarations, inner, used, stack, depth+1, input)
 	}
 	if strings.HasPrefix(source, "Map<") && !strings.HasPrefix(source, "Map<String, ") {
 		return fmt.Errorf("response map key must be String")
@@ -94,12 +127,15 @@ func checkResponseType(declarations map[string]selectionDeclaration, source stri
 		if err != nil {
 			return err
 		}
-		return checkResponseType(declarations, inner, used, stack, depth+1)
+		return checkTypedGraph(declarations, inner, used, stack, depth+1, input)
 	}
-	if accessorPrimitive(source) && source != "Binary64" {
+	if source == "Json" || accessorPrimitive(source) && source != "Binary64" {
 		return nil
 	}
 	body, ok := declarations[source]
+	if ok && stack[source] && input {
+		return nil
+	}
 	if !ok || stack[source] {
 		return fmt.Errorf("missing/recursive response type")
 	}
@@ -135,22 +171,144 @@ func checkResponseType(declarations map[string]selectionDeclaration, source stri
 			seen[label] = true
 		}
 	case "union":
-		var variants map[string]string
-		if body.Tag == "" || json.Unmarshal(body.Variants, &variants) != nil || len(variants) == 0 {
+		variants, err := unionVariants(body.Variants)
+		if body.Tag == "" || err != nil || len(variants) == 0 {
 			return fmt.Errorf("invalid response union")
 		}
 		for _, child := range variants {
-			children = append(children, child)
+			// A unit variant (ess/22) names no type to check.
+			if child != nil {
+				children = append(children, *child)
+			}
 		}
 	default:
 		return fmt.Errorf("unknown response declaration")
 	}
 	for _, child := range children {
-		if err := checkResponseType(declarations, child, used, stack, depth+1); err != nil {
+		if err := checkTypedGraph(declarations, child, used, stack, depth+1, input); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// validateFixtureTypes admits a fixture contract's closed type graph. A type that reaches itself
+// only behind Optional, List or Map has finite values, which a provider may supply and the value
+// depth guard bounds; one with no such boundary has none (beyond10x/ess#416).
+func validateFixtureTypes(fields []accessorField, declarations map[string]selectionDeclaration) error {
+	used := map[string]bool{}
+	seen := map[string]bool{}
+	for _, field := range fields {
+		if field.Name == "" || seen[field.Name] {
+			return fmt.Errorf("duplicate/empty fixture input field")
+		}
+		seen[field.Name] = true
+		if err := checkTypedGraph(declarations, field.Type, used, map[string]bool{}, 0, true); err != nil {
+			return err
+		}
+	}
+	if len(used) != len(declarations) {
+		return fmt.Errorf("unrelated fixture declarations")
+	}
+	finite := finiteDeclarations(declarations)
+	for _, field := range fields {
+		if name := unfiniteFrom(declarations, field.Type, finite, map[string]bool{}); name != "" {
+			return fmt.Errorf("fixture input %s has no finite value: %s recurs with no Optional, List or Map boundary", field.Name, name)
+		}
+	}
+	return nil
+}
+
+// declarationChildren are the type references a declaration holds, union variants in label order.
+func declarationChildren(body selectionDeclaration) []string {
+	children := []string{}
+	switch body.Kind {
+	case "newtype":
+		children = append(children, body.Of)
+	case "struct":
+		for _, field := range body.Fields {
+			children = append(children, field.Type)
+		}
+	case "union":
+		var variants map[string]string
+		_ = json.Unmarshal(body.Variants, &variants)
+		labels := make([]string, 0, len(variants))
+		for label := range variants {
+			labels = append(labels, label)
+		}
+		sort.Strings(labels)
+		for _, label := range labels {
+			children = append(children, variants[label])
+		}
+	}
+	return children
+}
+
+// finiteDeclarations is the model's inhabitation rule: the least fixpoint in which Optional, List
+// and Map are base cases, a struct needs every field and a union one variant.
+func finiteDeclarations(declarations map[string]selectionDeclaration) map[string]bool {
+	finite := map[string]bool{}
+	inhabited := func(source string) bool {
+		if _, ok := accessorOptional(source); ok {
+			return true
+		}
+		if _, ok, _ := accessorCollection(source); ok {
+			return true
+		}
+		if _, declared := declarations[source]; !declared {
+			return true
+		}
+		return finite[source]
+	}
+	for grew := true; grew; {
+		grew = false
+		for name, body := range declarations {
+			if finite[name] {
+				continue
+			}
+			children := declarationChildren(body)
+			admitted := body.Kind != "union"
+			for _, child := range children {
+				if body.Kind == "union" && inhabited(child) {
+					admitted = true
+					break
+				}
+				if body.Kind != "union" && !inhabited(child) {
+					admitted = false
+					break
+				}
+			}
+			if admitted {
+				finite[name] = true
+				grew = true
+			}
+		}
+	}
+	return finite
+}
+
+// unfiniteFrom is the first declaration with no finite value that source reaches, or "".
+func unfiniteFrom(declarations map[string]selectionDeclaration, source string, finite, seen map[string]bool) string {
+	if inner, ok := accessorOptional(source); ok {
+		return unfiniteFrom(declarations, inner, finite, seen)
+	}
+	if inner, ok, _ := accessorCollection(source); ok {
+		return unfiniteFrom(declarations, inner, finite, seen)
+	}
+	body, declared := declarations[source]
+	if !declared || seen[source] {
+		return ""
+	}
+	if !finite[source] {
+		return source
+	}
+	seen[source] = true
+	for _, child := range declarationChildren(body) {
+		if name := unfiniteFrom(declarations, child, finite, seen); name != "" {
+			return name
+		}
+	}
+	return ""
 }
 func (r responseObservation) compare(response, payload map[string]Node) error {
 	if err := r.validate(); err != nil {
@@ -204,6 +362,9 @@ func (r responseObservation) compare(response, payload map[string]Node) error {
 			return fmt.Errorf("event field %s differs from actual response field %s", target, source)
 		}
 	}
+	if r.Nested != nil {
+		return r.Nested.compare(r, response, payload)
+	}
 	return nil
 }
 func (r *run) expectResponsePayload(index int, step Step) bool {
@@ -225,10 +386,54 @@ func (r *run) expectResponsePayload(index int, step Step) bool {
 	return r.fail(index, "same invocation did not emit the response-mapped event")
 }
 
-func admitResponse(value any) error {
-	root, err := closed(value, "command outcome event fields declarations mappings targets", "")
+func admitResponse(value any, major int) error {
+	root, err := closed(value, "command outcome event fields declarations mappings targets", "nested")
 	if err != nil {
 		return err
+	}
+	if nested, exists := root["nested"]; exists {
+		if major < 34 {
+			return fmt.Errorf("nested response authority requires suite/34 or /35")
+		}
+		if err := admitNestedResponse(nested); err != nil {
+			return err
+		}
+		for _, key := range []string{"fields", "targets"} {
+			items, err := array(root[key])
+			if err != nil {
+				return err
+			}
+			for _, item := range items {
+				optional := ""
+				if key == "fields" {
+					optional = "presence"
+				}
+				if _, err := closed(item, "name type", optional); err != nil {
+					return err
+				}
+			}
+		}
+		declarations, ok := root["declarations"].(map[string]any)
+		if !ok {
+			return fmt.Errorf("invalid response declarations")
+		}
+		for _, value := range declarations {
+			body, ok := value.(map[string]any)
+			if !ok {
+				return fmt.Errorf("invalid response declaration")
+			}
+			if fields, exists := body["fields"]; exists {
+				items, err := array(fields)
+				if err != nil {
+					return err
+				}
+				for _, item := range items {
+					if _, err := closed(item, "name type", ""); err != nil {
+						return err
+					}
+				}
+			}
+		}
 	}
 	if err = admitOutcome(root["outcome"]); err != nil {
 		return err
@@ -432,4 +637,610 @@ func responsePresenceMajor(step map[string]any, major int) error {
 		}
 	}
 	return nil
+}
+
+// Nested destinations carry complete representation facts, separate from response value codecs.
+type nestedResponseField struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
+}
+type nestedResponseMapping struct {
+	Target []string `json:"target"`
+	Source string   `json:"source"`
+}
+type nestedResponseTargets struct {
+	Roots        []nestedResponseField           `json:"roots"`
+	Declarations map[string]selectionDeclaration `json:"declarations"`
+	Mappings     []nestedResponseMapping         `json:"mappings"`
+}
+
+var nestedResponseMember = regexp.MustCompile(`^_*[A-Za-z][A-Za-z0-9_]*$`)
+
+func (n *nestedResponseTargets) UnmarshalJSON(raw []byte) error {
+	var original any
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if err := decoder.Decode(&original); err != nil {
+		return err
+	}
+	if err := admitNestedResponse(original); err != nil {
+		return err
+	}
+	type plain nestedResponseTargets
+	var decoded plain
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return err
+	}
+	*n = nestedResponseTargets(decoded)
+	return nil
+}
+func admitNestedResponse(value any) error {
+	root, err := closed(value, "roots declarations mappings", "")
+	if err != nil {
+		return err
+	}
+	fields, err := array(root["roots"])
+	if err != nil {
+		return err
+	}
+	checkField := func(raw any) error {
+		f, e := closed(raw, "name type", "")
+		if e != nil {
+			return e
+		}
+		s, e := text(f["name"])
+		if e != nil || !nestedResponseMember.MatchString(s) {
+			return fmt.Errorf("invalid nested response member")
+		}
+		t, e := text(f["type"])
+		if e != nil {
+			return e
+		}
+		_, e = nestedResponseType(t, 0)
+		return e
+	}
+	for _, field := range fields {
+		if err = checkField(field); err != nil {
+			return err
+		}
+	}
+	declarations, ok := root["declarations"].(map[string]any)
+	if !ok {
+		return fmt.Errorf("invalid nested response declarations")
+	}
+	for key, raw := range declarations {
+		if err = name(key, false); err != nil {
+			return err
+		}
+		body, ok := raw.(map[string]any)
+		if !ok {
+			return fmt.Errorf("invalid structural declaration")
+		}
+		required := "kind"
+		switch body["kind"] {
+		case "newtype":
+			required += " of"
+		case "struct":
+			required += " fields"
+		case "enum":
+			required += " variants"
+		case "union":
+			required += " tag variants"
+		default:
+			return fmt.Errorf("invalid structural declaration kind")
+		}
+		if _, err = closed(raw, required, ""); err != nil {
+			return err
+		}
+		if value, exists := body["fields"]; exists {
+			items, e := array(value)
+			if e != nil {
+				return e
+			}
+			for _, field := range items {
+				if e = checkField(field); e != nil {
+					return e
+				}
+			}
+		}
+	}
+	mappings, err := array(root["mappings"])
+	if err != nil {
+		return err
+	}
+	for _, raw := range mappings {
+		mapping, e := closed(raw, "target source", "")
+		if e != nil {
+			return e
+		}
+		source, e := text(mapping["source"])
+		if e != nil || !nestedResponseMember.MatchString(source) {
+			return fmt.Errorf("invalid nested response source")
+		}
+		path, e := array(mapping["target"])
+		if e != nil {
+			return e
+		}
+		if len(path) < 2 || len(path) > 33 {
+			return fmt.Errorf("nested response path requires 2 through 33 segments")
+		}
+		for _, value := range path {
+			member, e := text(value)
+			if e != nil || !nestedResponseMember.MatchString(member) {
+				return fmt.Errorf("invalid nested response member")
+			}
+		}
+	}
+	return nil
+}
+
+// Match the source TypeRef parser, including its finite wrapper depth and canonical spacing.
+func nestedResponseType(raw string, depth int) (string, error) {
+	if depth > 32 {
+		return "", fmt.Errorf("nested response type wrapper depth")
+	}
+	raw = strings.TrimSpace(raw)
+	for _, wrapper := range []string{"Optional", "List", "Map"} {
+		prefix := wrapper + "<"
+		if !strings.HasPrefix(raw, prefix) || !strings.HasSuffix(raw, ">") {
+			continue
+		}
+		inner := raw[len(prefix) : len(raw)-1]
+		if wrapper == "Map" {
+			parts := strings.SplitN(inner, ",", 2)
+			if len(parts) != 2 {
+				return "", fmt.Errorf("invalid structural map")
+			}
+			key := strings.TrimSpace(parts[0])
+			if !accessorPrimitive(key) || key == "Binary64" {
+				return "", fmt.Errorf("invalid structural map key")
+			}
+			value, e := nestedResponseType(parts[1], depth+1)
+			if e != nil {
+				return "", e
+			}
+			return "Map<" + key + ", " + value + ">", nil
+		}
+		value, e := nestedResponseType(inner, depth+1)
+		if e != nil {
+			return "", e
+		}
+		return wrapper + "<" + value + ">", nil
+	}
+	if accessorPrimitive(raw) || raw == "Json" {
+		return raw, nil
+	}
+	if err := name(raw, false); err != nil {
+		return "", err
+	}
+	return raw, nil
+}
+func normalizeNestedDeclaration(body selectionDeclaration) (selectionDeclaration, error) {
+	var err error
+	switch body.Kind {
+	case "newtype":
+		body.Of, err = nestedResponseType(body.Of, 0)
+	case "struct":
+		for i := range body.Fields {
+			if body.Fields[i].Presence != "" {
+				return body, fmt.Errorf("structural member metadata")
+			}
+			body.Fields[i].Type, err = nestedResponseType(body.Fields[i].Type, 0)
+			if err != nil {
+				return body, err
+			}
+		}
+	case "union":
+		var variants map[string]*string
+		if variants, err = unionVariants(body.Variants); err != nil {
+			return body, err
+		}
+		for label, ty := range variants {
+			// A unit variant (ess/22) is null: it names no type.
+			if ty == nil {
+				continue
+			}
+			normalized, e := nestedResponseType(*ty, 0)
+			if e != nil {
+				return body, e
+			}
+			variants[label] = &normalized
+		}
+		body.Variants, err = json.Marshal(variants)
+	}
+	return body, err
+}
+func normalizeNestedResponse(r *responseObservation) error {
+	for _, fields := range [][]accessorField{r.Fields, r.Targets} {
+		for i := range fields {
+			value, e := nestedResponseType(fields[i].Type, 0)
+			if e != nil {
+				return e
+			}
+			fields[i].Type = value
+		}
+	}
+	for key, body := range r.Declarations {
+		value, e := normalizeNestedDeclaration(body)
+		if e != nil {
+			return e
+		}
+		r.Declarations[key] = value
+	}
+	for i := range r.Nested.Roots {
+		value, e := nestedResponseType(r.Nested.Roots[i].Type, 0)
+		if e != nil {
+			return e
+		}
+		r.Nested.Roots[i].Type = value
+	}
+	for key, body := range r.Nested.Declarations {
+		value, e := normalizeNestedDeclaration(body)
+		if e != nil {
+			return e
+		}
+		r.Nested.Declarations[key] = value
+	}
+	return nil
+}
+func nestedResponseReferences(body selectionDeclaration) ([]string, error) {
+	switch body.Kind {
+	case "newtype":
+		return []string{body.Of}, nil
+	case "struct":
+		if len(body.Fields) == 0 {
+			return nil, fmt.Errorf("empty structural struct")
+		}
+		seen := map[string]bool{}
+		refs := []string{}
+		for _, field := range body.Fields {
+			if !nestedResponseMember.MatchString(field.Name) || seen[field.Name] || field.Presence != "" {
+				return nil, fmt.Errorf("invalid structural member")
+			}
+			seen[field.Name] = true
+			refs = append(refs, field.Type)
+		}
+		return refs, nil
+	case "enum":
+		var labels []string
+		if json.Unmarshal(body.Variants, &labels) != nil || len(labels) == 0 {
+			return nil, fmt.Errorf("invalid structural enum")
+		}
+		return nil, nil
+	case "union":
+		variants, err := unionVariants(body.Variants)
+		if body.Tag == "" || err != nil || len(variants) == 0 {
+			return nil, fmt.Errorf("invalid structural union")
+		}
+		refs := []string{}
+		for _, ty := range variants {
+			// A unit variant (ess/22) reaches no type.
+			if ty != nil {
+				refs = append(refs, *ty)
+			}
+		}
+		return refs, nil
+	}
+	return nil, fmt.Errorf("invalid structural kind")
+}
+func nestedResponseNamed(ty string) string {
+	for {
+		if inner, ok := accessorOptional(ty); ok {
+			ty = inner
+			continue
+		}
+		if inner, ok, _ := accessorCollection(ty); ok {
+			ty = inner
+			continue
+		}
+		if accessorPrimitive(ty) || ty == "Json" {
+			return ""
+		}
+		return ty
+	}
+}
+func (n nestedResponseTargets) validate(r responseObservation) error {
+	if len(n.Roots) == 0 || len(n.Roots) > 256 || len(n.Mappings) == 0 || len(n.Mappings)+len(r.Mappings) > 256 {
+		return fmt.Errorf("nested response relationship bound")
+	}
+	names := map[string]bool{}
+	for key := range r.Declarations {
+		names[key] = true
+	}
+	for key, body := range n.Declarations {
+		names[key] = true
+		if old, ok := r.Declarations[key]; ok && nestedDeclarationCanonical(old) != nestedDeclarationCanonical(body) {
+			return fmt.Errorf("conflicting nested response declaration")
+		}
+	}
+	if len(names) > 4096 {
+		return fmt.Errorf("nested response declaration union limit")
+	}
+	roots := map[string]string{}
+	pending := []string{}
+	for _, root := range n.Roots {
+		if !nestedResponseMember.MatchString(root.Name) || roots[root.Name] != "" {
+			return fmt.Errorf("duplicate nested response root")
+		}
+		if _, ok := r.Mappings[root.Name]; ok {
+			return fmt.Errorf("overlapping nested response root")
+		}
+		roots[root.Name] = root.Type
+		pending = append(pending, root.Type)
+	}
+	visited := map[string]bool{}
+	for len(pending) > 0 {
+		ty := pending[len(pending)-1]
+		pending = pending[:len(pending)-1]
+		parsed, err := nestedResponseType(ty, 0)
+		if err != nil {
+			return err
+		}
+		key := nestedResponseNamed(parsed)
+		if key == "" || visited[key] {
+			continue
+		}
+		body, ok := n.Declarations[key]
+		if !ok {
+			return fmt.Errorf("missing structural declaration")
+		}
+		visited[key] = true
+		refs, err := nestedResponseReferences(body)
+		if err != nil {
+			return err
+		}
+		pending = append(pending, refs...)
+	}
+	if len(visited) != len(n.Declarations) {
+		return fmt.Errorf("unrelated structural declarations")
+	}
+	used := map[string]bool{}
+	paths := [][]string{}
+	memo := map[string]string{}
+	for _, mapping := range n.Mappings {
+		path := mapping.Target
+		if len(path) < 2 || len(path) > 33 {
+			return fmt.Errorf("nested response path bound")
+		}
+		for _, member := range path {
+			if !nestedResponseMember.MatchString(member) {
+				return fmt.Errorf("invalid nested response member")
+			}
+		}
+		ty, ok := roots[path[0]]
+		if !ok {
+			return fmt.Errorf("undeclared nested response root")
+		}
+		used[path[0]] = true
+		for _, member := range path[1:] {
+			key, err := n.structName(ty, memo)
+			if err != nil {
+				return err
+			}
+			found := false
+			for _, field := range n.Declarations[key].Fields {
+				if field.Name == member {
+					ty = field.Type
+					found = true
+					break
+				}
+			}
+			if !found {
+				return fmt.Errorf("undeclared nested response member")
+			}
+		}
+		from := ""
+		for _, field := range r.Fields {
+			if field.Name == mapping.Source {
+				from = field.Type
+				break
+			}
+		}
+		if from == "" || !responseAssignable(from, ty) {
+			return fmt.Errorf("nested response terminal mismatch")
+		}
+		for _, other := range paths {
+			short := len(path)
+			if len(other) < short {
+				short = len(other)
+			}
+			same := true
+			for i := 0; i < short; i++ {
+				if path[i] != other[i] {
+					same = false
+					break
+				}
+			}
+			if same {
+				return fmt.Errorf("duplicate or overlapping nested response paths")
+			}
+		}
+		paths = append(paths, path)
+	}
+	if len(used) != len(roots) {
+		return fmt.Errorf("unused nested response root")
+	}
+	return nil
+}
+func (n nestedResponseTargets) structName(ty string, memo map[string]string) (string, error) {
+	walked := map[string]bool{}
+	for {
+		if key, ok := memo[ty]; ok {
+			for prior := range walked {
+				memo[prior] = key
+			}
+			return key, nil
+		}
+		if walked[ty] {
+			return "", fmt.Errorf("cyclic nested response ancestor")
+		}
+		walked[ty] = true
+		if inner, ok := accessorOptional(ty); ok {
+			ty = inner
+			continue
+		}
+		body, ok := n.Declarations[ty]
+		if !ok {
+			return "", fmt.Errorf("nested response ancestor is not a struct")
+		}
+		switch body.Kind {
+		case "newtype":
+			ty = body.Of
+		case "struct":
+			for prior := range walked {
+				memo[prior] = ty
+			}
+			return ty, nil
+		default:
+			return "", fmt.Errorf("nested response ancestor is not a struct")
+		}
+	}
+}
+func (n nestedResponseTargets) compare(r responseObservation, response, payload map[string]Node) error {
+	for _, mapping := range n.Mappings {
+		object := payload
+		for _, member := range mapping.Target[:len(mapping.Target)-1] {
+			next, ok := object[member].(map[string]any)
+			if !ok {
+				return fmt.Errorf("nested response ancestor %s is absent or not an object", member)
+			}
+			object = next
+		}
+		emitted, present := object[mapping.Target[len(mapping.Target)-1]]
+		actual, exists := response[mapping.Source]
+		optional := false
+		for _, field := range r.Fields {
+			if field.Name == mapping.Source {
+				_, optional = accessorOptional(field.Type)
+			}
+		}
+		if optional && (!exists || actual == nil) && (!present || emitted == nil) {
+			continue
+		}
+		if !exists || !present || !responseEqual(actual, emitted) {
+			return fmt.Errorf("event path %s differs from actual response field %s", strings.Join(mapping.Target, "."), mapping.Source)
+		}
+	}
+	return nil
+}
+
+// Rust-compatible compact UTF-8 JSON: active declaration members only, no HTML or U+2028 escaping.
+func nestedJSONString(value string) string {
+	var out strings.Builder
+	out.WriteByte('"')
+	for _, r := range value {
+		switch r {
+		case '"':
+			out.WriteString(`\"`)
+		case '\\':
+			out.WriteString(`\\`)
+		case '\b':
+			out.WriteString(`\b`)
+		case '\t':
+			out.WriteString(`\t`)
+		case '\n':
+			out.WriteString(`\n`)
+		case '\f':
+			out.WriteString(`\f`)
+		case '\r':
+			out.WriteString(`\r`)
+		default:
+			if r < 32 {
+				out.WriteString(fmt.Sprintf(`\u%04x`, r))
+			} else {
+				out.WriteRune(r)
+			}
+		}
+	}
+	out.WriteByte('"')
+	return out.String()
+}
+func nestedStringList(values []string) string {
+	parts := make([]string, 0, len(values))
+	for _, value := range values {
+		parts = append(parts, nestedJSONString(value))
+	}
+	return "[" + strings.Join(parts, ",") + "]"
+}
+func nestedFieldsCanonical(fields []accessorField, presence bool) string {
+	parts := make([]string, 0, len(fields))
+	for _, field := range fields {
+		value := `{"name":` + nestedJSONString(field.Name) + `,"type":` + nestedJSONString(field.Type)
+		if presence && field.Presence != "" {
+			value += `,"presence":` + nestedJSONString(field.Presence)
+		}
+		parts = append(parts, value+"}")
+	}
+	return "[" + strings.Join(parts, ",") + "]"
+}
+func nestedStringMap(values map[string]string) string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, nestedJSONString(key)+":"+nestedJSONString(values[key]))
+	}
+	return "{" + strings.Join(parts, ",") + "}"
+}
+
+// nestedVariantMap is a union's variants as the canonical form spells them: a unit variant (ess/22)
+// is `null`.
+func nestedVariantMap(values map[string]*string) string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		spelled := "null"
+		if values[key] != nil {
+			spelled = nestedJSONString(*values[key])
+		}
+		parts = append(parts, nestedJSONString(key)+":"+spelled)
+	}
+	return "{" + strings.Join(parts, ",") + "}"
+}
+func nestedDeclarationCanonical(body selectionDeclaration) string {
+	value := `{"kind":` + nestedJSONString(body.Kind)
+	switch body.Kind {
+	case "newtype":
+		value += `,"of":` + nestedJSONString(body.Of)
+	case "struct":
+		value += `,"fields":` + nestedFieldsCanonical(body.Fields, false)
+	case "enum":
+		var labels []string
+		_ = json.Unmarshal(body.Variants, &labels)
+		value += `,"variants":` + nestedStringList(labels)
+	case "union":
+		variants, _ := unionVariants(body.Variants)
+		value += `,"tag":` + nestedJSONString(body.Tag) + `,"variants":` + nestedVariantMap(variants)
+	}
+	return value + "}"
+}
+func nestedDeclarationsCanonical(values map[string]selectionDeclaration) string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, nestedJSONString(key)+":"+nestedDeclarationCanonical(values[key]))
+	}
+	return "{" + strings.Join(parts, ",") + "}"
+}
+func nestedResponseCanonical(r responseObservation) string {
+	roots := make([]accessorField, 0, len(r.Nested.Roots))
+	for _, field := range r.Nested.Roots {
+		roots = append(roots, accessorField{Name: field.Name, Type: field.Type})
+	}
+	mappings := make([]string, 0, len(r.Nested.Mappings))
+	for _, mapping := range r.Nested.Mappings {
+		mappings = append(mappings, `{"target":`+nestedStringList(mapping.Target)+`,"source":`+nestedJSONString(mapping.Source)+"}")
+	}
+	return `{"command":` + nestedJSONString(r.Command) + `,"outcome":{"command":` + nestedJSONString(r.Outcome.Command) + `,"outcome":` + nestedJSONString(r.Outcome.Outcome) + `},"event":` + nestedJSONString(r.Event) + `,"fields":` + nestedFieldsCanonical(r.Fields, true) + `,"declarations":` + nestedDeclarationsCanonical(r.Declarations) + `,"mappings":` + nestedStringMap(r.Mappings) + `,"targets":` + nestedFieldsCanonical(r.Targets, false) + `,"nested":{"roots":` + nestedFieldsCanonical(roots, false) + `,"declarations":` + nestedDeclarationsCanonical(r.Nested.Declarations) + `,"mappings":[` + strings.Join(mappings, ",") + "]}}"
 }

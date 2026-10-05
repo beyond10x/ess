@@ -178,7 +178,7 @@ fn complete_projection_preserves_supported_yaml_through_both_spellings() {
         let out = dir.join("projection.yaml");
         let output = ess(arguments, &input, Some(&out), "json");
         assert!(output.status.success());
-        assert!(output.stdout.is_empty());
+        assert_eq!(output.stdout.len(), 0);
         assert_eq!(std::fs::read(&out).unwrap(), PROJECTED.as_bytes());
     }
 }

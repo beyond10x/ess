@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-03T20:54:07Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-312",
+  "kind": "story",
+  "revision": 10,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Integrated repository task fmt-check with Rust1.98.1: terminal exit0; excludes generated projections by Taskfile contract, no formatting writes",
+    "reference": "commit:4ecd55469"
+  }
+}

@@ -74,6 +74,7 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
                     types,
                     conversions: spec.conversions(),
                     inhabitation: &inhabitation,
+                    paths: super::input_path::admitted(Some(spec.system().format)),
                 },
                 subject,
             };
@@ -95,7 +96,7 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
                         &context,
                         &at,
                         Place::Payload,
-                        filled,
+                        (filled, filled),
                         source,
                         0,
                         &mut errors,
@@ -109,6 +110,7 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
                 }
             }
             errors.extend(error_payload(&context, &site));
+            errors.extend(identity_paths(&context, &site));
             if let Some((entity, _)) = context.subject {
                 for (target, source) in &outcome.sets {
                     let held = if entity.identity.name == *target {
@@ -120,7 +122,15 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
                         continue;
                     };
                     let at = site.clone().key("sets").named(target);
-                    check(&context, &at, Place::Sets, held, source, 0, &mut errors);
+                    check(
+                        &context,
+                        &at,
+                        Place::Sets,
+                        (held, held),
+                        source,
+                        0,
+                        &mut errors,
+                    );
                     errors.extend(fallback_literal(
                         &context,
                         &Filled::Sets { entity },
@@ -197,7 +207,7 @@ fn error_payload(context: &Context<'_>, site: &ConstructRef) -> ValidationErrors
             &context,
             &at,
             Place::Payload,
-            filled,
+            (filled, filled),
             source,
             0,
             &mut errors,
@@ -211,6 +221,59 @@ fn error_payload(context: &Context<'_>, site: &ConstructRef) -> ValidationErrors
             filled,
             source,
         ));
+    }
+    errors
+}
+
+/// Decision 8 of the design's final review (`ess/22`, A4): a dotted input path supplies the
+/// identity a creating branch names its instance by only when nothing on its route — the last
+/// segment included — may be absent. Existence then reads it as it reads a top-level input.
+fn identity_paths(context: &Context<'_>, site: &ConstructRef) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    let outcome = context.outcome;
+    let Some(subject) = outcome
+        .subject
+        .as_ref()
+        .filter(|subject| subject.effect == Effect::Creates && context.resolved.paths)
+    else {
+        return errors;
+    };
+    let mut sources: Vec<(ConstructRef, &PayloadSource)> = outcome
+        .payload
+        .iter()
+        .filter_map(|(event, fields)| {
+            fields.get(&subject.instance).map(|source| {
+                (
+                    site.clone()
+                        .key("payload")
+                        .named(event.to_string())
+                        .named(&subject.instance),
+                    source,
+                )
+            })
+        })
+        .collect();
+    if let Some(entity) = context.spec.entities().get(&subject.entity) {
+        if let Some(source) = outcome.sets.get(&entity.identity.name) {
+            sources.push((
+                site.clone().key("sets").named(&entity.identity.name),
+                source,
+            ));
+        }
+    }
+    for (at, source) in sources {
+        let (PayloadSource::InputField { field } | PayloadSource::InputOrGenerated { field, .. }) =
+            source
+        else {
+            continue;
+        };
+        if !super::input_path::is_path(field) {
+            continue;
+        }
+        let resolved = super::input_path::resolve(context.command, context.resolved.types, field);
+        if resolved.is_ok_and(|path| path.may_be_absent()) {
+            errors.push(super::input_path::optional_route(&at, field, "an identity"));
+        }
     }
     errors
 }
@@ -236,6 +299,7 @@ pub(super) fn validate_affect(
             types,
             conversions: spec.conversions(),
             inhabitation: &inhabitation,
+            paths: super::input_path::admitted(Some(spec.system().format)),
         },
         subject: Some((entity, true)),
     };
@@ -249,7 +313,15 @@ pub(super) fn validate_affect(
             continue;
         };
         let site = at.clone().key("sets").named(target);
-        check(&context, &site, Place::Sets, held, source, 0, &mut errors);
+        check(
+            &context,
+            &site,
+            Place::Sets,
+            (held, held),
+            source,
+            0,
+            &mut errors,
+        );
         errors.extend(fallback_literal(
             &context,
             &Filled::Sets { entity },
@@ -266,11 +338,12 @@ fn check(
     context: &Context<'_>,
     at: &ConstructRef,
     place: Place,
-    target: &Field,
+    targets: (&Field, &Field),
     source: &PayloadSource,
     depth: usize,
     errors: &mut ValidationErrors,
 ) {
+    let (root, target) = targets;
     let format = context.spec.system().format;
     if source.needs_value_expressions() && format.major() < FormatVersion::V14.major() {
         errors.push(ValidationError::at(
@@ -330,8 +403,8 @@ fn check(
             "`{cleared: true}` clears a whole entity field, not a field inside a nested mapping",
         )),
         PayloadSource::SubjectField { field } => check_subject(context, at, target, field, errors),
-        PayloadSource::RelatedField { via, field } => {
-            check_related(context, at, target, via, field, errors);
+        PayloadSource::RelatedField { .. } | PayloadSource::RelatedSelection { .. } => {
+            check_related(context, at, target, source, errors);
         }
         PayloadSource::CallerAttribute { attribute } => {
             super::caller_value::check_source(
@@ -344,7 +417,7 @@ fn check(
             );
         }
         PayloadSource::Increment { by, scalar } => {
-            check_increment(context, at, place, target, by, *scalar, errors);
+            check_increment(context, at, place, (root, target), by, *scalar, errors);
         }
         PayloadSource::InputOrGenerated { field, otherwise } => {
             check_fallback(
@@ -358,7 +431,7 @@ fn check(
             );
         }
         PayloadSource::Struct { fields } => {
-            check_struct(context, at, place, target, fields, depth, errors);
+            check_struct(context, at, place, (root, target), fields, depth, errors);
         }
         PayloadSource::ChangedCount if depth > 0 || place == Place::Sets => {
             errors.push(super::set_effects::count_elsewhere(at));
@@ -379,6 +452,7 @@ fn kind(source: &PayloadSource) -> &'static str {
         PayloadSource::InputOrGenerated { .. } => "`{input: …, else: …}`",
         PayloadSource::Struct { .. } => "nested mapping",
         PayloadSource::RelatedField { .. } => "`{related: …}`",
+        PayloadSource::RelatedSelection { .. } => "`{related: {entity, where, field}}`",
         PayloadSource::CallerAttribute { .. } => "`{caller: …}`",
         PayloadSource::ChangedCount => "`{count: changed}`",
         _ => "payload",
@@ -410,6 +484,25 @@ fn related_via<'a>(
                 })
                 .and_then(|(entity, _)| entity.field(name).or(Some(&entity.identity)))
                 .filter(|held| held.name == *name);
+            // Decision 8 (`ess/22`, A4): a creating branch reads the address from the input path
+            // that fills the field, and a path supplies one only when its whole route is
+            // required.
+            let carried = context
+                .subject
+                .filter(|_| created.is_some())
+                .and_then(|(entity, _)| subject_field_from_input(context.outcome, entity, name))
+                .filter(|path| super::input_path::is_path(path));
+            if let Some(path) = carried {
+                let resolved = super::input_path::resolve(command, context.resolved.types, path);
+                if resolved.is_ok_and(|path| path.may_be_absent()) {
+                    errors.push(super::input_path::optional_route(
+                        at,
+                        path,
+                        "the address of another row",
+                    ));
+                    return None;
+                }
+            }
             let held = if let Some(held) = created {
                 held
             } else {
@@ -441,42 +534,146 @@ fn related_via<'a>(
     }
 }
 
-/// The one entity a `{related: …}` source's `via`, of type `via_type`, names, or a refusal saying
-/// why there is none: a reference that may be absent or is several, a type that is no entity's
-/// identity, or one several entities share with no relation to decide.
+/// One reference a `{related: …}` source follows: its `via`, or (ess/22, beyond10x/ess#285) the
+/// field of the row `via` names that a chained `via:` names second.
+#[derive(Clone, Copy)]
+enum Reference<'r> {
+    Via(&'r RelatedVia),
+    Hop {
+        entity: &'r crate::entity::EntitySpec,
+        field: &'r str,
+    },
+}
+
+impl std::fmt::Display for Reference<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Via(via) => write!(f, "`{via}`"),
+            Self::Hop { entity, field } => write!(f, "`{}.{field}`", entity.name),
+        }
+    }
+}
+
+/// The one entity a reference of type `via_type` names, and whether the reference may be absent;
+/// or a refusal saying why there is none: a reference that is several, one that may be absent
+/// below `ess/22`, a type that is no entity's identity, or one several entities share with no
+/// relation to decide.
+///
+/// From `ess/22` (beyond10x/ess#285) a reference may be `Optional<…>` of an identity: the row is
+/// read where it is present, and the value is absent where it is not.
 fn related_entity<'a>(
     context: &Context<'a>,
     at: &ConstructRef,
-    via: &RelatedVia,
+    reference: Reference<'_>,
     via_type: &TypeRef,
     carrier: Option<(&crate::entity::EntitySpec, &str)>,
     errors: &mut ValidationErrors,
-) -> Option<&'a crate::entity::EntitySpec> {
-    if !matches!(via_type, TypeRef::Primitive(_) | TypeRef::Named(_)) {
-        errors.push(
-            ValidationError::at(
-                at.clone(),
-                ValidationCode::TypeMismatch,
-                format!(
-                    "`{via}` is `{via_type}`, and `{{related: …}}` follows one reference that is \
-                     always there"
-                ),
-            )
-            .with_hint("read a required field typed as the other entity's identity"),
-        );
-        return None;
-    }
-    let entities = match referenced_entity(context.spec, via_type, carrier) {
-        Referenced::Entity(entity) => return Some(entity),
+) -> Option<(&'a crate::entity::EntitySpec, bool)> {
+    let (identity_type, absent) = reference_identity(context, at, reference, via_type, errors)?;
+    let entities = match referenced_entity(context.spec, identity_type, carrier) {
+        Referenced::Entity(entity) => return Some((entity, absent)),
         Referenced::NoEntity => {
             errors.push(ValidationError::at(
                 at.clone(),
                 ValidationCode::TypeMismatch,
-                format!("`{via}` is `{via_type}`, which is no entity's identity"),
+                format!("{reference} is `{via_type}`, which is no entity's identity"),
             ));
             return None;
         }
         Referenced::Ambiguous(entities) => entities,
+    };
+    errors.push(ambiguous(context, at, reference, via_type, &entities));
+    None
+}
+
+/// The identity type a reference of `via_type` carries, and whether it may be absent; or a
+/// refusal: a collection, or below `ess/22` an `Optional<…>`.
+fn reference_identity<'t>(
+    context: &Context<'_>,
+    at: &ConstructRef,
+    reference: Reference<'_>,
+    via_type: &'t TypeRef,
+    errors: &mut ValidationErrors,
+) -> Option<(&'t TypeRef, bool)> {
+    let optional_admitted = context.spec.system().format.major() >= FormatVersion::V22.major();
+    Some(match via_type {
+        TypeRef::Primitive(_) | TypeRef::Named(_) => (via_type, false),
+        TypeRef::Optional(inner)
+            if optional_admitted
+                && matches!(**inner, TypeRef::Primitive(_) | TypeRef::Named(_)) =>
+        {
+            (&**inner, true)
+        }
+        TypeRef::Optional(inner)
+            if matches!(**inner, TypeRef::Primitive(_) | TypeRef::Named(_)) =>
+        {
+            errors.push(
+                ValidationError::at(
+                    at.clone(),
+                    ValidationCode::TypeMismatch,
+                    format!(
+                        "{reference} is `{via_type}`, and below specification format ess/22 \
+                         `{{related: …}}` follows one reference that is always there"
+                    ),
+                )
+                .with_hint(
+                    "declare `format: ess/22` to read through an Optional reference — the value \
+                     is then absent where the reference is — or read a required field typed as \
+                     the other entity's identity",
+                ),
+            );
+            return None;
+        }
+        _ => {
+            errors.push(
+                ValidationError::at(
+                    at.clone(),
+                    ValidationCode::TypeMismatch,
+                    format!(
+                        "{reference} is `{via_type}`, and `{{related: …}}` follows one reference \
+                         that is always there{}",
+                        if optional_admitted {
+                            " or, from ess/22, one that may be absent"
+                        } else {
+                            ""
+                        }
+                    ),
+                )
+                .with_hint("read a field typed as the other entity's identity"),
+            );
+            return None;
+        }
+    })
+}
+
+/// The refusal of a reference whose type several entities are identified by, with no relation to
+/// say which, and a hint naming a remedy that validates where the reference is read.
+fn ambiguous(
+    context: &Context<'_>,
+    at: &ConstructRef,
+    reference: Reference<'_>,
+    via_type: &TypeRef,
+    entities: &[&crate::entity::EntitySpec],
+) -> ValidationError {
+    let named = entities
+        .iter()
+        .map(|entity| format!("`{}`", entity.name))
+        .collect::<Vec<_>>()
+        .join(" and ");
+    let via = match reference {
+        Reference::Via(via) => via,
+        Reference::Hop { entity, field } => {
+            return ValidationError::at(
+                at.clone(),
+                ValidationCode::ConflictingDeclaration,
+                format!("{reference} is `{via_type}`, the identity of {named}"),
+            )
+            .with_hint(format!(
+                "say which: declare `relations: [{{name: …, kind: references, target: \
+                 <entity>, cardinality: one, via: {field}}}]` on `{}`",
+                entity.name
+            ));
+        }
     };
     let hint = match (via, context.subject) {
         (RelatedVia::Subject(name), Some((subject, _))) => format!(
@@ -520,56 +717,46 @@ fn related_entity<'a>(
               types instead"
             .to_owned(),
     };
-    errors.push(
-        ValidationError::at(
-            at.clone(),
-            ValidationCode::ConflictingDeclaration,
-            format!(
-                "`{via}` is `{via_type}`, the identity of {}",
-                entities
-                    .iter()
-                    .map(|entity| format!("`{}`", entity.name))
-                    .collect::<Vec<_>>()
-                    .join(" and ")
-            ),
-        )
-        .with_hint(hint),
-    );
-    None
+    ValidationError::at(
+        at.clone(),
+        ValidationCode::ConflictingDeclaration,
+        format!("`{via}` is `{via_type}`, the identity of {named}"),
+    )
+    .with_hint(hint)
 }
 
 /// `{related: {via, field}}` (`ess/16`, beyond10x/ess#166): `field` of the row `via` names.
 ///
 /// `via` is a field of the subject before the outcome (so an existing subject, as for
-/// `{subject: …}`) or of the input, typed as exactly one entity's identity — never `Optional` or a
-/// collection, because the source reads one row that is always there. A `references` relation the
-/// subject declares on `via` says which entity where the type alone names several.
+/// `{subject: …}`) or of the input, typed as exactly one entity's identity — below `ess/22` never
+/// `Optional`, and never a collection, because the source reads one row. A `references` relation
+/// the subject declares on `via` says which entity where the type alone names several.
+///
+/// From `ess/22` (beyond10x/ess#285) `via` may be `Optional<…>` of an identity, and `through`
+/// names one further reference: a field of the row `via` names, typed the same way, which the
+/// relation that row's entity declares on it decides as the subject's does. Where any reference
+/// may be absent, so may the value, and the target must admit that.
 fn check_related(
     context: &Context<'_>,
     at: &ConstructRef,
     target: &Field,
-    via: &RelatedVia,
-    field: &str,
+    source: &PayloadSource,
     errors: &mut ValidationErrors,
 ) {
-    if context.spec.system().format.major() < FormatVersion::V16.major() {
-        errors.push(
-            ValidationError::at(
-                at.clone(),
-                ValidationCode::UnsupportedFormatVersion,
-                "a `{related: …}` source requires specification format ess/16",
-            )
-            .with_hint("write `format: ess/16` on the source that declares the system"),
-        );
+    if matches!(source, PayloadSource::RelatedSelection { .. }) {
+        check_selection(context, at, target, source, errors);
         return;
     }
-    if !is_field_name(via.field()) || !is_field_name(field) {
-        errors.push(ValidationError::at(
-            at.clone(),
-            ValidationCode::UndeclaredReference,
-            "`{related: …}` names one field in `via:` (a field of the subject, or \
-             `input.<field>`) and one field in `field:`",
-        ));
+    let PayloadSource::RelatedField {
+        via,
+        through,
+        field,
+    } = source
+    else {
+        return;
+    };
+    if let Some(refused) = related_shape_refused(context, at, via, through, field) {
+        errors.push(refused);
         return;
     }
     let Some((via_type, carrier)) = related_via(context, at, via, errors) else {
@@ -578,44 +765,162 @@ fn check_related(
     let carrier = carrier
         .as_ref()
         .map(|(entity, field)| (*entity, field.as_str()));
-    let Some(entity) = related_entity(context, at, via, via_type, carrier, errors) else {
+    let Some((mut entity, mut absent)) =
+        related_entity(context, at, Reference::Via(via), via_type, carrier, errors)
+    else {
         return;
     };
-    let read = if entity.identity.name == field {
-        Some(&entity.identity)
-    } else {
-        entity.field(field)
+    for hop in through {
+        let Some(held) = entity_field(entity, hop) else {
+            errors.push(not_a_field(at, entity, hop));
+            return;
+        };
+        let reference = Reference::Hop { entity, field: hop };
+        let Some((next, may_be_absent)) = related_entity(
+            context,
+            at,
+            reference,
+            &held.type_ref,
+            Some((entity, hop.as_str())),
+            errors,
+        ) else {
+            return;
+        };
+        entity = next;
+        absent |= may_be_absent;
+    }
+    let Some(read) = entity_field(entity, field) else {
+        errors.push(not_a_field(at, entity, field));
+        return;
     };
-    let Some(read) = read else {
-        errors.push(
+    let value_type = if absent && !matches!(read.type_ref, TypeRef::Optional(_)) {
+        TypeRef::Optional(Box::new(read.type_ref.clone()))
+    } else {
+        read.type_ref.clone()
+    };
+    let conversions = &context.resolved.conversions;
+    if conversions.permits(&value_type, &target.type_ref) {
+        return;
+    }
+    if absent && conversions.permits(&read.type_ref, &target.type_ref) {
+        errors.push(absent_into_required(at, entity, field, target));
+        return;
+    }
+    errors.push(mismatch(
+        at,
+        &format!("`{}.{field}`", entity.name),
+        &value_type,
+        target,
+    ));
+}
+
+/// The refusal of a `{related: …}` source's shape where the format or the names refuse it: below
+/// `ess/16`; a chained `via:` below `ess/22` (beyond10x/ess#285); a name that is not one field.
+fn related_shape_refused(
+    context: &Context<'_>,
+    at: &ConstructRef,
+    via: &RelatedVia,
+    through: &[String],
+    field: &str,
+) -> Option<ValidationError> {
+    let format = context.spec.system().format;
+    if format.major() < FormatVersion::V16.major() {
+        return Some(
             ValidationError::at(
                 at.clone(),
-                ValidationCode::UndeclaredReference,
-                format!("`{field}` is not a field of `{}`", entity.name),
+                ValidationCode::UnsupportedFormatVersion,
+                "a `{related: …}` source requires specification format ess/16",
             )
-            .with_hint(format!(
-                "`{}` holds: {}",
-                entity.name,
-                std::iter::once(entity.identity.name.as_str())
-                    .chain(entity.fields.iter().map(|field| field.name.as_str()))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )),
+            .with_hint("write `format: ess/16` on the source that declares the system"),
         );
-        return;
-    };
-    if !context
-        .resolved
-        .conversions
-        .permits(&read.type_ref, &target.type_ref)
+    }
+    if !through.is_empty() && format.major() < FormatVersion::V22.major() {
+        return Some(
+            ValidationError::at(
+                at.clone(),
+                ValidationCode::UnsupportedFormatVersion,
+                "a chained `via:` — `{related: {via: [<field>, <field>], …}}`, read across two \
+                 references — requires specification format ess/22",
+            )
+            .with_hint(
+                "declare `format: ess/22`, or copy the value onto the row the first reference \
+                 names and read it in one hop",
+            ),
+        );
+    }
+    if !is_field_name(via.field())
+        || !is_field_name(field)
+        || through.iter().any(|hop| !is_field_name(hop))
     {
-        errors.push(mismatch(
-            at,
-            &format!("`{}.{field}`", entity.name),
-            &read.type_ref,
-            target,
+        // Below ess/22 the sentence it always was; from ess/22 it names the chained form too.
+        let named = if format.major() >= FormatVersion::V22.major() {
+            "`{related: …}` names one field in `via:` (a field of the subject, or \
+             `input.<field>`, or a list of that and one field of the row it names) and one field \
+             in `field:`"
+        } else {
+            "`{related: …}` names one field in `via:` (a field of the subject, or \
+             `input.<field>`) and one field in `field:`"
+        };
+        return Some(ValidationError::at(
+            at.clone(),
+            ValidationCode::UndeclaredReference,
+            named,
         ));
     }
+    None
+}
+
+/// The refusal of a value read through a reference that may be absent into a target that cannot be
+/// left absent (ess/22, beyond10x/ess#285).
+fn absent_into_required(
+    at: &ConstructRef,
+    entity: &crate::entity::EntitySpec,
+    field: &str,
+    target: &Field,
+) -> ValidationError {
+    ValidationError::at(
+        at.clone(),
+        ValidationCode::TypeMismatch,
+        format!(
+            "`{}.{field}` is read through a reference that may be absent, and then the value is \
+             absent too; `{}` requires `{}`, which cannot be left absent",
+            entity.name, target.name, target.type_ref
+        ),
+    )
+    .with_hint(format!(
+        "declare `{}` as `Optional<{}>`, or read through references that are always there",
+        target.name, target.type_ref
+    ))
+}
+
+/// The field `name` of `entity`, its identity included.
+fn entity_field<'e>(entity: &'e crate::entity::EntitySpec, name: &str) -> Option<&'e Field> {
+    if entity.identity.name == name {
+        Some(&entity.identity)
+    } else {
+        entity.field(name)
+    }
+}
+
+/// `name` is no field of `entity`, with the fields it holds as the hint.
+fn not_a_field(
+    at: &ConstructRef,
+    entity: &crate::entity::EntitySpec,
+    name: &str,
+) -> ValidationError {
+    ValidationError::at(
+        at.clone(),
+        ValidationCode::UndeclaredReference,
+        format!("`{name}` is not a field of `{}`", entity.name),
+    )
+    .with_hint(format!(
+        "`{}` holds: {}",
+        entity.name,
+        std::iter::once(entity.identity.name.as_str())
+            .chain(entity.fields.iter().map(|field| field.name.as_str()))
+            .collect::<Vec<_>>()
+            .join(", ")
+    ))
 }
 
 /// The subject's field, before this outcome.
@@ -708,11 +1013,12 @@ fn check_increment(
     context: &Context<'_>,
     at: &ConstructRef,
     place: Place,
-    target: &Field,
+    targets: (&Field, &Field),
     by: &str,
     scalar: ScalarKind,
     errors: &mut ValidationErrors,
 ) {
+    let (root, target) = targets;
     if place != Place::Sets {
         errors.push(
             ValidationError::at(
@@ -724,7 +1030,7 @@ fn check_increment(
         );
         return;
     }
-    if existing_subject_field(context, at, "`{increment: …}`", &target.name, errors).is_none() {
+    if existing_subject_field(context, at, "`{increment: …}`", &root.name, errors).is_none() {
         return;
     }
     if target.type_ref.is_optional() {
@@ -800,7 +1106,23 @@ fn check_fallback(
     otherwise: Option<&PayloadSource>,
     errors: &mut ValidationErrors,
 ) {
-    if let Some(literal) = otherwise {
+    // From `ess/22` (A4) the input read may be a path, and the fallback another input path.
+    let fallback_read = match otherwise {
+        Some(PayloadSource::InputField { field }) => Some(field.as_str()),
+        _ => None,
+    };
+    if !context.resolved.paths {
+        let below = if super::input_path::is_path(field) {
+            Some("`{input: <path>, else: …}`")
+        } else {
+            fallback_read.map(|_| "an input after `else:`")
+        };
+        if let Some(what) = below {
+            errors.push(super::input_path::below_ess_22(at, what));
+            return;
+        }
+    }
+    if let Some(literal) = otherwise.filter(|_| fallback_read.is_none()) {
         let format = context.spec.system().format;
         if format.major() < FormatVersion::V16.major() {
             errors.push(
@@ -822,17 +1144,27 @@ fn check_fallback(
         // `validate_sets` do on a bare one; inside a nested mapping the leaf rule at depth 1
         // checks both the misspelling and the literal's type against the target.
         let depth = usize::from(depth > 0);
-        check(context, at, place, target, literal, depth, errors);
+        check(context, at, place, (target, target), literal, depth, errors);
     }
     let command = context.command;
-    let Some(read) = command.input_field(field) else {
-        errors.push(ValidationError::at(
-            at.clone(),
-            ValidationCode::UndeclaredReference,
-            format!("`{field}` is not an input of `{}`", command.name),
-        ));
-        return;
+    let read = match command.read_input((context.resolved.types, context.resolved.paths), field) {
+        Ok(read) => read,
+        Err(Some(unresolved)) => {
+            errors.push(unresolved.refusal(at, command, field));
+            return;
+        }
+        Err(None) => {
+            errors.push(ValidationError::at(
+                at.clone(),
+                ValidationCode::UndeclaredReference,
+                format!("`{field}` is not an input of `{}`", command.name),
+            ));
+            return;
+        }
     };
+    if let Some(other) = fallback_read {
+        check_input_fallback(context, at, target, other, errors);
+    }
     if !read.type_ref.is_optional() {
         errors.push(
             ValidationError::at(
@@ -856,6 +1188,67 @@ fn check_fallback(
             at,
             &format!("`{}.{field}` when present", command.name),
             present,
+            target,
+        ));
+    }
+}
+
+/// `else: input.<path>` (`ess/22`, A4): the fallback reads another input, which must be present
+/// whenever the request is valid — required along its whole route — because `else:` promises a
+/// value; and its type must fill the target as a plain `input.` source would.
+fn check_input_fallback(
+    context: &Context<'_>,
+    at: &ConstructRef,
+    target: &Field,
+    field: &str,
+    errors: &mut ValidationErrors,
+) {
+    let command = context.command;
+    let read = match command.read_input((context.resolved.types, context.resolved.paths), field) {
+        Ok(read) => read,
+        Err(Some(unresolved)) => {
+            errors.push(unresolved.refusal(at, command, field));
+            return;
+        }
+        Err(None) => {
+            errors.push(ValidationError::at(
+                at.clone(),
+                ValidationCode::UndeclaredReference,
+                format!("`{field}` is not an input of `{}`", command.name),
+            ));
+            return;
+        }
+    };
+    // A newtype declared over an `Optional` may be absent as surely as the `Optional` itself.
+    if context
+        .resolved
+        .types
+        .newtype_layers(&read.type_ref)
+        .optional
+    {
+        errors.push(
+            ValidationError::at(
+                at.clone(),
+                ValidationCode::TypeMismatch,
+                format!(
+                    "`input.{field}` is `{}`, which may be absent, and `else:` promises a value",
+                    read.type_ref
+                ),
+            )
+            .with_hint(
+                "fall back to an input that is required along its whole route, or to a literal",
+            ),
+        );
+        return;
+    }
+    let conversions = context.resolved.conversions;
+    if !conversions.permits(&read.type_ref, target.type_ref.required())
+        && !conversions.permits(&read.type_ref, &target.type_ref)
+    {
+        errors.push(mismatch(
+            at,
+            &format!("`input.{field}`"),
+            &read.type_ref,
             target,
         ));
     }
@@ -1028,11 +1421,12 @@ fn check_struct(
     context: &Context<'_>,
     at: &ConstructRef,
     place: Place,
-    target: &Field,
+    targets: (&Field, &Field),
     fields: &[super::PayloadField],
     depth: usize,
     errors: &mut ValidationErrors,
 ) {
+    let (root, target) = targets;
     if depth >= MAX_DEPTH {
         errors.push(ValidationError::at(
             at.clone(),
@@ -1089,7 +1483,7 @@ fn check_struct(
             context,
             &at.clone().named(&field.target),
             place,
-            inner,
+            (root, inner),
             &field.source,
             depth + 1,
             errors,
@@ -1177,11 +1571,23 @@ fn check_read(
 ) {
     let command = context.command;
     let read = if response {
-        command.response.iter().find(|read| read.name == field)
+        command
+            .response
+            .iter()
+            .find(|read| read.name == field)
+            .cloned()
     } else {
-        command.input_field(field)
+        // From `ess/22` a leaf may read a member of a struct input (A4).
+        match command.read_input((context.resolved.types, context.resolved.paths), field) {
+            Ok(read) => Some(read),
+            Err(Some(unresolved)) => {
+                errors.push(unresolved.refusal(at, command, field));
+                return;
+            }
+            Err(None) => None,
+        }
     };
-    let Some(read) = read else {
+    let Some(read) = read.as_ref() else {
         errors.push(ValidationError::at(
             at.clone(),
             ValidationCode::UndeclaredReference,
@@ -1225,4 +1631,96 @@ fn mismatch(at: &ConstructRef, source: &str, from: &TypeRef, target: &Field) -> 
          the two types agree",
         target.type_ref
     ))
+}
+
+/// `{related: {entity, where, field}}` (ess/22, beyond10x/ess#299): a declared entity, a selector
+/// typed over its candidate row, the input and the addressed subject — as a row-set guard's is
+/// ([`super::row_set`]) — and a field of that entity whose type the target takes.
+fn check_selection(
+    context: &Context<'_>,
+    at: &ConstructRef,
+    target: &Field,
+    source: &PayloadSource,
+    errors: &mut ValidationErrors,
+) {
+    let PayloadSource::RelatedSelection {
+        selection,
+        field,
+        legacy,
+    } = source
+    else {
+        return;
+    };
+    let spec = context.spec;
+    if spec.system().format.major() < FormatVersion::V22.major() {
+        errors.push(
+            ValidationError::at(
+                at.clone(),
+                ValidationCode::UnsupportedFormatVersion,
+                "a filtered read — `{related: {entity, where, field}}` — requires specification \
+                 format ess/22",
+            )
+            .with_hint("declare `format: ess/22`"),
+        );
+        return;
+    }
+    if let Some(why) = &legacy.predicate {
+        errors.push(ValidationError::at(
+            at.clone(),
+            ValidationCode::TypeMismatch,
+            format!(
+                "the `where:` of `{{related: {{entity, where, field}}}}` is no predicate: {why}"
+            ),
+        ));
+        return;
+    }
+    let Some(entity) = spec.entities().get(&selection.entity) else {
+        errors.push(super::row_set::undeclared(spec, at, &selection.entity));
+        return;
+    };
+    if selection.filter == ess_primitives::predicate::Predicate::Always {
+        errors.push(
+            ValidationError::at(
+                at.clone(),
+                ValidationCode::EmptyDeclaration,
+                format!(
+                    "the filtered read selects every row of `{}`: its `where` selects every row",
+                    entity.name
+                ),
+            )
+            .with_hint(
+                "select by a field the input scopes, as `where: tenant_id == input.tenant_id`",
+            ),
+        );
+        return;
+    }
+    let registry = spec.types_with_lifecycles(&mut ValidationErrors::new());
+    let checked = super::row_set::check(
+        spec,
+        context.command,
+        entity,
+        &registry,
+        &selection.filter,
+        at,
+    );
+    if !checked.is_empty() {
+        errors.extend(checked);
+        return;
+    }
+    let Some(read) = entity_field(entity, field) else {
+        errors.push(not_a_field(at, entity, field));
+        return;
+    };
+    if !context
+        .resolved
+        .conversions
+        .permits(&read.type_ref, &target.type_ref)
+    {
+        errors.push(mismatch(
+            at,
+            &format!("`{}.{field}`", entity.name),
+            &read.type_ref,
+            target,
+        ));
+    }
 }

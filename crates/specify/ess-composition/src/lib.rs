@@ -1805,7 +1805,7 @@ fn collect_declared_type(ir: &EssIr, handle: &TypeHandle, types: &mut BTreeSet<D
         ResolvedBody::Newtype { of, .. } => collect_type_ref(ir, of, types),
         ResolvedBody::Struct { fields, .. } => collect_field_types(ir, fields, types),
         ResolvedBody::Union { variants, .. } => {
-            for variant in variants.values() {
+            for variant in variants.values().flatten() {
                 collect_type_ref(ir, variant, types);
             }
         }

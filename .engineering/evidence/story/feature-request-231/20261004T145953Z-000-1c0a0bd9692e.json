@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-04T14:59:53Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-231",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-entity-runtime (incl. lowerable_subset), ess-xtask site_navigation/layout, xtask docs (integration tree)",
+    "reference": "baseline: lowering stopped at the first refusal and no lowerable-subset table existed (lowerable_subset fails to compile on base; with the walk disabled 4 cases red); treatment: every refused construct reported with path, code and construct; 18 lowered / 32 refused constructs table drift-checked; lower_component entry point; 104 passed 0 failed"
+  }
+}

@@ -6,21 +6,17 @@
 //! list here is read off the registration — [`SUPPORTED_SUITE_FORMATS`] — never written out, so a
 //! new major the synthesizer learns to write turns this red until both runtimes read it.
 //!
-//! The only majors left out are the ones a generated package cannot hold: the direct-response pair
-//! ([`direct_response::ORDINARY`], [`direct_response::COVERAGE`]), the delivery-context pair
-//! ([`delivery_context::ORDINARY`], [`delivery_context::COVERAGE`]) and the structured-value pair
-//! ([`structured_values::ORDINARY`], [`structured_values::COVERAGE`]), which the Go and TypeScript
-//! emitters refuse at generation. `only_the_direct_response_pair_is_left_out` keeps that
-//! exclusion honest.
+//! No supported major is exempt. Admission is a necessary condition; the runtime parity tests
+//! additionally exercise each feature against healthy and faulty targets.
 
 mod support_go;
+mod support_versions;
 
 use std::collections::BTreeSet;
 
 use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
-use ess_conformance::scenario::SUPPORTED_SUITE_FORMATS;
+use ess_conformance::scenario::{ScenarioInitialState, SUPPORTED_SUITE_FORMATS};
 use ess_conformance::ConformanceSuite;
-use ess_conformance::{delivery_context, direct_response, structured_values};
 use ess_domain::{spec::RawSpecFile, system::Source, Specification};
 
 /// A small specification, for a real suite and a real coverage inventory.
@@ -65,6 +61,23 @@ views:
       - {name: text, type: String}
 ";
 
+/// One row of the model to seed with: no obligation of this model needs it.
+const NOTE_SEED: &str = "type: ess-scenario/2
+domain: demo.notes
+scenario: kept-note
+summary: A note established without a command.
+arrange:
+  - instance: kept
+    entity: demo.notes.Note
+    setup:
+      identity: kept-note
+      fields: {text: kept}
+      state: Open
+assert:
+  - view: demo.notes.Notes
+    contains: {note_id: {$instance: kept}, text: kept}
+";
+
 fn ir() -> EssIr {
     let raw = RawSpecFile::parse(MODEL).unwrap_or_else(|error| panic!("{error}"));
     let spec = Specification::assemble([(Source::new("notes.yaml"), raw)])
@@ -80,21 +93,7 @@ fn suite() -> ConformanceSuite {
 
 /// Every suite major a generated Go or TypeScript package can be asked to run.
 fn emittable_majors() -> BTreeSet<u32> {
-    SUPPORTED_SUITE_FORMATS
-        .iter()
-        .copied()
-        .filter(|major| {
-            ![
-                direct_response::ORDINARY,
-                direct_response::COVERAGE,
-                delivery_context::ORDINARY,
-                delivery_context::COVERAGE,
-                structured_values::ORDINARY,
-                structured_values::COVERAGE,
-            ]
-            .contains(major)
-        })
-        .collect()
+    SUPPORTED_SUITE_FORMATS.iter().copied().collect()
 }
 
 /// Whether a major carries a coverage inventory: the odd majors from 5, as
@@ -105,7 +104,13 @@ fn coverage(major: u32) -> bool {
 
 /// One admission document per major, keyed by the file name the Go driver prints.
 fn documents() -> Vec<(String, String)> {
-    let ordinary = serde_json::to_value(suite()).unwrap();
+    let ordinary = suite();
+    assert_eq!(ordinary.provenance.suite_version.major(), 34);
+    assert_eq!(
+        ordinary.provenance.scenario_initial_state,
+        Some(ScenarioInitialState::Empty)
+    );
+    let ordinary = ordinary.to_canonical_json().unwrap();
     let input = ess_conformance::coverage_build::build(
         &ir(),
         &[],
@@ -113,22 +118,59 @@ fn documents() -> Vec<(String, String)> {
         ess_conformance::coverage::Origins::Generated,
     )
     .unwrap_or_else(|error| panic!("{error}"));
-    let covered: serde_json::Value =
-        serde_json::from_str(input.selected().original_json()).unwrap();
+    let selected = input.selected();
+    assert_eq!(selected.suite().provenance.suite_version.major(), 35);
+    assert_eq!(
+        selected.suite().provenance.scenario_initial_state,
+        Some(ScenarioInitialState::Empty)
+    );
+    let covered = selected.original_json();
+    // The seed-bearing pair is written only with its record (beyond10x/ess#413): a real seeded
+    // synthesis of the same model, with one admitted row no obligation needs.
+    let seeds = ess_conformance::synthesize::AdmittedSeeds::compile(
+        &ir(),
+        &[ess_conformance::synthesize::SeedSelection {
+            source: ess_conformance::authored::Source::new("note.yaml", NOTE_SEED),
+            instance: ess_conformance::InstanceName::new("kept").unwrap(),
+        }],
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
+    let seeded = ess_conformance::synthesize::synthesize_with_seeds(&ir(), &seeds)
+        .unwrap()
+        .suite
+        .to_canonical_json()
+        .unwrap();
+    let seeded_input = ess_conformance::coverage_build::build_with_seeds(
+        &ir(),
+        &[],
+        ess_conformance::coverage::Scope::System,
+        ess_conformance::coverage::Origins::Generated,
+        &seeds,
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
+    let seeded_covered = seeded_input.selected().original_json();
     let newest = SUPPORTED_SUITE_FORMATS.iter().copied().max().unwrap();
     emittable_majors()
         .into_iter()
         .chain([newest + 1])
         .map(|major| {
-            let mut document = if coverage(major) {
-                covered.clone()
-            } else {
-                ordinary.clone()
+            let current = match major {
+                42 => &seeded,
+                43 => seeded_covered,
+                _ if coverage(major) => covered,
+                _ => &ordinary,
             };
+            let json = if major < 34 {
+                support_versions::legacy_json(current, major)
+            } else {
+                let mut document: serde_json::Value = serde_json::from_str(current).unwrap();
+                document["provenance"]["suite_version"] = format!("ess-conformance/{major}").into();
+                serde_json::to_string(&document).unwrap()
+            };
+            let mut document: serde_json::Value = serde_json::from_str(&json).unwrap();
             if !coverage(major) {
                 document["scenarios"] = serde_json::json!({});
             }
-            document["provenance"]["suite_version"] = format!("ess-conformance/{major}").into();
             (
                 format!("suite-{major:02}.json"),
                 serde_json::to_string(&document).unwrap(),
@@ -226,31 +268,5 @@ fn typescript_admits_every_suite_major_the_synthesizer_writes() {
         "the TypeScript runtime refuses suite majors the synthesizer writes: {missing:?}. \
          Owned by the ts unit of story:generated-runtimes-run-every-emitted-suite-version \
          (beyond10x/ess#188); red until that unit lands."
-    );
-}
-
-/// The generated packages cannot hold the direct-response pair: both emitters refuse a suite that
-/// carries a direct-response observation, which is the only thing that selects /28 or /29.
-#[test]
-fn only_the_direct_response_pair_is_left_out() {
-    let excluded: Vec<u32> = SUPPORTED_SUITE_FORMATS
-        .iter()
-        .copied()
-        .filter(|major| !emittable_majors().contains(major))
-        .collect();
-    assert_eq!(
-        excluded,
-        [
-            direct_response::ORDINARY,
-            direct_response::COVERAGE,
-            delivery_context::ORDINARY,
-            delivery_context::COVERAGE,
-            structured_values::ORDINARY,
-            structured_values::COVERAGE,
-        ],
-        "only the direct-response, delivery-context and structured-value pairs are left out; \
-         `tests/direct_returns.rs` (`pure_return_generators_refuse_unsupported_execution`), \
-         `tests/delivery_context.rs` and `tests/authored_structured_instances.rs` hold both \
-         emitters to refusing them"
     );
 }

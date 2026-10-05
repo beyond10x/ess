@@ -64,3 +64,33 @@ fn union_response_checks_closed_keys_without_changing_optional_content() {
         std::fs::write(path, serde_json::to_string(&contracts).unwrap()).unwrap();
     }
 }
+
+#[test]
+fn native_target_executes_legacy_union_response_suites() {
+    for tag in ["kind", "value"] {
+        let source = include_str!("fixtures/response-union.yaml")
+            .replace("tag: kind", &format!("tag: {tag}"))
+            .replace("text: String", "text: Optional<String>");
+        let spec = Specification::assemble([(
+            Source::new("union.yaml"),
+            RawSpecFile::parse(&source).unwrap(),
+        )])
+        .unwrap();
+        let model = compile(&spec, &SourceMap::new()).unwrap();
+        let synthesis = ess_conformance::synthesize::synthesize(&model);
+        assert!(synthesis.refusals.is_empty(), "{:?}", synthesis.refusals);
+        let admitted = ess_conformance::AdmittedSuite::from_suite(&synthesis.suite).unwrap();
+        let run = ess_conformance::Runner::for_suite(admitted.suite()).run_admitted(
+            &admitted,
+            &ess_conformance::interpret::Interpreted::for_model(model),
+        );
+        assert_ne!(run.scenarios.len(), 0);
+        assert!(
+            run.scenarios
+                .iter()
+                .all(|result| result.status == ess_conformance::report::Status::Passed),
+            "{:#?}",
+            run.scenarios
+        );
+    }
+}

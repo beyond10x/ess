@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-04T15:19:03Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-267",
+  "kind": "story",
+  "revision": 21,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-conformance binding, delivery, retry, periodic, interpreted and synthesis targets (38 binaries, integration tree)",
+    "reference": "baseline: binding_arrangement 0 passed 10 failed on base; adversary 4 red before correction; treatment: 465 passed 0 failed; Go and TypeScript binding lanes green; committed example suites unchanged"
+  }
+}

@@ -422,7 +422,7 @@ mod tests {
         );
         assert_eq!(report.issues.len(), 1);
         assert_eq!(report.issues[0].code, IssueCode::DuplicateSchemaId);
-        assert!(report.valid.is_empty());
+        assert_eq!(report.valid.len(), 0);
     }
 
     #[test]

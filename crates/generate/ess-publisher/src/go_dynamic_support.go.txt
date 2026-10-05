@@ -1,0 +1,210 @@
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+	"unicode"
+)
+
+// Transport is where a publisher sends one message. Implement it over any client, or use the
+// natsjs module for a JetStream connection. It returns once the broker has accepted or refused.
+type Transport interface { Publish(ctx context.Context, subject string, payload []byte) error }
+
+// PublishError is a publish that did not land: which subject, how many payloads, and why.
+type PublishError struct { Subject string; Items int; Err error }
+func (e *PublishError) Error() string { return fmt.Sprintf("publishing %d payload(s) on %q failed: %v", e.Items, e.Subject, e.Err) }
+func (e *PublishError) Unwrap() error { return e.Err }
+
+// ErrClosed is returned for a payload offered after Close.
+var ErrClosed = errors.New("the publisher is closed")
+
+type PublisherOptions struct { OnError func(error) }
+var _ = json.Marshal
+var _ = strings.Builder{}
+
+type bucket struct { payloads [][]byte; oldest time.Time }
+type batchReply chan error
+
+type enqueueCommand struct { subject string; payload []byte; reply batchReply }
+type sendCommand struct { ctx context.Context; subject string; payloads [][]byte; reply batchReply }
+type flushCommand struct { ctx context.Context; close bool; reply batchReply }
+type bucketCountCommand struct { reply chan int }
+
+// sendBatch is one drained message. sendJob is one message published in the background, or an
+// ordered group whose first failure answers a caller.
+type sendBatch struct { subject string; payloads [][]byte }
+type sendJob struct { ctx context.Context; batches []sendBatch; reply batchReply }
+
+// sendQueue is unbounded, so handing a drained batch to the sender never waits for a broker.
+type sendQueue struct { mu sync.Mutex; ready *sync.Cond; jobs []sendJob; closed bool }
+
+func newSendQueue() *sendQueue { q := &sendQueue{}; q.ready = sync.NewCond(&q.mu); return q }
+func (q *sendQueue) push(job sendJob) { q.mu.Lock(); q.jobs = append(q.jobs, job); q.mu.Unlock(); q.ready.Signal() }
+func (q *sendQueue) finish() { q.mu.Lock(); q.closed = true; q.mu.Unlock(); q.ready.Signal() }
+func (q *sendQueue) pop() (sendJob, bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	for len(q.jobs) == 0 && !q.closed { q.ready.Wait() }
+	if len(q.jobs) == 0 { return sendJob{}, false }
+	job := q.jobs[0]
+	q.jobs[0] = sendJob{}
+	q.jobs = q.jobs[1:]
+	return job, true
+}
+
+// batcher is one array operation: a worker that owns one nonempty bucket per concrete subject and
+// never performs I/O, and one sender that publishes drained batches in the order they were drained.
+type batcher struct {
+	template string
+	maxItems int
+	maxDelay time.Duration
+	transport Transport
+	onError func(error)
+	commands chan any
+	queue *sendQueue
+	mu sync.Mutex
+	closed bool
+	done chan struct{}
+	sent chan struct{}
+}
+
+func newBatcher(template string, maxItems int, maxDelay time.Duration, transport Transport, onError func(error)) *batcher {
+	b := &batcher{template: template, maxItems: maxItems, maxDelay: maxDelay, transport: transport, onError: onError, commands: make(chan any), queue: newSendQueue(), done: make(chan struct{}), sent: make(chan struct{})}
+	go b.work()
+	go b.sendAll()
+	return b
+}
+
+func parameterToken(template, name, value string) error {
+	if value == "" || strings.ContainsAny(value, ".*>") || strings.IndexFunc(value, unicode.IsSpace) >= 0 {
+		return &PublishError{Subject: template, Items: 1, Err: fmt.Errorf("address parameter %q must be one nonempty NATS subject token with no `.`, whitespace, `*` or `>`", name)}
+	}
+	return nil
+}
+
+func (b *batcher) work() {
+	defer close(b.done)
+	defer b.queue.finish()
+	buckets := map[string]*bucket{}
+	timer := time.NewTimer(time.Hour)
+	if !timer.Stop() { <-timer.C }
+	for {
+		var wake <-chan time.Time
+		if len(buckets) > 0 {
+			var deadline time.Time
+			for _, bucket := range buckets { if deadline.IsZero() || bucket.oldest.Add(b.maxDelay).Before(deadline) { deadline = bucket.oldest.Add(b.maxDelay) } }
+			wait := time.Until(deadline)
+			if wait < 0 { wait = 0 }
+			timer.Reset(wait)
+			wake = timer.C
+		}
+		select {
+		case raw := <-b.commands:
+			if wake != nil && !timer.Stop() { select { case <-timer.C: default: } }
+			switch command := raw.(type) {
+			case enqueueCommand:
+				entry := buckets[command.subject]
+				if entry == nil { entry = &bucket{oldest: time.Now()}; buckets[command.subject] = entry }
+				entry.payloads = append(entry.payloads, command.payload)
+				if len(entry.payloads) >= max(1, b.maxItems) {
+					delete(buckets, command.subject)
+					b.queue.push(sendJob{ctx: context.Background(), batches: []sendBatch{{subject: command.subject, payloads: entry.payloads}}})
+				}
+				command.reply <- nil
+			case sendCommand:
+				b.queue.push(sendJob{ctx: command.ctx, batches: []sendBatch{{subject: command.subject, payloads: command.payloads}}, reply: command.reply})
+			case flushCommand:
+				b.queue.push(sendJob{ctx: command.ctx, batches: drain(buckets), reply: command.reply})
+				if command.close { return }
+			case bucketCountCommand:
+				command.reply <- len(buckets)
+			}
+		case now := <-wake:
+			due := make([]string, 0)
+			for subject, bucket := range buckets { if !bucket.oldest.Add(b.maxDelay).After(now) { due = append(due, subject) } }
+			sort.Strings(due)
+			for _, subject := range due {
+				entry := buckets[subject]
+				delete(buckets, subject)
+				b.queue.push(sendJob{ctx: context.Background(), batches: []sendBatch{{subject: subject, payloads: entry.payloads}}})
+			}
+		}
+	}
+}
+
+// sendAll publishes every handed-over job in order. It holds no lock and serves no command, so the
+// error callback may publish to this same operation.
+func (b *batcher) sendAll() {
+	defer close(b.sent)
+	for {
+		job, ok := b.queue.pop()
+		if !ok { return }
+		var first error
+		for _, batch := range job.batches {
+			if err := b.send(job.ctx, batch.subject, batch.payloads); err != nil && first == nil { first = err }
+		}
+		if job.reply != nil { job.reply <- first } else if first != nil && b.onError != nil { b.onError(first) }
+	}
+}
+
+func (b *batcher) request(command func(batchReply) any, items int) error {
+	b.mu.Lock()
+	if b.closed { b.mu.Unlock(); return &PublishError{Subject: b.template, Items: items, Err: ErrClosed} }
+	reply := make(batchReply, 1)
+	b.commands <- command(reply)
+	b.mu.Unlock()
+	return <-reply
+}
+
+func (b *batcher) enqueue(subject string, payload []byte) error {
+	return b.request(func(reply batchReply) any { return enqueueCommand{subject: subject, payload: payload, reply: reply} }, 1)
+}
+func (b *batcher) sendNow(ctx context.Context, subject string, payloads [][]byte) error {
+	if len(payloads) == 0 { return nil }
+	return b.request(func(reply batchReply) any { return sendCommand{ctx: ctx, subject: subject, payloads: payloads, reply: reply} }, len(payloads))
+}
+func (b *batcher) flush(ctx context.Context) error {
+	return b.request(func(reply batchReply) any { return flushCommand{ctx: ctx, reply: reply} }, 0)
+}
+func (b *batcher) close(ctx context.Context) error {
+	b.mu.Lock()
+	if b.closed { b.mu.Unlock(); <-b.done; <-b.sent; return nil }
+	b.closed = true
+	reply := make(batchReply, 1)
+	b.commands <- flushCommand{ctx: ctx, close: true, reply: reply}
+	b.mu.Unlock()
+	err := <-reply
+	<-b.done
+	<-b.sent
+	return err
+}
+func (b *batcher) bucketCount() int {
+	b.mu.Lock()
+	if b.closed { b.mu.Unlock(); return -1 }
+	reply := make(chan int, 1)
+	b.commands <- bucketCountCommand{reply: reply}
+	b.mu.Unlock()
+	return <-reply
+}
+
+func (b *batcher) send(ctx context.Context, subject string, batch [][]byte) error {
+	if len(batch) == 0 { return nil }
+	payload := append(append([]byte{'['}, bytes.Join(batch, []byte{','})...), ']')
+	if err := b.transport.Publish(ctx, subject, payload); err != nil { return &PublishError{Subject: subject, Items: len(batch), Err: err} }
+	return nil
+}
+
+// drain retires every bucket, in lexical subject order.
+func drain(buckets map[string]*bucket) []sendBatch {
+	subjects := make([]string, 0, len(buckets))
+	for subject := range buckets { subjects = append(subjects, subject) }
+	sort.Strings(subjects)
+	batches := make([]sendBatch, 0, len(subjects))
+	for _, subject := range subjects { batches = append(batches, sendBatch{subject: subject, payloads: buckets[subject].payloads}); delete(buckets, subject) }
+	return batches
+}

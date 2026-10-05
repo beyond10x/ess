@@ -1,7 +1,7 @@
 ---
 title: Author scenarios
 sidebar_position: 2
-description: "Add scenarios a person wrote to a generated suite: selection, external branches, backend state, instances, held-state outcomes, retries, clocks, event context and binding accessors."
+description: "Add scenarios a person wrote to a generated suite: selection, compilation, subsets, expected branches and refusals, backend state, instances and captured event identities."
 ---
 
 # Author scenarios
@@ -88,6 +88,31 @@ the subset still shows what was left out. Narrow it again with `--suite-input` i
 A subset passing is not the whole suite passing: only a nonempty, complete, all-pass selection
 qualifies as conformance ([Opt into declared coverage](runners.md#opt-into-declared-coverage)).
 
+## Expect the branch the input selects
+
+`validate` reads each act's literal input against the command's `when:` guards, in the order a
+conforming target answers them: input-guarded refusals first, the first declared of them; then
+accepting `when:` and external branches in declaration order; the default only where no `when:`
+holds. An act is refused with `ESS-AUTHOR-041` when that order decidedly does not take the branch
+it expects under `outcome:`. Where no `outcome:` is written, the check applies to the branches that
+report its `error:`, and the act is refused only when none of them is taken.
+
+```yaml
+# `id-required: ticket_id == ""` is an input-guarded refusal, so it answers before `closed`.
+timeline:
+  - at: 2026-01-05T09:00:00Z
+    command: demo.tickets.SetTicketOpen
+    input: {ticket_id: "", open: false}
+    outcome: closed
+```
+
+The refusal names the branch that answers first and its guard, or the expected branch's own guard
+that the input refutes. Only what the input decides is read. What a branch reads beyond the input
+(a held state, a stored or related row, an external answer, the target's clock) is not decided, and
+neither is a guard over a field sent as `{$instance: …}` or another reference. A guard over `now`
+is decided only where it reads the same at every run, such as a start already in the past when the
+operand was introduced. Where any of these leaves the answer open, the act is accepted.
+
 ## Expect an external branch in an authored scenario
 
 No input decides a branch declared `external:`, so an authored act that expects one names it under
@@ -149,10 +174,14 @@ A refused command takes no branch and publishes nothing, so `no_events:` is the 
 carry. It is checked against the target's whole event log: the log may hold no more of each listed event
 after the send than just before it, counting repeats, and a refusal that hands back events fails.
 So a target that runs the command and only then refuses it fails. The generated runners perform
-these observations through `ObserveEvents` / `observeEvents`; a custom runner must also collect
-the pre-send count before executing the command, then compare it with the post-refusal count.
-See [the target interface](./runners.md) for the event-log and unsupported-observation contract.
-No extra authored step is needed. The act is refused:
+these observations through `ObserveEvents` / `observeEvents`. A custom runner must do the same.
+On reaching the act's `execute_command`, it looks ahead to the `expect_not_granted` that follows.
+Before sending, it observes each `no_events:` event in the scenario's correlation and counts the
+occurrences. After the refusal, it observes each event again in the same correlation. The step
+fails if any count grew. A target that cannot observe its log leaves the scenario `unsupported`,
+never passed. The command's answer and view comparisons cannot replace these observations. See
+[the target interface](./runners.md#hold-your-own-implementation-to-the-suite) for the full
+contract. No extra authored step is needed. The act is refused:
 
 | When | Refusal |
 |---|---|
@@ -219,137 +248,40 @@ Each reference resolves to the identity the run bound for that instance, and the
 receives the list or mapping with those identities in place. A reference at a position of
 any other type is refused as `ESS-AUTHOR-022`, naming the position (`labels[1]`,
 `pair.note`, `tags[owner]`, `target.value`); one at a member the model does not declare, or
-inside a value of the wrong shape, is refused naming the member or the position. One inside an event payload or an error is refused as
-`ESS-AUTHOR-021`, as a whole-field one is. A suite carrying such a value is suite/32 (/33
-with coverage); the Rust runner resolves it, and Go and TypeScript generation refuse it.
+inside a value of the wrong shape, is refused naming the member or the position. One nested
+inside an event payload or an error is refused as `ESS-AUTHOR-021`. A suite carrying such a
+value is suite/32 (/33 with coverage); Rust, Go and TypeScript resolve it with report/2.
 
-## Observe outcomes selected by held state
+## Compare an event's identity with a captured instance
 
-For a command declaring `when_subject_state`, synthesis establishes a real
-reachable state, queries a declared immediate view exposing identity and state,
-invokes the command, and checks the resulting row. The same input can therefore
-prove different outcomes from different held states. An implementation that
-returns the expected outcome while incorrectly changing the row fails.
+An expected event may name a captured instance for a payload field typed as that instance's
+identity, so an implementation that drops the identity, or publishes another one, fails:
 
-The initial adapter requires an unfiltered immediate view without parameters.
-Missing observation authority or an unreachable required state produces an
-explicit synthesis refusal. This uses existing command and view assertions;
-the state guard alone does not require a newer suite vocabulary. The source
-declaration requires `ess/3`.
+```yaml
+    events:
+      - event: billing.invoice.InvoicePaid
+        payload: {invoice_id: {$instance: invoice}, amount: {amount: 10, currency: EUR}}
+```
 
-## Observe retries of the original result
+The reference resolves to the identity the run bound, as it does in a command input, and the
+event must carry exactly that value. The act compiles into an `expect_event_values` step, so the
+suite is written at `ess-conformance/18` or later; Rust, Go and TypeScript resolve it, and browser
+replay shows it as a declaration. A reference at a field of any other type, including another
+entity's identity, an error field, or a position nested inside a payload field, is refused as
+`ESS-AUTHOR-021`.
 
-Source `ess/7`, introduced in 0.29.0, lets an outcome declare `replays` with
-the name of an earlier successful outcome in the same command. The generated
-witness executes that original outcome, captures its actual result and subject
-identity, then retries the same input with the same actor. The retry must return
-the exact original typed response without an error, direct event or subject
-change.
+Synthesis makes the same comparison wherever the arrangement determines an identity an event
+carries: an input sent as a captured instance, the subject's own identity (`{subject: <identity>}`),
+and a related row's identity read through `{related: …}`.
 
-Synthesis must establish that the retry's own condition holds immediately after
-the original command. An unreachable or unprovable immediate retry produces a
-named refusal. A valid model can still require an authored witness for a retry
-that becomes eligible only after later activity.
+## Where the observation sections went
 
-The target must expose the complete subject through declared immediate,
-unfiltered views. Complete observations check required fields and their types
-in both actual query results before comparing all returned fields. Returning
-only the identity fails even when that partial row stays unchanged. Optional
-absence is distinct from null; extra returned fields also participate in the
-comparison. Declared Integer values must reach the adapter without rounding.
-Recursive Decimal and Binary64 response or complete-row positions are outside
-this observation profile and refuse.
+What a suite observes beyond an act's own answer is on [Observations](observations.md). Each
+section that used to be on this page is listed here under its old anchor, so an older link still
+finds it.
 
-Source `ess/7` uses the same complete observations for ordinary `wrong_state`
-refusal witnesses. Existing independent snapshot steps remain available with
-their original, weaker contract. A generic error assertion alone does not
-establish subject preservation.
-
-These observations select suite/12 or declared-coverage suite/13 and require
-report/2 in Rust and generated Go. TypeScript and browser runners refuse these
-envelopes before invoking the target. An immediate retry witness does not prove
-restart recovery, retries after a later head, or absence of physical writes;
-those remain implementation-specific acceptance.
-
-## Observe selection, periodic activity and clock evidence
-
-Selection observations, introduced in 0.23.0, compare actual source occurrences and selected
-indices, preserving optional absence and occurrence-based exclusion. A host
-conversion remains an explicit obligation; declaring the conversion does not
-execute or prove it.
-
-Periodic checks exercise the named host under controlled target time: ready,
-initially inactive, failed first read and slow first read. The runner examines
-actual scoped timer, read and invocation facts, including the complete live
-interval and a window after stop acknowledgement. Missing ticks, overlapping
-work, stale mapped inputs and post-stop activity fail. Unsupported authority
-produces a non-passing result. The bounded check observes at most five live
-periods; it does not sleep in the runner.
-
-Clock comparisons use the typed `ExpectReadingOrder` operation with references
-to already observed event members. The adapter supplies occurrence-scoped
-process, epoch, origin and formatter facts; the runner normalizes and compares.
-Declared alternative origins are requirements, not evidence. Wrong occurrence,
-unknown offset, differing process/epoch or mutated request requirements cannot
-establish success. Authored YAML convenience syntax for this comparison is not
-provided; construct and persist the typed operation through the admitted writer.
-
-These operations use suite/6 or declared-coverage suite/7 and explicit report/2.
-Previous readers refuse their vocabulary. Controlled adapter tests do not prove
-that an unrelated production adapter implements these capabilities.
-
-## Deliver an event with its context
-
-A binding that declares a delivery context (`ess/18`) reacts to an event that nothing in the
-specification publishes. No command in the suite can make that event happen, so the suite
-delivers it with the `deliver_event` step. The step names the event, the external channel
-(`authority`), the occurrence's fields and the context the channel binds. The suite chooses
-all of these values, so every expected input is a value it put in.
-
-| Scenario | What it requires |
-|---|---|
-| `mapping` | One event is delivered under two different contexts. Each invocation carries its own delivery's context. |
-| `delivery` | Two occurrences are delivered under two contexts, and then the event is redelivered. Every invocation for the second occurrence (`expect_every_invocation`) carries the second context. |
-| `flow`, `on-failure` | The same as for any binding, with the event delivered by the suite. |
-
-A target implements `deliver_event` in Rust. It binds the context as a real channel would,
-and the invocation must read the context from the delivery, never from the payload. A later
-`redeliver_event` repeats the most recent delivered occurrence, with that occurrence's own
-context.
-
-If a target cannot deliver an event with its context, it answers unsupported, which is the
-default. Its scenarios are then recorded `unsupported` with the target's reason, and are never
-passed.
-
-These steps use suite/30, or suite/31 with declared coverage. Go and TypeScript generation
-refuse a suite that carries them.
-
-## Observe bounded binding accessors
-
-The `ess/3` binding paths described in
-[Write a specification](../specify/bindings-and-components.md#read-a-field-inside-an-event-envelope)
-require new suite vocabulary, introduced alongside them in 0.23.0. An ordinary suite retaining an
-accessor uses `ess-conformance/6`; a declared-coverage suite retaining the new accessor
-vocabulary uses `ess-conformance/7`. Models that do not retain that vocabulary
-keep their existing suite formats. Both new versions require explicit
-`--report-format 2` for execution. Report format 1 is refused before the target
-runs, even without `--report-out` or when incomplete execution is allowed.
-
-The observation checks the declared path against the triggering event and the
-resulting command input. It distinguishes an unavailable path from a terminal
-value and rejects missing required members, invalid union discriminators and wrong
-payload kinds along the traversal. Whole-value collection copies do not validate
-their elements. A conversion declaration supplies a reason
-for a type crossing, not an executable conversion algorithm: a mapping whose
-expected input cannot be determined receives a capability refusal.
-
-Native Rust and Go values can distinguish nested Optional states that serialize
-to the same JSON `null`. When that distinction is necessary to decide whether a
-mapping is correct, conformance refuses the ambiguous observation instead of
-guessing. Copying the typed native value remains distinct from proving that copy
-through a JSON observation.
-
-Ordinary suite/6 retains unknown coverage. Suite/7 uses the same exact-input and
-parent-lineage rules as suite/5; selecting a child preserves its version and
-requires the original parent chain. A passing run proves only the admitted
-selection and does not resolve any recorded refusal.
+- <a id="observe-outcomes-selected-by-held-state"></a>[Observe outcomes selected by held state](observations.md#observe-outcomes-selected-by-held-state)
+- <a id="observe-retries-of-the-original-result"></a>[Observe retries of the original result](observations.md#observe-retries-of-the-original-result)
+- <a id="observe-selection-periodic-activity-and-clock-evidence"></a>[Observe selection, periodic activity and clock evidence](observations.md#observe-selection-periodic-activity-and-clock-evidence)
+- <a id="deliver-an-event-with-its-context"></a>[Deliver an event with its context](observations.md#deliver-an-event-with-its-context)
+- <a id="observe-bounded-binding-accessors"></a>[Observe bounded binding accessors](observations.md#observe-bounded-binding-accessors)

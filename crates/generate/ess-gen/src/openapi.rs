@@ -43,6 +43,7 @@
 //! | `operationId` | the command's qualified name, verbatim | unique already; any prettifying transformation trades that guarantee for cosmetics |
 //! | request body | the command's `input`, `required` when any input field is | |
 //! | an outcome with no `error` | `202` | below |
+//! | an outcome declaring `returns: true`, from `ess/22` | `200`, with the command's response under `response` | `202` claims the request was queued; this branch was carried out and answered in the same response (beyond10x/ess#424). Below `ess/22` it keeps `202` and its body |
 //! | an outcome whose `error` the input decides | `422` | below |
 //! | an outcome whose `error` is `external` | `502` | below |
 //! | an outcome whose `error` is `wrong_state` | `409` | below |
@@ -208,8 +209,8 @@ use ess_domain::view::Consistency;
 use serde_json::{json, Map, Value};
 
 use crate::artifact::{Artifact, Generator};
-use crate::http::{self, status, CONFLICT, FORBIDDEN, NO_INPUT, READ, REFUSED, UPSTREAM};
-use ess_compiler::refs::{ActorRef, BindingRef, ComponentRef, EssSemanticRef};
+use crate::http::{self, ANSWERED, CONFLICT, FORBIDDEN, NO_INPUT, READ, REFUSED, UPSTREAM};
+use ess_compiler::refs::{ActorRef, BindingRef, CommandRef, ComponentRef, EssSemanticRef};
 
 use crate::provenance::{Provenance, ProvenanceMint, SlicedProvenance};
 use crate::schema::types::{self, Message, Node};
@@ -329,6 +330,17 @@ fn component_slice(
             .keys()
             .map(|name| BindingRef::new(name.clone()).into()),
     );
+    seeds.extend(
+        ir.commands()
+            .values()
+            .filter(|command| {
+                command
+                    .outcomes
+                    .iter()
+                    .any(|outcome| !outcome.one_time_response.is_empty())
+            })
+            .map(|command| CommandRef::new(command.name.clone()).into()),
+    );
     mint.of_seeds(seeds)
 }
 
@@ -351,6 +363,7 @@ fn render(document: &Document, provenance: &Provenance) -> String {
 fn document(ir: &EssIr, component: &ResolvedComponent, provenance: &Provenance) -> Document {
     Document {
         openapi: VERSION,
+        one_time_response: crate::one_time_response::all(ir),
         info: Info {
             title: component
                 .naming
@@ -370,6 +383,24 @@ fn document(ir: &EssIr, component: &ResolvedComponent, provenance: &Provenance) 
             schemas: schemas(ir, component),
         },
         entities: entity_model(ir, component),
+    }
+}
+
+/// The sentence a document adds when one of its commands has a branch that answers with the
+/// command's response (beyond10x/ess#424), and nothing otherwise, so every other document keeps its
+/// bytes.
+fn direct_answers(ir: &EssIr, component: &ResolvedComponent) -> &'static str {
+    let answers = component.accepts.iter().any(|handle| {
+        ir.command(handle)
+            .outcomes
+            .iter()
+            .any(|outcome| http::answers_with_response(ir, outcome))
+    });
+    if answers {
+        " A branch that returns the command's response is carried out in the request that took \
+         it, so it is answered 200, and its body carries that response under `response`."
+    } else {
+        ""
     }
 }
 
@@ -393,6 +424,7 @@ fn description(ir: &EssIr, component: &ResolvedComponent) -> String {
          Events emitted by a branch are published to consumers through the event transport, and \
          the `published` property of every response body lists them too, in publication order.",
     );
+    text.push_str(direct_answers(ir, component));
     if http::grants_checked_on(ir, component) {
         text.push_str(
             "\n\nThe specification declares who may invoke what (`x-ess-may-invoke` on each \
@@ -404,9 +436,18 @@ fn description(ir: &EssIr, component: &ResolvedComponent) -> String {
              `{\"refused\": \"not granted\", \"actor\": <name or null>}`. A 403 a declared branch \
              answers carries `outcome` and the declared `error` instead, so a client tells the two \
              apart by the members present. A command no declared actor may invoke is refused to \
-             every caller. Views are not grant-checked: a grant names commands, and any caller may \
-             read what a view publishes.",
+             every caller.",
         );
+        text.push_str(if ir.grants_reads() {
+            // beyond10x/ess#286: a model naming a view in a grant states who may read it.
+            " A view an actor's grant names is read-checked the same way (`x-ess-may-read` on its \
+             operation): a request authenticated as no actor, or as one the grant does not name, \
+             is answered 403 with the same standard refusal before the view is read. A view no \
+             grant names is open, and any caller may read what it publishes."
+        } else {
+            " Views are not grant-checked: a grant names commands, and any caller may read what a \
+             view publishes."
+        });
     }
     if component.reached_by == Reach::Network {
         text.push_str(
@@ -467,7 +508,7 @@ fn paths(ir: &EssIr, component: &ResolvedComponent) -> BTreeMap<String, PathItem
             http::Served::Command(handle) => {
                 item.post = Some(operation(ir, handle, &grants, checked));
             }
-            http::Served::View(handle) => item.get = Some(query(ir, handle)),
+            http::Served::View(handle) => item.get = Some(query(ir, handle, checked)),
         }
     }
     out
@@ -494,6 +535,7 @@ fn operation(
         description: command.naming.summary.clone(),
         tags: vec![domain.naming.wire_or(&domain.name).to_owned()],
         may_invoke: may_invoke(handle, grants),
+        may_read: Vec::new(),
         caller: http::caller_attributes(ir, command),
         accessors: ir
             .bindings()
@@ -520,7 +562,7 @@ fn operation(
         consistency: None,
         parameters: idempotency(ir, command).into_iter().collect(),
         request_body: request_body(command),
-        responses: responses(command, checks_grants),
+        responses: responses(ir, command, checks_grants),
     }
 }
 
@@ -532,6 +574,15 @@ const NOT_GRANTED_MEANING: &str = "the standard refusal for an actor no grant ad
                                    actor is decided by the command. Its body carries `refused` and \
                                    `actor`, never the `outcome` and `error` a declared branch \
                                    carries.";
+
+/// What the standard refusal means on a read-granted view (beyond10x/ess#286), for its `403`
+/// response's description.
+const NOT_GRANTED_READ_MEANING: &str = "the standard refusal for an actor no grant admits: the \
+                                        request was authenticated as no actor, or as one \
+                                        `x-ess-may-read` does not list. It is checked before the \
+                                        view is read, so no row was read, and the same request \
+                                        from a granted actor answers the rows. Its body is the \
+                                        one a command answers an ungranted actor.";
 
 /// The standard refusal's body: `{"refused": "not granted", "actor": …}`, the same for every
 /// command (beyond10x/ess#265).
@@ -565,9 +616,30 @@ fn not_granted_schema() -> Value {
 /// cursor, no ordering and no filter parameter, because the model states none of them. The view's
 /// filter is declared in the specification and is a property of the projection, not of the
 /// request: a caller supplies the values it reads as `param.<name>`, never the predicate.
-fn query(ir: &EssIr, handle: &ViewHandle) -> Operation {
+fn query(ir: &EssIr, handle: &ViewHandle, checks_grants: bool) -> Operation {
     let view = ir.view(handle);
     let domain = ir.domain(&view.domain);
+    // A read-granted view on a surface that checks grants answers the standard refusal too
+    // (beyond10x/ess#286); an open view, and every view of a model naming none, keeps its bytes.
+    let read_checked = checks_grants && ir.read_granted(&view.name);
+    let mut responses: BTreeMap<String, Response> = [(
+        READ.to_owned(),
+        Response {
+            description: view_description(ir, view),
+            content: Some(content(json!({"$ref": reference(&view_key(view))}))),
+        },
+    )]
+    .into_iter()
+    .collect();
+    if read_checked {
+        responses.insert(
+            FORBIDDEN.to_owned(),
+            Response {
+                description: format!("No declared outcome: {NOT_GRANTED_READ_MEANING}"),
+                content: Some(content(not_granted_schema())),
+            },
+        );
+    }
     Operation {
         id: view.name.to_string(),
         periodic: Vec::new(),
@@ -575,20 +647,19 @@ fn query(ir: &EssIr, handle: &ViewHandle) -> Operation {
         description: view.naming.summary.clone(),
         tags: vec![domain.naming.wire_or(&domain.name).to_owned()],
         may_invoke: Vec::new(),
+        may_read: if read_checked {
+            ir.readers(&view.name)
+                .map(|actor| actor.name.to_string())
+                .collect()
+        } else {
+            Vec::new()
+        },
         caller: Vec::new(),
         accessors: Vec::new(),
         consistency: Some(view.consistency.as_str()),
         parameters: view_parameters(view),
         request_body: None,
-        responses: [(
-            READ.to_owned(),
-            Response {
-                description: view_description(ir, view),
-                content: Some(content(json!({"$ref": reference(&view_key(view))}))),
-            },
-        )]
-        .into_iter()
-        .collect(),
+        responses,
     }
 }
 
@@ -715,13 +786,12 @@ fn request_body(command: &ResolvedCommand) -> Option<RequestBody> {
 /// the status, and the schema is `oneOf` the declared branch (or branches, with their
 /// discriminator kept inside) and the standard refusal. They cannot be confused: a branch's body
 /// requires `outcome`, the refusal's is closed over `refused` and `actor`.
-fn responses(command: &ResolvedCommand, checks_grants: bool) -> BTreeMap<String, Response> {
-    let mut grouped: BTreeMap<&'static str, Vec<&ResolvedOutcome>> = BTreeMap::new();
-    for outcome in &command.outcomes {
-        grouped.entry(status(outcome)).or_default().push(outcome);
-    }
-
-    let mut out: BTreeMap<String, Response> = grouped
+fn responses(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    checks_grants: bool,
+) -> BTreeMap<String, Response> {
+    let mut out: BTreeMap<String, Response> = by_status(ir, command)
         .into_iter()
         .map(|(status, outcomes)| {
             let names: Vec<String> = outcomes
@@ -821,6 +891,22 @@ fn responses(command: &ResolvedCommand, checks_grants: bool) -> BTreeMap<String,
     out
 }
 
+/// A command's outcomes, grouped by the status each is answered with ([`http::outcome_status`]),
+/// in declaration order within a status.
+fn by_status<'a>(
+    ir: &EssIr,
+    command: &'a ResolvedCommand,
+) -> BTreeMap<&'static str, Vec<&'a ResolvedOutcome>> {
+    let mut grouped: BTreeMap<&'static str, Vec<&'a ResolvedOutcome>> = BTreeMap::new();
+    for outcome in &command.outcomes {
+        grouped
+            .entry(http::outcome_status(ir, outcome))
+            .or_default()
+            .push(outcome);
+    }
+    grouped
+}
+
 /// What a status means here, for the response's required description.
 fn meaning(status: &str) -> &'static str {
     match status {
@@ -843,6 +929,11 @@ fn meaning(status: &str) -> &'static str {
         FORBIDDEN => {
             "the caller is not one this branch admits: its guard compares the authenticated caller \
              with the input or the record. The same request from an admitted caller is accepted."
+        }
+        ANSWERED => {
+            "the branch the specification declares for this input, carried out in this request: \
+             the body carries the command's response under `response`. Events this branch emits \
+             are published to consumers and listed under `published`."
         }
         _ => {
             "the branch the specification declares for this input. Events this branch emits are \
@@ -869,7 +960,7 @@ fn schemas(ir: &EssIr, component: &ResolvedComponent) -> BTreeMap<String, Fragme
             );
         }
         roots.extend(types::field_leaves(&command.input));
-        if command.outcomes.iter().any(|o| o.retains_result) {
+        if command.outcomes.iter().any(|o| carries_result(ir, o)) {
             out.insert(
                 format!("{}.Result", command.name),
                 embedded(&types::message(&Message::of_response(command))),
@@ -1054,7 +1145,7 @@ fn outcome_schema(ir: &EssIr, command: &ResolvedCommand, outcome: &ResolvedOutco
         }
     }
 
-    if outcome.retains_result {
+    if carries_result(ir, outcome) {
         required.push(Value::String("response".to_owned()));
         properties.insert(
             "response".into(),
@@ -1080,6 +1171,12 @@ fn outcome_schema(ir: &EssIr, command: &ResolvedCommand, outcome: &ResolvedOutco
         schema["x-ess-replays"] = json!({"command": command.name, "outcome": replay.origin});
     }
     schema
+}
+
+/// Whether an outcome's body carries the command's response under `response`: a retained result,
+/// or a branch that [answers with it](http::answers_with_response) (beyond10x/ess#423).
+fn carries_result(ir: &EssIr, outcome: &ResolvedOutcome) -> bool {
+    outcome.retains_result || http::answers_with_response(ir, outcome)
 }
 
 /// The `published` property of one outcome's response body: the events the branch published, in
@@ -1163,6 +1260,17 @@ fn condition_description(condition: &ResolvedCondition) -> String {
         } => format!(
             "{}{}.",
             ess_compiler::ir::related_sentence(via, entity, test),
+            input.as_ref().map_or(String::new(), |guard| format!(
+                " and `{guard}` holds of the input"
+            )),
+        ),
+        ResolvedCondition::RelatedSet {
+            selection,
+            test,
+            input,
+        } => format!(
+            "{}{}.",
+            ess_compiler::ir::row_set_sentence(selection, test),
             input.as_ref().map_or(String::new(), |guard| format!(
                 " and `{guard}` holds of the input"
             )),
@@ -1482,6 +1590,11 @@ fn list(items: &[String]) -> String {
 #[derive(Debug, serde::Serialize)]
 struct Document {
     openapi: &'static str,
+    #[serde(
+        rename = "x-ess-one-time-response",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    one_time_response: Vec<crate::one_time_response::Policy>,
     info: Info,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     tags: Vec<Tag>,
@@ -1570,6 +1683,11 @@ struct Operation {
     /// prove it. See the module documentation's "What this refuses to guess".
     #[serde(rename = "x-ess-may-invoke", skip_serializing_if = "Vec::is_empty")]
     may_invoke: Vec<String>,
+    /// The actors the specification permits to read this view (beyond10x/ess#286): the actors whose
+    /// `may:` names it. Absent on a command, and on a view no actor names, which is open to every
+    /// caller. An annotation, for the reason `x-ess-may-invoke` is one.
+    #[serde(rename = "x-ess-may-read", skip_serializing_if = "Vec::is_empty")]
+    may_read: Vec<String>,
     /// The attributes of the caller the command reads (ess/16, beyond10x/ess#168): what the
     /// request has to be authenticated as, which its body does not carry. An annotation, for the
     /// reason `x-ess-may-invoke` is one: the model states what the credential carries, not how a

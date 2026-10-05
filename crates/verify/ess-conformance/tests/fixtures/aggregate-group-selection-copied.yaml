@@ -1,0 +1,64 @@
+format: ess/20
+system: demo
+version: v1
+domain: demo.work
+types:
+  - {name: demo.work.DepotId, kind: newtype, of: Uuid}
+  - {name: demo.work.ItemId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.work.Depot
+    identity: {name: depot_id, type: demo.work.DepotId}
+    fields: [{name: team, type: String}]
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: demo.work.Item
+    identity: {name: item_id, type: demo.work.ItemId}
+    fields:
+      - {name: depot_id, type: demo.work.DepotId}
+      - {name: team, type: String}
+      - {name: cents, type: Integer}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+events:
+  - name: demo.work.DepotOpened
+    fields: [{name: depot_id, type: demo.work.DepotId}]
+  - name: demo.work.ItemOpened
+    fields: [{name: item_id, type: demo.work.ItemId}]
+commands:
+  - name: demo.work.OpenDepot
+    input: [{name: team, type: String}]
+    outcomes:
+      - name: opened
+        creates: demo.work.Depot
+        instance: depot_id
+        sets: {team: input.team}
+        emits: [demo.work.DepotOpened]
+        payload: {demo.work.DepotOpened: {depot_id: {generated: true}}}
+  - name: demo.work.OpenItem
+    input: [{name: depot_id, type: demo.work.DepotId}, {name: cents, type: Integer}]
+    outcomes:
+      - name: opened
+        creates: demo.work.Item
+        instance: item_id
+        sets:
+          depot_id: input.depot_id
+          team: {related: {via: input.depot_id, field: team}}
+          cents: input.cents
+        emits: [demo.work.ItemOpened]
+        payload: {demo.work.ItemOpened: {item_id: {generated: true}}}
+views:
+  - name: demo.work.ByTeam
+    source: demo.work.Item
+    consistency: read_your_writes
+    params: [{name: team, type: String}]
+    filter: team == param.team
+    group_by: [team]
+    fields:
+      - {name: team, type: String}
+      - {name: count, type: Integer, aggregate: {count: {}}}
+      - {name: total, type: Integer, aggregate: {sum: cents}}
+  - name: demo.work.ItemsByState
+    source: demo.work.Item
+    consistency: read_your_writes
+    group_by: [state]
+    fields:
+      - {name: state, type: demo.work.Item.State}
+      - {name: count, type: Integer, aggregate: {count: {}}}

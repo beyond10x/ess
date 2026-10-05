@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-03T19:11:04Z",
+  "actor": "human:timo",
+  "artifact": "component-design:expression-family-source22",
+  "kind": "component-design",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "Coordinator binds typed RecordedCommandCompletion and compatible target/interleaved recorded methods; recorder persists captured instant before answer/error branch; actual returned/indeterminate/out-of-order/retained-retry faults required. No third full design review or independent approval of this correction is claimed.",
+    "reference": "docs/design/expression-family-source22.md",
+    "review": "review-result:expression-family-source22-20261003-r2",
+    "outcome": "fixed"
+  }
+}

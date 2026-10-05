@@ -38,7 +38,7 @@ pub const MODULE_HOST: &str = "example.invalid";
 /// `sort` and the standard `sort` would be one name twice in any file importing both.
 const STANDARD_IMPORTS: &[&str] = &[
     "base64", "big", "bytes", "embed", "fmt", "http", "io", "json", "net", "reflect", "sort",
-    "strconv", "strings", "sync", "time", "utf8",
+    "strconv", "strings", "sync", "time", "utf8", "flag", "os", "filepath", "rand",
 ];
 
 /// One Go package of the generated module.
@@ -96,6 +96,8 @@ pub(crate) struct Layout {
     names: BTreeMap<String, String>,
     /// Every event the system's log can carry, in name order.
     system_events: BTreeSet<EventHandle>,
+    /// The stem every codec and served handler of a declaration is named by.
+    codecs: crate::codec_names::CodecNames,
 }
 
 /// The kinds of identifier the emitter derives, as the first half of a name-table key.
@@ -152,6 +154,10 @@ mod key {
     /// A binding's generated transformation function.
     pub const TRANSFORM: &str = "transform";
     pub const PREPARED: &str = "prepared-selection";
+    /// A conditioned binding's generated condition function (ess/22).
+    pub const CONDITION: &str = "condition";
+    /// An external binding's owed delivery interface (ess/18).
+    pub const DELIVERY: &str = "delivery";
     /// A binding's owed transformation interface.
     pub const TRANSFORMATION: &str = "transformation";
     /// A binding's owed escalation interface.
@@ -161,6 +167,30 @@ mod key {
 }
 
 impl Layout {
+    /// [`Layout::of`], refused when an allocated name is not a Go identifier.
+    ///
+    /// # Errors
+    ///
+    /// `invalid-identifier`, one cause per name, before any file is rendered.
+    pub fn admitted(
+        ir: &EssIr,
+        plan: &SynthesisPlan,
+        refusals: &TargetRefusals,
+    ) -> Result<Self, crate::TargetFailure> {
+        let layout = Self::of(ir, plan, refusals);
+        let invalid = layout.invalid_identifiers(ir);
+        if invalid.is_empty() {
+            Ok(layout)
+        } else {
+            Err(crate::TargetFailure::new(
+                ir,
+                crate::Target::Go,
+                plan,
+                invalid,
+            ))
+        }
+    }
+
     /// Derives the layout of a resolved specification for the Go target.
     pub fn of(ir: &EssIr, plan: &SynthesisPlan, refusals: &TargetRefusals) -> Self {
         let module = format!("{MODULE_HOST}/{}", ir.system().segments().join("-"));
@@ -248,6 +278,9 @@ impl Layout {
             owners,
             names: BTreeMap::new(),
             system_events,
+            codecs: crate::codec_names::CodecNames::of(ir, |declared| {
+                name::type_fragment(&declared.to_string())
+            }),
         };
         layout.allocate_names(ir);
         layout
@@ -256,6 +289,13 @@ impl Layout {
     /// The module path.
     pub fn module(&self) -> &str {
         &self.module
+    }
+
+    /// The stem a declaration's wire codecs and served handlers are named by: its pascal-cased
+    /// qualified name, suffixed only where another declaration of its family flattens to the same
+    /// identifier (`crate::codec_names`).
+    pub fn codec(&self, declared: &QualifiedName) -> &str {
+        self.codecs.stem(declared)
     }
 
     /// The package of a bounded context.
@@ -356,6 +396,42 @@ impl Layout {
     /// The package a declaration lands in.
     pub fn package_of(&self, declared: &QualifiedName) -> &Package {
         self.package(self.owner(declared))
+    }
+
+    /// Every allocated name that is not spelled as a Go identifier, as source-addressed causes.
+    ///
+    /// The table is the whole set of identifiers this emitter declares, so checking it once checks
+    /// every derivation, present and future. A wire label used as an enum variant's name
+    /// (`demo.explanation/2`) or a union label is the case that reaches here: Go would otherwise
+    /// receive a type declaration it cannot parse. The source is the key's specification
+    /// spellings joined by `.`, the address the Rust target gives the same declaration.
+    fn invalid_identifiers(&self, ir: &EssIr) -> Vec<crate::TargetFailureCause> {
+        self.names
+            .iter()
+            .filter(|(_, allocated)| !name::valid_ident(allocated))
+            .map(|(key, allocated)| {
+                let parts: Vec<&str> = key.split('\u{1f}').collect();
+                let (kind, spellings) = parts.split_first().expect("a key names its kind");
+                let enumerated = *kind == key::VARIANT
+                    && spellings.first().is_some_and(|declared| {
+                        ir.types().values().any(|candidate| {
+                            candidate.name.to_string() == *declared
+                                && matches!(candidate.body, ResolvedBody::Enum { .. })
+                        })
+                    });
+                let remedy = if enumerated {
+                    "; declare the variant as `{name: <identifier>, wire: <this spelling>}` to \
+                     keep its serialized value"
+                } else {
+                    ""
+                };
+                crate::TargetFailureCause::new(
+                    crate::TargetFailureCode::InvalidIdentifier,
+                    vec![spellings.join(".")],
+                    format!("{kind} allocates invalid Go identifier `{allocated}`{remedy}"),
+                )
+            })
+            .collect()
     }
 
     /// The Go name of a declared type, entity, command, event, error or view.
@@ -482,6 +558,16 @@ impl Layout {
     /// A binding's generated transformation function.
     pub fn transform(&self, binding: &str) -> &str {
         self.name(&[key::TRANSFORM, binding])
+    }
+
+    /// A conditioned binding's generated condition function (ess/22).
+    pub fn condition(&self, binding: &str) -> &str {
+        self.name(&[key::CONDITION, binding])
+    }
+
+    /// An external binding's owed delivery interface (ess/18).
+    pub fn delivery(&self, binding: &str) -> &str {
+        self.name(&[key::DELIVERY, binding])
     }
 
     /// The generated selector helper for explicitly prepared host input.
@@ -915,6 +1001,28 @@ impl Layout {
             let subject = binding.name.to_string();
             let candidate = format!("{}FromPrepared", self.transform(&subject));
             self.put(taken, &system, &[key::PREPARED, &subject], candidate);
+        }
+        // Allocated last, and only for a conditioned binding, so that no name an unconditioned
+        // specification has today can move (ess/22, beyond10x/ess#268).
+        for binding in ir
+            .bindings()
+            .values()
+            .filter(|binding| binding.condition.is_some())
+        {
+            let subject = binding.name.to_string();
+            let candidate = format!("{}Condition", self.transform(&subject));
+            self.put(taken, &system, &[key::CONDITION, &subject], candidate);
+        }
+        // Allocated last, and only for a binding an external channel delivers to (ess/18), whose
+        // delivery is owed: no other name can move.
+        for binding in ir
+            .bindings()
+            .values()
+            .filter(|binding| binding.context.is_some())
+        {
+            let subject = binding.name.to_string();
+            let candidate = format!("{}Delivery", self.transform(&subject));
+            self.put(taken, &system, &[key::DELIVERY, &subject], candidate);
         }
     }
 

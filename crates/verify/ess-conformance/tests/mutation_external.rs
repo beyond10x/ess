@@ -16,7 +16,7 @@ use ess_compiler::source::SourceMap;
 use ess_conformance::faulty::{self, Fault};
 use ess_conformance::mutate::{
     self, AuditRefusal, Document, Emission, MutantClass, Verdict, BASELINE_DIR, MANIFEST_FILE,
-    MANIFEST_FORMAT, MUTANT_FILE, REPORT_FILE, SUITE_FILE,
+    MANIFEST_FORMAT_4, MUTANT_FILE, REPORT_FILE, SUITE_FILE,
 };
 use ess_conformance::reference::Billing;
 use ess_conformance::runner::Runner;
@@ -56,35 +56,20 @@ fn example(name: &str) -> (Vec<Document>, SourceMap) {
     (parsed, texts)
 }
 
-/// Which report a fabricated project runner writes.
-#[derive(Clone, Copy)]
-enum Written {
-    One,
-    Two,
-}
-
 /// Runs `target` over the suite emitted at `dir` and returns the report a project runner would
 /// write there.
-fn run_emitted<T: ConformanceTarget>(
-    emission: &Emission,
-    dir: &str,
-    target: &T,
-    written: Written,
-) -> String {
+fn run_emitted<T: ConformanceTarget>(emission: &Emission, dir: &str, target: &T) -> String {
     let text = &emission.files[&format!("{dir}/{SUITE_FILE}")];
     let admitted = AdmittedSuite::from_json(text).expect("an emitted suite is admitted");
     let run = Runner::for_suite(admitted.suite()).run_admitted(&admitted, target);
-    match written {
-        Written::One => run.standalone().to_canonical_json(),
-        Written::Two => CountReport::from_run(&run, &admitted)
-            .expect("a complete run has a report/2")
-            .to_canonical_json()
-            .expect("report/2 serializes"),
-    }
+    CountReport::from_run(&run, &admitted)
+        .expect("a complete run has a report/2")
+        .to_canonical_json()
+        .expect("report/2 serializes")
 }
 
 /// The emission, plus a report beside every suite: the baseline's from `baseline`, every mutant's
-/// from a fresh Billing, alternating report/1 and report/2.
+/// from a fresh Billing.
 fn reports<T: ConformanceTarget>(
     emission: &Emission,
     baseline: impl Fn() -> T,
@@ -92,18 +77,13 @@ fn reports<T: ConformanceTarget>(
     let mut files = emission.files.clone();
     files.insert(
         format!("{BASELINE_DIR}/{REPORT_FILE}"),
-        run_emitted(emission, BASELINE_DIR, &baseline(), Written::One),
+        run_emitted(emission, BASELINE_DIR, &baseline()),
     );
-    for (index, mutant) in emission.manifest.mutants.iter().enumerate() {
+    for mutant in &emission.manifest.mutants {
         let Some(dir) = &mutant.dir else { continue };
-        let written = if index % 2 == 0 {
-            Written::One
-        } else {
-            Written::Two
-        };
         files.insert(
             format!("{dir}/{REPORT_FILE}"),
-            run_emitted(emission, dir, &Billing::new(), written),
+            run_emitted(emission, dir, &Billing::new()),
         );
     }
     files
@@ -137,7 +117,9 @@ fn the_emission_is_a_manifest_a_baseline_and_one_directory_per_mutant() {
     let emission = mutate::emit(&files, &texts, MutantClass::ALL).expect("billing emits");
     let manifest: serde_json::Value =
         serde_json::from_str(&emission.files[MANIFEST_FILE]).expect("the manifest is JSON");
-    assert_eq!(manifest["format"], MANIFEST_FORMAT);
+    // `/4`: every class includes `emit-swap`, a class only `/4` readers know, and billing has
+    // emit-swap mutants and unavailable sites (beyond10x/ess#295).
+    assert_eq!(manifest["format"], MANIFEST_FORMAT_4);
     assert_eq!(emission.manifest.baseline.dir, BASELINE_DIR);
     assert!(emission
         .files

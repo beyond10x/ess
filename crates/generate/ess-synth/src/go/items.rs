@@ -286,7 +286,7 @@ fn union(
     emit: &Emit<'_>,
     declared: &ResolvedType,
     tag: &str,
-    variants: &BTreeMap<String, ResolvedTypeRef>,
+    variants: &BTreeMap<String, Option<ResolvedTypeRef>>,
 ) {
     let type_name = emit.layout.declared(&declared.name);
     let _ = writeln!(
@@ -300,6 +300,16 @@ fn union(
     sealed(out, type_name);
     for (tag_value, type_ref) in variants {
         let variant_name = emit.layout.variant(&declared.name, tag_value);
+        // A unit variant (ess/22): the tag alone, an empty struct.
+        let Some(type_ref) = type_ref else {
+            let _ = writeln!(
+                out,
+                "\n// {variant_name} is the shape tagged `{tag_value}`, carrying nothing.\ntype \
+                 {variant_name} struct{{}}\n\nfunc ({variant_name}) {}() {{}}",
+                name::marker(type_name)
+            );
+            continue;
+        };
         let _ = writeln!(
             out,
             "\n// {variant_name} is the shape tagged `{tag_value}` — `{type_ref}`.\ntype \
@@ -384,7 +394,7 @@ pub(super) fn outcome_event_fields<'a>(
     outcome: &'a ResolvedOutcome,
 ) -> Vec<OutcomeEventField<'a>> {
     let mut used: BTreeMap<String, usize> = BTreeMap::new();
-    if super::super::rust::items::response_bearing(outcome) {
+    if super::super::rust::items::carries_response(emit.ir, outcome) {
         used.insert("Response".into(), 1);
         used.insert("ResponsePayloadMatches".into(), 1);
     }
@@ -425,7 +435,7 @@ fn outcome_variant(
     let carried = outcome_event_fields(emit, outcome);
     if carried.is_empty()
         && outcome.error.is_none()
-        && !super::super::rust::items::response_bearing(outcome)
+        && !super::super::rust::items::carries_response(emit.ir, outcome)
     {
         let _ = writeln!(
             out,
@@ -435,7 +445,7 @@ fn outcome_variant(
         return;
     }
     let _ = writeln!(out, "type {variant_name} struct {{");
-    if super::super::rust::items::response_bearing(outcome) {
+    if super::super::rust::items::carries_response(emit.ir, outcome) {
         let _ = writeln!(
             out,
             "\t// Response is the actual response returned by this branch.\n\tResponse {}",

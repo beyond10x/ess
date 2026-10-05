@@ -75,6 +75,7 @@ fn refusals(fact: &str) -> Vec<String> {
     let fields = fields();
     let environment = DomainEnvironment::new(&registry, &fields);
     let predicate = Predicate::Compare {
+        kind: ess_primitives::predicate::CompareKind::Value,
         left: Operand::Fact(FactPath::new(fact).unwrap()),
         op: CompareOp::Eq,
         right: Operand::Literal(FactValue::text("Fax")),
@@ -162,6 +163,7 @@ fn a_declared_variant_is_admitted_through_every_wrapper() {
         "optional_channel",
     ] {
         let predicate = Predicate::Compare {
+            kind: ess_primitives::predicate::CompareKind::Value,
             left: Operand::Fact(FactPath::new(fact).unwrap()),
             op: CompareOp::Eq,
             right: Operand::Literal(FactValue::text("Email")),

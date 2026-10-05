@@ -72,7 +72,7 @@ fn rust_holds_a_timestamp_natively_and_a_constant_newtype_carries_its_value() {
     );
     let manifest = &realization.supporting["Cargo.toml"];
     assert!(
-        manifest.contains("time = { version = \"=0.3.55\""),
+        manifest.contains("time = { version = \"=0.3.45\""),
         "{manifest}"
     );
 
@@ -92,6 +92,9 @@ fn a_reading_round_trips_and_the_constant_is_there() {
     assert_eq!(serde_json::to_value(&reading).unwrap(), serde_json::from_str::<serde_json::Value>(text).unwrap());
     assert_eq!(ProbeMeterVersion::default().0, 2);
     assert!(serde_json::from_str::<ProbeMeterReading>(&text.replace("2026-10-03T00:00:00.5+02:00", "yesterday")).is_err());
+    // RFC 2822 and its nested comments are outside this RFC 3339-only wire contract.
+    let mail_date = format!("Fri, 21 Nov 1997 09:55:06 -0600 {}comment{}", "(".repeat(1024), ")".repeat(1024));
+    assert!(serde_json::from_str::<ProbeMeterReading>(&text.replace("2026-10-03T00:00:00.5+02:00", &mail_date)).is_err());
 }
 "##,
     )

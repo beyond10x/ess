@@ -93,7 +93,7 @@ pub fn render_bound(
     if let Some(binding) = binding {
         files.insert("src/binding.ts".to_owned(), assets::binding(binding));
     }
-    let mut gen = emit::Gen::new(document, binding.is_some());
+    let mut gen = emit::Gen::new(document, binding);
     files.insert("src/routes.ts".to_owned(), gen.routes());
     for (name, shell) in &document.shells {
         let file = format!("src/shells/{}Shell.tsx", ts::pascal(name));
@@ -191,8 +191,12 @@ pub fn run(args: &ReactArgs, binding: Option<&Binding>) -> Result<String, Genera
             model.display()
         )));
     }
-    let loaded =
-        ess_ui::load_path(&args.path).map_err(|error| GenerateError::new(error.to_string()))?;
+    // Bound, the document is loaded with the model enums the binding carries (beyond10x/ess#330).
+    let loaded = match binding {
+        Some(binding) => ess_ui::load_path_with(&args.path, binding),
+        None => ess_ui::load_path(&args.path),
+    }
+    .map_err(|error| GenerateError::new(error.to_string()))?;
     let dir = args
         .path
         .parent()

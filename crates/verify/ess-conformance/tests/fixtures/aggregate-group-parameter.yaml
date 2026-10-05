@@ -1,0 +1,47 @@
+format: ess/20
+system: demo
+version: v1
+domain: demo.work
+events:
+  - name: demo.work.Opened
+    fields: [{name: id, type: Uuid}]
+  - name: demo.work.Finished
+    fields: [{name: id, type: Uuid}]
+entities:
+  - name: demo.work.Item
+    identity: {name: id, type: Uuid}
+    fields: [{name: team, type: String}, {name: cents, type: Integer}]
+    lifecycle:
+      initial: Open
+      states: [Open, Done]
+      terminal: [Done]
+      transitions: [{name: finish, from: [Open], to: Done}]
+commands:
+  - name: demo.work.Open
+    input: [{name: team, type: String}, {name: cents, type: Integer}]
+    outcomes:
+      - name: opened
+        creates: demo.work.Item
+        instance: id
+        sets: {team: input.team, cents: input.cents}
+        emits: [demo.work.Opened]
+        payload: {demo.work.Opened: {id: {generated: true}}}
+  - name: demo.work.Finish
+    input: [{name: id, type: Uuid}]
+    outcomes:
+      - name: finished
+        moves: demo.work.Item.finish
+        instance: id
+        emits: [demo.work.Finished]
+        payload: {demo.work.Finished: {id: input.id}}
+      - {name: unavailable, wrong_state: true, refuses: false}
+views:
+  - name: demo.work.ByTeam
+    source: demo.work.Item
+    consistency: read_your_writes
+    params: [{name: team, type: String}]
+    filter: team == param.team
+    group_by: [team]
+    fields:
+      - {name: team, type: String}
+      - {name: count, type: Integer, aggregate: {count: {}}}

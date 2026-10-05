@@ -57,6 +57,7 @@ fn input_paths(
                 left,
                 op: CompareOp::Eq | CompareOp::Ne,
                 right,
+                ..
             } => match (left, right) {
                 (Operand::Fact(path), Operand::Literal(FactValue::Text(_)))
                 | (Operand::Literal(FactValue::Text(_)), Operand::Fact(path)) => {

@@ -287,18 +287,23 @@ test('the suite document casts to a reference with no field renamed away', () =>
 // ---- expectReadingOrder -------------------------------------------------------------------------
 
 interface Recorded {
+  errors: string[];
   failures: string[];
   skips: string[];
 }
 
 function runFor(target: unknown, seen: ObservedEvent[]): { run: ReadingRun; recorded: Recorded } {
-  const recorded: Recorded = { failures: [], skips: [] };
+  const recorded: Recorded = { errors: [], failures: [], skips: [] };
   const run = {
     target: target as ReadingRun['target'],
     correlation: 'corr-1',
     seen,
     fail(index: number, message: string): boolean {
       recorded.failures.push(`step ${index}: ${message}`);
+      return false;
+    },
+    targetError(index: number, message: string): boolean {
+      recorded.errors.push(`step ${index}: ${message}`);
       return false;
     },
     skip(message: string): void {
@@ -461,7 +466,7 @@ test('a reading the scenario never observed is a failure', () => {
     expectReadingOrder(run, 6, orderStep('before', reference({ occurrence: 1 }), reference())),
     false,
   );
-  assert.deepEqual(recorded.failures, [
+  assert.deepEqual(recorded.errors, [
     'step 6: clock reading: reading event occurrence/member not observed',
   ]);
 });
@@ -470,19 +475,19 @@ test('a missing reading reference is a failure', () => {
   const target = new RecordingTarget((request) => evidenceFor(occurrenceKey(request.reading)));
   const { run, recorded } = runFor(target, [sampled('2024-03-01T12:30:45Z')]);
   assert.equal(expectReadingOrder(run, 7, orderStep('before', null, reference())), false);
-  assert.deepEqual(recorded.failures, ['step 7: clock reading: missing reading reference']);
+  assert.deepEqual(recorded.errors, ['step 7: clock reading: missing reading reference']);
 });
 
 test('a scalar that does not match the encoding is a failure', () => {
   const target = new RecordingTarget((request) => evidenceFor(occurrenceKey(request.reading)));
   const { run, recorded } = runFor(target, [sampled(17)]);
   assert.equal(expectReadingOrder(run, 8, orderStep('before', reference(), reference())), false);
-  assert.deepEqual(recorded.failures, [
+  assert.deepEqual(recorded.errors, [
     'step 8: clock reading: reading scalar does not match encoding',
   ]);
 });
 
-test('an error the target itself raised is a failure', () => {
+test('an error the target itself raised is an execution error', () => {
   const unixReference = reference({
     contract: {
       encoding: 'unix_seconds',
@@ -499,7 +504,7 @@ test('an error the target itself raised is a failure', () => {
     expectReadingOrder(run, 9, orderStep('before', unixReference, unixReference)),
     false,
   );
-  assert.deepEqual(recorded.failures, [
+  assert.deepEqual(recorded.errors, [
     'step 9: clock reading: the adapter has no epoch for this occurrence',
   ]);
 });
@@ -536,7 +541,7 @@ test('unix seconds arrive as a token, as a whole number, or not at all', () => {
   ]) {
     const { verdict, recorded } = observe(refused);
     assert.equal(verdict, false, `refused ${String(refused)}`);
-    assert.deepEqual(recorded.failures, [
+    assert.deepEqual(recorded.errors, [
       'step 1: clock reading: reading scalar does not match encoding',
     ]);
   }
@@ -618,7 +623,7 @@ test('a member the event does not carry is not observed', () => {
   const target = new RecordingTarget((request) => evidenceFor(occurrenceKey(request.reading)));
   const { run, recorded } = runFor(target, [{ event: 'chronology.reading.Sampled', payload: {} }]);
   assert.equal(expectReadingOrder(run, 1, orderStep('before', reference(), reference())), false);
-  assert.deepEqual(recorded.failures, [
+  assert.deepEqual(recorded.errors, [
     'step 1: clock reading: reading event occurrence/member not observed',
   ]);
 });

@@ -19,13 +19,14 @@ use ess_domain::view::Consistency;
 
 use crate::witness::{candidates, WitnessGap, MAX_CANDIDATES};
 
+use super::caller::{InvocationModels, InvocationPhase};
 use super::{
-    clipped, created, insert, is_input_guarded_refusal, not_emitted, outcome_scenario, reach, run,
-    shows, subject_fact, supply, ActorRef, AssertionStyle, BTreeMap, BTreeSet, CommandRef,
-    ConformanceScenario, ConformanceSuite, Distinction, EntityRef, ErrorRef, EssIr, EssSemanticRef,
-    Focus, InstanceNeed, Node, OutcomeRef, QualifiedName, Refusal, RefusalCause, ResolvedCommand,
-    ResolvedCondition, ResolvedEffect, ResolvedInstance, ResolvedOutcome, ResolvedSubject,
-    ResolvedView, Run, ScenarioId, ScenarioStep, ScenarioValue, Setup, ViewRef, FRESH_WITNESSES,
+    clipped, created, insert, is_input_guarded_refusal, not_emitted, reach, shows, subject_fact,
+    supply, ActorRef, AssertionStyle, BTreeMap, BTreeSet, CommandRef, ConformanceScenario,
+    ConformanceSuite, Distinction, EntityRef, ErrorRef, EssIr, EssSemanticRef, Focus, InstanceNeed,
+    Node, OutcomeRef, QualifiedName, Refusal, RefusalCause, ResolvedCommand, ResolvedCondition,
+    ResolvedEffect, ResolvedInstance, ResolvedOutcome, ResolvedSubject, ResolvedView, Run,
+    ScenarioId, ScenarioStep, ScenarioValue, Setup, ViewRef, FRESH_WITNESSES,
 };
 
 /// `true` for the creating half of create-or-update: a `creates:` branch marked
@@ -47,7 +48,7 @@ pub(super) fn creates_on_unknown(command: &ResolvedCommand) -> bool {
 /// The input field a creating branch takes its new identity from: the `input.` source its payload
 /// declares for the event field the creation publishes the identity in, or the optional input read
 /// by `{input: f, else: {generated: true}}` — a caller that sends `f` names the identity.
-fn identity_input(outcome: &ResolvedOutcome) -> Option<&str> {
+pub(super) fn identity_input(outcome: &ResolvedOutcome) -> Option<&str> {
     let subject = outcome
         .subject
         .as_ref()
@@ -89,6 +90,9 @@ pub(super) enum Fresh {
     /// The same creation again, in the invocation that leaves out every input read only through
     /// an `else:` literal.
     CreatedAgain,
+    /// The same creation in the `n`th further fallback run after the first (ess/22, A4), each
+    /// leaving out one Optional.
+    CreatedAgainIn(usize),
     /// The `nth` row a two-call segment stores before sending its identity again.
     Stored(usize),
 }
@@ -98,6 +102,7 @@ impl Fresh {
         match self {
             Self::Created => 0,
             Self::CreatedAgain => 1,
+            Self::CreatedAgainIn(run) => FRESH_SLOTS - 16 + run.min(15),
             Self::Stored(nth) => 2 + nth.min(FRESH_SLOTS - 3),
         }
     }
@@ -142,17 +147,14 @@ fn identity_at(
                 inputs
                     .into_iter()
                     .next()
-                    .and_then(|input| input.get(field).cloned())
+                    .and_then(|input| ess_compiler::ir::read_input(&input, field).cloned())
             })
     };
     let unfresh = || {
         RefusalCause::NoWitness(WitnessGap {
             path: field.to_owned(),
-            type_ref: command
-                .input
-                .iter()
-                .find(|input| input.name == field)
-                .map(|input| input.type_ref.to_string())
+            type_ref: super::input_type(ir, command, field)
+                .map(ToString::to_string)
                 .unwrap_or_default(),
             reason: "has too few values to name an identity no other scenario sends, so no \
                      instance is known to be new",
@@ -168,7 +170,9 @@ fn identity_at(
     // creation in the same run has no identity of its own (beyond10x/ess#287).
     if super::singleton::names_the_one_row(ir, command, field) {
         return match fresh {
-            Fresh::CreatedAgain => Err(super::singleton::second_row(command, field)),
+            Fresh::CreatedAgain | Fresh::CreatedAgainIn(_) => {
+                Err(super::singleton::second_row(command, field))
+            }
             Fresh::Created | Fresh::Stored(_) => Ok(mine),
         };
     }
@@ -209,20 +213,42 @@ pub(super) fn fresh_created(
             Fresh::Created
         };
         let identity = identity_at(ir, command, field, fresh, &input)?;
-        input.insert(field.to_owned(), identity);
+        super::set_at(&mut input, field, Some(identity));
+    }
+    Ok(input)
+}
+
+/// [`fresh_created`] for the `run`th further fallback run: the first takes the identity the one run
+/// always took, and every later one (ess/22, A4) one of its own.
+pub(super) fn fresh_created_again(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    mut input: BTreeMap<String, Node>,
+    run: usize,
+) -> Result<BTreeMap<String, Node>, RefusalCause> {
+    if run == 0 {
+        return fresh_created(ir, command, outcome, input, true);
+    }
+    let Some(field) = identity_input(outcome) else {
+        return Ok(input);
+    };
+    if creates_unknown(outcome) || creates_beside_existing(command, outcome) {
+        let identity = identity_at(ir, command, field, Fresh::CreatedAgainIn(run), &input)?;
+        super::set_at(&mut input, field, Some(identity));
     }
     Ok(input)
 }
 
 /// Both forms, for every command declaring one.
 pub(super) fn existence(
-    ir: &EssIr,
+    models: &InvocationModels<'_>,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     focus: Focus<'_>,
     suite: &mut ConformanceSuite,
     refusals: &mut Vec<Refusal>,
 ) {
-    for command in ir.commands().values() {
+    for command in models.acting.commands().values() {
         if !focus.takes(&command.name) {
             continue;
         }
@@ -231,12 +257,13 @@ pub(super) fn existence(
             .iter()
             .filter(|outcome| creates_unknown(outcome))
         {
-            if let Some((id, scenario)) = outcome_scenario(ir, command, creating, actors, refusals)
+            if let Some((id, scenario)) =
+                super::outcome_scenario_in(models, command, creating, actors, refusals)
             {
                 insert(suite, id, scenario, refusals);
             }
             for updating in paired(command, creating) {
-                one_row(ir, command, updating, actors, suite, refusals);
+                one_row(models, command, updating, actors, suite, refusals);
             }
         }
         for declared in command
@@ -245,14 +272,14 @@ pub(super) fn existence(
             .filter(|outcome| outcome.condition == ResolvedCondition::ExistingInstance)
         {
             let id = outcome_id(command, declared);
-            match existing_instance(ir, command, declared, actors) {
+            match existing_instance(models, command, declared, actors) {
                 Ok(scenario) => insert(suite, id, scenario, refusals),
                 Err(cause) => refusals.push(Refusal::about(&id, cause)),
             }
         }
-        refusals_on_a_stored_row(ir, command, actors, suite, refusals);
-        refusals_on_an_arranged_row(ir, command, actors, suite, refusals);
-        refusals_in_each_held_state(ir, command, actors, suite, refusals);
+        refusals_on_a_stored_row(models, command, actors, suite, refusals);
+        refusals_on_an_arranged_row(models, command, actors, suite, refusals);
+        refusals_in_each_held_state(models, command, actors, suite, refusals);
     }
 }
 
@@ -274,7 +301,7 @@ pub(super) fn existence(
 /// branches read the held state, and a refusal whose guard reads the identity field, which stays a
 /// plain send (beyond10x/ess#178).
 fn refusals_on_an_arranged_row(
-    ir: &EssIr,
+    models: &InvocationModels<'_>,
     command: &ResolvedCommand,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     suite: &mut ConformanceSuite,
@@ -305,7 +332,7 @@ fn refusals_on_an_arranged_row(
             continue;
         };
         let taken = super::bound_instances(&filed.steps);
-        match arranged_refusal(ir, command, addressing, refusal, actors, &taken) {
+        match arranged_refusal(models, command, addressing, refusal, actors, &taken) {
             Ok(part) => {
                 let scenario = suite
                     .scenarios
@@ -325,13 +352,14 @@ fn refusals_on_an_arranged_row(
 /// The arranged half of [`refusals_on_an_arranged_row`]: the record `addressing` acts on, arranged
 /// under names the scenario has not bound, then `refusal`'s input sent for it.
 fn arranged_refusal(
-    ir: &EssIr,
+    models: &InvocationModels<'_>,
     command: &ResolvedCommand,
     addressing: &ResolvedOutcome,
     refusal: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     taken: &BTreeSet<super::InstanceName>,
 ) -> Result<Segment, RefusalCause> {
+    let ir = models.arrangement;
     let subject = addressing
         .subject
         .as_ref()
@@ -380,8 +408,10 @@ fn arranged_refusal(
     let command_ref = CommandRef::new(command.name.clone());
     let branch = OutcomeRef::new(command_ref.clone(), refusal.name.clone());
     let mut steps = setup.steps.clone();
+    models.mark(InvocationPhase::Arrange, &mut steps);
     steps.extend(preservation.before);
     let supplied = supply(
+        ir,
         command,
         &refused,
         Some(subject),
@@ -417,6 +447,7 @@ fn arranged_refusal(
     }
     source.extend(forbidden.into_iter().map(EssSemanticRef::from));
     steps.extend(preservation.after);
+    models.mark(InvocationPhase::Act, &mut steps);
     Ok(Segment { steps, source })
 }
 
@@ -438,7 +469,7 @@ fn arranged_refusal(
 /// first takes it. Where no arrangement reaches a state, the scenario is withdrawn and refused
 /// with the arrangement's cause, never left without that state's witness.
 fn refusals_in_each_held_state(
-    ir: &EssIr,
+    models: &InvocationModels<'_>,
     command: &ResolvedCommand,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     suite: &mut ConformanceSuite,
@@ -454,7 +485,7 @@ fn refusals_in_each_held_state(
             continue;
         };
         let taken = super::bound_instances(&filed.steps);
-        match held_state_refusals(ir, command, refusal, actors, taken) {
+        match held_state_refusals(models, command, refusal, actors, taken) {
             Ok(part) => {
                 let scenario = suite
                     .scenarios
@@ -473,12 +504,13 @@ fn refusals_in_each_held_state(
 
 /// The segments of [`refusals_in_each_held_state`] for one refusal, one per held state and input.
 fn held_state_refusals(
-    ir: &EssIr,
+    models: &InvocationModels<'_>,
     command: &ResolvedCommand,
     refusal: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     mut taken: BTreeSet<super::InstanceName>,
 ) -> Result<Segment, RefusalCause> {
+    let ir = models.arrangement;
     let without = || RefusalCause::StrategyWithoutGuard {
         strategy: refusal.test_strategy,
     };
@@ -506,7 +538,7 @@ fn held_state_refusals(
         for input in refused_inputs_in(ir, command, refusal, state)? {
             // Each send on a record of its own, under names nothing earlier in the scenario
             // bound: the unchanged-row comparison spans one command.
-            let arrangement =
+            let mut arrangement =
                 arranged_in(ir, subject, state, actors, &mut nth, &mut taken, without)?;
             let setup = Setup {
                 instance: Some(arrangement.instance.clone()),
@@ -515,6 +547,7 @@ fn held_state_refusals(
                 settled: arrangement.settled.clone(),
                 ..Setup::none()
             };
+            models.mark(InvocationPhase::Arrange, &mut arrangement.steps);
             part.steps.extend(arrangement.steps);
             part.source.extend(arrangement.source);
             // Observed in the state it was arranged in, where a view shows it; the held-state
@@ -541,6 +574,7 @@ fn held_state_refusals(
             part.steps.extend(preservation.before);
             part.source.extend(preservation.source);
             let supplied = supply(
+                ir,
                 command,
                 &input,
                 Some(subject),
@@ -566,6 +600,7 @@ fn held_state_refusals(
             part.steps.extend(preservation.after);
         }
     }
+    models.mark(InvocationPhase::Act, &mut part.steps);
     Ok(part)
 }
 
@@ -728,13 +763,14 @@ fn one_row_view(ir: &EssIr, view: &ResolvedView, run: &Run) -> bool {
 /// naming them, rather than filed without the claim. A model with no view projecting the identity
 /// observes no row at all, for this branch or any update, and keeps its scenario.
 fn one_row(
-    ir: &EssIr,
+    models: &InvocationModels<'_>,
     command: &ResolvedCommand,
     updating: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     suite: &mut ConformanceSuite,
     refusals: &mut Vec<Refusal>,
 ) {
+    let ir = models.arrangement;
     let Some(subject) = &updating.subject else {
         return;
     };
@@ -750,7 +786,7 @@ fn one_row(
     }
     // The run the scenario was built from, again: synthesis is deterministic, so this is the row
     // the scenario's second call leaves, and the instance its arrangement bound.
-    let Ok(run) = run(ir, command, updating, actors) else {
+    let Ok(run) = super::run_as(models, command, updating, actors, super::Witness::Full) else {
         return;
     };
     let usable: Vec<&ResolvedView> = candidates
@@ -817,7 +853,7 @@ struct Segment {
 }
 
 fn segment(
-    ir: &EssIr,
+    models: &InvocationModels<'_>,
     command: &ResolvedCommand,
     creating: (&ResolvedOutcome, &str),
     second: BTreeMap<String, Node>,
@@ -825,25 +861,32 @@ fn segment(
     fresh: Fresh,
     actors: &BTreeMap<QualifiedName, ActorRef>,
 ) -> Result<Segment, RefusalCause> {
+    let ir = models.arrangement;
     let (creating, field) = creating;
+    let creator = &ir.commands()[&command.name];
+    let creating = creator
+        .outcomes
+        .iter()
+        .find(|outcome| outcome.name == creating.name)
+        .expect("caller interpretation preserves source outcomes");
     let no_error = || RefusalCause::StrategyWithoutGuard {
         strategy: declared.test_strategy,
     };
     let subject = creating.subject.as_ref().ok_or_else(no_error)?;
     let error = declared.error.as_ref().ok_or_else(no_error)?;
     let at = fresh.distinction();
-    let mut first = creating_input(ir, command, creating, at)?;
-    let identity = identity_at(ir, command, field, fresh, &first)?;
-    first.insert(field.to_owned(), identity.clone());
+    let mut first = creating_input(ir, creator, creating, at, actors)?;
+    let identity = identity_at(ir, creator, field, fresh, &first)?;
+    super::set_at(&mut first, field, Some(identity.clone()));
     let mut second = second;
-    second.insert(field.to_owned(), identity);
+    super::set_at(&mut second, field, Some(identity));
 
     let driver = Driver {
-        command,
+        command: creator,
         outcome: creating,
         effect: &subject.effect,
     };
-    let arrangement = created(ir, &subject.entity, &driver, actors, at, &[], Some(&first))
+    let mut arrangement = created(ir, &subject.entity, &driver, actors, at, &[], Some(&first))
         .map_err(|reason| RefusalCause::InstanceRequired {
             entity: EntityRef::from(&subject.entity),
             need: InstanceNeed::InState {
@@ -853,8 +896,9 @@ fn segment(
         })?;
     // Only the existence refusal carries recreation; an input refusal using this same helper
     // keeps its ordinary two-call precedence check.
+    models.mark(InvocationPhase::Arrange, &mut arrangement.steps);
     let recreation = if declared.condition == ResolvedCondition::ExistingInstance {
-        recreation(ir, command, creating, &arrangement, actors)?
+        recreation(ir, creator, creating, &arrangement, actors)?
     } else {
         None
     };
@@ -873,7 +917,7 @@ fn segment(
     let branch = OutcomeRef::new(command_ref.clone(), declared.name.clone());
     let mut steps = setup.steps.clone();
     steps.extend(preservation.before.iter().cloned());
-    let supplied = supply(command, &second, None, None, &BTreeMap::new());
+    let supplied = supply(ir, command, &second, None, None, &BTreeMap::new());
     let expected = super::expect_error(ir, declared, error, &supplied, &setup.settled);
     steps.push(ScenarioStep::ExecuteCommand {
         command: command_ref.clone(),
@@ -903,8 +947,10 @@ fn segment(
     }
     source.extend(forbidden.into_iter().map(EssSemanticRef::from));
     steps.extend(preservation.after);
+    models.mark(InvocationPhase::Act, &mut steps);
     if let Some((deleted, again)) = recreation {
-        let part = recreated(ir, command, creating, deleted, again, preservation.before);
+        let mut part = recreated(ir, creator, creating, deleted, again, preservation.before);
+        models.mark(InvocationPhase::Arrange, &mut part.steps);
         steps.extend(part.steps);
         source.extend(part.source);
     }
@@ -1014,9 +1060,18 @@ fn creating_input(
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     distinction: Distinction,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
 ) -> Result<BTreeMap<String, Node>, RefusalCause> {
     if super::related_guard::uses(command) {
-        super::related_guard::plain_input(ir, command, distinction)
+        super::related_guard::prepare_at_in(
+            &InvocationModels::plain(ir),
+            command,
+            outcome,
+            actors,
+            distinction,
+            None,
+        )
+        .map(|(_, input)| input)
     } else {
         reach(ir, command, outcome, distinction)
     }
@@ -1027,11 +1082,12 @@ fn creating_input(
 /// field values, and require the declared error, no event and the row as it was. A target that
 /// looks for the stored record on one creating path and not another is caught on the other.
 fn existing_instance(
-    ir: &EssIr,
+    models: &InvocationModels<'_>,
     command: &ResolvedCommand,
     declared: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
 ) -> Result<ConformanceScenario, RefusalCause> {
+    let ir = models.arrangement;
     let creating = creations(command);
     if creating.is_empty() {
         return Err(RefusalCause::StrategyWithoutGuard {
@@ -1049,11 +1105,12 @@ fn existing_instance(
     let mut source = BTreeSet::new();
     for (nth, (outcome, field)) in creating.into_iter().enumerate() {
         let fresh = Fresh::Stored(nth);
-        let first = creating_input(ir, command, outcome, fresh.distinction())?;
+        let first = creating_input(ir, command, outcome, fresh.distinction(), actors)?;
         // Other field values where the branch's own input allows them, so an overwrite is visible.
         let mut second = first.clone();
         for further in 0..=FRESH_WITNESSES {
-            let Ok(other) = creating_input(ir, command, outcome, Distinction::further(further))
+            let Ok(other) =
+                creating_input(ir, command, outcome, Distinction::further(further), actors)
             else {
                 continue;
             };
@@ -1071,7 +1128,7 @@ fn existing_instance(
             super::related_guard::point_at_missing(ir, command, &mut second)?;
         }
         let part = segment(
-            ir,
+            models,
             command,
             (outcome, field),
             second,
@@ -1098,12 +1155,19 @@ fn existing_instance(
 /// built the scenario is withdrawn and refused, rather than filed claiming the precedence it does
 /// not witness.
 fn refusals_on_a_stored_row(
-    ir: &EssIr,
+    models: &InvocationModels<'_>,
     command: &ResolvedCommand,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     suite: &mut ConformanceSuite,
     refusals: &mut Vec<Refusal>,
 ) {
+    let ir = models.arrangement;
+    // Related-row selection declares existence first, ahead of every input refusal. Its stored
+    // row belongs to existing_instance; adding an input-refusal half here would assert the wrong
+    // precedence (outcome-shapes.md, "Precedence").
+    if super::related_guard::uses(command) {
+        return;
+    }
     let creating = creations(command);
     let Some(first_creation) = creating.first().copied() else {
         return;
@@ -1120,7 +1184,7 @@ fn refusals_on_a_stored_row(
         }
         let built = reach(ir, command, refusal, Distinction::PLAIN).and_then(|refused| {
             segment(
-                ir,
+                models,
                 command,
                 first_creation,
                 refused,

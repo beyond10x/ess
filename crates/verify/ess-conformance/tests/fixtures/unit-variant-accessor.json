@@ -1,0 +1,70 @@
+{
+  "plan": {
+    "segments": [
+      "choice",
+      "status"
+    ],
+    "root": {
+      "name": "choice",
+      "type": "projection.core.Choice"
+    },
+    "start": 2,
+    "nodes": [
+      {
+        "source": "String",
+        "shape": {
+          "kind": "primitive",
+          "name": "string"
+        },
+        "position": 2,
+        "operation": {
+          "kind": "leaf"
+        },
+        "leaf": "String",
+        "may_miss": false,
+        "depth": 1
+      },
+      {
+        "source": "projection.core.Body",
+        "shape": {
+          "kind": "object"
+        },
+        "position": 1,
+        "operation": {
+          "kind": "field",
+          "field": {
+            "name": "status",
+            "type": "String",
+            "wire": "upstream_status"
+          },
+          "next": 0
+        },
+        "leaf": "String",
+        "may_miss": false,
+        "depth": 2
+      },
+      {
+        "source": "projection.core.Choice",
+        "shape": {
+          "kind": "object"
+        },
+        "position": 1,
+        "operation": {
+          "kind": "union",
+          "tag": "kind",
+          "variants": {
+            "gone": null,
+            "ready": 1
+          }
+        },
+        "leaf": "String",
+        "may_miss": true,
+        "depth": 3
+      }
+    ]
+  },
+  "target": "Optional<String>",
+  "types": {
+    "nodes": {}
+  }
+}

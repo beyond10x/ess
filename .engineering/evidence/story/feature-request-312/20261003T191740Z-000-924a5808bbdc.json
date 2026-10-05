@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-03T19:17:40Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-312",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Completed candidate226af8bfe affected run inventories31failedtargets/166failingtests; suite34/35 compatibility and report1 helper diagnosis required; TS type root missing during run, installed definitions verified afterward; baseline probes still pending",
+    "reference": "local-evidence:ess21-completion/282/full-affected-refreshed.log"
+  }
+}

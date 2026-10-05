@@ -18,6 +18,9 @@
 //!   optional field is not `required` in the schema; in the schema `Integer` is `type: integer`,
 //!   `String` is `type: string`, a declared type or `Uuid` is a `$ref` to its definition,
 //!   `Optional<T>` adds `null`, and a `List<T>` or a relation is an `array` of its items;
+//! - `Timestamp` is `DecisionInstant`, a `$ref` to its definition; `Optional<Timestamp>` (an
+//!   operation's `decision_time`, `ess-history/2`) is absent or an instant and never `null`, so its
+//!   schema property adds no `null`;
 //! - an enum `concurrent.history.T` is `enum T`, compared by wire name;
 //! - a newtype `concurrent.history.T` is a `struct T` or a `pub use …::T`.
 //!
@@ -124,6 +127,7 @@ fn rust_spelling(model_type: &str) -> String {
         "Integer" => "u64".to_owned(),
         "String" => "String".to_owned(),
         "Uuid" => "Uuid".to_owned(),
+        "Timestamp" => "DecisionInstant".to_owned(),
         other if other.starts_with(PREFIX) => local(other),
         other => panic!("the model type `{other}` has no mapping in this test"),
     }
@@ -532,6 +536,11 @@ fn rust_drift(model: &Model, text: &str) -> Vec<String> {
 
 /// A model field's Rust spelling in the vocabulary [`schema_kind`] reads a schema property into.
 fn expected_kind(rust: &str) -> String {
+    // A decision time is absent where no decision was observed and never `null`
+    // (`ess-history/2`): its schema property is the bare reference, not the reference or null.
+    if rust == "Option<DecisionInstant>" {
+        return "ref:DecisionInstant".to_owned();
+    }
     if let Some(inner) = rust
         .strip_prefix("Option<")
         .and_then(|rest| rest.strip_suffix('>'))

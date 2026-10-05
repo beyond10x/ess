@@ -1,0 +1,323 @@
+# Mutation scope, single-event alternatives and known failures
+
+Status: coordinator correction after two independent design passes, 2026-10-03. Pass two's
+generated-report reader finding is recorded below; its actual implementation proof remains due.
+This coordinates issues #212, #236,
+#294, #295 and #296 within the accepted bundle. It changes neither specification truth nor
+the ordinary conformance verdict. Implementation has not been admitted by this document.
+
+## Existing seams and demonstrated gap
+
+`ess-conformance/src/mutate.rs` mutates authored documents, compiles each through the ordinary
+compiler, synthesizes a suite and runs that suite against an unchanged implementation. Its
+`Ruler::new` refuses failed/error baselines; `Ruler::judge` excludes unexecuted baseline scenarios
+and detects whether their bodies changed. Keep these shared semantics for direct and collected
+audits. `report.rs` distinguishes Failed, Error and Unsupported; `counts.rs` additionally carries
+producer-qualified Skipped. None of those is a known-failure exemption.
+
+On the retained combined CLI, `verify conform mutate --path examples/billing --target billing
+--class emit-drop --format json` executes a green 32-scenario baseline but produces five
+stillborn mutants, zero kills and exit 3. Removing the sole emitted event violates
+ESS-COMMAND-007. This is a generator coverage gap, not permission to weaken outcome validation.
+The current CLI also has no known-failure option. The original issue reproductions request a
+declared list of failing scenarios and a valid single-event mutation.
+
+## Single-event mutation: emit-swap
+
+Add a separate class `emit-swap`; preserve the meaning and IDs of `emit-drop`. A swap site is an
+outcome with exactly one emitted event and no error. Replace that event with a different existing
+event, retaining every other command effect, guard, subject and transition. Do not remove an
+expectation from a suite or bypass source compilation.
+
+Choose candidates in qualified-name byte order. A candidate must have exactly the same resolved
+field names and types (including named type identity and Optional/container structure) as the
+original event. It must be published by every component that accepts this command, and at least
+one such component must exist. No inferred publisher is invented for a component-free model:
+that site has no admissible alternative under this operator. Rename the outcome's explicit
+payload-map event key when present, retaining its field expressions. Recompile the entire mutated
+document set; select the first candidate passing ordinary compilation. Thus implicit payload
+inference, ownership, binding type checks and naming are still the compiler's responsibility.
+
+The deterministic mutant ID includes class, command, outcome, old event and new event. Its change
+description states both events. An event with the wrong field type, merely the same wire label,
+or a publisher missing from one accepting component is not an alternative. Candidate enumeration
+must not change baseline documents or synthesize a new event declaration.
+
+When no candidate survives, record the source site under `unavailable_sites` with closed reason
+`no_compatible_event_alternative`. This is neither a mutant kill nor a stillborn mutant: no
+valid altering edit was available. A selected in-scope unavailable site prevents audit success
+(exit 3 unless an actual survivor already requires exit 1), including when other mutants were
+killed. Text and JSON state that single-event substitution was not audited there. This honestly
+limits the operator; it does not claim to detect an implementation that emits nothing merely
+because a different-event mutant was killed.
+
+Acceptance uses creating, updating and moving outcomes with compatible alternatives, incompatible
+payload alternatives, two accepting components with different publication sets, and no alternative.
+Healthy unchanged targets must kill the swaps through actual event observations. A target that
+wrongly emits the substituted event must survive that mutant, and a runner that discards event
+expectations must fail the audit control. Exercise native and actual generated Go/TypeScript
+runners against real generated Rust/Go service targets, plus external emit/collect. Keep multi-event
+emit-drop controls. No-alternative output and exit status must be identical through both routes.
+
+## Existing accepted operators and component scope
+
+#212 remains three serial implementation slices: non-creating `sets-drop` with separated prior
+and input values; `precedence-swap` on adjacent overlapping input-guard branches; and equality
+sub-leaf reversal plus outward integral boundary movement under `guard-boundary`. Do not add
+creating sets-drop or stored-guard precedence by inference. Guard arithmetic is checked: an
+out-of-range literal produces an explicit unavailable site, never wraparound or a duplicate edit.
+Outward movement is +1 for < or <= upper bounds, and -1 for > or >= lower bounds; equality and
+inequality use their reversal arm. Existing strictness swaps retain their IDs.
+
+#236 uses the existing `synthesize_for` component admission on both baseline and each mutant.
+An emitted mutant is in scope if its component suite differs from the component baseline in a
+scenario body or scenario presence. This includes cross-domain commands the component accepts.
+Owned-domain filtering is incorrect. `synthesize_for` deliberately preserves whole-system
+refusals; comparing that inventory cannot establish component scope. Keep those global facts
+visible separately, without adding unrelated mutants to the selected component's denominator.
+
+For scoring an already in-scope mutant, use only refusal keys naming a scenario present in the
+union of its baseline and mutant component suites. Other refusals are reported as unscoped facts,
+not scored gained refusals. If a selected component has no executable scenario for a command
+site it accepts, report that source site separately as unavailable with reason
+`selected_command_without_scenario` when a synthesis refusal names that command/outcome. This is
+an explicit incomplete audit obligation, not an in-scope mutant or a kill. Match typed semantic
+command/outcome references from synthesis, not prefixes parsed from diagnostic prose. A refusal
+that cannot be attributed remains a global fact and cannot alone make a mutant in scope. Exercise
+both other-component-only refusal changes and a selected command refused before any scenario is
+emitted. This preserves #236's changed-scenario mutant selection while making its incompleteness
+visible separately.
+For unavailable sites, retain the site when its command belongs to the component's accepted
+command set; otherwise record it as out of scope. This selection grants no evidence of execution.
+
+`--component` is supported by emit and collect. Collect derives scope from the manifest; a supplied
+flag must agree exactly. Built-in `--target` refuses component scope. Record excluded mutant IDs
+and unavailable sites with reason `outside_component`, outside every score denominator. Do not
+use component scoping to hide a selected component's missing observation or synthesis refusal.
+
+## Known-failure declaration
+
+Use an external, closed JSON document `ess-known-failures/1`, not a marker on authored outcomes.
+The intended ESS behavior and ordinary suite stay unchanged. Required fields are:
+
+- `format`, exactly `ess-known-failures/1`;
+- `spec_digest`, the admitted baseline specification digest;
+- `suite_digest`, the digest of the exact original baseline suite bytes under suite admission;
+- `implementation`, the exact nonempty implementation identity used by the observed report;
+- `implementation_build`, the SHA-256 identity of the public implementation build, supplied by
+  the execution host before target execution and independently of this declaration;
+- `failures`, a nonempty list of `{scenario, reason, tracking}` records in scenario ID order.
+
+Scenario IDs are exact, with no wildcard, prefix, command-wide or outcome-wide matching. Reason
+and tracking are nonempty user-authored strings; the latter names a repair issue or equivalent
+record and is never fetched. Unknown fields, duplicate keys/IDs, invalid digests, unknown scenario
+IDs and mismatched spec/suite/implementation identity refuse before scoring. The public build
+identity is separate from the report's implementation label. Protected one-time runners keep
+their fixed label and empty version: never restore arbitrary target-returned text. Direct built-in
+targets use the SHA-256 of the running ESS executable, computed before target execution. External
+hosts supply the SHA-256 of their immutable target build through explicit execution-context
+configuration, before any target call. Never derive it from a private value, a target response, or
+by copying the declaration's value. This is declared host execution provenance, not remote
+attestation; the runner remains responsible for truthfully identifying its target just as it is
+responsible for its result. A mismatched build refuses even when the safe label matches.
+
+After ordinary report validation, every listed scenario must currently be Failed. A passing entry
+is stale and refuses; Error, Unsupported, Skipped or absent entries refuse. Every unlisted failure
+still refuses a mutation baseline as ESS-MUTATE-001. An execution error is never exempted.
+Declarations exclude entire scenarios from mutation scoring; they do not distinguish two defects
+within one scenario. This scope is explicit in reports and documentation, and the unchanged
+conformance result continues to fail even for a matching declaration.
+
+No declaration is inferred from previous runs or automatically rewritten when a test changes.
+In particular, a still-failing scenario from a changed suite cannot inherit an old exception by
+name alone. Original-byte digest admission is performed before JSON normalization. Protected
+runtime inputs, expected values and observed values never enter declaration or accounting fields.
+
+## CLI and accounting without changing ordinary truth
+
+Add `--known-failing FILE` and `--accounting-out FILE` to `verify conform run` and `report`.
+Accounting output requires a declaration and a distinct output destination. With a declaration,
+accounting output is required, avoiding a machine-readable result that silently loses exclusions.
+The ordinary report retains its existing format, counts and verdict. `run`, including strict mode,
+retains its ordinary failure status/exit behavior. `report` retains its existing exit 0 meaning
+that a report was written, regardless of verdict; declaration/admission failure exits 2 and writes
+neither result. This is an explicit redesign of #296's suggested strict-mode waiver.
+
+Write the separate closed `ess-known-failure-accounting/1` document with original report-byte,
+suite-byte and declaration-byte digests; exact implementation identity and build; spec digest; matched
+known-failed IDs/reasons/tracking; unexpected-failed IDs; and the original terminal counts. Its
+known-failed count is a subset of Failed, never added to Passed or subtracted from total. It has
+no conformance-passed field. Its validator rechecks all identities and the partition against the
+original report and declaration. Validate all inputs before writing outputs; create-new outputs
+must not overwrite one another or any input. A write failure is failure, never a success receipt.
+
+Generated Go/TypeScript runners keep their ordinary failed report/2 and process status. They do
+not emit results/1, and their five-category producer profile must not be converted to its
+four-category external profile. Add an accounting-only mode to `verify conform report`:
+
+`--suite SUITE --observed-report REPORT --execution-context CONTEXT --known-failing DECLARATION
+--accounting-out ACCOUNTING`.
+
+This mode admits exact original report/2 bytes through the existing CountReport reader against
+the admitted suite, preserving producer profile, all five status arrays/counts, coverage,
+execution_status and conformance_status. It then admits the original execution/1 sidecar against
+that exact report and suite, and checks the declaration's implementation/build and failed IDs.
+It writes only accounting/1. It never rewrites the supplied report or creates a results/1.
+`--results`, `--implementation`, `--runner`, `--report-out`, `--implementation-build` and
+`--execution-context-out` conflict with this mode: caller flags cannot replace observed provenance.
+Exit 0 means accounting was written, never conformance passed; refused inputs exit 2 before output.
+Report/1 is not admitted by this mode because it lacks exact suite binding and producer semantics.
+
+The existing `report --suite --results --implementation --report-out` mode remains unchanged for
+external results/1 producers. Only that mode additionally requires `--implementation-build
+<sha256>` and `--execution-context-out FILE` when known-failure accounting is requested, and writes
+the new context alongside its report/accounting. The build value comes from the host's public
+build artifact, not target identity callbacks. No environment variable makes a failing runner
+pass. Native run and both report modes share the same accounting validator; category equivalence
+is compared only where producer profiles support that category. Skipped remains Skipped in actual
+Go/TypeScript controls and is never relabeled Unsupported. Browser conformance truth and one-time
+identity redaction are unchanged.
+
+Persist host execution provenance in a separate closed `ess-conformance-execution/1` sidecar:
+format, exact original report-byte digest, exact suite-byte digest, report implementation label
+and implementation_build. There are no values, timestamps, free-text host fields or commands.
+The runner freezes the build identity before its first target invocation; it binds the report
+digest after producing the ordinary report. Generated Go/TypeScript runners accept an explicit
+pre-execution public build digest and execution-context output path, validating both before
+execution. The Rust external-results report mode creates the same envelope from its explicit caller
+claim; the accounting-only observed-report mode consumes it without inventing a new identity.
+Unknown/duplicate fields and invalid/mismatched digests refuse. A context file is not an attestation
+of a remote binary; consumers must trust the result-producing host, as for the ordinary report.
+Tests must show protected response/identity sentinels and their hashes cannot enter this envelope.
+
+## Mutation scoring and persistence
+
+`mutate --target` accepts `--known-failing FILE`. `mutate --emit` also accepts it: validate static
+suite identity/IDs, copy its original bytes into the new emission directory, and record that
+declaration's digest/path, implementation label and implementation_build in the manifest. No matching current failure
+is claimed until execution. `--collect` uses that manifest-bound declaration. If supplied a file
+again, it must match the recorded original bytes; refusing an unbound late declaration prevents
+quietly changing the audit contract after observing mutant reports. Legacy manifest/1–3 refuse
+this new option; re-emission under /4 is the migration.
+
+The shared scorer admits only baseline-passing scenarios as eligible witnesses. A declared failed
+scenario can never kill a mutant, even if its mutant copy still fails differently. Unsupported and
+Skipped retain existing exclusions. Errors remain refusals. A mutant with a changed excluded
+scenario and no eligible killer is Inconclusive; a real eligible failure can still kill it. If
+every possible witness is excluded, the result is Inconclusive, never Equivalent or Killed. A
+mutant that adds a scenario absent from the baseline has no baseline-passing control for that
+scenario; it is excluded with reason `no_baseline_control`, and cannot alone kill the mutant.
+At least one baseline-passing scenario is required to start scoring. Eligible identities refer to
+baseline scenario IDs, while changed-body comparison uses the existing typed suite comparison.
+
+The current valid-suite, gained-refusal and dead-guard rules remain in force after eligibility is
+applied. Missing mutant reports remain Inconclusive. Baseline report admission precedes scoring;
+all reports must identify the same implementation, and each report must match its own emitted
+suite. Manifest/4 collection requires report/2, which admits the exact suite-byte digest; report/1
+is accepted only with legacy manifest/1–3 semantics. Test a stale report with unchanged spec,
+scenario IDs and counts but different suite bodies. When a declaration is bound, each baseline
+and mutant report additionally requires its host-produced execution/1 sidecar, conventionally
+`execution.json` beside `report.json`. Admission checks the exact report bytes, that report's
+suite, and the same implementation_build as the manifest/declaration. Missing or mismatched
+baseline context refuses; a missing mutant context is Inconclusive and can never produce a kill.
+Direct execution creates equivalent private context facts. The scorer must not compare a mutant's
+spec digest to the unmutated declaration digest.
+
+Coordinate all new persisted mutation fields in manifest/4 and report/4, already needed by #236.
+Record scope, sorted out-of-scope IDs/counts, unavailable sites, declaration identity, known-failed
+baseline exclusions and per-mutant exclusion reasons. Old manifest/1–3 readers remain supported
+with their unchanged meaning; old readers reject /4 before ignoring fields. New writers use /4;
+do not relabel changed bytes /3. Ordinary suite, source and conformance report versions do not
+change for this design. Canonical JSON, original-byte checks, digest mismatches, closed enums and
+strict duplicate/unknown-field admission have native tests. Persisted aliases are not accepted.
+
+Mutation exit 0 means all eligible scored mutants are killed/equivalent, at least one
+non-equivalent mutant ran, and there are no survivors, unavailable in-scope sites, inconclusive or
+unwitnessed entries. Known failures are displayed prominently even when this mutation-only audit
+succeeds; it makes no conformance claim. Survivors retain exit 1; incomplete/refused audits retain
+exit 3. Emit success means artifacts were emitted, as today, and is never a mutation score.
+
+## Required proof and rejected alternatives
+
+Direct and emit/collect controls must compare canonical reports for the same target execution:
+green baseline; one correctly declared Failed scenario plus independent eligible killers;
+unlisted failure; all witnesses excluded; changed excluded scenario; newly added unbaselined
+scenario; stale passing declaration; Error/Unsupported/Skipped substitution; duplicate/unknown ID;
+changed raw suite bytes/spec/build; missing report; wrong mutant report; tampered declaration;
+cross-component commands; no in-scope mutation site; selected and excluded unavailable sites.
+Run actual generated Go/TypeScript report/2 through the accounting-only report mode and collect,
+including a mixed Failed/Skipped run and a required Unsupported observation. Check raw reports
+remain failed, strict execution still fails and the accounting partition matches native execution.
+Plant faults in exclusion and stale-entry handling and show each falsely scored mutant or wrongly
+accepted declaration is caught. Unit-only construction of a report is insufficient acceptance.
+
+The second adopters are a partially repaired order service with a known cancellation defect, and
+a catalog component audited independently from billing. Both need exact, visible exclusions while
+remaining nonconformant to intended behavior. Changing nothing leaves the entire audit blocked;
+marking a spec outcome as optional or intended would mix implementation state into domain truth;
+dropping event expectations removes the very obligation under audit. These alternatives are
+rejected. This proposal instead separates explicit audit eligibility from unchanged conformance
+truth, and uses a compiler-valid event substitution with an honest unavailable-site result.
+
+## Implementation decisions for #294 and #296
+
+Recorded with the implementation; the review status above is unchanged.
+
+- Baseline-passing eligibility, `no_baseline_control` and witness-free `inconclusive` apply when a
+  declaration is bound. Without one the scorer and `ess-mutation-report/3` keep their released
+  meaning and bytes: every scenario the baseline executed, and every scenario new to a mutant's
+  suite, is still scored.
+- A gained or baseline synthesis refusal still makes an otherwise unkilled mutant `unwitnessed`
+  ahead of `inconclusive`, as before; both exit 3.
+- `--target` builds are the SHA-256 of the running `ess` executable, compared to the declaration
+  before any target is made. Its suite, specification and scenario IDs are checked against the
+  admitted baseline suite before that suite runs; its implementation label once the target names
+  itself.
+- Every `ess-mutation-manifest/4` suite records `suite_digest`, and `/4` collection reads report/2
+  only. Under a declaration, the baseline's missing `execution.json` refuses the collection
+  (`Uncollectable`), a mismatched one refuses it as `known-failures.identity`, and a mutant's
+  missing or mismatched one makes that mutant `inconclusive`.
+- `run --known-failing` requires `--report-format 2` and `--report-out`; the accounting is computed
+  from the exact report/2 bytes before either file is written, and its summary goes to standard
+  error. `report --results --known-failing` creates the report, the context and the accounting as
+  new files. Generated runners read `ESS_IMPLEMENTATION_BUILD` and `ESS_EXECUTION_CONTEXT_OUT`
+  together, only with `ESS_REPORT_FORMAT=2` and `ESS_REPORT_OUT`, before any target is made.
+- No generated runner produces `skipped` under report/2 on current suites (Go assigns no skipped
+  status under report/2, and the TypeScript runtime's `UNEXECUTED_STEPS` is empty), so the Skipped
+  category is exercised through admitted rewrites of actual reports, not through an actual skip.
+
+## Implementation decisions for #295
+
+Recorded with the implementation; the emit-swap section above is binding as written (coordinator
+decision, 2026-10-04) and these fill in what it leaves to the implementation.
+
+- "Accepts" and "publishes" are the component membership `synthesize --component` already uses: a
+  component accepts a command it lists or whose domain it owns, and publishes an event it lists or
+  whose domain it owns. Field identity compares the resolved field names and resolved types as a
+  set; declaration order is not part of it. Wire labels and display names are not compared.
+- A candidate is applied to a copy of the documents and compiled as the loader compiles them; only
+  whether it compiles is asked. A specification that does not compile has no emit-swap site, and
+  the audit refuses it as before. `emit-swap` is in every class list, after `precedence-swap`, so a
+  default audit (no `--class`) of a model with an unavailable site now exits 3 where it may have
+  exited 0: the five billing outcomes the issue names were never audited.
+- Mutant ids are `emit-swap/<command>/<outcome>/<event>/<new event>`; an unavailable site is
+  `emit-swap/<command>/<outcome>/<event>`, with `{class, command, event, id, outcome, reason,
+  unaudited}`, `unaudited` being the one sentence saying single-event substitution was not audited
+  there. The change reads ``` `emits: [old]` becomes `emits: [new]` ```.
+- `unavailable_sites` is a new persisted field, so it is carried only by `ess-mutation-manifest/4`
+  and `ess-mutation-report/4`, and only where there is at least one site: an emission with an
+  emit-swap mutant or site is `/4`, and a report is `/4` exactly when it has a site (or a component
+  or declaration, as before). A report or manifest without any keeps its bytes. Older manifests
+  carrying the field are refused naming `/4`; an empty list, a site of another class, an id or
+  sentence that is not its own, an order other than byte order of id, a site that is also a
+  mutant's, and `outside_component` without a `component` are refused.
+- In an emission scoped to a component, an unavailable site whose command that component does not
+  handle has reason `outside_component` and does not affect the exit status; every other one exits
+  3 unless a mutant survived. An audit whose selected classes find only unavailable sites runs the
+  baseline and reports them; `ESS-MUTATE-003` stays for classes that find no site at all.
+- Text lists unavailable sites after the inconclusive mutants (survivors stay first) and ends the
+  summary line with `; N unavailable`.
+- Observed while proving the kills, not changed here: where a scenario captures a created identity
+  from an event the target did not publish, the native runner records `error` and the generated Go
+  and TypeScript runners record `failed`. A creating swap is therefore killed by more scenarios in
+  the generated runners; its verdict and the unavailable sites are the same through every runner.

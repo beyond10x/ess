@@ -10,8 +10,9 @@ Synthesis follows one rule: **what the specification fully determines is generat
 determine is an obligation.** It generates the part of an implementation that was never yours to
 write — types, typestate lifecycles, component ports, one transport, and the behaviour of every
 command and the query of every view whose outcome the specification spells out — and hands back
-everything it cannot determine as a **named obligation**. Storage is not generated: a generated
-behaviour reads and writes through ports you provide.
+everything it cannot determine as a **named obligation**. Generated behaviour reads and writes
+through storage ports. Network-served components also get an ephemeral in-memory implementation
+and an executable; durable storage remains yours to provide.
 
 ```shell-session
 $ ess generate synthesize --path examples/billing --target rust --out out/
@@ -64,14 +65,14 @@ would have closed. What is lost is the compiler closing the question, not the pr
 
 | Target | Emits | Dependencies |
 |---|---|---|
-| `rust` | a cargo workspace: semantic types, typestate lifecycles, component ports, generated behaviours and view queries over storage and context ports, one HTTP transport | none |
+| `rust` | a cargo workspace: semantic types, typestate lifecycles, component ports, generated behaviours and view queries over storage and context ports, one HTTP transport; network components also get an ephemeral store and executable | reusable libraries: none; network servers: `clap`, `uuid` and `time` |
 | `go` | a Go module with the same system | standard library only |
 | `web` | a WebAssembly bridge over the Rust target plus a page built at load time from an emitted `catalog.json` — no model is typed into its HTML | no build tool, no `wasm-bindgen` |
 | `clap` | a command tree, shell completion support and a dispatcher with `Handler` seams for components declaring command-line reach and a CLI grammar | `clap` and `clap_complete` 4 |
 
 Clap emits grammar rather than another type layer. Its handlers receive `clap::ArgMatches`; the
 unimplemented handler names the obligation and refuses. The generated dependencies support parsing
-and completion, so the Rust target's zero-dependency boundary does not apply to Clap. See the
+and completion. Rust's semantic types and component libraries remain dependency-free. See the
 [Clap emitter](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/src/clap/mod.rs)
 and [handler/completion tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/tests/clap.rs).
 
@@ -197,10 +198,28 @@ Everything the specification leaves open is a port, and the ports are yours to p
 | Port | What you provide |
 |---|---|
 | storage, one trait per entity a generated behaviour or query reads or writes (`InvoiceStorage`) | `get`, `put` and `delete` of a snapshot by identity, and `list` of every stored snapshot |
-| `Context`, where a generated behaviour asks it anything | the caller's attributes, every identity and value the specification says the implementation assigns (a created identity, `{generated: true}`), and whether each `external:` branch is taken |
+| `Context`, where a generated behaviour asks it anything | the caller's attributes, every identity and value the specification says the implementation assigns (a created identity, `{generated: true}`), and whether each `external:` branch is taken, given the executing command input as an `ExternalCommand` |
 
-ESS generates each port's trait and never an implementation of it: where instances live stays
-yours. `P` also supplies every behaviour and query the plan still owes, and `Generated<P>` forwards
+ESS preserves these ports for your implementations. For network-served components it also
+generates in-memory stores whose `list` answers in identity order. These stores lose all data
+when the process exits. Integer identities sort numerically; text and the text-backed primitives
+sort by their stored rendering. Decimal `1` and `1.0` remain distinct identities, as do JSON
+numbers with different spellings. Newtypes preserve the underlying comparison. Records compare
+fields in declaration order, enum variants by their declared names, unions by tag then payload,
+and lists lexicographically. Booleans sort false before true, bytes lexicographically, and each
+optional layer absent before present. Maps compare sorted key/value pairs, independently of insertion
+order. JSON objects retain their member order; they are not maps in the generated value model.
+These comparisons govern lookup, replacement and deletion as well as listing. No numeric
+normalization is added, and the existing HTTP decoder bounds and refusals still apply.
+Memory-store identity compares decoded model values, rather than native Go pointer identity.
+In particular, direct Go `Json` values that differ only in whitespace address the same row;
+the zero `Json` value and explicit `null` also address the same row. This is the new store's
+key contract; it does not change `Json` constructors or native type equality.
+Malformed JSON supplied directly through a Go constructor retains a separate raw-text key,
+ordered after valid decoded keys. It neither panics nor aliases a valid JSON value; HTTP still
+refuses malformed JSON before it reaches the store.
+
+`P` also supplies every behaviour and query the plan still owes, and `Generated<P>` forwards
 them, so it is a complete bundle. To replace one generated behaviour, write a bundle that
 implements that trait and delegates the rest to a `Generated`. `PLAN.md` names the same ports in
 its **Ports — yours to provide** section.
@@ -212,17 +231,30 @@ and a field without one is read from the row the refusal is answered for: its fi
 name and type, or, for a field of the entity's state type, the state it rests in. A request no
 declared branch answers, or a guard that is Unknown, is the typed refusal naming the command.
 
+A `when_related:` guard is generated too, through an input reference, an Optional one and a
+stored field of the addressed subject. The behaviour reads the related row by identity through the
+related entity's storage port, and reads none for an absent reference. The order is the
+conformance interpreter's. For an input reference: `existing_instance:`, then a missing row's
+`exists: false` branch, then the input-guarded refusals. For a stored reference: the input-guarded
+refusals, the addressed row's existence and held state, then the reference as the row held it
+before the branch. Where a stored reference is read, or from `ess/22` where `wrong_state:` sits
+beside a present-row refusal, the addressed row's existence and held state answer before the
+present-row refusals, and those answer before every accepting branch. Otherwise the present-row
+predicate branches are read in declaration order with the accepting branches. A `{related:}` value
+still keeps its command owed.
+
 A command stays a **whole** obligation when any one outcome uses a construct the generator cannot
 express, and the plan names the first one it found. They are:
 
 | Where | Constructs that keep the command an obligation |
 |---|---|
 | the command | a typed `response:`; `when_subject_state:` beside `external:`; more than one default branch |
+| related rows | `when_related:` beside `external:`; a related row of a domain that a component accepting the command does not own (that component has no storage port for it) |
 | subject guards | a subject guard with no supplied subject to read, or beside a branch addressing another subject; a subject predicate choosing between a move and an update |
 | unknown identity | a supplied subject with neither `unknown_instance:` nor `wrong_state:` to answer an identity no record carries; a `wrong_state:` refusal with fields describing the rows of more than one subject |
-| branches | `when_related:`, `input_absent:`, `replays:`, `instances:`, `affects:`; a `wrong_state:` or `unknown_instance:` branch that acts or emits, except the creation of create-or-update |
+| branches | `input_absent:`, `replays:`, `instances:`, `affects:`; a `wrong_state:` or `unknown_instance:` branch that acts or emits, except the creation of create-or-update |
 | selection by existence | a creation that `existing_instance:` or a creating `unknown_instance:` decides, whose identity is not read from the input (for create-or-update, a required input field; beside `existing_instance:`, the same input field on every creation) |
-| effects | `creates:` leaving a required field unset; a creation whose identity the caller supplies; a move, update or delete whose identity is observed; `sets:` without a subject |
+| effects | `creates:` leaving a required field unset; a move, update or delete whose identity is observed; `sets:` without a subject |
 | values | a declared conversion; a value of another type; `{subject:}` on a branch that holds no row; `{increment:}` with no previous value or on a field that is not an `Integer`; a struct source leaving a required member unset; `{related:}`; `{count: changed}`; a response field; `{cleared}` on an event or error |
 | errors | an error field with no `payload:` source that the held row does not determine |
 | guards | a path that does not resolve; a read into a union or a collection element (`.count` is read); an ordering over text; a truthiness test of a value that is not a `Boolean`; a comparison of two kinds of value or two literals; the current time |
@@ -231,7 +263,8 @@ The Go target generates the same behaviours, with the same order of evaluation, 
 `types/behaviour` package: one storage interface per entity (`InvoiceStorage`, with `Get`, `Put`,
 `Delete` and, where a generated query reads it, `List` in an order the store keeps stable), a
 `Context` interface asking only what the model asks (`Caller<Attribute>()`, `Generate<Type>()`,
-`External(command, outcome)`), and `Owed`, every behaviour and query the plan still owes. You hand
+`External(command ExternalCommand, outcome)`, where each `ExternalCommand` wrapper carries
+the executing command input), and `Owed`, every behaviour and query the plan still owes. You hand
 them to `behaviour.New(behaviour.Ports{…})`, and the `*Generated` it returns has the method of
 every seam a component's bundle names, generated or forwarded to `Owed`, so it is a complete bundle
 for every component port. Each package's `Unimplemented` stub covers only what the plan owes. Two
@@ -273,6 +306,41 @@ another type than it computes. The Go target generates the same queries on its `
 the storage interface's `List`, with exact decimal sums and means. See the
 [view query tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/tests/generated_view_queries.rs).
 
+## Run a generated network component
+
+A `reached_by: network` component gets `cmd/<component>-server/main.go` in Go and
+`crates/<system>-server/src/bin/<component>-server.rs` in the Rust workspace. The Rust single-crate
+layout puts the executable under `src/bin/` and requires `--features server`. Rust entries use
+clap derive; their runtime dependencies are pinned to clap 4.6.7, uuid 1.26.1 and time 0.3.45,
+compatible with Rust 1.85. These dependencies stay outside the reusable types and the default
+single-crate feature set, which also build for WebAssembly. Go entries use the standard library.
+
+Each entry accepts `--listen <addr>` (default `127.0.0.1:8080`), `--callers <mode>` (default
+`none`) and `--static <dir>`. Port `0` chooses an available port; the ready record reports the
+bound address. With `--static`, paths outside the API route table serve files from the selected
+directory, including `index.html` at `/`. Filesystem aliases and encoded paths cannot escape
+that directory. API routes keep their own method, authorization and error responses. This lets
+a generated web app share the server's origin without CORS configuration.
+
+The memory context supplies random v4 UUIDs and timestamps from the system clock. Before opening
+the listener, an entry refuses startup if its reachable commands, views or bindings still owe
+behavior, caller attributes, external decisions or assigned values of another type. Diagnostics
+name the missing answers. Unrelated components' context requirements do not prevent startup.
+To supply those answers, link a realization through the existing storage, context and `serve`
+callback ports. The generated executable is for ephemeral use: restarting it clears its stores.
+Rust's additive `TryContext` returns typed context errors and adapts existing `Context`
+implementations automatically. Go's additive `NewWithContext(Ports, FallibleContext)` explicitly
+selects the fallible companion ahead of `Ports.Context`. The existing `Ports` fields and
+`New(Ports)` constructor remain unchanged. Missing context answers return a named
+`UnmetObligation`. Generated commands prepare their outcome and event payloads before committing
+storage changes, so an unavailable late context answer leaves stored rows unchanged.
+
+An external decision receives the command input being executed, not only its name: Rust passes
+the borrowed `ExternalCommand<'_>` enum, Go a typed `ExternalCommand` wrapper, through `Context`
+and the fallible companion alike. Compare it with the request your proof was issued for and
+refuse a mismatch. Regenerating changes this signature, so an existing names-only `external`
+implementation stops compiling until it takes the command.
+
 ## Actor grants are generated as data, and a served surface enforces them
 
 Which actors exist and which commands each may invoke is fully determined, so the Rust target
@@ -283,12 +351,19 @@ was authenticated as. The module is emitted only for a model that declares an ac
 Where the specification serves a component (`reached_by: network`), the generated server enforces
 the grant. Its `dispatch` and `handle` (Rust) and `dispatch` (Go) take the caller your realization
 authenticated the request as, or none, and `serve` takes the function that authenticates one. How a
-request proves who sent it is yours; the server reads no actor from the request itself. Before the
+request proves who sent it is yours; the `serve` callback remains available to your realization.
+The generated executable defaults to `--callers none`, which authenticates nobody even if a
+request carries an actor header. Explicitly selecting `--callers actor-header` enables a
+demonstration mode: `Authorization: Actor <name>` names a declared actor by its qualified name
+or an unambiguous short name. A request carrying more than one `Authorization` header is
+authenticated as nobody. Startup identifies this demonstration mode. It is not production
+authentication. Before the
 command runs, a caller that is none, or is an actor without the grant, gets one standard refusal,
 the same for every command: `403` with `{"refused": "not granted", "actor": <name or null>}`. The
 contract declares it on every command. A `403` a caller-decided branch answers carries `outcome` and
 the declared `error` instead, so a client tells the two apart by the members present. A command no
-declared actor may invoke is refused to every caller. Views are not grant-checked. The plan marks
+declared actor may invoke is refused to every caller. A view is not grant-checked unless an actor's
+`may:` names it (below). The plan marks
 the `actor grants` row generated. The Go server carries its own grant table, and both servers expose
 the check (`admit` in Rust, `Admit` in Go) for code that drives the system in process.
 
@@ -317,11 +392,32 @@ gets one note saying enforcement is the caller's. A server that skips the check 
 instead and fails the denied scenarios. See the
 [actor grant tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/tests/actor_grants.rs).
 
+From source `ess/22` an actor's `may:` may also name a view (beyond10x/ess#286). The views it names
+are read-granted: each generated server checks the caller before it reads one — `admit_read` and
+`Caller::may_read` in Rust, `AdmitRead` and `Caller.MayRead` in Go, with the views each actor may
+read in the types crate's `may_read(actor)` and the Go server's read grant table — and answers an
+actor the grant does not name, or no actor, with the same standard `403` refusal a command answers.
+The contract names the readers of each such view as `x-ess-may-read` and declares the `403` on its
+operation. A view no actor names stays open to every caller, and a model that names no view keeps
+its generated bytes. The synthesized suite holds the grant to each read-granted view a served
+component answers:
+
+- `<view>/grant/read/denied` reads the view as the lowest-named declared actor its grant does not
+  name, then as no actor at all, and requires the standard refusal of each read. A view every
+  declared actor names is still read as no actor, and a note says so.
+- `<view>/grant/read/admitted/<actor>` reads it as each actor naming it, and requires it served.
+- Every other read of the view in the suite is sent as the lowest-named actor naming it, with a
+  `read_as` step before it.
+
+A server that skips the read check serves the view to everyone and fails the denied scenario. See
+the [view grant tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/tests/view_grants.rs).
+
 ## Honest limits
 
 * **What the specification cannot determine is not generated.** A decision or an algorithm the
   specification does not spell out is an obligation, and a command with one such outcome is an
-  obligation as a whole. Storage is a port you provide; ESS never generates a store.
+  obligation as a whole. Storage remains a port; network-served components also get ephemeral
+  generated stores, while durable storage stays with the realization.
 * **Obligations are plan entries, not records** a task can own and evidence can close. Nothing
   blocks that extension; it is listed on the [roadmap](../status/roadmap.md#not-scheduled) as not
   scheduled.

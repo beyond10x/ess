@@ -1,0 +1,14 @@
+{
+  "at": "2026-10-04T14:41:21Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-283",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:multiple-related-vias-283-20261004-r1",
+    "review": "review-result:multiple-related-vias-283-20261004-r1",
+    "outcome": "fixed"
+  }
+}

@@ -1,0 +1,73 @@
+format: ess/18
+system: notebook
+version: v1
+domain: notebook.notes
+types:
+  - {name: notebook.notes.NoteId, kind: newtype, of: Integer}
+entities:
+  - name: notebook.notes.Note
+    identity: {name: note_id, type: notebook.notes.NoteId}
+    fields:
+      - {name: text, type: String}
+    lifecycle:
+      initial: Active
+      states: [Active, Archived]
+      terminal: [Archived]
+      transitions:
+        - {name: archive, from: [Active], to: Archived}
+events:
+  - name: notebook.notes.NoteAdded
+    fields:
+      - {name: note_id, type: notebook.notes.NoteId}
+      - {name: text, type: String}
+  - name: notebook.notes.NoteArchived
+    fields:
+      - {name: note_id, type: notebook.notes.NoteId}
+errors:
+  - {name: notebook.notes.NoSuchNote, summary: The note does not exist.}
+  - {name: notebook.notes.AlreadyArchived, summary: The note is already archived.}
+actors:
+  - name: notebook.notes.Writer
+    may: [notebook.notes.AddNote, notebook.notes.ArchiveNote]
+commands:
+  - name: notebook.notes.AddNote
+    naming: {wire: add-note}
+    input:
+      - {name: note_id, type: notebook.notes.NoteId}
+      - {name: text, type: String}
+    outcomes:
+      - name: added
+        creates: notebook.notes.Note
+        instance: note_id
+        sets: {text: input.text}
+        emits: [notebook.notes.NoteAdded]
+        payload:
+          notebook.notes.NoteAdded: {note_id: input.note_id, text: input.text}
+  - name: notebook.notes.ArchiveNote
+    naming: {wire: archive-note}
+    input:
+      - {name: note_id, type: notebook.notes.NoteId}
+    outcomes:
+      - name: archived
+        moves: notebook.notes.Note.archive
+        instance: note_id
+        emits: [notebook.notes.NoteArchived]
+        payload:
+          notebook.notes.NoteArchived: {note_id: input.note_id}
+      - {name: unknown, unknown_instance: true, error: notebook.notes.NoSuchNote}
+      - {name: archived-already, wrong_state: true, error: notebook.notes.AlreadyArchived}
+views:
+  - name: notebook.notes.Notes
+    naming: {wire: notes}
+    source: notebook.notes.Note
+    consistency: read_your_writes
+    fields:
+      - {name: note_id, type: notebook.notes.NoteId}
+      - {name: text, type: String}
+      - {name: state, type: notebook.notes.Note.State}
+components:
+  - component: notes
+    owns: {domains: [notebook.notes]}
+    accepts: {commands: [notebook.notes.AddNote, notebook.notes.ArchiveNote]}
+    publishes: {events: [notebook.notes.NoteAdded, notebook.notes.NoteArchived]}
+    reached_by: network

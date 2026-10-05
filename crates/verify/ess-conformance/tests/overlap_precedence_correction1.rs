@@ -175,7 +175,7 @@ fn a_refusal_overlap_between_two_literals_is_sent_requiring_the_refusal() {
         "the overlap is not sent: {invocations:#?}\nnotes: {:#?}",
         overlap_notes(&synthesis)
     );
-    assert!(overlap_notes(&synthesis).is_empty());
+    assert_eq!(overlap_notes(&synthesis).len(), 0);
 }
 
 /// The accepting overlap over `11 < amount < 12` is sent at the exact midpoint of the two literals,
@@ -203,7 +203,7 @@ fn an_accepting_overlap_between_two_literals_is_sent_at_their_midpoint() {
         .collect();
     assert_eq!(inside.len(), 1, "{invocations:#?}");
     assert_eq!(inside[0].exact_text(), "11.5");
-    assert!(overlap_notes(&synthesis).is_empty());
+    assert_eq!(overlap_notes(&synthesis).len(), 0);
 }
 
 /// Two branches whose guards cannot both hold are not an overlap, and no note says they are:

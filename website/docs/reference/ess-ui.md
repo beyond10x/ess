@@ -44,7 +44,7 @@ A field's `type` is one of three things. (1) A lowercase primitive name from `pr
 | `enum` | `{enum: [a, b]}` | `{enum: [light, dark]}` |   |
 | `one_of` | `{one_of: [T1, T2]}` | `{one_of: [duration, expr]}` |   |
 | `record` | `{record: {field: T}}` | `{record: {amount: number, currency: {enum: [EUR, USD, GBP]}}}` |   |
-| `ref` | `{ref: kind}` | `{ref: view}` | view, command and event resolve in the ESS model; the others in the document; kinds: `[shell, page, section, overlay, channel, state, page_kind, composite_kind, widget, tone_map, view, command, event]` |
+| `ref` | `{ref: kind}` | `{ref: view}` | view, command, event and actor resolve in the ESS model; the others in the document; kinds: `[shell, page, section, overlay, channel, state, page_kind, composite_kind, widget, tone_map, view, command, event, actor]` |
 | `const` | `{const: value}` | `{const: ess-ui/1}` |   |
 
 ### Expressions
@@ -93,7 +93,7 @@ Validation: a short form is checked against its `accepts` before it expands; one
 |---|---|
 | `expr` | the expanded value is this expression string |
 | `first_present` | the first listed source that has a value |
-| `each_value_of_enum_type` | one entry per value of the named enum type, shaped by `as` |
+| `each_value_of_enum_type` | one entry per value of the named enum type, shaped by `as`; the document's `types` are read first, and a name they do not declare is an enum of the model the document is loaded with (`--model`), whose entries send each variant's wire spelling and show its display name |
 | `remove_inherited` | the inherited entry of that name is removed during page kind merge |
 | `merge_under` | the named overlay is copied and the local props are merged over it |
 
@@ -546,7 +546,7 @@ Routes, layouts, page templates, and the section as the unit of loading.
 
 One route — its state, layout, header, sections and overlays.
 
-A page owns the state a link should reproduce (filters, paging, selection) and composes sections, each loading on its own. Start from a page kind and declare only what differs. `layout` arranges sections renderer-neutrally. Use `switch_to` for sibling pages shown as a view switch; switching keeps every current param the target page declares, by name, so sibling views of one record stay on that record.
+A page owns the state a link should reproduce (filters, paging, selection) and composes sections, each loading on its own. Start from a page kind and declare only what differs. `layout` arranges sections renderer-neutrally. Use `switch_to` for sibling pages shown as a view switch; switching keeps every current param the target page declares, by name, so sibling views of one record stay on that record. `actor` names the ESS actor the page is built for: checked against the model, every command the page sends (its sections, header and overlays) must be in that actor's `may`, as the served surface would refuse it otherwise. A page without `actor` is checked as before; renderers do not read it.
 
 **Properties**
 
@@ -560,6 +560,7 @@ A page owns the state a link should reproduce (filters, paging, selection) and c
 | `aliases` | list of `string` |   |   | legacy route paths |
 | `switch_to` | list of name of a [Page](#page) |   |   | sibling pages offered in the header |
 | `visible` | `expr` |   |   | extra condition beyond grants, such as a feature flag |
+| `actor` | name of an ESS `actor` |   |   | the ESS actor whose grants bind every command the page sends; with a model, each must be granted to it |
 | `layout` | [PageLayout](#pagelayout) |   | `stack` | how sections are arranged |
 | `state` | map of `name` → optional [State](#state) |   |   | page state |
 | `header` | [header](#header) |   |   | title, total, actions, live status |
@@ -999,7 +1000,9 @@ One composite replaces dropdowns, tag pickers, tree selects and checkbox lists. 
 | Property | Type | Required | Default | Note |
 |---|---|---|---|---|
 | `reads` | [Reads](#reads) |   |   | options from a view |
-| `options` | one of: list of record \{ `value`: `json`, `label`: `string` \} \| list of `string` \| `name` |   |   | fixed options or a named enum type |
+| `options` | one of: list of record \{ `value`: `json`, `label`: `string` \} \| list of `string` \| `name` |   |   | fixed options, or a named enum type: one of the document's `types`, else, with `--model`, an enum of the model by its qualified name, the name below the system, or the last segments only one enum ends with |
+| `value` | `name` |   |   | the row field of `reads` each option sends, by its wire name (the key its rows carry; `--model` names the wire name of a field written by its model name); a row without it offers no option. Absent: the read's `key`, else the row field named like the form field the choice picks for, else the identity of the entity the view projects (`--model`), else `id` |
+| `label` | `name` |   |   | the row field of `reads` each option shows, by its wire name; absent, or missing or `null` in a row: the row's `label`, else its `name`, else the value |
 | `binds` | `expr` |   |   | state the value is written to |
 | `multiple` | `boolean` |   | `false` | many values |
 | `style` | one of: `dropdown` \| `tags` \| `tree` \| `grouped` \| `radio` \| `segmented` \| `checklist` |   | `dropdown` | presentation hint |
@@ -1060,13 +1063,14 @@ inputs: [{field: min_value, as: number, binds: state.min_value}]
 
 Page title, count, primary actions, view switch, filters and live status.
 
-Every page has one header, placed by position (`header`) rather than by `component`, so it is not a member of the composite union. `total` names the section whose total is shown; `live` lists channels whose connection state is shown, so a stale page is visibly stale.
+Every page has one header, placed by position (`header`) rather than by `component`, so it is not a member of the composite union. `total` names the section whose total is shown; `live` lists channels whose connection state is shown, so a stale page is visibly stale, and never applies events. `title_from` shows a field of the record a section of the page holds (its first row, with its live changes applied) in place of `title`, which stays the text shown until the record holds the field. A header metric takes its own `live`, as any nested composite with `reads` does.
 
 **Properties**
 
 | Property | Type | Required | Default | Note |
 |---|---|---|---|---|
 | `title` | one of: `string` \| exactly `from_page` |   |   | header title |
+| `title_from` | record \{ `section`: name of a [Section](#section), `field`: `name` \} |   |   | a field of the first row of a section that reads, shown as the title once present; `title` until then |
 | `total` | name of a [Section](#section) |   |   | section whose total is shown |
 | `actions` | list of [Action](#action) |   |   | primary actions |
 | `switch` | list of `name` |   |   | pages from switch\_to, or modes of this page |
@@ -1517,7 +1521,7 @@ fields: [name, website, {field: logo, as: file}]
 
 The composite union — one type whose member is chosen by `component`.
 
-Every composite kind is a member of one union discriminated by `component`; the member's props follow inline beside the fields below, and a key the member does not declare is refused, naming the node's path. A composite written where a nested node is expected, a section and an overlay all hold one member. `header` and `overlay` are composites placed by position, so they are not members. A `component` that names no member names a widget. The bare-name shorthand accepts a member only: a widget is always written `{component: <widget>, args: …}`.
+Every composite kind is a member of one union discriminated by `component`; the member's props follow inline beside the fields below, and a key the member does not declare is refused, naming the node's path. A composite written where a nested node is expected, a section and an overlay all hold one member. `header` and `overlay` are composites placed by position, so they are not members. A `component` that names no member names a widget. The bare-name shorthand accepts a member only: a widget is always written `{component: <widget>, args: …}`. A nested composite with its own `reads` (a tab's node, a header metric, a record's item) takes `live` as a section does: the channel's events change its own rows while it is shown. A node that is not shown (an inactive tab, a collapsed `expand`, a node whose `visible` is false) applies no event and reads its view again when it is shown. `live` on a node that reads nothing is refused, and so is `when_paged_away`.
 
 **Properties**
 
@@ -1528,6 +1532,7 @@ Every composite kind is a member of one union discriminated by `component`; the 
 | `state` | map of `name` → [State](#state) |   |   | state local to this composite |
 | `visible` | `expr` |   |   | shows the composite only when true |
 | `degrades` | [Degrades](#degrades) |   |   | fallbacks for this composite |
+| `live` | [Live](#live) |   |   | how channel events change the composite's own `reads` while it is shown; only on a member with `reads`, without `when_paged_away` |
 | `unmapped` | list of `string` |   |   | gaps found by a retrofit |
 
 **You may also write**
@@ -2162,9 +2167,9 @@ buffer: {type: {list: ChatEvent}, class: channel_buffer}
 
 ### Live
 
-How a section applies a channel's events to its rows.
+How a section, or a nested composite that reads, applies a channel's events to its rows.
 
-`effect` decides what an event does: patch a row, insert or patch, insert at the top of a feed, remove, replace, or re-read. `only_if: matches(params)` drops live rows outside the section's filters; `when_paged_away: count_new` shows "12 new" instead of shifting rows.
+`effect` decides what an event does: patch a row, insert or patch, insert at the top of a feed, remove, replace, or re-read. `only_if: matches(params)` drops live rows outside the section's filters; `when_paged_away: count_new` shows "12 new" instead of shifting rows. Every effect acts on rows, whatever shows them: a record shows the first row, a metric takes its value or aggregate from the rows, a list shows them all.
 
 **Properties**
 
@@ -2800,7 +2805,7 @@ Every construct with its one-line summary, chapter by chapter.
 | [Action](#action) | [Reads, actions and fixtures](#reads-actions-and-fixtures) | One user-triggered effect: run a command (`does`), open an overlay, navigate, export, upload, copy or set UI state. |
 | [FixtureIndex](#fixtureindex) | [Reads, actions and fixtures](#reads-actions-and-fixtures) | Sample data per view and event scripts per channel, so renderers run without a backend. |
 | [Channel](#channel) | [Live data](#live-data) | A live source of ESS events or a live view, with delivery and resume semantics. |
-| [Live](#live) | [Live data](#live-data) | How a section applies a channel's events to its rows. |
+| [Live](#live) | [Live data](#live-data) | How a section, or a nested composite that reads, applies a channel's events to its rows. |
 | [State](#state) | [State placement](#state-placement) | One piece of UI state, its class and where it is stored. |
 | [StateClass](#stateclass) | [State placement](#state-placement) | The kind of a state — the key the placement profile uses. |
 | [Store](#store) | [State placement](#state-placement) | Where a state lives, with its durability, sharing, and reload/reconnect behaviour. |

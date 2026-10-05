@@ -71,7 +71,7 @@ impl Operation {
             Self::Go => command.args(["synthesize", "--target", "go"]),
             Self::Author => command.arg("author"),
             Self::Web => command.arg("web"),
-            Self::Run => command.args(["run", "--target", "billing"]),
+            Self::Run => command.args(["run", "--target", "billing", "--report-format", "2"]),
         };
         command
             .arg("--path")
@@ -228,7 +228,7 @@ fn a_yaml_named_subdirectory_alone_retains_its_read_refusal() {
             error.contains("reading") && error.contains("child.yaml"),
             "{error}"
         );
-        assert!(output.stdout.is_empty());
+        assert_eq!(output.stdout.len(), 0);
     }
 }
 
@@ -257,7 +257,7 @@ fn matching_directory_refusal(symlink: bool) {
                 error.contains("reading") && error.contains("child.yaml"),
                 "{error}"
             );
-            assert!(output.stdout.is_empty());
+            assert_eq!(output.stdout.len(), 0);
             assert_eq!(inventory(&out), before);
         }
     }
@@ -328,7 +328,17 @@ fn omitted_scenarios_preserve_intentional_generated_and_authored_selections() {
         let fixture = Fixture::new();
         let out = operation.destination(&fixture, false);
         let output = successful(&mut operation.command(None, Some(&out)));
-        assert!(output.stderr.is_empty());
+        // A run states a fresh suite's initial-state requirement before the target runs
+        // (docs/design/scenario-initial-state-and-cross-caller-witnesses.md, #312); nothing else.
+        if matches!(operation, Operation::Run) {
+            assert_eq!(
+                String::from_utf8_lossy(&output.stderr),
+                "Requires an empty logical modeled-instance/event/invocation namespace before each \
+                 scenario setup; unrelated physical data need not be deleted.\n"
+            );
+        } else {
+            assert_eq!(output.stderr.len(), 0);
+        }
         let files = inventory(&out);
         assert!(!files.is_empty(), "{operation:?}");
         if matches!(operation, Operation::Ir | Operation::Author) {

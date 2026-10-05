@@ -122,9 +122,9 @@ func (p ports) GenerateDeskTicketTicketRef() ticket.TicketRef {
 }
 
 // External is true for the one branch the step forced.
-func (p ports) External(command string, outcome string) bool {
+func (p ports) External(command behaviour.ExternalCommand, outcome string) bool {
 	forced := (*p.state).forced
-	return len(forced) == 2 && forced[0] == command && forced[1] == outcome
+	return len(forced) == 2 && forced[0] == command.Name() && forced[1] == outcome
 }
 
 // assemble is a fresh system over the ports.
@@ -286,6 +286,9 @@ func command(sys *system.System, name string, input map[string]any) (any, error)
 		taken, unmet = answer, errorOf(refusal)
 	case "desk.ticket.ReopenTicket":
 		answer, refusal := service.ReopenTicket(ticket.ReopenTicket{TicketId: ticketID(input["ticket_id"])})
+		taken, unmet = answer, errorOf(refusal)
+	case "desk.ticket.ForgetStats":
+		answer, refusal := service.ForgetStats(ticket.ForgetStats{TicketId: ticketID(input["ticket_id"])})
 		taken, unmet = answer, errorOf(refusal)
 	case "desk.ticket.Reprioritize":
 		answer, refusal := service.Reprioritize(ticket.Reprioritize{

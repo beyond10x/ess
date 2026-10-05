@@ -17,6 +17,7 @@ pub mod node;
 pub mod predicate;
 pub mod time;
 pub mod verification;
+pub mod window;
 
 pub use entity::{EntityLocator, EntityType};
 pub use error::{ParseError, ValidationCode, ValidationError, ValidationErrors};

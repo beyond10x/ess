@@ -20,7 +20,6 @@ use ess_conformance::mutate::{
 use ess_conformance::reference::{Billing, Oracle};
 use ess_conformance::report::Status;
 use ess_conformance::runner::Runner;
-use ess_conformance::scenario::ScenarioStep;
 use ess_conformance::target::ConformanceTarget;
 use ess_conformance::AdmittedSuite;
 use ess_domain::spec::RawSpecFile;
@@ -186,7 +185,7 @@ fn pinned_verdicts(report: &MutationReport, pinned: &[(&str, Verdict, &str)]) {
 /// was killed.
 const BILLING_SURVIVORS: &[(&str, Why)] = &[];
 
-/// Billing's twenty mutants.
+/// Billing's twenty-two mutants.
 ///
 /// **The design page predicted every `transition-to` mutant would be killed by its own transition
 /// scenario. Measured, all three are stillborn**, refused `ESS-ENTITY-011`: in `examples/billing/`
@@ -195,6 +194,11 @@ const BILLING_SURVIVORS: &[(&str, Why)] = &[];
 /// alternative state changes that. The same is true of every `emit-drop`: each billing outcome
 /// emits exactly one event, so dropping it leaves an outcome that neither emits nor names an error,
 /// which `ESS-COMMAND-007` refuses.
+///
+/// Each of those five sites is an `emit-swap` site as well (beyond10x/ess#295). `InvoiceIssued` and
+/// `InvoiceCancelled` carry exactly `invoice_id`, so the two moving outcomes swap them and are
+/// killed by their own outcome scenarios; no other event repeats the fields of `InvoiceCreated`,
+/// `InvoicePaid` or `EmailSent`, so those three sites are unavailable, which is no mutant at all.
 ///
 /// What P1-1 was there to catch — an audit that ran the *original* suite for every mutant — is
 /// caught instead by the two `from-drop` mutants: each is killed by a refusal scenario,
@@ -225,6 +229,18 @@ const BILLING_VERDICTS: &[(&str, Verdict, &str)] = &[
         "emit-drop/billing.invoice.PayInvoice/settled/billing.invoice.InvoicePaid",
         Verdict::Stillborn,
         "ESS-COMMAND-007",
+    ),
+    (
+        "emit-swap/billing.invoice.CancelInvoice/cancelled/billing.invoice.InvoiceCancelled/\
+         billing.invoice.InvoiceIssued",
+        Verdict::Killed,
+        "billing.invoice.CancelInvoice/outcome/cancelled",
+    ),
+    (
+        "emit-swap/billing.invoice.IssueInvoice/issued/billing.invoice.InvoiceIssued/\
+         billing.invoice.InvoiceCancelled",
+        Verdict::Killed,
+        "billing.invoice.IssueInvoice/outcome/issued",
     ),
     (
         "error-swap/billing.invoice.CancelInvoice/wrong-state",
@@ -310,12 +326,15 @@ fn the_billing_audit_pins_every_mutant_and_kills_every_one_that_ran() {
         per_class(&report),
         BTreeMap::from([
             ("emit-drop", 5),
+            ("emit-swap", 2),
             ("error-swap", 5),
             ("from-drop", 2),
             ("guard-boundary", 2),
             ("guard-connective", 0),
             ("guard-negate", 2),
             ("order-flip", 1),
+            ("precedence-swap", 0),
+            ("sets-drop", 0),
             ("sets-retarget", 0),
             ("transition-to", 3),
         ]),
@@ -326,16 +345,36 @@ fn the_billing_audit_pins_every_mutant_and_kills_every_one_that_ran() {
     pinned_survivors(&report, BILLING_SURVIVORS);
     assert_eq!(report.implementation, "billing-reference");
     assert_eq!(report.specification, "billing v3");
-    assert_eq!(report.counts.mutants, 20);
-    assert_eq!(report.counts.killed, 12);
+    assert_eq!(report.counts.mutants, 22);
+    assert_eq!(report.counts.killed, 14);
     assert_eq!(report.counts.stillborn, 8);
+    assert_eq!(
+        unavailable(&report),
+        [
+            "emit-swap/billing.email.SendEmail/sent/billing.email.EmailSent",
+            "emit-swap/billing.invoice.CreateInvoice/accepted/billing.invoice.InvoiceCreated",
+            "emit-swap/billing.invoice.PayInvoice/settled/billing.invoice.InvoicePaid",
+        ]
+    );
+}
+
+/// The ids of the report's unavailable sites, each `no_compatible_event_alternative`.
+fn unavailable(report: &MutationReport) -> Vec<&str> {
+    let sites = report.unavailable_sites.as_deref().unwrap_or_default();
+    assert!(sites
+        .iter()
+        .all(|site| site.reason == mutate::UnavailableReason::NoCompatibleEventAlternative));
+    sites.iter().map(|site| site.id.as_str()).collect()
 }
 
 /// The oracle fixture's survivors. None.
 const ORACLE_SURVIVORS: &[(&str, Why)] = &[];
 
-/// The oracle fixture's twenty mutants. `from-drop/…cancel/Held` is stillborn for the reason
+/// The oracle fixture's twenty-five mutants. `from-drop/…cancel/Held` is stillborn for the reason
 /// `ESS-ENTITY-011` gives: `cancel` is `Held`'s only way out, so dropping it strands the state.
+///
+/// `OrderHeld` and `OrderShipped` carry the same fields, so `hold` and `ship` swap them and each is
+/// killed (beyond10x/ess#295); the other four single-event sites have no alternative.
 const ORACLE_VERDICTS: &[(&str, Verdict, &str)] = &[
     (
         "emit-drop/oracle.dispatch.Handoff/accepted/oracle.dispatch.HandedOff",
@@ -366,6 +405,16 @@ const ORACLE_VERDICTS: &[(&str, Verdict, &str)] = &[
         "emit-drop/oracle.order.ShipOrder/shipped/oracle.order.OrderShipped",
         Verdict::Stillborn,
         "ESS-COMMAND-007",
+    ),
+    (
+        "emit-swap/oracle.order.HoldOrder/held/oracle.order.OrderHeld/oracle.order.OrderShipped",
+        Verdict::Killed,
+        "oracle.order.HoldOrder/outcome/held",
+    ),
+    (
+        "emit-swap/oracle.order.ShipOrder/shipped/oracle.order.OrderShipped/oracle.order.OrderHeld",
+        Verdict::Killed,
+        "oracle.order.ShipOrder/outcome/shipped",
     ),
     (
         "error-swap/oracle.order.AmendOrder/rejected",
@@ -407,10 +456,22 @@ const ORACLE_VERDICTS: &[(&str, Verdict, &str)] = &[
         Verdict::Killed,
         "oracle.order.AmendOrder/outcome/rejected",
     ),
+    // `weight_grams >= -1` (beyond10x/ess#212): the mutant's own boundary witness, `-1`, is sent
+    // and required accepted, and the reference rejects it.
+    (
+        "guard-boundary/oracle.order.AmendOrder/amended/0-outward",
+        Verdict::Killed,
+        "oracle.order.AmendOrder/outcome/amended",
+    ),
     (
         "guard-boundary/oracle.order.PlaceOrder/accepted/0",
         Verdict::Killed,
         "oracle.order.PlaceOrder/outcome/rejected",
+    ),
+    (
+        "guard-boundary/oracle.order.PlaceOrder/accepted/0-outward",
+        Verdict::Killed,
+        "oracle.order.PlaceOrder/outcome/accepted",
     ),
     (
         "guard-negate/oracle.order.AmendOrder/amended",
@@ -424,6 +485,11 @@ const ORACLE_VERDICTS: &[(&str, Verdict, &str)] = &[
         "guard-negate/oracle.order.PlaceOrder/accepted",
         Verdict::Killed,
         "oracle.order.PlaceOrder/outcome/rejected",
+    ),
+    (
+        "sets-retarget/oracle.order.PlaceOrder/accepted/contact",
+        Verdict::Killed,
+        "oracle.order.AmendOrder/outcome/amended",
     ),
     (
         "transition-to/oracle.order.Order.cancel",
@@ -449,13 +515,16 @@ fn the_oracle_audit_pins_every_mutant_and_kills_every_one_that_ran() {
         per_class(&report),
         BTreeMap::from([
             ("emit-drop", 6),
+            ("emit-swap", 2),
             ("error-swap", 5),
             ("from-drop", 2),
-            ("guard-boundary", 2),
+            ("guard-boundary", 4),
             ("guard-connective", 0),
             ("guard-negate", 2),
             ("order-flip", 0),
-            ("sets-retarget", 0),
+            ("precedence-swap", 0),
+            ("sets-drop", 0),
+            ("sets-retarget", 1),
             ("transition-to", 3),
         ]),
         "{}",
@@ -464,6 +533,18 @@ fn the_oracle_audit_pins_every_mutant_and_kills_every_one_that_ran() {
     pinned_verdicts(&report, ORACLE_VERDICTS);
     pinned_survivors(&report, ORACLE_SURVIVORS);
     assert_eq!(report.implementation, "oracle-reference");
+    assert_eq!(report.counts.mutants, 25);
+    assert_eq!(report.counts.killed, 15);
+    assert_eq!(report.counts.stillborn, 10);
+    assert_eq!(
+        unavailable(&report),
+        [
+            "emit-swap/oracle.dispatch.Handoff/accepted/oracle.dispatch.HandedOff",
+            "emit-swap/oracle.order.AmendOrder/amended/oracle.order.OrderAmended",
+            "emit-swap/oracle.order.CancelOrder/cancelled/oracle.order.OrderCancelled",
+            "emit-swap/oracle.order.PlaceOrder/accepted/oracle.order.OrderPlaced",
+        ]
+    );
 }
 
 // ---- P1-3: a killer is a failed scenario of that mutant's own suite -------------------------------
@@ -550,62 +631,23 @@ fn a_faulty_baseline_is_refused_with_the_failing_scenarios() {
     assert_eq!(not_passed, &expected);
 }
 
-/// The interpreter executes commands and not yet views or bindings, so it answers every scenario
-/// needing one `unsupported`.
-///
-/// Rewritten twice. For `story:interpreted-command-execution` the premise became the interpreter
-/// holding the unchanged model, as `ess verify conform mutate --target interpreted` runs it, and
-/// the audit was refused with `ESS-MUTATE-001`. Since issue #210 an `unsupported` baseline scenario
-/// is not red: the audit scores every mutant on the rest, and lists as not scored exactly the
-/// scenarios that need something the interpreter does not derive.
+/// The fixed original model answers every generated baseline and mutant scenario just as the
+/// independent Billing reference does, including view ordering and bindings.
 #[test]
-fn the_interpreted_target_scores_past_what_it_does_not_interpret() {
+fn the_interpreted_target_matches_the_complete_billing_mutation_audit() {
     let (files, texts) = example("billing");
     let ir = mutate::compile(files.clone(), &texts).unwrap();
     let report = mutate::audit(&files, &texts, MutantClass::ALL, || {
         Interpreted::for_model(ir.clone())
     })
-    .unwrap_or_else(|refusal| panic!("an unsupported baseline scenario is not red: {refusal}"));
-    assert!(report
-        .baseline
-        .not_scored
-        .iter()
-        .all(|it| it.status == mutate::NotScoredStatus::Unsupported));
-    let not_passed: Vec<String> = report
-        .baseline
-        .not_scored
-        .iter()
-        .map(|it| it.scenario.clone())
-        .collect();
-
-    let mut suite = ess_conformance::synthesize(&ir).suite;
-    suite.select_fresh_format();
-    let needs_more: Vec<String> = suite
-        .scenarios
-        .iter()
-        .filter(|(_, scenario)| {
-            !scenario.steps.iter().all(|step| {
-                matches!(
-                    step,
-                    ScenarioStep::ExecuteCommand { .. }
-                        | ScenarioStep::ConfigureExternalOutcome { .. }
-                        | ScenarioStep::ExpectOutcome { .. }
-                        | ScenarioStep::ExpectError { .. }
-                        | ScenarioStep::ExpectNoError
-                        | ScenarioStep::ExpectEvent { .. }
-                        | ScenarioStep::ExpectNoEvent { .. }
-                        | ScenarioStep::ExpectNoEvents
-                        | ScenarioStep::CaptureInstance { .. }
-                )
-            })
-        })
-        .map(|(id, _)| id.to_string())
-        .collect();
-    assert!(!needs_more.is_empty() && needs_more.len() < suite.scenarios.len());
-    assert_eq!(
-        not_passed, needs_more,
-        "exactly the scenarios needing a view or a binding are not scored"
-    );
+    .unwrap();
+    let reference = mutate::audit(&files, &texts, MutantClass::ALL, Billing::new).unwrap();
+    assert_eq!(report.baseline.not_scored.len(), 0);
+    assert_eq!(report.baseline.scenarios, 32);
+    assert_eq!(report.baseline, reference.baseline);
+    assert_eq!(report.counts, reference.counts);
+    assert_eq!(report.mutants, reference.mutants);
+    pinned_verdicts(&report, BILLING_VERDICTS);
 }
 
 // ---- P1-5: two audits, identical bytes ----------------------------------------------------------
@@ -618,7 +660,9 @@ fn two_audits_of_one_tree_are_byte_identical() {
     assert_eq!(first, second);
     assert!(first.ends_with("}\n"), "one trailing LF");
     let value: serde_json::Value = serde_json::from_str(&first).unwrap();
-    assert_eq!(value["format"], "ess-mutation-report/3");
+    // `/4`: every class includes `emit-swap`, and billing has sites it leaves unavailable
+    // (beyond10x/ess#295).
+    assert_eq!(value["format"], "ess-mutation-report/4");
     assert_eq!(value["spec_digest"].as_str().map(str::len), Some(64));
     let ids: Vec<&str> = value["mutants"]
         .as_array()
@@ -684,8 +728,10 @@ fn the_verdict_classification_reads_scenario_statuses() {
 
 // ---- P1-8: the closed class list -----------------------------------------------------------------
 
+/// Eleven since beyond10x/ess#212 added `sets-drop` and `precedence-swap`; twelve since
+/// beyond10x/ess#295 added `emit-swap`.
 #[test]
-fn the_classes_are_exactly_the_nine_altering_classes() {
+fn the_classes_are_exactly_the_twelve_altering_classes() {
     let names: Vec<&str> = MutantClass::ALL
         .iter()
         .map(|class| class.as_str())
@@ -702,6 +748,9 @@ fn the_classes_are_exactly_the_nine_altering_classes() {
             "error-swap",
             "emit-drop",
             "order-flip",
+            "sets-drop",
+            "precedence-swap",
+            "emit-swap",
         ]
     );
 }

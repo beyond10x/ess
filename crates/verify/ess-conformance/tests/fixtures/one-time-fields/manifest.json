@@ -1,0 +1,80 @@
+[
+  {
+    "callback_trace": [
+      "identity",
+      "begin_scenario",
+      "execute_command",
+      "execute_command",
+      "end_scenario"
+    ],
+    "case": "healthy",
+    "counts": {
+      "error": 0,
+      "failed": 0,
+      "passed": 1,
+      "skipped": 0,
+      "total": 1,
+      "unsupported": 0
+    },
+    "required_code": "ESS-CF-DISCLOSURE",
+    "status": "passed"
+  },
+  {
+    "callback_trace": [
+      "identity",
+      "begin_scenario",
+      "execute_command",
+      "end_scenario"
+    ],
+    "case": "same-marked",
+    "counts": {
+      "error": 0,
+      "failed": 1,
+      "passed": 0,
+      "skipped": 0,
+      "total": 1,
+      "unsupported": 0
+    },
+    "required_code": "ESS-CF-DISCLOSURE",
+    "status": "failed"
+  },
+  {
+    "callback_trace": [
+      "identity",
+      "begin_scenario",
+      "execute_command",
+      "end_scenario"
+    ],
+    "case": "same-unmarked",
+    "counts": {
+      "error": 0,
+      "failed": 1,
+      "passed": 0,
+      "skipped": 0,
+      "total": 1,
+      "unsupported": 0
+    },
+    "required_code": "ESS-CF-DISCLOSURE",
+    "status": "failed"
+  },
+  {
+    "callback_trace": [
+      "identity",
+      "begin_scenario",
+      "execute_command",
+      "execute_command",
+      "end_scenario"
+    ],
+    "case": "old-other",
+    "counts": {
+      "error": 0,
+      "failed": 1,
+      "passed": 0,
+      "skipped": 0,
+      "total": 1,
+      "unsupported": 0
+    },
+    "required_code": "ESS-CF-DISCLOSURE",
+    "status": "failed"
+  }
+]

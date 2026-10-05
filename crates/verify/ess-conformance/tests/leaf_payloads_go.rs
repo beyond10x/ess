@@ -8,12 +8,14 @@
 //! as an adopter's is.
 
 mod support_go;
+mod support_versions;
 
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 
 use ess_compiler::refs::{CommandRef, OutcomeRef};
 use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
+use ess_conformance::scenario::ScenarioInitialState;
 use ess_conformance::target::*;
 use ess_conformance::ConformanceSuite;
 use ess_domain::{command::OutcomeName, spec::RawSpecFile, system::Source, Specification};
@@ -228,8 +230,12 @@ fn issue_188_go_runs_the_dotted_leaf_suite_with_the_reference_verdicts() {
     let suite = suite(DIALER);
     assert_eq!(
         suite.provenance.suite_version.to_string(),
-        "ess-conformance/26",
-        "the #188 specification synthesizes suite/26"
+        "ess-conformance/34",
+        "the #188 specification synthesizes the current ordinary suite"
+    );
+    assert_eq!(
+        suite.provenance.scenario_initial_state,
+        Some(ScenarioInitialState::Empty)
     );
     let directory = support_go::package(
         "dialer",
@@ -291,7 +297,11 @@ fn issue_188_go_runs_the_dotted_leaf_coverage_input_27() {
     let selected = input.selected();
     assert_eq!(
         selected.suite().provenance.suite_version.to_string(),
-        "ess-conformance/27"
+        "ess-conformance/35"
+    );
+    assert_eq!(
+        selected.suite().provenance.scenario_initial_state,
+        Some(ScenarioInitialState::Empty)
     );
     let directory = support_go::package_input(
         "dialer-coverage",
@@ -366,9 +376,9 @@ fn go_refuses_a_leaf_path_below_suite_26_and_one_naming_no_leaf_of_its_shape() {
             include_str!("fixtures/dialer-runtime-go.go"),
         )],
     );
-    support_go::rewrite_suite(&directory, |document| {
-        document["provenance"]["suite_version"] = "ess-conformance/24".into();
-    });
+    let suite_path = directory.join("essconform/suite.json");
+    let current = std::fs::read_to_string(&suite_path).unwrap();
+    std::fs::write(&suite_path, support_versions::legacy_json(&current, 24)).unwrap();
     let go = support_go::go_test(&directory, "TestDialerRuntime", &[]);
     assert!(
         go.log
@@ -378,14 +388,19 @@ fn go_refuses_a_leaf_path_below_suite_26_and_one_naming_no_leaf_of_its_shape() {
     );
     assert!(go.outcomes.is_empty() && !go.success);
 
+    let legacy_26 = support_versions::legacy_json(&current, 26);
+    std::fs::write(&suite_path, legacy_26).unwrap();
     support_go::rewrite_suite(&directory, |document| {
-        document["provenance"]["suite_version"] = "ess-conformance/26".into();
         let steps = document["scenarios"][SET_LEAD]["steps"]
             .as_array_mut()
             .unwrap();
         let payload = steps
             .iter_mut()
-            .find(|step| step["step"] == "expect_event" && step["event"] == "demo.dialer.LeadSet")
+            // Either form: the expectation also compares a captured identity (beyond10x/ess#273).
+            .find(|step| {
+                (step["step"] == "expect_event" || step["step"] == "expect_event_values")
+                    && step["event"] == "demo.dialer.LeadSet"
+            })
             .unwrap()["payload"]
             .as_object_mut()
             .unwrap();

@@ -150,7 +150,7 @@ fn union(
     emit: &Emit<'_>,
     declared: &ResolvedType,
     tag: &str,
-    variants: &BTreeMap<String, ResolvedTypeRef>,
+    variants: &BTreeMap<String, Option<ResolvedTypeRef>>,
 ) {
     let _ = writeln!(
         out,
@@ -165,12 +165,24 @@ fn union(
         emit.layout.type_name(&declared.name)
     );
     for (tag_value, type_ref) in variants {
-        let _ = writeln!(
-            out,
-            "    /// Tagged `{tag_value}` — `{type_ref}`.\n    {}({}),",
-            name::pascal(tag_value),
-            emit.rust_type(type_ref)
-        );
+        match type_ref {
+            Some(type_ref) => {
+                let _ = writeln!(
+                    out,
+                    "    /// Tagged `{tag_value}` — `{type_ref}`.\n    {}({}),",
+                    name::pascal(tag_value),
+                    emit.rust_type(type_ref)
+                );
+            }
+            // A unit variant (ess/22): the tag alone, carrying nothing.
+            None => {
+                let _ = writeln!(
+                    out,
+                    "    /// Tagged `{tag_value}`, carrying nothing.\n    {},",
+                    name::pascal(tag_value)
+                );
+            }
+        }
     }
     out.push_str("}\n");
 }
@@ -257,7 +269,7 @@ pub(crate) fn outcome_event_fields<'a>(
     outcome: &'a ResolvedOutcome,
 ) -> Vec<OutcomeEventField<'a>> {
     let mut used: BTreeMap<String, usize> = BTreeMap::new();
-    if response_bearing(outcome) {
+    if carries_response(emit.ir, outcome) {
         used.insert("response".into(), 1);
     }
     let mut fields = Vec::new();
@@ -296,12 +308,12 @@ fn outcome_variant(
         );
     }
     let variant = name::pascal(outcome.name.as_str());
-    if outcome.emits.is_empty() && outcome.error.is_none() && !response_bearing(outcome) {
+    if outcome.emits.is_empty() && outcome.error.is_none() && !carries_response(emit.ir, outcome) {
         let _ = writeln!(out, "    {variant},");
         return;
     }
     let _ = writeln!(out, "    {variant} {{");
-    if response_bearing(outcome) {
+    if carries_response(emit.ir, outcome) {
         let response = format!("{}Response", emit.layout.type_name(&command.name));
         let _ = writeln!(
             out,
@@ -475,6 +487,13 @@ pub(super) fn invariant_doc(out: &mut String, invariants: &[Invariant]) {
             super::doc_text(&invariant.statement, "///")
         );
     }
+}
+
+/// Whether this branch's variant carries the command's actual response: a retained result, a
+/// response-mapped event, or a branch that answers its caller with it (`returns: true`, from
+/// `ess/22`, beyond10x/ess#423) — which is what lets a served surface write it.
+pub(crate) fn carries_response(ir: &ess_compiler::EssIr, outcome: &ResolvedOutcome) -> bool {
+    response_bearing(outcome) || ess_gen::http::answers_with_response(ir, outcome)
 }
 
 /// Whether this branch reads the returned response into an event.

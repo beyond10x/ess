@@ -383,6 +383,28 @@ test('a declaration reached twice is walked once', () => {
 
 // ---- comparing a returned response against an emitted event ---------------------------------------
 
+test('a unit variant (ess/22) is the tag alone, as the Go runtime answers', () => {
+  const union = decodeResponseObservation(
+    typed('billing.Method', {
+      'billing.Method': { kind: 'union', tag: 'kind', variants: { none: null, card: 'String' } },
+    }),
+  );
+  for (const value of [{ kind: 'none' }, { kind: 'card', value: 'c-1' }]) {
+    compareResponse(union, { receipt: value }, { receiptId: value });
+  }
+  for (const value of [
+    { kind: 'none', value: 'c-1' },
+    { kind: 'none', value: null },
+    { kind: 'card' },
+  ]) {
+    assert.throws(
+      () => compareResponse(union, { receipt: value }, { receiptId: value }),
+      /^Error: response field receipt: invalid_input$/,
+      JSON.stringify(value),
+    );
+  }
+});
+
 test('a response the command did not return is a refusal', () => {
   assert.throws(() => compareResponse(observation(), null, {}), /command returned no response/);
 });
@@ -844,4 +866,27 @@ test('a response field is held to the spelling of absence it declares', () => {
     /response field receipt was sent as null, and it is declared omitted_when_absent/,
   );
   compareResponse(omitted, { receipt: 'r-1' }, { receiptId: 'r-1' });
+});
+
+test('response snapshots stay lossless without JSON.parse reviver source context', () => {
+  const nativeParse = JSON.parse;
+  JSON.parse = (raw, revive) =>
+    nativeParse(
+      raw,
+      revive === undefined
+        ? undefined
+        : function (key, value) {
+            return revive.call(this, key, value);
+          },
+    );
+  try {
+    const result = snapshotResponseResult({
+      response: { exact: new JsonNumber('9007199254740993') },
+      outcome: 'returned',
+    });
+    assert.ok(result.response?.exact instanceof JsonNumber);
+    assert.equal(result.response.exact.raw, '9007199254740993');
+  } finally {
+    JSON.parse = nativeParse;
+  }
 });

@@ -1,4 +1,6 @@
 //! Direct returns reserve new formats beside the released round-three vocabulary.
+mod support_versions;
+
 use ess_compiler::{resolve::compile, source::SourceMap};
 use ess_conformance::authored;
 use ess_domain::{spec::RawSpecFile, system::Source, Specification};
@@ -25,7 +27,7 @@ fn direct_returns_use_fresh_source_and_suite_versions() {
     let mut suite = ess_conformance::synthesize(&model).suite;
     suite.scenarios = authored.scenarios;
     suite.select_fresh_format();
-    assert_eq!(suite.provenance.suite_version.major(), 28);
+    assert_eq!(suite.provenance.suite_version.major(), 34);
     assert!(suite
         .to_canonical_json()
         .unwrap()
@@ -62,7 +64,26 @@ fn released_round_three_suites_keep_exact_bytes_and_meaning() {
         let admitted = AdmittedSuite::from_json(expected).unwrap();
         assert_eq!(admitted.original_json(), expected);
         assert_eq!(admitted.suite().provenance.suite_version.major(), major);
-        assert_eq!(actual, expected);
+        // The released scenarios plus the captured identities each event now compares
+        // (beyond10x/ess#273), and nothing else: without those comparisons, the scenarios are the
+        // released ones.
+        let before = support_versions::without_captured_identities(&actual);
+        assert_ne!(
+            serde_json::from_str::<serde_json::Value>(&before).unwrap(),
+            serde_json::from_str::<serde_json::Value>(&actual).unwrap()
+        );
+        let fresh: serde_json::Value = serde_json::from_str(&before).unwrap();
+        let legacy: serde_json::Value = serde_json::from_str(expected).unwrap();
+        assert_eq!(fresh["scenarios"], legacy["scenarios"]);
+        for field in [
+            "system",
+            "specification_version",
+            "spec_digest",
+            "contract_digest",
+        ] {
+            assert_eq!(fresh["provenance"][field], legacy["provenance"][field]);
+        }
+        assert_eq!(fresh["provenance"]["scenario_initial_state"], "empty");
         assert!(expected.contains("execute_command_without_input"));
         assert!(!expected.contains("expect_direct_response"));
     }

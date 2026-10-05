@@ -215,7 +215,7 @@ fn issue_234_a_struct_input_satisfies_the_entity_invariants_over_its_members() {
         scenario(&result, "demo.req.Submit/outcome/submitted"),
         "demo.req.Submit",
     );
-    assert!(!sent.is_empty());
+    assert_ne!(sent.len(), 0);
     for input in &sent {
         let fingerprint = literal(&input["fingerprint"]);
         assert_eq!(
@@ -1100,7 +1100,7 @@ fn issue_234_an_invariant_no_bounded_input_meets_refuses_the_branch_naming_it() 
         "{refused:#?}"
     );
     for scenario in result.suite.scenarios.values() {
-        assert!(inputs(scenario, "demo.seal.Apply").is_empty());
+        assert_eq!(inputs(scenario, "demo.seal.Apply").len(), 0);
     }
 }
 

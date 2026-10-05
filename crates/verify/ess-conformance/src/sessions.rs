@@ -244,6 +244,7 @@ impl<T: Interleaved, V: ConformanceTarget> Recording<'_, T, V> {
             outcome: None,
             rows: None,
             retry_of: None,
+            decision_time: None,
         });
         index
     }
@@ -445,8 +446,15 @@ impl<T: Interleaved, V: ConformanceTarget> Recording<'_, T, V> {
                     self.operations[flight.index].subject_key = subject_key.unwrap_or_default();
                     return None;
                 }
-                let answer = self.target.complete(pending);
+                // The receipt's instant is written before the answer is read: a call executed
+                // and answered too late, or lost after its decision, keeps the instant it decided
+                // at. A retained answer delivered again carries none of its own.
+                let crate::target::RecordedCommandCompletion {
+                    answer,
+                    decision_time,
+                } = self.target.complete_recorded(pending);
                 let returned_at = self.tick();
+                self.operations[flight.index].decision_time = decision_time;
                 let Ok(result) = answer else {
                     self.operations[flight.index].subject_key = subject_key.unwrap_or_default();
                     return None;
@@ -586,6 +594,7 @@ pub fn record_with<T: Interleaved, V: ConformanceTarget>(
     seed: u64,
     injection: FaultInjection,
 ) -> Result<Recorded, RecordError> {
+    crate::record::refuse_one_time(ir)?;
     let clients = workload.clients.len().max(1);
     if workload.clients.is_empty() && workload.prefix.is_empty() || clients as u64 > MAX_INTEGER {
         return Err(RecordError::NoClients);
@@ -674,7 +683,7 @@ pub fn record_with<T: Interleaved, V: ConformanceTarget>(
 
     Ok(Recorded {
         history: History {
-            format: HistoryFormat::EssHistory1,
+            format: HistoryFormat::for_operations(&recording.operations),
             history_id: uuid(seed & 0xffff_ffff_ffff),
             spec_digest: SuiteProvenance::of(ir).spec_digest,
             seed,

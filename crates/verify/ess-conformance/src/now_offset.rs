@@ -11,6 +11,13 @@
 //! row a view returns afterwards is required to hold exactly what was sent. The target is told
 //! nothing new; it receives an RFC 3339 instant like any other.
 //!
+//! From `ess/22` a `when_subject:` or `when_related:` predicate may order a stored `Timestamp`
+//! against the current time too (`docs/design/expression-family-source22.md`, A3). Such an instant
+//! is arranged through the input of the command that writes the row: the value synthesis chose for
+//! the row is sent to that command as a `now_offset` and travels through its `sets:` into the row,
+//! so the arrangement and every later assertion of the row refer to the one resolved instant, while
+//! the command under test decides by its own clock at its own moment.
+//!
 //! Witnesses sit a second from each boundary and never on it, on the side a latency cannot flip:
 //! `now - 61s` requires the refusal, `now - 59s` the accepting branch. A target that handles the
 //! request under a second after the runner resolved the value decides both as the suite requires.
@@ -22,7 +29,10 @@
 
 use std::collections::BTreeMap;
 
-use ess_compiler::ir::{EssIr, ResolvedCommand, ResolvedCondition};
+use ess_compiler::ir::{
+    EntityHandle, EssIr, ResolvedCommand, ResolvedCondition, ResolvedPayloadValue,
+    ResolvedRelatedTest,
+};
 use ess_primitives::facts::{FactPath, FactValue};
 use ess_primitives::node::Node;
 use ess_primitives::predicate::{Operand, Predicate};
@@ -68,6 +78,7 @@ pub fn earliest_run() -> Rfc3339Instant {
 
 /// One comparison of an input path with a literal instant: an ordering against the current-time
 /// operand, or a comparison with a fixed RFC 3339 instant.
+#[derive(Clone, Copy)]
 enum Bound {
     /// `now` moved by this many seconds.
     Now(i64),
@@ -91,15 +102,158 @@ struct Orderings {
 
 impl Orderings {
     /// The orderings `command`'s input guards write: the plain `when:` and the input half of every
-    /// other condition, which `ess-domain` admits the operand in.
-    fn of(command: &ResolvedCommand) -> Self {
+    /// other condition, which `ess-domain` admits the operand in — and, from `ess/22`, the
+    /// orderings a stored row's predicate writes over a field `command` writes from a whole input
+    /// field ([`Self::stored`]).
+    fn of(ir: &EssIr, command: &ResolvedCommand) -> Self {
         let mut found = Self::default();
         for outcome in &command.outcomes {
             if let Some(predicate) = input_predicate(&outcome.condition) {
                 found.walk(predicate, &mut Vec::new());
             }
         }
+        found.stored(ir, command);
+        found.stored_windows(ir, command);
         found
+    }
+
+    /// Every ordering of a stored field against the current time that a `when_subject:` or
+    /// `when_related:` predicate writes over a row `command` writes (ess/22,
+    /// `docs/design/expression-family-source22.md`, A3), with the fixed instants the same field is
+    /// compared with there, carried over to the input field `command` writes the field from.
+    ///
+    /// A stored instant is arranged by the creator's input: the value synthesis chose for the row
+    /// is sent to the creator as a `now_offset` and travels through its `sets:` into the row, so the
+    /// run resolves it from the moment of sending, as it resolves an input guard's. Only a whole
+    /// field written from a whole input field without a conversion is carried; anything else is
+    /// left to the arrangement, which refuses it by name.
+    fn stored(&mut self, ir: &EssIr, command: &ResolvedCommand) {
+        // A stored row's predicate may order the command's own input, read under `input.`,
+        // against the current time: that input is sent relative to the moment of sending too.
+        for (entity, predicate) in command.outcomes.iter().flat_map(|outcome| {
+            let mut read: Vec<(&EntityHandle, &Predicate)> = Vec::new();
+            match &outcome.condition {
+                ResolvedCondition::SubjectPredicate { predicate, .. } => {
+                    if let Some(subject) = command.selection_subject(outcome) {
+                        read.push((&subject.entity, predicate));
+                    }
+                }
+                ResolvedCondition::Related {
+                    entity,
+                    test: ResolvedRelatedTest::Holds { predicate },
+                    ..
+                } => read.push((entity, predicate)),
+                // A row set's selector and `forall` (ess/22, beyond10x/ess#228, #299).
+                ResolvedCondition::RelatedSet {
+                    selection, test, ..
+                } => {
+                    read.push((&selection.entity, &selection.filter));
+                    read.extend(
+                        test.predicate()
+                            .map(|predicate| (&selection.entity, predicate)),
+                    );
+                }
+                _ => {}
+            }
+            read
+        }) {
+            let namespace = ess_domain::command::subject_fact::INPUT_NAMESPACE;
+            if ir
+                .entity(entity)
+                .fields
+                .iter()
+                .any(|field| field.name == namespace)
+            {
+                continue;
+            }
+            let mut over_row = Self::default();
+            over_row.walk(predicate, &mut Vec::new());
+            for (path, bounds) in over_row.bounds {
+                if let Some((root, rest)) = path.segments().split_first() {
+                    if root == namespace && !rest.is_empty() {
+                        self.bounds
+                            .entry(FactPath::from_segments(rest))
+                            .or_default()
+                            .extend(bounds);
+                    }
+                }
+            }
+        }
+        for outcome in &command.outcomes {
+            let Some(subject) = &outcome.subject else {
+                continue;
+            };
+            let writes: BTreeMap<&str, &str> = outcome
+                .sets
+                .iter()
+                .filter(|set| set.conversion.is_none())
+                .filter_map(|set| match &set.value {
+                    ResolvedPayloadValue::InputField { field, .. } => {
+                        Some((set.target.as_str(), field.as_str()))
+                    }
+                    _ => None,
+                })
+                .collect();
+            if writes.is_empty() {
+                continue;
+            }
+            for predicate in stored_predicates(ir, &subject.entity) {
+                let mut over_row = Self::default();
+                over_row.walk(predicate, &mut Vec::new());
+                for (path, bounds) in over_row.bounds {
+                    if path.segments().len() != 1
+                        || !bounds.iter().any(|bound| matches!(bound, Bound::Now(_)))
+                    {
+                        continue;
+                    }
+                    let Some(input) = writes.get(path.namespace()) else {
+                        continue;
+                    };
+                    let Ok(input) = FactPath::new(input) else {
+                        continue;
+                    };
+                    self.bounds.entry(input).or_default().extend(bounds);
+                }
+            }
+        }
+    }
+
+    /// A calendar window over a stored field, in any predicate over the row, holds that field to
+    /// fixed instants beside the `now` orderings another predicate writes on it: carried over to the
+    /// input it is written from, so a value chosen at a window's boundary stays that instant, and a
+    /// field also ordered against `now` is refused by name ([`Self::straddled`]) rather than decided
+    /// at the reference (`docs/design/calendar-window-guards.md`).
+    fn stored_windows(&mut self, ir: &EssIr, command: &ResolvedCommand) {
+        for outcome in &command.outcomes {
+            let Some(subject) = &outcome.subject else {
+                continue;
+            };
+            for set in outcome.sets.iter().filter(|set| set.conversion.is_none()) {
+                let ResolvedPayloadValue::InputField { field, .. } = &set.value else {
+                    continue;
+                };
+                let Ok(input) = FactPath::new(field) else {
+                    continue;
+                };
+                let now = self.bounds.get(&input).is_some_and(|bounds| {
+                    bounds.iter().any(|bound| matches!(bound, Bound::Now(_)))
+                });
+                if !now {
+                    continue;
+                }
+                let windows: Vec<Bound> = stored_predicates(ir, &subject.entity)
+                    .flat_map(Predicate::windows)
+                    .filter(|window| {
+                        window
+                            .at
+                            .fact_path()
+                            .is_some_and(|path| path.segments() == [set.target.clone()])
+                    })
+                    .flat_map(window_bounds)
+                    .collect();
+                self.bounds.entry(input).or_default().extend(windows);
+            }
+        }
     }
 
     /// Syntactic: `ess-domain` admits the operand only against a `Timestamp` in a command's input
@@ -117,7 +271,9 @@ impl Orderings {
                 self.walk(&quantified.body, binders);
                 binders.pop();
             }
-            Predicate::Compare { left, op, right } => {
+            Predicate::Compare {
+                left, op, right, ..
+            } => {
                 let ordered = op.needs_ordering();
                 for (fact, literal) in [(left, right), (right, left)] {
                     let (Operand::Fact(path), Operand::Literal(FactValue::Text(text))) =
@@ -138,6 +294,20 @@ impl Orderings {
                     };
                     if !binders.iter().any(|binder| binder == path.namespace()) {
                         self.bounds.entry(path.clone()).or_default().push(bound);
+                    }
+                }
+            }
+            // A calendar window over a path holds it to fixed instants: each boundary on the week
+            // synthesis tries it on, ordered (`docs/design/calendar-window-guards.md`). A value
+            // chosen there is sent as that instant, never relative to the moment of sending, which
+            // would put it on another weekday.
+            Predicate::Window(window) => {
+                if let Some(path) = window.at.fact_path() {
+                    if !binders.iter().any(|binder| binder == path.namespace()) {
+                        self.bounds
+                            .entry(path.clone())
+                            .or_default()
+                            .extend(window_bounds(window));
                     }
                 }
             }
@@ -237,6 +407,158 @@ impl Orderings {
     }
 }
 
+/// The fixed instants a calendar window holds its path to: each boundary synthesis tries it at.
+fn window_bounds(window: &ess_primitives::window::CalendarWindow) -> Vec<Bound> {
+    window
+        .boundaries()
+        .into_iter()
+        .map(|instant| Bound::Fixed {
+            instant,
+            ordered: true,
+        })
+        .collect()
+}
+
+/// Every predicate over a stored row of `entity` a command decides by: each `when_subject:`
+/// predicate over it, and each identity-addressed `when_related:` predicate over it.
+///
+/// Not a command with a [`clocked_window`]: no scenario sends one, so the instants it orders a row
+/// against steer no value another command's scenario sends.
+pub(crate) fn stored_predicates<'ir>(
+    ir: &'ir EssIr,
+    entity: &EntityHandle,
+) -> impl Iterator<Item = &'ir Predicate> + 'ir {
+    let entity = entity.clone();
+    let selected = entity.clone();
+    // A row set's selector and `forall` read every candidate row of their entity (ess/22).
+    let row_sets = ir.commands().values().flat_map(move |command| {
+        let entity = selected.clone();
+        command
+            .outcomes
+            .iter()
+            .flat_map(move |outcome| match &outcome.condition {
+                ResolvedCondition::RelatedSet {
+                    selection, test, ..
+                } if selection.entity == entity => std::iter::once(&selection.filter)
+                    .chain(test.predicate())
+                    .collect::<Vec<_>>(),
+                _ => Vec::new(),
+            })
+    });
+    ir.commands()
+        .values()
+        .filter(|command| clocked_window(command).is_none())
+        .flat_map(move |command| {
+            let entity = entity.clone();
+            command
+                .outcomes
+                .iter()
+                .filter_map(move |outcome| match &outcome.condition {
+                    ResolvedCondition::SubjectPredicate { predicate, .. }
+                        if command
+                            .selection_subject(outcome)
+                            .is_some_and(|subject| subject.entity == entity) =>
+                    {
+                        Some(predicate)
+                    }
+                    ResolvedCondition::Related {
+                        entity: related,
+                        test: ResolvedRelatedTest::Holds { predicate },
+                        ..
+                    } if *related == entity => Some(predicate),
+                    _ => None,
+                })
+        })
+        .chain(row_sets)
+}
+
+/// Every path `predicate` orders against the current time, and whether a `now_offset` can carry
+/// the value it reads: a whole field can; a member inside a structure cannot, and an element a
+/// quantifier binds is reported as the collection it walks, which cannot either.
+pub(crate) fn now_compared(predicate: &Predicate) -> Vec<(FactPath, bool)> {
+    fn walk(
+        predicate: &Predicate,
+        binders: &mut Vec<(String, FactPath)>,
+        out: &mut Vec<(FactPath, bool)>,
+    ) {
+        match predicate {
+            Predicate::All(children) | Predicate::Any(children) => {
+                for child in children {
+                    walk(child, binders, out);
+                }
+            }
+            Predicate::Not(inner) => walk(inner, binders, out),
+            Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
+                binders.push((quantified.bind.clone(), quantified.over.clone()));
+                walk(&quantified.body, binders, out);
+                binders.pop();
+            }
+            Predicate::Compare {
+                left, op, right, ..
+            } if op.needs_ordering() => {
+                for (fact, literal) in [(left, right), (right, left)] {
+                    let (Operand::Fact(path), Operand::Literal(FactValue::Text(text))) =
+                        (fact, literal)
+                    else {
+                        continue;
+                    };
+                    if CurrentTime::parse(text).is_none() {
+                        continue;
+                    }
+                    match binders
+                        .iter()
+                        .rev()
+                        .find(|(bind, _)| bind == path.namespace())
+                    {
+                        Some((_, over)) => out.push((over.clone(), false)),
+                        None => out.push((path.clone(), path.segments().len() == 1)),
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    walk(predicate, &mut Vec::new(), &mut out);
+    out
+}
+
+/// The first calendar window over the current time any decision of `command` reads — in an input
+/// guard, a `when_subject:` predicate or a `when_related:` predicate — where there is one
+/// (`docs/design/calendar-window-guards.md`).
+///
+/// A suite holds no clock: a target decides `now` by its own, and no step places that clock on a
+/// weekday or an hour, so no scenario sending such a command can say which branch it takes.
+pub(crate) fn clocked_window(
+    command: &ResolvedCommand,
+) -> Option<ess_primitives::window::CalendarWindow> {
+    command.outcomes.iter().find_map(|outcome| {
+        let stored = match &outcome.condition {
+            ResolvedCondition::SubjectPredicate { predicate, .. }
+            | ResolvedCondition::Related {
+                test: ResolvedRelatedTest::Holds { predicate },
+                ..
+            } => Some(predicate),
+            _ => None,
+        };
+        input_predicate(&outcome.condition)
+            .into_iter()
+            .chain(stored)
+            .flat_map(Predicate::windows)
+            .find(|window| window.at == ess_primitives::window::WindowInstant::Now)
+            .cloned()
+    })
+}
+
+/// What a refusal of a scenario sending a command with a [`clocked_window`] says.
+pub(crate) const CLOCKED_WINDOW: &str =
+    "a calendar window over `now` is decided by the target's own clock, which no suite step sets";
+
+/// The refusal path naming `window`.
+pub(crate) fn clocked_window_path(window: &ess_primitives::window::CalendarWindow) -> String {
+    format!("`{window}` is a calendar window over the current time")
+}
+
 /// The input half of a condition, as `ess-compiler`'s predicate sites read it.
 fn input_predicate(condition: &ResolvedCondition) -> Option<&Predicate> {
     match condition {
@@ -246,7 +568,8 @@ fn input_predicate(condition: &ResolvedCondition) -> Option<&Predicate> {
         | ResolvedCondition::StateChange { predicate, .. }
         | ResolvedCondition::SubjectField { predicate, .. } => predicate.as_ref(),
         ResolvedCondition::SubjectPredicate { input, .. }
-        | ResolvedCondition::Related { input, .. } => input.as_ref(),
+        | ResolvedCondition::Related { input, .. }
+        | ResolvedCondition::RelatedSet { input, .. } => input.as_ref(),
         ResolvedCondition::Otherwise
         | ResolvedCondition::External { .. }
         | ResolvedCondition::WrongState
@@ -260,12 +583,17 @@ fn input_predicate(condition: &ResolvedCondition) -> Option<&Predicate> {
 /// the field against the current time and synthesis chose the instant from a `now` boundary or as
 /// the plain witness, a whole number of seconds from [`reference`]; the literal otherwise,
 /// including an instant chosen from a fixed instant's boundary.
-pub(crate) fn sent(command: &ResolvedCommand, field: &str, value: &Node) -> ScenarioValue {
+pub(crate) fn sent(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    field: &str,
+    value: &Node,
+) -> ScenarioValue {
     let Node::Text(text) = value else {
         return ScenarioValue::literal(value.clone());
     };
     Rfc3339Instant::parse_rfc3339(text)
-        .filter(|instant| Orderings::of(command).chosen_from_now(field, *instant))
+        .filter(|instant| Orderings::of(ir, command).chosen_from_now(field, *instant))
         .and_then(|instant| instant.whole_seconds_since(reference()))
         .filter(|seconds| seconds.unsigned_abs() <= MAX_SECONDS.unsigned_abs())
         .map_or_else(
@@ -293,7 +621,11 @@ pub(crate) fn install(
             let Some(declared) = ir.commands().get(command.name()) else {
                 continue;
             };
-            let orderings = Orderings::of(declared);
+            if let Some(window) = clocked_window(declared) {
+                refused.push((id.clone(), clocked_window_path(&window), CLOCKED_WINDOW));
+                break;
+            }
+            let orderings = Orderings::of(ir, declared);
             if let Some(path) = orderings.uncarried() {
                 refused.push((
                     id.clone(),
@@ -312,7 +644,7 @@ pub(crate) fn install(
             }
             for (field, value) in input.iter_mut() {
                 if let ScenarioValue::Literal { value: literal } = value {
-                    *value = sent(declared, field, literal);
+                    *value = sent(ir, declared, field, literal);
                 }
             }
         }

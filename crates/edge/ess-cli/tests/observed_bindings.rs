@@ -846,8 +846,8 @@ fn malformed_acknowledgements_are_refused_before_acquisition() {
 }
 
 /// `ess-observed-bindings/1` is read unchanged: it acknowledges nothing, so an unbound sidecar
-/// still violates, and its binding digest is the one ESS 0.32.1 computed for the same bytes. The
-/// bytes carry the billing realization's digest, so the pin moves when `examples/billing` does.
+/// still violates. The exact binding digest includes the current billing realization's source
+/// pin; its fixture bytes changed when issuance time became explicit command input.
 #[test]
 fn the_first_input_format_still_reads_unchanged_and_acknowledges_nothing() {
     let mut fixture = Fixture::new();

@@ -1,0 +1,101 @@
+format: ess/22
+system: demo
+version: v1
+domain: demo.costs
+types:
+  - {name: demo.costs.InitiativeId, kind: newtype, of: String}
+  - {name: demo.costs.ObjectiveId, kind: newtype, of: String}
+  - {name: demo.costs.EntryId, kind: newtype, of: String}
+  - {name: demo.costs.OutcomeId, kind: newtype, of: String}
+entities:
+  - name: demo.costs.Initiative
+    identity: {name: initiative_id, type: demo.costs.InitiativeId}
+    fields:
+      - {name: outcome_id, type: demo.costs.OutcomeId}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+  - name: demo.costs.Objective
+    identity: {name: objective_id, type: demo.costs.ObjectiveId}
+    fields:
+      - {name: initiative_id, type: 'Optional<demo.costs.InitiativeId>'}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+  - name: demo.costs.CostEntry
+    identity: {name: entry_id, type: demo.costs.EntryId}
+    fields:
+      - {name: objective_id, type: demo.costs.ObjectiveId}
+      - {name: initiative_id, type: 'Optional<demo.costs.InitiativeId>'}
+      - {name: outcome_id, type: 'Optional<demo.costs.OutcomeId>'}
+      - {name: cents, type: Integer}
+    lifecycle: {initial: Booked, states: [Booked], terminal: [Booked]}
+events:
+  - name: demo.costs.InitiativeStarted
+    fields:
+      - {name: initiative_id, type: demo.costs.InitiativeId}
+  - name: demo.costs.ObjectiveSet
+    fields:
+      - {name: objective_id, type: demo.costs.ObjectiveId}
+  - name: demo.costs.CostBooked
+    fields:
+      - {name: entry_id, type: demo.costs.EntryId}
+      - {name: outcome_id, type: 'Optional<demo.costs.OutcomeId>'}
+actors:
+  - name: demo.costs.Controller
+    may: [demo.costs.StartInitiative, demo.costs.SetObjective, demo.costs.Book]
+commands:
+  - name: demo.costs.StartInitiative
+    input:
+      - {name: outcome_id, type: demo.costs.OutcomeId}
+    outcomes:
+      - name: started
+        creates: demo.costs.Initiative
+        instance: initiative_id
+        emits: [demo.costs.InitiativeStarted]
+        payload:
+          demo.costs.InitiativeStarted: {initiative_id: {generated: true}}
+        sets:
+          outcome_id: input.outcome_id
+  - name: demo.costs.SetObjective
+    input:
+      - {name: initiative_id, type: 'Optional<demo.costs.InitiativeId>'}
+    outcomes:
+      - name: set
+        creates: demo.costs.Objective
+        instance: objective_id
+        emits: [demo.costs.ObjectiveSet]
+        payload:
+          demo.costs.ObjectiveSet: {objective_id: {generated: true}}
+        sets:
+          initiative_id: input.initiative_id
+  - name: demo.costs.Book
+    input:
+      - {name: objective_id, type: demo.costs.ObjectiveId}
+      - {name: initiative_id, type: 'Optional<demo.costs.InitiativeId>'}
+      - {name: cents, type: Integer}
+    outcomes:
+      - name: booked
+        creates: demo.costs.CostEntry
+        instance: entry_id
+        emits: [demo.costs.CostBooked]
+        payload:
+          demo.costs.CostBooked:
+            entry_id: {generated: true}
+            outcome_id: {related: {via: [objective_id, initiative_id], field: outcome_id}}
+        sets:
+          objective_id: input.objective_id
+          initiative_id: input.initiative_id
+          outcome_id: {related: {via: [objective_id, initiative_id], field: outcome_id}}
+          cents: input.cents
+views:
+  - name: demo.costs.CostPerOutcome
+    source: demo.costs.CostEntry
+    consistency: read_your_writes
+    group_by: [outcome_id]
+    fields:
+      - {name: outcome_id, type: 'Optional<demo.costs.OutcomeId>'}
+      - {name: total, type: Integer, aggregate: {sum: cents}}
+  - name: demo.costs.CostEntries
+    source: demo.costs.CostEntry
+    consistency: read_your_writes
+    fields:
+      - {name: entry_id, type: demo.costs.EntryId}
+      - {name: outcome_id, type: 'Optional<demo.costs.OutcomeId>'}
+      - {name: cents, type: Integer}

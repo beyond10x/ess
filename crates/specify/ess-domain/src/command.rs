@@ -168,7 +168,10 @@
 //! | no outcome catches the input every `when` missed | [`NonExhaustiveBranches`](ValidationCode::NonExhaustiveBranches) |
 //! | two outcomes are unconditional | [`ConflictingDeclaration`](ValidationCode::ConflictingDeclaration) |
 //! | an outcome neither emits nor errors | [`EmptyChange`](ValidationCode::EmptyChange) |
-//! | an outcome names an error *and* emits, or names an error *and* declares a subject | [`RefusalMutatedState`](ValidationCode::RefusalMutatedState) |
+//! | an outcome names an error *and* emits, or names an error *and* declares a subject without `compensates: true` | [`RefusalMutatedState`](ValidationCode::RefusalMutatedState) |
+//! | `compensates: true` on a refusal not decided by `external:`, or beside `creates:`, `deletes:` or `affects:` | [`RefusalMutatedState`](ValidationCode::RefusalMutatedState) |
+//! | `compensates: true` on a branch naming no error | [`ConflictingDeclaration`](ValidationCode::ConflictingDeclaration) |
+//! | `compensates: true` on a refusal declaring no change to its addressed row | [`MissingDeclaration`](ValidationCode::MissingDeclaration) |
 //! | an external outcome states no cause | [`UnexplainedDecision`](ValidationCode::UnexplainedDecision) |
 //! | a `wrong_state` outcome names no error | [`MissingDeclaration`](ValidationCode::MissingDeclaration) |
 //! | a command declares two `wrong_state` outcomes | [`ConflictingDeclaration`](ValidationCode::ConflictingDeclaration) |
@@ -202,18 +205,38 @@ pub(crate) mod absent_input;
 pub mod caller_value;
 pub mod finite;
 pub mod fixture_inputs;
+pub mod input_path;
 mod narrowing;
+mod one_time_response;
 pub(crate) mod outcome_shapes;
 pub mod related_guard;
 pub use related_guard::RelatedTest;
 pub mod related_value;
 pub use related_value::RelatedVia;
+pub mod row_set;
 pub mod set_effects;
 pub use set_effects::SetEffects;
 pub mod subject_fact;
 pub mod subject_state;
 pub use outcome_shapes::{fixture_of as precondition_fixture, precondition_branch, Accepts};
 pub(crate) mod value_expression;
+
+std::thread_local! {
+    /// Whether the commands being converted belong to an `ess/22` source, where a guard may read
+    /// `input.<field>` (`docs/design/expression-family-source22.md`, A1). Set only while
+    /// [`crate::spec::Specification::assemble`] converts a source whose header it has read;
+    /// everywhere else a command converts as it did below `ess/22`.
+    static READS_INPUT_NAMESPACE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Runs `convert` with `input.<field>` admitted in a guard when `admitted`, restoring what was set
+/// before, so a nested assembly cannot leak its format into its caller's.
+pub(crate) fn converting_input_namespace<T>(admitted: bool, convert: impl FnOnce() -> T) -> T {
+    let before = READS_INPUT_NAMESPACE.with(|cell| cell.replace(admitted));
+    let converted = convert();
+    READS_INPUT_NAMESPACE.with(|cell| cell.set(before));
+    converted
+}
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -309,6 +332,110 @@ impl From<OutcomeName> for String {
     fn from(value: OutcomeName) -> Self {
         value.0
     }
+}
+
+/// Holds a branch marked `compensates: true` to the one shape the marker admits (ess/22,
+/// beyond10x/ess#197, `docs/design/refusal-with-effect.md`): an `external:` refusal that moves or
+/// updates the one row its `instance:` names, writes at most that row's `sets:`, and creates,
+/// deletes, emits and fans out nothing. An unmarked branch earns nothing here.
+///
+/// The marker's own misuses take the nearest codes — a branch that names no error is a conflict, a
+/// refusal that declares no change is missing it — and every change beyond the admitted one is the
+/// rule [`RefusalMutatedState`](ValidationCode::RefusalMutatedState) already states. `emits:` beside
+/// the marker is refused by that rule's emits half, unchanged; `preserves:` by the preserving
+/// outcome's rule, and `instances:` by the set-effects rule.
+fn validate_compensation(outcome: &Outcome, at: &ConstructRef) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    if !outcome.compensates {
+        return errors;
+    }
+    let marker = at.clone().key("compensates");
+    let Some(error) = &outcome.error else {
+        errors.push(
+            ValidationError::at(
+                marker,
+                ValidationCode::ConflictingDeclaration,
+                format!(
+                    "outcome `{}` declares `compensates: true` and names no error; the marker says \
+                     a refusal changes its addressed row, and a branch that succeeds already \
+                     declares its change",
+                    outcome.name
+                ),
+            )
+            .with_hint("drop `compensates:`, or name the error the branch reports with `error:`"),
+        );
+        return errors;
+    };
+    if !matches!(
+        outcome.condition,
+        OutcomeCondition::External { .. } | OutcomeCondition::ExternalWhen { .. }
+    ) {
+        errors.push(
+            ValidationError::at(
+                at.clone(),
+                ValidationCode::RefusalMutatedState,
+                format!(
+                    "outcome `{}` reports `{error}` and declares `compensates: true`, but only a \
+                     refusal decided by `external:` may change its addressed row; a refusal the \
+                     input, a held state or a related row decides is answered before that row is \
+                     read, and changes nothing",
+                    outcome.name
+                ),
+            )
+            .with_hint(
+                "decide the branch with `external:`, or drop `compensates:` and the change it \
+                 declares",
+            ),
+        );
+        return errors;
+    }
+    let others = !outcome.set_effects.affects.is_empty();
+    let effect = outcome.subject.as_ref().map(|subject| &subject.effect);
+    let unchanged = match effect {
+        Some(Effect::Updates) => outcome.sets.is_empty(),
+        None => outcome.set_effects.instances.is_none(),
+        Some(_) => false,
+    };
+    if others || matches!(effect, Some(Effect::Creates | Effect::Deletes)) {
+        errors.push(
+            ValidationError::at(
+                at.clone(),
+                ValidationCode::RefusalMutatedState,
+                format!(
+                    "outcome `{}` reports `{error}` and declares `compensates: true` beside {}; \
+                         a compensating refusal changes only the row its `instance:` names, by a \
+                         move or field writes",
+                    outcome.name,
+                    if others {
+                        "`affects:`, which changes other rows"
+                    } else {
+                        "a subject it creates or deletes"
+                    }
+                ),
+            )
+            .with_hint(
+                "declare the change with `moves:` or `updates:` and `sets:` on the addressed \
+                     row only",
+            ),
+        );
+    } else if unchanged {
+        errors.push(
+            ValidationError::at(
+                marker,
+                ValidationCode::MissingDeclaration,
+                format!(
+                    "outcome `{}` declares `compensates: true` and no change to its addressed \
+                         row; a compensating refusal moves the row or writes its fields",
+                    outcome.name
+                ),
+            )
+            .with_hint(
+                "declare the change with `moves:` or `updates:`, `instance:` and `sets:`, or \
+                     drop `compensates:`",
+            ),
+        );
+    }
+    errors
 }
 
 /// Checks that a wrong-state branch's answer and its `error:` say one thing rather than two.
@@ -425,10 +552,22 @@ pub enum OutcomeCondition {
     /// It reads a row the command does not address, so it sits on any branch: a `creates:`, a
     /// refusal naming no subject. One hop, by identity only — see [`related_guard`].
     Related {
-        /// The input field carrying the other entity's identity, without its `input.` prefix.
-        via: String,
+        /// The input field carrying the other entity's identity: `input.<field>`, from ess/22 possibly
+        /// `Optional<…>` of that identity (beyond10x/ess#304).
+        via: RelatedVia,
         /// What the branch requires of that row.
         test: RelatedTest,
+        /// Additional input eligibility, the ordinary `when:`.
+        input: Option<Predicate>,
+    },
+    /// The rows of an entity a `where:` predicate selects, tested by `exists`, `count` or `forall`,
+    /// conjunctive with an optional input guard (`when_related: {entity, where, …}`, ess/22,
+    /// beyond10x/ess#228, #299). See [`row_set`].
+    RelatedSet {
+        /// The entity and the predicate selecting its rows.
+        selection: row_set::RowSelection,
+        /// What the branch requires of the selected rows.
+        test: row_set::RowSetTest,
         /// Additional input eligibility, the ordinary `when:`.
         input: Option<Predicate>,
     },
@@ -524,7 +663,9 @@ impl OutcomeCondition {
             Self::SubjectState { predicate, .. }
             | Self::StateChange { predicate, .. }
             | Self::SubjectField { predicate, .. } => predicate.as_ref(),
-            Self::SubjectPredicate { input, .. } | Self::Related { input, .. } => input.as_ref(),
+            Self::SubjectPredicate { input, .. }
+            | Self::Related { input, .. }
+            | Self::RelatedSet { input, .. } => input.as_ref(),
             Self::Otherwise
             | Self::External { .. }
             | Self::WrongState
@@ -543,6 +684,7 @@ impl OutcomeCondition {
             | Self::SubjectField { .. }
             | Self::SubjectPredicate { .. }
             | Self::Related { .. }
+            | Self::RelatedSet { .. }
             | Self::StateChange { .. }
             | Self::Otherwise
             | Self::WrongState
@@ -559,7 +701,7 @@ impl OutcomeCondition {
             Self::SubjectField { .. } | Self::SubjectPredicate { .. } => {
                 TestStrategy::ObserveSubjectFact
             }
-            Self::Related { .. } => TestStrategy::ArrangeRelatedRow,
+            Self::Related { .. } | Self::RelatedSet { .. } => TestStrategy::ArrangeRelatedRow,
             Self::SubjectState { .. } | Self::StateChange { .. } => {
                 TestStrategy::ConstructInputInState
             }
@@ -602,6 +744,7 @@ impl OutcomeCondition {
         match self {
             Self::SubjectPredicate { predicate, .. } => Some(predicate.clone()),
             Self::SubjectField { field, equals, .. } => Some(Predicate::Compare {
+                kind: ess_primitives::predicate::CompareKind::Value,
                 left: ess_primitives::predicate::Operand::Fact(
                     ess_primitives::facts::FactPath::new(field).ok()?,
                 ),
@@ -614,6 +757,7 @@ impl OutcomeCondition {
             | Self::SubjectState { .. }
             | Self::StateChange { .. }
             | Self::Related { .. }
+            | Self::RelatedSet { .. }
             | Self::Otherwise
             | Self::ExternalWhen { .. }
             | Self::External { .. }
@@ -928,9 +1072,10 @@ pub enum PayloadSource {
     },
     /// The implementation chooses this field, subject to its declared type.
     Generated,
-    /// A field of the command's declared input: `input.amount`.
+    /// A field of the command's declared input: `input.amount`; from `ess/22` a member of a struct
+    /// input reached by a path, `input.opening.label` ([`input_path`], A4).
     InputField {
-        /// The field's name.
+        /// The field's name, or a path's declared segments joined by `.`.
         field: String,
     },
     /// A value written in the outcome itself.
@@ -997,11 +1142,12 @@ pub enum PayloadSource {
     /// mints: `{input: seq, else: {generated: true}}` (ess/14, #137), or the literal written after
     /// `else:`: `{input: tier, else: Standard}` (ess/16, #163).
     InputOrGenerated {
-        /// The optional input field read.
+        /// The optional input field read, or from `ess/22` a path whose route may be absent.
         field: String,
-        /// The fallback when it is a literal — only ever a [`Literal`](Self::Literal) or a
-        /// [`Scalar`](Self::Scalar), checked against the target as a literal written there would
-        /// be. `None` is `{generated: true}`.
+        /// The fallback: a [`Literal`](Self::Literal) or a [`Scalar`](Self::Scalar), checked
+        /// against the target as a literal written there would be, or from `ess/22` an
+        /// [`InputField`](Self::InputField) required along its whole route. `None` is
+        /// `{generated: true}`.
         #[serde(skip_serializing_if = "Option::is_none")]
         otherwise: Option<Box<PayloadSource>>,
     },
@@ -1016,11 +1162,35 @@ pub enum PayloadSource {
     /// `via` holds the other row's identity — a field of the subject as it was before the outcome,
     /// or `input.<field>` — and `field` is read from that row. Which entity `via` names is
     /// [`related_value::referenced_entity`]'s answer.
+    ///
+    /// From `ess/22` (beyond10x/ess#285) `via` may be `Optional<…>`, and a list of two names a
+    /// second reference: `{related: {via: [objective_id, initiative_id], field: outcome_id}}`
+    /// reads `initiative_id` of the row `objective_id` names, then `outcome_id` of the row that
+    /// names. Either reference absent leaves the value absent.
     RelatedField {
         /// Where the other row's identity is read.
         via: RelatedVia,
+        /// The further references followed, in order, each a field of the row the one before
+        /// names. Empty for a one-hop read, and then not serialized.
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        through: Vec<String>,
         /// The field of the referenced row.
         field: String,
+    },
+    /// A field of the one row a selector selects, as the store held it before this outcome:
+    /// `{related: {entity, where, field}}` (ess/22, beyond10x/ess#299, [`row_set`]).
+    ///
+    /// Exactly one selected row supplies the value; zero or several supply none, and a branch that
+    /// reads one is taken where its guards say exactly one row is selected. Below `ess/22` the shape
+    /// is the nested mapping it always was ([`row_set::read_below_ess_22`]).
+    RelatedSelection {
+        /// The entity and the predicate selecting its rows.
+        selection: row_set::RowSelection,
+        /// The field of the selected row.
+        field: String,
+        /// What the shape read as before `ess/22`.
+        #[serde(skip)]
+        legacy: row_set::Legacy,
     },
     /// An attribute of the authenticated caller: `{caller: account_id}` (ess/16,
     /// beyond10x/ess#168, [`caller_value`]).
@@ -1063,10 +1233,25 @@ impl fmt::Display for PayloadSource {
             Self::Generated => f.write_str("implementation-generated"),
             Self::Cleared => f.write_str("cleared"),
             Self::SubjectField { field } => write!(f, "subject field `{field}`"),
-            Self::RelatedField { via, field } => {
-                write!(f, "field `{field}` of the row `{via}` names")
+            Self::RelatedField {
+                via,
+                through,
+                field,
+            } => {
+                write!(f, "field `{field}` of the row `{via}` names")?;
+                for hop in through {
+                    write!(f, " through `{hop}`")?;
+                }
+                Ok(())
             }
             Self::CallerAttribute { attribute } => write!(f, "the caller's `{attribute}`"),
+            Self::RelatedSelection {
+                selection, field, ..
+            } => write!(
+                f,
+                "field `{field}` of the one `{}` that `{}` selects",
+                selection.entity, selection.filter
+            ),
             Self::ChangedCount => f.write_str("{count: changed}"),
             Self::Increment { by, .. } => write!(f, "increment by {by}"),
             Self::InputOrGenerated {
@@ -1105,6 +1290,7 @@ impl PayloadSource {
             | Self::InputOrGenerated { .. }
             | Self::Struct { .. }
             | Self::RelatedField { .. }
+            | Self::RelatedSelection { .. }
             | Self::CallerAttribute { .. }
             | Self::ChangedCount => true,
             Self::ResponseField { .. }
@@ -1162,6 +1348,16 @@ enum RawPayloadSource {
     Caller(caller_value::RawCallerSource),
     Count(set_effects::RawCountSource),
     Nested(RawNestedSources),
+    /// A list of texts, read only as the `via:` of `{related: …}` (ess/22, beyond10x/ess#285) and
+    /// refused anywhere else; the schema gives it there and nowhere else.
+    #[schemars(skip)]
+    Texts(Vec<String>),
+    /// `{related: {entity, where, field}}` (ess/22, beyond10x/ess#299).
+    Selection(RawRelatedSelection),
+    /// The `where:` of a `related:` mapping, kept as written until the shape around it says whether
+    /// it is a selector; never left in a source once read.
+    #[schemars(skip)]
+    Captured(Box<serde_yaml::Value>),
 }
 
 /// `{related: {via: <field>, field: <field>}}` (ess/16, #166): written alone, because its value is
@@ -1182,14 +1378,23 @@ struct RawRelatedSource {
 #[derive(serde::Serialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct RawRelated {
-    /// A field of the subject, or `input.<field>`.
-    via: String,
+    /// A field of the subject, or `input.<field>`; from `ess/22` (beyond10x/ess#285) also a list
+    /// of two: that, then a field of the row it names.
+    via: RawRelatedVia,
     /// A field of the entity `via` names.
     field: String,
 }
 
+/// `via:` as written: one reference, or (ess/22, beyond10x/ess#285) a chain of them.
+#[derive(serde::Serialize, schemars::JsonSchema)]
+#[serde(untagged)]
+enum RawRelatedVia {
+    One(String),
+    Chain(#[schemars(length(min = 2, max = 2))] Vec<String>),
+}
+
 impl RawRelatedSource {
-    /// The mapping `{related: {via: <text>, field: <text>}}`, and nothing else.
+    /// The mapping `{related: {via: <text or list of texts>, field: <text>}}`, and nothing else.
     fn recognise(entries: &[(String, RawPayloadSource)]) -> Option<Self> {
         let [(key, RawPayloadSource::Nested(RawNestedSources(inner)))] = entries else {
             return None;
@@ -1197,7 +1402,12 @@ impl RawRelatedSource {
         let (mut via, mut field) = (None, None);
         for (name, value) in inner {
             match (name.as_str(), value) {
-                ("via", RawPayloadSource::Text(text)) => via = Some(text.clone()),
+                ("via", RawPayloadSource::Text(text)) => {
+                    via = Some(RawRelatedVia::One(text.clone()));
+                }
+                ("via", RawPayloadSource::Texts(chain)) => {
+                    via = Some(RawRelatedVia::Chain(chain.clone()));
+                }
                 ("field", RawPayloadSource::Text(text)) => field = Some(text.clone()),
                 _ => return None,
             }
@@ -1231,88 +1441,231 @@ const SOURCE_KEYWORDS: &[&str] = &[
 /// and loses the reader boundary a wrong scalar crosses — the one thing a document author needs.
 impl<'de> serde::Deserialize<'de> for RawPayloadSource {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct Source;
+        deserializer.deserialize_any(Source { related: false })
+    }
+}
 
-        impl<'de> serde::de::Visitor<'de> for Source {
-            type Value = RawPayloadSource;
+/// The reader of one payload source. `related` is set for the value under a `related:` key, whose
+/// `where:` entry is kept as written ([`RawPayloadSource::Captured`]) until the shape around it is
+/// known: a filtered read's selector (ess/22, beyond10x/ess#299), or a leaf of the nested mapping
+/// it always was.
+struct Source {
+    related: bool,
+}
 
-            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(
-                    "a string, a boolean, a number, `{response: <field>}`, `{generated: true}`, \
-                     `{cleared: true}`, `{subject: <field>}`, `{increment: <number>}`, \
-                     `{input: <field>, else: {generated: true}}`, \
-                     `{input: <field>, else: <literal>}`, \
-                     `{related: {via: <field>, field: <field>}}`, `{caller: <attribute>}`, \
-                     `{count: changed}`, or a mapping of struct fields",
-                )
+impl<'de> serde::de::DeserializeSeed<'de> for Source {
+    type Value = RawPayloadSource;
+
+    fn deserialize<D: serde::Deserializer<'de>>(
+        self,
+        deserializer: D,
+    ) -> Result<Self::Value, D::Error> {
+        deserializer.deserialize_any(self)
+    }
+}
+
+impl<'de> serde::de::Visitor<'de> for Source {
+    type Value = RawPayloadSource;
+
+    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(
+            "a string, a boolean, a number, `{response: <field>}`, `{generated: true}`, \
+             `{cleared: true}`, `{subject: <field>}`, `{increment: <number>}`, \
+             `{input: <field>, else: {generated: true}}`, \
+             `{input: <field>, else: <literal>}`, \
+             `{related: {via: <field>, field: <field>}}`, `{caller: <attribute>}`, \
+             `{count: changed}`, or a mapping of struct fields",
+        )
+    }
+
+    fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+        Ok(RawPayloadSource::Text(value.to_owned()))
+    }
+
+    // The scalars are read rather than refused so the rule that types a literal can say
+    // what to write instead — `quote it: items: '0'` — which a reader error cannot.
+    fn visit_bool<E: serde::de::Error>(self, value: bool) -> Result<Self::Value, E> {
+        Ok(RawPayloadSource::Boolean(value))
+    }
+
+    fn visit_i64<E: serde::de::Error>(self, value: i64) -> Result<Self::Value, E> {
+        Ok(RawPayloadSource::Integer(value))
+    }
+
+    fn visit_u64<E: serde::de::Error>(self, value: u64) -> Result<Self::Value, E> {
+        Ok(RawPayloadSource::Unsigned(value))
+    }
+
+    fn visit_f64<E: serde::de::Error>(self, value: f64) -> Result<Self::Value, E> {
+        Ok(RawPayloadSource::Decimal(value))
+    }
+
+    // Read so that a chained `via:` (ess/22, beyond10x/ess#285) reaches the related
+    // source's shape; a list anywhere else is refused when the source is read.
+    fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+        let mut texts = Vec::new();
+        while let Some(text) = seq.next_element::<String>()? {
+            texts.push(text);
+        }
+        Ok(RawPayloadSource::Texts(texts))
+    }
+
+    // Every keyword's value is itself a source-shaped YAML value (`true`, a field name, a
+    // number, `{generated: true}`), so the entries are read one way and classified after:
+    // all keywords is a source, anything else a nested mapping.
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+        use serde::de::Error as _;
+        let mut entries: Vec<(String, RawPayloadSource)> = Vec::new();
+        while let Some(key) = map.next_key::<String>()? {
+            let value = if self.related && key == "where" && row_set::filtered_reads() {
+                RawPayloadSource::Captured(Box::new(map.next_value::<serde_yaml::Value>()?))
+            } else {
+                map.next_value_seed(Source {
+                    related: key == "related",
+                })?
+            };
+            if entries.iter().any(|(seen, _)| seen == &key) {
+                return Err(A::Error::custom(format!(
+                    "`{key}` is written twice in one mapping"
+                )));
             }
+            entries.push((key, value));
+        }
+        if self.related && RawRelatedSelection::selects(&entries) {
+            // Kept for the mapping around it to recognise; anything else settles it below.
+            return Ok(RawPayloadSource::Nested(RawNestedSources(entries)));
+        }
+        if let Some(selection) = RawRelatedSelection::recognise(&mut entries) {
+            return Ok(RawPayloadSource::Selection(selection));
+        }
+        for (_, value) in &mut entries {
+            value.settle().map_err(A::Error::custom)?;
+        }
+        if let Some(related) = RawRelatedSource::recognise(&entries) {
+            return Ok(RawPayloadSource::Related(related));
+        }
+        if let Some(caller) = caller_value::RawCallerSource::recognise(&entries) {
+            return Ok(RawPayloadSource::Caller(caller));
+        }
+        if let Some(count) = set_effects::RawCountSource::recognise(&entries) {
+            return Ok(RawPayloadSource::Count(count));
+        }
+        if !entries.is_empty()
+            && entries
+                .iter()
+                .all(|(key, _)| SOURCE_KEYWORDS.contains(&key.as_str()))
+        {
+            return ExplicitPayloadSource::from_entries(entries)
+                .map(RawPayloadSource::Explicit)
+                .map_err(A::Error::custom);
+        }
+        if entries.is_empty() {
+            return Err(A::Error::custom("an empty mapping is not a payload source"));
+        }
+        Ok(RawPayloadSource::Nested(RawNestedSources(entries)))
+    }
+}
 
-            fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
-                Ok(RawPayloadSource::Text(value.to_owned()))
+impl RawPayloadSource {
+    /// A `where:` kept as written under `related:` read the way every format before `ess/22` reads
+    /// it — a leaf of a nested mapping — once it is known not to be a selector's; and every
+    /// nested mapping holding one, the same. The reader's own refusal of it, where it refuses it.
+    fn settle(&mut self) -> Result<(), String> {
+        match self {
+            Self::Captured(value) => {
+                *self = legacy_reading(value)?;
+                Ok(())
             }
-
-            // The scalars are read rather than refused so the rule that types a literal can say
-            // what to write instead — `quote it: items: '0'` — which a reader error cannot.
-            fn visit_bool<E: serde::de::Error>(self, value: bool) -> Result<Self::Value, E> {
-                Ok(RawPayloadSource::Boolean(value))
+            Self::Nested(RawNestedSources(entries)) => {
+                for (_, value) in entries {
+                    value.settle()?;
+                }
+                Ok(())
             }
+            _ => Ok(()),
+        }
+    }
+}
 
-            fn visit_i64<E: serde::de::Error>(self, value: i64) -> Result<Self::Value, E> {
-                Ok(RawPayloadSource::Integer(value))
-            }
+/// `value` read as a payload source, the way a nested mapping's leaf always was.
+fn legacy_reading(value: &serde_yaml::Value) -> Result<RawPayloadSource, String> {
+    serde::de::Deserializer::deserialize_any(value.clone(), Source { related: false })
+        .map_err(|error| error.to_string())
+}
 
-            fn visit_u64<E: serde::de::Error>(self, value: u64) -> Result<Self::Value, E> {
-                Ok(RawPayloadSource::Unsigned(value))
-            }
+/// `{related: {entity, where, field}}` (ess/22, beyond10x/ess#299): one field of the one row a
+/// selector selects. Recognised by its exact shape — one key, `related`, holding exactly
+/// `entity` (a qualified name), `where` and `field` — and nothing else; below `ess/22` the same
+/// shape is read back as the nested mapping it was.
+#[derive(serde::Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RawRelatedSelection {
+    related: RawSelected,
+}
 
-            fn visit_f64<E: serde::de::Error>(self, value: f64) -> Result<Self::Value, E> {
-                Ok(RawPayloadSource::Decimal(value))
-            }
+/// What `related:` holds in a filtered read: the entity, the selector, and the field read.
+#[derive(serde::Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RawSelected {
+    /// The entity whose rows are candidates.
+    entity: QualifiedName,
+    /// What a candidate must satisfy: its fields bare, the input under `input.`, the addressed
+    /// subject under `subject.`.
+    #[serde(rename = "where")]
+    filter: Predicate,
+    /// The field of the one selected row.
+    field: String,
+    /// How the document wrote `where`, where it was read from one.
+    #[serde(skip)]
+    #[schemars(skip)]
+    written: Option<Box<serde_yaml::Value>>,
+}
 
-            // Every keyword's value is itself a source-shaped YAML value (`true`, a field name, a
-            // number, `{generated: true}`), so the entries are read one way and classified after:
-            // all keywords is a source, anything else a nested mapping.
-            fn visit_map<A: serde::de::MapAccess<'de>>(
-                self,
-                mut map: A,
-            ) -> Result<Self::Value, A::Error> {
-                let mut entries: Vec<(String, RawPayloadSource)> = Vec::new();
-                while let Some((key, value)) = map.next_entry::<String, RawPayloadSource>()? {
-                    if entries.iter().any(|(seen, _)| seen == &key) {
-                        return Err(serde::de::Error::custom(format!(
-                            "`{key}` is written twice in one mapping"
-                        )));
+impl RawRelatedSelection {
+    /// Whether the entries of a `related:` mapping are a selector's: exactly `entity` (a qualified
+    /// name), `where` and `field` (a text).
+    fn selects(entries: &[(String, RawPayloadSource)]) -> bool {
+        entries.len() == 3
+            && entries
+                .iter()
+                .all(|(key, value)| match (key.as_str(), value) {
+                    ("entity", RawPayloadSource::Text(entity)) => {
+                        entity.parse::<QualifiedName>().is_ok()
                     }
-                    entries.push((key, value));
-                }
-                if let Some(related) = RawRelatedSource::recognise(&entries) {
-                    return Ok(RawPayloadSource::Related(related));
-                }
-                if let Some(caller) = caller_value::RawCallerSource::recognise(&entries) {
-                    return Ok(RawPayloadSource::Caller(caller));
-                }
-                if let Some(count) = set_effects::RawCountSource::recognise(&entries) {
-                    return Ok(RawPayloadSource::Count(count));
-                }
-                if !entries.is_empty()
-                    && entries
-                        .iter()
-                        .all(|(key, _)| SOURCE_KEYWORDS.contains(&key.as_str()))
-                {
-                    return ExplicitPayloadSource::from_entries(entries)
-                        .map(RawPayloadSource::Explicit)
-                        .map_err(serde::de::Error::custom);
-                }
-                if entries.is_empty() {
-                    return Err(serde::de::Error::custom(
-                        "an empty mapping is not a payload source",
-                    ));
-                }
-                Ok(RawPayloadSource::Nested(RawNestedSources(entries)))
+                    ("where", RawPayloadSource::Captured(_))
+                    | ("field", RawPayloadSource::Text(_)) => true,
+                    _ => false,
+                })
+    }
+
+    /// The mapping `{related: {entity, where, field}}`, and nothing else, taken out of `entries`.
+    fn recognise(entries: &mut Vec<(String, RawPayloadSource)>) -> Option<Self> {
+        let [(key, RawPayloadSource::Nested(RawNestedSources(inner)))] = entries.as_slice() else {
+            return None;
+        };
+        if key != "related" || !Self::selects(inner) {
+            return None;
+        }
+        let Some((_, RawPayloadSource::Nested(RawNestedSources(inner)))) = entries.pop() else {
+            return None;
+        };
+        let (mut entity, mut written, mut field) = (None, None, None);
+        for (key, value) in inner {
+            match (key.as_str(), value) {
+                ("entity", RawPayloadSource::Text(text)) => entity = text.parse().ok(),
+                ("where", RawPayloadSource::Captured(value)) => written = Some(value),
+                ("field", RawPayloadSource::Text(text)) => field = Some(text),
+                _ => return None,
             }
         }
-
-        deserializer.deserialize_any(Source)
+        Some(Self {
+            related: RawSelected {
+                entity: entity?,
+                filter: Predicate::Always,
+                field: field?,
+                written: Some(written?),
+            },
+        })
     }
 }
 
@@ -1423,6 +1776,16 @@ fn source_field(field: String) -> Option<String> {
     (!field.is_empty() && !field.contains('.')).then_some(field)
 }
 
+/// The input `{input: …, else: …}` reads: one field, or from `ess/22` a path of fields
+/// (`input_path`, A4), every segment present. Below `ess/22` a path is refused as it always was.
+fn source_input(field: String) -> Option<String> {
+    if ess_primitives::predicate::reads_source22_operands() {
+        (!field.split('.').any(str::is_empty)).then_some(field)
+    } else {
+        source_field(field)
+    }
+}
+
 impl TryFrom<RawPayloadSource> for PayloadSource {
     type Error = &'static str;
     fn try_from(raw: RawPayloadSource) -> Result<Self, Self::Error> {
@@ -1450,14 +1813,50 @@ impl TryFrom<RawPayloadSource> for PayloadSource {
                 .ok_or("a decimal literal must be a finite number"),
             RawPayloadSource::Explicit(explicit) => Self::from_explicit(explicit),
             RawPayloadSource::Related(RawRelatedSource {
-                related: RawRelated { via, field },
+                related:
+                    RawRelated {
+                        via: RawRelatedVia::One(via),
+                        field,
+                    },
             }) => Ok(Self::RelatedField {
                 // Kept as written. Each name is checked where the format is known
                 // (`value_expression`): below `ess/16` this is a nested mapping, and its texts are
                 // whatever the struct's leaves were given.
                 via: RelatedVia::parse(&via),
+                through: Vec::new(),
                 field,
             }),
+            // A chain is two references and no other number (ess/22, beyond10x/ess#285): the
+            // format that admits it is checked where it is known (`value_expression`).
+            RawPayloadSource::Related(RawRelatedSource {
+                related:
+                    RawRelated {
+                        via: RawRelatedVia::Chain(chain),
+                        field,
+                    },
+            }) => match <[String; 2]>::try_from(chain) {
+                Ok([first, second]) => Ok(Self::RelatedField {
+                    via: RelatedVia::parse(&first),
+                    through: vec![second],
+                    field,
+                }),
+                Err(_) => Err(
+                    "a chained `{related: {via: […]}}` names exactly two references: \
+                     `via: [<field>, <field of the row it names>]`; one reference is written \
+                     `via: <field>`",
+                ),
+            },
+            RawPayloadSource::Texts(_) => Err(
+                "a list is read only as the `via:` of `{related: {via: [<field>, <field>], field: \
+                 <field>}}`",
+            ),
+            RawPayloadSource::Selection(RawRelatedSelection { related }) => {
+                Ok(Self::selection(related))
+            }
+            // Never left in a source once read; read as the leaf it always was where it is.
+            RawPayloadSource::Captured(value) => legacy_reading(&value)
+                .map_err(|_| "a `where:` under `related:` is read only as a selector")
+                .and_then(Self::try_from),
             RawPayloadSource::Caller(caller) => Ok(caller.into_source()),
             RawPayloadSource::Count(_) => Ok(Self::ChangedCount),
             RawPayloadSource::Nested(RawNestedSources(entries)) => entries
@@ -1470,6 +1869,39 @@ impl TryFrom<RawPayloadSource> for PayloadSource {
                 })
                 .collect::<Result<Vec<_>, _>>()
                 .map(|fields| Self::Struct { fields }),
+        }
+    }
+}
+
+impl PayloadSource {
+    /// A filtered read as written: the selector parsed as a predicate, and what the same mapping
+    /// read as before `ess/22`, which [`row_set::read_below_ess_22`] restores below it.
+    fn selection(related: RawSelected) -> Self {
+        use serde::Deserialize as _;
+        let RawSelected {
+            entity,
+            filter,
+            field,
+            written,
+        } = related;
+        let (filter, predicate, earlier) = match written {
+            Some(written) => {
+                let earlier = legacy_reading(&written)
+                    .and_then(|raw| Self::try_from(raw).map(Box::new).map_err(str::to_owned));
+                match Predicate::deserialize((*written).clone()) {
+                    Ok(predicate) => (predicate, None, earlier.into()),
+                    Err(error) => (Predicate::Always, Some(error.to_string()), earlier.into()),
+                }
+            }
+            None => (filter, None, row_set::Legacy::none().filter),
+        };
+        Self::RelatedSelection {
+            selection: row_set::RowSelection { entity, filter },
+            field,
+            legacy: row_set::Legacy {
+                filter: earlier,
+                predicate,
+            },
         }
     }
 }
@@ -1488,6 +1920,17 @@ impl PayloadSource {
         match Self::try_from(otherwise)? {
             Self::Generated => Ok(None),
             literal @ (Self::Literal { .. } | Self::Scalar { .. }) => Ok(Some(Box::new(literal))),
+            // From `ess/22` (A4) another input path, which `value_expression` holds to being
+            // required along its whole route: `else:` promises a value.
+            read @ Self::InputField { .. }
+                if ess_primitives::predicate::reads_source22_operands() =>
+            {
+                Ok(Some(Box::new(read)))
+            }
+            _ if ess_primitives::predicate::reads_source22_operands() => Err(
+                "`else:` admits `{generated: true}`, a literal (format ess/16) or \
+                 `input.<path>` (format ess/22)",
+            ),
             _ => Err("`else:` admits `{generated: true}` only, or a literal (format ess/16)"),
         }
     }
@@ -1572,7 +2015,7 @@ impl PayloadSource {
                 otherwise: Some(otherwise),
             } => {
                 let otherwise = Self::fallback(*otherwise)?;
-                source_field(field)
+                source_input(field)
                     .map(|field| Self::InputOrGenerated { field, otherwise })
                     .ok_or("`{input: <field>, else: …}` names one field of the command's input")
             }
@@ -1603,15 +2046,37 @@ impl From<&PayloadSource> for RawPayloadSource {
             PayloadSource::Generated => explicit(&|e| e.generated = Some(true)),
             PayloadSource::Cleared => explicit(&|e| e.cleared = Some(true)),
             PayloadSource::SubjectField { field } => explicit(&|e| e.subject = Some(field.clone())),
-            PayloadSource::RelatedField { via, field } => Self::Related(RawRelatedSource {
+            PayloadSource::RelatedField {
+                via,
+                through,
+                field,
+            } => Self::Related(RawRelatedSource {
                 related: RawRelated {
-                    via: via.to_string(),
+                    via: if through.is_empty() {
+                        RawRelatedVia::One(via.to_string())
+                    } else {
+                        RawRelatedVia::Chain(
+                            std::iter::once(via.to_string())
+                                .chain(through.iter().cloned())
+                                .collect(),
+                        )
+                    },
                     field: field.clone(),
                 },
             }),
             PayloadSource::CallerAttribute { attribute } => {
                 Self::Caller(caller_value::RawCallerSource::of(attribute))
             }
+            PayloadSource::RelatedSelection {
+                selection, field, ..
+            } => Self::Selection(RawRelatedSelection {
+                related: RawSelected {
+                    entity: selection.entity.clone(),
+                    filter: selection.filter.clone(),
+                    field: field.clone(),
+                    written: None,
+                },
+            }),
             PayloadSource::ChangedCount => Self::Count(set_effects::RawCountSource::changed()),
             PayloadSource::Increment { by, scalar } => explicit(&|e| {
                 e.increment = Some(match scalar {
@@ -1811,6 +2276,9 @@ impl schemars::JsonSchema for PayloadDeclaration {
 ///
 /// An outcome is observable or it is not an outcome: it emits events, or it names an error, and a
 /// branch that does neither is one no test can check.
+// One flag per marker an author writes (`refuses:`, `accepts: nothing`, `returns:`,
+// `compensates:`), as `RawOutcome` and `ResolvedOutcome` carry them: not a state machine.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(into = "RawOutcome")]
 pub struct Outcome {
@@ -1872,6 +2340,13 @@ pub struct Outcome {
     /// No persistence or absence of side effects is implied by a direct return.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub returns: bool,
+    /// A refusal that changes its addressed row before answering its error (ess/22,
+    /// beyond10x/ess#197, `docs/design/refusal-with-effect.md`): [`Self::error`] and
+    /// [`Self::subject`] both present, on an `external:` branch. `false` on every other outcome,
+    /// where a refusal changes nothing ([`RefusalMutatedState`](ValidationCode::RefusalMutatedState)).
+    pub compensates: bool,
+    /// Response fields disclosed only by this successful invocation (ess/21).
+    pub one_time_response: Vec<String>,
     /// One line for generated documentation and for the generated scenario's title.
     pub summary: Option<String>,
     /// The records outside this model that explain it, such as `jira:DEV-630`.
@@ -1899,6 +2374,8 @@ impl Outcome {
             refuses: true,
             accepts_nothing: false,
             returns: false,
+            compensates: false,
+            one_time_response: Vec::new(),
             set_effects: SetEffects::default(),
             summary: None,
             sets: BTreeMap::new(),
@@ -1920,6 +2397,8 @@ impl Outcome {
             refuses: true,
             accepts_nothing: false,
             returns: false,
+            compensates: false,
+            one_time_response: Vec::new(),
             set_effects: SetEffects::default(),
             summary: None,
             sets: BTreeMap::new(),
@@ -1945,6 +2424,8 @@ impl Outcome {
             refuses: true,
             accepts_nothing: false,
             returns: false,
+            compensates: false,
+            one_time_response: Vec::new(),
             set_effects: SetEffects::default(),
             summary: None,
             sets: BTreeMap::new(),
@@ -1990,6 +2471,7 @@ impl Outcome {
             | OutcomeCondition::SubjectField { .. }
             | OutcomeCondition::SubjectPredicate { .. }
             | OutcomeCondition::Related { .. }
+            | OutcomeCondition::RelatedSet { .. }
             | OutcomeCondition::UnknownInstance
             | OutcomeCondition::InputAbsent
             | OutcomeCondition::ExistingInstance => false,
@@ -2064,6 +2546,25 @@ impl CommandSpec {
         self.input.iter().find(|field| field.name == name)
     }
 
+    /// What a value source `input.<field>` reads, as a field named by what it reads, at the type it
+    /// is read at: the declared input, or from `ess/22` a member of a struct input reached by a
+    /// path ([`input_path`], A4). `Err(None)` where the input itself is undeclared, which the
+    /// outcome's shape check reports; `Err(Some(_))` where a path's members do not resolve.
+    pub fn read_input(
+        &self,
+        (types, paths): (&TypeRegistry, bool),
+        field: &str,
+    ) -> Result<Field, Option<input_path::Unresolved>> {
+        if paths && input_path::is_path(field) {
+            return match input_path::resolve(self, types, field) {
+                Ok(path) => Ok(path.as_field()),
+                Err(input_path::Unresolved::Root(_)) => Err(None),
+                Err(unresolved) => Err(Some(unresolved)),
+            };
+        }
+        self.input_field(field).cloned().ok_or(None)
+    }
+
     /// The outcome with this name.
     pub fn outcome(&self, name: &OutcomeName) -> Option<&Outcome> {
         self.outcomes.iter().find(|outcome| &outcome.name == name)
@@ -2107,12 +2608,20 @@ impl CommandSpec {
                     | OutcomeCondition::SubjectField { .. }
                     | OutcomeCondition::SubjectPredicate { .. }
                     | OutcomeCondition::Related { .. }
+                    | OutcomeCondition::RelatedSet { .. }
             )
         {
             errors.push(ValidationError::at(site.clone(), ValidationCode::ConflictingDeclaration,
                 "replay declares no independent identity, effect, assignment, event, payload or error"));
         }
         let origin = self.outcome(name);
+        if origin.is_some_and(|origin| !origin.one_time_response.is_empty()) {
+            errors.push(ValidationError::at(
+                site.clone(),
+                ValidationCode::ConflictingDeclaration,
+                "replays conflicts with its origin's one_time_response disclosure restriction",
+            ));
+        }
         if name == &outcome.name
             || origin.is_none_or(|origin| {
                 origin.replays.is_some()
@@ -2230,7 +2739,13 @@ impl CommandSpec {
                     .with_hint("name the second branch after what makes it different"),
                 );
             }
-            errors.extend(self.validate_outcome(outcome, &inputs));
+            // From `ess/22` a value source may read a member of a struct input (`input_path`, A4):
+            // known from the registry's format, or while parsing from the header being read.
+            let paths = types.and_then(TypeRegistry::format).map_or_else(
+                ess_primitives::predicate::reads_source22_operands,
+                |format| input_path::admitted(Some(format)),
+            );
+            errors.extend(self.validate_outcome(outcome, &inputs, paths));
             errors.extend(self.validate_replay(outcome));
             let location = self.site().key("outcomes").named(outcome.name.as_str());
             errors.extend(match types {
@@ -2264,9 +2779,22 @@ impl CommandSpec {
     /// Checks one outcome: that it is observable, that a refusal changes nothing, and that its
     /// condition is decidable from what the caller supplied.
     #[allow(clippy::too_many_lines)]
-    fn validate_outcome(&self, outcome: &Outcome, inputs: &BTreeSet<&str>) -> ValidationErrors {
+    fn validate_outcome(
+        &self,
+        outcome: &Outcome,
+        inputs: &BTreeSet<&str>,
+        paths: bool,
+    ) -> ValidationErrors {
         let mut errors = ValidationErrors::new();
         let location = self.site().key("outcomes").named(outcome.name.as_str());
+
+        if !outcome.one_time_response.is_empty() && !outcome.returns {
+            errors.push(ValidationError::at(
+                location.clone().key("one_time_response"),
+                ValidationCode::ConflictingDeclaration,
+                "one_time_response requires a successful returns outcome",
+            ));
+        }
 
         if outcome.returns
             && (self.response.is_empty()
@@ -2358,8 +2886,9 @@ impl CommandSpec {
             // The same rule read on the lifecycle. AEP's own version of it — a refused command
             // changes nothing and is still recorded — is what `AuditRecord::validate` enforces at
             // runtime; this is the specification refusing to *promise* the thing that record would
-            // have to refuse.
-            if let Some(subject) = &outcome.subject {
+            // have to refuse. A branch marked `compensates: true` (ess/22) is the one exception,
+            // and `validate_compensation` holds it to its own shape.
+            if let Some(subject) = outcome.subject.as_ref().filter(|_| !outcome.compensates) {
                 errors.push(
                     ValidationError::at(
                         location.clone(),
@@ -2379,6 +2908,8 @@ impl CommandSpec {
                 );
             }
         }
+
+        errors.extend(validate_compensation(outcome, &location));
 
         // §19: "do not generate vague *operation fails* tests if the domain declares a specific
         // error". A wrong-state branch exists precisely to name that error, and the states it
@@ -2403,8 +2934,8 @@ impl CommandSpec {
             }
         }
 
-        errors.extend(self.validate_payload_shape(outcome, inputs, &location));
-        errors.extend(self.validate_sets_shape(outcome, inputs, &location));
+        errors.extend(self.validate_payload_shape(outcome, (inputs, paths), &location));
+        errors.extend(self.validate_sets_shape(outcome, (inputs, paths), &location));
         errors
     }
 
@@ -2414,7 +2945,7 @@ impl CommandSpec {
     fn validate_payload_shape(
         &self,
         outcome: &Outcome,
-        inputs: &BTreeSet<&str>,
+        inputs: (&BTreeSet<&str>, bool),
         location: &ConstructRef,
     ) -> ValidationErrors {
         let mut errors = ValidationErrors::new();
@@ -2423,22 +2954,17 @@ impl CommandSpec {
                 let PayloadSource::InputField { field } = source else {
                     continue;
                 };
-                if !inputs.contains(field.as_str()) {
-                    errors.push(
-                        ValidationError::at(
-                            location
-                                .clone()
-                                .key("payload")
-                                .named(error.to_string())
-                                .named(target),
-                            ValidationCode::UndeclaredReference,
-                            format!(
-                                "`{source}` reads `{field}`, which `{}` does not declare as input",
-                                self.name
-                            ),
-                        )
-                        .with_hint(format!("declared input: {}", join(inputs.iter()))),
-                    );
+                if let Some(refusal) = self.undeclared_read(
+                    inputs,
+                    source,
+                    field,
+                    location
+                        .clone()
+                        .key("payload")
+                        .named(error.to_string())
+                        .named(target),
+                ) {
+                    errors.push(refusal);
                 }
             }
         }
@@ -2471,26 +2997,49 @@ impl CommandSpec {
                 let PayloadSource::InputField { field } = source else {
                     continue;
                 };
-                if !inputs.contains(field.as_str()) {
-                    errors.push(
-                        ValidationError::at(
-                            location
-                                .clone()
-                                .key("payload")
-                                .named(event.to_string())
-                                .named(target),
-                            ValidationCode::UndeclaredReference,
-                            format!(
-                                "`{source}` reads `{field}`, which `{}` does not declare as input",
-                                self.name
-                            ),
-                        )
-                        .with_hint(format!("declared input: {}", join(inputs.iter()))),
-                    );
+                if let Some(refusal) = self.undeclared_read(
+                    inputs,
+                    source,
+                    field,
+                    location
+                        .clone()
+                        .key("payload")
+                        .named(event.to_string())
+                        .named(target),
+                ) {
+                    errors.push(refusal);
                 }
             }
         }
         errors
+    }
+
+    /// The refusal for an `input.` source whose input the command does not declare. From `ess/22`
+    /// (`paths`) a path reads a member of a struct input (A4), and only its first segment is an
+    /// input; its members are checked with the registry in hand.
+    fn undeclared_read(
+        &self,
+        (inputs, paths): (&BTreeSet<&str>, bool),
+        source: &PayloadSource,
+        field: &str,
+        at: ConstructRef,
+    ) -> Option<ValidationError> {
+        let read = if paths && input_path::is_path(field) {
+            field.split('.').next().unwrap_or_default()
+        } else {
+            field
+        };
+        (!inputs.contains(read)).then(|| {
+            ValidationError::at(
+                at,
+                ValidationCode::UndeclaredReference,
+                format!(
+                    "`{source}` reads `{read}`, which `{}` does not declare as input",
+                    self.name
+                ),
+            )
+            .with_hint(format!("declared input: {}", join(inputs.iter())))
+        })
     }
 
     /// Checks that what an outcome sets is set on something, and read from what the caller supplied.
@@ -2500,7 +3049,7 @@ impl CommandSpec {
     fn validate_sets_shape(
         &self,
         outcome: &Outcome,
-        inputs: &BTreeSet<&str>,
+        inputs: (&BTreeSet<&str>, bool),
         location: &ConstructRef,
     ) -> ValidationErrors {
         let mut errors = ValidationErrors::new();
@@ -2530,18 +3079,13 @@ impl CommandSpec {
             let PayloadSource::InputField { field } = source else {
                 continue;
             };
-            if !inputs.contains(field.as_str()) {
-                errors.push(
-                    ValidationError::at(
-                        location.clone().key("sets").named(target),
-                        ValidationCode::UndeclaredReference,
-                        format!(
-                            "`{source}` reads `{field}`, which `{}` does not declare as input",
-                            self.name
-                        ),
-                    )
-                    .with_hint(format!("declared input: {}", join(inputs.iter()))),
-                );
+            if let Some(refusal) = self.undeclared_read(
+                inputs,
+                source,
+                field,
+                location.clone().key("sets").named(target),
+            ) {
+                errors.push(refusal);
             }
         }
         errors
@@ -2568,6 +3112,34 @@ impl CommandSpec {
             if !inputs.contains(root) {
                 // `caller.<attribute>` (ess/16) is checked with the actors in hand.
                 if caller_value::is_caller_path(path, &self.input) {
+                    continue;
+                }
+                // `input.<field>` reads that input in an `ess/22` source; below it the root is
+                // refused here, as it always was.
+                if READS_INPUT_NAMESPACE.with(std::cell::Cell::get)
+                    && root == subject_fact::INPUT_NAMESPACE
+                    && path
+                        .segments()
+                        .get(1)
+                        .is_some_and(|field| inputs.contains(field.as_str()))
+                {
+                    continue;
+                }
+                // `input.lower-5` reads as the path it is spelled like until the source format
+                // decides it is one constant offset of the input `lower` (A2, rule 3a); the
+                // registry-aware checker refuses it there if it is neither.
+                if READS_INPUT_NAMESPACE.with(std::cell::Cell::get)
+                    && root == subject_fact::INPUT_NAMESPACE
+                    && ess_primitives::predicate::OffsetOperand::spellings(&path.to_string())
+                        .iter()
+                        .any(|(base, _, _)| {
+                            base.namespace() == subject_fact::INPUT_NAMESPACE
+                                && base
+                                    .segments()
+                                    .get(1)
+                                    .is_some_and(|field| inputs.contains(field.as_str()))
+                        })
+                {
                     continue;
                 }
                 errors.push(
@@ -2698,6 +3270,11 @@ impl CommandSpec {
             return errors;
         }
 
+        // A command guarded by a row set (ess/22, beyond10x/ess#228, #299): its count-decided
+        // branches, and that it reads no other kind of related row.
+        if row_set::uses(self) {
+            return row_set::validate_shape(self);
+        }
         // A command reading a related row (ess/18, beyond10x/ess#211) partitions that row's fields
         // with the input, which needs the other entity's field types, known at assembly; here its
         // own branches are checked, including that it selects on nothing else.
@@ -2999,6 +3576,7 @@ pub fn validate_payloads(
                             types,
                             conversions,
                             inhabitation: &inhabitation,
+                            paths: input_path::admitted(types.format()),
                         },
                     ));
                 }
@@ -3021,6 +3599,9 @@ struct Resolved<'a> {
     /// Which declarations `check_inhabitation` refuses, so a rule staying silent can check that
     /// somebody else really speaks — about the type in hand, and not merely about a name under it.
     inhabitation: &'a crate::system::Inhabitation,
+    /// Whether a value source reads a member of a struct input, `input.<path>`: from `ess/22`
+    /// ([`input_path`], A4).
+    paths: bool,
 }
 
 // One arm per source; ess/16 `{count: changed}` took it past the line limit.
@@ -3056,6 +3637,7 @@ fn check_payload_entry(
         | PayloadSource::InputOrGenerated { .. }
         | PayloadSource::Struct { .. }
         | PayloadSource::RelatedField { .. }
+        | PayloadSource::RelatedSelection { .. }
         | PayloadSource::CallerAttribute { .. } => {}
         PayloadSource::ChangedCount => {
             errors.extend(set_effects::check_count(at, outcome, filled));
@@ -3064,11 +3646,22 @@ fn check_payload_entry(
             // An input nothing declares was already reported by the outcome's own shape check,
             // and the type of a field that does not exist is not a second finding.
             let read = if matches!(source, PayloadSource::ResponseField { .. }) {
-                command.response.iter().find(|read| &read.name == field)
+                command
+                    .response
+                    .iter()
+                    .find(|read| &read.name == field)
+                    .cloned()
             } else {
-                command.input_field(field)
+                match command.read_input((resolved.types, resolved.paths), field) {
+                    Ok(read) => Some(read),
+                    Err(Some(unresolved)) => {
+                        errors.push(unresolved.refusal(at, command, field));
+                        return errors;
+                    }
+                    Err(None) => None,
+                }
             };
-            let Some(read) = read else {
+            let Some(read) = read.as_ref() else {
                 errors.push(ValidationError::at(
                     at.clone(),
                     ValidationCode::UndeclaredReference,
@@ -3200,6 +3793,25 @@ fn error_payload_contract(
     errors
 }
 
+/// The format gate of the one refusal that changes state (`compensates: true`, beyond10x/ess#197):
+/// admitted from `ess/22`. Its shape is held by `validate_compensation`, which reads no format, so
+/// below `ess/22` this is the branch's only refusal.
+fn compensation_format(
+    format: crate::system::FormatVersion,
+    outcome: &Outcome,
+    at: &ConstructRef,
+) -> Option<ValidationError> {
+    (outcome.compensates && format.major() < crate::system::FormatVersion::V22.major()).then(|| {
+        ValidationError::at(
+            at.clone().key("compensates"),
+            ValidationCode::UnsupportedFormatVersion,
+            "a refusal that declares its compensating change — `compensates: true` beside \
+             `error:` — requires specification format ess/22",
+        )
+        .with_hint("declare `format: ess/22`, or drop `compensates:` and the change it declares")
+    })
+}
+
 /// Admit response vocabulary and the source-version-specific emitted payload completeness rule.
 pub(crate) fn validate_response_contracts(spec: &crate::Specification) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
@@ -3237,6 +3849,7 @@ pub(crate) fn validate_response_contracts(spec: &crate::Specification) -> Valida
         }
         for outcome in &command.outcomes {
             let at = command.site().key("outcomes").named(outcome.name.as_str());
+            errors.extend(one_time_response::validate(spec, command, outcome, &at));
             if outcome.returns
                 && spec.system().format.major() < crate::system::FormatVersion::V17.major()
             {
@@ -3245,6 +3858,9 @@ pub(crate) fn validate_response_contracts(spec: &crate::Specification) -> Valida
                     ValidationCode::UnsupportedFormatVersion,
                     "direct return outcomes require specification format ess/17",
                 ));
+            }
+            if let Some(refused) = compensation_format(spec.system().format, outcome, &at) {
+                errors.push(refused);
             }
             for (field, source) in &outcome.sets {
                 // `ess/14` hands a field to the implementation with `{generated: true}` (#134).
@@ -3383,6 +3999,7 @@ pub fn validate_sets(
                         types,
                         conversions,
                         inhabitation: &inhabitation,
+                        paths: input_path::admitted(types.format()),
                     };
                     if let Some(refusal) =
                         sets_literal(&entity.name, target, held, source, command, resolved)
@@ -3400,34 +4017,56 @@ pub fn validate_sets(
                     // second is checked against the command's declared response.
                     continue;
                 };
-                let Some(read) = command.input_field(field) else {
-                    continue;
-                };
-                // Read as `payload:` reads it: narrowed from `ess/16` (#169), declared first.
-                let format = types.format();
-                if command.admits_input_read(outcome, read, &held.type_ref, conversions, format) {
-                    continue;
+                if let Some(refusal) = sets_input_read(
+                    (command, outcome),
+                    (&entity.name, target, held),
+                    field,
+                    (types, conversions),
+                    at,
+                ) {
+                    errors.push(refusal);
                 }
-                errors.push(
-                    ValidationError::new(
-                        ValidationCode::TypeMismatch,
-                        at,
-                        format!(
-                            "`{}.{field}` has type `{}`, and `{}.{target}` holds `{}`; no \
-                             conversion is declared",
-                            command.name, read.type_ref, entity.name, held.type_ref
-                        ),
-                    )
-                    .with_hint(format!(
-                        "declare the crossing — `conversions: [{{from: {}, to: {}, because: …}}]` \
-                         — or make the two types agree",
-                        read.type_ref, held.type_ref
-                    )),
-                );
             }
         }
     }
     errors
+}
+
+/// The refusal for one `sets:` entry `target: input.<field>`, where the input it reads cannot fill
+/// the field it is written to; from `ess/22` the input may be a path ([`input_path`], A4).
+fn sets_input_read(
+    (command, outcome): (&CommandSpec, &Outcome),
+    (entity, target, held): (&QualifiedName, &str, &Field),
+    field: &str,
+    (types, conversions): (&TypeRegistry, &crate::types::ConversionRegistry),
+    at: String,
+) -> Option<ValidationError> {
+    let read = match command.read_input((types, input_path::admitted(types.format())), field) {
+        Ok(read) => read,
+        Err(None) => return None,
+        Err(Some(unresolved)) => return Some(unresolved.refusal_at(at, command, field)),
+    };
+    // Read as `payload:` reads it: narrowed from `ess/16` (#169), declared first.
+    let format = types.format();
+    if command.admits_input_read(outcome, &read, &held.type_ref, conversions, format) {
+        return None;
+    }
+    Some(
+        ValidationError::new(
+            ValidationCode::TypeMismatch,
+            at,
+            format!(
+                "`{}.{field}` has type `{}`, and `{entity}.{target}` holds `{}`; no conversion is \
+                 declared",
+                command.name, read.type_ref, held.type_ref
+            ),
+        )
+        .with_hint(format!(
+            "declare the crossing — `conversions: [{{from: {}, to: {}, because: …}}]` — or make the \
+             two types agree",
+            read.type_ref, held.type_ref
+        )),
+    )
 }
 
 /// Checks that every required field an entity invariant reads is set by every branch creating it.
@@ -4927,6 +5566,20 @@ pub struct RawOutcome {
     /// The outcome returns the command's typed response (ess/17), without implying effects.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub returns: bool,
+    /// `true` marks an `external:` refusal that changes the one row its `instance:` names before it
+    /// answers its `error:` (ess/22, beyond10x/ess#197, `docs/design/refusal-with-effect.md`). The
+    /// change is spelled with `moves:` or `updates:` and `sets:`; `false` is the document without
+    /// the key.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub compensates: bool,
+    /// Outcome-local names of required String response fields (ess/21).
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "one_time_response::present_fields"
+    )]
+    #[schemars(with = "Vec<String>")]
+    pub one_time_response: Option<Vec<String>>,
     /// The originating success of this same command, retained without another effect (ess/7).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub replays: Option<OutcomeName>,
@@ -5237,7 +5890,9 @@ impl TryFrom<RawOutcome> for Outcome {
             Some(guard) => {
                 related_guard::alone(&raw)?;
                 let read = guard.read(&raw.name)?;
-                related_guard::absent_alone(&raw, &read.1)?;
+                if let related_guard::ReadGuard::Identity(_, test) = &read {
+                    related_guard::absent_alone(&raw, test)?;
+                }
                 Some(read)
             }
             None => None,
@@ -5305,11 +5960,18 @@ impl TryFrom<RawOutcome> for Outcome {
             },
             None => match related {
                 // `related_guard::alone` admitted `when:` and nothing else beside it.
-                Some((via, test)) => OutcomeCondition::Related {
+                Some(related_guard::ReadGuard::Identity(via, test)) => OutcomeCondition::Related {
                     via,
                     test,
                     input: input_predicate,
                 },
+                Some(related_guard::ReadGuard::RowSet(selection, test)) => {
+                    OutcomeCondition::RelatedSet {
+                        selection,
+                        test,
+                        input: input_predicate,
+                    }
+                }
                 None => condition,
             },
         };
@@ -5379,6 +6041,13 @@ impl TryFrom<RawOutcome> for Outcome {
             .filter(|error| !raw.emits.contains(error))
             .and_then(|error| payload.remove(error))
             .unwrap_or_default();
+        if raw.one_time_response.as_ref().is_some_and(Vec::is_empty) {
+            return Err(conflict(
+                "one_time_response",
+                "one_time_response must name at least one field".into(),
+                "omit the key when no field is marked",
+            ));
+        }
         Ok(Self {
             payload,
             error_payload,
@@ -5392,6 +6061,8 @@ impl TryFrom<RawOutcome> for Outcome {
             refuses,
             accepts_nothing: raw.accepts.is_some(),
             returns: raw.returns,
+            compensates: raw.compensates,
+            one_time_response: raw.one_time_response.unwrap_or_default(),
             summary: raw.summary,
             refs: raw.refs,
             set_effects: SetEffects { instances, affects },
@@ -5703,7 +6374,8 @@ impl From<Outcome> for RawOutcome {
                     (predicate, None, None, None, false)
                 }
                 OutcomeCondition::SubjectPredicate { input, .. }
-                | OutcomeCondition::Related { input, .. } => (input, None, None, None, false),
+                | OutcomeCondition::Related { input, .. }
+                | OutcomeCondition::RelatedSet { input, .. } => (input, None, None, None, false),
                 OutcomeCondition::SubjectState { state, predicate } => {
                     (predicate, Some(state), None, None, false)
                 }
@@ -5792,6 +6464,9 @@ impl From<Outcome> for RawOutcome {
             into,
             accepts: outcome.accepts_nothing.then_some(Accepts::Nothing),
             returns: outcome.returns,
+            compensates: outcome.compensates,
+            one_time_response: (!outcome.one_time_response.is_empty())
+                .then_some(outcome.one_time_response),
             creates,
             moves,
             updates,
@@ -6082,6 +6757,8 @@ outcomes:
                 refuses: true,
                 accepts_nothing: false,
                 returns: false,
+                compensates: false,
+                one_time_response: Vec::new(),
                 set_effects: SetEffects::default(),
                 summary: None,
                 refs: Refs::new(),
@@ -6131,6 +6808,8 @@ outcomes:
             refuses: true,
             accepts_nothing: false,
             returns: false,
+            compensates: false,
+            one_time_response: Vec::new(),
             set_effects: SetEffects::default(),
             summary: None,
             refs: Refs::new(),
@@ -6170,6 +6849,8 @@ outcomes:
                 refuses: true,
                 accepts_nothing: false,
                 returns: false,
+                compensates: false,
+                one_time_response: Vec::new(),
                 set_effects: SetEffects::default(),
                 summary: None,
                 refs: Refs::new(),
@@ -6202,6 +6883,8 @@ outcomes:
             refuses: true,
             accepts_nothing: false,
             returns: false,
+            compensates: false,
+            one_time_response: Vec::new(),
             set_effects: SetEffects::default(),
             summary: None,
             refs: Refs::new(),
@@ -6265,6 +6948,8 @@ outcomes:
             refuses: false,
             accepts_nothing: false,
             returns: false,
+            compensates: false,
+            one_time_response: Vec::new(),
             set_effects: SetEffects::default(),
             summary: None,
             refs: Refs::new(),
@@ -6347,6 +7032,8 @@ outcomes:
             refuses: false,
             accepts_nothing: false,
             returns: false,
+            compensates: false,
+            one_time_response: Vec::new(),
             set_effects: SetEffects::default(),
             summary: None,
             refs: Refs::new(),
@@ -6394,6 +7081,8 @@ outcomes:
                 refuses: true,
                 accepts_nothing: false,
                 returns: false,
+                compensates: false,
+                one_time_response: Vec::new(),
                 set_effects: SetEffects::default(),
                 summary: None,
                 refs: Refs::new(),
@@ -6579,6 +7268,8 @@ outcomes:
                 refuses: true,
                 accepts_nothing: false,
                 returns: false,
+                compensates: false,
+                one_time_response: Vec::new(),
                 set_effects: SetEffects::default(),
                 summary: None,
                 refs: Refs::new(),
@@ -6616,6 +7307,8 @@ outcomes:
                 refuses: true,
                 accepts_nothing: false,
                 returns: false,
+                compensates: false,
+                one_time_response: Vec::new(),
                 set_effects: SetEffects::default(),
                 summary: None,
                 refs: Refs::new(),
@@ -6742,6 +7435,8 @@ outcomes:
             refuses: true,
             accepts_nothing: false,
             returns: false,
+            compensates: false,
+            one_time_response: Vec::new(),
             set_effects: SetEffects::default(),
             summary: None,
             refs: Refs::new(),
@@ -7065,6 +7760,8 @@ outcomes:
                 refuses: true,
                 accepts_nothing: false,
                 returns: false,
+                compensates: false,
+                one_time_response: Vec::new(),
                 set_effects: SetEffects::default(),
                 summary: None,
                 refs: Refs::new(),
@@ -7196,6 +7893,8 @@ outcomes:
                     refuses: true,
                     accepts_nothing: false,
                     returns: false,
+                    compensates: false,
+                    one_time_response: Vec::new(),
                     set_effects: SetEffects::default(),
                     summary: None,
                     refs: Refs::new(),

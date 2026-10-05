@@ -12,6 +12,7 @@
 //! | [`fixture_values`](ConformanceTarget::fixture_values) | explicit typed fixture declarations, independently resolved before scenario activity | [`ResolveFixtures`](crate::scenario::ScenarioStep::ResolveFixtures) |
 //! | [`begin_scenario`](ConformanceTarget::begin_scenario) / [`end_scenario`](ConformanceTarget::end_scenario) | scenario isolation (§8): observations from one scenario may not satisfy another | every scenario |
 //! | [`execute_command`](ConformanceTarget::execute_command) | `commands:`, their `outcomes:`, the `error:` a branch declares and what it `emits:` | [`ExecuteCommand`](crate::scenario::ScenarioStep::ExecuteCommand) |
+//! | [`execute_command_recorded`](ConformanceTarget::execute_command_recorded) | a command guard reading `now`: the one instant its decision observed, which an `ess-history/2` operation records | a recorded concurrent history ([`crate::record`], [`crate::sessions`]) |
 //! | [`query_view`](ConformanceTarget::query_view) | `views:` and their `consistency:` | [`QueryView`](crate::scenario::ScenarioStep::QueryView), [`EventuallyView`](crate::scenario::ScenarioStep::EventuallyView) |
 //! | [`observe_events`](ConformanceTarget::observe_events) | `events:` a component `publishes:`, observed away from the command that caused them | [`EventuallyEvent`](crate::scenario::ScenarioStep::EventuallyEvent) |
 //! | [`configure_external_outcome`](ConformanceTarget::configure_external_outcome) | an outcome declared `external:` (§12) | [`ConfigureExternalOutcome`](crate::scenario::ScenarioStep::ConfigureExternalOutcome) |
@@ -184,6 +185,25 @@ pub trait ConformanceTarget {
         request: SemanticCommandRequest,
     ) -> Result<SemanticCommandResult, TargetError>;
 
+    /// [`execute_command`](Self::execute_command), with the decision instant the command edge
+    /// observed: the typed receipt a recorder writes into an `ess-history/2` operation
+    /// (beyond10x/ess#244, [`crate::occurrence_clock`]).
+    ///
+    /// The default calls [`execute_command`](Self::execute_command) exactly once and wraps its
+    /// answer, errors included, with no time. A target that reads a command clock overrides this
+    /// through the same command core its ordinary method runs, and never as execute-then-read-clock:
+    /// the instant is the one the decision used. An error after the decision edge keeps that instant;
+    /// an error before it, and a retained answer delivered again, carry none.
+    fn execute_command_recorded(
+        &self,
+        request: SemanticCommandRequest,
+    ) -> RecordedCommandCompletion {
+        RecordedCommandCompletion {
+            answer: self.execute_command(request),
+            decision_time: None,
+        }
+    }
+
     /// Invokes a command with no input at all — an absent request body, not `{}` — and reports
     /// what is observable of it (suite/26, `input_absent:`; beyond10x/ess#170).
     ///
@@ -203,6 +223,43 @@ pub trait ConformanceTarget {
 
     /// Reads a view, no fresher than the request demands (§14).
     fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError>;
+
+    /// Reads a view as `reader`, the actor a [`ReadAs`](crate::scenario::ScenarioStep::ReadAs)
+    /// step named (beyond10x/ess#286).
+    ///
+    /// A view some actor's `may:` names is read-granted: a target answers it only to an actor the
+    /// grant names, and answers anyone else [`TargetError::NotGranted`] naming `reader` before
+    /// reading anything. A view no actor names is open, read as [`query_view`](Self::query_view)
+    /// reads it. The runner calls this only after a `ReadAs` step; every other read stays
+    /// [`query_view`](Self::query_view).
+    ///
+    /// The default body reads as [`query_view`](Self::query_view) does, whoever `reader` is: a
+    /// target written before this method existed keeps compiling, and serves every read it is sent
+    /// — so a suite's `<view>/grant/read/denied` scenario fails it, which is the finding.
+    fn query_view_as(
+        &self,
+        request: SemanticViewRequest,
+        reader: &crate::scenario::ActorRef,
+    ) -> Result<SemanticViewResult, TargetError> {
+        let _ = reader;
+        self.query_view(request)
+    }
+
+    /// Reads a view as no actor at all, an unauthenticated request, after a
+    /// [`ReadAs`](crate::scenario::ScenarioStep::ReadAs) step naming none (beyond10x/ess#286).
+    ///
+    /// A view some actor's `may:` names is refused to such a read with
+    /// [`TargetError::NotGranted`] naming no actor; a view no actor names is open. Not
+    /// [`query_view`](Self::query_view), which is the harness reading on its own authority to
+    /// check what a command did. The default body reads as `query_view` does, so a target that
+    /// cannot send a read unauthenticated serves it and fails the `<view>/grant/read/denied`
+    /// scenario that requires its refusal.
+    fn query_view_anonymous(
+        &self,
+        request: SemanticViewRequest,
+    ) -> Result<SemanticViewResult, TargetError> {
+        self.query_view(request)
+    }
 
     /// Reports the occurrences of an event this context has published (§13).
     ///
@@ -297,14 +354,25 @@ pub trait ConformanceTarget {
     /// The ninth method, and the one §16 warns about: command tracing "may be additional evidence,
     /// but it should not become a requirement for every implementation". So it has a default body
     /// that answers [`TargetError::Unsupported`], and a target that cannot see its own bindings'
-    /// invocations implements the other eight and reports `unsupported` for exactly one scenario
-    /// (§28) — `<binding>/binding/mapping` — while still proving the flow, the delivery and the
-    /// failure policy.
+    /// invocations still compiles and reports `unsupported` for every scenario that asks — never a
+    /// pass. A flow or a delivery whose suite asks only for effects is still proved without it.
+    /// The mapping, an exact retry count, `drop`'s one attempt and no retry, and a conditional
+    /// binding's zero invocations are claims about attempts, and nothing else observes an attempt:
+    /// a refused one publishes no event (`docs/design/binding-arrangement-and-drop.md`).
     ///
-    /// The alternative was to leave the mapping unchecked, and a swapped mapping is the one clause
-    /// of a binding that is silently wrong: `recipient: event.contact` and
-    /// `recipient: event.alternate_contact` are the same shape, the same types and two different
-    /// systems.
+    /// # What the answer is
+    ///
+    /// A cumulative, non-consuming snapshot of **every** attempt `binding` made of `command` under
+    /// `correlation` since that correlation began — recorded at the dispatcher-to-command boundary,
+    /// before the command answers, so a refused attempt is one. Repeated calls and later steps see
+    /// earlier attempts again, identical repeated inputs included. The target does not filter by
+    /// expected input or by success, deduplicate, drain its log, start a new history at a new
+    /// `deadline` (which bounds a wait and is no baseline), or mix in another correlation's
+    /// attempts. A target that cannot keep that promise answers [`TargetError::Unsupported`].
+    ///
+    /// The mapping check was the reason it exists: a swapped mapping is the one clause of a binding
+    /// that is silently wrong — `recipient: event.contact` and `recipient: event.alternate_contact`
+    /// are the same shape, the same types and two different systems.
     fn observe_invocations(
         &self,
         request: InvocationObservationRequest,
@@ -419,6 +487,25 @@ pub trait ConformanceTarget {
             "this target cannot read a view a row at a time, so it cannot say whether a consumer \
              stopped the producer or merely stopped looking",
         ))
+    }
+
+    /// [`scan_view`](Self::scan_view), read as `reader`, the actor a
+    /// [`ReadAs`](crate::scenario::ScenarioStep::ReadAs) step named (beyond10x/ess#286), as
+    /// [`query_view_as`](Self::query_view_as) reads. The default body scans as
+    /// [`scan_view`](Self::scan_view) does, whoever `reader` is.
+    fn scan_view_as(
+        &self,
+        request: OrderedScanRequest,
+        reader: &crate::scenario::ActorRef,
+    ) -> Result<OrderedScan, TargetError> {
+        let _ = reader;
+        self.scan_view(request)
+    }
+
+    /// [`scan_view`](Self::scan_view), read as no actor, as
+    /// [`query_view_anonymous`](Self::query_view_anonymous) reads (beyond10x/ess#286).
+    fn scan_view_anonymous(&self, request: OrderedScanRequest) -> Result<OrderedScan, TargetError> {
+        self.scan_view(request)
     }
 
     /// Closes the scenario's execution context (§8).
@@ -549,6 +636,22 @@ pub struct SemanticCommandRequest {
     pub input: BTreeMap<String, Node>,
     /// The scenario this belongs to.
     pub correlation: CorrelationId,
+}
+
+/// One command's answer and the instant its decision observed, from the command edge to the
+/// recorder (beyond10x/ess#244, [`ConformanceTarget::execute_command_recorded`]).
+///
+/// An in-process value, not a serialized result envelope: only an `ess-history/2` operation's
+/// `decision_time` persists the instant. `decision_time` is `None` where no decision was observed —
+/// a command refused before its decision edge, a retained answer delivered again, a target with no
+/// clock — and never an inferred epoch. An `Err` answer may carry `Some`: the command decided, and
+/// its answer was lost after.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecordedCommandCompletion {
+    /// What the command answered, or why it did not.
+    pub answer: Result<SemanticCommandResult, TargetError>,
+    /// The instant the decision used, where one was observed.
+    pub decision_time: Option<crate::occurrence_clock::DecisionInstant>,
 }
 
 /// A command to invoke with no input document at all (suite/26, `input_absent:`).

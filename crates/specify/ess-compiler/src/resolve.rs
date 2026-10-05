@@ -42,6 +42,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use ess_domain::actor::ActorSpec;
 use ess_domain::binding::{BindingName, BindingSpec, MappingSource};
 use ess_domain::command::related_value::{input_carrier, referenced_entity, Referenced};
+use ess_domain::command::row_set::RowSetTest;
 use ess_domain::command::{
     CommandSpec, Effect, ErrorSpec, EventSpec, InstanceSurface, Outcome, OutcomeCondition, Subject,
 };
@@ -60,15 +61,16 @@ use ess_primitives::error::{
 
 use crate::diagnostic::{Code, Detail, Diagnostic, Diagnostics, Severity};
 use crate::ir::{
-    ActorHandle, CommandHandle, ComponentHandle, DomainHandle, EntityHandle, ErrorHandle, EssIr,
-    EventHandle, ResolvedActor, ResolvedAggregate, ResolvedAggregation, ResolvedBinding,
-    ResolvedBody, ResolvedCommand, ResolvedCommandGroup, ResolvedCommandLineSurface,
-    ResolvedComponent, ResolvedComponentSetting, ResolvedCondition, ResolvedConversion,
-    ResolvedDomain, ResolvedEffect, ResolvedEntity, ResolvedError, ResolvedEvent, ResolvedField,
-    ResolvedInstance, ResolvedMapping, ResolvedMappingValue, ResolvedOutcome, ResolvedPayload,
-    ResolvedPayloadField, ResolvedPayloadValue, ResolvedRelatedTest, ResolvedRelatedVia,
-    ResolvedRelation, ResolvedSubject, ResolvedType, ResolvedTypeRef, ResolvedView,
-    ResolvedWorkload, TypeHandle, ViewHandle,
+    related_may_be_absent, ActorHandle, CommandHandle, ComponentHandle, DomainHandle, EntityHandle,
+    ErrorHandle, EssIr, EventHandle, ResolvedActor, ResolvedAggregate, ResolvedAggregation,
+    ResolvedBinding, ResolvedBody, ResolvedCommand, ResolvedCommandGroup,
+    ResolvedCommandLineSurface, ResolvedComponent, ResolvedComponentSetting, ResolvedCondition,
+    ResolvedConversion, ResolvedDomain, ResolvedEffect, ResolvedEntity, ResolvedError,
+    ResolvedEvent, ResolvedFallback, ResolvedField, ResolvedInputRead, ResolvedInstance,
+    ResolvedMapping, ResolvedMappingValue, ResolvedOutcome, ResolvedPayload, ResolvedPayloadField,
+    ResolvedPayloadValue, ResolvedRelatedHop, ResolvedRelatedTest, ResolvedRelatedVia,
+    ResolvedRelation, ResolvedRowSelection, ResolvedRowSetTest, ResolvedSubject, ResolvedType,
+    ResolvedTypeRef, ResolvedView, ResolvedWorkload, TypeHandle, ViewHandle,
 };
 use crate::source::{Location, SourceMap, Span};
 
@@ -1465,7 +1467,7 @@ impl<'a> Resolver<'a> {
         let errors = self.errors();
         let commands = self.commands(&events, &errors, &entities);
         let views = self.views(&types, &entities);
-        let actors = self.actors(&commands);
+        let actors = self.actors(&commands, &views);
         let components = self.components(&commands, &events);
         let bindings = self.bindings(&events, &commands);
         let workloads = self.workloads(&components);
@@ -1713,12 +1715,17 @@ impl<'a> Resolver<'a> {
                 let mut resolved = BTreeMap::new();
                 let mut complete = true;
                 for (variant, reference) in variants {
+                    // A unit variant (ess/22) carries nothing, so it names nothing to resolve.
+                    let Some(reference) = reference else {
+                        resolved.insert(variant.clone(), None);
+                        continue;
+                    };
                     let subject = format!("{}.{variant}", declared.name);
                     let mut variant_needles = vec![format!("{variant}: {reference}")];
                     variant_needles.extend_from_slice(needles);
                     match self.type_ref(code, reference, &subject, path, &variant_needles) {
                         Some(reference) => {
-                            resolved.insert(variant.clone(), reference);
+                            resolved.insert(variant.clone(), Some(reference));
                         }
                         None => complete = false,
                     }
@@ -2166,7 +2173,7 @@ impl<'a> Resolver<'a> {
             let set_effects = self.set_effects(command, outcome, input, entities);
             complete &= set_effects.is_some();
             let (instances, affects) = set_effects.unwrap_or_default();
-            let related = self.related_guard(command, outcome, input);
+            let related = self.related_guard(command, outcome, input, entities);
             complete &=
                 related.is_some() || !matches!(outcome.condition, OutcomeCondition::Related { .. });
             resolved.push(ResolvedOutcome {
@@ -2190,6 +2197,8 @@ impl<'a> Resolver<'a> {
                 refuses: outcome.refuses,
                 accepts_nothing: outcome.accepts_nothing,
                 returns: outcome.returns,
+                compensates: outcome.compensates,
+                one_time_response: outcome.one_time_response.clone(),
                 summary: outcome.summary.clone(),
                 refs: outcome.refs.clone(),
                 sets,
@@ -2286,10 +2295,15 @@ impl<'a> Resolver<'a> {
                     None => complete = false,
                 }
             }
+            let moves = match &affect.moves {
+                None => None,
+                Some(named) => Some(entity.lifecycle.transition(named)?.clone()),
+            };
             affects.push(crate::ir::ResolvedAffect {
                 entity: handle,
                 filter: affect.filter.clone(),
                 sets,
+                moves,
             });
         }
         complete.then_some((instances, affects))
@@ -2600,7 +2614,11 @@ impl<'a> Resolver<'a> {
         } else {
             input
         };
-        let Some(read) = input.and_then(|fields| fields.iter().find(|it| &it.name == value)) else {
+        let read = match input {
+            Some(fields) if !response_source => self.input_read(command, fields, value),
+            fields => fields.and_then(|fields| fields.iter().find(|it| &it.name == value).cloned()),
+        };
+        let Some(read) = read.as_ref() else {
             // Either the input did not resolve — its own refusal stands — or a hand-built
             // specification reads a field the command does not take.
             if input.is_some() {
@@ -2694,6 +2712,39 @@ impl<'a> Resolver<'a> {
             .map(|crossing| Some(crossing.because.clone()))
     }
 
+    /// What a value source `input.<field>` reads among the command's resolved `input`: the field,
+    /// or from ess/22 (Family F A4) a member of a struct input reached by a path, by the rule
+    /// `ess-domain` validated it with ([`ess_domain::command::input_path`]). A path is named by
+    /// its declared segments and read at its last segment's type, `Optional<…>` of it where an
+    /// `Optional` before it may leave it absent. `None` where it resolves to nothing.
+    fn input_read(
+        &mut self,
+        command: &CommandSpec,
+        input: &[ResolvedField],
+        field: &str,
+    ) -> Option<ResolvedField> {
+        use ess_domain::command::input_path;
+        if !(input_path::is_path(field) && input_path::admitted(Some(self.spec.system().format))) {
+            return input.iter().find(|it| it.name == field).cloned();
+        }
+        let root = input
+            .iter()
+            .find(|it| Some(it.name.as_str()) == field.split('.').next())?;
+        let path = input_path::resolve(command, &self.spec.system().types, field).ok()?;
+        let type_ref = self.type_ref(
+            codes::COMMAND_UNDECLARED_REFERENCE,
+            &path.type_ref(),
+            &format!("{}.{field}", command.name),
+            &format!("commands.{}.input.{field}", command.name),
+            &[],
+        )?;
+        Some(ResolvedField {
+            name: field.to_owned(),
+            type_ref,
+            naming: root.naming.clone(),
+        })
+    }
+
     /// The input field `read` at its present type, when `outcome` is only ever taken with it
     /// present and the specification is `ess/16` or later (#169,
     /// `docs/design/optional-input-narrowing.md`). `None` reads it at its declared type.
@@ -2722,7 +2773,7 @@ impl<'a> Resolver<'a> {
     /// An `ess/14` source that reads something: the subject, an optional input, or a struct's
     /// fields. `ess-domain::command::value_expression` has refused an assembled specification that
     /// breaks these rules; the refusals here are backstops for one built field by field.
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
     fn expression_field(
         &mut self,
         command: &CommandSpec,
@@ -2765,7 +2816,8 @@ impl<'a> Resolver<'a> {
                 )
             }
             PayloadSource::InputOrGenerated { field, otherwise } => {
-                let read = input.and_then(|fields| fields.iter().find(|it| &it.name == field));
+                let read = input.and_then(|fields| self.input_read(command, fields, field));
+                let read = read.as_ref();
                 let Some(read) = read else {
                     if input.is_some() {
                         self.refuse_payload(
@@ -2788,17 +2840,17 @@ impl<'a> Resolver<'a> {
                     ResolvedTypeRef::Optional { of } => of.as_ref().clone(),
                     other => other.clone(),
                 };
+                let otherwise = self.fallback(
+                    (command, outcome, block),
+                    (target, source),
+                    otherwise.as_deref(),
+                    input,
+                )?;
                 (
                     ResolvedPayloadValue::InputOrGenerated {
                         field: read.name.clone(),
                         type_ref: read.type_ref.clone(),
-                        // As a top-level literal compiles: an unquoted scalar to its quoted
-                        // form's text.
-                        otherwise: otherwise.as_deref().and_then(|literal| match literal {
-                            PayloadSource::Literal { value }
-                            | PayloadSource::Scalar { value, .. } => Some(value.clone()),
-                            _ => None,
-                        }),
+                        otherwise,
                     },
                     present,
                 )
@@ -2806,17 +2858,24 @@ impl<'a> Resolver<'a> {
             PayloadSource::Struct { fields } => {
                 return self.struct_field(command, outcome, block, target, fields, input, subject);
             }
-            PayloadSource::RelatedField { via, field } => self.related_field(
+            PayloadSource::RelatedField {
+                via,
+                through,
+                field,
+            } => self.related_field(
                 command,
                 outcome,
                 block,
                 (target, source),
-                (via, field),
+                (via, through, field),
                 input,
                 subject,
             )?,
             PayloadSource::CallerAttribute { attribute } => {
                 self.caller_field(command, outcome, block, (target, source), attribute)?
+            }
+            PayloadSource::RelatedSelection { .. } => {
+                self.selection_field(command, outcome, block, (target, source))?
             }
             _ => unreachable!("every other source is resolved by `payload_field`"),
         };
@@ -2829,34 +2888,169 @@ impl<'a> Resolver<'a> {
         })
     }
 
+    /// `{related: {entity, where, field}}` (ess/22, beyond10x/ess#299): the selector, resolved to
+    /// its entity, and the field read from the one row it selects, at its declared type.
+    /// `ess-domain` refused a selector over no entity and a field the entity does not hold; the
+    /// refusal here is the backstop for a specification built field by field.
+    fn selection_field(
+        &mut self,
+        command: &CommandSpec,
+        outcome: &ess_domain::command::Outcome,
+        block: SourceBlock<'_>,
+        (target, source): (&ResolvedField, &PayloadSource),
+    ) -> Option<(ResolvedPayloadValue, ResolvedTypeRef)> {
+        let PayloadSource::RelatedSelection {
+            selection, field, ..
+        } = source
+        else {
+            return None;
+        };
+        let read = self
+            .spec
+            .entities()
+            .get(&selection.entity)
+            .and_then(|entity| entity_field(entity, field).map(|held| (entity, held)));
+        let Some((entity, held)) = read else {
+            self.refuse_payload(
+                command,
+                outcome,
+                block,
+                Some((&target.name, source)),
+                codes::COMMAND_UNDECLARED_REFERENCE,
+                format!(
+                    "outcome `{}` of `{}` reads `{field}` of the one `{}` its selector selects, \
+                     and that is no field of a declared entity",
+                    outcome.name, command.name, selection.entity
+                ),
+                Vec::new(),
+            );
+            return None;
+        };
+        let read = self.entity_field_resolved(entity, held)?;
+        Some((
+            ResolvedPayloadValue::RelatedSelection {
+                selection: ResolvedRowSelection {
+                    entity: EntityHandle::new(entity.name.clone()),
+                    filter: selection.filter.clone(),
+                },
+                field: read.name.clone(),
+                type_ref: read.type_ref.clone(),
+            },
+            read.type_ref,
+        ))
+    }
+
+    /// What stands in for an absent input after `else:`: `Some(None)` for `{generated: true}`, a
+    /// literal as a top-level one compiles (an unquoted scalar to its quoted form's text), or
+    /// (ess/22, A4) another input, required along its whole route and filling the target as
+    /// `ess-domain` checked. `None` where that input is refused, for a model built field by field.
+    #[allow(clippy::option_option)]
+    fn fallback(
+        &mut self,
+        (command, outcome, block): (&CommandSpec, &ess_domain::command::Outcome, SourceBlock<'_>),
+        (target, source): (&ResolvedField, &PayloadSource),
+        otherwise: Option<&PayloadSource>,
+        input: Option<&[ResolvedField]>,
+    ) -> Option<Option<ResolvedFallback>> {
+        let Some(PayloadSource::InputField { field: other }) = otherwise else {
+            return Some(match otherwise {
+                Some(PayloadSource::Literal { value } | PayloadSource::Scalar { value, .. }) => {
+                    Some(ResolvedFallback::Literal(value.clone()))
+                }
+                _ => None,
+            });
+        };
+        let fallback = input.and_then(|fields| self.input_read(command, fields, other));
+        let admitted = fallback.as_ref().filter(|fallback| {
+            !fallback.type_ref.is_optional()
+                && (self.admits(fallback, target).is_some()
+                    || self
+                        .admits(
+                            fallback,
+                            &ResolvedField {
+                                type_ref: target.type_ref.required().clone(),
+                                ..target.clone()
+                            },
+                        )
+                        .is_some())
+        });
+        let Some(fallback) = admitted else {
+            self.refuse_payload(
+                command,
+                outcome,
+                block,
+                Some((&target.name, source)),
+                codes::COMMAND_TYPE_MISMATCH,
+                format!(
+                    "outcome `{}` of `{}` falls back to `input.{other}`, which is no required \
+                     input that fills `{}`",
+                    outcome.name, command.name, target.name
+                ),
+                Vec::new(),
+            );
+            return None;
+        };
+        Some(Some(ResolvedFallback::Input {
+            input: ResolvedInputRead {
+                field: fallback.name.clone(),
+                type_ref: fallback.type_ref.clone(),
+            },
+        }))
+    }
+
     /// `when_related:` (ess/18, #211): the input field a related-guard branch reads and the entity
     /// whose identity it carries, by the rule `ess-domain` validated it with. `None` for a branch
     /// that reads no related row, and for one whose read did not resolve.
+    ///
+    /// From ess/22 (beyond10x/ess#304) the field may be a stored field of the subject the command
+    /// addresses, read as it was before the branch: [`ResolvedRelatedVia::Subject`], at the field's
+    /// declared type, `Optional<…>` included.
     fn related_guard(
         &self,
         command: &CommandSpec,
         outcome: &Outcome,
         input: Option<&[ResolvedField]>,
+        entities: &BTreeMap<QualifiedName, ResolvedEntity>,
     ) -> Option<(ResolvedRelatedVia, EntityHandle)> {
         let OutcomeCondition::Related { via, .. } = &outcome.condition else {
             return None;
         };
-        let read = input?.iter().find(|field| &field.name == via)?;
-        match ess_domain::command::related_guard::related_entity(self.spec, command, via) {
-            Referenced::Entity(entity) => Some((
+        let related =
+            ess_domain::command::related_guard::related_entity_via(self.spec, command, via);
+        let Referenced::Entity(entity) = related else {
+            return None;
+        };
+        let read = match via {
+            RelatedVia::Input(field) => {
+                let read = input?.iter().find(|held| held.name == *field)?;
                 ResolvedRelatedVia::Input {
                     field: read.name.clone(),
                     type_ref: read.type_ref.clone(),
-                },
-                EntityHandle::new(entity.name.clone()),
-            )),
-            Referenced::NoEntity | Referenced::Ambiguous(_) => None,
-        }
+                }
+            }
+            RelatedVia::Subject(field) => {
+                let subject = ess_domain::command::subject_fact::common_subject(command)?;
+                let stored = entities
+                    .get(&subject.entity)?
+                    .fields
+                    .iter()
+                    .find(|held| held.name == *field)?;
+                ResolvedRelatedVia::Subject {
+                    field: stored.name.clone(),
+                    type_ref: stored.type_ref.clone(),
+                }
+            }
+        };
+        Some((read, EntityHandle::new(entity.name.clone())))
     }
 
     /// `{related: {via, field}}` (ess/16, #166): the entity `via` names, by the rule
     /// `ess-domain` validated it with, and the field read there. The value and the type it is read
     /// at; the caller checks that type against the target.
+    ///
+    /// From ess/22 (beyond10x/ess#285) `via` may be `Optional<…>` and `through` names further
+    /// references, each resolved by the same rule on the entity the reference before names; where
+    /// any may be absent, the value's type is `Optional<…>` of the field's.
     #[allow(clippy::too_many_arguments)]
     fn related_field(
         &mut self,
@@ -2864,7 +3058,7 @@ impl<'a> Resolver<'a> {
         outcome: &ess_domain::command::Outcome,
         block: SourceBlock<'_>,
         (target, source): (&ResolvedField, &PayloadSource),
-        (via, field): (&RelatedVia, &String),
+        (via, through, field): (&RelatedVia, &[String], &String),
         input: Option<&[ResolvedField]>,
         subject: Option<&ResolvedEntity>,
     ) -> Option<(ResolvedPayloadValue, ResolvedTypeRef)> {
@@ -2892,21 +3086,16 @@ impl<'a> Resolver<'a> {
         let carrier = carrier
             .as_ref()
             .map(|(entity, field)| (*entity, field.as_str()));
+        // An `Optional<…>` reference (ess/22) names the entity its required type is the identity
+        // of; a required one is its own required type, so a one-hop read resolves as before.
         let entity = read_via.and_then(|read| {
-            match referenced_entity(spec, &spec_type_ref(&read.type_ref), carrier) {
+            match referenced_entity(spec, &spec_type_ref(read.type_ref.required()), carrier) {
                 Referenced::Entity(entity) => Some(entity),
                 Referenced::NoEntity | Referenced::Ambiguous(_) => None,
             }
         });
-        let held = entity.and_then(|entity| {
-            if entity.identity.name == *field {
-                Some(&entity.identity)
-            } else {
-                entity.field(field)
-            }
-        });
-        let (Some(read_via), Some(entity), Some(held)) = (read_via, entity, held) else {
-            self.refuse_payload(
+        let unresolved = |resolver: &mut Self| {
+            resolver.refuse_payload(
                 command,
                 outcome,
                 block,
@@ -2919,36 +3108,59 @@ impl<'a> Resolver<'a> {
                 ),
                 Vec::new(),
             );
+        };
+        let (Some(read_via), Some(mut entity)) = (read_via, entity) else {
+            unresolved(self);
             return None;
         };
-        let read = self
-            .fields(
-                codes::COMMAND_TYPE_MISMATCH,
-                std::slice::from_ref(held),
-                &entity.name,
-                &format!("entities.{}", entity.name),
-                &[format!("name: {}", entity.name)],
-            )?
-            .pop()?;
-        let via = match via {
-            RelatedVia::Subject(_) => ResolvedRelatedVia::Subject {
-                field: read_via.name.clone(),
-                type_ref: read_via.type_ref.clone(),
-            },
-            RelatedVia::Input(_) => ResolvedRelatedVia::Input {
-                field: read_via.name.clone(),
-                type_ref: read_via.type_ref.clone(),
-            },
-        };
-        Some((
-            ResolvedPayloadValue::RelatedField {
-                via,
+        let mut hops = Vec::new();
+        for hop in through {
+            let Some(held) = entity_field(entity, hop) else {
+                unresolved(self);
+                return None;
+            };
+            let resolved = self.entity_field_resolved(entity, held)?;
+            let next = match referenced_entity(
+                spec,
+                &spec_type_ref(resolved.type_ref.required()),
+                Some((entity, hop.as_str())),
+            ) {
+                Referenced::Entity(next) => next,
+                Referenced::NoEntity | Referenced::Ambiguous(_) => {
+                    unresolved(self);
+                    return None;
+                }
+            };
+            hops.push(ResolvedRelatedHop {
                 entity: EntityHandle::new(entity.name.clone()),
-                field: read.name,
-                type_ref: read.type_ref.clone(),
-            },
-            read.type_ref,
-        ))
+                field: resolved.name,
+                type_ref: resolved.type_ref,
+            });
+            entity = next;
+        }
+        let Some(held) = entity_field(entity, field) else {
+            unresolved(self);
+            return None;
+        };
+        let read = self.entity_field_resolved(entity, held)?;
+        Some(related_value(via, read_via, hops, entity, read))
+    }
+
+    /// `held`, a field of `entity` a `{related: …}` source reads or follows, resolved as the entity
+    /// declares it.
+    fn entity_field_resolved(
+        &mut self,
+        entity: &EntitySpec,
+        held: &ess_domain::types::Field,
+    ) -> Option<ResolvedField> {
+        self.fields(
+            codes::COMMAND_TYPE_MISMATCH,
+            std::slice::from_ref(held),
+            &entity.name,
+            &format!("entities.{}", entity.name),
+            &[format!("name: {}", entity.name)],
+        )?
+        .pop()
     }
 
     /// `{caller: <attribute>}` (ess/16, #168): the attribute as the actors that may invoke the
@@ -3543,10 +3755,9 @@ impl<'a> Resolver<'a> {
             else {
                 continue;
             };
-            let aggregation = view
-                .aggregation
-                .as_ref()
-                .map(|aggregation| self.aggregation(aggregation, entities.get(source.name())));
+            let aggregation = view.aggregation.as_ref().map(|aggregation| {
+                self.aggregation(aggregation, entities.get(source.name()), &view)
+            });
             resolved.insert(
                 view.name.clone(),
                 ResolvedView {
@@ -3574,13 +3785,41 @@ impl<'a> Resolver<'a> {
     ///
     /// `ess-domain` refuses an input that is not one, so a miss means an unchecked in-memory
     /// specification, and compilation stays closed over it.
+    ///
+    /// A measure's condition is checked again here against the view's own environment — one row of
+    /// the source and the view's parameters — whoever assembled the specification: a predicate
+    /// that does not check there keeps compilation closed.
     fn aggregation(
         &mut self,
         aggregation: &ess_domain::view::Aggregation,
         entity: Option<&ResolvedEntity>,
+        view: &ViewSpec,
     ) -> ResolvedAggregation {
         let mut functions = BTreeMap::new();
         for (field, aggregate) in &aggregation.functions {
+            if let Some(condition) = &aggregate.r#where {
+                let source = self
+                    .spec
+                    .entities()
+                    .get(&view.source)
+                    .map(ess_domain::entity::EntitySpec::observable_fields);
+                let checked = source.map(|fields| {
+                    let environment =
+                        ess_domain::expression::DomainEnvironment::new(&self.registry, &fields)
+                            .with_params(&view.params);
+                    ess_domain::expression::check_predicate(
+                        &environment,
+                        condition,
+                        &format!("view.{}.{field}.where", view.name),
+                    )
+                    .errors
+                    .is_empty()
+                });
+                if checked != Some(true) {
+                    self.off_contract = true;
+                    continue;
+                }
+            }
             let input = match &aggregate.input {
                 None => None,
                 Some(input) => {
@@ -3598,6 +3837,7 @@ impl<'a> Resolver<'a> {
                     function: aggregate.function,
                     input,
                     skip_absent: aggregate.skip_absent,
+                    r#where: aggregate.r#where.clone(),
                 },
             );
         }
@@ -3607,10 +3847,12 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    /// Every actor, with every grant resolved to the command it names.
+    /// Every actor, with every grant resolved to the command or, from ess/22, the view it names
+    /// (beyond10x/ess#286).
     fn actors(
         &mut self,
         commands: &BTreeMap<QualifiedName, ResolvedCommand>,
+        views: &BTreeMap<QualifiedName, ResolvedView>,
     ) -> BTreeMap<QualifiedName, ResolvedActor> {
         let declared: Vec<ActorSpec> = self.spec.actors().values().cloned().collect();
         let mut resolved = BTreeMap::new();
@@ -3620,6 +3862,7 @@ impl<'a> Resolver<'a> {
             let code = codes::ACTOR_UNDECLARED_REFERENCE;
             let domain = self.owner(code, &actor.name, "actor");
             let mut may = BTreeSet::new();
+            let mut may_read = BTreeSet::new();
             let mut complete = true;
             for granted in &actor.may {
                 match self.command_of(granted, commands) {
@@ -3627,6 +3870,14 @@ impl<'a> Resolver<'a> {
                         may.insert(handle);
                     }
                     Found::Unresolved => complete = false,
+                    Found::Missing if self.view_grant_admitted(granted) => {
+                        match self.view_grant_of(granted, views) {
+                            Found::Handle(handle) => {
+                                may_read.insert(handle);
+                            }
+                            Found::Unresolved | Found::Missing => complete = false,
+                        }
+                    }
                     Found::Missing => {
                         complete = false;
                         let available = self
@@ -3667,12 +3918,36 @@ impl<'a> Resolver<'a> {
                     name: actor.name,
                     domain,
                     may,
+                    may_read,
                     naming: actor.naming,
                     attributes,
                 },
             );
         }
         resolved
+    }
+
+    /// Whether `granted` names a view an actor's `may:` may grant: a declared view, in a
+    /// specification from ess/22 (beyond10x/ess#286). Below it `ess-domain` refused the grant, so
+    /// it stays the reference to an undeclared command it always was.
+    fn view_grant_admitted(&self, granted: &QualifiedName) -> bool {
+        self.spec.system().format.major() >= ess_domain::system::FormatVersion::V22.major()
+            && self.spec.views().contains_key(granted)
+    }
+
+    /// A read-granted view, as a handle (beyond10x/ess#286).
+    fn view_grant_of(
+        &self,
+        name: &QualifiedName,
+        views: &BTreeMap<QualifiedName, ResolvedView>,
+    ) -> Found<ViewHandle> {
+        if views.contains_key(name) {
+            Found::Handle(ViewHandle::new(name.clone()))
+        } else if self.spec.views().contains_key(name) {
+            Found::Unresolved
+        } else {
+            Found::Missing
+        }
     }
 
     // ---- components and topology ----------------------------------------------------------
@@ -3965,16 +4240,19 @@ impl<'a> Resolver<'a> {
             return None;
         }
         let context = self.delivery_context(&binding, path, needles)?;
+        let condition = self.binding_condition(&binding, event_name, path)?;
         let (mapping, selection) = self.selection_mapping(
             &binding,
             &events[event_name],
             &commands[&binding.command],
             context.as_ref(),
         )?;
+        let refusal_policy = self.refusal_policy(&binding, escalation.as_ref())?;
         Some(ResolvedBinding {
             name: binding.name,
             cause: crate::ir::ResolvedBindingCause::Event(event_handle),
             context,
+            condition,
             command: command_handle,
             mapping,
             selection,
@@ -3987,9 +4265,54 @@ impl<'a> Resolver<'a> {
                     .get(&binding.command)
                     .map(|command| crate::ir::ResolvedRetryBound::resolve(bound, command))
             }),
+            refusal_policy,
             naming: binding.naming,
             refs: binding.refs,
         })
+    }
+
+    /// The binding's refusal-selected failure policy (ess/22, beyond10x/ess#269), resolved against
+    /// the invoked command: `Some(None)` for a binding that declares none. Already admitted by
+    /// `Specification::validate`, which `compile` runs first, so `None` is reached only for a
+    /// policy that refused there.
+    #[allow(clippy::option_option)]
+    fn refusal_policy(
+        &self,
+        binding: &BindingSpec,
+        escalation: Option<&crate::ir::EventHandle>,
+    ) -> Option<Option<crate::ir::ResolvedRefusalPolicy>> {
+        let Some(policy) = &binding.refusals else {
+            return Some(None);
+        };
+        crate::ir::ResolvedRefusalPolicy::resolve(
+            policy,
+            self.spec.commands().get(&binding.command)?,
+            escalation,
+        )
+        .map(Some)
+    }
+
+    /// The binding's event-payload condition (ess/22, beyond10x/ess#268), resolved: `Some(None)`
+    /// for a binding that declares none. Already admitted by `Specification::validate`, which
+    /// `compile` runs first, so `None` is reached only for a condition that refused there.
+    #[allow(clippy::option_option)]
+    fn binding_condition(
+        &self,
+        binding: &BindingSpec,
+        event: &QualifiedName,
+        path: &str,
+    ) -> Option<Option<crate::ir::ResolvedBindingCondition>> {
+        let Some(predicate) = &binding.condition else {
+            return Some(None);
+        };
+        let plan = ess_domain::binding::condition::ConditionPlan::resolve(
+            predicate,
+            self.spec.events().get(event)?,
+            &self.registry,
+            &format!("{path}.when.where"),
+        )
+        .ok()?;
+        Some(Some(crate::ir::ResolvedBindingCondition::of(plan)))
     }
 
     /// The delivery context an external channel binds (ess/18, beyond10x/ess#195), its fields
@@ -4063,14 +4386,7 @@ impl<'a> Resolver<'a> {
                 MappingSource::HostContext { field } => (field, &context, true),
                 MappingSource::HostRead { field } => (field, &read, false),
                 MappingSource::Literal { value } => {
-                    mapping.push(ResolvedMapping {
-                        target: input.name.clone(),
-                        target_type: input.type_ref.clone(),
-                        value: ResolvedMappingValue::Literal {
-                            value: value.clone(),
-                        },
-                        conversion: None,
-                    });
+                    mapping.push(literal_mapping(input, value));
                     continue;
                 }
                 _ => return None,
@@ -4116,6 +4432,7 @@ impl<'a> Resolver<'a> {
                 read,
             }),
             context: None,
+            condition: None,
             command: command_handle,
             mapping,
             selection: None,
@@ -4123,6 +4440,7 @@ impl<'a> Resolver<'a> {
             failure: binding.failure,
             escalation: None,
             retry: None,
+            refusal_policy: None,
             naming: binding.naming.clone(),
             refs: binding.refs.clone(),
         })
@@ -4263,14 +4581,9 @@ impl<'a> Resolver<'a> {
                         None => complete = false,
                     }
                 }
-                Some(MappingSource::Literal { value }) => resolved.push(ResolvedMapping {
-                    target: input.name.clone(),
-                    target_type: input.type_ref.clone(),
-                    value: ResolvedMappingValue::Literal {
-                        value: value.clone(),
-                    },
-                    conversion: None,
-                }),
+                Some(MappingSource::Literal { value }) => {
+                    resolved.push(literal_mapping(input, value));
+                }
                 Some(MappingSource::Selection { selection, path }) => {
                     match self.mapped_selection(binding, input, selection, path) {
                         Some(mapped) => resolved.push(mapped),
@@ -4399,9 +4712,10 @@ impl<'a> Resolver<'a> {
                 return None;
             }
         };
-        let from = plan.effective_type();
+        let effective = plan.effective_type();
         let to = spec_type_ref(&input.type_ref);
-        if plan.may_miss() && !matches!(to, TypeRef::Optional(_)) {
+        let proved = self.proved_present(binding, segments, &effective, &to);
+        if proved.is_none() && plan.may_miss() && !matches!(to, TypeRef::Optional(_)) {
             self.refuse_mapping(
                 binding,
                 codes::MAPPING_PARTIAL_ACCESSOR,
@@ -4415,6 +4729,8 @@ impl<'a> Resolver<'a> {
             );
             return None;
         }
+        // Assignment reads the present type the condition proves; the IR keeps the source type.
+        let from = proved.unwrap_or_else(|| effective.clone());
         let conversion = if is_assignable(&from, &to) {
             None
         } else {
@@ -4441,7 +4757,7 @@ impl<'a> Resolver<'a> {
         };
         let type_ref = self.type_ref(
             codes::BINDING_UNDECLARED_REFERENCE,
-            &from,
+            &effective,
             &plan.path(),
             &at,
             &[],
@@ -4496,6 +4812,7 @@ impl<'a> Resolver<'a> {
             );
             return None;
         };
+        // A delivery-context field is never read by the condition, so nothing proves it present.
         let from = spec_type_ref(&source.type_ref);
         let to = spec_type_ref(&input.type_ref);
         let conversion = if is_assignable(&from, &to) {
@@ -4545,6 +4862,29 @@ impl<'a> Resolver<'a> {
         })
     }
 
+    /// The present type of `from` where `binding`'s condition proves every Optional member on
+    /// `members` present and the input `to` is required (beyond10x/ess#194); `None` elsewhere, so
+    /// every other mapping keeps its meaning. The proof reads the same declared members the
+    /// mapping reads, never a spelling prefix.
+    fn proved_present(
+        &self,
+        binding: &BindingSpec,
+        members: &[String],
+        from: &TypeRef,
+        to: &TypeRef,
+    ) -> Option<TypeRef> {
+        use ess_domain::binding::condition;
+        if matches!(to, TypeRef::Optional(_)) {
+            return None;
+        }
+        let predicate = binding.condition.as_ref()?;
+        let event = self.spec.events().get(binding.cause.event()?)?;
+        let plan = condition::ConditionPlan::resolve(predicate, event, &self.registry, "").ok()?;
+        let optional = condition::optional_positions(members, event, &self.registry)?;
+        condition::covers(&plan.proves_present(), members, &optional)
+            .then(|| condition::present_type(from))
+    }
+
     fn mapped_field(
         &mut self,
         binding: &BindingSpec,
@@ -4576,6 +4916,11 @@ impl<'a> Resolver<'a> {
         };
         let from = spec_type_ref(&source.type_ref);
         let to = spec_type_ref(&input.type_ref);
+        // Assignment reads the present type the condition proves (beyond10x/ess#194), as the domain
+        // does for a copied field; the IR keeps the source type.
+        let from = self
+            .proved_present(binding, &[field.to_owned()], &from, &to)
+            .unwrap_or(from);
         let conversion = if is_assignable(&from, &to) {
             None
         } else if let Some(crossing) = self
@@ -4754,6 +5099,19 @@ struct Members<'a> {
 /// Unbounded recursion on a bounded tree: this walks a [`ResolvedTypeRef`], whose depth is the
 /// parsed [`TypeRef`]'s depth, which [`TypeRef::parse`] refuses past
 /// [`MAX_TYPE_DEPTH`](ess_domain::types::MAX_TYPE_DEPTH).
+/// A literal filling `input`: the text as written, which `ess-domain` checked against the input's
+/// representation.
+fn literal_mapping(input: &ResolvedField, value: &str) -> ResolvedMapping {
+    ResolvedMapping {
+        target: input.name.clone(),
+        target_type: input.type_ref.clone(),
+        value: ResolvedMappingValue::Literal {
+            value: value.to_owned(),
+        },
+        conversion: None,
+    }
+}
+
 fn spec_type_ref(reference: &ResolvedTypeRef) -> TypeRef {
     match reference {
         ResolvedTypeRef::Primitive { name } => TypeRef::Primitive(*name),
@@ -4802,6 +5160,25 @@ fn condition_of(
                 input: input.clone(),
             },
             None => ResolvedCondition::Otherwise,
+        },
+        OutcomeCondition::RelatedSet {
+            selection,
+            test,
+            input,
+        } => ResolvedCondition::RelatedSet {
+            selection: ResolvedRowSelection {
+                entity: EntityHandle::new(selection.entity.clone()),
+                filter: selection.filter.clone(),
+            },
+            test: match test {
+                RowSetTest::Exists(exists) => ResolvedRowSetTest::Exists(*exists),
+                RowSetTest::Count { op, bound } => ResolvedRowSetTest::Count {
+                    op: *op,
+                    bound: *bound,
+                },
+                RowSetTest::Forall(predicate) => ResolvedRowSetTest::Forall(predicate.clone()),
+            },
+            input: input.clone(),
         },
         OutcomeCondition::When(predicate) => ResolvedCondition::When {
             predicate: predicate.clone(),
@@ -4885,6 +5262,7 @@ fn payload_constant_source(
         | PayloadSource::InputOrGenerated { .. }
         | PayloadSource::Struct { .. }
         | PayloadSource::RelatedField { .. }
+        | PayloadSource::RelatedSelection { .. }
         | PayloadSource::CallerAttribute { .. } => return None,
         PayloadSource::ChangedCount => ResolvedPayloadValue::ChangedCount,
         PayloadSource::Increment { by, .. } => ResolvedPayloadValue::Increment { by: by.clone() },
@@ -4912,6 +5290,51 @@ fn payload_read(read: &ResolvedField, response: bool) -> ResolvedPayloadValue {
             field: read.name.clone(),
             type_ref: read.type_ref.clone(),
         }
+    }
+}
+
+/// The resolved `{related: …}` value reading `read` of `entity` through `via` (as `read_via`
+/// resolved) and `hops`, and the type it is read at. A reference that may be absent leaves the
+/// value absent (ess/22, beyond10x/ess#285): it is read at `Optional<…>` of the field's type, unless
+/// the field is already `Optional<…>`.
+fn related_value(
+    via: &RelatedVia,
+    read_via: &ResolvedField,
+    hops: Vec<ResolvedRelatedHop>,
+    entity: &EntitySpec,
+    read: ResolvedField,
+) -> (ResolvedPayloadValue, ResolvedTypeRef) {
+    let (field, type_ref) = (read_via.name.clone(), read_via.type_ref.clone());
+    let via = match via {
+        RelatedVia::Subject(_) => ResolvedRelatedVia::Subject { field, type_ref },
+        RelatedVia::Input(_) => ResolvedRelatedVia::Input { field, type_ref },
+    };
+    let type_ref = if related_may_be_absent(&via, &hops) && !read.type_ref.is_optional() {
+        ResolvedTypeRef::Optional {
+            of: Box::new(read.type_ref),
+        }
+    } else {
+        read.type_ref
+    };
+    (
+        ResolvedPayloadValue::RelatedField {
+            via,
+            through: hops,
+            entity: EntityHandle::new(entity.name.clone()),
+            field: read.name,
+            type_ref: type_ref.clone(),
+        },
+        type_ref,
+    )
+}
+
+/// The field `name` of `entity`, its identity included: what a `{related: …}` reference or read
+/// names on the row it reaches.
+fn entity_field<'e>(entity: &'e EntitySpec, name: &str) -> Option<&'e ess_domain::types::Field> {
+    if entity.identity.name == name {
+        Some(&entity.identity)
+    } else {
+        entity.field(name)
     }
 }
 
@@ -5616,5 +6039,70 @@ mod tests {
         assert_eq!(diagnostic.code, codes::COMMAND_UNDECLARED_REFERENCE);
         let span = diagnostic.span.as_ref().expect("a span");
         assert_eq!(span.located.expect("located").line, 5);
+    }
+
+    /// A binding condition reads the event payload and never a delivery context, so it proves no
+    /// context field present (ess/22, beyond10x/ess#194): `mapped_context` refuses an Optional
+    /// context field into a required input even where the event carries a same-named member the
+    /// condition does prove. The domain refuses that mapping first, so this asks the resolver
+    /// itself, over a model the domain admits with the input made required here.
+    #[test]
+    fn a_condition_proves_no_delivery_context_field_present_in_the_resolver() {
+        let text = include_str!("../../../verify/ess-conformance/tests/fixtures/delivery-context.yaml")
+            .replacen("format: ess/18\n", "format: ess/22\n", 1)
+            .replacen(
+                "      - {name: from, type: String}\n",
+                "      - {name: from, type: String}\n      - {name: tag, type: Optional<String>}\n",
+                1,
+            )
+            .replacen(
+                "        - {name: account_id, type: demo.inbox.AccountId}\n",
+                "        - {name: account_id, type: demo.inbox.AccountId}\n        - {name: tag, type: Optional<String>}\n",
+                1,
+            )
+            .replacen(
+                "      - {name: peer, type: String}\n",
+                "      - {name: peer, type: String}\n      - {name: tag, type: Optional<String>}\n",
+                1,
+            )
+            .replacen(
+                "      context_authority: account-messages\n",
+                "      context_authority: account-messages\n      where: defined(event.tag)\n",
+                1,
+            )
+            .replacen("      peer: event.from\n", "      peer: event.from\n      tag: context.tag\n", 1);
+        let raw = ess_domain::spec::RawSpecFile::parse(&text).expect("the model parses");
+        let spec = Specification::assemble([(ess_domain::system::Source::new("inbox.yaml"), raw)])
+            .unwrap_or_else(|errors| panic!("an Optional input is admitted: {errors}"));
+        let sources = SourceMap::new();
+        let ir = compile(&spec, &sources).expect("the model compiles");
+        let compiled = ir
+            .bindings()
+            .values()
+            .find(|binding| binding.name.as_str() == "received")
+            .expect("the binding");
+        let command = ir.command(&compiled.command);
+        let mut input = command
+            .input
+            .iter()
+            .find(|field| field.name == "tag")
+            .expect("the input")
+            .clone();
+        input.type_ref = crate::ir::ResolvedTypeRef::Primitive {
+            name: ess_domain::types::Primitive::String,
+        };
+        let binding = spec
+            .bindings()
+            .values()
+            .find(|binding| binding.name.as_str() == "received")
+            .expect("the binding spec")
+            .clone();
+        let mut resolver = Resolver::new(&spec, Locator::new(&sources, &[] as &[&str]));
+        let mapped =
+            resolver.mapped_context(&binding, command, &input, "tag", compiled.context.as_ref());
+        assert!(
+            mapped.is_none(),
+            "an Optional context field fills a required input: {mapped:?}"
+        );
     }
 }

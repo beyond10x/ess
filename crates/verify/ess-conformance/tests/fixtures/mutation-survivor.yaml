@@ -215,6 +215,8 @@ commands:
     input:
       - name: invoice_id
         type: billing.invoice.InvoiceId
+      - name: issued_at
+        type: Timestamp
 
     outcomes:
       - name: issued
@@ -225,6 +227,8 @@ commands:
         payload:
           billing.invoice.InvoiceIssued:
             invoice_id: input.invoice_id
+        sets:
+          issued_at: input.issued_at
         summary: The invoice leaves Draft and is now Issued.
 
       - name: wrong-state

@@ -22,6 +22,7 @@ func decodeStep(raw []byte, exact bool) (Step, error) {
 		*plain
 		Shape       json.RawMessage `json:"shape"`
 		Expectation json.RawMessage `json:"expectation"`
+		Response    json.RawMessage `json:"response"`
 	}{plain: (*plain)(&value)}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	if exact {
@@ -29,6 +30,23 @@ func decodeStep(raw []byte, exact bool) (Step, error) {
 	}
 	if err := decoder.Decode(&decoded); err != nil {
 		return Step{}, err
+	}
+	if len(decoded.Response) > 0 {
+		if value.Step == "expect_direct_response" {
+			var raw any
+			decoder := json.NewDecoder(bytes.NewReader(decoded.Response))
+			decoder.UseNumber()
+			if err := decoder.Decode(&raw); err != nil {
+				return Step{}, err
+			}
+			response, err := admitDirectResponse(raw)
+			if err != nil {
+				return Step{}, err
+			}
+			value.DirectResponse = response
+		} else if err := json.Unmarshal(decoded.Response, &value.Response); err != nil {
+			return Step{}, err
+		}
 	}
 	if len(decoded.Expectation) != 0 && string(decoded.Expectation) != "null" {
 		expectation, err := decodeExpectation(decoded.Expectation, exact)
@@ -473,12 +491,16 @@ func (r replayObservation) exactType(source string, depth int, visited map[strin
 			}
 		}
 	case "union":
-		var variants map[string]string
-		if err := json.Unmarshal(body.Variants, &variants); err != nil {
+		variants, err := unionVariants(body.Variants)
+		if err != nil {
 			return err
 		}
 		for _, child := range variants {
-			if err := r.exactType(child, depth+1, visited); err != nil {
+			// A unit variant (ess/22) names no type.
+			if child == nil {
+				continue
+			}
+			if err := r.exactType(*child, depth+1, visited); err != nil {
 				return err
 			}
 		}

@@ -7,7 +7,7 @@
 //! the other entity's identity only: a lookup by any other field (rule 2 of
 //! `docs/design/cross-record-and-stored-field-guards.md`) stays out of scope.
 use ess_domain::{
-    command::{OutcomeCondition, RelatedTest},
+    command::{OutcomeCondition, RelatedTest, RelatedVia},
     spec::RawSpecFile,
     system::Source,
     Specification,
@@ -386,6 +386,10 @@ fn issue_211_two_branches_one_related_row_selects_are_conflicting() {
 pub const RELEASE: &str =
     include_str!("../../../verify/ess-conformance/tests/fixtures/related-guard-release.yaml");
 
+/// A moving command whose related-row identity is optional (beyond10x/ess#304, `ess/22`).
+pub const OPTIONAL_RELEASE: &str =
+    include_str!("../../../verify/ess-conformance/tests/fixtures/related-guard-optional.yaml");
+
 const NOT_ACCEPTED: &str =
     "        when_related: {via: input.candidate, predicate: state != Accepted}\n";
 
@@ -510,6 +514,350 @@ fn issue_229_the_related_state_enters_the_partition() {
             ValidationCode::NonExhaustiveBranches,
             "state = Accepted"
         ),
+        "{errors}"
+    );
+}
+
+// ---- a present related refusal beside wrong_state (beyond10x/ess#282, `ess/22`) -------------
+
+fn issue_282_overlap(wrong_state_first: bool) -> String {
+    let text = release_at("ess/22");
+    let text = replaced(
+        &text,
+        "  - {name: demo.release.CandidateNotAccepted, summary: The candidate is not accepted., fields: []}\n",
+        "  - {name: demo.release.CandidateNotAccepted, summary: The candidate is not accepted., fields: []}\n  - {name: demo.release.ReleaseStateConflict, summary: The release cannot move from its held state., fields: []}\n",
+    );
+    let wrong =
+        "      - {name: wrong-state, wrong_state: true, error: demo.release.ReleaseStateConflict}\n";
+    if wrong_state_first {
+        replaced(
+            &text,
+            "      - name: not-accepted\n",
+            &format!("{wrong}      - name: not-accepted\n"),
+        )
+    } else {
+        replaced(
+            &text,
+            "      - name: published\n",
+            &format!("{wrong}      - name: published\n"),
+        )
+    }
+}
+
+#[test]
+fn issue_282_two_selected_related_refusals_remain_ambiguous_under_ess_22() {
+    let source = replaced(
+        &issue_282_overlap(false),
+        "        error: demo.release.CandidateNotAccepted\n      - {name: wrong-state",
+        "        error: demo.release.CandidateNotAccepted\n      - name: also-not-accepted\n        when_related: {via: input.candidate, predicate: state == Proposed}\n        error: demo.release.CandidateNotAccepted\n      - {name: wrong-state",
+    );
+    let errors = assemble_as(&source, "release.yaml")
+        .err()
+        .unwrap_or_else(|| panic!("two related refusals must remain ambiguous under ess/22"));
+    assert!(
+        has(
+            &errors,
+            ValidationCode::ConflictingDeclaration,
+            "state = Proposed"
+        ),
+        "{errors}"
+    );
+}
+
+#[test]
+fn issue_282_only_a_present_related_refusal_gains_wrong_state_precedence() {
+    let source = replaced(
+        &issue_282_overlap(false),
+        "        when_related: {via: input.candidate, predicate: state != Accepted}\n        error: demo.release.CandidateNotAccepted\n",
+        "        when_related: {via: input.candidate, predicate: state != Accepted}\n        preserves: demo.release.Release\n        instance: release_id\n",
+    );
+    let errors = assemble_as(&source, "release.yaml")
+        .err()
+        .unwrap_or_else(|| panic!("a related acceptance beside wrong_state remains outside #282"));
+    assert!(
+        has(
+            &errors,
+            ValidationCode::ConflictingDeclaration,
+            "wrong_state"
+        ),
+        "{errors}"
+    );
+}
+
+#[test]
+fn issue_282_source_22_without_wrong_state_keeps_related_acceptance_ambiguity() {
+    let source = replaced(
+        &release_at("ess/22"),
+        "      - {name: candidate, type: demo.release.CandidateId}\n",
+        "      - {name: candidate, type: demo.release.CandidateId}\n      - {name: publish, type: Boolean}\n",
+    );
+    let source = replaced(
+        &source,
+        "      - name: published\n",
+        "      - name: held\n        when: publish == false\n        preserves: demo.release.Release\n        instance: release_id\n      - name: published\n        when: publish == true\n",
+    );
+    let errors = assemble_as(&source, "release.yaml")
+        .err()
+        .unwrap_or_else(|| panic!("source22 without wrong_state retains the related partition"));
+    assert!(
+        has(
+            &errors,
+            ValidationCode::ConflictingDeclaration,
+            "state = Proposed"
+        ),
+        "{errors}"
+    );
+}
+
+fn issue_282_objective_switch(wrong_state_first: bool) -> String {
+    issue_282_overlap(wrong_state_first)
+        .replace("Release", "Objective")
+        .replace("release", "objective")
+        .replace("Candidate", "Switch")
+        .replace("candidate", "switch")
+        .replace("Accepted", "Running")
+        .replace("accepted", "running")
+        .replace("Proposed", "Paused")
+        .replace("proposed", "paused")
+        .replace("Published", "Executing")
+        .replace("published", "executing")
+        .replace("PublishObjective", "StartObjective")
+        .replace("publish", "start")
+}
+
+fn issue_282_deployment_approval(wrong_state_first: bool) -> String {
+    issue_282_overlap(wrong_state_first)
+        .replace("Release", "Deployment")
+        .replace("release", "deployment")
+        .replace("Candidate", "Release")
+        .replace("candidate", "release")
+        .replace("Accepted", "Approved")
+        .replace("accepted", "approved")
+        .replace("Published", "Deployed")
+        .replace("published", "deployed")
+        .replace("PublishDeployment", "Deploy")
+        .replace("publish", "deploy")
+}
+
+#[test]
+fn issue_282_related_refusal_and_wrong_state_validate_under_ess_22() {
+    for (shape, build) in [
+        (
+            "objective/switch",
+            issue_282_objective_switch as fn(bool) -> String,
+        ),
+        ("deployment/approval", issue_282_deployment_approval),
+    ] {
+        for wrong_state_first in [true, false] {
+            let source = build(wrong_state_first);
+            assemble_as(&source, "issue-282.yaml").unwrap_or_else(|errors| {
+                panic!("{shape}, wrong_state_first={wrong_state_first}: {errors}\n{source}")
+            });
+        }
+    }
+}
+
+#[test]
+fn issue_282_overlap_below_ess_22_keeps_its_refusal() {
+    for format in ["ess/21", "ess/20"] {
+        let source = replaced(
+            &issue_282_overlap(true),
+            "format: ess/22\n",
+            &format!("format: {format}\n"),
+        );
+        let errors = assemble_as(&source, "overlap.yaml")
+            .err()
+            .unwrap_or_else(|| panic!("{format} must retain the overlap refusal"));
+        assert!(
+            has(
+                &errors,
+                ValidationCode::ConflictingDeclaration,
+                "`wrong_state` branch"
+            ),
+            "{format}: {errors}"
+        );
+    }
+}
+
+// ---- an Optional input naming the related row (beyond10x/ess#304, `ess/22`) -----------------
+
+fn optional_release_at(format: &str) -> String {
+    let at_format = replaced(
+        OPTIONAL_RELEASE,
+        "format: ess/22\n",
+        &format!("format: {format}\n"),
+    );
+    replaced(
+        &at_format,
+        "      - {name: wrong-state, wrong_state: true, error: demo.release.ReleaseStateConflict}\n",
+        "",
+    )
+}
+
+#[test]
+fn issue_304_an_optional_input_via_validates_under_ess_22() {
+    let original = accepted(OPTIONAL_RELEASE);
+    let command = &original.commands()[&"demo.release.PublishRelease".parse().unwrap()];
+    let OutcomeCondition::Related { via, .. } = &command.outcomes[0].condition else {
+        panic!(
+            "the missing-row branch is related: {:?}",
+            command.outcomes[0]
+        )
+    };
+    assert_eq!(via.to_string(), "input.candidate");
+
+    let related_first = "      - name: no-candidate\n        when_related: {via: input.candidate, exists: false}\n        error: demo.release.NoCandidate\n      - name: not-accepted\n        when_related: {via: input.candidate, predicate: state != Accepted}\n        error: demo.release.CandidateNotAccepted\n      - {name: wrong-state, wrong_state: true, error: demo.release.ReleaseStateConflict}\n";
+    let wrong_state_first = "      - {name: wrong-state, wrong_state: true, error: demo.release.ReleaseStateConflict}\n      - name: not-accepted\n        when_related: {via: input.candidate, predicate: state != Accepted}\n        error: demo.release.CandidateNotAccepted\n      - name: no-candidate\n        when_related: {via: input.candidate, exists: false}\n        error: demo.release.NoCandidate\n";
+    accepted(&replaced(
+        OPTIONAL_RELEASE,
+        related_first,
+        wrong_state_first,
+    ));
+}
+
+#[test]
+fn issue_304_an_optional_via_below_ess_22_is_refused_naming_ess_22() {
+    for format in ["ess/21", "ess/20", "ess/18"] {
+        let errors = refused(&optional_release_at(format));
+        assert!(
+            has(&errors, ValidationCode::UnsupportedFormatVersion, "ess/22"),
+            "{format}: {errors}"
+        );
+        assert!(
+            errors.as_slice().iter().any(|error| {
+                let rendered = error.to_string();
+                rendered.contains("when_related") && rendered.contains("candidate")
+            }),
+            "{format}: the refusal identifies the Optional via at its declaration: {errors}"
+        );
+    }
+}
+
+#[test]
+fn issue_304_an_absent_reference_reaching_no_branch_is_non_exhaustive() {
+    let no_accepting_branch = replaced(
+        OPTIONAL_RELEASE,
+        "      - name: published\n        moves: demo.release.Release.publish\n        instance: release_id\n        emits: [demo.release.ReleasePublished]\n        payload: {demo.release.ReleasePublished: {release_id: input.release_id}}\n",
+        "",
+    );
+    let errors = refused(&no_accepting_branch);
+    assert!(
+        has(&errors, ValidationCode::NonExhaustiveBranches, "candidate"),
+        "{errors}"
+    );
+    assert!(
+        errors
+            .as_slice()
+            .iter()
+            .any(|error| error.to_string().contains("absent")),
+        "the uncovered Optional-input case is named: {errors}"
+    );
+}
+
+// ---- a stored field of the addressed subject naming the related row (beyond10x/ess#304, `ess/22`)
+
+/// A task stores the task blocking it, and is completed only once that task is done
+/// (beyond10x/ess#304, the subject via).
+pub const STORED_REFERENCE: &str = include_str!(
+    "../../../verify/ess-conformance/tests/fixtures/related-guard-stored-reference.yaml"
+);
+
+const STORED_WRONG_STATE: &str =
+    "      - {name: wrong-state, wrong_state: true, error: demo.tasks.TaskStateConflict}\n";
+
+#[test]
+fn a_stored_reference_via_validates_under_ess_22() {
+    let spec = accepted(STORED_REFERENCE);
+    let command = &spec.commands()[&"demo.tasks.CompleteTask".parse().unwrap()];
+    for outcome in &command.outcomes[..2] {
+        let OutcomeCondition::Related { via, .. } = &outcome.condition else {
+            panic!("a related guard: {outcome:?}")
+        };
+        assert_eq!(
+            *via,
+            RelatedVia::Subject("blocked_by".to_owned()),
+            "a bare field is the addressed subject's stored field"
+        );
+        assert_eq!(via.to_string(), "blocked_by", "written back as authored");
+    }
+
+    // A required stored reference is admitted as well: it is never absent.
+    accepted(&STORED_REFERENCE.replace(
+        "{name: blocked_by, type: Optional<demo.tasks.TaskId>}",
+        "{name: blocked_by, type: demo.tasks.TaskId}",
+    ));
+
+    // Below ess/22 the subject via is refused at its declaration, naming the format that admits
+    // it, before any other refusal of the command.
+    for format in ["ess/21", "ess/20", "ess/18"] {
+        let older = replaced(
+            &replaced(
+                STORED_REFERENCE,
+                "format: ess/22\n",
+                &format!("format: {format}\n"),
+            ),
+            STORED_WRONG_STATE,
+            "",
+        );
+        let errors = refused(&older);
+        assert!(
+            has(&errors, ValidationCode::UnsupportedFormatVersion, "ess/22"),
+            "{format}: {errors}"
+        );
+        assert!(
+            errors.as_slice().iter().any(|error| {
+                let rendered = error.to_string();
+                rendered.contains("when_related")
+                    && rendered.contains("blocker-missing")
+                    && rendered.contains("blocked_by")
+            }),
+            "{format}: the refusal names the subject via at its declaration: {errors}"
+        );
+    }
+}
+
+#[test]
+fn a_stored_reference_via_is_refused_on_creates_and_without_a_subject() {
+    // On a command that creates its subject: there is no row before the branch to read.
+    let on_creates = replaced(
+        STORED_REFERENCE,
+        "    outcomes:\n      - name: added\n",
+        "    outcomes:\n      - name: no-blocker\n        when_related: {via: blocked_by, exists: false}\n        error: demo.tasks.BlockerMissing\n      - name: added\n",
+    );
+    let errors = refused(&on_creates);
+    assert!(
+        has(&errors, ValidationCode::ConflictingDeclaration, "creates"),
+        "{errors}"
+    );
+    assert!(
+        errors.as_slice().iter().any(|error| {
+            let rendered = error.to_string();
+            rendered.contains("AddTask") && rendered.contains("blocked_by")
+        }),
+        "the refusal names the command and the subject via: {errors}"
+    );
+
+    // On a command that addresses no existing subject through its input.
+    let without_subject = replaced(
+        &replaced(STORED_REFERENCE, STORED_WRONG_STATE, ""),
+        "      - name: completed\n        moves: demo.tasks.Task.complete\n        instance: task_id\n",
+        "      - name: completed\n",
+    );
+    let errors = refused(&without_subject);
+    assert!(
+        has(
+            &errors,
+            ValidationCode::UndeclaredReference,
+            "no existing subject"
+        ),
+        "{errors}"
+    );
+
+    // A bare name that is no stored field of the addressed subject.
+    let unknown_field = STORED_REFERENCE.replace("via: blocked_by", "via: waiting_on");
+    let errors = refused(&unknown_field);
+    assert!(
+        has(&errors, ValidationCode::UndeclaredReference, "waiting_on"),
         "{errors}"
     );
 }

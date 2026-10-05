@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-04T14:17:42Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-284",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test six UI packages (integration tree)",
+    "reference": "baseline: page actor refused at load as unknown field (document_loads), naming neither actor nor command; page_actor tests fail to compile; treatment: page_actor_grants names page, actor and command; UI packages 620 passed, 5 esbuild-only failures; renderers byte-identical with and without a page actor"
+  }
+}

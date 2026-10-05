@@ -21,6 +21,36 @@ fn model_wire_mapping_builds_with_native_roundtrips() {
     );
 }
 
+/// A union mixing a unit variant with a payload variant (ess/22, beyond10x/ess#418): the Go data
+/// library round-trips both and refuses the malformed shapes.
+#[test]
+fn model_unit_variant_round_trips_natively_and_refuses_the_malformed_shapes() {
+    let text =
+        include_str!("../../../specify/ess-compiler/tests/fixtures/union-unit-variants.yaml");
+    let specification = ess_domain::spec::Specification::assemble([(
+        ess_domain::system::Source::new("work.yaml"),
+        ess_domain::spec::RawSpecFile::parse(text).unwrap(),
+    )])
+    .unwrap();
+    let ir =
+        ess_compiler::resolve::compile(&specification, &ess_compiler::source::SourceMap::new())
+            .unwrap();
+    let selected = ess_gen::schema::ModelTypes::select(
+        &ir,
+        &BTreeSet::from(["demo.work.StatusReported".to_owned()]),
+    )
+    .unwrap();
+    let result = Plan::from_model(&selected)
+        .unwrap()
+        .go("contract_types", "example.invalid/modeltypes")
+        .unwrap();
+    compile(
+        &result.supporting["go.mod"],
+        &result.declarations,
+        include_str!("fixtures/unit_variant_wire_tests.go.txt"),
+    );
+}
+
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};

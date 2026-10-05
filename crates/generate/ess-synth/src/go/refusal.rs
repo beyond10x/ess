@@ -395,7 +395,7 @@ fn body_refusal(ir: &EssIr, body: &ResolvedBody) -> Option<Unrepresentable> {
         ResolvedBody::Struct { fields, .. } => fields_refusal(ir, fields.iter()),
         ResolvedBody::Enum { .. } => None,
         ResolvedBody::Union { variants, .. } => variants.iter().find_map(|(tag, variant)| {
-            type_refusal(ir, variant).map(|found| found.under(format!("variant `{tag}`")))
+            type_refusal(ir, variant.as_ref()?).map(|found| found.under(format!("variant `{tag}`")))
         }),
     }
 }
@@ -440,7 +440,7 @@ fn unrepresentable(
                 ResolvedBody::Enum { .. } => None,
                 ResolvedBody::Union { variants, .. } => {
                     variants.iter().find_map(|(tag, variant)| {
-                        unrepresentable(ir, variant, seen)
+                        unrepresentable(ir, variant.as_ref()?, seen)
                             .map(|found| found.under(format!("variant `{tag}`")))
                     })
                 }

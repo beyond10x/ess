@@ -8,9 +8,10 @@ use ess_primitives::error::ParseError;
 use ess_primitives::evidence::SpecDigest;
 
 use crate::change::{ChangeId, SemanticChange, SemanticRelation};
+use crate::compatibility::{ChangeCompatibility, Compatibility, UseIndex, CLASSIFIED_DELTA_FORMAT};
 
 /// Delta format major versions this build implements.
-pub const SUPPORTED_DELTA_FORMATS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+pub const SUPPORTED_DELTA_FORMATS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
 
 /// The version of a delta's document shape and admitted change vocabulary.
 ///
@@ -178,6 +179,9 @@ pub struct EssDelta {
     pub after: EssRevisionRef,
     /// Every change, in canonical order.
     changes: Vec<SemanticChange>,
+    /// One compatibility classification per change, in the same order, when the delta was
+    /// classified (`ess-diff/14` and later); `None` otherwise.
+    compatibility: Option<Vec<ChangeCompatibility>>,
 }
 
 impl EssDelta {
@@ -205,7 +209,33 @@ impl EssDelta {
             before,
             after,
             changes,
+            compatibility: None,
         }
+    }
+
+    /// This delta with every change classified (beyond10x/ess#290), written as `ess-diff/14` or
+    /// later.
+    ///
+    /// Crate-private: the classification of a type change reads both compiled models, so it is
+    /// made by [`classified`](crate::classified()) from the pair this delta compared, never from
+    /// a caller's say-so.
+    pub(crate) fn classify(mut self, index: &UseIndex<'_>) -> Self {
+        let compatibility = self
+            .changes
+            .iter()
+            .map(|change| {
+                let uses = match change {
+                    SemanticChange::Type { subject, .. } => index.uses(subject),
+                    _ => std::collections::BTreeSet::new(),
+                };
+                ChangeCompatibility::derive(change, &uses)
+            })
+            .collect();
+        self.compatibility = Some(compatibility);
+        let major = self.format.major().max(CLASSIFIED_DELTA_FORMAT);
+        self.format =
+            DeltaFormat::parse(&format!("ess-diff/{major}")).expect("declared delta version");
+        self
     }
 
     /// Assembles a delta from changes already known to be in canonical order.
@@ -220,18 +250,41 @@ impl EssDelta {
         before: EssRevisionRef,
         after: EssRevisionRef,
         changes: Vec<SemanticChange>,
+        compatibility: Option<Vec<ChangeCompatibility>>,
     ) -> Self {
         Self {
             format,
             before,
             after,
             changes,
+            compatibility,
         }
     }
 
     /// Every change, in canonical order.
     pub fn changes(&self) -> &[SemanticChange] {
         &self.changes
+    }
+
+    /// One classification per change, in the order of [`Self::changes`], when the delta is
+    /// classified.
+    pub fn compatibility(&self) -> Option<&[ChangeCompatibility]> {
+        self.compatibility.as_deref()
+    }
+
+    /// The classification of the change with this id, when the delta is classified and holds it.
+    pub fn compatibility_of(&self, id: &ChangeId) -> Option<&ChangeCompatibility> {
+        let index = self.changes.iter().position(|change| &change.id() == id)?;
+        self.compatibility.as_ref()?.get(index)
+    }
+
+    /// How many changes carry this verdict, or `None` when the delta is unclassified.
+    pub fn count_verdict(&self, verdict: Compatibility) -> Option<usize> {
+        self.compatibility.as_ref().map(|all| {
+            all.iter()
+                .filter(|compatibility| compatibility.verdict() == verdict)
+                .count()
+        })
     }
 
     /// How many changes there are.
@@ -284,6 +337,12 @@ impl EssDelta {
             return Err(DeltaWriteRefusal::UnrepresentableChange {
                 format,
                 change: change.id(),
+            });
+        }
+        if self.compatibility.is_some() != (format.major() >= CLASSIFIED_DELTA_FORMAT) {
+            return Err(DeltaWriteRefusal::Unclassifiable {
+                format,
+                classified: self.compatibility.is_some(),
             });
         }
         Ok(())
@@ -381,26 +440,34 @@ struct WrittenChange<'a> {
     id: ChangeId,
     /// How it relates the two revisions.
     relation: SemanticRelation,
+    /// Whom it breaks, on a classified delta (`ess-diff/14` and later) only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    compatibility: Option<&'a ChangeCompatibility>,
     /// Which construct moved, and what happened to it.
     change: &'a SemanticChange,
 }
 
-/// Writes each change with its derived id and relation.
-fn serialize_changes<S: serde::Serializer>(
-    changes: &[SemanticChange],
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    use serde::ser::SerializeSeq as _;
+/// Every change with its derived id and relation, and its classification when there is one.
+struct WrittenChanges<'a> {
+    changes: &'a [SemanticChange],
+    compatibility: Option<&'a [ChangeCompatibility]>,
+}
 
-    let mut sequence = serializer.serialize_seq(Some(changes.len()))?;
-    for change in changes {
-        sequence.serialize_element(&WrittenChange {
-            id: change.id(),
-            relation: change.relation(),
-            change,
-        })?;
+impl serde::Serialize for WrittenChanges<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeSeq as _;
+
+        let mut sequence = serializer.serialize_seq(Some(self.changes.len()))?;
+        for (index, change) in self.changes.iter().enumerate() {
+            sequence.serialize_element(&WrittenChange {
+                id: change.id(),
+                relation: change.relation(),
+                compatibility: self.compatibility.and_then(|all| all.get(index)),
+                change,
+            })?;
+        }
+        sequence.end()
     }
-    sequence.end()
 }
 
 /// A requested writer version cannot represent this document faithfully.
@@ -418,6 +485,14 @@ pub enum DeltaWriteRefusal {
         /// The first unrepresentable change in canonical order.
         change: ChangeId,
     },
+    /// A classified delta asked for below `ess-diff/14`, which cannot carry its classification,
+    /// or an unclassified one asked for at `ess-diff/14` or later, which requires one.
+    Unclassifiable {
+        /// The requested version.
+        format: DeltaFormat,
+        /// Whether the delta is classified.
+        classified: bool,
+    },
 }
 
 impl fmt::Display for DeltaWriteRefusal {
@@ -429,6 +504,22 @@ impl fmt::Display for DeltaWriteRefusal {
             Self::UnrepresentableChange { format, change } => {
                 write!(f, "`{change}` is not representable in `{format}`")
             }
+            Self::Unclassifiable {
+                format,
+                classified: true,
+            } => write!(
+                f,
+                "a classified delta is not representable in `{format}`; compatibility needs \
+                 `ess-diff/{CLASSIFIED_DELTA_FORMAT}` or later"
+            ),
+            Self::Unclassifiable {
+                format,
+                classified: false,
+            } => write!(
+                f,
+                "`{format}` requires every change to carry its compatibility, and this delta is \
+                 unclassified"
+            ),
         }
     }
 }
@@ -439,8 +530,6 @@ impl std::error::Error for DeltaWriteRefusal {}
 impl serde::Serialize for EssDelta {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct as _;
-        #[derive(serde::Serialize)]
-        struct Changes<'a>(#[serde(serialize_with = "serialize_changes")] &'a [SemanticChange]);
         self.validate_format(self.format)
             .map_err(serde::ser::Error::custom)?;
 
@@ -448,7 +537,13 @@ impl serde::Serialize for EssDelta {
         document.serialize_field("format", &self.format)?;
         document.serialize_field("before", &self.before)?;
         document.serialize_field("after", &self.after)?;
-        document.serialize_field("changes", &Changes(&self.changes))?;
+        document.serialize_field(
+            "changes",
+            &WrittenChanges {
+                changes: &self.changes,
+                compatibility: self.compatibility(),
+            },
+        )?;
         document.end()
     }
 }

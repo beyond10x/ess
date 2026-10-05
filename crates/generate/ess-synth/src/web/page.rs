@@ -148,9 +148,31 @@ function primitive(name) {
   if (name === "json") return jsonControl();
   if (name === "boolean") {"#;
 
-/// The fixed script, with the aggregate note only where the page presents an aggregate view and
-/// the `Json` control only where the model uses `Json` — so the page of every model without them
-/// keeps its bytes.
+/// Where the fixed script builds the control for the union variant chosen.
+const UNION_SHOW: &str = "    held = control(declaration.variants[choice.value].type);\n";
+
+/// The same, where a variant may carry nothing (ess/22, beyond10x/ess#418): a unit variant's
+/// catalogue type is `null`, its control reads as absent, and the value sent is the tag alone.
+const UNIT_UNION_SHOW: &str = "    const carried = declaration.variants[choice.value].type;
+    held = carried === null
+      ? { node: element(\"span\", { class: \"note\", text: \"carries nothing\" }), read: () => undefined }
+      : control(carried);
+";
+
+/// Whether any union the model declares has a unit variant.
+fn has_unit_variant(ir: &ess_compiler::EssIr) -> bool {
+    ir.types().values().any(|declared| {
+        matches!(
+            &declared.body,
+            ess_compiler::ir::ResolvedBody::Union { variants, .. }
+                if variants.values().any(Option::is_none)
+        )
+    })
+}
+
+/// The fixed script, with the aggregate note only where the page presents an aggregate view, the
+/// `Json` control only where the model uses `Json` and the unit-variant control only where a union
+/// has a unit variant — so the page of every model without them keeps its bytes.
 fn script(bridge: &Bridge<'_>) -> String {
     let aggregate = bridge
         .ir
@@ -164,6 +186,9 @@ fn script(bridge: &Bridge<'_>) -> String {
     };
     if crate::rust::json::used(bridge.ir) {
         script = script.replacen(PRIMITIVE, JSON_PRIMITIVE, 1);
+    }
+    if has_unit_variant(bridge.ir) {
+        script = script.replacen(UNION_SHOW, UNIT_UNION_SHOW, 1);
     }
     script
 }
@@ -707,5 +732,13 @@ mod tests {
         assert_eq!(SCRIPT.matches(PRIMITIVE).count(), 1);
         assert!(JSON_PRIMITIVE.ends_with(&PRIMITIVE["function primitive(name) {".len()..]));
         assert!(!SCRIPT.contains("jsonControl"));
+    }
+
+    #[test]
+    fn the_unit_variant_control_replaces_exactly_the_union_control_the_script_writes() {
+        // The same hazard: a replacement that found nothing would hand a unit variant to `control`
+        // with no type, and the page would throw building its form.
+        assert_eq!(SCRIPT.matches(UNION_SHOW).count(), 1);
+        assert!(!SCRIPT.contains("carries nothing"));
     }
 }

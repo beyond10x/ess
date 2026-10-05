@@ -1,4 +1,5 @@
 //! Accessor observations preserve wire presence and refuse unavailable native information.
+mod support_versions;
 use ess_compiler::{ir::EssIr, resolve::compile_locating, source::SourceMap};
 use ess_conformance::accessor::{Expected, Observation};
 use ess_domain::{spec::RawSpecFile, system::Source, Specification};
@@ -111,7 +112,7 @@ fn executable_accessors_select_new_suite_and_roundtrip_closed_admission() {
     let synthesis = ess_conformance::synthesize::synthesize(&ir);
     assert_eq!(
         synthesis.suite.provenance.suite_version.major(),
-        6,
+        34,
         "{:?}",
         synthesis.refusals
     );
@@ -119,7 +120,7 @@ fn executable_accessors_select_new_suite_and_roundtrip_closed_admission() {
     let admitted = ess_conformance::admission::AdmittedSuite::from_json(&json).unwrap();
     assert_eq!(admitted.suite(), &synthesis.suite);
     for version in [4, 5] {
-        let downgraded = json.replace("ess-conformance/6", &format!("ess-conformance/{version}"));
+        let downgraded = support_versions::legacy_json(&json, version);
         assert!(ess_conformance::admission::AdmittedSuite::from_json(&downgraded).is_err());
     }
     if let Some(directory) = std::env::var_os("ESS_ACCESSOR_GO_OUT") {
@@ -190,7 +191,10 @@ fn coverage_refusals_select_seven_and_exact_filtered_lineage_cannot_downgrade() 
     let ir = fixture(); // The equal nested-Optional mapping has an explicit capability refusal.
     let input = ess_conformance::coverage_build::build(&ir, &[], Scope::System, Origins::Generated)
         .unwrap();
-    assert_eq!(input.selected().suite().provenance.suite_version.major(), 7);
+    assert_eq!(
+        input.selected().suite().provenance.suite_version.major(),
+        35
+    );
     assert!(input
         .selected()
         .coverage()
@@ -204,7 +208,7 @@ fn coverage_refusals_select_seven_and_exact_filtered_lineage_cannot_downgrade() 
     let selected = input.select(&[]).unwrap();
     assert_eq!(
         selected.selected().suite().provenance.suite_version.major(),
-        7
+        35
     );
     assert_eq!(
         selected.parents()[0].original_json(),
@@ -225,7 +229,7 @@ fn coverage_refusals_select_seven_and_exact_filtered_lineage_cannot_downgrade() 
         report.conformance_status(),
         ess_conformance::CountStatus::Inconclusive
     );
-    assert!(encoded.contains("ess-conformance/7"));
+    assert!(encoded.contains("ess-conformance/35"));
     assert!(encoded.contains("ESS-SYNTH-015"));
     let detailed = ess_conformance::CountRun::from_run(&run, selected.selected()).unwrap();
     assert_eq!(
@@ -237,14 +241,9 @@ fn coverage_refusals_select_seven_and_exact_filtered_lineage_cannot_downgrade() 
         detailed
     );
     let mut document = selected.document();
-    document.suite_json = document
-        .suite_json
-        .replace("ess-conformance/7", "ess-conformance/5");
+    document.suite_json = support_versions::legacy_json(&document.suite_json, 5);
     assert!(AdmittedInput::from_json(&document.to_canonical_json().unwrap()).is_err());
-    let downgraded = input
-        .selected()
-        .original_json()
-        .replace("ess-conformance/7", "ess-conformance/5");
+    let downgraded = support_versions::legacy_json(input.selected().original_json(), 5);
     assert!(ess_conformance::AdmittedSuite::from_json(&downgraded).is_err());
     if let Some(base) = std::env::var_os("ESS_ACCESSOR_GO_OUT") {
         let base = std::path::PathBuf::from(base);

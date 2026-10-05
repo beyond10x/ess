@@ -343,7 +343,7 @@ pub fn reads_state(predicate: &ess_primitives::predicate::Predicate) -> bool {
 ///
 /// A `when_related` predicate reads the related row through the same list, from `ess/20`
 /// (beyond10x/ess#229).
-pub(super) fn readable_fields(entity: &EntitySpec, admits_state: bool) -> Vec<crate::types::Field> {
+pub(crate) fn readable_fields(entity: &EntitySpec, admits_state: bool) -> Vec<crate::types::Field> {
     let mut fields = entity.fields.clone();
     if admits_state
         && !entity
@@ -432,7 +432,8 @@ fn check(
         return errors;
     }
     let readable = readable_fields(entity, admits_state(types));
-    let mut environment = DomainEnvironment::new(types, &readable);
+    // The decision reads the row with the one instant it reads its input with (ess/22, A3).
+    let mut environment = DomainEnvironment::new(types, &readable).with_stored_current_time();
     if admits_input && !declares_input_field(entity) {
         environment = environment.with_input(&command.input);
     }

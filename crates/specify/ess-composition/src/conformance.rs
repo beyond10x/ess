@@ -282,7 +282,29 @@ impl Comparison<'_> {
                 let their_names: BTreeSet<_> = theirs.keys().cloned().collect();
                 if my_names == their_names {
                     for (name, shape) in mine {
-                        self.references(&join(path, name), shape, &theirs[name]);
+                        match (shape, &theirs[name]) {
+                            (Some(shape), Some(their_shape)) => {
+                                self.references(&join(path, name), shape, their_shape);
+                            }
+                            (None, None) => {}
+                            // A unit variant (ess/22) is the tag alone, so it agrees only with
+                            // another unit variant.
+                            (mine, theirs) => self.drifts.push(format!(
+                                "{}: {} where `{}` {}",
+                                at(&join(path, name)),
+                                if mine.is_some() {
+                                    "a payload"
+                                } else {
+                                    "no payload"
+                                },
+                                imported.name,
+                                if theirs.is_some() {
+                                    "carries one"
+                                } else {
+                                    "carries none"
+                                }
+                            )),
+                        }
                     }
                 } else {
                     self.drifts.push(format!(

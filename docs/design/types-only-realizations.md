@@ -138,8 +138,10 @@ existing bundle adopter's API moves.
   normalize the spelling (for example, fractional seconds `.500` become `.5`). It does not
   preserve the original JSON string byte for byte. A string that is not RFC 3339 is refused at
   decode. The Rust library then depends on
-  `time` (`=0.3.55`, features `formatting` and `parsing`), the version this workspace already
-  locks, so the offline gate can build it; `chrono` was not chosen for that reason.
+  `time` (`=0.3.45`, features `formatting` and `parsing`), matching the generated server's
+  Rust 1.85-compatible dependency. This lets model and server crates resolve together and
+  keeps the offline dependency closure in the workspace lockfile. The former `=0.3.55`
+  model pin conflicts with that server pin and requires Rust 1.88.
 - **Anonymous shapes are named by position.** The name is the owning declaration followed by each
   pointer step (`properties/<field>` → the field in UpperCamelCase, `items` → `Item`,
   `additionalProperties` → `Value`, `prefixItems/N` → `PositionN`, `anyOf|oneOf|allOf/N` →
@@ -151,6 +153,14 @@ existing bundle adopter's API moves.
 - **Short names are opt-in.** `--names short` on `ess generate types` and `ess generate client`
   declares each component under the last segment of its qualified name and refuses
   (`short_name_collision`) when two selected components share one. Bundle input refuses the flag.
+
+The `time` 0.3.45 dependency is affected by
+[RUSTSEC-2026-0009](https://rustsec.org/advisories/RUSTSEC-2026-0009.html) in its RFC 2822
+parser. ESS's generated timestamp decoder selects `Rfc3339` directly and exposes no format
+selection input; server clock generation only formats RFC 3339. The affected parser is therefore
+not reached through these ESS operations. The native model round-trip test also rejects an
+RFC 2822 date with nested comments. This disposition covers those operations only, not downstream
+code that calls other `time` APIs. No security-check allowlist or policy exception is introduced.
 
 ## Language Mappings
 

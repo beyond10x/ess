@@ -45,7 +45,7 @@ docs/index.md — 4140 byte(s)
 6 artifact(s), written to target/projections
 $ ess generate --path examples/billing --kind site --out target/site
 …
-index.html — 11793 byte(s)
+index.html — 12262 byte(s)
 …
 9 artifact(s), written to target/site
 ```
@@ -61,10 +61,14 @@ built into `ess`:
 $ ess verify conform synthesize --path examples/billing --out target/billing-suite.json
 note: the specification declares actors and serves no component, so enforcing a grant is the caller's, against the generated grant table, and no `<command>/grant/denied` scenario is owed
 32 scenario(s) (0 authored), 0 refusal(s), written to target/billing-suite.json
-$ ess verify conform run --suite target/billing-suite.json --target billing
+$ ess verify conform run --suite target/billing-suite.json --target billing --report-format 2
 …
   32 scenarios: 32 passed, 0 failed, 0 error, 0 unsupported
+…
 ```
+
+A freshly synthesized suite requires report format 2, so the run names it; without
+`--report-format 2` it stops before the first scenario and says so.
 
 The built-in targets (`billing`, `oracle-fixture`, `interpreted`) exist to demonstrate the runner;
 your own implementation is held to its suite through a runner, as in

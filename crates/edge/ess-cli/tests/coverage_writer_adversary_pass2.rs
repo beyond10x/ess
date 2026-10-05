@@ -149,6 +149,7 @@ fn emit_replay(evidence: &Path, generated: &Path) -> String {
     )
     .unwrap();
     assert!(output.status.success(), "{output:?}");
+    browser::legacy_replay_fixture(generated);
     let original = fs::read_to_string(generated.join("replay.json")).unwrap();
     fs::write(evidence.join("emitted-replay.json"), &original).unwrap();
     AdmittedReplay::from_json(&original).unwrap();

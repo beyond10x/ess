@@ -13,10 +13,11 @@ use ess_conformance::mutate::{
 };
 use ess_conformance::reference::Billing;
 use ess_conformance::runner::Runner;
-use ess_conformance::AdmittedSuite;
+use ess_conformance::{AdmittedSuite, CountReport};
 use ess_domain::spec::RawSpecFile;
 use ess_domain::system::Source;
-use ess_primitives::verification::VerificationStatus;
+
+mod support_versions;
 
 fn load(paths: Vec<std::path::PathBuf>) -> (Vec<Document>, SourceMap) {
     let mut texts = SourceMap::new();
@@ -196,17 +197,112 @@ fn shop_emission() -> BTreeMap<String, String> {
             AdmittedSuite::from_json(&emission.files[&format!("{dir}/{SUITE_FILE}")]).unwrap();
         let run = Runner::for_suite(admitted.suite())
             .run_admitted(&admitted, &Interpreted::for_model(ir.clone()));
-        let mut report = run.standalone();
-        report.failed_scenarios.clear();
-        report.scenarios_failed = 0;
-        report.status = VerificationStatus::Passed;
-        written.insert(format!("{dir}/{REPORT_FILE}"), report.to_canonical_json());
+        let text = CountReport::from_run(&run, &admitted)
+            .unwrap()
+            .to_canonical_json()
+            .unwrap();
+        let mut report: serde_json::Value = serde_json::from_str(&text).unwrap();
+        // Deliberate collector input, not evidence that this target passed.
+        let ids: Vec<_> = admitted.suite().scenarios.keys().collect();
+        report["outcomes"] = serde_json::json!({
+            "passed": ids, "failed": [], "error": [], "unsupported": [], "skipped": []
+        });
+        report["counts"] = serde_json::json!({
+            "total": ids.len(), "passed": ids.len(), "failed": 0,
+            "error": 0, "unsupported": 0, "skipped": 0
+        });
+        report["execution_status"] = "passed".into();
+        report["conformance_status"] = "inconclusive".into();
+        let text = serde_json::to_string(&report).unwrap();
+        CountReport::from_json(&text, &admitted).expect("coherent report/2 collector input");
+        written.insert(format!("{dir}/{REPORT_FILE}"), text);
     }
     written
 }
 
 fn key(scenario: &str, subject: &str) -> serde_json::Value {
     serde_json::json!({"code": "ESS-SYNTH-005", "scenario": scenario, "subject": subject})
+}
+
+/// Collection still reads a genuine legacy report beside reports of current suites.
+#[test]
+fn legacy_report_one_and_current_report_two_collect_the_same_mutation_results() {
+    let (files, texts) = example("billing");
+    let emission = mutate::emit(&files, &texts, &[MutantClass::ErrorSwap]).unwrap();
+    let mut written = emission.files.clone();
+    let dirs = std::iter::once(BASELINE_DIR.to_owned()).chain(
+        emission
+            .manifest
+            .mutants
+            .iter()
+            .filter_map(|entry| entry.dir.clone()),
+    );
+    for dir in dirs {
+        let admitted = AdmittedSuite::from_json(&written[&format!("{dir}/{SUITE_FILE}")]).unwrap();
+        let run = Runner::for_suite(admitted.suite()).run_admitted(&admitted, &Billing::new());
+        let report = CountReport::from_run(&run, &admitted)
+            .unwrap()
+            .to_canonical_json()
+            .unwrap();
+        written.insert(format!("{dir}/{REPORT_FILE}"), report);
+    }
+    let current = mutate::collect(|path| written.get(path).cloned()).unwrap();
+    assert!(
+        current.counts.killed > 0,
+        "the real reference kills an error swap"
+    );
+    let suite_path = format!("{BASELINE_DIR}/{SUITE_FILE}");
+    // The baseline suite as a pre-#273 synthesizer wrote it: suite/4 has no step comparing a captured
+    // identity, so a genuine /4 document carries none.
+    let current_text = support_versions::without_captured_identities(&written[&suite_path]);
+    let original = AdmittedSuite::from_json(&current_text).unwrap();
+    let legacy_text = support_versions::legacy_json(&current_text, 4);
+    let legacy = AdmittedSuite::from_json(&legacy_text).expect("genuine suite/4 vocabulary");
+    assert_eq!(legacy.suite().scenarios, original.suite().scenarios);
+    assert_eq!(
+        legacy.suite().provenance.spec_digest,
+        original.suite().provenance.spec_digest
+    );
+    assert_ne!(legacy.digest(), original.digest());
+    let run = Runner::for_suite(legacy.suite()).run_admitted(&legacy, &Billing::new());
+    assert!(run
+        .scenarios
+        .iter()
+        .all(|result| result.status == ess_conformance::Status::Passed));
+    let text = run.standalone().to_canonical_json();
+    let report: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(report["format"], "ess-conformance-report/1");
+    assert_eq!(report["suite_version"], "ess-conformance/4");
+    written.insert(suite_path, legacy_text);
+    written.insert(format!("{BASELINE_DIR}/{REPORT_FILE}"), text);
+    let mixed = mutate::collect(|path| written.get(path).cloned()).unwrap();
+    assert_eq!(mixed, current);
+}
+
+#[test]
+fn report_two_stand_ins_keep_exact_suite_and_status_validation() {
+    let written = shop_emission();
+    let suite =
+        AdmittedSuite::from_json(&written[&format!("{BASELINE_DIR}/{SUITE_FILE}")]).unwrap();
+    let path = format!("{BASELINE_DIR}/{REPORT_FILE}");
+    let original: serde_json::Value = serde_json::from_str(&written[&path]).unwrap();
+    for change in ["digest", "count", "status"] {
+        let mut altered = original.clone();
+        match change {
+            "digest" => altered["suite"]["digest"] = "0".repeat(64).into(),
+            "count" => altered["counts"]["passed"] = (suite.suite().len() + 1).into(),
+            "status" => altered["execution_status"] = "failed".into(),
+            _ => unreachable!(),
+        }
+        let text = serde_json::to_string(&altered).unwrap();
+        assert!(CountReport::from_json(&text, &suite).is_err(), "{change}");
+        let mut invalid = written.clone();
+        invalid.insert(path.clone(), text);
+        assert!(
+            mutate::collect(|path| invalid.get(path).cloned()).is_err(),
+            "{change}"
+        );
+    }
 }
 
 fn rewrite(
@@ -380,15 +476,32 @@ fn a_mutant_whose_only_excluded_scenario_is_unchanged_from_the_baseline_survives
         let admitted =
             AdmittedSuite::from_json(&emission.files[&format!("{dir}/{SUITE_FILE}")]).unwrap();
         let run = Runner::for_suite(admitted.suite()).run_admitted(&admitted, &Billing::new());
-        let mut report = run.standalone();
-        report.failed_scenarios.clear();
-        report.status = VerificationStatus::Passed;
-        if dir == BASELINE_DIR || holders.contains(dir) {
-            report.failed_scenarios = vec![format!("unsupported {unchanged}")];
-            report.status = VerificationStatus::Failed;
-        }
-        report.scenarios_failed = report.failed_scenarios.len();
-        written.insert(format!("{dir}/{REPORT_FILE}"), report.to_canonical_json());
+        let text = CountReport::from_run(&run, &admitted)
+            .unwrap()
+            .to_canonical_json()
+            .unwrap();
+        let mut report: serde_json::Value = serde_json::from_str(&text).unwrap();
+        // Deliberately exclude exactly the shared scenario in the baseline and its holders.
+        let excluded = dir == BASELINE_DIR || holders.contains(dir);
+        let (unsupported, passed): (Vec<_>, Vec<_>) = admitted
+            .suite()
+            .scenarios
+            .keys()
+            .partition(|id| excluded && id.to_string() == unchanged);
+        assert_eq!(unsupported.len(), usize::from(excluded));
+        report["outcomes"] = serde_json::json!({
+            "passed": passed, "failed": [], "error": [],
+            "unsupported": unsupported, "skipped": []
+        });
+        report["counts"] = serde_json::json!({
+            "total": admitted.suite().len(), "passed": passed.len(), "failed": 0,
+            "error": 0, "unsupported": unsupported.len(), "skipped": 0
+        });
+        report["execution_status"] = if excluded { "failed" } else { "passed" }.into();
+        report["conformance_status"] = if excluded { "failed" } else { "inconclusive" }.into();
+        let text = serde_json::to_string(&report).unwrap();
+        CountReport::from_json(&text, &admitted).expect("coherent report/2 collector fault");
+        written.insert(format!("{dir}/{REPORT_FILE}"), text);
     }
     let report = mutate::collect(|path| written.get(path).cloned()).unwrap();
     let dir_of: BTreeMap<&str, &str> = emission

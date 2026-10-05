@@ -19,7 +19,7 @@ $ cd ~/tasks
 $ ess verify conform synthesize --path . --target typescript --out typescript
 note: every declared actor may invoke `tasks.list.AddTask`, so no actor is refused it and no `tasks.list.AddTask/grant/denied` scenario is owed
 note: every declared actor may invoke `tasks.list.CompleteTask`, so no actor is refused it and no `tasks.list.CompleteTask/grant/denied` scenario is owed
-6 scenario(s) (0 authored), 0 refusal(s), 13 file(s) written to typescript
+6 scenario(s) (0 authored), 0 refusal(s), 15 file(s) written to typescript
 ```
 
 The package is `essconform`, one directory below `--out`:
@@ -29,9 +29,11 @@ README.md
 ir.json
 package.json
 src/coordinate.ts
+src/direct_response.ts
 src/explore.ts
 src/fixtures.ts
 src/index.ts
+src/one_time_response.ts
 src/predicate.ts
 src/reading.ts
 src/response.ts
@@ -46,6 +48,7 @@ tsconfig.json
 | `ir.json` | the compiled specification, which the explorer interprets as its reference model |
 | `src/runtime.ts` | the runner: `run`, `runWith`, the `Target` interface and its request and result types |
 | `src/predicate.ts`, `src/response.ts`, `src/reading.ts`, `src/coordinate.ts`, `src/fixtures.ts` | what the runner asserts with: guards, returned values, clock readings and supplied values |
+| `src/direct_response.ts`, `src/one_time_response.ts` | typed direct responses and one-time response disclosure checks |
 | `src/explore.ts` | `explore` and `exploreConcurrent`, seeded random command sequences |
 | `src/index.ts` | the entry point your test imports from |
 | `package.json`, `tsconfig.json` | the package: `npm test` compiles `src/` into `dist/` and runs `dist/*.test.js` |
@@ -87,6 +90,7 @@ export interface Target {
     control: ExternalOutcomeControl & { times: number },
   ): Answer<void>;
   redeliverEvent(request: RedeliveryRequest): Answer<void>;
+  deliverEvent?(request: EventDeliveryRequest): Answer<void>;
   observeInvocations(request: InvocationObservationRequest): Answer<Invocation[]>;
 }
 ```
@@ -102,9 +106,9 @@ export interface Target {
 | `redeliverEvent` | deliver an event a second time, for `delivery: at_least_once` |
 | `observeInvocations` | the commands one binding invoked and what it passed |
 
-A method the implementation cannot answer throws `ErrUnsupported`. The scenario is then reported
-as skipped, which is a different fact from failed, and a run with a skipped scenario is
-`inconclusive`, not `passed`. A specification that declares backend setup, periodic hosts or clock
+A method the implementation cannot answer throws `ErrUnsupported`. Report/2 records that scenario
+as `unsupported`, and the default strict run fails. Ordinary target errors are recorded separately
+as `error` and make execution inconclusive. A specification that declares backend setup, periodic hosts or clock
 readings asks for a further interface beside `Target` (`EntitySetupTarget`, `PeriodicTarget`,
 `ClockReadingTarget`); the generated `README.md` names the ones its suite needs.
 

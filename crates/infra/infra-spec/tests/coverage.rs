@@ -47,7 +47,7 @@ fn graph_and_drift_carry_scope_and_only_compare_matching_coverage() {
     let document = infra_analyze::GraphDocument::of(&graph, &from, None);
     assert_eq!(document.format, "infra-graph/2");
     assert_eq!(document.coverage, from.model().coverage);
-    assert!(!document.edges.is_empty());
+    assert_ne!(document.edges.len(), 0);
     assert!(graph.mermaid().contains("namespace app;"));
     assert!(graph.restricted_to("app").mermaid().contains("unobserved"));
 }
@@ -61,7 +61,7 @@ fn limited_observation_withholds_diagnosis_invariants_and_intent_verdicts() {
         diagnosis.findings[0].code,
         infra_analyze::DiagCode::ObservationLimited
     );
-    assert!(infra_analyze::candidates(&ir).is_empty());
+    assert_eq!(infra_analyze::candidates(&ir).len(), 0);
     let simulation = simulate(&support::example_spec(), &ir);
     assert_eq!(simulation.format, "infra-simulation/2");
     assert_eq!(simulation.summary.holds, 0);

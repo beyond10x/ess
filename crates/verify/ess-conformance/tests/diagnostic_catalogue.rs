@@ -40,15 +40,15 @@ fn numbered(entries: &[CatalogueEntry<u16>], last: u16) {
 }
 
 #[test]
-fn author_codes_run_from_001_to_040() {
+fn author_codes_run_from_001_to_041() {
     assert_eq!(Cause::FAMILY, "AUTHOR");
-    numbered(Cause::CATALOGUE, 40);
+    numbered(Cause::CATALOGUE, 41);
 }
 
 #[test]
-fn synth_codes_run_from_001_to_019() {
+fn synth_codes_run_from_001_to_021() {
     assert_eq!(RefusalCause::FAMILY, "SYNTH");
-    numbered(RefusalCause::CATALOGUE, 19);
+    numbered(RefusalCause::CATALOGUE, 21);
 }
 
 #[test]

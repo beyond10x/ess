@@ -22,6 +22,19 @@
 // the explorer no longer expects that command's ordinary branch where an external one is eligible.
 // A branch the target cannot arrange is reported `unarrangeable`, never as a disagreement.
 //
+// # Restarts
+//
+// Every sequence runs in one process lifetime unless the caller asks for restarts. With
+// `restartEvery` set, the explorer restarts the target after every that many commands of a
+// sequence through `restart` (`RestartTarget`), then reads every view again: the model does not
+// change across a restart, so a row the restarted implementation lost is a disagreement, and an
+// identity a later creation mints again — a counter kept only in the process — is the identity
+// disagreement every creation is already checked for (beyond10x/ess#297). A restart draws nothing,
+// so a seed names the same commands with restarts as without. A restart is a check only once a
+// command has followed it: one after a sequence's last command is followed by one more drawn
+// command, and only a restart a command followed counts in `restarts.performed`. A target that
+// cannot restart is reported in `restarts.unsupported` and never passes.
+//
 // # A port, not a second opinion
 //
 // `src/go/explore.go` is this file in Go, function for function. The random draws, their order and
@@ -37,10 +50,11 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { refusePrivateExploration } from './one_time_response.js';
 import { join } from 'node:path';
 
-import { facts, fromNode, TruthFalse, TruthTrue, TruthUnknown } from './predicate.js';
-import type { FactSource, Predicate } from './predicate.js';
+import { facts, fromNode, present, TruthFalse, TruthTrue, TruthUnknown } from './predicate.js';
+import type { FactSource, Operand, Predicate, Truth } from './predicate.js';
 import {
   asNumber,
   byteCompare,
@@ -60,6 +74,7 @@ import type {
   CommandResult,
   Node,
   Row,
+  ScenarioContext,
   Target,
   ViewRequest,
 } from './runtime.js';
@@ -72,6 +87,39 @@ export interface ExploreOptions {
   steps?: number;
   /** Run exactly this one sequence, overriding `seeds`: how a reported failure is replayed. */
   seed?: number;
+  /**
+   * Restart the target through `RestartTarget` after every this many commands of a sequence, and
+   * check every view again. Absent or zero means no restart, which is what an exploration did
+   * before restarts existed.
+   */
+  restartEvery?: number;
+}
+
+/**
+ * What a durable implementation offers so that exploration can restart it. Optional: a target
+ * without `restart`, or whose `restart` throws ErrUnsupported, has restarts reported unsupported,
+ * which never passes.
+ *
+ * `restart` stops every process of the implementation and starts it again over the same durable
+ * state, inside the scenario already begun, and settles once the restarted implementation answers
+ * requests. Clearing memory inside a process that keeps running is not a restart: a counter that
+ * lives in the process survives it, and that counter is what a restart is for.
+ */
+export interface RestartTarget {
+  restart(scenario: ScenarioContext): Answer<void>;
+}
+
+/** How far the restarts an exploration was asked for got. */
+export interface RestartReach {
+  /** The interval asked for, in commands. */
+  every: number;
+  /**
+   * Restarts that completed and a command then followed, across every sequence and none of the
+   * shrinking replays.
+   */
+  performed: number;
+  /** Why the target could not restart, when it could not. */
+  unsupported?: string;
 }
 
 /** One command or view left out of every sequence, and why. */
@@ -112,6 +160,11 @@ export interface ExploreResult {
    * keeps its bytes.
    */
   external?: ExternalReach[];
+  /**
+   * How far the restarts `restartEvery` asked for got. Absent when none were asked for, so a result
+   * without restarts keeps its bytes.
+   */
+  restarts?: RestartReach;
   failure?: ExploreFailure;
 }
 
@@ -217,7 +270,9 @@ export function loadModel(
   if (digest !== declared) {
     throw new Error(MODEL_MISMATCH);
   }
-  return strictJSON(body);
+  const model = strictJSON(body);
+  refusePrivateExploration(model);
+  return model;
 }
 
 /** An object's values in byte order of key. */
@@ -241,9 +296,12 @@ function nonEmpty(value: Node): boolean {
 type Kind =
   | { kind: 'integer' | 'boolean' | 'string' | 'uuid' | 'decimal' | 'timestamp' }
   | { kind: 'enum'; variants: string[] }
-  | { kind: 'struct'; fields: [string, Kind][] }
+  | { kind: 'struct'; fields: InputField[] }
   | { kind: 'identity'; entity: string; base: Kind }
+  | { kind: 'optional'; base: Kind }
   | { kind: 'unsupported'; why: string };
+
+type InputField = [string, Kind, string?];
 
 function identityOwner(ir: Node, type: string): string | null {
   for (const entity of sortedValues(ir.entities)) {
@@ -261,6 +319,10 @@ function identityOwner(ir: Node, type: string): string | null {
  */
 function resolveKind(ir: Node, ref: Node, depth = 0, concurrent = false): Kind {
   if (depth > 32) return { kind: 'unsupported', why: 'nested too deeply' };
+  if (ref?.kind === 'optional') {
+    const base = resolveKind(ir, ref.of, depth + 1, concurrent);
+    return base.kind === 'unsupported' ? base : { kind: 'optional', base };
+  }
   if (ref?.kind === 'primitive') {
     switch (ref.name) {
       case 'integer':
@@ -299,11 +361,11 @@ function resolveKind(ir: Node, ref: Node, depth = 0, concurrent = false): Kind {
     return { kind: 'enum', variants };
   }
   if (body?.kind === 'struct') {
-    const fields: [string, Kind][] = [];
+    const fields: InputField[] = [];
     for (const field of list(body.fields)) {
       const kind = resolveKind(ir, field.type_ref, depth + 1, concurrent);
       if (kind.kind === 'unsupported') return kind;
-      fields.push([field.name, kind]);
+      fields.push([field.name, kind, field.naming?.presence]);
     }
     return { kind: 'struct', fields };
   }
@@ -327,6 +389,10 @@ function paths(predicate: Predicate): string[] {
     if (node.kind === 'compare') {
       if (node.left.isFact) found.add(node.left.path);
       if (node.right.isFact) found.add(node.right.path);
+      // An offset reads its base (A2).
+      if (node.right.offset !== null) found.add(node.right.offset.base);
+      // A byte length reads the text it measures (decision 11).
+      for (const side of [node.left, node.right]) if (side.utf8Bytes) found.add(side.path);
     } else if (node.kind === 'forall' || node.kind === 'exists') {
       found.add(node.over);
     } else if (node.path !== '') {
@@ -356,8 +422,161 @@ function parsed(node: Node): Predicate | string {
   }
 }
 
+/**
+ * A command's draw pools. `fieldIntegers` and `fieldTexts` are the pools of the input paths whose
+ * own pool differs from the command's (beyond10x/ess#223): the command's, with the input's
+ * `example:` and, for a text, that example (or the path itself) cut or cycled to n-1, n and n+1
+ * characters for each `.count` literal compared with the input. Every other path draws from the
+ * command's pool.
+ */
+interface Pools {
+  integers: number[];
+  texts: string[];
+  fieldIntegers: Map<string, number[]>;
+  fieldTexts: Map<string, string[]>;
+  /**
+   * The variants of each enum input with an `example:`, and the example where it is not one of
+   * them. Validation admits only a declared variant, so for a validated specification this is the
+   * variants as declared and the draw does not move.
+   */
+  fieldEnums: Map<string, string[]>;
+}
+
+/** The longest text a `.count` boundary is drawn at, synthesis's `MAX_COUNT_WITNESS`. */
+const MAX_COUNT = 1024;
+
+/** The integer pool the input at `path` draws from. */
+function integersAt(pools: Pools, path: string): number[] {
+  return pools.fieldIntegers.get(path) ?? pools.integers;
+}
+
+/** The text pool the input at `path` draws from. */
+function textsAt(pools: Pools, path: string): string[] {
+  return pools.fieldTexts.get(path) ?? pools.texts;
+}
+
+/** The pool an enum input at `path` draws from, `variants` where it has no example. */
+function enumsAt(pools: Pools, path: string, variants: string[]): string[] {
+  return pools.fieldEnums.get(path) ?? variants;
+}
+
+/** `value` as a whole number binary64 holds exactly, if it is one. */
+function safeWhole(value: Node): number | null {
+  if (
+    typeof value === 'string' ||
+    typeof value === 'boolean' ||
+    value === null ||
+    value === undefined
+  )
+    return null;
+  const [number, ok] = asNumber(value);
+  return ok && Number.isSafeInteger(number) ? number : null;
+}
+
+/**
+ * For each input path a `.count` of which a guard compares with a whole literal, the lengths n-1, n
+ * and n+1 of every such literal n, from 0 to `MAX_COUNT`. A guard over the input reads its paths as
+ * they are; a predicate over the stored row reads the input under `input.`, and its other paths
+ * are the row's.
+ */
+function counts(inputGuards: Predicate[], storedGuards: Predicate[]): Map<string, Set<number>> {
+  const found = new Map<string, Set<number>>();
+  const visit =
+    (stored: boolean) =>
+    (node: Predicate): void => {
+      if (node.kind !== 'compare') return;
+      const pairs: [Operand, Operand][] = [
+        [node.left, node.right],
+        [node.right, node.left],
+      ];
+      for (const [fact, literal] of pairs) {
+        if (!fact.isFact || literal.isFact || !fact.path.endsWith('.count')) continue;
+        let path = fact.path.slice(0, -'.count'.length);
+        if (path === '') continue;
+        if (stored) {
+          if (!path.startsWith('input.')) continue;
+          path = path.slice('input.'.length);
+        }
+        const n = safeWhole(literal.literal);
+        if (n === null) continue;
+        for (const length of [n - 1, n, n + 1]) {
+          if (length < 0 || length > MAX_COUNT) continue;
+          if (!found.has(path)) found.set(path, new Set());
+          found.get(path)!.add(length);
+        }
+      }
+    };
+  for (const guard of inputGuards) walk(guard, visit(false));
+  for (const guard of storedGuards) walk(guard, visit(true));
+  return found;
+}
+
+/**
+ * `text` at exactly `length` characters: its first `length` when it has that many, otherwise its
+ * own characters cycled from its start, and `plain`'s when it is empty. Synthesis's rule for a text
+ * cut to a `.count` boundary (`witness.rs` `resize`).
+ */
+function resize(text: string, length: number, plain: string): string {
+  let source = [...text];
+  if (source.length === 0) source = [...plain];
+  if (source.length === 0) return '';
+  const out: string[] = [];
+  for (let index = 0; index < length; index += 1) out.push(source[index % source.length] as string);
+  return out.join('');
+}
+
+/** The kind a value is drawn as once an `Optional` and an identity are looked through. */
+function leafKind(kind: Kind): Kind {
+  while (kind.kind === 'optional' || kind.kind === 'identity') kind = kind.base;
+  return kind;
+}
+
+/**
+ * Gives each input path its own pool where it differs from the command's (beyond10x/ess#223).
+ * `examples` is the command's `examples`, by top-level input name.
+ */
+function fieldPools(
+  pools: Pools,
+  inputs: InputField[],
+  examples: Node,
+  lengths: Map<string, Set<number>>,
+): void {
+  const visit = (path: string, kind: Kind, example: Node, hasExample: boolean): void => {
+    const leaf = leafKind(kind);
+    if (leaf.kind === 'struct') {
+      for (const [name, field] of leaf.fields) visit(`${path}.${name}`, field, undefined, false);
+    } else if (leaf.kind === 'enum') {
+      if (!hasExample || typeof example !== 'string') return;
+      pools.fieldEnums.set(
+        path,
+        leaf.variants.includes(example) ? [...leaf.variants] : [...leaf.variants, example],
+      );
+    } else if (leaf.kind === 'integer') {
+      const n = hasExample ? safeWhole(example) : null;
+      if (n === null) return;
+      pools.fieldIntegers.set(
+        path,
+        [...new Set([n, ...pools.integers])].sort((left, right) => left - right),
+      );
+    } else if (leaf.kind === 'string') {
+      const text = hasExample && typeof example === 'string' ? example : null;
+      const counted = lengths.get(path) ?? new Set<number>();
+      if (text === null && counted.size === 0) return;
+      const set = new Set<string>(pools.texts);
+      if (text !== null) set.add(text);
+      const base = text ?? path;
+      for (const length of counted) set.add(resize(base, length, path));
+      pools.fieldTexts.set(path, sortStrings([...set]));
+    }
+  };
+  for (const [name, kind] of inputs) {
+    const hasExample = isObject(examples) && Object.prototype.hasOwnProperty.call(examples, name);
+    visit(name, kind, hasExample ? examples[name] : undefined, hasExample);
+  }
+}
+
 /** The literals a command's guards compare against, as draw pools. */
-function pools(guards: Predicate[]): { integers: number[]; texts: string[] } {
+function pools(guards: Predicate[]): Pools {
   const integers = new Set<number>(INTEGERS);
   const texts = new Set<string>(TEXTS);
   const literal = (value: Node): void => {
@@ -386,6 +605,9 @@ function pools(guards: Predicate[]): { integers: number[]; texts: string[] } {
   return {
     integers: [...integers].sort((left, right) => left - right),
     texts: sortStrings([...texts]),
+    fieldIntegers: new Map(),
+    fieldTexts: new Map(),
+    fieldEnums: new Map(),
   };
 }
 
@@ -395,10 +617,29 @@ interface Command {
   name: string;
   actor: string;
   node: Node;
-  inputs: [string, Kind][];
+  inputs: InputField[];
   guards: Map<string, Predicate>;
-  pools: { integers: number[]; texts: string[] };
+  /** Every branch selected by the stored row (beyond10x/ess#221), by outcome name. */
+  rows: Map<string, RowGuard>;
+  pools: Pools;
 }
+
+/**
+ * A condition read from the subject's stored row: its held state (`subject_state`, `state_change`),
+ * one stored enum field (`subject_field`) or a predicate over its stored fields
+ * (`subject_predicate`), each with an optional guard over the input.
+ */
+interface RowGuard {
+  kind: string;
+  states: Set<string>;
+  field: string;
+  equals: string;
+  stored: Predicate | null;
+  input: Predicate | null;
+}
+
+/** Every condition read from the subject's stored row. */
+const ROW_KINDS = ['subject_state', 'state_change', 'subject_field', 'subject_predicate'];
 
 interface Plan {
   ir: Node;
@@ -438,6 +679,99 @@ function effectRefusal(outcome: Node): string | null {
     : `outcome \`${outcome.name}\` ${subject.effect} its subject from \`${from}\``;
 }
 
+/** A stored-row condition as the explorer evaluates it, or why it cannot. */
+function rowOf(condition: Node): RowGuard | string {
+  const row: RowGuard = {
+    kind: String(condition.kind),
+    states: new Set(),
+    field: '',
+    equals: '',
+    stored: null,
+    input: null,
+  };
+  const parse = (node: Node): Predicate | null | string =>
+    node === null || node === undefined ? null : parsed(node);
+  let input: Predicate | null | string = null;
+  switch (row.kind) {
+    case 'subject_state':
+      // One state is written as the state itself, a list (ess/18) as a list.
+      if (typeof condition.state === 'string') row.states.add(condition.state);
+      for (const state of list(condition.state)) row.states.add(String(state));
+      input = parse(condition.predicate);
+      break;
+    case 'state_change':
+      for (const state of list(condition.states)) row.states.add(String(state));
+      input = parse(condition.predicate);
+      break;
+    case 'subject_field':
+      row.field = typeof condition.field === 'string' ? condition.field : '';
+      row.equals = typeof condition.equals === 'string' ? condition.equals : '';
+      input = parse(condition.predicate);
+      break;
+    case 'subject_predicate': {
+      const stored = parse(condition.predicate);
+      if (typeof stored === 'string') return stored;
+      row.stored = stored;
+      input = parse(condition.input);
+      break;
+    }
+  }
+  if (typeof input === 'string') return input;
+  row.input = input;
+  return row;
+}
+
+/** The `existing_instance` branch of a command node, or undefined. */
+function existingOutcome(node: Node): Node | undefined {
+  return list(node.outcomes).find(
+    (outcome: Node) => outcome.condition?.kind === 'existing_instance',
+  );
+}
+
+/**
+ * Where a creating branch puts its identity: the entity, and the input field that names the
+ * identity, or `''` where the implementation generates it.
+ */
+interface Address {
+  entity: string;
+  field: string;
+}
+
+/**
+ * The distinct addresses of a command node's creating branches, in declaration order. Where there
+ * is more than one, which one an `existing_instance` branch reads depends on the branch selected
+ * (`interpret::execute` `existence::existing`).
+ */
+function addresses(node: Node): Address[] {
+  const out: Address[] = [];
+  for (const outcome of list(node.outcomes)) {
+    const subject = outcome?.subject;
+    if (subject?.effect !== 'creates') continue;
+    const instance = subject.instance;
+    const identity = typeof instance?.field?.name === 'string' ? instance.field.name : '';
+    const address: Address = {
+      entity: typeof subject.entity === 'string' ? subject.entity : '',
+      field: '',
+    };
+    for (const payload of list(outcome.payload)) {
+      if (payload?.event !== instance?.event) continue;
+      for (const field of list(payload.fields)) {
+        const kind = field?.value?.kind;
+        if (
+          field?.target === identity &&
+          (kind === 'input_field' || kind === 'input_or_generated')
+        ) {
+          address.field = typeof field.value.field === 'string' ? field.value.field : '';
+        }
+      }
+    }
+    if (!out.some((known) => known.entity === address.entity && known.field === address.field)) {
+      out.push(address);
+    }
+  }
+  return out;
+}
+
 /**
  * What exploration may call and read. With `concurrent` it resolves inputs as `resolveKind` does then
  * and keeps a command no actor may invoke, which is then sent with no actor.
@@ -474,16 +808,26 @@ function plan(ir: Node, concurrent = false): Plan {
     let reason: string | null = null;
     for (const outcome of outcomes) {
       const kind = outcome.condition?.kind;
+      // A condition read from the stored row, and existence of the identity a creation names, are
+      // decided from the model's rows (beyond10x/ess#221). Concurrent exploration does not draw
+      // them: it keeps the commands it always drew.
+      const stored = !concurrent && (kind === 'existing_instance' || ROW_KINDS.includes(kind));
       if (
         reason === null &&
         kind !== 'when' &&
         kind !== 'otherwise' &&
         kind !== 'wrong_state' &&
+        kind !== 'unknown_instance' &&
         kind !== 'external' &&
-        kind !== 'external_when'
+        kind !== 'external_when' &&
+        !stored
       ) {
         reason = `outcome \`${outcome.name}\` has a \`${kind}\` condition`;
       }
+    }
+    const existing = existingOutcome(node);
+    if (reason === null && existing !== undefined && addresses(node).length > 1) {
+      reason = `outcome \`${existing.name}\` answers an existing instance of creations that name it differently`;
     }
     for (const outcome of outcomes) reason ??= effectRefusal(outcome);
     for (const outcome of outcomes) {
@@ -500,33 +844,63 @@ function plan(ir: Node, concurrent = false): Plan {
     // excluded for it alone stays sendable by a precondition. It is reported in the order it always
     // was: after the outcome reasons, before the guard and actor ones.
     let undrawable: string | null = null;
-    const inputs: [string, Kind][] = [];
+    const inputs: InputField[] = [];
     for (const field of list(node.input)) {
       const kind = resolveKind(ir, field.type_ref, 0, concurrent);
       if (undrawable === null && kind.kind === 'unsupported') {
         undrawable = `input \`${field.name}\` is ${kind.why}`;
       }
-      inputs.push([field.name, kind]);
+      inputs.push([field.name, kind, field.naming?.presence]);
     }
     const guards = new Map<string, Predicate>();
+    const rows = new Map<string, RowGuard>();
+    const ordered: Predicate[] = [];
+    // `inputGuards` read the input as it is; `storedGuards` read the row, and the input under
+    // `input.`.
+    const inputGuards: Predicate[] = [];
+    const storedGuards: Predicate[] = [];
     let later: string | null = null;
     for (const outcome of outcomes) {
       const kind = outcome.condition?.kind;
-      if (reason !== null || later !== null || (kind !== 'when' && kind !== 'external_when'))
+      if (reason !== null || later !== null) continue;
+      if (ROW_KINDS.includes(kind)) {
+        const row = rowOf(outcome.condition);
+        if (typeof row === 'string') {
+          later = `the guard of \`${outcome.name}\`: ${row}`;
+          continue;
+        }
+        rows.set(outcome.name, row);
+        if (row.stored !== null) {
+          ordered.push(row.stored);
+          storedGuards.push(row.stored);
+        }
+        if (row.input !== null) {
+          ordered.push(row.input);
+          inputGuards.push(row.input);
+        }
         continue;
+      }
+      if (kind !== 'when' && kind !== 'external_when') continue;
       const guard = parsed(outcome.condition.predicate);
       if (typeof guard === 'string') later = `the guard of \`${outcome.name}\`: ${guard}`;
-      else guards.set(outcome.name, guard);
+      else {
+        guards.set(outcome.name, guard);
+        ordered.push(guard);
+        inputGuards.push(guard);
+      }
     }
     const actor = actorFor.get(node.name) ?? (concurrent ? '' : undefined);
     if (later === null && actor === undefined) later = 'no actor may invoke it';
+    const drawn = pools(ordered);
+    fieldPools(drawn, inputs, node.examples, counts(inputGuards, storedGuards));
     const command: Command = {
       name: node.name,
       actor: actor ?? '',
       node,
       inputs,
       guards,
-      pools: pools([...guards.values()]),
+      rows,
+      pools: drawn,
     };
     if (reason === null && later === null && undrawable !== null) sendable.set(node.name, command);
     reason ??= undrawable ?? later;
@@ -645,10 +1019,23 @@ function literalValue(ir: Node, text: Node, type: Node): Node {
   }
 }
 
+function optionalType(ir: Node, type: Node): boolean {
+  for (let depth = 0; depth <= 32; depth += 1) {
+    if (type?.kind === 'optional') return true;
+    if (type?.kind !== 'declared') return false;
+    const body = ir.types?.[type.name]?.body;
+    if (body?.kind !== 'newtype') return false;
+    type = body.of;
+  }
+  return false;
+}
+
 function valueOf(ir: Node, value: Node, input: Row, type: Node): Node | typeof CLEARED {
   switch (value?.kind) {
-    case 'input_field':
-      return readPath(input, String(value.field));
+    case 'input_field': {
+      const found = readPath(input, String(value.field));
+      return found === undefined && optionalType(ir, value.type_ref) ? null : found;
+    }
     case 'literal':
       return literalValue(ir, value.value, type);
     case 'cleared':
@@ -658,22 +1045,89 @@ function valueOf(ir: Node, value: Node, input: Row, type: Node): Node | typeof C
   }
 }
 
+/** Typed absence is knowledge; only genuinely unknown model fields are skipped. */
+function valueAgrees(
+  ir: Node,
+  type: Node,
+  naming: Node,
+  expected: Node,
+  actual: Node,
+  present: boolean,
+  depth = 0,
+): boolean {
+  if (depth > 32) return false;
+  if (type?.kind === 'optional') {
+    if (expected === null || expected === undefined) {
+      if (naming?.presence === 'null_when_absent') return present && actual === null;
+      if (naming?.presence === 'omitted_when_absent') return !present;
+      return !present || actual === null;
+    }
+    return valueAgrees(ir, type.of, {}, expected, actual, present, depth + 1);
+  }
+  if (type?.kind === 'declared') {
+    const body = ir.types?.[type.name]?.body;
+    if (body?.kind === 'newtype')
+      return valueAgrees(ir, body.of, naming, expected, actual, present, depth + 1);
+    if (body?.kind === 'struct' && isObject(expected)) {
+      const fields = list(body.fields);
+      const names = new Set(fields.map((field: Node) => field.name));
+      return (
+        present &&
+        isObject(actual) &&
+        Object.keys(actual).every((name) => names.has(name)) &&
+        fields.every((field: Node) =>
+          valueAgrees(
+            ir,
+            field.type_ref,
+            field.naming,
+            expected[field.name],
+            actual[field.name],
+            Object.prototype.hasOwnProperty.call(actual, field.name),
+            depth + 1,
+          ),
+        )
+      );
+    }
+  }
+  return present && equal(expected, actual);
+}
+
 /**
  * What the model says one step may take. For `take`, `outcome` is the ordinary branch (undefined
  * when none holds) and `externals` the external branches eligible for this input and this subject,
  * in declaration order; at least one of the two is present. A `take` with no ordinary branch
  * carries in `names` the ambiguity it stands in for, reported if no external branch can be
- * arranged.
+ * arranged. `unknown` and `undetermined` carry in `reason` a guard the model cannot
+ * evaluate: over the input, which excludes the command, or over a stored field no command set,
+ * which is redrawn and reported.
  */
 type Decision =
   | { kind: 'take'; outcome: Node; externals: Node[]; names?: string[] }
   | { kind: 'ambiguous'; names: string[] }
-  | { kind: 'unknown'; reason: string };
+  | { kind: 'unknown'; reason: string }
+  | { kind: 'undetermined'; reason: string };
 
 function suppliedOutcome(command: Command): Node | undefined {
   return list(command.node.outcomes).find(
     (outcome: Node) => outcome.subject?.instance?.from === 'supplied',
   );
+}
+
+function unknownOutcome(command: Command): Node | undefined {
+  return list(command.node.outcomes).find(
+    (outcome: Node) => outcome.condition?.kind === 'unknown_instance',
+  );
+}
+
+function terminal(command: Command, outcome: Node, input: Row, model: Model): Node {
+  const subject = outcome?.subject;
+  if (
+    subject?.instance?.from === 'supplied' &&
+    model.find(subject.entity, readPath(input, subject.instance.field.name)) === undefined
+  ) {
+    return unknownOutcome(command) ?? outcome;
+  }
+  return outcome;
 }
 
 /**
@@ -720,7 +1174,26 @@ function decide(command: Command, input: Row, model: Model): Decision {
     }
     if (truth === TruthTrue) return { kind: 'take', outcome, externals: [] };
   }
-  if (supplied !== undefined && record === undefined) {
+  // Existence (beyond10x/ess#221): a creation naming an identity a record already carries is
+  // refused by `existing_instance`, before the held state and every accepting branch.
+  const existing = existingOutcome(command.node);
+  if (existing !== undefined) {
+    for (const address of addresses(command.node)) {
+      if (address.field === '') continue;
+      const id = readPath(input, address.field);
+      if (id !== undefined && id !== null && model.find(address.entity, id) !== undefined) {
+        return { kind: 'take', outcome: existing, externals: [] };
+      }
+    }
+  }
+  if (supplied !== undefined && record === undefined && unknownOutcome(command) === undefined) {
+    return { kind: 'ambiguous', names: ['no record for the supplied instance'] };
+  }
+  // A branch selected by the stored row reads a row that must exist: an identity no record carries
+  // is the unknown-instance answer before any of them is read.
+  if (command.rows.size > 0 && record === undefined) {
+    const missingRecord = unknownOutcome(command);
+    if (missingRecord !== undefined) return { kind: 'take', outcome: missingRecord, externals: [] };
     return { kind: 'ambiguous', names: ['no record for the supplied instance'] };
   }
   // What a step may take where no ordinary branch can be: the eligible external branches alone,
@@ -752,9 +1225,38 @@ function decide(command: Command, input: Row, model: Model): Decision {
     });
   };
 
+  // The held row (beyond10x/ess#221): the branches selected by the stored row — its held state, a
+  // stored field, a predicate over its fields — whose input guard holds too, before every accepting
+  // guard (the precedence order, step 4), the first declared that holds answering. An accepting
+  // guard declared before it that holds as well is the one branch the interpreter
+  // (`interpret::execute::select`, declaration order) and the precedence order answer differently,
+  // so that draw alone the specification does not decide, and it is redrawn.
+  const { held, decision: undecided } = heldBranch(command, outcomes, record as Rec, source, input);
+  if (undecided !== undefined) return undecided;
   const holding: Node[] = [];
+  if (held !== undefined) {
+    const earlier: string[] = [];
+    for (const outcome of outcomes) {
+      if (String(outcome.name) === String(held.name)) break;
+      if (outcome.condition?.kind !== 'when' || isInputRefusal(outcome)) continue;
+      const guard = command.guards.get(outcome.name) as Predicate;
+      const truth = guard.evaluate(source);
+      if (truth === TruthUnknown) {
+        return {
+          kind: 'unknown',
+          reason: `the guard of \`${outcome.name}\` (${guard}) is unknown over a generated input`,
+        };
+      }
+      if (truth === TruthTrue) earlier.push(String(outcome.name));
+    }
+    if (earlier.length > 0) {
+      return orExternal({ kind: 'ambiguous', names: [...earlier, String(held.name)] });
+    }
+    holding.push(held);
+  }
   for (const outcome of outcomes) {
-    if (outcome.condition?.kind !== 'when' || isInputRefusal(outcome)) continue;
+    if (held !== undefined || outcome.condition?.kind !== 'when' || isInputRefusal(outcome))
+      continue;
     const guard = command.guards.get(outcome.name) as Predicate;
     const truth = guard.evaluate(source);
     if (truth === TruthUnknown) {
@@ -796,7 +1298,128 @@ function decide(command: Command, input: Row, model: Model): Decision {
     if (wrong !== undefined) names.push(String(wrong.name));
     return orExternal({ kind: 'ambiguous', names });
   }
-  return { kind: 'take', outcome: selected, externals };
+  return { kind: 'take', outcome: terminal(command, selected, input, model), externals };
+}
+
+/**
+ * Whether a branch selected by the stored row holds for `record` and this input, or the decision a
+ * guard the model cannot evaluate stands for: `unknown` where a path of the input is missing, which
+ * is so for every draw of that input, and `undetermined` where a stored field is unset or null,
+ * which another record need not share.
+ */
+function rowHolds(
+  command: Command,
+  name: string,
+  row: RowGuard,
+  record: Rec,
+  source: FactSource,
+  input: Row,
+): boolean | Decision {
+  let stored: Truth = TruthTrue;
+  let unread: Unread = { path: '', input: false, null: false };
+  switch (row.kind) {
+    case 'subject_state':
+    case 'state_change':
+      stored = row.states.has(String(record.fields.state)) ? TruthTrue : TruthFalse;
+      break;
+    case 'subject_field': {
+      const has = Object.prototype.hasOwnProperty.call(record.fields, row.field);
+      const value = record.fields[row.field];
+      if (!has) {
+        stored = TruthUnknown;
+        unread = { path: row.field, input: false, null: false };
+      } else if (value === null || value === undefined) {
+        stored = TruthUnknown;
+        unread = { path: row.field, input: false, null: true };
+      } else {
+        stored = equal(value, row.equals) ? TruthTrue : TruthFalse;
+      }
+      break;
+    }
+    case 'subject_predicate': {
+      const combined: Row = { ...record.fields, input };
+      stored = (row.stored as Predicate).evaluate(facts(combined));
+      if (stored === TruthUnknown) unread = unreadIn(row.stored as Predicate, combined);
+      break;
+    }
+  }
+  if (stored === TruthFalse) return false;
+  let guard: Truth = TruthTrue;
+  if (row.input !== null) {
+    guard = row.input.evaluate(source);
+    if (guard === TruthUnknown) {
+      return {
+        kind: 'unknown',
+        reason: `the guard of \`${name}\` (${row.input}) is unknown over a generated input`,
+      };
+    }
+  }
+  if (unread.input) {
+    return {
+      kind: 'unknown',
+      reason: `the guard of \`${name}\` (${row.stored}) is unknown over a generated input`,
+    };
+  }
+  if (guard === TruthFalse) return false;
+  if (stored === TruthUnknown) {
+    const why = unread.null ? 'which the row holds as null' : 'which no command set';
+    return {
+      kind: 'undetermined',
+      reason: `${command.name} guard of \`${name}\` reads ${unread.path}, ${why}`,
+    };
+  }
+  return true;
+}
+
+/**
+ * The path that left a stored-row predicate Unknown: a path of the input under `input.` the draw
+ * does not hold, or else a stored field the row does not hold or holds as null.
+ */
+interface Unread {
+  path: string;
+  input: boolean;
+  null: boolean;
+}
+
+/**
+ * What left `predicate` Unknown over `row`: the input is blamed only where one of its paths is
+ * actually missing (beyond10x/ess#221 adversary pass 1).
+ */
+function unreadIn(predicate: Predicate, row: Row): Unread {
+  const source = facts(row);
+  const read = paths(predicate);
+  for (const path of read) {
+    if (path.startsWith('input.') && !present(source, path)) {
+      return { path, input: true, null: false };
+    }
+  }
+  for (const path of read) {
+    if (path.startsWith('input.') || present(source, path)) continue;
+    return { path, input: false, null: source.has(path) };
+  }
+  return { path: read[0] ?? '', input: false, null: false };
+}
+
+/**
+ * The first branch selected by the stored row that holds, in declaration order, or the decision a
+ * branch the model cannot evaluate before it stands for. A branch after the one that holds is not
+ * read, as `interpret::execute::select` stops at the first that holds.
+ */
+function heldBranch(
+  command: Command,
+  outcomes: Node[],
+  record: Rec,
+  source: FactSource,
+  input: Row,
+): { held?: Node; decision?: Decision } {
+  for (const outcome of outcomes) {
+    const row = command.rows.get(outcome.name);
+    if (row === undefined) continue;
+    const holds = rowHolds(command, String(outcome.name), row, record, source, input);
+    if (typeof holds !== 'boolean') return { decision: holds };
+    if (holds) return { held: outcome };
+  }
+  return {};
 }
 
 /**
@@ -837,16 +1460,31 @@ function eligibleExternals(
  * may still hold and an external branch is eligible, then every eligible external branch the
  * target has not refused to arrange.
  */
-function choices(s: Session, command: Command, decision: Decision & { kind: 'take' }): Node[] {
-  const out: Node[] = [];
+interface Choice {
+  arrangement: string;
+  expected: Node;
+}
+
+function choices(
+  s: Session,
+  command: Command,
+  decision: Decision & { kind: 'take' },
+  input: Row,
+): Choice[] {
+  const out: Choice[] = [];
   if (
     decision.outcome !== undefined &&
     (!s.forced.has(command.name) || decision.externals.length === 0)
   ) {
-    out.push(decision.outcome);
+    out.push({ arrangement: '', expected: decision.outcome });
   }
   for (const outcome of decision.externals) {
-    if (!s.p.unarrangeable.has(`${command.name}/${outcome.name}`)) out.push(outcome);
+    if (!s.p.unarrangeable.has(`${command.name}/${outcome.name}`)) {
+      out.push({
+        arrangement: String(outcome.name),
+        expected: terminal(command, outcome, input, s.model),
+      });
+    }
   }
   return out;
 }
@@ -883,17 +1521,14 @@ interface Step {
   refs: [string, string, number][];
   /** The external branch arranged for this step, or empty for the ordinary branch. */
   external: string;
+  /** Identities deliberately absent in the serial draw/replay model. */
+  fresh?: [string, string][];
+  /** A restart of the target rather than a command. */
+  restart?: true;
 }
 
 const NO_RECORD = Symbol('no record');
-
-/** An RFC 3339 instant `seconds` into 2020-01-01, UTC. Go's `exploreInstant` writes the same text. */
-function drawnInstant(seconds: number): string {
-  const two = (n: number): string => String(n).padStart(2, '0');
-  const hours = two(Math.floor(seconds / 3600));
-  const minutes = two(Math.floor(seconds / 60) % 60);
-  return `2020-01-01T${hours}:${minutes}:${two(seconds % 60)}Z`;
-}
+const ABSENT = Symbol('absent');
 
 function drawValue(
   kind: Kind,
@@ -905,6 +1540,10 @@ function drawValue(
   refs: [string, string, number][],
 ): Node | typeof NO_RECORD {
   switch (kind.kind) {
+    case 'optional':
+      return rng.chance(0.5)
+        ? ABSENT
+        : drawValue(kind.base, rng, command, model, path, mustExist, refs);
     case 'identity': {
       const known = model.of(kind.entity);
       if (mustExist) {
@@ -922,23 +1561,28 @@ function drawValue(
     }
     case 'integer':
     case 'decimal':
-      return rng.chance(0.7) ? rng.pick(command.pools.integers) : rng.int(-10, 10000);
+      return rng.chance(0.7) ? rng.pick(integersAt(command.pools, path)) : rng.int(-10, 10000);
     case 'boolean':
       return rng.chance(0.5);
     case 'string':
-      return rng.pick(command.pools.texts);
+      return rng.pick(textsAt(command.pools, path));
+    case 'timestamp': {
+      // One seeded draw selects a UTC second on a fixed date, never a target clock.
+      const second = rng.int(0, 86399);
+      const part = (value: number): string => String(value).padStart(2, '0');
+      return `2020-01-01T${part(Math.floor(second / 3600))}:${part(Math.floor(second / 60) % 60)}:${part(second % 60)}Z`;
+    }
     case 'uuid':
       return `00000000-0000-4000-8000-${String(rng.int(0, 999999)).padStart(12, '0')}`;
-    case 'timestamp':
-      return drawnInstant(rng.int(0, 86399));
     case 'enum':
-      return rng.pick(kind.variants);
+      return rng.pick(enumsAt(command.pools, path, kind.variants));
     case 'struct': {
       const value: Row = {};
-      for (const [name, field] of kind.fields) {
+      for (const [name, field, presence] of kind.fields) {
         const drawn = drawValue(field, rng, command, model, `${path}.${name}`, false, refs);
         if (drawn === NO_RECORD) return NO_RECORD;
-        value[name] = drawn;
+        if (drawn !== ABSENT) value[name] = drawn;
+        else if (presence !== 'omitted_when_absent') value[name] = null;
       }
       return value;
     }
@@ -950,18 +1594,69 @@ function drawValue(
 function draw(command: Command, rng: Mulberry32, model: Model): Step | null {
   const supplied = suppliedOutcome(command);
   const instance = supplied?.subject?.instance?.field?.name;
+  // `created` is the input naming the identity an `existing_instance` branch is decided by, and
+  // the entity it is looked up in (beyond10x/ess#221): drawn, as a supplied instance with an
+  // unknown-instance branch is, to name a record or not with even chance.
+  let created = '';
+  let createdEntity = '';
+  if (existingOutcome(command.node) !== undefined) {
+    for (const address of addresses(command.node)) {
+      if (address.field !== '') {
+        created = address.field;
+        createdEntity = address.entity;
+      }
+    }
+  }
   const input: Row = {};
   const refs: [string, string, number][] = [];
-  for (const [name, declared] of command.inputs) {
+  const fresh: [string, string][] = [];
+  for (const [name, declared, presence] of command.inputs) {
     let kind = declared;
     if (name === instance && kind.kind !== 'identity') {
       kind = { kind: 'identity', entity: supplied.subject.entity, base: kind };
     }
-    const value = drawValue(kind, rng, command, model, name, name === instance, refs);
+    const probesUnknown = name === instance && unknownOutcome(command) !== undefined;
+    let probed: string = probesUnknown ? supplied.subject.entity : '';
+    if (name === created && !probesUnknown) {
+      kind = {
+        kind: 'identity',
+        entity: createdEntity,
+        base: kind.kind === 'identity' ? kind.base : kind,
+      };
+      probed = createdEntity;
+    }
+    let value: Node;
+    if (probesUnknown || name === created) {
+      const known = model.of(probed);
+      if (known.length > 0 && rng.chance(0.5)) {
+        value = drawValue(kind, rng, command, model, name, true, refs);
+      } else {
+        value = NO_RECORD;
+        for (let attempt = 0; attempt < ATTEMPTS_PER_STEP; attempt += 1) {
+          const drawn = drawValue(
+            kind.kind === 'identity' ? kind.base : kind,
+            rng,
+            command,
+            model,
+            name,
+            false,
+            [],
+          );
+          if (drawn !== NO_RECORD && drawn !== ABSENT && model.find(probed, drawn) === undefined) {
+            value = drawn;
+            fresh.push([name, probed]);
+            break;
+          }
+        }
+      }
+    } else {
+      value = drawValue(kind, rng, command, model, name, name === instance, refs);
+    }
     if (value === NO_RECORD) return null;
-    input[name] = value;
+    if (value !== ABSENT) input[name] = value;
+    else if (presence !== 'omitted_when_absent') input[name] = null;
   }
-  return { command: command.name, input, refs, external: '' };
+  return { command: command.name, input, refs, external: '', fresh };
 }
 
 // ---- one step against the target ----------------------------------------------------------------
@@ -981,6 +1676,9 @@ interface Session {
   undetermined: Set<string>;
   /** Every command the target was asked to arrange a branch for in this sequence. */
   forced: Set<string>;
+  /** The consistency token the last command returned. */
+  token: string;
+  scenario: string;
 }
 
 function render(value: Node): string {
@@ -1006,6 +1704,7 @@ async function perform(
     if (isUnsupported(error)) throw new Unsupported(errorText(error));
     return { kind: 'target', detail: `the target threw ${errorText(error)}` };
   }
+  s.token = result.consistency ?? '';
   const got = result.outcome ?? '';
   if (got !== outcome.name) {
     return {
@@ -1036,7 +1735,19 @@ async function perform(
       const expected = valueOf(ir, field.value, step.input, field.target_type);
       if (expected === undefined || expected === CLEARED) continue;
       const actual = (event.payload ?? {})[field.target];
-      if (!equal(expected, actual)) {
+      const target = list(ir.events[event.event]?.fields).find(
+        (declared: Node) => declared.name === field.target,
+      );
+      if (
+        !valueAgrees(
+          ir,
+          field.target_type,
+          target?.naming,
+          expected,
+          actual,
+          Object.prototype.hasOwnProperty.call(event.payload ?? {}, field.target),
+        )
+      ) {
         return {
           kind: 'payload',
           detail: `event ${index} \`${event.event}\`.${field.target} is ${render(actual)}, the specification says ${render(expected)}`,
@@ -1079,7 +1790,8 @@ async function perform(
     if (record !== undefined) {
       for (const set of list(outcome.sets)) {
         const value = valueOf(ir, set.value, step.input, set.target_type);
-        if (value === undefined || value === CLEARED) delete record.fields[set.target];
+        if (value === undefined) delete record.fields[set.target];
+        else if (value === CLEARED) record.fields[set.target] = null;
         else record.fields[set.target] = value;
       }
     }
@@ -1090,7 +1802,13 @@ async function perform(
   return checkInvariants(s);
 }
 
-function agree(view: Node, identity: string, rows: Row[], expected: Rec[]): Disagreement | null {
+function agree(
+  ir: Node,
+  view: Node,
+  identity: string,
+  rows: Row[],
+  expected: Rec[],
+): Disagreement | null {
   if (rows.length !== expected.length) {
     return {
       kind: 'view-rows',
@@ -1111,7 +1829,17 @@ function agree(view: Node, identity: string, rows: Row[], expected: Rec[]): Disa
       seen.add(record);
       for (const field of fields) {
         if (!Object.prototype.hasOwnProperty.call(record.fields, field)) continue;
-        if (!equal(record.fields[field], row[field])) {
+        const declared = list(view.fields).find((entry: Node) => entry.name === field);
+        if (
+          !valueAgrees(
+            ir,
+            declared.type_ref,
+            declared.naming,
+            record.fields[field],
+            row[field],
+            Object.prototype.hasOwnProperty.call(row, field),
+          )
+        ) {
           return {
             kind: 'view-field',
             detail: `\`${view.name}\`.${field} of ${render(row[identity])} is ${render(row[field])}, the specification says ${render(record.fields[field])}`,
@@ -1177,7 +1905,7 @@ async function checkViews(s: Session, token: string): Promise<Disagreement | nul
           detail: `reading \`${view.name}\`, the target threw ${errorText(error)}`,
         };
       }
-      problem = agree(view, String(entity.identity.name), rows, expected);
+      problem = agree(ir, view, String(entity.identity.name), rows, expected);
       if (problem === null) break;
     }
     if (problem !== null) return problem;
@@ -1211,7 +1939,28 @@ function checkInvariants(s: Session): Disagreement | null {
 
 // ---- sequences ----------------------------------------------------------------------------------
 
+/** Why a target without `restart` cannot restart. */
+const NO_RESTART = 'the target offers no restart';
+
+/**
+ * Restarts the target and reads every view again. The model does not move: what the restarted
+ * implementation answers must be what it answered before. Throws `Unsupported` when the target
+ * cannot restart.
+ */
+async function restartTarget(s: Session): Promise<Disagreement | null> {
+  const restartable = s.target as Target & Partial<RestartTarget>;
+  if (typeof restartable.restart !== 'function') throw new Unsupported(NO_RESTART);
+  try {
+    await restartable.restart({ scenario: s.scenario, correlation: s.correlation });
+  } catch (error) {
+    if (isUnsupported(error)) throw new Unsupported(errorText(error));
+    return { kind: 'target', detail: `restarting, the target threw ${errorText(error)}` };
+  }
+  return checkViews(s, s.token);
+}
+
 function line(step: Step): string {
+  if (step.restart === true) return 'restart';
   const external = step.external === '' ? '' : ` [external: ${step.external}]`;
   return `${step.command} ${goMarshal(step.input)}${external}`;
 }
@@ -1241,6 +1990,7 @@ async function open(
     correlation,
     undetermined: new Set<string>(),
     forced: new Set<string>(),
+    token: '',
     scenario,
   };
   await preconditions(session);
@@ -1300,6 +2050,24 @@ async function replay(
   const executed: Step[] = [];
   try {
     for (const recorded of trace) {
+      if (recorded.restart === true) {
+        let restarted: Disagreement | null;
+        try {
+          restarted = await restartTarget(s);
+        } catch (error) {
+          if (error instanceof Unsupported) continue;
+          throw error;
+        }
+        executed.push(recorded);
+        if (restarted !== null) {
+          return {
+            kind: restarted.kind,
+            message: describe(restarted, executed.length - 1, recorded),
+            executed,
+          };
+        }
+        continue;
+      }
       const command = p.commands.find((candidate) => candidate.name === recorded.command);
       if (command === undefined) continue;
       const input = JSON.parse(JSON.stringify(recorded.input)) as Row;
@@ -1310,16 +2078,23 @@ async function replay(
         else setPath(input, path, (known[index] as Rec).id);
       }
       if (!resolvable) continue;
+      if (
+        (recorded.fresh ?? []).some(
+          ([path, entity]) => s.model.find(entity, readPath(input, path)) !== undefined,
+        )
+      )
+        continue;
       const step: Step = {
         command: recorded.command,
         input,
         refs: recorded.refs,
         external: recorded.external,
+        fresh: recorded.fresh ?? [],
       };
       const decision = decide(command, input, s.model);
       if (decision.kind !== 'take') continue;
-      const outcome = choices(s, command, decision).find(
-        (choice) => (isExternal(choice) ? String(choice.name) : '') === step.external,
+      const outcome = choices(s, command, decision, input).find(
+        (choice) => choice.arrangement === step.external,
       );
       if (outcome === undefined) continue;
       let found: Disagreement | null;
@@ -1335,7 +2110,7 @@ async function replay(
             };
           }
         }
-        found = await perform(s, command, step, outcome);
+        found = await perform(s, command, step, outcome.expected);
       } catch (error) {
         if (error instanceof Unsupported) continue;
         throw error;
@@ -1363,6 +2138,10 @@ export async function explore(
   newTarget: () => Answer<Target>,
   options: ExploreOptions = {},
 ): Promise<ExploreResult> {
+  const every = options.restartEvery ?? 0;
+  if (!Number.isInteger(every) || every < 0) {
+    throw new Error('the restart interval must be a whole number of steps, zero or more');
+  }
   const p = plan(loadModel());
   const steps = options.steps ?? DEFAULT_STEPS;
   const seeds: number[] = [];
@@ -1375,6 +2154,9 @@ export async function explore(
   let executed = 0;
   let sequences = 0;
   let failure: ExploreFailure | undefined;
+  // The restarts a command followed, and why the target cannot restart, which stops every later one.
+  let performed = 0;
+  let refused = '';
 
   for (const seed of seeds) {
     if (p.commands.length === 0 || failure !== undefined) break;
@@ -1383,11 +2165,16 @@ export async function explore(
     const s = await open(p, newTarget, `explore/seed-${seed}`);
     s.undetermined = undetermined;
     const trace: Step[] = [];
+    // The restart steps in `trace`, which are not commands, and how many of them no command has
+    // followed yet. A restart is a check only once a command has followed it, so one after the last
+    // command is followed by one more.
+    let restarts = 0;
+    let pending = 0;
     let found: Found | null = null;
     try {
       for (
         let attempts = 0;
-        trace.length < steps && attempts < steps * ATTEMPTS_PER_STEP;
+        (trace.length - restarts < steps || pending > 0) && attempts < steps * ATTEMPTS_PER_STEP;
         attempts += 1
       ) {
         if (p.commands.length === 0) break;
@@ -1403,16 +2190,20 @@ export async function explore(
           exclude(p, command.name, decision.reason);
           continue;
         }
-        const available = choices(s, command, decision);
+        if (decision.kind === 'undetermined') {
+          undetermined.add(decision.reason);
+          continue;
+        }
+        const available = choices(s, command, decision, step.input);
         if (available.length === 0) {
           if (decision.names !== undefined) {
             ambiguous.add(`${command.name}: ${decision.names.join(', ')}`);
           }
           continue;
         }
-        const outcome = available.length > 1 ? rng.pick(available) : available[0];
-        if (isExternal(outcome)) {
-          step.external = String(outcome.name);
+        const outcome = available.length > 1 ? rng.pick(available) : (available[0] as Choice);
+        if (outcome.arrangement !== '') {
+          step.external = outcome.arrangement;
           let arranging: Disagreement | null;
           try {
             arranging = await arrange(s, command, step.external);
@@ -1438,7 +2229,7 @@ export async function explore(
         }
         let disagreement: Disagreement | null;
         try {
-          disagreement = await perform(s, command, step, outcome);
+          disagreement = await perform(s, command, step, outcome.expected);
         } catch (error) {
           if (error instanceof Unsupported) {
             exclude(p, command.name, `the target does not expose it: ${error.message}`);
@@ -1448,11 +2239,38 @@ export async function explore(
         }
         executed += 1;
         trace.push(step);
-        reached.add(`${command.name}/${outcome.name}`);
+        performed += pending;
+        pending = 0;
+        reached.add(`${command.name}/${outcome.expected.name}`);
         if (disagreement !== null) {
           found = {
             kind: disagreement.kind,
             message: describe(disagreement, trace.length - 1, step),
+            executed: [...trace],
+          };
+          break;
+        }
+        // No restart after the command that follows the last scheduled one.
+        const commands = trace.length - restarts;
+        if (every === 0 || refused !== '' || commands % every !== 0 || commands > steps) continue;
+        const restart: Step = { command: '', input: {}, refs: [], external: '', restart: true };
+        let restarted: Disagreement | null;
+        try {
+          restarted = await restartTarget(s);
+        } catch (error) {
+          if (error instanceof Unsupported) {
+            refused = error.message;
+            continue;
+          }
+          throw error;
+        }
+        pending += 1;
+        restarts += 1;
+        trace.push(restart);
+        if (restarted !== null) {
+          found = {
+            kind: restarted.kind,
+            message: describe(restarted, trace.length - 1, restart),
             executed: [...trace],
           };
           break;
@@ -1497,8 +2315,37 @@ export async function explore(
     ambiguous: sortStrings([...ambiguous]),
   };
   if (external.length > 0) result.external = external;
+  if (every > 0) {
+    result.restarts = { every, performed };
+    if (refused !== '') result.restarts.unsupported = refused;
+  }
   if (failure !== undefined) result.failure = failure;
   return result;
+}
+
+/** Keep the Optional/identity witness and arranged cause when accepting a shorter failure. */
+function sameFailure(p: Plan, original: Found, replayed: Found): boolean {
+  if (original.kind !== replayed.kind) return false;
+  const last = original.executed[original.executed.length - 1];
+  const next = replayed.executed[replayed.executed.length - 1];
+  const command = p.commands.find((candidate) => candidate.name === last?.command);
+  const optional = (kind: Kind): boolean =>
+    kind.kind === 'optional' ||
+    (kind.kind === 'struct' && kind.fields.some(([, member]) => optional(member))) ||
+    (kind.kind === 'identity' && optional(kind.base));
+  if (
+    command === undefined ||
+    (unknownOutcome(command) === undefined &&
+      existingOutcome(command.node) === undefined &&
+      !command.inputs.some(([, kind]) => optional(kind)))
+  )
+    return true;
+  return (
+    last?.command === next?.command &&
+    last?.external === next?.external &&
+    equal(last?.fresh ?? [], next?.fresh ?? []) &&
+    original.message.split(' (step ')[0] === replayed.message.split(' (step ')[0]
+  );
 }
 
 /** Removes one step at a time, last to first, while the shorter trace still fails the same way. */
@@ -1523,7 +2370,7 @@ async function shrink(
       const candidate = current.filter((_, position) => position !== index);
       replays += 1;
       const again = await replay(p, newTarget, candidate, `explore/seed-${seed}/shrink-${replays}`);
-      if (again !== null && again.kind === found.kind) {
+      if (again !== null && sameFailure(p, found, again)) {
         current = candidate;
         shortest = again;
         removed = true;
@@ -1578,14 +2425,29 @@ export function exploreProblem(result: ExploreResult, options: AssertOptions = {
         '\naccept them explicitly with { allowExcluded: true }',
     );
   }
+  // Restarts asked for and not performed are never a pass, `allowExcluded` or not: a caller that
+  // cannot restart its target does not set `restartEvery`.
+  const restarts = result.restarts;
+  if (restarts !== undefined) {
+    if (restarts.unsupported !== undefined && restarts.unsupported !== '') {
+      problems.push(
+        `explore: restarts were requested every ${restarts.every} step(s), and the target cannot restart: ${restarts.unsupported}`,
+      );
+    } else if (restarts.performed === 0) {
+      problems.push(
+        `explore: restarts were requested every ${restarts.every} step(s), and no sequence performed one`,
+      );
+    }
+  }
   return problems.length === 0 ? null : problems.join('\n');
 }
 
 /**
  * assertExplored throws when an exploration failed, when a declared outcome went unreached, or
  * when an excluded command's outcomes, or external outcomes the target could not arrange, were
- * never tried and `allowExcluded` is not set. What the
- * model could not place, and the draws it would not decide, are printed and do not fail.
+ * never tried and `allowExcluded` is not set, or when restarts were asked for and none was
+ * performed. What the model could not place, and the draws it would not decide, are printed and do
+ * not fail.
  */
 export function assertExplored(result: ExploreResult, options: AssertOptions = {}): void {
   for (const note of result.undetermined) console.log(`explore: undetermined: ${note}`);
@@ -1622,6 +2484,12 @@ export function assertExplored(result: ExploreResult, options: AssertOptions = {
 // it may be what that creation made, which the checker could only read as shown before anyone
 // asked for it. Every other row is written and judged.
 //
+// A call whose receipt carries the instant its decision observed (a target with
+// `executeCommandRecorded`, or a pending call with `completeRecorded`) has it written as the
+// operation's `decision_time`, and the history is then `ess-history/2`; a history with none is
+// written as `ess-history/1`, byte for byte as before. The instant is the call's own, carried from
+// its decision to its completion; the explorer reads no clock of its own.
+//
 // With `inject`, every fault the specification declares is injected, and no other: a second
 // delivery for each `delivery: at_least_once` binding, a client retry for each command declaring
 // `replays:`, and a delayed or unanswered answer for each command declaring another `external:`
@@ -1637,6 +2505,80 @@ export interface PendingCommand {
    * fails the exploration. A throw from `invokeCommand` is read the same way.
    */
   complete(): Answer<CommandResult>;
+  /**
+   * The answer arriving with this call's own decision receipt, carried from its invoke: called
+   * instead of `complete`, exactly once, where present.
+   */
+  completeRecorded?(): Answer<RecordedCompletion>;
+}
+
+/**
+ * One call's answer and the instant its decision observed: what the explorer writes into the
+ * operation's `decision_time`. `decisionTime` is absent where no decision was observed — a call
+ * refused before its decision edge, a retained answer delivered again, a target with no clock — and
+ * an `error` may carry one: the call decided, and its answer was lost after. `error` is read as a
+ * throw from `complete` is.
+ */
+export interface RecordedCompletion {
+  result?: CommandResult;
+  error?: unknown;
+  /** The instant, in the one spelling `parseDecisionInstant` admits. */
+  decisionTime?: string;
+}
+
+/**
+ * A target whose command edge reads a command clock: `executeCommandRecorded` runs the same command
+ * as `executeCommand`, reads the clock once immediately before deciding, and answers that reading
+ * with the result — never a reading taken after the command.
+ */
+export interface RecordedTarget extends Target {
+  executeCommandRecorded(request: CommandRequest): Answer<RecordedCompletion>;
+}
+
+const DECISION_INSTANT =
+  /^([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2}):([0-9]{2})(\.[0-9]{0,8}[1-9])?Z$/;
+
+/**
+ * The instant one command decision observed, in its one spelling: RFC 3339 in UTC with `Z`, and a
+ * fraction of one to nine digits only when it is not zero, with no trailing zero. `ess` and the Go
+ * explorer admit the same texts (beyond10x/ess#244). Throws for any other text.
+ */
+export function parseDecisionInstant(text: string): string {
+  const parts = DECISION_INSTANT.exec(text);
+  const number = (index: number): number => Number(parts?.[index] ?? 'NaN');
+  const year = number(1);
+  const month = number(2);
+  const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1] ?? 0;
+  if (
+    parts === null ||
+    month < 1 ||
+    number(3) < 1 ||
+    number(3) > days ||
+    number(4) > 23 ||
+    number(5) > 59 ||
+    number(6) > 59
+  ) {
+    throw new Error(
+      `${JSON.stringify(text)} is not a decision instant: an RFC 3339 instant in UTC with \`Z\`, and a fraction only when it is not zero, with no trailing zero`,
+    );
+  }
+  return text;
+}
+
+/** The instant a clock read, in its one spelling. */
+export function decisionInstantOf(at: Date): string {
+  return parseDecisionInstant(at.toISOString().replace(/\.?0+Z$/, 'Z'));
+}
+
+/** The call's receipt: its own where it carries one, otherwise `complete`'s answer, called once, with no time. */
+export async function completeRecorded(pending: PendingCommand): Promise<RecordedCompletion> {
+  try {
+    if (typeof pending.completeRecorded === 'function') return await pending.completeRecorded();
+    return { result: await pending.complete() };
+  } catch (error) {
+    return { error };
+  }
 }
 
 /**
@@ -1648,7 +2590,10 @@ export interface InterleavedTarget extends Target {
   invokeCommand(request: CommandRequest): Answer<PendingCommand>;
 }
 
-/** What one concurrent exploration is asked to do. */
+/**
+ * What one concurrent exploration is asked to do. There is no `restartEvery`: restarts are
+ * sequential-only, and `exploreConcurrent` refuses options that carry one.
+ */
 export interface ConcurrentOptions {
   /** The specification `ess` checks each history against, as `--path` takes it. */
   path?: string;
@@ -1794,7 +2739,8 @@ export class SplitMix64 {
   }
 }
 
-interface Operation {
+/** One operation as the explorer records it and `historyText` writes it. */
+export interface HistoryOperation {
   client: number;
   command: string;
   subjectKey: string;
@@ -1811,7 +2757,11 @@ interface Operation {
   source: string;
   /** What a returned read answered, each row's identity; absent where it records none. */
   rows?: string[];
+  /** The instant the call's decision observed; absent where none was observed. */
+  decisionTime?: string;
 }
+
+type Operation = HistoryOperation;
 
 interface Flight {
   pending: PendingCommand | null;
@@ -2063,7 +3013,15 @@ async function send(h: Recording, request: CommandRequest): Promise<PendingComma
       };
     }
   }
-  return { complete: () => target.executeCommand(request) };
+  const recorded = target as Partial<RecordedTarget> & Target;
+  return {
+    complete: () => target.executeCommand(request),
+    // Executed at the return instant through the target's own recorded command, where it has one.
+    completeRecorded: async () =>
+      typeof recorded.executeCommandRecorded === 'function'
+        ? await recorded.executeCommandRecorded(request)
+        : { result: await target.executeCommand(request) },
+  };
 }
 
 async function invokeCall(
@@ -2187,12 +3145,17 @@ async function completeCall(
     bump(h.injected.unanswered, command.name);
     return null;
   }
-  let result: CommandResult;
-  try {
-    result = await pending.complete();
-  } catch (error) {
-    h.clock += 1;
-    const operation = h.operations[flight.index] as Operation;
+  // The receipt's instant is written before the answer is read: a call lost after its decision
+  // keeps the instant it decided at.
+  const receipt = await completeRecorded(pending);
+  h.clock += 1;
+  const operation = h.operations[flight.index] as Operation;
+  if (receipt.decisionTime !== undefined) {
+    operation.decisionTime = parseDecisionInstant(receipt.decisionTime);
+  }
+  const result = receipt.result;
+  if (result === undefined) {
+    const error = receipt.error;
     if (isUnsupported(error)) {
       operation.dropped = true;
       if (!h.unsupported.some((known) => known.subject === command.name)) {
@@ -2209,8 +3172,6 @@ async function completeCall(
     }
     throw new Error(`\`${command.name}\` failed: ${errorText(error)}`);
   }
-  h.clock += 1;
-  const operation = h.operations[flight.index] as Operation;
   const taken = result.outcome ?? '';
   queueRedeliveries(h, result);
   const created = createdBy(command, result);
@@ -2250,14 +3211,17 @@ function jsonObject(members: [string, string][]): string {
 
 /**
  * The history in the one spelling `ess` reads and writes: compact, keys in declaration order, an
- * absent `returned_at` and `outcome` for a call that never answered.
+ * absent `returned_at` and `outcome` for a call that never answered, and `ess-history/2` exactly
+ * when a written operation records a `decision_time`.
  */
-function historyText(
+export function historyText(
   digest: string,
   seed: number,
   clients: number,
-  operations: Operation[],
+  operations: HistoryOperation[],
 ): string {
+  // `ess-history/2` exactly when a written operation records a decision time.
+  let format = 'ess-history/1';
   // Where each written operation stands among the written ones, from 1, for a retry naming it.
   const position = new Map<number, number>();
   let kept = 0;
@@ -2294,10 +3258,14 @@ function historyText(
     if (operation.retryOf !== 0 && original !== undefined) {
       members.push(['retry_of', quote(uuidOf(BigInt(original)))]);
     }
+    if (operation.decisionTime !== undefined) {
+      format = 'ess-history/2';
+      members.push(['decision_time', quote(operation.decisionTime)]);
+    }
     return jsonObject(members);
   });
   return jsonObject([
-    ['format', quote('ess-history/1')],
+    ['format', quote(format)],
     ['history_id', quote(uuidOf(BigInt(seed) & 0xffffffffffffn))],
     ['spec_digest', quote(digest)],
     ['seed', String(seed)],
@@ -2438,6 +3406,13 @@ export async function exploreConcurrent(
   newTarget: () => Answer<Target>,
   options: ConcurrentOptions = {},
 ): Promise<ConcurrentResult> {
+  // Restarts are sequential-only. A caller that passes `restartEvery` here, which the type does not
+  // admit, is told so rather than given a run that never restarted.
+  if ('restartEvery' in options) {
+    throw new Error(
+      'explore: `restartEvery` is set; concurrent exploration does not restart the target, restarts are for `explore` only',
+    );
+  }
   const clients = options.clients ?? 0;
   if (clients !== 0 && !(clients >= 2 && clients <= 4)) {
     throw new Error(
@@ -2459,9 +3434,6 @@ export async function exploreConcurrent(
       `explore: \`Calls\` is ${String(options.calls)}; each client makes at least one call, or 3 when it is 0`,
     );
   }
-  if (spawnSync('ess', ['--version'], { encoding: 'utf8' }).error !== undefined) {
-    throw new Error(NO_ESS);
-  }
   const path = options.path ?? '';
   const out = options.out ?? '';
   if (path === '') {
@@ -2475,6 +3447,11 @@ export async function exploreConcurrent(
     );
   }
   const ir = loadModel();
+  // The model is read first, so a source this mode refuses (one-time responses) is refused before
+  // anything else is asked of the host.
+  if (spawnSync('ess', ['--version'], { encoding: 'utf8' }).error !== undefined) {
+    throw new Error(NO_ESS);
+  }
   if (nonEmpty(ir.preconditions)) {
     throw new Error(
       "explore: concurrent exploration does not run the specification's preconditions, so it does not record against one that declares them",

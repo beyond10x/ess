@@ -210,11 +210,11 @@ fn predicate_count(predicate: &Predicate, at: &str) -> Result<usize, ValidationE
 
             Predicate::All(children) | Predicate::Any(children) => pending.extend(children),
             Predicate::Not(child) => pending.push(child),
-            Predicate::Always | Predicate::Never | Predicate::Defined(_) | Predicate::Compare { left: Operand::Fact(_), op: CompareOp::Eq | CompareOp::Ne, right: Operand::Literal(ess_primitives::facts::FactValue::Text(_)) } => {}
+            Predicate::Always | Predicate::Never | Predicate::Defined(_) | Predicate::Compare { left: Operand::Fact(_), op: CompareOp::Eq | CompareOp::Ne, right: Operand::Literal(ess_primitives::facts::FactValue::Text(_)) , .. } => {}
             // The bounded contract for string operators (docs/design/string-predicate-operators.md,
             // *Selection*): a text literal, not empty, and no longer than any admitted read, so one
             // pass over a read the selection already bounds decides it.
-            Predicate::TextMatch { value: ess_primitives::facts::FactValue::Text(text), .. } if !text.is_empty() && text.len() <= MAX_TEXT_BYTES => {}
+            Predicate::TextMatch { value: ess_primitives::predicate::TextOperand::Literal(ess_primitives::facts::FactValue::Text(text)), .. } if !text.is_empty() && text.len() <= MAX_TEXT_BYTES => {}
             _ => return Err(err(at, "selection admits only Always/Never/Defined, String or enum Eq/Ne literals, String starts_with/ends_with/contains a non-empty text literal of at most 4096 bytes, All/Any/Not")),
         }
     }

@@ -129,9 +129,16 @@ model says:
 Two are the cost of keeping a true branch:
 
 - `check-on-tag/binding/flow` and `.../delivery` (`ESS-SYNTH-010`) — `RunReleaseChecks` declares a
-  `wrong_state` branch, and the synthesizer counts a branch the event's own field decides as
-  input-decided, so it builds no flow scenario for the binding. A `workflow_dispatch` backfill on an
-  already-published tag reaches that branch, so it stays.
+  `wrong_state` branch, and the synthesizer counted a branch the event's own field decides as
+  input-decided, so it built no flow scenario for the binding. A `workflow_dispatch` backfill on an
+  already-published tag reaches that branch, so it stays. Since beyond10x/ess#267 the release the
+  pushed tag creates is the binding's destination, resting in `Tagged`, which the accepting branch
+  admits; both scenarios are synthesized. Since beyond10x/ess#266 synthesis does not race that
+  binding: a pushed tag sets `check-on-tag` off, which moves the release on to `Queued`. A release
+  can still rest in `Tagged` — when `RunReleaseChecks` answers its `external:` refusal and the binding
+  escalates — but arranging that would take a forced refusal during arrangement, which synthesis
+  does not do yet. So the six scenarios that need a release in `Tagged` are refused naming
+  `check-on-tag` (`BoundAway`): a conservative refusal, not a claim that the state is unreachable.
 
 One is a gap `ess/3` narrowed and did not close:
 

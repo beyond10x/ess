@@ -381,7 +381,8 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
                 };
                 if reads_caller(predicate, &entity.fields) {
                     let at = site.clone().key("when_subject");
-                    let mut environment = DomainEnvironment::new(types, &entity.fields);
+                    let mut environment =
+                        DomainEnvironment::new(types, &entity.fields).with_stored_current_time();
                     if !entity
                         .fields
                         .iter()
@@ -556,7 +557,26 @@ fn misplaced(predicate: &Predicate, roots: &[Field]) -> Option<FactPath> {
             children.iter().find_map(|child| misplaced(child, roots))
         }
         Predicate::Not(child) => misplaced(child, roots),
-        Predicate::Compare { left, op, right } => match (caller(left), caller(right)) {
+        // A caller moved by a constant (A2) is no caller equality, whatever the operator.
+        Predicate::Compare {
+            right: Operand::Offset(offset),
+            ..
+        } if is_caller_path(&offset.base, roots) => Some(offset.base.clone()),
+        // Nor is a caller's byte length (decision 11), on either side.
+        Predicate::Compare { left, right, .. } if [left, right].into_iter().any(|operand| {
+            matches!(operand, Operand::Derived(derived) if is_caller_path(derived.parent(), roots))
+        }) =>
+        {
+            [left, right].into_iter().find_map(|operand| match operand {
+                Operand::Derived(derived) if is_caller_path(derived.parent(), roots) => {
+                    Some(derived.parent().clone())
+                }
+                _ => None,
+            })
+        }
+        Predicate::Compare {
+            left, op, right, ..
+        } => match (caller(left), caller(right)) {
             (None, None) => None,
             (Some(path), None) | (None, Some(path)) => {
                 let other = if caller(left).is_some() { right } else { left };

@@ -123,7 +123,7 @@ fn check(optional: bool, independent: bool, reversed: bool) {
             _ => None,
         })
         .collect();
-    assert!(!rows.is_empty());
+    assert_ne!(rows.len(), 0);
     for row in &rows {
         assert_eq!(row.get("origin"), row.get("destination"), "{row:?}");
     }

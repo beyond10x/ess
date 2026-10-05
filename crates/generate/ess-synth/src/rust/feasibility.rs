@@ -313,7 +313,7 @@ fn paths_and_packages(
         );
     }
     if !served.is_empty() {
-        for fixed in ["http", "json", "wire"] {
+        for fixed in ["entry", "http", "json", "wire", "memory", "static_assets"] {
             inventory.symbol("server root", fixed, &system, "fixed module");
             inventory.path(
                 format!("crates/{}/src/{fixed}.rs", layout.server_package()),
@@ -369,7 +369,9 @@ fn type_declarations(inventory: &mut Inventory, ir: &EssIr, layout: &Layout) {
                         &format!("{source}.{variant}"),
                         "union variant",
                     );
-                    inventory.reference(&scope, reference, &format!("{source}.{variant}"));
+                    if let Some(reference) = reference {
+                        inventory.reference(&scope, reference, &format!("{source}.{variant}"));
+                    }
                 }
             }
         }
@@ -857,7 +859,20 @@ fn bindings(inventory: &mut Inventory, ir: &EssIr, plan: &SynthesisPlan) {
         }
         for mapping in &binding.mapping {
             if let ResolvedMappingValue::EventField { field, type_ref } = &mapping.value {
-                if mapping.conversion.is_none() && type_ref != &mapping.target_type {
+                // A copy of an Optional member the binding's condition proves present
+                // (beyond10x/ess#194) is checked, not cloned plainly: `system::proved_expression`.
+                let mut present = type_ref;
+                while let ResolvedTypeRef::Optional { of } = present {
+                    present = of.as_ref();
+                }
+                let proved = present == &mapping.target_type
+                    && crate::condition::proved_levels(
+                        ir,
+                        binding,
+                        &crate::plan::DeterminedInput::Copy { field },
+                        &mapping.target_type,
+                    ) > 0;
+                if mapping.conversion.is_none() && type_ref != &mapping.target_type && !proved {
                     inventory.cause(Code::BindingAssignment, vec![binding.name.to_string(), format!("{}.{}", binding.cause.event().expect("generated event capability"), field), format!("{}.{}", binding.command, mapping.target)], format!("binding `{}` emits a plain clone of `{type_ref}` for `{}` of type `{}`; this assignment needs an explicit target representation", binding.name, mapping.target, mapping.target_type));
                 }
             }
@@ -899,7 +914,7 @@ fn size_cycles(inventory: &mut Inventory, ir: &EssIr) {
             }
             ResolvedBody::Union { variants, .. } => {
                 for (variant, reference) in variants {
-                    if let Some(target) = size_reference(reference) {
+                    if let Some(target) = reference.as_ref().and_then(size_reference) {
                         edges.push((target, format!("{}.{variant}", declared.name)));
                     }
                 }
@@ -980,7 +995,7 @@ fn wire(
         for prefix in ["encode", "decode"] {
             inventory.symbol(
                 "wire functions",
-                &format!("{prefix}_{}", super::wire::ident(&declared.name)),
+                &format!("{prefix}_{}", super::wire::ident(layout, &declared.name)),
                 &declared.name.to_string(),
                 "type codec",
             );
@@ -1009,7 +1024,7 @@ fn wire(
     {
         inventory.symbol(
             "wire functions",
-            &format!("{prefix}_{}", super::wire::ident(owner)),
+            &format!("{prefix}_{}", super::wire::ident(layout, owner)),
             &owner.to_string(),
             "record codec",
         );
@@ -1023,7 +1038,7 @@ fn wire(
         for prefix in ["encode_command", "decode_command", "encode_outcome"] {
             inventory.symbol(
                 "wire functions",
-                &format!("{prefix}_{}", super::wire::ident(&command.name)),
+                &format!("{prefix}_{}", super::wire::ident(layout, &command.name)),
                 &command.name.to_string(),
                 "command codec",
             );
@@ -1058,7 +1073,7 @@ fn outcome_codec_locals(
             );
             inventory.helper(
                 &scope,
-                &format!("encode_event_{}", super::wire::ident(event)),
+                &format!("encode_event_{}", super::wire::ident(layout, event)),
                 &event.to_string(),
             );
         }
@@ -1066,7 +1081,7 @@ fn outcome_codec_locals(
             inventory.symbol(&scope, "error", &error.to_string(), "error pattern binding");
             inventory.helper(
                 &scope,
-                &format!("encode_error_{}", super::wire::ident(error.name())),
+                &format!("encode_error_{}", super::wire::ident(layout, error.name())),
                 &error.to_string(),
             );
         }

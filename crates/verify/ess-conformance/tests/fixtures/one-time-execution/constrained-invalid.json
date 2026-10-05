@@ -1,0 +1,143 @@
+{
+  "provenance": {
+    "suite_version": "ess-conformance/34",
+    "system": "credentials",
+    "specification_version": "v1",
+    "spec_digest": "49d4dd380d3f2a37d56280b21740661ea52e506472d6c7a9fa01e867bc762373",
+    "contract_digest": "51b1bd396e96a42bbd771266951bbeeef1ebad465b536e6b2625541d8ac1612a",
+    "scenario_initial_state": "empty"
+  },
+  "scenarios": {
+    "credentials.api.Issue/outcome/issued": {
+      "one_time_response": {
+        "origins": [
+          {
+            "command": "credentials.api.Issue",
+            "outcome": {
+              "command": "credentials.api.Issue",
+              "outcome": "issued"
+            },
+            "response": {
+              "fields": [
+                {
+                  "name": "secret",
+                  "type": "credentials.api.Secret"
+                }
+              ],
+              "declarations": {
+                "credentials.api.Secret": {
+                  "kind": "newtype",
+                  "of": "String"
+                }
+              },
+              "constraints": {
+                "credentials.api.Secret": {
+                  "alphabet": "abcdef",
+                  "prefix": "ab",
+                  "invariants": [
+                    "value.count >= 4"
+                  ]
+                }
+              }
+            },
+            "fields": [
+              "secret"
+            ]
+          }
+        ],
+        "required_origins": [
+          {
+            "command": "credentials.api.Issue",
+            "outcome": "issued"
+          }
+        ],
+        "events": [],
+        "event_windows": []
+      },
+      "purpose": "`credentials.api.Issue` answers `issued` for an input no other branch's guard claims",
+      "steps": [
+        {
+          "step": "execute_command",
+          "command": "credentials.api.Issue"
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "credentials.api.Issue",
+            "outcome": "issued"
+          }
+        },
+        {
+          "step": "expect_direct_response",
+          "response": {
+            "command": "credentials.api.Issue",
+            "outcome": {
+              "command": "credentials.api.Issue",
+              "outcome": "issued"
+            },
+            "fields": [
+              {
+                "name": "secret",
+                "type": "credentials.api.Secret"
+              }
+            ],
+            "declarations": {
+              "credentials.api.Secret": {
+                "kind": "newtype",
+                "of": "String"
+              }
+            },
+            "expected": {}
+          }
+        },
+        {
+          "step": "execute_command",
+          "command": "credentials.api.Issue"
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "credentials.api.Issue",
+            "outcome": "issued"
+          }
+        },
+        {
+          "step": "expect_direct_response",
+          "response": {
+            "command": "credentials.api.Issue",
+            "outcome": {
+              "command": "credentials.api.Issue",
+              "outcome": "issued"
+            },
+            "fields": [
+              {
+                "name": "secret",
+                "type": "credentials.api.Secret"
+              }
+            ],
+            "declarations": {
+              "credentials.api.Secret": {
+                "kind": "newtype",
+                "of": "String"
+              }
+            },
+            "expected": {}
+          }
+        }
+      ],
+      "source": [
+        {
+          "kind": "command",
+          "name": "credentials.api.Issue"
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "credentials.api.Issue",
+            "outcome": "issued"
+          }
+        }
+      ]
+    }
+  }
+}

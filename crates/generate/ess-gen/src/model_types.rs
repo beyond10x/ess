@@ -223,6 +223,8 @@ fn body_numeric_locations(item: &ess_compiler::ir::ResolvedType, found: &mut BTr
         ResolvedBody::Union { tag, variants } => {
             let content = types::content_key(tag);
             for (index, (_, payload)) in variants.iter().enumerate() {
+                // A unit variant (ess/22) carries no number.
+                let Some(payload) = payload else { continue };
                 numeric_locations(
                     payload.required(),
                     &pointer(&format!("{at}/oneOf/{index}/properties"), content),

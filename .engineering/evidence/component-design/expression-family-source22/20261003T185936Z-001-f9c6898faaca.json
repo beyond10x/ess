@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-03T18:59:36Z",
+  "actor": "human:timo",
+  "artifact": "component-design:expression-family-source22",
+  "kind": "component-design",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "Finding2: persisted UTF-8 selector tag preserves declared utf8_bytes fields and full-path direct-binding precedence; suite39/40 controls specified",
+    "reference": "docs/design/expression-family-source22.md#review1-finding2",
+    "review": "review-result:expression-family-source22-20261003-r1",
+    "outcome": "fixed"
+  }
+}

@@ -234,7 +234,7 @@ fn schema_resource_and_dialect_features_refuse_but_annotation_literals_do_not() 
         source["jsonSchemaDialect"] = json!(SCHEMA_DIALECT);
         let report = import(&source.to_string()).unwrap();
         let checked = read_import(&report.to_canonical_json()).unwrap();
-        assert!(checked.accounting().coverage_gaps.is_empty());
+        assert_eq!(checked.accounting().coverage_gaps.len(), 0);
         assert!(checked
             .accounting()
             .normalizations

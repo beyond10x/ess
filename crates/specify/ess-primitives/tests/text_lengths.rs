@@ -56,6 +56,7 @@ fn store(facts: &serde_json::Map<String, serde_json::Value>) -> FactStore {
 
 fn compare(at: &str, value: f64) -> Predicate {
     Predicate::Compare {
+        kind: ess_primitives::predicate::CompareKind::Value,
         left: ess_primitives::predicate::Operand::Fact(path(at)),
         op: ess_primitives::predicate::CompareOp::Eq,
         right: ess_primitives::predicate::Operand::Literal(
@@ -116,6 +117,7 @@ fn samples() -> Vec<Predicate> {
         yaml("keys.count == 3"),
         // The literal on the left: the grammar writes a fact first, so this side is built.
         Predicate::Compare {
+            kind: ess_primitives::predicate::CompareKind::Value,
             left: ess_primitives::predicate::Operand::Literal(FactValue::count(3)),
             op: ess_primitives::predicate::CompareOp::Eq,
             right: ess_primitives::predicate::Operand::Fact(path("keys.count")),
@@ -125,6 +127,8 @@ fn samples() -> Vec<Predicate> {
         yaml("keys.count: {in: [3, 4]}"),
         yaml("keys.count: {not_in: [1, 2]}"),
         yaml("exists: {in: parts, as: p, that: p.count == 3}"),
+        // A key read under the binder is a leaf read too (`ess/22`, beyond10x/ess#237).
+        yaml("distinct: {in: parts, as: p, by: p.count, kind: integer}"),
     ];
     for sample in &samples {
         match sample {
@@ -133,12 +137,14 @@ fn samples() -> Vec<Predicate> {
             | Predicate::Truthy(_)
             | Predicate::AnyOf { .. }
             | Predicate::NoneOf { .. }
-            | Predicate::Exists(_) => {}
+            | Predicate::Exists(_)
+            | Predicate::Distinct(_) => {}
             // A string or case-insensitive operator reads text, not a number, so it has no `.count`
             // sample; a connective reads through its children. Each is named, so a new kind is a
             // compile error here rather than a silent gap.
             Predicate::TextMatch { .. }
             | Predicate::FoldMatch { .. }
+            | Predicate::Window(_)
             | Predicate::Forall(_)
             | Predicate::All(_)
             | Predicate::Any(_)
@@ -154,11 +160,13 @@ fn samples() -> Vec<Predicate> {
 fn a_text_reads_as_if_its_count_were_bound_in_every_leaf_kind() {
     let mut bare = FactStore::new();
     bare.set(path("keys"), FactValue::text("abc"));
-    bare.set(path("parts.count"), FactValue::count(1));
+    bare.set(path("parts.count"), FactValue::count(2));
     bare.set(path("parts.0"), FactValue::text("xyz"));
+    bare.set(path("parts.1"), FactValue::text("pq"));
     let mut bound = bare.clone();
     bound.set(path("keys.count"), FactValue::count(3));
     bound.set(path("parts.0.count"), FactValue::count(3));
+    bound.set(path("parts.1.count"), FactValue::count(2));
     for sample in samples() {
         assert_eq!(
             sample.evaluate(&bare),

@@ -748,7 +748,7 @@ fn referenced_types(ir: &EssIr) -> BTreeSet<QualifiedName> {
             }
             ResolvedBody::Enum { .. } => {}
             ResolvedBody::Union { variants, .. } => {
-                for variant in variants.values() {
+                for variant in variants.values().flatten() {
                     note(variant);
                 }
             }
@@ -1042,6 +1042,10 @@ fn actors_section(ir: &EssIr, domain: &ResolvedDomain) -> Vec<Block> {
         let mut about = Blocks::new();
         about.prose(naming_sentence(&actor.naming, &actor.name));
         about.prose(grants_sentence(ir, domain, actor));
+        // ess/22 (beyond10x/ess#286): the views its grant names, which only those actors may read.
+        if !actor.may_read.is_empty() {
+            about.prose(reads_sentence(ir, domain, actor));
+        }
         // ess/16 (#168): what the credential carries, which a command it invokes may read.
         if !actor.attributes.is_empty() {
             about.sentence("Its credential carries:");
@@ -1279,6 +1283,18 @@ fn binding_section(ir: &EssIr, binding: &ResolvedBinding) -> Block {
         ),
         Inline::text("."),
     ]);
+    if let Some(condition) = &binding.condition {
+        under.prose(vec![
+            Inline::text("It invokes only for an occurrence whose payload makes "),
+            Inline::code(condition.plan.predicate.to_string()),
+            Inline::text(
+                " hold. Where it does not hold, this binding skips the occurrence and the \
+                 bindings beside it still run; where it cannot be decided — a comparison reading \
+                 an absent member — nothing is invoked and the binding reports an unmet \
+                 obligation instead.",
+            ),
+        ]);
+    }
     if let Some(context) = &binding.context {
         let mut sentence = vec![
             Inline::text("Each occurrence arrives on the external channel "),
@@ -1406,12 +1422,17 @@ fn type_prose(declared: &ResolvedType) -> Vec<Block> {
             out.push(bullets(
                 variants
                     .iter()
-                    .map(|(variant, type_ref)| {
-                        vec![
+                    .map(|(variant, type_ref)| match type_ref {
+                        Some(type_ref) => vec![
                             Inline::code(variant.clone()),
                             Inline::text(" — "),
                             Inline::code(type_ref.to_string()),
-                        ]
+                        ],
+                        // A unit variant (ess/22): the tag alone.
+                        None => vec![
+                            Inline::code(variant.clone()),
+                            Inline::text(" — carries nothing; its value is the tag alone"),
+                        ],
                     })
                     .collect(),
             ));
@@ -1437,6 +1458,20 @@ fn outcome_prose(
     ];
     if let Some(summary) = &outcome.summary {
         out.push(Inline::text(format!("{summary} ")));
+    }
+    if !outcome.one_time_response.is_empty() {
+        out.push(Inline::text("One-time response fields: "));
+        out.extend(inline_list(
+            outcome
+                .one_time_response
+                .iter()
+                .map(|field| vec![Inline::code(field.clone())])
+                .collect(),
+        ));
+        out.push(Inline::text(format!(
+            ". {} ",
+            crate::one_time_response::OBLIGATION
+        )));
     }
     out.extend(condition_sentence(ir, command, &outcome.condition));
     out.push(Inline::text(" "));
@@ -1631,7 +1666,9 @@ fn condition_sentence(
             ],
             input.as_ref(),
         ),
-        ResolvedCondition::Related { .. } => related_condition(condition),
+        ResolvedCondition::Related { .. } | ResolvedCondition::RelatedSet { .. } => {
+            related_condition(condition)
+        }
         ResolvedCondition::SubjectState { state, predicate } => vec![Inline::text(format!(
             "Taken when the existing subject is in {state}{}.",
             predicate.as_ref().map_or(String::new(), |guard| format!(
@@ -1741,9 +1778,22 @@ fn unknown_instance_sentence(command: &ResolvedCommand) -> &'static str {
     }
 }
 
-/// A guard over a row of another entity (ess/18, `when_related:`), in the sentence every projection
-/// opens it with.
+/// A guard over a row of another entity (ess/18, `when_related:`), or over the rows a selector
+/// selects (ess/22, beyond10x/ess#228, #299), in the sentence every projection opens it with.
 fn related_condition(condition: &ResolvedCondition) -> Vec<Inline> {
+    if let ResolvedCondition::RelatedSet {
+        selection,
+        test,
+        input,
+    } = condition
+    {
+        return input_guarded(
+            vec![Inline::text(ess_compiler::ir::row_set_sentence(
+                selection, test,
+            ))],
+            input.as_ref(),
+        );
+    }
     let ResolvedCondition::Related {
         via,
         entity,
@@ -1924,6 +1974,64 @@ fn failure_sentence(ir: &EssIr, binding: &ResolvedBinding) -> Vec<Inline> {
             ));
             out
         }
+        ResolvedFailure::ByRefusal { policy } => {
+            let mut out = vec![
+                Inline::text("When it fails, its policy is "),
+                Inline::Strong {
+                    text: vec![Inline::text("selected per refusal")],
+                },
+                Inline::text(" of "),
+                Inline::code(ir.command(&binding.command).name.to_string()),
+                Inline::text(", by the actual answer of every attempt: "),
+            ];
+            for rule in &policy.refusals {
+                out.push(Inline::code(rule.outcome.to_string()));
+                out.push(Inline::text(" "));
+                out.extend(refusal_clause(ir, &rule.action));
+                out.push(Inline::text("; "));
+            }
+            out.push(Inline::text("a failure that carries no declared outcome "));
+            out.extend(refusal_clause(ir, &policy.fallback));
+            out.push(Inline::text(
+                ". A bounded retry counts every attempt of the occurrence, whichever refusal \
+                 answered it, and a failure before the command could be invoked runs no policy at \
+                 all.",
+            ));
+            out
+        }
+    }
+}
+
+/// What one policy of a refusal-selected table does, as a clause after the refusal it answers.
+fn refusal_clause(ir: &EssIr, action: &ess_compiler::ir::ResolvedRefusalAction) -> Vec<Inline> {
+    use ess_compiler::ir::ResolvedRefusalAction;
+    match action {
+        ResolvedRefusalAction::Drop => vec![Inline::text("is dropped: the work is lost")],
+        ResolvedRefusalAction::Retry { bound: None } => vec![Inline::text(
+            "is retried, on whatever schedule the transport provides",
+        )],
+        ResolvedRefusalAction::Retry { bound: Some(bound) } => {
+            let mut out = vec![Inline::text(format!(
+                "is retried up to {} attempts in all",
+                bound.attempts
+            ))];
+            if !bound.final_outcomes.is_empty() {
+                out.push(Inline::text(", except that "));
+                for (index, outcome) in bound.final_outcomes.iter().enumerate() {
+                    if index > 0 {
+                        out.push(Inline::text(" or "));
+                    }
+                    out.push(Inline::code(outcome.to_string()));
+                }
+                out.push(Inline::text(" ends it at once"));
+            }
+            out
+        }
+        ResolvedRefusalAction::Escalate { emits } => vec![
+            Inline::text("is escalated to a person, publishing "),
+            Inline::code(ir.event(emits).name.to_string()),
+            Inline::text(" once"),
+        ],
     }
 }
 
@@ -2426,6 +2534,26 @@ fn grants_sentence(ir: &EssIr, domain: &ResolvedDomain, actor: &ResolvedActor) -
     out
 }
 
+/// The views an actor's `may:` names (beyond10x/ess#286): it may read them, and an actor that does
+/// not name one may not.
+fn reads_sentence(ir: &EssIr, domain: &ResolvedDomain, actor: &ResolvedActor) -> Vec<Inline> {
+    let mut out = vec![Inline::text("It may read ")];
+    out.extend(inline_list(
+        actor
+            .may_read
+            .iter()
+            .map(|handle| {
+                let view = ir.view(handle);
+                vec![section_link(ir, domain, &view.name, &view.domain)]
+            })
+            .collect(),
+    ));
+    out.push(Inline::text(
+        ", which an actor whose grant does not name it may not read.",
+    ));
+    out
+}
+
 /// The invariants a type's values satisfy, as a clause rather than a heading.
 fn invariants_clause(invariants: &[Invariant]) -> Vec<Inline> {
     if invariants.is_empty() {
@@ -2499,7 +2627,14 @@ fn markdown_code(text: &str) -> Vec<Inline> {
 fn emitters(ir: &EssIr, event: &ResolvedEvent) -> Vec<Vec<Inline>> {
     let mut out = Vec::new();
     for binding in ir.bindings().values() {
-        if let ResolvedFailure::Escalate { emits } = binding.on_failure() {
+        let escalates = match binding.on_failure() {
+            ResolvedFailure::Escalate { emits } => Some(emits),
+            ResolvedFailure::ByRefusal { policy } => policy.escalation(),
+            ResolvedFailure::Retry
+            | ResolvedFailure::Drop
+            | ResolvedFailure::BoundedRetry { .. } => None,
+        };
+        if let Some(emits) = escalates {
             if emits.name() == &event.name {
                 out.push(vec![
                     Inline::text("Emitted when binding "),
@@ -2808,11 +2943,13 @@ fn binding_flow(ir: &EssIr, binding: &ResolvedBinding) -> String {
         label(&binding.cause.to_string())
     );
     let _ = writeln!(out, "    command[\"{}\"]", label(&command.name.to_string()));
-    let _ = writeln!(
-        out,
-        "    {cause_id} -->|\"{}\"| command",
-        label(binding.name.as_str())
-    );
+    // Only a binding with an event-payload condition (ess/22) says so on its edge, so every other
+    // diagram keeps its bytes.
+    let edge = match &binding.condition {
+        Some(condition) => format!("{} when {}", binding.name, condition.plan.predicate),
+        None => binding.name.to_string(),
+    };
+    let _ = writeln!(out, "    {cause_id} -->|\"{}\"| command", label(&edge));
     let mut reached_failure = false;
     for (index, outcome) in command.outcomes.iter().enumerate() {
         let _ = writeln!(
@@ -2829,7 +2966,27 @@ fn binding_flow(ir: &EssIr, binding: &ResolvedBinding) -> String {
             );
             let _ = writeln!(out, "    outcome{index} --> emit{index}_{emitted}");
         }
-        if let Some(handle) = &outcome.error {
+        if let (Some(handle), ResolvedFailure::ByRefusal { policy }) =
+            (&outcome.error, binding.on_failure())
+        {
+            // Each refusal goes where its own selected policy sends it (ess/22).
+            let action = policy.select(Some(&outcome.name));
+            let _ = writeln!(out, "    error{index}[\"{}\"]", label(&handle.to_string()));
+            let _ = writeln!(out, "    outcome{index} --> error{index}");
+            let _ = writeln!(
+                out,
+                "    error{index} --> policy{index}[\"{}\"]",
+                label(&action_label(ir, action))
+            );
+            if let ess_compiler::ir::ResolvedRefusalAction::Escalate { emits } = action {
+                let _ = writeln!(
+                    out,
+                    "    escalation[\"{}\"]",
+                    label(&ir.event(emits).name.to_string())
+                );
+                let _ = writeln!(out, "    policy{index} --> escalation");
+            }
+        } else if let Some(handle) = &outcome.error {
             let _ = writeln!(out, "    error{index}[\"{}\"]", label(&handle.to_string()));
             let _ = writeln!(out, "    outcome{index} --> error{index}");
             let _ = writeln!(
@@ -2864,6 +3021,26 @@ fn failure_label(ir: &EssIr, binding: &ResolvedBinding) -> String {
         ResolvedFailure::Drop => "dropped: the work is lost".to_owned(),
         ResolvedFailure::BoundedRetry { bound } => {
             format!("retried up to {} attempts, then dropped", bound.attempts)
+        }
+        ResolvedFailure::ByRefusal { .. } => "selected per refusal".to_owned(),
+    }
+}
+
+/// Where one refusal of a refusal-selected policy goes, in a few words for a diagram node.
+fn action_label(ir: &EssIr, action: &ess_compiler::ir::ResolvedRefusalAction) -> String {
+    use ess_compiler::ir::ResolvedRefusalAction;
+    match action {
+        ResolvedRefusalAction::Drop => "dropped: the work is lost".to_owned(),
+        ResolvedRefusalAction::Retry { bound: None } => "retried by the transport".to_owned(),
+        ResolvedRefusalAction::Retry { bound: Some(bound) } if bound.final_outcomes.is_empty() => {
+            format!("retried up to {} attempts in all", bound.attempts)
+        }
+        ResolvedRefusalAction::Retry { bound: Some(bound) } => format!(
+            "retried up to {} attempts in all, unless final",
+            bound.attempts
+        ),
+        ResolvedRefusalAction::Escalate { emits } => {
+            format!("escalated, emitting {}", ir.event(emits).name)
         }
     }
 }

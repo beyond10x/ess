@@ -227,7 +227,9 @@ fn send_email_behaviour_is_generated_and_asks_the_context_for_the_providers_answ
     let synthesis = synthesize(&ir).expect("the fixture has a realizable target");
     let behaviour = artifact(&synthesis, "crates/billing-types/src/behaviour.rs");
     assert!(
-        behaviour.contains("self.ports.external(\"billing.email.SendEmail\", \"failed\")"),
+        behaviour.contains(
+            "self.ports.try_external(ExternalCommand::BillingEmailSendEmail(&input), \"failed\")?"
+        ),
         "{behaviour}"
     );
 }
@@ -682,22 +684,41 @@ fn newtypes_stay_distinct_and_the_declared_crossing_is_the_only_bridge() {
 fn stubs_in(synthesis: &ess_synth::Synthesis) -> Vec<(String, String)> {
     let mut found = Vec::new();
     for emitted in synthesis.artifacts.values() {
-        let text = &emitted.contents;
+        // This exact companion helper reports a dynamic context failure, not a planned stub.
+        // Any changed signature/body remains subject to the literal-source checks below.
+        let context_helper = "pub fn unmet_context(source: &'static str) -> UnmetObligation { UnmetObligation { capability: \"context answer\", source } }";
+        let text = if emitted.contents.contains("pub fn unmet_context(") {
+            assert_eq!(
+                emitted.contents.matches(context_helper).count(),
+                1,
+                "the fallible context helper must have its exact dynamic-source form"
+            );
+            emitted.contents.replace(context_helper, "")
+        } else {
+            emitted.contents.clone()
+        };
         let mut from = 0;
         while let Some(position) = text[from..].find("UnmetObligation { capability: \"") {
             let at = from + position + "UnmetObligation { capability: \"".len();
-            let capability_end = text[at..].find('"').expect("the capability closes") + at;
-            let source_at = text[capability_end..]
+            let literal_end = text[at..].find('}').expect("the literal closes") + at;
+            let capability_end = text[at..literal_end]
+                .find('"')
+                .expect("the capability closes")
+                + at;
+            let source_at = text[capability_end..literal_end]
                 .find("source: \"")
                 .expect("the source follows")
                 + capability_end
                 + "source: \"".len();
-            let source_end = text[source_at..].find('"').expect("the source closes") + source_at;
+            let source_end = text[source_at..literal_end]
+                .find('"')
+                .expect("the source closes")
+                + source_at;
             found.push((
                 text[at..capability_end].to_owned(),
                 text[source_at..source_end].to_owned(),
             ));
-            from = source_end;
+            from = literal_end + 1;
         }
     }
     found.sort();

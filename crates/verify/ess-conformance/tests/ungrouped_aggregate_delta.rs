@@ -5,8 +5,10 @@
 //! including rows another user of a shared target made, so its absolute value is not the
 //! scenario's to assert. It is read and snapshotted before the rows are created, and only the
 //! change in each `count` and `sum` is asserted after them. A view with neither, and a grouped view
-//! nothing scopes, keep `ESS-SYNTH-016`.
+//! nothing scopes, are observed exactly under a fresh suite's `Empty` authority
+//! (`docs/design/aggregate-group-selection.md`) and refused as `ESS-SYNTH-016` without it.
 use std::collections::{BTreeMap, BTreeSet};
+mod support_versions;
 
 use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
 use ess_conformance::{
@@ -111,44 +113,117 @@ fn a_count_beside_a_maximum_asserts_the_count_change_and_says_the_maximum_is_not
     );
     let purpose = counted.purpose.to_string();
     assert!(purpose.contains("`longest`"), "{purpose}");
-    assert!(refused(&result, "ESS-SYNTH-016").is_empty());
+    assert_eq!(refused(&result, "ESS-SYNTH-016").len(), 0);
 }
 
+/// Every expectation the scenario holds of `view`, in step order, and how many reads there are.
+/// An `eventually` view's block repeats the parameters on each expectation, so a read is one set
+/// of parameters.
+fn expected(scenario: &ConformanceScenario) -> (usize, Vec<ViewExpectation>) {
+    let mut reads = Vec::new();
+    let mut out = Vec::new();
+    for step in &scenario.steps {
+        match step {
+            ScenarioStep::QueryView { params, .. } => reads.push(params.clone()),
+            ScenarioStep::ExpectView { expectation, .. } => out.push(expectation.clone()),
+            ScenarioStep::EventuallyView {
+                params,
+                expectation,
+                ..
+            } => {
+                if !reads.contains(params) {
+                    reads.push(params.clone());
+                }
+                out.push(expectation.clone());
+            }
+            _ => {}
+        }
+    }
+    (reads.len(), out)
+}
+
+fn fields(pairs: &[(&str, Node)]) -> BTreeMap<String, ess_conformance::ScenarioValue> {
+    pairs
+        .iter()
+        .map(|(name, value)| {
+            (
+                (*name).to_owned(),
+                ess_conformance::ScenarioValue::literal(value.clone()),
+            )
+        })
+        .collect()
+}
+
+/// Under a fresh suite's `scenario_initial_state: empty` the one row is over this scenario's rows
+/// alone, so a view with no `count` or `sum` is asserted absolutely rather than refused
+/// (`docs/design/aggregate-group-selection.md`). A view with one keeps its change.
 #[test]
-fn an_ungrouped_view_with_no_count_or_sum_keeps_its_unscoped_refusal() {
+fn an_ungrouped_view_with_no_count_or_sum_is_observed_exactly_under_empty_authority() {
     let result = synthesis(&with_views(LONGEST));
-    assert_eq!(
-        refused(&result, "ESS-SYNTH-016"),
-        ["demo.orders.Longest/aggregate"]
-    );
+    assert_eq!(refused(&result, "ESS-SYNTH-016"), Vec::<String>::new());
     assert!(!aggregate_delta::used_by(&result.suite));
+    let longest = scenario(&result.suite, "demo.orders.Longest");
+    // A's rows hold 1, 1 and 3; the row lacking `duration` is skipped.
+    assert_eq!(
+        expected(longest),
+        (
+            1,
+            vec![
+                ViewExpectation::Contains {
+                    fields: fields(&[("longest", n("3"))])
+                },
+                ViewExpectation::Counts {
+                    at_least: Some(1),
+                    at_most: Some(1)
+                },
+            ]
+        )
+    );
 }
 
+/// The same authority makes a view grouped by an enum alone exact: every group, its absent one
+/// included, and the number of rows.
 #[test]
-fn a_view_grouped_by_an_enum_alone_keeps_its_unscoped_refusal() {
+fn a_view_grouped_by_an_enum_alone_is_observed_exactly_under_empty_authority() {
     let result = synthesis(&with_views(PER_CHANNEL));
-    assert_eq!(
-        refused(&result, "ESS-SYNTH-016"),
-        ["demo.orders.PerChannel/aggregate"]
-    );
+    assert_eq!(refused(&result, "ESS-SYNTH-016"), Vec::<String>::new());
     assert!(!aggregate_delta::used_by(&result.suite));
+    let per_channel = scenario(&result.suite, "demo.orders.PerChannel");
+    assert_eq!(
+        expected(per_channel),
+        (
+            1,
+            vec![
+                ViewExpectation::Contains {
+                    fields: fields(&[("channel", Node::Text("Web".into())), ("orders", n("3"))])
+                },
+                ViewExpectation::Contains {
+                    fields: fields(&[("channel", Node::Text("Phone".into())), ("orders", n("1"))])
+                },
+                ViewExpectation::Contains {
+                    fields: fields(&[("channel", Node::Null), ("orders", n("1"))])
+                },
+                ViewExpectation::Counts {
+                    at_least: Some(3),
+                    at_most: Some(3)
+                },
+            ]
+        )
+    );
 }
 
 #[test]
 fn a_suite_with_a_change_is_written_at_26_and_its_coverage_at_27() {
     let suite = synthesis(ORDERS).suite;
     assert!(aggregate_delta::used_by(&suite));
-    assert_eq!(
-        suite.provenance.suite_version.major(),
-        aggregate_delta::ORDINARY
-    );
+    assert_eq!(suite.provenance.suite_version.major(), 34);
     let input = coverage_build::build(&ir(ORDERS), &[], Scope::System, Origins::Generated)
         .unwrap_or_else(|error| panic!("{error:?}"));
     assert_eq!(
         input.selected().suite().provenance.suite_version.major(),
-        aggregate_delta::COVERAGE
+        35
     );
-    // Without the ungrouped total, nothing needs the round-3 pair and the suite keeps /16.
+    // Without the ungrouped total, the delta vocabulary is absent; fresh isolation still uses /34.
     let without = with_views(
         ORDERS
             .split_once("  - name: demo.orders.PerGroup\n")
@@ -160,7 +235,7 @@ fn a_suite_with_a_change_is_written_at_26_and_its_coverage_at_27() {
     );
     let older = synthesis(&without).suite;
     assert!(!aggregate_delta::used_by(&older));
-    assert_eq!(older.provenance.suite_version.major(), 16);
+    assert_eq!(older.provenance.suite_version.major(), 34);
 }
 
 #[test]
@@ -172,13 +247,14 @@ fn a_change_under_an_older_suite_label_is_refused_as_vocabulary_it_does_not_have
         "{original}"
     );
     // The document relabelled with the ordinary major below the round-3 pair.
-    let older = original.replace("\"ess-conformance/26\"", "\"ess-conformance/24\"");
+    let older = support_versions::legacy_json(&original, 24);
     assert_ne!(older, original);
     let error = AdmittedSuite::from_json(&older).expect_err("a change needs suite/26");
     assert_eq!(error.issues[0].reason, "UnsupportedVocabulary", "{error}");
     assert!(error.to_string().contains("suite/26"), "{error}");
     // The typed suite pinned there is refused before serialization.
     suite.provenance.suite_version = SuiteFormat::parse("ess-conformance/24").unwrap();
+    suite.provenance.scenario_initial_state = None;
     let error = ess_conformance::admission::suite(&suite).expect_err("refused");
     assert_eq!(error.issues[0].reason, "UnsupportedVocabulary");
     assert!(error.to_string().contains("suite/26"), "{error}");

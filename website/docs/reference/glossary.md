@@ -12,7 +12,7 @@ authority; this list only helps you find it.
 | Term | Meaning | Defined in |
 |---|---|---|
 | Actor | Who may invoke which commands. | [The model](../concepts/ess.md#the-model) |
-| Aggregate view | A view with `group_by:` that reports counts, sums and extremes over one entity's rows. | [Aggregate views](../guides/specify/values-and-views.md#aggregate-views) |
+| Aggregate view | A view with `group_by:` that reports counts, sums and extremes over one entity's rows. | [Aggregate views](../guides/specify/aggregate-views.md) |
 | Ambient precondition | A command every command of the system runs inside, such as an open session. | [Ambient preconditions](../guides/specify/commands-and-outcomes.md#a-system-can-run-inside-ambient-preconditions) |
 | Authored scenario | A conformance scenario a person wrote as an `ess-scenario/*` document, joined to a suite only when `--scenarios` names it. | [Author scenarios](../guides/verify/author-scenarios.md#select-authored-scenarios-explicitly) |
 | Binding | An event-to-command reaction across contexts, including what happens when it fails. | [Bindings](../guides/specify/bindings-and-components.md#a-binding-says-what-happens-when-it-fails) |
@@ -21,7 +21,7 @@ authority; this list only helps you find it.
 | Component | A unit of ownership over domains, which can become a module or a process without changing what it owns. | [Logical, interface and delivery owners](../concepts/ess.md#logical-interface-and-delivery-owners) |
 | Concurrent history | A recorded run of several clients, with each call's invoke and return instants, checked against the model. | [Check a concurrent history](../guides/verify/explore.md#check-a-concurrent-history) |
 | Consistency | A view's declaration of whether a generated assertion reads it immediately or eventually. | [View consistency](../guides/specify/values-and-views.md#a-view-declares-its-consistency) |
-| Conversion | A declared reason for a binding to carry a value from one context's type into another's. | [Conversions](../guides/specify/bindings-and-components.md#crossing-contexts-takes-a-declared-conversion) |
+| Conversion | A declared reason for a binding to carry a value from one context's type into another's. | [Conversions](../guides/specify/wire-names.md#crossing-contexts-takes-a-declared-conversion) |
 | Declared coverage | An opt-in suite form that retains its declared scope, the selected scenarios and every refusal, so a report can qualify what it covers. | [Declared coverage](../guides/verify/runners.md#opt-into-declared-coverage) |
 | Deliverable descriptor | An `ess-component/1` document naming a deliverable's source paths and release units. | [Component delivery](../concepts/component-delivery.md) |
 | Digest | A hash identifying only the bytes its producer defines; several digest kinds exist. | [Which digest is this?](../reference/formats.md#which-digest-is-this) |

@@ -61,6 +61,7 @@ fn fields() -> Vec<Field> {
 /// `<fact> == Fax`, the story's own reproduction shape.
 fn compared(fact: &str) -> Predicate {
     Predicate::Compare {
+        kind: ess_primitives::predicate::CompareKind::Value,
         left: Operand::Fact(FactPath::new(fact).unwrap()),
         op: CompareOp::Eq,
         right: Operand::Literal(FactValue::text("Fax")),

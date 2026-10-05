@@ -192,6 +192,7 @@ fn complete_real_fixture_inventory_keeps_versions_slots_events_effects_and_fulfi
         matches!(issue.effect, entity_core::OutcomeEffect::Moves { ref to, .. } if to == "Issued")
     );
     assert_eq!(issue.emits.len(), 1);
+    assert_eq!(issue.set["issued_at"], json!("$args.input.issued_at"));
     // The issuing instant is the caller's (`sets: {issued_at: input.issued_at}`), so it is a
     // source-determined assignment and no host action; `note` stays the host's to fulfil.
     assert!(issue.set.contains_key("issued_at"));
@@ -429,8 +430,8 @@ fn operation_identity_and_optional_output_boundaries_are_explicit() {
         &billing_path,
         "domains/invoice.yaml",
         &[(
-            "        sets:\n          issued_at: input.issued_at\n",
-            "        sets:\n          issued_at: input.issued_at\n          invoice_id: input.invoice_id\n",
+            "          issued_at: input.issued_at\n",
+            "          issued_at: input.issued_at\n          invoice_id: input.invoice_id\n",
         )],
     );
     let plan = SynthesisPlan::of(&identity);
@@ -444,10 +445,16 @@ fn operation_identity_and_optional_output_boundaries_are_explicit() {
     let optional = compile_replacing(
         &billing_path,
         "domains/invoice.yaml",
-        &[(
-            "      - name: issued_at\n        type: Timestamp\n",
-            "      - name: issued_at\n        type: Optional<Timestamp>\n",
-        )],
+        &[
+            (
+                "      - name: issued_at\n        type: Timestamp\n",
+                "      - name: supplied_issued_at\n        type: Optional<Timestamp>\n",
+            ),
+            (
+                "          issued_at: input.issued_at\n",
+                "          issued_at: input.supplied_issued_at\n",
+            ),
+        ],
     );
     let plan = SynthesisPlan::of(&optional);
     let diagnostics = lower(
@@ -878,7 +885,13 @@ fn preserves(
 
 #[test]
 fn accepted_operation_action_algebra_is_enforced_after_branch_selection() {
-    let ir = compile_directory(&example("billing"));
+    // This boundary test deliberately leaves the optional timestamp to fulfillment, so all
+    // three optional actions remain exercised even though the real example now stores input.
+    let ir = compile_replacing(
+        &example("billing"),
+        "domains/invoice.yaml",
+        &[("        sets:\n          issued_at: input.issued_at\n", "")],
+    );
     let plan = SynthesisPlan::of(&ir);
     let lowered = lower(
         &selected(&ir, &plan, "invoice-service"),
@@ -897,7 +910,7 @@ fn accepted_operation_action_algebra_is_enforced_after_branch_selection() {
         fields: invoice_fields(),
     };
     let operation = "billing.invoice.IssueInvoice";
-    let input = json!({"invoice_id": logical_id, "issued_at": "2026-09-16T10:30:00Z"});
+    let input = json!({"invoice_id": logical_id, "issued_at": "2026-01-05T09:00:01Z"});
 
     assert!(selected_fulfillment(&runtime, &instance, operation, &input)
         .complete(BTreeMap::new())
@@ -923,46 +936,24 @@ fn accepted_operation_action_algebra_is_enforced_after_branch_selection() {
     );
     assert!(prepared.complete(wrong_type).is_err());
 
-    // `issued_at` is the outcome's own assignment from the input, so a host action for it is one
-    // the branch does not declare.
     let prepared = selected_fulfillment(&runtime, &instance, operation, &input);
-    let mut host_issued_at = preserves(&prepared);
-    host_issued_at.insert(
+    let mut set_and_remove = preserves(&prepared);
+    set_and_remove.insert(
         "issued_at".to_owned(),
         OperationFieldAction::Set {
-            value: json!("2027-01-01T00:00:00Z"),
+            value: json!("2026-09-16T10:30:00Z"),
         },
     );
-    assert!(prepared.complete(host_issued_at).is_err());
-
-    let prepared = selected_fulfillment(&runtime, &instance, operation, &input);
-    let mut optional_set = preserves(&prepared);
-    optional_set.insert(
-        "note".to_owned(),
-        OperationFieldAction::Set {
-            value: json!("issued on request"),
-        },
-    );
+    set_and_remove.insert("note".to_owned(), OperationFieldAction::Remove);
     let issued = prepared
-        .complete(optional_set)
-        .expect("an optional set is admitted")
+        .complete(set_and_remove)
+        .expect("optional set and absent remove are admitted")
         .into_decision()
         .expect("issue accepts");
     assert_eq!(
         issued.instance.fields["issued_at"],
         json!("2026-09-16T10:30:00Z")
     );
-    assert_eq!(issued.instance.fields["note"], json!("issued on request"));
-    assert_eq!(issued.instance.lifecycle_state, "Issued");
-
-    let prepared = selected_fulfillment(&runtime, &instance, operation, &input);
-    let mut absent_remove = preserves(&prepared);
-    absent_remove.insert("note".to_owned(), OperationFieldAction::Remove);
-    let issued = prepared
-        .complete(absent_remove)
-        .expect("an absent optional remove is admitted")
-        .into_decision()
-        .expect("issue accepts");
     assert!(!issued.instance.fields.contains_key("note"));
     assert_eq!(issued.instance.lifecycle_state, "Issued");
 
@@ -1347,7 +1338,7 @@ fn subject_field_selection_and_a_responding_preserve_lower_and_decide_faithfully
     assert!(kept.set.is_empty());
     assert!(kept.set_if_present.is_empty());
     assert!(kept.fulfills.is_empty());
-    assert!(kept.emits.is_empty());
+    assert_eq!(kept.emits.len(), 0);
     assert!(kept.responds.contains_key("seen"));
     assert!(!lowered.bindings().requirements().iter().any(|requirement| matches!(
         requirement,
@@ -1388,7 +1379,7 @@ fn subject_field_selection_and_a_responding_preserve_lower_and_decide_faithfully
     let decision = evaluation.into_decision().expect("preserve accepts");
     assert_eq!(decision.instance.lifecycle_state, "Draft");
     assert_eq!(decision.instance.fields, posted.fields);
-    assert!(decision.events.is_empty());
+    assert_eq!(decision.events.len(), 0);
 
     let emailed = invoice_instance("Draft", "Email");
     let PreloadDecision::Load(prepared) = runtime
@@ -1449,10 +1440,7 @@ fn state_change_selection_partitions_the_held_state_exactly() {
 
     let registry = registry(&lowered);
     let runtime = Runtime::new(&registry);
-    let input = json!({
-        "invoice_id": "b404a1e8-9360-4af5-a0ac-8a483adfa225",
-        "issued_at": "2026-09-16T10:30:00Z"
-    });
+    let input = json!({"invoice_id": "b404a1e8-9360-4af5-a0ac-8a483adfa225", "issued_at": "2026-01-05T09:00:01Z"});
     for (state, expected) in [("Draft", "issued"), ("Issued", "reissued")] {
         let instance = invoice_instance(state, "Email");
         let prepared =
@@ -2125,7 +2113,7 @@ fn taken_in(
     let binding = &lowered.bindings().commands()[&name(operation)];
     let mut input = json!({"invoice_id": "b404a1e8-9360-4af5-a0ac-8a483adfa225"});
     if operation == "billing.invoice.IssueInvoice" {
-        input["issued_at"] = json!("2026-09-16T10:30:00Z");
+        input["issued_at"] = json!("2026-01-05T09:00:01Z");
     }
     let arguments = json!({
         "input": input,

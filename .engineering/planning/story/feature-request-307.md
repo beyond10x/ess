@@ -21,7 +21,7 @@ scope:
   path: crates/verify/ess-conformance/tests/fixtures/subject-guard-copied-field.yaml
 - confidence: cited
   path: crates/verify/ess-conformance/tests/subject_guard_copied_field.rs
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T12:22:56Z", actor: "human:timo", revision: 5, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T12:22:57Z", actor: "human:timo", revision: 6, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
@@ -65,3 +65,7 @@ Keep changes within existing bounded related arrangement, settled values and vie
 The expanded two-policy regression demonstrated that IgnoresRollbackPolicy survives the old suite. Binding ordinary command input during boundary evaluation made seven copy/branch/state mutants decisive, while an explicit absence-coverage assertion remained red: isolating defined(flag) also demanded flag == true, which cannot hold when that Optional field is absent (307-controls-2.log).
 
 Accept the bounded subject_fact.rs refinement: for the absent side of a defined Optional stored-field conjunct, retain independent conjuncts (including the ordinary result input), and remove only comparisons that require the same field to be present. Identify dependent reads through resolved typed paths, not broad textual substitution. Run the existing search and verify the entire selected branch afterward; omitting a dependent comparison from an arrangement goal must never omit it from actual outcome verification. Retain MAX_BOUNDARIES=8, deterministic ordering and explicit unsupported/cycle limits. Include true/false/absent controls and keep the named interpreter RelatedField refusal separate from honest-target acceptance evidence.
+
+## Current combined copied-field control correction
+
+The original full affected run (logSHA39076a45b7c1c2ec1883b78230ec1b24818e367352c2e498e189fcd601e73d78) failed the historical limitation assertion in subject_guard_copied_field.rs even though the imported native related-source implementation now returns Passed. Read-only diagnosis against74a67d7cd is retained with SHA832bdcc36f225ff517972e211e745f1ced18043103a27875f42c9bd81d1d6673. Author scope_nested_increment is assigned only that test file's obsolete limitation control: require exact PROMOTED, ROLLED_BACK and FINISHED scenarios to exist and pass, plus the entire native report to pass. Preserve the actual healthy target, CopiesNothing and all nine copy/branch mutant controls unchanged. No production change or whole307 closure. Run the whole target, strict scoped lint and owning format, followed by independent review before integration. The adjacent exact response-regex inventory correction is owned by the accepted combined runtime verification under312, not a weakening of307 semantics.

@@ -53,6 +53,7 @@ pub fn emit_input(
     input: &crate::coverage::AdmittedInput,
 ) -> Result<BTreeMap<String, Artifact>, crate::admission::AdmissionError> {
     response_replay_supported(input.selected().suite())?;
+    refusal_policy_supported(ir)?;
     let replay = crate::web_replay::AdmittedReplay::new(ir, input)?;
     let mut out = BTreeMap::new();
     for (path, contents) in [
@@ -90,6 +91,7 @@ pub fn emit(
 ) -> Result<BTreeMap<String, Artifact>, crate::admission::AdmissionError> {
     crate::admission::model(ir)?;
     response_replay_supported(suite)?;
+    refusal_policy_supported(ir)?;
     let json = suite.to_canonical_json()?;
     let mut out = BTreeMap::new();
     let mut add = |path: &str, contents: String| {
@@ -145,7 +147,7 @@ fn command(command: &ess_compiler::ir::ResolvedCommand) -> serde_json::Value {
 }
 
 fn outcome(outcome: &ess_compiler::ir::ResolvedOutcome) -> serde_json::Value {
-    serde_json::json!({
+    let mut projected = serde_json::json!({
         "name": outcome.name.as_str(),
         "refuses": outcome.refuses,
         "subject": outcome.subject.as_ref().map(subject),
@@ -155,7 +157,11 @@ fn outcome(outcome: &ess_compiler::ir::ResolvedOutcome) -> serde_json::Value {
             .iter()
             .map(|set| serde_json::json!({ "target": set.target, "from": set_source(set) }))
             .collect::<Vec<_>>(),
-    })
+    });
+    if !outcome.one_time_response.is_empty() {
+        projected["one_time_response"] = serde_json::json!(outcome.one_time_response);
+    }
+    projected
 }
 
 /// What an outcome does to its subject, in the words the page needs to move an instance.
@@ -216,13 +222,19 @@ fn binding(binding: &ess_compiler::ir::ResolvedBinding) -> serde_json::Value {
     if let Some(periodic) = binding.cause.periodic() {
         return serde_json::json!({ "name": binding.name.as_str(), "periodic": periodic, "command": binding.command.to_string(), "delivery": delivery(binding.delivery), "failure": binding.failure.to_string() });
     }
-    serde_json::json!({
+    let mut value = serde_json::json!({
         "name": binding.name.as_str(),
         "event": binding.cause.event().expect("event branch").to_string(),
         "command": binding.command.to_string(),
         "delivery": delivery(binding.delivery),
         "failure": binding.failure.to_string(),
-    })
+    });
+    // The event-payload condition (ess/22), only where one is declared, so every other model keeps
+    // its bytes. The page carries it beside the binding and evaluates nothing.
+    if let Some(condition) = &binding.condition {
+        value["where"] = serde_json::json!(condition.plan.predicate.to_string());
+    }
+    value
 }
 
 fn names<T: ToString>(items: impl Iterator<Item = T>) -> Vec<String> {
@@ -246,6 +258,7 @@ fn set_source(set: &ess_compiler::ir::ResolvedPayloadField) -> Option<String> {
         | ess_compiler::ir::ResolvedPayloadValue::InputOrGenerated { .. }
         | ess_compiler::ir::ResolvedPayloadValue::Struct { .. }
         | ess_compiler::ir::ResolvedPayloadValue::RelatedField { .. }
+        | ess_compiler::ir::ResolvedPayloadValue::RelatedSelection { .. }
         | ess_compiler::ir::ResolvedPayloadValue::CallerAttribute { .. }
         | ess_compiler::ir::ResolvedPayloadValue::ChangedCount => None,
     }
@@ -291,10 +304,38 @@ fn readme(ir: &EssIr, suite: &ConformanceSuite) -> String {
     )
 }
 
+/// A failure policy selected per refusal (ess/22, beyond10x/ess#269) has no representation in the
+/// page's model, whose closed binding names one failure word: printing the fallback's would claim
+/// it for every refusal. Refused by name, as the generated targets refuse it.
+fn refusal_policy_supported(ir: &EssIr) -> Result<(), crate::admission::AdmissionError> {
+    match ir
+        .bindings()
+        .values()
+        .find(|binding| binding.refusal_policy.is_some())
+    {
+        Some(binding) => Err(crate::admission::AdmissionError::new(
+            "UnsupportedConstruct",
+            format!("$model.bindings.{}.on_failure", binding.name),
+            "the scenario player names one failure word per binding and cannot show a failure \
+             policy selected per refusal",
+        )),
+        None => Ok(()),
+    }
+}
+
 fn response_replay_supported(
     suite: &ConformanceSuite,
 ) -> Result<(), crate::admission::AdmissionError> {
-    if crate::fixtures::used_by(suite) {
+    // A browser depiction is not evidence that a backend accepted seeded setup (beyond10x/ess#413).
+    if crate::synthesis_seeds::used_by(suite) {
+        return Err(crate::admission::AdmissionError::new(
+            "UnsupportedVocabulary",
+            "$suite.provenance.synthesis_seeds",
+            "browser replay refuses a suite generated with synthesis seeds: it cannot depict a \
+             backend establishing seeded setup",
+        ));
+    }
+    if crate::fixtures::provisioned_by(suite) {
         return Err(crate::admission::AdmissionError::new(
             "UnsupportedVocabulary",
             "$suite.scenarios",
@@ -309,6 +350,43 @@ fn response_replay_supported(
         ));
     }
     Ok(())
+}
+
+/// Emit the complete default browser product with original source and execution authority.
+/// Existing `emit`/`emit_input` are explicit legacy declaration-replay APIs.
+pub fn emit_product(
+    sources: &[crate::web_execution::bundle::SourceDocument],
+    execution: &crate::web_execution::bundle::Execution,
+) -> crate::web_execution::Result<BTreeMap<String, Artifact>> {
+    use crate::web_execution::{bundle, host, Error};
+    let (manifest, blobs) = bundle::create(sources, execution)?;
+    let mut out = BTreeMap::new();
+    for blob in blobs {
+        let contents = String::from_utf8(blob.bytes).map_err(|_| Error::InvalidBundle)?;
+        out.insert(blob.path.clone(), Artifact::new(&blob.path, contents));
+    }
+    for (path, contents) in [
+        ("browser.json", manifest.as_str()),
+        ("index.html", include_str!("../assets/browser-index.html")),
+        ("player.js", include_str!("../assets/browser-player.js")),
+        ("worker.js", include_str!("../assets/browser-worker.js")),
+        ("assets/vue.esm-browser.prod.js", VUE),
+        ("assets/vue.LICENSE", VUE_LICENCE),
+        ("rust/browser_host.rs", host::MODULE),
+        ("rust/Cargo.toml.example", host::MANIFEST),
+        ("rust/lib.rs.example", host::LIBRARY),
+        ("README.md", host::README),
+    ] {
+        if out
+            .insert(path.into(), Artifact::new(path, contents.to_owned()))
+            .is_some()
+        {
+            // Original source labels cannot shadow a fixed product resource. Never return an
+            // artifact set whose manifest names different bytes than the published file.
+            return Err(Error::InvalidBundle);
+        }
+    }
+    Ok(out)
 }
 
 #[cfg(test)]

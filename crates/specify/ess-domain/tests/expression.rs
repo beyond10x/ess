@@ -85,7 +85,11 @@ fn registry() -> TypeRegistry {
             "sample.Union",
             TypeBody::Union {
                 tag: "kind".into(),
-                variants: [("email".into(), TypeRef::parse("sample.Email").unwrap())].into(),
+                variants: [(
+                    "email".into(),
+                    Some(TypeRef::parse("sample.Email").unwrap()),
+                )]
+                .into(),
             },
         ),
     ] {
@@ -129,6 +133,7 @@ fn path(text: &str) -> FactPath {
 }
 fn compare(left: &str, right: &str) -> Predicate {
     Predicate::Compare {
+        kind: ess_primitives::predicate::CompareKind::Value,
         left: Operand::Fact(path(left)),
         op: CompareOp::Eq,
         right: Operand::Fact(path(right)),
@@ -212,6 +217,7 @@ fn scalar_operand_contract_is_distinct_from_nominal_assignment_and_satisfiabilit
         predicate("{note: {exists: true}}"),
         predicate("{amount: {any_of: []}}"),
         Predicate::Compare {
+            kind: ess_primitives::predicate::CompareKind::Value,
             left: Operand::Literal(FactValue::Bool(true)),
             op: CompareOp::Eq,
             right: Operand::Literal(FactValue::Bool(false)),
@@ -244,6 +250,7 @@ fn every_operand_membership_item_and_dead_ast_child_is_checked() {
             Predicate::Not(Box::new(compare("flag", "text"))),
         ]),
         Predicate::Compare {
+            kind: ess_primitives::predicate::CompareKind::Value,
             left: Operand::Literal(FactValue::Bool(true)),
             op: CompareOp::Eq,
             right: Operand::Literal(FactValue::text("true")),
@@ -332,7 +339,7 @@ fn quantifiers_resolve_targets_before_pushing_lexical_binders() {
         quantified("lines", "line", Predicate::Always),
         predicate("line.amount > 0"),
     ]);
-    assert!(!check_predicate(&env, &p, "owner").errors.is_empty());
+    assert_ne!(check_predicate(&env, &p, "owner").errors.len(), 0);
 }
 #[test]
 fn parameters_are_typed_at_depth_and_shadowed_lexically() {
@@ -356,7 +363,7 @@ fn parameters_are_typed_at_depth_and_shadowed_lexically() {
         &quantified("lines", "param", predicate("param.amount > 0")),
         "owner",
     );
-    assert!(checked.errors.is_empty());
+    assert_eq!(checked.errors.len(), 0);
     assert!(checked.parameters.is_empty());
     for text in [
         "param.absent.amount > 0",
@@ -507,6 +514,12 @@ predicate_forms! {
     // The same for the case-insensitive operators (beyond10x/ess#140): refused over an enum as a
     // type mismatch whatever the literal. `tests/subject_guard_input.rs` asserts that refusal.
     FoldMatch => false,
+    // Distinct list members (`ess/22`, beyond10x/ess#237) compare keys with each other and carry no
+    // literal at all.
+    Distinct => false,
+    // A calendar window (`docs/design/calendar-window-guards.md`) compares an instant with days and
+    // times of its own, never a literal with a fact, so the enum-variant rule has no case of it.
+    Window => false,
 }
 
 /// The form a predicate is, as an exhaustive match.
@@ -529,6 +542,8 @@ fn form_of(predicate: &Predicate) -> Form {
         Predicate::Exists(_) => Form::Exists,
         Predicate::TextMatch { .. } => Form::TextMatch,
         Predicate::FoldMatch { .. } => Form::FoldMatch,
+        Predicate::Distinct(_) => Form::Distinct,
+        Predicate::Window(_) => Form::Window,
     }
 }
 
@@ -557,10 +572,14 @@ fn carries_a_literal(predicate: &Predicate) -> bool {
         Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
             carries_a_literal(&quantified.body)
         }
-        // Nothing to compare: these read a fact, or nothing at all.
-        Predicate::Always | Predicate::Never | Predicate::Truthy(_) | Predicate::Defined(_) => {
-            false
-        }
+        // Nothing to compare: these read a fact, or nothing at all. A window holds an instant to
+        // its own days and times, never to a literal of the fact's.
+        Predicate::Always
+        | Predicate::Never
+        | Predicate::Truthy(_)
+        | Predicate::Defined(_)
+        | Predicate::Distinct(_)
+        | Predicate::Window(_) => false,
     }
 }
 
@@ -574,6 +593,7 @@ fn carries_a_literal(predicate: &Predicate) -> bool {
 fn enum_literal_cases(variant: &str) -> Vec<(String, Predicate)> {
     let literal = || Operand::Literal(FactValue::text(variant));
     let eq = |left: Operand, right: Operand| Predicate::Compare {
+        kind: ess_primitives::predicate::CompareKind::Value,
         left,
         op: CompareOp::Eq,
         right,
@@ -588,6 +608,7 @@ fn enum_literal_cases(variant: &str) -> Vec<(String, Predicate)> {
         (
             "inequality".to_owned(),
             Predicate::Compare {
+                kind: ess_primitives::predicate::CompareKind::Value,
                 left: Operand::Fact(path("state")),
                 op: CompareOp::Ne,
                 right: literal(),

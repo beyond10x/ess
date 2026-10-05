@@ -7,7 +7,8 @@
 //! every view, command, event and page parameter type the document names exists in it, that form
 //! fields, `bind` keys, columns and `row.<field>` paths name inputs and fields that exist, and
 //! that every section's read is readable by some actor — an approximation, since ESS grants
-//! commands and not views (documented on [`Model`]). [`CHECKS`] lists them all.
+//! commands and not views (documented on [`Model`]) — and that a page naming its `actor` sends
+//! only commands that actor is granted. [`CHECKS`] lists them all.
 //!
 //! A document the loader refuses yields exactly one finding, the refusal, classified under the
 //! check it breaks. A document that loads is checked in full, and every finding names its node by
@@ -162,6 +163,11 @@ pub const CHECKS: &[Check] = &[
     rule("command_in_model"),
     rule("event_in_model"),
     rule("section_readable"),
+    // With `--model`: a page's `actor` names an actor of the model (beyond10x/ess#284).
+    rule("actor_in_model"),
+    // With `--model`: every command a page with an `actor` sends is in that actor's `may`
+    // (beyond10x/ess#284).
+    rule("page_actor_grants"),
     // With `--model`: a read binds a parameter its view does not declare, or leaves a required
     // one unbound.
     rule("read_params"),
@@ -171,8 +177,8 @@ pub const CHECKS: &[Check] = &[
     // With `--model`: form fields and `bind` keys are inputs of their command; columns, record
     // fields and `row.<field>` paths are fields of the view read.
     rule("field_in_model"),
-    // With `--model`: a `group_by`, an aggregate's `field` or a `label_from` names a row field
-    // the view does not have.
+    // With `--model`: a `group_by`, an aggregate's `field`, a `label_from`, or a choice's `value`
+    // or `label` names a row field the view does not have.
     rule("row_fields"),
     // With `--model`: a `group_order` value, or a form choice's fixed option, is no variant of the
     // enum the field holds, or the options leave a variant out.
@@ -182,6 +188,15 @@ pub const CHECKS: &[Check] = &[
     rule("metric_aggregate"),
     // `collection`: `group_order` and `show_empty_groups` order the groups of `group_by`.
     rule("group_order"),
+    // A choice's `options` name an enum of the document, or with `--model` exactly one enum of
+    // the model (beyond10x/ess#330).
+    rule("options_enum"),
+    // `choice`: `value` and `label` name fields of the rows of `reads`, so they need `reads`
+    // (beyond10x/ess#328).
+    rule("choice_projection"),
+    // `header.title_from` names a section that reads: the title's record is its first row
+    // (beyond10x/ess#354).
+    rule("header_record"),
 ];
 
 fn severity_of(id: &str) -> Severity {
@@ -384,7 +399,11 @@ pub fn check_source(
     options: &Options,
 ) -> Report {
     let mut sink = Sink::default();
-    match ess_ui::load_str(text) {
+    let loaded = match model {
+        Some(model) => ess_ui::load_str_with(text, model),
+        None => ess_ui::load_str(text),
+    };
+    match loaded {
         Err(error) => classify::refusal(text, &error, &mut sink),
         Ok(document) => {
             rules::run(&document, base, options, &mut sink);

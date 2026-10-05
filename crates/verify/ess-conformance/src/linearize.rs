@@ -14,14 +14,16 @@
 //!   before it was invoked. An operation that never answered returns after every other one
 //!   ([`ReturnBound::AfterEveryOther`], decision 4), so it never holds another back.
 //! * The model is **nondeterministic**: one step can leave more than one next state — an
-//!   `external:` branch ([`Externals::Open`]), and every input the history does not record (below).
+//!   `external:` branch ([`Externals::Open`](crate::interpret::execute::Externals::Open)), and
+//!   every input the history does not record (below).
 //!   Each next state is a branch of the search.
 //! * A state already reached with the same set of operations ordered is not searched again.
-//! * The history is **partitioned by subject** (P-compositionality): the interpreter's store keys
-//!   every instance by its identity and no step reads another instance, so operations on different
-//!   subjects commute and each subject's operations are searched alone. The history is linearizable
-//!   exactly when every partition is. The one exception is a retried request (below): every subject
-//!   its operations name is one partition.
+//! * Row-local histories are partitioned by subject, joining retry components as described below.
+//!   A command which may read related rows or select a set puts the history into one shared
+//!   partition: those operations do not commute merely because their addressed subjects differ.
+//! * The private store preserves the provenance, type and presence of unrecorded generated values.
+//!   A proven complete path wins over unresolved alternatives; exhaustion without such a path is
+//!   a violation only if no unresolved alternative remains. Exhausted budget remains Unknown.
 //!
 //! # What a returned operation must answer
 //!
@@ -43,6 +45,8 @@
 //! * a `replays:` branch — answered, or taken by an operation that never answered — is available
 //!   only once the request's origin branch has been taken earlier in that order, and changes
 //!   nothing. A replay with nothing of its request taken before it is not one the model allows.
+//! * an operation recording a `decision_time` (`ess-history/2`) made a decision, so a `replays:`
+//!   branch never answers it: a retained answer delivered again carries no instant of its own.
 //!
 //! Because the rule spans the request, every subject its operations name — an original that never
 //! answered names the instance it would have created, a retry that created another names that one
@@ -52,6 +56,15 @@
 //! violation is reported before any search, naming the subject the second answer created and the
 //! request's operations.
 //!
+//! # The instant a decision observed
+//!
+//! An `ess-history/2` operation may record the instant its command decision observed
+//! ([`Operation::decision_time`]). Every alternative and replay of that operation the search tries
+//! reads that one instant as `now`, unchanged. An operation recording none reads no clock: a guard
+//! that needs one is Unknown, which leaves that alternative unresolved — never a violation, and
+//! never a pass by trying instants nobody recorded. `invoked_at` and `returned_at` are ordering
+//! coordinates and are never read as `now`.
+//!
 //! # What `ess-history/1` does not record, and how the search reads it
 //!
 //! An operation records its command, its subject and its outcome, and **not its input**. So the
@@ -60,8 +73,10 @@
 //! synthesis submits — with the field that names the subject set to the recorded `subject_key`.
 //! Every distinct next state any of them reaches is a branch. A creating command's new identity is
 //! the `subject_key`, given to the interpreter as the value of the event field `instance:` names
-//! ([`Generated::Recorded`]); every other value the implementation assigns is left to the model's own
-//! counter.
+//! ([`Generated::Recorded`]). Other implementation-assigned values stay abstract in this private
+//! history entrypoint. A validated witness can prove their constrained domain inhabited; its value
+//! is discarded and cannot decide a later guard. Public native generated-value policies retain
+//! their concrete semantics.
 //!
 //! Because `ess-history/1` records no inputs, neither verdict is exact. A `Violation` says no
 //! candidate input explains the history, and an input outside the candidates might have. A
@@ -140,19 +155,20 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Write as _};
 
 use ess_compiler::ir::{EssIr, ResolvedCommand, ResolvedEffect, ResolvedInstance, ResolvedView};
+use ess_compiler::ir::{ResolvedBody, ResolvedTypeRef};
 use ess_domain::entity::StateName;
 use ess_domain::name::QualifiedName as ModelName;
+use ess_domain::types::Primitive;
 use ess_domain::view::Consistency;
 use ess_primitives::facts::{FactPath, FactStore, FactValue};
 use ess_primitives::node::Node;
 use ess_primitives::predicate::Truth;
 use serde::Serialize;
 
-use crate::history::{Completion, History, Operation, ReturnBound, Verdict};
+use crate::history::{Completion, History, HistoryFormat, Operation, ReturnBound, Verdict};
 use crate::input::TypedFacts;
-use crate::interpret::execute::{
-    execute_generating, Externals, Generated, GeneratedSlot, Store, Undetermined,
-};
+use crate::interpret::execute::history::{self as history_execution, State};
+use crate::interpret::execute::{Generated, GeneratedSlot, Undetermined};
 use crate::witness::{self, Distinction};
 
 /// The search budget when none is named: this many executions of the model.
@@ -338,9 +354,71 @@ struct ViewRead<'h> {
 /// The model-side reading of every operation: commands by subject, judged reads, and the reads
 /// that cannot be judged.
 struct Split<'h> {
-    partitions: BTreeMap<&'h str, Vec<Prepared<'h>>>,
+    partitions: BTreeMap<Partition<'h>, Vec<Prepared<'h>>>,
     reads: Vec<ViewRead<'h>>,
     not_judged: Vec<NotJudged>,
+}
+
+/// A shared interaction group is not a fabricated subject identity.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Partition<'h> {
+    Subject(&'h str),
+    Shared,
+}
+
+impl Partition<'_> {
+    fn diagnostic(self, operations: &[Prepared<'_>]) -> String {
+        match self {
+            Self::Subject(subject) => subject.to_owned(),
+            Self::Shared => operations
+                .iter()
+                .map(|prepared| prepared.operation.subject_key.as_str())
+                .filter(|subject| !subject.is_empty())
+                .min()
+                .unwrap_or("")
+                .to_owned(),
+        }
+    }
+}
+
+/// A conservative grouping dependency, never a command refusal or branch-selection authority.
+fn reads_other_rows(command: &ResolvedCommand) -> bool {
+    use ess_compiler::ir::{ResolvedCondition, ResolvedPayloadValue};
+    fn cross(value: &ResolvedPayloadValue) -> bool {
+        match value {
+            ResolvedPayloadValue::RelatedField { .. }
+            | ResolvedPayloadValue::RelatedSelection { .. } => true,
+            ResolvedPayloadValue::Struct { fields } => {
+                fields.iter().any(|field| cross(&field.value))
+            }
+            ResolvedPayloadValue::ResponseField { .. }
+            | ResolvedPayloadValue::Generated
+            | ResolvedPayloadValue::InputField { .. }
+            | ResolvedPayloadValue::Literal { .. }
+            | ResolvedPayloadValue::Cleared
+            | ResolvedPayloadValue::SubjectField { .. }
+            | ResolvedPayloadValue::Increment { .. }
+            | ResolvedPayloadValue::InputOrGenerated { .. }
+            | ResolvedPayloadValue::CallerAttribute { .. }
+            | ResolvedPayloadValue::ChangedCount => false,
+        }
+    }
+    command.outcomes.iter().any(|outcome| {
+        matches!(
+            outcome.condition,
+            ResolvedCondition::Related { .. } | ResolvedCondition::RelatedSet { .. }
+        ) || outcome.instances.is_some()
+            || !outcome.affects.is_empty()
+            || outcome.sets.iter().any(|field| cross(&field.value))
+            || outcome
+                .error_payload
+                .iter()
+                .any(|field| cross(&field.value))
+            || outcome
+                .payload
+                .iter()
+                .any(|payload| payload.fields.iter().any(|field| cross(&field.value)))
+    })
 }
 
 /// The read `operation` of `view`, where it can be judged; why not, where it cannot.
@@ -362,6 +440,12 @@ fn view_read<'h>(
         return Err("an aggregate view's rows are groups, not instances".to_owned());
     }
     let entity = ir.entity(&view.source);
+    if !history_text_identity(ir, &entity.identity.type_ref) {
+        return Err(
+            "ess-history/1 records text row identities; this entity requires nontext identities"
+                .into(),
+        );
+    }
     let mut admits = BTreeSet::new();
     for state in &entity.lifecycle.states {
         let admitted = match &view.filter {
@@ -416,7 +500,13 @@ fn reads_a_view(ir: &EssIr, operation: &Operation) -> bool {
 
 fn split<'h>(ir: &'h EssIr, history: &'h History) -> Result<Split<'h>, CheckRefusal> {
     let mut inputs: BTreeMap<&ModelName, Vec<BTreeMap<String, Node>>> = BTreeMap::new();
-    let mut partitions: BTreeMap<&str, Vec<Prepared<'h>>> = BTreeMap::new();
+    let mut partitions: BTreeMap<Partition<'h>, Vec<Prepared<'h>>> = BTreeMap::new();
+    let shared = history.operations.iter().any(|operation| {
+        ModelName::new(operation.command.as_str())
+            .ok()
+            .and_then(|name| ir.commands().get(&name))
+            .is_some_and(reads_other_rows)
+    });
     let mut reads = Vec::new();
     let mut not_judged = Vec::new();
     let mut plan = request_plan(ir, history);
@@ -439,6 +529,19 @@ fn split<'h>(ir: &'h EssIr, history: &'h History) -> Result<Split<'h>, CheckRefu
             continue;
         }
         let (key, command) = ir.commands().get_key_value(&name).ok_or_else(unknown)?;
+        if command
+            .outcomes
+            .iter()
+            .filter_map(|outcome| outcome.subject.as_ref())
+            .any(|subject| {
+                !history_text_identity(ir, &ir.entity(&subject.entity).identity.type_ref)
+            })
+        {
+            return Err(CheckRefusal::Model {
+                operation_id: operation.operation_id.as_str().into(),
+                why: "ess-history/1 records text subject identities; this command requires nontext identities".into(),
+            });
+        }
         if !inputs.contains_key(key) {
             inputs.insert(key, candidates(ir, command)?);
         }
@@ -465,12 +568,16 @@ fn split<'h>(ir: &'h EssIr, history: &'h History) -> Result<Split<'h>, CheckRefu
         );
         let id = operation.operation_id.as_str();
         partitions
-            .entry(
-                plan.partition
-                    .get(id)
-                    .copied()
-                    .unwrap_or(operation.subject_key.as_str()),
-            )
+            .entry(if shared {
+                Partition::Shared
+            } else {
+                Partition::Subject(
+                    plan.partition
+                        .get(id)
+                        .copied()
+                        .unwrap_or(operation.subject_key.as_str()),
+                )
+            })
             .or_default()
             .push(Prepared {
                 operation,
@@ -485,6 +592,34 @@ fn split<'h>(ir: &'h EssIr, history: &'h History) -> Result<Split<'h>, CheckRefu
         reads,
         not_judged,
     })
+}
+
+/// Whether this declaration admits history's actual text identity representation.
+/// Json histories retain text as text; numeric JSON cannot be recovered from a string.
+fn history_text_identity(ir: &EssIr, identity: &ResolvedTypeRef) -> bool {
+    let mut current = identity.required();
+    for _ in 0..=ess_domain::types::MAX_TYPE_DEPTH {
+        return match current {
+            ResolvedTypeRef::Primitive { name } => matches!(
+                name,
+                Primitive::String
+                    | Primitive::Uuid
+                    | Primitive::Timestamp
+                    | Primitive::Duration
+                    | Primitive::Json
+            ),
+            ResolvedTypeRef::Declared { name } => match &ir.named_type(name).body {
+                ResolvedBody::Newtype { of, .. } => {
+                    current = of.required();
+                    continue;
+                }
+                ResolvedBody::Enum { .. } => true,
+                _ => false,
+            },
+            _ => false,
+        };
+    }
+    false
 }
 
 /// Every candidate input the witness strategy builds for `command`.
@@ -541,7 +676,7 @@ fn observed(command: &ResolvedCommand) -> impl Iterator<Item = GeneratedSlot> + 
 /// far has taken ([`Request::id`]).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 struct Held {
-    store: Store,
+    store: State,
     taken: BTreeSet<usize>,
 }
 
@@ -550,22 +685,41 @@ struct Held {
 /// An operation of a request to a command declaring `replays:` is held to the request besides:
 /// its origin branch is taken at most once per request, and a `replays:` branch only once it has
 /// been, whether the operation answered it or, never answering, may have taken it.
-fn step(ir: &EssIr, held: &Held, prepared: &Prepared<'_>) -> Result<Vec<Held>, CheckRefusal> {
+struct Alternatives<T> {
+    proven: Vec<T>,
+    unresolved: Option<CheckRefusal>,
+    exhausted: bool,
+}
+
+impl<T> Alternatives<T> {
+    /// Diagnostics may describe impossibility only when every alternative is resolved.
+    fn determined(self) -> Result<Vec<T>, CheckRefusal> {
+        self.unresolved.map_or(Ok(self.proven), Err)
+    }
+}
+
+fn step(
+    ir: &EssIr,
+    held: &Held,
+    prepared: &Prepared<'_>,
+) -> Result<Alternatives<Held>, CheckRefusal> {
     let operation = prepared.operation;
     let store = &held.store;
     let mut next: Vec<Held> = Vec::new();
+    let mut unresolved = None;
     if operation.completion == Completion::Indeterminate {
         // It may never have happened.
         next.push(held.clone());
     }
     for input in &prepared.inputs {
-        let steps = match execute_generating(
+        let steps = match history_execution::execute(
             ir,
             store,
             &prepared.name,
             input,
-            &Externals::Open,
             &prepared.generated,
+            operation.operation_id.as_str(),
+            operation.decision_time,
         ) {
             Ok(steps) => steps,
             // The request is not one the model's branches describe from here — an identity already
@@ -578,7 +732,13 @@ fn step(ir: &EssIr, held: &Held, prepared: &Prepared<'_>) -> Result<Vec<Held>, C
                 })
             }
         };
-        for taken in steps {
+        if let Some(why) = steps.unresolved {
+            unresolved.get_or_insert_with(|| CheckRefusal::Model {
+                operation_id: operation.operation_id.as_str().to_owned(),
+                why: why.to_string(),
+            });
+        }
+        for taken in steps.proven {
             let answers = match (&operation.completion, &operation.outcome) {
                 (Completion::Returned, Some(recorded)) => taken
                     .outcome
@@ -603,6 +763,11 @@ fn step(ir: &EssIr, held: &Held, prepared: &Prepared<'_>) -> Result<Vec<Held>, C
                     // Nothing of this request was retained to replay.
                     continue;
                 }
+                if request.replays.contains(branch) && operation.decision_time.is_some() {
+                    // A retained answer delivered again decides nothing; an operation recording a
+                    // decision instant made a decision, and a replay is not one (`ess-history/2`).
+                    continue;
+                }
             }
             let state = Held {
                 store: taken.next,
@@ -613,7 +778,11 @@ fn step(ir: &EssIr, held: &Held, prepared: &Prepared<'_>) -> Result<Vec<Held>, C
             }
         }
     }
-    Ok(next)
+    Ok(Alternatives {
+        proven: next,
+        unresolved,
+        exhausted: false,
+    })
 }
 
 // ---- the search ------------------------------------------------------------------------------
@@ -642,6 +811,7 @@ enum Outcome {
     Linearizable(Vec<usize>),
     Violation(Vec<usize>),
     Unknown(Vec<usize>),
+    Unresolved(CheckRefusal),
 }
 
 /// One level of the depth-first search: the state reached, and the moves from it not yet tried.
@@ -669,8 +839,9 @@ fn next_moves(
     store: &Held,
     budget: &mut u64,
     spent: &mut u64,
-) -> Result<Option<Vec<(usize, Held)>>, CheckRefusal> {
+) -> Result<Option<Alternatives<(usize, Held)>>, CheckRefusal> {
     let mut found: Vec<(usize, Held)> = Vec::new();
+    let mut unresolved = None;
     for &index in order {
         if done.has(index) {
             continue;
@@ -685,15 +856,27 @@ fn next_moves(
             continue;
         }
         if *budget == 0 {
-            return Ok(None);
+            return Ok((!found.is_empty()).then_some(Alternatives {
+                proven: found,
+                unresolved,
+                exhausted: true,
+            }));
         }
         *budget -= 1;
         *spent += 1;
-        for next in step(ir, store, &operations[index])? {
+        let steps = step(ir, store, &operations[index])?;
+        if unresolved.is_none() {
+            unresolved = steps.unresolved;
+        }
+        for next in steps.proven {
             found.push((index, next));
         }
     }
-    Ok(Some(found))
+    Ok(Some(Alternatives {
+        proven: found,
+        unresolved,
+        exhausted: false,
+    }))
 }
 
 /// Searches one partition, spending from `budget`.
@@ -726,9 +909,11 @@ fn search(
     if total == 0 {
         return Ok(Outcome::Linearizable(Vec::new()));
     }
+    let mut unresolved = first.unresolved;
+    let mut exhausted = first.exhausted;
     let mut stack = vec![Frame {
         done: start,
-        moves: first,
+        moves: first.proven,
         next: 0,
     }];
     while let Some(frame) = stack.last_mut() {
@@ -752,15 +937,25 @@ fn search(
             return Ok(Outcome::Linearizable(path));
         }
         let Some(found) = next_moves(ir, operations, &order, &done, &store, budget, spent)? else {
-            return Ok(Outcome::Unknown(longest));
+            exhausted = true;
+            path.pop();
+            continue;
         };
+        exhausted |= found.exhausted;
+        if unresolved.is_none() {
+            unresolved = found.unresolved;
+        }
         stack.push(Frame {
             done,
-            moves: found,
+            moves: found.proven,
             next: 0,
         });
     }
-    Ok(Outcome::Violation(longest))
+    if exhausted {
+        Ok(Outcome::Unknown(longest))
+    } else {
+        Ok(unresolved.map_or(Outcome::Violation(longest), Outcome::Unresolved))
+    }
 }
 
 // ---- every state a linearization passes through -----------------------------------------------
@@ -769,7 +964,7 @@ fn search(
 /// so far, and the state they leave.
 struct Reached {
     done: Done,
-    store: Store,
+    store: State,
     /// The latest invoke instant among the operations ordered so far; 0 when there are none.
     latest: u64,
     /// Whether every operation of the partition is ordered.
@@ -784,6 +979,7 @@ struct Walk<'a, 'h> {
     budget: &'a mut u64,
     spent: &'a mut u64,
     live: BTreeMap<Done, Vec<(Held, bool)>>,
+    unresolved: Option<CheckRefusal>,
 }
 
 impl Walk<'_, '_> {
@@ -812,7 +1008,13 @@ impl Walk<'_, '_> {
             else {
                 return Ok(None);
             };
-            for (index, next) in moves {
+            if self.unresolved.is_none() {
+                self.unresolved = moves.unresolved;
+            }
+            if moves.exhausted {
+                return Ok(None);
+            }
+            for (index, next) in moves.proven {
                 match self.visit(&done.with(index), &next)? {
                     None => return Ok(None),
                     Some(child) => live |= child,
@@ -838,7 +1040,7 @@ fn reach(
     operations: &[Prepared<'_>],
     budget: &mut u64,
     spent: &mut u64,
-) -> Result<Option<Vec<Reached>>, CheckRefusal> {
+) -> Result<Option<Alternatives<Reached>>, CheckRefusal> {
     let total = operations.len();
     let mut walk = Walk {
         ir,
@@ -847,6 +1049,7 @@ fn reach(
         budget,
         spent,
         live: BTreeMap::new(),
+        unresolved: None,
     };
     if walk.visit(&Done::new(total), &Held::default())?.is_none() {
         return Ok(None);
@@ -871,7 +1074,11 @@ fn reach(
             }
         }
     }
-    Ok(Some(reached))
+    Ok(Some(Alternatives {
+        proven: reached,
+        unresolved: walk.unresolved,
+        exhausted: false,
+    }))
 }
 
 /// How many of a session's reads of an `eventual` view, invoked after the writes stop, may still
@@ -900,6 +1107,10 @@ pub fn check(ir: &EssIr, history: &History, budget: u64) -> Result<Checked, Chec
 /// # Errors
 ///
 /// [`CheckRefusal`] where the history cannot be checked against this model at all.
+#[allow(
+    clippy::too_many_lines,
+    reason = "the checker keeps reachability and view judgments under one shared budget"
+)]
 pub fn check_settled(
     ir: &EssIr,
     history: &History,
@@ -919,7 +1130,8 @@ pub fn check_settled(
             .map(|&index| operations[index].operation.operation_id.as_str().to_owned())
             .collect()
     };
-    let mut found: BTreeMap<&str, Vec<String>> = BTreeMap::new();
+    let mut found: BTreeMap<Partition<'_>, Vec<String>> = BTreeMap::new();
+    let mut unresolved = None;
     for (subject_key, operations) in &split.partitions {
         match search(ir, operations, &mut remaining, &mut spent)? {
             Outcome::Linearizable(order) => {
@@ -929,7 +1141,7 @@ pub fn check_settled(
                 return Ok(Checked {
                     verdict: Verdict::Violation,
                     steps: spent,
-                    subject_key: Some((*subject_key).to_owned()),
+                    subject_key: Some(subject_key.diagnostic(operations)),
                     linearization: ids(operations, &longest),
                     partitions: split.partitions.len(),
                     not_judged: split.not_judged,
@@ -939,8 +1151,14 @@ pub fn check_settled(
             }
             Outcome::Unknown(longest) => {
                 if unknown.is_none() {
-                    unknown = Some(((*subject_key).to_owned(), ids(operations, &longest)));
+                    unknown = Some((
+                        subject_key.diagnostic(operations),
+                        ids(operations, &longest),
+                    ));
                 }
+            }
+            Outcome::Unresolved(why) => {
+                unresolved.get_or_insert(why);
             }
         }
     }
@@ -958,19 +1176,31 @@ pub fn check_settled(
     if let Some((subject_key, longest)) = unknown {
         return Ok(unknown_now(subject_key, longest, spent, split));
     }
-    let mut reached: BTreeMap<&str, Vec<Reached>> = BTreeMap::new();
+    if let Some(why) = unresolved {
+        return Err(why);
+    }
+    let mut reached: BTreeMap<Partition<'_>, Vec<Reached>> = BTreeMap::new();
+    let mut unresolved_reads = BTreeMap::new();
     if !split.reads.is_empty() {
         for (subject_key, operations) in &split.partitions {
             let Some(states) = reach(ir, operations, &mut remaining, &mut spent)? else {
                 let order = found.remove(subject_key).unwrap_or_default();
-                return Ok(unknown_now((*subject_key).to_owned(), order, spent, split));
+                return Ok(unknown_now(
+                    subject_key.diagnostic(operations),
+                    order,
+                    spent,
+                    split,
+                ));
             };
-            reached.insert(*subject_key, states);
+            reached.insert(*subject_key, states.proven);
+            if let Some(why) = states.unresolved {
+                unresolved_reads.insert(*subject_key, why);
+            }
         }
     }
     let convergence = convergence(&split, settle);
     let subjects = subjects(&split);
-    let judged_reads = judge(&split, &subjects, &reached, &convergence);
+    let judged_reads = judge(&split, &subjects, &reached, &convergence, &unresolved_reads)?;
     let (verdict, subject_key, linearization, read) = match judged_reads {
         Some(violation) => (
             Verdict::Violation,
@@ -1324,10 +1554,14 @@ fn convergence<'h>(split: &Split<'h>, settle: u64) -> BTreeMap<&'h str, Result<(
 /// Every subject a partition's operations name, with the partition it is searched in, and each
 /// partition under its own name: one subject is one partition, except where one request's
 /// operations name several ([`RequestPlan`]).
-fn subjects<'s>(split: &Split<'s>) -> BTreeMap<&'s str, &'s str> {
+fn subjects<'s>(split: &Split<'s>) -> BTreeMap<&'s str, Partition<'s>> {
     let mut subjects = BTreeMap::new();
     for (partition, operations) in &split.partitions {
-        subjects.insert(*partition, *partition);
+        // A subject partition is named by its subject, the empty string included: a `String`
+        // identity may be empty, and a read showing that row is explained by its partition.
+        if let Partition::Subject(subject) = partition {
+            subjects.insert(*subject, *partition);
+        }
         for prepared in operations {
             let subject = prepared.operation.subject_key.as_str();
             if !subject.is_empty() {
@@ -1340,10 +1574,11 @@ fn subjects<'s>(split: &Split<'s>) -> BTreeMap<&'s str, &'s str> {
 
 fn judge(
     split: &Split<'_>,
-    subjects: &BTreeMap<&str, &str>,
-    reached: &BTreeMap<&str, Vec<Reached>>,
+    subjects: &BTreeMap<&str, Partition<'_>>,
+    reached: &BTreeMap<Partition<'_>, Vec<Reached>>,
     convergence: &BTreeMap<&str, Result<(), String>>,
-) -> Option<ReadViolation> {
+    unresolved: &BTreeMap<Partition<'_>, CheckRefusal>,
+) -> Result<Option<ReadViolation>, CheckRefusal> {
     for read in &split.reads {
         let operation = read.operation;
         let returned = operation.returned_at.unwrap_or(u64::MAX);
@@ -1362,11 +1597,11 @@ fn judge(
         };
         // A row-level view holds one row per instance; the same identity twice is no state.
         if let Some(row) = read.duplicate {
-            return Some(violation(row, true, Anomaly::DuplicateRow));
+            return Ok(Some(violation(row, true, Anomaly::DuplicateRow)));
         }
         for row in &read.rows {
             if !subjects.contains_key(row) {
-                return Some(violation(row, true, Anomaly::FutureRead));
+                return Ok(Some(violation(row, true, Anomaly::FutureRead)));
             }
         }
         for (subject, name) in subjects {
@@ -1384,7 +1619,9 @@ fn judge(
                     .filter(|(_, prepared)| {
                         let own = prepared.operation;
                         own.client == operation.client
-                            && (own.subject_key == *subject || own.subject_key.is_empty())
+                            && (*name == Partition::Shared
+                                || own.subject_key == *subject
+                                || own.subject_key.is_empty())
                             && own.completion == Completion::Returned
                             && returned_before(own, operation.invoked_at)
                     })
@@ -1395,8 +1632,8 @@ fn judge(
             let answers = |state: &&Reached| {
                 state
                     .store
-                    .instance(read.entity, subject)
-                    .is_some_and(|instance| read.admits.contains(&instance.state))
+                    .lifecycle(read.entity, subject)
+                    .is_some_and(|state| read.admits.contains(state))
                     == shown
             };
             let asked = |state: &&Reached| state.latest <= returned;
@@ -1409,7 +1646,10 @@ fn judge(
                 {
                     continue;
                 }
-                return Some(violation(subject, shown, Anomaly::NotConverged));
+                if let Some(why) = unresolved.get(name) {
+                    return Err(why.clone());
+                }
+                return Ok(Some(violation(subject, shown, Anomaly::NotConverged)));
             }
             if states
                 .iter()
@@ -1417,15 +1657,18 @@ fn judge(
             {
                 continue;
             }
+            if let Some(why) = unresolved.get(name) {
+                return Err(why.clone());
+            }
             let anomaly = if states.iter().any(|state| asked(&state) && answers(&state)) {
                 Anomaly::StaleRead
             } else {
                 Anomaly::FutureRead
             };
-            return Some(violation(subject, shown, anomaly));
+            return Ok(Some(violation(subject, shown, anomaly)));
         }
     }
-    None
+    Ok(None)
 }
 
 // ---- shrinking -------------------------------------------------------------------------------
@@ -1434,6 +1677,11 @@ fn judge(
 fn only(history: &History, keep: impl Fn(&Operation) -> bool) -> History {
     let mut kept = history.clone();
     kept.operations.retain(|operation| keep(operation));
+    // A part of a history written as `ess-history/2` is written as format 2 only while one of its
+    // operations still records a decision time.
+    if kept.format == HistoryFormat::EssHistory2 {
+        kept.format = HistoryFormat::for_operations(&kept.operations);
+    }
     kept
 }
 
@@ -1719,9 +1967,10 @@ pub fn orders(
             Outcome::Linearizable(order) | Outcome::Violation(order) | Outcome::Unknown(order) => {
                 order
             }
+            Outcome::Unresolved(why) => return Err(why),
         };
         found.push((
-            (*subject_key).to_owned(),
+            subject_key.diagnostic(operations),
             order
                 .iter()
                 .map(|&index| operations[index].operation.operation_id.as_str().to_owned())
@@ -1764,18 +2013,18 @@ pub struct Conflict {
 }
 
 /// The subject's lifecycle state in each of `stores`, sorted and without repeats.
-fn subject_states<'s>(stores: impl IntoIterator<Item = &'s Store>, subject: &str) -> Vec<String> {
+fn subject_states<'s>(stores: impl IntoIterator<Item = &'s State>, subject: &str) -> Vec<String> {
     let mut states = BTreeSet::new();
     for store in stores {
         let mut held = store
-            .instances()
-            .filter(|(_, identity, _)| *identity == subject)
+            .text_states()
+            .filter(|(identity, _)| *identity == subject)
             .peekable();
         if held.peek().is_none() {
             states.insert("absent".to_owned());
         }
-        for (_, _, instance) in held {
-            states.insert(instance.state.as_str().to_owned());
+        for (_, state) in held {
+            states.insert(state.as_str().to_owned());
         }
     }
     states.into_iter().collect()
@@ -1797,6 +2046,10 @@ fn subject_states<'s>(stores: impl IntoIterator<Item = &'s Store>, subject: &str
 /// # Errors
 ///
 /// [`CheckRefusal`] where the history cannot be checked against this model at all.
+#[allow(
+    clippy::too_many_lines,
+    reason = "conflict extraction keeps all history completion cases in one exhaustive pass"
+)]
 pub fn conflict(
     ir: &EssIr,
     history: &History,
@@ -1809,7 +2062,11 @@ pub fn conflict(
         return Ok(None);
     };
     let split = split(ir, history)?;
-    let Some(operations) = split.partitions.get(subject) else {
+    let Some(operations) = split
+        .partitions
+        .get(&Partition::Shared)
+        .or_else(|| split.partitions.get(&Partition::Subject(subject)))
+    else {
         return Ok(None);
     };
     let Some(placed) = checked
@@ -1834,7 +2091,7 @@ pub fn conflict(
     for &index in &placed {
         let mut next: Vec<Held> = Vec::new();
         for store in prefixes.last().into_iter().flatten() {
-            for reached in step(ir, store, &operations[index])? {
+            for reached in step(ir, store, &operations[index])?.determined()? {
                 if !next.contains(&reached) {
                     next.push(reached);
                 }
@@ -1845,7 +2102,10 @@ pub fn conflict(
     let id = |index: usize| operations[index].operation.operation_id.as_str().to_owned();
     let answers_from = |stores: &[Held], index: usize| -> Result<bool, CheckRefusal> {
         for store in stores {
-            if !step(ir, store, &operations[index])?.is_empty() {
+            if !step(ir, store, &operations[index])?
+                .determined()?
+                .is_empty()
+            {
                 return Ok(true);
             }
         }
@@ -1870,7 +2130,7 @@ pub fn conflict(
         let mut explained: Vec<&Held> = Vec::new();
         let mut instead: Vec<Held> = Vec::new();
         for store in before {
-            let next = step(ir, store, &operations[failing])?;
+            let next = step(ir, store, &operations[failing])?.determined()?;
             if !next.is_empty() {
                 explained.push(store);
                 instead.extend(next);
@@ -1881,7 +2141,10 @@ pub fn conflict(
         }
         let mut needed: Vec<&Held> = Vec::new();
         for store in before {
-            if !step(ir, store, &operations[against])?.is_empty() {
+            if !step(ir, store, &operations[against])?
+                .determined()?
+                .is_empty()
+            {
                 needed.push(store);
             }
         }

@@ -63,7 +63,7 @@ use std::fmt::Write as _;
 use ess_compiler::ir::{
     EssIr, ResolvedBinding, ResolvedBody, ResolvedCommand, ResolvedComponent, ResolvedCondition,
     ResolvedConversion, ResolvedEffect, ResolvedFailure, ResolvedField, ResolvedMappingValue,
-    ResolvedTypeRef, ResolvedView, TypeHandle,
+    ResolvedRelatedTest, ResolvedTypeRef, ResolvedView, TypeHandle,
 };
 use ess_domain::component::Reach;
 use ess_gen::Provenance;
@@ -698,30 +698,100 @@ pub(crate) fn behavior_contract(ir: &EssIr, command: &ResolvedCommand) -> String
         }
         branches.push(branch);
     }
-    // The inventory below retains source order. For related guards the implementation is owed,
-    // so its reader also needs the conditional order from the binding design:
-    // docs/design/cross-record-and-stored-field-guards.md#the-precedence-order.
-    let precedence = if command
-        .outcomes
-        .iter()
-        .any(|outcome| matches!(outcome.condition, ResolvedCondition::Related { .. }))
-    {
-        " Selection precedence: on commands with `when_related:`, check `existing_instance` then \
-         `exists: false` before input-guarded refusals; choose the first declared input refusal \
-         whose guard holds; then check addressed-row existence (`unknown_instance`, and \
-         `existing_instance` on commands without `when_related:`); then the held state \
-         (`when_subject_state` and `when_subject`), with `wrong_state` only if the selected branch \
-         moves from a state the row does not hold; then accepting and external branches in \
-         declaration order. An accepting branch that moves nothing answers in every state. \
-         Related-presence predicates do not precede input-guarded refusals."
-    } else {
-        ""
-    };
+    let precedence = related_precedence(ir, command);
     format!(
         "given `{}` input, decide and enact exactly one outcome.{precedence} Declared outcomes (declaration order, not selection precedence): {}",
         command.name,
         branches.join("; ")
     )
+}
+
+/// The selection precedence a command reading a related row is owed against, as the interpreter
+/// applies it (`docs/design/cross-record-and-stored-field-guards.md#the-precedence-order`); empty
+/// for a command reading none.
+fn related_precedence(ir: &EssIr, command: &ResolvedCommand) -> String {
+    // The inventory below retains source order. For related guards the implementation is owed,
+    // so its reader also needs the conditional order from the binding design:
+    // docs/design/cross-record-and-stored-field-guards.md#the-precedence-order.
+    let has_related = command
+        .outcomes
+        .iter()
+        .any(|outcome| matches!(outcome.condition, ResolvedCondition::Related { .. }));
+    // Several rows read through the input (ess/22, beyond10x/ess#283): missing rows in the declaration
+    // order of their `exists: false` branches, and the present-related refusals before acceptance
+    // whether or not `wrong_state:` is declared.
+    let several = crate::determined::several_rows(command);
+    let orders_present_related_refusal = ir.format().major()
+        >= ess_domain::system::FormatVersion::V22.major()
+        && command
+            .outcomes
+            .iter()
+            .any(|outcome| matches!(outcome.condition, ResolvedCondition::WrongState))
+        && command.outcomes.iter().any(|outcome| {
+            outcome.error.is_some()
+                && matches!(
+                    outcome.condition,
+                    ResolvedCondition::Related {
+                        test: ResolvedRelatedTest::Holds { .. },
+                        ..
+                    }
+                )
+        });
+    // A related row named by a stored field of the addressed subject (ess/22, beyond10x/ess#304) is
+    // read at its own step, after that row's existence and held state.
+    let stored = command
+        .outcomes
+        .iter()
+        .find_map(|outcome| match &outcome.condition {
+            ResolvedCondition::Related {
+                via: ess_compiler::ir::ResolvedRelatedVia::Subject { field, .. },
+                ..
+            } => Some(field),
+            _ => None,
+        });
+    if let Some(field) = stored {
+        format!(
+            " Selection precedence: on commands with `when_related:` reading the stored reference \
+             `{field}` of the addressed subject, choose the first declared input refusal whose \
+             guard holds; then check addressed-row existence (`unknown_instance`, else the declared \
+             not-found answer); then the held state, with `wrong_state` only if the selected branch \
+             moves from a state the row does not hold; then read the stored reference as the \
+             subject held it before the branch: absent, it selects no `when_related:` branch; \
+             naming an identity no row carries, `exists: false`; naming a row, the present \
+             `when_related:` predicate refusal whose predicate and optional input guard hold; then \
+             accepting and external branches in declaration order. An accepting branch that moves \
+             nothing answers in every state."
+        )
+    } else if has_related {
+        let present_related = if several {
+            "then choose the first declared present `when_related:` predicate refusal whose \
+             predicate and optional input guard hold, across rows; "
+        } else if orders_present_related_refusal {
+            "then choose the present `when_related:` predicate refusal whose predicate and \
+             optional input guard hold; "
+        } else {
+            ""
+        };
+        let missing = if several {
+            " (read the related rows in the declaration order of their `exists: false` branches, \
+             and the first missing one answers)"
+        } else {
+            ""
+        };
+        format!(
+            " Selection precedence: on commands with `when_related:`, check `existing_instance` then \
+         `exists: false`{missing} before input-guarded refusals; choose the first declared input refusal \
+         whose guard holds; then check addressed-row existence (`unknown_instance`, and \
+         `existing_instance` on commands without `when_related:`); then the held state \
+         (`when_subject_state` and `when_subject`), with `wrong_state` only if the selected branch \
+         moves from a state the row does not hold; {present_related}then \
+         accepting and external branches in declaration order. An accepting branch that moves \
+         nothing answers in every state. Related-presence predicates do not precede input-guarded \
+         refusals."
+        )
+    } else {
+        String::new()
+    }
 }
 
 /// A condition as a contract phrase.
@@ -732,6 +802,18 @@ pub(crate) fn behavior_contract(ir: &EssIr, command: &ResolvedCommand) -> String
 pub(crate) fn condition_phrase(condition: &ResolvedCondition) -> String {
     match condition {
         ResolvedCondition::When { predicate } => format!("when `{predicate}`"),
+        ResolvedCondition::RelatedSet {
+            selection,
+            test,
+            input,
+        } => format!(
+            "when, of the `{}` rows satisfying `{}`, {test}{}",
+            selection.entity.name(),
+            selection.filter,
+            input
+                .as_ref()
+                .map_or(String::new(), |guard| format!(" and `{guard}`")),
+        ),
         ResolvedCondition::SubjectPredicate { predicate, input } => format!(
             "when the existing subject's stored fields satisfy `{predicate}`{}",
             input
@@ -1029,7 +1111,16 @@ fn plan_bindings(ir: &EssIr, capabilities: &mut Vec<PlannedCapability>) {
             },
             disposition: delivery_disposition(ir, binding),
         });
-        if let ResolvedFailure::Escalate { emits } = binding.on_failure() {
+        // A policy selected per refusal (ess/22) owes the same builder where any refusal, or its
+        // fallback, escalates.
+        let escalates = match binding.on_failure() {
+            ResolvedFailure::Escalate { emits } => Some(emits),
+            ResolvedFailure::ByRefusal { policy } => policy.escalation(),
+            ResolvedFailure::Retry
+            | ResolvedFailure::Drop
+            | ResolvedFailure::BoundedRetry { .. } => None,
+        };
+        if let Some(emits) = escalates {
             capabilities.push(PlannedCapability {
                 capability: Capability {
                     kind: CapabilityKind::BindingEscalation,
@@ -1109,6 +1200,16 @@ pub(crate) fn attempts_again(binding: &ResolvedBinding) -> bool {
     matches!(binding.delivery, ess_domain::binding::Delivery::AtLeastOnce)
 }
 
+/// The failure policy in the words a plan's obligation quotes: the word an author wrote, or, for a
+/// policy selected per refusal (ess/22), that it is selected — never the fallback's word alone.
+fn failure_text(binding: &ResolvedBinding) -> &'static str {
+    if binding.refusal_policy.is_some() {
+        "selected per refusal"
+    } else {
+        binding.failure.as_str()
+    }
+}
+
 /// Whether the generated system keeps a held-back list for this binding: it attempts again after
 /// an unmet obligation ([`attempts_again`]), or its declared refusal is answered with `retry`.
 pub(crate) fn holds_back(binding: &ResolvedBinding) -> bool {
@@ -1165,7 +1266,7 @@ fn delivery_disposition(ir: &EssIr, binding: &ResolvedBinding) -> SynthesisDispo
             binding.cause,
             binding.command,
             ess_gen::graph::delivery_word(binding.delivery),
-            binding.failure.as_str(),
+            failure_text(binding),
             binding.command,
         )
     } else {
@@ -1175,7 +1276,7 @@ fn delivery_disposition(ir: &EssIr, binding: &ResolvedBinding) -> SynthesisDispo
             binding.cause,
             binding.command,
             ess_gen::graph::delivery_word(binding.delivery),
-            binding.failure.as_str(),
+            failure_text(binding),
             acceptors.len(),
             binding.command,
             acceptors

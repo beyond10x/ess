@@ -11,6 +11,7 @@ use ess_primitives::predicate::{CompareOp, Operand, Predicate};
 
 fn text_comparison(path: &str, text: &str) -> Predicate {
     Predicate::Compare {
+        kind: ess_primitives::predicate::CompareKind::Value,
         left: Operand::Fact(path.parse().expect("path")),
         op: CompareOp::Eq,
         right: Operand::Literal(FactValue::text(text)),

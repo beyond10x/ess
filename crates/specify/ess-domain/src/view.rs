@@ -48,6 +48,7 @@ use ess_primitives::predicate::Predicate;
 use crate::name::{Naming, QualifiedName};
 use crate::types::{Field, Primitive, TypeBody, TypeRef, TypeRegistry, MAX_TYPE_DEPTH};
 
+mod measure;
 mod paging;
 pub use paging::Paging;
 
@@ -352,7 +353,11 @@ impl fmt::Display for AggregateFunction {
 }
 
 /// One aggregate field's computation.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+///
+/// Ordered and hashed as it always was — by `(function, input, skip_absent)` — and then by its
+/// condition: none first, then a private structural key over the resolved predicate
+/// (`docs/design/conditional-aggregate-measures.md`, "Public aggregate comparison and hashing").
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Aggregate {
     /// The function.
     pub function: AggregateFunction,
@@ -362,6 +367,34 @@ pub struct Aggregate {
     /// Absent values of [`Self::input`] are skipped, as SQL skips `NULL` (`skip_absent: true`,
     /// `ess/15`, beyond10x/ess#148). Never set for [`AggregateFunction::Count`], which counts rows.
     pub skip_absent: bool,
+    /// Which of the group's rows this measure reads (`where:`, `ess/22`, beyond10x/ess#363): a
+    /// predicate over one source row's observable fields and the view's parameters. `None` reads
+    /// every row of the group, which is not the same as an explicit `where: true`.
+    pub r#where: Option<Predicate>,
+}
+
+impl PartialOrd for Aggregate {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Aggregate {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (self.function, &self.input, self.skip_absent)
+            .cmp(&(other.function, &other.input, other.skip_absent))
+            .then_with(|| measure::cmp(self.r#where.as_ref(), other.r#where.as_ref()))
+    }
+}
+
+impl std::hash::Hash for Aggregate {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        // The feed a derived `Hash` gave before the condition existed, field by field.
+        self.function.hash(state);
+        self.input.hash(state);
+        self.skip_absent.hash(state);
+        measure::hash(self.r#where.as_ref(), state);
+    }
 }
 
 impl fmt::Display for Aggregate {
@@ -377,7 +410,11 @@ impl fmt::Display for Aggregate {
             } else {
                 ""
             }
-        )
+        )?;
+        if let Some(condition) = &self.r#where {
+            write!(f, " where {condition}")?;
+        }
+        Ok(())
     }
 }
 
@@ -397,6 +434,7 @@ impl From<&RawAggregate> for Aggregate {
             function,
             input,
             skip_absent: raw.skip_absent,
+            r#where: raw.r#where.clone(),
         }
     }
 }
@@ -415,6 +453,7 @@ impl From<&Aggregate> for RawAggregate {
         Self {
             function,
             skip_absent: aggregate.skip_absent,
+            r#where: aggregate.r#where.clone(),
         }
     }
 }
@@ -448,12 +487,13 @@ impl Aggregation {
 }
 
 /// An aggregate as written: a map with exactly one function key and, beside a function that reads
-/// a value, `skip_absent: true`.
+/// a value, `skip_absent: true`; beside any function, `where:` (`ess/22`, beyond10x/ess#363).
 ///
 /// The shape is the reader's to refuse — an unknown function, two functions, an argument to
 /// `count`, `skip_absent` beside `count`, or `skip_absent` written anything but `true` fails the
 /// parse with a message naming the six functions, as an unknown key does anywhere a [`Field`] is
-/// read.
+/// read. So do a second `where:` and an empty one — `null`, empty text, an empty list or an empty
+/// map — which would otherwise read as every row, a condition nobody wrote.
 ///
 /// Read and written by hand as a map rather than derived: `serde_yaml` reads and writes a derived
 /// externally tagged enum as a YAML tag (`!sum talk_seconds`), which is not the syntax the design
@@ -465,6 +505,10 @@ pub struct RawAggregate {
     pub function: RawFunction,
     /// `skip_absent: true`: absent values of the argument are skipped (`ess/15`).
     pub skip_absent: bool,
+    /// `where:`: which of the group's rows this measure reads (`ess/22`). Its words are resolved
+    /// against the view's source row and parameters once the document's format is known, as a
+    /// view filter's are (`crate::expression::lexical`).
+    pub r#where: Option<Predicate>,
 }
 
 /// One aggregate function as written, with its argument.
@@ -494,7 +538,9 @@ impl RawAggregate {
 impl serde::Serialize for RawAggregate {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeMap;
-        let mut map = serializer.serialize_map(Some(1 + usize::from(self.skip_absent)))?;
+        let mut map = serializer.serialize_map(Some(
+            1 + usize::from(self.skip_absent) + usize::from(self.r#where.is_some()),
+        ))?;
         match &self.function {
             RawFunction::Count(empty) => map.serialize_entry("count", empty)?,
             RawFunction::CountDistinct(input) => map.serialize_entry("count_distinct", input)?,
@@ -505,6 +551,9 @@ impl serde::Serialize for RawAggregate {
         }
         if self.skip_absent {
             map.serialize_entry(Self::SKIP_ABSENT, &true)?;
+        }
+        if let Some(condition) = &self.r#where {
+            map.serialize_entry(measure::WHERE, condition)?;
         }
         map.end()
     }
@@ -528,7 +577,25 @@ impl<'de> serde::Deserialize<'de> for RawAggregate {
                 let names = || RawAggregate::NAMES.join(", ");
                 let mut function: Option<RawFunction> = None;
                 let mut skip_absent: Option<bool> = None;
+                let mut condition: Option<Predicate> = None;
                 while let Some(key) = map.next_key::<String>()? {
+                    if key == measure::WHERE {
+                        if condition.is_some() {
+                            return Err(A::Error::duplicate_field(measure::WHERE));
+                        }
+                        let written: ess_primitives::node::Node = map.next_value()?;
+                        if measure::empty(&written) {
+                            return Err(A::Error::custom(
+                                "`where` is empty, which would read as every row; write the \
+                                 condition, `true` for every row, or leave `where` out",
+                            ));
+                        }
+                        condition = Some(
+                            Predicate::from_node(&written)
+                                .map_err(|error| A::Error::custom(format!("`where`: {error}")))?,
+                        );
+                        continue;
+                    }
                     if key == RawAggregate::SKIP_ABSENT {
                         if skip_absent.is_some() {
                             return Err(A::Error::duplicate_field(RawAggregate::SKIP_ABSENT));
@@ -576,6 +643,7 @@ impl<'de> serde::Deserialize<'de> for RawAggregate {
                 Ok(RawAggregate {
                     function,
                     skip_absent,
+                    r#where: condition,
                 })
             }
         }
@@ -609,6 +677,7 @@ impl schemars::JsonSchema for RawAggregate {
         });
         let text = generator.subschema_for::<String>();
         let empty = generator.subschema_for::<Empty>();
+        let condition = generator.subschema_for::<Predicate>();
         let variants = [
             ("count", "`{count: {}}`.", empty),
             (
@@ -647,6 +716,9 @@ impl schemars::JsonSchema for RawAggregate {
                     .properties
                     .insert(Self::SKIP_ABSENT.to_owned(), skip.clone());
             }
+            object
+                .properties
+                .insert(measure::WHERE.to_owned(), condition.clone());
             object.additional_properties = Some(Box::new(Schema::Bool(false)));
             Schema::Object(SchemaObject {
                 metadata: described(description),
@@ -659,7 +731,8 @@ impl schemars::JsonSchema for RawAggregate {
         Schema::Object(SchemaObject {
             metadata: described(
                 "An aggregate as written: a map with exactly one function key and, beside a \
-                 function that reads a value, `skip_absent: true`.",
+                 function that reads a value, `skip_absent: true`; beside any function, `where:`, \
+                 the rows of the group this measure reads (ess/22).",
             ),
             subschemas: Some(Box::new(SubschemaValidation {
                 one_of: Some(variants),
@@ -1097,12 +1170,64 @@ impl ViewSpec {
             }
             read_params = checked.parameters;
         }
+        let measure_reads = self.validate_conditions(types, source_fields, &mut errors);
         errors.extend(self.validate_paging(types, &read_params));
-        errors.extend(self.validate_params(&read_params));
+        errors.extend(self.validate_condition_paging(&measure_reads));
+        // A parameter only a measure's condition reads is a parameter the view reads.
+        read_params.extend(measure_reads.into_keys());
+        // From `ess/22` a string operator reads a parameter too (beyond10x/ess#200), and the
+        // repair says so; below it the words are the ones they always were.
+        let text_operands = types
+            .format()
+            .is_some_and(|format| format.major() >= crate::system::FormatVersion::V22.major());
+        errors.extend(self.validate_params(&read_params, text_operands));
         errors.extend(self.validate_order(projected_fields));
         errors.extend(self.validate_grouping(types));
 
         errors.into_result(())
+    }
+
+    /// Each measure's `where:` (`docs/design/conditional-aggregate-measures.md`): a predicate over
+    /// one row of the source and the view's parameters, checked in exactly the environment the
+    /// view's filter is — never a group result, another measure, the command input or `now`.
+    /// Answers every parameter a condition reads, with the location of the first condition that
+    /// reads it.
+    fn validate_conditions(
+        &self,
+        types: &TypeRegistry,
+        source_fields: &[Field],
+        errors: &mut ValidationErrors,
+    ) -> BTreeMap<String, String> {
+        let mut reads = BTreeMap::new();
+        let Some(aggregation) = &self.aggregation else {
+            return reads;
+        };
+        for (index, field) in self.fields.iter().enumerate() {
+            let Some(condition) = aggregation
+                .function(&field.name)
+                .and_then(|aggregate| aggregate.r#where.as_ref())
+            else {
+                continue;
+            };
+            let site = format!("view.{}.fields[{index}].aggregate.where", self.name);
+            let environment = crate::expression::DomainEnvironment::new(types, source_fields)
+                .with_params(&self.params);
+            let checked = crate::expression::check_predicate(&environment, condition, &site);
+            for error in &checked.errors {
+                let mut diagnostic = error.validation_error();
+                if error.code == ValidationCode::UnobservableFact {
+                    diagnostic.message.push_str(
+                        "; a measure's condition reads one row of the view's source and the view's \
+                         parameters",
+                    );
+                }
+                errors.push(diagnostic);
+            }
+            for param in checked.parameters {
+                reads.entry(param).or_insert_with(|| site.clone());
+            }
+        }
+        reads
     }
 
     /// Every projected field against the source: a declared field at a type the source can fill,
@@ -1411,6 +1536,41 @@ impl ViewSpec {
         errors
     }
 
+    /// The source-format gate of a measure's condition (`docs/design/conditional-aggregate-measures.md`):
+    /// below `ess/22`, `where:` beside an aggregate's function is refused where it is written.
+    ///
+    /// Beside the other format gates in `primitive_admission::specification`, the one place a view
+    /// meets its document's format. An older reader fails `where` as an unknown key.
+    pub fn conditional_measure_admission(
+        &self,
+        format: crate::system::FormatVersion,
+    ) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
+        let Some(aggregation) = &self.aggregation else {
+            return errors;
+        };
+        if format.major() >= crate::system::FormatVersion::V22.major() {
+            return errors;
+        }
+        for (index, field) in self.fields.iter().enumerate() {
+            if aggregation
+                .function(&field.name)
+                .is_some_and(|aggregate| aggregate.r#where.is_some())
+            {
+                errors.push(ValidationError::new(
+                    ValidationCode::UnsupportedFormatVersion,
+                    format!("view.{}.fields[{index}].aggregate.where", self.name),
+                    format!(
+                        "`{}.{}` reads only the rows its `where:` admits; a measure's condition \
+                         requires specification format ess/22",
+                        self.name, field.name
+                    ),
+                ));
+            }
+        }
+        errors
+    }
+
     /// V1, V2, V11 and V12: each group key names a non-aggregate field of an equality type.
     fn validate_keys(&self, aggregation: &Aggregation, types: &TypeRegistry) -> ValidationErrors {
         let mut errors = ValidationErrors::new();
@@ -1556,7 +1716,7 @@ impl ViewSpec {
     /// declared parameter no filter reads is worse than useless: every caller is made to supply it
     /// and nothing selects on it, so two different values return the same rows and the view looks
     /// parameterised to a reader who then trusts it.
-    fn validate_params(&self, read: &BTreeSet<String>) -> ValidationErrors {
+    fn validate_params(&self, read: &BTreeSet<String>, text_operands: bool) -> ValidationErrors {
         let mut errors = ValidationErrors::new();
         let declared: BTreeSet<&str> = self
             .params
@@ -1578,10 +1738,19 @@ impl ViewSpec {
                         self.name
                     ),
                 )
-                .with_hint(format!(
-                    "read it in `filter:` as `param.{name}`, or drop it — a parameter nothing \
-                     selects on makes the view look narrower than it is"
-                )),
+                .with_hint(if text_operands {
+                    format!(
+                        "read it in `filter:` as `param.{name}` in a comparison, or as \
+                         `{{param: {name}}}` under `starts_with`, `ends_with` or `contains`, or \
+                         drop it — a parameter nothing selects on makes the view look narrower \
+                         than it is"
+                    )
+                } else {
+                    format!(
+                        "read it in `filter:` as `param.{name}`, or drop it — a parameter \
+                         nothing selects on makes the view look narrower than it is"
+                    )
+                }),
             );
         }
         errors

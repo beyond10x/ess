@@ -9,6 +9,14 @@ types:
   - {name: desk.ticket.EscalationId, kind: newtype, of: Uuid}
   - {name: desk.ticket.Title, kind: newtype, of: String}
   - {name: desk.ticket.Priority, kind: enum, variants: [Low, High]}
+  - name: desk.ticket.Counter
+    kind: struct
+    fields: [{name: amount, type: Integer}]
+  - name: desk.ticket.Stats
+    kind: struct
+    fields:
+      - {name: amount, type: Integer}
+      - {name: deeper, type: desk.ticket.Counter}
 
 entities:
   - name: desk.ticket.Ticket
@@ -21,6 +29,8 @@ entities:
       - {name: reopen_count, type: Integer}
       - {name: ticket_ref, type: desk.ticket.TicketRef}
       - {name: note, type: Optional<String>}
+      - {name: stats, type: desk.ticket.Stats}
+      - {name: maybe_stats, type: 'Optional<desk.ticket.Counter>'}
     lifecycle:
       initial: Open
       states: [Open, Closed]
@@ -41,6 +51,7 @@ actors:
       - desk.ticket.Comment
       - desk.ticket.DeleteTicket
       - desk.ticket.Escalate
+      - desk.ticket.ForgetStats
 
 errors:
   - name: desk.ticket.NegativeEstimate
@@ -105,6 +116,9 @@ events:
     fields:
       - {name: escalation_id, type: desk.ticket.EscalationId}
       - {name: reason, type: String}
+  - name: desk.ticket.StatsForgotten
+    fields:
+      - {name: ticket_id, type: desk.ticket.TicketId}
 
 commands:
   - name: desk.ticket.OpenTicket
@@ -130,6 +144,8 @@ commands:
           reopen_count: "0"
           ticket_ref: {generated: true}
           note: input.note
+          stats: {amount: 100, deeper: {amount: 200}}
+          maybe_stats: {amount: 300}
         emits: [desk.ticket.TicketOpened]
         payload:
           desk.ticket.TicketOpened:
@@ -170,6 +186,8 @@ commands:
         sets:
           reopen_count: {increment: 1}
           note: {cleared: true}
+          stats: {amount: {increment: 1}, deeper: {amount: {increment: 2}}}
+          maybe_stats: {amount: {increment: 3}}
         emits: [desk.ticket.TicketReopened]
         payload:
           desk.ticket.TicketReopened:
@@ -215,6 +233,24 @@ commands:
           desk.ticket.TicketReprioritized:
             ticket_id: input.ticket_id
             priority: input.priority
+      - name: no-such-ticket
+        unknown_instance: true
+        error: desk.ticket.TicketNotFound
+        payload:
+          desk.ticket.TicketNotFound: {ticket_id: input.ticket_id}
+
+  - name: desk.ticket.ForgetStats
+    input:
+      - {name: ticket_id, type: desk.ticket.TicketId}
+    outcomes:
+      - name: forgotten
+        updates: desk.ticket.Ticket
+        instance: ticket_id
+        sets:
+          maybe_stats: {cleared: true}
+        emits: [desk.ticket.StatsForgotten]
+        payload:
+          desk.ticket.StatsForgotten: {ticket_id: input.ticket_id}
       - name: no-such-ticket
         unknown_instance: true
         error: desk.ticket.TicketNotFound
@@ -304,3 +340,5 @@ views:
       - {name: reopen_count, type: Integer}
       - {name: ticket_ref, type: desk.ticket.TicketRef}
       - {name: note, type: Optional<String>}
+      - {name: stats, type: desk.ticket.Stats}
+      - {name: maybe_stats, type: 'Optional<desk.ticket.Counter>'}

@@ -1,0 +1,50 @@
+format: ess/18
+system: demo
+version: v1
+domain: demo.claims
+summary: Claims settled while the decision is not past their due time; a retried settlement is answered from what was retained.
+entities:
+  - name: demo.claims.Claim
+    identity: {name: claim_id, type: Uuid}
+    fields: []
+    lifecycle:
+      initial: Open
+      states: [Open, Settled]
+      terminal: [Settled]
+      transitions:
+        - {name: settle, from: [Open], to: Settled}
+events:
+  - name: demo.claims.Opened
+    fields:
+      - {name: claim_id, type: Uuid}
+  - name: demo.claims.Changed
+    fields: []
+commands:
+  - name: demo.claims.Open
+    input: []
+    outcomes:
+      - name: opened
+        creates: demo.claims.Claim
+        instance: claim_id
+        emits: [demo.claims.Opened]
+        payload:
+          demo.claims.Opened: {claim_id: {generated: true}}
+  - name: demo.claims.Settle
+    input:
+      - {name: claim_id, type: Uuid}
+      - {name: due_at, type: Timestamp}
+    response: [{name: revision, type: Integer}]
+    outcomes:
+      - name: settled
+        when_subject_state: Open
+        when: due_at >= now
+        moves: demo.claims.Claim.settle
+        instance: claim_id
+        emits: [demo.claims.Changed]
+      - name: replayed
+        when_subject_state: Settled
+        replays: settled
+      - name: lapsed
+        updates: demo.claims.Claim
+        instance: claim_id
+        emits: [demo.claims.Changed]

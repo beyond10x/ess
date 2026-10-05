@@ -26,6 +26,7 @@ import {
   isObject,
   name,
   paddedBase64,
+  strictResponseJSON,
 } from './runtime.js';
 import type {
   AccessorField,
@@ -53,6 +54,7 @@ export interface ResponseObservation {
    * or `omitted_when_absent`. A field with none admits both spellings of an absent value.
    */
   presence?: Record<string, string>;
+  nested?: NestedResponseTargets;
 }
 
 const BYTE_LIMIT = 1048576;
@@ -116,7 +118,11 @@ export function decodeDeclaration(value: unknown): SelectionDeclaration {
  * response contract does not.
  */
 export function decodeResponseObservation(value: unknown): ResponseObservation {
-  const document = closed(value, '', 'command outcome event fields declarations mappings targets');
+  const document = closed(
+    value,
+    '',
+    'command outcome event fields declarations mappings targets nested',
+  );
   const outcomeRaw =
     document.outcome === undefined ? {} : closed(document.outcome, '', 'command outcome');
   const declarationsRaw = document.declarations;
@@ -131,7 +137,9 @@ export function decodeResponseObservation(value: unknown): ResponseObservation {
       throw new Error('response mappings must be an object');
     }
   }
-  const mappings: Record<string, string> = {};
+  const mappings: Record<string, string> = Object.hasOwn(document, 'nested')
+    ? Object.create(null)
+    : {};
   for (const [key, mapped] of Object.entries((mappingsRaw ?? {}) as Record<string, unknown>)) {
     if (typeof mapped !== 'string') {
       throw new Error('a response mapping must be a string');
@@ -159,7 +167,9 @@ export function decodeResponseObservation(value: unknown): ResponseObservation {
   };
   // A response field alone may carry a presence policy; it is read beside the field, not into it,
   // so the contract the byte bound measures stays the one Go measures.
-  const presence: Record<string, string> = {};
+  const presence: Record<string, string> = Object.hasOwn(document, 'nested')
+    ? Object.create(null)
+    : {};
   for (const raw of document.fields === undefined || document.fields === null
     ? []
     : array(document.fields)) {
@@ -179,6 +189,10 @@ export function decodeResponseObservation(value: unknown): ResponseObservation {
   }
   if (Object.keys(presence).length > 0) {
     observation.presence = presence;
+  }
+  if (Object.hasOwn(document, 'nested')) {
+    observation.nested = decodeNestedResponse(document.nested);
+    normalizeNestedResponse(observation);
   }
   validateResponseObservation(observation);
   return observation;
@@ -220,7 +234,8 @@ export function validateResponseObservation(observation: ResponseObservation): v
     observation.fields.length > 256 ||
     observation.targets.length > 256 ||
     declarationCount > 4096 ||
-    mappingCount === 0 ||
+    (mappingCount === 0 && observation.nested === undefined) ||
+    mappingCount + (observation.nested?.mappings.length ?? 0) > 256 ||
     mappingCount !== observation.targets.length
   ) {
     throw new Error('invalid response contract bounds or owner');
@@ -240,7 +255,12 @@ export function validateResponseObservation(observation: ResponseObservation): v
       throw new Error('invalid response mapping');
     }
   }
-  if (goBytes(marshalShape(observation)) > BYTE_LIMIT) {
+  if (observation.nested !== undefined) {
+    validateNestedResponse(observation, observation.nested);
+    if (ENCODER.encode(nestedResponseCanonical(observation)).length > BYTE_LIMIT) {
+      throw new Error('response contract byte limit');
+    }
+  } else if (goBytes(marshalShape(observation)) > BYTE_LIMIT) {
     throw new Error('response contract byte limit');
   }
 }
@@ -597,6 +617,7 @@ export function admitSubjectRow(shape: SubjectShape, row: Record<string, Node>):
 export function validateTypedFields(
   groups: AccessorField[][],
   declarations: Record<string, SelectionDeclaration>,
+  allowJson = false,
 ): void {
   const used = new Set<string>();
   for (const list of groups) {
@@ -606,12 +627,110 @@ export function validateTypedFields(
         throw new Error('duplicate/empty response field');
       }
       seen.add(field.name);
-      checkType({ declarations }, field.type, used, new Set<string>(), 0);
+      checkType({ declarations }, field.type, used, new Set<string>(), 0, allowJson);
     }
   }
   if (used.size !== Object.keys(declarations).length) {
     throw new Error('unrelated response declarations');
   }
+}
+
+/**
+ * Admit a fixture contract's closed type graph. A type that reaches itself only behind Optional,
+ * List or Map has finite values, which a provider may supply and the value depth guard bounds; one
+ * with no such boundary has none (beyond10x/ess#416).
+ */
+export function validateFixtureTypes(
+  fields: AccessorField[],
+  declarations: Record<string, SelectionDeclaration>,
+): void {
+  const used = new Set<string>();
+  const seen = new Set<string>();
+  for (const field of fields) {
+    if (field.name === '' || seen.has(field.name)) {
+      throw new Error('duplicate/empty fixture input field');
+    }
+    seen.add(field.name);
+    checkType({ declarations }, field.type, used, new Set<string>(), 0, false, true);
+  }
+  if (used.size !== Object.keys(declarations).length) {
+    throw new Error('unrelated fixture declarations');
+  }
+  const finite = finiteDeclarations(declarations);
+  for (const field of fields) {
+    const name = unfiniteFrom(declarations, field.type, finite, new Set<string>());
+    if (name !== undefined) {
+      throw new Error(
+        `fixture input ${field.name} has no finite value: ${name} recurs with no Optional, List or Map boundary`,
+      );
+    }
+  }
+}
+
+/** The type references a declaration holds, union variants in label order. */
+function declarationChildren(body: SelectionDeclaration): string[] {
+  switch (body.kind) {
+    case 'newtype':
+      return [body.of ?? ''];
+    case 'struct':
+      return (body.fields ?? []).map((field) => field.type);
+    case 'union': {
+      const variants = body.variants as Record<string, string>;
+      return Object.keys(variants)
+        .sort()
+        .map((label) => variants[label]!);
+    }
+    default:
+      return [];
+  }
+}
+
+/**
+ * The model's inhabitation rule: the least fixpoint in which Optional, List and Map are base
+ * cases, a struct needs every field and a union one variant.
+ */
+function finiteDeclarations(declarations: Record<string, SelectionDeclaration>): Set<string> {
+  const finite = new Set<string>();
+  const inhabited = (source: string): boolean =>
+    accessorOptional(source)[1] ||
+    accessorCollection(source)[1] ||
+    owned(declarations, source) === undefined ||
+    finite.has(source);
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const [name, body] of Object.entries(declarations)) {
+      if (finite.has(name)) continue;
+      const children = declarationChildren(body);
+      const admitted = body.kind === 'union' ? children.some(inhabited) : children.every(inhabited);
+      if (admitted) {
+        finite.add(name);
+        grew = true;
+      }
+    }
+  }
+  return finite;
+}
+
+/** The first declaration with no finite value that `source` reaches. */
+function unfiniteFrom(
+  declarations: Record<string, SelectionDeclaration>,
+  source: string,
+  finite: Set<string>,
+  seen: Set<string>,
+): string | undefined {
+  const [inner, optional] = accessorOptional(source);
+  if (optional) return unfiniteFrom(declarations, inner, finite, seen);
+  const [item, collection] = accessorCollection(source);
+  if (collection) return unfiniteFrom(declarations, item, finite, seen);
+  const body = owned(declarations, source);
+  if (body === undefined || seen.has(source)) return undefined;
+  if (!finite.has(source)) return source;
+  seen.add(source);
+  for (const child of declarationChildren(body)) {
+    const name = unfiniteFrom(declarations, child, finite, seen);
+    if (name !== undefined) return name;
+  }
+  return undefined;
 }
 
 /** A response field's type holds a target's type, widening only into `Optional`. */
@@ -632,13 +751,15 @@ function checkType(
   used: Set<string>,
   stack: Set<string>,
   depth: number,
+  allowJson = false,
+  input = false,
 ): void {
   if (depth > DEPTH_LIMIT) {
     throw new Error('response type depth limit');
   }
   const [inner, optional] = accessorOptional(source);
   if (optional) {
-    checkType(observation, inner, used, stack, depth + 1);
+    checkType(observation, inner, used, stack, depth + 1, allowJson, input);
     return;
   }
   if (source.startsWith('Map<') && !source.startsWith('Map<String, ')) {
@@ -646,13 +767,18 @@ function checkType(
   }
   const [item, collection] = accessorCollection(source);
   if (collection) {
-    checkType(observation, item, used, stack, depth + 1);
+    checkType(observation, item, used, stack, depth + 1, allowJson, input);
     return;
   }
-  if (accessorPrimitive(source) && source !== 'Binary64') {
+  if ((allowJson && source === 'Json') || (accessorPrimitive(source) && source !== 'Binary64')) {
     return;
   }
   const body = owned(observation.declarations, source);
+  // A fixture input admits recursion here; `finiteDeclarations` decides whether it has a finite
+  // value (beyond10x/ess#416). A response refuses every recursive type.
+  if (body !== undefined && stack.has(source) && input) {
+    return;
+  }
   if (body === undefined || stack.has(source)) {
     throw new Error('missing/recursive response type');
   }
@@ -704,18 +830,19 @@ function checkType(
           variants === null ||
           Array.isArray(variants) ||
           Object.keys(variants).length === 0 ||
-          !Object.values(variants).every((child) => typeof child === 'string')
+          !Object.values(variants).every((child) => child === null || typeof child === 'string')
         ) {
           throw new Error('invalid response union');
         }
-        children.push(...(Object.values(variants) as string[]));
+        // A unit variant (ess/22) is `null`: it names no type to check.
+        children.push(...(Object.values(variants).filter((child) => child !== null) as string[]));
         break;
       }
       default:
         throw new Error('unknown response declaration');
     }
     for (const child of children) {
-      checkType(observation, child, used, stack, depth + 1);
+      checkType(observation, child, used, stack, depth + 1, allowJson, input);
     }
   } finally {
     stack.delete(source);
@@ -811,6 +938,9 @@ export function compareResponse(
       throw new Error(`event field ${target} differs from actual response field ${source}`);
     }
   }
+  if (observation.nested !== undefined) {
+    compareNestedResponse(observation, observation.nested, response, payload);
+  }
 }
 
 /**
@@ -844,7 +974,14 @@ export function expectResponsePayload(run: ResponseRun, index: number, step: Ste
 
 /** Admit one authored response observation. */
 export function admitResponse(value: unknown, major = 21): void {
-  const root = closed(value, 'command outcome event fields declarations mappings targets', '');
+  const root = closed(
+    value,
+    'command outcome event fields declarations mappings targets',
+    'nested',
+  );
+  if (Object.hasOwn(root, 'nested') && major < 34) {
+    throw new Error('nested response observations require suite/34 or /35');
+  }
   admitOutcome(root.outcome);
   admitTypedDeclarations(root.declarations);
   for (const key of ['fields', 'targets']) {
@@ -935,26 +1072,21 @@ interface EncodedResult {
  * that cannot be written — a NaN, a function — is not a typed wire value and is refused here
  * rather than compared later as whatever it degraded into.
  */
-export function snapshotResponseResult(result: CommandResult): CommandResult {
+export function snapshotResponseResult(
+  result: CommandResult,
+  enforceResultBudget = true,
+): CommandResult {
   let raw: string;
   try {
     raw = goMarshal(commandResultShape(result));
   } catch {
     throw new Error('response result is not a typed wire value');
   }
-  if (ENCODER.encode(raw).length > BYTE_LIMIT) {
+  // Direct returns apply their native payload-only budget at the typed observation.
+  if (enforceResultBudget && ENCODER.encode(raw).length > BYTE_LIMIT) {
     throw new Error('response result byte limit');
   }
-  const decoded = JSON.parse(raw, function reviveTokens(
-    _key: string,
-    value: unknown,
-    context?: { source?: string },
-  ): unknown {
-    if (typeof value === 'number' && typeof context?.source === 'string') {
-      return new JsonNumber(context.source);
-    }
-    return value;
-  } as (key: string, value: unknown) => unknown) as EncodedResult;
+  const decoded = strictResponseJSON(raw) as EncodedResult;
   return {
     response: decoded.Response,
     outcome: decoded.Outcome,
@@ -1097,4 +1229,350 @@ export function responseEqual(left: Node, right: Node): boolean {
     );
   }
   return equal(left, right);
+}
+
+interface NestedResponseMapping {
+  target: string[];
+  source: string;
+}
+interface NestedResponseTargets {
+  roots: AccessorField[];
+  declarations: Record<string, SelectionDeclaration>;
+  mappings: NestedResponseMapping[];
+}
+const NESTED_MEMBER = /^_*[A-Za-z][A-Za-z0-9_]*$/;
+
+function nestedMember(value: unknown): string {
+  if (typeof value !== 'string' || !NESTED_MEMBER.test(value)) {
+    throw new Error('invalid nested response member');
+  }
+  return value;
+}
+
+function nestedType(raw: string, depth = 0): string {
+  if (depth > 32) throw new Error('nested response type wrapper depth');
+  raw = raw.trim();
+  for (const wrapper of ['Optional', 'List', 'Map']) {
+    if (!raw.startsWith(`${wrapper}<`) || !raw.endsWith('>')) continue;
+    const inner = raw.slice(wrapper.length + 1, -1);
+    if (wrapper === 'Map') {
+      const comma = inner.indexOf(',');
+      if (comma < 0) throw new Error('invalid structural map');
+      const key = inner.slice(0, comma).trim();
+      if (!accessorPrimitive(key) || key === 'Binary64')
+        throw new Error('invalid structural map key');
+      return `Map<${key}, ${nestedType(inner.slice(comma + 1), depth + 1)}>`;
+    }
+    return `${wrapper}<${nestedType(inner, depth + 1)}>`;
+  }
+  if (!accessorPrimitive(raw) && raw !== 'Json') name(raw, false);
+  return raw;
+}
+
+function decodeNestedResponse(value: unknown): NestedResponseTargets {
+  const raw = closed(value, 'roots declarations mappings', '');
+  const field = (value: unknown): AccessorField => {
+    const member = closed(value, 'name type', '');
+    return {
+      name: nestedMember(member.name),
+      type: nestedType(decodedString(member.type, 'structural type')),
+    };
+  };
+  if (!isObject(raw.declarations)) throw new Error('invalid structural declarations');
+  const declarations: Record<string, SelectionDeclaration> = Object.create(null);
+  for (const [key, value] of Object.entries(raw.declarations)) {
+    name(key, false);
+    if (!isObject(value)) throw new Error('invalid structural declaration');
+    let required = 'kind';
+    switch (value.kind) {
+      case 'newtype':
+        required += ' of';
+        break;
+      case 'struct':
+        required += ' fields';
+        break;
+      case 'enum':
+        required += ' variants';
+        break;
+      case 'union':
+        required += ' tag variants';
+        break;
+      default:
+        throw new Error('invalid structural declaration kind');
+    }
+    const body = closed(value, required, '');
+    const decoded = decodeDeclaration(body);
+    if (body.kind === 'struct') decoded.fields = array(body.fields).map(field);
+    normalizeNestedDeclaration(decoded);
+    declarations[key] = decoded;
+  }
+  return {
+    roots: array(raw.roots).map(field),
+    declarations,
+    mappings: array(raw.mappings).map((value) => {
+      const mapping = closed(value, 'target source', '');
+      const target = array(mapping.target).map(nestedMember);
+      if (target.length < 2 || target.length > 33) throw new Error('nested response path bound');
+      return { target, source: nestedMember(mapping.source) };
+    }),
+  };
+}
+
+function normalizeNestedDeclaration(body: SelectionDeclaration): void {
+  switch (body.kind) {
+    case 'newtype':
+      body.of = nestedType(body.of ?? '');
+      break;
+    case 'struct':
+      for (const field of body.fields ?? []) field.type = nestedType(field.type);
+      break;
+    case 'union':
+      if (!isObject(body.variants)) throw new Error('invalid structural union');
+      for (const [label, type] of Object.entries(body.variants)) {
+        // A unit variant (ess/22) is `null`: it names no type.
+        if (type === null) continue;
+        if (typeof type !== 'string') throw new Error('invalid structural variant type');
+        body.variants[label] = nestedType(type);
+      }
+      break;
+  }
+}
+function normalizeNestedResponse(observation: ResponseObservation): void {
+  for (const field of [...observation.fields, ...observation.targets])
+    field.type = nestedType(field.type);
+  for (const body of Object.values(observation.declarations)) normalizeNestedDeclaration(body);
+}
+
+function nestedReferences(body: SelectionDeclaration): string[] {
+  switch (body.kind) {
+    case 'newtype':
+      return [body.of ?? ''];
+    case 'struct': {
+      const fields = body.fields ?? [];
+      const seen = new Set<string>();
+      if (!fields.length) throw new Error('empty structural struct');
+      for (const field of fields) {
+        nestedMember(field.name);
+        if (seen.has(field.name)) throw new Error('duplicate structural member');
+        seen.add(field.name);
+      }
+      return fields.map((field) => field.type);
+    }
+    case 'enum': {
+      const labels = array(body.variants);
+      if (!labels.length || labels.some((label) => typeof label !== 'string')) {
+        throw new Error('invalid structural enum');
+      }
+      return [];
+    }
+    case 'union': {
+      if (typeof body.tag !== 'string' || !body.tag)
+        throw new Error('invalid structural union tag');
+      if (!isObject(body.variants) || !Object.keys(body.variants).length)
+        throw new Error('invalid structural union');
+      // A unit variant (ess/22) is `null`: it names no type to reach.
+      return Object.values(body.variants)
+        .filter((type) => type !== null)
+        .map((type) => {
+          if (typeof type !== 'string') throw new Error('invalid structural union variant');
+          return type;
+        });
+    }
+    default:
+      throw new Error('invalid structural kind');
+  }
+}
+function nestedNamed(type: string): string | undefined {
+  for (;;) {
+    const [inner, optional] = accessorOptional(type);
+    if (optional) {
+      type = inner;
+      continue;
+    }
+    const [item, collection] = accessorCollection(type);
+    if (collection) {
+      type = item;
+      continue;
+    }
+    return accessorPrimitive(type) || type === 'Json' ? undefined : type;
+  }
+}
+function nestedStruct(
+  type: string,
+  declarations: Record<string, SelectionDeclaration>,
+  memo: Map<string, string>,
+): string {
+  const walked = new Set<string>();
+  for (;;) {
+    const known = memo.get(type);
+    if (known !== undefined) {
+      for (const previous of walked) memo.set(previous, known);
+      return known;
+    }
+    if (walked.has(type)) throw new Error('cyclic nested response ancestor');
+    walked.add(type);
+    const [inner, optional] = accessorOptional(type);
+    if (optional) {
+      type = inner;
+      continue;
+    }
+    const body = owned(declarations, type);
+    if (body?.kind === 'newtype') {
+      type = body.of ?? '';
+      continue;
+    }
+    if (body?.kind !== 'struct') throw new Error('nested response ancestor is not a struct');
+    for (const previous of walked) memo.set(previous, type);
+    return type;
+  }
+}
+function validateNestedResponse(
+  observation: ResponseObservation,
+  nested: NestedResponseTargets,
+): void {
+  if (
+    !nested.roots.length ||
+    nested.roots.length > 256 ||
+    !nested.mappings.length ||
+    nested.mappings.length + Object.keys(observation.mappings).length > 256
+  ) {
+    throw new Error('nested response relationship bound');
+  }
+  const names = new Set([
+    ...Object.keys(observation.declarations),
+    ...Object.keys(nested.declarations),
+  ]);
+  if (names.size > 4096) throw new Error('nested response declaration union limit');
+  for (const [name, body] of Object.entries(nested.declarations)) {
+    const other = owned(observation.declarations, name);
+    if (
+      other !== undefined &&
+      nestedDeclarationCanonical(other) !== nestedDeclarationCanonical(body)
+    ) {
+      throw new Error('conflicting nested response declaration');
+    }
+  }
+  const roots = new Map<string, string>();
+  for (const root of nested.roots) {
+    nestedMember(root.name);
+    if (roots.has(root.name) || present(observation.mappings, root.name))
+      throw new Error('duplicate or overlapping nested response root');
+    roots.set(root.name, root.type);
+  }
+  const pending = [...roots.values()];
+  const visited = new Set<string>();
+  while (pending.length) {
+    const type = nestedType(pending.pop()!);
+    const named = nestedNamed(type);
+    if (named === undefined || visited.has(named)) continue;
+    const body = owned(nested.declarations, named);
+    if (body === undefined) throw new Error('missing structural declaration');
+    visited.add(named);
+    pending.push(...nestedReferences(body));
+  }
+  if (visited.size !== Object.keys(nested.declarations).length)
+    throw new Error('unrelated structural declarations');
+  const used = new Set<string>();
+  const paths: string[][] = [];
+  const memo = new Map<string, string>();
+  for (const mapping of nested.mappings) {
+    const path = mapping.target;
+    if (path.length < 2 || path.length > 33) throw new Error('nested response path bound');
+    path.forEach(nestedMember);
+    const root = roots.get(path[0]!);
+    if (root === undefined) throw new Error('undeclared nested response root');
+    let type: string = root;
+    used.add(path[0]!);
+    for (const member of path.slice(1)) {
+      const body: SelectionDeclaration = owned(
+        nested.declarations,
+        nestedStruct(type, nested.declarations, memo),
+      )!;
+      const field: AccessorField | undefined = body.fields?.find((field) => field.name === member);
+      if (field === undefined) throw new Error('undeclared nested response member');
+      type = field.type;
+    }
+    const source = observation.fields.find((field) => field.name === mapping.source);
+    if (source === undefined || !responseAssignable(source.type, type))
+      throw new Error('nested response terminal mismatch');
+    if (
+      paths.some((other) =>
+        other
+          .slice(0, Math.min(other.length, path.length))
+          .every((member, index) => member === path[index]),
+      )
+    ) {
+      throw new Error('duplicate or overlapping nested response paths');
+    }
+    paths.push(path);
+  }
+  if (used.size !== roots.size) throw new Error('unused nested response root');
+}
+function compareNestedResponse(
+  observation: ResponseObservation,
+  nested: NestedResponseTargets,
+  response: Record<string, Node>,
+  payload: Record<string, Node>,
+): void {
+  for (const mapping of nested.mappings) {
+    let object = payload;
+    for (const member of mapping.target.slice(0, -1)) {
+      const next = owned(object, member);
+      if (!isObject(next) || next instanceof JsonNumber)
+        throw new Error(`nested response ancestor ${member} is absent or not an object`);
+      object = next;
+    }
+    const actual = owned(response, mapping.source);
+    const emitted = owned(object, mapping.target.at(-1)!);
+    const field = observation.fields.find((field) => field.name === mapping.source)!;
+    if (
+      accessorOptional(field.type)[1] &&
+      (actual === undefined || actual === null) &&
+      (emitted === undefined || emitted === null)
+    )
+      continue;
+    if (actual === undefined || emitted === undefined || !responseEqual(actual, emitted)) {
+      throw new Error(
+        `event path ${mapping.target.join('.')} differs from actual response field ${mapping.source}`,
+      );
+    }
+  }
+}
+// Explicit member order and UTF-8 key order match Rust's nested-only accounting profile.
+function nestedKeyOrder(left: string, right: string): number {
+  const a = ENCODER.encode(left),
+    b = ENCODER.encode(right);
+  for (let i = 0; i < Math.min(a.length, b.length); i++) if (a[i] !== b[i]) return a[i]! - b[i]!;
+  return a.length - b.length;
+}
+function nestedMapCanonical<T>(values: Record<string, T>, encode: (value: T) => string): string {
+  return `{${Object.keys(values)
+    .sort(nestedKeyOrder)
+    .map((key) => `${JSON.stringify(key)}:${encode(values[key]!)}`)
+    .join(',')}}`;
+}
+function nestedFieldsCanonical(fields: AccessorField[], presence?: Record<string, string>): string {
+  return `[${fields.map((field) => `{"name":${JSON.stringify(field.name)},"type":${JSON.stringify(field.type)}${owned(presence, field.name) === undefined ? '' : `,"presence":${JSON.stringify(owned(presence, field.name))}`}}`).join(',')}]`;
+}
+function nestedDeclarationCanonical(body: SelectionDeclaration): string {
+  let result = `{"kind":${JSON.stringify(body.kind)}`;
+  switch (body.kind) {
+    case 'newtype':
+      result += `,"of":${JSON.stringify(body.of)}`;
+      break;
+    case 'struct':
+      result += `,"fields":${nestedFieldsCanonical(body.fields ?? [])}`;
+      break;
+    case 'enum':
+      result += `,"variants":${JSON.stringify(body.variants)}`;
+      break;
+    case 'union':
+      result += `,"tag":${JSON.stringify(body.tag)},"variants":${nestedMapCanonical(body.variants as Record<string, string>, JSON.stringify)}`;
+      break;
+  }
+  return `${result}}`;
+}
+function nestedResponseCanonical(observation: ResponseObservation): string {
+  const nested = observation.nested!;
+  return `{"command":${JSON.stringify(observation.command)},"outcome":{"command":${JSON.stringify(observation.outcome.command)},"outcome":${JSON.stringify(observation.outcome.outcome)}},"event":${JSON.stringify(observation.event)},"fields":${nestedFieldsCanonical(observation.fields, observation.presence)},"declarations":${nestedMapCanonical(observation.declarations, nestedDeclarationCanonical)},"mappings":${nestedMapCanonical(observation.mappings, JSON.stringify)},"targets":${nestedFieldsCanonical(observation.targets)},"nested":{"roots":${nestedFieldsCanonical(nested.roots)},"declarations":${nestedMapCanonical(nested.declarations, nestedDeclarationCanonical)},"mappings":${JSON.stringify(nested.mappings)}}}`;
 }

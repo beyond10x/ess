@@ -42,8 +42,11 @@ fn only_authored(text: &str) -> ConformanceSuite {
 
 fn failures<T: ConformanceTarget>(suite: &ConformanceSuite, target: &T) -> Vec<String> {
     let report = Runner::for_suite(suite)
-        .run(suite, target)
-        .expect("admitted");
+        .run_admitted(
+            &ess_conformance::AdmittedSuite::from_suite(suite).expect("admitted"),
+            target,
+        )
+        .into_report();
     let mut failed: Vec<String> = report
         .failures()
         .map(|result| format!("{} — {}", result.scenario, result.status))
@@ -175,8 +178,11 @@ fn committed_suite_fails_a_target_that_ranks_outstanding_by_issue_sequence() {
         issued: RefCell::default(),
     };
     let report = Runner::for_suite(&suite)
-        .run(&suite, &target)
-        .expect("admitted");
+        .run_admitted(
+            &ess_conformance::AdmittedSuite::from_suite(&suite).expect("admitted"),
+            &target,
+        )
+        .into_report();
     assert_ne!(
         report.status,
         ConformanceStatus::Passed,

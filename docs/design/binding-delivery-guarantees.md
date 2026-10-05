@@ -63,7 +63,10 @@ the declared consequence anyway. `at_most_once` says the second delivery does no
 * an `at_least_once` binding keeps the scenario it has, unchanged.
 
 The refusal is a **declaration, not a defect** — the second of that kind, beside
-`BindingGap::PolicySilent` for `on_failure: drop`. A binding still accounts for four aspects: the
+`BindingGap::PolicySilent` for an `on_failure: drop` whose invoked command acts on no row a scenario
+can read before the trigger. Where it does, `drop` is a scenario since beyond10x/ess#267: one forced
+refusal, exactly one attempt carrying the mapped input, and the row unchanged
+([binding-arrangement-and-drop.md](binding-arrangement-and-drop.md)). A binding still accounts for four aspects: the
 `delivery` aspect appears as a named refusal instead of a scenario, which is what
 `every_clause_of_every_binding_is_either_a_scenario_or_a_named_refusal` already requires.
 
@@ -155,7 +158,8 @@ observed through the invocation count — the one thing a bound changes:
 | `<binding>/binding/final-failure` | the first `final` refusal that is `external:`, on the next invocation | exactly one invocation |
 
 Neither requires the invoked command's success event, so `on-failure` is a scenario, not
-`ESS-SYNTH-010`; a plain `drop` is still refused. `final-failure` is not in `BindingAspect::ALL`:
+`ESS-SYNTH-010`; a plain `drop` is refused only where its destination cannot be read unchanged
+(see above). `final-failure` is not in `BindingAspect::ALL`:
 only a bound that names `final` refusals makes that claim, so every other binding still accounts
 for exactly four aspects. Where no retried refusal can be forced (every `external:` branch is
 final) `on-failure` is refused with `BindingGap::RetriedUnforcible`; where no final refusal can be

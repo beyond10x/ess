@@ -5,7 +5,7 @@
 //! behaviour bundle take this one unchanged, and an implementor who wants a different behaviour
 //! still writes their own bundle. Everything the specification leaves to the implementor is a
 //! port `P` supplies: one storage trait per entity (get, put and delete a snapshot by identity —
-//! ess generates the trait and never a store) and one context trait (the caller's attributes, the
+//! generated network entries supply an ephemeral store) and one context trait (the caller's attributes, the
 //! identities and values the model says the implementation assigns, and the answer to an
 //! `external:` branch, forced or decided). Every behaviour and query the plan still owes is
 //! forwarded to `P`, so `Generated<P>` is a complete bundle.
@@ -28,13 +28,24 @@
 //! `wrong_state:`. A forced external branch naming no subject therefore answers before any row is
 //! read. A guard that is Unknown, or a request no declared branch answers, is the typed refusal
 //! naming the command: the model declares no outcome for it.
+//!
+//! A command guarded by `when_related:` reads its one related row through the related entity's
+//! storage port, and none for an absent reference, in the interpreter's order: a row named by the
+//! input after `existing_instance:` and before the input-guarded refusals, its `exists: false`
+//! answering an identity no row carries; a row named by a stored field of the addressed subject
+//! after the input-guarded refusals and that row's existence and held state. Where the
+//! present-related refusals come first (every stored reference; from ess/22 beside `wrong_state:`),
+//! the branch the request selects without them has its subject's existence and held state checked
+//! before them, and they answer before every accepting branch; otherwise the predicate branches are
+//! read in declaration order with the accepting ones.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
 use ess_compiler::ir::{
-    EssIr, ResolvedBody, ResolvedCommand, ResolvedCondition, ResolvedEffect, ResolvedEntity,
-    ResolvedInstance, ResolvedOutcome, ResolvedPayloadField, ResolvedPayloadValue, ResolvedTypeRef,
+    EntityHandle, EssIr, ResolvedBody, ResolvedCommand, ResolvedCondition, ResolvedEffect,
+    ResolvedEntity, ResolvedFallback, ResolvedInstance, ResolvedOutcome, ResolvedPayloadField,
+    ResolvedPayloadValue, ResolvedRelatedTest, ResolvedRelatedVia, ResolvedTypeRef,
 };
 use ess_domain::name::QualifiedName;
 use ess_domain::types::Primitive;
@@ -67,6 +78,7 @@ pub(super) fn module(
         return None;
     }
     let storages = storage_names(ir, layout);
+    let external_commands = external_names(ir, plan);
     let mut uses = Uses::default();
     let mut impls = String::new();
     for command in ir.commands().values() {
@@ -81,6 +93,7 @@ pub(super) fn module(
                 layout,
                 command,
                 storages: &storages,
+                external_commands: &external_commands,
                 uses: &mut uses,
                 bounds: Bounds::default(),
             };
@@ -122,7 +135,9 @@ pub(super) fn module(
             uses.listed.contains(entity),
         );
     }
+    external_command(&mut out, layout, &external_commands);
     context_trait(&mut out, &uses);
+    fallible_context(&mut out, &uses);
     out.push_str(GENERATED);
     out.push_str(&impls);
     helpers(&mut out, &uses);
@@ -138,7 +153,7 @@ const HEADER: &str = "
 //! lists as generated, written against ports the implementor supplies.
 //!
 //! Storage is a port: one trait per entity, get, put and delete of a snapshot by identity. ess
-//! generates the trait and never a store. `Context` is the other port: the caller's attributes,
+//! preserves the trait; generated network entries supply an ephemeral store. `Context` carries the caller's attributes,
 //! every identity and value the model says the implementation assigns, and the answer to each
 //! `external:` branch. [`Generated`] implements every generated `…Behavior` trait over those ports
 //! and forwards every behaviour and query the plan still owes to them, so it is a complete bundle
@@ -157,7 +172,7 @@ const GENERATED: &str = "
 /// Every generated behaviour of this workspace, over the ports `P` supplies.
 ///
 /// `P` implements the storage trait of each entity a generated behaviour reads or writes,
-/// `Context` where one asks it anything, and every `…Behavior` and `…Query` trait the plan still
+/// `TryContext` (or its legacy `Context` blanket adapter) where one asks it anything, and every `…Behavior` and `…Query` trait the plan still
 /// owes; `Generated<P>` forwards those to it.
 pub struct Generated<P> {
     /// The storage and context ports, and every behaviour or query still owed.
@@ -174,19 +189,60 @@ impl<P> Generated<P> {
 
 /// What the generated impls asked of the ports and of the helpers, collected while rendering.
 #[derive(Default)]
-struct Uses {
+pub(super) struct Uses {
     /// Entities whose storage trait some behaviour or query uses.
-    storages: BTreeSet<QualifiedName>,
+    pub(super) storages: BTreeSet<QualifiedName>,
     /// Entities whose rows some generated query lists: their storage trait carries `list`.
-    listed: BTreeSet<QualifiedName>,
+    pub(super) listed: BTreeSet<QualifiedName>,
     /// Caller attribute methods: name → returned type.
-    callers: BTreeMap<String, (String, String)>,
+    pub(super) callers: BTreeMap<String, (String, String)>,
     /// Assigned-value methods: name → returned type.
-    generates: BTreeMap<String, (String, String)>,
+    pub(super) generates: BTreeMap<String, (String, String)>,
+    pub(super) assigned: BTreeMap<String, ResolvedTypeRef>,
     /// Some behaviour asks the context about an `external:` branch.
-    external: bool,
+    pub(super) external: bool,
+    pub(super) externals: BTreeSet<String>,
+    /// Some behaviour reads the command clock: a guard of it orders an instant against the current
+    /// time (ess/22, family F A3).
+    pub(super) clock: bool,
     /// Helper functions used, by name.
     helpers: BTreeSet<&'static str>,
+}
+
+/// Ask the very same renderers for the ports a selected set of methods reads.
+pub(super) fn requirements(
+    ir: &EssIr,
+    plan: &SynthesisPlan,
+    layout: &Layout,
+    selected: Option<&crate::served::Reachable>,
+) -> Uses {
+    let storages = storage_names(ir, layout);
+    let external_commands = external_names(ir, plan);
+    let mut uses = Uses::default();
+    for command in ir.commands().values() {
+        if plan.is_generated(CapabilityKind::CommandBehavior, &command.name.to_string())
+            && selected.is_none_or(|selected| selected.commands.contains(&command.name))
+        {
+            let _ = Writer {
+                ir,
+                layout,
+                command,
+                storages: &storages,
+                external_commands: &external_commands,
+                uses: &mut uses,
+                bounds: Bounds::default(),
+            }
+            .implementation();
+        }
+    }
+    for view in ir.views().values() {
+        if plan.is_generated(CapabilityKind::ViewQuery, &view.name.to_string())
+            && selected.is_none_or(|selected| selected.views.contains(&view.name))
+        {
+            let _ = query::implementation(ir, layout, view, &storages, &mut uses);
+        }
+    }
+    uses
 }
 
 /// The ports one impl needs.
@@ -199,7 +255,7 @@ struct Bounds {
 /// The storage trait name of each entity: `<Type>Storage`, or — where two entities of different
 /// domains share a type name — every one spelled from its full name, so adding an entity never
 /// renames another's trait.
-fn storage_names(ir: &EssIr, layout: &Layout) -> BTreeMap<QualifiedName, String> {
+pub(super) fn storage_names(ir: &EssIr, layout: &Layout) -> BTreeMap<QualifiedName, String> {
     let short: BTreeMap<QualifiedName, String> = ir
         .entities()
         .keys()
@@ -223,6 +279,67 @@ fn storage_names(ir: &EssIr, layout: &Layout) -> BTreeMap<QualifiedName, String>
             )
         })
         .collect()
+}
+
+/// Names for commands whose generated body calls the external port. Reserve every base first so
+/// a collision suffix cannot steal another command's natural name.
+fn external_names(ir: &EssIr, plan: &SynthesisPlan) -> BTreeMap<QualifiedName, String> {
+    let candidates: BTreeMap<_, _> = ir
+        .commands()
+        .values()
+        .filter(|command| {
+            plan.is_generated(CapabilityKind::CommandBehavior, &command.name.to_string())
+                && command.outcomes.iter().any(|outcome| {
+                    matches!(
+                        outcome.condition,
+                        ResolvedCondition::External { .. } | ResolvedCondition::ExternalWhen { .. }
+                    )
+                })
+        })
+        .map(|command| {
+            (
+                command.name.clone(),
+                name::type_fragment(&command.name.to_string()),
+            )
+        })
+        .collect();
+    let mut reserved: BTreeSet<String> = candidates.values().cloned().collect();
+    let mut allocated = BTreeSet::new();
+    candidates
+        .into_iter()
+        .map(|(command, base)| {
+            let mut variant = base.clone();
+            if !allocated.insert(base.clone()) {
+                let mut suffix = 2;
+                loop {
+                    variant = format!("{base}{suffix}");
+                    if reserved.insert(variant.clone()) {
+                        break;
+                    }
+                    suffix += 1;
+                }
+            }
+            (command, variant)
+        })
+        .collect()
+}
+
+/// The executing input, borrowed without conversion; absent when no generated command asks it.
+fn external_command(out: &mut String, layout: &Layout, commands: &BTreeMap<QualifiedName, String>) {
+    if commands.is_empty() {
+        return;
+    }
+    out.push_str("\n/// The exact executing command input supplied to an external decision.\n///\n/// This supplies facts, not authority: the context must verify its request-bound proof.\n#[derive(Debug, Clone, Copy)]\npub enum ExternalCommand<'a> {\n");
+    for (command, variant) in commands {
+        let module = layout.module(layout.owner(command));
+        let input = layout.type_name(command);
+        let _ = writeln!(out, "    /// The executing `{command}` input.\n    {variant}(&'a crate::{module}::{input}),");
+    }
+    out.push_str("}\n\nimpl ExternalCommand<'_> {\n    /// The canonical qualified identity of this command.\n    pub fn name(&self) -> &'static str {\n        match self {\n");
+    for (command, variant) in commands {
+        let _ = writeln!(out, "            Self::{variant}(_) => \"{command}\",");
+    }
+    out.push_str("        }\n    }\n}\n");
 }
 
 /// One entity's storage port.
@@ -249,7 +366,7 @@ fn storage_trait(
     let _ = writeln!(
         out,
         "\n/// Where `{entity}` is stored — a port the implementor provides.\n///\n/// Keyed by the \
-         identity `{}`. ess generates this trait and never an implementation of it.\npub trait {} \
+         identity `{}`. Generated network entries supply an ephemeral implementation; durable storage remains a port.\npub trait {} \
          {{\n    /// The instance with this identity, or `None` where none is stored.\n    \
          fn get(&self, identity: &{identity}) -> Option<{snapshot}>;\n\n    /// Stores this \
          instance under its identity, replacing what was held.\n    fn put(&mut self, snapshot: \
@@ -261,7 +378,7 @@ fn storage_trait(
 
 /// The context port: only the methods some generated behaviour asks.
 fn context_trait(out: &mut String, uses: &Uses) {
-    if uses.callers.is_empty() && uses.generates.is_empty() && !uses.external {
+    if uses.callers.is_empty() && uses.generates.is_empty() && !uses.external && !uses.clock {
         return;
     }
     out.push_str(
@@ -301,8 +418,19 @@ fn context_trait(out: &mut String, uses: &Uses) {
              invocation.\n    ///\n    /// Asked in declaration order, before the branch's input \
              guard is read; the first branch\n    /// answered `true` whose guard holds is taken. A \
              test forces a branch by answering `true`\n    /// for it alone; a deployment asks \
-             whatever decides it.\n    fn external(&mut self, command: &'static str, outcome: \
+             whatever decides it.\n    fn external(&mut self, command: ExternalCommand<'_>, outcome: \
              &'static str) -> bool;\n",
+        );
+    }
+    if uses.clock {
+        separate(out);
+        out.push_str(
+            "    /// The instant of the command decision being made now, or `None` where this \
+             context has no\n    /// clock. Read once per decision, before any guard: every \
+             guard ordering an instant against\n    /// the current time reads that one instant, \
+             and a decision that needs it and has none is\n    /// refused naming the command \
+             clock, never decided with another instant.\n    fn command_clock(&mut self) -> \
+             Option<crate::primitives::Timestamp>;\n",
         );
     }
     out.push_str("}\n");
@@ -379,6 +507,9 @@ fn helpers(out: &mut String, uses: &Uses) {
              Result<bool, UnmetObligation> {\n    truth.ok_or_else(|| undeclared(command))\n}\n",
         );
     }
+    if uses.helpers.contains("decided_at") {
+        out.push_str(DECIDED_AT);
+    }
     if uses.helpers.contains("all") {
         out.push_str(
             "\n/// Three-valued conjunction: false wins, then Unknown.\nfn all(truths: \
@@ -415,6 +546,24 @@ fn helpers(out: &mut String, uses: &Uses) {
     }
     if uses.helpers.contains("compare_numbers") {
         out.push_str(COMPARE_NUMBERS);
+    }
+    if uses.helpers.contains("compare_instants") {
+        out.push_str(COMPARE_INSTANTS);
+    }
+    if uses.helpers.contains("compare_offset_integers") {
+        out.push_str(COMPARE_OFFSET_INTEGERS);
+    }
+    if uses.helpers.contains("compare_offset_instants") {
+        out.push_str(COMPARE_OFFSET_INSTANTS);
+    }
+    if uses.helpers.contains("compare_with_now") {
+        out.push_str(COMPARE_WITH_NOW);
+    }
+    if uses.helpers.contains("compare_instants")
+        || uses.helpers.contains("compare_offset_instants")
+        || uses.helpers.contains("compare_with_now")
+    {
+        out.push_str(INSTANT_OF);
     }
     for (helper, text) in QUERY_HELPERS {
         if uses.helpers.contains(helper) {
@@ -472,6 +621,167 @@ fn compare_numbers(
         (false, true) => core::cmp::Ordering::Greater,
     };
     Some(accepts(ordering))
+}
+";
+
+/// A guard's comparison of two `Timestamp` facts by the instants they name
+/// (`docs/design/expression-family-source22.md`, decision 2).
+const COMPARE_INSTANTS: &str = "
+/// Compares two RFC 3339 renderings by the instant each names; an unread one, or one that names
+/// no instant, is Unknown — never ordered by its spelling.
+fn compare_instants(
+    left: Option<String>,
+    right: Option<String>,
+    accepts: fn(core::cmp::Ordering) -> bool,
+) -> Option<bool> {
+    Some(accepts(instant_of(&left?)?.cmp(&instant_of(&right?)?)))
+}
+";
+
+/// The guard comparisons with one constant offset of a fact
+/// (`docs/design/expression-family-source22.md`, A2), each written only where a guard uses it.
+const COMPARE_OFFSET_INTEGERS: &str = "
+/// Compares an `Integer` rendering with another moved by a constant, exactly: every `i64 ± i64`
+/// fits `i128`, so nothing wraps, saturates or rounds; an unread one is Unknown.
+fn compare_offset_integers(
+    left: Option<String>,
+    base: Option<String>,
+    offset: i128,
+    accepts: fn(core::cmp::Ordering) -> bool,
+) -> Option<bool> {
+    let left: i128 = left?.parse().ok()?;
+    let base: i128 = base?.parse().ok()?;
+    Some(accepts(left.cmp(&(base + offset))))
+}
+";
+
+/// See [`COMPARE_OFFSET_INTEGERS`].
+const COMPARE_OFFSET_INSTANTS: &str = "
+/// Compares an RFC 3339 rendering with another moved by elapsed seconds, by the instants they name;
+/// an unread one, one that names no instant, or a moved instant no `date-time` spells is Unknown.
+fn compare_offset_instants(
+    left: Option<String>,
+    base: Option<String>,
+    seconds: i64,
+    accepts: fn(core::cmp::Ordering) -> bool,
+) -> Option<bool> {
+    let left = instant_of(&left?)?;
+    let (base, nanos) = instant_of(&base?)?;
+    let moved = base.checked_add(seconds)?;
+    if !(-62_167_219_200..=253_402_300_799).contains(&moved) {
+        return None;
+    }
+    Some(accepts(left.cmp(&(moved, nanos))))
+}
+";
+
+/// The call a guard ordering an instant against the current time is rendered as: the stored or
+/// input instant on the left, the decision's one instant moved by whole seconds on the right
+/// (`docs/design/expression-family-source22.md`, A3).
+const COMPARE_WITH_NOW_CALL: &str = "compare_with_now(";
+
+/// A guard's ordering of an instant against the decision's one instant (A3).
+const COMPARE_WITH_NOW: &str = "
+/// Orders an RFC 3339 rendering against the decision's one instant moved by `seconds`, by the
+/// instants each names; an unread value, no instant to read, or one that names no instant is
+/// Unknown — never ordered by its spelling, and never read from another clock.
+fn compare_with_now(
+    value: Option<String>,
+    now: &Result<Option<crate::primitives::Timestamp>, UnmetObligation>,
+    seconds: i64,
+    accepts: fn(core::cmp::Ordering) -> bool,
+) -> Option<bool> {
+    let (at, nanos) = instant_of(&value?)?;
+    let (decided, decided_nanos) = instant_of(&now.as_ref().ok()?.as_ref()?.0)?;
+    Some(accepts((at, nanos).cmp(&(decided.checked_add(seconds)?, decided_nanos))))
+}
+";
+
+/// The decision of a guard reading the decision's one instant (A3).
+const DECIDED_AT: &str = "
+/// A guard's truth, where it has one. Unknown with no instant to read is the command clock this
+/// decision needs and its context did not supply: the context's own unavailable answer where it
+/// named one, otherwise the missing command clock, named as such. Any other Unknown selects no
+/// branch, so the model declares no outcome.
+fn decided_at(
+    truth: Option<bool>,
+    now: &Result<Option<crate::primitives::Timestamp>, UnmetObligation>,
+    command: &'static str,
+) -> Result<bool, UnmetObligation> {
+    match (truth, now) {
+        (Some(truth), _) => Ok(truth),
+        (None, Err(unavailable)) => Err(unavailable.clone()),
+        (None, Ok(None)) => Err(UnmetObligation { capability: \"command clock\", source: command }),
+        (None, Ok(Some(_))) => Err(undeclared(command)),
+    }
+}
+";
+
+/// The instant an RFC 3339 `date-time` names, shared by every instant comparison.
+const INSTANT_OF: &str = "
+/// The instant an RFC 3339 `date-time` names, as seconds from the epoch and nanoseconds.
+fn instant_of(text: &str) -> Option<(i64, u32)> {
+    let bytes = text.as_bytes();
+    let digits = |from: usize, to: usize| -> Option<u32> {
+        let slice = bytes.get(from..to)?;
+        if slice.is_empty() || !slice.iter().all(u8::is_ascii_digit) {
+            return None;
+        }
+        slice
+            .iter()
+            .try_fold(0u32, |total, digit| Some(total * 10 + u32::from(digit - b'0')))
+    };
+    let at = |index: usize, expected: &[u8]| bytes.get(index).is_some_and(|b| expected.contains(b));
+    if !(at(4, b\"-\") && at(7, b\"-\") && at(10, b\"Tt\") && at(13, b\":\") && at(16, b\":\")) {
+        return None;
+    }
+    let (year, month, day) = (i64::from(digits(0, 4)?), digits(5, 7)?, digits(8, 10)?);
+    let leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+    let length = match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if leap => 29,
+        2 => 28,
+        _ => return None,
+    };
+    let (hour, minute, second) = (digits(11, 13)?, digits(14, 16)?, digits(17, 19)?);
+    if day < 1 || day > length || hour > 23 || minute > 59 || second > 59 {
+        return None;
+    }
+    let mut position = 19;
+    let mut nanos = 0u32;
+    if at(position, b\".\") {
+        let mut end = position + 1;
+        while bytes.get(end).is_some_and(u8::is_ascii_digit) {
+            end += 1;
+        }
+        let width = end - position - 1;
+        if width == 0 || width > 9 {
+            return None;
+        }
+        nanos = digits(position + 1, end)? * 10u32.pow(u32::try_from(9 - width).ok()?);
+        position = end;
+    }
+    let offset = match bytes.get(position..)? {
+        b\"Z\" | b\"z\" => 0i64,
+        [sign @ (b'+' | b'-'), _, _, b':', _, _] => {
+            let (hours, minutes) = (digits(position + 1, position + 3)?, digits(position + 4, position + 6)?);
+            if hours > 23 || minutes > 59 {
+                return None;
+            }
+            let magnitude = i64::from(hours * 3600 + minutes * 60);
+            if *sign == b'-' { -magnitude } else { magnitude }
+        }
+        _ => return None,
+    };
+    let shifted = if month <= 2 { year - 1 } else { year };
+    let era = shifted.div_euclid(400);
+    let of_era = shifted - era * 400;
+    let march = i64::from(if month > 2 { month - 3 } else { month + 9 });
+    let of_year = (153 * march + 2) / 5 + i64::from(day) - 1;
+    let of_cycle = of_era * 365 + of_era / 4 - of_era / 100 + of_year;
+    let days = era * 146_097 + of_cycle - 719_468;
+    Some((days * 86_400 + i64::from(hour * 3600 + minute * 60 + second) - offset, nanos))
 }
 ";
 
@@ -773,8 +1083,38 @@ struct Writer<'a> {
     layout: &'a Layout,
     command: &'a ResolvedCommand,
     storages: &'a BTreeMap<QualifiedName, String>,
+    external_commands: &'a BTreeMap<QualifiedName, String>,
     uses: &'a mut Uses,
     bounds: Bounds,
+}
+
+/// A fallible companion preserves the existing context API and its implementations.
+fn fallible_context(out: &mut String, uses: &Uses) {
+    if uses.callers.is_empty() && uses.generates.is_empty() && !uses.external && !uses.clock {
+        return;
+    }
+    out.push_str("\n/// Context answers that may be unavailable, without fabricated values.\n/// Existing `Context` implementations receive the blanket adapter.\npub trait TryContext {\n");
+    let mut adapter = String::from("\nimpl<T: Context + ?Sized> TryContext for T {\n");
+    for (method, (ty, attribute)) in &uses.callers {
+        let _ = writeln!(out, "/// The caller's `{attribute}`, or a named unavailable answer.\nfn try_{method}(&self) -> Result<Option<{ty}>, UnmetObligation>;");
+        let _ = writeln!(adapter, "fn try_{method}(&self) -> Result<Option<{ty}>, UnmetObligation> {{ Ok(Context::{method}(self)) }}");
+    }
+    for (method, (ty, _)) in &uses.generates {
+        let _ = writeln!(out, "/// Assigns the value, or names the unavailable answer.\nfn try_{method}(&mut self) -> Result<{ty}, UnmetObligation>;");
+        let _ = writeln!(adapter, "fn try_{method}(&mut self) -> Result<{ty}, UnmetObligation> {{ Ok(Context::{method}(self)) }}");
+    }
+    if uses.external {
+        out.push_str("/// Decides the named external branch, or names the unavailable answer.\nfn try_external(&mut self, command: ExternalCommand<'_>, outcome: &'static str) -> Result<bool, UnmetObligation>;\n");
+        adapter.push_str("fn try_external(&mut self, command: ExternalCommand<'_>, outcome: &'static str) -> Result<bool, UnmetObligation> { Ok(Context::external(self, command, outcome)) }\n");
+    }
+    if uses.clock {
+        out.push_str("/// The decision's one instant, `None` where the context has no clock, or a named unavailable answer.\nfn try_command_clock(&mut self) -> Result<Option<crate::primitives::Timestamp>, UnmetObligation>;\n");
+        adapter.push_str("fn try_command_clock(&mut self) -> Result<Option<crate::primitives::Timestamp>, UnmetObligation> { Ok(Context::command_clock(self)) }\n");
+    }
+    out.push_str("}\n");
+    adapter.push_str("}\n");
+    out.push_str(&adapter);
+    out.push_str("\n/// An unavailable runtime context answer, rather than a new planned capability.\npub fn unmet_context(source: &'static str) -> UnmetObligation { UnmetObligation { capability: \"context answer\", source } }\n");
 }
 
 /// Where the values a branch reads are held while it is rendered.
@@ -801,7 +1141,7 @@ impl Writer<'_> {
         let body = self.body();
         let mut bounds: Vec<String> = Vec::new();
         if self.bounds.context {
-            bounds.push("Context".to_owned());
+            bounds.push("TryContext".to_owned());
         }
         for entity in &self.bounds.storages {
             bounds.push(self.storages[entity].clone());
@@ -827,6 +1167,34 @@ impl Writer<'_> {
     fn body(&mut self) -> String {
         let command = self.command;
         let mut out = String::new();
+        if determined::reads_clock(command) {
+            // The decision's one instant, read once at its edge before any guard or row is read
+            // (ess/22, family F A3); every guard ordering an instant against `now` reads it.
+            self.uses.clock = true;
+            self.bounds.context = true;
+            out.push_str(
+                "        // The decision's one instant: read once, before any guard, and read by \
+                 every guard that\n        // orders an instant against the current time.\n        \
+                 let now = self.ports.try_command_clock();\n",
+            );
+        }
+        let related = determined::related(command);
+        let orders =
+            related.is_some() && determined::orders_present_related_refusal(self.ir, command);
+        // A related row named by the input is read first: `existing_instance:`, then a missing
+        // row's `exists: false`, answer before the input-guarded refusals (ess/18).
+        if let Some((ResolvedRelatedVia::Input { field, type_ref }, entity)) = related {
+            if let Some(existing) = determined::existing_instance(command) {
+                out.push_str(&self.existing_lookup(existing));
+            }
+            let field = name::value_ident(field);
+            let reference = if type_ref.is_optional() {
+                format!("input.{field}.as_ref()")
+            } else {
+                format!("Some(&input.{field})")
+            };
+            out.push_str(&self.related_read(entity, &reference, &format!("input.{field}")));
+        }
         for outcome in &command.outcomes {
             if let (ResolvedCondition::When { predicate }, Some(_), None) =
                 (&outcome.condition, &outcome.error, &outcome.subject)
@@ -842,8 +1210,53 @@ impl Writer<'_> {
                 );
             }
         }
-        if let Some(existing) = determined::existing_instance(command) {
-            out.push_str(&self.existing_lookup(existing));
+        if !matches!(related, Some((ResolvedRelatedVia::Input { .. }, _))) {
+            if let Some(existing) = determined::existing_instance(command) {
+                out.push_str(&self.existing_lookup(existing));
+            }
+        }
+        if let Some((ResolvedRelatedVia::Subject { field, type_ref }, entity)) = related {
+            // A stored reference is read from the addressed row, as it was before the branch, once
+            // that row's existence and held state have answered (ess/22, beyond10x/ess#304).
+            let subject = determined::addressed_subject(command)
+                .expect("the plan admits a stored reference on an addressed subject");
+            let addressed = self.ir.entity(&subject.entity);
+            let storage = self.storage(&addressed.name);
+            let unknown = self.unknown_arm(12);
+            let _ = writeln!(
+                out,
+                "        // The addressed row, whose stored `{field}` names the related row.\n        \
+                 let Some(held) = {storage}::get(&self.ports, &input.{}) else {{\n{unknown}        \
+                 }};\n        let _ = &held;",
+                name::value_ident(&subject.instance.field().name)
+            );
+            out.push_str(&self.precheck(false));
+            let member = name::value_ident(field);
+            let reference = if type_ref.is_optional() {
+                format!("held.data.{member}.as_ref()")
+            } else {
+                format!("Some(&held.data.{member})")
+            };
+            out.push_str(&self.related_read(entity, &reference, &format!("subject.{field}")));
+        } else if orders {
+            out.push_str(&self.precheck(true));
+        }
+        if orders {
+            for outcome in command
+                .outcomes
+                .iter()
+                .filter(|outcome| determined::is_present_related_refusal(outcome))
+            {
+                let guard = self.related_guard(outcome);
+                let taken = self.take(outcome, Held::None);
+                let _ = writeln!(
+                    out,
+                    "        // `{}`: a present related row's refusal, before every accepting \
+                     branch.\n        if let Some(related) = &related {{\n        if {guard} \
+                     {{\n{taken}        }}\n        }}",
+                    outcome.name
+                );
+            }
         }
         let guarded = determined::subject_guarded(command);
         let held = if guarded {
@@ -885,6 +1298,22 @@ impl Writer<'_> {
                         out,
                         "        // `{}`: an accepting branch, in declaration order.\n        if \
                          {guard} {{\n{taken}        }}",
+                        outcome.name
+                    );
+                }
+                // A present related row selects its predicate branches in declaration order; an
+                // absent reference selects none. Already answered where they come first.
+                ResolvedCondition::Related {
+                    test: ResolvedRelatedTest::Holds { .. },
+                    ..
+                } if !(orders && determined::is_present_related_refusal(outcome)) => {
+                    let guard = self.related_guard(outcome);
+                    let taken = self.take(outcome, held);
+                    let _ = writeln!(
+                        out,
+                        "        // `{}`: selected by the present related row, in declaration \
+                         order.\n        if let Some(related) = &related {{\n        if {guard} \
+                         {{\n{taken}        }}\n        }}",
                         outcome.name
                     );
                 }
@@ -976,6 +1405,163 @@ impl Writer<'_> {
         )
     }
 
+    /// The related row a `when_related:` guard reads (ess/18, ess/22; beyond10x/ess#319), as
+    /// `related`: read by identity through the related entity's storage port where `reference`
+    /// names one, and no row read where it is absent. A reference naming no row takes the
+    /// `exists: false` branch, which the compiler requires wherever a predicate branch reads it.
+    fn related_read(&mut self, entity: &EntityHandle, reference: &str, named: &str) -> String {
+        let related = self.ir.entity(entity);
+        let storage = self.storage(&related.name);
+        let mut out = format!(
+            "        // `when_related:` reads the `{}` row `{named}` names, through its storage \
+             port; an absent\n        // reference reads no row and selects no related \
+             branch.\n        let reference = {reference};\n        let related = \
+             reference.and_then(|identity| {storage}::get(&self.ports, identity));\n",
+            related.name
+        );
+        if let Some(absent) = determined::related_absent(self.command) {
+            let taken = self.take(absent, Held::None);
+            let _ = write!(
+                out,
+                "        // `{}`: the reference names an identity no row carries.\n        if \
+                 reference.is_some() && related.is_none() {{\n{taken}        }}\n",
+                absent.name
+            );
+        }
+        out.push_str("        let _ = &related;\n");
+        out
+    }
+
+    /// The guard of a `when_related:` predicate branch over the present row `related`, with its
+    /// input guard, as `decided(…)?`.
+    fn related_guard(&mut self, outcome: &ResolvedOutcome) -> String {
+        let command = self.command;
+        let ResolvedCondition::Related {
+            entity,
+            test: ResolvedRelatedTest::Holds { predicate },
+            input,
+            ..
+        } = &outcome.condition
+        else {
+            unreachable!("only a predicate branch reads the present related row")
+        };
+        let entity = self.ir.entity(entity);
+        let row = self
+            .guards_on("related")
+            .predicate(&Env::Subject(command, entity), predicate);
+        let truth = match input {
+            Some(input) => {
+                self.uses.helpers.insert("all");
+                format!(
+                    "all(&[{row}, {}])",
+                    self.guards().predicate(&Env::Input(command), input)
+                )
+            }
+            None => row,
+        };
+        self.decided(&truth)
+    }
+
+    /// The addressed-row existence and held-state answers of the branch the request selects with
+    /// no present-related refusal read, before the related refusals (beyond10x/ess#282, #304), as
+    /// the interpreter orders them. `with_related` reads the present row's accepting branches, as
+    /// an input reference is read by then; a stored reference is not read yet.
+    fn precheck(&mut self, with_related: bool) -> String {
+        let command = self.command;
+        let mut arms = String::new();
+        let mut breaks = false;
+        for outcome in &command.outcomes {
+            match &outcome.condition {
+                ResolvedCondition::When { predicate } if outcome.error.is_none() => {
+                    let truth = self.guards().predicate(&Env::Input(command), predicate);
+                    let guard = self.decided(&truth);
+                    let check = self.check_subject(outcome);
+                    breaks = true;
+                    let _ = writeln!(
+                        arms,
+                        "            if {guard} {{\n{check}                break 'precheck;\n            \
+                         }}"
+                    );
+                }
+                ResolvedCondition::Related {
+                    test: ResolvedRelatedTest::Holds { .. },
+                    ..
+                } if with_related && outcome.error.is_none() => {
+                    let guard = self.related_guard(outcome);
+                    let check = self.check_subject(outcome);
+                    breaks = true;
+                    let _ = writeln!(
+                        arms,
+                        "            if let Some(related) = &related {{\n            if {guard} \
+                         {{\n{check}                break 'precheck;\n            }}\n            }}"
+                    );
+                }
+                _ => {}
+            }
+        }
+        if let Some(default) = command
+            .outcomes
+            .iter()
+            .find(|outcome| outcome.condition == ResolvedCondition::Otherwise)
+        {
+            arms.push_str(&self.check_subject(default));
+        }
+        let label = if breaks { "'precheck: " } else { "" };
+        format!(
+            "        // The addressed row's existence and held state, for the branch the request \
+             selects\n        // before any present related row's refusal.\n        \
+             {label}{{\n{arms}        }}\n"
+        )
+    }
+
+    /// The existence and held-state answers of one selected branch's subject, returning where
+    /// either refuses; nothing for a branch addressing no existing row.
+    fn check_subject(&mut self, outcome: &ResolvedOutcome) -> String {
+        let Some(subject) = &outcome.subject else {
+            return String::new();
+        };
+        let ResolvedInstance::Supplied { field } = &subject.instance else {
+            return String::new();
+        };
+        if subject.effect == ResolvedEffect::Creates {
+            return String::new();
+        }
+        let entity = self.ir.entity(&subject.entity);
+        let storage = self.storage(&entity.name);
+        let unknown = self.unknown_arm(20);
+        let mut out = format!(
+            "                {{\n                let Some(held) = {storage}::get(&self.ports, \
+             &input.{}) else {{\n{unknown}                }};\n                let _ = &held;\n",
+            name::value_ident(&field.name)
+        );
+        if let ResolvedEffect::Moves { transition } = &subject.effect {
+            if transition.from.len() < entity.lifecycle.states.len() {
+                let wrong = self.wrong_state_answer();
+                let reads = self.wrong_state_reads(entity);
+                if reads.0 {
+                    out.push_str("                let held_state = held.state;\n");
+                }
+                if reads.1 {
+                    out.push_str("                let before = held.data.clone();\n");
+                }
+                let state_enum = declared_path(self.layout, entity.state_type.name());
+                let patterns: Vec<String> = transition
+                    .from
+                    .iter()
+                    .map(|state| format!("{state_enum}::{}", name::pascal(state.as_str())))
+                    .collect();
+                let _ = writeln!(
+                    out,
+                    "                if !matches!(held.state, {}) {{\n                    return \
+                     {wrong};\n                }}",
+                    patterns.join(" | ")
+                );
+            }
+        }
+        out.push_str("                }\n");
+        out
+    }
+
     /// The storage trait of an entity, recorded as used and as a bound of this impl.
     fn storage(&mut self, entity: &QualifiedName) -> String {
         self.uses.storages.insert(entity.clone());
@@ -986,17 +1572,26 @@ impl Writer<'_> {
     /// Asks the context whether an external branch is taken.
     fn external(&mut self, outcome: &ResolvedOutcome) -> String {
         self.uses.external = true;
+        self.uses
+            .externals
+            .insert(format!("{}/{}", self.command.name, outcome.name));
         self.bounds.context = true;
         format!(
-            "self.ports.external(\"{}\", \"{}\")",
-            self.command.name, outcome.name
+            "self.ports.try_external(ExternalCommand::{}(&input), \"{}\")?",
+            self.external_commands[&self.command.name], outcome.name
         )
     }
 
     /// `decided(<truth>, "<command>")?`.
     fn decided(&mut self, truth: &str) -> String {
-        self.uses.helpers.insert("decided");
         self.uses.helpers.insert("undeclared");
+        // A guard reading the decision's instant that is Unknown with no instant to read is the
+        // command clock missing, named as such (ess/22, family F A3).
+        if truth.contains(COMPARE_WITH_NOW_CALL) {
+            self.uses.helpers.insert("decided_at");
+            return format!("decided_at({truth}, &now, \"{}\")?", self.command.name);
+        }
+        self.uses.helpers.insert("decided");
         format!("decided({truth}, \"{}\")?", self.command.name)
     }
 
@@ -1023,6 +1618,7 @@ impl Writer<'_> {
                 let path = ess_primitives::facts::FactPath::new(field)
                     .expect("the compiler admitted the field");
                 let compare = Predicate::Compare {
+                    kind: ess_primitives::predicate::CompareKind::Value,
                     left: Operand::Fact(path),
                     op: CompareOp::Eq,
                     right: Operand::Literal(FactValue::Text(equals.clone())),
@@ -1167,13 +1763,14 @@ impl Writer<'_> {
         } else {
             name::value_ident(&format!("new-{state}"))
         };
+        let answer = self.variant(outcome, held, Some("identity"));
+        let _ = writeln!(out, "            let answer = {answer};");
         let _ = writeln!(
             out,
             "            {storage}::put(&mut self.ports, \
              {any}::{state}({module_entity}::{constructor}(data)).snapshot());"
         );
-        let answer = self.variant(outcome, held, Some("identity"));
-        let _ = writeln!(out, "            return Ok({answer});");
+        out.push_str("            return Ok(answer);\n");
         out
     }
 
@@ -1222,6 +1819,7 @@ impl Writer<'_> {
                      else {{\n{unknown}            }};\n            let _ = &held;"
                 );
                 let reads_before = outcome_reads_before(outcome);
+                let mut commit = String::new();
                 match effect {
                     ResolvedEffect::Moves { transition } => {
                         let wrong = self.wrong_state_answer();
@@ -1247,7 +1845,8 @@ impl Writer<'_> {
                         }
                         out.push_str("            };\n");
                         self.write_sets(&mut out, outcome, "moved.snapshot()", entity);
-                        let _ = writeln!(out, "            {storage}::put(&mut self.ports, next);");
+                        let _ =
+                            writeln!(commit, "            {storage}::put(&mut self.ports, next);");
                     }
                     ResolvedEffect::Updates | ResolvedEffect::Preserves => {
                         if reads_before {
@@ -1257,8 +1856,10 @@ impl Writer<'_> {
                             matches!(effect, ResolvedEffect::Updates) || !outcome.sets.is_empty();
                         if writes {
                             self.write_sets(&mut out, outcome, "held", entity);
-                            let _ =
-                                writeln!(out, "            {storage}::put(&mut self.ports, next);");
+                            let _ = writeln!(
+                                commit,
+                                "            {storage}::put(&mut self.ports, next);"
+                            );
                         }
                     }
                     ResolvedEffect::Deletes => {
@@ -1266,7 +1867,7 @@ impl Writer<'_> {
                             out.push_str("            let before = held.data.clone();\n");
                         }
                         let _ = writeln!(
-                            out,
+                            commit,
                             "            {storage}::delete(&mut self.ports, &input.{identity});"
                         );
                     }
@@ -1275,7 +1876,10 @@ impl Writer<'_> {
                     }
                 }
                 let answer = self.variant(outcome, held, None);
-                let _ = writeln!(out, "            return Ok({answer});");
+                let _ = writeln!(
+                    out,
+                    "            let answer = {answer};\n{commit}            return Ok(answer);"
+                );
             }
             (_, ResolvedInstance::Observed { .. }) => {
                 unreachable!("an observed identity outside `creates:` is an obligation")
@@ -1485,19 +2089,100 @@ impl Writer<'_> {
     fn generate(&mut self, target: &ResolvedTypeRef) -> String {
         let fragment = name::type_fragment(&target.to_string());
         let method = name::value_ident(&format!("generate{fragment}"));
+        self.uses.assigned.insert(method.clone(), target.clone());
         self.uses.generates.insert(
             method.clone(),
             (self.layout.absolute_type(target), target.to_string()),
         );
         self.bounds.context = true;
-        format!("self.ports.{method}()")
+        format!("self.ports.try_{method}()?")
+    }
+
+    /// The owned value `input.<field>` reads: the input, or from ess/22 (Family F A4) the member a
+    /// path reaches through struct inputs — through a newtype's representation, and, past an
+    /// `Optional`, as an `Option` that is `None` where any `Optional` on the way is absent. The
+    /// expression has the IR's type for the read: the last segment's, or `Option` of it.
+    fn input_value(&self, field: &str) -> String {
+        let mut segments = field.split('.');
+        let root = segments.next().unwrap_or_default();
+        let mut expression = format!("input.{}", name::value_ident(root));
+        let Some(mut current) = self
+            .command
+            .input
+            .iter()
+            .find(|input| input.name == root)
+            .map(|input| input.type_ref.clone())
+        else {
+            return format!("{expression}.clone()");
+        };
+        // Whether `expression` is an `Option<&T>` rather than a place of type `T`.
+        let mut optional = false;
+        for segment in segments {
+            for _ in 0..=ess_domain::types::MAX_TYPE_DEPTH {
+                match &current {
+                    ResolvedTypeRef::Optional { of } => {
+                        expression = if optional {
+                            format!("{expression}.and_then(|value| value.as_ref())")
+                        } else {
+                            format!("{expression}.as_ref()")
+                        };
+                        optional = true;
+                        current = (**of).clone();
+                    }
+                    ResolvedTypeRef::Declared { name } => match &self.ir.named_type(name).body {
+                        ResolvedBody::Newtype { of, .. } => {
+                            expression = if optional {
+                                format!("{expression}.map(|value| &value.0)")
+                            } else {
+                                format!("{expression}.0")
+                            };
+                            current = of.clone();
+                        }
+                        _ => break,
+                    },
+                    _ => break,
+                }
+            }
+            let ResolvedTypeRef::Declared { name } = &current else {
+                unreachable!("ess-domain admits a path through struct members only")
+            };
+            let ResolvedBody::Struct { fields, .. } = &self.ir.named_type(name).body else {
+                unreachable!("ess-domain admits a path through struct members only")
+            };
+            let member = fields
+                .iter()
+                .find(|member| member.name == segment)
+                .expect("ess-domain admits a path through declared members only");
+            let ident = name::value_ident(&member.name);
+            expression = if optional {
+                format!("{expression}.map(|value| &value.{ident})")
+            } else {
+                format!("{expression}.{ident}")
+            };
+            current = member.type_ref.clone();
+        }
+        match (optional, current.is_optional()) {
+            (false, _) => format!("{expression}.clone()"),
+            (true, false) => format!("{expression}.cloned()"),
+            (true, true) => format!("{expression}.and_then(|value| value.clone())"),
+        }
     }
 
     /// The value one source fills its field with. `before` names the held data before the
     /// outcome, where the branch holds a row.
     // One arm per value source the model declares, each rendering its own expression.
-    #[allow(clippy::too_many_lines)]
     fn value(&mut self, field: &ResolvedPayloadField, before: Option<&str>) -> String {
+        let previous = before.map(|row| format!("{row}.{}", name::value_ident(&field.target)));
+        self.value_at(field, before, previous)
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn value_at(
+        &mut self,
+        field: &ResolvedPayloadField,
+        before: Option<&str>,
+        previous: Option<String>,
+    ) -> String {
         let target = &field.target_type;
         let wrap = |source: &ResolvedTypeRef, expression: String| {
             if source == target {
@@ -1510,10 +2195,7 @@ impl Writer<'_> {
             ResolvedPayloadValue::InputField {
                 field: source,
                 type_ref,
-            } => wrap(
-                type_ref,
-                format!("input.{}.clone()", name::value_ident(source)),
-            ),
+            } => wrap(type_ref, self.input_value(source)),
             ResolvedPayloadValue::SubjectField {
                 field: source,
                 type_ref,
@@ -1543,28 +2225,31 @@ impl Writer<'_> {
             ResolvedPayloadValue::Literal { value } => literal(self.ir, self.layout, target, value),
             ResolvedPayloadValue::Generated => self.assigned(target),
             ResolvedPayloadValue::Cleared => "None".to_owned(),
-            ResolvedPayloadValue::Increment { by } => {
-                let before = before.expect("the plan admits `{increment:}` only on a held row");
-                increment(
-                    self.ir,
-                    self.layout,
-                    target,
-                    &format!("{before}.{}", name::value_ident(&field.target)),
-                    by,
-                )
-            }
+            ResolvedPayloadValue::Increment { by } => increment(
+                self.ir,
+                self.layout,
+                target,
+                previous
+                    .as_deref()
+                    .expect("the plan admits `{increment:}` only on a held row"),
+                by,
+            ),
             ResolvedPayloadValue::InputOrGenerated {
                 field: source,
                 otherwise,
                 ..
             } => {
-                let read = format!("input.{}.clone()", name::value_ident(source));
+                let read = self.input_value(source);
                 if target.is_optional() && otherwise.is_none() {
                     return read;
                 }
                 let required = target.required();
                 let fallback = match otherwise {
-                    Some(text) => literal(self.ir, self.layout, required, text),
+                    Some(ResolvedFallback::Literal(text)) => {
+                        literal(self.ir, self.layout, required, text)
+                    }
+                    // ess/22 (A4): another input, present whenever the request is valid.
+                    Some(ResolvedFallback::Input { input }) => self.input_value(&input.field),
                     None => self.generate(required),
                 };
                 let chosen = format!("match {read} {{ Some(value) => value, None => {fallback} }}");
@@ -1584,10 +2269,33 @@ impl Writer<'_> {
                 else {
                     unreachable!("the plan admits a struct source only for a struct")
                 };
+                // A structured event payload may have the same name and shape as an Optional
+                // stored field without reading that field. Only an increment consumes the value
+                // at the corresponding previous path; delaying the unwrap until that is true
+                // keeps output-only structures independent of the held row.
+                let previous = previous
+                    .filter(|_| increments_previous(&field.value))
+                    .map(|read| {
+                        if target.is_optional() {
+                            self.uses.helpers.insert("undeclared");
+                            format!(
+                                "{read}.as_ref().ok_or_else(|| undeclared(\"{}\"))?",
+                                self.command.name
+                            )
+                        } else {
+                            read
+                        }
+                    });
                 let mut rendered = Vec::new();
                 for member in members {
                     let value = match fields.iter().find(|source| source.target == member.name) {
-                        Some(source) => self.value(source, before),
+                        Some(source) => self.value_at(
+                            source,
+                            before,
+                            previous
+                                .as_ref()
+                                .map(|read| format!("{read}.{}", name::value_ident(&member.name))),
+                        ),
                         None => "None".to_owned(),
                     };
                     rendered.push(format!("{}: {value}", name::value_ident(&member.name)));
@@ -1605,6 +2313,7 @@ impl Writer<'_> {
                 }
             }
             ResolvedPayloadValue::RelatedField { .. }
+            | ResolvedPayloadValue::RelatedSelection { .. }
             | ResolvedPayloadValue::ChangedCount
             | ResolvedPayloadValue::ResponseField { .. } => {
                 unreachable!("the plan keeps this source's command an obligation")
@@ -1614,14 +2323,28 @@ impl Writer<'_> {
 
     /// The guard renderer over this impl's uses and bounds, reading the held row as `held`.
     fn guards(&mut self) -> Guards<'_> {
+        self.guards_on("held")
+    }
+
+    /// The guard renderer reading a stored field or `state` from `row`.
+    fn guards_on(&mut self, row: &'static str) -> Guards<'_> {
         Guards {
             ir: self.ir,
             layout: self.layout,
             uses: &mut *self.uses,
             bounds: &mut self.bounds,
-            row: "held",
+            row,
+            params: &[],
         }
     }
+}
+
+/// The argument a generated view query binds its parameter at `position` to (beyond10x/ess#200):
+/// by position, so no parameter name can shadow a helper the body calls or a local it binds, and
+/// no two arguments meet. The obligation trait keeps the declared names; an implementation's
+/// argument names are its own.
+fn param_binding(position: usize) -> String {
+    format!("param_{position}")
 }
 
 // ---- guards --------------------------------------------------------------------------------------
@@ -1635,6 +2358,21 @@ struct Guards<'a> {
     bounds: &'a mut Bounds,
     /// The variable a stored field or `state` is read from: a snapshot, or a reference to one.
     row: &'a str,
+    /// The parameters of the view whose query this renders, in declaration order, each bound to
+    /// the argument [`param_binding`] names; none for a command's guard (beyond10x/ess#200).
+    params: &'a [ess_compiler::ir::ResolvedField],
+}
+
+/// The generated acceptor of an ordering `op` decides by: `core::cmp::Ordering::<acceptor>`.
+fn acceptor(op: CompareOp) -> &'static str {
+    match op {
+        CompareOp::Eq => "is_eq",
+        CompareOp::Ne => "is_ne",
+        CompareOp::Lt => "is_lt",
+        CompareOp::Le => "is_le",
+        CompareOp::Gt => "is_gt",
+        CompareOp::Ge => "is_ge",
+    }
 }
 
 impl Guards<'_> {
@@ -1646,10 +2384,11 @@ impl Guards<'_> {
             (self.layout.absolute_type(type_ref), attribute.to_owned()),
         );
         self.bounds.context = true;
-        format!("self.ports.{method}()")
+        format!("self.ports.try_{method}()?")
     }
 
     /// A predicate as an `Option<bool>` expression: `None` is Unknown.
+    #[allow(clippy::too_many_lines)]
     fn predicate(&mut self, env: &Env<'_>, predicate: &Predicate) -> String {
         match predicate {
             Predicate::Always => "Some(true)".to_owned(),
@@ -1678,27 +2417,40 @@ impl Guards<'_> {
                 let resolved = self.resolve(env, path);
                 self.read(&resolved)
             }
-            Predicate::Compare { left, op, right } => {
+            Predicate::Compare {
+                left,
+                op,
+                right: Operand::Offset(offset),
+                ..
+            } => self.offset(env, left, *op, offset),
+            Predicate::Compare {
+                left, op, right, ..
+            } => {
                 let kind = [left, right]
                     .into_iter()
                     .find_map(|operand| match operand {
                         Operand::Fact(path) => Some(self.resolve(env, path).kind),
-                        Operand::Literal(_) => None,
+                        Operand::Derived(derived) => Some(self.resolve_derived(env, derived).kind),
+                        Operand::Literal(_) | Operand::Offset(_) => None,
                     })
                     .expect("the plan admits comparisons reading a fact");
+                let accepts = acceptor(*op);
+                if let (Kind::Instant, Some(current)) =
+                    (&kind, determined::current_time(right, *op))
+                {
+                    return self.with_now(env, left, &kind, accepts, current.offset_seconds());
+                }
                 let left = self.operand(env, left, &kind);
                 let right = self.operand(env, right, &kind);
-                if let Kind::Number(_) = kind {
-                    self.uses.helpers.insert("compare_numbers");
-                    let accepts = match op {
-                        CompareOp::Eq => "is_eq",
-                        CompareOp::Ne => "is_ne",
-                        CompareOp::Lt => "is_lt",
-                        CompareOp::Le => "is_le",
-                        CompareOp::Gt => "is_gt",
-                        CompareOp::Ge => "is_ge",
+                if let Kind::Number(_) | Kind::Instant = kind {
+                    // Two `Timestamp`s compare by the instants they name (decision 2).
+                    let helper = if kind == Kind::Instant {
+                        "compare_instants"
+                    } else {
+                        "compare_numbers"
                     };
-                    format!("compare_numbers({left}, {right}, core::cmp::Ordering::{accepts})")
+                    self.uses.helpers.insert(helper);
+                    format!("{helper}({left}, {right}, core::cmp::Ordering::{accepts})")
                 } else {
                     self.uses.helpers.insert("equal");
                     let equal = format!("equal({left}, {right})");
@@ -1731,24 +2483,80 @@ impl Guards<'_> {
                 }
             }
             Predicate::TextMatch { path, op, value } => {
+                use ess_primitives::predicate::{TextNamespace, TextOperand};
                 let resolved = self.resolve(env, path);
-                let FactValue::Text(literal) = value else {
-                    unreachable!("the plan admits text tests of text literals")
-                };
-                format!(
-                    "{}.map(|value| value.{}({literal:?}))",
-                    self.read(&resolved),
-                    op.keyword()
-                )
+                let read = self.read(&resolved);
+                match value {
+                    TextOperand::Literal(FactValue::Text(literal)) => {
+                        format!("{read}.map(|value| value.{}({literal:?}))", op.keyword())
+                    }
+                    TextOperand::Literal(_) => {
+                        unreachable!("the plan admits text tests of text literals")
+                    }
+                    // A parameter or an input (beyond10x/ess#200): the fact tested against the
+                    // operand, byte for byte; either absent is Unknown.
+                    TextOperand::Fact {
+                        namespace,
+                        name,
+                        path: at,
+                    } => {
+                        let operand = match namespace {
+                            TextNamespace::Param => {
+                                let param = self
+                                    .params
+                                    .iter()
+                                    .find(|param| &param.name == name)
+                                    .expect("the plan admits a parameter the view declares");
+                                determined::resolve_param(self.ir, param)
+                                    .expect("the plan admits a parameter that resolves")
+                            }
+                            TextNamespace::Input => self.resolve(env, at),
+                        };
+                        let operand = self.read(&operand);
+                        format!(
+                            "{read}.zip({operand}).map(|(value, operand)| \
+                             value.{}(operand.as_str()))",
+                            op.keyword()
+                        )
+                    }
+                }
             }
             _ => unreachable!("the plan admits only the guards `determined::supported` names"),
         }
+    }
+
+    /// An instant ordered against the current time: it reads the decision's one instant, `now`,
+    /// moved by the operand's whole `seconds` (ess/22, family F A3).
+    fn with_now(
+        &mut self,
+        env: &Env<'_>,
+        left: &Operand,
+        kind: &Kind,
+        accepts: &str,
+        seconds: i64,
+    ) -> String {
+        let left = self.operand(env, left, kind);
+        self.uses.helpers.insert("compare_with_now");
+        format!(
+            "{COMPARE_WITH_NOW_CALL}{left}, &now, {seconds}, \
+             core::cmp::Ordering::{accepts})"
+        )
     }
 
     /// Resolves a path the plan already checked.
     fn resolve(&self, env: &Env<'_>, path: &ess_primitives::facts::FactPath) -> Resolved {
         determined::resolve(self.ir, env, path)
             .expect("the plan admitted only guards whose paths resolve")
+    }
+
+    /// Resolves a derived operand the plan already checked.
+    fn resolve_derived(
+        &self,
+        env: &Env<'_>,
+        derived: &ess_primitives::predicate::Derived,
+    ) -> Resolved {
+        determined::resolve_derived(self.ir, env, derived)
+            .expect("the plan admitted only byte lengths of String paths")
     }
 
     /// One comparison operand, normalized to what the comparison reads.
@@ -1759,6 +2567,56 @@ impl Guards<'_> {
                 self.read(&resolved)
             }
             Operand::Literal(value) => fact_literal(value, kind),
+            Operand::Offset(_) => unreachable!("an offset is compared by `offset`"),
+            Operand::Derived(derived) => {
+                let resolved = self.resolve_derived(env, derived);
+                self.read(&resolved)
+            }
+        }
+    }
+
+    /// `left <op> base ± magnitude` (`docs/design/expression-family-source22.md`, A2): two
+    /// `Integer` renderings compared with the exact sum in `i128`, or two `Timestamp` renderings
+    /// compared as instants after moving the base by elapsed seconds — Unknown where a value is
+    /// absent or the moved instant is past what a `date-time` spells.
+    fn offset(
+        &mut self,
+        env: &Env<'_>,
+        left: &Operand,
+        op: CompareOp,
+        offset: &ess_primitives::predicate::OffsetOperand,
+    ) -> String {
+        use ess_primitives::predicate::{OffsetDirection, OffsetMagnitude};
+        let base = self.resolve(env, &offset.base);
+        let left = self.operand(env, left, &base.kind);
+        let base = self.read(&base);
+        let accepts = acceptor(op);
+        let negate = offset.direction == OffsetDirection::Subtract;
+        match offset.magnitude {
+            OffsetMagnitude::Integer(_) => {
+                self.uses.helpers.insert("compare_offset_integers");
+                let magnitude = offset
+                    .magnitude
+                    .integer()
+                    .expect("the plan admits whole Integer magnitudes");
+                let delta = if negate {
+                    format!("-{magnitude}")
+                } else {
+                    magnitude.to_string()
+                };
+                format!(
+                    "compare_offset_integers({left}, {base}, {delta}_i128, \
+                     core::cmp::Ordering::{accepts})"
+                )
+            }
+            OffsetMagnitude::ElapsedSeconds { seconds, .. } => {
+                self.uses.helpers.insert("compare_offset_instants");
+                let delta = if negate { -seconds } else { seconds };
+                format!(
+                    "compare_offset_instants({left}, {base}, {delta}_i64, \
+                     core::cmp::Ordering::{accepts})"
+                )
+            }
         }
     }
 
@@ -1771,6 +2629,14 @@ impl Guards<'_> {
             Root::Caller(attribute) => {
                 format!("{}.as_ref()", self.caller(attribute, &resolved.root_type))
             }
+            Root::Param(param) => {
+                let position = self
+                    .params
+                    .iter()
+                    .position(|declared| &declared.name == param)
+                    .expect("a parameter path is read in the query of the view that declares it");
+                format!("Some(&{})", param_binding(position))
+            }
         };
         for step in &resolved.steps {
             match step {
@@ -1779,7 +2645,7 @@ impl Guards<'_> {
                 Step::Field(field) => {
                     let _ = write!(out, ".map(|value| &value.{})", name::value_ident(field));
                 }
-                Step::Count => {}
+                Step::Count | Step::Utf8Bytes => {}
             }
         }
         out
@@ -1789,7 +2655,9 @@ impl Guards<'_> {
     /// rendering and a `bool` as `true` or `false`.
     fn text(&mut self, resolved: &Resolved) -> String {
         match &resolved.kind {
-            Kind::Opaque => format!("{}.map(|value| value.0.clone())", self.reference(resolved)),
+            Kind::Opaque | Kind::Instant => {
+                format!("{}.map(|value| value.0.clone())", self.reference(resolved))
+            }
             Kind::Bool => format!("{}.map(|value| value.to_string())", self.read(resolved)),
             _ => self.read(resolved),
         }
@@ -1799,12 +2667,15 @@ impl Guards<'_> {
     /// of a string, identity or enum, a `bool`.
     fn read(&mut self, resolved: &Resolved) -> String {
         let reference = self.reference(resolved);
-        if resolved.steps.last() == Some(&Step::Count) {
+        // A collection's element count, or a `String`'s UTF-8 bytes: `str::len` is the byte length.
+        if matches!(resolved.steps.last(), Some(Step::Count | Step::Utf8Bytes)) {
             return format!("{reference}.map(|value| value.len().to_string())");
         }
         let leaf = leaf_type(self.ir, resolved);
         match &resolved.kind {
-            Kind::Number(Primitive::Decimal) => format!("{reference}.map(|value| value.0.clone())"),
+            Kind::Number(Primitive::Decimal) | Kind::Instant => {
+                format!("{reference}.map(|value| value.0.clone())")
+            }
             Kind::Number(_) => format!("{reference}.map(|value| value.to_string())"),
             Kind::Text => match leaf {
                 Some(Primitive::String) => format!("{reference}.map(|value| value.clone())"),
@@ -1906,6 +2777,17 @@ fn reads_subject(value: &ResolvedPayloadValue) -> bool {
         ResolvedPayloadValue::SubjectField { .. } | ResolvedPayloadValue::Increment { .. } => true,
         ResolvedPayloadValue::Struct { fields } => {
             fields.iter().any(|field| reads_subject(&field.value))
+        }
+        _ => false,
+    }
+}
+
+/// Whether one value source needs the value at its own target path before the outcome.
+fn increments_previous(value: &ResolvedPayloadValue) -> bool {
+    match value {
+        ResolvedPayloadValue::Increment { .. } => true,
+        ResolvedPayloadValue::Struct { fields } => {
+            fields.iter().any(|field| increments_previous(&field.value))
         }
         _ => false,
     }

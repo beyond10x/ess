@@ -369,3 +369,25 @@ this inventory establishes no SDK/AgentIDE upgrade, release or deployed-consumer
 
 No schema resource identity redesign, mass format rename, `ess-ir/2`, new universal registry or
 normalization of historical bytes is part of this documentation change.
+
+## Browser conformance product
+
+The [binding browser product design](browser-conformance-product.md) registers the following
+identities for the complete ordinary/coverage browser product. Registration is a design contract;
+implementation and independent Firefox execution validation remain outstanding. Historical
+`ess-conformance-replay/1` remains a separate reduced declaration-replay contract with unchanged
+bytes and admission. These identities do not advance suite/input/report versions or describe the
+separate generated-application `ess-browser-catalog/1`.
+
+| Surface / discriminator | Separate version or identity | Producer; reader and admission | Canonical bytes / digest |
+|---|---|---|---|
+| Browser bundle: `format: ess-conformance-browser/1` | Exact source-file hashes, original ordinary suite or full coverage input, presentation reference; ABI and generator semantic revision | Source-built conformance web emission → closed Rust product Load. Exactly format/abi/sources/execution/presentation/generator; every original selected/ancestor byte is admitted, full sources compile, provenance and regenerated presentation match before installation/target callbacks. Static JS hashing only checks file consistency. [Binding](browser-conformance-product.md). | P manifest; BlobRef hashes are bare lowercase SHA-256 of exact referenced bytes, including any final LF. Source/suite/input blobs remain original; selected suite keeps its existing exact-byte digest profile. No whole-output hash or authenticity claim. |
+| Browser declaration display: `format: ess-conformance-browser-presentation/1` | Selected/ancestor and source references inherited from admitted bundle; no independent model authority | Shared Rust typed presenter at emission and Load → closed display renderer. Full declaration cards use lossless tagged values with semantic numbers as text. Static navigation requires no prebuilt WASM and produces no execution result; runtime Load regenerates/verifies presentation independently. [Binding](browser-conformance-product.md). | P; exact bytes are hashed by the bundle BlobRef. Presentation is never converted back into target values or an admitted execution capability. |
+| Browser module ABI: `ess-conformance-browser-abi/1` | Exported version `0x0001_0000`, wire major 1/minor 0, generator/runtime semantic revision 1; opaque worker-local handles and fresh run nonces | Generated consumer Rust host + runtime library ↔ bounded worker memory protocol. Closed Load/SelectCoverage/Run/Release operations; original-byte admission precedes every factory/target callback. Actual results originate in ExecutedRun/CountReport; missing build/installation and aborted runs are not conformance reports. [Binding](browser-conformance-product.md). | Binary little-endian u32 framing: `ESBW`, 24-byte request/28-byte response headers, length-prefixed payloads. No document canonical JSON or independent ABI-message digest. Report bytes retain their own existing canonical/digest contracts. |
+
+The complete input/presentation is bounded by the product's proposed, **unmeasured** resource
+profile. Validation must establish those limits before release; no lineage truncation,
+feature-specific exclusion or successful empty result is authorized by resource exhaustion.
+Only explicit consumer Cargo manifests and the exact emitted Rust host are the initial build
+route; no helper, implicit published dependency, prebuilt reader or async target transport is
+implied. Actual independent Firefox healthy/fault capability coverage remains a completion gate.

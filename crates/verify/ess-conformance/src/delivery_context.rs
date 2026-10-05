@@ -68,21 +68,3 @@ pub(crate) fn admit(suite: &crate::ConformanceSuite) -> Result<(), crate::Admiss
     }
     Ok(())
 }
-
-/// Refuses to generate a runner that does not execute this vocabulary.
-pub(crate) fn refuse_generation(
-    suite: &crate::ConformanceSuite,
-    target: &str,
-) -> Result<(), crate::AdmissionError> {
-    if used_by(suite) {
-        return Err(crate::AdmissionError::new(
-            "UnsupportedTarget",
-            "$suite",
-            format!(
-                "{target} does not deliver events from an external channel with their delivery \
-                 context; use the Rust runner"
-            ),
-        ));
-    }
-    Ok(())
-}

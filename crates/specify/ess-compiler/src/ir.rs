@@ -88,6 +88,9 @@ use ess_domain::view::{AggregateFunction, AssertionStyle, Consistency, Paging, R
 use ess_primitives::facts::FactPath;
 use ess_primitives::predicate::Predicate;
 
+mod refusal;
+pub use refusal::{ResolvedRefusalAction, ResolvedRefusalPolicy, ResolvedRefusalRule};
+
 /// Declares every handle kind, its accessor on [`EssIr`], and the map it indexes — from one line
 /// each, so a handle cannot exist without a total lookup for it.
 ///
@@ -350,8 +353,12 @@ pub enum ResolvedBody {
     Union {
         /// The field carrying the variant's name.
         tag: String,
-        /// The variants, by tag value.
-        variants: BTreeMap<String, ResolvedTypeRef>,
+        /// The variants, by tag value, each with the payload it carries.
+        ///
+        /// `None` is a unit variant (ess/22, beyond10x/ess#418), written `null`; a payload is
+        /// written as the reference it is, so the IR of a union with no unit variant keeps its
+        /// bytes and its `spec_digest`.
+        variants: BTreeMap<String, Option<ResolvedTypeRef>>,
     },
 }
 
@@ -611,12 +618,27 @@ pub enum ResolvedCondition {
     /// [`Absent`](ResolvedRelatedTest::Absent) branch: never a predicate branch and never the
     /// default.
     Related {
-        /// The input field carrying the other entity's identity.
+        /// The field carrying the other entity's identity: an input field, or from ess/22 a stored
+        /// field of the addressed subject as it was before the branch (beyond10x/ess#304).
         via: ResolvedRelatedVia,
         /// The entity whose identity that field carries.
         entity: EntityHandle,
         /// What the branch requires of the row.
         test: ResolvedRelatedTest,
+        /// The ordinary input guard, when declared.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        input: Option<Predicate>,
+    },
+    /// The rows of an entity a selector selects pass a test — `exists`, `count` or `forall` — and
+    /// the optional input guard holds (`when_related: {entity, where, …}`, ess/22,
+    /// beyond10x/ess#228, #299). Read from the store as it was before the branch is selected; a row
+    /// of unknown membership stays a possible member, and a test it leaves undecided selects
+    /// nothing.
+    RelatedSet {
+        /// The entity and the predicate selecting its rows.
+        selection: ResolvedRowSelection,
+        /// What the branch requires of the selected rows.
+        test: ResolvedRowSetTest,
         /// The ordinary input guard, when declared.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         input: Option<Predicate>,
@@ -908,6 +930,17 @@ pub struct ResolvedOutcome {
     /// The outcome returns the command's complete typed response (ess/17).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub returns: bool,
+    /// A refusal that changes its addressed row before answering (`compensates: true`, ess/22,
+    /// beyond10x/ess#197, `docs/design/refusal-with-effect.md`): [`Self::error`] beside the
+    /// [`Self::subject`] it moves or updates and the [`Self::sets`] it writes, on an `external:`
+    /// branch, with no event. Every other branch naming an error changes nothing. A pure function of
+    /// `error` and `subject` both being present, written so a consumer refuses it by name. Left out
+    /// of the document when `false`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub compensates: bool,
+    /// Required String response fields disclosed only by their originating invocation.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub one_time_response: Vec<String>,
     /// One line for generated documentation.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
@@ -961,7 +994,7 @@ pub struct ResolvedSetSubject {
 }
 
 /// One `affects:` entry (ess/16): every row of an entity its filter selects comes to hold what its
-/// `sets:` say. Where the entity is the subject's, the subject is not among the rows.
+/// `sets:` say, and from ess/22 takes the entry's move. Where the entity is the subject's, the subject is not among the rows.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ResolvedAffect {
     /// The entity whose rows change.
@@ -971,6 +1004,11 @@ pub struct ResolvedAffect {
     pub filter: Predicate,
     /// What every selected row comes to hold, in the entity's declaration order.
     pub sets: Vec<ResolvedPayloadField>,
+    /// The move every selected row resting in its `from` states takes; a selected row resting
+    /// elsewhere is skipped (ess/22, beyond10x/ess#229). Left out of the document where the entry
+    /// only sets fields.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub moves: Option<Transition>,
 }
 
 /// Where a determined payload field's value comes from, resolved.
@@ -991,11 +1029,14 @@ pub enum ResolvedPayloadValue {
     },
     /// Explicit implementation ownership, retaining ordinary type assertions.
     Generated,
-    /// A field of the command's input.
+    /// A field of the command's input, or from ess/22 (Family F A4) a member of a struct input
+    /// reached by a path.
     InputField {
-        /// The field's name.
+        /// The field's name, or the declared segments of a path joined by `.`: `opening.label`.
         field: String,
-        /// Its type, which had to be assignable to the event field's or declared convertible.
+        /// Its type, which had to be assignable to the event field's or declared convertible. For a
+        /// path, the last segment's type, or `Optional<…>` of it where an `Optional` before it may
+        /// leave it absent.
         type_ref: ResolvedTypeRef,
     },
     /// A value written in the outcome itself.
@@ -1025,18 +1066,20 @@ pub enum ResolvedPayloadValue {
         /// The amount, as canonical text.
         by: String,
     },
-    /// The optional input when the caller sent it, otherwise implementation-generated (ess/14) or
-    /// the literal written after `else:` (ess/16).
+    /// The optional input when the caller sent it, otherwise implementation-generated (ess/14),
+    /// the literal written after `else:` (ess/16), or another input (ess/22).
+    ///
+    /// From ess/22 (Family F A4) `field` may be a path through struct inputs, `opening.label`:
+    /// absent where any `Optional` on it is.
     InputOrGenerated {
-        /// The input field read.
+        /// The input read: a field, or from ess/22 the declared segments of a path joined by `.`.
         field: String,
         /// Its resolved type, `Optional<…>`.
         type_ref: ResolvedTypeRef,
-        /// The fallback literal, as [`Literal`](Self::Literal) carries one: checked by `ess-domain`
-        /// against the target's type. Absent for `{generated: true}`, which keeps the bytes an
-        /// `ess/14` document compiled to.
+        /// What stands in for an absent input. Absent for `{generated: true}`, which keeps the
+        /// bytes an `ess/14` document compiled to.
         #[serde(skip_serializing_if = "Option::is_none")]
-        otherwise: Option<String>,
+        otherwise: Option<ResolvedFallback>,
     },
     /// One source per field of a struct-typed target, in the struct's declaration order (ess/14).
     Struct {
@@ -1045,14 +1088,24 @@ pub enum ResolvedPayloadValue {
     },
     /// A field of the row another row references, as it was immediately before this outcome
     /// (ess/16, beyond10x/ess#166): `{related: {via: customer_id, field: region}}`.
+    ///
+    /// From ess/22 (beyond10x/ess#285) `via` may be `Optional<…>` and `through` may name one
+    /// further reference; where any reference may be absent, `type_ref` is `Optional<…>` and the
+    /// value is absent where a reference is.
     RelatedField {
         /// Where the other row's identity is read.
         via: ResolvedRelatedVia,
-        /// The entity `via` names.
+        /// The further references followed after `via`, in order: each a field of the row the
+        /// reference before it names. Empty for a one-hop read, and then omitted, so a model
+        /// without a chained read keeps its IR bytes.
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        through: Vec<ResolvedRelatedHop>,
+        /// The entity the last reference names: `via`'s for a one-hop read.
         entity: EntityHandle,
         /// The field of that entity read.
         field: String,
-        /// Its resolved type.
+        /// The type of the value: the field's resolved type, or `Optional<…>` of it where a
+        /// reference may be absent and the field is not already `Optional<…>`.
         type_ref: ResolvedTypeRef,
     },
     /// An attribute of the authenticated caller (ess/16, beyond10x/ess#168): `{caller:
@@ -1065,6 +1118,94 @@ pub enum ResolvedPayloadValue {
     },
     /// How many rows the set outcome changed (ess/16, beyond10x/ess#167): `{count: changed}`.
     ChangedCount,
+    /// A field of the one row a selector selects, as the store held it before this outcome
+    /// (ess/22, beyond10x/ess#299): `{related: {entity, where, field}}`. Zero or several selected
+    /// rows supply no value, and no first or latest is chosen.
+    RelatedSelection {
+        /// The entity and the predicate selecting its rows.
+        selection: ResolvedRowSelection,
+        /// The field of the selected row read.
+        field: String,
+        /// The field's resolved type as declared.
+        type_ref: ResolvedTypeRef,
+    },
+}
+
+/// What stands in for an absent input in [`ResolvedPayloadValue::InputOrGenerated`].
+///
+/// Untagged, so a literal keeps the bytes an `ess/16` document compiled to:
+/// `"otherwise": "Standard"`. An input fallback (ess/22, Family F A4) is the one mapping:
+/// `"otherwise": {"input": {"field": "settings.defaults.label", "type_ref": …}}`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(untagged)]
+pub enum ResolvedFallback {
+    /// A literal, as [`ResolvedPayloadValue::Literal`] carries one: checked by `ess-domain`
+    /// against the target's type.
+    Literal(String),
+    /// Another input, required along its whole route.
+    Input {
+        /// The input read.
+        input: ResolvedInputRead,
+    },
+}
+
+impl ResolvedFallback {
+    /// The literal, where the fallback is one.
+    pub fn literal(&self) -> Option<&str> {
+        match self {
+            Self::Literal(value) => Some(value),
+            Self::Input { .. } => None,
+        }
+    }
+
+    /// The input read, where the fallback is one.
+    pub fn input(&self) -> Option<&ResolvedInputRead> {
+        match self {
+            Self::Literal(_) => None,
+            Self::Input { input } => Some(input),
+        }
+    }
+}
+
+impl fmt::Display for ResolvedFallback {
+    /// As a reader of generated documentation sees it: `"Standard"`, or `input.settings.label`.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Literal(value) => write!(f, "\"{value}\""),
+            Self::Input { input } => write!(f, "input.{}", input.field),
+        }
+    }
+}
+
+/// A read of the command's input: a field, or a path through struct inputs (ess/22, A4).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ResolvedInputRead {
+    /// The field, or the declared segments of a path joined by `.`.
+    pub field: String,
+    /// The type it is read at.
+    pub type_ref: ResolvedTypeRef,
+}
+
+/// The segments of an input read: `["opening", "label"]` for `opening.label`, and the field alone
+/// for a top-level one (ess/22, Family F A4).
+pub fn input_segments(field: &str) -> impl Iterator<Item = &str> {
+    field.split('.')
+}
+
+/// The value an input read finds in a request's `input`: the field, or the member a path reaches
+/// through nested mappings (ess/22, Family F A4). `None` where a member on the way is missing, or
+/// an `Optional` before the last segment is absent; a top-level read answers exactly what
+/// `input.get(field)` does, `null` included.
+pub fn read_input<'a>(
+    input: &'a std::collections::BTreeMap<String, ess_primitives::node::Node>,
+    field: &str,
+) -> Option<&'a ess_primitives::node::Node> {
+    let mut segments = input_segments(field);
+    let mut value = input.get(segments.next()?)?;
+    for segment in segments {
+        value = value.as_map()?.get(segment)?;
+    }
+    Some(value)
 }
 
 /// What a [`ResolvedCondition::Related`] branch requires of the row the input names (ess/18).
@@ -1087,6 +1228,21 @@ pub fn related_sentence(
     entity: &EntityHandle,
     test: &ResolvedRelatedTest,
 ) -> String {
+    // An Optional input reference (ess/22, beyond10x/ess#304) is checked only when present: an
+    // absent one reads no row and selects no related branch, so it is never a missing row.
+    if via.type_ref().is_optional() {
+        return match test {
+            ResolvedRelatedTest::Absent => format!(
+                "Taken when `{via}`, checked only when present, names an identity no `{}` carries",
+                entity.name()
+            ),
+            ResolvedRelatedTest::Holds { predicate } => format!(
+                "Taken when `{via}`, checked only when present, names a `{}` that exists and whose \
+                 stored fields satisfy `{predicate}`",
+                entity.name()
+            ),
+        };
+    }
     match test {
         ResolvedRelatedTest::Absent => format!(
             "Taken when no `{}` carries the identity `{via}` names",
@@ -1100,6 +1256,223 @@ pub fn related_sentence(
     }
 }
 
+/// The rows of an entity a selector selects (ess/22, beyond10x/ess#228, #299,
+/// `docs/design/filtered-related-reads.md`): what a [`ResolvedCondition::RelatedSet`] guard tests
+/// and a [`ResolvedPayloadValue::RelatedSelection`] reads one row of.
+///
+/// The predicate reads a candidate row's declared fields, identity and held lifecycle state as
+/// `state` bare, the command's input under `input.` and the addressed subject, as it was before the
+/// outcome, under `subject.`; `now` is the decision's one instant. The rows are the store as it was
+/// immediately before the branch is selected.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ResolvedRowSelection {
+    /// The entity whose rows are candidates.
+    pub entity: EntityHandle,
+    /// What a candidate must satisfy to be selected.
+    #[serde(rename = "where")]
+    pub filter: Predicate,
+}
+
+/// What a [`ResolvedCondition::RelatedSet`] branch requires of the rows its selector selects,
+/// written as the document writes it: `{exists: true}`, `{count: {gt: 1}}`, `{forall: <predicate>}`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ResolvedRowSetTest {
+    /// Some row is selected (`true`), or none is (`false`).
+    Exists(bool),
+    /// The number of rows selected compares with `bound` by `op`, exactly.
+    Count {
+        /// The comparison.
+        op: ess_domain::command::row_set::CountOp,
+        /// The nonnegative bound.
+        bound: u64,
+    },
+    /// Every selected row satisfies the predicate; true of no rows.
+    Forall(Predicate),
+}
+
+impl serde::Serialize for ResolvedRowSetTest {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(Some(1))?;
+        match self {
+            Self::Exists(exists) => map.serialize_entry("exists", exists)?,
+            Self::Count { op, bound } => {
+                let count: BTreeMap<&str, u64> = [(op.keyword(), *bound)].into();
+                map.serialize_entry("count", &count)?;
+            }
+            Self::Forall(predicate) => map.serialize_entry("forall", predicate)?,
+        }
+        map.end()
+    }
+}
+
+/// One candidate row of a row set, as far as it is known: whether the selector selects it, and —
+/// for a `forall` test — whether it satisfies the tested predicate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RowMember {
+    /// Whether the row is selected: `Unknown` keeps it as a possible member, never dropped.
+    pub selected: ess_primitives::predicate::Truth,
+    /// Whether it satisfies the `forall` predicate; `True` for every other test.
+    pub satisfies: ess_primitives::predicate::Truth,
+}
+
+/// How many rows a selector selected, as far as membership is known.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RowCount {
+    /// Rows certainly selected.
+    pub certain: u64,
+    /// Rows possibly selected: the certain ones and every one of unknown membership.
+    pub possible: u64,
+}
+
+impl RowCount {
+    /// The counts of `members`.
+    pub fn of(members: &[RowMember]) -> Self {
+        use ess_primitives::predicate::Truth;
+        let count = |keep: &dyn Fn(&RowMember) -> bool| {
+            u64::try_from(members.iter().filter(|member| keep(member)).count()).unwrap_or(u64::MAX)
+        };
+        Self {
+            certain: count(&|member| member.selected == Truth::True),
+            possible: count(&|member| member.selected != Truth::False),
+        }
+    }
+}
+
+impl ResolvedRowSetTest {
+    /// Whether the test holds of `members`, by the three-valued table of
+    /// `docs/design/filtered-related-reads.md` ("Shared row-set guard contract"): a decision is
+    /// made only where it is the same for every completion of the unknown memberships and facts.
+    pub fn decide(&self, members: &[RowMember]) -> ess_primitives::predicate::Truth {
+        use ess_primitives::predicate::Truth;
+        let count = RowCount::of(members);
+        let by_count = |holds: &dyn Fn(u64) -> bool| {
+            let first = holds(count.certain);
+            if (count.certain..=count.possible).all(|n| holds(n) == first) {
+                Truth::from_bool(first)
+            } else {
+                Truth::Unknown
+            }
+        };
+        match self {
+            Self::Exists(exists) => by_count(&|n| (n > 0) == *exists),
+            Self::Count { op, bound } => by_count(&|n| op.holds(n, *bound)),
+            Self::Forall(_) => {
+                let possible: Vec<&RowMember> = members
+                    .iter()
+                    .filter(|member| member.selected != Truth::False)
+                    .collect();
+                if possible.iter().any(|member| {
+                    member.selected == Truth::True && member.satisfies == Truth::False
+                }) {
+                    Truth::False
+                } else if possible
+                    .iter()
+                    .all(|member| member.satisfies == Truth::True)
+                {
+                    Truth::True
+                } else {
+                    Truth::Unknown
+                }
+            }
+        }
+    }
+
+    /// The `forall` predicate, where the test is one.
+    pub fn predicate(&self) -> Option<&Predicate> {
+        match self {
+            Self::Forall(predicate) => Some(predicate),
+            Self::Exists(_) | Self::Count { .. } => None,
+        }
+    }
+}
+
+impl fmt::Display for ResolvedRowSetTest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Exists(true) => f.write_str("at least one row is selected"),
+            Self::Exists(false) => f.write_str("no row is selected"),
+            Self::Count { op, bound } => {
+                let compared = match op {
+                    ess_domain::command::row_set::CountOp::Eq => "exactly",
+                    ess_domain::command::row_set::CountOp::Ne => "other than",
+                    ess_domain::command::row_set::CountOp::Lt => "fewer than",
+                    ess_domain::command::row_set::CountOp::Lte => "at most",
+                    ess_domain::command::row_set::CountOp::Gt => "more than",
+                    ess_domain::command::row_set::CountOp::Gte => "at least",
+                };
+                write!(f, "{compared} {bound} rows are selected")
+            }
+            Self::Forall(predicate) => write!(f, "every selected row satisfies `{predicate}`"),
+        }
+    }
+}
+
+/// The sentence a published contract opens a [`ResolvedCondition::RelatedSet`] branch with,
+/// without its input guard or final stop: one phrasing, shared by every projection that prints it.
+pub fn row_set_sentence(selection: &ResolvedRowSelection, test: &ResolvedRowSetTest) -> String {
+    format!(
+        "Taken when, of the `{}` rows whose stored fields satisfy `{}` before the outcome, {test}",
+        selection.entity.name(),
+        selection.filter
+    )
+}
+
+/// What a [`ResolvedPayloadValue::RelatedSelection`] reads, as far as membership is known.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Selected {
+    /// Exactly this candidate, by its position among the members.
+    One(usize),
+    /// No row: the read supplies no value.
+    None,
+    /// Several rows: the read supplies no value, and no first or latest is chosen.
+    Several,
+    /// Which, or how many, is not known.
+    Unknown,
+}
+
+impl Selected {
+    /// The one row `members` selects, or why there is not one.
+    pub fn of(members: &[RowMember]) -> Self {
+        use ess_primitives::predicate::Truth;
+        let count = RowCount::of(members);
+        match (count.certain, count.possible) {
+            (0, 0) => Self::None,
+            (1, 1) => members
+                .iter()
+                .position(|member| member.selected == Truth::True)
+                .map_or(Self::Unknown, Self::One),
+            (certain, _) if certain >= 2 => Self::Several,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+/// Whether a [`ResolvedPayloadValue::RelatedField`] reading through `via` and then `through` may
+/// find a reference absent (ess/22, beyond10x/ess#285): any of them is `Optional<…>`. Its value is
+/// then absent too.
+pub fn related_may_be_absent(via: &ResolvedRelatedVia, through: &[ResolvedRelatedHop]) -> bool {
+    via.type_ref().is_optional() || through.iter().any(|hop| hop.type_ref.is_optional())
+}
+
+/// One further reference a chained [`ResolvedPayloadValue::RelatedField`] follows (ess/22,
+/// beyond10x/ess#285): the field of the row read so far that holds the next row's identity.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ResolvedRelatedHop {
+    /// The entity whose row holds the field: the one the reference before names.
+    pub entity: EntityHandle,
+    /// The field.
+    pub field: String,
+    /// Its resolved type as declared: the next entity's identity, or `Optional<…>` of it.
+    pub type_ref: ResolvedTypeRef,
+}
+
+impl fmt::Display for ResolvedRelatedHop {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}.{}", self.entity.name(), self.field)
+    }
+}
+
 /// Where a [`ResolvedPayloadValue::RelatedField`] reads the other row's identity (ess/16).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(tag = "from", rename_all = "snake_case")]
@@ -1108,14 +1481,18 @@ pub enum ResolvedRelatedVia {
     Subject {
         /// The entity field.
         field: String,
-        /// Its resolved type: the referenced entity's identity.
+        /// Its resolved type as declared: the referenced entity's identity, or — for a
+        /// `when_related` guard from ess/22 (beyond10x/ess#304) — `Optional<…>` of it, checked only
+        /// when present.
         type_ref: ResolvedTypeRef,
     },
     /// A field of the command's input.
     Input {
         /// The input field.
         field: String,
-        /// Its resolved type: the referenced entity's identity.
+        /// Its resolved type as declared: the referenced entity's identity, or — for a
+        /// `when_related` guard from ess/22 (beyond10x/ess#304) — `Optional<…>` of it, checked only
+        /// when present.
         type_ref: ResolvedTypeRef,
     },
 }
@@ -1156,9 +1533,33 @@ impl ResolvedPayloadValue {
             Self::Cleared => "cleared".to_owned(),
             Self::SubjectField { field, .. } => format!("subject.{field} before the outcome"),
             Self::RelatedField {
-                via, entity, field, ..
-            } => format!("{}.{field} of the row {via} names", entity.name()),
+                via,
+                through,
+                entity,
+                field,
+                ..
+            } => {
+                let mut named = format!("the row {via} names");
+                for hop in through {
+                    named = format!("the row {hop} of {named}");
+                }
+                if related_may_be_absent(via, through) {
+                    format!(
+                        "{}.{field} of {named}, absent where a reference is",
+                        entity.name()
+                    )
+                } else {
+                    format!("{}.{field} of {named}", entity.name())
+                }
+            }
             Self::CallerAttribute { attribute, .. } => format!("the caller's {attribute}"),
+            Self::RelatedSelection {
+                selection, field, ..
+            } => format!(
+                "{}.{field} of the one row whose stored fields satisfy `{}` before the outcome",
+                selection.entity.name(),
+                selection.filter
+            ),
             Self::ChangedCount => "how many rows the outcome changed".to_owned(),
             Self::Increment { by } => format!("its previous value plus {by}"),
             Self::InputOrGenerated {
@@ -1172,7 +1573,7 @@ impl ResolvedPayloadValue {
                 field,
                 otherwise: Some(value),
                 ..
-            } => format!("input.{field}, else \"{value}\""),
+            } => format!("input.{field}, else {value}"),
             Self::Struct { fields } => format!(
                 "{{{}}}",
                 fields
@@ -1523,11 +1924,16 @@ pub struct ResolvedAggregate {
     /// beyond10x/ess#148). Omitted when false, so a model that does not write it keeps its bytes.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub skip_absent: bool,
+    /// Which of the group's rows this measure reads (`where:`, `ess/22`, beyond10x/ess#363): the
+    /// resolved predicate over one source row and the view's parameters. Omitted when the source
+    /// writes none, so a model without one keeps its IR bytes and digests.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub r#where: Option<Predicate>,
 }
 
 impl std::fmt::Display for ResolvedAggregate {
-    /// `sum(talk_seconds)`, `sum(duration, skip_absent)`, or `count()`: the rendering every
-    /// projection of the construct uses.
+    /// `sum(talk_seconds)`, `sum(duration, skip_absent)`, `count()`, or
+    /// `count() where state == Completed`: the rendering every projection of the construct uses.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -1539,7 +1945,11 @@ impl std::fmt::Display for ResolvedAggregate {
             } else {
                 ""
             }
-        )
+        )?;
+        if let Some(condition) = &self.r#where {
+            write!(f, " where {condition}")?;
+        }
+        Ok(())
     }
 }
 
@@ -1573,10 +1983,14 @@ impl ResolvedAggregate {
                 format!("average of {input}, rounded to 6 places half-even")
             }
         };
-        if self.skip_absent {
+        let described = if self.skip_absent {
             format!("{described}, skipping absent values")
         } else {
             described
+        };
+        match &self.r#where {
+            Some(condition) => format!("{described}, over the rows where {condition}"),
+            None => described,
         }
     }
 }
@@ -1668,6 +2082,13 @@ pub struct ResolvedActor {
     /// A set, ordered by name: the same grant written twice means the same thing, and anything
     /// generated from it has to be diffable.
     pub may: BTreeSet<CommandHandle>,
+    /// The views it may read: the views its `may:` names, from ess/22 (beyond10x/ess#286).
+    ///
+    /// A view no actor names is open to every caller; one some actor names is read-granted, and
+    /// only the actors naming it may read it. Left out of the document when empty, so a model
+    /// that names no view keeps its bytes.
+    #[serde(skip_serializing_if = "BTreeSet::is_empty")]
+    pub may_read: BTreeSet<ViewHandle>,
     /// What it is called on the wire, and shown as.
     pub naming: Naming,
     /// What its credential carries about it (ess/16, beyond10x/ess#168), each type resolved.
@@ -1681,6 +2102,11 @@ impl ResolvedActor {
     /// `true` when this actor may invoke `command`.
     pub fn may_invoke(&self, command: &CommandHandle) -> bool {
         self.may.contains(command)
+    }
+
+    /// `true` when this actor's `may:` names `view` (beyond10x/ess#286).
+    pub fn may_read(&self, view: &QualifiedName) -> bool {
+        self.may_read.iter().any(|granted| granted.name() == view)
     }
 }
 
@@ -1846,6 +2272,49 @@ pub struct ResolvedSelectionPlan {
     pub types: BTreeMap<QualifiedName, TypeHandle>,
 }
 
+/// A binding's event-payload condition, resolved against the declared event (ess/22,
+/// beyond10x/ess#268, beyond10x/ess#194, [`ess_domain::binding::condition`]).
+///
+/// Evaluated before selection, conversion, mapping and invocation: True invokes, False skips this
+/// binding occurrence, Unknown is an unmet obligation that invokes nothing.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ResolvedBindingCondition {
+    /// The predicate and every path it reads.
+    #[serde(flatten)]
+    pub plan: ess_domain::binding::condition::ConditionPlan,
+    /// The `event.<members>` paths the condition proves present when it holds, in order: what
+    /// admits an Optional source into a required input.
+    pub present: Vec<String>,
+}
+
+impl ResolvedBindingCondition {
+    /// The resolved form of an admitted plan.
+    pub fn of(plan: ess_domain::binding::condition::ConditionPlan) -> Self {
+        let present = plan
+            .proves_present()
+            .into_iter()
+            .map(|members| {
+                format!(
+                    "{}.{}",
+                    ess_domain::binding::condition::ROOT,
+                    members.join(".")
+                )
+            })
+            .collect();
+        Self { plan, present }
+    }
+
+    /// Whether `members` is proved present when the condition holds.
+    pub fn proves(&self, members: &[String]) -> bool {
+        let written = format!(
+            "{}.{}",
+            ess_domain::binding::condition::ROOT,
+            members.join(".")
+        );
+        self.present.contains(&written)
+    }
+}
+
 /// A binding whose mapping is known to typecheck.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ResolvedBinding {
@@ -1860,6 +2329,10 @@ pub struct ResolvedBinding {
     /// binding without a context keeps its bytes. `Some` only for an event cause.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context: Option<ResolvedDeliveryContext>,
+    /// The event-payload condition, where the binding declares one (ess/22). Beside the cause, as
+    /// the context is, so a binding without one keeps its bytes.
+    #[serde(rename = "where", skip_serializing_if = "Option::is_none")]
+    pub condition: Option<ResolvedBindingCondition>,
     /// The command it invokes.
     pub command: CommandHandle,
     /// One entry per mapped command input, in the command's declaration order.
@@ -1891,6 +2364,16 @@ pub struct ResolvedBinding {
     /// it with the word, so a projection reads [`ResolvedFailure::BoundedRetry`] rather than this.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub retry: Option<ResolvedRetryBound>,
+    /// The failure policy selected per refusal of the invoked command (ess/22,
+    /// beyond10x/ess#269), where the binding declares one.
+    ///
+    /// The authority where present, read through [`ResolvedFailure::ByRefusal`]. Then
+    /// [`Self::failure`] is the fallback's word, [`Self::escalation`] the table's escalation event
+    /// and [`Self::retry`] its bound — a view [`ResolvedRefusalPolicy::agrees_with`] checks, which a
+    /// consumer asking what a binding may publish reads, and which no consumer may apply to every
+    /// refusal. Serialized only when present, so every other binding keeps its bytes.
+    #[serde(rename = "on_refusal", skip_serializing_if = "Option::is_none")]
+    pub refusal_policy: Option<ResolvedRefusalPolicy>,
     /// What it is called on the wire, and shown as.
     pub naming: Naming,
     /// The records outside this model that explain it, such as `jira:DEV-630`.
@@ -1968,6 +2451,16 @@ pub enum ResolvedFailure<'a> {
         /// The attempts and the final outcomes.
         bound: &'a ResolvedRetryBound,
     },
+    /// A policy selected per refusal of the invoked command, with an explicit fallback for a
+    /// failure that carries no declared outcome (ess/22, beyond10x/ess#269).
+    ///
+    /// Its own arm, so that a consumer matching this enum cannot apply one word to every refusal
+    /// by reading the binding's universal fields: it has to say what it does per refusal, or
+    /// refuse.
+    ByRefusal {
+        /// The table and the fallback.
+        policy: &'a ResolvedRefusalPolicy,
+    },
 }
 
 impl ResolvedBinding {
@@ -1980,6 +2473,9 @@ impl ResolvedBinding {
     /// which is a programming mistake and not a specification's problem. The same reasoning, and
     /// the same wording, as the handle accessors above.
     pub fn on_failure(&self) -> ResolvedFailure<'_> {
+        if let Some(policy) = &self.refusal_policy {
+            return ResolvedFailure::ByRefusal { policy };
+        }
         match self.failure {
             Failure::Retry => match &self.retry {
                 None => ResolvedFailure::Retry,
@@ -2538,6 +3034,28 @@ impl EssIr {
             }
         }
         out
+    }
+
+    /// Whether some actor's `may:` names `view`, so that only those actors may read it
+    /// (beyond10x/ess#286). A view no actor names is open to every caller.
+    pub fn read_granted(&self, view: &QualifiedName) -> bool {
+        self.actors.values().any(|actor| actor.may_read(view))
+    }
+
+    /// The actors whose `may:` names `view`, in name order (beyond10x/ess#286).
+    pub fn readers<'a>(
+        &'a self,
+        view: &'a QualifiedName,
+    ) -> impl Iterator<Item = &'a ResolvedActor> + 'a {
+        self.actors
+            .values()
+            .filter(move |actor| actor.may_read(view))
+    }
+
+    /// Whether any actor's `may:` names a view (beyond10x/ess#286): what every projection asks
+    /// before it says anything about read grants, so a model naming none keeps its bytes.
+    pub fn grants_reads(&self) -> bool {
+        self.actors.values().any(|actor| !actor.may_read.is_empty())
     }
 
     /// The IR as canonical JSON, with a trailing newline.

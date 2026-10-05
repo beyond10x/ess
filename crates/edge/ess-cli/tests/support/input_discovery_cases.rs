@@ -800,13 +800,7 @@ fn a21_authored_routes_aliases_and_presentations_use_the_same_manifest() {
                             c.args(["synthesize", "--target", operation]);
                         }
                         "run" => {
-                            c.args([
-                                "run",
-                                "--target",
-                                "billing",
-                                "--report-format",
-                                if version == "5" { "2" } else { "1" },
-                            ]);
+                            c.args(["run", "--target", "billing", "--report-format", "2"]);
                         }
                         _ => {
                             c.arg(operation);

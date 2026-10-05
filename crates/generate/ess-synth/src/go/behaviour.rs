@@ -7,7 +7,7 @@
 //! signature of the seam its bounded context already declares, so every component port that takes
 //! a behaviour bundle takes a `*Generated` unchanged. Everything the specification leaves to the
 //! implementor is a port in `behaviour.Ports`: one storage interface per entity (get, put, delete
-//! and, where a query reads it, list — ess generates the interface and never a store), one context
+//! and, where a query reads it, list — network entries supply ephemeral stores), one context
 //! interface (the caller's attributes, the values the model says the implementation assigns, and
 //! the answer to an `external:` branch), and `Owed`, every behaviour and query the plan still owes,
 //! which `Generated` forwards to.
@@ -18,7 +18,8 @@
 //! refusals; the existence lookup; on a subject-guarded command the addressed row and the branches
 //! that select by it; the accepting and external branches in declaration order; the default. The
 //! branch taken then reads its own subject. A guard that is unknown, or a request no declared
-//! branch answers, is the typed refusal naming the command.
+//! branch answers, is the typed refusal naming the command. A `when_related:` guard reads its
+//! related row in the Rust target's order, through the related entity's storage interface.
 //!
 //! # What Go spells differently
 //!
@@ -38,8 +39,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
 use ess_compiler::ir::{
-    EssIr, ResolvedBody, ResolvedCommand, ResolvedCondition, ResolvedEffect, ResolvedEntity,
-    ResolvedInstance, ResolvedOutcome, ResolvedPayloadField, ResolvedPayloadValue, ResolvedTypeRef,
+    EntityHandle, EssIr, ResolvedBody, ResolvedCommand, ResolvedCondition, ResolvedEffect,
+    ResolvedEntity, ResolvedFallback, ResolvedInstance, ResolvedOutcome, ResolvedPayloadField,
+    ResolvedPayloadValue, ResolvedRelatedTest, ResolvedRelatedVia, ResolvedTypeRef,
 };
 use ess_domain::name::QualifiedName;
 use ess_domain::types::Primitive;
@@ -146,14 +148,14 @@ impl Seams {
         seams
     }
 
-    fn generates(&self, kind: CapabilityKind, source: &str) -> bool {
+    pub(super) fn generates(&self, kind: CapabilityKind, source: &str) -> bool {
         self.generated.contains(&Capability {
             kind,
             source: source.to_owned(),
         })
     }
 
-    fn forwards(&self, kind: CapabilityKind, source: &str) -> bool {
+    pub(super) fn forwards(&self, kind: CapabilityKind, source: &str) -> bool {
         self.forwarded.contains(&Capability {
             kind,
             source: source.to_owned(),
@@ -163,19 +165,62 @@ impl Seams {
 
 /// What the generated methods asked of the ports and of the helpers, collected while rendering.
 #[derive(Default)]
-struct Uses {
+pub(super) struct Uses {
     /// Entities whose storage interface some method uses.
-    storages: BTreeSet<QualifiedName>,
+    pub(super) storages: BTreeSet<QualifiedName>,
     /// Entities whose rows some generated query lists: their storage interface carries `List`.
-    listed: BTreeSet<QualifiedName>,
+    pub(super) listed: BTreeSet<QualifiedName>,
     /// Caller attribute methods: name → (returned type, attribute).
-    callers: BTreeMap<String, (String, String)>,
+    pub(super) callers: BTreeMap<String, (String, String)>,
+    pub(super) attributes: BTreeMap<String, ResolvedTypeRef>,
     /// Assigned-value methods: name → (returned type, the type as the model spells it).
-    generates: BTreeMap<String, (String, String)>,
+    pub(super) generates: BTreeMap<String, (String, String)>,
+    pub(super) assigned: BTreeMap<String, ResolvedTypeRef>,
     /// Some method asks the context about an `external:` branch.
-    external: bool,
+    pub(super) external: bool,
+    pub(super) externals: BTreeSet<String>,
+    /// Some method reads the command clock: a guard of it orders an instant against the current
+    /// time (ess/22, family F A3).
+    pub(super) clock: bool,
     /// Helpers used, by name.
     helpers: BTreeSet<&'static str>,
+}
+
+/// Collect exactly the port reads of the existing behavior/query emitters.
+pub(super) fn requirements(
+    emit: &Emit<'_>,
+    seams: &Seams,
+    selected: Option<&crate::served::Reachable>,
+) -> Uses {
+    let storages = storage_names(emit.ir, emit.layout);
+    let reserved = emit.layout.package_names();
+    let external_commands = external_names(emit.ir, seams, &reserved, &storages);
+    let receiver = fresh(&reserved, "b");
+    let mut uses = Uses::default();
+    for command in emit.ir.commands().values() {
+        if seams.generates(CapabilityKind::CommandBehavior, &command.name.to_string())
+            && selected.is_none_or(|selected| selected.commands.contains(&command.name))
+        {
+            let _ = Writer::new(
+                emit,
+                command,
+                &storages,
+                &mut uses,
+                &reserved,
+                &receiver,
+                &external_commands,
+            )
+            .method();
+        }
+    }
+    for view in emit.ir.views().values() {
+        if seams.generates(CapabilityKind::ViewQuery, &view.name.to_string())
+            && selected.is_none_or(|selected| selected.views.contains(&view.name))
+        {
+            let _ = query::method(emit, view, &storages, &mut uses, &reserved, &receiver);
+        }
+    }
+    uses
 }
 
 /// The `behaviour` package, or `None` where this target generates no behaviour and no query.
@@ -192,6 +237,7 @@ pub(super) fn package(
     let emit = Emit::new(ir, layout, layout.behaviour(), None);
     let reserved = layout.package_names();
     let storages = storage_names(ir, layout);
+    let external_commands = external_names(ir, seams, &reserved, &storages);
     let receiver = fresh(&reserved, "b");
     let mut uses = Uses::default();
     let mut methods = String::new();
@@ -202,8 +248,15 @@ pub(super) fn package(
                 kind: CapabilityKind::CommandBehavior,
                 source,
             });
-            let mut writer =
-                Writer::new(&emit, command, &storages, &mut uses, &reserved, &receiver);
+            let mut writer = Writer::new(
+                &emit,
+                command,
+                &storages,
+                &mut uses,
+                &reserved,
+                &receiver,
+                &external_commands,
+            );
             methods.push_str(&writer.method());
         } else if seams.forwards(CapabilityKind::CommandBehavior, &source) {
             forward_behaviour(&mut methods, &emit, &receiver, command);
@@ -234,19 +287,32 @@ pub(super) fn package(
             uses.listed.contains(entity),
         );
     }
-    let context = context_interface(&mut body, &uses);
+    let context = context_ports(&mut body, &emit, &uses, &external_commands);
     let owed = owed_interface(&mut body, &emit, ir, seams);
     ports_struct(&mut body, &storages, &uses, context, owed);
+    let context_field = if context {
+        "\tcontext FallibleContext\n"
+    } else {
+        ""
+    };
+    let ports_field = if context {
+        "ports   Ports"
+    } else {
+        "ports Ports"
+    };
     let _ = write!(
         body,
         "\n// Generated is every generated behaviour and query of this module, over the ports.\n//\n// \
          It has the method of every seam a component's behaviour bundle names, generated or owed, \
          so\n// a `*Generated` is a complete bundle for every component port. To replace one \
          generated\n// behaviour, write a bundle of your own with that method that delegates the \
-         rest to a\n// `*Generated`.\ntype Generated struct {{\n\tports Ports\n}}\n\n// New is the \
+         rest to a\n// `*Generated`.\ntype Generated struct {{\n\t{ports_field}\n{context_field}}}\n\n// New is the \
          generated behaviours and queries, over ports.\nfunc New(ports Ports) *Generated \
          {{\n\treturn &Generated{{ports: ports}}\n}}\n"
     );
+    if context {
+        body.push_str("\n// NewWithContext explicitly supplies the fallible companion; it takes precedence over Ports.Context.\nfunc NewWithContext(ports Ports, context FallibleContext) *Generated {\n\treturn &Generated{ports: ports, context: context}\n}\n");
+    }
     body.push_str(&methods);
     helpers(&mut body, &emit, &uses);
 
@@ -258,14 +324,14 @@ pub(super) fn package(
                generated, written against\n// ports the implementor supplies.\n//\n// Storage is \
                a port: one interface per entity, get, put and delete of a snapshot by\n// \
                identity, and list where a generated query reads every row. ess generates the \
-               interface\n// and never a store. Context is the other port: the caller's \
+               interface. Network entries supply ephemeral stores. Context carries the caller's \
                attributes, every identity and\n// value the model says the implementation \
                assigns, and the answer to each `external:` branch.\n// Owed is every behaviour \
                and query the plan still owes, which [Generated] forwards to.\n//\n// A refusal \
                from a generated method is the typed refusal naming the command: the model\n// \
                declares no outcome for the request (a guard is undecidable over it, or no \
                declared\n// branch answers it), or — as `entity invariant` — the declared outcome \
-               would leave an\n// entity breaking an invariant.\n//\n// Every port a generated method reads must be set: a nil field of [Ports] is a nil-pointer\n// panic at the first call that reads it.\n";
+               would leave an\n// entity breaking an invariant.\n//\n// Every storage and owed port a generated method reads must be set. Context uses the\n// fallible companion when supplied, otherwise the legacy port; absence is a typed refusal.\n";
     let body = rename_helpers(&body, &reserved);
     Some(emit.file(provenance, doc, &body))
 }
@@ -287,9 +353,13 @@ const HELPER_NAMES: &[&str] = &[
     "anyOf",
     "equal",
     "textMatch",
+    "textMatchOperand",
     "numberParts",
     "magnitudeOrder",
     "compareNumbers",
+    "compareInstants",
+    "compareWithNow",
+    "clockUnmet",
     "isEq",
     "isNe",
     "isLt",
@@ -313,7 +383,31 @@ const HELPER_NAMES: &[&str] = &[
     "sumValues",
     "spell",
     "average",
+    "compareOffsetIntegers",
+    "compareOffsetInstants",
 ];
+
+/// Each helper whose name is an imported package's, with the name [`rename_helpers`] moves it to.
+fn renamed_helpers(reserved: &BTreeSet<String>) -> BTreeMap<&'static str, String> {
+    let mut taken: BTreeSet<String> = reserved.clone();
+    taken.extend(HELPER_NAMES.iter().map(|name| (*name).to_owned()));
+    HELPER_NAMES
+        .iter()
+        .filter(|name| reserved.contains(**name))
+        .map(|name| (*name, fresh(&taken, name)))
+        .collect()
+}
+
+/// Every package-level name a generated method body may call or qualify by: the imported
+/// packages (`reserved`), every helper, and the name each helper an imported package displaces
+/// is moved to. A view query's arguments are named apart from all of them, so none shadows what
+/// the body reads (beyond10x/ess#200).
+pub(super) fn package_level(reserved: &BTreeSet<String>) -> BTreeSet<String> {
+    let mut taken: BTreeSet<String> = reserved.clone();
+    taken.extend(HELPER_NAMES.iter().map(|name| (*name).to_owned()));
+    taken.extend(renamed_helpers(reserved).into_values());
+    taken
+}
 
 /// `body` with every helper whose name is an imported package's moved out of its way, as a local
 /// is (`fresh`): a domain package called `equal` and a helper called `equal` are one name declared
@@ -323,13 +417,7 @@ const HELPER_NAMES: &[&str] = &[
 /// which is a package qualifier (`equal.TaskId`) or a selector, not a helper. A model whose
 /// package names meet no helper keeps every byte.
 fn rename_helpers(body: &str, reserved: &BTreeSet<String>) -> String {
-    let mut taken: BTreeSet<String> = reserved.clone();
-    taken.extend(HELPER_NAMES.iter().map(|name| (*name).to_owned()));
-    let renamed: BTreeMap<&str, String> = HELPER_NAMES
-        .iter()
-        .filter(|name| reserved.contains(**name))
-        .map(|name| (*name, fresh(&taken, name)))
-        .collect();
+    let renamed = renamed_helpers(reserved);
     if renamed.is_empty() {
         return body.to_owned();
     }
@@ -382,7 +470,7 @@ fn rename_helpers(body: &str, reserved: &BTreeSet<String>) -> String {
 
 /// The storage interface name of each entity: `<Type>Storage`, or — where two entities of
 /// different domains share a type name — every one spelled from its full name.
-fn storage_names(ir: &EssIr, layout: &Layout) -> BTreeMap<QualifiedName, String> {
+pub(super) fn storage_names(ir: &EssIr, layout: &Layout) -> BTreeMap<QualifiedName, String> {
     let short: BTreeMap<QualifiedName, String> = ir
         .entities()
         .keys()
@@ -430,8 +518,7 @@ fn storage_interface(
     let _ = writeln!(
         out,
         "\n// {} is where `{entity}` is stored — a port the implementor provides.\n//\n// Keyed by \
-         the identity `{}`. ess generates this interface and never an implementation of \
-         it.\ntype {} interface {{\n\t// Get is the instance with this identity and true, or \
+         the identity `{}`. Network entries supply ephemeral stores; durable storage stays a port.\ntype {} interface {{\n\t// Get is the instance with this identity and true, or \
          false where none is stored.\n\tGet(identity {identity}) ({snapshot}, bool)\n\n\t// Put \
          stores this instance under its identity, replacing what was held.\n\tPut(snapshot \
          {snapshot})\n\n\t// Delete removes the instance with this identity.\n\tDelete(identity \
@@ -440,9 +527,106 @@ fn storage_interface(
     );
 }
 
+/// Typed wrapper names for commands whose Go body actually asks an external branch. Reserve
+/// bases and the generated package namespace before assigning deterministic collision suffixes.
+fn external_names(
+    ir: &EssIr,
+    seams: &Seams,
+    packages: &BTreeSet<String>,
+    storages: &BTreeMap<QualifiedName, String>,
+) -> BTreeMap<QualifiedName, String> {
+    let candidates: BTreeMap<_, _> = ir
+        .commands()
+        .values()
+        .filter(|command| {
+            seams.generates(CapabilityKind::CommandBehavior, &command.name.to_string())
+                && command.outcomes.iter().any(|outcome| {
+                    matches!(
+                        outcome.condition,
+                        ResolvedCondition::External { .. } | ResolvedCondition::ExternalWhen { .. }
+                    )
+                })
+        })
+        .map(|command| {
+            (
+                command.name.clone(),
+                format!(
+                    "ExternalCommand{}",
+                    name::type_fragment(&command.name.to_string())
+                ),
+            )
+        })
+        .collect();
+    let mut allocated = packages.clone();
+    allocated.extend(storages.values().cloned());
+    allocated.extend(
+        [
+            "ExternalCommand",
+            "Context",
+            "Generated",
+            "Ports",
+            "Owed",
+            "New",
+            "FallibleContext",
+            "NewWithContext",
+            "UnmetContext",
+        ]
+        .map(str::to_owned),
+    );
+    allocated.extend(HELPER_NAMES.iter().map(|name| (*name).to_owned()));
+    let mut reserved = allocated.clone();
+    reserved.extend(candidates.values().cloned());
+    candidates
+        .into_iter()
+        .map(|(command, base)| {
+            let mut wrapper = base.clone();
+            if !allocated.insert(base.clone()) {
+                let mut suffix = 2;
+                loop {
+                    wrapper = format!("{base}{suffix}");
+                    if reserved.insert(wrapper.clone()) {
+                        break;
+                    }
+                    suffix += 1;
+                }
+            }
+            (command, wrapper)
+        })
+        .collect()
+}
+
+/// The closed typed input supplied to an external decision. Values keep Go's ordinary nested
+/// pointer/map/slice aliasing; this is not an immutable deep copy.
+fn external_command(out: &mut String, emit: &Emit<'_>, commands: &BTreeMap<QualifiedName, String>) {
+    if commands.is_empty() {
+        return;
+    }
+    out.push_str("\n// ExternalCommand is the exact executing input supplied to an external decision.\n// It supplies facts, not authority; the context must verify its request-bound proof.\n// Nested pointers, maps and slices retain Go aliasing and must not be mutated.\ntype ExternalCommand interface {\n\tName() string\n\tisExternalCommand()\n}\n");
+    for (command, wrapper) in commands {
+        let input = emit.reference(command);
+        let _ = writeln!(out, "\n// {wrapper} carries the executing `{command}` input.\ntype {wrapper} struct {{\n\t// Input is the actual command value.\n\tInput {input}\n}}\n\n// Name is the canonical qualified command identity.\nfunc ({wrapper}) Name() string {{ return {} }}\n\nfunc ({wrapper}) isExternalCommand() {{}}", go_string(&command.to_string()));
+    }
+}
+
+/// The typed external command, the context port and its fallible companion. `true` where there is
+/// a context port.
+fn context_ports(
+    out: &mut String,
+    emit: &Emit<'_>,
+    uses: &Uses,
+    external_commands: &BTreeMap<QualifiedName, String>,
+) -> bool {
+    external_command(out, emit, external_commands);
+    let context = context_interface(out, emit, uses);
+    if context {
+        out.push_str(&fallible_context(emit, uses));
+    }
+    context
+}
+
 /// The context port: only the methods some generated method asks. `true` where there is one.
-fn context_interface(out: &mut String, uses: &Uses) -> bool {
-    if uses.callers.is_empty() && uses.generates.is_empty() && !uses.external {
+fn context_interface(out: &mut String, emit: &Emit<'_>, uses: &Uses) -> bool {
+    if uses.callers.is_empty() && uses.generates.is_empty() && !uses.external && !uses.clock {
         return false;
     }
     out.push_str(
@@ -482,11 +666,108 @@ fn context_interface(out: &mut String, uses: &Uses) -> bool {
              this\n\t// invocation.\n\t//\n\t// Asked in declaration order, before the branch's \
              input guard is read; the first branch\n\t// answered true whose guard holds is \
              taken. A test forces a branch by answering true for\n\t// it alone; a deployment \
-             asks whatever decides it.\n\tExternal(command string, outcome string) bool\n",
+             asks whatever decides it.\n\tExternal(command ExternalCommand, outcome string) bool\n",
+        );
+    }
+    if uses.clock {
+        separate(out);
+        let _ = writeln!(
+            out,
+            "\t// CommandClock is the instant of the command decision being made now and true, or \
+             false\n\t// where this context has no clock. Read once per decision, before any \
+             guard: every guard\n\t// ordering an instant against the current time reads that \
+             one instant, and a decision\n\t// that needs it and has none is refused naming the \
+             command clock, never decided with\n\t// another instant.\n\tCommandClock() ({}, bool)",
+            clock_type(emit)
         );
     }
     out.push_str("}\n");
     true
+}
+
+/// The acceptor helper accepting what `op` accepts.
+fn acceptor(op: CompareOp) -> &'static str {
+    match op {
+        CompareOp::Eq => "isEq",
+        CompareOp::Ne => "isNe",
+        CompareOp::Lt => "isLt",
+        CompareOp::Le => "isLe",
+        CompareOp::Gt => "isGt",
+        CompareOp::Ge => "isGe",
+    }
+}
+
+/// The call a guard ordering an instant against the current time is rendered as (A3).
+const COMPARE_WITH_NOW_CALL: &str = "compareWithNow(";
+
+/// The locals a method reading the command clock holds the decision's one instant in, and whether
+/// the clock gave one: the same names wherever the method's guards read them.
+fn clock_locals(reserved: &BTreeSet<String>) -> (String, String) {
+    (fresh(reserved, "now"), fresh(reserved, "clocked"))
+}
+
+/// The local holding the context's unavailable answer for the command clock, where it named one:
+/// an unavailable clock is no clock, and is answered only where a guard needs the instant.
+fn clock_unavailable(reserved: &BTreeSet<String>) -> String {
+    fresh(reserved, "clockUnavailable")
+}
+
+/// The Go type of the command clock's reading: the generated `Timestamp`.
+fn clock_type(emit: &Emit<'_>) -> String {
+    emit.go_type(&ResolvedTypeRef::Primitive {
+        name: Primitive::Timestamp,
+    })
+}
+
+/// An additive context path; old Ports{Context: ...} callers continue to work.
+fn fallible_context(emit: &Emit<'_>, uses: &Uses) -> String {
+    let unmet = emit.unmet();
+    let receiver = fresh(&emit.layout.package_names(), "contextPorts");
+    let mut out = String::from("\n// FallibleContext reports unavailable context answers explicitly.\ntype FallibleContext interface {\n");
+    let mut helpers = String::new();
+    for (method, (ty, attribute)) in &uses.callers {
+        let _ = writeln!(out, "\tTry{method}() ({ty}, bool, {unmet})");
+        let _ = writeln!(helpers, "\n// read{method} prefers the fallible port, then adapts the legacy context.\nfunc ({receiver} *Generated) read{method}() ({ty}, bool, {unmet}) {{\n\tif {receiver}.context != nil {{\n\t\treturn {receiver}.context.Try{method}()\n\t}}\n\tif {receiver}.ports.Context == nil {{\n\t\tvar zero {ty}\n\t\treturn zero, false, UnmetContext({:?})\n\t}}\n\tvalue, present := {receiver}.ports.Context.{method}()\n\treturn value, present, nil\n}}", format!("caller attribute: {attribute}"));
+    }
+    for (method, (ty, of)) in &uses.generates {
+        let _ = writeln!(out, "\tTry{method}() ({ty}, {unmet})");
+        let _ = writeln!(helpers, "\n// read{method} prefers the fallible port, then adapts the legacy context.\nfunc ({receiver} *Generated) read{method}() ({ty}, {unmet}) {{\n\tif {receiver}.context != nil {{\n\t\treturn {receiver}.context.Try{method}()\n\t}}\n\tif {receiver}.ports.Context == nil {{\n\t\tvar zero {ty}\n\t\treturn zero, UnmetContext({:?})\n\t}}\n\treturn {receiver}.ports.Context.{method}(), nil\n}}", format!("assigned value: {of}"));
+    }
+    if uses.external {
+        let _ = writeln!(
+            out,
+            "\tTryExternal(command ExternalCommand, outcome string) (bool, {unmet})"
+        );
+        let _ = writeln!(helpers, "\n// readExternal prefers the fallible port, then adapts the legacy context.\nfunc ({receiver} *Generated) readExternal(command ExternalCommand, outcome string) (bool, {unmet}) {{\n\tif {receiver}.context != nil {{\n\t\treturn {receiver}.context.TryExternal(command, outcome)\n\t}}\n\tif {receiver}.ports.Context == nil {{\n\t\treturn false, UnmetContext(\"external branch answer\")\n\t}}\n\treturn {receiver}.ports.Context.External(command, outcome), nil\n}}");
+    }
+    if uses.clock {
+        let ty = clock_type(emit);
+        let _ = writeln!(out, "\tTryCommandClock() ({ty}, bool, {unmet})");
+        let _ = writeln!(helpers, "\n// readCommandClock prefers the fallible port, then adapts the legacy context. No context\n// is no clock: a decision that needs the instant is refused naming the command clock.\nfunc ({receiver} *Generated) readCommandClock() ({ty}, bool, {unmet}) {{\n\tif {receiver}.context != nil {{\n\t\treturn {receiver}.context.TryCommandClock()\n\t}}\n\tif {receiver}.ports.Context == nil {{\n\t\tvar zero {ty}\n\t\treturn zero, false, nil\n\t}}\n\tnow, clocked := {receiver}.ports.Context.CommandClock()\n\treturn now, clocked, nil\n}}");
+    }
+    out.push_str("}\n");
+    out.push_str(&helpers);
+    let error = emit.qualify(emit.layout.obligation(), "UnmetObligation");
+    let _ = writeln!(out, "\n// UnmetContext names an unavailable runtime answer, not a new planned capability.\nfunc UnmetContext(source string) {unmet} {{\n\treturn &{error}{{Capability: \"context answer\", Source: source}}\n}}");
+    out
+}
+
+/// Read context before committing an effect; every caller already returns the typed error channel.
+fn context_read(
+    lines: &mut Lines,
+    receiver: &str,
+    method: &str,
+    arguments: &str,
+    values: &[&str],
+    error: &str,
+) {
+    lines.push(&format!(
+        "{}, {error} := {receiver}.read{method}({arguments})",
+        values.join(", ")
+    ));
+    lines.open(&format!("if {error} != nil {{"));
+    lines.push(&format!("return nil, {error}"));
+    lines.close("}");
 }
 
 /// The interface bundling every seam `Generated` forwards. `true` where there is one.
@@ -598,6 +879,23 @@ fn helpers(out: &mut String, emit: &Emit<'_>, uses: &Uses) {
     // What each helper calls, so a used helper brings its own.
     let needs: &[(&str, &[&str])] = &[
         ("compareNumbers", &["numberParts", "truth", "known"]),
+        // The `isEq`…`isGe` acceptors are written with `compareNumbers`.
+        (
+            "compareInstants",
+            &["instant", "truth", "known", "compareNumbers"],
+        ),
+        (
+            "compareOffsetIntegers",
+            &["truth", "known", "compareNumbers"],
+        ),
+        (
+            "compareOffsetInstants",
+            &["instant", "truth", "known", "compareNumbers"],
+        ),
+        (
+            "compareWithNow",
+            &["instant", "truth", "known", "compareNumbers"],
+        ),
         ("numberKey", &["numberParts"]),
         ("numberOrder", &["numberParts"]),
         ("sumValues", &["numberParts", "fitsWide"]),
@@ -611,6 +909,7 @@ fn helpers(out: &mut String, emit: &Emit<'_>, uses: &Uses) {
         ("anyOf", &["truth"]),
         ("truthOf", &["truth", "known"]),
         ("textMatch", &["truth", "known"]),
+        ("textMatchOperand", &["textMatch", "unknown"]),
         ("undeclared", &[]),
     ];
     let mut changed = true;
@@ -629,7 +928,10 @@ fn helpers(out: &mut String, emit: &Emit<'_>, uses: &Uses) {
             for import in *imports {
                 emit.import(import);
             }
-            let text = if *helper == "undeclared" || *helper == "unrepresentable" {
+            let text = if *helper == "undeclared"
+                || *helper == "unrepresentable"
+                || *helper == "clockUnmet"
+            {
                 text.replace("UNMET", &emit.unmet()).replace(
                     "OBLIGATION",
                     &emit.qualify(emit.layout.obligation(), "UnmetObligation"),
@@ -770,6 +1072,16 @@ func textMatch(value *string, op string, literal string) truth {
 	return known(strings.Contains(*value, literal))
 }
 "),
+    ("textMatchOperand", &[], "
+// textMatchOperand is a read text's test against a read parameter or input (beyond10x/ess#200);
+// either unread is unknown.
+func textMatchOperand(value *string, op string, operand *string) truth {
+	if operand == nil {
+		return unknown
+	}
+	return textMatch(value, op, *operand)
+}
+"),
     ("numberParts", &["strings"], "
 // numberParts is a decimal rendering as its sign, its whole digits and its fraction digits,
 // without the zeros that do not change its value; ok is false where it is not a plain decimal.
@@ -822,6 +1134,59 @@ func magnitudeOrder(leftNegative bool, leftWhole string, leftFraction string, ri
 		return -1
 	}
 	return 1
+}
+"),
+    ("compareInstants", &[], "
+// compareInstants compares two RFC 3339 renderings by the instant each names; an unread one, or
+// one that names no instant, is unknown — never ordered by its spelling.
+func compareInstants(left *string, right *string, accepts func(int) bool) truth {
+	if left == nil || right == nil {
+		return unknown
+	}
+	leftSeconds, leftNanos, leftOk := instant(*left)
+	rightSeconds, rightNanos, rightOk := instant(*right)
+	if !leftOk || !rightOk {
+		return unknown
+	}
+	order := 0
+	switch {
+	case leftSeconds < rightSeconds, leftSeconds == rightSeconds && leftNanos < rightNanos:
+		order = -1
+	case leftSeconds > rightSeconds, leftSeconds == rightSeconds && leftNanos > rightNanos:
+		order = 1
+	}
+	return known(accepts(order))
+}
+"),
+    ("compareWithNow", &[], "
+// compareWithNow orders an RFC 3339 rendering against the decision's one instant moved by seconds,
+// by the instants each names; an unread value, no instant to read, or one that names no instant is
+// unknown — never ordered by its spelling, and never read from another clock.
+func compareWithNow(value *string, now string, clocked bool, seconds int64, accepts func(int) bool) truth {
+	if value == nil || !clocked {
+		return unknown
+	}
+	valueSeconds, valueNanos, valueOk := instant(*value)
+	nowSeconds, nowNanos, nowOk := instant(now)
+	if !valueOk || !nowOk {
+		return unknown
+	}
+	nowSeconds += seconds
+	order := 0
+	switch {
+	case valueSeconds < nowSeconds, valueSeconds == nowSeconds && valueNanos < nowNanos:
+		order = -1
+	case valueSeconds > nowSeconds, valueSeconds == nowSeconds && valueNanos > nowNanos:
+		order = 1
+	}
+	return known(accepts(order))
+}
+"),
+    ("clockUnmet", &[], "
+// clockUnmet is the typed refusal of a decision that needs the command clock's instant where the
+// context supplied none.
+func clockUnmet(source string) UNMET {
+	return &OBLIGATION{Capability: \"command clock\", Source: source}
 }
 "),
     ("compareNumbers", &[], "
@@ -1250,6 +1615,49 @@ func average(present int, units *big.Int, scale int) (*string, bool) {
 	return &text, true
 }
 "),
+    ("compareOffsetIntegers", &["math/big"], "
+// compareOffsetIntegers compares an Integer rendering with another moved by a constant, exactly:
+// big integers, so nothing wraps, saturates or rounds; an unread or unparsable one is unknown.
+func compareOffsetIntegers(left *string, base *string, offset string, accepts func(int) bool) truth {
+	if left == nil || base == nil {
+		return unknown
+	}
+	leftValue, leftOk := new(big.Int).SetString(*left, 10)
+	baseValue, baseOk := new(big.Int).SetString(*base, 10)
+	delta, deltaOk := new(big.Int).SetString(offset, 10)
+	if !leftOk || !baseOk || !deltaOk {
+		return unknown
+	}
+	return known(accepts(leftValue.Cmp(baseValue.Add(baseValue, delta))))
+}
+"),
+    ("compareOffsetInstants", &[], "
+// compareOffsetInstants compares an RFC 3339 rendering with another moved by elapsed seconds, by
+// the instants they name; an unread one, one that names no instant, or a moved instant no
+// `date-time` spells is unknown.
+func compareOffsetInstants(left *string, base *string, seconds int64, accepts func(int) bool) truth {
+	if left == nil || base == nil {
+		return unknown
+	}
+	leftSeconds, leftNanos, leftOk := instant(*left)
+	baseSeconds, baseNanos, baseOk := instant(*base)
+	if !leftOk || !baseOk {
+		return unknown
+	}
+	moved := baseSeconds + seconds
+	if moved < -62167219200 || moved > 253402300799 {
+		return unknown
+	}
+	order := 0
+	switch {
+	case leftSeconds < moved, leftSeconds == moved && leftNanos < baseNanos:
+		order = -1
+	case leftSeconds > moved, leftSeconds == moved && leftNanos > baseNanos:
+		order = 1
+	}
+	return known(accepts(order))
+}
+"),
 ];
 
 // ---- one command -------------------------------------------------------------------------------
@@ -1280,6 +1688,9 @@ struct Locals {
     input: String,
     broken: String,
     breaks: String,
+    reference: String,
+    related: String,
+    row: String,
 }
 
 impl Locals {
@@ -1298,6 +1709,9 @@ impl Locals {
             input: fresh(reserved, "input"),
             broken: fresh(reserved, "broken"),
             breaks: fresh(reserved, "breaks"),
+            reference: fresh(reserved, "reference"),
+            related: fresh(reserved, "related"),
+            row: fresh(reserved, "row"),
         }
     }
 }
@@ -1308,6 +1722,7 @@ struct Writer<'a> {
     emit: &'a Emit<'a>,
     command: &'a ResolvedCommand,
     storages: &'a BTreeMap<QualifiedName, String>,
+    external_commands: &'a BTreeMap<QualifiedName, String>,
     uses: &'a mut Uses,
     lines: Lines,
     reserved: &'a BTreeSet<String>,
@@ -1324,12 +1739,14 @@ impl<'a> Writer<'a> {
         uses: &'a mut Uses,
         reserved: &'a BTreeSet<String>,
         receiver: &'a str,
+        external_commands: &'a BTreeMap<QualifiedName, String>,
     ) -> Self {
         Self {
             ir: emit.ir,
             emit,
             command,
             storages,
+            external_commands,
             uses,
             lines: Lines::new(1),
             reserved,
@@ -1370,6 +1787,48 @@ impl<'a> Writer<'a> {
     #[allow(clippy::too_many_lines)]
     fn body(&mut self) {
         let command = self.command;
+        if determined::reads_clock(command) {
+            // The decision's one instant, read once at its edge before any guard or row is read
+            // (ess/22, family F A3); every guard ordering an instant against `now` reads it.
+            self.uses.clock = true;
+            let (now, clocked) = clock_locals(self.reserved);
+            let unavailable = clock_unavailable(self.reserved);
+            self.lines.push(
+                "// The decision's one instant: read once, before any guard, and read by every \
+                 guard that",
+            );
+            self.lines.push(
+                "// orders an instant against the current time. An unavailable clock is no \
+                 clock, answered",
+            );
+            self.lines.push("// only where a guard needs the instant.");
+            self.lines.push(&format!(
+                "{now}, {clocked}, {unavailable} := {}.readCommandClock()",
+                self.receiver
+            ));
+            self.lines.open(&format!("if {unavailable} != nil {{"));
+            self.lines.push(&format!("{clocked} = false"));
+            self.lines.close("}");
+            self.lines
+                .push(&format!("_, _, _ = {now}, {clocked}, {unavailable}"));
+        }
+        let related = determined::related(command);
+        let orders =
+            related.is_some() && determined::orders_present_related_refusal(self.ir, command);
+        // A related row named by the input is read first: `existing_instance:`, then a missing
+        // row's `exists: false`, answer before the input-guarded refusals (ess/18).
+        if let Some((ResolvedRelatedVia::Input { field, type_ref }, entity)) = related {
+            if let Some(existing) = determined::existing_instance(command) {
+                self.existing_lookup(existing);
+            }
+            let member = self.input_member(field);
+            let reference = if type_ref.is_optional() {
+                member
+            } else {
+                format!("&{member}")
+            };
+            self.related_read(entity, &reference, &format!("input.{field}"));
+        }
         for outcome in &command.outcomes {
             if let (ResolvedCondition::When { predicate }, Some(_), None) =
                 (&outcome.condition, &outcome.error, &outcome.subject)
@@ -1385,8 +1844,56 @@ impl<'a> Writer<'a> {
                 });
             }
         }
-        if let Some(existing) = determined::existing_instance(command) {
-            self.existing_lookup(existing);
+        if !matches!(related, Some((ResolvedRelatedVia::Input { .. }, _))) {
+            if let Some(existing) = determined::existing_instance(command) {
+                self.existing_lookup(existing);
+            }
+        }
+        if let Some((ResolvedRelatedVia::Subject { field, type_ref }, entity)) = related {
+            // A stored reference is read from the addressed row, as it was before the branch, once
+            // that row's existence and held state have answered (ess/22, beyond10x/ess#304).
+            let subject = determined::addressed_subject(command)
+                .expect("the plan admits a stored reference on an addressed subject");
+            let addressed = self.ir.entity(&subject.entity);
+            let identity = self.input_member(&subject.instance.field().name);
+            self.lines.push(&format!(
+                "// The addressed row, whose stored `{field}` names the related row."
+            ));
+            self.get(addressed, &identity);
+            self.lines.open(&format!("if !{} {{", self.locals.found));
+            self.unknown_arm();
+            self.lines.close("}");
+            self.precheck(false);
+            let member = format!(
+                "{}.Data.{}",
+                self.locals.held,
+                Self::data_member(addressed, field)
+            );
+            let reference = if type_ref.is_optional() {
+                member
+            } else {
+                format!("&{member}")
+            };
+            self.related_read(entity, &reference, &format!("subject.{field}"));
+        } else if orders {
+            self.precheck(true);
+        }
+        if orders {
+            for outcome in command
+                .outcomes
+                .iter()
+                .filter(|outcome| determined::is_present_related_refusal(outcome))
+            {
+                self.lines.push(&format!(
+                    "// `{}`: a present related row's refusal, before every accepting branch.",
+                    outcome.name
+                ));
+                let related = self.locals.related.clone();
+                self.lines.open(&format!("if {related} != nil {{"));
+                let truth = self.related_guard(outcome);
+                self.decided(&truth, |writer| writer.take(outcome, Held::None));
+                self.lines.close("}");
+            }
         }
         let guarded = determined::subject_guarded(command);
         let held = if guarded {
@@ -1426,6 +1933,22 @@ impl<'a> Writer<'a> {
                     let truth = self.predicate(&Env::Input(command), predicate, "");
                     self.decided(&truth, |writer| writer.take(outcome, held));
                 }
+                // A present related row selects its predicate branches in declaration order; an
+                // absent reference selects none. Already answered where they come first.
+                ResolvedCondition::Related {
+                    test: ResolvedRelatedTest::Holds { .. },
+                    ..
+                } if !(orders && determined::is_present_related_refusal(outcome)) => {
+                    self.lines.push(&format!(
+                        "// `{}`: selected by the present related row, in declaration order.",
+                        outcome.name
+                    ));
+                    let related = self.locals.related.clone();
+                    self.lines.open(&format!("if {related} != nil {{"));
+                    let truth = self.related_guard(outcome);
+                    self.decided(&truth, |writer| writer.take(outcome, held));
+                    self.lines.close("}");
+                }
                 ResolvedCondition::External { .. } => {
                     self.lines.push(&format!(
                         "// `{}`: an external branch, where the context takes it.",
@@ -1458,7 +1981,7 @@ impl<'a> Writer<'a> {
         {
             self.lines
                 .push(&format!("// `{}`: the default.", default.name));
-            if guarded {
+            if guarded || related.is_some() {
                 // Its own block: the branch reads the row again under the names the selection
                 // already declared.
                 self.lines.open("{");
@@ -1497,6 +2020,22 @@ impl<'a> Writer<'a> {
         let reading = self.temp("g");
         self.lines.push(&format!("{reading} := {truth}"));
         self.lines.open(&format!("if {reading} == unknown {{"));
+        // A guard reading the decision's instant that is unknown with no instant to read is the
+        // command clock missing, named as such (ess/22, family F A3).
+        if truth.contains(COMPARE_WITH_NOW_CALL) {
+            self.uses.helpers.insert("clockUnmet");
+            let (_, clocked) = clock_locals(self.reserved);
+            let unavailable = clock_unavailable(self.reserved);
+            self.lines.open(&format!("if !{clocked} {{"));
+            self.lines.open(&format!("if {unavailable} != nil {{"));
+            self.lines.push(&format!("return nil, {unavailable}"));
+            self.lines.close("}");
+            self.lines.push(&format!(
+                "return nil, clockUnmet({})",
+                go_string(&self.command.name.to_string())
+            ));
+            self.lines.close("}");
+        }
         self.lines.push(&format!(
             "return nil, undeclared({})",
             go_string(&self.command.name.to_string())
@@ -1514,6 +2053,138 @@ impl<'a> Writer<'a> {
             self.locals.input,
             items::member_ident(&self.command.input, field)
         )
+    }
+
+    /// The value `input.<field>` reads, with the Go type of the IR's type for the read: the input
+    /// member, or from ess/22 (Family F A4) the member a path reaches through struct inputs and
+    /// newtype representations. Past an `Optional` the value is a pointer, nil where any `Optional`
+    /// on the way is absent, built by statements emitted before the expression.
+    fn input_value(&mut self, field: &str) -> String {
+        let mut segments = field.split('.');
+        let root = segments.next().unwrap_or_default();
+        let mut expression = self.input_member(root);
+        let rest: Vec<&str> = segments.collect();
+        if rest.is_empty() {
+            return expression;
+        }
+        let Some(mut current) = self
+            .command
+            .input
+            .iter()
+            .find(|input| input.name == root)
+            .map(|input| input.type_ref.clone())
+        else {
+            return expression;
+        };
+        // Without an `Optional` before the last segment the read is one expression; with one, the
+        // value is declared first and assigned inside one nil check per `Optional` crossed.
+        let Some((crosses, terminal)) = self.path_shape(&current, &rest) else {
+            return expression;
+        };
+        let out = if crosses {
+            let out = self.temp("v");
+            let go_type = if terminal.is_optional() {
+                self.emit.go_type(&terminal)
+            } else {
+                self.emit.go_type(&ResolvedTypeRef::Optional {
+                    of: Box::new(terminal.clone()),
+                })
+            };
+            self.lines.push(&format!("var {out} {go_type}"));
+            Some(out)
+        } else {
+            None
+        };
+        let mut opened = 0;
+        for segment in &rest {
+            for _ in 0..=ess_domain::types::MAX_TYPE_DEPTH {
+                match &current {
+                    ResolvedTypeRef::Optional { of } => {
+                        self.lines.open(&format!("if {expression} != nil {{"));
+                        opened += 1;
+                        let bound = self.temp("v");
+                        self.lines.push(&format!("{bound} := *{expression}"));
+                        expression = bound;
+                        current = (**of).clone();
+                    }
+                    ResolvedTypeRef::Declared { name } => match &self.ir.named_type(name).body {
+                        ResolvedBody::Newtype { of, .. } => {
+                            expression = format!("{expression}.Value()");
+                            current = of.clone();
+                        }
+                        _ => break,
+                    },
+                    _ => break,
+                }
+            }
+            let ResolvedTypeRef::Declared { name } = &current else {
+                unreachable!("ess-domain admits a path through struct members only")
+            };
+            let ResolvedBody::Struct { fields, .. } = &self.ir.named_type(name).body else {
+                unreachable!("ess-domain admits a path through struct members only")
+            };
+            expression = format!("{expression}.{}", items::member_ident(fields, segment));
+            current = fields
+                .iter()
+                .find(|member| member.name == *segment)
+                .expect("ess-domain admits a path through declared members only")
+                .type_ref
+                .clone();
+        }
+        let Some(out) = out else {
+            return expression;
+        };
+        let held = if terminal.is_optional() {
+            expression
+        } else {
+            let copied = self.temp("v");
+            self.lines.push(&format!("{copied} := {expression}"));
+            format!("&{copied}")
+        };
+        self.lines.push(&format!("{out} = {held}"));
+        for _ in 0..opened {
+            self.lines.close("}");
+        }
+        out
+    }
+
+    /// Whether a path from a value of type `current` through the members `rest` crosses an
+    /// `Optional` before its last segment, and the last segment's declared type; `None` where the
+    /// path names no declared member.
+    fn path_shape(
+        &self,
+        current: &ResolvedTypeRef,
+        rest: &[&str],
+    ) -> Option<(bool, ResolvedTypeRef)> {
+        let mut current = current.clone();
+        let mut crosses = false;
+        for segment in rest {
+            for _ in 0..=ess_domain::types::MAX_TYPE_DEPTH {
+                match &current {
+                    ResolvedTypeRef::Optional { of } => {
+                        crosses = true;
+                        current = (**of).clone();
+                    }
+                    ResolvedTypeRef::Declared { name } => match &self.ir.named_type(name).body {
+                        ResolvedBody::Newtype { of, .. } => current = of.clone(),
+                        _ => break,
+                    },
+                    _ => break,
+                }
+            }
+            let ResolvedTypeRef::Declared { name } = &current else {
+                return None;
+            };
+            let ResolvedBody::Struct { fields, .. } = &self.ir.named_type(name).body else {
+                return None;
+            };
+            current = fields
+                .iter()
+                .find(|member| member.name == *segment)?
+                .type_ref
+                .clone();
+        }
+        Some((crosses, current))
     }
 
     /// The Go member of an entity's data struct.
@@ -1574,6 +2245,180 @@ impl<'a> Writer<'a> {
         }
     }
 
+    /// The related row a `when_related:` guard reads (ess/18, ess/22; beyond10x/ess#319), as the
+    /// pointer `related`: read by identity through the related entity's storage port where the
+    /// pointer `reference` names one, and no row read where it is nil. A reference naming no row
+    /// takes the `exists: false` branch, which the compiler requires wherever a predicate branch
+    /// reads it.
+    fn related_read(&mut self, entity: &EntityHandle, reference: &str, named: &str) {
+        let declared = self.ir.entity(entity);
+        let storage = self.storage(&declared.name);
+        let snapshot = self.emit.qualify(
+            self.emit.layout.package_of(&declared.name),
+            self.emit.layout.snapshot(&declared.name),
+        );
+        let (local, related, row, found) = (
+            self.locals.reference.clone(),
+            self.locals.related.clone(),
+            self.locals.row.clone(),
+            self.locals.found.clone(),
+        );
+        self.lines.push(&format!(
+            "// `when_related:` reads the `{}` row `{named}` names, through its storage port; an",
+            declared.name
+        ));
+        self.lines
+            .push("// absent reference reads no row and selects no related branch.");
+        self.lines.push(&format!("var {related} *{snapshot}"));
+        self.lines.push(&format!("{local} := {reference}"));
+        self.lines.open(&format!("if {local} != nil {{"));
+        self.lines.push(&format!(
+            "{row}, {found} := {}.ports.{storage}.Get(*{local})",
+            self.receiver
+        ));
+        self.lines.open(&format!("if {found} {{"));
+        self.lines.push(&format!("{related} = &{row}"));
+        self.lines.close("}");
+        self.lines.close("}");
+        if let Some(absent) = determined::related_absent(self.command) {
+            self.lines.push(&format!(
+                "// `{}`: the reference names an identity no row carries.",
+                absent.name
+            ));
+            self.lines
+                .open(&format!("if {local} != nil && {related} == nil {{"));
+            self.take(absent, Held::None);
+            self.lines.close("}");
+        }
+        self.lines.push(&format!("_ = {related}"));
+    }
+
+    /// The reading of a `when_related:` predicate branch over the present row `related`, with
+    /// its input guard.
+    fn related_guard(&mut self, outcome: &ResolvedOutcome) -> String {
+        let command = self.command;
+        let ResolvedCondition::Related {
+            entity,
+            test: ResolvedRelatedTest::Holds { predicate },
+            input,
+            ..
+        } = &outcome.condition
+        else {
+            unreachable!("only a predicate branch reads the present related row")
+        };
+        let entity = self.ir.entity(entity);
+        let related = self.locals.related.clone();
+        let row = self.predicate(&Env::Subject(command, entity), predicate, &related);
+        match input {
+            Some(input) => {
+                self.uses.helpers.insert("allOf");
+                let input = self.predicate(&Env::Input(command), input, "");
+                format!("allOf({row}, {input})")
+            }
+            None => row,
+        }
+    }
+
+    /// The addressed-row existence and held-state answers of the branch the request selects with
+    /// no present-related refusal read, before the related refusals (beyond10x/ess#282, #304), as
+    /// the interpreter orders them. `with_related` reads the present row's accepting branches, as
+    /// an input reference is read by then; a stored reference is not read yet.
+    fn precheck(&mut self, with_related: bool) {
+        let command = self.command;
+        self.lines.push(
+            "// The addressed row's existence and held state, for the branch the request selects",
+        );
+        self.lines
+            .push("// before any present related row's refusal.");
+        self.lines.open("for {");
+        for outcome in &command.outcomes {
+            match &outcome.condition {
+                ResolvedCondition::When { predicate } if outcome.error.is_none() => {
+                    let truth = self.predicate(&Env::Input(command), predicate, "");
+                    self.decided(&truth, |writer| {
+                        writer.check_subject(outcome);
+                        writer.lines.push("break");
+                    });
+                }
+                ResolvedCondition::Related {
+                    test: ResolvedRelatedTest::Holds { .. },
+                    ..
+                } if with_related && outcome.error.is_none() => {
+                    let related = self.locals.related.clone();
+                    self.lines.open(&format!("if {related} != nil {{"));
+                    let truth = self.related_guard(outcome);
+                    self.decided(&truth, |writer| {
+                        writer.check_subject(outcome);
+                        writer.lines.push("break");
+                    });
+                    self.lines.close("}");
+                }
+                _ => {}
+            }
+        }
+        if let Some(default) = command
+            .outcomes
+            .iter()
+            .find(|outcome| outcome.condition == ResolvedCondition::Otherwise)
+        {
+            self.check_subject(default);
+        }
+        self.lines.push("break");
+        self.lines.close("}");
+    }
+
+    /// The existence and held-state answers of one selected branch's subject, returning where
+    /// either refuses; nothing for a branch addressing no existing row.
+    fn check_subject(&mut self, outcome: &ResolvedOutcome) {
+        let Some(subject) = &outcome.subject else {
+            return;
+        };
+        let ResolvedInstance::Supplied { field } = &subject.instance else {
+            return;
+        };
+        if subject.effect == ResolvedEffect::Creates {
+            return;
+        }
+        let entity = self.ir.entity(&subject.entity);
+        let identity = self.input_member(&field.name);
+        self.lines.open("{");
+        self.get(entity, &identity);
+        self.lines.open(&format!("if !{} {{", self.locals.found));
+        self.unknown_arm();
+        self.lines.close("}");
+        let held = self.locals.held.clone();
+        self.lines.push(&format!("_ = {held}"));
+        if let ResolvedEffect::Moves { transition } = &subject.effect {
+            if transition.from.len() < entity.lifecycle.states.len() {
+                let reads = self.wrong_state_reads(entity);
+                if reads.0 {
+                    let held_state = self.locals.held_state.clone();
+                    self.lines.push(&format!("{held_state} := {held}.State"));
+                }
+                if reads.1 {
+                    let before = self.locals.before.clone();
+                    self.lines.push(&format!("{before} := {held}.Data"));
+                }
+                let variants: Vec<String> = transition
+                    .from
+                    .iter()
+                    .map(|state| {
+                        self.emit
+                            .reference_variant(entity.state_type.name(), state.as_str())
+                    })
+                    .collect();
+                self.lines.push(&format!("switch {held}.State.(type) {{"));
+                self.lines.push(&format!("case {}:", variants.join(", ")));
+                self.lines.push("default:");
+                self.lines.indent();
+                let wrong = self.wrong_state_answer();
+                self.lines.push(&format!("return {wrong}"));
+                self.lines.close("}");
+            }
+        }
+        self.lines.close("}");
+    }
+
     /// The storage field of an entity, recorded as used.
     fn storage(&mut self, entity: &QualifiedName) -> String {
         self.uses.storages.insert(entity.clone());
@@ -1583,12 +2428,26 @@ impl<'a> Writer<'a> {
     /// Asks the context whether an external branch is taken.
     fn external(&mut self, outcome: &ResolvedOutcome) -> String {
         self.uses.external = true;
-        format!(
-            "{}.ports.Context.External({}, {})",
-            self.receiver,
-            go_string(&self.command.name.to_string()),
+        self.uses
+            .externals
+            .insert(format!("{}/{}", self.command.name, outcome.name));
+        let value = self.temp("external");
+        let error = self.temp("contextErr");
+        let arguments = format!(
+            "{}{{Input: {}}}, {}",
+            self.external_commands[&self.command.name],
+            self.locals.input,
             go_string(outcome.name.as_str())
-        )
+        );
+        context_read(
+            &mut self.lines,
+            self.receiver,
+            "External",
+            &arguments,
+            &[&value],
+            &error,
+        );
+        value
     }
 
     /// The reading of a branch that selects by the addressed row.
@@ -1624,6 +2483,7 @@ impl<'a> Writer<'a> {
                 let path = ess_primitives::facts::FactPath::new(field)
                     .expect("the compiler admitted the field");
                 let compare = Predicate::Compare {
+                    kind: ess_primitives::predicate::CompareKind::Value,
                     left: Operand::Fact(path),
                     op: CompareOp::Eq,
                     right: Operand::Literal(FactValue::Text(equals.clone())),
@@ -1760,12 +2620,14 @@ impl<'a> Writer<'a> {
                     .reference_variant(entity.state_type.name(), state.as_str())
             )
         };
+        let answer = self.variant(outcome, held, Some(&identity));
+        let prepared = self.temp("answer");
+        self.lines.push(&format!("{prepared} := {answer}"));
         self.lines.push(&format!(
             "{}.ports.{storage}.Put({snapshot})",
             self.receiver
         ));
-        let answer = self.variant(outcome, held, Some(&identity));
-        self.lines.push(&format!("return {answer}, nil"));
+        self.lines.push(&format!("return {prepared}, nil"));
     }
 
     /// The answer for a move from a state it does not start in, as the `return`'s two results.
@@ -1809,6 +2671,7 @@ impl<'a> Writer<'a> {
                 let receiver = self.receiver;
                 let reads_before = outcome_reads_before(outcome);
                 let before = self.locals.before.clone();
+                let mut commit = None;
                 match effect {
                     ResolvedEffect::Moves { transition } => {
                         let wrong_reads = self.wrong_state_reads(entity);
@@ -1852,8 +2715,7 @@ impl<'a> Writer<'a> {
                         self.lines.close("}");
                         self.write_sets(outcome, &format!("{moved}.Snapshot()"), entity);
                         let next = self.locals.next.clone();
-                        self.lines
-                            .push(&format!("{receiver}.ports.{storage}.Put({next})"));
+                        commit = Some(format!("{receiver}.ports.{storage}.Put({next})"));
                     }
                     ResolvedEffect::Updates | ResolvedEffect::Preserves => {
                         if reads_before {
@@ -1864,23 +2726,26 @@ impl<'a> Writer<'a> {
                         if writes {
                             self.write_sets(outcome, &held_row, entity);
                             let next = self.locals.next.clone();
-                            self.lines
-                                .push(&format!("{receiver}.ports.{storage}.Put({next})"));
+                            commit = Some(format!("{receiver}.ports.{storage}.Put({next})"));
                         }
                     }
                     ResolvedEffect::Deletes => {
                         if reads_before {
                             self.lines.push(&format!("{before} := {held_row}.Data"));
                         }
-                        self.lines
-                            .push(&format!("{receiver}.ports.{storage}.Delete({identity})"));
+                        commit = Some(format!("{receiver}.ports.{storage}.Delete({identity})"));
                     }
                     ResolvedEffect::Creates => {
                         unreachable!("a creation whose identity is supplied is an obligation")
                     }
                 }
                 let answer = self.variant(outcome, held, None);
-                self.lines.push(&format!("return {answer}, nil"));
+                let prepared = self.temp("answer");
+                self.lines.push(&format!("{prepared} := {answer}"));
+                if let Some(commit) = commit {
+                    self.lines.push(&commit);
+                }
+                self.lines.push(&format!("return {prepared}, nil"));
             }
             (_, ResolvedInstance::Observed { .. }) => {
                 unreachable!("an observed identity outside `creates:` is an obligation")
@@ -2095,15 +2960,21 @@ impl<'a> Writer<'a> {
     /// `<receiver>.ports.Context.Generate<Type>()`, recorded on the context, as a temporary.
     fn generate(&mut self, target: &ResolvedTypeRef) -> String {
         let method = format!("Generate{}", name::type_fragment(&target.to_string()));
+        self.uses.assigned.insert(method.clone(), target.clone());
         self.uses.generates.insert(
             method.clone(),
             (self.emit.go_type(target), target.to_string()),
         );
         let minted = self.temp("m");
-        self.lines.push(&format!(
-            "{minted} := {}.ports.Context.{method}()",
-            self.receiver
-        ));
+        let error = self.temp("contextErr");
+        context_read(
+            &mut self.lines,
+            self.receiver,
+            &method,
+            "",
+            &[&minted],
+            &error,
+        );
         minted
     }
 
@@ -2116,11 +2987,26 @@ impl<'a> Writer<'a> {
     /// The value one source fills its field with. `before` names the held data before the outcome
     /// and its entity, where the branch holds a row.
     // One arm per value source the model declares, each rendering its own expression.
-    #[allow(clippy::too_many_lines)]
     fn value(
         &mut self,
         field: &ResolvedPayloadField,
         before: Option<(&str, &ResolvedEntity)>,
+    ) -> String {
+        let previous = before.and_then(|(row, entity)| {
+            std::iter::once(&entity.identity)
+                .chain(&entity.fields)
+                .any(|stored| stored.name == field.target)
+                .then(|| format!("{row}.{}", Self::data_member(entity, &field.target)))
+        });
+        self.value_at(field, before, previous)
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn value_at(
+        &mut self,
+        field: &ResolvedPayloadField,
+        before: Option<(&str, &ResolvedEntity)>,
+        previous: Option<String>,
     ) -> String {
         let target = &field.target_type;
         match &field.value {
@@ -2128,7 +3014,7 @@ impl<'a> Writer<'a> {
                 field: source,
                 type_ref,
             } => {
-                let read = self.input_member(source);
+                let read = self.input_value(source);
                 if type_ref == target {
                     read
                 } else {
@@ -2157,9 +3043,15 @@ impl<'a> Writer<'a> {
                 if type_ref == target {
                     self.uses.helpers.insert("undeclared");
                     let (value, ok) = (self.temp("c"), self.temp("ok"));
-                    self.lines.push(&format!(
-                        "{value}, {ok} := {receiver}.ports.Context.{method}()"
-                    ));
+                    let error = self.temp("contextErr");
+                    context_read(
+                        &mut self.lines,
+                        receiver,
+                        &method,
+                        "",
+                        &[&value, &ok],
+                        &error,
+                    );
                     self.lines.open(&format!("if !{ok} {{"));
                     self.lines.push(&format!(
                         "return nil, undeclared({})",
@@ -2170,27 +3062,35 @@ impl<'a> Writer<'a> {
                 } else {
                     self.uses.helpers.insert("present");
                     let value = self.temp("c");
-                    self.lines.push(&format!(
-                        "{value} := present({receiver}.ports.Context.{method}())"
-                    ));
-                    value
+                    let ok = self.temp("ok");
+                    let error = self.temp("contextErr");
+                    context_read(
+                        &mut self.lines,
+                        receiver,
+                        &method,
+                        "",
+                        &[&value, &ok],
+                        &error,
+                    );
+                    format!("present({value}, {ok})")
                 }
             }
             ResolvedPayloadValue::Literal { value } => self.literal(target, value),
             ResolvedPayloadValue::Generated => self.assigned(target),
             ResolvedPayloadValue::Cleared => "nil".to_owned(),
-            ResolvedPayloadValue::Increment { by } => {
-                let (row, entity) =
-                    before.expect("the plan admits `{increment:}` only on a held row");
-                let read = format!("{row}.{}", Self::data_member(entity, &field.target));
-                self.increment(target, &read, by)
-            }
+            ResolvedPayloadValue::Increment { by } => self.increment(
+                target,
+                previous
+                    .as_deref()
+                    .expect("the plan admits `{increment:}` only on a held row"),
+                by,
+            ),
             ResolvedPayloadValue::InputOrGenerated {
                 field: source,
                 otherwise,
                 ..
             } => {
-                let read = self.input_member(source);
+                let read = self.input_value(source);
                 if target.is_optional() && otherwise.is_none() {
                     return read;
                 }
@@ -2203,7 +3103,9 @@ impl<'a> Writer<'a> {
                 self.lines.close("} else {");
                 self.lines.indent();
                 let fallback = match otherwise {
-                    Some(text) => self.literal(&required, text),
+                    Some(ResolvedFallback::Literal(text)) => self.literal(&required, text),
+                    // ess/22 (A4): another input, present whenever the request is valid.
+                    Some(ResolvedFallback::Input { input }) => self.input_value(&input.field),
                     None => self.generate(&required),
                 };
                 self.lines.push(&format!("{chosen} = {fallback}"));
@@ -2224,10 +3126,34 @@ impl<'a> Writer<'a> {
                 else {
                     unreachable!("the plan admits a struct source only for a struct")
                 };
+                // A structured event payload may have the same name and shape as an Optional
+                // stored field without reading that field. Only an increment consumes the value
+                // at the corresponding previous path; delaying the guard until that is true
+                // keeps output-only structures independent of the held row.
+                let previous = previous
+                    .filter(|_| increments_previous(&field.value))
+                    .map(|read| {
+                        if target.is_optional() {
+                            self.uses.helpers.insert("undeclared");
+                            self.lines.open(&format!("if {read} == nil {{"));
+                            self.lines.push(&format!(
+                                "return nil, undeclared({})",
+                                go_string(&self.command.name.to_string())
+                            ));
+                            self.lines.close("}");
+                        }
+                        read
+                    });
                 let mut rendered = Vec::new();
                 for member in members {
                     let value = match fields.iter().find(|source| source.target == member.name) {
-                        Some(source) => self.value(source, before),
+                        Some(source) => self.value_at(
+                            source,
+                            before,
+                            previous.as_ref().map(|read| {
+                                format!("{read}.{}", items::member_ident(members, &member.name))
+                            }),
+                        ),
                         None => "nil".to_owned(),
                     };
                     rendered.push(format!(
@@ -2247,6 +3173,7 @@ impl<'a> Writer<'a> {
                 }
             }
             ResolvedPayloadValue::RelatedField { .. }
+            | ResolvedPayloadValue::RelatedSelection { .. }
             | ResolvedPayloadValue::ChangedCount
             | ResolvedPayloadValue::ResponseField { .. } => {
                 unreachable!("the plan keeps this source's command an obligation")
@@ -2324,6 +3251,7 @@ impl<'a> Writer<'a> {
                 Env::Subject(_, entity) | Env::Row(entity) => Some(*entity),
                 Env::Input(_) => None,
             },
+            params: Vec::new(),
         };
         guards.predicate(env, predicate)
     }
@@ -2350,6 +3278,17 @@ fn reads_subject(value: &ResolvedPayloadValue) -> bool {
     }
 }
 
+/// Whether one value source needs the value at its own target path before the outcome.
+fn increments_previous(value: &ResolvedPayloadValue) -> bool {
+    match value {
+        ResolvedPayloadValue::Increment { .. } => true,
+        ResolvedPayloadValue::Struct { fields } => {
+            fields.iter().any(|field| increments_previous(&field.value))
+        }
+        _ => false,
+    }
+}
+
 /// The context method reading one caller attribute, recorded on the context.
 fn caller_method(
     emit: &Emit<'_>,
@@ -2358,6 +3297,7 @@ fn caller_method(
     type_ref: &ResolvedTypeRef,
 ) -> String {
     let method = name::exported(&format!("caller_{attribute}"));
+    uses.attributes.insert(method.clone(), type_ref.clone());
     uses.callers.insert(
         method.clone(),
         (emit.go_type(type_ref), attribute.to_owned()),
@@ -2391,6 +3331,9 @@ struct Guards<'a, 'w> {
     command: Option<&'a ResolvedCommand>,
     /// The entity a stored field or `state` is read from.
     row_entity: Option<&'a ResolvedEntity>,
+    /// The parameters of the view whose query this renders, each with the Go identifier its
+    /// argument is bound to; none for a command's guard (beyond10x/ess#200).
+    params: Vec<(ess_compiler::ir::ResolvedField, String)>,
 }
 
 impl Guards<'_, '_> {
@@ -2402,6 +3345,7 @@ impl Guards<'_, '_> {
     }
 
     /// A predicate as a `truth` expression.
+    #[allow(clippy::too_many_lines)]
     fn predicate(&mut self, env: &Env<'_>, predicate: &Predicate) -> String {
         self.uses.helpers.insert("truth");
         match predicate {
@@ -2431,27 +3375,40 @@ impl Guards<'_, '_> {
                 self.uses.helpers.insert("truthOf");
                 format!("truthOf({read})")
             }
-            Predicate::Compare { left, op, right } => {
+            Predicate::Compare {
+                left,
+                op,
+                right: Operand::Offset(offset),
+                ..
+            } => self.offset(env, left, *op, offset),
+            Predicate::Compare {
+                left, op, right, ..
+            } => {
                 let kind = [left, right]
                     .into_iter()
                     .find_map(|operand| match operand {
                         Operand::Fact(path) => Some(self.resolve(env, path).kind),
-                        Operand::Literal(_) => None,
+                        Operand::Derived(derived) => Some(self.resolve_derived(env, derived).kind),
+                        Operand::Literal(_) | Operand::Offset(_) => None,
                     })
                     .expect("the plan admits comparisons reading a fact");
+                let accepts = acceptor(*op);
+                if let (Kind::Instant, Some(current)) =
+                    (&kind, determined::current_time(right, *op))
+                {
+                    return self.with_now(env, left, &kind, accepts, current.offset_seconds());
+                }
                 let left = self.operand(env, left, &kind);
                 let right = self.operand(env, right, &kind);
-                if let Kind::Number(_) = kind {
-                    self.uses.helpers.insert("compareNumbers");
-                    let accepts = match op {
-                        CompareOp::Eq => "isEq",
-                        CompareOp::Ne => "isNe",
-                        CompareOp::Lt => "isLt",
-                        CompareOp::Le => "isLe",
-                        CompareOp::Gt => "isGt",
-                        CompareOp::Ge => "isGe",
+                if let Kind::Number(_) | Kind::Instant = kind {
+                    // Two `Timestamp`s compare by the instants they name (decision 2).
+                    let helper = if kind == Kind::Instant {
+                        "compareInstants"
+                    } else {
+                        "compareNumbers"
                     };
-                    format!("compareNumbers({left}, {right}, {accepts})")
+                    self.uses.helpers.insert(helper);
+                    format!("{helper}({left}, {right}, {accepts})")
                 } else {
                     self.uses.helpers.insert("equal");
                     let equal = format!("equal({left}, {right})");
@@ -2481,17 +3438,48 @@ impl Guards<'_, '_> {
                 }
             }
             Predicate::TextMatch { path, op, value } => {
+                use ess_primitives::predicate::{TextNamespace, TextOperand};
                 let resolved = self.resolve(env, path);
-                let FactValue::Text(literal) = value else {
-                    unreachable!("the plan admits text tests of text literals")
-                };
-                self.uses.helpers.insert("textMatch");
                 let read = self.read(&resolved);
-                format!(
-                    "textMatch({read}, {}, {})",
-                    go_string(op.keyword()),
-                    go_string(literal)
-                )
+                match value {
+                    TextOperand::Literal(FactValue::Text(literal)) => {
+                        self.uses.helpers.insert("textMatch");
+                        format!(
+                            "textMatch({read}, {}, {})",
+                            go_string(op.keyword()),
+                            go_string(literal)
+                        )
+                    }
+                    TextOperand::Literal(_) => {
+                        unreachable!("the plan admits text tests of text literals")
+                    }
+                    // A parameter or an input (beyond10x/ess#200): the fact tested against the
+                    // operand, byte for byte; either unread is unknown.
+                    TextOperand::Fact {
+                        namespace,
+                        name,
+                        path: at,
+                    } => {
+                        let operand = match namespace {
+                            TextNamespace::Param => {
+                                let (param, _) = self
+                                    .params
+                                    .iter()
+                                    .find(|(param, _)| &param.name == name)
+                                    .expect("the plan admits a parameter the view declares");
+                                crate::determined::resolve_param(self.ir, param)
+                                    .expect("the plan admits a parameter that resolves")
+                            }
+                            TextNamespace::Input => self.resolve(env, at),
+                        };
+                        let operand = self.read(&operand);
+                        self.uses.helpers.insert("textMatchOperand");
+                        format!(
+                            "textMatchOperand({read}, {}, {operand})",
+                            go_string(op.keyword())
+                        )
+                    }
+                }
             }
             _ => unreachable!("the plan admits only the guards `determined::supported` names"),
         }
@@ -2528,6 +3516,32 @@ impl Guards<'_, '_> {
             .expect("the plan admitted only guards whose paths resolve")
     }
 
+    /// An instant ordered against the current time: it reads the decision's one instant, moved by
+    /// the operand's whole `seconds` (ess/22, family F A3).
+    fn with_now(
+        &mut self,
+        env: &Env<'_>,
+        left: &Operand,
+        kind: &Kind,
+        accepts: &str,
+        seconds: i64,
+    ) -> String {
+        let left = self.operand(env, left, kind);
+        let (now, clocked) = clock_locals(self.reserved);
+        self.uses.helpers.insert("compareWithNow");
+        format!("{COMPARE_WITH_NOW_CALL}{left}, {now}.Value(), {clocked}, {seconds}, {accepts})")
+    }
+
+    /// Resolves a derived operand the plan already checked.
+    fn resolve_derived(
+        &self,
+        env: &Env<'_>,
+        derived: &ess_primitives::predicate::Derived,
+    ) -> Resolved {
+        determined::resolve_derived(self.ir, env, derived)
+            .expect("the plan admitted only byte lengths of String paths")
+    }
+
     /// One comparison operand, normalized to what the comparison reads.
     fn operand(&mut self, env: &Env<'_>, operand: &Operand, kind: &Kind) -> String {
         let _ = kind;
@@ -2537,6 +3551,50 @@ impl Guards<'_, '_> {
                 self.read(&resolved)
             }
             Operand::Literal(value) => self.fact_literal(value),
+            Operand::Offset(_) => unreachable!("an offset is compared by `offset`"),
+            Operand::Derived(derived) => {
+                let resolved = self.resolve_derived(env, derived);
+                self.read(&resolved)
+            }
+        }
+    }
+
+    /// `left <op> base ± magnitude` (`docs/design/expression-family-source22.md`, A2): two
+    /// `Integer` renderings compared with the exact sum in `math/big`, or two `Timestamp`
+    /// renderings compared as instants after moving the base by elapsed seconds — unknown where a
+    /// value is absent or the moved instant is past what a `date-time` spells.
+    fn offset(
+        &mut self,
+        env: &Env<'_>,
+        left: &Operand,
+        op: CompareOp,
+        offset: &ess_primitives::predicate::OffsetOperand,
+    ) -> String {
+        use ess_primitives::predicate::{OffsetDirection, OffsetMagnitude};
+        let base = self.resolve(env, &offset.base);
+        let left = self.operand(env, left, &base.kind);
+        let base = self.read(&base);
+        let accepts = acceptor(op);
+        let negate = offset.direction == OffsetDirection::Subtract;
+        match offset.magnitude {
+            OffsetMagnitude::Integer(_) => {
+                self.uses.helpers.insert("compareOffsetIntegers");
+                let magnitude = offset
+                    .magnitude
+                    .integer()
+                    .expect("the plan admits whole Integer magnitudes");
+                let delta = if negate {
+                    format!("-{magnitude}")
+                } else {
+                    magnitude.to_string()
+                };
+                format!("compareOffsetIntegers({left}, {base}, \"{delta}\", {accepts})")
+            }
+            OffsetMagnitude::ElapsedSeconds { seconds, .. } => {
+                self.uses.helpers.insert("compareOffsetInstants");
+                let delta = if negate { -seconds } else { seconds };
+                format!("compareOffsetInstants({left}, {base}, {delta}, {accepts})")
+            }
         }
     }
 
@@ -2576,13 +3634,24 @@ impl Guards<'_, '_> {
             }
             Root::Stored(field) => format!("{}.Data.{}", self.row, self.stored_member(field)),
             Root::State => format!("{}.State", self.row),
+            Root::Param(param) => self
+                .params
+                .iter()
+                .find(|(declared, _)| &declared.name == param)
+                .map(|(_, ident)| ident.clone())
+                .expect("a parameter path is read in the query of the view that declares it"),
             Root::Caller(attribute) => {
                 let method = caller_method(self.emit, self.uses, attribute, &resolved.root_type);
                 let (value, ok) = (self.temp("c"), self.temp("ok"));
-                self.lines.push(&format!(
-                    "{value}, {ok} := {}.ports.Context.{method}()",
-                    self.receiver
-                ));
+                let error = self.temp("contextErr");
+                context_read(
+                    self.lines,
+                    self.receiver,
+                    &method,
+                    "",
+                    &[&value, &ok],
+                    &error,
+                );
                 let bind = self.temp("v");
                 guards.push(Guard {
                     condition: ok,
@@ -2627,6 +3696,15 @@ impl Guards<'_, '_> {
                     }
                 }
                 Step::Count => {}
+                // A string that is no UTF-8 — the bytes a lone surrogate leaves — has no byte
+                // length: Unknown, never the count of its bytes.
+                Step::Utf8Bytes => {
+                    self.emit.import("unicode/utf8");
+                    guards.push(Guard {
+                        condition: format!("utf8.ValidString({expression})"),
+                        bind: None,
+                    });
+                }
             }
         }
         (guards, expression, current)
@@ -2654,7 +3732,8 @@ impl Guards<'_, '_> {
                 return format!("some({value})");
             }
         }
-        let go_type = if resolved.kind == Kind::Bool && resolved.steps.last() != Some(&Step::Count)
+        let go_type = if resolved.kind == Kind::Bool
+            && !matches!(resolved.steps.last(), Some(Step::Count | Step::Utf8Bytes))
         {
             "*bool"
         } else {
@@ -2683,7 +3762,7 @@ impl Guards<'_, '_> {
     /// its rendering and a Boolean as `true` or `false`.
     fn text(&mut self, resolved: &Resolved) -> String {
         match &resolved.kind {
-            Kind::Opaque => {
+            Kind::Opaque | Kind::Instant => {
                 self.uses.helpers.insert("some");
                 let (guards, expression, _) = self.reference(resolved);
                 if guards.is_empty() {
@@ -2714,12 +3793,15 @@ impl Guards<'_, '_> {
 
     /// What one present value at the end of a path reads, held in `at`.
     fn leaf(&mut self, resolved: &Resolved, at: &str, current: &ResolvedTypeRef) -> ReadLeaf {
-        if resolved.steps.last() == Some(&Step::Count) {
+        // A collection's element count, or a UTF-8 `string`'s bytes: `len` is the byte length.
+        if matches!(resolved.steps.last(), Some(Step::Count | Step::Utf8Bytes)) {
             self.emit.import("strconv");
             return ReadLeaf::Expression(format!("strconv.Itoa(len({at}))"));
         }
         match &resolved.kind {
-            Kind::Number(Primitive::Decimal) => ReadLeaf::Expression(format!("{at}.Value()")),
+            Kind::Number(Primitive::Decimal) | Kind::Instant => {
+                ReadLeaf::Expression(format!("{at}.Value()"))
+            }
             Kind::Number(_) => {
                 self.emit.import("strconv");
                 ReadLeaf::Expression(format!("strconv.FormatInt({at}, 10)"))

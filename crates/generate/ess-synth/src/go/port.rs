@@ -192,6 +192,15 @@ fn port(out: &mut String, emit: &Emit<'_>, component: &ResolvedComponent) {
     }
 }
 
+/// Allocate every handler local in stable order, retaining ordinary spellings when unreserved.
+fn handler_locals(mut reserved: BTreeSet<String>) -> [String; 5] {
+    ["c", "input", "outcome", "unmet", "value"].map(|base| {
+        let local = super::invariant::fresh(&reserved, base);
+        reserved.insert(local.clone());
+        local
+    })
+}
+
 /// One accepted command as a method: run the owed behaviour, publish what the outcome declares.
 fn handler(
     out: &mut String,
@@ -207,6 +216,8 @@ fn handler(
         emit.layout.outcome(&command.name),
     );
     let unmet = emit.unmet();
+    let [receiver, input_local, outcome_local, unmet_local, value_local] =
+        handler_locals(emit.layout.package_names());
 
     let events: BTreeSet<&EventHandle> = component.publishes.iter().collect();
     let variants = event_variants(emit.ir, emit.layout, &events);
@@ -229,7 +240,7 @@ fn handler(
             publishes = true;
             let _ = writeln!(
                 &mut arms,
-                "\t\tc.outbox = append(c.outbox, {}{{Event: value.{}}})",
+                "\t\t{receiver}.outbox = append({receiver}.outbox, {}{{Event: {value_local}.{}}})",
                 emit.layout
                     .published_variant(&component.name, field.event.name()),
                 field.field
@@ -251,20 +262,20 @@ fn handler(
         "\n// {method} accepts `{}`: runs the behaviour obligation, then publishes the declared \
          events\n// the outcome carries.\n//\n// The second result is the typed refusal of an \
          unmet obligation — never a domain outcome,\n// which always arrives as a variant of the \
-         outcome interface, refusals included.\nfunc (c *{port}) {method}(input {input}) \
-         ({outcome}, {unmet}) {{\n\toutcome, unmet := c.behaviors.{method}(input)\n\tif unmet != \
-         nil {{\n\t\treturn nil, unmet\n\t}}",
+         outcome interface, refusals included.\nfunc ({receiver} *{port}) {method}({input_local} {input}) \
+         ({outcome}, {unmet}) {{\n\t{outcome_local}, {unmet_local} := {receiver}.behaviors.{method}({input_local})\n\tif {unmet_local} != \
+         nil {{\n\t\treturn nil, {unmet_local}\n\t}}",
         command.name
     );
     if publishes {
         let subject = if binds {
-            "switch value := outcome.(type) {"
+            format!("switch {value_local} := {outcome_local}.(type) {{")
         } else {
-            "switch outcome.(type) {"
+            format!("switch {outcome_local}.(type) {{")
         };
         let _ = writeln!(out, "\t{subject}\n{arms}\t}}");
     }
-    out.push_str("\treturn outcome, nil\n}\n");
+    let _ = writeln!(out, "\treturn {outcome_local}, nil\n}}");
 }
 
 /// One declared view as a query, delegating to the owed projection.
@@ -421,4 +432,26 @@ pub(super) fn arguments(params: &[(String, String)]) -> String {
         .map(|(ident, _)| ident.as_str())
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::handler_locals;
+
+    #[test]
+    fn handler_local_suffixes_respect_every_reserved_candidate() {
+        // Synthetic allocator boundary: current package_ident normalizes underscores away.
+        // This does not claim that domains input/input_ allocate these exact package names.
+        let reserved = ["c", "c_", "input", "input_", "outcome", "unmet", "value"]
+            .map(str::to_owned)
+            .into();
+        assert_eq!(
+            handler_locals(reserved),
+            ["c__", "input__", "outcome_", "unmet_", "value_"]
+        );
+        assert_eq!(
+            handler_locals(std::collections::BTreeSet::default()),
+            ["c", "input", "outcome", "unmet", "value"]
+        );
+    }
 }

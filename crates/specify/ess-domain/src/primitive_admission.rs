@@ -187,6 +187,22 @@ pub(crate) fn system(system: &SystemSpec) -> ValidationErrors {
             ),
             TypeBody::Union { variants, .. } => {
                 for (name, ty) in variants {
+                    let Some(ty) = ty else {
+                        // An older reader fails a variant written with no type as `invalid type:
+                        // unit value, expected a string`, with no version hint (beyond10x/ess#418).
+                        if system.format.major() < FormatVersion::V22.major() {
+                            errors.push(
+                                ValidationError::new(
+                                    ValidationCode::UnsupportedFormatVersion,
+                                    format!("{at}.variants.{name}"),
+                                    "a union variant with no payload requires specification \
+                                     format ess/22",
+                                )
+                                .with_hint("declare `format: ess/22`, or give the variant a type"),
+                            );
+                        }
+                        continue;
+                    };
                     reference(
                         ty,
                         Some(system.format),
@@ -382,6 +398,21 @@ pub fn predicates(
                     predicate,
                 ));
             }
+            // And the selector and `forall` of a row set (ess/22, beyond10x/ess#228, #299).
+            if let crate::command::OutcomeCondition::RelatedSet {
+                selection, test, ..
+            } = &outcome.condition
+            {
+                let at = command
+                    .site()
+                    .key("outcomes")
+                    .named(outcome.name.to_string())
+                    .key(crate::command::related_guard::KEY);
+                found.push((at.clone(), &selection.filter));
+                if let crate::command::row_set::RowSetTest::Forall(predicate) = test {
+                    found.push((at, predicate));
+                }
+            }
         }
     }
     for view in spec.views().values() {
@@ -414,6 +445,8 @@ fn aggregate_view(view: &crate::ViewSpec, format: FormatVersion, errors: &mut Va
     let Some(aggregation) = &view.aggregation else {
         return;
     };
+    // A measure's condition (`where:`, ess/22, beyond10x/ess#363).
+    errors.extend(view.conditional_measure_admission(format));
     if format.major() < FormatVersion::V10.major() {
         let at = if aggregation.group_by.is_empty() {
             "fields"

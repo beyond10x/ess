@@ -818,7 +818,7 @@ views:
         }
     }
 
-    fn suite(filter: &str) -> ConformanceSuite {
+    fn compiled(filter: &str) -> EssIr {
         // Compact syntax reads a bare RHS word as a literal. Build reversed fact operands in
         // the public typed source AST, then run the same domain validation and compilation.
         let reversed = filter.contains("subject.user_id == user_id")
@@ -840,7 +840,11 @@ views:
         }
         let spec = Specification::assemble([(Source::new("captured-user-affects.yaml"), raw)])
             .expect("admitted");
-        let ir = compile(&spec, &SourceMap::new()).expect("compiled");
+        compile(&spec, &SourceMap::new()).expect("compiled")
+    }
+
+    fn suite(filter: &str) -> ConformanceSuite {
+        let ir = compiled(filter);
         let mut synthesis = ess_conformance::synthesize::synthesize(&ir);
         assert!(synthesis.refusals.is_empty(), "{:#?}", synthesis.refusals);
         scenario(&synthesis.suite, DEACTIVATED);
@@ -849,6 +853,25 @@ views:
             .scenarios
             .retain(|id, _| id.to_string() == DEACTIVATED);
         synthesis.suite
+    }
+
+    #[test]
+    fn the_interpreter_executes_captured_subject_identity_filters() {
+        for filter in [
+            "user_id == subject.user_id",
+            "subject.user_id == user_id",
+            "user_id == input.user_id",
+            "input.user_id == user_id",
+            "{all: [user_id == subject.user_id, team == subject.team]}",
+            "{all: [subject.user_id == user_id, subject.team == team]}",
+        ] {
+            let target = ess_conformance::interpret::Interpreted::for_model(compiled(filter));
+            assert_eq!(
+                run(&suite(filter), &target).get(DEACTIVATED),
+                Some(&Status::Passed),
+                "{filter}"
+            );
+        }
     }
 
     fn honest(filter: &str, mixed: bool) {
@@ -918,5 +941,21 @@ views:
                 );
             }
         }
+    }
+}
+
+#[test]
+fn the_actual_interpreter_executes_the_complete_set_effect_suite() {
+    let ir = ir_of(MODEL);
+    let synthesis = ess_conformance::synthesize::synthesize(&ir);
+    assert_eq!(synthesis.refusals.len(), 0);
+    let statuses = run(
+        &synthesis.suite,
+        &ess_conformance::interpret::Interpreted::for_model(ir),
+    );
+    assert_eq!(statuses.len(), 14);
+    assert!(not_passed(&statuses).is_empty(), "{statuses:#?}");
+    for id in [ENDED, NOTED, INVITED] {
+        assert_eq!(statuses.get(id), Some(&Status::Passed));
     }
 }

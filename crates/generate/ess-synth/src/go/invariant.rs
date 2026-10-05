@@ -22,7 +22,9 @@ use ess_compiler::ir::{EssIr, ResolvedBody, ResolvedEntity, ResolvedField, Resol
 use ess_domain::Primitive;
 use ess_gen::{Artifact, Provenance};
 use ess_primitives::facts::{FactPath, FactValue};
-use ess_primitives::predicate::{CompareOp, FoldOp, Operand, Predicate, Quantified, TextOp};
+use ess_primitives::predicate::{
+    CompareOp, FoldOp, Operand, Predicate, Quantified, TextOp, TextOperand,
+};
 
 use super::layout::Layout;
 use super::selection::go_string;
@@ -325,7 +327,9 @@ impl<'a> Check<'a> {
             Predicate::All(children) => format!("{}({})", self.iv("All"), self.children(children)?),
             Predicate::Any(children) => format!("{}({})", self.iv("Any"), self.children(children)?),
             Predicate::Not(inner) => format!("{}({})", self.iv("Not"), self.predicate(inner)?),
-            Predicate::Compare { left, op, right } => self.compare(left, *op, right)?,
+            Predicate::Compare {
+                left, op, right, ..
+            } => self.compare(left, *op, right)?,
             Predicate::Truthy(path) => format!("{}({})", self.iv("Truthy"), self.fact(path)?),
             Predicate::Defined(path) => self.defined(path)?,
             Predicate::AnyOf { path, values } => {
@@ -344,8 +348,17 @@ impl<'a> Check<'a> {
                 };
                 let fact = self.fact(path)?;
                 let literal = match value {
-                    FactValue::Text(text) => format!("{}({})", self.iv("Text"), go_string(text)),
-                    _ => self.iv("Absent"),
+                    TextOperand::Literal(FactValue::Text(text)) => {
+                        format!("{}({})", self.iv("Text"), go_string(text))
+                    }
+                    TextOperand::Literal(_) => self.iv("Absent"),
+                    // No invariant reads a parameter or an input (beyond10x/ess#200).
+                    TextOperand::Fact { .. } => {
+                        return Err(format!(
+                            "`{predicate}` compares with a parameter or an input, which no \
+                             invariant reads"
+                        ))
+                    }
                 };
                 format!(
                     "{}({fact}, {}, {literal})",
@@ -369,6 +382,22 @@ impl<'a> Check<'a> {
             }
             Predicate::Forall(quantified) => self.quantified(true, quantified)?,
             Predicate::Exists(quantified) => self.quantified(false, quantified)?,
+            // The shared invariant evaluator compares no keys across a list's elements: refused by
+            // name rather than dropped from the check.
+            Predicate::Distinct(_) => {
+                return Err(format!(
+                    "`{predicate}` requires distinct list members, which the generated invariant \
+                     check does not evaluate"
+                ))
+            }
+            // Validation admits a calendar window only in a command guard, and the shared invariant
+            // evaluator reads no window: refused by name rather than rendered as something else.
+            Predicate::Window(window) => {
+                return Err(format!(
+                    "`{window}` is a calendar window, which the generated invariant check does not \
+                     evaluate"
+                ))
+            }
         })
     }
 
@@ -416,6 +445,45 @@ impl<'a> Check<'a> {
         for operand in [left, right] {
             operands.push(match operand {
                 Operand::Literal(value) => self.literal(value),
+                // The shared invariant evaluator moves no value by a constant (A2): refused by
+                // name rather than read as the text it is spelled like.
+                Operand::Offset(offset) => {
+                    return Err(format!(
+                        "`{offset}` moves a fact by a constant, which the generated invariant \
+                         check does not evaluate"
+                    ))
+                }
+                // The UTF-8 byte length of a `String` (decision 11): `len` of a string that is
+                // UTF-8; one that is not — the bytes a lone surrogate leaves — decides nothing.
+                Operand::Derived(derived) => {
+                    let parent = derived.parent();
+                    match self.walk(parent)? {
+                        Walked::Value {
+                            mut guards,
+                            expression,
+                            terminal:
+                                ResolvedTypeRef::Primitive {
+                                    name: Primitive::String,
+                                },
+                        } => {
+                            self.emit.import("unicode/utf8");
+                            let bind = self.local("s");
+                            guards.push(Guard {
+                                condition: format!("utf8.ValidString({expression})"),
+                                found: expression,
+                                bind: bind.clone(),
+                            });
+                            let expression = format!("{}(len({bind}))", self.iv("Count"));
+                            self.walked_fact(Walked::Count { guards, expression }, parent)?
+                        }
+                        Walked::Absent => self.iv("Absent"),
+                        _ => {
+                            return Err(format!(
+                                "`{derived}` measures `{parent}`, which is no String"
+                            ))
+                        }
+                    }
+                }
                 Operand::Fact(path) => {
                     let walked = self.walk(path)?;
                     if let Walked::Value { terminal, .. } = &walked {

@@ -33,7 +33,15 @@
 // One thing the Go file leaves to chance is reconstructed as a fixed order rather than a random
 // one, and it is called out at `comparisonOperators`.
 
-import { asNumber, compare, equal, render, sortStrings } from './runtime.js';
+import {
+  asNumber,
+  compare,
+  equal,
+  exactDecimal,
+  JsonNumber,
+  render,
+  sortStrings,
+} from './runtime.js';
 import type { Node, Row } from './runtime.js';
 
 /** A three-valued result. */
@@ -127,6 +135,44 @@ export function readLeaf(source: FactSource, path: string): [Node, boolean] {
   return [null, false];
 }
 
+/**
+ * The number of bytes the UTF-8 encoding of `text` takes, or null where `text` holds a lone
+ * surrogate and is no Unicode text. A JavaScript string is UTF-16 code units, so `length` counts
+ * units and `[...text]` code points; `TextEncoder` writes a lone surrogate as the three bytes of
+ * U+FFFD, which would measure a text nobody wrote — so well-formedness is checked first.
+ */
+export function utf8Length(text: string): number | null {
+  for (let index = 0; index < text.length; index += 1) {
+    const unit = text.charCodeAt(index);
+    if (unit >= 0xdc00 && unit <= 0xdfff) return null;
+    if (unit >= 0xd800 && unit <= 0xdbff) {
+      const low = text.charCodeAt(index + 1);
+      if (!(low >= 0xdc00 && low <= 0xdfff)) return null;
+      index += 1;
+    }
+  }
+  return new TextEncoder().encode(text).length;
+}
+
+/**
+ * The UTF-8 byte length of the text at `path`, Go's `utf8BytesOf` and Rust's `Derived::value`: a
+ * bound `<path>.utf8_bytes` wins, and only a whole number from zero within `i64` is a byte length —
+ * any other bound value is Unknown, with no fallback to the text. Otherwise the text at `path` is
+ * measured; an unbound path, null, a value that is no text and a lone surrogate are Unknown.
+ */
+export function utf8BytesOf(source: FactSource, path: string): [Node, boolean] {
+  const observed = `${path}.utf8_bytes`;
+  const bound = source.get(observed);
+  if (source.has(observed) && bound !== null && bound !== undefined) {
+    const length = integerOf(bound);
+    return length === null || length < 0n ? [null, false] : [bound, true];
+  }
+  const text = source.get(path);
+  if (typeof text !== 'string') return [null, false];
+  const length = utf8Length(text);
+  return length === null ? [null, false] : [length, true];
+}
+
 export function facts(row: Row): FactSource {
   const flattened: FactSource = new Map();
   for (const [field, value] of Object.entries(row)) {
@@ -146,6 +192,12 @@ export function bindFact(into: FactSource, path: string, value: Node): void {
     }
     return;
   }
+  // A number kept as its digits is one scalar, as Go's `json.Number` is, never a mapping of its
+  // `raw` field: an offset compares `i64::MAX` exactly only where the row still holds its digits.
+  if (value instanceof JsonNumber) {
+    into.set(path, value);
+    return;
+  }
   if (value !== null && typeof value === 'object') {
     presence(into).add(path);
     for (const [key, nested] of Object.entries(value)) {
@@ -158,26 +210,202 @@ export function bindFact(into: FactSource, path: string, value: Node): void {
 
 // ---- the predicate ----------------------------------------------------------------------------
 
-/** One side of a comparison: a fact to look up, or a constant. */
+/**
+ * One fact moved by one constant (suite/40, `docs/design/expression-family-source22.md` A2): an
+ * exact integer, or elapsed seconds — Go's `offsetOperand`.
+ */
+export interface OffsetOperand {
+  base: string;
+  add: boolean;
+  /** The Integer magnitude, or null for an elapsed one. */
+  integer: bigint | null;
+  /** The elapsed magnitude in seconds; 0 for an Integer one. */
+  seconds: bigint;
+  /** The magnitude as written: `5`, `24h`. */
+  spelled: string;
+}
+
+/**
+ * One side of a comparison: a fact to look up, a constant, one fact moved by a constant, or the
+ * UTF-8 byte length of a text.
+ */
 export class Operand {
   path: string;
   literal: Node;
   isFact: boolean;
+  offset: OffsetOperand | null;
+  /**
+   * The derived UTF-8 byte length of the text at `path` (suite/40,
+   * `docs/design/expression-family-source22.md` decision 11): `{utf8_bytes: <path>}`. Not a fact: no
+   * value is read at `path` itself, and a selection never reads one.
+   */
+  utf8Bytes: boolean;
 
-  constructor(fields: { path?: string; literal?: Node; isFact?: boolean } = {}) {
+  constructor(
+    fields: {
+      path?: string;
+      literal?: Node;
+      isFact?: boolean;
+      offset?: OffsetOperand;
+      utf8Bytes?: boolean;
+    } = {},
+  ) {
     this.path = fields.path ?? '';
     this.literal = fields.literal ?? null;
     this.isFact = fields.isFact ?? false;
+    this.offset = fields.offset ?? null;
+    this.utf8Bytes = fields.utf8Bytes ?? false;
   }
 
   toString(): string {
+    if (this.utf8Bytes) return `{utf8_bytes: ${this.path}}`;
+    if (this.offset !== null) {
+      const direction = this.offset.add ? 'add' : 'subtract';
+      return `{offset: {fact: ${this.offset.base}, ${direction}: ${this.offset.spelled}}}`;
+    }
     return this.isFact ? this.path : render(this.literal);
   }
 
   resolve(source: FactSource): [Node, boolean] {
+    if (this.utf8Bytes) return utf8BytesOf(source, this.path);
     if (!this.isFact) return [this.literal, true];
     return readLeaf(source, this.path);
   }
+}
+
+const WINDOW_DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const;
+
+/**
+ * A calendar window at UTC or a fixed offset (`docs/design/calendar-window-guards.md`), as Rust's
+ * `CalendarWindow` and Go's `windowPredicate`: the instant moved by the offset falls on a listed
+ * weekday at or after `from` and before `to`; a window with `from` after `to` crosses midnight and
+ * belongs to the day it opens. No zone data.
+ */
+export class CalendarWindow {
+  /** `at: now`: the decision's current time, which a runner never has. */
+  now = false;
+  /** Monday first. */
+  days: boolean[] = [false, false, false, false, false, false, false];
+  /** Minutes after midnight; `to` may be 1440, the end of the day. */
+  from = 0;
+  to = 0;
+  /** Minutes east of UTC. */
+  offset = 0;
+
+  /** The weekday (Monday 0) and the second of the day of `seconds` moved by the offset. */
+  local(seconds: bigint): [number, number] {
+    const local = seconds + BigInt(this.offset * 60);
+    let day = local / 86400n;
+    if (local % 86400n !== 0n && local < 0n) day -= 1n;
+    const second = Number(local - day * 86400n);
+    return [Number((((day + 3n) % 7n) + 7n) % 7n), second];
+  }
+
+  /** Whether the instant `seconds` after the epoch falls inside the window. */
+  contains(seconds: bigint): boolean {
+    const [day, second] = this.local(seconds);
+    const from = this.from * 60;
+    const to = this.to * 60;
+    if (this.from > this.to) {
+      return (this.days[day]! && second >= from) || (this.days[(day + 6) % 7]! && second < to);
+    }
+    return this.days[day]! && from <= second && second < to;
+  }
+
+  toString(path = ''): string {
+    const at = this.now ? 'now' : path;
+    const days = WINDOW_DAYS.filter((_, index) => this.days[index]);
+    const clock = (minutes: number): string =>
+      `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+    let offset = 'Z';
+    if (this.offset !== 0) {
+      const magnitude = Math.abs(this.offset);
+      offset = `${this.offset < 0 ? '-' : '+'}${clock(magnitude)}`;
+    }
+    return `window(at ${at}, ${days.join(' ')}, ${clock(this.from)}-${clock(this.to)}, ${offset})`;
+  }
+}
+
+/**
+ * Reads `{window: {at, days, from, to, offset}}` as Rust's `CalendarWindow::parse_mapping` does,
+ * refusing what it refuses: another key, a missing one, a named time zone, an offset that is not
+ * `Z` or `±HH:MM` within 14 hours, a time that is not quoted `HH:MM`, `from` equal to `to`, `to`
+ * 00:00, no day, a day twice or a day not spelled `mon` to `sun`.
+ */
+export function parseWindow(fields: { [key: string]: Node }): Predicate {
+  const refuse = (reason: string): never => {
+    throw new Error(`window: ${reason}`);
+  };
+  for (const key of Object.keys(fields)) {
+    if (['zone', 'tz', 'timezone', 'time_zone'].includes(key)) {
+      refuse(`\`${key}\` names a time zone, and a calendar window takes a fixed offset`);
+    }
+    if (!['at', 'days', 'from', 'to', 'offset'].includes(key)) {
+      refuse(
+        `a window takes \`at\`, \`days\`, \`from\`, \`to\` and \`offset\`; \`${key}\` is none of them`,
+      );
+    }
+  }
+  for (const key of ['at', 'days', 'from', 'to', 'offset']) {
+    if (!Object.hasOwn(fields, key)) refuse(`a window takes \`${key}\`, and this one has none`);
+  }
+  const window = new CalendarWindow();
+  let path = '';
+  const at = fields['at'];
+  if (at === 'now') {
+    window.now = true;
+  } else if (typeof at === 'string' && factPath.test(at)) {
+    path = at;
+  } else {
+    refuse('`at` is `now` or the fact path of a Timestamp');
+  }
+  const days = fields['days'];
+  if (!Array.isArray(days) || days.length === 0)
+    refuse('`days` lists at least one of `mon` to `sun`');
+  for (const day of days as Node[]) {
+    const index = WINDOW_DAYS.indexOf(day as (typeof WINDOW_DAYS)[number]);
+    if (typeof day !== 'string' || index < 0) refuse(`\`${String(day)}\` is no day`);
+    if (window.days[index]) refuse(`\`days\` lists \`${String(day)}\` twice`);
+    window.days[index] = true;
+  }
+  const clock = (key: string): number => {
+    const text = fields[key];
+    if (typeof text !== 'string' || !/^[0-9]{2}:[0-9]{2}$/.test(text)) {
+      return refuse(`\`${key}\` is a time written as quoted text, "HH:MM"`);
+    }
+    const hours = Number(text.slice(0, 2));
+    const minutes = Number(text.slice(3));
+    if (minutes > 59 || hours > 24 || (hours === 24 && minutes !== 0)) {
+      return refuse(`\`${key}: ${text}\` is no time of day`);
+    }
+    return hours * 60 + minutes;
+  };
+  window.from = clock('from');
+  window.to = clock('to');
+  if (window.from === 1440) refuse('`from` is at most 23:59');
+  if (window.to === 0) refuse('`to` 00:00 is the end of the day, which a window writes `24:00`');
+  if (window.from === window.to) {
+    refuse('`from` and `to` are equal: a window is either empty or the whole day');
+  }
+  const offset = fields['offset'];
+  if (typeof offset !== 'string') refuse('`offset` is `Z` or `±HH:MM`');
+  if (offset !== 'Z') {
+    const text = offset as string;
+    if (!/^[+-][0-9]{2}:[0-9]{2}$/.test(text)) {
+      refuse(
+        `\`offset: ${text}\` is no fixed offset: write \`Z\` or \`±HH:MM\`; a named time zone is refused`,
+      );
+    }
+    const hours = Number(text.slice(1, 3));
+    const minutes = Number(text.slice(4));
+    const magnitude = hours * 60 + minutes;
+    if (minutes > 59 || magnitude > 14 * 60) refuse(`\`offset: ${text}\` is past 14:00 either way`);
+    if (magnitude === 0 && text.startsWith('-')) {
+      refuse('`offset: -00:00` is the unknown local offset; write `Z`');
+    }
+    window.offset = text.startsWith('-') ? -magnitude : magnitude;
+  }
+  return new Predicate({ kind: 'window', path, window });
 }
 
 interface PredicateFields {
@@ -186,11 +414,15 @@ interface PredicateFields {
   left?: Operand;
   op?: string;
   right?: Operand;
+  instant?: boolean;
   path?: string;
   values?: Node[];
   over?: string;
   bind?: string;
   body?: Predicate | null;
+  key?: string;
+  keyKind?: string;
+  window?: CalendarWindow | null;
 }
 
 /** A condition over facts. */
@@ -201,6 +433,8 @@ export class Predicate {
   left: Operand;
   op: string;
   right: Operand;
+  /** A tagged comparison (`as: timestamp`, suite/40): the operands compare as instants. */
+  instant: boolean;
   path: string;
   // any_of / none_of
   values: Node[];
@@ -208,6 +442,11 @@ export class Predicate {
   over: string;
   bind: string;
   body: Predicate | null;
+  /** distinct (suite/40): the key under `bind`, empty for the element itself, and its kind. */
+  key: string;
+  keyKind: string;
+  /** A calendar window; `path` holds the fact it reads, empty for `now`. */
+  window: CalendarWindow | null;
 
   constructor(fields: PredicateFields = {}) {
     this.kind = fields.kind ?? '';
@@ -215,11 +454,15 @@ export class Predicate {
     this.left = fields.left ?? new Operand();
     this.op = fields.op ?? '';
     this.right = fields.right ?? new Operand();
+    this.instant = fields.instant ?? false;
     this.path = fields.path ?? '';
     this.values = fields.values ?? [];
     this.over = fields.over ?? '';
     this.bind = fields.bind ?? '';
     this.body = fields.body ?? null;
+    this.key = fields.key ?? '';
+    this.keyKind = fields.keyKind ?? '';
+    this.window = fields.window ?? null;
   }
 
   toString(): string {
@@ -237,7 +480,9 @@ export class Predicate {
       case 'not':
         return `not (${this.body})`;
       case 'compare':
-        return `${this.left} ${this.op} ${this.right}`;
+        return this.instant
+          ? `${this.left} ${this.op} ${this.right} as timestamp`
+          : `${this.left} ${this.op} ${this.right}`;
       case 'truthy':
         return this.path;
       case 'defined':
@@ -263,6 +508,10 @@ export class Predicate {
       case 'forall':
       case 'exists':
         return `${this.kind} ${this.bind} in ${this.over}: (${this.body})`;
+      case 'distinct':
+        return `distinct ${this.bind} in ${this.over}${this.key === '' ? '' : ` by ${this.key}`} as ${this.keyKind}`;
+      case 'window':
+        return this.window!.toString(this.path);
       default:
         return this.kind;
     }
@@ -314,6 +563,18 @@ export class Predicate {
       case 'forall':
       case 'exists':
         return this.quantify(source);
+      case 'distinct':
+        return this.distinct(source);
+      case 'window': {
+        // `now` is the decision's current time, which a runner never reads: Unknown. A fact is read
+        // as the instant it names, never its spelling; text that names none is Unknown.
+        if (this.window!.now) return TruthUnknown;
+        const [value, ok] = readLeaf(source, this.path);
+        if (!ok || typeof value !== 'string') return TruthUnknown;
+        const at = parseInstant(value);
+        if (at === undefined) return TruthUnknown;
+        return truthOf(this.window!.contains(at.seconds));
+      }
       default:
         return TruthUnknown;
     }
@@ -356,9 +617,18 @@ export class Predicate {
 
   /** The Go method of the same name; `compare` below it is the runtime's ordering function. */
   compare(source: FactSource): Truth {
+    if (this.right.offset !== null) return this.compareOffset(source, this.right.offset);
     const [left, leftOk] = this.left.resolve(source);
     const [right, rightOk] = this.right.resolve(source);
     if (!leftOk || !rightOk) return TruthUnknown;
+    if (this.instant) {
+      // Decision 2: the instants the two operands name, under every operator. A text that names
+      // no instant is Unknown, never ordered by its spelling.
+      const a = typeof left === 'string' ? parseInstant(left) : undefined;
+      const b = typeof right === 'string' ? parseInstant(right) : undefined;
+      if (a === undefined || b === undefined) return TruthUnknown;
+      return truthOf(acceptsOrder(this.op, compareInstants(a, b)));
+    }
     if (this.op === '==' || this.op === '!=') {
       return truthOf(equal(left, right) === (this.op === '=='));
     }
@@ -376,6 +646,36 @@ export class Predicate {
       default:
         return TruthUnknown;
     }
+  }
+
+  /**
+   * `left <op> base ± magnitude` (A2), as Go's `compareOffset`: an Integer magnitude compares two
+   * whole numbers with the exact sum, as `bigint`, so nothing wraps, saturates or rounds; an elapsed
+   * one moves the base instant by seconds and compares instants. An unread value, a value of the
+   * wrong kind, or a moved instant past what a `date-time` spells is Unknown.
+   */
+  compareOffset(source: FactSource, offset: OffsetOperand): Truth {
+    const [left, leftOk] = this.left.resolve(source);
+    const [base, baseOk] = readLeaf(source, offset.base);
+    if (!leftOk || !baseOk) return TruthUnknown;
+    if (offset.integer !== null) {
+      const a = integerOf(left);
+      const b = integerOf(base);
+      if (a === null || b === null) return TruthUnknown;
+      const bound = offset.add ? b + offset.integer : b - offset.integer;
+      return truthOf(acceptsOrder(this.op, a < bound ? -1 : a > bound ? 1 : 0));
+    }
+    const a = typeof left === 'string' ? parseInstant(left) : undefined;
+    const b = typeof base === 'string' ? parseInstant(base) : undefined;
+    if (a === undefined || b === undefined) return TruthUnknown;
+    const moved = {
+      seconds: b.seconds + (offset.add ? offset.seconds : -offset.seconds),
+      nanos: b.nanos,
+    };
+    if (moved.seconds < FIRST_SPELLED_SECOND || moved.seconds > LAST_SPELLED_SECOND) {
+      return TruthUnknown;
+    }
+    return truthOf(acceptsOrder(this.op, compareInstants(a, moved)));
   }
 
   /**
@@ -417,14 +717,55 @@ export class Predicate {
     }
     return result;
   }
+
+  /**
+   * `distinct: {in, as, by, kind}` (suite/40), Go's `distinct` and Rust's `Distinct::evaluate`: a
+   * present empty or one-element list holds; for more, two known equal keys anywhere make it false,
+   * every key known and pairwise unequal makes it true, and anything else is unknown. An absent list
+   * is unknown, not empty, and an absent key is neither skipped nor one shared null.
+   */
+  distinct(source: FactSource): Truth {
+    const counted = `${this.over}.count`;
+    if (!source.has(counted)) return TruthUnknown;
+    const [count, ok] = asNumber(source.get(counted) ?? null);
+    if (
+      !ok ||
+      count < 0 ||
+      !Number.isFinite(count) ||
+      count !== Math.trunc(count) ||
+      count >= 2 ** 63
+    ) {
+      return TruthUnknown;
+    }
+    if (count < 2) return TruthTrue;
+    const key = this.key === '' ? this.bind : this.key;
+    const seen = new Set<string>();
+    let unknown = false;
+    for (let index = 0; index < count; index += 1) {
+      const element = rebind(source, this.bind, `${this.over}.${index}`);
+      const [value, read] = readLeaf(element, key);
+      const spelled =
+        read && value !== null && value !== undefined ? distinctKey(this.keyKind, value) : null;
+      if (spelled === null) {
+        unknown = true;
+        continue;
+      }
+      if (seen.has(spelled)) return TruthFalse;
+      seen.add(spelled);
+    }
+    return unknown ? TruthUnknown : TruthTrue;
+  }
 }
 
 /**
  * The source seen from inside one element: reads of `<bind>.rest` become reads of `<prefix>.rest`,
- * and every other path passes through.
+ * and every other path passes through. A root of the same name as `bind`, and everything under it,
+ * is out of sight, as Rust's `Element::rebind` hides it and Go's `rebind` does: an element without
+ * the member read is Unknown, never the root field's value.
  */
 export function rebind(source: FactSource, bind: string, prefix: string): FactSource {
-  const bound: FactSource = new Map(source);
+  const outer = (path: string): boolean => path === bind || path.startsWith(`${bind}.`);
+  const bound: FactSource = new Map([...source].filter(([path]) => !outer(path)));
   for (const [path, value] of source) {
     if (path === prefix) {
       bound.set(bind, value);
@@ -438,7 +779,7 @@ export function rebind(source: FactSource, bind: string, prefix: string): FactSo
   if (held !== undefined) {
     const rebound = presence(bound);
     for (const path of held) {
-      rebound.add(path);
+      if (!outer(path)) rebound.add(path);
       if (path === prefix) rebound.add(bind);
       else if (path.startsWith(`${prefix}.`))
         rebound.add(`${bind}.${path.slice(prefix.length + 1)}`);
@@ -500,6 +841,13 @@ export function fromNodes(nodes: Node[], binders: readonly string[] = []): Predi
 
 export function fromEntry(key: string, value: Node, binders: readonly string[] = []): Predicate {
   switch (key) {
+    case 'distinct':
+      // `as` is no operator, so a mapping holding it was never a constraint on a fact named
+      // `distinct`, as Rust's `from_entry` reads it.
+      if (isFactMapping(value) && Object.hasOwn(value, 'as')) {
+        return parseDistinct(value);
+      }
+      return parseConstraint(key, value, binders);
     case 'all':
     case 'and':
     case 'all_of':
@@ -515,8 +863,305 @@ export function fromEntry(key: string, value: Node, binders: readonly string[] =
     case 'forall':
     case 'exists':
       return parseQuantifier(key, value, binders);
+    case 'compare':
+      if (isFactMapping(value) && Object.hasOwn(value, 'left')) {
+        return parseTaggedCompare(value, binders);
+      }
+      return parseConstraint(key, value, binders);
+    case 'window':
+      // A mapping under `window` carrying `at` is a calendar window; any other is a constraint on
+      // a fact named `window`, as it always was.
+      if (isFactMapping(value) && Object.hasOwn(value, 'at')) {
+        return parseWindow(value);
+      }
+      return parseConstraint(key, value, binders);
     default:
       return parseConstraint(key, value, binders);
+  }
+}
+
+/**
+ * Reads the closed `{compare: …}` form of a comparison (suite/40,
+ * `docs/design/expression-family-source22.md`), as Rust's `Predicate::tagged_compare` does: tagged
+ * to compare instants (decision 2), `{compare: {left, op, right, as: timestamp}}`, or untagged with
+ * a derived operand (decision 11), `{compare: {left: {utf8_bytes: <path>}, op, right}}` — exactly
+ * those keys. `as` never stands beside a derived operand, and the untagged form carries one. A
+ * mapping under `compare` without `left` is a constraint on a fact named `compare`, as it always was.
+ */
+export function parseTaggedCompare(
+  fields: { [key: string]: Node },
+  binders: readonly string[] = [],
+): Predicate {
+  const refuse = (reason: string): never => {
+    throw new Error(`compare: ${reason}`);
+  };
+  const tagged = Object.hasOwn(fields, 'as');
+  if (
+    Object.keys(fields).length !== (tagged ? 4 : 3) ||
+    !Object.hasOwn(fields, 'op') ||
+    !Object.hasOwn(fields, 'right')
+  ) {
+    refuse(
+      'a `{compare: …}` comparison takes exactly `left`, `op` and `right`, and `as` where it is tagged',
+    );
+  }
+  const written = fields['left'] ?? null;
+  let left: Operand;
+  if (typeof written === 'string' && factPath.test(written)) {
+    left = new Operand({ path: written, isFact: true });
+  } else if (
+    isFactMapping(written) &&
+    Object.keys(written).length === 1 &&
+    Object.hasOwn(written, 'utf8_bytes')
+  ) {
+    left = parseUtf8BytesOperand('compare', 'left', written['utf8_bytes'] ?? null);
+  } else {
+    return refuse('`left` names a fact path or `{utf8_bytes: <path>}`');
+  }
+  const spelled = fields['op'];
+  const op =
+    typeof spelled === 'string'
+      ? comparisonOperators.find(([spelling]) => spelling === spelled)?.[1]
+      : undefined;
+  if (op === undefined) refuse('`op` is one of eq, ne, lt, lte, gt, gte');
+  if (tagged && fields['as'] !== 'timestamp') {
+    refuse('`as` names the one kind a comparison is tagged with, `timestamp`');
+  }
+  const compared = fields['right'] ?? null;
+  let right: Operand;
+  if (typeof compared === 'string') {
+    right = parseOperand(compared, binders);
+  } else if (isFactMapping(compared) && !(compared instanceof JsonNumber)) {
+    right = parseMappingOperand('compare', 'right', compared);
+  } else if (compared === null || Array.isArray(compared)) {
+    return refuse('`right` is a scalar or `{fact: <path>}`');
+  } else {
+    right = new Operand({ literal: compared });
+  }
+  const derived = left.utf8Bytes || right.utf8Bytes;
+  if (!tagged) {
+    if (!derived) {
+      refuse(
+        'an untagged `{compare: …}` carries a derived operand, `{utf8_bytes: <path>}`; compare two facts as `<path>: {<op>: …}`',
+      );
+    }
+    return new Predicate({ kind: 'compare', left, op: op as string, right });
+  }
+  if (derived) refuse('a derived operand compares as a number, never `as: timestamp`');
+  return new Predicate({
+    kind: 'compare',
+    left,
+    op: op as string,
+    right,
+    instant: true,
+  });
+}
+
+/** Applies a comparison operator to an ordering, as Rust's `CompareOp::accepts` does. */
+function acceptsOrder(op: string, order: number): boolean {
+  switch (op) {
+    case '==':
+      return order === 0;
+    case '!=':
+      return order !== 0;
+    case '<':
+      return order < 0;
+    case '<=':
+      return order <= 0;
+    case '>':
+      return order > 0;
+    default:
+      return order >= 0;
+  }
+}
+
+/** `0000-01-01T00:00:00Z` and `9999-12-31T23:59:59Z`: the seconds a `date-time` spells. */
+const FIRST_SPELLED_SECOND = -62167219200n;
+const LAST_SPELLED_SECOND = 253402300799n;
+
+/** An Integer value: a number whose exact value is a whole number within `i64`, or null. */
+function integerOf(value: Node): bigint | null {
+  const decimal = exactDecimal(value);
+  if (decimal === null || decimal[1] !== 0) return null;
+  const [units] = decimal;
+  return units > 9223372036854775807n || units < -9223372036854775808n ? null : units;
+}
+
+/** One RFC 3339 `date-time` on the UTC line: seconds since the epoch and nanoseconds. */
+export interface Instant {
+  seconds: bigint;
+  nanos: number;
+}
+
+export function compareInstants(a: Instant, b: Instant): number {
+  if (a.seconds !== b.seconds) return a.seconds < b.seconds ? -1 : 1;
+  if (a.nanos !== b.nanos) return a.nanos < b.nanos ? -1 : 1;
+  return 0;
+}
+
+/**
+ * Rust's `Rfc3339Instant::parse_rfc3339` (decision 14): the `date-time` production and nothing
+ * wider — `T` or `t`, seconds 00–59 (no leap second), up to nine fraction digits, and `Z`, `z` or
+ * a `±HH:MM` offset; years 0000–9999 with real month lengths. The vectors it answers are
+ * `crates/specify/ess-primitives/tests/vectors/rfc3339-instants.json`.
+ */
+export function parseInstant(text: string): Instant | undefined {
+  const digits = (from: number, to: number): number | undefined => {
+    if (from >= to || to > text.length) return undefined;
+    let total = 0;
+    for (let index = from; index < to; index += 1) {
+      const code = text.charCodeAt(index);
+      if (code < 48 || code > 57) return undefined;
+      total = total * 10 + (code - 48);
+    }
+    return total;
+  };
+  const at = (index: number, expected: string): boolean =>
+    index < text.length && expected.includes(text[index]!);
+  if (!(at(4, '-') && at(7, '-') && at(10, 'Tt') && at(13, ':') && at(16, ':'))) return undefined;
+  const year = digits(0, 4);
+  const month = digits(5, 7);
+  const day = digits(8, 10);
+  const hour = digits(11, 13);
+  const minute = digits(14, 16);
+  const second = digits(17, 19);
+  if (
+    year === undefined ||
+    month === undefined ||
+    day === undefined ||
+    hour === undefined ||
+    minute === undefined ||
+    second === undefined ||
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > daysInMonth(year, month) ||
+    hour > 23 ||
+    minute > 59 ||
+    second > 59
+  ) {
+    return undefined;
+  }
+  let position = 19;
+  let nanos = 0;
+  if (at(position, '.')) {
+    let end = position + 1;
+    while (end < text.length && text.charCodeAt(end) >= 48 && text.charCodeAt(end) <= 57) end += 1;
+    const width = end - position - 1;
+    if (width === 0 || width > 9) return undefined;
+    nanos = digits(position + 1, end)! * 10 ** (9 - width);
+    position = end;
+  }
+  const rest = text.slice(position);
+  let offset = 0;
+  if (rest !== 'Z' && rest !== 'z') {
+    if (rest.length !== 6 || (rest[0] !== '+' && rest[0] !== '-') || rest[3] !== ':') {
+      return undefined;
+    }
+    const hours = digits(position + 1, position + 3);
+    const minutes = digits(position + 4, position + 6);
+    if (hours === undefined || minutes === undefined || hours > 23 || minutes > 59) {
+      return undefined;
+    }
+    offset = (hours * 3600 + minutes * 60) * (rest[0] === '-' ? -1 : 1);
+  }
+  const seconds =
+    daysFromCivil(year, month, day) * 86400n + BigInt(hour * 3600 + minute * 60 + second - offset);
+  return { seconds, nanos };
+}
+
+function daysInMonth(year: number, month: number): number {
+  if (month === 2) return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0 ? 29 : 28;
+  return [4, 6, 9, 11].includes(month) ? 30 : 31;
+}
+
+/** Days from 1970-01-01 to a proleptic Gregorian date. */
+function daysFromCivil(year: number, month: number, day: number): bigint {
+  const y = month <= 2 ? year - 1 : year;
+  const era = Math.floor(y / 400);
+  const yoe = y - era * 400;
+  const shifted = month > 2 ? month - 3 : month + 9;
+  const doy = Math.floor((153 * shifted + 2) / 5) + day - 1;
+  const doe = yoe * 365 + Math.floor(yoe / 4) - Math.floor(yoe / 100) + doy;
+  return BigInt(era * 146097 + doe - 719468);
+}
+
+/** The key kinds a `distinct` names, Rust's `DistinctKeyKind`. */
+export const DISTINCT_KINDS = [
+  'boolean',
+  'integer',
+  'decimal',
+  'string',
+  'uuid',
+  'timestamp',
+  'enum',
+] as const;
+
+/**
+ * Reads `{distinct: {in, as, by, kind}}` (suite/40, `docs/design/expression-family-source22.md`
+ * `distinct`), Go's `parseDistinct`, and requires `kind`: a suite never carries a key whose
+ * equality its reader would have to infer.
+ */
+export function parseDistinct(fields: { [key: string]: Node }): Predicate {
+  for (const field of Object.keys(fields)) {
+    if (!['in', 'as', 'by', 'kind'].includes(field)) {
+      throw new Error(
+        `distinct: \`${field}\`: \`distinct\` takes \`in\`, \`as\`, \`by\` and \`kind\`, and nothing else`,
+      );
+    }
+  }
+  const over = fields['in'];
+  if (typeof over !== 'string' || !factPath.test(over)) {
+    throw new Error('distinct: `in` names the list, a fact path');
+  }
+  const bind = fields['as'];
+  if (typeof bind !== 'string' || !factPath.test(bind) || bind.includes('.')) {
+    throw new Error('distinct: `as` names each element, one fact path segment');
+  }
+  let key = '';
+  if (Object.hasOwn(fields, 'by')) {
+    const by = fields['by'];
+    if (typeof by !== 'string' || !factPath.test(by) || !by.startsWith(`${bind}.`)) {
+      throw new Error(`distinct: \`by\` names one member under the binder \`${bind}\``);
+    }
+    key = by;
+  }
+  const kind = fields['kind'];
+  if (typeof kind !== 'string' || !(DISTINCT_KINDS as readonly string[]).includes(kind)) {
+    throw new Error(
+      'distinct: `kind` names the key kind: boolean, integer, decimal, string, uuid, timestamp or enum',
+    );
+  }
+  return new Predicate({ kind: 'distinct', over, bind, key, keyKind: kind });
+}
+
+/**
+ * A value spelled under its key kind so equal keys spell alike — exact numbers, the instant of a
+ * timestamp, exact text — or null where the value lies outside the kind. Go's `distinctKey`.
+ */
+export function distinctKey(kind: string, value: Node): string | null {
+  switch (kind) {
+    case 'boolean':
+      return typeof value === 'boolean' ? String(value) : null;
+    case 'integer': {
+      const integer = integerOf(value);
+      return integer === null ? null : integer.toString();
+    }
+    case 'decimal': {
+      const decimal = exactDecimal(value);
+      return decimal === null ? null : `${decimal[0]}e-${decimal[1]}`;
+    }
+    case 'string':
+    case 'uuid':
+    case 'enum':
+      return typeof value === 'string' ? value : null;
+    case 'timestamp': {
+      if (typeof value !== 'string') return null;
+      const at = parseInstant(value);
+      return at === undefined ? null : `${at.seconds}.${at.nanos}`;
+    }
+    default:
+      return null;
   }
 }
 
@@ -610,7 +1255,9 @@ export function parseConstraint(
       const right =
         typeof compared === 'string'
           ? parseOperand(compared, binders)
-          : new Operand({ literal: compared });
+          : isFactMapping(compared)
+            ? parseMappingOperand(path, spelling, compared)
+            : new Operand({ literal: compared });
       return new Predicate({
         kind: 'compare',
         left: new Operand({ path, isFact: true }),
@@ -620,6 +1267,100 @@ export function parseConstraint(
     }
   }
   throw new Error(`\`${path}\` carries no operator this runner knows`);
+}
+
+/** Whether `value` is a mapping, which a comparison operand can only be as `{fact: <path>}`. */
+function isFactMapping(value: Node): value is { [key: string]: Node } {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Reads the explicit fact operand `{fact: <path>}`, the canonical spelling of a one-segment fact on
+ * the right of a comparison (suite/40, `docs/design/expression-family-source22.md` A1), as Rust's
+ * `Operand::fact_mapping` does: exactly one key, naming a fact path. Anything else is refused
+ * rather than compared as the mapping it is. Which suite majors may carry it is the runtime's
+ * admission to decide; this reader only reads it.
+ */
+function parseMappingOperand(path: string, key: string, value: { [key: string]: Node }): Operand {
+  if (Object.keys(value).length === 1 && Object.hasOwn(value, 'offset')) {
+    return parseOffsetOperand(path, key, value['offset'] ?? null);
+  }
+  if (Object.keys(value).length === 1 && Object.hasOwn(value, 'utf8_bytes')) {
+    return parseUtf8BytesOperand(path, key, value['utf8_bytes'] ?? null);
+  }
+  return parseFactOperand(path, key, value);
+}
+
+/**
+ * Reads the derived UTF-8 byte length of a text, `{utf8_bytes: <path>}` (suite/40,
+ * `docs/design/expression-family-source22.md` decision 11), as Rust's `Operand::fact_mapping` does:
+ * one key, naming a fact path. Which suite majors may carry it is the runtime's admission to decide.
+ */
+export function parseUtf8BytesOperand(path: string, key: string, value: Node): Operand {
+  if (typeof value !== 'string' || !factPath.test(value)) {
+    throw new Error(`\`${path}: {${key}: {utf8_bytes: …}}\` names the fact path of a text`);
+  }
+  return new Operand({ path: value, utf8Bytes: true });
+}
+
+/**
+ * Reads one constant offset, `{offset: {fact: <path>, add|subtract: <magnitude>}}` (suite/40, A2),
+ * as Rust's `OffsetOperand::from_entries` does: exactly `fact` and one of `add` and `subtract`; a
+ * number that is a whole number from 0 to `i64::MAX`, or a text `<digits><s|m|h>` without a leading
+ * zero under the current-time bound. A whole number written as text is refused.
+ */
+function parseOffsetOperand(path: string, key: string, value: Node): Operand {
+  const refuse = (): never => {
+    throw new Error(
+      `\`${path}: {${key}: {offset: …}}\` takes exactly \`fact\`, a fact path, and one of \`add\` and \`subtract\``,
+    );
+  };
+  if (
+    value === null ||
+    typeof value !== 'object' ||
+    Array.isArray(value) ||
+    value instanceof JsonNumber
+  ) {
+    return refuse();
+  }
+  const fields = value as { [key: string]: Node };
+  const base = fields['fact'];
+  const add = Object.hasOwn(fields, 'add');
+  const direction = add ? 'add' : 'subtract';
+  if (
+    Object.keys(fields).length !== 2 ||
+    typeof base !== 'string' ||
+    !factPath.test(base) ||
+    add === Object.hasOwn(fields, 'subtract')
+  ) {
+    return refuse();
+  }
+  const magnitude = fields[direction] ?? null;
+  if (typeof magnitude === 'string') {
+    const matched = /^([1-9][0-9]{0,9}|0)([smh])$/.exec(magnitude);
+    if (matched === null) return refuse();
+    const unit = { s: 1n, m: 60n, h: 3600n }[matched[2] as 's' | 'm' | 'h'];
+    const seconds = BigInt(matched[1]!) * unit;
+    if (seconds > 3155760000n) return refuse();
+    return new Operand({
+      offset: { base, add, integer: null, seconds, spelled: magnitude },
+    });
+  }
+  const integer = integerOf(magnitude);
+  if (integer === null || integer < 0n || typeof magnitude === 'boolean') return refuse();
+  return new Operand({
+    offset: { base, add, integer, seconds: 0n, spelled: integer.toString() },
+  });
+}
+
+function parseFactOperand(path: string, key: string, value: { [key: string]: Node }): Operand {
+  const fact = value['fact'];
+  if (Object.keys(value).length !== 1 || typeof fact !== 'string' || !factPath.test(fact)) {
+    throw new Error(
+      `\`${path}: {${key}: …}\`: a comparison operand must be a scalar, or \`{fact: <path>}\` naming a fact`,
+    );
+  }
+  return new Operand({ path: fact, isFact: true });
 }
 
 /** Reads compact expressions. Unrepresentable literal data uses structured comparisons. */

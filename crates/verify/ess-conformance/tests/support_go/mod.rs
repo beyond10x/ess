@@ -13,10 +13,10 @@ use ess_conformance::report::Status;
 use ess_conformance::target::ConformanceTarget;
 use ess_conformance::target::{
     AbsentInputRequest, ElapsedObservation, ElapsedObservationRequest, EntitySetupRequest,
-    EventObservationRequest, ExternalOutcomeControl, ImplementationIdentity, InstantMark,
-    InvocationObservationRequest, ObservedEvent, ObservedInvocation, RedeliveryRequest,
-    ScenarioContext, SemanticCommandRequest, SemanticCommandResult, SemanticViewRequest,
-    SemanticViewResult, TargetError,
+    EventDeliveryRequest, EventObservationRequest, ExternalOutcomeControl, ImplementationIdentity,
+    InstantMark, InvocationObservationRequest, ObservedEvent, ObservedInvocation,
+    RedeliveryRequest, ScenarioContext, SemanticCommandRequest, SemanticCommandResult,
+    SemanticViewRequest, SemanticViewResult, TargetError,
 };
 use ess_conformance::{AdmittedSuite, AdvancingClock, ConformanceSuite, Ids, Runner, RunnerConfig};
 use serde_json::{json, Value};
@@ -24,7 +24,7 @@ use std::cell::RefCell;
 
 /// What one `go test` run of the emitted package came to.
 pub struct GoRun {
-    /// Every scenario's verdict — `passed`, `failed` or `skipped` — read from the run's report/2.
+    /// Every scenario's precise status, read from the run's report/2.
     /// Empty when the run published none, which is what a suite refused at admission leaves.
     pub outcomes: BTreeMap<String, String>,
     /// `go test`'s own output, for a diagnostic.
@@ -175,6 +175,7 @@ fn command_result(result: &SemanticCommandResult) -> Value {
     json!({
         "outcome": result.outcome.as_ref().map(|outcome| outcome.outcome.to_string()),
         "error": result.error.as_ref().map(|error| error.error.to_string()),
+        "error_payload": result.error.as_ref().map(|error| nodes(&error.fields)),
         "consistency": result.consistency.as_ref().map(ToString::to_string),
         "direct_events": events(&result.direct_events),
         "response": result.response.as_ref().map(nodes),
@@ -285,9 +286,59 @@ impl<T: ConformanceTarget> ConformanceTarget for Recorder<T> {
         )
     }
     fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
-        let described = json!({"params": nodes(&request.params)});
+        let at_least = match &request.consistency {
+            ess_primitives::consistency::QueryConsistency::Current => String::new(),
+            ess_primitives::consistency::QueryConsistency::AtLeast { token } => token.to_string(),
+        };
+        let described = json!({"params": nodes(&request.params), "at_least": at_least});
         let key = request.view.to_string();
         let answer = self.inner.query_view(request);
+        self.record(
+            "query_view",
+            key,
+            described,
+            answer,
+            |result| json!({"rows": nodes(&result.rows), "total": result.total}),
+        )
+    }
+    // A read sent as an actor (beyond10x/ess#286) records the actor beside the read, and only
+    // then, so a transcript of reads sent as no actor keeps its bytes.
+    fn query_view_as(
+        &self,
+        request: SemanticViewRequest,
+        reader: &ess_conformance::scenario::ActorRef,
+    ) -> Result<SemanticViewResult, TargetError> {
+        let at_least = match &request.consistency {
+            ess_primitives::consistency::QueryConsistency::Current => String::new(),
+            ess_primitives::consistency::QueryConsistency::AtLeast { token } => token.to_string(),
+        };
+        let described = json!({
+            "params": nodes(&request.params), "at_least": at_least, "actor": reader.to_string(),
+        });
+        let key = request.view.to_string();
+        let answer = self.inner.query_view_as(request, reader);
+        self.record(
+            "query_view",
+            key,
+            described,
+            answer,
+            |result| json!({"rows": nodes(&result.rows), "total": result.total}),
+        )
+    }
+    // A read sent as no actor at all (beyond10x/ess#286), recorded as one.
+    fn query_view_anonymous(
+        &self,
+        request: SemanticViewRequest,
+    ) -> Result<SemanticViewResult, TargetError> {
+        let at_least = match &request.consistency {
+            ess_primitives::consistency::QueryConsistency::Current => String::new(),
+            ess_primitives::consistency::QueryConsistency::AtLeast { token } => token.to_string(),
+        };
+        let described = json!({
+            "params": nodes(&request.params), "at_least": at_least, "anonymous": true,
+        });
+        let key = request.view.to_string();
+        let answer = self.inner.query_view_anonymous(request);
         self.record(
             "query_view",
             key,
@@ -337,6 +388,12 @@ impl<T: ConformanceTarget> ConformanceTarget for Recorder<T> {
         let key = request.event.to_string();
         let answer = self.inner.redeliver_event(request);
         self.record("redeliver_event", key, json!({}), answer, |()| Value::Null)
+    }
+    // An event an external channel delivers (ess/18), for the suites that deliver one.
+    fn deliver_event(&self, request: EventDeliveryRequest) -> Result<(), TargetError> {
+        let key = format!("{}|{}", request.event, request.authority);
+        let answer = self.inner.deliver_event(request);
+        self.record("deliver_event", key, json!({}), answer, |()| Value::Null)
     }
     fn observe_invocations(
         &self,
@@ -556,8 +613,7 @@ pub fn not_passed(verdicts: &BTreeMap<String, String>) -> Vec<&str> {
         .collect()
 }
 
-/// Every scenario's verdict from the Rust reference runner, in the Go report's words: a scenario
-/// the target could not answer is `skipped` there, and one the run could not execute is `failed`.
+/// Every scenario's verdict from the Rust reference runner, preserving report/2 categories.
 pub fn rust_outcomes<T: ConformanceTarget>(
     suite: &ConformanceSuite,
     target: &T,
@@ -585,8 +641,9 @@ fn verdicts(report: ess_conformance::ConformanceReport) -> BTreeMap<String, Stri
         .map(|result| {
             let status = match result.status {
                 Status::Passed => "passed",
-                Status::Failed | Status::Error => "failed",
-                Status::Unsupported => "skipped",
+                Status::Failed => "failed",
+                Status::Error => "error",
+                Status::Unsupported => "unsupported",
             };
             (result.scenario.to_string(), status.to_owned())
         })

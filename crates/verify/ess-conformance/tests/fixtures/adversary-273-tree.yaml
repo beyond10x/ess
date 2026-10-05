@@ -1,0 +1,63 @@
+format: ess/16
+system: tree
+version: v1
+domain: tree.tickets
+types:
+  - {name: tree.tickets.TicketId, kind: newtype, of: Uuid}
+entities:
+  - name: tree.tickets.Ticket
+    identity: {name: ticket_id, type: tree.tickets.TicketId}
+    fields:
+      - {name: parent_id, type: tree.tickets.TicketId}
+    lifecycle:
+      initial: Open
+      states: [Open, Closed]
+      terminal: [Closed]
+      transitions:
+        - {name: close, from: [Open], to: Closed}
+events:
+  - name: tree.tickets.TicketOpened
+    fields:
+      - {name: ticket_id, type: tree.tickets.TicketId}
+      - {name: parent_id, type: tree.tickets.TicketId}
+  - name: tree.tickets.TicketClosed
+    fields:
+      - {name: ticket_id, type: tree.tickets.TicketId}
+      - {name: own, type: tree.tickets.TicketId}
+      - {name: parent_id, type: tree.tickets.TicketId}
+      - {name: parent_again, type: tree.tickets.TicketId}
+errors:
+  - name: tree.tickets.NotOpen
+    fields: []
+commands:
+  - name: tree.tickets.OpenTicket
+    input:
+      - {name: parent_id, type: tree.tickets.TicketId}
+    outcomes:
+      - name: opened
+        creates: tree.tickets.Ticket
+        instance: ticket_id
+        emits: [tree.tickets.TicketOpened]
+        payload:
+          tree.tickets.TicketOpened:
+            ticket_id: {generated: true}
+            parent_id: input.parent_id
+        sets:
+          parent_id: input.parent_id
+  - name: tree.tickets.CloseTicket
+    input:
+      - {name: ticket_id, type: tree.tickets.TicketId}
+    outcomes:
+      - name: closed
+        moves: tree.tickets.Ticket.close
+        instance: ticket_id
+        emits: [tree.tickets.TicketClosed]
+        payload:
+          tree.tickets.TicketClosed:
+            ticket_id: input.ticket_id
+            own: {subject: ticket_id}
+            parent_id: {subject: parent_id}
+            parent_again: {related: {via: parent_id, field: ticket_id}}
+      - name: wrong-state
+        wrong_state: true
+        error: tree.tickets.NotOpen

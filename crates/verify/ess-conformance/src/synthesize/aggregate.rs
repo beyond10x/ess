@@ -21,8 +21,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use ess_compiler::ir::{
     Driver, EntityHandle, EssIr, ResolvedAggregation, ResolvedBody, ResolvedCondition,
-    ResolvedEffect, ResolvedEntity, ResolvedPayloadValue, ResolvedRelatedVia, ResolvedTypeRef,
-    ResolvedView,
+    ResolvedEffect, ResolvedEntity, ResolvedPayloadValue, ResolvedRelatedHop, ResolvedRelatedVia,
+    ResolvedTypeRef, ResolvedView,
 };
 use ess_domain::entity::{EntitySpec, StateName};
 use ess_domain::name::QualifiedName;
@@ -33,16 +33,19 @@ use ess_primitives::node::Node;
 use ess_primitives::predicate::{CompareOp, Operand, Predicate};
 
 use super::{
-    advance, arrange_owner, clipped, created_owned, has_subject_guards, identity_inputs, insert,
-    literal_value, reach, reachable_types, related_guard, route_from, shares_owner, shows,
-    subject_fact, Arrangement, CommandRef, Determined, Refusal, RefusalCause,
+    advance, arrange_first, arrange_owner, clipped, created_owned, has_subject_guards,
+    identity_inputs, insert, literal_value, reach, reachable_types, related, related_guard,
+    route_from, shares_owner, shows, subject_fact, Arrangement, CommandRef, Determined, Refusal,
+    RefusalCause,
 };
 use crate::aggregate::{evaluate, evaluate_skipping_absent, ValueKind};
 use crate::scenario::{
     ActorRef, ConformanceScenario, ConformanceSuite, EntityRef, EssSemanticRef, ScenarioId,
-    ScenarioStep, ScenarioValue, ViewExpectation, ViewRef,
+    ScenarioInitialState, ScenarioStep, ScenarioValue, ViewExpectation, ViewRef,
 };
 use crate::witness::{uuid_of, Distinction};
+
+mod contrast;
 
 /// The most inputs the page's pattern keeps apart: seven, with a group of nine rows.
 const MAX_INPUTS: usize = 7;
@@ -59,6 +62,11 @@ pub(super) fn aggregates(
     refusals: &mut Vec<Refusal>,
 ) {
     let literals = model_literals(ir);
+    // The suite's own authority, established before this family runs: only a scenario that starts
+    // from an empty logical namespace makes an exact count over every row it reads a claim about
+    // this scenario alone (`docs/design/aggregate-group-selection.md`). Never inferred from an
+    // absent parameter or a version number.
+    let isolated = suite.provenance.scenario_initial_state == Some(ScenarioInitialState::Empty);
     for view in ir.views().values() {
         let Some(aggregation) = &view.aggregation else {
             continue;
@@ -66,7 +74,7 @@ pub(super) fn aggregates(
         let id = ScenarioId::Aggregate {
             view: ViewRef::new(view.name.clone()),
         };
-        match scenario(ir, view, aggregation, actors, &literals) {
+        match scenario(ir, view, aggregation, actors, &literals, isolated) {
             Ok(scenario) => insert(suite, id, scenario, refusals),
             Err(cause) => refusals.push(Refusal::about(&id, cause)),
         }
@@ -118,11 +126,18 @@ fn leaf(ir: &EssIr, type_ref: &ResolvedTypeRef) -> (bool, Leaf) {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Ladder {
     Number,
-    Text { prefix: String },
+    Text {
+        prefix: String,
+    },
     Timestamp,
     Enum(Vec<String>),
     Boolean,
-    Uuid { prefix: String },
+    Uuid {
+        prefix: String,
+    },
+    /// The values of another ladder its type admits, in ladder order (`admitted`): a key whose
+    /// newtype bounds, sizes or patterns its values walks only those.
+    Listed(Vec<Node>),
 }
 
 impl Ladder {
@@ -158,6 +173,7 @@ impl Ladder {
             Self::Enum(variants) => Node::Text(variants[ordinal % variants.len()].clone()),
             Self::Boolean => Node::Bool(ordinal % 2 == 1),
             Self::Uuid { prefix } => Node::Text(uuid_of(&format!("{prefix}#{ordinal}"))),
+            Self::Listed(values) => values[ordinal % values.len()].clone(),
         }
     }
 
@@ -165,10 +181,62 @@ impl Ladder {
     fn len(&self) -> Option<usize> {
         match self {
             Self::Enum(variants) => Some(variants.len()),
+            Self::Listed(values) => Some(values.len()),
             Self::Boolean => Some(2),
             _ => None,
         }
     }
+}
+
+/// How many of a ladder's values are checked against a key's type before the ladder is kept as it
+/// is, and how many admitted values a listed ladder keeps.
+const ADMITTED: usize = 64;
+
+/// How far a ladder is walked for values its type admits.
+const ADMITTED_SCAN: usize = 4_096;
+
+/// `ladder`, kept to the values `declared` admits (beyond10x/ess#361): a newtype's invariants —
+/// a range, a length, a pattern — bound a walked key as much as its primitive does, and a row
+/// holding a value outside them is one a correct target refuses to create. A ladder whose first
+/// [`ADMITTED`] values all pass is kept as it is, so every key no invariant bounds walks exactly as
+/// before; otherwise it is the admitted values met walking it, in order, and `None` where it meets
+/// none.
+fn admitted(ir: &EssIr, declared: &ResolvedTypeRef, ladder: Ladder) -> Option<Ladder> {
+    let valid = |value: &Node| crate::input::validate_typed_value(ir, declared, value).is_ok();
+    let bound = ladder.len().unwrap_or(ADMITTED_SCAN);
+    if (0..bound.min(ADMITTED)).all(|ordinal| valid(&ladder.at(ordinal))) {
+        return Some(ladder);
+    }
+    let values: Vec<Node> = (0..bound)
+        .map(|ordinal| ladder.at(ordinal))
+        .filter(|value| valid(value))
+        .take(ADMITTED)
+        .collect();
+    (!values.is_empty()).then_some(Ladder::Listed(values))
+}
+
+/// Why a group tuple holds a value its key's type does not admit, where one does: a scoped or
+/// walked value outside a newtype's invariants is a row a correct target refuses, so the view is
+/// refused by name rather than arranged (beyond10x/ess#361).
+fn inadmissible(plan: &Plan<'_>) -> Option<String> {
+    for (label, tuple) in &plan.tuples {
+        for ((name, _), value) in plan.keys.iter().zip(tuple) {
+            if *value == Node::Null {
+                continue;
+            }
+            let Some(field) = plan.entity.observable_field(name) else {
+                continue;
+            };
+            if let Err(why) = crate::input::validate_typed_value(plan.ir, &field.type_ref, value) {
+                return Some(format!(
+                    "group `{label}` would hold `{name}` = {}, which its type does not admit \
+                     ({why}), and no arrangement here chooses another",
+                    serde_json::to_string(value).unwrap_or_default()
+                ));
+            }
+        }
+    }
+    None
 }
 
 /// Where a scoped value is text and where it is a `Uuid`.
@@ -225,7 +293,13 @@ impl Key {
 struct RelatedKey<'ir> {
     /// The creating command's input that names the referenced row.
     via: &'ir str,
-    /// The referenced entity.
+    /// The further references a chained read follows from that row (ess/22, beyond10x/ess#285):
+    /// empty for a one-hop read.
+    through: &'ir [ResolvedRelatedHop],
+    /// Whether the creating command may leave `via` out, leaving the reference — and so the value
+    /// — absent (ess/22, beyond10x/ess#285).
+    optional_via: bool,
+    /// The referenced entity: the one the last reference names.
     entity: &'ir EntityHandle,
     /// The referenced row's field the value is copied from.
     field: &'ir str,
@@ -267,8 +341,11 @@ fn filled_from<'ir>(creator: &Driver<'ir>, field: &str) -> Option<&'ir str> {
         .sets
         .iter()
         .find_map(|set| match &set.value {
+            // A path (ess/22, A4) reads inside a struct input, which no arrangement here writes.
             ResolvedPayloadValue::InputField { field: input, .. }
-                if set.target == field && set.conversion.is_none() =>
+                if set.target == field
+                    && set.conversion.is_none()
+                    && !ess_domain::command::input_path::is_path(input) =>
             {
                 Some(input.as_str())
             }
@@ -290,12 +367,14 @@ fn leaves_absent(creator: &Driver<'_>, field: &str) -> bool {
 /// How the scenario gives the field `{related: {via, field}}` fills a value of its choosing, or
 /// why it cannot. Which branch creates the related row is chosen per row, once for every field it
 /// must hold ([`arrange_related`]).
+#[allow(clippy::too_many_arguments)]
 fn related_key<'ir>(
     ir: &'ir EssIr,
     handle: &EntityHandle,
     creator: &Driver<'ir>,
     mapped: &BTreeMap<&'ir str, &'ir str>,
     via: &'ir ResolvedRelatedVia,
+    through: &'ir [ResolvedRelatedHop],
     entity: &'ir EntityHandle,
     field: &'ir str,
 ) -> Result<RelatedKey<'ir>, String> {
@@ -327,8 +406,42 @@ fn related_key<'ir>(
             "nothing creates a `{name}` that sets `{field}` from its input"
         ));
     }
+    // A chained read (ess/22, beyond10x/ess#285) is arranged through a row of each entity it
+    // names, each reference stored from its creating branch's input; a related guard on the
+    // creating command reads one row, never a chain.
+    for hop in through {
+        let named = &ir.entity(&hop.entity).name;
+        if hop.entity == *handle {
+            return Err(format!(
+                "a row it reads through is a `{named}`, which the view would then count"
+            ));
+        }
+        if related_guard::routes(creator.command, creator.outcome) {
+            return Err(format!(
+                "`{}` is chosen by a related row its own arrangement supplies",
+                creator.command.name
+            ));
+        }
+        if !related_creators(ir, &hop.entity)
+            .iter()
+            .any(|driver| filled_from(driver, &hop.field).is_some())
+        {
+            return Err(format!(
+                "nothing creates a `{named}` that sets `{}` from its input",
+                hop.field
+            ));
+        }
+    }
+    let optional_via = via.type_ref().is_optional()
+        && creator
+            .command
+            .input
+            .iter()
+            .any(|input| input.name == via_input && input.type_ref.is_optional());
     Ok(RelatedKey {
         via: via_input,
+        through,
+        optional_via,
         entity,
         field,
     })
@@ -379,6 +492,9 @@ fn unchosen(
         ResolvedPayloadValue::ResponseField { .. } => "an external response",
         ResolvedPayloadValue::CallerAttribute { .. } => "a `{caller: …}` source",
         ResolvedPayloadValue::ChangedCount => "`{count: changed}`",
+        ResolvedPayloadValue::RelatedSelection { .. } => {
+            "a value read from the row a selector selects"
+        }
     };
     format!(
         "the creating command sets {role} from {source}, whose value no arrangement here chooses"
@@ -393,6 +509,21 @@ struct Scope {
     kind: Scoped,
 }
 
+/// One declared parameter the filter compares with a group key, `key == param.name`
+/// (beyond10x/ess#361): each read binds it to an actual arranged group's key, and it never
+/// overwrites a row's tuple (`docs/design/aggregate-group-selection.md`).
+#[derive(Debug, Clone)]
+struct Selector {
+    param: String,
+    field: String,
+    /// The key's position in [`Plan::keys`].
+    key: usize,
+}
+
+/// The most reads one selecting scenario makes: every arranged selection first, then the valid
+/// unmatched ones, cut here in that order.
+const MAX_READS: usize = 16;
+
 /// One row the scenario creates.
 #[derive(Debug, Clone)]
 struct Row {
@@ -404,6 +535,9 @@ struct Row {
     values: BTreeMap<String, Node>,
     /// What the row is called in a refusal.
     label: String,
+    /// The lifecycle state a measure's condition has this row rest in, where the contrast search
+    /// chose one (beyond10x/ess#363, [`contrast::arrange`]).
+    state: Option<StateName>,
 }
 
 /// Everything the arrangement decided before any command is chosen.
@@ -444,6 +578,12 @@ struct Plan<'ir> {
     /// Whether the view is ungrouped and nothing scopes it, so it is asserted as the change its
     /// rows make ([`observe_change`]).
     delta: bool,
+    /// The parameters that select a group key.
+    selectors: Vec<Selector>,
+    /// Whether the scenario asserts every group and the number of rows exactly, under the suite's
+    /// `Empty` authority ([`observe_exact`]): a view with a group selector, or one nothing scopes.
+    /// Every other view keeps the observation it had.
+    exact: bool,
 }
 
 /// An input of the creating command that a `when_related:` predicate compares with the related
@@ -505,9 +645,11 @@ impl Plan<'_> {
     /// Whether only this scenario's rows can land in the group with these key values: the view is
     /// scoped by a parameter, or a scoped key holds one of its values. A tuple whose scoped key is
     /// absent (`N<k>` of a view scoped only by that key) is shared with every row another scenario
-    /// creates without the key, so it is asserted to exist and nothing more.
+    /// creates without the key, so it is asserted to exist and nothing more — except where the
+    /// scenario is [`exact`](Self::exact): its rows are all the view holds.
     fn scoped_tuple(&self, tuple: &[Node]) -> bool {
-        !self.scopes.is_empty()
+        self.exact
+            || !self.scopes.is_empty()
             || self
                 .keys
                 .iter()
@@ -550,6 +692,54 @@ impl Plan<'_> {
             })
             .collect()
     }
+
+    /// `params`, with every group selector bound to the key `reached` actually holds: the
+    /// selector conjunct then holds of the row, and the rest of the filter decides it. A key the
+    /// row holds as absent is left unbound — no equality selects it.
+    fn selecting(
+        &self,
+        params: &BTreeMap<String, ScenarioValue>,
+        reached: &Arrangement,
+    ) -> BTreeMap<String, ScenarioValue> {
+        let mut bound = params.clone();
+        for selector in &self.selectors {
+            let value = if selector.field == EntitySpec::STATE {
+                Some(ScenarioValue::literal(Node::Text(
+                    reached.state.to_string(),
+                )))
+            } else {
+                reached
+                    .settled
+                    .get(&selector.field)
+                    .map(|held| held.value.clone())
+            };
+            match value {
+                Some(value) if value != ScenarioValue::literal(Node::Null) => {
+                    bound.insert(selector.param.clone(), value);
+                }
+                _ => {}
+            }
+        }
+        bound
+    }
+
+    /// Whether the filter reads nothing but group selectors and their parameters: bound to a row's
+    /// own key it holds of every row, so a refuted row is witnessed by a distinct group and is
+    /// never forced through a state.
+    fn selectors_only(&self) -> bool {
+        !self.selectors.is_empty()
+            && self.view.filter.as_ref().is_some_and(|filter| {
+                filter.fact_paths().into_iter().all(|path| {
+                    self.selectors.iter().any(|selector| match path.segments() {
+                        [field] => *field == selector.field,
+                        [namespace, name] => {
+                            namespace == ViewSpec::PARAM && *name == selector.param
+                        }
+                        _ => false,
+                    })
+                })
+            })
+    }
 }
 
 fn unwitnessed(view: &ResolvedView, reason: impl Into<String>) -> RefusalCause {
@@ -582,6 +772,19 @@ fn model_literals(ir: &EssIr) -> BTreeSet<String> {
                 }
                 ResolvedCondition::Related { test, input, .. } => {
                     if let ess_compiler::ir::ResolvedRelatedTest::Holds { predicate } = test {
+                        texts(predicate, &mut out);
+                    }
+                    if let Some(input) = input {
+                        texts(input, &mut out);
+                    }
+                }
+                ResolvedCondition::RelatedSet {
+                    selection,
+                    test,
+                    input,
+                } => {
+                    texts(&selection.filter, &mut out);
+                    if let Some(predicate) = test.predicate() {
                         texts(predicate, &mut out);
                     }
                     if let Some(input) = input {
@@ -652,7 +855,11 @@ fn texts(predicate: &Predicate, out: &mut BTreeSet<String>) {
                 value(literal, out);
             }
         }
-        Predicate::TextMatch { value: literal, .. } => value(literal, out),
+        Predicate::TextMatch { value: operand, .. } => {
+            if let Some(literal) = operand.as_literal() {
+                value(literal, out);
+            }
+        }
         Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
             texts(&quantified.body, out);
         }
@@ -675,6 +882,7 @@ fn scoping_equality(predicate: &Predicate) -> Option<(String, String)> {
         left: Operand::Fact(left),
         op: CompareOp::Eq,
         right: Operand::Fact(right),
+        ..
     } = predicate
     else {
         return None;
@@ -735,6 +943,7 @@ fn scenario(
     aggregation: &ResolvedAggregation,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     literals: &BTreeSet<String>,
+    isolated: bool,
 ) -> Result<ConformanceScenario, RefusalCause> {
     let handle = &view.source;
     let entity = ir.entity(handle);
@@ -771,7 +980,9 @@ fn scenario(
         .iter()
         .filter(|set| set.conversion.is_none())
         .filter_map(|set| match &set.value {
-            ResolvedPayloadValue::InputField { field, .. } => {
+            ResolvedPayloadValue::InputField { field, .. }
+                if !ess_domain::command::input_path::is_path(field) =>
+            {
                 Some((set.target.as_str(), field.as_str()))
             }
             _ => None,
@@ -789,12 +1000,13 @@ fn scenario(
     {
         if let ResolvedPayloadValue::RelatedField {
             via,
+            through,
             entity: other,
             field,
             ..
         } = &set.value
         {
-            match related_key(ir, handle, creator, &mapped, via, other, field) {
+            match related_key(ir, handle, creator, &mapped, via, through, other, field) {
                 Ok(key) => {
                     related.insert(set.target.as_str(), key);
                 }
@@ -841,14 +1053,24 @@ fn scenario(
     // the row then holds it as absent (`synthesize.rs`, `settled`).
     // A field copied from a related row is absent where that row's field is: some branch creating
     // the row fills it from an `Optional` input, and the field is itself `Optional`.
+    // From ess/22 (beyond10x/ess#285) it is absent too where a reference it is read through is:
+    // the creating command leaves its Optional `via` input out, or a chained read's Optional next
+    // reference is left absent by a branch creating the row that holds it.
     let related_absent = |name: &str| {
         related.get(name).is_some_and(|key| {
-            ir.entity(key.entity)
+            (ir.entity(key.entity)
                 .observable_field(key.field)
                 .is_some_and(|field| field.type_ref.is_optional())
                 && related_creators(ir, key.entity)
                     .iter()
-                    .any(|driver| leaves_absent(driver, key.field))
+                    .any(|driver| leaves_absent(driver, key.field)))
+                || key.optional_via
+                || key.through.iter().any(|hop| {
+                    hop.type_ref.is_optional()
+                        && related_creators(ir, &hop.entity)
+                            .iter()
+                            .any(|driver| leaves_absent(driver, &hop.field))
+                })
         })
     };
     let absent_able = |name: &str| {
@@ -875,8 +1097,10 @@ fn scenario(
     };
 
     // Scoping by parameter: every declared parameter is read by exactly one top-level
-    // `field == param.name` conjunct over a scopable field that is not a group key.
+    // `field == param.name` conjunct over a scopable field that is not a group key — or, under the
+    // suite's `Empty` authority, over a group key it then selects (beyond10x/ess#361).
     let mut scopes = Vec::new();
+    let mut selectors: Vec<Selector> = Vec::new();
     for param in &view.params {
         let read = FactPath::from_segments([ViewSpec::PARAM, param.name.as_str()]);
         let reads = view.filter.as_ref().map_or(0, |filter| {
@@ -906,6 +1130,27 @@ fn scenario(
                     param: param.name.clone(),
                     field,
                     kind,
+                });
+            }
+            Some((field, _)) if reads == 1 && isolated => {
+                if let Some(other) = selectors.iter().find(|selector| selector.field == field) {
+                    return Err(unwitnessed(
+                        view,
+                        format!(
+                            "the parameters `{}` and `{}` both select the group key `{field}`",
+                            other.param, param.name
+                        ),
+                    ));
+                }
+                let key = aggregation
+                    .group_by
+                    .iter()
+                    .position(|key| *key == field)
+                    .unwrap_or_else(|| unreachable!("`{field}` is a group key"));
+                selectors.push(Selector {
+                    param: param.name.clone(),
+                    field,
+                    key,
                 });
             }
             _ => {
@@ -938,8 +1183,21 @@ fn scenario(
             Key::Fixed(Node::Null)
         } else if chosen_by_scenario(key) {
             let (_, found) = field_type(key).unwrap_or((false, Leaf::Other));
-            match Ladder::of(&view.name, key, &found) {
-                Some(ladder) => Key::Walked(ladder),
+            let declared = entity.observable_field(key).map(|field| field.type_ref);
+            match Ladder::of(&view.name, key, &found)
+                .zip(declared)
+                .map(|(ladder, declared)| admitted(ir, &declared, ladder))
+            {
+                Some(Some(ladder)) => Key::Walked(ladder),
+                Some(None) => {
+                    return Err(unwitnessed(
+                        view,
+                        format!(
+                            "no value the ladder walks for the group key `{key}` is one its type \
+                             admits"
+                        ),
+                    ))
+                }
                 None => {
                     return Err(unwitnessed(
                         view,
@@ -975,10 +1233,34 @@ fn scenario(
             .functions
             .values()
             .any(|aggregate| additive(aggregate.function));
-    if !keys.iter().any(|(_, key)| matches!(key, Key::Scoped(_))) && scopes.is_empty() && !delta {
+    // Under the suite's `Empty` authority a scenario's rows are all the view holds, so a view a
+    // parameter selects a group of, and every view nothing scopes — grouped by the lifecycle
+    // state, an enum or a `Boolean` alone, or ungrouped with no `count` or `sum` — is asserted
+    // exactly (beyond10x/ess#361, beyond10x/ess#362). Every other view keeps the observation it
+    // had, the change of an ungrouped `count` or `sum` included.
+    let unscoped =
+        !keys.iter().any(|(_, key)| matches!(key, Key::Scoped(_))) && scopes.is_empty() && !delta;
+    let exact = isolated && (!selectors.is_empty() || unscoped);
+    if unscoped && !exact {
         return Err(RefusalCause::AggregateUnscoped {
             view: ViewRef::new(view.name.clone()),
         });
+    }
+    if exact {
+        if let Some(reason) = unsettled(ir, handle) {
+            return Err(unwitnessed(view, reason));
+        }
+        // Every row the creating command names must exist (`arrange_related`).
+        if let Some((field, reason)) = unrelated.iter().next() {
+            return Err(unwitnessed(
+                view,
+                format!(
+                    "the creating command copies `{field}` from a related row no arrangement here \
+                     supplies ({reason}), so the rows it creates would name a row that does not \
+                     exist"
+                ),
+            ));
+        }
     }
     // The identity is scopable by nothing and differs in every row, so no group of `m` rows
     // shares one; it is scoped out above only when nothing else scopes the view.
@@ -1102,7 +1384,20 @@ fn scenario(
             }
         })
         .collect();
-    let m = group_size(inputs.len(), &beyond);
+    // A conditioned `avg` (beyond10x/ess#363) is over a proper subset of A whose mean must tell
+    // rounding from truncation, which three of at least six rows can and three of three cannot:
+    // the group is sized as for two inputs at least.
+    let conditioned_mean = aggregation.functions.values().any(|aggregate| {
+        aggregate.function == AggregateFunction::Avg && aggregate.r#where.is_some()
+    });
+    let m = group_size(
+        if conditioned_mean {
+            inputs.len().max(2)
+        } else {
+            inputs.len()
+        },
+        &beyond,
+    );
     // The pattern keeps every A value below `100·i + 85` up to nine rows (`t ≤ 7`); a group the
     // absent rows' counts made larger would let an A value reach the values b, x, c and bₖ hold.
     if m > group_size(MAX_INPUTS, &[]) {
@@ -1172,9 +1467,31 @@ fn scenario(
         follows_owner,
         tuples: Vec::new(),
         delta,
+        selectors,
+        exact,
     };
     assign_tuples(&mut plan, &mapped);
-    let rows = rows(&plan, &inputs, m);
+    if let Some(reason) = inadmissible(&plan) {
+        return Err(unwitnessed(view, reason));
+    }
+    let mut rows = rows(&plan, &inputs, m);
+    // A measure that reads only the rows its condition admits (beyond10x/ess#363) needs a group
+    // holding rows on both sides of it, arranged so that its value decides the condition. Rows
+    // something outside the arrangement changes could move between its sides unseen.
+    if !contrast::conditioned(&plan).is_empty() {
+        if let Some(reason) = unsettled(ir, handle) {
+            return Err(unwitnessed(view, reason));
+        }
+        let keyed: BTreeSet<&str> = aggregation
+            .group_by
+            .iter()
+            .map(String::as_str)
+            .chain(plan.scopes.iter().map(|scope| scope.field.as_str()))
+            .collect();
+        let measured: BTreeSet<&str> = inputs.iter().map(|(name, _)| name.as_str()).collect();
+        let dimensions = contrast::dimensions(&plan, &mapped, &keyed, &measured);
+        contrast::arrange(&plan, &mut rows, &dimensions, &plan.params("in"))?;
+    }
     plan.related_owners = related_owners(&plan, &rows, actors)?;
     plan.guard_owners = guard_owners(&plan, &rows, actors)?;
     arrange_and_observe(&plan, creator, &mapped, rows, actors)
@@ -1280,6 +1597,15 @@ fn assign_tuples(plan: &mut Plan<'_>, mapped: &BTreeMap<&str, &str>) {
         if representatives[index] != index {
             continue;
         }
+        // No equality selects an absent key, so a group a selector's key leaves absent is one no
+        // read could ask for (`docs/design/aggregate-group-selection.md`).
+        if plan
+            .selectors
+            .iter()
+            .any(|selector| representatives[selector.key] == index)
+        {
+            continue;
+        }
         let label = format!("N{}", index + 1);
         let mut tuple = b.clone();
         set(&mut tuple, index, Node::Null);
@@ -1359,6 +1685,7 @@ fn rows(plan: &Plan<'_>, inputs: &[(String, Ladder)], m: usize) -> Vec<Row> {
             admitted,
             values,
             label,
+            state: None,
         }
     };
     let skips = |i: usize| plan.skipping.contains(&inputs[i].0);
@@ -1747,6 +2074,9 @@ fn arrange_and_observe(
                 }
                 arrange(&attempt)?
             }
+            // A filter that reads nothing but group selectors holds of every row under its own
+            // key: the selection is refuted by the distinct groups, and no state is forced.
+            Err(_) if !attempt.admitted && plan.selectors_only() => continue,
             Err(error) => return Err(error),
         };
         if let (Some(key), Some(owner)) = (
@@ -2006,14 +2336,15 @@ fn drive_row(
     )?;
     let start = &created.reached;
 
-    let wanted_state =
-        plan.keys
-            .iter()
-            .zip(&plan.tuples[row.tuple].1)
-            .find_map(|((_, key), value)| match (key, value) {
-                (Key::State(_), Node::Text(state)) => StateName::new(state).ok(),
-                _ => None,
-            });
+    let wanted_state = plan
+        .keys
+        .iter()
+        .zip(&plan.tuples[row.tuple].1)
+        .find_map(|((_, key), value)| match (key, value) {
+            (Key::State(_), Node::Text(state)) => StateName::new(state).ok(),
+            _ => None,
+        })
+        .or_else(|| row.state.clone());
     let all = ir.drivers();
     let drivers: &[Driver<'_>] = all.get(plan.handle).map_or(&[], Vec::as_slice);
     let targets: Vec<StateName> = match wanted_state {
@@ -2038,7 +2369,8 @@ fn drive_row(
         ) else {
             continue;
         };
-        if shows(ir, plan.view, &reached.state, &reached.settled, params) != Ok(row.admitted) {
+        let selecting = plan.selecting(params, &reached);
+        if shows(ir, plan.view, &reached.state, &reached.settled, &selecting) != Ok(row.admitted) {
             continue;
         }
         if best
@@ -2073,7 +2405,12 @@ fn create_row(
     input: &BTreeMap<String, Node>,
 ) -> Result<Created, RefusalCause> {
     let shared = owner.filter(|owner| owner.shared).map(|owner| &owner.row);
-    let referenced = arrange_related(plan, row, distinction, actors, shared)?;
+    let Referenced {
+        named: referenced,
+        read_from,
+        omitted,
+        others,
+    } = arrange_related(plan, (creator, mapped), row, distinction, actors, shared)?;
     let prelude: Vec<ScenarioStep> = referenced
         .iter()
         .flat_map(|(_, row)| row.steps.iter().cloned())
@@ -2111,12 +2448,21 @@ fn create_row(
         &referenced,
     )?;
     for (via, row) in &referenced {
-        point_at(creator, &mut start, via, row, mapped).ok_or_else(|| {
+        let from = (read_from.get(via), others.get(via));
+        point_at(creator, &mut start, via, row, from, mapped).ok_or_else(|| {
             plan.unwitnessed(format!(
                 "the creating command's `{via}` cannot be pointed at the row it reads"
             ))
         })?;
         start.source.extend(row.source.iter().cloned());
+    }
+    for via in &omitted {
+        leave_out(creator, &mut start, via, mapped).ok_or_else(|| {
+            plan.unwitnessed(format!(
+                "the creating command's `{via}` cannot be left out for row `{}`",
+                row.label
+            ))
+        })?;
     }
     Ok(Created {
         reached: start,
@@ -2154,16 +2500,12 @@ fn create_from(
     let Some((via, read)) = related_guard::reads(creator.command)
         .filter(|_| related_guard::routes(creator.command, creator.outcome))
     else {
-        return created_owned(
-            ir,
-            plan.handle,
-            creator,
-            actors,
-            distinction,
-            &[],
-            owner,
-            Some(input),
-        )
+        // This aggregate owns the related-row prelude and points the invocation at those
+        // captured rows below. The general creator arrangement would create them again,
+        // interleaving unused sources with the aggregate's rows and changing its witness.
+        return super::created_by(ir, plan.handle, creator, distinction, owner, |bound, _| {
+            Ok::<_, super::Unreachable>(super::invoke_with(ir, creator, None, actors, bound, input))
+        })
         .map(|created| (created, None))
         .map_err(|_| plan.unwitnessed(format!("row `{}` cannot be created", row.label)));
     };
@@ -2284,23 +2626,37 @@ fn holds(row: &Arrangement, values: &Wanted<'_>) -> bool {
 /// read, so rows that share an owner share its values and its group.
 fn arrange_related<'p>(
     plan: &Plan<'p>,
+    (creator, mapped): (&Driver<'p>, &BTreeMap<&str, &str>),
     row: &Row,
     distinction: Distinction,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     shared: Option<&(String, Arrangement)>,
-) -> Result<Vec<(&'p str, Arrangement)>, RefusalCause> {
+) -> Result<Referenced<'p>, RefusalCause> {
     let mut wanted: BTreeMap<&str, (RelatedKey<'_>, Wanted<'_>)> = BTreeMap::new();
     for (field, value) in &row.values {
         let Some(key) = plan.related.get(field.as_str()) else {
             continue;
         };
-        wanted
-            .entry(key.via)
-            .or_insert((*key, BTreeMap::new()))
-            .1
-            .insert(key.field, value.clone());
+        let (held, values) = wanted.entry(key.via).or_insert((*key, BTreeMap::new()));
+        // One input read along two paths — once in one hop, once chained — names one row, which
+        // cannot be both (ess/22, beyond10x/ess#285).
+        if held.through != key.through {
+            return Err(plan.unwitnessed(format!(
+                "row `{}` reads `{}` along two paths of references",
+                row.label, key.via
+            )));
+        }
+        values.insert(key.field, value.clone());
     }
-    let mut out = Vec::new();
+    // Under an exact observation every row the creating command reads through is arranged, also
+    // where the view reads nothing copied from it: an input naming no row is a command a correct
+    // target refuses, never a row it counts.
+    if plan.exact {
+        for key in plan.related.values() {
+            wanted.entry(key.via).or_insert((*key, BTreeMap::new()));
+        }
+    }
+    let mut out = Referenced::default();
     for (nth, (via, (key, values))) in wanted.into_iter().enumerate() {
         if let Some((_, owner)) = shared.filter(|(field, _)| field == via) {
             if !holds(owner, &values) {
@@ -2310,22 +2666,208 @@ fn arrange_related<'p>(
                     row.label
                 )));
             }
-            out.push((
+            out.named.push((
                 via,
                 Arrangement {
                     steps: Vec::new(),
                     ..owner.clone()
                 },
             ));
+            out.read_from.insert(via, ReadFrom::Named);
             continue;
         }
         let at = Distinction::further(RELATED_ROWS * (nth + 1) + distinction.get());
-        out.push((
-            via,
-            arrange_referenced(plan, &key, &values, at, actors, &row.label)?,
-        ));
+        match arrange_key_rows(plan, &key, &values, at, actors, &row.label)? {
+            (Some(mut named), from) => {
+                let chains = other_chains(creator, mapped, &key);
+                let pointed =
+                    point_others(plan, &mut named, &chains, at, actors, (&row.label, via))?;
+                out.named.push((via, named));
+                out.read_from.insert(via, from);
+                out.others.insert(via, pointed);
+            }
+            (None, _) => out.omitted.push(via),
+        }
     }
     Ok(out)
+}
+
+/// The chained reads of `creator`'s `sets:` through `key`'s input other than `key`'s own: each a
+/// further reference on the row that input names, and the entity it names (ess/22,
+/// beyond10x/ess#285).
+fn other_chains<'ir>(
+    creator: &Driver<'ir>,
+    mapped: &BTreeMap<&str, &str>,
+    key: &RelatedKey<'_>,
+) -> Vec<(&'ir ResolvedRelatedHop, &'ir EntityHandle)> {
+    let mut out: Vec<(&ResolvedRelatedHop, &EntityHandle)> = Vec::new();
+    for set in &creator.outcome.sets {
+        let ResolvedPayloadValue::RelatedField {
+            via,
+            through,
+            entity,
+            ..
+        } = &set.value
+        else {
+            continue;
+        };
+        let [hop] = through.as_slice() else {
+            continue;
+        };
+        let other = via_input(via, mapped) == Some(key.via) && through.as_slice() != key.through;
+        if other && !out.iter().any(|(held, _)| held.field == hop.field) {
+            out.push((hop, entity));
+        }
+    }
+    out
+}
+
+/// Points every further reference `chains` names on `named` — the row a key's input is pointed at,
+/// which other chained reads of the creating branch follow on along references of their own — at a
+/// row of the entity each names, arranged first; or, where none can be arranged (the view's own
+/// entity, which it would count) and the reference may be absent, leaves it absent. A required
+/// reference no row can be arranged for is refused by name (ess/22, beyond10x/ess#285).
+fn point_others(
+    plan: &Plan<'_>,
+    named: &mut Arrangement,
+    chains: &[(&ResolvedRelatedHop, &EntityHandle)],
+    at: Distinction,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    (label, via): (&str, &str),
+) -> Result<BTreeMap<String, Option<Arrangement>>, RefusalCause> {
+    let ir = plan.ir;
+    let mut out = BTreeMap::new();
+    let mut prelude = Vec::new();
+    for (nth, (hop, entity)) in chains.iter().enumerate() {
+        let last = (*entity != plan.handle)
+            .then(|| {
+                arrange_first(
+                    ir,
+                    entity,
+                    std::slice::from_ref(&ir.entity(entity).lifecycle.initial),
+                    actors,
+                    Distinction::further(at.get() + RELATED_ROWS / 2 + nth),
+                    &[plan.handle],
+                )
+                .ok()
+            })
+            .flatten()
+            .filter(|last| related::rewrite_reference(ir, named, &hop.field, Some(&last.instance)));
+        match last {
+            Some(last) => {
+                prelude.extend(last.steps.iter().cloned());
+                named.source.extend(last.source.iter().cloned());
+                out.insert(hop.field.clone(), Some(last));
+            }
+            None if hop.type_ref.is_optional()
+                && related::rewrite_reference(ir, named, &hop.field, None) =>
+            {
+                out.insert(hop.field.clone(), None);
+            }
+            None => {
+                return Err(plan.unwitnessed(format!(
+                    "row `{label}` reads `{via}` along two chains of references, and `{hop}` can \
+                     be pointed at no row the arrangement makes"
+                )))
+            }
+        }
+    }
+    prelude.append(&mut named.steps);
+    named.steps = prelude;
+    Ok(out)
+}
+
+/// Where the values a row copies through one input are read (ess/22, beyond10x/ess#285).
+enum ReadFrom {
+    /// The row the input is pointed at holds them.
+    Named,
+    /// A chained read: the last row it reaches holds them.
+    Last(Arrangement),
+    /// A reference on the way was left absent, so every value read is absent.
+    Absent,
+}
+
+/// The related rows a created row reads its keys from ([`arrange_related`]).
+#[derive(Default)]
+struct Referenced<'p> {
+    /// The row each input is pointed at, by input. A chained read's carries the steps of the rows
+    /// it reaches through, first.
+    named: Vec<(&'p str, Arrangement)>,
+    /// Where each pointed input's values are read.
+    read_from: BTreeMap<&'p str, ReadFrom>,
+    /// The rows the further references of other chained reads through each input name, by the
+    /// reference's field — `None` where it is left absent ([`point_others`]).
+    others: BTreeMap<&'p str, BTreeMap<String, Option<Arrangement>>>,
+    /// The Optional inputs left out, leaving the reference and every value read through it absent
+    /// (ess/22, beyond10x/ess#285).
+    omitted: Vec<&'p str>,
+}
+
+/// The rows one input a row's keys are read through is arranged as: the row the input is pointed
+/// at, and where the values are read — or no row, where the input is left out.
+///
+/// A one-hop read is arranged as [`arrange_referenced`] arranges it, and only where that cannot
+/// leave every value absent is its Optional input left out instead (ess/22, beyond10x/ess#285).
+/// A chained read gets a row of the last entity holding the values and a row of the entity `via`
+/// names whose next reference is pointed at it; where every value is absent, that next reference
+/// is left absent instead, where it may be, else the input is left out, else the last row holds
+/// the values absent.
+fn arrange_key_rows(
+    plan: &Plan<'_>,
+    key: &RelatedKey<'_>,
+    values: &Wanted<'_>,
+    distinction: Distinction,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    label: &str,
+) -> Result<(Option<Arrangement>, ReadFrom), RefusalCause> {
+    let all_absent = !values.is_empty() && values.values().all(|value| *value == Node::Null);
+    let [hop] = key.through else {
+        if !key.through.is_empty() {
+            return Err(plan.unwitnessed(format!(
+                "row `{label}` reads through `{}` across more than two references",
+                key.via
+            )));
+        }
+        return match arrange_referenced(plan, key, values, distinction, actors, label) {
+            Ok(row) => Ok((Some(row), ReadFrom::Named)),
+            Err(_) if all_absent && key.optional_via => Ok((None, ReadFrom::Absent)),
+            Err(error) => Err(error),
+        };
+    };
+    let ir = plan.ir;
+    let name = &ir.entity(&hop.entity).name;
+    let middle = |to: Option<&crate::scenario::InstanceName>| {
+        let mut row = arrange_first(
+            ir,
+            &hop.entity,
+            std::slice::from_ref(&ir.entity(&hop.entity).lifecycle.initial),
+            actors,
+            distinction,
+            &[plan.handle],
+        )
+        .ok()?;
+        related::rewrite_reference(ir, &mut row, &hop.field, to).then_some(row)
+    };
+    if all_absent && hop.type_ref.is_optional() {
+        if let Some(named) = middle(None) {
+            return Ok((Some(named), ReadFrom::Absent));
+        }
+    }
+    if all_absent && key.optional_via {
+        return Ok((None, ReadFrom::Absent));
+    }
+    let last = arrange_referenced(plan, key, values, distinction, actors, label)?;
+    let mut named = middle(Some(&last.instance)).ok_or_else(|| {
+        plan.unwitnessed(format!(
+            "no `{name}` can be created naming the row that row `{label}` reads through `{}`",
+            key.via
+        ))
+    })?;
+    let mut steps = last.steps.clone();
+    steps.append(&mut named.steps);
+    named.steps = steps;
+    named.source.extend(last.source.iter().cloned());
+    Ok((Some(named), ReadFrom::Last(last)))
 }
 
 /// The distinction the owners of [`related_owners`] are arranged at, one apart per owner.
@@ -2497,13 +3039,26 @@ fn arrange_referenced(
 
 /// Points the creating command's input `via` at the referenced row `row`, in the step that runs it
 /// and in what it settled: the fields it fills from `via`, and those it copies from `row`.
+///
+/// A chained read's values are read from the last row it reaches, and a read through a reference
+/// left absent copies absent values (ess/22, beyond10x/ess#285).
 fn point_at(
     creator: &Driver<'_>,
     start: &mut Arrangement,
     via: &str,
     row: &Arrangement,
+    (from, others): (
+        Option<&ReadFrom>,
+        Option<&BTreeMap<String, Option<Arrangement>>>,
+    ),
     mapped: &BTreeMap<&str, &str>,
 ) -> Option<()> {
+    let absent = Determined {
+        value: ScenarioValue::literal(Node::Null),
+        type_ref: ResolvedTypeRef::Primitive {
+            name: Primitive::String,
+        },
+    };
     let command = CommandRef::new(creator.command.name.clone());
     let pointed = ScenarioValue::instance(row.instance.clone());
     let step = start.steps.iter_mut().rev().find_map(|step| match step {
@@ -2524,9 +3079,27 @@ fn point_at(
         let value = match &set.value {
             ResolvedPayloadValue::InputField { field, .. } if field == via => Some(pointed.clone()),
             ResolvedPayloadValue::RelatedField {
-                via: read, field, ..
+                via: read,
+                through,
+                field,
+                ..
             } if via_input(read, mapped) == Some(via) => {
-                row.settled.get(field).map(|held| held.value.clone())
+                // A one-hop read reads the row the input names; a chained one the row its next
+                // reference names there — another chain's ([`point_others`]) or the key's own —
+                // and nothing where that reference was left absent (ess/22, beyond10x/ess#285).
+                let other = through
+                    .first()
+                    .and_then(|hop| others.and_then(|others| others.get(&hop.field)));
+                match (through.is_empty(), other, from) {
+                    (true, _, _) | (false, None, None | Some(ReadFrom::Named)) => {
+                        row.settled.get(field)
+                    }
+                    (false, Some(Some(last)), _) | (false, None, Some(ReadFrom::Last(last))) => {
+                        last.settled.get(field)
+                    }
+                    (false, Some(None), _) | (false, None, Some(ReadFrom::Absent)) => Some(&absent),
+                }
+                .map(|held| held.value.clone())
             }
             _ => continue,
         };
@@ -2544,6 +3117,55 @@ fn point_at(
                 start.settled.remove(&set.target);
             }
         }
+    }
+    Some(())
+}
+
+/// Leaves the creating command's Optional input `via` out (ess/22, beyond10x/ess#285), in the step
+/// that runs it and in what it settled: the fields it fills from `via`, and those it copies through
+/// it, are absent.
+fn leave_out(
+    creator: &Driver<'_>,
+    start: &mut Arrangement,
+    via: &str,
+    mapped: &BTreeMap<&str, &str>,
+) -> Option<()> {
+    let command = CommandRef::new(creator.command.name.clone());
+    let step = start.steps.iter_mut().rev().find_map(|step| match step {
+        ScenarioStep::ExecuteCommand {
+            command: run,
+            input,
+            ..
+        } if *run == command => Some(input),
+        _ => None,
+    })?;
+    step.remove(via);
+    for set in creator
+        .outcome
+        .sets
+        .iter()
+        .filter(|set| set.conversion.is_none())
+    {
+        let reads = match &set.value {
+            ResolvedPayloadValue::InputField { field, .. } => field == via,
+            ResolvedPayloadValue::RelatedField { via: read, .. } => {
+                via_input(read, mapped) == Some(via)
+            }
+            _ => false,
+        };
+        if !reads {
+            continue;
+        }
+        if !set.target_type.is_optional() {
+            return None;
+        }
+        start.settled.insert(
+            set.target.clone(),
+            Determined {
+                value: ScenarioValue::literal(Node::Null),
+                type_ref: set.target_type.clone(),
+            },
+        );
     }
     Some(())
 }
@@ -2728,8 +3350,14 @@ fn observe(
     }
 
     let groups = groups(plan, arranged)?;
+    if plan.exact {
+        return observe_exact(plan, arranged, &groups, params, (&name, steps, source));
+    }
 
     let mut expectations = Vec::new();
+    // The conditioned measures some asserted group decides, and whether one asserted group selects
+    // nothing for every one of them (beyond10x/ess#363).
+    let (mut decided, mut nothing) = (BTreeSet::new(), false);
     for (tuple, members) in &groups {
         let keys: BTreeMap<String, ScenarioValue> = plan
             .aggregation
@@ -2756,10 +3384,11 @@ fn observe(
             continue;
         }
         if members.contains(&0) {
-            rounding_is_observable(plan, arranged, &admitted)?;
+            rounding_is_observable(plan, arranged, &admitted, params)?;
         }
+        nothing |= contrast::decisive(plan, arranged, &admitted, params, &mut decided)?;
         let mut fields = keys;
-        for (field, value) in aggregates_over(plan, arranged, &admitted)? {
+        for (field, value) in aggregates_over(plan, arranged, &admitted, params)? {
             fields.insert(field, ScenarioValue::literal(value));
         }
         expectations.push(ViewExpectation::Contains { fields });
@@ -2774,19 +3403,20 @@ fn observe(
             .any(|expectation| matches!(expectation, ViewExpectation::Contains { .. }))
         {
             let mut fields = BTreeMap::new();
-            for (field, value) in aggregates_over(plan, arranged, &[])? {
+            for (field, value) in aggregates_over(plan, arranged, &[], params)? {
                 fields.insert(field, ScenarioValue::literal(value));
             }
             expectations.push(ViewExpectation::Contains { fields });
         }
         expectations.push(one.clone());
     }
+    contrast::all_decisive(plan, &decided, nothing)?;
     read(view, &name, params, expectations, &mut steps);
 
     if plan.aggregation.is_ungrouped() {
         // Decision 4: the one row exists when no row passes the filter.
         let mut fields = BTreeMap::new();
-        for (field, value) in aggregates_over(plan, arranged, &[])? {
+        for (field, value) in aggregates_over(plan, arranged, &[], params)? {
             fields.insert(field, ScenarioValue::literal(value));
         }
         read(
@@ -2809,6 +3439,290 @@ fn observe(
     ))
 }
 
+/// The observation of an [`exact`](Plan::exact) scenario (`docs/design/aggregate-group-selection.md`):
+/// one read per selection, each evaluating the whole filter afresh over every row the scenario
+/// reached with that read's own parameters. A read holds a `Contains` with every aggregate for each
+/// group it admits a row of, an `Excludes` for each arranged group it admits none of, and the exact
+/// number of rows — so a group nobody arranged, or one merged or dropped, is caught.
+fn observe_exact(
+    plan: &Plan<'_>,
+    arranged: &[Arranged],
+    groups: &[Group],
+    params: &BTreeMap<String, ScenarioValue>,
+    (name, mut steps, source): (&ViewRef, Vec<ScenarioStep>, BTreeSet<EssSemanticRef>),
+) -> Result<ConformanceScenario, RefusalCause> {
+    if let Some((_, members)) = groups.iter().find(|(_, members)| members.contains(&0)) {
+        let admitted: Vec<usize> = members
+            .iter()
+            .copied()
+            .filter(|index| arranged[*index].admitted)
+            .collect();
+        if !admitted.is_empty() {
+            rounding_is_observable(plan, arranged, &admitted, params)?;
+        }
+    }
+    // The conditioned measures some asserted group decides, and whether one asserted group selects
+    // nothing for every one of them (beyond10x/ess#363).
+    let mut decided = BTreeSet::new();
+    let mut nothing = false;
+    for read_with in selections(plan, arranged, groups, params) {
+        let mut expectations = Vec::new();
+        let mut answered = 0;
+        for (tuple, members) in groups {
+            let keys: BTreeMap<String, ScenarioValue> = plan
+                .aggregation
+                .group_by
+                .iter()
+                .zip(tuple)
+                .map(|(key, value)| (key.clone(), key_value(arranged, members, key, value)))
+                .collect();
+            let mut admitted = Vec::new();
+            for index in members {
+                let row = &arranged[*index].arrangement;
+                match shows(plan.ir, plan.view, &row.state, &row.settled, &read_with) {
+                    Ok(true) => admitted.push(*index),
+                    Ok(false) => {}
+                    Err(unknown) => {
+                        let unknown: Vec<String> =
+                            unknown.iter().map(|path| format!("`{path}`")).collect();
+                        return Err(plan.unwitnessed(format!(
+                            "the filter's truth for row `{}` under one of its reads is unknown: \
+                             nothing answers {}",
+                            arranged[*index].row.label,
+                            unknown.join(", ")
+                        )));
+                    }
+                }
+            }
+            // An ungrouped view is one row whatever it admits, its aggregates over no row included.
+            if admitted.is_empty() && !plan.aggregation.is_ungrouped() {
+                expectations.push(ViewExpectation::Excludes { fields: keys });
+                continue;
+            }
+            nothing |= contrast::decisive(plan, arranged, &admitted, &read_with, &mut decided)?;
+            let mut fields = keys;
+            for (field, value) in aggregates_over(plan, arranged, &admitted, &read_with)? {
+                fields.insert(field, ScenarioValue::literal(value));
+            }
+            expectations.push(ViewExpectation::Contains { fields });
+            answered += 1;
+        }
+        expectations.push(ViewExpectation::Counts {
+            at_least: Some(answered),
+            at_most: Some(answered),
+        });
+        read(plan.view, name, &read_with, expectations, &mut steps);
+    }
+    contrast::all_decisive(plan, &decided, nothing)?;
+    let purpose = if plan.aggregation.is_ungrouped() {
+        format!(
+            "`{}` reports its one row's exact aggregates over the rows this scenario made",
+            plan.view.name
+        )
+    } else if plan.selectors.is_empty() {
+        format!(
+            "`{}` reports every group the rows this scenario made reach, each with its exact \
+             aggregates, and no other group",
+            plan.view.name
+        )
+    } else {
+        format!(
+            "`{}` answers each selection with exactly the groups it admits over the rows this \
+             scenario made, each with its exact aggregates",
+            plan.view.name
+        )
+    };
+    Ok(ConformanceScenario::new(clipped(&purpose), steps, source))
+}
+
+/// The parameters of each read of an [`exact`](Plan::exact) scenario, in order: the scoped
+/// parameters alone where nothing selects a group; otherwise every distinct selection the arranged
+/// groups hold, in group order, then each selector moved to a valid value no arranged group holds,
+/// then, with several selectors, the first combination of arranged values no group holds — at most
+/// [`MAX_READS`]. A selection that needs an absent key is no selection: no equality asks for it.
+fn selections(
+    plan: &Plan<'_>,
+    arranged: &[Arranged],
+    groups: &[Group],
+    params: &BTreeMap<String, ScenarioValue>,
+) -> Vec<BTreeMap<String, ScenarioValue>> {
+    if plan.selectors.is_empty() {
+        return vec![params.clone()];
+    }
+    let absent = ScenarioValue::literal(Node::Null);
+    let held = |selector: &Selector, (tuple, members): &Group| {
+        key_value(arranged, members, &selector.field, &tuple[selector.key])
+    };
+    let mut vectors: Vec<Vec<ScenarioValue>> = Vec::new();
+    for group in groups {
+        let vector: Vec<ScenarioValue> = plan
+            .selectors
+            .iter()
+            .map(|selector| held(selector, group))
+            .collect();
+        if !vector.contains(&absent) && !vectors.contains(&vector) {
+            vectors.push(vector);
+        }
+    }
+    let arranged_vectors = vectors.clone();
+    if let Some(first) = arranged_vectors.first() {
+        for (position, selector) in plan.selectors.iter().enumerate() {
+            let values: Vec<ScenarioValue> =
+                groups.iter().map(|group| held(selector, group)).collect();
+            if let Some(value) = unheld(plan, selector, &values) {
+                let mut vector = first.clone();
+                vector[position] = ScenarioValue::literal(value);
+                if !vectors.contains(&vector) {
+                    vectors.push(vector);
+                }
+            }
+        }
+    }
+    if plan.selectors.len() > 1 {
+        let mut columns: Vec<Vec<ScenarioValue>> = vec![Vec::new(); plan.selectors.len()];
+        for vector in &arranged_vectors {
+            for (column, value) in columns.iter_mut().zip(vector) {
+                if !column.contains(value) {
+                    column.push(value.clone());
+                }
+            }
+        }
+        let mut combination = vec![0_usize; columns.len()];
+        'combinations: loop {
+            let vector: Vec<ScenarioValue> = combination
+                .iter()
+                .zip(&columns)
+                .map(|(at, column)| column[*at].clone())
+                .collect();
+            if !arranged_vectors.contains(&vector) {
+                if !vectors.contains(&vector) {
+                    vectors.push(vector);
+                }
+                break;
+            }
+            for (at, column) in combination.iter_mut().zip(&columns).rev() {
+                *at += 1;
+                if *at < column.len() {
+                    continue 'combinations;
+                }
+                *at = 0;
+            }
+            break;
+        }
+    }
+    vectors.truncate(MAX_READS);
+    vectors
+        .into_iter()
+        .map(|vector| {
+            let mut bound = params.clone();
+            for (selector, value) in plan.selectors.iter().zip(vector) {
+                bound.insert(selector.param.clone(), value);
+            }
+            bound
+        })
+        .collect()
+}
+
+/// A value of `selector`'s key that is valid for its type and unequal to every value in `held`,
+/// where one exists: a scoped value no scenario writes, the next step of an unbounded ladder, or a
+/// variant, `Boolean` or state no arranged group holds. None for a key whose values are instances
+/// the target generates, and none where the domain is used up — no invalid value is invented.
+fn unheld(plan: &Plan<'_>, selector: &Selector, held: &[ScenarioValue]) -> Option<Node> {
+    if held
+        .iter()
+        .any(|value| matches!(value, ScenarioValue::Instance { .. }))
+    {
+        return None;
+    }
+    let ladder = |ladder: &Ladder| -> Vec<Node> {
+        let bound = ladder.len().unwrap_or(held.len() + 1);
+        (0..bound).map(|ordinal| ladder.at(ordinal)).collect()
+    };
+    let candidates = match &plan.keys[selector.key].1 {
+        Key::Scoped(kind) => vec![plan.scoped(*kind, "unselected")],
+        Key::State(states) => states
+            .iter()
+            .map(|state| Node::Text(state.to_string()))
+            .collect(),
+        Key::Walked(walked) => ladder(walked),
+        Key::Fixed(_) => plan
+            .entity
+            .observable_field(&selector.field)
+            .and_then(|field| {
+                Ladder::of(
+                    &plan.view.name,
+                    &selector.field,
+                    &leaf(plan.ir, &field.type_ref).1,
+                )
+            })
+            .map(|walked| ladder(&walked))
+            .unwrap_or_default(),
+    };
+    // Only a value the parameter's own declared type admits is ever sent: a read the target must
+    // refuse as a request asks nothing of the view. With none, the read is not made.
+    let declared = plan
+        .view
+        .params
+        .iter()
+        .find(|param| param.name == selector.param)?;
+    candidates.into_iter().find(|candidate| {
+        !held.contains(&ScenarioValue::literal(candidate.clone()))
+            && crate::input::validate_typed_value(plan.ir, &declared.type_ref, candidate).is_ok()
+    })
+}
+
+/// Why an exact observation of `handle`'s rows is not this scenario's to make, where something
+/// outside the arrangement changes them: a binding whose command changes them after the command
+/// that triggers it returns — an exact count needs a causal cut after that binding's effects, which
+/// no conformance step provides yet — or a declared precondition that makes them before every
+/// scenario (`docs/design/aggregate-group-selection.md`, "Bindings and preconditions").
+fn unsettled(ir: &EssIr, handle: &EntityHandle) -> Option<String> {
+    let entity = &ir.entity(handle).name;
+    let touches = |outcome: &ess_compiler::ir::ResolvedOutcome| {
+        outcome
+            .subject
+            .as_ref()
+            .is_some_and(|subject| subject.entity == *handle)
+            || outcome
+                .instances
+                .as_ref()
+                .is_some_and(|set| set.entity == *handle)
+            || outcome
+                .affects
+                .iter()
+                .any(|affect| affect.entity == *handle)
+    };
+    for binding in ir.bindings().values() {
+        let command = ir.command(&binding.command);
+        if command.outcomes.iter().any(touches) {
+            return Some(format!(
+                "the binding `{}` runs `{}`, which changes `{entity}` rows after the command that \
+                 triggers it returns; an exact aggregate over every row the scenario holds needs \
+                 a causal cut after that binding's effects, and no conformance step provides that \
+                 binding cut yet",
+                binding.name, command.name
+            ));
+        }
+    }
+    for precondition in ir.preconditions() {
+        let command = ir.command(&precondition.command);
+        if let Some(outcome) = command
+            .outcomes
+            .iter()
+            .find(|outcome| outcome.name == precondition.outcome)
+            .filter(|outcome| touches(outcome))
+        {
+            return Some(format!(
+                "the declared precondition `{}/{}` runs before every scenario and makes `{entity}` \
+                 rows this arrangement does not determine, so no exact total is this scenario's \
+                 to assert",
+                command.name, outcome.name
+            ));
+        }
+    }
+    None
+}
+
 /// Every aggregate field's expected value over the admitted rows `members`.
 /// Refuse a view whose A group would assert an `avg` a truncating implementation also reports.
 ///
@@ -2821,11 +3735,24 @@ fn rounding_is_observable(
     plan: &Plan<'_>,
     arranged: &[Arranged],
     members: &[usize],
+    params: &BTreeMap<String, ScenarioValue>,
 ) -> Result<(), RefusalCause> {
     for (field, aggregate) in &plan.aggregation.functions {
         let (AggregateFunction::Avg, Some(input)) = (aggregate.function, &aggregate.input) else {
             continue;
         };
+        // A conditioned mean (beyond10x/ess#363) is over the rows its condition admits, and those
+        // are the rows whose mean must tell rounding from truncation.
+        let mut selected = Vec::new();
+        for index in members {
+            if let Some(condition) = &aggregate.r#where {
+                if !contrast::holds(plan, arranged, *index, field, condition, params)? {
+                    continue;
+                }
+            }
+            selected.push(*index);
+        }
+        let members = &selected;
         let values: Option<Vec<Node>> = members
             .iter()
             .map(|index| held(plan, &arranged[*index], *index, &input.name))
@@ -2855,25 +3782,43 @@ fn aggregates_over(
     plan: &Plan<'_>,
     arranged: &[Arranged],
     members: &[usize],
+    params: &BTreeMap<String, ScenarioValue>,
 ) -> Result<Vec<(String, Node)>, RefusalCause> {
     let mut out = Vec::new();
     for (field, aggregate) in &plan.aggregation.functions {
         out.push((
             field.clone(),
-            aggregate_over(plan, arranged, members, field, aggregate)?,
+            aggregate_over(plan, arranged, members, field, aggregate, params)?,
         ));
     }
     Ok(out)
 }
 
-/// One aggregate field's expected value over the admitted rows `members`.
+/// One aggregate field's expected value over the admitted rows `members` — of those, where the
+/// measure declares `where:` (beyond10x/ess#363), the ones its condition holds for under a read
+/// sending `params`.
 fn aggregate_over(
     plan: &Plan<'_>,
     arranged: &[Arranged],
     members: &[usize],
     field: &str,
     aggregate: &ess_compiler::ir::ResolvedAggregate,
+    params: &BTreeMap<String, ScenarioValue>,
 ) -> Result<Node, RefusalCause> {
+    let selected: Vec<usize>;
+    let members = match &aggregate.r#where {
+        None => members,
+        Some(condition) => {
+            let mut kept = Vec::new();
+            for index in members {
+                if contrast::holds(plan, arranged, *index, field, condition, params)? {
+                    kept.push(*index);
+                }
+            }
+            selected = kept;
+            &selected
+        }
+    };
     let (values, kind) = match &aggregate.input {
         None => (vec![Node::Null; members.len()], ValueKind::Other),
         Some(input) => {
@@ -2922,6 +3867,11 @@ fn observe_change(
     let admitted: Vec<usize> = (0..arranged.len())
         .filter(|index| arranged[*index].admitted)
         .collect();
+    // A conditioned measure (beyond10x/ess#363) is decided by the change only where its value
+    // over the admitted rows tells its condition from none and from the inverted one.
+    let mut decided = BTreeSet::new();
+    let nothing = contrast::decisive(plan, arranged, &admitted, &BTreeMap::new(), &mut decided)?;
+    contrast::all_decisive(plan, &decided, nothing)?;
     let mut changes = BTreeMap::new();
     let mut absent_is_zero = BTreeSet::new();
     let mut unasserted = Vec::new();
@@ -2930,7 +3880,14 @@ fn observe_change(
             unasserted.push(format!("`{field}`"));
             continue;
         }
-        let value = match aggregate_over(plan, arranged, &admitted, field, aggregate)? {
+        let value = match aggregate_over(
+            plan,
+            arranged,
+            &admitted,
+            field,
+            aggregate,
+            &BTreeMap::new(),
+        )? {
             Node::Null => Node::Number(Number::from(0_usize)),
             value => value,
         };
@@ -3032,6 +3989,110 @@ mod tests {
         // Beside the absent row, `m + 1` must repeat too: not 3 (4), 7 (8) or 9 (10); 6 and 11 do.
         let beside: Vec<usize> = (0..=7).map(|inputs| group_size(inputs, &[1])).collect();
         assert_eq!(beside, [6, 6, 6, 6, 6, 11, 11, 11]);
+    }
+
+    /// A planner run without `scenario_initial_state: empty` keeps the shared-target contract: a
+    /// parameter on a group key and a grouping nothing scopes are refused exactly as before
+    /// (`docs/design/aggregate-group-selection.md`, "Problem and authority").
+    #[test]
+    fn without_empty_authority_the_old_refusals_stand() {
+        use ess_compiler::{resolve::compile, source::SourceMap};
+        use ess_domain::{spec::RawSpecFile, system::Source, Specification};
+        let cases = [
+            (
+                include_str!("../../tests/fixtures/aggregate-group-parameter.yaml"),
+                "ESS-SYNTH-017",
+                "the parameter `team` is read other than by one top-level `field == param.team` \
+                 conjunct over a field that is not a group key",
+            ),
+            (
+                include_str!("../../tests/fixtures/aggregate-copied-group-parameter.yaml"),
+                "ESS-SYNTH-017",
+                "the parameter `team` is read other than by one top-level `field == param.team` \
+                 conjunct over a field that is not a group key",
+            ),
+            (
+                include_str!("../../tests/fixtures/aggregate-state-groups.yaml"),
+                "ESS-SYNTH-016",
+                "",
+            ),
+        ];
+        for (text, code, reason) in cases {
+            let raw = RawSpecFile::parse(text).unwrap();
+            let spec = Specification::assemble([(Source::new("work.yaml"), raw)]).unwrap();
+            let ir = compile(&spec, &SourceMap::new()).unwrap();
+            let mut suite = ConformanceSuite::new(crate::scenario::SuiteProvenance::of(&ir));
+            assert_eq!(suite.provenance.scenario_initial_state, None);
+            let mut refusals = Vec::new();
+            aggregates(
+                &ir,
+                &super::super::granted_actors(&ir),
+                &mut suite,
+                &mut refusals,
+            );
+            assert_eq!(suite.len(), 0, "{text}");
+            assert_eq!(refusals.len(), 1, "{refusals:?}");
+            assert_eq!(refusals[0].code().to_string(), code);
+            match &refusals[0].cause {
+                RefusalCause::AggregateUnwitnessed { reason: held, .. } => {
+                    assert_eq!(held, reason);
+                }
+                RefusalCause::AggregateUnscoped { .. } => assert_eq!(reason, ""),
+                other => panic!("{other:?}"),
+            }
+        }
+        // The wider fixture: every view a fresh suite observes exactly — selected, grouped by the
+        // state, an enum or a `Boolean` alone, or ungrouped with no `count` or `sum` — keeps its
+        // old refusal here.
+        let text = include_str!("../../tests/fixtures/aggregate-group-selection.yaml");
+        let raw = RawSpecFile::parse(text).unwrap();
+        let spec = Specification::assemble([(Source::new("work.yaml"), raw)]).unwrap();
+        let ir = compile(&spec, &SourceMap::new()).unwrap();
+        let mut suite = ConformanceSuite::new(crate::scenario::SuiteProvenance::of(&ir));
+        let mut refusals = Vec::new();
+        aggregates(
+            &ir,
+            &super::super::granted_actors(&ir),
+            &mut suite,
+            &mut refusals,
+        );
+        assert_eq!(suite.len(), 0);
+        let codes: Vec<(String, String)> = refusals
+            .iter()
+            .map(|refusal| {
+                (
+                    refusal
+                        .scenario
+                        .as_ref()
+                        .map(ToString::to_string)
+                        .unwrap_or_default(),
+                    refusal.code().to_string(),
+                )
+            })
+            .collect();
+        let expected: Vec<(String, String)> = [
+            ("ByBucket", "017"),
+            ("ByKind", "016"),
+            ("ByState", "016"),
+            ("ByTeam", "017"),
+            ("ByTeamChannel", "017"),
+            ("ByTeamState", "017"),
+            ("ByTeamUrgency", "017"),
+            ("ByUrgency", "017"),
+            ("ByUrgent", "016"),
+            ("OpenByTeam", "017"),
+            ("TeamsInLane", "017"),
+            ("TopOpen", "016"),
+        ]
+        .into_iter()
+        .map(|(view, code)| {
+            (
+                format!("demo.work.{view}/aggregate"),
+                format!("ESS-SYNTH-{code}"),
+            )
+        })
+        .collect();
+        assert_eq!(codes, expected);
     }
 
     #[test]

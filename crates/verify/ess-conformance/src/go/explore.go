@@ -22,6 +22,19 @@
 // explorer no longer expects that command's ordinary branch where an external one is eligible.
 // A branch the target cannot arrange is reported `unarrangeable`, never as a disagreement.
 //
+// # Restarts
+//
+// Every sequence runs in one process lifetime unless the caller asks for restarts. With
+// RestartEvery set, the explorer restarts the target after every that many commands of a sequence
+// through RestartTarget, then reads every view again: the model does not change across a restart,
+// so a row the restarted implementation lost is a disagreement, and an identity a later creation
+// mints again — a counter kept only in the process — is the identity disagreement every creation
+// is already checked for (beyond10x/ess#297). A restart draws nothing, so a seed names the same
+// commands with restarts as without. A restart is a check only once a command has followed it: one
+// after a sequence's last command is followed by one more drawn command, and only a restart a
+// command followed counts in Restarts.Performed. A target that cannot restart is reported in
+// Restarts.Unsupported and never passes.
+//
 // # A port, not a second opinion
 //
 // This file is `src/ts/explore.ts` in Go, function for function. The random draws, their order and
@@ -54,6 +67,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 //go:embed ir.json
@@ -71,6 +85,33 @@ type ExploreOptions struct {
 	// Seed, when not zero, runs exactly that one sequence and overrides Seeds: how a reported
 	// failure is replayed.
 	Seed int `json:"seed,omitempty"`
+	// RestartEvery, when not zero, restarts the target through RestartTarget after every that many
+	// commands of a sequence and checks every view again. Zero means no restart, which is what an
+	// exploration did before restarts existed.
+	RestartEvery int `json:"restartEvery,omitempty"`
+}
+
+// RestartTarget is what a durable implementation offers so that exploration can restart it.
+// Optional: a target without it, or whose Restart returns ErrUnsupported, has restarts reported
+// unsupported, which never passes.
+//
+// Restart stops every process of the implementation and starts it again over the same durable
+// state, inside the scenario already begun, and returns once the restarted implementation answers
+// requests. Clearing memory inside a process that keeps running is not a restart: a counter that
+// lives in the process survives it, and that counter is what a restart is for.
+type RestartTarget interface {
+	Restart(scenario ScenarioContext) error
+}
+
+// RestartReach is how far the restarts an exploration was asked for got.
+type RestartReach struct {
+	// Every is the interval asked for, in commands.
+	Every int `json:"every"`
+	// Performed is the number of restarts that completed and a command then followed, across every
+	// sequence and none of the shrinking replays.
+	Performed int `json:"performed"`
+	// Unsupported is why the target could not restart, when it could not.
+	Unsupported string `json:"unsupported,omitempty"`
 }
 
 // Exclusion is one command or view left out of every sequence, and why.
@@ -113,6 +154,9 @@ type ExploreResult struct {
 	// order of Outcome. Absent when the specification declares none, so a result without external
 	// branches keeps its bytes.
 	External []ExternalReach `json:"external,omitempty"`
+	// Restarts is how far the restarts RestartEvery asked for got. Absent when none were asked for,
+	// so a result without restarts keeps its bytes.
+	Restarts *RestartReach   `json:"restarts,omitempty"`
 	Failure  *ExploreFailure `json:"failure,omitempty"`
 }
 
@@ -216,7 +260,15 @@ func exploreLoad(irText, suiteText string) (map[string]any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("explore: cannot read `ir.json`: %w", err)
 	}
-	return exploreObject(model), nil
+	ir := exploreObject(model)
+	for _, command := range exploreSorted(ir["commands"]) {
+		for _, raw := range exploreList(command["outcomes"]) {
+			if len(exploreList(exploreObject(raw)["one_time_response"])) != 0 {
+				return nil, errors.New("UnsupportedOneTimeDisclosure: one-time response concurrent/history observation is not supported")
+			}
+		}
+	}
+	return ir, nil
 }
 
 func exploreObject(value any) map[string]any {
@@ -291,8 +343,9 @@ type exploreKind struct {
 }
 
 type exploreField struct {
-	name string
-	kind exploreKind
+	name     string
+	kind     exploreKind
+	presence string
 }
 
 func exploreIdentityOwner(ir map[string]any, name string) string {
@@ -316,6 +369,13 @@ func exploreResolve(ir map[string]any, ref map[string]any, depth int) exploreKin
 func exploreResolveAs(ir map[string]any, ref map[string]any, depth int, concurrent bool) exploreKind {
 	if depth > 32 {
 		return exploreKind{kind: "unsupported", why: "nested too deeply"}
+	}
+	if ref["kind"] == "optional" {
+		base := exploreResolveAs(ir, exploreObject(ref["of"]), depth+1, concurrent)
+		if base.kind == "unsupported" {
+			return base
+		}
+		return exploreKind{kind: "optional", base: &base}
 	}
 	if ref["kind"] == "primitive" {
 		name := exploreString(ref["name"])
@@ -370,7 +430,7 @@ func exploreResolveAs(ir map[string]any, ref map[string]any, depth int, concurre
 			if kind.kind == "unsupported" {
 				return kind
 			}
-			fields = append(fields, exploreField{name: exploreString(field["name"]), kind: kind})
+			fields = append(fields, exploreField{name: exploreString(field["name"]), kind: kind, presence: exploreString(exploreObject(field["naming"])["presence"])})
 		}
 		return exploreKind{kind: "struct", fields: fields}
 	default:
@@ -411,6 +471,16 @@ func explorePaths(p predicate) []string {
 			}
 			if node.right.isFact {
 				found[node.right.path] = true
+			}
+			// An offset reads its base (A2).
+			if node.right.offset != nil {
+				found[node.right.offset.base] = true
+			}
+			// A byte length reads the text it measures (decision 11).
+			for _, side := range []operand{node.left, node.right} {
+				if side.utf8Bytes {
+					found[side.path] = true
+				}
 			}
 		case node.kind == "forall" || node.kind == "exists":
 			found[node.over] = true
@@ -458,6 +528,204 @@ func exploreParse(node any) (predicate, string) {
 type explorePools struct {
 	integers []float64
 	texts    []string
+	// fieldIntegers and fieldTexts are the pools of the input paths whose own pool differs from
+	// the command's (beyond10x/ess#223): the command's, with the input's `example:` and, for a
+	// text, that example (or the path itself) cut or cycled to n-1, n and n+1 characters for each
+	// `.count` literal compared with the input. Every other path draws from the command's pool.
+	fieldIntegers map[string][]float64
+	fieldTexts    map[string][]string
+	// fieldEnums is the variants of each enum input with an `example:`, and the example where it is
+	// not one of them. Validation admits only a declared variant, so for a validated specification
+	// this is the variants as declared and the draw does not move.
+	fieldEnums map[string][]string
+}
+
+// exploreMaxCount is the longest text a `.count` boundary is drawn at, synthesis's
+// MAX_COUNT_WITNESS.
+const exploreMaxCount = 1024
+
+// integersAt is the integer pool the input at path draws from.
+func (p explorePools) integersAt(path string) []float64 {
+	if pool, ok := p.fieldIntegers[path]; ok {
+		return pool
+	}
+	return p.integers
+}
+
+// enumsAt is the pool an enum input at path draws from, variants where it has no example.
+func (p explorePools) enumsAt(path string, variants []string) []string {
+	if pool, ok := p.fieldEnums[path]; ok {
+		return pool
+	}
+	return variants
+}
+
+// textsAt is the text pool the input at path draws from.
+func (p explorePools) textsAt(path string) []string {
+	if pool, ok := p.fieldTexts[path]; ok {
+		return pool
+	}
+	return p.texts
+}
+
+// exploreSafeWhole is value as a whole number a binary64 holds exactly, if it is one.
+func exploreSafeWhole(value Node) (float64, bool) {
+	switch value.(type) {
+	case string, bool, nil:
+		return 0, false
+	}
+	number, ok := numberValue(value)
+	if !ok || !number.IsInt() {
+		return 0, false
+	}
+	whole := number.Num()
+	if whole.CmpAbs(big.NewInt(exploreSafeInteger)) > 0 {
+		return 0, false
+	}
+	return float64(whole.Int64()), true
+}
+
+// exploreCounts is, for each input path a `.count` of which a guard compares with a whole
+// literal, the lengths n-1, n and n+1 of every such literal n, from 0 to exploreMaxCount. A guard
+// over the input reads its paths as they are; a predicate over the stored row reads the input under
+// `input.`, and its other paths are the row's.
+func exploreCounts(inputGuards, storedGuards []predicate) map[string]map[int]bool {
+	counts := map[string]map[int]bool{}
+	visit := func(stored bool) func(predicate) {
+		return func(node predicate) {
+			if node.kind != "compare" {
+				return
+			}
+			for _, pair := range [][2]operand{{node.left, node.right}, {node.right, node.left}} {
+				fact, literal := pair[0], pair[1]
+				if !fact.isFact || literal.isFact {
+					continue
+				}
+				path, counted := strings.CutSuffix(fact.path, ".count")
+				if !counted || path == "" {
+					continue
+				}
+				if stored {
+					if path, counted = strings.CutPrefix(path, "input."); !counted {
+						continue
+					}
+				}
+				n, ok := exploreSafeWhole(literal.literal)
+				if !ok {
+					continue
+				}
+				for _, length := range []float64{n - 1, n, n + 1} {
+					if length < 0 || length > exploreMaxCount {
+						continue
+					}
+					if counts[path] == nil {
+						counts[path] = map[int]bool{}
+					}
+					counts[path][int(length)] = true
+				}
+			}
+		}
+	}
+	for _, guard := range inputGuards {
+		exploreWalk(guard, visit(false))
+	}
+	for _, guard := range storedGuards {
+		exploreWalk(guard, visit(true))
+	}
+	return counts
+}
+
+// exploreResize is text at exactly length characters: its first length when it has that many,
+// otherwise its own characters cycled from its start, and plain's when it is empty. Synthesis's
+// rule for a text cut to a `.count` boundary (`witness.rs` `resize`).
+func exploreResize(text string, length int, plain string) string {
+	source := []rune(text)
+	if len(source) == 0 {
+		source = []rune(plain)
+	}
+	if len(source) == 0 {
+		return ""
+	}
+	out := make([]rune, 0, length)
+	for index := 0; index < length; index++ {
+		out = append(out, source[index%len(source)])
+	}
+	return string(out)
+}
+
+// exploreLeafKind is the kind a value is drawn as once an `Optional` and an identity are looked
+// through.
+func exploreLeafKind(kind exploreKind) exploreKind {
+	for (kind.kind == "optional" || kind.kind == "identity") && kind.base != nil {
+		kind = *kind.base
+	}
+	return kind
+}
+
+// exploreFieldPools gives each input path its own pool where it differs from the command's
+// (beyond10x/ess#223). examples is the command's `examples`, by top-level input name.
+func exploreFieldPools(pools *explorePools, inputs []exploreField, examples map[string]any, counts map[string]map[int]bool) {
+	pools.fieldIntegers = map[string][]float64{}
+	pools.fieldTexts = map[string][]string{}
+	pools.fieldEnums = map[string][]string{}
+	var visit func(path string, kind exploreKind, example Node, hasExample bool)
+	visit = func(path string, kind exploreKind, example Node, hasExample bool) {
+		leaf := exploreLeafKind(kind)
+		switch leaf.kind {
+		case "struct":
+			for _, field := range leaf.fields {
+				visit(path+"."+field.name, field.kind, nil, false)
+			}
+		case "enum":
+			text, isText := example.(string)
+			if !hasExample || !isText {
+				return
+			}
+			pool := append([]string{}, leaf.variants...)
+			if !exploreContains(pool, text) {
+				pool = append(pool, text)
+			}
+			pools.fieldEnums[path] = pool
+		case "integer":
+			n, ok := exploreSafeWhole(example)
+			if !hasExample || !ok {
+				return
+			}
+			set := map[float64]bool{n: true}
+			for _, value := range pools.integers {
+				set[value] = true
+			}
+			pool := make([]float64, 0, len(set))
+			for value := range set {
+				pool = append(pool, value)
+			}
+			sort.Float64s(pool)
+			pools.fieldIntegers[path] = pool
+		case "string":
+			text, isText := example.(string)
+			isText = isText && hasExample
+			if !isText && len(counts[path]) == 0 {
+				return
+			}
+			set := map[string]bool{}
+			for _, value := range pools.texts {
+				set[value] = true
+			}
+			base := path
+			if isText {
+				set[text] = true
+				base = text
+			}
+			for length := range counts[path] {
+				set[exploreResize(base, length, path)] = true
+			}
+			pools.fieldTexts[path] = exploreSet(set)
+		}
+	}
+	for _, field := range inputs {
+		example, hasExample := examples[field.name]
+		visit(field.name, field.kind, example, hasExample)
+	}
 }
 
 // exploreLiterals is the literals a command's guards compare against, as draw pools.
@@ -525,8 +793,25 @@ type exploreCommand struct {
 	node   map[string]any
 	inputs []exploreField
 	guards map[string]predicate
-	pools  explorePools
+	// rows is every branch selected by the stored row (beyond10x/ess#221), by outcome name.
+	rows  map[string]exploreRowGuard
+	pools explorePools
 }
+
+// exploreRowGuard is a condition read from the subject's stored row: its held state
+// (`subject_state`, `state_change`), one stored enum field (`subject_field`) or a predicate over
+// its stored fields (`subject_predicate`), each with an optional guard over the input.
+type exploreRowGuard struct {
+	kind   string
+	states map[string]bool
+	field  string
+	equals string
+	stored *predicate
+	input  *predicate
+}
+
+// exploreRowKinds is every condition read from the subject's stored row.
+var exploreRowKinds = []string{"subject_state", "state_change", "subject_field", "subject_predicate"}
 
 type exploreDeclared struct {
 	command  string
@@ -579,6 +864,104 @@ func exploreEffectRefusal(outcome map[string]any) string {
 	return fmt.Sprintf("outcome `%v` %v its subject from `%v`", outcome["name"], exploreUndefined(effect), exploreUndefined(from))
 }
 
+// exploreRowOf is a stored-row condition as the explorer evaluates it, or why it cannot.
+func exploreRowOf(condition map[string]any) (exploreRowGuard, string) {
+	row := exploreRowGuard{kind: exploreString(condition["kind"]), states: map[string]bool{}}
+	parse := func(node any) (*predicate, string) {
+		if node == nil {
+			return nil, ""
+		}
+		parsed, refusal := exploreParse(node)
+		if refusal != "" {
+			return nil, refusal
+		}
+		return &parsed, ""
+	}
+	var refusal string
+	switch row.kind {
+	case "subject_state":
+		// One state is written as the state itself, a list (ess/18) as a list.
+		if state, ok := condition["state"].(string); ok {
+			row.states[state] = true
+		}
+		for _, state := range exploreStrings(condition["state"]) {
+			row.states[state] = true
+		}
+		row.input, refusal = parse(condition["predicate"])
+	case "state_change":
+		for _, state := range exploreStrings(condition["states"]) {
+			row.states[state] = true
+		}
+		row.input, refusal = parse(condition["predicate"])
+	case "subject_field":
+		row.field = exploreString(condition["field"])
+		row.equals = exploreString(condition["equals"])
+		row.input, refusal = parse(condition["predicate"])
+	case "subject_predicate":
+		row.stored, refusal = parse(condition["predicate"])
+		if refusal == "" {
+			row.input, refusal = parse(condition["input"])
+		}
+	}
+	return row, refusal
+}
+
+// exploreExistingIn is the `existing_instance` branch of a command node, or nil.
+func exploreExistingIn(node map[string]any) map[string]any {
+	for _, item := range exploreList(node["outcomes"]) {
+		outcome := exploreObject(item)
+		if exploreObject(outcome["condition"])["kind"] == "existing_instance" {
+			return outcome
+		}
+	}
+	return nil
+}
+
+// exploreAddress is where a creating branch puts its identity: the entity, and the input field
+// that names the identity, or "" where the implementation generates it.
+type exploreAddress struct {
+	entity string
+	field  string
+}
+
+// exploreAddresses is the distinct addresses of a command node's creating branches, in
+// declaration order. Where there is more than one, which one an `existing_instance` branch reads
+// depends on the branch selected (`interpret::execute` `existence::existing`).
+func exploreAddresses(node map[string]any) []exploreAddress {
+	out := []exploreAddress{}
+	for _, item := range exploreList(node["outcomes"]) {
+		outcome := exploreObject(item)
+		subject := exploreObject(outcome["subject"])
+		if subject["effect"] != "creates" {
+			continue
+		}
+		instance := exploreObject(subject["instance"])
+		identity := exploreString(exploreObject(instance["field"])["name"])
+		address := exploreAddress{entity: exploreString(subject["entity"])}
+		for _, payload := range exploreList(outcome["payload"]) {
+			payload := exploreObject(payload)
+			if payload["event"] != instance["event"] {
+				continue
+			}
+			for _, field := range exploreList(payload["fields"]) {
+				field := exploreObject(field)
+				value := exploreObject(field["value"])
+				if exploreString(field["target"]) == identity && (value["kind"] == "input_field" || value["kind"] == "input_or_generated") {
+					address.field = exploreString(value["field"])
+				}
+			}
+		}
+		known := false
+		for _, earlier := range out {
+			known = known || earlier == address
+		}
+		if !known {
+			out = append(out, address)
+		}
+	}
+	return out
+}
+
 func explorePlanOf(ir map[string]any) *explorePlan {
 	return explorePlanAs(ir, false)
 }
@@ -614,10 +997,17 @@ func explorePlanAs(ir map[string]any, concurrent bool) *explorePlan {
 		reason := ""
 		for _, outcome := range outcomes {
 			kind := exploreObject(exploreObject(outcome)["condition"])["kind"]
+			// A condition read from the stored row, and existence of the identity a creation names,
+			// are decided from the model's rows (beyond10x/ess#221). Concurrent exploration does not
+			// draw them: it keeps the commands it always drew.
+			stored := !concurrent && (kind == "existing_instance" || exploreContains(exploreRowKinds, fmt.Sprint(kind)))
 			if reason == "" && kind != "when" && kind != "otherwise" && kind != "wrong_state" &&
-				kind != "external" && kind != "external_when" {
+				kind != "external" && kind != "external_when" && kind != "unknown_instance" && !stored {
 				reason = fmt.Sprintf("outcome `%v` has a `%v` condition", exploreObject(outcome)["name"], exploreUndefined(kind))
 			}
+		}
+		if existing := exploreExistingIn(node); reason == "" && existing != nil && len(exploreAddresses(node)) > 1 {
+			reason = fmt.Sprintf("outcome `%v` answers an existing instance of creations that name it differently", existing["name"])
 		}
 		for _, outcome := range outcomes {
 			if reason == "" {
@@ -640,15 +1030,39 @@ func explorePlanAs(ir map[string]any, concurrent bool) *explorePlan {
 			if undrawable == "" && kind.kind == "unsupported" {
 				undrawable = fmt.Sprintf("input `%v` is %s", field["name"], kind.why)
 			}
-			inputs = append(inputs, exploreField{name: exploreString(field["name"]), kind: kind})
+			inputs = append(inputs, exploreField{name: exploreString(field["name"]), kind: kind, presence: exploreString(exploreObject(field["naming"])["presence"])})
 		}
 		guards := map[string]predicate{}
+		rows := map[string]exploreRowGuard{}
 		ordered := []predicate{}
+		// inputGuards read the input as it is; storedGuards read the row, and the input under `input.`.
+		inputGuards := []predicate{}
+		storedGuards := []predicate{}
 		later := ""
 		for _, outcome := range outcomes {
 			outcome := exploreObject(outcome)
 			condition := exploreObject(outcome["condition"])
-			if reason != "" || later != "" || (condition["kind"] != "when" && condition["kind"] != "external_when") {
+			if reason != "" || later != "" {
+				continue
+			}
+			if exploreContains(exploreRowKinds, fmt.Sprint(condition["kind"])) {
+				row, refusal := exploreRowOf(condition)
+				if refusal != "" {
+					later = fmt.Sprintf("the guard of `%v`: %s", outcome["name"], refusal)
+					continue
+				}
+				rows[fmt.Sprint(outcome["name"])] = row
+				if row.stored != nil {
+					ordered = append(ordered, *row.stored)
+					storedGuards = append(storedGuards, *row.stored)
+				}
+				if row.input != nil {
+					ordered = append(ordered, *row.input)
+					inputGuards = append(inputGuards, *row.input)
+				}
+				continue
+			}
+			if condition["kind"] != "when" && condition["kind"] != "external_when" {
 				continue
 			}
 			guard, refusal := exploreParse(condition["predicate"])
@@ -658,13 +1072,16 @@ func explorePlanAs(ir map[string]any, concurrent bool) *explorePlan {
 			}
 			guards[fmt.Sprint(outcome["name"])] = guard
 			ordered = append(ordered, guard)
+			inputGuards = append(inputGuards, guard)
 		}
 		actor, ok := actorFor[name]
 		if later == "" && !ok && !concurrent {
 			later = "no actor may invoke it"
 		}
+		pools := exploreLiterals(ordered)
+		exploreFieldPools(&pools, inputs, exploreObject(node["examples"]), exploreCounts(inputGuards, storedGuards))
 		command := &exploreCommand{
-			name: name, actor: actor, node: node, inputs: inputs, guards: guards, pools: exploreLiterals(ordered),
+			name: name, actor: actor, node: node, inputs: inputs, guards: guards, rows: rows, pools: pools,
 		}
 		if reason == "" && later == "" && undrawable != "" {
 			p.sendable[name] = command
@@ -851,11 +1268,31 @@ func exploreLiteral(ir map[string]any, text any, ref map[string]any) (Node, bool
 	}
 }
 
+func exploreOptionalType(ir, ref map[string]any) bool {
+	for depth := 0; depth <= 32; depth++ {
+		if ref["kind"] == "optional" {
+			return true
+		}
+		if ref["kind"] != "declared" {
+			return false
+		}
+		body := exploreObject(exploreObject(exploreObject(ir["types"])[exploreString(ref["name"])])["body"])
+		if body["kind"] != "newtype" {
+			return false
+		}
+		ref = exploreObject(body["of"])
+	}
+	return false
+}
+
 func exploreValue(ir map[string]any, value map[string]any, input Row, ref map[string]any) (Node, int) {
 	switch value["kind"] {
 	case "input_field":
 		found, ok := exploreReadPath(map[string]any(input), fmt.Sprint(value["field"]))
 		if !ok {
+			if exploreOptionalType(ir, exploreObject(value["type_ref"])) {
+				return nil, exploreDetermined
+			}
 			return nil, exploreUndetermined
 		}
 		return found, exploreDetermined
@@ -872,11 +1309,63 @@ func exploreValue(ir map[string]any, value map[string]any, input Row, ref map[st
 	}
 }
 
+// Typed absence is knowledge; only genuinely unknown model fields are skipped.
+func exploreValueAgrees(ir map[string]any, ref, naming map[string]any, expected, actual Node, present bool, depth int) bool {
+	if depth > 32 {
+		return false
+	}
+	if ref["kind"] == "optional" {
+		if expected == nil {
+			switch naming["presence"] {
+			case "null_when_absent":
+				return present && actual == nil
+			case "omitted_when_absent":
+				return !present
+			default:
+				return !present || actual == nil
+			}
+		}
+		return exploreValueAgrees(ir, exploreObject(ref["of"]), nil, expected, actual, present, depth+1)
+	}
+	if ref["kind"] == "declared" {
+		body := exploreObject(exploreObject(exploreObject(ir["types"])[exploreString(ref["name"])])["body"])
+		if body["kind"] == "newtype" {
+			return exploreValueAgrees(ir, exploreObject(body["of"]), naming, expected, actual, present, depth+1)
+		}
+		if body["kind"] == "struct" && exploreObject(expected) != nil {
+			if !present || exploreObject(actual) == nil {
+				return false
+			}
+			names := map[string]bool{}
+			for _, item := range exploreList(body["fields"]) {
+				names[exploreString(exploreObject(item)["name"])] = true
+			}
+			for name := range exploreObject(actual) {
+				if !names[name] {
+					return false
+				}
+			}
+			for _, item := range exploreList(body["fields"]) {
+				field := exploreObject(item)
+				name := exploreString(field["name"])
+				got, has := exploreObject(actual)[name]
+				if !exploreValueAgrees(ir, exploreObject(field["type_ref"]), exploreObject(field["naming"]), exploreObject(expected)[name], got, has, depth+1) {
+					return false
+				}
+			}
+			return true
+		}
+	}
+	return present && equal(expected, actual)
+}
+
 // exploreDecision is what the model says one step may take. For `take`, outcome is the ordinary
 // branch (nil when none holds) and externals the external branches eligible for this input and
 // this subject, in declaration order; at least one of the two is present. A `take` with no
 // ordinary branch carries in names the ambiguity it stands in for, reported if no external branch
-// can be arranged.
+// can be arranged. `unknown` and `undetermined` carry in reason a guard the model cannot
+// evaluate: over the input, which excludes the command, or over a stored field no command set,
+// which is redrawn and reported.
 type exploreDecision struct {
 	kind      string
 	outcome   map[string]any
@@ -893,6 +1382,30 @@ func exploreSupplied(command *exploreCommand) map[string]any {
 		}
 	}
 	return nil
+}
+
+func exploreUnknown(command *exploreCommand) map[string]any {
+	for _, item := range exploreList(command.node["outcomes"]) {
+		outcome := exploreObject(item)
+		if exploreObject(outcome["condition"])["kind"] == "unknown_instance" {
+			return outcome
+		}
+	}
+	return nil
+}
+
+func exploreTerminal(command *exploreCommand, outcome map[string]any, input Row, model *exploreModel) map[string]any {
+	subject := exploreObject(outcome["subject"])
+	instance := exploreObject(subject["instance"])
+	if instance["from"] == "supplied" {
+		id, _ := exploreReadPath(map[string]any(input), exploreString(exploreObject(instance["field"])["name"]))
+		if model.find(exploreString(subject["entity"]), id) == nil {
+			if missing := exploreUnknown(command); missing != nil {
+				return missing
+			}
+		}
+	}
+	return outcome
 }
 
 func exploreFrom(outcome map[string]any) []string {
@@ -971,7 +1484,27 @@ func exploreDecide(command *exploreCommand, input Row, model *exploreModel) expl
 			return exploreDecision{kind: "take", outcome: outcome}
 		}
 	}
-	if supplied != nil && record == nil {
+	// Existence (beyond10x/ess#221): a creation naming an identity a record already carries is
+	// refused by `existing_instance`, before the held state and every accepting branch.
+	if existing := exploreExistingIn(command.node); existing != nil {
+		for _, address := range exploreAddresses(command.node) {
+			if address.field == "" {
+				continue
+			}
+			if id, ok := exploreReadPath(map[string]any(input), address.field); ok && id != nil && model.find(address.entity, id) != nil {
+				return exploreDecision{kind: "take", outcome: existing}
+			}
+		}
+	}
+	if supplied != nil && record == nil && exploreUnknown(command) == nil {
+		return exploreDecision{kind: "ambiguous", names: []string{"no record for the supplied instance"}}
+	}
+	// A branch selected by the stored row reads a row that must exist: an identity no record
+	// carries is the unknown-instance answer before any of them is read.
+	if len(command.rows) > 0 && record == nil {
+		if missing := exploreUnknown(command); missing != nil {
+			return exploreDecision{kind: "take", outcome: missing}
+		}
 		return exploreDecision{kind: "ambiguous", names: []string{"no record for the supplied instance"}}
 	}
 	// orExternal is what a step may take where no ordinary branch can be: the eligible external
@@ -1004,9 +1537,41 @@ func exploreDecide(command *exploreCommand, input Row, model *exploreModel) expl
 		return orExternal(exploreDecision{kind: "ambiguous", names: []string{fmt.Sprintf("no outcome for state %v", record.fields["state"])}})
 	}
 
+	// The held row (beyond10x/ess#221): the branches selected by the stored row — its held state, a
+	// stored field, a predicate over its fields — whose input guard holds too, before every
+	// accepting guard (the precedence order, step 4), the first declared that holds answering. An
+	// accepting guard declared before it that holds as well is the one branch the interpreter
+	// (`interpret::execute::select`, declaration order) and the precedence order answer
+	// differently, so that draw alone the specification does not decide, and it is redrawn.
+	held, undecided := exploreHeld(command, outcomes, record, source, input)
+	if undecided != nil {
+		return *undecided
+	}
 	holding := []map[string]any{}
+	if held != nil {
+		earlier := []string{}
+		for _, outcome := range outcomes {
+			if fmt.Sprint(outcome["name"]) == fmt.Sprint(held["name"]) {
+				break
+			}
+			if exploreObject(outcome["condition"])["kind"] != "when" || exploreIsInputRefusal(outcome) {
+				continue
+			}
+			guard := command.guards[fmt.Sprint(outcome["name"])]
+			switch guard.evaluate(source) {
+			case truthUnknown:
+				return exploreDecision{kind: "unknown", reason: fmt.Sprintf("the guard of `%v` (%s) is unknown over a generated input", outcome["name"], guard)}
+			case truthTrue:
+				earlier = append(earlier, fmt.Sprint(outcome["name"]))
+			}
+		}
+		if len(earlier) > 0 {
+			return orExternal(exploreDecision{kind: "ambiguous", names: append(earlier, fmt.Sprint(held["name"]))})
+		}
+		holding = append(holding, held)
+	}
 	for _, outcome := range outcomes {
-		if exploreObject(outcome["condition"])["kind"] != "when" || exploreIsInputRefusal(outcome) {
+		if held != nil || exploreObject(outcome["condition"])["kind"] != "when" || exploreIsInputRefusal(outcome) {
 			continue
 		}
 		guard := command.guards[fmt.Sprint(outcome["name"])]
@@ -1061,7 +1626,116 @@ func exploreDecide(command *exploreCommand, input Row, model *exploreModel) expl
 		}
 		return orExternal(exploreDecision{kind: "ambiguous", names: names})
 	}
-	return exploreDecision{kind: "take", outcome: selected, externals: externals}
+	return exploreDecision{kind: "take", outcome: exploreTerminal(command, selected, input, model), externals: externals}
+}
+
+// exploreRowHolds is whether a branch selected by the stored row holds for record and this input,
+// or the decision a guard the model cannot evaluate stands for: `unknown` where a path of the
+// input is missing, which is so for every draw of that input, and `undetermined` where a stored
+// field is unset or null, which another record need not share.
+func exploreRowHolds(command *exploreCommand, name string, row exploreRowGuard, record *exploreRecord, source factSource, input Row) (bool, *exploreDecision) {
+	stored := truthTrue
+	unread := exploreUnread{}
+	switch row.kind {
+	case "subject_state", "state_change":
+		stored = truthOf(row.states[fmt.Sprint(record.fields["state"])])
+	case "subject_field":
+		value, ok := record.fields[row.field]
+		switch {
+		case !ok:
+			stored, unread = truthUnknown, exploreUnread{path: row.field}
+		case value == nil:
+			stored, unread = truthUnknown, exploreUnread{path: row.field, null: true}
+		default:
+			stored = truthOf(equal(value, row.equals))
+		}
+	case "subject_predicate":
+		combined := Row{}
+		for field, value := range record.fields {
+			combined[field] = value
+		}
+		combined["input"] = map[string]any(input)
+		stored = row.stored.evaluate(facts(combined))
+		if stored == truthUnknown {
+			unread = exploreUnreadIn(*row.stored, combined)
+		}
+	}
+	if stored == truthFalse {
+		return false, nil
+	}
+	guard := truthTrue
+	if row.input != nil {
+		guard = row.input.evaluate(source)
+		if guard == truthUnknown {
+			return false, &exploreDecision{kind: "unknown", reason: fmt.Sprintf("the guard of `%s` (%s) is unknown over a generated input", name, *row.input)}
+		}
+	}
+	if unread.input {
+		return false, &exploreDecision{kind: "unknown", reason: fmt.Sprintf("the guard of `%s` (%s) is unknown over a generated input", name, *row.stored)}
+	}
+	if guard == truthFalse {
+		return false, nil
+	}
+	if stored == truthUnknown {
+		why := "which no command set"
+		if unread.null {
+			why = "which the row holds as null"
+		}
+		return false, &exploreDecision{kind: "undetermined", reason: fmt.Sprintf("%s guard of `%s` reads %s, %s", command.name, name, unread.path, why)}
+	}
+	return true, nil
+}
+
+// exploreUnread is the path that left a stored-row predicate Unknown: a path of the input under
+// `input.` the draw does not hold, or else a stored field the row does not hold or holds as null.
+type exploreUnread struct {
+	path  string
+	input bool
+	null  bool
+}
+
+// exploreUnreadIn is what left p Unknown over row: the input is blamed only where one of its paths
+// is actually missing (beyond10x/ess#221 adversary pass 1).
+func exploreUnreadIn(p predicate, row Row) exploreUnread {
+	source := facts(row)
+	paths := explorePaths(p)
+	for _, path := range paths {
+		if strings.HasPrefix(path, "input.") && !present(source, path) {
+			return exploreUnread{path: path, input: true}
+		}
+	}
+	for _, path := range paths {
+		if strings.HasPrefix(path, "input.") || present(source, path) {
+			continue
+		}
+		_, bound := source[path]
+		return exploreUnread{path: path, null: bound}
+	}
+	if len(paths) > 0 {
+		return exploreUnread{path: paths[0]}
+	}
+	return exploreUnread{}
+}
+
+// exploreHeld is the first branch selected by the stored row that holds, in declaration order, or
+// the decision a branch the model cannot evaluate before it stands for. A branch after the one
+// that holds is not read, as `interpret::execute::select` stops at the first that holds.
+func exploreHeld(command *exploreCommand, outcomes []map[string]any, record *exploreRecord, source factSource, input Row) (map[string]any, *exploreDecision) {
+	for _, outcome := range outcomes {
+		name := fmt.Sprint(outcome["name"])
+		row, ok := command.rows[name]
+		if !ok {
+			continue
+		}
+		holds, undecided := exploreRowHolds(command, name, row, record, source, input)
+		if undecided != nil {
+			return nil, undecided
+		}
+		if holds {
+			return outcome, nil
+		}
+	}
+	return nil, nil
 }
 
 // exploreEligible is the external branches of a command this input and subject make eligible, in
@@ -1094,14 +1768,19 @@ func exploreEligible(command *exploreCommand, outcomes []map[string]any, source 
 // exploreChoices is the branches a step may take: the ordinary one, unless an earlier arrangement
 // of this command may still hold and an external branch is eligible, then every eligible external
 // branch the target has not refused to arrange.
-func exploreChoices(s *exploreSession, command *exploreCommand, decision exploreDecision) []map[string]any {
-	choices := []map[string]any{}
+type exploreChoice struct {
+	arrangement string
+	expected    map[string]any
+}
+
+func exploreChoices(s *exploreSession, command *exploreCommand, decision exploreDecision, input Row) []exploreChoice {
+	choices := []exploreChoice{}
 	if decision.outcome != nil && (!s.forced[command.name] || len(decision.externals) == 0) {
-		choices = append(choices, decision.outcome)
+		choices = append(choices, exploreChoice{expected: decision.outcome})
 	}
 	for _, outcome := range decision.externals {
 		if _, refused := s.p.unarrangeable[command.name+"/"+fmt.Sprint(outcome["name"])]; !refused {
-			choices = append(choices, outcome)
+			choices = append(choices, exploreChoice{arrangement: fmt.Sprint(outcome["name"]), expected: exploreTerminal(command, outcome, input, s.model)})
 		}
 	}
 	return choices
@@ -1138,12 +1817,24 @@ type exploreStep struct {
 	refs    []exploreRef
 	// external is the external branch arranged for this step, or empty for the ordinary branch.
 	external string
+	fresh    []exploreRef
+	// restart marks a restart of the target rather than a command.
+	restart bool
 }
 
 var errExploreNoRecord = errors.New("no record")
 
+type exploreAbsentValue struct{}
+
+var exploreAbsent = exploreAbsentValue{}
+
 func exploreDraw(kind exploreKind, r *Mulberry32, command *exploreCommand, model *exploreModel, path string, mustExist bool, refs *[]exploreRef) (Node, error) {
 	switch kind.kind {
+	case "optional":
+		if r.Chance(0.5) {
+			return exploreAbsent, nil
+		}
+		return exploreDraw(*kind.base, r, command, model, path, mustExist, refs)
 	case "identity":
 		known := model.of(kind.entity)
 		if mustExist {
@@ -1162,19 +1853,21 @@ func exploreDraw(kind exploreKind, r *Mulberry32, command *exploreCommand, model
 		return exploreDraw(*kind.base, r, command, model, path, false, refs)
 	case "integer", "decimal":
 		if r.Chance(0.7) {
-			return explorePick(r, command.pools.integers), nil
+			return explorePick(r, command.pools.integersAt(path)), nil
 		}
 		return float64(r.Int(-10, 10000)), nil
 	case "boolean":
 		return r.Chance(0.5), nil
 	case "string":
-		return explorePick(r, command.pools.texts), nil
+		return explorePick(r, command.pools.textsAt(path)), nil
+	case "timestamp":
+		// One seeded draw selects a UTC second on a fixed date, never a target clock.
+		second := r.Int(0, 86399)
+		return fmt.Sprintf("2020-01-01T%02d:%02d:%02dZ", second/3600, second/60%60, second%60), nil
 	case "uuid":
 		return fmt.Sprintf("00000000-0000-4000-8000-%012d", r.Int(0, 999999)), nil
-	case "timestamp":
-		return exploreInstant(r.Int(0, 86399)), nil
 	case "enum":
-		return explorePick(r, kind.variants), nil
+		return explorePick(r, command.pools.enumsAt(path, kind.variants)), nil
 	case "struct":
 		value := map[string]any{}
 		for _, field := range kind.fields {
@@ -1182,18 +1875,16 @@ func exploreDraw(kind exploreKind, r *Mulberry32, command *exploreCommand, model
 			if err != nil {
 				return nil, err
 			}
-			value[field.name] = drawn
+			if _, absent := drawn.(exploreAbsentValue); !absent {
+				value[field.name] = drawn
+			} else if field.presence != "omitted_when_absent" {
+				value[field.name] = nil
+			}
 		}
 		return value, nil
 	default:
 		return nil, nil
 	}
-}
-
-// exploreInstant is an RFC 3339 instant `seconds` into 2020-01-01, UTC. TypeScript's `drawnInstant`
-// writes the same text.
-func exploreInstant(seconds int) string {
-	return fmt.Sprintf("2020-01-01T%02d:%02d:%02dZ", seconds/3600, seconds/60%60, seconds%60)
 }
 
 func exploreDrawStep(command *exploreCommand, r *Mulberry32, model *exploreModel) *exploreStep {
@@ -1205,21 +1896,70 @@ func exploreDrawStep(command *exploreCommand, r *Mulberry32, model *exploreModel
 		instance = exploreString(exploreObject(exploreObject(subject["instance"])["field"])["name"])
 		entity = exploreString(subject["entity"])
 	}
+	// created is the input naming the identity an `existing_instance` branch is decided by, and
+	// the entity it is looked up in (beyond10x/ess#221): drawn, as a supplied instance with an
+	// unknown-instance branch is, to name a record or not with even chance.
+	created, createdEntity := "", ""
+	if exploreExistingIn(command.node) != nil {
+		for _, address := range exploreAddresses(command.node) {
+			if address.field != "" {
+				created, createdEntity = address.field, address.entity
+			}
+		}
+	}
 	input := Row{}
 	refs := []exploreRef{}
+	fresh := []exploreRef{}
 	for _, field := range command.inputs {
 		kind := field.kind
 		if field.name == instance && kind.kind != "identity" {
 			base := kind
 			kind = exploreKind{kind: "identity", entity: entity, base: &base}
 		}
-		value, err := exploreDraw(kind, r, command, model, field.name, field.name == instance, &refs)
+		probed := entity
+		if field.name == created && !(field.name == instance && exploreUnknown(command) != nil) {
+			base := kind
+			if kind.kind == "identity" {
+				base = *kind.base
+			}
+			kind = exploreKind{kind: "identity", entity: createdEntity, base: &base}
+			probed = createdEntity
+		}
+		var value Node
+		var err error
+		if (field.name == instance && exploreUnknown(command) != nil) || field.name == created {
+			if len(model.of(probed)) > 0 && r.Chance(0.5) {
+				value, err = exploreDraw(kind, r, command, model, field.name, true, &refs)
+			} else {
+				base := kind
+				if kind.kind == "identity" {
+					base = *kind.base
+				}
+				err = errExploreNoRecord
+				for attempt := 0; attempt < exploreAttempts; attempt++ {
+					ignored := []exploreRef{}
+					drawn, problem := exploreDraw(base, r, command, model, field.name, false, &ignored)
+					_, absent := drawn.(exploreAbsentValue)
+					if problem == nil && !absent && model.find(probed, drawn) == nil {
+						value, err = drawn, nil
+						fresh = append(fresh, exploreRef{path: field.name, entity: probed})
+						break
+					}
+				}
+			}
+		} else {
+			value, err = exploreDraw(kind, r, command, model, field.name, field.name == instance, &refs)
+		}
 		if err != nil {
 			return nil
 		}
-		input[field.name] = value
+		if _, absent := value.(exploreAbsentValue); !absent {
+			input[field.name] = value
+		} else if field.presence != "omitted_when_absent" {
+			input[field.name] = nil
+		}
 	}
-	return &exploreStep{command: command.name, input: input, refs: refs}
+	return &exploreStep{command: command.name, input: input, refs: refs, fresh: fresh}
 }
 
 // ---- one step against the target ----------------------------------------------------------------
@@ -1242,6 +1982,8 @@ type exploreSession struct {
 	undetermined map[string]bool
 	// forced is every command the target was asked to arrange a branch for in this sequence.
 	forced map[string]bool
+	// token is the consistency token the last command returned.
+	token string
 }
 
 func exploreRender(value Node, determined bool) string {
@@ -1266,6 +2008,7 @@ func explorePerform(s *exploreSession, command *exploreCommand, step *exploreSte
 		}
 		return &exploreDisagreement{kind: "target", detail: "the target threw " + err.Error()}, nil
 	}
+	s.token = result.Consistency
 	name := fmt.Sprint(outcome["name"])
 	if result.Outcome != name {
 		return &exploreDisagreement{kind: "outcome", detail: fmt.Sprintf("the target answered `%s`, the specification says `%s`", result.Outcome, name)}, nil
@@ -1298,7 +2041,14 @@ func explorePerform(s *exploreSession, command *exploreCommand, step *exploreSte
 			}
 			target := exploreString(field["target"])
 			actual, present := event.Payload[target]
-			if !equal(expected, actual) {
+			var naming map[string]any
+			for _, item := range exploreList(exploreObject(exploreObject(ir["events"])[event.Event])["fields"]) {
+				declared := exploreObject(item)
+				if declared["name"] == target {
+					naming = exploreObject(declared["naming"])
+				}
+			}
+			if !exploreValueAgrees(ir, exploreObject(field["target_type"]), naming, expected, actual, present, 0) {
 				return &exploreDisagreement{kind: "payload", detail: fmt.Sprintf("event %d `%s`.%s is %s, the specification says %s", index, event.Event, target, exploreRender(actual, present), exploreRender(expected, true))}, nil
 			}
 		}
@@ -1348,6 +2098,8 @@ func explorePerform(s *exploreSession, command *exploreCommand, step *exploreSte
 				target := exploreString(set["target"])
 				if state == exploreDetermined {
 					record.fields[target] = value
+				} else if state == exploreCleared {
+					record.fields[target] = nil
 				} else {
 					delete(record.fields, target)
 				}
@@ -1361,7 +2113,7 @@ func explorePerform(s *exploreSession, command *exploreCommand, step *exploreSte
 	return exploreInvariants(s), nil
 }
 
-func exploreAgree(view map[string]any, identity string, rows []Row, expected []*exploreRecord) *exploreDisagreement {
+func exploreAgree(ir, view map[string]any, identity string, rows []Row, expected []*exploreRecord) *exploreDisagreement {
 	name := exploreString(view["name"])
 	if len(rows) != len(expected) {
 		return &exploreDisagreement{kind: "view-rows", detail: fmt.Sprintf("`%s` holds %d row(s), the specification says %d", name, len(rows), len(expected))}
@@ -1391,7 +2143,15 @@ func exploreAgree(view map[string]any, identity string, rows []Row, expected []*
 					continue
 				}
 				got, present := row[field]
-				if !equal(want, got) {
+				var declared map[string]any
+				for _, item := range exploreList(view["fields"]) {
+					candidate := exploreObject(item)
+					if candidate["name"] == field {
+						declared = candidate
+						break
+					}
+				}
+				if !exploreValueAgrees(ir, exploreObject(declared["type_ref"]), exploreObject(declared["naming"]), want, got, present, 0) {
 					value, has := row[identity]
 					return &exploreDisagreement{kind: "view-field", detail: fmt.Sprintf("`%s`.%s of %s is %s, the specification says %s", name, field, exploreRender(value, has), exploreRender(got, present), exploreRender(want, true))}
 				}
@@ -1460,7 +2220,7 @@ func exploreViews(s *exploreSession, token string) *exploreDisagreement {
 				}
 				return &exploreDisagreement{kind: "target", detail: fmt.Sprintf("reading `%s`, the target threw %s", name, err.Error())}
 			}
-			problem = exploreAgree(view, exploreString(exploreObject(entity["identity"])["name"]), answer.Rows, expected)
+			problem = exploreAgree(ir, view, exploreString(exploreObject(entity["identity"])["name"]), answer.Rows, expected)
 			if problem == nil {
 				break
 			}
@@ -1495,7 +2255,29 @@ func exploreInvariants(s *exploreSession) *exploreDisagreement {
 
 // ---- sequences ----------------------------------------------------------------------------------
 
+// exploreNoRestart is why a target without RestartTarget cannot restart.
+const exploreNoRestart = "the target offers no restart"
+
+// exploreRestart restarts the target and reads every view again. The model does not move: what the
+// restarted implementation answers must be what it answered before.
+func exploreRestart(s *exploreSession) (*exploreDisagreement, *exploreUnsupported) {
+	restartable, ok := s.target.(RestartTarget)
+	if !ok {
+		return nil, &exploreUnsupported{reason: exploreNoRestart}
+	}
+	if err := restartable.Restart(ScenarioContext{Scenario: s.scenario, Correlation: s.correlation}); err != nil {
+		if errors.Is(err, ErrUnsupported) {
+			return nil, &exploreUnsupported{reason: err.Error()}
+		}
+		return &exploreDisagreement{kind: "target", detail: "restarting, the target threw " + err.Error()}, nil
+	}
+	return exploreViews(s, s.token), nil
+}
+
 func exploreLine(step *exploreStep) string {
+	if step.restart {
+		return "restart"
+	}
 	line := step.command + " " + exploreRender(map[string]Node(step.input), true)
 	if step.external != "" {
 		line += " [external: " + step.external + "]"
@@ -1507,6 +2289,54 @@ type exploreFound struct {
 	kind     string
 	message  string
 	executed []*exploreStep
+}
+
+func exploreHasOptional(kind exploreKind) bool {
+	if kind.kind == "optional" {
+		return true
+	}
+	if kind.base != nil && exploreHasOptional(*kind.base) {
+		return true
+	}
+	for _, field := range kind.fields {
+		if exploreHasOptional(field.kind) {
+			return true
+		}
+	}
+	return false
+}
+
+func exploreSameFailure(p *explorePlan, original, replayed *exploreFound) bool {
+	if original.kind != replayed.kind {
+		return false
+	}
+	if len(original.executed) == 0 || len(replayed.executed) == 0 {
+		return false
+	}
+	last := original.executed[len(original.executed)-1]
+	next := replayed.executed[len(replayed.executed)-1]
+	strict := false
+	for _, command := range p.commands {
+		if command.name != last.command {
+			continue
+		}
+		strict = exploreUnknown(command) != nil || exploreExistingIn(command.node) != nil
+		for _, field := range command.inputs {
+			strict = strict || exploreHasOptional(field.kind)
+		}
+	}
+	if !strict {
+		return true
+	}
+	if last.command != next.command || last.external != next.external || len(last.fresh) != len(next.fresh) {
+		return false
+	}
+	for index, ref := range last.fresh {
+		if ref.path != next.fresh[index].path || ref.entity != next.fresh[index].entity {
+			return false
+		}
+	}
+	return strings.Split(original.message, " (step ")[0] == strings.Split(replayed.message, " (step ")[0]
 }
 
 func exploreDescribe(found *exploreDisagreement, index int, step *exploreStep) string {
@@ -1588,6 +2418,17 @@ func exploreReplay(p *explorePlan, newTarget func() Target, trace []*exploreStep
 	defer s.close()
 	executed := []*exploreStep{}
 	for _, recorded := range trace {
+		if recorded.restart {
+			found, unsupported := exploreRestart(s)
+			if unsupported != nil {
+				continue
+			}
+			executed = append(executed, recorded)
+			if found != nil {
+				return &exploreFound{kind: found.kind, message: exploreDescribe(found, len(executed)-1, recorded), executed: executed}, nil
+			}
+			continue
+		}
 		command := p.command(recorded.command)
 		if command == nil {
 			continue
@@ -1605,19 +2446,24 @@ func exploreReplay(p *explorePlan, newTarget func() Target, trace []*exploreStep
 		if !resolvable {
 			continue
 		}
-		step := &exploreStep{command: recorded.command, input: Row(input), refs: recorded.refs, external: recorded.external}
+		for _, ref := range recorded.fresh {
+			id, _ := exploreReadPath(input, ref.path)
+			if s.model.find(ref.entity, id) != nil {
+				resolvable = false
+			}
+		}
+		if !resolvable {
+			continue
+		}
+		step := &exploreStep{command: recorded.command, input: Row(input), refs: recorded.refs, external: recorded.external, fresh: recorded.fresh}
 		decision := exploreDecide(command, step.input, s.model)
 		if decision.kind != "take" {
 			continue
 		}
 		var outcome map[string]any
-		for _, choice := range exploreChoices(s, command, decision) {
-			name := ""
-			if exploreIsExternal(choice) {
-				name = fmt.Sprint(choice["name"])
-			}
-			if name == step.external {
-				outcome = choice
+		for _, choice := range exploreChoices(s, command, decision, step.input) {
+			if choice.arrangement == step.external {
+				outcome = choice.expected
 				break
 			}
 		}
@@ -1657,6 +2503,10 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 	if err != nil {
 		return ExploreResult{}, err
 	}
+	every := options.RestartEvery
+	if every < 0 {
+		return ExploreResult{}, errors.New("the restart interval must be a whole number of steps, zero or more")
+	}
 	p := explorePlanOf(ir)
 	steps := options.Steps
 	if steps == 0 {
@@ -1681,6 +2531,10 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 	executed := 0
 	sequences := 0
 	var failure *ExploreFailure
+	// performed counts the restarts a command followed; refused is why the target cannot restart,
+	// and stops every later restart.
+	performed := 0
+	refused := ""
 
 	for _, seed := range seeds {
 		if len(p.commands) == 0 || failure != nil {
@@ -1694,8 +2548,13 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 		}
 		s.undetermined = undetermined
 		trace := []*exploreStep{}
+		// restarts is the number of restart steps in trace, which are not commands; pending is the
+		// number of them no command has followed yet. A restart is a check only once a command has
+		// followed it, so one after the last command is followed by one more.
+		restarts := 0
+		pending := 0
 		var found *exploreFound
-		for attempts := 0; len(trace) < steps && attempts < steps*exploreAttempts; attempts++ {
+		for attempts := 0; (len(trace)-restarts < steps || pending > 0) && attempts < steps*exploreAttempts; attempts++ {
 			if len(p.commands) == 0 {
 				break
 			}
@@ -1713,7 +2572,11 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 				p.exclude(command.name, decision.reason)
 				continue
 			}
-			choices := exploreChoices(s, command, decision)
+			if decision.kind == "undetermined" {
+				undetermined[decision.reason] = true
+				continue
+			}
+			choices := exploreChoices(s, command, decision, step.input)
 			if len(choices) == 0 {
 				if len(decision.names) > 0 {
 					ambiguous[command.name+": "+strings.Join(decision.names, ", ")] = true
@@ -1724,8 +2587,8 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 			if len(choices) > 1 {
 				outcome = explorePick(r, choices)
 			}
-			if exploreIsExternal(outcome) {
-				step.external = fmt.Sprint(outcome["name"])
+			if outcome.arrangement != "" {
+				step.external = outcome.arrangement
 				arranging, unsupported := exploreArrange(s, command, step.external)
 				if unsupported != nil {
 					p.unarrangeable[command.name+"/"+step.external] = "the target cannot arrange it: " + unsupported.reason
@@ -1737,16 +2600,35 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 					break
 				}
 			}
-			disagreement, unsupported := explorePerform(s, command, step, outcome)
+			disagreement, unsupported := explorePerform(s, command, step, outcome.expected)
 			if unsupported != nil {
 				p.exclude(command.name, "the target does not expose it: "+unsupported.reason)
 				continue
 			}
 			executed++
 			trace = append(trace, step)
-			reached[command.name+"/"+fmt.Sprint(outcome["name"])] = true
+			performed += pending
+			pending = 0
+			reached[command.name+"/"+fmt.Sprint(outcome.expected["name"])] = true
 			if disagreement != nil {
 				found = &exploreFound{kind: disagreement.kind, message: exploreDescribe(disagreement, len(trace)-1, step), executed: append([]*exploreStep{}, trace...)}
+				break
+			}
+			// No restart after the command that follows the last scheduled one.
+			if commands := len(trace) - restarts; every == 0 || refused != "" || commands%every != 0 || commands > steps {
+				continue
+			}
+			restart := &exploreStep{restart: true}
+			disagreement, unsupported = exploreRestart(s)
+			if unsupported != nil {
+				refused = unsupported.reason
+				continue
+			}
+			pending++
+			restarts++
+			trace = append(trace, restart)
+			if disagreement != nil {
+				found = &exploreFound{kind: disagreement.kind, message: exploreDescribe(disagreement, len(trace)-1, restart), executed: append([]*exploreStep{}, trace...)}
 				break
 			}
 		}
@@ -1794,6 +2676,10 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 		}
 		return excluded[i].Reason < excluded[j].Reason
 	})
+	var restarts *RestartReach
+	if every > 0 {
+		restarts = &RestartReach{Every: every, Performed: performed, Unsupported: refused}
+	}
 	return ExploreResult{
 		Sequences:        sequences,
 		Steps:            steps,
@@ -1805,6 +2691,7 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 		Undetermined:     exploreSet(undetermined),
 		Ambiguous:        exploreSet(ambiguous),
 		External:         external,
+		Restarts:         restarts,
 		Failure:          failure,
 	}, nil
 }
@@ -1831,7 +2718,7 @@ func exploreShrink(p *explorePlan, newTarget func() Target, seed int, trace []*e
 			if err != nil {
 				return nil, err
 			}
-			if again != nil && again.kind == found.kind {
+			if again != nil && exploreSameFailure(p, found, again) {
 				current = candidate
 				shortest = again
 				removed = true
@@ -1889,6 +2776,15 @@ func CheckExplored(result ExploreResult, options AssertOptions) error {
 	if len(unarrangeable) > 0 && !options.AllowExcluded {
 		problems = append(problems, fmt.Sprintf("explore: %d external outcome(s) the target could not arrange were never tried:\n%s\naccept them explicitly with AssertOptions{AllowExcluded: true}", len(unarrangeable), strings.Join(unarrangeable, "\n")))
 	}
+	// Restarts asked for and not performed are never a pass, AllowExcluded or not: a caller that
+	// cannot restart its target does not set RestartEvery.
+	if restarts := result.Restarts; restarts != nil {
+		if restarts.Unsupported != "" {
+			problems = append(problems, fmt.Sprintf("explore: restarts were requested every %d step(s), and the target cannot restart: %s", restarts.Every, restarts.Unsupported))
+		} else if restarts.Performed == 0 {
+			problems = append(problems, fmt.Sprintf("explore: restarts were requested every %d step(s), and no sequence performed one", restarts.Every))
+		}
+	}
 	if len(problems) == 0 {
 		return nil
 	}
@@ -1897,8 +2793,8 @@ func CheckExplored(result ExploreResult, options AssertOptions) error {
 
 // AssertExplored fails t when an exploration failed, when a declared outcome went unreached, or
 // when an excluded command's outcomes, or external outcomes the target could not arrange, were
-// never tried and AllowExcluded is not set. What the
-// model could not place, and the draws it would not decide, are logged and do not fail.
+// never tried and AllowExcluded is not set, or when restarts were asked for and none was performed.
+// What the model could not place, and the draws it would not decide, are logged and do not fail.
 func AssertExplored(t testing.TB, result ExploreResult, options AssertOptions) {
 	t.Helper()
 	for _, note := range result.Undetermined {
@@ -1939,6 +2835,12 @@ func AssertExplored(t testing.TB, result ExploreResult, options AssertOptions) {
 // `rows`, the first in answer order: it may be what that creation made, which the checker could
 // only read as shown before anyone asked for it. Every other row is written and judged.
 //
+// A call whose receipt carries the instant its decision observed (a RecordedTarget, or a
+// RecordedPendingCommand from InvokeCommand) has it written as the operation's `decision_time`, and
+// the history is then `ess-history/2`; a history with none is written as `ess-history/1`, byte for
+// byte as before. The instant is the call's own, carried from its decision to its completion; the
+// explorer reads no clock of its own.
+//
 // With ConcurrentOptions.Inject, every fault the specification declares is injected, and no other:
 // a second delivery for each `delivery: at_least_once` binding, a client retry for each command
 // declaring `replays:`, and a delayed or unanswered answer for each command declaring another
@@ -1971,7 +2873,85 @@ func (c exploreAtomicCall) Complete() (CommandResult, error) {
 	return c.target.ExecuteCommand(c.request)
 }
 
+// CompleteRecorded executes the call at its return instant through the target's own recorded
+// command, where it has one.
+func (c exploreAtomicCall) CompleteRecorded() RecordedCompletion {
+	if recorded, ok := c.target.(RecordedTarget); ok {
+		return recorded.ExecuteCommandRecorded(c.request)
+	}
+	result, err := c.target.ExecuteCommand(c.request)
+	return RecordedCompletion{Result: result, Err: err}
+}
+
+// DecisionInstant is the instant one command decision observed, in its one spelling: RFC 3339 in
+// UTC with `Z`, and a fraction of one to nine digits only when it is not zero, with no trailing
+// zero. An `ess-history/2` operation records it as `decision_time` (beyond10x/ess#244).
+type DecisionInstant struct {
+	text string
+}
+
+// ParseDecisionInstant admits exactly the one spelling of an instant: `ess` and the TypeScript
+// explorer admit the same texts.
+func ParseDecisionInstant(text string) (DecisionInstant, error) {
+	parsed, err := time.Parse(time.RFC3339Nano, text)
+	if err != nil || parsed.UTC().Format("2006-01-02T15:04:05.999999999Z07:00") != text {
+		return DecisionInstant{}, fmt.Errorf("%q is not a decision instant: an RFC 3339 instant in UTC with `Z`, and a fraction only when it is not zero, with no trailing zero", text)
+	}
+	return DecisionInstant{text: text}, nil
+}
+
+// DecisionInstantOf is the instant a clock read, in its one spelling, or an error for an instant
+// outside the years 0000 through 9999 an RFC 3339 instant spells, which `ess` would refuse to read.
+func DecisionInstantOf(at time.Time) (DecisionInstant, error) {
+	if year := at.UTC().Year(); year < 0 || year > 9999 {
+		return DecisionInstant{}, fmt.Errorf("the decision instant %s lies outside the years 0000 through 9999 an RFC 3339 instant spells", at.UTC().Format(time.RFC3339Nano))
+	}
+	return ParseDecisionInstant(at.UTC().Format("2006-01-02T15:04:05.999999999Z07:00"))
+}
+
+// String is the one spelling.
+func (d DecisionInstant) String() string {
+	return d.text
+}
+
+// RecordedCompletion is one call's answer and the instant its decision observed: what the explorer
+// writes into the operation's `decision_time`. DecisionTime is nil where no decision was observed —
+// a call refused before its decision edge, a retained answer delivered again, a target with no
+// clock — and an error may carry one: the call decided, and its answer was lost after.
+type RecordedCompletion struct {
+	Result       CommandResult
+	Err          error
+	DecisionTime *DecisionInstant
+}
+
+// RecordedPendingCommand is a call in flight that carries its own decision receipt from its
+// invoke to its return. CompleteRecorded is called instead of Complete, exactly once.
+type RecordedPendingCommand interface {
+	PendingCommand
+	CompleteRecorded() RecordedCompletion
+}
+
+// RecordedTarget is a Target whose command edge reads a command clock: ExecuteCommandRecorded runs
+// the same command as ExecuteCommand, reads the clock once immediately before deciding, and answers
+// that reading with the result — never a reading taken after the command.
+type RecordedTarget interface {
+	ExecuteCommandRecorded(request CommandRequest) RecordedCompletion
+}
+
+// exploreCompleteRecorded is the call's receipt: its own where it carries one, otherwise Complete's
+// answer, called once, with no time.
+func exploreCompleteRecorded(pending PendingCommand) RecordedCompletion {
+	if recorded, ok := pending.(RecordedPendingCommand); ok {
+		return recorded.CompleteRecorded()
+	}
+	result, err := pending.Complete()
+	return RecordedCompletion{Result: result, Err: err}
+}
+
 // ConcurrentOptions is what one concurrent exploration is asked to do.
+//
+// It has no RestartEvery: restarts are sequential-only. Concurrent exploration never restarts the
+// target; ExploreOptions.RestartEvery is how a sequence asks for restarts.
 type ConcurrentOptions struct {
 	// Path is the specification `ess` checks each history against, as `--path` takes it.
 	Path string `json:"path,omitempty"`
@@ -2121,6 +3101,8 @@ type exploreOperation struct {
 	source string
 	// rows is what a returned read answered, each row's identity; nil where it records none.
 	rows []string
+	// decisionTime is the instant the call's decision observed, or nil where none was observed.
+	decisionTime *DecisionInstant
 }
 
 type exploreFlight struct {
@@ -2429,8 +3411,20 @@ func (h *exploreRecording) complete(flight *exploreFlight) (Node, string, error)
 		h.injected.Unanswered[flight.command.name]++
 		return nil, "", nil
 	}
-	result, err := flight.pending.Complete()
+	// The receipt's instant is written before the answer is read: a call lost after its decision
+	// keeps the instant it decided at.
+	receipt := exploreCompleteRecorded(flight.pending)
 	h.clock++
+	if receipt.DecisionTime != nil {
+		// Only the one spelling is written: a zero DecisionInstant{} or any other value `ess` would
+		// refuse fails the exploration, as the TypeScript recorder does.
+		instant, err := ParseDecisionInstant(receipt.DecisionTime.String())
+		if err != nil {
+			return nil, "", fmt.Errorf("`%s` answered a decision receipt `ess` cannot read: %w", flight.command.name, err)
+		}
+		operation.decisionTime = &instant
+	}
+	result, err := receipt.Result, receipt.Err
 	switch {
 	case err == nil:
 	case errors.Is(err, ErrUnsupported):
@@ -2499,6 +3493,8 @@ func exploreQuote(text string) string {
 // declaration order, an absent `returned_at` and `outcome` for a call that never answered.
 func exploreHistoryBytes(digest string, seed, clients int, operations []exploreOperation) []byte {
 	written := []string{}
+	// format is `ess-history/2` exactly when a written operation records a decision time.
+	format := "ess-history/1"
 	kept := []exploreOperation{}
 	// position is where each written operation stands among the written ones, from 1, for a retry
 	// naming it.
@@ -2541,10 +3537,14 @@ func exploreHistoryBytes(digest string, seed, clients int, operations []exploreO
 		if original := position[operation.retryOf-1]; operation.retryOf != 0 && original != 0 {
 			members = append(members, [2]string{"retry_of", exploreQuote(exploreUUID(uint64(original)))})
 		}
+		if operation.decisionTime != nil {
+			format = "ess-history/2"
+			members = append(members, [2]string{"decision_time", exploreQuote(operation.decisionTime.String())})
+		}
 		written = append(written, exploreJSONObject(members))
 	}
 	return []byte(exploreJSONObject([][2]string{
-		{"format", exploreQuote("ess-history/1")},
+		{"format", exploreQuote(format)},
 		{"history_id", exploreQuote(exploreUUID(uint64(seed) & 0xffffffffffff))},
 		{"spec_digest", exploreQuote(digest)},
 		{"seed", strconv.Itoa(seed)},
@@ -2705,10 +3705,6 @@ func ExploreConcurrent(newTarget func() Target, options ConcurrentOptions) (Conc
 	if options.Calls < 0 {
 		return ConcurrentResult{}, fmt.Errorf("explore: `Calls` is %d; each client makes at least one call, or 3 when it is 0", options.Calls)
 	}
-	ess, err := exec.LookPath("ess")
-	if err != nil {
-		return ConcurrentResult{}, ErrNoEss
-	}
 	if options.Path == "" {
 		return ConcurrentResult{}, errors.New("explore: concurrent exploration needs `Path`, the specification `ess` checks each history against")
 	}
@@ -2718,6 +3714,12 @@ func ExploreConcurrent(newTarget func() Target, options ConcurrentOptions) (Conc
 	ir, err := exploreLoad(exploreIR, exploreSuite)
 	if err != nil {
 		return ConcurrentResult{}, err
+	}
+	// The model is read first, so a source this mode refuses (one-time responses) is refused
+	// before anything else is asked of the host.
+	ess, err := exec.LookPath("ess")
+	if err != nil {
+		return ConcurrentResult{}, ErrNoEss
 	}
 	if exploreNonEmpty(ir["preconditions"]) {
 		return ConcurrentResult{}, errors.New("explore: concurrent exploration does not run the specification's preconditions, so it does not record against one that declares them")

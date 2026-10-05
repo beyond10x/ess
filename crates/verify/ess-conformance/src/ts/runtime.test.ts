@@ -6,9 +6,10 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import {
   ErrUnsupported,
@@ -26,6 +27,8 @@ import {
   exactDecimal,
   exactNumbers,
   exactInteger,
+  executionContextConfiguration,
+  executionContextDocument,
   goMarshal,
   holds,
   instant,
@@ -36,6 +39,7 @@ import {
   newHarness,
   paddedBase64,
   primitive,
+  publicBuild,
   rankOrder,
   ranked,
   reduce,
@@ -46,6 +50,7 @@ import {
   strictJSON,
   unsupported,
   UNEXECUTED_STEPS,
+  admitAccessor,
   writeReport,
 } from './runtime.js';
 import type {
@@ -346,6 +351,62 @@ class ExampleTarget implements Target {
   }
 }
 
+function nestedIncrementSuite(): string {
+  const raw = JSON.parse(suiteText());
+  raw.provenance.suite_version = 'ess-conformance/32';
+  raw.scenarios = {
+    'nested.counter/authored/increment': {
+      purpose: 'A nested increment reads its own previous location',
+      source: [],
+      steps: [
+        { step: 'query_view', view: 'nested.counter.Counters' },
+        {
+          step: 'expect_view',
+          view: 'nested.counter.Counters',
+          expectation: {
+            expect: 'contains',
+            fields: {
+              amount: { kind: 'literal', value: 3 },
+              packet: {
+                kind: 'members',
+                members: { amount: { kind: 'literal', value: 101 } },
+              },
+            },
+          },
+        },
+      ],
+    },
+  };
+  return JSON.stringify(raw);
+}
+
+class NestedIncrementTarget extends ExampleTarget {
+  private readonly nestedAmount: number;
+
+  constructor(nestedAmount: number) {
+    super();
+    this.nestedAmount = nestedAmount;
+  }
+
+  queryView(_request: ViewRequest): ViewResult {
+    return { rows: [{ amount: 3, packet: { amount: this.nestedAmount } }] };
+  }
+}
+
+test('nested increment suite passes the full path and fails the old-leaf mutant', async () => {
+  await withEnvironmentAsync({ ESS_REPORT_FORMAT: '2', ESS_REPORT_OUT: undefined }, async () => {
+    const correct = new Recorder('correct nested location');
+    await runWith(correct, () => new NestedIncrementTarget(101), nestedIncrementSuite());
+    assert.deepEqual(correct.verdicts(), ['passed']);
+
+    // The former defect incremented the unrelated top-level `amount` (3 + 1) and stored that 4 in
+    // `packet.amount`; this target is the deliberate regression mutant.
+    const oldLeafMutant = new Recorder('old leaf mutant');
+    await runWith(oldLeafMutant, () => new NestedIncrementTarget(4), nestedIncrementSuite());
+    assert.deepEqual(oldLeafMutant.verdicts(), ['failed']);
+  });
+});
+
 function setEnvironment(
   values: Record<string, string | undefined>,
 ): Record<string, string | undefined> {
@@ -433,6 +494,24 @@ test('a scenario identity is one of the seven shapes', () => {
   assert.doesNotThrow(() => scenarioIdentity('pay-gateway/binding/delivery'));
   assert.throws(() => scenarioIdentity('nope'), /malformed scenario ID/);
   assert.throws(() => scenarioIdentity('pay-gateway/binding/other'), /malformed scenario ID/);
+});
+
+// A scenario per selected refusal (beyond10x/ess#269) arrived in suite/36 and /37.
+test('a selected refusal scenario identity requires suite/36', () => {
+  assert.throws(
+    () => scenarioIdentity('notify-ledger/binding/refusal/at-limit', 35),
+    /a scenario per selected refusal requires suite\/36 or \/37/,
+  );
+  assert.doesNotThrow(() => scenarioIdentity('notify-ledger/binding/refusal/at-limit', 36));
+  assert.doesNotThrow(() => scenarioIdentity('notify-ledger/binding/refusal/at-limit', 37));
+  assert.throws(
+    () => scenarioIdentity('notify-ledger/binding/refusal/At_Limit', 36),
+    /malformed scenario ID/,
+  );
+  assert.throws(
+    () => scenarioIdentity('notify-ledger/binding/policy/at-limit', 36),
+    /malformed scenario ID/,
+  );
 });
 
 test('a system name reduces to identifier segments', () => {
@@ -752,12 +831,12 @@ test('report/2 counts every terminal verdict and is refused for an incomplete ru
       passed: 1,
       failed: 1,
       error: 0,
-      unsupported: 0,
-      skipped: 1,
+      unsupported: 1,
+      skipped: 0,
     });
     assert.equal(document.execution_status, 'failed');
     assert.equal(document.conformance_status, 'failed');
-    assert.equal(document.producer_profile, 'go-scenario-status/1');
+    assert.equal(document.producer_profile, 'go-scenario-status/2');
     assert.equal(document.coverage.knowledge, 'unknown');
   } finally {
     rmSync(directory, { recursive: true, force: true });
@@ -780,6 +859,15 @@ test('asJSON reads a target answer as JSON does', () => {
     e: exact,
   });
   assert.equal(Object.hasOwn(asJSON({ a: undefined }) as object, 'a'), false);
+});
+
+test('asJSON preserves special own object keys without changing the prototype', () => {
+  const input = JSON.parse('{"__proto__":{"audit":"private"},"constructor":"data"}');
+  const observed = asJSON(input) as Record<string, Node>;
+  assert.deepEqual(observed, input);
+  assert.equal(Object.hasOwn(observed, '__proto__'), true);
+  assert.equal(Object.getPrototypeOf(observed), Object.prototype);
+  assert.equal(Object.hasOwn(Object.prototype, 'audit'), false);
 });
 
 // Everything is read exactly as `JSON.parse(JSON.stringify(x))` reads it, with two documented
@@ -887,4 +975,160 @@ test('exactNumbers keeps an integer past 2^53 exact and plain numbers plain', ()
   assert.equal(exactNumbers(new JsonNumber('9007199254740992')), 9007199254740992);
   assert.equal(exactNumbers(new JsonNumber('1.666667')), 1.666667);
   assert.deepEqual(exactNumbers({ n: [new JsonNumber('3')] }), { n: [3] });
+});
+
+// ---- host execution provenance (beyond10x/ess#296) -----------------------------------------------
+
+const build = `sha256:${'c'.repeat(64)}`;
+
+test('an execution context is configured explicitly, with report/2 and a file of its own', () => {
+  const unset = {
+    ESS_IMPLEMENTATION_BUILD: undefined,
+    ESS_EXECUTION_CONTEXT_OUT: undefined,
+    ESS_REPORT_OUT: '/out/report.json',
+  };
+  withEnvironment(unset, () => {
+    assert.equal(executionContextConfiguration('2'), undefined);
+  });
+  const both = {
+    ESS_IMPLEMENTATION_BUILD: build,
+    ESS_EXECUTION_CONTEXT_OUT: '/out/execution.json',
+    ESS_REPORT_OUT: '/out/report.json',
+  };
+  withEnvironment(both, () => {
+    assert.deepEqual(executionContextConfiguration('2'), { build, out: '/out/execution.json' });
+    assert.throws(
+      () => executionContextConfiguration('1'),
+      /requires explicit ESS_REPORT_FORMAT=2/,
+    );
+  });
+  for (const [change, reason] of [
+    [{ ESS_IMPLEMENTATION_BUILD: undefined }, /together or not at all/],
+    [{ ESS_EXECUTION_CONTEXT_OUT: undefined }, /together or not at all/],
+    [{ ESS_REPORT_OUT: undefined }, /requires ESS_REPORT_OUT/],
+    [{ ESS_IMPLEMENTATION_BUILD: 'v1.2.3' }, /64 lowercase hexadecimal digits/],
+    [{ ESS_IMPLEMENTATION_BUILD: build.toUpperCase() }, /64 lowercase hexadecimal digits/],
+    [{ ESS_EXECUTION_CONTEXT_OUT: '/out/./report.json' }, /other than ESS_REPORT_OUT/],
+  ] as const) {
+    withEnvironment({ ...both, ...change }, () => {
+      assert.throws(() => executionContextConfiguration('2'), reason);
+    });
+  }
+  assert.equal(publicBuild(build), true);
+  assert.equal(publicBuild(`${build}0`), false);
+});
+
+test('the execution context binds the exact report and suite bytes and nothing else', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'ess-execution-context-'));
+  try {
+    const report = join(directory, 'report.json');
+    const context = join(directory, 'execution.json');
+    const text = suiteText();
+    const target = (): Target =>
+      ({
+        identity: () => ({ name: 'context-target', version: '7' }),
+        beginScenario: () => {},
+        endScenario: () => {},
+        executeCommand: ({ command }: CommandRequest) => {
+          if (command === 'billing.Unanswerable') throw ErrUnsupported;
+          // Every command answers `created`, so the `refused` scenario fails.
+          return { outcome: 'created' };
+        },
+      }) as unknown as Target;
+    await withEnvironmentAsync(
+      {
+        ESS_REPORT_FORMAT: '2',
+        ESS_REPORT_OUT: report,
+        ESS_IMPLEMENTATION_BUILD: build,
+        ESS_EXECUTION_CONTEXT_OUT: context,
+        ESS_CONFORMANCE_STRICT: undefined,
+        ESS_CONFORMANCE_ALLOW_INCOMPLETE: undefined,
+      },
+      () => runWith(new Recorder('context'), target, text),
+    );
+    const written = readFileSync(report, 'utf8');
+    const reportDocument = JSON.parse(written);
+    assert.deepEqual(reportDocument.outcomes.failed, ['billing.CreateInvoice/outcome/refused']);
+    assert.deepEqual(reportDocument.outcomes.unsupported, [
+      'billing.CreateInvoice/outcome/unanswered',
+    ]);
+    assert.equal(reportDocument.conformance_status, 'failed');
+    const sha = (value: string): string =>
+      `sha256:${createHash('sha256').update(value, 'utf8').digest('hex')}`;
+    assert.equal(
+      readFileSync(context, 'utf8'),
+      countCanonical({
+        format: 'ess-conformance-execution/1',
+        implementation: 'context-target 7',
+        implementation_build: build,
+        report_digest: sha(written),
+        suite_digest: sha(text),
+      }),
+    );
+    assert.deepEqual(
+      executionContextDocument(
+        { original: text } as never,
+        { name: 'context-target', version: '7' },
+        written,
+        build,
+      ),
+      JSON.parse(readFileSync(context, 'utf8')),
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('a refused execution context configuration reaches no target', async () => {
+  let made = 0;
+  const target = (): Target => {
+    made += 1;
+    throw new Error('no target is made');
+  };
+  await assert.rejects(
+    withEnvironmentAsync(
+      {
+        ESS_REPORT_FORMAT: '2',
+        ESS_REPORT_OUT: '/nowhere/report.json',
+        ESS_IMPLEMENTATION_BUILD: 'not-a-build',
+        ESS_EXECUTION_CONTEXT_OUT: '/nowhere/execution.json',
+      },
+      () => runWith(new Recorder('refused'), target, suiteText()),
+    ),
+    /64 lowercase hexadecimal digits/,
+  );
+  assert.equal(made, 0);
+});
+
+// ---- an accessor through a unit variant (ess/22, beyond10x/ess#418) ------------------------------
+
+// The observation the reference runner writes, in
+// `crates/verify/ess-conformance/tests/fixtures/unit-variant-accessor.json`; the Rust and Go answers
+// to the same payloads are `tests/union_unit_variants_accessor.rs`.
+function unitVariantAccessor(): string {
+  const relative = 'crates/verify/ess-conformance/tests/fixtures/unit-variant-accessor.json';
+  let directory = import.meta.dirname;
+  for (;;) {
+    const candidate = join(directory, relative);
+    if (existsSync(candidate)) return readFileSync(candidate, 'utf8');
+    const parent = dirname(directory);
+    if (parent === directory) throw new Error(`no ${relative} above ${import.meta.dirname}`);
+    directory = parent;
+  }
+}
+
+test('a unit variant is read as unavailable, and a payload beside its tag is malformed', () => {
+  const accessor = admitAccessor(strictJSON(unitVariantAccessor()));
+  assert.deepEqual(accessor.evaluate({ choice: { kind: 'gone' } }), [null, false]);
+  assert.deepEqual(accessor.evaluate({ choice: { kind: 'ready', value: { status: 'yes' } } }), [
+    'yes',
+    true,
+  ]);
+  for (const malformed of [
+    { kind: 'gone', value: 'gone' },
+    { kind: 'gone', value: null },
+    { kind: 'ready' },
+  ]) {
+    assert.throws(() => accessor.evaluate({ choice: malformed }), JSON.stringify(malformed));
+  }
 });

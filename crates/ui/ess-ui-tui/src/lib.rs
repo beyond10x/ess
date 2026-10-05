@@ -175,7 +175,7 @@ pub fn run(args: &TuiArgs, binding: Option<&ess_ui::binding::Binding>) -> Result
             let text = std::fs::read_to_string(&args.path).map_err(|error| {
                 TuiError::Io(format!("cannot read {}: {error}", args.path.display()))
             })?;
-            ess_ui::load_str(&text).map_err(TuiError::Load)
+            ess_ui::load_str_with(&text, binding).map_err(TuiError::Load)
         })?,
     };
     interactive(&mut app)
@@ -249,7 +249,7 @@ pub fn run_embedded(
             TuiError::Binding(format!("the embedded binding does not read: {error}"))
         })?;
     let mut app = bound_app(&binding, base_url, Options::new(state_dir()), || {
-        ess_ui::load_str(embedded.document).map_err(TuiError::Load)
+        ess_ui::load_str_with(embedded.document, &binding).map_err(TuiError::Load)
     })?;
     let Some(size) = screen_once else {
         return interactive(&mut app);
