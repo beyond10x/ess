@@ -1614,9 +1614,12 @@ fn boolean_variants(location: &str, booleans: &[bool]) -> ValidationError {
 }
 
 impl RawNamedType {
-    /// The refusal of every invariant this type writes that does not parse, each one's place held
-    /// (beyond10x/ess#448): see [`RawInvariant::withhold_unparsed`].
-    pub(crate) fn withhold_unparsed_invariants(&mut self) -> ValidationErrors {
+    /// The refusal of what this type writes that no reading admits — an invariant that does not
+    /// parse (beyond10x/ess#448), a YAML boolean written as a variant (beyond10x/ess#426) — each
+    /// withheld from the declaration rather than the declaration from the specification, so
+    /// nothing declared with the type is refused a second time for it. An invariant's place is held
+    /// ([`RawInvariant::withhold_unparsed`]); a boolean is left out of the variants.
+    pub(crate) fn withhold_unread(&mut self) -> ValidationErrors {
         let location = declared_at(&self.name);
         match &mut self.body {
             RawTypeBody::Newtype { invariants, .. } | RawTypeBody::Struct { invariants, .. } => {
@@ -1624,7 +1627,22 @@ impl RawNamedType {
                     PredicateAt::from(format!("{location}.invariants[{index}]"))
                 })
             }
-            RawTypeBody::Enum { .. } | RawTypeBody::Union { .. } => ValidationErrors::new(),
+            RawTypeBody::Enum { variants } => {
+                let booleans: Vec<bool> = variants
+                    .iter()
+                    .filter_map(|variant| match variant {
+                        RawEnumVariant::Boolean(value) => Some(*value),
+                        RawEnumVariant::Declared(_) => None,
+                    })
+                    .collect();
+                let mut errors = ValidationErrors::new();
+                if !booleans.is_empty() {
+                    variants.retain(|variant| matches!(variant, RawEnumVariant::Declared(_)));
+                    errors.push(boolean_variants(&location, &booleans));
+                }
+                errors
+            }
+            RawTypeBody::Union { .. } => ValidationErrors::new(),
         }
     }
 }

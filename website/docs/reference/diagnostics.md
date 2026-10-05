@@ -47,7 +47,7 @@ The code has two parts. The family says which part of the specification the defe
 
 | Family | Where it applies |
 |---|---|
-| `SPEC` | The specification as a whole: its header, a document that cannot be read, a predicate that does not parse, and anything with no better home. A refusal of a document's structure — a missing required key, an unknown key, a value of the wrong shape — stops that file at the first one; a predicate that does not parse does not, and is reported at its declaration beside the file's other refusals. |
+| `SPEC` | The specification as a whole: its header, a document that cannot be read, a predicate that does not parse, and anything with no better home. A refusal of a document's structure — a missing required key, an unknown key, a value of the wrong shape — stops that file at the first one; a predicate that does not parse does not, and is reported at its declaration beside the file's other refusals. A declaration with an unparsable predicate is withheld whole, so its own other refusals appear once the predicate parses; the file's other declarations are still checked and reported. |
 | `DOMAIN` | A bounded context and what it declares as a whole. |
 | `TYPE` | A named type, or a declared conversion between two types. |
 | `ENTITY` | An entity: its identity, its fields, its lifecycle and its invariants. |

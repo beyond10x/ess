@@ -833,7 +833,12 @@ views:
             for command in &mut raw.commands {
                 for outcome in &mut command.outcomes {
                     for affect in &mut outcome.affects {
-                        reverse(&mut affect.filter);
+                        reverse(
+                            affect
+                                .filter
+                                .predicate_mut()
+                                .expect("the fixture's filter parses"),
+                        );
                     }
                 }
             }

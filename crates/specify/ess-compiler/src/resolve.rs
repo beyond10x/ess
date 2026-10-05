@@ -228,7 +228,9 @@ pub mod codes {
                              required key, an unknown key, a value of the wrong shape — stops \
                              that file at the first one; a predicate that does not parse does \
                              not, and is reported at its declaration beside the file's other \
-                             refusals.",
+                             refusals. A declaration with an unparsable predicate is withheld \
+                             whole, so its own other refusals appear once the predicate parses; \
+                             the file's other declarations are still checked and reported.",
             },
             FamilyDoc {
                 name: DOMAIN,

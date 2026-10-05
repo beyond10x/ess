@@ -27,7 +27,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use ess_primitives::error::{ConstructRef, ValidationCode, ValidationError, ValidationErrors};
-use ess_primitives::predicate::Predicate;
+use ess_primitives::predicate::{Predicate, WrittenPredicate};
 
 use super::{CommandSpec, Effect, Outcome, OutcomeName, PayloadSource, PayloadTable, Subject};
 use crate::entity::EntitySpec;
@@ -46,7 +46,7 @@ pub const SUBJECT_NAMESPACE: &str = "subject";
 pub struct RawInstances {
     /// The rows selected: a predicate over the entity's stored fields, with `input.` operands.
     #[serde(rename = "where")]
-    pub filter: Predicate,
+    pub filter: WrittenPredicate,
 }
 
 /// One `affects:` entry as written.
@@ -57,7 +57,7 @@ pub struct RawAffect {
     pub entity: QualifiedName,
     /// The rows selected, over the entity's fields, `input.` and `subject.`.
     #[serde(rename = "where")]
-    pub filter: Predicate,
+    pub filter: WrittenPredicate,
     /// What every selected row comes to hold.
     #[serde(default, skip_serializing_if = "PayloadTable::is_empty")]
     pub sets: PayloadTable,
@@ -143,6 +143,12 @@ pub(super) fn set_subject(
     let Some(instances) = instances else {
         return Ok(None);
     };
+    // A filter that does not parse is refused here, at the outcome's `instances.where`
+    // (beyond10x/ess#448).
+    let filter = instances
+        .filter
+        .read(format!("outcomes.{name}.instances.where"))
+        .map_err(ValidationErrors::from)?;
     if verbs.instance {
         return Err(refusal(
             name,
@@ -184,7 +190,7 @@ pub(super) fn set_subject(
         return Ok(Some(SetSubject {
             entity,
             effect: Effect::Updates,
-            filter: instances.filter,
+            filter,
         }));
     }
     let Some(qualified) = verbs.moves.take() else {
@@ -217,7 +223,7 @@ pub(super) fn set_subject(
         effect: Effect::Moves {
             transition: qualified.local().to_owned(),
         },
-        filter: instances.filter,
+        filter,
     }))
 }
 
@@ -261,6 +267,17 @@ pub(super) fn affects(
     let mut errors = ValidationErrors::new();
     let mut affects = Vec::with_capacity(written.len());
     for (index, raw) in written.into_iter().enumerate() {
+        // A filter that does not parse is refused at its entry's `where` (beyond10x/ess#448).
+        let filter = match raw
+            .filter
+            .read(format!("outcomes.{name}.affects[{index}].where"))
+        {
+            Ok(filter) => filter,
+            Err(error) => {
+                errors.push(error);
+                continue;
+            }
+        };
         let moves = match &raw.moves {
             None => None,
             Some(moved) => match misnamed_move(name.as_str(), &raw.entity, moved) {
@@ -293,7 +310,7 @@ pub(super) fn affects(
         }
         affects.push(Affect {
             entity: raw.entity,
-            filter: raw.filter,
+            filter,
             sets,
             moves,
         });
@@ -370,7 +387,7 @@ pub(super) fn written(
                 .as_deref()
                 .map(|transition| affect.entity.child(transition)),
             entity: affect.entity,
-            filter: affect.filter,
+            filter: affect.filter.into(),
             sets: PayloadTable(
                 affect
                     .sets
@@ -383,7 +400,9 @@ pub(super) fn written(
     let Some(set) = effects.instances else {
         return (moves, updates, None, affects);
     };
-    let instances = Some(RawInstances { filter: set.filter });
+    let instances = Some(RawInstances {
+        filter: set.filter.into(),
+    });
     match set.effect {
         Effect::Moves { transition } => (
             Some(set.entity.child(&transition)),

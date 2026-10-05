@@ -378,6 +378,12 @@ const STOP_RULE: &str = "A refusal of a document's structure — a missing requi
                          one; a predicate that does not parse does not, and is reported at its \
                          declaration beside the file's other refusals.";
 
+/// The sentence beside it on what a predicate that does not parse withholds (story 448's recorded
+/// decision): its declaration, whole, and nothing else in the file.
+const WITHHOLD_RULE: &str = "A declaration with an unparsable predicate is withheld whole, so \
+                             its own other refusals appear once the predicate parses; the file's \
+                             other declarations are still checked and reported.";
+
 #[test]
 fn structural_refusal_still_stops_and_is_documented() {
     // A view with no `source:` beside a view with an unparsable filter: the structural refusal
@@ -411,4 +417,37 @@ fn structural_refusal_still_stops_and_is_documented() {
         row.contains(STOP_RULE),
         "the `SPEC` row states the structural stop rule `{STOP_RULE}`:\n{row}"
     );
+    assert!(
+        row.contains(WITHHOLD_RULE),
+        "the `SPEC` row states what an unparsable predicate withholds `{WITHHOLD_RULE}`:\n{row}"
+    );
+}
+
+/// A binding selector's `first.where` is a predicate position like the others: refused at its
+/// selector, beside nothing it would hide (correction round 1 of story 448).
+#[test]
+fn selection_where_that_does_not_parse_is_refused_at_its_binding() {
+    let text = std::fs::read_to_string(
+        root().join("crates/verify/ess-conformance/tests/fixtures/binding-condition-selected.yaml"),
+    )
+    .expect("the selected-binding fixture");
+    let premise = validate("selected.yaml", &text);
+    assert_eq!(premise.code, Some(0), "the premise:\n{}", premise.output);
+    let validated = validate(
+        "selected.yaml",
+        &replaced(
+            &text,
+            "where: 'item.id != \"\"'",
+            "where: 'item.id ~= \"\"'",
+        ),
+    );
+    let location = "binding.received.selections[0].first.where";
+    assert_eq!(
+        validated.at("unparsable_predicate", location).len(),
+        1,
+        "{}",
+        validated.output
+    );
+    assert_eq!(validated.problems.len(), 1, "{}", validated.output);
+    assert_eq!(validated.code(location), "ESS-SPEC-012");
 }

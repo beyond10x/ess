@@ -505,7 +505,7 @@ impl Specification {
             errors.extend(actor.validate_grants(&command_names, &view_names, self.system.format));
         }
 
-        errors.extend(self.validate_components(&command_names, &event_names));
+        errors.extend(self.validate_components(&command_names, &event_names, refused));
 
         // The payload construct's cross-declaration half, beside the binding's for the reason the
         // two mirror each other: an outcome fills an event's fields from its command's input, and
@@ -558,6 +558,7 @@ impl Specification {
         &self,
         command_names: &BTreeSet<QualifiedName>,
         event_names: &BTreeSet<QualifiedName>,
+        refused: &Refused,
     ) -> ValidationErrors {
         // The three layers above the domains. Each needs the whole specification, because each is
         // about how the parts fit rather than about any one of them.
@@ -583,6 +584,15 @@ impl Specification {
                         .iter()
                         .filter(|view| self.views.contains_key(*view))
                         .cloned()
+                        // A view its own conversion refused is still the one its domain declares:
+                        // reading it is not a second fault (beyond10x/ess#448).
+                        .chain(
+                            refused
+                                .view_domains
+                                .iter()
+                                .filter(|(_, owner)| **owner == domain.name)
+                                .map(|(view, _)| view.clone()),
+                        )
                         .collect(),
                 )
             })
@@ -949,6 +959,9 @@ pub(crate) struct Refused {
     /// Views whose conversion failed, so a grant naming one (ess/22, beyond10x/ess#286) is not
     /// reported as naming nothing.
     pub(crate) views: BTreeSet<QualifiedName>,
+    /// The domain each refused view was declared in, so a command tree reading one is not
+    /// reported as reading a view its domain does not project (beyond10x/ess#448).
+    pub(crate) view_domains: BTreeMap<QualifiedName, QualifiedName>,
     pub(crate) components: BTreeSet<crate::component::ComponentName>,
     /// The `moves:` a refused command's outcomes name, so a transition only that command takes is
     /// not reported as one nothing takes.
@@ -1132,9 +1145,10 @@ impl Collected {
         let owner = file.domain.clone();
         let owner = owner.as_ref();
         for mut raw in file.types {
-            // An invariant that does not parse is refused and withheld, not the type: a refused
-            // type would make every field declared with it a second refusal (beyond10x/ess#448).
-            errors.extend(raw.withhold_unparsed_invariants());
+            // An invariant that does not parse, or a boolean written as a variant, is refused and
+            // withheld, not the type: a refused type would make every field declared with it a
+            // second refusal (beyond10x/ess#448, beyond10x/ess#426).
+            errors.extend(raw.withhold_unread());
             let name = raw.name.clone();
             let converted = match NamedType::try_from(raw) {
                 Ok(declared) => Some(declared),
@@ -1276,6 +1290,11 @@ impl Collected {
                 }
                 Err(member_errors) => {
                     self.refused.views.insert(name.clone());
+                    if let Some(owner) = owner {
+                        self.refused
+                            .view_domains
+                            .insert(name.clone(), owner.clone());
+                    }
                     errors.extend(member_errors);
                     None
                 }

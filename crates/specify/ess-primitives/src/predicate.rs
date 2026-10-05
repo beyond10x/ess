@@ -3915,7 +3915,7 @@ impl<'de> serde::Deserialize<'de> for Predicate {
 ///
 /// Serialized, and published in a schema, exactly as a [`Predicate`] is: a parsed one as its
 /// canonical node, and one that did not parse as the node it was written as.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WrittenPredicate {
     /// What the document wrote.
     node: Node,
@@ -3928,7 +3928,7 @@ pub struct WrittenPredicate {
 /// The refusal is kept as the parser's sentence and the one fact about it a reader acts on, rather
 /// than as a [`ParseError`] or a `Result`: every type reachable from an authored file is spelled by
 /// name and carries serde's attributes only, which `ess-xtask`'s consumer accounting reads.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum Reading {
     /// The node is this predicate.
     Parsed(Predicate),
