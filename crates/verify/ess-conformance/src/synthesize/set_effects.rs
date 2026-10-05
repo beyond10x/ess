@@ -467,18 +467,17 @@ impl Selection<'_> {
         rests: &dyn Fn(&StateName) -> bool,
         visible: bool,
     ) -> Option<Arrangement> {
-        // A row arranged by sending the command under test would carry that command's own effect
-        // (its set or secondary rows, its subject) into the scenario before it is witnessed, so
-        // such an arrangement is never a witness; another path, or none, is taken instead.
-        let under_test = CommandRef::new(self.command.name.clone());
+        // An arrangement is the row it arranges and nothing else: each act it sends is folded
+        // into that row's expected state. An act taking a branch with a set effect (`instances:`
+        // or `affects:`) also changes rows the arrangement does not account for, which the
+        // scenario then reads back as arranged, so such an arrangement is never a witness and
+        // another path, or none, is taken. Sending the command under test is otherwise allowed:
+        // a branch of it that changes only the row it names is accounted for like any other act.
         let accept = |row: &Arrangement| {
             self.truth_of(goal, row) == Truth::True
                 && rests(&row.state)
                 && (!visible || visibly_changed(self.ir, self.sets, self.supplied, &row.settled))
-                && !row.steps.iter().any(|step| {
-                    matches!(step, ScenarioStep::ExecuteCommand { command, .. }
-                        if *command == under_test)
-                })
+                && !reaches_other_rows(self.ir, &row.steps)
         };
         let distinction = next(self.ir, self.entity, taken);
         if self.symbolic(goal) {
@@ -1371,4 +1370,23 @@ fn zero_match(
         ir, entity, views, &unchanged, None, outcome, &supplied, steps, source,
     );
     Ok(())
+}
+
+/// Whether `steps` take a branch with a set effect (`instances:` or `affects:`): an act whose
+/// effect reaches rows beside the one it names, which an arrangement of one row does not account
+/// for.
+fn reaches_other_rows(ir: &EssIr, steps: &[ScenarioStep]) -> bool {
+    steps.iter().any(|step| {
+        let ScenarioStep::ExpectOutcome { outcome } = step else {
+            return false;
+        };
+        ir.commands()
+            .values()
+            .filter(|command| command.name.to_string() == outcome.command.to_string())
+            .flat_map(|command| &command.outcomes)
+            .any(|branch| {
+                branch.name == outcome.outcome
+                    && (branch.instances.is_some() || !branch.affects.is_empty())
+            })
+    })
 }

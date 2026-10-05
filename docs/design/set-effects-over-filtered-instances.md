@@ -129,9 +129,12 @@ command the changed rows are read in the arrival state, the others as they were.
 them back must publish the state. Where no row can show its `sets:` changing, the state alone
 separates them. Where only the arrival state itself is reached, the move is seen through what
 `sets:` writes, and an entry writing nothing is refused by name (`NoWitness`). No witness row of
-`instances:` or `affects:` is arranged by sending the command under test, whose own effect would
-reach the scenario's other rows before it is witnessed; another path is taken, or the optional row
-skipped outside the move is left out as where no arrangement reaches it.
+`instances:` or `affects:` is arranged through an act taking a branch with a set effect
+(`instances:` or `affects:`), whose effect would reach rows the arrangement does not account for
+before the command is witnessed; another path is taken, or the optional row skipped outside the move
+is left out as where no arrangement reaches it. Sending the command under test is otherwise allowed:
+a branch of it that changes only the row it names (a creation under another caller, beyond10x/ess#287)
+is folded into that row like any other act.
 
 Every row the segment arranges is read back as every entry, in the order written, leaves it: an
 entry over the row's entity whose filter selects the row as arranged writes its `sets:` and, where
