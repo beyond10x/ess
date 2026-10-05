@@ -1,0 +1,156 @@
+format: ess/22
+system: idioms
+version: v1
+domain: idioms.correlated
+summary: >-
+  The latest earlier row is a held row (`docs/design/read-api-view-idioms.md`, beyond10x/ess#442).
+  A begin is held as one row per correlation key: its identity `span_key` is the key the caller
+  composes from the correlation fields (customer and session), and a create-or-update pair writes it,
+  so a later begin of the key replaces the earlier one. A begin under a second key for the same
+  correlation fields is a second row, and an end then refuses as ambiguous rather than choose one.
+  An end either carries its own duration, or reads the one held begin of its correlation fields
+  through a row-set selector, with every other count its own branch: no begin drops the end, two
+  refuse as ambiguous, a begin not before the end clamps the duration to 0. The difference
+  between the two instants is the consumer's.
+types:
+  # The correlation key, composed by the caller from customer and session, one key per pair.
+  - {name: idioms.correlated.SpanKey, kind: newtype, of: String}
+errors:
+  - {name: idioms.correlated.Ambiguous, summary: More than one begin of the customer and session is held., fields: []}
+  - {name: idioms.correlated.Unmatched, summary: No begin of the customer and session is held; the end is dropped., fields: []}
+events:
+  - name: idioms.correlated.SpanOpened
+    fields:
+      - {name: span_key, type: idioms.correlated.SpanKey}
+  - name: idioms.correlated.SpanEnded
+    fields:
+      - {name: end_id, type: Uuid}
+entities:
+  - name: idioms.correlated.OpenSpan
+    identity: {name: span_key, type: idioms.correlated.SpanKey}
+    fields:
+      - {name: customer, type: String}
+      - {name: session, type: String}
+      - {name: began_at, type: Timestamp}
+    lifecycle:
+      initial: Open
+      states: [Open]
+      terminal: [Open]
+      transitions: []
+  - name: idioms.correlated.SpanEnd
+    identity: {name: end_id, type: Uuid}
+    fields:
+      - {name: customer, type: String}
+      - {name: session, type: String}
+      - {name: duration, type: Optional<Integer>}
+      - {name: began_at, type: Optional<Timestamp>}
+      - {name: ended_at, type: Optional<Timestamp>}
+    lifecycle:
+      initial: Recorded
+      states: [Recorded]
+      terminal: [Recorded]
+      transitions: []
+commands:
+  - name: idioms.correlated.Begin
+    input:
+      - {name: span_key, type: idioms.correlated.SpanKey}
+      - {name: customer, type: String}
+      - {name: session, type: String}
+      - {name: at, type: Timestamp}
+    outcomes:
+      # A later begin of the same key replaces the held one: the row holds the latest begin.
+      - name: superseded
+        updates: idioms.correlated.OpenSpan
+        instance: span_key
+        sets: {customer: input.customer, session: input.session, began_at: input.at}
+        emits: [idioms.correlated.SpanOpened]
+        payload:
+          idioms.correlated.SpanOpened: {span_key: input.span_key}
+      - name: opened
+        unknown_instance: true
+        creates: idioms.correlated.OpenSpan
+        instance: span_key
+        sets: {customer: input.customer, session: input.session, began_at: input.at}
+        emits: [idioms.correlated.SpanOpened]
+        payload:
+          idioms.correlated.SpanOpened: {span_key: input.span_key}
+  - name: idioms.correlated.End
+    input:
+      - {name: customer, type: String}
+      - {name: session, type: String}
+      - {name: at, type: Timestamp}
+      - {name: duration, type: Optional<Integer>}
+    outcomes:
+      # The end carries its own duration.
+      - name: carried
+        when: defined(duration)
+        creates: idioms.correlated.SpanEnd
+        instance: end_id
+        sets: {customer: input.customer, session: input.session, duration: input.duration, ended_at: input.at}
+        emits: [idioms.correlated.SpanEnded]
+        payload:
+          idioms.correlated.SpanEnded: {end_id: {generated: true}}
+      # More than one held begin matches: no row order is chosen, so the end is refused.
+      - name: ambiguous
+        when: missing(duration)
+        when_related:
+          entity: idioms.correlated.OpenSpan
+          where: {all: [customer == input.customer, session == input.session]}
+          count: {gt: 1}
+        error: idioms.correlated.Ambiguous
+      # No held begin matches: the end is dropped.
+      - name: unmatched
+        when: missing(duration)
+        when_related:
+          entity: idioms.correlated.OpenSpan
+          where: {all: [customer == input.customer, session == input.session]}
+          count: {eq: 0}
+        error: idioms.correlated.Unmatched
+      # The one held begin is not before the end: the duration is clamped at 0.
+      - name: clamped
+        when: missing(duration)
+        when_related:
+          entity: idioms.correlated.OpenSpan
+          where: {all: [customer == input.customer, session == input.session]}
+          forall: began_at >= input.at
+        creates: idioms.correlated.SpanEnd
+        instance: end_id
+        sets: {customer: input.customer, session: input.session, duration: 0, ended_at: input.at}
+        emits: [idioms.correlated.SpanEnded]
+        payload:
+          idioms.correlated.SpanEnded: {end_id: {generated: true}}
+      # Otherwise the one held begin supplies its instant; `ended_at - began_at` is the consumer's.
+      - name: derived
+        creates: idioms.correlated.SpanEnd
+        instance: end_id
+        sets:
+          customer: input.customer
+          session: input.session
+          began_at:
+            related:
+              entity: idioms.correlated.OpenSpan
+              where: {all: [customer == input.customer, session == input.session]}
+              field: began_at
+          ended_at: input.at
+        emits: [idioms.correlated.SpanEnded]
+        payload:
+          idioms.correlated.SpanEnded: {end_id: {generated: true}}
+views:
+  - name: idioms.correlated.OpenSpans
+    source: idioms.correlated.OpenSpan
+    consistency: read_your_writes
+    fields:
+      - {name: span_key, type: idioms.correlated.SpanKey}
+      - {name: customer, type: String}
+      - {name: session, type: String}
+      - {name: began_at, type: Timestamp}
+  - name: idioms.correlated.SpanEnds
+    source: idioms.correlated.SpanEnd
+    consistency: read_your_writes
+    fields:
+      - {name: end_id, type: Uuid}
+      - {name: customer, type: String}
+      - {name: session, type: String}
+      - {name: duration, type: Optional<Integer>}
+      - {name: began_at, type: Optional<Timestamp>}
+      - {name: ended_at, type: Optional<Timestamp>}

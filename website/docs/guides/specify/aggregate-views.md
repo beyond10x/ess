@@ -75,3 +75,15 @@ fields it reads that the creating command sets and the lifecycle state — so th
 exact value would change if its condition were dropped or inverted, and refuses the view
 (`ESS-SYNTH-017`) where no arrangement does. Such a suite is written as `ess-conformance/38` or
 `/39`. A view a binding or precondition changes the rows of is refused by name.
+
+## What an aggregate view does not compute
+
+A view returns the numbers a suite can check exactly, and the consumer computes what follows from
+them. There is no ratio or difference between two measures: return both operands as measures of one
+row, `queued` as `{count: {}}` beside `abandoned` as `{count: {}, where: abandoned == true}`, and
+let the consumer divide, round and decide what a zero denominator reads as. A filter moves a
+parameter by one constant at most (`duration_ms > param.limit_ms + 1000`); declare the parameter in
+the unit the field is stored in, and convert at the adapter. The same applies to a latest row per
+group, a unit, a total kept per key and a field of another entity: each has an idiom with the
+constructs above, collected with validated examples in the
+[read-API view idioms](https://github.com/beyond10x/ess/blob/main/docs/design/read-api-view-idioms.md).

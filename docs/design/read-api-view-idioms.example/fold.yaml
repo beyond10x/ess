@@ -1,0 +1,96 @@
+domain: idioms.fold
+
+summary: >-
+  A total maintained per key is a grouped view over the rows it totals. The rows are the entity;
+  how a target keeps the totals current is its own business.
+
+events:
+  - name: idioms.fold.SessionEnded
+    fields:
+      - {name: end_id, type: Uuid}
+
+entities:
+  - name: idioms.fold.SessionEnd
+    identity: {name: end_id, type: Uuid}
+    fields:
+      - {name: customer, type: String}
+      - {name: session, type: String}
+      - {name: label, type: String}
+      - {name: duration, type: Integer}
+    invariants:
+      - duration >= 0
+    lifecycle:
+      initial: Recorded
+      states: [Recorded]
+      terminal: [Recorded]
+      transitions: []
+
+commands:
+  - name: idioms.fold.RecordEnd
+    input:
+      - {name: customer, type: String}
+      - {name: session, type: String}
+      - {name: label, type: String}
+      - {name: duration, type: Integer}
+    outcomes:
+      - name: recorded
+        creates: idioms.fold.SessionEnd
+        instance: end_id
+        sets: {customer: input.customer, session: input.session, label: input.label, duration: input.duration}
+        emits: [idioms.fold.SessionEnded]
+        payload:
+          idioms.fold.SessionEnded: {end_id: {generated: true}}
+
+views:
+  # The rows themselves, which is where conformance reads the invariant back.
+  - name: idioms.fold.SessionEnds
+    source: idioms.fold.SessionEnd
+    consistency: read_your_writes
+    fields:
+      - {name: end_id, type: Uuid}
+      - {name: customer, type: String}
+      - {name: session, type: String}
+      - {name: label, type: String}
+      - {name: duration, type: Integer}
+
+  - name: idioms.fold.TotalByLabel
+    source: idioms.fold.SessionEnd
+    consistency: read_your_writes
+    group_by: [customer, session, label]
+    fields:
+      - {name: customer, type: String}
+      - {name: session, type: String}
+      - {name: label, type: String}
+      - {name: duration_sum, type: Integer, aggregate: {sum: duration}}
+
+  - name: idioms.fold.TotalBySession
+    source: idioms.fold.SessionEnd
+    consistency: read_your_writes
+    group_by: [customer, session]
+    fields:
+      - {name: customer, type: String}
+      - {name: session, type: String}
+      - {name: duration_sum, type: Integer, aggregate: {sum: duration}}
+
+  # With every duration non-negative, a group sums to 0 exactly when each of its rows is 0, so
+  # admitting only positive rows leaves a zero-total group out: it has no admitted row.
+  - name: idioms.fold.NonZeroTotalByLabel
+    source: idioms.fold.SessionEnd
+    consistency: read_your_writes
+    filter: duration > 0
+    group_by: [customer, session, label]
+    fields:
+      - {name: customer, type: String}
+      - {name: session, type: String}
+      - {name: label, type: String}
+      - {name: duration_sum, type: Integer, aggregate: {sum: duration}}
+
+  - name: idioms.fold.NonZeroTotalBySession
+    source: idioms.fold.SessionEnd
+    consistency: read_your_writes
+    filter: duration > 0
+    group_by: [customer, session]
+    fields:
+      - {name: customer, type: String}
+      - {name: session, type: String}
+      - {name: duration_sum, type: Integer, aggregate: {sum: duration}}

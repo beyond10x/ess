@@ -1,0 +1,20 @@
+type: ess-scenario/1
+domain: idioms.latest
+scenario: latest-event-ties-are-broken-by-identity
+summary: Two events of one group at the same instant are read in ascending identity order.
+timeline:
+  - at: 2026-01-05T09:00:00Z
+    command: idioms.latest.RecordEvent
+    input: {outer: tied, inner: first, at: 2026-01-05T08:00:00Z}
+    outcome: recorded
+  - at: 2026-01-05T09:00:01Z
+    command: idioms.latest.RecordEvent
+    input: {outer: tied, inner: second, at: 2026-01-05T08:00:00Z}
+    outcome: recorded
+assert:
+  - view: idioms.latest.LatestEvent
+    params: {outer: tied, page: 0, size: 2}
+    counts: {at_least: 2, at_most: 2}
+  - view: idioms.latest.LatestEvent
+    params: {outer: tied, page: 0, size: 2}
+    ranked: true
