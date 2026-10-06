@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:served-store-and-entry
 kind: story
-status: active
+status: implemented
 title: A served component gets a generated in-memory store and server entry point
 refs:
 - provider: github
@@ -72,10 +72,11 @@ scope:
   path: website/docs/concepts/ess.md
 - confidence: cited
   path: website/docs/guides/synthesize.md
-revision: 21
+revision: 22
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T20:11:53Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":8}}}
 - {from: "proposed", to: "active", at: "2026-10-01T20:11:53Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":8}}}
+- {from: "active", to: "implemented", at: "2026-10-06T09:43:45Z", actor: "human:timo", revision: 22, decided_on: {"recorded":{"test_result":3,"review_outcome":10}}}
 ---
 ## Outcome
 

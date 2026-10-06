@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-309
 kind: story
-status: active
+status: implemented
 title: Aggregate with two group keys filled from one input is refused for a move the source does not have
 tags:
 - feature-request
@@ -19,10 +19,11 @@ scope:
   path: crates/verify/ess-conformance/tests/aggregate_shared_input_keys.rs
 - confidence: inferred
   path: docs/design/aggregate-views.md
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T08:44:47Z", actor: "human:timo", revision: 6, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T08:44:47Z", actor: "human:timo", revision: 7, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
+- {from: "active", to: "implemented", at: "2026-10-06T09:46:27Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":2}}}
 ---
 ## Outcome
 

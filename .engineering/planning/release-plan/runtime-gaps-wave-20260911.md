@@ -2,12 +2,14 @@
 format: aep.planning-md/3
 id: release-plan:runtime-gaps-wave-20260911
 kind: release-plan
-status: draft
+status: implemented
 title: Deliver runtime-measured gaps 9 through 13 in PR29
 relations:
 - serves: vision:O2
 - informed_by: task:runtime-adopter-gaps-9-13
-revision: 1
+revision: 2
+transitions:
+- {from: "draft", to: "implemented", at: "2026-10-06T09:44:38Z", actor: "human:timo", revision: 2, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Authorized scope and process
 

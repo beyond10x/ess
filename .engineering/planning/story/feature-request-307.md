@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-307
 kind: story
-status: active
+status: implemented
 title: when_subject over a field copied from a related row is witnessed
 tags:
 - feature-request
@@ -21,10 +21,11 @@ scope:
   path: crates/verify/ess-conformance/tests/fixtures/subject-guard-copied-field.yaml
 - confidence: cited
   path: crates/verify/ess-conformance/tests/subject_guard_copied_field.rs
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T12:22:56Z", actor: "human:timo", revision: 5, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T12:22:57Z", actor: "human:timo", revision: 6, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
+- {from: "active", to: "implemented", at: "2026-10-06T09:43:22Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

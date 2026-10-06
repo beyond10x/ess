@@ -2,17 +2,18 @@
 format: aep.planning-md/3
 id: story:external-request-binding
 kind: story
-status: active
+status: implemented
 title: A Rust external decision port binds authorization to the actual command input
 refs:
 - provider: github
   reference: beyond10x/ess#412
 relations:
 - serves: vision:O2
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-04T19:17:27Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-04T19:17:27Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-06T09:42:50Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

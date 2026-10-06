@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-282
 kind: story
-status: active
+status: implemented
 title: ESS-COMMAND-004 refuses a when_related refusal beside a wrong_state outcome; no precedence is stated
 tags:
 - feature-request
@@ -39,10 +39,11 @@ scope:
   path: docs/design/cross-record-and-stored-field-guards.md
 - confidence: cited
   path: docs/design/input-guard-overlap-precedence.md
-revision: 24
+revision: 25
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T22:51:33Z", actor: "human:timo", revision: 19, decided_on: {"recorded":{"approval":1}}}
 - {from: "proposed", to: "active", at: "2026-10-02T22:51:33Z", actor: "human:timo", revision: 20, decided_on: {"recorded":{"approval":1}}}
+- {from: "active", to: "implemented", at: "2026-10-06T09:43:08Z", actor: "human:timo", revision: 25, decided_on: {"recorded":{"test_result":5,"approval":1,"review_outcome":2}}}
 ---
 ## Outcome
 

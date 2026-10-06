@@ -13,6 +13,7 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
+- supersedes: story:fast-line-regeneration-fails-on-macos
 scope:
 - confidence: cited
   path: .github/workflows/ci.yml

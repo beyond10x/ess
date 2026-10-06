@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-347
 kind: story
-status: active
+status: implemented
 title: Reconcile grant refusal log observation with consumer runners
 refs:
 - provider: github
@@ -15,10 +15,11 @@ scope:
   path: website/docs/guides/verify/author-scenarios.md
 - confidence: cited
   path: website/docs/guides/verify/runners.md
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T10:18:55Z", actor: "human:timo", revision: 5, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T10:18:55Z", actor: "human:timo", revision: 6, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
+- {from: "active", to: "implemented", at: "2026-10-06T09:43:25Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Outcome
 

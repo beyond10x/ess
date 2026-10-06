@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-228
 kind: story
-status: active
+status: implemented
 title: No way to declare a multi-field key unique within a scope (equality, one arranged row)
 tags:
 - feature-request
@@ -11,10 +11,11 @@ refs:
   reference: beyond10x/ess#228
 relations:
 - serves: vision:O2
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-04T15:27:22Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-10-04T15:27:22Z", actor: "human:timo", revision: 6}
+- {from: "active", to: "implemented", at: "2026-10-06T09:42:55Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

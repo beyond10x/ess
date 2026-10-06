@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:related-record-effects
 kind: story
-status: active
+status: implemented
 title: A non-creating command may declare an effect on related records
 tags:
 - feature-request
@@ -11,10 +11,11 @@ refs:
   reference: beyond10x/ess#229
 relations:
 - serves: vision:O2
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-04T19:20:22Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-10-04T19:20:22Z", actor: "human:timo", revision: 5}
+- {from: "active", to: "implemented", at: "2026-10-06T09:43:40Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

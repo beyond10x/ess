@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-30T10:42:02Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-305",
+  "kind": "story",
+  "revision": 1,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "ESS 0.48.0 Release run 36702785119 succeeded at tag 0.48.0 (5dbda40be9d3); the closing comment or the 0.48.0 CHANGELOG section names beyond10x/ess#305 as shipped in 0.48.0. Recorded by the 2026-10-06 store reconciliation.",
+    "reference": "https://github.com/beyond10x/ess/actions/runs/36702785119"
+  }
+}

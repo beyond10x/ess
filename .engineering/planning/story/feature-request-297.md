@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-297
 kind: story
-status: active
+status: implemented
 title: Conformance and exploration have no process restart, so identities minted from a counter that resets on restart go undetected
 tags:
 - feature-request
@@ -12,10 +12,11 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-04T13:32:48Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-04T13:32:48Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-06T09:43:18Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1,"review_outcome":1,"verification":1}}}
 ---
 ## Outcome
 

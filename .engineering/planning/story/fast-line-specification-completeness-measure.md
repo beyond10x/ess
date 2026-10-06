@@ -2,11 +2,13 @@
 format: aep.planning-md/3
 id: story:fast-line-specification-completeness-measure
 kind: story
-status: draft
+status: archived
 title: No measure of how complete a specification is
 tags:
 - fast-line
-revision: 1
+revision: 2
+transitions:
+- {from: "draft", to: "archived", at: "2026-10-06T09:48:10Z", actor: "human:timo", revision: 2}
 ---
 ## Outcome
 

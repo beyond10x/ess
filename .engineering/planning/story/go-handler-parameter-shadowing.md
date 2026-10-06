@@ -2,17 +2,18 @@
 format: aep.planning-md/3
 id: story:go-handler-parameter-shadowing
 kind: story
-status: active
+status: implemented
 title: A Go component handler parameter never shadows an input domain package
 refs:
 - provider: github
   reference: beyond10x/ess#414
 relations:
 - serves: vision:O2
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-04T19:17:27Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-04T19:17:28Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-06T09:43:34Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

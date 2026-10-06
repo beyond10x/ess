@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-269
 kind: story
-status: proposed
+status: implemented
 title: A binding failure policy may differ per refusal
 tags:
 - feature-request
@@ -50,9 +50,11 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/delivery_context.rs
 - confidence: inferred
   path: docs/design/binding-delivery-guarantees.md
-revision: 32
+revision: 34
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T13:04:16Z", actor: "human:timo", revision: 25, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-10-06T09:43:01Z", actor: "human:timo", revision: 33, decided_on: {"recorded":{"test_result":1,"review_outcome":3}}}
+- {from: "active", to: "implemented", at: "2026-10-06T09:43:01Z", actor: "human:timo", revision: 34, decided_on: {"recorded":{"test_result":1,"review_outcome":3}}}
 ---
 ## Outcome
 

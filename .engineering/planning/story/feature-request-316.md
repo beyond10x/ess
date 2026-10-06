@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-316
 kind: story
-status: active
+status: implemented
 title: Generated creation honors the declared input identity
 refs:
 - provider: github
@@ -19,10 +19,11 @@ scope:
   path: crates/generate/ess-synth/tests/adversary_upsert_by_existence_pass1.rs
 - confidence: cited
   path: crates/generate/ess-synth/tests/upsert_by_existence.rs
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T09:36:17Z", actor: "human:timo", revision: 6, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T09:36:17Z", actor: "human:timo", revision: 7, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
+- {from: "active", to: "implemented", at: "2026-10-06T09:46:27Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Outcome
 

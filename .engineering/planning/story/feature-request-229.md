@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-229
 kind: story
-status: active
+status: implemented
 title: No guard on another entity's state for non-creating commands, and no effect on related records
 tags:
 - feature-request
@@ -35,10 +35,11 @@ scope:
   path: website/docs/reference/predicates.md
 - confidence: inferred
   path: website/docs/reference/spec-versions.md
-revision: 19
+revision: 20
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T13:04:14Z", actor: "human:timo", revision: 16, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-10-01T06:31:54Z", actor: "human:timo", revision: 19, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-10-06T09:42:56Z", actor: "human:timo", revision: 20, decided_on: {"recorded":{"test_result":1,"review_outcome":3,"verification":1}}}
 ---
 ## Outcome
 

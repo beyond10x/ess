@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-296
 kind: story
-status: active
+status: implemented
 title: 'Retrofit: no way to declare intended behaviour that the implementation is known not to meet, and count it apart'
 tags:
 - feature-request
@@ -12,10 +12,11 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-04T15:00:15Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":2}}}
 - {from: "proposed", to: "active", at: "2026-10-04T15:00:15Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "active", to: "implemented", at: "2026-10-06T09:43:17Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1,"review_outcome":3,"verification":1}}}
 ---
 ## Outcome
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:related-via-stored-reference
 kind: story
-status: active
+status: implemented
 title: when_related reads through a stored subject field, Optional included (ess/22)
 refs:
 - provider: github
@@ -41,10 +41,11 @@ scope:
   path: docs/design/cross-record-and-stored-field-guards.md
 - confidence: inferred
   path: website/docs/reference/predicates.md
-revision: 12
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T20:11:54Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":2}}}
 - {from: "proposed", to: "active", at: "2026-10-01T20:11:55Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "active", to: "implemented", at: "2026-10-06T09:43:42Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"test_result":1,"review_outcome":3,"verification":1}}}
 ---
 ## Outcome
 

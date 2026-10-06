@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-26T10:19:48Z",
+  "actor": "human:timo",
+  "artifact": "story:typed-literals-in-sets-and-unknown-instances",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "ESS 0.34.0 Release run 36235385637 succeeded at tag 0.34.0 (a80557a3f93e); the closing comment or the 0.34.0 CHANGELOG section names beyond10x/ess#113 as shipped in 0.34.0. Recorded by the 2026-10-06 store reconciliation.",
+    "reference": "https://github.com/beyond10x/ess/actions/runs/36235385637"
+  }
+}

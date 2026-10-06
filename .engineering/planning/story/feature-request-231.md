@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-231
 kind: story
-status: active
+status: implemented
 title: 'Entity Runtime lowering refuses constructs ess/15-16 validate: unknown_instance, existing_instance, {related:}, {increment}, {cleared}, alphabet:, text .count, now'
 tags:
 - feature-request
@@ -11,10 +11,11 @@ refs:
   reference: beyond10x/ess#231
 relations:
 - serves: vision:O2
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-04T14:28:42Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-10-04T14:28:42Z", actor: "human:timo", revision: 5}
+- {from: "active", to: "implemented", at: "2026-10-06T09:47:47Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Outcome
 

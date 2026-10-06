@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-29T05:18:56Z",
+  "actor": "human:timo",
+  "artifact": "story:collections-reach-their-upper-count-boundary",
+  "kind": "story",
+  "revision": 1,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "ESS 0.41.0 Release run 36524774887 succeeded at tag 0.41.0 (a4aa8b6154bd); the closing comment or the 0.41.0 CHANGELOG section names beyond10x/ess#196 as shipped in 0.41.0. Recorded by the 2026-10-06 store reconciliation.",
+    "reference": "https://github.com/beyond10x/ess/actions/runs/36524774887"
+  }
+}

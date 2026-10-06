@@ -2,14 +2,18 @@
 format: aep.planning-md/3
 id: story:collections-reach-their-upper-count-boundary
 kind: story
-status: draft
+status: implemented
 title: An upper count bound on a collection is never sent at its accepting boundary
 refs:
 - provider: github
   reference: beyond10x/ess#196
 relations:
 - serves: vision:O2
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-06T09:42:47Z", actor: "human:timo", revision: 2, decided_on: {"recorded":{"test_result":1}}}
+- {from: "proposed", to: "active", at: "2026-10-06T09:42:47Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"test_result":1}}}
+- {from: "active", to: "implemented", at: "2026-10-06T09:42:48Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-278
 kind: story
-status: active
+status: implemented
 title: An input guard beside a stored-field guard on one branch is synthesized
 tags:
 - feature-request
@@ -17,10 +17,11 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - confidence: inferred
   path: docs/design/input-guard-overlap-precedence.md
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T06:31:26Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-10-01T11:17:36Z", actor: "human:timo", revision: 6}
+- {from: "active", to: "implemented", at: "2026-10-06T09:43:06Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1,"review_outcome":2,"verification":1}}}
 ---
 ## Outcome
 

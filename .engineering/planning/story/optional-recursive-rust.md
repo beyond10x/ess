@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:optional-recursive-rust
 kind: story
-status: active
+status: implemented
 title: Rust represents optional recursive structs without changing their wire contract
 refs:
 - provider: github
@@ -15,10 +15,11 @@ scope:
   path: crates/generate/ess-synth
 - confidence: inferred
   path: docs/design/optional-recursive-rust.md
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T23:37:29Z", actor: "agent:codex-ekr-knowledge", revision: 4, decided_on: {"recorded":{"approval":1}}}
 - {from: "proposed", to: "active", at: "2026-10-02T23:37:30Z", actor: "agent:codex-ekr-knowledge", revision: 5, decided_on: {"recorded":{"approval":1}}}
+- {from: "active", to: "implemented", at: "2026-10-06T09:44:40Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1,"approval":1,"review_outcome":2,"verification":2}}}
 ---
 ## Acceptance
 

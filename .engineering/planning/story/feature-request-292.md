@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-292
 kind: story
-status: active
+status: implemented
 title: 'check-history: a generated Timestamp makes every history uncheckable (check.model-undetermined, exit 2)'
 tags:
 - feature-request
@@ -55,10 +55,11 @@ scope:
   path: crates/verify/ess-conformance/tests/linearizability_adversary.rs
 - confidence: inferred
   path: docs/design/generated-history-values.md
-revision: 27
+revision: 28
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T15:42:34Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-10-03T15:42:34Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-10-06T09:43:14Z", actor: "human:timo", revision: 28, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

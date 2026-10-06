@@ -2,14 +2,18 @@
 format: aep.planning-md/3
 id: story:union-unit-variants
 kind: story
-status: draft
+status: implemented
 title: A union variant may be declared without a payload
 refs:
 - provider: github
   reference: beyond10x/ess#418
 relations:
 - serves: vision:O2
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-06T09:43:49Z", actor: "human:timo", revision: 2, decided_on: {"recorded":{"test_result":1}}}
+- {from: "proposed", to: "active", at: "2026-10-06T09:43:49Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"test_result":1}}}
+- {from: "active", to: "implemented", at: "2026-10-06T09:43:50Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

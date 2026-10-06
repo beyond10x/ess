@@ -5,7 +5,7 @@ kind: decision-blocker
 status: open
 title: Entity-core has no feature for increment, alphabet, text count, cleared and Optional-to-Optional updates
 relations:
-- blocks: story:feature-request-231
+- blocks: story:entity-runtime-lowers-entity-core-constructs
 revision: 1
 ---
 # Entity-core has no feature for increment, alphabet, text count, cleared and Optional-to-Optional updates

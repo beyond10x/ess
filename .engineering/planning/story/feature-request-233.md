@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-233
 kind: story
-status: active
+status: implemented
 title: 'Value expressions: dotted input paths in sets:/payload:, field arithmetic, sibling-field comparison, byte length'
 tags:
 - feature-request
@@ -11,10 +11,11 @@ refs:
   reference: beyond10x/ess#233
 relations:
 - serves: vision:O2
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-04T15:27:20Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-10-04T15:27:21Z", actor: "human:timo", revision: 6}
+- {from: "active", to: "implemented", at: "2026-10-06T09:42:56Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

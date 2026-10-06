@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-279
 kind: story
-status: proposed
+status: implemented
 title: A stored-guarded moving command does not count as rewriting a group key
 tags:
 - feature-request
@@ -21,9 +21,11 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - confidence: inferred
   path: docs/design/aggregate-views.md
-revision: 7
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T06:31:26Z", actor: "human:timo", revision: 7}
+- {from: "proposed", to: "active", at: "2026-10-06T09:46:17Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1}}}
+- {from: "active", to: "implemented", at: "2026-10-06T09:46:17Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

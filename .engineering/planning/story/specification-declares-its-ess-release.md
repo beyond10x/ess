@@ -2,17 +2,18 @@
 format: aep.planning-md/3
 id: story:specification-declares-its-ess-release
 kind: story
-status: active
+status: implemented
 title: A specification declares the ess release it is maintained with
 refs:
 - provider: github
   reference: beyond10x/ess#106
 relations:
 - serves: vision:O2
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-26T02:42:42Z", actor: "human:timo", revision: 2, imported: true}
 - {from: "proposed", to: "active", at: "2026-09-26T02:43:26Z", actor: "human:timo", revision: 3, imported: true}
+- {from: "active", to: "implemented", at: "2026-10-06T09:43:45Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

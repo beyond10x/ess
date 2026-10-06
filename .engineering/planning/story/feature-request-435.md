@@ -14,6 +14,7 @@ relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
 - depends_on: story:ess-generate-check
+- supersedes: story:fast-line-adoption-diff-noise
 scope:
 - confidence: inferred
   path: crates/edge/ess-cli/tests/generate_check.rs

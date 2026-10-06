@@ -2,11 +2,13 @@
 format: aep.planning-md/3
 id: story:fast-line-adoption-diff-noise
 kind: story
-status: draft
+status: archived
 title: Adopting ESS on an existing service produces a large unexplained diff
 tags:
 - fast-line
-revision: 1
+revision: 2
+transitions:
+- {from: "draft", to: "archived", at: "2026-10-06T09:48:08Z", actor: "human:timo", revision: 2}
 ---
 ## Outcome
 

@@ -2,11 +2,13 @@
 format: aep.planning-md/3
 id: story:fast-line-regeneration-fails-on-macos
 kind: story
-status: draft
+status: archived
 title: Regenerating ESS output fails on macOS with a provenance error
 tags:
 - fast-line
-revision: 1
+revision: 2
+transitions:
+- {from: "draft", to: "archived", at: "2026-10-06T09:48:09Z", actor: "human:timo", revision: 2}
 ---
 ## Outcome
 

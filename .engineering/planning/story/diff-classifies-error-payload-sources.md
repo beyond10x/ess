@@ -2,17 +2,18 @@
 format: aep.planning-md/3
 id: story:diff-classifies-error-payload-sources
 kind: story
-status: active
+status: implemented
 title: The diff classifies error payload sources per outcome
 refs:
 - provider: github
   reference: beyond10x/ess#253
 relations:
 - serves: vision:O2
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T01:33:23Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-09-30T01:33:23Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-06T09:42:49Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":2}}}
 ---
 ## Outcome
 

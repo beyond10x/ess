@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: epic:ui-live-apps
 kind: epic
-status: active
+status: implemented
 title: One model and one ess-ui document produce running apps with nothing hand-written
 refs:
 - provider: github
@@ -10,10 +10,11 @@ refs:
 relations:
 - serves: vision:O2
 - informed_by: epic:ess-ui-renderer-neutral-ui
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T20:11:49Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-10-01T20:11:49Z", actor: "human:timo", revision: 6}
+- {from: "active", to: "implemented", at: "2026-10-06T09:42:47Z", actor: "human:timo", revision: 7}
 ---
 ## Outcome
 

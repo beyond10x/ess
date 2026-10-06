@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-05T15:43:03Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-228",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "ESS 0.53.0 Release run 37331219712 succeeded at tag 0.53.0 (a81a8729dc25); the closing comment or the 0.53.0 CHANGELOG section names beyond10x/ess#228 as shipped in 0.53.0. Recorded by the 2026-10-06 store reconciliation.",
+    "reference": "https://github.com/beyond10x/ess/actions/runs/37331219712"
+  }
+}

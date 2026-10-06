@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-272
 kind: story
-status: active
+status: implemented
 title: A when_related guard on the creating command does not refuse the aggregate view
 tags:
 - feature-request
@@ -25,10 +25,11 @@ scope:
   path: crates/verify/ess-conformance/tests/related_guard.rs
 - confidence: inferred
   path: docs/design/aggregate-views.md
-revision: 13
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T13:04:17Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-10-01T16:38:14Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-10-06T09:43:03Z", actor: "human:timo", revision: 14, decided_on: {"recorded":{"test_result":1,"review_outcome":3,"verification":1}}}
 ---
 ## Outcome
 

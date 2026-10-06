@@ -13,6 +13,7 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
+- supersedes: story:fast-line-topology-central-writer-read-replicas
 scope:
 - confidence: inferred
   path: crates/specify/ess-compiler/tests/replica_read_idiom.rs

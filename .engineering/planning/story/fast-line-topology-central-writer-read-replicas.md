@@ -2,11 +2,13 @@
 format: aep.planning-md/3
 id: story:fast-line-topology-central-writer-read-replicas
 kind: story
-status: draft
+status: archived
 title: Topology cannot declare a central writer with per-environment read replicas
 tags:
 - fast-line
-revision: 1
+revision: 2
+transitions:
+- {from: "draft", to: "archived", at: "2026-10-06T09:48:11Z", actor: "human:timo", revision: 2}
 ---
 ## Outcome
 

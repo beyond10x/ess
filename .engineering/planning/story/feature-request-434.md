@@ -13,6 +13,7 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
+- supersedes: story:fast-line-specification-completeness-measure
 scope:
 - confidence: cited
   path: crates/edge/ess-cli/src/main.rs
