@@ -1023,9 +1023,16 @@ pub struct ResolvedAffect {
     /// The entity whose rows change.
     pub entity: EntityHandle,
     /// The rows selected: the entity's stored fields, `input.<field>` and `subject.<field>` — the
-    /// subject as it was before the outcome.
-    pub filter: Predicate,
-    /// What every selected row comes to hold, in the entity's declaration order.
+    /// subject as it was before the outcome. `None` exactly where [`Self::each`] names the rows
+    /// instead, and then left out of the document.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filter: Option<Predicate>,
+    /// One row per element of an input list (ess/23, beyond10x/ess#459). Left out of the document
+    /// where the entry selects by its filter.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub each: Option<ResolvedEach>,
+    /// What every selected row comes to hold, in the entity's declaration order; beside
+    /// [`Self::each`], every source but the element's members, which [`ResolvedEach::reads`] holds.
     pub sets: Vec<ResolvedPayloadField>,
     /// The move every selected row resting in its `from` states takes; a selected row resting
     /// elsewhere is skipped (ess/22, beyond10x/ess#229). Left out of the document where the entry
@@ -1036,6 +1043,34 @@ pub struct ResolvedAffect {
     /// the entry sets fields or moves its rows.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub deletes: bool,
+}
+
+/// An `affects:` entry's `each:` (ess/23, beyond10x/ess#459): for each element of the input list,
+/// in order, the row whose identity [`Self::member`] holds is updated if held and created in the
+/// lifecycle's `initial` state if not, and comes to hold the entry's `sets:` and [`Self::reads`].
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ResolvedEach {
+    /// The input field holding the list.
+    pub list: String,
+    /// The name each element is read under, as written.
+    pub binder: String,
+    /// The member of the element holding the identity of the row it writes.
+    pub member: String,
+    /// The fields written from a member of the element, in the entity's declaration order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reads: Vec<ResolvedElementRead>,
+}
+
+/// One entity field an `each:` entry fills from a member of the element (ess/23,
+/// beyond10x/ess#459).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ResolvedElementRead {
+    /// The entity field written.
+    pub target: String,
+    /// The member of the element read.
+    pub member: String,
+    /// The entity field's declared type.
+    pub target_type: ResolvedTypeRef,
 }
 
 /// Where a determined payload field's value comes from, resolved.

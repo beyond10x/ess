@@ -836,7 +836,8 @@ views:
                         reverse(
                             affect
                                 .filter
-                                .predicate_mut()
+                                .as_mut()
+                                .and_then(|filter| filter.predicate_mut())
                                 .expect("the fixture's filter parses"),
                         );
                     }
@@ -1346,5 +1347,335 @@ mod issue_452 {
             not_passed(&run(&synthesis.suite, &AuthDesk::new(Mutation::None))).is_empty(),
             "the honest target passes the whole suite"
         );
+    }
+}
+
+/// One record per element of an input list (ess/23, beyond10x/ess#459): `RunSource` updates its
+/// source and, per element of `applied`, updates the `SeenDocument` the element names if held and
+/// creates it if not. One in-memory target implements the model; each mutation breaks it one way.
+mod issue_459 {
+    use super::*;
+
+    const MODEL: &str = include_str!("../../../specify/ess-compiler/tests/fixtures/set-each.yaml");
+    const RAN: &str = "demo.feed.RunSource/outcome/ran";
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum Mutation {
+        None,
+        /// Creates a row for an element naming no held row, and leaves a held row as it was.
+        CreateOnly,
+        /// Updates a held row, and creates none.
+        UpdateOnly,
+        /// Adds a row for every element, whether or not one is held under its identity.
+        AddsRow,
+    }
+
+    #[derive(Clone)]
+    struct Seen {
+        id: Node,
+        source: Node,
+        hash: Node,
+        revision: Node,
+    }
+
+    struct FeedDesk {
+        sources: RefCell<Vec<(String, String)>>,
+        seen: RefCell<Vec<Seen>>,
+        next: RefCell<usize>,
+        mutation: Mutation,
+    }
+
+    impl FeedDesk {
+        fn new(mutation: Mutation) -> Self {
+            Self {
+                sources: RefCell::default(),
+                seen: RefCell::default(),
+                next: RefCell::new(7001),
+                mutation,
+            }
+        }
+
+        fn refused(command: &CommandRef, outcome: &str, error: &str) -> SemanticCommandResult {
+            let mut result = SemanticCommandResult::took(OutcomeRef::new(
+                command.clone(),
+                outcome.parse().unwrap(),
+            ));
+            result.error = Some(DeclaredErrorValue::new(error.parse().unwrap()));
+            result.consistency =
+                Some(ess_primitives::consistency::ConsistencyToken::new("write").unwrap());
+            result
+        }
+
+        fn run(
+            &self,
+            command: &CommandRef,
+            input: &BTreeMap<String, Node>,
+        ) -> SemanticCommandResult {
+            let applied = match input.get("applied") {
+                Some(Node::Seq(items)) => items.clone(),
+                _ => Vec::new(),
+            };
+            let member = |item: &Node, name: &str| match item {
+                Node::Map(members) => members.get(name).cloned().unwrap_or(Node::Null),
+                _ => Node::Null,
+            };
+            let ids: Vec<Node> = applied
+                .iter()
+                .map(|item| member(item, "document_id"))
+                .collect();
+            if ids
+                .iter()
+                .enumerate()
+                .any(|(at, id)| ids[..at].contains(id))
+            {
+                return Self::refused(command, "duplicated", "demo.feed.DuplicateDocument");
+            }
+            let source = text(input, "source_id");
+            let mut sources = self.sources.borrow_mut();
+            let Some(held) = sources.iter_mut().find(|(id, _)| *id == source) else {
+                return Self::refused(command, "no-such-source", "demo.feed.NoSuchSource");
+            };
+            held.1 = text(input, "label");
+            let mut seen = self.seen.borrow_mut();
+            for item in &applied {
+                let row = Seen {
+                    id: member(item, "document_id"),
+                    source: Node::Text(source.clone()),
+                    hash: member(item, "content_hash"),
+                    revision: member(item, "revision"),
+                };
+                let at = seen.iter().position(|held| held.id == row.id);
+                match (at, self.mutation) {
+                    (_, Mutation::AddsRow) => seen.push(row),
+                    (Some(_), Mutation::CreateOnly) | (None, Mutation::UpdateOnly) => {}
+                    (Some(at), _) => seen[at] = row,
+                    (None, _) => seen.push(row),
+                }
+            }
+            took(
+                command,
+                "ran",
+                "demo.feed.SourceRan",
+                vec![("source_id", Node::Text(source))],
+            )
+        }
+    }
+
+    impl ConformanceTarget for FeedDesk {
+        fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
+            Ok(ImplementationIdentity::new("set-each", "1"))
+        }
+        fn begin_scenario(&self, _: &ScenarioContext) -> Result<(), TargetError> {
+            self.sources.borrow_mut().clear();
+            self.seen.borrow_mut().clear();
+            Ok(())
+        }
+        fn end_scenario(&self, _: &ScenarioContext) -> Result<(), TargetError> {
+            Ok(())
+        }
+        fn execute_command(
+            &self,
+            request: SemanticCommandRequest,
+        ) -> Result<SemanticCommandResult, TargetError> {
+            let command = &request.command;
+            Ok(match command.to_string().as_str() {
+                "demo.feed.AddSource" => {
+                    let mut next = self.next.borrow_mut();
+                    *next += 11;
+                    let id = format!("target-source-{next}");
+                    self.sources
+                        .borrow_mut()
+                        .push((id.clone(), text(&request.input, "label")));
+                    took(
+                        command,
+                        "added",
+                        "demo.feed.SourceAdded",
+                        vec![("source_id", Node::Text(id))],
+                    )
+                }
+                "demo.feed.RunSource" => self.run(command, &request.input),
+                other => panic!("unexpected command {other}"),
+            })
+        }
+        fn query_view(
+            &self,
+            request: SemanticViewRequest,
+        ) -> Result<SemanticViewResult, TargetError> {
+            let rows = match request.view.to_string().as_str() {
+                "demo.feed.Sources" => self
+                    .sources
+                    .borrow()
+                    .iter()
+                    .map(|(id, label)| {
+                        BTreeMap::from([
+                            ("source_id".into(), Node::Text(id.clone())),
+                            ("label".into(), Node::Text(label.clone())),
+                        ])
+                    })
+                    .collect(),
+                "demo.feed.SeenDocuments" => self
+                    .seen
+                    .borrow()
+                    .iter()
+                    .map(|row| {
+                        BTreeMap::from([
+                            ("document_id".into(), row.id.clone()),
+                            ("source_id".into(), row.source.clone()),
+                            ("content_hash".into(), row.hash.clone()),
+                            ("revision".into(), row.revision.clone()),
+                        ])
+                    })
+                    .collect(),
+                other => panic!("unexpected view {other}"),
+            };
+            Ok(SemanticViewResult { rows, total: None })
+        }
+        fn configure_external_outcome(&self, _: ExternalOutcomeControl) -> Result<(), TargetError> {
+            Err(TargetError::unsupported("external", "unused"))
+        }
+        fn redeliver_event(&self, _: RedeliveryRequest) -> Result<(), TargetError> {
+            Err(TargetError::unsupported("redelivery", "unused"))
+        }
+        fn observe_events(
+            &self,
+            _: EventObservationRequest,
+        ) -> Result<Vec<ObservedEvent>, TargetError> {
+            Err(TargetError::unsupported("events", "unused"))
+        }
+    }
+
+    fn synthesis() -> ess_conformance::synthesize::Synthesis {
+        let synthesis = synthesis_of(MODEL);
+        assert!(
+            synthesis.refusals.is_empty(),
+            "nothing is refused: {:#?}",
+            synthesis.refusals
+        );
+        synthesis
+    }
+
+    /// The `RunSource` calls of a scenario, and its one-row snapshots of `SeenDocuments`.
+    fn shape(scenario: &ConformanceScenario) -> (usize, usize) {
+        let sent = scenario
+            .steps
+            .iter()
+            .filter(|step| {
+                matches!(step, ScenarioStep::ExecuteCommand { command, .. }
+                    if command.to_string() == "demo.feed.RunSource")
+            })
+            .count();
+        let snapshots = scenario
+            .steps
+            .iter()
+            .filter(|step| {
+                matches!(step, ScenarioStep::SnapshotSubject { view, .. }
+                    if view.to_string() == "demo.feed.SeenDocuments")
+            })
+            .count();
+        (sent, snapshots)
+    }
+
+    #[test]
+    fn each_entry_scenario_reads_held_new_and_decoy_rows() {
+        let synthesis = synthesis();
+        let ran = scenario(&synthesis.suite, RAN);
+        let (sent, snapshots) = shape(ran);
+        assert!(
+            sent >= 2,
+            "a first call puts the held row and the decoy in place, then the command: {:#?}",
+            ran.steps
+        );
+        assert!(
+            snapshots >= 2,
+            "one row per element's identity: {:#?}",
+            ran.steps
+        );
+        let statuses = run(&synthesis.suite, &FeedDesk::new(Mutation::AddsRow));
+        assert_eq!(
+            statuses.get(RAN),
+            Some(&Status::Failed),
+            "a second row for a held identity fails: {statuses:#?}"
+        );
+    }
+
+    /// The fixture with an enum member of `variants` on the element and the row, which the entry
+    /// reads.
+    fn with_enum(variants: &str) -> String {
+        let model = MODEL
+            .replacen(
+                "  - name: demo.feed.AppliedDocument\n",
+                &format!(
+                    "  - {{name: demo.feed.Kind, kind: enum, variants: [{variants}]}}\n  - name: demo.feed.AppliedDocument\n"
+                ),
+                1,
+            )
+            .replacen(
+                "      - {name: revision, type: Integer}\nentities:",
+                "      - {name: revision, type: Integer}\n      - {name: kind, type: demo.feed.Kind}\nentities:",
+                1,
+            )
+            .replacen(
+                "      - {name: revision, type: Integer}\n    lifecycle: {initial: Seen",
+                "      - {name: revision, type: Integer}\n      - {name: kind, type: demo.feed.Kind}\n    lifecycle: {initial: Seen",
+                1,
+            )
+            .replacen("revision: doc.revision}", "revision: doc.revision, kind: doc.kind}", 1);
+        format!("{model}      - {{name: kind, type: demo.feed.Kind}}\n")
+    }
+
+    /// The held row's two elements sit at adjacent distinctions, so an enum member of an even
+    /// number of variants differs between them as an odd one does, and the interpreter passes the
+    /// scenario that reads it.
+    #[test]
+    fn each_entry_reading_an_even_variant_enum_member_is_witnessed() {
+        for variants in ["Pdf, Html", "Pdf, Html, Text", "Pdf, Html, Text, Csv"] {
+            let model = with_enum(variants);
+            assert!(model.contains("kind: doc.kind"), "{model}");
+            let ir = ir_of(&model);
+            let synthesis = ess_conformance::synthesize::synthesize(&ir);
+            assert!(
+                synthesis.refusals.is_empty(),
+                "[{variants}]: {:#?}",
+                synthesis.refusals
+            );
+            let statuses = run(
+                &synthesis.suite,
+                &ess_conformance::interpret::Interpreted::for_model(ir),
+            );
+            assert_eq!(
+                statuses.get(RAN),
+                Some(&Status::Passed),
+                "[{variants}]: {statuses:#?}"
+            );
+        }
+    }
+
+    #[test]
+    fn each_entry_targets_refuse_by_name() {
+        // The conformance half: the interpreted model passes the scenario, and a create-only and
+        // an update-only target each fail it. Entity Runtime's `SetEffectUnsupported` and the code
+        // targets' `MissingRepresentation` are cases of the same name in their own crates.
+        let ir = ir_of(MODEL);
+        let synthesis = ess_conformance::synthesize::synthesize(&ir);
+        assert!(synthesis.refusals.is_empty(), "{:#?}", synthesis.refusals);
+        let statuses = run(
+            &synthesis.suite,
+            &ess_conformance::interpret::Interpreted::for_model(ir),
+        );
+        assert!(not_passed(&statuses).is_empty(), "{statuses:#?}");
+        assert_eq!(statuses.get(RAN), Some(&Status::Passed));
+        let honest = run(&synthesis.suite, &FeedDesk::new(Mutation::None));
+        assert!(
+            not_passed(&honest).is_empty(),
+            "the honest target passes: {honest:#?}"
+        );
+        for mutation in [Mutation::CreateOnly, Mutation::UpdateOnly] {
+            let mutant = run(&synthesis.suite, &FeedDesk::new(mutation));
+            assert_eq!(
+                mutant.get(RAN),
+                Some(&Status::Failed),
+                "{mutation:?}: {mutant:#?}"
+            );
+        }
     }
 }

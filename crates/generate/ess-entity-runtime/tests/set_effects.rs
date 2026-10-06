@@ -174,3 +174,45 @@ fn a_plain_update_is_not_refused_for_it() {
     );
     assert!(!refused_codes(&ir).contains(&LoweringCode::SetEffectUnsupported));
 }
+
+/// One record per element of an input list (ess/23, beyond10x/ess#459): an `each:` entry is
+/// refused by name, as every set effect is.
+#[test]
+fn each_entry_targets_refuse_by_name() {
+    const EACH: &str = include_str!("../../../specify/ess-compiler/tests/fixtures/set-each.yaml");
+    const FEED: &str = "components:\n  - component: feed-service\n    owns:\n      domains: [demo.feed]\n    accepts:\n      commands: [demo.feed.AddSource, demo.feed.RunSource]\n    publishes:\n      events: [demo.feed.SourceAdded, demo.feed.SourceRan]\n";
+    let text = format!("{EACH}{FEED}");
+    let mut sources = SourceMap::new();
+    sources.insert("feed.yaml".to_owned(), text.clone());
+    let specification =
+        Specification::assemble([(Source::new("feed.yaml"), RawSpecFile::parse(&text).unwrap())])
+            .unwrap_or_else(|errors| panic!("{errors}"));
+    let ir = compile_locating(&specification, &sources, &["feed.yaml".to_owned()])
+        .expect("the model compiles");
+    let plan = SynthesisPlan::of(&ir);
+    let service = extract(&ir, &plan, &ComponentName::new("feed-service").unwrap()).unwrap();
+    let options = LoweringOptions {
+        definition_versions: ["demo.feed.Source", "demo.feed.SeenDocument"]
+            .into_iter()
+            .map(|name| {
+                (
+                    QualifiedName::new(name).unwrap(),
+                    NonZeroU32::new(1).unwrap(),
+                )
+            })
+            .collect(),
+        scales: BTreeMap::new(),
+    };
+    let codes: Vec<LoweringCode> = match lower(&service, &options) {
+        Ok(_) => Vec::new(),
+        Err(diagnostics) => diagnostics
+            .into_vec()
+            .into_iter()
+            .map(|diagnostic| diagnostic.code)
+            .collect(),
+    };
+    assert!(
+        codes.contains(&LoweringCode::SetEffectUnsupported),
+        "{codes:?}"
+    );
+}

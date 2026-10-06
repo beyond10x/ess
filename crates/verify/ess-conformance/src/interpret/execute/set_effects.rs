@@ -13,6 +13,12 @@ struct Plan<'a> {
     effect: ResolvedEffect,
     sets: &'a [ResolvedPayloadField],
     keys: Vec<Node>,
+    /// One row per element of an input list (ess/23, beyond10x/ess#459): the rows are named by
+    /// the elements rather than selected, and `keys` is empty.
+    each: Option<&'a ess_compiler::ir::ResolvedEach>,
+    /// The subject's identity where an `each:` entry is over the subject's own entity: an element
+    /// naming it is skipped, the subject itself excepted as under every `affects:` entry.
+    excepted: Option<Node>,
 }
 
 #[derive(Clone, Copy)]
@@ -57,6 +63,8 @@ pub(super) fn apply(
                     subject: None,
                 },
             )?,
+            each: None,
+            excepted: None,
         });
     }
     if !outcome.affects.is_empty() {
@@ -66,11 +74,24 @@ pub(super) fn apply(
         for affect in &outcome.affects {
             let affected = ir.entity(&affect.entity);
             let effect = affect_effect(affect);
+            // An `each:` entry (ess/23, beyond10x/ess#459) names its rows by the elements of its
+            // list, which [`carry_out`] reads in the order written.
+            let Some(filter) = &affect.filter else {
+                plans.push(Plan {
+                    entity: affected,
+                    effect: ResolvedEffect::Updates,
+                    sets: &affect.sets,
+                    keys: Vec::new(),
+                    each: affect.each.as_ref(),
+                    excepted: (affected.name == entity.name).then(|| key.clone()),
+                });
+                continue;
+            };
             let keys = select(
                 ir,
                 before,
                 affected,
-                &affect.filter,
+                filter,
                 &input,
                 Some(&facts),
                 Eligibility {
@@ -84,6 +105,8 @@ pub(super) fn apply(
                 effect,
                 sets: &affect.sets,
                 keys,
+                each: None,
+                excepted: None,
             });
         }
     }
@@ -118,6 +141,13 @@ fn carry_out(
     let mut applied = 0;
     let mut touched = BTreeSet::new();
     for (occurrence, plan) in plans.into_iter().enumerate() {
+        if let Some(each) = plan.each {
+            for key in elements(ir, &plan, each, occurrence, supplied, work)? {
+                touched.insert((plan.entity.name.clone(), key));
+                applied += 1;
+            }
+            continue;
+        }
         for key in plan.keys {
             // A validated model removes no row another plan also selects: a deleting entry stands
             // alone over its entity and excludes the subject (ess/23, beyond10x/ess#452). One that
@@ -169,6 +199,111 @@ fn carry_out(
         at_rest(ir, &work.next, &entity, &key)?;
     }
     Ok(applied)
+}
+
+/// One `each:` entry applied to `work` (ess/23, beyond10x/ess#459): for each element of its input
+/// list, in order, the row the element's identity member names is updated if held and created in
+/// the lifecycle's `initial` state if not, and comes to hold the entry's `sets:` and the element's
+/// members it reads; an element naming the subject is skipped, the subject itself excepted.
+/// Returns the identities written, in the order written; an empty list writes nothing.
+fn elements(
+    ir: &EssIr,
+    plan: &Plan<'_>,
+    each: &ess_compiler::ir::ResolvedEach,
+    occurrence: usize,
+    supplied: &super::Context<'_>,
+    work: &mut Work<'_>,
+) -> Result<Vec<Node>, Undetermined> {
+    let entity = plan.entity;
+    let items = match supplied.get(&each.list) {
+        Some(Node::Seq(items)) => items.clone(),
+        _ => {
+            return Err(Undetermined::Request(format!(
+                "`input.{}` holds no list for an `each:` entry",
+                each.list
+            )))
+        }
+    };
+    let mut written = Vec::with_capacity(items.len());
+    for (index, item) in items.iter().enumerate() {
+        let Node::Map(members) = item else {
+            return Err(Undetermined::Request(format!(
+                "element {index} of `input.{}` is not a struct",
+                each.list
+            )));
+        };
+        let key = members
+            .get(&each.member)
+            .filter(|value| **value != Node::Null)
+            .cloned()
+            .ok_or_else(|| Undetermined::NoValue {
+                what: format!(
+                    "the identity `{}.{}` of element {index} of `input.{}`",
+                    each.binder, each.member, each.list
+                ),
+            })?;
+        // The subject itself is excepted, as under every `affects:` entry: it holds what its own
+        // branch writes.
+        if plan.excepted.as_ref() == Some(&key) {
+            continue;
+        }
+        work.location = vec![
+            "set-effect".into(),
+            occurrence.to_string(),
+            "element".into(),
+            index.to_string(),
+            "sets".into(),
+        ];
+        // Updated if held, created in `initial` if not.
+        let held = work.next.instance_typed(&entity.name, &key).cloned();
+        let mut after = if let Some(held) = held {
+            let Acted::Rests(after) = act(ir, plan.sets, &plan.effect, &held, supplied, work)?
+            else {
+                return Err(Undetermined::Request(
+                    "an `each:` entry updates the row an element names".into(),
+                ));
+            };
+            after
+        } else {
+            let mut fields = BTreeMap::new();
+            super::write(ir, plan.sets, supplied, &mut fields, work)?;
+            Row {
+                state: entity.lifecycle.initial.clone(),
+                fields,
+            }
+        };
+        for read in &each.reads {
+            match members
+                .get(&read.member)
+                .filter(|value| **value != Node::Null)
+            {
+                Some(value) => {
+                    let value = Value::Known(value.clone());
+                    super::history::validate(ir, &read.target_type, &value)?;
+                    after.fields.insert(read.target.clone(), value);
+                }
+                None if read.target_type.is_optional() => {
+                    after.fields.remove(&read.target);
+                }
+                None => {
+                    return Err(Undetermined::NoValue {
+                        what: format!(
+                            "`{}.{}` of element {index}, which `{}` requires",
+                            each.binder, read.member, read.target
+                        ),
+                    })
+                }
+            }
+        }
+        validate_writes(ir, plan.sets, &after)?;
+        work.next
+            .instances
+            .entry(entity.name.clone())
+            .or_default()
+            .insert(key.clone(), after);
+        written.push(key);
+    }
+    Ok(written)
 }
 
 fn validate_writes(

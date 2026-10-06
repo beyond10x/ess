@@ -473,10 +473,10 @@ fn a1_reaches_when_related_and_set_effect_filters() {
     );
     let invite = &spec.commands()[&"demo.desk.Invite".parse().unwrap()];
     let affect = &invite.outcomes[0].set_effects.affects[0];
+    let filter = affect.filter.as_ref().expect("a `where:` entry");
     assert!(
-        affect.filter.to_string().contains("note == {fact: team}"),
-        "{}",
-        affect.filter
+        filter.to_string().contains("note == {fact: team}"),
+        "{filter}"
     );
 }
 

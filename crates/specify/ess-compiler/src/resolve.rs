@@ -2388,9 +2388,30 @@ impl<'a> Resolver<'a> {
                 None => None,
                 Some(named) => Some(entity.lifecycle.transition(named)?.clone()),
             };
+            // One row per element of an input list (ess/23, beyond10x/ess#459): the element reads
+            // in the entity's declaration order, at the field's declared type.
+            let each = affect.each.as_ref().map(|each| crate::ir::ResolvedEach {
+                list: each.list.clone(),
+                binder: each.binder.clone(),
+                member: each.member.clone(),
+                reads: entity
+                    .fields
+                    .iter()
+                    .filter_map(|field| {
+                        each.reads
+                            .get(&field.name)
+                            .map(|member| crate::ir::ResolvedElementRead {
+                                target: field.name.clone(),
+                                member: member.clone(),
+                                target_type: field.type_ref.clone(),
+                            })
+                    })
+                    .collect(),
+            });
             affects.push(crate::ir::ResolvedAffect {
                 entity: handle,
                 filter: affect.filter.clone(),
+                each,
                 sets,
                 moves,
                 deletes: affect.deletes,

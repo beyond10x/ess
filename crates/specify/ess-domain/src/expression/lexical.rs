@@ -692,7 +692,7 @@ pub(crate) fn slot<'a>(
             .set_effects
             .affects
             .get_mut(*index)
-            .map(|affect| &mut affect.filter),
+            .and_then(|affect| affect.filter.as_mut()),
         Site::Invariant { entity, index } => entities
             .get_mut(entity)?
             .invariants
@@ -892,7 +892,7 @@ pub(crate) fn resolutions(
                 let affect = outcome.set_effects.affects.get(*index)?;
                 let entity = spec.entities().get(&affect.entity)?;
                 Some((
-                    affect.filter.clone(),
+                    affect.filter.clone()?,
                     over_row(&entity.fields, entity, command, lexical),
                 ))
             }),
