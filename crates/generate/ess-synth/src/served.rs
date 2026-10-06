@@ -103,3 +103,10 @@ pub(crate) fn supported(ir: &EssIr, reference: &ResolvedTypeRef) -> bool {
         Some(Primitive::Uuid | Primitive::Timestamp)
     )
 }
+
+/// Whether a generated context answers this assigned value: a supported kind, or any optional
+/// value, which it answers absent — nothing to report, as the interpreter answers it
+/// (beyond10x/ess#467).
+pub(crate) fn answered(ir: &EssIr, reference: &ResolvedTypeRef) -> bool {
+    reference.is_optional() || supported(ir, reference)
+}

@@ -322,7 +322,8 @@ directory, including `index.html` at `/`. Filesystem aliases and encoded paths c
 that directory. API routes keep their own method, authorization and error responses. This lets
 a generated web app share the server's origin without CORS configuration.
 
-The memory context supplies random v4 UUIDs and timestamps from the system clock. Before opening
+The memory context supplies random v4 UUIDs and timestamps from the system clock, and answers an
+optional `{generated: true}` value absent. Before opening
 the listener, an entry refuses startup if its reachable commands, views or bindings still owe
 behavior, caller attributes, external decisions or assigned values of another type. Diagnostics
 name the missing answers. Unrelated components' context requirements do not prevent startup.

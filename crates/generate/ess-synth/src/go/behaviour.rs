@@ -652,6 +652,19 @@ fn context_interface(out: &mut String, emit: &Emit<'_>, uses: &Uses) -> bool {
     }
     for (method, (ty, of)) in &uses.generates {
         separate(out);
+        if uses
+            .assigned
+            .get(method)
+            .is_some_and(ResolvedTypeRef::is_optional)
+        {
+            let _ = writeln!(
+                out,
+                "\t// {method} is a `{of}` the model says the implementation assigns — a\n\t// \
+                 `{{generated: true}}` value — or nil where there is nothing to report.\n\t\
+                 {method}() {ty}"
+            );
+            continue;
+        }
         let _ = writeln!(
             out,
             "\t// {method} is a new `{of}`, which the model says the implementation assigns — a\n\t// \
@@ -2955,7 +2968,7 @@ impl<'a> Writer<'a> {
         format!("{path}{{{}}}", fields.join(", "))
     }
 
-    /// A value the implementation assigns: absent where optional, else from the context.
+    /// An event field nothing sets: absent where optional, else from the context.
     fn assigned(&mut self, target: &ResolvedTypeRef) -> String {
         if target.is_optional() {
             "nil".to_owned()
@@ -3099,7 +3112,9 @@ impl<'a> Writer<'a> {
                 }
             }
             ResolvedPayloadValue::Literal { value } => self.literal(target, value),
-            ResolvedPayloadValue::Generated => self.assigned(target),
+            // The implementation supplies the value, an optional one included: its port answers
+            // a pointer, nil where there is nothing to report (beyond10x/ess#467).
+            ResolvedPayloadValue::Generated => self.generate(target),
             ResolvedPayloadValue::Cleared => "nil".to_owned(),
             ResolvedPayloadValue::Increment { by } => self.increment(
                 target,
