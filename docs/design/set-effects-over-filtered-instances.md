@@ -6,7 +6,8 @@ Both constructs are admitted under source format `ess/16`. Below it `instances:`
 written, before the outcome is converted, so no shape rule of the construct and no cascade
 (`missing_declaration`, `empty_declaration`) is reported beside it; a `{count: changed}` on any other
 outcome stays the nested mapping it was. From `ess/23` both also delete the rows they select
-(beyond10x/ess#452, below).
+(beyond10x/ess#452, below), and an `affects:` entry may write one row per element of an input list
+(beyond10x/ess#459, below).
 
 ## The gap
 
@@ -197,6 +198,80 @@ domain's entity is refused: a domain boundary is where bindings belong. The dele
 on that event, each with its own `delivery:` and `on_failure:`; each receiving command removes its
 own rows with the bulk form. ESS states no order between bindings of one event, and atomicity
 across them stays out of scope (below).
+
+## One row per element of an input list (ess/23, beyond10x/ess#459)
+
+An `affects:` entry may write one row per element of a list the command's input carries, rather
+than select stored rows: a scheduled fetch sees N documents and records each as its own row, keyed
+by the document.
+
+```yaml
+affects:
+  - entity: demo.feed.SeenDocument
+    each: {in: input.applied, as: doc}
+    instance: doc.document_id
+    sets: {source_id: input.source_id, content_hash: doc.content_hash, revision: doc.revision}
+```
+
+**Semantics.** `each: {in: input.<list>, as: <name>}` walks a `List` of a struct in the command's
+input, in order. For each element, `instance: <name>.<member>` reads an identity of the entry's
+entity, and the row it names is updated if held and created in `initial` if not: the existence
+pair's create-or-update (beyond10x/ess#164), applied per element. `sets:` writes each such row. A
+source there may read `<name>.<member>`, a member of the element at the field's own type or the
+`Optional` of it, beside the sources every `affects:` entry takes; `{subject: …}`, `{related: …}`,
+`{increment: …}` and `{caller: …}` stay refused as on every set effect, and the subject's identity
+is read from the input that names it. An element is read one member deep and not inside a nested
+mapping. An empty list writes nothing and is an accepted answer. A row the list does not name is
+not removed: replace-a-set, removing the rows a list no longer names, is not in this cut, and
+composes later with the deleting entry above.
+
+**Duplicate identities.** Two elements naming one identity would leave a row that depends on their
+order. The entry is admitted only where a declared `distinct:` holds that member distinct across
+the list: `{distinct: {in: <list>, as: x, by: x.<member>}}` conjoined in the branch's own `when:`,
+or negated in the `when:` of a refusal of the command (`when: {not: {distinct: …}}`). Without one,
+validate refuses with `missing_declaration` naming the list and the member.
+
+**Refusals.** `each:` beside `where:`, `moves:` or `deletes:` in one entry is
+`conflicting_declaration`: the entry creates or updates the rows its elements name and selects,
+moves or removes no other. So are `instance:` without `each:` and an element read writing the
+identity, which comes from `instance:` alone; `each:` without `instance:`, or an entry with neither
+`where:` nor `each:`, is `missing_declaration`. `in:` other than `input.<field>` is
+`unsupported_construct`, an undeclared input or member `undeclared_reference`, and an input not
+holding a `List` of a struct, an `instance:` member not of the entity's identity type, or an
+element read not of its field's type `type_mismatch`.
+`affects:` sits beside one subject (`moves:` or `updates:` with `instance:`), so a command with no
+subject of its own is refused with `missing_declaration` naming the `each:` entry; admitting
+`each:` as an outcome's own set subject is a labelled follow-up, not this cut. A required field an
+entity invariant reads must be written by the entry, as by any creation (`ESS-COMMAND-018`). Below
+`ess/23` `each:` is refused with `unsupported_format_version` naming `ess/23`, at the key and before
+conversion; the entry keeps its place and changes nothing, so the refusal comes alone.
+
+**Atomicity.** A refused command changes nothing, the rule every outcome keeps, so a refused run
+writes none of the rows. Partial failure inside an implementation stays out of scope, as for every
+set effect (below).
+
+**Conformance.** The entry appends to the branch's own scenario. A second subject is arranged and
+the command is sent for it with two elements, the row to be held and a decoy, so the rows exist
+without any other command creating the entity: the existence pair arranges its updating sibling
+through the same command. The command under test is then sent with two elements, one naming the
+held row with other values and one naming an identity no row holds. Afterwards every view
+publishing the entity's identity and every field the entry writes, immediate, unfiltered,
+unparameterised and unpaged, must read the held row with the element's values, the new row with
+its element's values, both in `initial` where the view publishes the state, and the decoy as the
+first call left it; and a snapshot by each element's identity selects exactly one row, the
+existence pair's one-row-per-identity check, so a target adding a second row for a held identity
+fails. A target that only creates, or only updates, fails the scenario. Where no view publishes
+those, the scenario is refused by name (`NoWitness`), as is an entry over an entity another entry
+of the outcome also writes, and a branch with more than one `each:` entry. Every step used
+(`execute_command`, `expect_outcome`, `query_view`, `expect_view` `contains`, `snapshot_subject`)
+already exists, so no conformance major and no new suite step is taken: a suite carrying the entry
+keeps the format its other steps select.
+
+**Targets.** The interpreter writes the rows after the subject, element by element in list order.
+Entity Runtime refuses the entry with `SetEffectUnsupported`, and Rust, Go, Web and Clap synthesis
+as `MissingRepresentation`, as for every `affects:`. `ess-diff`'s `outcome-set-effect-changed` line
+names the entry and its list, and the generated documentation says it writes one row per element of
+the list.
 
 ## Targets
 

@@ -1,7 +1,7 @@
 ---
 title: Changing selected records
 sidebar_position: 4
-description: "An outcome that changes, moves or deletes every record a filter selects; `moves:`, `updates:` and, from ess/23, `deletes:` take `instances:`."
+description: "An outcome that changes, moves or deletes every record a filter selects; `moves:`, `updates:` and, from ess/23, `deletes:` take `instances:`, and an `affects:` entry may write one record per element of an input list with `each:`."
 ---
 
 # An outcome can change every record a filter selects
@@ -146,3 +146,79 @@ domain may rely on another having run first; there is no order between bindings 
 failure in one is that binding's `on_failure:` to answer, and atomicity across domains is not part
 of the specification.
 
+
+## Write one record per element of an input list
+
+From `format: ess/23` (beyond10x/ess#459), an `affects:` entry can write one record per element of
+a list the command carries, rather than select stored records. Write `each:` and
+`instance: <name>.<member>` in place of `where:`: for each element, the record its member names is
+updated if one is held and created in its lifecycle's `initial` state if not.
+
+```yaml
+format: ess/23
+system: demo
+version: v1
+domain: demo.feed
+types:
+  - {name: demo.feed.SourceId, kind: newtype, of: String}
+  - {name: demo.feed.DocumentId, kind: newtype, of: String}
+  - name: demo.feed.AppliedDocument
+    kind: struct
+    fields:
+      - {name: document_id, type: demo.feed.DocumentId}
+      - {name: content_hash, type: String}
+entities:
+  - name: demo.feed.Source
+    identity: {name: source_id, type: demo.feed.SourceId}
+    fields: [{name: label, type: String}]
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+  - name: demo.feed.SeenDocument
+    identity: {name: document_id, type: demo.feed.DocumentId}
+    fields:
+      - {name: source_id, type: demo.feed.SourceId}
+      - {name: content_hash, type: String}
+    lifecycle: {initial: Seen, states: [Seen], terminal: [Seen]}
+events:
+  - name: demo.feed.SourceRan
+    fields: [{name: source_id, type: demo.feed.SourceId}]
+errors: [{name: demo.feed.DuplicateDocument}, {name: demo.feed.NoSuchSource}]
+commands:
+  - name: demo.feed.RunSource
+    input:
+      - {name: source_id, type: demo.feed.SourceId}
+      - {name: applied, type: List<demo.feed.AppliedDocument>}
+    outcomes:
+      - name: duplicated
+        when: {not: {distinct: {in: applied, as: d, by: d.document_id}}}
+        error: demo.feed.DuplicateDocument
+      - name: ran
+        updates: demo.feed.Source
+        instance: source_id
+        emits: [demo.feed.SourceRan]
+        payload: {demo.feed.SourceRan: {source_id: input.source_id}}
+        affects:
+          - entity: demo.feed.SeenDocument
+            each: {in: input.applied, as: doc}
+            instance: doc.document_id
+            sets: {source_id: input.source_id, content_hash: doc.content_hash}
+      - {name: no-such-source, unknown_instance: true, error: demo.feed.NoSuchSource}
+```
+
+`each: {in: input.<list>, as: <name>}` reads a `List` of a struct from the input.
+`instance: <name>.<member>` names a member holding the entity's identity type, and a `sets:` source
+may read `<name>.<member>` at the field's own type, beside the sources every entry takes. The list
+must be held free of repeated identities by a declared `distinct:` over that member: a refusal
+whose `when:` is `{not: {distinct: {in: <list>, as: x, by: x.<member>}}}`, as above, or the
+`distinct:` in the branch's own `when:`. Without it two elements could name one record and the
+result would depend on their order, so validation refuses the entry.
+
+Writing is per element, so an empty list writes nothing; a record the list does not name is not
+removed. A refused run writes none of the records. `each:` beside `where:`, `moves:` or `deletes:`
+is refused, and so is an entry on a branch without a subject: `affects:` sits beside a branch that
+moves or updates one named record. Below `ess/23` `each:` is refused, naming `ess/23`.
+
+The suite sends the command once to put a record in place and a decoy beside it, then sends it
+again with one element naming that record and one naming a new identity, and reads back the updated
+record, the created one in `initial`, the decoy as it was, and exactly one record per identity.
+Every generated code target (Rust, Go, Web, Clap) refuses the entry by name, and Entity Runtime
+lowering refuses it with `SetEffectUnsupported`.

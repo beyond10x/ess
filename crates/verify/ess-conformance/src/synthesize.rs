@@ -4486,6 +4486,11 @@ fn written_elsewhere(ir: &EssIr, entity: &EntityHandle) -> BTreeSet<String> {
             }
             for affect in outcome.affects.iter().filter(|a| &a.entity == entity) {
                 written.extend(affect.sets.iter().map(|set| set.target.clone()));
+                // An `each:` entry (ess/23, beyond10x/ess#459) also writes every field it reads from
+                // an element, on the rows its elements name.
+                written.extend(affect.each.iter().flat_map(|each| {
+                    each.reads.iter().map(|read| read.target.clone())
+                }));
             }
         }
     }

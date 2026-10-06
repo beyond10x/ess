@@ -127,3 +127,38 @@ fn issue_229_an_affects_entry_that_moves_its_rows_is_refused_by_name() {
         );
     }
 }
+
+/// One record per element of an input list (ess/23, beyond10x/ess#459): every code target refuses
+/// an `each:` entry by name, as it refuses every `affects:`.
+#[test]
+fn each_entry_targets_refuse_by_name() {
+    const EACH: &str = include_str!("../../../specify/ess-compiler/tests/fixtures/set-each.yaml");
+    const RAN: &str = "demo.feed.RunSource.outcomes.ran.affects";
+    let ir = ir(EACH);
+    for target in [Target::Rust, Target::Go] {
+        let failure = synthesize_for(&ir, target)
+            .err()
+            .unwrap_or_else(|| panic!("{target:?} refuses an each entry"));
+        let text = format!("{failure:?}");
+        assert!(text.contains(RAN), "{target:?} names {RAN}: {text}");
+        assert!(
+            text.contains(&format!("{:?}", TargetFailureCode::MissingRepresentation)),
+            "{text}"
+        );
+    }
+    let plan = ess_synth::SynthesisPlan::of(&ir);
+    for (target, failure) in [
+        ("rust", ess_synth::rust::workspace(&ir, &plan).err()),
+        ("go", ess_synth::go::workspace(&ir, &plan).err()),
+        ("web", ess_synth::web::workspace(&ir, &plan).err()),
+        ("clap", ess_synth::clap::workspace(&ir, &plan).err()),
+    ] {
+        let failure = failure.unwrap_or_else(|| panic!("{target} refuses an each entry"));
+        let json = failure.to_canonical_json();
+        assert!(json.contains(RAN), "{target} names {RAN}: {json}");
+        assert!(
+            json.contains(r#""code": "missing-representation""#),
+            "{target}: {json}"
+        );
+    }
+}

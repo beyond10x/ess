@@ -111,3 +111,24 @@ fn issue_452_the_documentation_says_which_rows_are_removed() {
         "the deleting entry is published: {docs}"
     );
 }
+
+/// One record per element of an input list (ess/23, beyond10x/ess#459): the documentation says
+/// the entry writes one row per element of the list.
+#[test]
+fn issue_459_the_documentation_says_one_row_per_element() {
+    const EACH: &str = include_str!("../../../specify/ess-compiler/tests/fixtures/set-each.yaml");
+    const FEED: &str = "components:\n  - component: feed-service\n    owns:\n      domains: [demo.feed]\n    accepts:\n      commands: [demo.feed.AddSource, demo.feed.RunSource]\n    publishes:\n      events: [demo.feed.SourceAdded, demo.feed.SourceRan]\n";
+    let raw = RawSpecFile::parse(&format!("{EACH}{FEED}")).unwrap();
+    let spec = Specification::assemble([(Source::new("feed.yaml"), raw)])
+        .unwrap_or_else(|errors| panic!("{errors}"));
+    let ir = compile(&spec, &SourceMap::new()).unwrap();
+    let docs = artifacts(&ir, |path| {
+        std::path::Path::new(path)
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("md"))
+    });
+    assert!(
+        docs.contains("one `demo.feed.SeenDocument` per element of `applied`"),
+        "the entry is published: {docs}"
+    );
+}

@@ -316,6 +316,7 @@ impl Specification {
             &mut collected.refused.moves,
         );
         crate::command::set_effects::refuse_deletions(&mut files, &mut errors);
+        crate::command::set_effects::refuse_each(&mut files, &mut errors);
 
         // A guard reads `input.<field>` only in an `ess/22` source, named by its one header.
         let headers: Vec<Option<FormatVersion>> = files

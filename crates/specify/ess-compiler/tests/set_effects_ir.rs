@@ -82,7 +82,14 @@ fn affects_carries_each_entry_resolved() {
         panic!("one entry: {:#?}", invited.affects)
     };
     assert_eq!(affect.entity.name().to_string(), "demo.desk.Session");
-    assert_eq!(affect.filter.to_string(), "team == subject.team");
+    assert_eq!(
+        affect
+            .filter
+            .as_ref()
+            .expect("a `where:` entry")
+            .to_string(),
+        "team == subject.team"
+    );
     assert_eq!(affect.sets.len(), 1);
     assert_eq!(affect.sets[0].target, "on_hold");
 }

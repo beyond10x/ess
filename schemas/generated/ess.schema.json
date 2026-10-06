@@ -1636,8 +1636,7 @@
       "description": "One `affects:` entry as written.",
       "type": "object",
       "required": [
-        "entity",
-        "where"
+        "entity"
       ],
       "properties": {
         "deletes": {
@@ -1645,6 +1644,17 @@
           "anyOf": [
             {
               "$ref": "#/definitions/QualifiedName"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "each": {
+          "description": "One row per element of an input list (ess/23, beyond10x/ess#459): the row `instance:` names is updated if held and created in `initial` if not.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RawEach"
             },
             {
               "type": "null"
@@ -1659,6 +1669,13 @@
             }
           ]
         },
+        "instance": {
+          "description": "The row an element names, written `<as>.<member>`; beside `each:` only.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "moves": {
           "description": "The move every selected row resting in its `from` states takes, written `<Entity>.<transition>` over `entity` (ess/22, beyond10x/ess#229); a selected row resting elsewhere is skipped.",
           "anyOf": [
@@ -1671,17 +1688,20 @@
           ]
         },
         "sets": {
-          "description": "What every selected row comes to hold.",
+          "description": "What every selected row comes to hold. Beside `each:` a source may read the element as `<as>.<member>`.",
           "type": "object",
           "additionalProperties": {
             "$ref": "#/definitions/RawPayloadSource"
           }
         },
         "where": {
-          "description": "The rows selected, over the entity's fields, `input.` and `subject.`.",
-          "allOf": [
+          "description": "The rows selected, over the entity's fields, `input.` and `subject.`. Absent only on an entry that writes one row per element instead (`each:`, ess/23, beyond10x/ess#459).",
+          "anyOf": [
             {
               "$ref": "#/definitions/Predicate"
+            },
+            {
+              "type": "null"
             }
           ]
         }
@@ -2255,6 +2275,25 @@
       "properties": {
         "count": {
           "description": "`changed`: the rows the outcome changed.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "RawEach": {
+      "description": "`each: {in: input.<list>, as: <name>}` as written (ess/23, beyond10x/ess#459).",
+      "type": "object",
+      "required": [
+        "as",
+        "in"
+      ],
+      "properties": {
+        "as": {
+          "description": "The name each element is read under.",
+          "type": "string"
+        },
+        "in": {
+          "description": "The list, `input.<field>`.",
           "type": "string"
         }
       },

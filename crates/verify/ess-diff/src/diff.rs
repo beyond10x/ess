@@ -2803,12 +2803,39 @@ fn written_set_effects(outcome: &ResolvedOutcome) -> Vec<String> {
         ));
     }
     for affect in &outcome.affects {
+        let filter = affect
+            .filter
+            .as_ref()
+            .map_or_else(String::new, ToString::to_string);
+        // From ess/23 an entry may write one row per element of an input list
+        // (beyond10x/ess#459): the line names the list, the member naming each row, and every
+        // field with its source, an element read as `<as>.<member>`.
+        if let Some(each) = &affect.each {
+            let reads = each
+                .reads
+                .iter()
+                .map(|read| format!("{} <- {}.{}", read.target, each.binder, read.member));
+            let sets: Vec<String> = written_sets(&affect.sets, None)
+                .into_iter()
+                .chain(reads)
+                .collect();
+            lines.push(format!(
+                "affects one `{}` per element (each) of `input.{}` as `{}`, named by `{}.{}`, \
+                 updated if held and created if not: {}",
+                affect.entity.name(),
+                each.list,
+                each.binder,
+                each.binder,
+                each.member,
+                sets.join(", ")
+            ));
+            continue;
+        }
         // From ess/23 an entry may remove its rows (beyond10x/ess#452).
         if affect.deletes {
             lines.push(format!(
-                "affects every `{}` where `{}`: deletes them",
+                "affects every `{}` where `{filter}`: deletes them",
                 affect.entity.name(),
-                affect.filter
             ));
             continue;
         }
@@ -2821,9 +2848,8 @@ fn written_set_effects(outcome: &ResolvedOutcome) -> Vec<String> {
                 format!(", moves along `{}` to `{}`", transition.name, transition.to)
             });
         lines.push(format!(
-            "affects every `{}` where `{}`{moves}: {}",
+            "affects every `{}` where `{filter}`{moves}: {}",
             affect.entity.name(),
-            affect.filter,
             written_sets(&affect.sets, None).join(", ")
         ));
     }

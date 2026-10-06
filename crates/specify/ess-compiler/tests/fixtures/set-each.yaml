@@ -1,0 +1,80 @@
+format: ess/23
+system: demo
+version: v1
+domain: demo.feed
+types:
+  - {name: demo.feed.SourceId, kind: newtype, of: String}
+  - {name: demo.feed.DocumentId, kind: newtype, of: String}
+  - name: demo.feed.AppliedDocument
+    kind: struct
+    fields:
+      - {name: document_id, type: demo.feed.DocumentId}
+      - {name: content_hash, type: String}
+      - {name: revision, type: Integer}
+entities:
+  - name: demo.feed.Source
+    identity: {name: source_id, type: demo.feed.SourceId}
+    fields: [{name: label, type: String}]
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+  - name: demo.feed.SeenDocument
+    identity: {name: document_id, type: demo.feed.DocumentId}
+    fields:
+      - {name: source_id, type: demo.feed.SourceId}
+      - {name: content_hash, type: String}
+      - {name: revision, type: Integer}
+    lifecycle: {initial: Seen, states: [Seen], terminal: [Seen]}
+events:
+  - name: demo.feed.SourceAdded
+    fields: [{name: source_id, type: demo.feed.SourceId}]
+  - name: demo.feed.SourceRan
+    fields: [{name: source_id, type: demo.feed.SourceId}]
+errors: [{name: demo.feed.DuplicateDocument}, {name: demo.feed.NoSuchSource}]
+actors:
+  - name: demo.feed.Operator
+    may: [demo.feed.AddSource, demo.feed.RunSource]
+commands:
+  - name: demo.feed.AddSource
+    input: [{name: label, type: String}]
+    outcomes:
+      - name: added
+        creates: demo.feed.Source
+        instance: source_id
+        emits: [demo.feed.SourceAdded]
+        payload: {demo.feed.SourceAdded: {source_id: {generated: true}}}
+        sets: {label: input.label}
+  - name: demo.feed.RunSource
+    input:
+      - {name: source_id, type: demo.feed.SourceId}
+      - {name: label, type: String}
+      - {name: applied, type: List<demo.feed.AppliedDocument>}
+    outcomes:
+      - name: duplicated
+        when: {not: {distinct: {in: applied, as: d, by: d.document_id}}}
+        error: demo.feed.DuplicateDocument
+      - name: ran
+        updates: demo.feed.Source
+        instance: source_id
+        emits: [demo.feed.SourceRan]
+        payload: {demo.feed.SourceRan: {source_id: input.source_id}}
+        sets: {label: input.label}
+        affects:
+          - entity: demo.feed.SeenDocument
+            each: {in: input.applied, as: doc}
+            instance: doc.document_id
+            sets: {source_id: input.source_id, content_hash: doc.content_hash, revision: doc.revision}
+      - {name: no-such-source, unknown_instance: true, error: demo.feed.NoSuchSource}
+views:
+  - name: demo.feed.Sources
+    source: demo.feed.Source
+    consistency: read_your_writes
+    fields:
+      - {name: source_id, type: demo.feed.SourceId}
+      - {name: label, type: String}
+  - name: demo.feed.SeenDocuments
+    source: demo.feed.SeenDocument
+    consistency: read_your_writes
+    fields:
+      - {name: document_id, type: demo.feed.DocumentId}
+      - {name: source_id, type: demo.feed.SourceId}
+      - {name: content_hash, type: String}
+      - {name: revision, type: Integer}

@@ -110,7 +110,14 @@ fn a_set_move_a_set_update_and_a_secondary_effect_are_admitted_under_ess_16() {
         panic!("one secondary effect: {:#?}", invited.set_effects.affects)
     };
     assert_eq!(affect.entity.to_string(), "demo.desk.Session");
-    assert_eq!(affect.filter.to_string(), "team == subject.team");
+    assert_eq!(
+        affect
+            .filter
+            .as_ref()
+            .expect("a `where:` entry")
+            .to_string(),
+        "team == subject.team"
+    );
     assert!(affect.sets.contains_key("on_hold"));
 }
 
@@ -740,4 +747,301 @@ fn set_effects_note_records_bulk_delete() {
         section(&note, "## Out of scope"),
         &["cross-domain cascade"],
     );
+}
+
+/// One record per element of an input list (ess/23, beyond10x/ess#459): an `affects:` entry with
+/// `each: {in: input.<list>, as: <name>}` and `instance: <name>.<member>` creates or updates the
+/// row each element's identity names, with `sets:` reading `<name>.<member>`.
+mod issue_459 {
+    use super::*;
+
+    const EACH: &str = include_str!("../../ess-compiler/tests/fixtures/set-each.yaml");
+    const ENTRY: &str =
+        "            each: {in: input.applied, as: doc}\n            instance: doc.document_id\n";
+    const DISTINCT: &str = "      - name: duplicated\n        when: {not: {distinct: {in: applied, as: d, by: d.document_id}}}\n        error: demo.feed.DuplicateDocument\n";
+
+    fn each_edited(from: &str, to: &str) -> String {
+        assert!(EACH.contains(from), "the fixture holds:\n{from}");
+        EACH.replacen(from, to, 1)
+    }
+
+    fn ran(spec: &Specification) -> &ess_domain::command::Outcome {
+        spec.commands()
+            .get(&"demo.feed.RunSource".parse().unwrap())
+            .expect("RunSource")
+            .outcomes
+            .iter()
+            .find(|outcome| outcome.name.as_str() == "ran")
+            .expect("ran")
+    }
+
+    /// A refusal with `code` sited at a location ending in `at`, carrying a hint, or a failure
+    /// listing them all.
+    fn refused_at(
+        errors: &ValidationErrors,
+        code: ValidationCode,
+        at: &str,
+    ) -> ess_primitives::error::ValidationError {
+        errors
+            .as_slice()
+            .iter()
+            .find(|error| error.code == code && error.location.ends_with(at))
+            .unwrap_or_else(|| panic!("expected {code:?} at `{at}`, got:\n{errors}"))
+            .clone()
+    }
+
+    #[test]
+    fn each_entry_is_admitted_under_ess_23_and_round_trips() {
+        let spec = admitted(EACH);
+        let outcome = ran(&spec);
+        let [entry] = outcome.set_effects.affects.as_slice() else {
+            panic!("one entry: {:#?}", outcome.set_effects)
+        };
+        let each = entry.each.as_ref().expect("the entry reads each element");
+        assert_eq!(each.list, "applied");
+        assert_eq!(each.binder, "doc");
+        assert_eq!(each.member, "document_id");
+        assert_eq!(
+            each.reads,
+            [
+                ("content_hash".to_owned(), "content_hash".to_owned()),
+                ("revision".to_owned(), "revision".to_owned()),
+            ]
+            .into_iter()
+            .collect()
+        );
+        assert!(entry.filter.is_none(), "{entry:#?}");
+        assert_eq!(
+            entry.sets.keys().collect::<Vec<_>>(),
+            ["source_id"],
+            "the element reads are the entry's, not literals: {entry:#?}"
+        );
+        let written = serde_yaml::to_string(&RawOutcome::from(outcome.clone())).unwrap();
+        assert!(written.contains("each:"), "{written}");
+        assert!(written.contains("doc.document_id"), "{written}");
+        assert!(!written.contains("where:"), "{written}");
+        let read: RawOutcome = serde_yaml::from_str(&written).unwrap();
+        let back = ess_domain::command::Outcome::try_from(read)
+            .unwrap_or_else(|errors| panic!("{errors}\n{written}"));
+        assert_eq!(back.set_effects, outcome.set_effects, "{written}");
+    }
+
+    #[test]
+    fn each_entry_without_distinct_is_refused() {
+        let errors = refused(&each_edited(DISTINCT, ""));
+        let refusal = refused_at(
+            &errors,
+            ValidationCode::MissingDeclaration,
+            "RunSource.outcomes.ran.affects[0].each",
+        );
+        for named in ["applied", "document_id", "distinct"] {
+            assert!(refusal.message.contains(named), "names {named}: {refusal}");
+        }
+        assert!(refusal.hint.is_some(), "{refusal}");
+        // A `distinct:` over another member does not hold the identity distinct.
+        let errors = refused(&each_edited("by: d.document_id", "by: d.content_hash"));
+        refused_at(
+            &errors,
+            ValidationCode::MissingDeclaration,
+            "RunSource.outcomes.ran.affects[0].each",
+        );
+        // On the accepting branch's own guard it holds as well.
+        admitted(&each_edited(
+            DISTINCT,
+            "",
+        ).replacen(
+            "        updates: demo.feed.Source\n",
+            "        when: {distinct: {in: applied, as: d, by: d.document_id}}\n        updates: demo.feed.Source\n",
+            1,
+        ).replacen(
+            "      - {name: no-such-source, unknown_instance: true, error: demo.feed.NoSuchSource}\n",
+            "      - {name: no-such-source, unknown_instance: true, error: demo.feed.NoSuchSource}\n      - {name: duplicated, error: demo.feed.DuplicateDocument}\n",
+            1,
+        ));
+    }
+
+    #[test]
+    fn each_entry_beside_where_or_move_or_delete_is_refused() {
+        for (beside, key) in [
+            (
+                "            where: source_id == subject.source_id\n",
+                "where:",
+            ),
+            (
+                "            moves: demo.feed.SeenDocument.reseen\n",
+                "moves:",
+            ),
+            ("            deletes: demo.feed.SeenDocument\n", "deletes:"),
+        ] {
+            let model = each_edited(ENTRY, &format!("{ENTRY}{beside}")).replacen(
+                "    lifecycle: {initial: Seen, states: [Seen], terminal: [Seen]}\n",
+                "    lifecycle:\n      initial: Seen\n      states: [Seen]\n      terminal: [Seen]\n      transitions:\n        - {name: reseen, from: [Seen], to: Seen}\n",
+                1,
+            );
+            let errors = refused(&model);
+            let refusal = refused_at(
+                &errors,
+                ValidationCode::ConflictingDeclaration,
+                "RunSource.outcomes.ran.affects[0].each",
+            );
+            assert!(refusal.message.contains("`each:`"), "{key}: {refusal}");
+            assert!(refusal.message.contains(key), "{key}: {refusal}");
+            assert!(refusal.hint.is_some(), "{key}: {refusal}");
+        }
+    }
+
+    #[test]
+    fn each_entry_without_subject_is_refused() {
+        let model = each_edited(
+            "        updates: demo.feed.Source\n        instance: source_id\n",
+            "",
+        )
+        .replacen("        sets: {label: input.label}\n        affects:", "        affects:", 1)
+        .replacen(
+            "      - {name: no-such-source, unknown_instance: true, error: demo.feed.NoSuchSource}\n",
+            "",
+            1,
+        );
+        let errors = refused(&model);
+        let refusal = refused_at(
+            &errors,
+            ValidationCode::MissingDeclaration,
+            "RunSource.outcomes.ran.affects",
+        );
+        assert!(refusal.message.contains("`each:`"), "{refusal}");
+        let hint = refusal.hint.as_deref().unwrap_or_default();
+        assert!(hint.contains("subject"), "{refusal}");
+    }
+
+    #[test]
+    fn each_entry_below_ess23_is_refused_naming_ess23() {
+        let below = EACH.replacen("format: ess/23", "format: ess/22", 1);
+        let errors = refused(&below);
+        let refusal = only_under(&errors, "RunSource");
+        assert_eq!(
+            refusal.code,
+            ValidationCode::UnsupportedFormatVersion,
+            "{refusal}"
+        );
+        assert!(
+            refusal
+                .location
+                .ends_with("RunSource.outcomes.ran.affects[0].each"),
+            "{refusal}"
+        );
+        assert!(refusal.message.contains("ess/23"), "{refusal}");
+        assert_eq!(errors.len(), 1, "{errors}");
+        no_empty_declaration(&errors);
+    }
+
+    #[test]
+    fn each_entry_reads_are_checked_against_the_element_and_the_entity() {
+        // `instance:` names a member of the identity's type.
+        let errors = refused(&each_edited(
+            "instance: doc.document_id",
+            "instance: doc.content_hash",
+        ));
+        refused_at(
+            &errors,
+            ValidationCode::TypeMismatch,
+            "RunSource.outcomes.ran.affects[0].instance",
+        );
+        // A member the element does not declare.
+        let errors = refused(&each_edited(
+            "revision: doc.revision",
+            "revision: doc.missing",
+        ));
+        refused_at(
+            &errors,
+            ValidationCode::UndeclaredReference,
+            "RunSource.outcomes.ran.affects[0].sets.revision",
+        );
+        // A member of another type than the field it fills.
+        let errors = refused(&each_edited(
+            "revision: doc.revision",
+            "revision: doc.content_hash",
+        ));
+        refused_at(
+            &errors,
+            ValidationCode::TypeMismatch,
+            "RunSource.outcomes.ran.affects[0].sets.revision",
+        );
+        // `in:` names a list of the input.
+        let errors = refused(&each_edited("in: input.applied", "in: input.label"));
+        refused_at(
+            &errors,
+            ValidationCode::TypeMismatch,
+            "RunSource.outcomes.ran.affects[0].each",
+        );
+        // A required field an invariant reads is written by the entry, as by any creation.
+        let errors = refused(&each_edited(
+            "    lifecycle: {initial: Seen, states: [Seen], terminal: [Seen]}\n",
+            "    invariants:\n      - revision > 0\n    lifecycle: {initial: Seen, states: [Seen], terminal: [Seen]}\n",
+        ).replacen(", revision: doc.revision}", "}", 1));
+        refused_at(
+            &errors,
+            ValidationCode::InvariantReadsUnsetField,
+            "RunSource.outcomes.ran.affects[0]",
+        );
+    }
+
+    #[test]
+    fn set_effects_note_records_each_entry() {
+        let note = repository_file("docs/design/set-effects-over-filtered-instances.md");
+        let heading = "## One row per element of an input list (ess/23, beyond10x/ess#459)";
+        let each = section(&note, heading);
+        let at = note.find(heading).expect("found above");
+        let targets = note
+            .find("\n## Targets\n")
+            .expect("missing heading `## Targets`");
+        assert!(at < targets, "`{heading}` comes before `## Targets`");
+        contains_all(
+            heading,
+            each,
+            &[
+                "`each: {in: input.",
+                "`distinct:`",
+                "created in `initial`",
+                "updated if held",
+                "a refused run writes none",
+                "replace-a-set",
+                "conformance major",
+            ],
+        );
+    }
+
+    #[test]
+    fn each_entry_guide_section_states_the_form() {
+        let page = repository_file("website/docs/guides/specify/selection-effects.md");
+        let heading = "## Write one record per element of an input list";
+        let body = section(&page, heading);
+        let at = page.find(heading).expect("found above");
+        for earlier in [
+            "## Delete every record a filter selects",
+            "## Removal in other domains is one binding per domain",
+        ] {
+            let before = page
+                .find(earlier)
+                .unwrap_or_else(|| panic!("missing heading `{earlier}`"));
+            assert!(before < at, "`{heading}` comes after `{earlier}`");
+        }
+        contains_all(
+            heading,
+            body,
+            &[
+                "`each:`",
+                "`instance: <name>.<member>`",
+                "`distinct:`",
+                "an empty list writes nothing",
+                "not removed",
+            ],
+        );
+        let fence = body
+            .split("```yaml\n")
+            .nth(1)
+            .and_then(|rest| rest.split("```").next())
+            .unwrap_or_else(|| panic!("`{heading}` has no fenced model"));
+        assemble(fence)
+            .unwrap_or_else(|errors| panic!("the fenced model validates: {errors}\n{fence}"));
+    }
 }
