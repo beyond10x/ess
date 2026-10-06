@@ -110,6 +110,12 @@
 - In every source format a row-set branch arranges its decoys both before and after the selected
   rows, so a target that keeps only the newest or the oldest record per compared value fails;
   four `ess/22` suites gain steps, with unchanged scenario ids and refusals (beyond10x/ess#463).
+- A command whose external branch is claimed, in every state it is taken from, by a held-state
+  branch with no input guard (`committed: when_subject_state: Validated` declared beside an
+  external `stale` from `Validated`) gets named refusals for that branch (`ESS-SYNTH-003`) and
+  for the states reached only through it (`ESS-SYNTH-004`), where earlier releases wrote
+  scenarios the precedence order answers otherwise. To keep the scenario, give the held-state
+  branch an input guard the external case does not meet (beyond10x/ess#464).
 
 ### Fixed
 
@@ -126,6 +132,17 @@
 - No synthesized scenario creates an identity a row already carries, a creating branch of a
   row-set command no longer arranges its sibling update's record, and a stored identity no longer
   leaves a row predicate that does not read it undecided (beyond10x/ess#463).
+- Synthesis no longer writes an external branch's scenario on a row and input that a held-state
+  guard (`when_subject`, `when_subject_state`) or a `when_related` guard claims, whatever the
+  declaration order: it finds a row and input no such guard claims, reading the branch's own
+  `when:` as a row guard, or refuses the scenario naming the guards (`ESS-SYNTH-003`). Rows
+  arranged through an external branch follow the same rule, and a state reached only through
+  one is arranged through it. An external branch naming no subject of its own is sent the
+  arranged row's identity, and one beside a `when_related` guard that reads a stored reference
+  is refused by name. Suite bytes change only for scenarios such a guard claimed, which the
+  reference interpreter failed (beyond10x/ess#464).
+- The version history lists `ess-mutation-report/4` and `ess-mutation-manifest/4` as shipped in
+  0.53.0; it called them unreleased.
 
 ## [0.53.0] — 2026-10-05
 
