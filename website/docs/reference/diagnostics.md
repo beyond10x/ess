@@ -42,12 +42,13 @@ The code has two parts. The family says which part of the specification the defe
 | `016` | `ACCESSOR_RESOURCE` | A plan exceeds its declared construction or output resource budget. | Simplify the mapping until it fits the stated budget. |
 | `017` | `NULL_COMPARISON` | A predicate compares a fact with an unquoted `null`, which no fact value can be. | Test for absence with `defined(x)` or `not defined(x)`, or quote `'null'` to compare with the text. |
 | `018` | `UNSET_AT_CREATION` | An invariant reads a required field that a creating branch leaves with no value. | Set the field with a `sets:` entry on the creating branch, or declare it `Optional<…>`. |
+| `019` | `IMPLIED_RELATION` | A relation the specification relies on and does not declare, reported as a warning. | Declare the `references` relation the warning names, or the target's `owns`; a warning leaves the exit status and the compiled model unchanged. |
 
 ### Families
 
 | Family | Where it applies |
 |---|---|
-| `SPEC` | The specification as a whole: its header, a document that cannot be read, a predicate refused while it is read, and anything with no better home. |
+| `SPEC` | The specification as a whole: its header, a document that cannot be read, a predicate that does not parse, and anything with no better home. A refusal of a document's structure — a missing required key, an unknown key, a value of the wrong shape — stops that file at the first one; a predicate that does not parse does not, and is reported at its declaration beside the file's other refusals. A declaration with an unparsable predicate is withheld whole, so its own other refusals appear once the predicate parses; the file's other declarations are still checked and reported. |
 | `DOMAIN` | A bounded context and what it declares as a whole. |
 | `TYPE` | A named type, or a declared conversion between two types. |
 | `ENTITY` | An entity: its identity, its fields, its lifecycle and its invariants. |
@@ -62,7 +63,7 @@ The code has two parts. The family says which part of the specification the defe
 
 ### Validation names
 
-Each bracketed validation name is reported under the class below. Its family is the construct the defect is in.
+Each bracketed validation name is reported under the class below. Its family is the construct the defect is in, except `unparsable_predicate` and `null_comparison`, which are `SPEC` wherever the predicate is written.
 
 | Validation name | Class |
 |---|---|
@@ -112,6 +113,9 @@ Each bracketed validation name is reported under the class below. Its family is 
 | `non_exhaustive_branches` | `005` `MISSING` |
 | `unreachable_branch` | `012` `OTHER` |
 | `invariant_reads_unset_field` | `018` `UNSET_AT_CREATION` |
+| `unparsable_predicate` | `012` `OTHER` |
+| `null_comparison` | `017` `NULL_COMPARISON` |
+| `implied_relation` | `019` `IMPLIED_RELATION` |
 
 ## Authored scenarios: `ESS-AUTHOR`
 

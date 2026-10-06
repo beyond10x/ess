@@ -605,3 +605,35 @@ fn window_mutants_move_a_boundary_and_the_synthesized_suite_kills_them() {
         assert_eq!(entry.verdict, expected, "{}: {entry:#?}", mutant.id);
     }
 }
+
+/// A window a caller resolved is two `Timestamp` parameters (beyond10x/ess#439,
+/// `docs/design/read-api-view-idioms.md`); the view filter itself still reads no clock. `now` and
+/// `window:` there keep their `type_mismatch` refusals beside the parameters.
+#[test]
+fn window_parameters_stay_refused() {
+    use ess_domain::spec::{RawSpecFile, Specification};
+    use ess_domain::system::Source;
+    const RANGE: &str = include_str!("fixtures/aggregate-timestamp-range.yaml");
+    const FILTER: &str = "filter: [started_at >= param.from, started_at < param.to]";
+    for (filter, phrase) in [
+        (
+            "filter: [started_at >= param.from, started_at < param.to, started_at >= now - 1h]",
+            "with the current time, `now - 1h`, which is admitted only in a command outcome's",
+        ),
+        (
+            "filter: [started_at >= param.from, started_at < param.to, {window: {at: started_at, \
+             days: [mon], from: \"08:00\", to: \"16:00\", offset: Z}}]",
+            "is a calendar window, which is admitted only in a command outcome's guard",
+        ),
+    ] {
+        assert!(RANGE.contains(FILTER), "the fixture reads {FILTER}");
+        let text = RANGE.replacen(FILTER, filter, 1);
+        let raw = RawSpecFile::parse(&text).unwrap_or_else(|error| panic!("{error}"));
+        let errors = Specification::assemble([(Source::new("range.yaml"), raw)])
+            .err()
+            .unwrap_or_else(|| panic!("refused: {filter}"))
+            .to_string();
+        assert!(errors.contains("[type_mismatch]"), "{errors}");
+        assert!(errors.contains(phrase), "{phrase}:\n{errors}");
+    }
+}

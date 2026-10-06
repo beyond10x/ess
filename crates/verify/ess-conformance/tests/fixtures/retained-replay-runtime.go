@@ -1131,14 +1131,23 @@ func TestExternalStaleRefusalObligations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, state := range []string{"Proposed", "Rejected", "Stale"} {
+	for _, state := range []string{"Proposed", "Rejected"} {
 		id := "retained.core.Transaction/state/" + state + "/refuses/retained.core.Commit"
 		if _, exists := suite.Scenarios[id]; !exists {
 			t.Error("missing Commit refusal obligation", state)
 		}
 	}
-	if _, exists := suite.Scenarios["retained.core.Transaction/state/Stale/refuses/retained.core.Validate"]; !exists {
-		t.Error("missing Validate/Stale refusal obligation")
+	for _, state := range []string{"Validated", "Rejected", "Committed"} {
+		id := "retained.core.Transaction/state/" + state + "/refuses/retained.core.Validate"
+		if _, exists := suite.Scenarios[id]; !exists {
+			t.Error("missing Validate refusal obligation", state)
+		}
+	}
+	// beyond10x/ess#464: `committed` answers every Validated row before `stale` ("Which branch answers", guards-and-predicates.md), so no Stale row is arranged.
+	for _, id := range []string{"retained.core.Transaction/state/Stale/refuses/retained.core.Commit", "retained.core.Transaction/state/Stale/refuses/retained.core.Validate"} {
+		if _, exists := suite.Scenarios[id]; exists {
+			t.Error("a Stale row arranged through the claimed external stale", id)
+		}
 	}
 	for id, scenario := range suite.Scenarios {
 		for _, step := range scenario.Steps {
@@ -1147,6 +1156,10 @@ func TestExternalStaleRefusalObligations(t *testing.T) {
 			}
 			if strings.HasSuffix(id, "/outcome/replayed") && step.Step == "configure_external_outcome" {
 				t.Error("retained replay was externally forced")
+			}
+			// beyond10x/ess#464: no stale witness, which `committed` answers before ("Which branch answers", guards-and-predicates.md).
+			if step.Step == "configure_external_outcome" {
+				t.Error("a stale witness the held state claims", id)
 			}
 		}
 	}
@@ -1191,9 +1204,7 @@ func (f *externalStaleFixture) ExecuteCommand(request CommandRequest) (CommandRe
 		}
 	}
 	if request.Command == "retained.core.Validate" && f.state != "Proposed" {
-		if f.state == "Stale" {
-			f.observed["validate-refused-stale"]++
-		}
+		f.observed["validate-refused-"+f.state]++
 		result := CommandResult{Outcome: "refused", Consistency: "observed-write"}
 		if f.mode != "missing-refusal" {
 			result.Error = "retained.core.TransactionStateConflict"
@@ -1221,15 +1232,19 @@ func TestExternalCommitStaleRefusals(t *testing.T) {
 		Run(t, func() Target {
 			return &externalStaleFixture{heldFixture: heldFixture{retainedFixture: retainedFixture{mode: mode}, reached: reached}, observed: observed}
 		})
-		for _, state := range []string{"Proposed", "Validated", "Rejected", "Stale", "Committed"} {
+		// beyond10x/ess#464: no Stale row and no stale witness, which `committed` answers before ("Which branch answers", guards-and-predicates.md).
+		for _, state := range []string{"Proposed", "Validated", "Rejected", "Committed"} {
 			if !reached[state] {
 				t.Error("state not exercised", state)
 			}
 		}
-		for _, obligation := range []string{"external-stale", "commit-refused-Proposed", "commit-refused-Rejected", "commit-refused-Stale", "validate-refused-stale"} {
+		for _, obligation := range []string{"commit-refused-Proposed", "commit-refused-Rejected", "validate-refused-Validated", "validate-refused-Rejected", "validate-refused-Committed"} {
 			if observed[obligation] == 0 {
 				t.Error("obligation not exercised", obligation)
 			}
+		}
+		if observed["external-stale"] != 0 {
+			t.Error("stale was forced on a row the held state claims")
 		}
 		return
 	}
@@ -1247,14 +1262,18 @@ func TestExternalCommitStaleRefusals(t *testing.T) {
 				t.Fatalf("%s: %v\n%s", mode, err, output)
 			}
 			if mode != "valid" {
-				for _, state := range []string{"Proposed", "Rejected", "Stale"} {
+				// beyond10x/ess#464: the reachable states' refusals carry the detection ("Which branch answers", guards-and-predicates.md).
+				for _, state := range []string{"Proposed", "Rejected"} {
 					witness := "--- FAIL: TestExternalCommitStaleRefusals/retained.core.Transaction/state/" + state + "/refuses/retained.core.Commit"
 					if !strings.Contains(result, witness) {
 						t.Fatalf("%s did not detect %s refusal violation\n%s", mode, state, output)
 					}
 				}
-				if !strings.Contains(result, "--- FAIL: TestExternalCommitStaleRefusals/retained.core.Transaction/state/Stale/refuses/retained.core.Validate") {
-					t.Fatalf("%s did not detect Validate/Stale refusal violation\n%s", mode, output)
+				for _, state := range []string{"Validated", "Rejected", "Committed"} {
+					witness := "--- FAIL: TestExternalCommitStaleRefusals/retained.core.Transaction/state/" + state + "/refuses/retained.core.Validate"
+					if !strings.Contains(result, witness) {
+						t.Fatalf("%s did not detect Validate/%s refusal violation\n%s", mode, state, output)
+					}
 				}
 			}
 		})

@@ -952,14 +952,9 @@ fn adversary_literal_docs_do_not_invent_a_representation_for_optional_cycles() {
 
 #[test]
 fn adversary_literal_docs_cannot_be_generated_from_nontext_literal_inputs() {
-    for target in [
-        "Integer",
-        "Boolean",
-        "Decimal",
-        "Uuid",
-        "List<String>",
-        "Map<String, String>",
-    ] {
+    // `'1'` is a value of `Integer` and `Decimal`, as it is in `sets:` (beyond10x/ess#445), and
+    // is no value of `Boolean`.
+    for target in ["Boolean", "Uuid", "List<String>", "Map<String, String>"] {
         let text = literal_mapping_fixture(target, "'1'");
         let raw = RawSpecFile::parse(&text).expect("quoted literal is valid source syntax");
         let error = Specification::assemble(vec![(Source::new("literal.yaml"), raw)])

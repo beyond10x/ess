@@ -315,6 +315,8 @@ impl Specification {
             &mut errors,
             &mut collected.refused.moves,
         );
+        crate::command::set_effects::refuse_deletions(&mut files, &mut errors);
+        crate::command::set_effects::refuse_each(&mut files, &mut errors);
 
         // A guard reads `input.<field>` only in an `ess/22` source, named by its one header.
         let headers: Vec<Option<FormatVersion>> = files
@@ -326,10 +328,25 @@ impl Specification {
             headers.as_slice(),
             [Some(format)] if format.major() >= FormatVersion::V22.major()
         );
+        // A refusal names `deletes:` among the verbs a set effect sits beside only in an `ess/23`
+        // source (beyond10x/ess#452).
+        let admits_deletions = matches!(
+            headers.as_slice(),
+            [Some(format)] if format.major() >= FormatVersion::V23.major()
+        );
+        // And from `ess/23` an enum attribute (beyond10x/ess#450), lowered once the types are known.
+        let reads_attributes = matches!(
+            headers.as_slice(),
+            [Some(format)] if format.major() >= FormatVersion::V23.major()
+        );
         crate::command::converting_input_namespace(reads_input_namespace, || {
-            for (source, file) in files {
-                parts.push(collected.absorb(&source, file, &mut errors));
-            }
+            crate::command::set_effects::converting_deletions(admits_deletions, || {
+                crate::expression::attributes::converting(reads_attributes, || {
+                    for (source, file) in files {
+                        parts.push(collected.absorb(&source, file, &mut errors));
+                    }
+                });
+            });
         });
 
         let lifecycle_types: Vec<NamedType> = collected
@@ -374,7 +391,7 @@ impl Specification {
 
         // From `ess/22` a bare word on the right of a comparison may name a field; which one is
         // decided now that the format and every declaration are known (A1).
-        specification.resolve_written(&collected.spelled);
+        errors.extend(specification.resolve_written(&collected.spelled));
 
         errors.extend(specification.validate_after(&collected.refused));
         errors.extend(specification.validate_roster(&collected.roster));
@@ -382,10 +399,16 @@ impl Specification {
     }
 
     /// Replaces every authored predicate an `ess/22` source wrote with what its bare words name
-    /// there (`docs/design/expression-family-source22.md`, A1). Nothing moves below `ess/22`.
-    fn resolve_written(&mut self, written: &crate::expression::lexical::Written) {
+    /// there (`docs/design/expression-family-source22.md`, A1). Nothing moves below `ess/22`. What it
+    /// refuses is an enum attribute read that names no value of the attribute (ess/23).
+    fn resolve_written(
+        &mut self,
+        written: &crate::expression::lexical::Written,
+    ) -> ValidationErrors {
         let registry = self.types_with_lifecycles(&mut ValidationErrors::new());
-        let resolved = crate::expression::lexical::resolutions(self, &registry, written);
+        let mut refusals = ValidationErrors::new();
+        let resolved =
+            crate::expression::lexical::resolutions(self, &registry, written, &mut refusals);
         for (site, predicate) in resolved {
             if let crate::expression::lexical::Site::TypeInvariant { name, index } = &site {
                 // A declared type is held twice — in the registry and in its domain's list — and
@@ -416,6 +439,7 @@ impl Specification {
                 *slot = predicate;
             }
         }
+        refusals
     }
 
     /// Checks every reference in the specification.
@@ -505,7 +529,7 @@ impl Specification {
             errors.extend(actor.validate_grants(&command_names, &view_names, self.system.format));
         }
 
-        errors.extend(self.validate_components(&command_names, &event_names));
+        errors.extend(self.validate_components(&command_names, &event_names, refused));
 
         // The payload construct's cross-declaration half, beside the binding's for the reason the
         // two mirror each other: an outcome fills an event's fields from its command's input, and
@@ -558,6 +582,7 @@ impl Specification {
         &self,
         command_names: &BTreeSet<QualifiedName>,
         event_names: &BTreeSet<QualifiedName>,
+        refused: &Refused,
     ) -> ValidationErrors {
         // The three layers above the domains. Each needs the whole specification, because each is
         // about how the parts fit rather than about any one of them.
@@ -583,6 +608,15 @@ impl Specification {
                         .iter()
                         .filter(|view| self.views.contains_key(*view))
                         .cloned()
+                        // A view its own conversion refused is still the one its domain declares:
+                        // reading it is not a second fault (beyond10x/ess#448).
+                        .chain(
+                            refused
+                                .view_domains
+                                .iter()
+                                .filter(|(_, owner)| **owner == domain.name)
+                                .map(|(view, _)| view.clone()),
+                        )
                         .collect(),
                 )
             })
@@ -949,6 +983,9 @@ pub(crate) struct Refused {
     /// Views whose conversion failed, so a grant naming one (ess/22, beyond10x/ess#286) is not
     /// reported as naming nothing.
     pub(crate) views: BTreeSet<QualifiedName>,
+    /// The domain each refused view was declared in, so a command tree reading one is not
+    /// reported as reading a view its domain does not project (beyond10x/ess#448).
+    pub(crate) view_domains: BTreeMap<QualifiedName, QualifiedName>,
     pub(crate) components: BTreeSet<crate::component::ComponentName>,
     /// The `moves:` a refused command's outcomes name, so a transition only that command takes is
     /// not reported as one nothing takes.
@@ -1131,7 +1168,11 @@ impl Collected {
         // The owner every member of this file is claimed for, as `Assembly::claim` will claim it.
         let owner = file.domain.clone();
         let owner = owner.as_ref();
-        for raw in file.types {
+        for mut raw in file.types {
+            // An invariant that does not parse, or a boolean written as a variant, is refused and
+            // withheld, not the type: a refused type would make every field declared with it a
+            // second refusal (beyond10x/ess#448, beyond10x/ess#426).
+            errors.extend(raw.withhold_unread());
             let name = raw.name.clone();
             let converted = match NamedType::try_from(raw) {
                 Ok(declared) => Some(declared),
@@ -1148,7 +1189,9 @@ impl Collected {
 
         let mut members = DomainMembers::default();
 
-        for raw in file.entities {
+        for mut raw in file.entities {
+            // As for a type: the invariant is withheld, not the entity (beyond10x/ess#448).
+            errors.extend(raw.withhold_unparsed_invariants());
             let first = self.declare_member("entity", &raw.name, source, owner, errors);
             let name = raw.name.clone();
             let converted = match EntitySpec::try_from(raw) {
@@ -1271,6 +1314,11 @@ impl Collected {
                 }
                 Err(member_errors) => {
                     self.refused.views.insert(name.clone());
+                    if let Some(owner) = owner {
+                        self.refused
+                            .view_domains
+                            .insert(name.clone(), owner.clone());
+                    }
                     errors.extend(member_errors);
                     None
                 }

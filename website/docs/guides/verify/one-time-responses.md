@@ -57,7 +57,9 @@ network reply does not restore that authority. Rotation creates a new value; it 
 old value safe to return again.
 
 A finite serial suite cannot prove durable storage, log hygiene, every encoding of a value,
-restart safety or concurrent atomicity. Those remain implementation obligations. Recording and
+restart safety or concurrent atomicity. Those remain implementation obligations; what a
+specification promises when commands race, and the history check that holds it, is in
+[when commands race](../../concepts/ess.md#when-commands-race). Recording and
 history exploration paths that cannot preserve the policy refuse marked models before invoking
 the target; they must not record plaintext as ordinary history data.
 

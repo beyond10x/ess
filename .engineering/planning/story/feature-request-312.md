@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-312
 kind: story
-status: active
+status: implemented
 title: Suites state their empty-target assumption and act across callers
 tags:
 - feature-request
@@ -29,10 +29,11 @@ scope:
   path: crates/verify/ess-conformance/tests/support_typescript_prerequisite/mod.rs
 - confidence: cited
   path: docs/design/scenario-initial-state-and-cross-caller-witnesses.md
-revision: 32
+revision: 33
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T19:07:02Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}}
 - {from: "proposed", to: "active", at: "2026-10-03T19:07:02Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"approval":1}}}
+- {from: "active", to: "implemented", at: "2026-10-06T09:43:23Z", actor: "human:timo", revision: 33, decided_on: {"recorded":{"test_result":14,"approval":1,"review_outcome":4}}}
 ---
 ## Outcome
 

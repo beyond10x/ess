@@ -514,9 +514,14 @@ fn a_compact_conjunction_or_disjunction_is_refused_toward_the_structured_form() 
         "sku == A1 || sku == B2",
         "sku != A1 && flag",
     ] {
-        let error =
-            RawSpecFile::parse(&text.replace("when: amount > 0", &format!("when: {guard}")))
-                .expect_err(guard);
+        // Refused at the guard that wrote it rather than by the reader (beyond10x/ess#448).
+        let errors = assemble(&text.replace("when: amount > 0", &format!("when: {guard}")))
+            .expect_err(guard);
+        let error = errors
+            .as_slice()
+            .iter()
+            .find(|error| error.code == ValidationCode::UnparsablePredicate)
+            .unwrap_or_else(|| panic!("`{guard}` is refused as a predicate: {errors}"));
         let rendered = error.to_string();
         assert!(
             rendered.contains("structured") && rendered.contains("all") && rendered.contains("any"),

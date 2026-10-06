@@ -1,0 +1,41 @@
+format: ess/20
+system: demo
+version: v1
+domain: demo.hold
+summary: A hold request refused for a blank code and, separately, when it asks to pause.
+types:
+  - {name: demo.hold.HoldId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.hold.Hold
+    identity: {name: hold_id, type: demo.hold.HoldId}
+    fields:
+      - {name: code, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+actors:
+  - name: demo.hold.Agent
+    may: [demo.hold.Place]
+errors:
+  - {name: demo.hold.InvalidCode, fields: []}
+  - {name: demo.hold.PauseRefused, fields: []}
+events:
+  - name: demo.hold.Placed
+    fields: [{name: hold_id, type: demo.hold.HoldId}]
+commands:
+  - name: demo.hold.Place
+    input:
+      - {name: code, type: String}
+      - {name: pause, type: Boolean}
+    outcomes:
+      - {name: invalid-code, when: code == "", error: demo.hold.InvalidCode}
+      - {name: pause-refused, when: pause == true, error: demo.hold.PauseRefused}
+      - name: placed
+        creates: demo.hold.Hold
+        instance: hold_id
+        sets: {code: input.code}
+        emits: [demo.hold.Placed]
+        payload: {demo.hold.Placed: {hold_id: {generated: true}}}
+components:
+  - component: hold
+    owns: {domains: [demo.hold]}
+    accepts: {commands: [demo.hold.Place]}
+    reached_by: network

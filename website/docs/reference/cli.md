@@ -448,9 +448,28 @@ ess specify cli [OPTIONS] --binding <BINDING>
 | `--format` | `<FORMAT>` | no | `text` | Output rendering. One of `text`, `yaml`, `json`. |
 | `--binding` | `<BINDING>` | yes |  | An independently authored ess-cli/1 presentation document |
 
+#### `ess specify formats`
+
+List the specification formats (`format: ess/N`) this build implements, and what each added.
+
+One line per format, oldest first: the release that first shipped it, or `unreleased`, and `newest` beside the highest. Under it, indented, what the format added and any rule that reads a document differently from that format on. Declare the lowest format that admits every construct the specification uses. `--format json` and `--format yaml` print a list of `{format, release, newest, added, stricter}`.
+
+The other versioned documents an author writes (`ess-inputs/N`, `ess-ui/N`, `ess-composition/N`, `ess-scenario/N`) and the documents `ess` writes itself are listed with their releases on the format version history page, `https://beyond10x.github.io/ess/docs/reference/spec-versions`.
+
+```text
+ess specify formats [OPTIONS]
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--since` | `<ess/N>` | no |  | List only the formats after this one |
+| `--format` | `<FORMAT>` | no | `text` | Output rendering. One of `text`, `yaml`, `json`. |
+
 #### `ess specify validate`
 
-Validate and resolve an ESS specification
+Validate and resolve an ESS specification.
+
+A valid specification's `--format json|yaml` report carries `completeness` when conformance synthesis owes anything: the constructs it gives no scenario (`unscenarioed`), the scenarios held outside `--component` (`outside`), the questions the model leaves unanswered (`unanswered`), and their `counts`. To answer, `json` and `yaml` run conformance synthesis and take as long as `ess verify conform synthesize`; text mode does not synthesize. Advisory warnings, such as a relation the model only implies, are printed on standard error and carried as `warnings`. Neither changes the exit status.
 
 ```text
 ess specify validate [OPTIONS]
@@ -460,6 +479,7 @@ ess specify validate [OPTIONS]
 |---|---|---|---|---|
 | `--path` | `<PATH>` | no | `.` | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
 | `--format` | `<FORMAT>` | no | `text` | Output rendering. One of `text`, `yaml`, `json`. |
+| `--component` | `<COMPONENT>` | no |  | Report completeness for this declared component's suite, as `ess verify conform synthesize --component` scopes it: the scenarios it holds outside are listed under `completeness.outside` |
 
 #### `ess specify compile`
 
@@ -666,6 +686,7 @@ ess generate <COMMAND>
 | `--asset` | `<OUTPUT=PATH>`… | no |  | Publish a declared UTF-8 download verbatim, written `<output-path>=<source-path>` |
 | `--strict-links` |  | no |  | Refuse unpublished local link targets before writing any output |
 | `--out` | `<OUT>` | no |  |  |
+| `--check` |  | no |  | Refuse when `--out` differs from the generated output, without writing it.<br /><br />Passing means the same command without `--check` changes nothing. Every file the selected projections would write is compared byte for byte; a file `.ess-output` records for them that no projection produces any more is drift, and so is a missing or stale `.ess-output` record. Exit 0 when `--out` is current, 1 with one line per drifted file. |
 | `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
 | `--strict` |  | no |  | Refuse, writing nothing, where `openapi` or `asyncapi` has a domain no component owns.<br /><br />Without it the same condition is a note on stderr and the exit stays 0: an empty projection is legal, and the note is what tells it apart from a clean one. |
 | `--transport` | `<TRANSPORT>` | no |  | An `ess-transport/1` or `ess-transport/2` document binding events to brokers, subjects and streams; only with `--kind asyncapi` |
@@ -689,6 +710,7 @@ ess generate generate [OPTIONS]
 | `--asset` | `<OUTPUT=PATH>`… | no |  | Publish a declared UTF-8 download verbatim, written `<output-path>=<source-path>` |
 | `--strict-links` |  | no |  | Refuse unpublished local link targets before writing any output |
 | `--out` | `<OUT>` | no |  |  |
+| `--check` |  | no |  | Refuse when `--out` differs from the generated output, without writing it.<br /><br />Passing means the same command without `--check` changes nothing. Every file the selected projections would write is compared byte for byte; a file `.ess-output` records for them that no projection produces any more is drift, and so is a missing or stale `.ess-output` record. Exit 0 when `--out` is current, 1 with one line per drifted file. |
 | `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
 | `--strict` |  | no |  | Refuse, writing nothing, where `openapi` or `asyncapi` has a domain no component owns.<br /><br />Without it the same condition is a note on stderr and the exit stays 0: an empty projection is legal, and the note is what tells it apart from a clean one. |
 | `--transport` | `<TRANSPORT>` | no |  | An `ess-transport/1` or `ess-transport/2` document binding events to brokers, subjects and streams; only with `--kind asyncapi` |
@@ -1361,7 +1383,7 @@ ess verify conform synthesize [OPTIONS]
 | `--scenarios` | `<SCENARIOS>` | no |  | The `ess-scenario/1` documents to compile beside the generated scenarios.<br /><br />One file or a directory. Immediate `ess-inputs.yaml` selects its exact scenarios list. Otherwise only immediate `.yaml`/`.yml` files are read; subdirectories are not searched. An empty selection is refused. When omitted, no authored scenarios are selected. |
 | `--suite-format` | `<SUITE_FORMAT>` | no | `4` | Ordinary (4) or declared coverage (5); admitted features select newer required versions. One of `4`, `5`. |
 | `--compact` |  | no |  | Write fresh IR as compact JSON with one trailing newline; requires --target ir |
-| `--synthesis-seed` | `<FILE>`… | no |  | Offer the `setup` row of arrangement INSTANCE in the authored document FILE as an explicit synthesis seed; repeatable.<br /><br />A seed supplies only that nominated initial row: never the document's timeline, assertions or any state its timeline reaches, and it appends no authored scenario (`--scenarios` does that, independently). Ordinary arrangement is tried first; a row is established only for a generated obligation no bounded arrangement reaches, and the real command and assertions follow it. Any seed selects suite/42 (or /43 with `--suite-format 5`) and records its source, row and uses. |
+| `--synthesis-seed` | `<FILE>`… | no |  | Offer the `setup` row of arrangement INSTANCE in the authored document FILE as an explicit synthesis seed; repeatable.<br /><br />A seed supplies only that nominated initial row: never the document's timeline, assertions or any state its timeline reaches, and it appends no authored scenario (`--scenarios` does that, independently). Ordinary arrangement is tried first; a row is established only for a generated obligation no bounded arrangement reaches, and the real command and assertions follow it. Any seed selects suite/42 (or /43 with `--suite-format 5`), or suite/44 (/45) where an act also claims one event more than once, and records its source, row and uses. |
 
 #### `ess verify conform author`
 

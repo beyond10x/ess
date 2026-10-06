@@ -527,6 +527,9 @@ the pin to that tag's commit. That move is not B1b's.
 
 - **Regular expressions.** A witness would need text generated from a regex, and one dialect across
   Rust, Go and JS. The schema side already notes ECMA-262 matching as unfinished (issue #95).
+  Declined again for #449: the idiom is on the predicate reference page ("Text shapes without
+  patterns"), and a pattern stored as data is the system's evaluator
+  ([stored-rules-boundary.md](stored-rules-boundary.md), "Patterns held as data").
 - **SQL `LIKE`.** It is a pattern language with the same witness problem, restricted.
 - **Case-insensitive matching.** "Case" needs a folding table, and the three lanes' tables differ
   (`binding-list-selection.md:119-125` records the same boundary for selection).

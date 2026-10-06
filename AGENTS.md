@@ -149,7 +149,7 @@ a one-line `package.json` change, `npm --prefix website install`, and `cargo xta
 refusal saying the IR is not the compiled model means `ess-ui`'s pinned ESS release and this
 workspace compile the example differently: move the `ess-ui` pin to a commit built on this release.
 
-Before pushing a release tag, run `task check`, `task web-check`, `task test-browser-product` and `task test-slow-probes` on the commit being tagged; those Firefox tests and slow probes are ignored in the 30-minute CI shards.
+Before pushing a release tag, run `task check`, `task web-check`, `task test-browser-product` and `task test-slow-probes` on the commit being tagged; those Firefox tests and slow probes are ignored in the CI test shards.
 Consumer coverage is not part of that bar while it is parked (revision 3, above).
 The release workflow runs the reusable gate, the WebAssembly realization check and native
 packaging concurrently at that exact commit, then retains a read-only preparation artifact only

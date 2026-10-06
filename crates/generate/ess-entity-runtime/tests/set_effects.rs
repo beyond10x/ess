@@ -18,11 +18,12 @@ use ess_entity_runtime::{lower, LoweringCode, LoweringOptions};
 use ess_service_contract::extract;
 use ess_synth::SynthesisPlan;
 
-/// The focused contract fixture at ess/16, with each `(file, before, after)` edit applied once.
-fn contract(changes: &[(&str, &str, &str)]) -> EssIr {
+/// The focused contract fixture under `format` (ess/16 for every case but the ess/23 deletions), with
+/// each `(file, before, after)` edit applied once.
+fn contract_at(format: &str, changes: &[(&str, &str, &str)]) -> EssIr {
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/contract");
     let mut changes = changes.to_vec();
-    changes.push(("system.yaml", "format: ess/4", "format: ess/16"));
+    changes.push(("system.yaml", "format: ess/4", format));
     let mut paths = Vec::new();
     let mut pending = vec![base.clone()];
     while let Some(directory) = pending.pop() {
@@ -95,7 +96,11 @@ const COUNTED: (&str, &str, &str) = (
 const INPUT: &str = "    input:\n      - name: child_id\n        type: contract.local.ChildId\n      - name: note\n        type: contract.local.Shared\n";
 
 fn with_command(name: &str, outcomes: &str) -> EssIr {
-    contract(&[
+    with_command_at("format: ess/16", name, outcomes)
+}
+
+fn with_command_at(format: &str, name: &str, outcomes: &str) -> EssIr {
+    contract_at(format, &[
         COUNTED,
         (
             "domains/local.yaml",
@@ -138,6 +143,29 @@ fn affects_is_refused_by_name() {
     );
 }
 
+/// Deleting the selected rows (ess/23, beyond10x/ess#452): a bulk `deletes:` and a deleting
+/// `affects:` entry are refused by name, as every set effect is.
+#[test]
+fn set_delete_targets_refuse_by_name() {
+    for (name, outcomes) in [
+        (
+            "Purge",
+            "      - name: purged\n        deletes: contract.local.Child\n        instances: {where: note == input.note}\n        emits: [contract.local.Counted]\n        payload:\n          contract.local.Counted: {changed: {count: changed}}\n",
+        ),
+        (
+            "Remove",
+            "      - name: removed\n        deletes: contract.local.Child\n        instance: child_id\n        emits: [contract.local.First]\n        affects:\n          - entity: contract.local.Child\n            where: note == subject.note\n            deletes: contract.local.Child\n",
+        ),
+    ] {
+        let ir = with_command_at("format: ess/23", name, outcomes);
+        let codes = refused_codes(&ir);
+        assert!(
+            codes.contains(&LoweringCode::SetEffectUnsupported),
+            "{name}: {codes:?}"
+        );
+    }
+}
+
 #[test]
 fn a_plain_update_is_not_refused_for_it() {
     let ir = with_command(
@@ -145,4 +173,46 @@ fn a_plain_update_is_not_refused_for_it() {
         "      - name: touched\n        updates: contract.local.Child\n        instance: child_id\n        emits: [contract.local.First]\n        sets:\n          note: input.note\n",
     );
     assert!(!refused_codes(&ir).contains(&LoweringCode::SetEffectUnsupported));
+}
+
+/// One record per element of an input list (ess/23, beyond10x/ess#459): an `each:` entry is
+/// refused by name, as every set effect is.
+#[test]
+fn each_entry_targets_refuse_by_name() {
+    const EACH: &str = include_str!("../../../specify/ess-compiler/tests/fixtures/set-each.yaml");
+    const FEED: &str = "components:\n  - component: feed-service\n    owns:\n      domains: [demo.feed]\n    accepts:\n      commands: [demo.feed.AddSource, demo.feed.RunSource]\n    publishes:\n      events: [demo.feed.SourceAdded, demo.feed.SourceRan]\n";
+    let text = format!("{EACH}{FEED}");
+    let mut sources = SourceMap::new();
+    sources.insert("feed.yaml".to_owned(), text.clone());
+    let specification =
+        Specification::assemble([(Source::new("feed.yaml"), RawSpecFile::parse(&text).unwrap())])
+            .unwrap_or_else(|errors| panic!("{errors}"));
+    let ir = compile_locating(&specification, &sources, &["feed.yaml".to_owned()])
+        .expect("the model compiles");
+    let plan = SynthesisPlan::of(&ir);
+    let service = extract(&ir, &plan, &ComponentName::new("feed-service").unwrap()).unwrap();
+    let options = LoweringOptions {
+        definition_versions: ["demo.feed.Source", "demo.feed.SeenDocument"]
+            .into_iter()
+            .map(|name| {
+                (
+                    QualifiedName::new(name).unwrap(),
+                    NonZeroU32::new(1).unwrap(),
+                )
+            })
+            .collect(),
+        scales: BTreeMap::new(),
+    };
+    let codes: Vec<LoweringCode> = match lower(&service, &options) {
+        Ok(_) => Vec::new(),
+        Err(diagnostics) => diagnostics
+            .into_vec()
+            .into_iter()
+            .map(|diagnostic| diagnostic.code)
+            .collect(),
+    };
+    assert!(
+        codes.contains(&LoweringCode::SetEffectUnsupported),
+        "{codes:?}"
+    );
 }

@@ -25,6 +25,7 @@ use ess_primitives::error::{
 
 use crate::entity::{Invariant, RawInvariant};
 use crate::name::{Naming, QualifiedName};
+use ess_primitives::predicate::PredicateAt;
 
 /// A type with no structure of its own.
 #[derive(
@@ -653,6 +654,121 @@ pub struct EnumVariant {
     pub name: String,
     /// What it is called on the wire, and what a person is shown.
     pub naming: Naming,
+    /// The typed attributes its enum declares, in declaration order, each with this variant's
+    /// value (`ess/23`, beyond10x/ess#450). Empty for an enum that declares none.
+    ///
+    /// Every variant carries every declared attribute, so the declaration is read off any variant
+    /// and no shape that carries variants — the model, the IR — had to change to carry it.
+    pub attributes: Vec<VariantAttribute>,
+}
+
+/// One typed attribute of an enum variant (`ess/23`, beyond10x/ess#450).
+///
+/// `attributes: [{name, type}]` on the enum declares it; `attributes: {<name>: <literal>}` on the
+/// variant fills it, checked by the rule `sets:` types a literal by. A predicate reads it as
+/// `<fact>.<name>`, lowered to membership over the variants that satisfy the comparison, so no
+/// runner ever reads an attribute itself.
+#[derive(Debug, Clone, Eq, serde::Serialize)]
+pub struct VariantAttribute {
+    /// The attribute's name, as the enum declares it.
+    pub name: String,
+    /// Its declared type.
+    #[serde(rename = "type")]
+    pub type_ref: TypeRef,
+    /// The variant's value, as the canonical text of its literal; `None` where an `Optional`
+    /// attribute is left unfilled.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+    /// The YAML scalar the value was written as, `None` for text: only the literal rule reads it,
+    /// to say `quote it` where text was meant.
+    #[serde(skip)]
+    pub written: Option<crate::command::ScalarKind>,
+}
+
+/// Equal when the name, the type and the value are: how the value was spelled is not part of it.
+impl PartialEq for VariantAttribute {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name && self.type_ref == other.type_ref && self.value == other.value
+    }
+}
+
+/// A variant's attribute value as a document writes it: text, or an unquoted YAML scalar.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttributeLiteral {
+    /// The canonical text: as written for text, `true`, `3`, `0.5` for a scalar.
+    pub value: String,
+    /// The YAML scalar it was written as, `None` for text.
+    pub scalar: Option<crate::command::ScalarKind>,
+}
+
+impl<'de> serde::Deserialize<'de> for AttributeLiteral {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Literal;
+        impl serde::de::Visitor<'_> for Literal {
+            type Value = AttributeLiteral;
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("a literal: text, a boolean or a number")
+            }
+            fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+                Ok(AttributeLiteral {
+                    value: value.to_owned(),
+                    scalar: None,
+                })
+            }
+            fn visit_bool<E: serde::de::Error>(self, value: bool) -> Result<Self::Value, E> {
+                Ok(AttributeLiteral {
+                    value: value.to_string(),
+                    scalar: Some(crate::command::ScalarKind::Boolean),
+                })
+            }
+            fn visit_i64<E: serde::de::Error>(self, value: i64) -> Result<Self::Value, E> {
+                Ok(AttributeLiteral {
+                    value: value.to_string(),
+                    scalar: Some(crate::command::ScalarKind::Integer),
+                })
+            }
+            fn visit_u64<E: serde::de::Error>(self, value: u64) -> Result<Self::Value, E> {
+                Ok(AttributeLiteral {
+                    value: value.to_string(),
+                    scalar: Some(crate::command::ScalarKind::Integer),
+                })
+            }
+            fn visit_f64<E: serde::de::Error>(self, value: f64) -> Result<Self::Value, E> {
+                crate::command::decimal_text(value)
+                    .map(|value| AttributeLiteral {
+                        value,
+                        scalar: Some(crate::command::ScalarKind::Decimal),
+                    })
+                    .ok_or_else(|| E::custom("a decimal literal must be a finite number"))
+            }
+        }
+        deserializer.deserialize_any(Literal)
+    }
+}
+
+impl serde::Serialize for AttributeLiteral {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.value)
+    }
+}
+
+impl schemars::JsonSchema for AttributeLiteral {
+    fn schema_name() -> String {
+        "AttributeLiteral".to_owned()
+    }
+
+    fn json_schema(_: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+        use schemars::schema::{InstanceType, SchemaObject, SingleOrVec};
+        SchemaObject {
+            instance_type: Some(SingleOrVec::Vec(vec![
+                InstanceType::String,
+                InstanceType::Boolean,
+                InstanceType::Number,
+            ])),
+            ..Default::default()
+        }
+        .into()
+    }
 }
 
 impl EnumVariant {
@@ -661,7 +777,15 @@ impl EnumVariant {
         Self {
             name: name.into(),
             naming: Naming::default(),
+            attributes: Vec::new(),
         }
+    }
+
+    /// The attribute of that name, when its enum declares one.
+    pub fn attribute(&self, name: &str) -> Option<&VariantAttribute> {
+        self.attributes
+            .iter()
+            .find(|attribute| attribute.name == name)
     }
 
     /// Its name.
@@ -746,23 +870,45 @@ impl PartialEq<String> for EnumVariant {
     }
 }
 
-/// The mapping form, used only to read and write a variant that declares naming.
+/// The mapping form, used only to read a variant that declares naming or attributes, and to write
+/// one that declares naming.
 #[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct NamedEnumVariant {
     name: String,
     #[serde(default, flatten, skip_serializing_if = "Naming::is_empty")]
     naming: Naming,
+    /// The variant's value for each attribute its enum declares (`ess/23`, beyond10x/ess#450).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    attributes: BTreeMap<String, AttributeLiteral>,
+}
+
+/// What a variant that declares attributes is written as: its naming, and each attribute typed.
+#[derive(serde::Serialize)]
+struct AttributedEnumVariant<'a> {
+    name: &'a str,
+    #[serde(flatten, skip_serializing_if = "Naming::is_empty")]
+    naming: &'a Naming,
+    attributes: &'a [VariantAttribute],
 }
 
 impl serde::Serialize for EnumVariant {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        if !self.attributes.is_empty() {
+            return AttributedEnumVariant {
+                name: &self.name,
+                naming: &self.naming,
+                attributes: &self.attributes,
+            }
+            .serialize(serializer);
+        }
         if self.naming.is_empty() {
             return serializer.serialize_str(&self.name);
         }
         NamedEnumVariant {
             name: self.name.clone(),
             naming: self.naming.clone(),
+            attributes: BTreeMap::new(),
         }
         .serialize(serializer)
     }
@@ -789,15 +935,37 @@ impl<'de> serde::Deserialize<'de> for EnumVariant {
                 Ok(EnumVariant::new(value))
             }
 
+            // YAML reads an unquoted `True` as a boolean before a variant list sees it; the
+            // refusal names the repair (beyond10x/ess#426). A type's `variants:` is read through
+            // `RawEnumVariant`, which refuses it at the type's path instead.
+            fn visit_bool<E: serde::de::Error>(self, value: bool) -> Result<Self::Value, E> {
+                Err(E::custom(format!(
+                    "`{value}` is a YAML boolean, not a variant name; quote it, as the text the \
+                     variant is named"
+                )))
+            }
+
             fn visit_map<A: serde::de::MapAccess<'de>>(
                 self,
                 map: A,
             ) -> Result<Self::Value, A::Error> {
-                let NamedEnumVariant { name, naming } =
-                    <NamedEnumVariant as serde::Deserialize>::deserialize(
-                        serde::de::value::MapAccessDeserializer::new(map),
-                    )?;
-                Ok(EnumVariant { name, naming })
+                let NamedEnumVariant {
+                    name,
+                    naming,
+                    attributes,
+                } = <NamedEnumVariant as serde::Deserialize>::deserialize(
+                    serde::de::value::MapAccessDeserializer::new(map),
+                )?;
+                if !attributes.is_empty() {
+                    return Err(serde::de::Error::custom(
+                        "`attributes:` is written on the variants of a declared enum type",
+                    ));
+                }
+                Ok(EnumVariant {
+                    name,
+                    naming,
+                    attributes: Vec::new(),
+                })
             }
         }
 
@@ -1303,6 +1471,111 @@ impl NamedType {
         }
     }
 
+    /// Check an enum's typed attributes against the complete registry (`ess/23`,
+    /// beyond10x/ess#450): the format admits them, each declared type is one an attribute may
+    /// have, no name is declared twice, and each variant's value is one of its attribute's type by
+    /// the rule `sets:` types a literal by.
+    pub fn validate_attributes(&self, registry: &TypeRegistry) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
+        let TypeBody::Enum { variants } = &self.body else {
+            return errors;
+        };
+        let Some(declared) = variants.first().map(|variant| &variant.attributes) else {
+            return errors;
+        };
+        if declared.is_empty() {
+            return errors;
+        }
+        let at = format!("types.{}.attributes", self.name);
+        if registry
+            .format()
+            .is_some_and(|format| format.major() < crate::system::FormatVersion::V23.major())
+        {
+            errors.push(
+                ValidationError::new(
+                    ValidationCode::UnsupportedFormatVersion,
+                    at,
+                    format!(
+                        "typed attributes on the variants of `{}` require specification format \
+                         ess/23",
+                        self.name
+                    ),
+                )
+                .with_hint("write `format: ess/23` on the source that declares the system"),
+            );
+            return errors;
+        }
+        let mut seen = BTreeSet::new();
+        let mut admitted = BTreeSet::new();
+        for attribute in declared {
+            if !seen.insert(attribute.name.as_str()) {
+                errors.push(ValidationError::new(
+                    ValidationCode::ConflictingDeclaration,
+                    format!("{at}.{}", attribute.name),
+                    format!(
+                        "`{}` declares the attribute `{}` twice",
+                        self.name, attribute.name
+                    ),
+                ));
+                continue;
+            }
+            match attribute_type(&attribute.type_ref, registry) {
+                Ok(()) => {
+                    admitted.insert(attribute.name.as_str());
+                }
+                Err((code, reason)) => errors.push(
+                    ValidationError::new(
+                        code,
+                        format!("{at}.{}", attribute.name),
+                        format!(
+                            "the attribute `{}` of `{}` is `{}`, {reason}",
+                            attribute.name, self.name, attribute.type_ref
+                        ),
+                    )
+                    .with_hint(
+                        "an attribute is a `Boolean`, an `Integer`, a `Decimal`, a `String`, a \
+                         newtype of one, an enum, or an `Optional` of one of these; a `List` \
+                         attribute is not in this cut",
+                    ),
+                ),
+            }
+        }
+        let inhabitation = crate::system::Inhabitation::of(registry);
+        let conversions = ConversionRegistry::new();
+        for variant in variants {
+            for attribute in &variant.attributes {
+                let Some(value) = &attribute.value else {
+                    continue;
+                };
+                if !admitted.contains(attribute.name.as_str()) {
+                    continue;
+                }
+                let held = Field::new(attribute.name.clone(), attribute.type_ref.clone());
+                if let Some((reason, hint)) = crate::command::literal_refusal(
+                    (&self.name, &format!("{}.{}", variant.name, attribute.name)),
+                    &held,
+                    (value, attribute.written),
+                    "variant's `attributes:`",
+                    &self.name,
+                    (registry, &conversions, &inhabitation),
+                ) {
+                    errors.push(
+                        ValidationError::new(
+                            ValidationCode::TypeMismatch,
+                            format!(
+                                "types.{}.variants.{}.attributes.{}",
+                                self.name, variant.name, attribute.name
+                            ),
+                            reason,
+                        )
+                        .with_hint(hint),
+                    );
+                }
+            }
+        }
+        errors
+    }
+
     /// Check complete invariant paths after every named and lifecycle type is registered.
     pub fn validate_invariants(&self, registry: &TypeRegistry) -> ValidationErrors {
         let value;
@@ -1427,7 +1700,11 @@ pub enum RawTypeBody {
     /// One of a fixed set of names.
     Enum {
         /// The variants, in declaration order.
-        variants: Vec<EnumVariant>,
+        variants: Vec<RawEnumVariant>,
+        /// The typed attributes every variant gives a value (`ess/23`, beyond10x/ess#450), in the
+        /// `{name, type}` shape of `fields:`.
+        #[serde(default)]
+        attributes: Vec<Field>,
     },
     /// One of several shapes, distinguished by a tag field.
     Union {
@@ -1441,26 +1718,391 @@ pub enum RawTypeBody {
     },
 }
 
-impl From<RawTypeBody> for TypeBody {
-    fn from(raw: RawTypeBody) -> Self {
-        match raw {
-            RawTypeBody::Newtype {
+/// An enum variant as a document writes it (beyond10x/ess#426).
+///
+/// A variant, or a YAML boolean where a name was meant: `variants: [True, False, Unknown]` reads
+/// `True` and `False` as booleans before ESS sees them. The boolean is kept, rather than refused
+/// by the reader with no key path, so the type's own pass refuses it at its `variants` with the
+/// repair — quoting it — and never guesses which spelling, `True`, `true` or `TRUE`, was written.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RawEnumVariant {
+    /// A variant.
+    Declared(EnumVariant),
+    /// A variant that gives values to its enum's attributes (`ess/23`, beyond10x/ess#450), each
+    /// typed once the enum's declaration is read.
+    Attributed(EnumVariant, BTreeMap<String, AttributeLiteral>),
+    /// A YAML boolean written where a variant name was meant.
+    Boolean(bool),
+}
+
+impl RawEnumVariant {
+    /// The variant, where a name was written rather than a boolean.
+    pub fn declared(&self) -> Option<&EnumVariant> {
+        match self {
+            Self::Declared(variant) | Self::Attributed(variant, _) => Some(variant),
+            Self::Boolean(_) => None,
+        }
+    }
+}
+
+impl From<EnumVariant> for RawEnumVariant {
+    fn from(variant: EnumVariant) -> Self {
+        Self::Declared(variant)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for RawEnumVariant {
+    /// [`EnumVariant`]'s two authored forms, and a boolean kept rather than refused.
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Written;
+
+        impl<'de> serde::de::Visitor<'de> for Written {
+            type Value = RawEnumVariant;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("a variant name, or a mapping carrying `name` and its naming")
+            }
+
+            fn visit_bool<E: serde::de::Error>(self, value: bool) -> Result<Self::Value, E> {
+                Ok(RawEnumVariant::Boolean(value))
+            }
+
+            fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+                Ok(RawEnumVariant::Declared(EnumVariant::new(value)))
+            }
+
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                map: A,
+            ) -> Result<Self::Value, A::Error> {
+                let NamedEnumVariant {
+                    name,
+                    naming,
+                    attributes,
+                } = <NamedEnumVariant as serde::Deserialize>::deserialize(
+                    serde::de::value::MapAccessDeserializer::new(map),
+                )?;
+                let variant = EnumVariant {
+                    name,
+                    naming,
+                    attributes: Vec::new(),
+                };
+                Ok(if attributes.is_empty() {
+                    RawEnumVariant::Declared(variant)
+                } else {
+                    RawEnumVariant::Attributed(variant, attributes)
+                })
+            }
+        }
+
+        deserializer.deserialize_any(Written)
+    }
+}
+
+impl schemars::JsonSchema for RawEnumVariant {
+    fn schema_name() -> String {
+        <EnumVariant as schemars::JsonSchema>::schema_name()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        <EnumVariant as schemars::JsonSchema>::schema_id()
+    }
+
+    fn json_schema(generator: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+        <EnumVariant as schemars::JsonSchema>::json_schema(generator)
+    }
+}
+
+impl RawTypeBody {
+    /// The body, with the refusal of every invariant that does not parse added to `errors`,
+    /// located under `location` (beyond10x/ess#448).
+    fn read(self, location: &str, errors: &mut ValidationErrors) -> TypeBody {
+        let at = |index: usize| PredicateAt::from(format!("{location}.invariants[{index}]"));
+        match self {
+            Self::Newtype {
                 of,
                 alphabet,
                 prefix,
                 invariants,
-            } => Self::Newtype {
+            } => TypeBody::Newtype {
                 of,
                 alphabet,
                 prefix,
-                invariants: invariants.into_iter().map(Invariant::from).collect(),
+                invariants: RawInvariant::read_all(invariants, at, errors),
             },
-            RawTypeBody::Struct { fields, invariants } => Self::Struct {
+            Self::Struct { fields, invariants } => TypeBody::Struct {
                 fields,
-                invariants: invariants.into_iter().map(Invariant::from).collect(),
+                invariants: RawInvariant::read_all(invariants, at, errors),
             },
-            RawTypeBody::Enum { variants } => Self::Enum { variants },
-            RawTypeBody::Union { tag, variants } => Self::Union { tag, variants },
+            Self::Enum {
+                variants,
+                attributes,
+            } => {
+                let mut booleans = Vec::new();
+                let variants = variants
+                    .into_iter()
+                    .filter_map(|variant| match variant {
+                        RawEnumVariant::Declared(variant) => {
+                            Some(attributed(variant, BTreeMap::new(), &attributes))
+                        }
+                        RawEnumVariant::Attributed(variant, values) => {
+                            Some(attributed(variant, values, &attributes))
+                        }
+                        RawEnumVariant::Boolean(value) => {
+                            booleans.push(value);
+                            None
+                        }
+                    })
+                    .collect();
+                if !booleans.is_empty() {
+                    errors.push(boolean_variants(location, &booleans));
+                }
+                TypeBody::Enum { variants }
+            }
+            Self::Union { tag, variants } => TypeBody::Union { tag, variants },
+        }
+    }
+}
+
+/// `types.<name>`, where the refusals a named type's own declaration raises are located.
+fn declared_at(name: &QualifiedName) -> String {
+    format!("types.{name}")
+}
+
+/// Whether an enum attribute may have the type `reference` (`ess/23`, beyond10x/ess#450): a
+/// `Boolean`, `Integer`, `Decimal` or `String`, a newtype of one, an enum, or an `Optional` of any
+/// of these — the types a literal spells. Otherwise the refusal's code and the clause that says why.
+fn attribute_type(
+    reference: &TypeRef,
+    registry: &TypeRegistry,
+) -> Result<(), (ValidationCode, String)> {
+    let mut current = reference;
+    for _ in 0..=MAX_TYPE_DEPTH {
+        match current {
+            TypeRef::Optional(inner) => current = inner,
+            TypeRef::Primitive(
+                Primitive::Boolean | Primitive::Integer | Primitive::Decimal | Primitive::String,
+            ) => return Ok(()),
+            TypeRef::Primitive(primitive) => {
+                return Err((
+                    ValidationCode::UnsupportedConstruct,
+                    format!("and `{primitive}` has no literal an attribute could be written as"),
+                ))
+            }
+            TypeRef::List(_) | TypeRef::Map(..) => {
+                return Err((
+                    ValidationCode::UnsupportedConstruct,
+                    "and a `List` or `Map` attribute is not in this cut".to_owned(),
+                ))
+            }
+            TypeRef::Named(name) => match registry.get(name).map(|declared| &declared.body) {
+                None => {
+                    return Err((
+                        ValidationCode::UndeclaredReference,
+                        format!("and nothing declares `{name}`"),
+                    ))
+                }
+                Some(TypeBody::Newtype { of, .. }) => current = of,
+                Some(TypeBody::Enum { .. }) => return Ok(()),
+                Some(TypeBody::Struct { .. } | TypeBody::Union { .. }) => {
+                    return Err((
+                        ValidationCode::UnsupportedConstruct,
+                        format!("and `{name}` has structure, which no literal spells"),
+                    ))
+                }
+            },
+        }
+    }
+    Err((
+        ValidationCode::SelfReference,
+        "whose wrappers do not end".to_owned(),
+    ))
+}
+
+/// `variant` with a value for each attribute its enum declares (`ess/23`, beyond10x/ess#450), in
+/// declaration order; `None` for one it leaves out. What it leaves out or adds is refused before
+/// the conversion ([`RawNamedType::withhold_unread`]), and whether each value is one of its
+/// attribute's type needs the complete registry, so [`NamedType::validate_attributes`] decides it.
+fn attributed(
+    mut variant: EnumVariant,
+    mut values: BTreeMap<String, AttributeLiteral>,
+    declared: &[Field],
+) -> EnumVariant {
+    for attribute in declared {
+        let value = values.remove(&attribute.name);
+        variant.attributes.push(VariantAttribute {
+            name: attribute.name.clone(),
+            type_ref: attribute.type_ref.clone(),
+            written: value.as_ref().and_then(|value| value.scalar),
+            value: value.map(|value| value.value),
+        });
+    }
+    variant
+}
+
+/// The refusal of every required attribute of the enum at `location` that `variant` gives no
+/// value (`ess/23`, beyond10x/ess#450).
+fn unfilled(
+    location: &str,
+    variant: &EnumVariant,
+    values: &BTreeMap<String, AttributeLiteral>,
+    declared: &[Field],
+    errors: &mut ValidationErrors,
+) {
+    let owner = location.strip_prefix("types.").unwrap_or(location);
+    for attribute in declared {
+        if values.contains_key(&attribute.name) || attribute.type_ref.is_optional() {
+            continue;
+        }
+        errors.push(
+            ValidationError::new(
+                ValidationCode::MissingDeclaration,
+                format!("{location}.variants.{}.attributes", variant.name),
+                format!(
+                    "variant `{}` of `{owner}` gives no value for the attribute `{}`, which is \
+                     `{}`",
+                    variant.name, attribute.name, attribute.type_ref
+                ),
+            )
+            .with_hint(format!(
+                "write `attributes: {{{}: …}}` on the variant, or declare the attribute \
+                 `Optional<{}>` if a variant may leave it out",
+                attribute.name, attribute.type_ref
+            )),
+        );
+    }
+}
+
+/// The refusal of every value `variant` gives an attribute the enum at `location` does not
+/// declare, each withheld (`ess/23`, beyond10x/ess#450).
+fn undeclared(
+    location: &str,
+    variant: &EnumVariant,
+    values: &mut BTreeMap<String, AttributeLiteral>,
+    declared: &[Field],
+    errors: &mut ValidationErrors,
+) {
+    let owner = location.strip_prefix("types.").unwrap_or(location);
+    let added: Vec<String> = values
+        .keys()
+        .filter(|name| !declared.iter().any(|attribute| &&attribute.name == name))
+        .cloned()
+        .collect();
+    for name in added {
+        values.remove(&name);
+        errors.push(
+            ValidationError::new(
+                ValidationCode::UndeclaredReference,
+                format!("{location}.variants.{}.attributes.{name}", variant.name),
+                format!(
+                    "variant `{}` gives a value for `{name}`, which is not an attribute `{owner}` \
+                     declares",
+                    variant.name
+                ),
+            )
+            .with_hint(if declared.is_empty() {
+                format!("declare it on the enum: `attributes: [{{name: {name}, type: …}}]`")
+            } else {
+                format!(
+                    "declared attributes: {}",
+                    declared
+                        .iter()
+                        .map(|attribute| format!("`{}`", attribute.name))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            }),
+        );
+    }
+}
+
+/// The refusal of the YAML booleans written as variants of the enum at `location`, naming the
+/// repair (beyond10x/ess#426).
+fn boolean_variants(location: &str, booleans: &[bool]) -> ValidationError {
+    let written = booleans
+        .iter()
+        .map(|value| format!("`{value}`"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let quoted = booleans
+        .iter()
+        .map(|value| if *value { "`'True'`" } else { "`'False'`" })
+        .collect::<Vec<_>>()
+        .join(", ");
+    ValidationError::new(
+        ValidationCode::TypeMismatch,
+        format!("{location}.variants"),
+        format!(
+            "{written} {} a YAML boolean, not a variant name: YAML reads an unquoted `True`, \
+             `true` or `TRUE` (and `False`, `false`, `FALSE`) as a boolean before the variant \
+             list sees it, and which of them was written is not kept",
+            if booleans.len() == 1 {
+                "is"
+            } else {
+                "are each"
+            }
+        ),
+    )
+    .with_hint(format!(
+        "quote it: write each variant as the text it is named, such as {quoted}, in the case the \
+         variant is meant to have"
+    ))
+}
+
+impl RawNamedType {
+    /// The refusal of what this type writes that no reading admits — an invariant that does not
+    /// parse (beyond10x/ess#448), a YAML boolean written as a variant (beyond10x/ess#426) — each
+    /// withheld from the declaration rather than the declaration from the specification, so
+    /// nothing declared with the type is refused a second time for it. An invariant's place is held
+    /// ([`RawInvariant::withhold_unparsed`]); a boolean is left out of the variants.
+    pub(crate) fn withhold_unread(&mut self) -> ValidationErrors {
+        let location = declared_at(&self.name);
+        match &mut self.body {
+            RawTypeBody::Newtype { invariants, .. } | RawTypeBody::Struct { invariants, .. } => {
+                RawInvariant::withhold_unparsed(invariants, |index| {
+                    PredicateAt::from(format!("{location}.invariants[{index}]"))
+                })
+            }
+            RawTypeBody::Enum {
+                variants,
+                attributes,
+            } => {
+                // What each variant's attributes leave out or add (ess/23, beyond10x/ess#450),
+                // refused here so the enum stays declared and nothing that names it is refused a
+                // second time; an added value is withheld.
+                let mut errors = ValidationErrors::new();
+                for variant in variants.iter_mut() {
+                    match variant {
+                        RawEnumVariant::Declared(declared) => {
+                            unfilled(
+                                &location,
+                                declared,
+                                &BTreeMap::new(),
+                                attributes,
+                                &mut errors,
+                            );
+                        }
+                        RawEnumVariant::Attributed(declared, values) => {
+                            unfilled(&location, declared, values, attributes, &mut errors);
+                            undeclared(&location, declared, values, attributes, &mut errors);
+                        }
+                        RawEnumVariant::Boolean(_) => {}
+                    }
+                }
+                let booleans: Vec<bool> = variants
+                    .iter()
+                    .filter_map(|variant| match variant {
+                        RawEnumVariant::Boolean(value) => Some(*value),
+                        RawEnumVariant::Declared(_) | RawEnumVariant::Attributed(..) => None,
+                    })
+                    .collect();
+                if !booleans.is_empty() {
+                    variants.retain(|variant| !matches!(variant, RawEnumVariant::Boolean(_)));
+                    errors.push(boolean_variants(&location, &booleans));
+                }
+                errors
+            }
+            RawTypeBody::Union { .. } => ValidationErrors::new(),
         }
     }
 }
@@ -1558,13 +2200,15 @@ impl TryFrom<RawNamedType> for NamedType {
     type Error = ValidationErrors;
 
     fn try_from(raw: RawNamedType) -> Result<Self, Self::Error> {
+        let mut errors = ValidationErrors::new();
+        let body = raw.body.read(&declared_at(&raw.name), &mut errors);
         let declared = Self {
             name: raw.name,
-            body: raw.body.into(),
+            body,
             naming: raw.naming,
             reading: raw.reading,
         };
-        let mut errors = declared.check_shape();
+        errors.extend(declared.check_shape());
         errors.extend(declared.check_invariants());
         errors.into_result(declared)
     }
@@ -1831,6 +2475,7 @@ impl TypeRegistry {
         for declared in self.iter() {
             errors.extend(declared.validate_alphabet(self));
             errors.extend(declared.validate_prefix(self));
+            errors.extend(declared.validate_attributes(self));
             errors.extend(declared.validate_invariants(self));
         }
         errors
@@ -2224,14 +2869,20 @@ mod tests {
 
     #[test]
     fn a_type_invariant_that_is_not_a_predicate_is_refused() {
-        let error = serde_yaml::from_str::<RawNamedType>(
+        // Refused by the type's own pass at the invariant's index, not by the reader, so it does
+        // not end the document (beyond10x/ess#448).
+        let errors = declared(
             "name: billing.invoice.Money\nkind: struct\nfields:\n  - name: amount\n    type: Decimal\ninvariants: [\"))) this is not a predicate\"]\n",
         )
         .expect_err("a value object's invariants are predicates, exactly like an entity's");
+        let error = errors
+            .as_slice()
+            .iter()
+            .find(|error| error.code == ValidationCode::UnparsablePredicate)
+            .unwrap_or_else(|| panic!("an unparsable invariant is refused as one: {errors}"));
+        assert_eq!(error.location, "types.billing.invoice.Money.invariants[0]");
         assert!(
-            error
-                .to_string()
-                .contains("a predicate is either a comparison"),
+            error.message.contains("a predicate is either a comparison"),
             "the refusal says what an invariant is: {error}"
         );
     }

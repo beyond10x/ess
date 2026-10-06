@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-197
 kind: story
-status: draft
+status: implemented
 title: a refused command cannot declare the compensating change the service makes before answering
 tags:
 - feature-request
@@ -11,7 +11,11 @@ refs:
   reference: beyond10x/ess#197
 relations:
 - serves: vision:O2
-revision: 3
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-06T09:45:01Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}}
+- {from: "proposed", to: "active", at: "2026-10-06T09:45:02Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1}}}
+- {from: "active", to: "implemented", at: "2026-10-06T09:45:02Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

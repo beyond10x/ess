@@ -541,8 +541,22 @@ fn mapping_expression(
                 super::accessor::root_identifier(emit, binding, field)
             ),
         ),
-        DeterminedInput::Literal { value, wraps } => {
-            let mut expression = format!("{value:?}");
+        DeterminedInput::Literal {
+            value,
+            wraps,
+            primitive,
+        } => {
+            // A constant is passed as the value it is, never as the text that spells it
+            // (beyond10x/ess#445).
+            let mut expression = match primitive {
+                ess_domain::types::Primitive::Boolean => value.to_owned(),
+                ess_domain::types::Primitive::Integer => format!("int64({value})"),
+                ess_domain::types::Primitive::Decimal => format!(
+                    "{}({value:?})",
+                    emit.primitive_ctor(ess_domain::types::Primitive::Decimal)
+                ),
+                _ => format!("{value:?}"),
+            };
             for wrap in wraps.iter().rev() {
                 expression = format!(
                     "{}({expression})",

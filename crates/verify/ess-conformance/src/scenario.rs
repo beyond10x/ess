@@ -166,6 +166,19 @@ impl ConformanceSuite {
             }
         ))
         .expect("constant suite version");
+        self.raise_for_counted_claims();
+    }
+
+    /// Raises the format to suite/44 when an act claims one event more than once
+    /// (beyond10x/ess#427): `/44` is cumulative over every major below it, so nothing may lower it.
+    fn raise_for_counted_claims(&mut self) {
+        if let Some(floor) = crate::event_multiplicity::ordinary_floor(self) {
+            if self.provenance.suite_version.major() < floor {
+                self.provenance.suite_version =
+                    SuiteFormat::parse(&format!("ess-conformance/{floor}"))
+                        .expect("constant suite version");
+            }
+        }
     }
 
     /// [`select_fresh_format`](Self::select_fresh_format), with the constructs only the model can
@@ -175,6 +188,13 @@ impl ConformanceSuite {
     /// Every caller that assembles a fresh suite from a model calls this one, so that a later
     /// selection over the same suite cannot lower the number again.
     pub fn select_fresh_format_for(&mut self, ir: &ess_compiler::EssIr) {
+        self.select_model_format_for(ir);
+        // Counted event claims (beyond10x/ess#427): `/44` is cumulative over everything below.
+        self.raise_for_counted_claims();
+    }
+
+    /// [`select_fresh_format_for`](Self::select_fresh_format_for) before the counted-claim floor.
+    fn select_model_format_for(&mut self, ir: &ess_compiler::EssIr) {
         self.select_fresh_format();
         // A seeded suite is suite/42 (beyond10x/ess#413), the newest pair, cumulative over every
         // vocabulary below it; nothing here may lower it.
@@ -444,7 +464,7 @@ impl SuiteProvenance {
 /// refuse a suite it understands perfectly.
 pub const SUPPORTED_SUITE_FORMATS: &[u32] = &[
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
-    27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43,
+    27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
 ];
 
 /// The version of the *document shape* a suite is written in — `ess-conformance/1`.
@@ -3280,12 +3300,14 @@ mod tests {
             "ess-conformance/37",
             "ess-conformance/38",
             "ess-conformance/39",
+            "ess-conformance/44",
+            "ess-conformance/45",
         ] {
             let earlier = SuiteFormat::parse(earlier).expect("well formed");
             assert!(earlier.is_supported());
         }
 
-        let later = SuiteFormat::parse("ess-conformance/44").expect("well formed");
+        let later = SuiteFormat::parse("ess-conformance/46").expect("well formed");
         assert!(
             !later.is_supported(),
             "a later format may mean something different by the same words"

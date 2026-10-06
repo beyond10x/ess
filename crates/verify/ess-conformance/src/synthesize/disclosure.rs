@@ -227,6 +227,8 @@ fn retry(
         before_settled: origin.settled.clone(),
         settled,
         refused: Vec::new(),
+        unclaimed: Vec::new(),
+        unobserved: std::collections::BTreeSet::new(),
     };
     super::exercise_run(ir, command, branch, actors, id, refusals, run)
 }

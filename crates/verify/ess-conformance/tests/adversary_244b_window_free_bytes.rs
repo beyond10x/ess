@@ -171,6 +171,28 @@ fn digests(root: &Path) -> Vec<(String, String)> {
 
 const BASE: &str = include_str!("fixtures/adversary-244b-base-digests.tsv");
 
+/// Moves a later release made on purpose, each admitted only at the exact digests it produced, so
+/// any further change to the same model fails the probe again.
+///
+/// 0.54.0 (beyond10x/ess#454, beyond10x/ess#455): an input refusal's scenario also arranges an
+/// unknown identity beside stored-row branches, and the overlap of two input refusals; the
+/// `id-required` and `secret-too-short` scenarios of `arrangement-input-refusal` and the
+/// `blank-note` scenario of `now-stored-rows` gain steps. IR, refusals and mutants are unchanged.
+const INTENDED: &[(&str, &str)] = &[
+    (
+        "crates/verify/ess-conformance/tests/fixtures/arrangement-input-refusal.yaml",
+        "ir=8f73acbe936097824f8e:9715 suite=d10530fe00b5eb7bfc37:32088 refusals=e3b0c44298fc1c149afb:0 mutants=9b0ca26989288b2d82cb:1856",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/arrangement-input-refusal.yaml@ess22",
+        "ir=8f73acbe936097824f8e:9715 suite=d10530fe00b5eb7bfc37:32088 refusals=e3b0c44298fc1c149afb:0 mutants=9b0ca26989288b2d82cb:1856",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/now-stored-rows.yaml",
+        "ir=fad93168fa11c42db418:30720 suite=37ae4b7217b154be6972:109803 refusals=b0abbc30c3882c8c5037:423 mutants=cba7fdbc721a7942835e:2631",
+    ),
+];
+
 #[ignore = "slow probe: `task test-slow-probes`"]
 #[test]
 fn adversary_244b_every_window_free_model_keeps_its_bytes_against_3b1684d1a() {
@@ -183,6 +205,13 @@ fn adversary_244b_every_window_free_model_keeps_its_bytes_against_3b1684d1a() {
         std::fs::write(path, text).unwrap();
         return;
     }
+    for (label, _) in INTENDED {
+        assert!(
+            BASE.lines()
+                .any(|line| line.split('\t').next() == Some(*label)),
+            "intended move {label} names no pinned model"
+        );
+    }
     let mut moved = Vec::new();
     let mut compared = 0usize;
     let mut compiled = 0usize;
@@ -194,6 +223,7 @@ fn adversary_244b_every_window_free_model_keeps_its_bytes_against_3b1684d1a() {
         }
         match here.iter().find(|(name, _)| name == label) {
             Some((_, value)) if value == base => {}
+            Some((_, value)) if INTENDED.contains(&(label, value.as_str())) => {}
             Some((_, value)) => moved.push(format!("{label}\n  base {base}\n  here {value}")),
             None => moved.push(format!("{label}: no longer found")),
         }

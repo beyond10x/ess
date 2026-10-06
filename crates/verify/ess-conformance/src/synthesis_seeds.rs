@@ -93,6 +93,16 @@ pub(crate) fn seed_major(major: u32) -> bool {
     major == ORDINARY || major == COVERAGE
 }
 
+/// Whether a suite labelled `major` may carry seed provenance: the seed-bearing pair, which requires
+/// it, and the counted event-claim pair above it, which is cumulative over it (beyond10x/ess#427).
+pub(crate) fn admitted_in(major: u32) -> bool {
+    seed_major(major) || crate::event_multiplicity::ADMITTED.contains(&major)
+}
+
+/// What refuses seed provenance under any other major.
+pub(crate) const OUTSIDE: &str =
+    "synthesis seeds require suite/42 or /43, or the counted event-claim pair /44 or /45";
+
 fn refuse(path: &str, detail: impl Into<String>) -> AdmissionError {
     AdmissionError::new("InvalidSynthesisSeeds", path, detail)
 }
@@ -161,10 +171,10 @@ fn addressed(steps: &[ScenarioStep], at: usize, instance: &InstanceName) -> Opti
     .then_some(position)
 }
 
-/// Refuse seed provenance outside suite/42 and /43, its absence there, and any record that is not
-/// bound to the suite's own steps. `coverage` is the admitted inventory, where there is one: a
-/// selected coverage suite may name an application whose scenario its selection filter moved
-/// outside, and its retained parent proves that use.
+/// Refuse seed provenance outside suite/42 through /45, its absence in /42 and /43, and any record
+/// that is not bound to the suite's own steps. `coverage` is the admitted inventory, where there
+/// is one: a selected coverage suite may name an application whose scenario its selection filter
+/// moved outside, and its retained parent proves that use.
 pub(crate) fn admit(
     suite: &ConformanceSuite,
     coverage: Option<&Inventory>,
@@ -180,11 +190,11 @@ pub(crate) fn admit(
         }
         return Ok(());
     };
-    if !seed_major(major) {
+    if !admitted_in(major) {
         return Err(AdmissionError::new(
             "UnsupportedVocabulary",
             "/provenance/synthesis_seeds",
-            "synthesis seeds require suite/42 or /43",
+            OUTSIDE,
         ));
     }
     admit_selections(seeds)?;

@@ -25,7 +25,9 @@ one.
    credential, and view consistency, paging and aggregates.
 6. [Components and bindings](specify/bindings-and-components.md) — the layers above the domains
    and bindings between components.
-7. [Conversions and wire names](specify/wire-names.md) — conversions between contexts, wire
+7. [Selections, periodic causes and delivery context](specify/binding-context.md) — what a binding
+   reads besides its event payload, and clock-reading provenance.
+8. [Conversions and wire names](specify/wire-names.md) — conversions between contexts, wire
    spellings and error wire codes.
 
 ## Where each section went
@@ -70,10 +72,10 @@ an older link still finds it.
 - <a id="a-binding-says-what-happens-when-it-fails"></a>[A binding says what happens when it fails](specify/bindings-and-components.md#a-binding-says-what-happens-when-it-fails)
 - <a id="bound-a-retry"></a>[Bound a retry](specify/bindings-and-components.md#bound-a-retry)
 - <a id="read-a-field-inside-an-event-envelope"></a>[Read a field inside an event envelope](specify/bindings-and-components.md#read-a-field-inside-an-event-envelope)
-- <a id="select-ordered-records-in-a-binding"></a>[Select ordered records in a binding](specify/bindings-and-components.md#select-ordered-records-in-a-binding)
-- <a id="declare-a-periodic-host-cause"></a>[Declare a periodic host cause](specify/bindings-and-components.md#declare-a-periodic-host-cause)
-- <a id="read-the-channel-an-event-arrived-on"></a>[Read the channel an event arrived on](specify/bindings-and-components.md#read-the-channel-an-event-arrived-on)
-- <a id="preserve-clock-reading-provenance"></a>[Preserve clock-reading provenance](specify/bindings-and-components.md#preserve-clock-reading-provenance)
+- <a id="select-ordered-records-in-a-binding"></a>[Select ordered records in a binding](specify/binding-context.md#select-ordered-records-in-a-binding)
+- <a id="declare-a-periodic-host-cause"></a>[Declare a periodic host cause](specify/binding-context.md#declare-a-periodic-host-cause)
+- <a id="read-the-channel-an-event-arrived-on"></a>[Read the channel an event arrived on](specify/binding-context.md#read-the-channel-an-event-arrived-on)
+- <a id="preserve-clock-reading-provenance"></a>[Preserve clock-reading provenance](specify/binding-context.md#preserve-clock-reading-provenance)
 - <a id="crossing-contexts-takes-a-declared-conversion"></a>[Crossing contexts takes a declared conversion](specify/wire-names.md#crossing-contexts-takes-a-declared-conversion)
 - <a id="an-enum-variant-can-carry-its-own-wire-spelling"></a>[An enum variant can carry its own wire spelling](specify/wire-names.md#an-enum-variant-can-carry-its-own-wire-spelling)
 - <a id="a-field-can-carry-its-own-wire-name"></a>[A field can carry its own wire name](specify/wire-names.md#a-field-can-carry-its-own-wire-name)

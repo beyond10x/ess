@@ -13,6 +13,8 @@ use std::{
     path::Path,
 };
 
+use ess_domain::system::{FormatHistoryEntry, FORMAT_HISTORY};
+
 /// The published document tree.
 const DOCS: &str = "website/docs";
 
@@ -134,29 +136,12 @@ const SUPPORTED: &[(&str, &str, &str)] = &[
 ///
 /// A version that is supported in this checkout and not yet in any release carries `None`, and is
 /// the one case a document may still call unreleased.
+///
+/// The `ess` family is not here. Its releases are `FORMAT_HISTORY` in
+/// `crates/specify/ess-domain/src/system.rs`, which `ess specify formats` prints and the version
+/// history's `ess/` table is rendered from; [`format_releases`] joins the two, and
+/// [`ess_release_mismatches`] holds the page's "Introduced in" cells to the catalogue.
 const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
-    ("ess", 1, Some("0.1.0")),
-    ("ess", 2, Some("0.20.0")),
-    ("ess", 3, Some("0.23.0")),
-    ("ess", 4, Some("0.23.0")),
-    ("ess", 5, Some("0.27.0")),
-    ("ess", 6, Some("0.28.0")),
-    ("ess", 7, Some("0.29.0")),
-    ("ess", 8, Some("0.34.0")),
-    ("ess", 9, Some("0.34.0")),
-    ("ess", 10, Some("0.34.0")),
-    ("ess", 11, Some("0.34.0")),
-    ("ess", 12, Some("0.34.0")),
-    ("ess", 13, Some("0.35.0")),
-    ("ess", 14, Some("0.36.0")),
-    ("ess", 15, Some("0.37.0")),
-    ("ess", 16, Some("0.38.0")),
-    ("ess", 17, Some("0.39.0")),
-    ("ess", 18, Some("0.41.0")),
-    ("ess", 19, Some("0.46.0")),
-    ("ess", 20, Some("0.49.0")),
-    ("ess", 21, Some("0.53.0")),
-    ("ess", 22, Some("0.53.0")),
     ("ess-diff", 1, Some("0.1.0")),
     ("ess-diff", 2, Some("0.19.0")),
     ("ess-diff", 3, Some("0.23.0")),
@@ -217,6 +202,9 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-conformance", 41, Some("0.53.0")),
     ("ess-conformance", 42, Some("0.53.0")),
     ("ess-conformance", 43, Some("0.53.0")),
+    // Counted event claims (beyond10x/ess#427).
+    ("ess-conformance", 44, Some("0.54.0")),
+    ("ess-conformance", 45, Some("0.54.0")),
     ("ess-composition", 1, Some("0.4.0")),
     ("ess-composition", 2, Some("0.38.0")),
     ("ess-composition", 3, Some("0.40.0")),
@@ -264,9 +252,11 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-mutation-report", 1, Some("0.34.0")),
     ("ess-mutation-report", 2, Some("0.41.0")),
     ("ess-mutation-report", 3, Some("0.42.0")),
+    ("ess-mutation-report", 4, Some("0.53.0")),
     ("ess-mutation-manifest", 1, Some("0.37.0")),
     ("ess-mutation-manifest", 2, Some("0.41.0")),
     ("ess-mutation-manifest", 3, Some("0.42.0")),
+    ("ess-mutation-manifest", 4, Some("0.53.0")),
     ("ess-service-interface", 1, Some("0.1.0")),
     ("infra-spec", 1, Some("0.1.0")),
     ("infra-graph", 1, Some("0.1.0")),
@@ -330,13 +320,72 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-ui-test-report", 1, Some("0.48.0")),
 ];
 
+/// Every tracked format version and its release: the `ess` rows of `FORMAT_HISTORY`, then
+/// [`FORMAT_RELEASES`].
+fn format_releases() -> Vec<(&'static str, u32, Option<&'static str>)> {
+    FORMAT_HISTORY
+        .iter()
+        .map(|entry| ("ess", entry.major, entry.release))
+        .chain(FORMAT_RELEASES.iter().copied())
+        .collect()
+}
+
+/// Every `ess/N` whose "Introduced in" cell on the version history disagrees with `history`.
+///
+/// `cargo xtask format-history --check` already holds the whole table to the catalogue; this lane
+/// reads the release cell itself, so the release claim is checked where every other release claim
+/// is, and a page whose generated block was bypassed still cannot name a release the catalogue
+/// does not.
+fn ess_release_mismatches(page: &str, history: &[FormatHistoryEntry]) -> Vec<String> {
+    let mut mismatches = Vec::new();
+    for entry in history {
+        let prefix = format!("| `ess/{}` |", entry.major);
+        let Some(line) = page.lines().find(|line| line.starts_with(&prefix)) else {
+            mismatches.push(format!("{HISTORY}: no `ess/{}` row", entry.major));
+            continue;
+        };
+        let cell = line.split('|').nth(2).unwrap_or_default().trim();
+        let named = versions_in(cell);
+        let agrees = match entry.release {
+            Some(release) => named == [release],
+            None => named.is_empty(),
+        };
+        if !agrees {
+            let claim = match entry.release {
+                Some(release) => format!("is introduced in {release} by FORMAT_HISTORY"),
+                None => "has no release in FORMAT_HISTORY".to_owned(),
+            };
+            mismatches.push(format!(
+                "{HISTORY}: `ess/{}` {claim}, and the page's \"Introduced in\" cell says `{cell}`",
+                entry.major
+            ));
+        }
+    }
+    mismatches
+}
+
+/// The refusal for a version history whose `ess/` releases disagree with `FORMAT_HISTORY`, if it
+/// does.
+fn ess_release_refusal(root: &Path) -> Result<Option<String>, String> {
+    let history = fs::read_to_string(root.join(HISTORY))
+        .map_err(|error| format!("read {HISTORY}: {error}"))?;
+    let mismatches = ess_release_mismatches(&history, FORMAT_HISTORY);
+    Ok((!mismatches.is_empty()).then(|| {
+        format!(
+            "the version history's `ess/` releases disagree with FORMAT_HISTORY:\n{}",
+            mismatches.join("\n")
+        )
+    }))
+}
+
 /// Checks the published documents against the source and the changelog.
 ///
 /// Every defect class is collected before anything is reported, so one run names everything that
 /// has to be repaired rather than the first thing it met.
 pub fn run(root: &Path) -> Result<String, String> {
     let supported = supported_versions(root)?;
-    let released: BTreeMap<(&str, u32), &str> = FORMAT_RELEASES
+    let tracked_rows = format_releases();
+    let released: BTreeMap<(&str, u32), &str> = tracked_rows
         .iter()
         .filter_map(|&(family, version, release)| release.map(|value| ((family, version), value)))
         .collect();
@@ -346,10 +395,7 @@ pub fn run(root: &Path) -> Result<String, String> {
     let untracked = untracked_in(root)?;
 
     let documents = read_documents(root)?;
-    let tracked: BTreeSet<&str> = FORMAT_RELEASES
-        .iter()
-        .map(|&(family, _, _)| family)
-        .collect();
+    let tracked: BTreeSet<&str> = tracked_rows.iter().map(|&(family, _, _)| family).collect();
     let unnamed = untracked_named(&documents, &tracked);
 
     let mut stale = Vec::new();
@@ -395,6 +441,7 @@ pub fn run(root: &Path) -> Result<String, String> {
             undeclared.join(", ")
         ));
     }
+    refusals.extend(ess_release_refusal(root)?);
     if !untracked.is_empty() {
         refusals.push(format!(
             "format families {HISTORY} gives a release and FORMAT_RELEASES does not track: {}",
@@ -433,7 +480,7 @@ pub fn run(root: &Path) -> Result<String, String> {
     }
 
     let count: usize = supported.values().map(Vec::len).sum();
-    let rows = FORMAT_RELEASES.len();
+    let rows = tracked_rows.len();
     let families = tracked.len();
     Ok(format!(
         "{count} supported format versions, each with a recorded release; {rows} tracked versions \
@@ -489,9 +536,9 @@ fn recorded(
     supported: &BTreeMap<String, Vec<u32>>,
     reference: &[String],
 ) -> (Vec<String>, Vec<String>) {
-    let declared: BTreeSet<(&str, u32)> = FORMAT_RELEASES
-        .iter()
-        .map(|&(family, version, _)| (family, version))
+    let declared: BTreeSet<(&str, u32)> = format_releases()
+        .into_iter()
+        .map(|(family, version, _)| (family, version))
         .collect();
     let mut undeclared = Vec::new();
     let mut undocumented = unreferenced(reference);
@@ -509,15 +556,15 @@ fn recorded(
     (undeclared, undocumented)
 }
 
-/// Every [`FORMAT_RELEASES`] version that no reference page names.
+/// Every tracked version ([`format_releases`]) that no reference page names.
 ///
 /// A tracked family is one a reader may meet, so each version needs a line saying what it is,
 /// whether or not a `SUPPORTED_*` constant lists it.
 fn unreferenced(reference: &[String]) -> Vec<String> {
-    FORMAT_RELEASES
-        .iter()
-        .filter(|&&(family, version, _)| !reference.iter().any(|page| names(page, family, version)))
-        .map(|&(family, version, _)| format!("{family}/{version}"))
+    format_releases()
+        .into_iter()
+        .filter(|&(family, version, _)| !reference.iter().any(|page| names(page, family, version)))
+        .map(|(family, version, _)| format!("{family}/{version}"))
         .collect()
 }
 
@@ -656,9 +703,9 @@ fn formats_on_line<'a>(line: &str, families: &BTreeSet<&'a str>) -> BTreeSet<(&'
 fn untracked_in(root: &Path) -> Result<Vec<String>, String> {
     let history = fs::read_to_string(root.join(HISTORY))
         .map_err(|error| format!("read {HISTORY}: {error}"))?;
-    let tracked: BTreeSet<&str> = FORMAT_RELEASES
-        .iter()
-        .map(|&(family, _, _)| family)
+    let tracked: BTreeSet<&str> = format_releases()
+        .into_iter()
+        .map(|(family, _, _)| family)
         .collect();
     Ok(untracked_families(&history, &tracked))
 }
@@ -947,12 +994,62 @@ mod tests {
     use super::*;
 
     fn released() -> BTreeMap<(&'static str, u32), &'static str> {
-        FORMAT_RELEASES
+        format_releases()
             .iter()
             .filter_map(|&(family, version, release)| {
                 release.map(|value| ((family, version), value))
             })
             .collect()
+    }
+
+    #[test]
+    fn docs_lane_reads_ess_releases_from_the_catalogue() {
+        let rows: Vec<u32> = FORMAT_RELEASES
+            .iter()
+            .filter(|&&(family, _, _)| family == "ess")
+            .map(|&(_, version, _)| version)
+            .collect();
+        assert_eq!(rows, Vec::<u32>::new(), "`ess` rows live in FORMAT_HISTORY");
+        let releases = format_releases();
+        for entry in ess_domain::system::FORMAT_HISTORY {
+            assert!(
+                releases.contains(&("ess", entry.major, entry.release)),
+                "ess/{} is tracked with the catalogue's release",
+                entry.major
+            );
+        }
+    }
+
+    #[test]
+    fn a_catalogue_release_the_page_disagrees_with_is_refused() {
+        let root = crate::workspace_root().expect("workspace root");
+        let page = fs::read_to_string(root.join(HISTORY)).expect("version history");
+        assert_eq!(
+            ess_release_mismatches(&page, ess_domain::system::FORMAT_HISTORY),
+            Vec::<String>::new()
+        );
+        let moved = page.replacen(
+            "| `ess/2` | [0.20.0][r20] |",
+            "| `ess/2` | [0.19.0][r19] |",
+            1,
+        );
+        assert_ne!(moved, page, "the ess/2 row is where this test expects it");
+        assert_eq!(
+            ess_release_mismatches(&moved, ess_domain::system::FORMAT_HISTORY),
+            [format!(
+                "{HISTORY}: `ess/2` is introduced in 0.20.0 by FORMAT_HISTORY, and the page's \
+                 \"Introduced in\" cell says `[0.19.0][r19]`"
+            )]
+        );
+        let missing = page
+            .lines()
+            .filter(|line| !line.starts_with("| `ess/3` |"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(
+            ess_release_mismatches(&missing, ess_domain::system::FORMAT_HISTORY),
+            [format!("{HISTORY}: no `ess/3` row")]
+        );
     }
 
     #[test]
@@ -1044,7 +1141,7 @@ mod tests {
     fn every_family_the_committed_version_history_gives_a_release_is_tracked() {
         let root = crate::workspace_root().expect("workspace root");
         let page = fs::read_to_string(root.join(HISTORY)).expect("version history");
-        let tracked: BTreeSet<&str> = FORMAT_RELEASES
+        let tracked: BTreeSet<&str> = format_releases()
             .iter()
             .map(|&(family, _, _)| family)
             .collect();
@@ -1082,7 +1179,7 @@ mod tests {
     fn every_family_a_published_page_names_is_tracked() {
         let root = crate::workspace_root().expect("workspace root");
         let documents = read_documents(&root).expect("published documents");
-        let tracked: BTreeSet<&str> = FORMAT_RELEASES
+        let tracked: BTreeSet<&str> = format_releases()
             .iter()
             .map(|&(family, _, _)| family)
             .collect();
@@ -1246,14 +1343,14 @@ mod tests {
         for (family, versions) in &supported {
             for version in versions {
                 assert!(
-                    FORMAT_RELEASES
+                    format_releases()
                         .iter()
                         .any(|&(name, number, _)| name == family && number == *version),
                     "{family}/{version} is supported and has no recorded release"
                 );
             }
         }
-        for &(family, version, release) in FORMAT_RELEASES {
+        for &(family, version, release) in &format_releases() {
             if let Some(release) = release {
                 assert_eq!(
                     versions_in(release).len(),

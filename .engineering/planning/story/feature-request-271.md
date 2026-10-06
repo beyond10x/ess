@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-271
 kind: story
-status: active
+status: implemented
 title: when_related over an owns via field is witnessed on both sides
 tags:
 - feature-request
@@ -17,10 +17,11 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/related_guard.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T13:04:16Z", actor: "human:timo", revision: 8}
 - {from: "proposed", to: "active", at: "2026-09-30T13:04:18Z", actor: "human:timo", revision: 9}
+- {from: "active", to: "implemented", at: "2026-10-06T09:43:03Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"test_result":1,"review_outcome":2,"verification":1}}}
 ---
 ## Outcome
 

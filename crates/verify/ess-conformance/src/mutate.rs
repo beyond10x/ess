@@ -48,7 +48,7 @@ use ess_domain::entity::{RawEntitySpec, StateName, Transition};
 use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
 use ess_domain::view::{Direction, RawViewSpec};
-use ess_primitives::predicate::{CompareOp, Predicate};
+use ess_primitives::predicate::{CompareOp, Predicate, WrittenPredicate};
 
 use crate::report::Status;
 use crate::runner::Runner;
@@ -873,6 +873,7 @@ fn guarded_by_input_alone(outcome: &RawOutcome) -> bool {
     outcome
         .when
         .as_ref()
+        .and_then(WrittenPredicate::predicate)
         .is_some_and(|when| *when != Predicate::Always)
         && outcome.when_subject.is_none()
         && outcome.when_related.is_none()
@@ -982,7 +983,11 @@ fn resolved(documents: &[Document]) -> Vec<Document> {
                 continue;
             };
             for outcome in &mut command.outcomes {
-                let Some(when) = outcome.when.as_mut() else {
+                let Some(when) = outcome
+                    .when
+                    .as_mut()
+                    .and_then(WrittenPredicate::predicate_mut)
+                else {
                     continue;
                 };
                 let guard = assembled
@@ -1329,7 +1334,7 @@ fn outcome_sites(documents: &[Document], command: &RawCommandSpec, found: &mut V
         let at = |mutation: fn(String, String) -> Mutation| {
             mutation(command_name.clone(), outcome_name.clone())
         };
-        if let Some(when) = &outcome.when {
+        if let Some(when) = outcome.when.as_ref().and_then(WrittenPredicate::predicate) {
             boundary_sites(&command_name, &outcome_name, when, found);
             if *when != Predicate::Always {
                 found.push(at(|command, outcome| Mutation::GuardNegate {
@@ -1624,7 +1629,12 @@ fn describe_drop_or_swap(documents: &[Document], mutation: &Mutation) -> Option<
             first,
             second,
         } => {
-            let guard = |name: &str| self::outcome(documents, command, name)?.when.as_ref();
+            let guard = |name: &str| {
+                self::outcome(documents, command, name)?
+                    .when
+                    .as_ref()
+                    .and_then(WrittenPredicate::predicate)
+            };
             format!(
                 "`{first}` (`{}`) and `{second}` (`{}`) change places, so `{second}` answers \
                  where both hold",
@@ -1644,7 +1654,10 @@ fn describe_guard(documents: &[Document], mutation: &Mutation) -> Option<String>
             outcome,
             leaf,
         } => {
-            let when = self::outcome(documents, command, outcome)?.when.as_ref()?;
+            let when = self::outcome(documents, command, outcome)?
+                .when
+                .as_ref()
+                .and_then(WrittenPredicate::predicate)?;
             let mut changed = when.clone();
             let before = ordering_leaves(when).get(*leaf)?.to_string();
             let mut after = String::new();
@@ -1659,7 +1672,10 @@ fn describe_guard(documents: &[Document], mutation: &Mutation) -> Option<String>
             outcome,
             leaf,
         } => {
-            let when = self::outcome(documents, command, outcome)?.when.as_ref()?;
+            let when = self::outcome(documents, command, outcome)?
+                .when
+                .as_ref()
+                .and_then(WrittenPredicate::predicate)?;
             let before = ordering_leaves(when).get(*leaf).copied()?;
             format!("`{before}` becomes `{}`", outward(before)?)
         }
@@ -1668,14 +1684,20 @@ fn describe_guard(documents: &[Document], mutation: &Mutation) -> Option<String>
             outcome,
             leaf,
         } => {
-            let when = self::outcome(documents, command, outcome)?.when.as_ref()?;
+            let when = self::outcome(documents, command, outcome)?
+                .when
+                .as_ref()
+                .and_then(WrittenPredicate::predicate)?;
             let before = equality_leaves(when).get(*leaf).copied()?;
             let mut after = before.clone();
             flip_equality(&mut after);
             format!("`{before}` becomes `{after}`")
         }
         Mutation::GuardNegate { command, outcome } => {
-            let when = self::outcome(documents, command, outcome)?.when.as_ref()?;
+            let when = self::outcome(documents, command, outcome)?
+                .when
+                .as_ref()
+                .and_then(WrittenPredicate::predicate)?;
             format!(
                 "`when: {when}` becomes `when: {}`",
                 Predicate::not(when.clone())
@@ -1686,7 +1708,10 @@ fn describe_guard(documents: &[Document], mutation: &Mutation) -> Option<String>
             outcome,
             node,
         } => {
-            let when = self::outcome(documents, command, outcome)?.when.as_ref()?;
+            let when = self::outcome(documents, command, outcome)?
+                .when
+                .as_ref()
+                .and_then(WrittenPredicate::predicate)?;
             let before = connectives(when).get(*node)?.to_string();
             let mut changed = when.clone();
             edit_nth(&mut changed, &is_connective, *node, &swap_connective);
@@ -1877,7 +1902,7 @@ fn apply_guard(mutated: &mut [Document], mutation: &Mutation) -> Result<(), Stri
             leaf,
         } => {
             let when = outcome_mut(mutated, command, outcome)
-                .and_then(|it| it.when.as_mut())
+                .and_then(|it| it.when.as_mut().and_then(WrittenPredicate::predicate_mut))
                 .ok_or_else(absent)?;
             if !edit_nth(when, &is_ordering, *leaf, &swap_strictness) {
                 return Err(absent());
@@ -1889,7 +1914,7 @@ fn apply_guard(mutated: &mut [Document], mutation: &Mutation) -> Result<(), Stri
             leaf,
         } => {
             let when = outcome_mut(mutated, command, outcome)
-                .and_then(|it| it.when.as_mut())
+                .and_then(|it| it.when.as_mut().and_then(WrittenPredicate::predicate_mut))
                 .ok_or_else(absent)?;
             if ordering_leaves(when)
                 .get(*leaf)
@@ -1905,7 +1930,7 @@ fn apply_guard(mutated: &mut [Document], mutation: &Mutation) -> Result<(), Stri
             leaf,
         } => {
             let when = outcome_mut(mutated, command, outcome)
-                .and_then(|it| it.when.as_mut())
+                .and_then(|it| it.when.as_mut().and_then(WrittenPredicate::predicate_mut))
                 .ok_or_else(absent)?;
             if *leaf >= equality_leaves(when).len() {
                 return Err(absent());
@@ -1914,7 +1939,7 @@ fn apply_guard(mutated: &mut [Document], mutation: &Mutation) -> Result<(), Stri
         }
         Mutation::GuardNegate { command, outcome } => {
             let when = outcome_mut(mutated, command, outcome)
-                .and_then(|it| it.when.as_mut())
+                .and_then(|it| it.when.as_mut().and_then(WrittenPredicate::predicate_mut))
                 .ok_or_else(absent)?;
             *when = Predicate::not(std::mem::take(when));
         }
@@ -1924,7 +1949,7 @@ fn apply_guard(mutated: &mut [Document], mutation: &Mutation) -> Result<(), Stri
             node,
         } => {
             let when = outcome_mut(mutated, command, outcome)
-                .and_then(|it| it.when.as_mut())
+                .and_then(|it| it.when.as_mut().and_then(WrittenPredicate::predicate_mut))
                 .ok_or_else(absent)?;
             if !edit_nth(when, &is_connective, *node, &swap_connective) {
                 return Err(absent());

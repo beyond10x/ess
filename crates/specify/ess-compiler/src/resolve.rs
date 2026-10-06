@@ -223,8 +223,14 @@ pub mod codes {
             FamilyDoc {
                 name: SPEC,
                 applies_to: "The specification as a whole: its header, a document that cannot \
-                             be read, a predicate refused while it is read, and anything with no \
-                             better home.",
+                             be read, a predicate that does not parse, and anything with no \
+                             better home. A refusal of a document's structure — a missing \
+                             required key, an unknown key, a value of the wrong shape — stops \
+                             that file at the first one; a predicate that does not parse does \
+                             not, and is reported at its declaration beside the file's other \
+                             refusals. A declaration with an unparsable predicate is withheld \
+                             whole, so its own other refusals appear once the predicate parses; \
+                             the file's other declarations are still checked and reported.",
             },
             FamilyDoc {
                 name: DOMAIN,
@@ -324,6 +330,11 @@ pub mod codes {
         pub const NULL_COMPARISON: u16 = 17;
         /// An invariant reads a required field that a creating branch leaves with no value.
         pub const UNSET_AT_CREATION: u16 = 18;
+        /// A relation the specification relies on and does not declare, reported as a warning.
+        ///
+        /// The one class `ess specify validate` reports as `Severity::Warning` rather than refuses
+        /// (beyond10x/ess#437): the specification is legal and compiles as it did.
+        pub const IMPLIED_RELATION: u16 = 19;
 
         /// Every class, in code order.
         pub const ALL: &[u16] = &[
@@ -345,6 +356,7 @@ pub mod codes {
             ACCESSOR_RESOURCE,
             NULL_COMPARISON,
             UNSET_AT_CREATION,
+            IMPLIED_RELATION,
         ];
 
         /// One catalogue row. Private so every row is written the same way.
@@ -481,6 +493,13 @@ pub mod codes {
                 "Set the field with a `sets:` entry on the creating branch, or declare it \
                  `Optional<…>`.",
             ),
+            doc(
+                IMPLIED_RELATION,
+                "IMPLIED_RELATION",
+                "A relation the specification relies on and does not declare, reported as a warning.",
+                "Declare the `references` relation the warning names, or the target's `owns`; a \
+                 warning leaves the exit status and the compiled model unchanged.",
+            ),
         ];
     }
 
@@ -517,12 +536,18 @@ pub mod codes {
         UNVALIDATED_SPECIFICATION = family::SPEC, class::UNDECLARED;
 
         /// A predicate compares a fact with an unquoted `null` — `note == null`, `note: null` —
-        /// which read as the four-character text before ess#93. Refused while the document is
-        /// read, so it has no construct and is `SPEC`; the message is
-        /// `ess_primitives::error::ParseError::NullComparison`, which names `defined(x)` and
-        /// `not defined(x)` and carries this code as
+        /// which read as the four-character text before ess#93. Reported at the declaration
+        /// that wrote it since beyond10x/ess#448, and still `SPEC`, the family it had while it
+        /// was refused as the document was read, so a list of known codes keeps matching; the
+        /// message is `ess_primitives::error::ParseError::NullComparison`, which names
+        /// `defined(x)` and `not defined(x)` and carries this code as
         /// `ParseError::NULL_COMPARISON_CODE`.
         NULL_COMPARISON = family::SPEC, class::NULL_COMPARISON;
+
+        /// A predicate a declaration writes does not parse: an unknown operator, a malformed
+        /// compact expression. Reported at that declaration, beside the file's other refusals
+        /// (beyond10x/ess#448), and `SPEC` for the reason [`NULL_COMPARISON`] is.
+        UNPARSABLE_PREDICATE = family::SPEC, class::OTHER;
 
         /// A type, or a declared conversion, names a type nothing declares.
         UNDECLARED_TYPE = family::TYPE, class::UNDECLARED;
@@ -628,6 +653,14 @@ pub mod codes {
         /// creating outcome: the usual repair is a `sets:` entry there, the other is declaring the
         /// field `Optional<…>`, and the hint names both.
         CREATION_LEAVES_INVARIANT_FIELD_UNSET = family::COMMAND, class::UNSET_AT_CREATION;
+
+        /// A stored entity field is typed as the named identity of exactly one entity, and no
+        /// `references` or `owns` relation carries it (beyond10x/ess#437). A warning.
+        STORED_FIELD_IMPLIES_RELATION = family::ENTITY, class::IMPLIED_RELATION;
+
+        /// A `when_related:` row is settled by its identity type alone, where a relation on the
+        /// field carrying it could say which entity it names (beyond10x/ess#437). A warning.
+        RELATED_GUARD_IMPLIES_RELATION = family::COMMAND, class::IMPLIED_RELATION;
     }
 
     /// `true` when two families are the same string.
@@ -969,7 +1002,7 @@ pub fn diagnose_locating(
 fn bridge(errors: &ValidationErrors, locator: &Locator<'_>) -> Diagnostics {
     let mut diagnostics = Diagnostics::new();
     for error in errors.as_slice() {
-        let (family, span) = match error.site() {
+        let (mut family, span) = match error.site() {
             Some(site) => (
                 family_of_kind(site.construct.kind()),
                 span_of_site(site, locator),
@@ -979,6 +1012,11 @@ fn bridge(errors: &ValidationErrors, locator: &Locator<'_>) -> Diagnostics {
                 locator.span(error.location.clone(), &needles_for(&error.location)),
             ),
         };
+        // A predicate that does not parse is located at its declaration and keeps the `SPEC`
+        // code it had while it was refused as the document was read (beyond10x/ess#448).
+        if read_family_spec(error.code) {
+            family = codes::family::SPEC;
+        }
         diagnostics.push(Diagnostic {
             code: Code::new(family, class_of(error.code)),
             severity: Severity::Error,
@@ -991,6 +1029,53 @@ fn bridge(errors: &ValidationErrors, locator: &Locator<'_>) -> Diagnostics {
         });
     }
     diagnostics
+}
+
+/// `ess-domain`'s advisories about a specification that compiles, as warnings with codes and
+/// source lines (beyond10x/ess#437).
+///
+/// The warning sibling of [`diagnose_locating`]: the same family, class, span and hint, at
+/// [`Severity::Warning`]. Nothing here feeds [`compile`], so a specification compiles to the same
+/// bytes whether or not anybody asked for its warnings; `ess specify validate` asks.
+///
+/// Today one rule: a relation the model implies and does not declare —
+/// [`ess_domain::entity::implied_relations`] for a stored field, and
+/// [`ess_domain::command::related_guard::implied_relations`] for a `when_related:` row.
+pub fn advise_locating(
+    specification: &Specification,
+    sources: &SourceMap,
+    files: &[impl AsRef<str>],
+) -> Diagnostics {
+    let mut advisories = ess_domain::entity::implied_relations(specification);
+    advisories.extend(ess_domain::command::related_guard::implied_relations(
+        specification,
+    ));
+    let bridged = bridge(&advisories, &Locator::new(sources, files));
+    let mut warnings = Diagnostics::new();
+    // `bridge` keeps one diagnostic per advisory, in order.
+    for (advisory, diagnostic) in advisories.as_slice().iter().zip(bridged.as_slice()) {
+        warnings.push(Diagnostic {
+            severity: Severity::Warning,
+            details: vec![Detail::Note {
+                text: format!(
+                    "`ess-domain` warns of this as `{}`; it is legal and compiles as written",
+                    advisory.code.as_str()
+                ),
+            }],
+            ..diagnostic.clone()
+        });
+    }
+    warnings
+}
+
+/// Whether a refusal keeps the `SPEC` family wherever it is located: a predicate that does not
+/// parse, which until beyond10x/ess#448 was refused while the document was read, before any
+/// construct existed to file it under.
+fn read_family_spec(code: ValidationCode) -> bool {
+    matches!(
+        code,
+        ValidationCode::UnparsablePredicate | ValidationCode::NullComparison
+    )
 }
 
 /// Where a sited refusal points.
@@ -1165,6 +1250,8 @@ pub fn class_of(code: ValidationCode) -> u16 {
         | Refused::UnreachableState
         | Refused::UnknownPhase => codes::class::LIFECYCLE,
         Refused::InvariantReadsUnsetField => codes::class::UNSET_AT_CREATION,
+        Refused::NullComparison => codes::class::NULL_COMPARISON,
+        Refused::ImpliedRelation => codes::class::IMPLIED_RELATION,
         _ => codes::class::OTHER,
     }
 }
@@ -2181,9 +2268,7 @@ impl<'a> Resolver<'a> {
                 condition: condition_of(outcome, subject.as_ref(), related),
                 subject,
                 replays: None,
-                complete_refusal: self.spec.system().format.major() >= 7
-                    && outcome.condition == OutcomeCondition::WrongState
-                    && outcome.error.is_some(),
+                complete_refusal: complete_refusal(self.spec.system().format.major(), outcome),
                 retains_result: outcome.replays.is_some()
                     || command
                         .outcomes
@@ -2254,6 +2339,10 @@ impl<'a> Resolver<'a> {
                     return None;
                 };
                 let effect = match set.effect.transition() {
+                    // From ess/23 a set subject may remove its rows (beyond10x/ess#452).
+                    None if set.effect == ess_domain::command::Effect::Deletes => {
+                        ResolvedEffect::Deletes
+                    }
                     None => ResolvedEffect::Updates,
                     Some(named) => ResolvedEffect::Moves {
                         transition: entities
@@ -2299,11 +2388,33 @@ impl<'a> Resolver<'a> {
                 None => None,
                 Some(named) => Some(entity.lifecycle.transition(named)?.clone()),
             };
+            // One row per element of an input list (ess/23, beyond10x/ess#459): the element reads
+            // in the entity's declaration order, at the field's declared type.
+            let each = affect.each.as_ref().map(|each| crate::ir::ResolvedEach {
+                list: each.list.clone(),
+                binder: each.binder.clone(),
+                member: each.member.clone(),
+                reads: entity
+                    .fields
+                    .iter()
+                    .filter_map(|field| {
+                        each.reads
+                            .get(&field.name)
+                            .map(|member| crate::ir::ResolvedElementRead {
+                                target: field.name.clone(),
+                                member: member.clone(),
+                                target_type: field.type_ref.clone(),
+                            })
+                    })
+                    .collect(),
+            });
             affects.push(crate::ir::ResolvedAffect {
                 entity: handle,
                 filter: affect.filter.clone(),
+                each,
                 sets,
                 moves,
+                deletes: affect.deletes,
             });
         }
         complete.then_some((instances, affects))
@@ -2785,6 +2896,22 @@ impl<'a> Resolver<'a> {
         subject: Option<&ResolvedEntity>,
     ) -> Option<ResolvedPayloadField> {
         let (value, from) = match source {
+            // The held lifecycle state (ess/23, beyond10x/ess#458), which `ess-domain` admitted on
+            // an existing row only and typed as the entity's `State`.
+            PayloadSource::SubjectField { field }
+                if field == ess_domain::entity::EntitySpec::STATE && subject.is_some() =>
+            {
+                let state = subject
+                    .map(ResolvedEntity::state_field)
+                    .expect("guarded above")
+                    .type_ref;
+                (
+                    ResolvedPayloadValue::SubjectState {
+                        type_ref: state.clone(),
+                    },
+                    state,
+                )
+            }
             PayloadSource::SubjectField { field } => {
                 let read = subject.and_then(|entity| {
                     std::iter::once(&entity.identity)
@@ -4385,7 +4512,7 @@ impl<'a> Resolver<'a> {
             let (field, table, is_context) = match source {
                 MappingSource::HostContext { field } => (field, &context, true),
                 MappingSource::HostRead { field } => (field, &read, false),
-                MappingSource::Literal { value } => {
+                MappingSource::Literal { value } | MappingSource::Scalar { value, .. } => {
                     mapping.push(literal_mapping(input, value));
                     continue;
                 }
@@ -4581,7 +4708,9 @@ impl<'a> Resolver<'a> {
                         None => complete = false,
                     }
                 }
-                Some(MappingSource::Literal { value }) => {
+                // A constant compiles to its canonical text however it was written, and every
+                // target reads it against `target_type` (beyond10x/ess#445).
+                Some(MappingSource::Literal { value } | MappingSource::Scalar { value, .. }) => {
                     resolved.push(literal_mapping(input, value));
                 }
                 Some(MappingSource::Selection { selection, path }) => {
@@ -4990,7 +5119,9 @@ impl<'a> Resolver<'a> {
                     format!("{target}: event.{}", segments.join("."))
                 }
                 MappingSource::Selection { .. } => format!("{target}:"),
-                MappingSource::Literal { value } => format!("{target}: {value}"),
+                MappingSource::Literal { value } | MappingSource::Scalar { value, .. } => {
+                    format!("{target}: {value}")
+                }
             });
         }
         needles.push(format!("id: {}", binding.name));
@@ -5129,6 +5260,25 @@ fn names(values: impl IntoIterator<Item = String>) -> String {
         return "nothing".to_owned();
     }
     listed.join(", ")
+}
+
+/// Whether a refusal's scenario observes the complete held subject and no direct event
+/// ([`ResolvedOutcome::complete_refusal`](crate::ir::ResolvedOutcome::complete_refusal)).
+///
+/// From `ess/7` a named wrong-state refusal does. From `ess/23` so does a refusal selected by
+/// `when_subject: {predicate: …}` that names no subject of its own (beyond10x/ess#461): it
+/// changes nothing on the record it reads, so a field it does not guard is checked as well. Below
+/// `ess/23` such a refusal keeps its stored-field observation and its suite's bytes. The test
+/// reads either `when_subject:` shape, but only the predicate form reaches it: validation refuses
+/// a `{field, equals}` branch that names no subject (`a subject-state guard requires an existing
+/// moves or updates subject`), so that shape never selects a refusal.
+fn complete_refusal(major: u32, outcome: &Outcome) -> bool {
+    let named = outcome.error.is_some();
+    let wrong_state = major >= 7 && outcome.condition == OutcomeCondition::WrongState;
+    let stored = major >= ess_domain::system::FormatVersion::V23.major()
+        && outcome.condition.reads_subject_fact()
+        && outcome.subject.is_none();
+    named && (wrong_state || stored)
 }
 
 /// The IR's spelling of an outcome's condition.

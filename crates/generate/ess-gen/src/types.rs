@@ -300,6 +300,11 @@ pub(crate) struct Node {
     /// supplementary-plane character without the `u` flag.
     #[serde(rename = "x-ess-alphabet", skip_serializing_if = "Option::is_none")]
     pub(crate) alphabet: Option<String>,
+    /// An enum's typed variant attributes (ess/23, beyond10x/ess#450): one entry per attribute in
+    /// declaration order, with its type as written and each variant's value keyed by the variant's
+    /// wire spelling. An annotation, read by the types-only outputs for their accessors.
+    #[serde(rename = "x-ess-attributes", skip_serializing_if = "Vec::is_empty")]
+    pub(crate) attributes: Vec<serde_json::Value>,
     /// The authored example of a command input, as JSON Schema's `examples`: what synthesis
     /// builds the input from, and not a constraint a validator applies.
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -750,7 +755,7 @@ pub(crate) fn prefix_pattern(prefix: &str) -> String {
 }
 
 /// The schema for one named type, as it appears in a document's definitions.
-pub(crate) fn body(declared: &ResolvedType) -> Node {
+pub(crate) fn body(ir: &EssIr, declared: &ResolvedType) -> Node {
     let mut node = match &declared.body {
         // Referenced, never inlined, even though a newtype over `String` has the same assertions as
         // a `String`. The reference is what keeps `Email` and `EmailAddress` two types in the
@@ -794,6 +799,7 @@ pub(crate) fn body(declared: &ResolvedType) -> Node {
                 .iter()
                 .map(|variant| variant.wire().to_owned())
                 .collect(),
+            attributes: attributes(ir, variants),
             ..Node::default()
         },
         ResolvedBody::Union { tag, variants } => Node {
@@ -1235,7 +1241,7 @@ pub(crate) fn definitions<'a>(
         .into_iter()
         .map(|handle| {
             let declared = ir.named_type(handle);
-            (declared.name.to_string(), body(declared))
+            (declared.name.to_string(), body(ir, declared))
         })
         .collect()
 }
@@ -1259,6 +1265,93 @@ pub(crate) fn field_leaves(fields: &[ResolvedField]) -> Vec<&TypeHandle> {
     fields
         .iter()
         .flat_map(|declared| declared.type_ref.named_leaves())
+        .collect()
+}
+
+/// What a value of an enum attribute of type `type_ref` is written as in a schema annotation
+/// (ess/23, beyond10x/ess#450): through `Optional` and newtypes, `boolean`, `integer`, `decimal`
+/// — the decimal string a `Decimal` is on the wire — or `string` for text and an enum.
+pub(crate) fn attribute_kind(ir: &EssIr, type_ref: &ess_domain::types::TypeRef) -> &'static str {
+    use ess_domain::types::TypeRef;
+    let mut current = type_ref;
+    for _ in 0..=ess_domain::types::MAX_TYPE_DEPTH {
+        match current {
+            TypeRef::Optional(inner) => current = inner,
+            TypeRef::Primitive(Primitive::Boolean) => return "boolean",
+            TypeRef::Primitive(Primitive::Integer) => return "integer",
+            TypeRef::Primitive(Primitive::Decimal) => return "decimal",
+            TypeRef::Named(name) => match ir.types().get(name).map(|declared| &declared.body) {
+                Some(ResolvedBody::Newtype { of, .. }) => {
+                    let written = of.written();
+                    return attribute_kind(ir, &written);
+                }
+                _ => return "string",
+            },
+            _ => return "string",
+        }
+    }
+    "string"
+}
+
+/// The wire spelling of the variant `value` names, where `type_ref` is an enum through `Optional`
+/// and newtypes; `None` for any other type.
+fn enum_wire(ir: &EssIr, type_ref: &ess_domain::types::TypeRef, value: &str) -> Option<String> {
+    use ess_domain::types::TypeRef;
+    let mut current = type_ref.clone();
+    for _ in 0..=ess_domain::types::MAX_TYPE_DEPTH {
+        current = match current {
+            TypeRef::Optional(inner) => *inner,
+            TypeRef::Named(name) => match &ir.types().get(&name)?.body {
+                ResolvedBody::Newtype { of, .. } => of.written(),
+                ResolvedBody::Enum { variants } => {
+                    return variants
+                        .iter()
+                        .find(|variant| variant.name() == value)
+                        .map(|variant| variant.wire().to_owned());
+                }
+                _ => return None,
+            },
+            _ => return None,
+        };
+    }
+    None
+}
+
+/// The `x-ess-attributes` annotation of an enum's variants: empty where it declares none.
+fn attributes(ir: &EssIr, variants: &[ess_domain::types::EnumVariant]) -> Vec<serde_json::Value> {
+    let Some(first) = variants.first() else {
+        return Vec::new();
+    };
+    first
+        .attributes
+        .iter()
+        .map(|declared| {
+            let kind = attribute_kind(ir, &declared.type_ref);
+            let values: serde_json::Map<String, serde_json::Value> = variants
+                .iter()
+                .filter_map(|variant| {
+                    let value = variant.attribute(&declared.name)?.value.as_ref()?;
+                    let value = match kind {
+                        "boolean" => serde_json::Value::Bool(value == "true"),
+                        "integer" => serde_json::from_str::<serde_json::Number>(value)
+                            .map_or_else(|_| value.clone().into(), serde_json::Value::Number),
+                        // A value of an enum is that variant's wire spelling, as the enum's own
+                        // schema lists it.
+                        _ => serde_json::Value::String(
+                            enum_wire(ir, &declared.type_ref, value)
+                                .unwrap_or_else(|| value.clone()),
+                        ),
+                    };
+                    Some((variant.wire().to_owned(), value))
+                })
+                .collect();
+            serde_json::json!({
+                "name": declared.name,
+                "type": declared.type_ref.to_string(),
+                "kind": kind,
+                "values": values,
+            })
+        })
         .collect()
 }
 

@@ -432,6 +432,27 @@ validation_codes! {
     /// [`Self::UnobservableFact`], where the field does not exist at all: here it exists and
     /// nothing the specification says gives it a value.
     InvariantReadsUnsetField => "invariant_reads_unset_field",
+
+    /// A predicate a declaration writes does not parse: an unknown operator, a malformed compact
+    /// expression, a structure the predicate grammar does not have.
+    ///
+    /// Reported at the declaration that wrote it, beside every other refusal in its file
+    /// (beyond10x/ess#448), and filed under the `SPEC` family it had while a predicate was
+    /// refused as the document was read, so a list of known refusal codes keeps matching.
+    UnparsablePredicate => "unparsable_predicate",
+
+    /// A predicate a declaration writes compares a fact with an unquoted `null`
+    /// ([`ParseError::NullComparison`]), at that declaration. Its code stays
+    /// [`ParseError::NULL_COMPARISON_CODE`].
+    NullComparison => "null_comparison",
+
+    /// A specification relies on a relation it does not declare: a stored field typed as the
+    /// named identity of exactly one entity, or a `when_related:` row settled by that type alone
+    /// (beyond10x/ess#437).
+    ///
+    /// The one code reported as a warning rather than a refusal: the specification is legal and
+    /// compiles as it did, and the repair is to declare the `references` relation it implies.
+    ImpliedRelation => "implied_relation",
 }
 
 impl fmt::Display for ValidationCode {

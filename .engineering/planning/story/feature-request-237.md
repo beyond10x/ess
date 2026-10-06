@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-237
 kind: story
-status: active
+status: implemented
 title: Distinct list members and a count across records
 tags:
 - feature-request
@@ -11,10 +11,11 @@ refs:
   reference: beyond10x/ess#237
 relations:
 - serves: vision:O2
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-04T15:27:22Z", actor: "human:timo", revision: 6}
 - {from: "proposed", to: "active", at: "2026-10-04T15:27:22Z", actor: "human:timo", revision: 7}
+- {from: "active", to: "implemented", at: "2026-10-06T09:42:58Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

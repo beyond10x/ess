@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-03T10:29:28Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-317",
+  "kind": "story",
+  "revision": 10,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "ESS 0.52.0 Release preparation run 37116372637 succeeded at tag 0.52.0 (4d6a4ecafc0f); PR beyond10x/ess#387 names beyond10x/ess#317 among its fixes and its merge commit is first contained in tag 0.52.0. Recorded by the 2026-10-06 store reconciliation.",
+    "reference": "https://github.com/beyond10x/ess/pull/387"
+  }
+}

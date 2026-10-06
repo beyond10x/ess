@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-283
 kind: story
-status: active
+status: implemented
 title: 'A command can guard on only one related row (a second exists: false branch is ESS-COMMAND-004)'
 tags:
 - feature-request
@@ -12,10 +12,11 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-04T13:32:47Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-10-04T13:32:47Z", actor: "human:timo", revision: 6}
+- {from: "active", to: "implemented", at: "2026-10-06T09:43:09Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1,"review_outcome":1,"verification":1}}}
 ---
 ## Outcome
 

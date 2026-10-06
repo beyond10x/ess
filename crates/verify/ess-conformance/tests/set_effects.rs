@@ -833,7 +833,13 @@ views:
             for command in &mut raw.commands {
                 for outcome in &mut command.outcomes {
                     for affect in &mut outcome.affects {
-                        reverse(&mut affect.filter);
+                        reverse(
+                            affect
+                                .filter
+                                .as_mut()
+                                .and_then(|filter| filter.predicate_mut())
+                                .expect("the fixture's filter parses"),
+                        );
                     }
                 }
             }
@@ -957,5 +963,719 @@ fn the_actual_interpreter_executes_the_complete_set_effect_suite() {
     assert!(not_passed(&statuses).is_empty(), "{statuses:#?}");
     for id in [ENDED, NOTED, INVITED] {
         assert_eq!(statuses.get(id), Some(&Status::Passed));
+    }
+}
+
+/// Deleting the selected rows (ess/23, beyond10x/ess#452): `RevokeTokens` deletes every token of a
+/// user and scope, and `DeleteUser` deletes a user and, in an `affects:` entry, every token it owns.
+/// Each removed row is read absent, each other row as arranged; one in-memory target implements
+/// the model, and each mutation breaks it one way.
+mod issue_452 {
+    use super::*;
+
+    const MODEL: &str =
+        include_str!("../../../specify/ess-compiler/tests/fixtures/set-deletes.yaml");
+    const REVOKED: &str = "demo.auth.RevokeTokens/outcome/revoked";
+    const DELETED: &str = "demo.auth.DeleteUser/outcome/deleted";
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum Mutation {
+        None,
+        /// Removes nothing it selects, and reports the count it should have.
+        DeleteNothing,
+        /// Revokes every token of the user, whatever its scope.
+        RevokeIgnoresScope,
+        /// Revokes the first selected token only, and reports the count it should have.
+        RevokeOnlyOne,
+        /// Reports three revoked, whatever it revoked.
+        RevokeReportsThree,
+        /// Deleting a user removes every token, whoever owns it.
+        DeleteEveryToken,
+    }
+
+    struct Token {
+        id: String,
+        user_id: String,
+        scope: String,
+    }
+
+    struct AuthDesk {
+        users: RefCell<Vec<(String, String)>>,
+        tokens: RefCell<Vec<Token>>,
+        next: RefCell<usize>,
+        mutation: Mutation,
+    }
+
+    impl AuthDesk {
+        fn new(mutation: Mutation) -> Self {
+            Self {
+                users: RefCell::default(),
+                tokens: RefCell::default(),
+                next: RefCell::new(4051),
+                mutation,
+            }
+        }
+
+        fn fresh(&self) -> String {
+            let mut next = self.next.borrow_mut();
+            *next += 13;
+            format!("target-generated-{next}")
+        }
+
+        /// Removes the tokens `selected` picks, as the mutation allows, and says how many it
+        /// should have removed.
+        fn remove(&self, selected: impl Fn(&Token) -> bool) -> usize {
+            let mut tokens = self.tokens.borrow_mut();
+            let due = tokens.iter().filter(|token| selected(token)).count();
+            if self.mutation == Mutation::DeleteNothing {
+                return due;
+            }
+            let mut removed = 0;
+            tokens.retain(|token| {
+                let gone =
+                    selected(token) && (self.mutation != Mutation::RevokeOnlyOne || removed == 0);
+                removed += usize::from(gone);
+                !gone
+            });
+            due
+        }
+    }
+
+    impl ConformanceTarget for AuthDesk {
+        fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
+            Ok(ImplementationIdentity::new("set-deletes", "1"))
+        }
+        fn begin_scenario(&self, _: &ScenarioContext) -> Result<(), TargetError> {
+            self.users.borrow_mut().clear();
+            self.tokens.borrow_mut().clear();
+            Ok(())
+        }
+        fn end_scenario(&self, _: &ScenarioContext) -> Result<(), TargetError> {
+            Ok(())
+        }
+        fn execute_command(
+            &self,
+            request: SemanticCommandRequest,
+        ) -> Result<SemanticCommandResult, TargetError> {
+            let input = &request.input;
+            let command = &request.command;
+            Ok(match command.to_string().as_str() {
+                "demo.auth.AddUser" => {
+                    let id = self.fresh();
+                    self.users
+                        .borrow_mut()
+                        .push((id.clone(), text(input, "team")));
+                    took(
+                        command,
+                        "added",
+                        "demo.auth.UserAdded",
+                        vec![("user_id", Node::Text(id))],
+                    )
+                }
+                "demo.auth.IssueToken" => {
+                    let id = self.fresh();
+                    self.tokens.borrow_mut().push(Token {
+                        id: id.clone(),
+                        user_id: text(input, "user_id"),
+                        scope: text(input, "scope"),
+                    });
+                    took(
+                        command,
+                        "issued",
+                        "demo.auth.TokenIssued",
+                        vec![("token_id", Node::Text(id))],
+                    )
+                }
+                "demo.auth.RevokeTokens" => {
+                    let (user_id, scope) = (text(input, "user_id"), text(input, "scope"));
+                    let mut revoked = self.remove(|token| {
+                        token.user_id == user_id
+                            && (self.mutation == Mutation::RevokeIgnoresScope
+                                || token.scope == scope)
+                    });
+                    if self.mutation == Mutation::RevokeReportsThree {
+                        revoked = 3;
+                    }
+                    took(
+                        command,
+                        "revoked",
+                        "demo.auth.TokensRevoked",
+                        vec![
+                            ("user_id", Node::Text(user_id)),
+                            ("revoked", count(revoked)),
+                        ],
+                    )
+                }
+                "demo.auth.DeleteUser" => {
+                    let id = text(input, "user_id");
+                    let mut users = self.users.borrow_mut();
+                    let Some(at) = users.iter().position(|(user, _)| *user == id) else {
+                        let mut result = SemanticCommandResult::took(OutcomeRef::new(
+                            command.clone(),
+                            "no-such-user".parse().unwrap(),
+                        ));
+                        result.error = Some(DeclaredErrorValue::new(
+                            "demo.auth.NoSuchUser".parse().unwrap(),
+                        ));
+                        result.consistency = Some(
+                            ess_primitives::consistency::ConsistencyToken::new("write").unwrap(),
+                        );
+                        return Ok(result);
+                    };
+                    users.remove(at);
+                    drop(users);
+                    self.remove(|token| {
+                        token.user_id == id || self.mutation == Mutation::DeleteEveryToken
+                    });
+                    took(
+                        command,
+                        "deleted",
+                        "demo.auth.UserDeleted",
+                        vec![("user_id", Node::Text(id))],
+                    )
+                }
+                other => panic!("unexpected command {other}"),
+            })
+        }
+        fn query_view(
+            &self,
+            request: SemanticViewRequest,
+        ) -> Result<SemanticViewResult, TargetError> {
+            let rows = match request.view.to_string().as_str() {
+                "demo.auth.Users" => self
+                    .users
+                    .borrow()
+                    .iter()
+                    .map(|(id, team)| {
+                        BTreeMap::from([
+                            ("user_id".into(), Node::Text(id.clone())),
+                            ("team".into(), Node::Text(team.clone())),
+                        ])
+                    })
+                    .collect(),
+                "demo.auth.Tokens" => self
+                    .tokens
+                    .borrow()
+                    .iter()
+                    .map(|token| {
+                        BTreeMap::from([
+                            ("token_id".into(), Node::Text(token.id.clone())),
+                            ("user_id".into(), Node::Text(token.user_id.clone())),
+                            ("scope".into(), Node::Text(token.scope.clone())),
+                        ])
+                    })
+                    .collect(),
+                other => panic!("unexpected view {other}"),
+            };
+            Ok(SemanticViewResult { rows, total: None })
+        }
+        fn configure_external_outcome(&self, _: ExternalOutcomeControl) -> Result<(), TargetError> {
+            Err(TargetError::unsupported("external", "unused"))
+        }
+        fn redeliver_event(&self, _: RedeliveryRequest) -> Result<(), TargetError> {
+            Err(TargetError::unsupported("redelivery", "unused"))
+        }
+        fn observe_events(
+            &self,
+            _: EventObservationRequest,
+        ) -> Result<Vec<ObservedEvent>, TargetError> {
+            Err(TargetError::unsupported("events", "unused"))
+        }
+    }
+
+    fn synthesis() -> ess_conformance::synthesize::Synthesis {
+        let synthesis = synthesis_of(MODEL);
+        assert!(
+            synthesis.refusals.is_empty(),
+            "nothing is refused: {:#?}",
+            synthesis.refusals
+        );
+        synthesis
+    }
+
+    /// How many rows of `view` the scenario reads absent.
+    fn absent(scenario: &ConformanceScenario, view: &str) -> usize {
+        scenario
+            .steps
+            .iter()
+            .filter(|step| {
+                matches!(step, ScenarioStep::ExpectSubjectAbsent { view: read, .. }
+                    if read.to_string() == view)
+            })
+            .count()
+    }
+
+    /// Every `revoked` count the scenario requires, in order.
+    fn counts(scenario: &ConformanceScenario) -> Vec<Option<Node>> {
+        scenario
+            .steps
+            .iter()
+            .filter_map(|step| match step {
+                ScenarioStep::ExpectEvent { event, payload, .. }
+                    if event.to_string() == "demo.auth.TokensRevoked" =>
+                {
+                    Some(payload.get("revoked").cloned())
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn fails(mutation: Mutation, id: &str) {
+        let statuses = run(&synthesis().suite, &AuthDesk::new(mutation));
+        assert_eq!(
+            statuses.get(id),
+            Some(&Status::Failed),
+            "{mutation:?} must fail {id}: {statuses:#?}"
+        );
+    }
+
+    #[test]
+    fn bulk_delete_removes_every_selected_row_and_keeps_the_rest() {
+        let synthesis = synthesis();
+        let revoked = scenario(&synthesis.suite, REVOKED);
+        assert_eq!(
+            absent(revoked, "demo.auth.Tokens"),
+            3,
+            "three selected rows read absent: {:#?}",
+            revoked.steps
+        );
+        assert!(
+            captured(revoked).len() >= 5,
+            "three selected rows and one per conjunct left out: {:#?}",
+            revoked.steps
+        );
+        assert_eq!(
+            counts(revoked).first(),
+            Some(&Some(count_node(3))),
+            "{:#?}",
+            revoked.steps
+        );
+        let statuses = run(&synthesis.suite, &AuthDesk::new(Mutation::None));
+        assert_eq!(
+            statuses.get(REVOKED),
+            Some(&Status::Passed),
+            "{statuses:#?}"
+        );
+        for mutation in [
+            Mutation::DeleteNothing,
+            Mutation::RevokeIgnoresScope,
+            Mutation::RevokeOnlyOne,
+        ] {
+            fails(mutation, REVOKED);
+        }
+    }
+
+    #[test]
+    fn bulk_delete_zero_match_is_accepted_with_count_zero() {
+        let synthesis = synthesis();
+        let revoked = scenario(&synthesis.suite, REVOKED);
+        let sent = revoked
+            .steps
+            .iter()
+            .filter(|step| {
+                matches!(step, ScenarioStep::ExecuteCommand { command, .. }
+                    if command.to_string() == "demo.auth.RevokeTokens")
+            })
+            .count();
+        assert_eq!(
+            sent, 2,
+            "the command, then the zero-match call: {:#?}",
+            revoked.steps
+        );
+        assert_eq!(
+            counts(revoked),
+            [Some(count_node(3)), Some(count_node(0))],
+            "{:#?}",
+            revoked.steps
+        );
+        assert_eq!(
+            absent(revoked, "demo.auth.Tokens"),
+            3,
+            "the zero-match call reads no further row absent: {:#?}",
+            revoked.steps
+        );
+        fails(Mutation::RevokeReportsThree, REVOKED);
+    }
+
+    #[test]
+    fn affects_delete_entry_removes_owned_rows_with_subject() {
+        let synthesis = synthesis();
+        let deleted = scenario(&synthesis.suite, DELETED);
+        assert!(
+            absent(deleted, "demo.auth.Tokens") >= 3,
+            "every owned token reads absent: {:#?}",
+            deleted.steps
+        );
+        assert!(
+            absent(deleted, "demo.auth.Users") >= 1,
+            "the deleted subject reads absent: {:#?}",
+            deleted.steps
+        );
+        let statuses = run(&synthesis.suite, &AuthDesk::new(Mutation::None));
+        assert_eq!(
+            statuses.get(DELETED),
+            Some(&Status::Passed),
+            "{statuses:#?}"
+        );
+        for mutation in [Mutation::DeleteNothing, Mutation::DeleteEveryToken] {
+            fails(mutation, DELETED);
+        }
+    }
+
+    #[test]
+    fn set_delete_targets_refuse_by_name() {
+        // The conformance half: the interpreted model passes both scenarios, and a target that
+        // deletes nothing fails each. Entity Runtime's `SetEffectUnsupported` and the code
+        // targets' `MissingRepresentation` are cases of the same name in their own crates.
+        let ir = ir_of(MODEL);
+        let synthesis = ess_conformance::synthesize::synthesize(&ir);
+        assert!(synthesis.refusals.is_empty(), "{:#?}", synthesis.refusals);
+        let statuses = run(
+            &synthesis.suite,
+            &ess_conformance::interpret::Interpreted::for_model(ir),
+        );
+        assert!(not_passed(&statuses).is_empty(), "{statuses:#?}");
+        for id in [REVOKED, DELETED] {
+            assert_eq!(statuses.get(id), Some(&Status::Passed), "{id}");
+        }
+        let mutant = run(&synthesis.suite, &AuthDesk::new(Mutation::DeleteNothing));
+        for id in [REVOKED, DELETED] {
+            assert_eq!(mutant.get(id), Some(&Status::Failed), "{id}: {mutant:#?}");
+        }
+        assert!(
+            not_passed(&run(&synthesis.suite, &AuthDesk::new(Mutation::None))).is_empty(),
+            "the honest target passes the whole suite"
+        );
+    }
+}
+
+/// One record per element of an input list (ess/23, beyond10x/ess#459): `RunSource` updates its
+/// source and, per element of `applied`, updates the `SeenDocument` the element names if held and
+/// creates it if not. One in-memory target implements the model; each mutation breaks it one way.
+mod issue_459 {
+    use super::*;
+
+    const MODEL: &str = include_str!("../../../specify/ess-compiler/tests/fixtures/set-each.yaml");
+    const RAN: &str = "demo.feed.RunSource/outcome/ran";
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum Mutation {
+        None,
+        /// Creates a row for an element naming no held row, and leaves a held row as it was.
+        CreateOnly,
+        /// Updates a held row, and creates none.
+        UpdateOnly,
+        /// Adds a row for every element, whether or not one is held under its identity.
+        AddsRow,
+    }
+
+    #[derive(Clone)]
+    struct Seen {
+        id: Node,
+        source: Node,
+        hash: Node,
+        revision: Node,
+    }
+
+    struct FeedDesk {
+        sources: RefCell<Vec<(String, String)>>,
+        seen: RefCell<Vec<Seen>>,
+        next: RefCell<usize>,
+        mutation: Mutation,
+    }
+
+    impl FeedDesk {
+        fn new(mutation: Mutation) -> Self {
+            Self {
+                sources: RefCell::default(),
+                seen: RefCell::default(),
+                next: RefCell::new(7001),
+                mutation,
+            }
+        }
+
+        fn refused(command: &CommandRef, outcome: &str, error: &str) -> SemanticCommandResult {
+            let mut result = SemanticCommandResult::took(OutcomeRef::new(
+                command.clone(),
+                outcome.parse().unwrap(),
+            ));
+            result.error = Some(DeclaredErrorValue::new(error.parse().unwrap()));
+            result.consistency =
+                Some(ess_primitives::consistency::ConsistencyToken::new("write").unwrap());
+            result
+        }
+
+        fn run(
+            &self,
+            command: &CommandRef,
+            input: &BTreeMap<String, Node>,
+        ) -> SemanticCommandResult {
+            let applied = match input.get("applied") {
+                Some(Node::Seq(items)) => items.clone(),
+                _ => Vec::new(),
+            };
+            let member = |item: &Node, name: &str| match item {
+                Node::Map(members) => members.get(name).cloned().unwrap_or(Node::Null),
+                _ => Node::Null,
+            };
+            let ids: Vec<Node> = applied
+                .iter()
+                .map(|item| member(item, "document_id"))
+                .collect();
+            if ids
+                .iter()
+                .enumerate()
+                .any(|(at, id)| ids[..at].contains(id))
+            {
+                return Self::refused(command, "duplicated", "demo.feed.DuplicateDocument");
+            }
+            let source = text(input, "source_id");
+            let mut sources = self.sources.borrow_mut();
+            let Some(held) = sources.iter_mut().find(|(id, _)| *id == source) else {
+                return Self::refused(command, "no-such-source", "demo.feed.NoSuchSource");
+            };
+            held.1 = text(input, "label");
+            let mut seen = self.seen.borrow_mut();
+            for item in &applied {
+                let row = Seen {
+                    id: member(item, "document_id"),
+                    source: Node::Text(source.clone()),
+                    hash: member(item, "content_hash"),
+                    revision: member(item, "revision"),
+                };
+                let at = seen.iter().position(|held| held.id == row.id);
+                match (at, self.mutation) {
+                    (_, Mutation::AddsRow) => seen.push(row),
+                    (Some(_), Mutation::CreateOnly) | (None, Mutation::UpdateOnly) => {}
+                    (Some(at), _) => seen[at] = row,
+                    (None, _) => seen.push(row),
+                }
+            }
+            took(
+                command,
+                "ran",
+                "demo.feed.SourceRan",
+                vec![("source_id", Node::Text(source))],
+            )
+        }
+    }
+
+    impl ConformanceTarget for FeedDesk {
+        fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
+            Ok(ImplementationIdentity::new("set-each", "1"))
+        }
+        fn begin_scenario(&self, _: &ScenarioContext) -> Result<(), TargetError> {
+            self.sources.borrow_mut().clear();
+            self.seen.borrow_mut().clear();
+            Ok(())
+        }
+        fn end_scenario(&self, _: &ScenarioContext) -> Result<(), TargetError> {
+            Ok(())
+        }
+        fn execute_command(
+            &self,
+            request: SemanticCommandRequest,
+        ) -> Result<SemanticCommandResult, TargetError> {
+            let command = &request.command;
+            Ok(match command.to_string().as_str() {
+                "demo.feed.AddSource" => {
+                    let mut next = self.next.borrow_mut();
+                    *next += 11;
+                    let id = format!("target-source-{next}");
+                    self.sources
+                        .borrow_mut()
+                        .push((id.clone(), text(&request.input, "label")));
+                    took(
+                        command,
+                        "added",
+                        "demo.feed.SourceAdded",
+                        vec![("source_id", Node::Text(id))],
+                    )
+                }
+                "demo.feed.RunSource" => self.run(command, &request.input),
+                other => panic!("unexpected command {other}"),
+            })
+        }
+        fn query_view(
+            &self,
+            request: SemanticViewRequest,
+        ) -> Result<SemanticViewResult, TargetError> {
+            let rows = match request.view.to_string().as_str() {
+                "demo.feed.Sources" => self
+                    .sources
+                    .borrow()
+                    .iter()
+                    .map(|(id, label)| {
+                        BTreeMap::from([
+                            ("source_id".into(), Node::Text(id.clone())),
+                            ("label".into(), Node::Text(label.clone())),
+                        ])
+                    })
+                    .collect(),
+                "demo.feed.SeenDocuments" => self
+                    .seen
+                    .borrow()
+                    .iter()
+                    .map(|row| {
+                        BTreeMap::from([
+                            ("document_id".into(), row.id.clone()),
+                            ("source_id".into(), row.source.clone()),
+                            ("content_hash".into(), row.hash.clone()),
+                            ("revision".into(), row.revision.clone()),
+                        ])
+                    })
+                    .collect(),
+                other => panic!("unexpected view {other}"),
+            };
+            Ok(SemanticViewResult { rows, total: None })
+        }
+        fn configure_external_outcome(&self, _: ExternalOutcomeControl) -> Result<(), TargetError> {
+            Err(TargetError::unsupported("external", "unused"))
+        }
+        fn redeliver_event(&self, _: RedeliveryRequest) -> Result<(), TargetError> {
+            Err(TargetError::unsupported("redelivery", "unused"))
+        }
+        fn observe_events(
+            &self,
+            _: EventObservationRequest,
+        ) -> Result<Vec<ObservedEvent>, TargetError> {
+            Err(TargetError::unsupported("events", "unused"))
+        }
+    }
+
+    fn synthesis() -> ess_conformance::synthesize::Synthesis {
+        let synthesis = synthesis_of(MODEL);
+        assert!(
+            synthesis.refusals.is_empty(),
+            "nothing is refused: {:#?}",
+            synthesis.refusals
+        );
+        synthesis
+    }
+
+    /// The `RunSource` calls of a scenario, and its one-row snapshots of `SeenDocuments`.
+    fn shape(scenario: &ConformanceScenario) -> (usize, usize) {
+        let sent = scenario
+            .steps
+            .iter()
+            .filter(|step| {
+                matches!(step, ScenarioStep::ExecuteCommand { command, .. }
+                    if command.to_string() == "demo.feed.RunSource")
+            })
+            .count();
+        let snapshots = scenario
+            .steps
+            .iter()
+            .filter(|step| {
+                matches!(step, ScenarioStep::SnapshotSubject { view, .. }
+                    if view.to_string() == "demo.feed.SeenDocuments")
+            })
+            .count();
+        (sent, snapshots)
+    }
+
+    #[test]
+    fn each_entry_scenario_reads_held_new_and_decoy_rows() {
+        let synthesis = synthesis();
+        let ran = scenario(&synthesis.suite, RAN);
+        let (sent, snapshots) = shape(ran);
+        assert!(
+            sent >= 2,
+            "a first call puts the held row and the decoy in place, then the command: {:#?}",
+            ran.steps
+        );
+        assert!(
+            snapshots >= 2,
+            "one row per element's identity: {:#?}",
+            ran.steps
+        );
+        let statuses = run(&synthesis.suite, &FeedDesk::new(Mutation::AddsRow));
+        assert_eq!(
+            statuses.get(RAN),
+            Some(&Status::Failed),
+            "a second row for a held identity fails: {statuses:#?}"
+        );
+    }
+
+    /// The fixture with an enum member of `variants` on the element and the row, which the entry
+    /// reads.
+    fn with_enum(variants: &str) -> String {
+        let model = MODEL
+            .replacen(
+                "  - name: demo.feed.AppliedDocument\n",
+                &format!(
+                    "  - {{name: demo.feed.Kind, kind: enum, variants: [{variants}]}}\n  - name: demo.feed.AppliedDocument\n"
+                ),
+                1,
+            )
+            .replacen(
+                "      - {name: revision, type: Integer}\nentities:",
+                "      - {name: revision, type: Integer}\n      - {name: kind, type: demo.feed.Kind}\nentities:",
+                1,
+            )
+            .replacen(
+                "      - {name: revision, type: Integer}\n    lifecycle: {initial: Seen",
+                "      - {name: revision, type: Integer}\n      - {name: kind, type: demo.feed.Kind}\n    lifecycle: {initial: Seen",
+                1,
+            )
+            .replacen("revision: doc.revision}", "revision: doc.revision, kind: doc.kind}", 1);
+        format!("{model}      - {{name: kind, type: demo.feed.Kind}}\n")
+    }
+
+    /// The held row's two elements sit at adjacent distinctions, so an enum member of an even
+    /// number of variants differs between them as an odd one does, and the interpreter passes the
+    /// scenario that reads it.
+    #[test]
+    fn each_entry_reading_an_even_variant_enum_member_is_witnessed() {
+        for variants in ["Pdf, Html", "Pdf, Html, Text", "Pdf, Html, Text, Csv"] {
+            let model = with_enum(variants);
+            assert!(model.contains("kind: doc.kind"), "{model}");
+            let ir = ir_of(&model);
+            let synthesis = ess_conformance::synthesize::synthesize(&ir);
+            assert!(
+                synthesis.refusals.is_empty(),
+                "[{variants}]: {:#?}",
+                synthesis.refusals
+            );
+            let statuses = run(
+                &synthesis.suite,
+                &ess_conformance::interpret::Interpreted::for_model(ir),
+            );
+            assert_eq!(
+                statuses.get(RAN),
+                Some(&Status::Passed),
+                "[{variants}]: {statuses:#?}"
+            );
+        }
+    }
+
+    #[test]
+    fn each_entry_targets_refuse_by_name() {
+        // The conformance half: the interpreted model passes the scenario, and a create-only and
+        // an update-only target each fail it. Entity Runtime's `SetEffectUnsupported` and the code
+        // targets' `MissingRepresentation` are cases of the same name in their own crates.
+        let ir = ir_of(MODEL);
+        let synthesis = ess_conformance::synthesize::synthesize(&ir);
+        assert!(synthesis.refusals.is_empty(), "{:#?}", synthesis.refusals);
+        let statuses = run(
+            &synthesis.suite,
+            &ess_conformance::interpret::Interpreted::for_model(ir),
+        );
+        assert!(not_passed(&statuses).is_empty(), "{statuses:#?}");
+        assert_eq!(statuses.get(RAN), Some(&Status::Passed));
+        let honest = run(&synthesis.suite, &FeedDesk::new(Mutation::None));
+        assert!(
+            not_passed(&honest).is_empty(),
+            "the honest target passes: {honest:#?}"
+        );
+        for mutation in [Mutation::CreateOnly, Mutation::UpdateOnly] {
+            let mutant = run(&synthesis.suite, &FeedDesk::new(mutation));
+            assert_eq!(
+                mutant.get(RAN),
+                Some(&Status::Failed),
+                "{mutation:?}: {mutant:#?}"
+            );
+        }
     }
 }

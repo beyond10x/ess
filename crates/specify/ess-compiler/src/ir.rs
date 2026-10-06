@@ -886,7 +886,10 @@ pub struct ResolvedOutcome {
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub retains_result: bool,
     /// Compiler-minted source/7 requirement: observe the complete held subject and zero direct
-    /// events for an ordinary named wrong-state refusal. This grants no product effect authority.
+    /// events for an ordinary named wrong-state refusal, and from source/23 for a named refusal
+    /// selected by `when_subject: {predicate: …}` that names no subject of its own
+    /// (beyond10x/ess#461); validation admits no such refusal in the `{field, equals}` shape. This
+    /// grants no product effect authority.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub complete_refusal: bool,
     /// How a generated test reaches this branch.
@@ -977,16 +980,36 @@ pub struct ResolvedOutcome {
     pub affects: Vec<ResolvedAffect>,
 }
 
+impl ResolvedOutcome {
+    /// The `sets:` entry that writes the identity of the row an `updates:` addresses, where the
+    /// branch writes one: the branch re-keys the record (ess/23, beyond10x/ess#429,
+    /// `docs/design/identity-changing-updates.md`). The row read under `instance:` comes to rest
+    /// under the identity this entry writes, every field `sets:` does not name carried over, and
+    /// the old identity names nothing.
+    ///
+    /// Derived rather than carried: the IR of a re-key is the IR the same document compiled to
+    /// before `ess/23` gave it this meaning, so no model's bytes move.
+    pub fn identity_write(&self, ir: &EssIr) -> Option<&ResolvedPayloadField> {
+        let subject = self
+            .subject
+            .as_ref()
+            .filter(|subject| subject.effect == ResolvedEffect::Updates)?;
+        let identity = &ir.entity(&subject.entity).identity.name;
+        self.sets.iter().find(|set| set.target == *identity)
+    }
+}
+
 /// Every stored row of an entity a filter selects, and what a set outcome does to each (ess/16).
 ///
 /// A `moves:` takes the selected rows resting in the transition's `from` states and skips the
-/// others; an `updates:` changes every selected row. The outcome's own
-/// [`sets`](ResolvedOutcome::sets) apply to each changed row.
+/// others; an `updates:` changes every selected row; a `deletes:` (ess/23, beyond10x/ess#452)
+/// removes every selected row. The outcome's own [`sets`](ResolvedOutcome::sets) apply to each
+/// changed row.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ResolvedSetSubject {
     /// The entity whose rows change.
     pub entity: EntityHandle,
-    /// [`ResolvedEffect::Moves`] or [`ResolvedEffect::Updates`].
+    /// [`ResolvedEffect::Moves`], [`ResolvedEffect::Updates`] or [`ResolvedEffect::Deletes`].
     #[serde(flatten)]
     pub effect: ResolvedEffect,
     /// The rows selected: the entity's stored fields, with `input.<field>` operands.
@@ -1000,15 +1023,54 @@ pub struct ResolvedAffect {
     /// The entity whose rows change.
     pub entity: EntityHandle,
     /// The rows selected: the entity's stored fields, `input.<field>` and `subject.<field>` — the
-    /// subject as it was before the outcome.
-    pub filter: Predicate,
-    /// What every selected row comes to hold, in the entity's declaration order.
+    /// subject as it was before the outcome. `None` exactly where [`Self::each`] names the rows
+    /// instead, and then left out of the document.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filter: Option<Predicate>,
+    /// One row per element of an input list (ess/23, beyond10x/ess#459). Left out of the document
+    /// where the entry selects by its filter.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub each: Option<ResolvedEach>,
+    /// What every selected row comes to hold, in the entity's declaration order; beside
+    /// [`Self::each`], every source but the element's members, which [`ResolvedEach::reads`] holds.
     pub sets: Vec<ResolvedPayloadField>,
     /// The move every selected row resting in its `from` states takes; a selected row resting
     /// elsewhere is skipped (ess/22, beyond10x/ess#229). Left out of the document where the entry
     /// only sets fields.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub moves: Option<Transition>,
+    /// Every selected row is removed (ess/23, beyond10x/ess#452). Left out of the document where
+    /// the entry sets fields or moves its rows.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub deletes: bool,
+}
+
+/// An `affects:` entry's `each:` (ess/23, beyond10x/ess#459): for each element of the input list,
+/// in order, the row whose identity [`Self::member`] holds is updated if held and created in the
+/// lifecycle's `initial` state if not, and comes to hold the entry's `sets:` and [`Self::reads`].
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ResolvedEach {
+    /// The input field holding the list.
+    pub list: String,
+    /// The name each element is read under, as written.
+    pub binder: String,
+    /// The member of the element holding the identity of the row it writes.
+    pub member: String,
+    /// The fields written from a member of the element, in the entity's declaration order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reads: Vec<ResolvedElementRead>,
+}
+
+/// One entity field an `each:` entry fills from a member of the element (ess/23,
+/// beyond10x/ess#459).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ResolvedElementRead {
+    /// The entity field written.
+    pub target: String,
+    /// The member of the element read.
+    pub member: String,
+    /// The entity field's declared type.
+    pub target_type: ResolvedTypeRef,
 }
 
 /// Where a determined payload field's value comes from, resolved.
@@ -1059,6 +1121,16 @@ pub enum ResolvedPayloadValue {
         /// The entity field read.
         field: String,
         /// Its resolved type.
+        type_ref: ResolvedTypeRef,
+    },
+    /// The lifecycle state the addressed row held immediately before this outcome (ess/23,
+    /// beyond10x/ess#458): `{subject: state}`, read as `when_subject` and invariants read `state`.
+    ///
+    /// A variant of its own rather than [`Self::SubjectField`] naming `state`, so a reader that
+    /// looks a field up among the entity's declared fields never meets one that is not there. Only
+    /// a model using it carries it, so every other model keeps its bytes.
+    SubjectState {
+        /// The entity's `State` type.
         type_ref: ResolvedTypeRef,
     },
     /// The subject's value of the target field before this outcome, plus `by` (ess/14, `sets:`).
@@ -1532,6 +1604,7 @@ impl ResolvedPayloadValue {
             Self::Generated => "implementation-generated".to_owned(),
             Self::Cleared => "cleared".to_owned(),
             Self::SubjectField { field, .. } => format!("subject.{field} before the outcome"),
+            Self::SubjectState { .. } => "the state the subject held before the outcome".to_owned(),
             Self::RelatedField {
                 via,
                 through,
@@ -1721,6 +1794,54 @@ fn unstated_secrecy(secret: &bool) -> bool {
 }
 
 impl ResolvedCommand {
+    /// The refusal a re-keying `outcome` (see [`ResolvedOutcome::identity_write`]) takes for a new
+    /// identity another row already carries: the sibling refusal guarded by exactly
+    /// `when_related: {entity: <the entity>, where: <identity> == input.<field>, exists: true}`,
+    /// over the input the identity is written from (ess/23, beyond10x/ess#429). `ess-domain`
+    /// refuses a re-key without one, so every re-key that reaches the IR has it.
+    pub fn collision_answer<'a>(
+        &'a self,
+        ir: &EssIr,
+        outcome: &ResolvedOutcome,
+    ) -> Option<&'a ResolvedOutcome> {
+        let write = outcome.identity_write(ir)?;
+        let ResolvedPayloadValue::InputField { field, .. } = &write.value else {
+            return None;
+        };
+        let entity = &outcome.subject.as_ref()?.entity;
+        let identity = &ir.entity(entity).identity.name;
+        let input = format!(
+            "{}.{field}",
+            ess_domain::command::subject_fact::INPUT_NAMESPACE
+        );
+        self.outcomes.iter().find(|candidate| {
+            candidate.error.is_some()
+                && matches!(
+                    &candidate.condition,
+                    ResolvedCondition::RelatedSet {
+                        selection,
+                        test: ResolvedRowSetTest::Exists(true),
+                        input: None,
+                    } if selection.entity == *entity
+                        && matches!(
+                            &selection.filter,
+                            Predicate::Compare {
+                                left,
+                                op: ess_primitives::predicate::CompareOp::Eq,
+                                right,
+                                ..
+                            } if matches!(
+                                (left.fact_path(), right.fact_path()),
+                                (Some(left), Some(right))
+                                    if (left.to_string() == *identity && right.to_string() == input)
+                                        || (right.to_string() == *identity
+                                            && left.to_string() == input)
+                            )
+                        )
+                )
+        })
+    }
+
     /// Resolve the original success using the index minted with this command.
     pub fn replay_origin(&self, replay: &ResolvedReplay) -> &ResolvedOutcome {
         &self.outcomes[replay.index]
@@ -2165,13 +2286,16 @@ pub enum ResolvedMappingValue {
     /// A value written in the binding itself.
     ///
     /// Enum membership is verified through every Optional/newtype wrapper the document writes, and
-    /// String-backed targets admit text. A representation that resolves through itself is refused
-    /// in `ess-domain` rather than admitted, so a literal that reaches this IR was checked. Type
-    /// invariants and the existence of external resources are not verified; `invoice-created`
-    /// being accepted for a String-backed `TemplateId` does not establish that the template
-    /// exists.
+    /// String-backed targets admit text. A `Boolean`, `Integer` or `Decimal` target admits the
+    /// constants `sets:` admits, written quoted or not (`is_bridged: true`, beyond10x/ess#445), and
+    /// `value` is then the canonical text of the value: it is read against the mapping's
+    /// `target_type` ([`EssIr::literal_primitive`]), as `ResolvedPayloadValue::Literal` is, never
+    /// sent as text. A representation that resolves through itself is refused in `ess-domain`
+    /// rather than admitted, so a literal that reaches this IR was checked. Type invariants and the
+    /// existence of external resources are not verified; `invoice-created` being accepted for a
+    /// String-backed `TemplateId` does not establish that the template exists.
     Literal {
-        /// The value, as written.
+        /// The value: as written for text and an enum, canonical for a typed constant.
         value: String,
     },
 }
@@ -2767,6 +2891,30 @@ impl EssIr {
             preconditions: parts.preconditions,
             format: parts.format,
         }
+    }
+
+    /// The primitive a binding constant over `target` is read as, when it is one a literal spells
+    /// as a value rather than as text: `Boolean`, `Integer` or `Decimal`, through `Optional` and
+    /// newtype wrappers (beyond10x/ess#445).
+    ///
+    /// `None` for text, an enum and everything else, whose literal is the text itself. Every target
+    /// that reads a [`ResolvedMappingValue::Literal`] asks this one question, so the interpreter,
+    /// synthesis and the generators cannot disagree about which constants are typed.
+    pub fn literal_primitive(&self, target: &ResolvedTypeRef) -> Option<Primitive> {
+        let mut current = target.required();
+        for _ in 0..=ess_domain::types::MAX_TYPE_DEPTH {
+            match current {
+                ResolvedTypeRef::Primitive {
+                    name: name @ (Primitive::Boolean | Primitive::Integer | Primitive::Decimal),
+                } => return Some(*name),
+                ResolvedTypeRef::Declared { name } => match &self.named_type(name).body {
+                    ResolvedBody::Newtype { of, .. } => current = of.required(),
+                    _ => return None,
+                },
+                _ => return None,
+            }
+        }
+        None
     }
 
     /// The system's name.

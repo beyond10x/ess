@@ -71,14 +71,155 @@ state" is written once:
   error: demo.secrets.NotConfigured
 ```
 
-Of two refusals one input selects, the first declared answers.
-
 The refusal still names no subject: with `updates:` or `preserves:` it is refused as
 `refusal_mutated_state`. The synthesized suite sends the refused input for an identity nothing
 stores, then for a record arranged in each state of the lifecycle, and requires the error, no event
 and the record unchanged each time. Where a state-guarded branch also reads the input, the record in
 its state is sent an input both guards admit. A target that reads the held state or looks the record
 up before it checks the input fails the refusal's scenario.
+
+### Keep a record unchanged in any of several states
+
+The list works on every subject branch, not only on a refusal. A re-sent `ShipOrder` that keeps the
+order as it is while it is `Shipped` or `Delivered` is one branch:
+
+```yaml
+- name: shipped
+  moves: demo.ship.Order.ship
+  instance: order_id
+  emits: [demo.ship.OrderShipped]
+  payload: {demo.ship.OrderShipped: {order_id: input.order_id}}
+- name: already-there              # a re-send changes nothing
+  when_subject_state: [Shipped, Delivered]
+  preserves: demo.ship.Order
+  instance: order_id
+- name: gone
+  when_subject_state: Cancelled
+  error: demo.ship.Gone
+```
+
+The synthesized suite arranges an order in each listed state, sends the command and requires
+`already-there` with the order unchanged, so a target that keeps the order in only one of them
+fails. `when_subject_state: {in: [...]}` is refused; the list is the spelling.
+
+## Which branch answers
+
+One order answers every command, whichever branches it declares
+([the precedence order](https://github.com/beyond10x/ess/blob/main/docs/design/cross-record-and-stored-field-guards.md#the-precedence-order)).
+For a command acting on a record its input names:
+
+1. input refusals answer first: a `when:` with an `error:` and no subject is checked before the
+   record is looked up, and of two that one input selects, the first declared answers;
+2. then existence: an identity no record carries takes the unknown instance answer, an
+   `unknown_instance:` branch or the declared not-found refusal;
+3. then the held state: `when_subject_state:` and `when_subject:` select by it, and `wrong_state`
+   answers where the branch selected moves from a state its move does not start from;
+4. then the accepting and external branches, in declaration order.
+
+A `when_related:` guard adds steps of its own; the design note lists them.
+
+An input refusal that holds only for a live record is guarded by the held state as well. "A blank
+reason code is refused, but only on an active session: an unknown session is not found, and a paused
+one is not active" is `when_subject: {predicate: state == Active}` beside the refusal's `when:`.
+That makes it a held-state branch, answered after existence and, in any other state, after
+`wrong_state`:
+
+```yaml
+format: ess/18
+system: demo
+version: v1
+domain: demo.session
+summary: A session paused with a reason code; the code is checked only on a live session.
+types:
+  - {name: demo.session.SessionId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.session.Session
+    identity: {name: session_id, type: demo.session.SessionId}
+    fields:
+      - {name: code, type: String}
+    lifecycle:
+      initial: Active
+      states: [Active, Paused]
+      terminal: [Paused]
+      transitions:
+        - {name: pause, from: [Active], to: Paused}
+actors:
+  - name: demo.session.Agent
+    may: [demo.session.Start, demo.session.Pause]
+errors:
+  - {name: demo.session.InvalidCode, fields: []}
+  - {name: demo.session.NoSession, fields: []}
+  - {name: demo.session.NotActive, fields: []}
+events:
+  - name: demo.session.Started
+    fields: [{name: session_id, type: demo.session.SessionId}]
+  - name: demo.session.Paused
+    fields: [{name: session_id, type: demo.session.SessionId}]
+commands:
+  - name: demo.session.Start
+    input: []
+    outcomes:
+      - name: started
+        creates: demo.session.Session
+        instance: session_id
+        sets: {code: ""}
+        emits: [demo.session.Started]
+        payload: {demo.session.Started: {session_id: {generated: true}}}
+  - name: demo.session.Pause
+    input:
+      - {name: session_id, type: demo.session.SessionId}
+      - {name: code, type: String}
+    outcomes:
+      - {name: no-session, unknown_instance: true, error: demo.session.NoSession}
+      - name: invalid-code              # checked only on a live session
+        when_subject: {predicate: state == Active}
+        when: code == ""
+        error: demo.session.InvalidCode
+      - name: paused
+        moves: demo.session.Session.pause
+        instance: session_id
+        sets: {code: input.code}
+        emits: [demo.session.Paused]
+        payload: {demo.session.Paused: {session_id: input.session_id}}
+      - {name: not-active, wrong_state: true, error: demo.session.NotActive}
+views:
+  - name: demo.session.Sessions
+    source: demo.session.Session
+    consistency: read_your_writes
+    fields:
+      - {name: session_id, type: demo.session.SessionId}
+      - {name: state, type: demo.session.Session.State}
+      - {name: code, type: String}
+components:
+  - component: sessions
+    owns: {domains: [demo.session]}
+    accepts: {commands: [demo.session.Start, demo.session.Pause]}
+    reached_by: network
+```
+
+The synthesized suite sends the blank code to an identity nothing stores and requires
+`no-session`, to a paused session and requires `not-active`, and to an active one and requires
+`invalid-code`. A target that checks the code before it looks the session up fails the first two.
+`when_subject_state: Active` beside the `when:` would read the same, but it is refused beside
+`wrong_state:` (`ESS-COMMAND-004`); write the predicate form.
+
+### Two input refusals whose guards overlap
+
+Declaration order is the declared precedence. Of two input refusals whose guards both hold,
+the first declared answers:
+
+```yaml
+- {name: invalid-code, when: code == "", error: demo.hold.InvalidCode}
+- {name: pause-refused, when: pause == true, error: demo.hold.PauseRefused}
+```
+
+`{code: "", pause: true}` takes `invalid-code`. Validation does not refuse the overlap: a text or
+number guard needs an overlap analysis it does not have. Write the refusal that should win first,
+or make the guards disjoint with `all:` or `not`, as in `{all: [pause == true, code != ""]}`.
+The synthesized suite witnesses `invalid-code` with
+`{code: "", pause: false}`, outside the later guard, and the overlap is sent once more, on its own,
+requiring `invalid-code`. A target that checks `pause` first fails only that send. Where no input
+separates the two guards, the overlap is the one witness.
 
 ## Guard an outcome by the subject's stored fields
 
@@ -127,6 +268,11 @@ from every state it may be selected in. The refusal names no
 subject of its own and reads the parcel its sibling moves. An `Optional` field may be read; an
 absent value is unknown and selects no branch, so write `not defined(field)` to select on absence.
 
+A domain generated from another format, such as the case record of a protocol's claims, guards its
+outcomes this way too. Its generator quotes every scalar, writes compound guards with structured
+`all`/`any`/`not`, and makes the refusal the default branch, which past 64 joint assignments is
+required: [generated case-record domains](https://github.com/beyond10x/ess/blob/main/docs/design/generated-case-record-domains.md).
+
 Validation partitions closed enum fields jointly with the input, so two branches that split an enum
 need no default. An open comparison such as `weight_kg > 20` needs a genuine default, here
 `dispatched`. Declare an unfiltered view that projects the identity, `state` and every guarded
@@ -136,9 +282,40 @@ and dispatches it. A `read_your_writes` view is read once; where the only such v
 the observation goes in an `eventually` block that waits until the view shows the arranged parcel.
 A refused parcel is asserted unchanged only through a `read_your_writes` view: an `eventual` view
 that has not caught up shows the old row too, so without one that check is left out.
+From `ess/23` a refused record is asserted unchanged in every field, not only in the guarded ones:
+the scenario snapshots the whole record before the command and compares it afterwards, as it does
+for a `wrong_state` refusal. A target that refuses and still writes a field the guard does not
+read fails. Where the `read_your_writes` views do not project every field, the suite compares what
+they project and names the rest in a note. Below `ess/23` only the guarded fields are compared.
 In a state the command does not move from, no branch is selected by the stored fields, and the
 refusal scenario sends the command as it does for a command without `when_subject`. The older
 `when_subject: {field, equals}` form keeps `ess/6`.
+
+A command that refuses a changed stored field and updates the record only while it is `Active`
+cannot write `when_subject_state: Active` on the update beside the `when_subject:` refusal: the
+two strategies stay apart, and the command is refused `ESS-COMMAND-004`, whose hint names this
+form. Read the held state in the predicate instead: `when_subject: {predicate: state != Active}`
+on a refusal declared before the update, which then needs no guard of its own:
+
+```yaml
+- name: seed-change-refused
+  when_subject:
+    predicate: seed_digest != input.seed_digest
+  error: demo.inst.SeedChangeRefused
+- name: not-active
+  when_subject:
+    predicate: state != Active
+  error: demo.inst.InstanceNotActive
+- name: updated
+  updates: demo.inst.Instance
+  instance: name
+  sets: {description: input.description}
+```
+
+Declaration order decides which refusal answers when both hold. From `ess/23` a refusal whose
+predicate reads `state` is witnessed on a record in each state it claims. With the states `Active`,
+`Suspended` and `Removed`, `not-active` is witnessed on a suspended record and on a removed one, so
+a target that updates a suspended record fails.
 
 ## An outcome the input cannot decide says that too
 
@@ -153,6 +330,10 @@ Whether a mail provider accepts an address is not a function of the request. Fro
 
 Writing `when: false` would claim the branch is unreachable — a different statement, and a false
 one. A generator reads `external` and injects a fault instead of trying to construct an input.
+
+## A rule stored as data is evaluated by the system
+
+This section has its own page: [rules stored as data](./stored-rules.md).
 
 ## One outcome for many commands
 

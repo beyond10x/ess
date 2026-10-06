@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-285
 kind: story
-status: active
+status: implemented
 title: '{related:} reads through an Optional reference or across two references'
 tags:
 - feature-request
@@ -12,10 +12,11 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-04T15:13:56Z", actor: "human:timo", revision: 6}
 - {from: "proposed", to: "active", at: "2026-10-04T15:13:56Z", actor: "human:timo", revision: 7}
+- {from: "active", to: "implemented", at: "2026-10-06T09:43:10Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1,"review_outcome":1,"verification":1}}}
 ---
 ## Outcome
 

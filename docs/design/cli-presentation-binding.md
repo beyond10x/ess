@@ -149,6 +149,64 @@ symlinks and hard links to regular files remain admitted. Other platforms retain
 the standard file-open behavior followed by regular-file admission; this version
 does not claim a nonblocking-open guarantee there.
 
+### Trailing arguments
+
+`{kind: trailing}` has no other fields. It binds one field to every argv word after
+the first `--`, verbatim, for a command that hands those words to another program.
+The field must be exactly a required `List<String>` (an unconstrained String newtype
+counts as String); `Optional<List<String>>` is refused, because absent and empty
+would be two spellings of one value. A command has at most one trailing source. It
+reserves no flag and does not read stdin. Positionals keep their consecutive-index
+rule and are filled only before `--`; the trailing list takes the next index after
+them. Words are never JSON-decoded and never parsed as options: `--output json`
+after `--` is a value, and so is a second `--`. With no `--`, or nothing after it,
+the field is `[]`. A word before `--` that no positional takes is a parse failure
+(`cli_parse`, exit 2), as is a word after it that is not UTF-8; neither failure
+names the word. Help renders the list as `[-- <field:args>...]`.
+
+```yaml
+# launch-system.yaml
+format: ess/1
+system: demo
+version: v1
+types:
+  - name: demo.LaunchInput
+    kind: struct
+    fields:
+      - {name: connection, type: String}
+      - {name: args, type: 'List<String>'}
+  - name: demo.Launched
+    kind: struct
+    fields:
+      - {name: status, type: String}
+```
+
+```yaml
+# launch-cli.yaml
+format: ess-cli/1
+binary: demo
+about: Launch an operator-pinned program
+globals: {config: config, state: state-dir, output: output}
+callables:
+  launch:
+    target: {kind: local, owner: demo.cli, action: launch}
+    input: demo.LaunchInput
+    result: demo.Launched
+commands:
+  - path: [launch]
+    callable: launch
+    about: Launch the program with every word after --
+    arguments:
+      - {field: connection, source: {kind: option, long: connection}}
+      - {field: args, source: {kind: trailing}}
+```
+
+`demo launch --connection c -- --flag -x v` hands the handler
+`{"connection":"c","args":["--flag","-x","v"]}`. `ess-cli/1` and `ess-cli-plan/1`
+gained the kind in 0.54.0 without a format change; an older reader refuses it by
+name. Every generated package's `src/wire.rs` and `src/runtime.rs` change with it, so
+`ess generate cli --check` reports drift until the package is regenerated.
+
 ## Runtime contract and process policy
 
 The generator emits a standalone Rust/Clap Cargo package named

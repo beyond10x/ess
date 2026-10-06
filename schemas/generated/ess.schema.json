@@ -204,6 +204,13 @@
         }
       ]
     },
+    "AttributeLiteral": {
+      "type": [
+        "string",
+        "boolean",
+        "number"
+      ]
+    },
     "AuthoredMappingSchema": {
       "anyOf": [
         {
@@ -211,6 +218,17 @@
         },
         {
           "$ref": "#/definitions/SelectionMapping"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "integer",
+          "format": "int64"
+        },
+        {
+          "type": "number",
+          "format": "double"
         }
       ]
     },
@@ -978,12 +996,19 @@
       ]
     },
     "NamedEnumVariant": {
-      "description": "The mapping form, used only to read and write a variant that declares naming.",
+      "description": "The mapping form, used only to read a variant that declares naming or attributes, and to write one that declares naming.",
       "type": "object",
       "required": [
         "name"
       ],
       "properties": {
+        "attributes": {
+          "description": "The variant's value for each attribute its enum declares (`ess/23`, beyond10x/ess#450).",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/AttributeLiteral"
+          }
+        },
         "code": {
           "description": "The identifier a code emitter spells this as, when the one it would derive is taken.\n\nA target that has no dotted type names flattens a qualified name to one identifier, so `billing.invoice.Invoice.State` and an authored `billing.invoice.InvoiceState` both want to be `InvoiceState`. One of them has to move, and this says which — because the author knows which name carries meaning and an emitter does not.\n\nIt is deliberately not a per-target map. A name that differs between Rust and Go is two names to keep in step, and nothing in this model has ever needed one: the collision is a property of flattening, which every such target does the same way.\n\nOnly code emitters read it. Wire names, document schemas and the qualified name itself are untouched, so setting it cannot break a deployed consumer — which is the whole reason it is a separate key rather than a rename.",
           "type": [
@@ -1149,6 +1174,14 @@
             "variants"
           ],
           "properties": {
+            "attributes": {
+              "description": "The typed attributes every variant gives a value (`ess/23`, beyond10x/ess#450), in the `{name, type}` shape of `fields:`.",
+              "default": [],
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/Field"
+              }
+            },
             "kind": {
               "type": "string",
               "enum": [
@@ -1636,16 +1669,44 @@
       "description": "One `affects:` entry as written.",
       "type": "object",
       "required": [
-        "entity",
-        "where"
+        "entity"
       ],
       "properties": {
+        "deletes": {
+          "description": "Every selected row is removed, written `deletes: <Entity>` naming `entity` (ess/23, beyond10x/ess#452).",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/QualifiedName"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "each": {
+          "description": "One row per element of an input list (ess/23, beyond10x/ess#459): the row `instance:` names is updated if held and created in `initial` if not.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RawEach"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "entity": {
           "description": "The entity whose rows change.",
           "allOf": [
             {
               "$ref": "#/definitions/QualifiedName"
             }
+          ]
+        },
+        "instance": {
+          "description": "The row an element names, written `<as>.<member>`; beside `each:` only.",
+          "type": [
+            "string",
+            "null"
           ]
         },
         "moves": {
@@ -1660,17 +1721,20 @@
           ]
         },
         "sets": {
-          "description": "What every selected row comes to hold.",
+          "description": "What every selected row comes to hold. Beside `each:` a source may read the element as `<as>.<member>`.",
           "type": "object",
           "additionalProperties": {
             "$ref": "#/definitions/RawPayloadSource"
           }
         },
         "where": {
-          "description": "The rows selected, over the entity's fields, `input.` and `subject.`.",
-          "allOf": [
+          "description": "The rows selected, over the entity's fields, `input.` and `subject.`. Absent only on an entry that writes one row per element instead (`each:`, ess/23, beyond10x/ess#459).",
+          "anyOf": [
             {
               "$ref": "#/definitions/Predicate"
+            },
+            {
+              "type": "null"
             }
           ]
         }
@@ -2244,6 +2308,25 @@
       "properties": {
         "count": {
           "description": "`changed`: the rows the outcome changed.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "RawEach": {
+      "description": "`each: {in: input.<list>, as: <name>}` as written (ess/23, beyond10x/ess#459).",
+      "type": "object",
+      "required": [
+        "as",
+        "in"
+      ],
+      "properties": {
+        "as": {
+          "description": "The name each element is read under.",
+          "type": "string"
+        },
+        "in": {
+          "description": "The list, `input.<field>`.",
           "type": "string"
         }
       },

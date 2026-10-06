@@ -486,7 +486,9 @@ fn unchosen(
         ResolvedPayloadValue::InputOrGenerated { .. } => "an input with a fallback",
         ResolvedPayloadValue::Generated => "`{generated: true}`",
         ResolvedPayloadValue::Cleared => "`{cleared: true}`",
-        ResolvedPayloadValue::SubjectField { .. } => "a `{subject: …}` source",
+        ResolvedPayloadValue::SubjectField { .. } | ResolvedPayloadValue::SubjectState { .. } => {
+            "a `{subject: …}` source"
+        }
         ResolvedPayloadValue::Increment { .. } => "an `{increment: …}` source",
         ResolvedPayloadValue::Struct { .. } => "a nested mapping",
         ResolvedPayloadValue::ResponseField { .. } => "an external response",
@@ -518,6 +520,33 @@ struct Selector {
     field: String,
     /// The key's position in [`Plan::keys`].
     key: usize,
+    /// How the parameter names the keys it selects.
+    selection: Selection,
+}
+
+/// How a group selector's parameter names the keys it selects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Selection {
+    /// `key == param.name`: one key value.
+    Equal,
+    /// `exists: {in: param.name, as: b, that: key == b}` (beyond10x/ess#438): a list of key
+    /// values, each read sending one. `empty` where a sibling disjunct `param.name.count == 0`
+    /// reads `[]` as every group.
+    Listed { empty: bool },
+}
+
+impl Selector {
+    /// The value a read sends for `key`: the key itself, or a list holding only it. `None` for an
+    /// instance the target generates, which no literal list can hold.
+    fn sent(&self, key: ScenarioValue) -> Option<ScenarioValue> {
+        match (self.selection, key) {
+            (Selection::Equal, key) => Some(key),
+            (Selection::Listed { .. }, ScenarioValue::Literal { value }) => {
+                Some(ScenarioValue::literal(Node::Seq(vec![value])))
+            }
+            (Selection::Listed { .. }, _) => None,
+        }
+    }
 }
 
 /// The most reads one selecting scenario makes: every arranged selection first, then the valid
@@ -538,6 +567,9 @@ struct Row {
     /// The lifecycle state a measure's condition has this row rest in, where the contrast search
     /// chose one (beyond10x/ess#363, [`contrast::arrange`]).
     state: Option<StateName>,
+    /// Whether the row is refuted by a window's bound alone (beyond10x/ess#439): it must hold
+    /// every other conjunct of the filter, so that only the bound decides it ([`window_rows`]).
+    window_edge: bool,
 }
 
 /// Everything the arrangement decided before any command is chosen.
@@ -584,6 +616,8 @@ struct Plan<'ir> {
     /// `Empty` authority ([`observe_exact`]): a view with a group selector, or one nothing scopes.
     /// Every other view keeps the observation it had.
     exact: bool,
+    /// The window the caller resolved into instants that bounds the filter (beyond10x/ess#439).
+    window: Option<Window>,
 }
 
 /// An input of the creating command that a `when_related:` predicate compares with the related
@@ -690,6 +724,7 @@ impl Plan<'_> {
                     ScenarioValue::literal(self.scoped(scope.kind, suffix)),
                 )
             })
+            .chain(self.window.iter().flat_map(Window::params))
             .collect()
     }
 
@@ -713,11 +748,11 @@ impl Plan<'_> {
                     .get(&selector.field)
                     .map(|held| held.value.clone())
             };
-            match value {
-                Some(value) if value != ScenarioValue::literal(Node::Null) => {
-                    bound.insert(selector.param.clone(), value);
-                }
-                _ => {}
+            if let Some(value) = value
+                .filter(|value| *value != ScenarioValue::literal(Node::Null))
+                .and_then(|value| selector.sent(value))
+            {
+                bound.insert(selector.param.clone(), value);
             }
         }
         bound
@@ -734,6 +769,12 @@ impl Plan<'_> {
                         [field] => *field == selector.field,
                         [namespace, name] => {
                             namespace == ViewSpec::PARAM && *name == selector.param
+                        }
+                        [namespace, name, count] => {
+                            namespace == ViewSpec::PARAM
+                                && *name == selector.param
+                                && count == COUNT
+                                && selector.selection == Selection::Listed { empty: true }
                         }
                         _ => false,
                     })
@@ -900,6 +941,374 @@ fn scoping_equality(predicate: &Predicate) -> Option<(String, String)> {
         (Some(name), None) => Some((field(right)?, name)),
         _ => None,
     }
+}
+
+/// The segment a list's element count is read under: `param.queues.count`.
+const COUNT: &str = "count";
+
+/// One bound of a window the caller resolved into instants (beyond10x/ess#439): a top-level
+/// ordering of a `Timestamp` field against a `Timestamp` parameter, `started_at >= param.from`.
+#[derive(Debug, Clone)]
+struct Bound {
+    param: String,
+    field: String,
+    /// Whether rows at or after the parameter pass (`>=`, `>`), rather than at or before it.
+    lower: bool,
+    /// Whether a row at the parameter's instant passes (`>=`, `<=`).
+    inclusive: bool,
+    /// The position of the conjunct it is, among the filter's top-level conjuncts.
+    conjunct: usize,
+}
+
+/// The instants a window's lower and upper parameters are sent at: two hours apart, so a row an
+/// hour inside either bound is inside both.
+const WINDOW_FROM: &str = "2020-01-01T10:00:00Z";
+const WINDOW_TO: &str = "2020-01-01T12:00:00Z";
+
+/// `field <op> param.name` with `<op>` an ordering, either way round, as a [`Bound`].
+fn ordering_bound(predicate: &Predicate) -> Option<Bound> {
+    let Predicate::Compare {
+        left: Operand::Fact(left),
+        op,
+        right: Operand::Fact(right),
+        ..
+    } = predicate
+    else {
+        return None;
+    };
+    let param = |path: &FactPath| match path.segments() {
+        [namespace, name] if namespace == ViewSpec::PARAM => Some(name.clone()),
+        _ => None,
+    };
+    let field = |path: &FactPath| match path.segments() {
+        [name] => Some(name.clone()),
+        _ => None,
+    };
+    // Written as `field <op> param`.
+    let (field, param, op) = match (param(left), param(right)) {
+        (None, Some(name)) => (field(left)?, name, *op),
+        (Some(name), None) => (
+            field(right)?,
+            name,
+            match op {
+                CompareOp::Lt => CompareOp::Gt,
+                CompareOp::Le => CompareOp::Ge,
+                CompareOp::Gt => CompareOp::Lt,
+                CompareOp::Ge => CompareOp::Le,
+                other => *other,
+            },
+        ),
+        _ => return None,
+    };
+    let (lower, inclusive) = match op {
+        CompareOp::Ge => (true, true),
+        CompareOp::Gt => (true, false),
+        CompareOp::Le => (false, true),
+        CompareOp::Lt => (false, false),
+        CompareOp::Eq | CompareOp::Ne => return None,
+    };
+    Some(Bound {
+        param,
+        field,
+        lower,
+        inclusive,
+        conjunct: 0,
+    })
+}
+
+/// The instants a window's rows are arranged at, and the value each bound parameter is sent: inside
+/// each edge, outside each edge, and one row inside whose spelling sorts outside
+/// ([`window_rows`]).
+struct Window {
+    field: String,
+    /// The parameter sent at [`WINDOW_FROM`] and whether a row at it passes.
+    lower: Option<(String, bool)>,
+    /// The parameter sent at [`WINDOW_TO`] and whether a row at it passes.
+    upper: Option<(String, bool)>,
+    /// The view with every bound conjunct taken out of its filter: what a row outside the window
+    /// must still hold, so that the bound alone refutes it. `None` where the bounds are the whole
+    /// filter.
+    residual: Option<ResolvedView>,
+}
+
+impl Window {
+    /// One window from its bounds; `Err` names why they make none: two fields, or two bounds on
+    /// one side.
+    fn of(bounds: &[Bound]) -> Result<Option<Self>, String> {
+        let Some(first) = bounds.first() else {
+            return Ok(None);
+        };
+        let mut window = Self {
+            field: first.field.clone(),
+            lower: None,
+            upper: None,
+            residual: None,
+        };
+        for bound in bounds {
+            if bound.field != window.field {
+                return Err(format!(
+                    "the parameters `{}` and `{}` bound two fields, `{}` and `{}`; one window is \
+                     arranged per view",
+                    first.param, bound.param, first.field, bound.field
+                ));
+            }
+            let side = if bound.lower {
+                &mut window.lower
+            } else {
+                &mut window.upper
+            };
+            if let Some((other, _)) = side {
+                return Err(format!(
+                    "the parameters `{other}` and `{}` both bound `{}` from the same side",
+                    bound.param, bound.field
+                ));
+            }
+            *side = Some((bound.param.clone(), bound.inclusive));
+        }
+        Ok(Some(window))
+    }
+
+    /// The window with [`Self::residual`] taken from `view`: its filter without the bounds' own
+    /// conjuncts.
+    fn beside(self, view: &ResolvedView, bounds: &[Bound]) -> Self {
+        let rest: Vec<Predicate> = conjuncts(view.filter.as_ref())
+            .into_iter()
+            .enumerate()
+            .filter(|(at, _)| !bounds.iter().any(|bound| bound.conjunct == *at))
+            .map(|(_, conjunct)| conjunct.clone())
+            .collect();
+        let residual = (!rest.is_empty()).then(|| ResolvedView {
+            filter: Some(Predicate::All(rest)),
+            ..view.clone()
+        });
+        Self { residual, ..self }
+    }
+
+    fn at(text: &str) -> ess_primitives::time::Rfc3339Instant {
+        ess_primitives::time::Rfc3339Instant::parse_rfc3339(text)
+            .unwrap_or_else(|| unreachable!("`{text}` is an instant"))
+    }
+
+    fn moved(text: &str, seconds: i64) -> String {
+        Self::at(text)
+            .plus_seconds(seconds)
+            .unwrap_or_else(|| unreachable!("`{text}` moves a second"))
+            .to_rfc3339()
+    }
+
+    /// Whether `text` passes the window, read as an instant — or, with `as_text`, as its spelling.
+    fn passes(&self, text: &str, as_text: bool) -> bool {
+        let lower = self.lower.as_ref().is_none_or(|(_, inclusive)| {
+            if as_text {
+                text > WINDOW_FROM || (*inclusive && text == WINDOW_FROM)
+            } else {
+                Self::at(text) > Self::at(WINDOW_FROM)
+                    || (*inclusive && Self::at(text) == Self::at(WINDOW_FROM))
+            }
+        });
+        let upper = self.upper.as_ref().is_none_or(|(_, inclusive)| {
+            if as_text {
+                text < WINDOW_TO || (*inclusive && text == WINDOW_TO)
+            } else {
+                Self::at(text) < Self::at(WINDOW_TO)
+                    || (*inclusive && Self::at(text) == Self::at(WINDOW_TO))
+            }
+        });
+        lower && upper
+    }
+
+    /// The instants inside the window, each edge's first: at a bound that passes, a second inside
+    /// one that does not; then an hour inside, spelled at an offset under which its text sorts
+    /// outside, so a target comparing spellings counts it out.
+    fn inside(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        if let Some((_, inclusive)) = &self.lower {
+            out.push(if *inclusive {
+                WINDOW_FROM.to_owned()
+            } else {
+                Self::moved(WINDOW_FROM, 1)
+            });
+        }
+        if let Some((_, inclusive)) = &self.upper {
+            out.push(if *inclusive {
+                WINDOW_TO.to_owned()
+            } else {
+                Self::moved(WINDOW_TO, -1)
+            });
+        }
+        let middle = if self.lower.is_some() {
+            Self::at(WINDOW_FROM).plus_seconds(3_600)
+        } else {
+            Self::at(WINDOW_TO).plus_seconds(-3_600)
+        }
+        .unwrap_or_else(|| unreachable!("an hour from a fixed instant"));
+        let spelled = [-3, 3, -5, 5, -1, 1]
+            .into_iter()
+            .filter_map(|hours: i32| middle.to_rfc3339_at(hours * 60))
+            .find(|text| !self.passes(text, true))
+            .unwrap_or_else(|| middle.to_rfc3339());
+        out.push(spelled);
+        out
+    }
+
+    /// The instants outside the window: at a bound that does not pass, a second outside one that
+    /// does.
+    fn outside(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        if let Some((_, inclusive)) = &self.lower {
+            out.push(if *inclusive {
+                Self::moved(WINDOW_FROM, -1)
+            } else {
+                WINDOW_FROM.to_owned()
+            });
+        }
+        if let Some((_, inclusive)) = &self.upper {
+            out.push(if *inclusive {
+                Self::moved(WINDOW_TO, 1)
+            } else {
+                WINDOW_TO.to_owned()
+            });
+        }
+        out
+    }
+
+    /// The value each bound parameter is sent.
+    fn params(&self) -> impl Iterator<Item = (String, ScenarioValue)> + '_ {
+        let lower = self
+            .lower
+            .iter()
+            .map(|(param, _)| (param.clone(), WINDOW_FROM));
+        let upper = self
+            .upper
+            .iter()
+            .map(|(param, _)| (param.clone(), WINDOW_TO));
+        lower
+            .chain(upper)
+            .map(|(param, at)| (param, ScenarioValue::literal(Node::Text(at.to_owned()))))
+    }
+}
+
+/// Every row's instant in the window's field (beyond10x/ess#439). Admitted rows are inside, the
+/// first of group A at each inside edge and one spelled to sort outside. Group A gains one row per
+/// outside edge, `y1`, `y2`, … ([`Row::window_edge`]): each holds every other conjunct of the filter
+/// and is refuted by the bound alone, so a target that ignores a bound or moves an edge counts it.
+/// The pattern's other refuted rows keep their role: where the filter has conjuncts beside the
+/// window they are refuted by those, inside it; where the window is the whole filter they are
+/// outside it.
+fn window_rows(window: &Window, rows: &mut Vec<Row>) {
+    let inside = window.inside();
+    let outside = window.outside();
+    let mut admitted = 0;
+    let mut refuted = 0;
+    for row in rows.iter_mut() {
+        let at = if row.admitted || window.residual.is_some() {
+            admitted += 1;
+            &inside[(admitted - 1) % inside.len()]
+        } else {
+            refuted += 1;
+            &outside[(refuted - 1) % outside.len()]
+        };
+        row.values
+            .insert(window.field.clone(), Node::Text(at.clone()));
+    }
+    let Some(template) = rows.iter().find(|row| row.tuple == 0).cloned() else {
+        return;
+    };
+    for (n, at) in outside.iter().enumerate() {
+        let mut edge = template.clone();
+        edge.label = format!("y{}", n + 1);
+        edge.admitted = false;
+        edge.window_edge = true;
+        edge.state = None;
+        edge.values
+            .insert(window.field.clone(), Node::Text(at.clone()));
+        rows.push(edge);
+    }
+}
+
+/// `exists: {in: param.name, as: b, that: field == b}`, either way round, as `(field, name)`
+/// (beyond10x/ess#438): membership of a group key in a list parameter.
+fn listed_membership(predicate: &Predicate) -> Option<(String, String)> {
+    let Predicate::Exists(quantified) = predicate else {
+        return None;
+    };
+    let [namespace, name] = quantified.over.segments() else {
+        return None;
+    };
+    if namespace != ViewSpec::PARAM {
+        return None;
+    }
+    let Predicate::Compare {
+        left: Operand::Fact(left),
+        op: CompareOp::Eq,
+        right: Operand::Fact(right),
+        ..
+    } = &quantified.body
+    else {
+        return None;
+    };
+    let binder = |path: &FactPath| matches!(path.segments(), [bound] if *bound == quantified.bind);
+    let field = |path: &FactPath| match path.segments() {
+        [field] if *field != quantified.bind => Some(field.clone()),
+        _ => None,
+    };
+    let field = if binder(right) {
+        field(left)?
+    } else if binder(left) {
+        field(right)?
+    } else {
+        return None;
+    };
+    Some((field, name.clone()))
+}
+
+/// `param.name.count == 0`, either way round: the list `name` is empty.
+fn empty_list(predicate: &Predicate, name: &str) -> bool {
+    let Predicate::Compare {
+        left,
+        op: CompareOp::Eq,
+        right,
+        ..
+    } = predicate
+    else {
+        return false;
+    };
+    let counted = |operand: &Operand| {
+        matches!(operand, Operand::Fact(path)
+            if matches!(path.segments(), [namespace, held, count]
+                if namespace == ViewSpec::PARAM && held == name && count == COUNT))
+    };
+    let zero = |operand: &Operand| matches!(operand, Operand::Literal(FactValue::Number(number)) if number.as_i64() == Some(0));
+    (counted(left) && zero(right)) || (zero(left) && counted(right))
+}
+
+/// A top-level conjunct selecting group keys through a list parameter, as `(field, name, empty)`:
+/// [`listed_membership`] alone, or beside `param.name.count == 0` in a two-way `any:`, which reads
+/// `[]` as every group (beyond10x/ess#438).
+fn list_selection(predicate: &Predicate) -> Option<(String, String, bool)> {
+    if let Some((field, name)) = listed_membership(predicate) {
+        return Some((field, name, false));
+    }
+    let Predicate::Any(children) = predicate else {
+        return None;
+    };
+    let [first, second] = children.as_slice() else {
+        return None;
+    };
+    [(first, second), (second, first)]
+        .into_iter()
+        .find_map(|(membership, empty)| {
+            let (field, name) = listed_membership(membership)?;
+            empty_list(empty, &name).then_some((field, name, true))
+        })
+}
+
+/// Whether `predicate` reads the parameter `name` or anything under it.
+fn reads_param(predicate: &Predicate, name: &str) -> bool {
+    predicate.fact_paths().into_iter().any(|path| {
+        matches!(path.segments(), [namespace, held, ..]
+            if namespace == ViewSpec::PARAM && held == name)
+    })
 }
 
 /// `m`: the smallest group size at least `max(3, inputs + 2)` with a prime factor other than 2
@@ -1101,7 +1510,39 @@ fn scenario(
     // suite's `Empty` authority, over a group key it then selects (beyond10x/ess#361).
     let mut scopes = Vec::new();
     let mut selectors: Vec<Selector> = Vec::new();
+    let mut bounds: Vec<Bound> = Vec::new();
     for param in &view.params {
+        // One bound of a window the caller resolved (beyond10x/ess#439): one top-level ordering of
+        // a required `Timestamp` field the creating command sets from its input, against a
+        // required `Timestamp` parameter read nowhere else, under the `Empty` authority.
+        let top = conjuncts(view.filter.as_ref());
+        let bounding = top.iter().enumerate().find_map(|(at, conjunct)| {
+            ordering_bound(conjunct)
+                .filter(|bound| bound.param == param.name)
+                .map(|bound| (at, bound))
+        });
+        if let Some((at, bound)) = bounding {
+            let elsewhere = top
+                .iter()
+                .enumerate()
+                .any(|(other, conjunct)| other != at && reads_param(conjunct, &param.name));
+            let instant = |found: Option<(bool, Leaf)>| {
+                found == Some((false, Leaf::Primitive(Primitive::Timestamp)))
+            };
+            if isolated
+                && !elsewhere
+                && instant(Some(leaf(ir, &param.type_ref)))
+                && instant(field_type(&bound.field))
+                && mapped.contains_key(bound.field.as_str())
+                && !aggregation.group_by.contains(&bound.field)
+            {
+                bounds.push(Bound {
+                    conjunct: at,
+                    ..bound
+                });
+                continue;
+            }
+        }
         let read = FactPath::from_segments([ViewSpec::PARAM, param.name.as_str()]);
         let reads = view.filter.as_ref().map_or(0, |filter| {
             filter
@@ -1110,7 +1551,41 @@ fn scenario(
                 .filter(|path| **path == read)
                 .count()
         });
-        let scoping = conjuncts(view.filter.as_ref())
+        // A list of group keys (beyond10x/ess#438): one top-level membership conjunct, the
+        // parameter read nowhere else, a declared `List`, a group key, and the `Empty` authority.
+        let listing = top.iter().enumerate().find_map(|(at, conjunct)| {
+            list_selection(conjunct)
+                .filter(|(_, name, _)| *name == param.name)
+                .map(|found| (at, found))
+        });
+        if let Some((at, (field, _, empty))) = listing {
+            let elsewhere = top
+                .iter()
+                .enumerate()
+                .any(|(other, conjunct)| other != at && reads_param(conjunct, &param.name));
+            let listed = matches!(param.type_ref, ResolvedTypeRef::List { .. });
+            if isolated && listed && !elsewhere {
+                if let Some(key) = aggregation.group_by.iter().position(|key| *key == field) {
+                    if let Some(other) = selectors.iter().find(|selector| selector.field == field) {
+                        return Err(unwitnessed(
+                            view,
+                            format!(
+                                "the parameters `{}` and `{}` both select the group key `{field}`",
+                                other.param, param.name
+                            ),
+                        ));
+                    }
+                    selectors.push(Selector {
+                        param: param.name.clone(),
+                        field,
+                        key,
+                        selection: Selection::Listed { empty },
+                    });
+                    continue;
+                }
+            }
+        }
+        let scoping = top
             .into_iter()
             .filter_map(scoping_equality)
             .find(|(_, name)| *name == param.name);
@@ -1151,6 +1626,7 @@ fn scenario(
                     param: param.name.clone(),
                     field,
                     key,
+                    selection: Selection::Equal,
                 });
             }
             _ => {
@@ -1229,6 +1705,7 @@ fn scenario(
     // amount those rows alone decide (`docs/design/aggregate-views.md`, "Scoping").
     let delta = aggregation.is_ungrouped()
         && scopes.is_empty()
+        && bounds.is_empty()
         && aggregation
             .functions
             .values()
@@ -1240,7 +1717,10 @@ fn scenario(
     // had, the change of an ungrouped `count` or `sum` included.
     let unscoped =
         !keys.iter().any(|(_, key)| matches!(key, Key::Scoped(_))) && scopes.is_empty() && !delta;
-    let exact = isolated && (!selectors.is_empty() || unscoped);
+    let window = Window::of(&bounds)
+        .map_err(|reason| unwitnessed(view, reason))?
+        .map(|window| window.beside(view, &bounds));
+    let exact = isolated && (!selectors.is_empty() || window.is_some() || unscoped);
     if unscoped && !exact {
         return Err(RefusalCause::AggregateUnscoped {
             view: ViewRef::new(view.name.clone()),
@@ -1448,6 +1928,25 @@ fn scenario(
             ));
         }
     }
+    // A window's field is arranged at instants, never walked: one an aggregate also reads is not
+    // arranged here.
+    if let Some(window) = window.as_ref().filter(|window| {
+        aggregation.functions.values().any(|aggregate| {
+            aggregate
+                .input
+                .as_ref()
+                .is_some_and(|input| input.name == window.field)
+        })
+    }) {
+        return Err(unwitnessed(
+            view,
+            format!(
+                "`{}` is bounded by a window and read by an aggregate, which the instants a window \
+                 is arranged at do not witness",
+                window.field
+            ),
+        ));
+    }
     let mut plan = Plan {
         ir,
         view,
@@ -1469,12 +1968,16 @@ fn scenario(
         delta,
         selectors,
         exact,
+        window,
     };
     assign_tuples(&mut plan, &mapped);
     if let Some(reason) = inadmissible(&plan) {
         return Err(unwitnessed(view, reason));
     }
     let mut rows = rows(&plan, &inputs, m);
+    if let Some(window) = &plan.window {
+        window_rows(window, &mut rows);
+    }
     // A measure that reads only the rows its condition admits (beyond10x/ess#363) needs a group
     // holding rows on both sides of it, arranged so that its value decides the condition. Rows
     // something outside the arrangement changes could move between its sides unseen.
@@ -1686,6 +2189,7 @@ fn rows(plan: &Plan<'_>, inputs: &[(String, Ladder)], m: usize) -> Vec<Row> {
             values,
             label,
             state: None,
+            window_edge: false,
         }
     };
     let skips = |i: usize| plan.skipping.contains(&inputs[i].0);
@@ -2066,7 +2570,7 @@ fn arrange_and_observe(
             Ok(done) => done,
             // A refuted row of a parameter-scoped filter that no state refutes is moved out of the
             // scope the query binds.
-            Err(_) if !attempt.admitted && !plan.scopes.is_empty() => {
+            Err(_) if !attempt.admitted && !attempt.window_edge && !plan.scopes.is_empty() => {
                 for scope in &plan.scopes {
                     attempt
                         .values
@@ -2076,7 +2580,9 @@ fn arrange_and_observe(
             }
             // A filter that reads nothing but group selectors holds of every row under its own
             // key: the selection is refuted by the distinct groups, and no state is forced.
-            Err(_) if !attempt.admitted && plan.selectors_only() => continue,
+            Err(_) if !attempt.admitted && !attempt.window_edge && plan.selectors_only() => {
+                continue
+            }
             Err(error) => return Err(error),
         };
         if let (Some(key), Some(owner)) = (
@@ -2373,6 +2879,17 @@ fn drive_row(
         if shows(ir, plan.view, &reached.state, &reached.settled, &selecting) != Ok(row.admitted) {
             continue;
         }
+        // A window's edge row holds every other conjunct, so the bound alone refutes it.
+        if let Some(residual) = plan
+            .window
+            .as_ref()
+            .and_then(|window| window.residual.as_ref())
+            .filter(|_| row.window_edge)
+        {
+            if shows(ir, residual, &reached.state, &reached.settled, &selecting) != Ok(true) {
+                continue;
+            }
+        }
         if best
             .as_ref()
             .is_none_or(|held| reached.steps.len() < held.steps.len())
@@ -2381,11 +2898,20 @@ fn drive_row(
         }
     }
     let reached = best.ok_or_else(|| {
-        plan.unwitnessed(format!(
-            "no reachable state leaves row `{}` {} by the filter",
-            row.label,
-            if row.admitted { "admitted" } else { "refuted" }
-        ))
+        if row.window_edge {
+            plan.unwitnessed(format!(
+                "no reachable state holds every conjunct of the filter but the window's bounds \
+                 for row `{}`, so no row is refuted by a bound alone and the window is not \
+                 witnessed",
+                row.label
+            ))
+        } else {
+            plan.unwitnessed(format!(
+                "no reachable state leaves row `{}` {} by the filter",
+                row.label,
+                if row.admitted { "admitted" } else { "refuted" }
+            ))
+        }
     })?;
     kept_as_planned(plan, row, start, &reached)?;
     Ok(Created { reached, ..created })
@@ -3465,7 +3991,7 @@ fn observe_exact(
     // nothing for every one of them (beyond10x/ess#363).
     let mut decided = BTreeSet::new();
     let mut nothing = false;
-    for read_with in selections(plan, arranged, groups, params) {
+    for read_with in selections(plan, arranged, groups, params)? {
         let mut expectations = Vec::new();
         let mut answered = 0;
         for (tuple, members) in groups {
@@ -3539,15 +4065,17 @@ fn observe_exact(
 /// parameters alone where nothing selects a group; otherwise every distinct selection the arranged
 /// groups hold, in group order, then each selector moved to a valid value no arranged group holds,
 /// then, with several selectors, the first combination of arranged values no group holds — at most
-/// [`MAX_READS`]. A selection that needs an absent key is no selection: no equality asks for it.
+/// [`MAX_READS`], counting the list reads: a list parameter sends each of those values as a list of
+/// one, then every arranged key in one list, then `[]` where its disjunct reads that as every group.
+/// A selection that needs an absent key is no selection: no equality asks for it.
 fn selections(
     plan: &Plan<'_>,
     arranged: &[Arranged],
     groups: &[Group],
     params: &BTreeMap<String, ScenarioValue>,
-) -> Vec<BTreeMap<String, ScenarioValue>> {
+) -> Result<Vec<BTreeMap<String, ScenarioValue>>, RefusalCause> {
     if plan.selectors.is_empty() {
-        return vec![params.clone()];
+        return Ok(vec![params.clone()]);
     }
     let absent = ScenarioValue::literal(Node::Null);
     let held = |selector: &Selector, (tuple, members): &Group| {
@@ -3610,17 +4138,72 @@ fn selections(
             break;
         }
     }
-    vectors.truncate(MAX_READS);
-    vectors
-        .into_iter()
-        .map(|vector| {
+    let lists = list_reads(plan, &arranged_vectors);
+    vectors.truncate(MAX_READS.saturating_sub(lists.len()));
+    let bind =
+        |bound: &mut BTreeMap<String, ScenarioValue>, selector: &Selector, value: ScenarioValue| {
+            let sent = selector.sent(value).ok_or_else(|| {
+                plan.unwitnessed(format!(
+                    "the list parameter `{}` would list identities the target generates, which no \
+                 literal list sent with a read can hold",
+                    selector.param
+                ))
+            })?;
+            bound.insert(selector.param.clone(), sent);
+            Ok::<_, RefusalCause>(())
+        };
+    let mut reads = Vec::new();
+    for vector in vectors {
+        let mut bound = params.clone();
+        for (selector, value) in plan.selectors.iter().zip(vector) {
+            bind(&mut bound, selector, value)?;
+        }
+        reads.push(bound);
+    }
+    if let Some(first) = arranged_vectors.first() {
+        for (position, list) in lists {
             let mut bound = params.clone();
-            for (selector, value) in plan.selectors.iter().zip(vector) {
-                bound.insert(selector.param.clone(), value);
+            for (at, (selector, value)) in plan.selectors.iter().zip(first).enumerate() {
+                if at != position {
+                    bind(&mut bound, selector, value.clone())?;
+                }
             }
-            bound
-        })
-        .collect()
+            bound.insert(plan.selectors[position].param.clone(), list);
+            reads.push(bound);
+        }
+    }
+    Ok(reads)
+}
+
+/// The further reads of each list selector, by its position among the selectors (beyond10x/ess#438).
+/// A list parameter is sent one arranged key at a time ([`selections`]); then every arranged key at
+/// once, in reverse group order, so a target reading the first element alone answers fewer groups;
+/// then, where a `param.name.count == 0` disjunct reads it as every group, `[]`.
+fn list_reads(
+    plan: &Plan<'_>,
+    arranged_vectors: &[Vec<ScenarioValue>],
+) -> Vec<(usize, ScenarioValue)> {
+    let mut lists = Vec::new();
+    for (position, selector) in plan.selectors.iter().enumerate() {
+        let Selection::Listed { empty } = selector.selection else {
+            continue;
+        };
+        let mut every: Vec<Node> = Vec::new();
+        for vector in arranged_vectors.iter().rev() {
+            if let ScenarioValue::Literal { value } = &vector[position] {
+                if !every.contains(value) {
+                    every.push(value.clone());
+                }
+            }
+        }
+        if every.len() > 1 {
+            lists.push((position, ScenarioValue::literal(Node::Seq(every))));
+        }
+        if empty {
+            lists.push((position, ScenarioValue::literal(Node::Seq(Vec::new()))));
+        }
+    }
+    lists
 }
 
 /// A value of `selector`'s key that is valid for its type and unequal to every value in `held`,
@@ -3666,8 +4249,12 @@ fn unheld(plan: &Plan<'_>, selector: &Selector, held: &[ScenarioValue]) -> Optio
         .iter()
         .find(|param| param.name == selector.param)?;
     candidates.into_iter().find(|candidate| {
+        let sent = match selector.selection {
+            Selection::Equal => candidate.clone(),
+            Selection::Listed { .. } => Node::Seq(vec![candidate.clone()]),
+        };
         !held.contains(&ScenarioValue::literal(candidate.clone()))
-            && crate::input::validate_typed_value(plan.ir, &declared.type_ref, candidate).is_ok()
+            && crate::input::validate_typed_value(plan.ir, &declared.type_ref, &sent).is_ok()
     })
 }
 

@@ -361,11 +361,33 @@ pub(super) fn parent(
     }
     bail!("output path names its anchor")
 }
+/// The snapshot of one output under the output root `root`, or a refusal naming that output,
+/// relative to the root, and the `ess` release that refused it: the message is often all a
+/// reporter can quote.
 pub(super) fn image(
     root: &File,
     relative: &Path,
     mount: &Mount,
 ) -> Result<(Image, Option<Vec<u8>>)> {
+    image_within(root, Path::new(""), relative, mount)
+}
+/// [`image`] of `name` in `directory`, which is `within` relative to the output root (such as
+/// `.ess-output`): the refusal still names the file relative to the output root.
+pub(super) fn image_within(
+    directory: &File,
+    within: &Path,
+    name: &Path,
+    mount: &Mount,
+) -> Result<(Image, Option<Vec<u8>>)> {
+    snapshot(directory, name, mount).with_context(|| {
+        format!(
+            "ess {} refused output {}",
+            env!("CARGO_PKG_VERSION"),
+            within.join(name).display()
+        )
+    })
+}
+fn snapshot(root: &File, relative: &Path, mount: &Mount) -> Result<(Image, Option<Vec<u8>>)> {
     let Some((parent, name)) = parent(root, relative, mount)? else {
         return Ok((Image::Absent, None));
     };
@@ -378,7 +400,12 @@ pub(super) fn image(
     state::mode(mode)?;
     match FileType::from_raw_mode(stat.st_mode) {
         FileType::Directory => {
-            let fd = open_directory(&parent, &name, mount)?;
+            // Not `open_directory`: its refusal repeats the name the caller's context gives.
+            let fd = File::from(
+                fs::openat(&parent, &name, DIRECTORY, Mode::empty())
+                    .context("output path has an incompatible file type or symlink")?,
+            );
+            mount.check(&fd)?;
             ordinary_metadata(&fd, false)?;
             Ok((Image::Directory { mode }, None))
         }
@@ -419,10 +446,8 @@ pub(super) fn image(
                 Some(bytes),
             ))
         }
-        _ => bail!(
-            "output path has an incompatible file type or symlink: {}",
-            relative.display()
-        ),
+        // The path is in the context `image_within` adds; naming it here too printed it twice.
+        _ => bail!("output path has an incompatible file type or symlink"),
     }
 }
 fn ordinary_metadata(fd: &impl AsFd, file: bool) -> Result<()> {
@@ -452,11 +477,15 @@ fn ordinary_metadata(fd: &impl AsFd, file: bool) -> Result<()> {
     Ok(())
 }
 
-/// Access labels imposed by mandatory access-control platforms. Capabilities, ACLs, execution
-/// labels and overlay control attributes affect behavior outside the ownership ledger and remain
-/// foreign. Accept exact names only; an entire namespace is not evidence of platform ownership.
+/// Access labels imposed by mandatory access-control platforms, and the provenance label macOS
+/// attaches to files some processes write (beyond10x/ess#433: its native case on both macOS lanes
+/// refused regeneration without it). Capabilities, ACLs, execution labels such as
+/// `com.apple.quarantine` and overlay control attributes affect behavior outside the ownership
+/// ledger and remain foreign. Accept exact names only; an entire namespace is not evidence of
+/// platform ownership.
 fn platform_xattr(name: &[u8]) -> bool {
-    cfg!(target_os = "linux") && matches!(name, b"security.selinux" | b"security.SMACK64")
+    (cfg!(target_os = "linux") && matches!(name, b"security.selinux" | b"security.SMACK64"))
+        || (cfg!(target_os = "macos") && name == b"com.apple.provenance")
 }
 
 /// The extended-attribute names on `fd` that the platform did not impose — anything a person or
@@ -541,8 +570,11 @@ pub(super) fn sync(fd: &impl AsFd, observer: &mut Observer<'_>, label: &str) -> 
     observer(&format!("after:sync:{label}"))?;
     Ok(())
 }
+/// Create `name` in `parent`, which is `within` relative to the output root, and read it back.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn write_new(
     parent: &File,
+    within: &Path,
     name: &OsStr,
     bytes: &[u8],
     mode: u32,
@@ -573,7 +605,7 @@ pub(super) fn write_new(
     observer(&format!("after:mode:{label}"))?;
     sync(&file, observer, label)?;
     let id = identity(&file)?;
-    let (actual, _) = image(parent, Path::new(name), mount)?;
+    let (actual, _) = image_within(parent, within, Path::new(name), mount)?;
     ensure!(
         actual
             == Image::File {
@@ -760,6 +792,41 @@ mod xattr_tests {
             assert!(
                 !platform_xattr(name),
                 "{} was attached by somebody other than the platform and must be refused",
+                String::from_utf8_lossy(name)
+            );
+        }
+    }
+
+    /// Admission stays by exact name: a Darwin label an OS imposes would be added beside the Linux
+    /// ones, never a `com.apple.*` namespace, and the labels that change execution stay foreign.
+    #[test]
+    fn platform_label_admission_stays_exact() {
+        for name in [&b"security.selinux"[..], b"security.SMACK64"] {
+            assert_eq!(
+                platform_xattr(name),
+                cfg!(target_os = "linux"),
+                "{} is admitted on Linux only",
+                String::from_utf8_lossy(name)
+            );
+        }
+        assert_eq!(
+            platform_xattr(b"com.apple.provenance"),
+            cfg!(target_os = "macos"),
+            "com.apple.provenance is admitted on macOS only"
+        );
+        for name in [
+            &b"user.ess_test"[..],
+            b"security.capability",
+            b"system.posix_acl_access",
+            b"system.posix_acl_default",
+            b"com.apple.quarantine",
+            b"com.apple.",
+            b"com.apple.provenance.extra",
+            b"com.apple.ResourceFork",
+        ] {
+            assert!(
+                !platform_xattr(name),
+                "{} must stay refused",
                 String::from_utf8_lossy(name)
             );
         }

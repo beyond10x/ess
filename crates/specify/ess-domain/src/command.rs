@@ -205,6 +205,7 @@ pub(crate) mod absent_input;
 pub mod caller_value;
 pub mod finite;
 pub mod fixture_inputs;
+pub mod identity_write;
 pub mod input_path;
 mod narrowing;
 mod one_time_response;
@@ -248,7 +249,7 @@ use ess_primitives::error::{
 };
 use ess_primitives::facts::FactValue;
 use ess_primitives::node::Node;
-use ess_primitives::predicate::Predicate;
+use ess_primitives::predicate::{Predicate, WrittenPredicate};
 
 use crate::name::{Naming, QualifiedName};
 use crate::refs::Refs;
@@ -1907,7 +1908,7 @@ impl PayloadSource {
 }
 
 /// `serde_json`'s shortest round-trip spelling of a finite binary64.
-fn decimal_text(value: f64) -> Option<String> {
+pub(crate) fn decimal_text(value: f64) -> Option<String> {
     serde_json::Number::from_f64(value).map(|number| number.to_string())
 }
 
@@ -3290,11 +3291,14 @@ impl CommandSpec {
                 .iter()
                 .any(|outcome| outcome.condition.reads_held_state())
         {
-            errors.push(ValidationError::at(
-                self.site().key("outcomes"),
-                ValidationCode::ConflictingDeclaration,
-                "subject fact and lifecycle guards cannot be combined in one command",
-            ));
+            errors.push(
+                ValidationError::at(
+                    self.site().key("outcomes"),
+                    ValidationCode::ConflictingDeclaration,
+                    "subject fact and lifecycle guards cannot be combined in one command",
+                )
+                .with_hint(subject_fact::LIFECYCLE_MIX_HINT),
+            );
             return errors;
         }
         // A subject-state command needs the complete entity declarations. Its joint coverage
@@ -3327,16 +3331,21 @@ impl CommandSpec {
         let finite = if unconditional.is_empty() {
             self.finite_coverage(types)
         } else {
-            None
+            Err(None)
         };
 
         match (unconditional.len(), finite) {
-            (0, Some(finite)) => errors.extend(finite),
-            (0, None) => errors.push(
+            (0, Ok(finite)) => errors.extend(finite),
+            // Why the finite proof declined, where it was asked (beyond10x/ess#426).
+            (0, Err(declined)) => errors.push(
                 ValidationError::at(
                     self.site().key("outcomes"),
                     ValidationCode::NonExhaustiveBranches,
-                    format!("every outcome of `{}` is conditional, so there is input the specification says nothing about", self.name),
+                    format!(
+                        "every outcome of `{}` is conditional, so there is input the specification says nothing about{}",
+                        self.name,
+                        declined.map(|declined| format!("; coverage is not proved: {declined}")).unwrap_or_default()
+                    ),
                 ).with_hint("drop the `when` from the branch that catches everything else — usually the rejection"),
             ),
             (1, _) => {}
@@ -3353,8 +3362,12 @@ impl CommandSpec {
         errors
     }
 
-    /// None means this command still needs a default; Some contains the finite proof's diagnostics.
-    fn finite_coverage(&self, types: Option<&TypeRegistry>) -> Option<ValidationErrors> {
+    /// The finite proof's diagnostics, or an error meaning this command still needs a default:
+    /// why the proof declined, or `None` where there is no registry to prove against.
+    fn finite_coverage(
+        &self,
+        types: Option<&TypeRegistry>,
+    ) -> Result<ValidationErrors, Option<finite::Decline>> {
         let guarded: Vec<_> = self
             .outcomes
             .iter()
@@ -3367,14 +3380,14 @@ impl CommandSpec {
             })
             .collect();
         let guards: Vec<_> = guarded.iter().map(|(_, predicate)| *predicate).collect();
-        let finite = types.and_then(|types| {
-            finite::analyze(
+        let finite = types.map(|types| {
+            finite::input_coverage(
                 &crate::expression::DomainEnvironment::new(types, &self.input),
                 &guards,
             )
         });
         let deferred = types.is_none()
-            && finite::paths(&guards).is_some_and(|paths| {
+            && (finite::paths(&guards).is_some_and(|paths| {
                 paths.iter().all(|path| {
                     self.input.iter().any(|field| {
                         field.name == path.namespace()
@@ -3385,13 +3398,21 @@ impl CommandSpec {
                             )
                     })
                 })
-            });
+            })
+                // A guard that may read an enum attribute (ess/23) is lowered to membership only
+                // once the types are known, so its coverage is decided then.
+                || crate::expression::attributes::may_read(&guards, &self.input));
 
         if deferred {
-            return Some(ValidationErrors::new());
+            return Ok(ValidationErrors::new());
         }
+        let cases = match finite {
+            Some(Ok(cases)) => cases,
+            Some(Err(declined)) => return Err(Some(declined)),
+            None => return Err(None),
+        };
         let mut errors = ValidationErrors::new();
-        for case in finite?.into_iter().filter(|case| case.selected.len() != 1) {
+        for case in cases.into_iter().filter(|case| case.selected.len() != 1) {
             let assignment = case
                 .values
                 .iter()
@@ -3421,7 +3442,7 @@ impl CommandSpec {
                 message,
             ));
         }
-        Some(errors)
+        Ok(errors)
     }
 
     fn validate_reachable_and_wrong_state(&self, decidable_from_input: usize) -> ValidationErrors {
@@ -4336,7 +4357,10 @@ struct LiteralRefusal {
 /// `Timestamp` or a `Uuid` admitted in this function and not in the reader that sends it is exactly
 /// how the two come apart. `Decimal` joined in beyond10x/ess#135, with its reader in
 /// `ess-primitives` so that both sides call one function.
-fn primitive_literal(primitive: Primitive, value: &str) -> Result<(), Option<&'static str>> {
+pub(crate) fn primitive_literal(
+    primitive: Primitive,
+    value: &str,
+) -> Result<(), Option<&'static str>> {
     let spelling = match primitive {
         Primitive::Boolean => {
             if value == "true" || value == "false" {
@@ -4393,17 +4417,14 @@ fn scalar_representation(
     value: &str,
     scalar: ScalarKind,
     place: &str,
-    command: &CommandSpec,
+    command: &dyn LiteralSource,
     resolved: Resolved<'_>,
 ) -> Option<LiteralRefusal> {
     use crate::binding::{representation, Representation, Resolution};
 
     let quoted = literal_representation(owner, target, held, value, place, command, resolved);
-    match representation(&held.type_ref, resolved.types, resolved.inhabitation) {
-        Resolution::Established(Representation::Primitive(_)) => quoted,
-        // Deferred exactly as the quoted form defers: another pass reports the type itself.
-        Resolution::Undeclared | Resolution::Uninhabited => None,
-        _ => quoted.or_else(|| {
+    let quote_it = |quoted: Option<LiteralRefusal>| {
+        quoted.or_else(|| {
             Some(LiteralRefusal {
                 reason: format!(
                     "`{owner}.{target}` is `{}`, and `{value}` is written as a YAML {scalar}",
@@ -4411,7 +4432,30 @@ fn scalar_representation(
                 ),
                 hint: format!("quote it: `{target}: '{value}'`"),
             })
-        }),
+        })
+    };
+    match representation(&held.type_ref, resolved.types, resolved.inhabitation) {
+        Resolution::Established(Representation::Primitive(_)) => quoted,
+        // Deferred exactly as the quoted form defers: another pass reports the type itself.
+        Resolution::Undeclared | Resolution::Uninhabited => None,
+        // `True` over an enum declaring `"True"`: YAML read the variant's name as a boolean, and
+        // the variant it names is the repair (beyond10x/ess#426). Named in the hint, never
+        // admitted: which case the author wrote is not something the boolean kept.
+        Resolution::Established(Representation::Variants(variants))
+            if scalar == ScalarKind::Boolean =>
+        {
+            let named = variants
+                .iter()
+                .find(|variant| variant.name().eq_ignore_ascii_case(value));
+            match (quoted, named) {
+                (Some(refusal), Some(variant)) => Some(LiteralRefusal {
+                    hint: format!("quote it: `{target}: '{}'`", variant.name()),
+                    ..refusal
+                }),
+                (quoted, _) => quote_it(quoted),
+            }
+        }
+        _ => quote_it(quoted),
     }
 }
 
@@ -4429,7 +4473,7 @@ fn literal_representation(
     held: &Field,
     value: &str,
     place: &str,
-    command: &CommandSpec,
+    command: &dyn LiteralSource,
     resolved: Resolved<'_>,
 ) -> Option<LiteralRefusal> {
     use crate::binding::{representation, Representation, Resolution};
@@ -4440,7 +4484,7 @@ fn literal_representation(
             hint: format!(
                 "a literal may be text, a variant of an enum, `true` or `false`, a whole number \
                  or a decimal; anything else has to come from an input of `{}`",
-                command.name
+                command.source_name()
             ),
         })
     };
@@ -4522,6 +4566,83 @@ fn literal_representation(
             "`{owner}.{target}` has structure, and a literal in a {place} is one piece of text"
         )),
     }
+}
+
+/// What a value no literal spells has to come from instead, named in the literal rule's hint: the
+/// command whose input it would be, for `sets:`, `payload:` and a binding's `mapping:`, or the enum
+/// whose variant attribute it is (beyond10x/ess#450).
+pub(crate) trait LiteralSource {
+    /// The name the hint gives.
+    fn source_name(&self) -> &QualifiedName;
+}
+
+impl LiteralSource for CommandSpec {
+    fn source_name(&self) -> &QualifiedName {
+        &self.name
+    }
+}
+
+impl LiteralSource for QualifiedName {
+    fn source_name(&self) -> &QualifiedName {
+        self
+    }
+}
+
+/// A binding `mapping:` constant over `held`, an input of `command`, by the rule `sets:` and
+/// `payload:` type a literal by (beyond10x/ess#445): the refusal's reason and hint, or `None` to
+/// admit it. `scalar` is the YAML scalar an unquoted constant was written as, `None` for text.
+///
+/// A binding has no command input to take a value from, so the binding keeps its own refusal for
+/// the targets no literal spells; this is called for the rest.
+pub(crate) fn mapping_literal(
+    command: &CommandSpec,
+    held: &Field,
+    value: &str,
+    scalar: Option<ScalarKind>,
+    types: &TypeRegistry,
+    conversions: &crate::types::ConversionRegistry,
+    inhabitation: &crate::system::Inhabitation,
+) -> Option<(String, String)> {
+    literal_refusal(
+        (&command.name, &held.name),
+        held,
+        (value, scalar),
+        "`mapping:` entry of a binding",
+        &command.name,
+        (types, conversions, inhabitation),
+    )
+}
+
+/// A literal `value`, written as the YAML `scalar` (`None` for text), as the value of `held`, the
+/// member `target` of `owner`: the refusal's reason and hint, or `None` to admit it. The rule
+/// `sets:` and `payload:` type a literal by, for the positions outside a command's outcome — a
+/// binding's `mapping:` (beyond10x/ess#445) and an enum variant's `attributes:`
+/// (beyond10x/ess#450). `source` is what a value no literal spells has to come from instead.
+pub(crate) fn literal_refusal(
+    (owner, target): (&QualifiedName, &str),
+    held: &Field,
+    (value, scalar): (&str, Option<ScalarKind>),
+    place: &str,
+    source: &QualifiedName,
+    (types, conversions, inhabitation): (
+        &TypeRegistry,
+        &crate::types::ConversionRegistry,
+        &crate::system::Inhabitation,
+    ),
+) -> Option<(String, String)> {
+    let resolved = Resolved {
+        types,
+        conversions,
+        inhabitation,
+        paths: false,
+    };
+    let refusal = match scalar {
+        Some(scalar) => {
+            scalar_representation(owner, target, held, value, scalar, place, source, resolved)
+        }
+        None => literal_representation(owner, target, held, value, place, source, resolved),
+    };
+    refusal.map(|refusal| (refusal.reason, refusal.hint))
 }
 
 /// An immutable fact: something that happened, named in the domain's own words.
@@ -5368,7 +5489,7 @@ pub struct RawSubjectField {
 #[serde(deny_unknown_fields)]
 pub struct RawSubjectPredicate {
     /// What must hold of the subject's declared fields, read immediately before selection.
-    pub predicate: Predicate,
+    pub predicate: WrittenPredicate,
 }
 
 /// What `when_subject:` says about the existing subject: one of two closed shapes, never both.
@@ -5398,7 +5519,7 @@ impl RawSubjectFact {
             }
             OutcomeCondition::SubjectPredicate { predicate, .. } => {
                 Some(Self::Predicate(RawSubjectPredicate {
-                    predicate: predicate.clone(),
+                    predicate: predicate.clone().into(),
                 }))
             }
             _ => None,
@@ -5417,7 +5538,7 @@ impl<'de> serde::Deserialize<'de> for RawSubjectFact {
             #[serde(default)]
             equals: Option<String>,
             #[serde(default)]
-            predicate: Option<Predicate>,
+            predicate: Option<WrittenPredicate>,
         }
         let written = Written::deserialize(deserializer)?;
         match (written.field, written.equals, written.predicate) {
@@ -5458,7 +5579,7 @@ pub struct RawOutcome {
     pub name: OutcomeName,
     /// A predicate over the command's input.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub when: Option<Predicate>,
+    pub when: Option<WrittenPredicate>,
     /// An independently observed subject fact: an enum field equal to a variant (ess/6), or a
     /// predicate over the subject's declared fields (ess/9).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -5684,6 +5805,23 @@ fn outcome_conflict(
     )
 }
 
+/// The predicate branch `name` wrote at `key`, or `None` with its refusal added to `unparsed`
+/// when it does not parse (beyond10x/ess#448).
+fn read_written(
+    written: Option<WrittenPredicate>,
+    name: &OutcomeName,
+    key: &str,
+    unparsed: &mut ValidationErrors,
+) -> Option<Predicate> {
+    match written?.read(format!("outcomes.{name}.{key}")) {
+        Ok(predicate) => Some(predicate),
+        Err(error) => {
+            unparsed.push(error);
+            None
+        }
+    }
+}
+
 /// The one condition a document's condition keys add up to, or why they do not add up to one.
 ///
 /// Five keys and at most one condition. Two of them read the state the subject already holds —
@@ -5857,14 +5995,13 @@ impl TryFrom<RawOutcome> for Outcome {
     #[allow(clippy::too_many_lines)]
     fn try_from(mut raw: RawOutcome) -> Result<Self, Self::Error> {
         // ess/16 (#167, #175): a set subject takes the verb it is written beside, before the one
-        // subject is read.
+        // subject is read; `deletes:` among them from ess/23 (#452).
         let instances = set_effects::set_subject(
             &raw.name,
             raw.instances.take(),
             &mut set_effects::Verbs {
                 other: [
                     raw.creates.as_ref().map(|_| "creates"),
-                    raw.deletes.as_ref().map(|_| "deletes"),
                     raw.preserves.as_ref().map(|_| "preserves"),
                 ]
                 .into_iter()
@@ -5873,6 +6010,7 @@ impl TryFrom<RawOutcome> for Outcome {
                 instance: raw.instance.is_some(),
                 moves: &mut raw.moves,
                 updates: &mut raw.updates,
+                deletes: &mut raw.deletes,
             },
         )?;
         let affects = set_effects::affects(&raw.name, std::mem::take(&mut raw.affects))?;
@@ -5886,10 +6024,30 @@ impl TryFrom<RawOutcome> for Outcome {
             outcome_shapes::existing_alone(&raw)?;
         }
         let held_state_key = held_state_key(raw.when_subject_state.is_some());
+        // Every predicate the branch writes is read before any of them is used, and each one that
+        // does not parse is refused at its own key, beside the others (beyond10x/ess#448). The
+        // keys stay written, so the checks below still see which ones the author wrote.
+        let mut unparsed = ValidationErrors::new();
+        let when = read_written(raw.when.clone(), &raw.name, "when", &mut unparsed);
+        let subject_predicate = match &raw.when_subject {
+            Some(RawSubjectFact::Predicate(fact)) => read_written(
+                Some(fact.predicate.clone()),
+                &raw.name,
+                "when_subject.predicate",
+                &mut unparsed,
+            ),
+            _ => None,
+        };
         let related = match raw.when_related.take() {
             Some(guard) => {
                 related_guard::alone(&raw)?;
-                let read = guard.read(&raw.name)?;
+                let read = match guard.read(&raw.name) {
+                    Ok(read) => read,
+                    Err(errors) => {
+                        unparsed.extend(errors);
+                        return Err(unparsed);
+                    }
+                };
                 if let related_guard::ReadGuard::Identity(_, test) = &read {
                     related_guard::absent_alone(&raw, test)?;
                 }
@@ -5897,8 +6055,11 @@ impl TryFrom<RawOutcome> for Outcome {
             }
             None => None,
         };
+        if !unparsed.is_empty() {
+            return Err(unparsed);
+        }
         let subject_fact = raw.when_subject;
-        let input_predicate = raw.when.clone();
+        let input_predicate = when.clone();
         if subject_fact.is_some()
             && (raw.when_subject_state.is_some()
                 || raw.when_state_changes.is_some()
@@ -5941,24 +6102,27 @@ impl TryFrom<RawOutcome> for Outcome {
         } else {
             outcome_condition(
                 &raw.name,
-                raw.when,
+                when,
                 raw.when_subject_state,
                 raw.when_state_changes,
                 raw.external,
                 raw.wrong_state,
             )?
         };
-        let condition = match subject_fact {
-            Some(RawSubjectFact::Field(fact)) => OutcomeCondition::SubjectField {
+        let condition = match (subject_fact, subject_predicate) {
+            (Some(RawSubjectFact::Field(fact)), _) => OutcomeCondition::SubjectField {
                 field: fact.field,
                 equals: fact.equals,
                 predicate: input_predicate,
             },
-            Some(RawSubjectFact::Predicate(fact)) => OutcomeCondition::SubjectPredicate {
-                predicate: fact.predicate,
-                input: input_predicate,
-            },
-            None => match related {
+            // Read above: a subject predicate that did not parse has already been refused.
+            (Some(RawSubjectFact::Predicate(_)), Some(predicate)) => {
+                OutcomeCondition::SubjectPredicate {
+                    predicate,
+                    input: input_predicate,
+                }
+            }
+            (Some(RawSubjectFact::Predicate(_)) | None, _) => match related {
                 // `related_guard::alone` admitted `when:` and nothing else beside it.
                 Some(related_guard::ReadGuard::Identity(via, test)) => OutcomeCondition::Related {
                     via,
@@ -6418,8 +6582,8 @@ impl From<Outcome> for RawOutcome {
                 ..
             }) => (None, None, None, Some(instance)),
         };
-        let (moves, updates, instances, affects) =
-            set_effects::written(outcome.set_effects, moves, updates);
+        let ((moves, updates, deletes), instances, affects) =
+            set_effects::written(outcome.set_effects, (moves, updates, deletes));
         let payload = PayloadDeclaration(
             outcome
                 .payload
@@ -6446,7 +6610,7 @@ impl From<Outcome> for RawOutcome {
         );
         Self {
             name: outcome.name,
-            when,
+            when: when.map(WrittenPredicate::from),
             when_subject_state,
             when_subject,
             when_related,

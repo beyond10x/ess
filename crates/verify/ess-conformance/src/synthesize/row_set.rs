@@ -9,7 +9,10 @@
 //!   target that drops any one conjunct counts a row it must leave out;
 //! * the rows the selector selects, as many as the branch needs and — for a `forall` — one of them
 //!   refuting the tested predicate where the branch needs it false. The counts are tried in the
-//!   order one, two, none, three, so a branch true of a nonempty set is witnessed on one.
+//!   order one, two, none, three, so a branch true of a nonempty set is witnessed on one;
+//! * where a row is selected, the decoys again after the selected rows, so the selected rows are
+//!   neither the oldest nor the newest record of any value they share with a decoy, and a target
+//!   keeping one record per such value fails.
 //!
 //! The rows are arranged before the branch is decided, and the branch the specification takes on
 //! them is decided again over the rows the steps actually leave ([`walk`], [`consistent`]): the
@@ -42,6 +45,7 @@ use ess_primitives::facts::FactPath;
 use ess_primitives::node::Node;
 use ess_primitives::predicate::{CompareOp, Operand, Predicate, Truth};
 
+use super::identity;
 use super::set_effects::{input_value, misses, subject_value, written_in};
 use super::{
     absorb, arrange_toward_filter, candidates, flatten, instance_name, prepare_in, settled,
@@ -175,16 +179,22 @@ fn scopable(ir: &EssIr, type_ref: &ResolvedTypeRef) -> bool {
 }
 
 /// Whether the selector selects only rows the scenario's own values name: a top-level equality
-/// between a `String` or `Uuid` field of the row and the input or the addressed subject.
+/// between a `String` or `Uuid` field of the row and the input or the addressed subject. From
+/// `ess/23` a `String` or `Uuid` member of a struct identity counts as such a field
+/// (beyond10x/ess#463).
 fn scoped(ir: &EssIr, selection: &ResolvedRowSelection) -> bool {
     let entity = ir.entity(&selection.entity);
     let conjuncts: Vec<&Predicate> = match &selection.filter {
         Predicate::All(children) => children.iter().collect(),
         other => vec![other],
     };
+    let members = subject_fact::identity_selectors(ir);
     let field = |path: &FactPath| {
         let [name] = path.segments() else {
-            return false;
+            return members
+                && path.namespace() == entity.identity.name
+                && identity::member_type(ir, &selection.entity, &path.segments().join("."))
+                    .is_some_and(|member| scopable(ir, &member));
         };
         std::iter::once(&entity.identity)
             .chain(&entity.fields)
@@ -209,6 +219,80 @@ fn scoped(ir: &EssIr, selection: &ResolvedRowSelection) -> bool {
             } if (field(left) && named(right)) || (field(right) && named(left))
         )
     })
+}
+
+/// Whether the selector reads a member of a struct identity no declared creation publishes from
+/// its input (ess/23, beyond10x/ess#463): every row then carries its identity only as an observed
+/// value, and a struct held by reference has no member projection.
+fn unprojected_identity(ir: &EssIr, selection: &ResolvedRowSelection) -> bool {
+    let identity = &ir.entity(&selection.entity).identity.name;
+    subject_fact::identity_selectors(ir)
+        && selection.filter.fact_paths().iter().any(|path| {
+            path.segments().len() > 1
+                && path.namespace() == identity
+                && identity::member_type(ir, &selection.entity, &path.segments().join("."))
+                    .is_some()
+        })
+        && !ir.drivers().get(&selection.entity).is_some_and(|drivers| {
+            drivers.iter().any(|driver| {
+                matches!(driver.effect, ResolvedEffect::Creates)
+                    && super::published_identity_input(driver.outcome).is_some()
+            })
+        })
+}
+
+/// Every member path below `at`, a value of type `type_ref`, down to the members that are not
+/// structs: `at` itself where it is not one.
+fn identity_members(
+    ir: &EssIr,
+    type_ref: &ResolvedTypeRef,
+    at: Vec<String>,
+    out: &mut Vec<Vec<String>>,
+) {
+    if let ResolvedTypeRef::Declared { name } = type_ref.required() {
+        if let ResolvedBody::Struct { fields, .. } = &ir.named_type(name).body {
+            for field in fields {
+                let mut member = at.clone();
+                member.push(field.name.clone());
+                identity_members(ir, &field.type_ref, member, out);
+            }
+            return;
+        }
+    }
+    out.push(at);
+}
+
+/// Whether `filter`, its input and subject written in, pins every member of `entity`'s identity to
+/// a literal by a top-level equality: every row it selects is then the one record of that
+/// identity (beyond10x/ess#463).
+fn pins_identity(ir: &EssIr, entity: &EntityHandle, filter: &Predicate) -> bool {
+    let identity = &ir.entity(entity).identity;
+    let conjuncts: Vec<&Predicate> = match filter {
+        Predicate::All(children) => children.iter().collect(),
+        other => vec![other],
+    };
+    let pinned = |member: &[String]| {
+        conjuncts.iter().any(|conjunct| match conjunct {
+            Predicate::Compare {
+                left,
+                op: CompareOp::Eq,
+                right,
+                ..
+            } => [(left, right), (right, left)].iter().any(|(fact, value)| {
+                matches!(fact, Operand::Fact(path) if path.segments() == member)
+                    && matches!(value, Operand::Literal(_))
+            }),
+            _ => false,
+        })
+    };
+    let mut members = Vec::new();
+    identity_members(
+        ir,
+        &identity.type_ref,
+        vec![identity.name.clone()],
+        &mut members,
+    );
+    !members.is_empty() && members.iter().all(|member| pinned(member))
 }
 
 /// The `when:` of `other`, where its condition is one.
@@ -326,6 +410,30 @@ impl Rows {
     }
 }
 
+/// The literal values of a sent input, and of an input naming an arranged instance whose identity
+/// the steps named by a literal: the own-identity collision of a re-key (ess/23,
+/// beyond10x/ess#429) sends the addressed row's own instance as the new identity.
+fn resolved_literals(
+    supplied: &BTreeMap<String, ScenarioValue>,
+    rows: &Rows,
+) -> BTreeMap<String, Node> {
+    let mut out = literals(supplied);
+    for (field, value) in supplied {
+        let ScenarioValue::Instance { instance } = value else {
+            continue;
+        };
+        let named = rows
+            .held
+            .iter()
+            .filter(|row| row.instance.as_ref() == Some(instance))
+            .find_map(|row| row.identity.as_ref().and_then(ScenarioValue::as_literal));
+        if let Some(identity) = named {
+            out.insert(field.clone(), identity.clone());
+        }
+    }
+    out
+}
+
 /// The literal values of a sent input, as the predicates over it read them.
 fn literals(supplied: &BTreeMap<String, ScenarioValue>) -> BTreeMap<String, Node> {
     supplied
@@ -394,7 +502,11 @@ impl<'a> Reading<'a> {
             command,
             selection,
             supplied: supplied.clone(),
-            input: literals(supplied),
+            input: if subject_fact::identity_selectors(ir) {
+                resolved_literals(supplied, rows)
+            } else {
+                literals(supplied)
+            },
             subject,
             rows: candidates,
         })
@@ -404,7 +516,18 @@ impl<'a> Reading<'a> {
     fn closed(&self, predicate: &Predicate) -> Result<Predicate, String> {
         let empty = BTreeMap::new();
         let subject = self.subject.as_ref().unwrap_or(&empty);
-        let written = written_in(predicate, &|path| subject_value(path, subject));
+        // The input the send names is written in where it is literal, as the arrangement reads it: an
+        // input naming an arranged instance — the addressed row of an `updates:` (ess/23,
+        // beyond10x/ess#429) — leaves the rest of the input unflattened, and the literal it compares
+        // with would read nothing. From `ess/23` only: an older document keeps the suite it had.
+        let literal_input = subject_fact::identity_selectors(self.ir);
+        let written = written_in(predicate, &|path| {
+            subject_value(path, subject).or_else(|| {
+                literal_input
+                    .then(|| input_value(path, &self.input))
+                    .flatten()
+            })
+        });
         if written.fact_paths().iter().any(|path| {
             path.segments().len() > 1
                 && path.namespace() == ess_domain::command::set_effects::SUBJECT_NAMESPACE
@@ -417,10 +540,31 @@ impl<'a> Reading<'a> {
     }
 
     fn truth(&self, row: &Row, predicate: &Predicate) -> Truth {
+        // The row's own identity, where the steps named it by a literal: a selector over the
+        // identity (ess/23, beyond10x/ess#429) reads the key the row is stored under.
+        // Only where the predicate reads the identity: every other predicate binds what it bound.
+        // A member of a struct identity (beyond10x/ess#463) reads the same literal, member by member.
+        let identity = &self.ir.entity(&row.entity).identity;
+        let reads_identity = subject_fact::identity_selectors(self.ir)
+            && subject_fact::reads_key(predicate, &identity.name);
+        let mut settled = std::borrow::Cow::Borrowed(&row.settled);
+        if let Some(value) = row
+            .identity
+            .as_ref()
+            .filter(|value| reads_identity && value.as_literal().is_some())
+        {
+            settled
+                .to_mut()
+                .entry(identity.name.clone())
+                .or_insert_with(|| Determined {
+                    value: value.clone(),
+                    type_ref: identity.type_ref.clone(),
+                });
+        }
         subject_fact::row_truth_with(
             self.ir,
             &row.entity,
-            &row.settled,
+            &settled,
             &row.unwritten,
             Some(&row.state),
             predicate,
@@ -507,11 +651,14 @@ fn consistent(
         return Ok(());
     }
     // The command's own identity is read before any row set: a creation sent with the identity of
-    // a row the steps left is `existing_instance:`'s, never this branch's.
-    if command
-        .outcomes
-        .iter()
-        .any(|outcome| outcome.condition == ResolvedCondition::ExistingInstance)
+    // a row the steps left is `existing_instance:`'s, never this branch's. From `ess/23` whatever
+    // the creator declares: a target refuses a second record under one identity, so no scenario
+    // expects this branch to create one a row already carries (beyond10x/ess#463).
+    if subject_fact::identity_selectors(ir)
+        || command
+            .outcomes
+            .iter()
+            .any(|outcome| outcome.condition == ResolvedCondition::ExistingInstance)
     {
         if let Some(subject) = expected
             .subject
@@ -519,8 +666,12 @@ fn consistent(
             .filter(|subject| subject.effect == ResolvedEffect::Creates)
         {
             if let Some(identity) = created_identity(expected, supplied) {
+                let by_instance = subject_fact::identity_selectors(ir);
                 if rows.held.iter().any(|row| {
-                    row.entity == subject.entity && row.identity.as_ref() == Some(&identity)
+                    row.entity == subject.entity
+                        && (row.identity.as_ref() == Some(&identity)
+                            || matches!(&identity, ScenarioValue::Instance { instance }
+                                if by_instance && row.instance.as_ref() == Some(instance)))
                 }) {
                     return Err("the creation names an identity a row already carries".into());
                 }
@@ -564,6 +715,53 @@ fn consistent(
     }
     if !reads(expected).is_empty() {
         reading.one()?;
+    }
+    Ok(())
+}
+
+/// Whether the creation `outcome` names a literal identity a row the steps left already carries,
+/// where a row-set selector reads that entity's identity (ess/23, beyond10x/ess#463): such a
+/// selector counts records by their key, and a target refuses a second record under one key
+/// whatever the creator declares. Every other creation, and every older document, is left as it
+/// was.
+fn recreates(
+    ir: &EssIr,
+    outcome: &ResolvedOutcome,
+    supplied: &BTreeMap<String, ScenarioValue>,
+    rows: &Rows,
+) -> Result<(), String> {
+    if !subject_fact::identity_selectors(ir) || outcome.error.is_some() {
+        return Ok(());
+    }
+    let Some(subject) = outcome
+        .subject
+        .as_ref()
+        .filter(|subject| subject.effect == ResolvedEffect::Creates)
+    else {
+        return Ok(());
+    };
+    let identity = &ir.entity(&subject.entity).identity.name;
+    let keyed = ir
+        .commands()
+        .values()
+        .filter(|command| uses(command))
+        .filter_map(|command| selection_of(command).ok())
+        .any(|selection| {
+            selection.entity == subject.entity
+                && subject_fact::reads_key(&selection.filter, identity)
+        });
+    let Some(created) =
+        created_identity(outcome, supplied).filter(|created| created.as_literal().is_some())
+    else {
+        return Ok(());
+    };
+    if keyed
+        && rows
+            .held
+            .iter()
+            .any(|row| row.entity == subject.entity && row.identity.as_ref() == Some(&created))
+    {
+        return Err("creates an identity a row the steps left already carries".into());
     }
     Ok(())
 }
@@ -672,6 +870,10 @@ pub(super) fn walk(ir: &EssIr, steps: &[ScenarioStep], check: bool) -> Result<Ro
                     }
                     continue;
                 };
+                if check {
+                    recreates(ir, expected, input, &rows)
+                        .map_err(|why| format!("`{}/{}` {why}", command.name, expected.name))?;
+                }
                 if check && uses(command) {
                     consistent(ir, command, expected, input, &rows)
                         .map_err(|why| format!("`{}/{}` {why}", command.name, expected.name))?;
@@ -761,6 +963,15 @@ fn apply(
             };
             absorb(&mut row.settled, outcome, determined);
             row.unwritten = still_unwritten(&row.unwritten, outcome);
+            // A re-key (ess/23, beyond10x/ess#429): the row answers to the identity written, and
+            // the instance name the arrangement captured names the identity it left.
+            if let Some(write) = outcome.identity_write(ir) {
+                row.identity = row
+                    .settled
+                    .get(&write.target)
+                    .map(|held| held.value.clone());
+                row.instance = None;
+            }
             if let ResolvedEffect::Moves { transition } = &subject.effect {
                 row.state = transition.to.clone();
             }
@@ -836,8 +1047,9 @@ fn zero(value: &Node) -> bool {
 }
 
 /// The rows one attempt arranges: a decoy per conjunct of `filter`, then `count` rows it selects,
-/// the first of them refuting `foralls[violate]` where `violate` names one. Each selected row's
-/// value of every field in `copied` differs from zero and from every decoy's.
+/// the first of them refuting `foralls[violate]` where `violate` names one, then — where `count`
+/// is not zero — a decoy per conjunct again. Each selected row's value of every field in `copied`
+/// differs from zero and from every decoy's.
 #[allow(clippy::too_many_arguments)]
 fn arrange_rows(
     ir: &EssIr,
@@ -876,26 +1088,47 @@ fn arrange_rows(
         Predicate::All(children) if children.len() > 1 => children.clone(),
         other => vec![other.clone()],
     };
-    let mut arranged: Vec<Arrangement> = Vec::new();
-    for (missed, miss) in misses(filter).into_iter().enumerate() {
-        // Decidedly not selected, by this conjunct: it is false, and no other is. A conjunct that
-        // reads what the missed one says is absent stays unknown, and is no other's refutation.
-        let accept = |row: &Arrangement| {
-            truth(row, filter) == Truth::False
-                && conjuncts
-                    .iter()
-                    .enumerate()
-                    .all(|(at, conjunct)| (truth(row, conjunct) == Truth::False) == (at == missed))
-        };
-        let distinction = next(ir, entity, taken);
-        // A decoy no creating command arranges with the rows before it decided is left out: it
-        // would catch a target ignoring that conjunct, and the scenario stands without it.
-        if let Some(row) = arrange_row(ir, entity, &miss, actors, distinction, &accept) {
-            if follows(&arranged, &row) {
-                arranged.push(row);
+    // Where the selector pins every member of the identity, a decoy refuting any other conjunct
+    // carries the selected row's identity: it is that same record, so a branch needing a selected
+    // row arranges none, and the empty branch arranges it (ess/23, beyond10x/ess#463).
+    let identity = &ir.entity(entity).identity.name;
+    let one_record =
+        count > 0 && subject_fact::identity_selectors(ir) && pins_identity(ir, entity, filter);
+    // One decoy per conjunct, refuting that conjunct alone, each holding a copied value no row of
+    // `selected` holds.
+    let place_decoys = |arranged: &mut Vec<Arrangement>,
+                        taken: &mut BTreeSet<InstanceName>,
+                        selected: &[Arrangement]| {
+        for (missed, miss) in misses(filter).into_iter().enumerate() {
+            if one_record && !subject_fact::reads_key(&conjuncts[missed], identity) {
+                continue;
+            }
+            // Decidedly not selected, by this conjunct: it is false, and no other is. A conjunct
+            // that reads what the missed one says is absent stays unknown, and is no other's
+            // refutation.
+            let accept = |row: &Arrangement| {
+                truth(row, filter) == Truth::False
+                    && conjuncts.iter().enumerate().all(|(at, conjunct)| {
+                        (truth(row, conjunct) == Truth::False) == (at == missed)
+                    })
+                    && copied.iter().all(|field| {
+                        selected
+                            .iter()
+                            .all(|chosen| held(row, field) != held(chosen, field))
+                    })
+            };
+            let distinction = next(ir, entity, taken);
+            // A decoy no creating command arranges with the rows before it decided is left out:
+            // it would catch a target ignoring that conjunct, and the scenario stands without it.
+            if let Some(row) = arrange_row(ir, entity, &miss, actors, distinction, &accept) {
+                if follows(arranged, &row) {
+                    arranged.push(row);
+                }
             }
         }
-    }
+    };
+    let mut arranged: Vec<Arrangement> = Vec::new();
+    place_decoys(&mut arranged, taken, &[]);
     let decoys = arranged.clone();
     for nth in 0..count {
         let mut goal = vec![filter.clone()];
@@ -921,6 +1154,14 @@ fn arrange_rows(
             return None;
         }
         arranged.push(row);
+    }
+    // The decoys again after the selected rows. A decoy holds every value the selector reads but
+    // the one its conjunct refutes, so the selected rows are then neither the oldest nor the newest
+    // record of any value they share with one, and a target keeping one record per value — the
+    // newest or the oldest replacing the rest — answers from a decoy.
+    if count > 0 {
+        let selected = arranged[decoys.len()..].to_vec();
+        place_decoys(&mut arranged, taken, &selected);
     }
     Some(arranged)
 }
@@ -965,6 +1206,25 @@ fn arrange_row(
         .find_map(|steer| arrange_toward_filter(ir, entity, steer, actors, distinction, accept))
 }
 
+/// Why no scenario can decide the rows `selection` selects, where none can: it is unscoped, or it
+/// reads a member of a struct identity no row holds as a literal.
+fn decidable(ir: &EssIr, selection: &ResolvedRowSelection) -> Result<(), &'static str> {
+    if !scoped(ir, selection) {
+        return Err(
+            "selects rows by no equality between a String or Uuid field and the input or the \
+             addressed subject, so the rows it counts are not only the scenario's own",
+        );
+    }
+    if unprojected_identity(ir, selection) {
+        return Err(
+            "reads a member of a struct identity every declared creation publishes only as an \
+             observed value, never from its input: a struct held by reference has no member \
+             projection, so the rows it selects are never decided",
+        );
+    }
+    Ok(())
+}
+
 /// The rows a branch of a row-set command is witnessed on, the subject it addresses where it
 /// addresses one, and the input it is sent: the first arrangement — of the counts [`COUNTS`] names,
 /// and for a `forall`, with or without a refuting row — on which the rows its steps leave select
@@ -978,13 +1238,7 @@ pub(super) fn prepare(
     let ir = models.arrangement;
     let selection = selection_of(command)?;
     let at = || format!("{}/{}", command.name, outcome.name);
-    if !scoped(ir, selection) {
-        return Err(gap(
-            at(),
-            "selects rows by no equality between a String or Uuid field and the input or the \
-             addressed subject, so the rows it counts are not only the scenario's own",
-        ));
-    }
+    decidable(ir, selection).map_err(|reason| gap(at(), reason))?;
     let input = input_for(ir, command, outcome, Distinction::PLAIN)?;
     let setup = subject_setup(ir, command, outcome, actors)?;
     let subject_ref = reading(command, outcome);
@@ -1140,8 +1394,16 @@ fn subject_setup(
         .subject
         .as_ref()
         .is_some_and(|subject| matches!(subject.instance, ResolvedInstance::Supplied { .. }));
+    // A creation addresses no existing record: arranging the one its siblings address would arrange
+    // the very identity it is sent to create (ess/23, beyond10x/ess#463).
+    let creates = outcome
+        .subject
+        .as_ref()
+        .is_some_and(|subject| subject.effect == ResolvedEffect::Creates);
     let addressing = if own {
         Some(outcome)
+    } else if creates && subject_fact::identity_selectors(ir) {
+        None
     } else {
         command.outcomes.iter().find(|other| {
             other.subject.as_ref().is_some_and(|subject| {

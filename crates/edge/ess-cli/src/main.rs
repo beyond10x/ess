@@ -8,6 +8,7 @@ mod cli_binding;
 mod cli_reference;
 mod client;
 mod coverage;
+mod formats;
 mod git_checkout;
 mod input_discovery;
 mod known_failures;
@@ -117,6 +118,19 @@ enum SpecifyAreaCommand {
     },
     /// Validate a typed CLI presentation binding against its selected ESS model.
     Cli(cli_binding::Input),
+    /// List the specification formats (`format: ess/N`) this build implements, and what each added.
+    ///
+    /// One line per format, oldest first: the release that first shipped it, or `unreleased`, and
+    /// `newest` beside the highest. Under it, indented, what the format added and any rule that
+    /// reads a document differently from that format on. Declare the lowest format that admits
+    /// every construct the specification uses. `--format json` and `--format yaml` print a list of
+    /// `{format, release, newest, added, stricter}`.
+    ///
+    /// The other versioned documents an author writes (`ess-inputs/N`, `ess-ui/N`,
+    /// `ess-composition/N`, `ess-scenario/N`) and the documents `ess` writes itself are listed
+    /// with their releases on the format version history page,
+    /// `https://beyond10x.github.io/ess/docs/reference/spec-versions`.
+    Formats(formats::Args),
     /// Existing specification verbs retain their flat spellings.
     #[command(flatten)]
     Other(SpecifyCommand),
@@ -126,7 +140,23 @@ enum SpecifyAreaCommand {
 #[derive(Debug, Subcommand)]
 enum SpecifyCommand {
     /// Validate and resolve an ESS specification.
-    Validate(SpecPath),
+    ///
+    /// A valid specification's `--format json|yaml` report carries `completeness` when conformance
+    /// synthesis owes anything: the constructs it gives no scenario (`unscenarioed`), the scenarios
+    /// held outside `--component` (`outside`), the questions the model leaves unanswered
+    /// (`unanswered`), and their `counts`. To answer, `json` and `yaml` run conformance synthesis and
+    /// take as long as `ess verify conform synthesize`; text mode does not synthesize. Advisory
+    /// warnings, such as a relation the model only implies, are printed on standard error and
+    /// carried as `warnings`. Neither changes the exit status.
+    Validate {
+        #[command(flatten)]
+        input: SpecPath,
+        /// Report completeness for this declared component's suite, as `ess verify conform
+        /// synthesize --component` scopes it: the scenarios it holds outside are listed under
+        /// `completeness.outside`.
+        #[arg(long)]
+        component: Option<String>,
+    },
     /// Compile a specification into canonical typed IR.
     Compile {
         #[command(flatten)]
@@ -229,6 +259,14 @@ struct GenerateArgs {
     site: site::Options,
     #[arg(long)]
     out: Option<PathBuf>,
+    /// Refuse when `--out` differs from the generated output, without writing it.
+    ///
+    /// Passing means the same command without `--check` changes nothing. Every file the selected
+    /// projections would write is compared byte for byte; a file `.ess-output` records for them
+    /// that no projection produces any more is drift, and so is a missing or stale `.ess-output`
+    /// record. Exit 0 when `--out` is current, 1 with one line per drifted file.
+    #[arg(long, requires = "out")]
+    check: bool,
     #[arg(long, value_enum, default_value_t = Format::Text)]
     format: Format,
     /// Refuse, writing nothing, where `openapi` or `asyncapi` has a domain no component owns.
@@ -589,7 +627,8 @@ enum ConformCommand {
         /// (`--scenarios` does that, independently). Ordinary arrangement is tried first; a row is
         /// established only for a generated obligation no bounded arrangement reaches, and the
         /// real command and assertions follow it. Any seed selects suite/42 (or /43 with
-        /// `--suite-format 5`) and records its source, row and uses.
+        /// `--suite-format 5`), or suite/44 (/45) where an act also claims one event more than
+        /// once, and records its source, row and uses.
         #[arg(
             long = "synthesis-seed",
             num_args = 2,
@@ -1505,6 +1544,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
         Command::Specify { command } => match command {
             SpecifyAreaCommand::Protocol { command } => protocol::specify(&command),
             SpecifyAreaCommand::Cli(input) => cli_binding::validate(&input),
+            SpecifyAreaCommand::Formats(args) => formats::run(&args),
             SpecifyAreaCommand::Other(command) => specify_area(command),
         },
         Command::FlatSpecify(command) => specify_area(command),
@@ -1526,7 +1566,9 @@ fn run(cli: Cli) -> Result<ExitCode> {
 /// `ess specify …`, and the same verbs spelled flat.
 fn specify_area(command: SpecifyCommand) -> Result<ExitCode> {
     match command {
-        SpecifyCommand::Validate(input) => validate(&input.path, input.format),
+        SpecifyCommand::Validate { input, component } => {
+            validate(&input.path, input.format, component.as_deref())
+        }
         SpecifyCommand::Compile { input, out } => {
             compile(&input.path, out.as_deref(), input.format)
         }
@@ -1588,7 +1630,11 @@ fn generate_projections(arguments: &GenerateArgs) -> Result<ExitCode> {
         &arguments.input.path,
         arguments.kind,
         &arguments.site,
-        arguments.out.as_deref(),
+        match (arguments.out.as_deref(), arguments.check) {
+            (None, _) => Delivery::Print,
+            (Some(root), false) => Delivery::Write(root),
+            (Some(root), true) => Delivery::Check(root),
+        },
         arguments.format,
         arguments.strict,
         arguments.transport.as_deref(),
@@ -2488,9 +2534,28 @@ fn resolved_browser(path: &Path, format: Format) -> Result<Result<BrowserSpecifi
     }
 }
 
-fn validate(path: &Path, format: Format) -> Result<ExitCode> {
-    let Ok((ir, files_read)) = resolved(path, format)? else {
-        return Ok(ExitCode::from(1));
+fn validate(path: &Path, format: Format, component: Option<&str>) -> Result<ExitCode> {
+    let (ir, files_read, warnings) = match load::advised_specification(path)? {
+        (load::LoadedSpec::Compiled { ir, files_read }, warnings) => (ir, files_read, warnings),
+        (refusal @ load::LoadedSpec::Refused { .. }, _) => {
+            return refused(path, format, &refusal);
+        }
+    };
+    // What conformance synthesis owes and cannot hold (beyond10x/ess#434): advisory, so it is
+    // reported and never changes the exit status. Only the `json` and `yaml` reports carry it, so
+    // only they synthesize, at what `conform synthesize` costs; text mode gives its verdict without
+    // waiting on a suite it would discard. An unknown component is refused in every format, as
+    // `conform synthesize --component` refuses it.
+    let completeness = match format {
+        Format::Text => Completeness::declared_component(&ir, component).map(|()| None),
+        Format::Json | Format::Yaml => Completeness::of(&ir, component).map(Some),
+    };
+    let completeness = match completeness {
+        Ok(completeness) => completeness,
+        Err(unknown) => {
+            eprintln!("{unknown}");
+            return Ok(ExitCode::from(1));
+        }
     };
     // The scenarios an `ess-inputs.yaml` lists, compiled against the model exactly as
     // `synthesize --scenarios` compiles them before it runs, so a scenario that step would refuse
@@ -2528,8 +2593,15 @@ fn validate(path: &Path, format: Format) -> Result<ExitCode> {
         components: ir.components().len(),
         unresolved_references: &[],
         scenario_refusals,
+        completeness: completeness.filter(|completeness| !completeness.is_empty()),
+        warnings: &warnings,
     };
     if matches!(format, Format::Text) {
+        // Advisories, on standard error before the verdict, so the verdict line stays the last
+        // and standard output stays what it was (beyond10x/ess#437).
+        for warning in warnings.as_slice() {
+            eprintln!("{warning}");
+        }
         let scenarios = report
             .scenarios
             .map_or_else(String::new, |count| format!(", {count} scenario(s)"));
@@ -3238,12 +3310,23 @@ fn unowned_domains(ir: &ess_compiler::EssIr) -> Vec<&ess_domain::name::Qualified
         .collect()
 }
 
+/// What `generate` does with the projections it rendered.
+#[derive(Debug, Clone, Copy)]
+enum Delivery<'a> {
+    /// List them; write nothing.
+    Print,
+    /// Publish them into this ownership root.
+    Write(&'a Path),
+    /// Compare them with what this ownership root holds; write nothing.
+    Check(&'a Path),
+}
+
 /// Resolve once, then render the selected projection and preflight its complete output set.
 fn generate(
     path: &Path,
     kind: Option<Projection>,
     site_options: &site::Options,
-    out: Option<&Path>,
+    delivery: Delivery<'_>,
     format: Format,
     strict: bool,
     transport: Option<&Path>,
@@ -3335,25 +3418,49 @@ fn generate(
                 .map(|a| (a.path.as_str(), a.contents.as_str())),
         )?);
     }
-    if let Some(root) = out {
-        output_ownership::publish(root, publications)?;
+    if !delivery.deliver(publications)? {
+        return Ok(ExitCode::from(1));
     }
     if matches!(format, Format::Text) {
         for artifact in artifacts.values() {
             println!("{} — {} byte(s)", artifact.path, artifact.contents.len());
         }
-        println!(
-            "{} artifact(s){}",
-            artifacts.len(),
-            out.map_or_else(
-                || ", nothing written".to_owned(),
-                |path| format!(", written to {}", path.display())
-            )
-        );
+        println!("{} artifact(s), {}", artifacts.len(), delivery.summary());
     } else {
         render(&artifacts, format)?;
     }
     Ok(ExitCode::SUCCESS)
+}
+
+impl Delivery<'_> {
+    /// Publish, compare or do nothing; `false` when `--check` found drift, after naming each file.
+    fn deliver(self, publications: Vec<output_ownership::Publication>) -> Result<bool> {
+        match self {
+            Delivery::Print => Ok(true),
+            Delivery::Write(root) => output_ownership::publish(root, publications).map(|()| true),
+            Delivery::Check(root) => {
+                let drifted = output_ownership::drift(root, &publications)?;
+                for drift in &drifted {
+                    eprintln!(
+                        "{} {}; {}",
+                        root.join(&drift.path).display(),
+                        drift.reason,
+                        drift.remedy
+                    );
+                }
+                Ok(drifted.is_empty())
+            }
+        }
+    }
+
+    /// The end of the inventory line: where the artifacts went, if anywhere.
+    fn summary(self) -> String {
+        match self {
+            Delivery::Print => "nothing written".to_owned(),
+            Delivery::Write(root) => format!("written to {}", root.display()),
+            Delivery::Check(root) => format!("current in {}", root.display()),
+        }
+    }
 }
 
 fn synthesize(
@@ -4867,6 +4974,172 @@ struct ValidationSummary<'a> {
     /// Every listed scenario `synthesize --scenarios` would refuse, and why.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     scenario_refusals: Vec<ScenarioRefusal<'a>>,
+    /// What conformance synthesis owes and cannot hold (beyond10x/ess#434); absent when nothing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    completeness: Option<Completeness>,
+    /// Advisory diagnostics, in the shape of a refusal's `diagnostics` (beyond10x/ess#437); absent
+    /// when there are none.
+    #[serde(skip_serializing_if = "ess_compiler::Diagnostics::is_empty")]
+    warnings: &'a ess_compiler::Diagnostics,
+}
+
+/// How complete a valid specification is, as conformance synthesis answers it: what `ess verify
+/// conform synthesize` prints as `refused:`, `outside:` and `note:` lines, as data (beyond10x/ess#434).
+///
+/// Target-dependent obligations are not here: they belong to a projection, and `ess generate
+/// synthesize` writes them to `plan.json` for the target it was asked for.
+#[derive(serde::Serialize)]
+struct Completeness {
+    /// Every construct synthesis gives no scenario, by the code and subject `refused:` prints.
+    unscenarioed: Vec<Unscenarioed>,
+    /// Every scenario held outside the `--component` the report was scoped to.
+    outside: Vec<OutsideScenario>,
+    /// Every question the specification leaves unanswered, as `note:` prints it.
+    unanswered: Vec<String>,
+    /// Why conformance synthesis does not admit the model at all, where it does not: then the
+    /// three lists above are empty because nothing was synthesized, not because nothing is owed.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    unsynthesizable: Vec<Unsynthesizable>,
+    /// One count per list.
+    counts: CompletenessCounts,
+}
+
+#[derive(serde::Serialize)]
+struct Unscenarioed {
+    code: String,
+    subject: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    scenario: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+struct OutsideScenario {
+    scenario: String,
+    needs: Vec<String>,
+}
+
+#[derive(serde::Serialize)]
+struct Unsynthesizable {
+    reason: &'static str,
+    path: String,
+    detail: String,
+}
+
+#[derive(serde::Serialize)]
+struct CompletenessCounts {
+    unscenarioed: usize,
+    outside: usize,
+    unanswered: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    unsynthesizable: usize,
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)] // Serde's skip_serializing_if passes a reference.
+fn is_zero(count: &usize) -> bool {
+    *count == 0
+}
+
+impl Completeness {
+    /// Synthesizes `ir` as `ess verify conform synthesize` does without seeds — scoped to
+    /// `component` where one is named — and keeps what it owes rather than the suite.
+    fn of(
+        ir: &EssIr,
+        component: Option<&str>,
+    ) -> Result<Self, ess_conformance::synthesize::UnknownComponent> {
+        // Before admission, so an unknown name is refused whatever the model.
+        Self::declared_component(ir, component)?;
+        if let Err(refused) = ess_conformance::admission::model(ir) {
+            let unsynthesizable: Vec<Unsynthesizable> = refused
+                .issues
+                .into_iter()
+                .map(|issue| Unsynthesizable {
+                    reason: issue.reason,
+                    path: issue.path,
+                    detail: issue.detail,
+                })
+                .collect();
+            return Ok(Self {
+                counts: CompletenessCounts {
+                    unscenarioed: 0,
+                    outside: 0,
+                    unanswered: 0,
+                    unsynthesizable: unsynthesizable.len(),
+                },
+                unscenarioed: Vec::new(),
+                outside: Vec::new(),
+                unanswered: Vec::new(),
+                unsynthesizable,
+            });
+        }
+        let synthesis = match component {
+            None => ess_conformance::synthesize::synthesize(ir),
+            Some(name) => ess_conformance::synthesize::synthesize_for(ir, name)?,
+        };
+        let unscenarioed: Vec<Unscenarioed> = synthesis
+            .refusals
+            .iter()
+            .map(|refusal| Unscenarioed {
+                code: refusal.code().to_string(),
+                subject: refusal.subject.to_string(),
+                scenario: refusal.scenario.as_ref().map(ToString::to_string),
+            })
+            .collect();
+        let outside: Vec<OutsideScenario> = synthesis
+            .outside
+            .iter()
+            .map(|outside| OutsideScenario {
+                scenario: outside.scenario.to_string(),
+                needs: outside.needs.iter().map(ToString::to_string).collect(),
+            })
+            .collect();
+        let unanswered: Vec<String> = synthesis.notes.iter().map(ToString::to_string).collect();
+        Ok(Self {
+            counts: CompletenessCounts {
+                unscenarioed: unscenarioed.len(),
+                outside: outside.len(),
+                unanswered: unanswered.len(),
+                unsynthesizable: 0,
+            },
+            unscenarioed,
+            outside,
+            unanswered,
+            unsynthesizable: Vec::new(),
+        })
+    }
+
+    /// Refuses a `component` the specification does not declare, as `conform synthesize
+    /// --component` does, without synthesizing anything.
+    fn declared_component(
+        ir: &EssIr,
+        component: Option<&str>,
+    ) -> Result<(), ess_conformance::synthesize::UnknownComponent> {
+        let Some(name) = component else {
+            return Ok(());
+        };
+        if ir
+            .components()
+            .values()
+            .any(|declared| declared.name.as_str() == name)
+        {
+            return Ok(());
+        }
+        Err(ess_conformance::synthesize::UnknownComponent {
+            component: name.to_owned(),
+            declared: ir
+                .components()
+                .keys()
+                .map(|declared| declared.as_str().to_owned())
+                .collect(),
+        })
+    }
+
+    /// `true` when synthesis owes nothing and admits the model.
+    fn is_empty(&self) -> bool {
+        self.unscenarioed.is_empty()
+            && self.outside.is_empty()
+            && self.unanswered.is_empty()
+            && self.unsynthesizable.is_empty()
+    }
 }
 
 /// One `ESS-AUTHOR-*` refusal of a listed scenario, as `validate --format json|yaml` reports it.
@@ -5093,7 +5366,7 @@ fn project(adapter: ProjectAdapter) -> Result<ExitCode> {
                 &path,
                 Some(Projection::OpenApi),
                 &site::Options::default(),
-                out.as_deref(),
+                out.as_deref().map_or(Delivery::Print, Delivery::Write),
                 format,
                 strict,
                 None,
@@ -5634,11 +5907,12 @@ mod tests {
     ///
     /// Written down on purpose. A verb added to the tree and to no area would otherwise be
     /// counted by the enumeration it is missing from and pass every case below.
-    const AREA_LEAVES: usize = 80;
-    const AREA_ONLY_LEAVES: [&[&str]; 10] = [
+    const AREA_LEAVES: usize = 81;
+    const AREA_ONLY_LEAVES: [&[&str]; 11] = [
         &["specify", "protocol", "validate"],
         &["specify", "protocol", "compile"],
         &["specify", "cli"],
+        &["specify", "formats"],
         &["generate", "cli"],
         &["generate", "ui"],
         &["ui", "load"],

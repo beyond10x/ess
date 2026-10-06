@@ -55,6 +55,7 @@ struct Occurrence {
 
 /// What each delivery of one binding is made of, shared by its scenarios.
 struct Delivered<'ir> {
+    ir: &'ir EssIr,
     binding: &'ir ResolvedBinding,
     invoked: &'ir ResolvedCommand,
     context: &'ir ResolvedDeliveryContext,
@@ -113,11 +114,18 @@ impl Delivered<'_> {
                     selecting.insert(mapped.target.clone(), value.clone());
                     value
                 }
-                // As for any binding: a literal fills a text or an enum target, so the text is
-                // the value.
-                ResolvedMappingValue::Literal { value } => {
-                    ScenarioValue::literal(Node::Text(value.clone()))
-                }
+                // As for any binding: the text over text or an enum, the typed value over a
+                // `Boolean`, `Integer` or `Decimal` (beyond10x/ess#445).
+                ResolvedMappingValue::Literal { value } => ScenarioValue::literal(
+                    crate::input::mapping_literal(self.ir, &mapped.target_type, value).ok_or_else(
+                        || {
+                            unobservable(format!(
+                                "the constant `{value}` is not a value of `{}`",
+                                mapped.target_type
+                            ))
+                        },
+                    )?,
+                ),
                 ResolvedMappingValue::EventAccessor { plan, .. } => {
                     return Err(unobservable(format!(
                         "`{}` reads `{}` through a bounded accessor, which a delivered occurrence \
@@ -524,6 +532,7 @@ pub(super) fn synthesize(
                     subject: subject.into(),
                     scenario: None,
                     cause: RefusalCause::NoWitness(gap),
+                    stands: false,
                 });
                 return;
             }
@@ -550,6 +559,7 @@ pub(super) fn synthesize(
         }
     }
     let delivered = Delivered {
+        ir,
         binding,
         invoked: ir.command(&binding.command),
         context,

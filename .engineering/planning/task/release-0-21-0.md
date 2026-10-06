@@ -2,15 +2,16 @@
 format: aep.planning-md/3
 id: task:release-0-21-0
 kind: task
-status: active
+status: archived
 title: Prepare and publish ESS 0.21.0 from merged source
 relations:
 - serves: vision:O2
 - derived_from: story:cli-presentation-binding
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-09T21:59:13Z", actor: "human:timo", revision: 2, decided_on: {"recorded":{"approval":1}}, imported: true}
 - {from: "proposed", to: "active", at: "2026-09-09T21:59:15Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}, imported: true}
+- {from: "active", to: "archived", at: "2026-10-06T09:44:39Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1,"approval":1}}}
 ---
 ## Authorization and outcome
 

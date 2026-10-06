@@ -209,6 +209,31 @@ its hand-written realization, passes the committed 29-scenario suite unchanged â
 deliberately corrupted linkage fails exactly the scenario that exists to catch it. See
 [Synthesize code from a specification](../guides/synthesize.md).
 
+## When commands race
+
+Two clients, or two instances of one service, can send commands on one record at once. A
+specification promises the same of every command: it takes effect at one point between its call
+and its answer. A concurrent history is correct when one sequential order of its calls explains
+every answer, and the model accepts that order; the history is then linearizable, per subject. In
+`examples/billing`, two overlapping `PayInvoice` calls on one issued invoice cannot both answer
+`settled`, because the lifecycle has one move from `Issued` to `Paid`.
+
+How an implementation serialises is its own business: a claim at the store, optimistic
+concurrency, a transaction. A lock local to one process serialises nothing across instances, so
+two instances behind such a lock are two clients whose calls interleave. The promise has four
+limits:
+
+- reads are judged subject by subject, which is weaker than one snapshot of every subject;
+- the multi-record atomicity of a set effect is not claimed;
+- a command that may read related rows or select a set puts its calls into one shared partition
+  rather than one per subject;
+- an unanswered call may or may not have taken effect.
+
+`check-history` holds the promise: `ess verify conform check-history` reads a recorded run of
+several clients and searches for that order, and the Go and TypeScript concurrent explorers record
+such runs. A suite drives one call at a time, so a single-client suite cannot see a race. See
+[check a concurrent history](../guides/verify/explore.md#check-a-concurrent-history).
+
 ## The same pattern, pointed somewhere else
 
 The pipeline shape â€” observe, normalize into a content-addressed IR, declare a desired state, judge

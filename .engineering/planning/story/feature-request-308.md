@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-308
 kind: story
-status: active
+status: implemented
 title: 'A constrained newtype identity refuses replay scenarios: complete subject requires a finite exact typed observer'
 tags:
 - feature-request
@@ -21,10 +21,11 @@ scope:
   path: crates/verify/ess-conformance/tests/retained_replay.rs
 - confidence: cited
   path: docs/design/retained-command-results.md
-revision: 12
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T10:32:09Z", actor: "human:timo", revision: 9, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T10:32:09Z", actor: "human:timo", revision: 10, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
+- {from: "active", to: "implemented", at: "2026-10-06T09:46:26Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Outcome
 

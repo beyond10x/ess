@@ -29,6 +29,14 @@ pub(crate) fn set_sentence(ir: &EssIr, set: &ResolvedSetSubject) -> Vec<Inline> 
                 "; a selected row resting outside the move's starting states is left as it is.",
             ),
         ],
+        // From ess/23 a set subject may remove its rows (beyond10x/ess#452).
+        ResolvedEffect::Deletes => vec![
+            Inline::text("It removes every "),
+            Inline::code(entity.name.to_string()),
+            Inline::text(" its filter "),
+            Inline::code(set.filter.to_string()),
+            Inline::text(" selects."),
+        ],
         _ => vec![
             Inline::text("It changes every "),
             Inline::code(entity.name.to_string()),
@@ -54,6 +62,44 @@ pub(crate) fn affects_sentences(ir: &EssIr, outcome: &ResolvedOutcome) -> Vec<In
 
 fn affect_sentence(ir: &EssIr, affect: &ResolvedAffect) -> Vec<Inline> {
     let entity = ir.entity(&affect.entity);
+    let filter = affect
+        .filter
+        .as_ref()
+        .map_or_else(String::new, ToString::to_string);
+    // From ess/23 an entry may write one row per element of an input list (beyond10x/ess#459).
+    if let Some(each) = &affect.each {
+        let mut out = vec![
+            Inline::text(" Beside its subject, it writes one "),
+            Inline::code(entity.name.to_string()),
+            Inline::text(" per element of "),
+            Inline::code(each.list.clone()),
+            Inline::text(": the row "),
+            Inline::code(format!("{}.{}", each.binder, each.member)),
+            Inline::text(" names is updated if held and created in "),
+            Inline::code(entity.lifecycle.initial.to_string()),
+            Inline::text(" if not"),
+        ];
+        let mut written = assignments(&affect.sets);
+        for read in &each.reads {
+            written.push(Inline::text(if written.is_empty() { ": " } else { ", " }));
+            written.push(Inline::code(read.target.clone()));
+            written.push(Inline::text(" becomes "));
+            written.push(Inline::code(format!("{}.{}", each.binder, read.member)));
+        }
+        out.extend(written);
+        out.push(Inline::text("; a row no element names is left as it is."));
+        return out;
+    }
+    // From ess/23 an entry may remove its rows (beyond10x/ess#452).
+    if affect.deletes {
+        return vec![
+            Inline::text(" Beside its subject, it removes every "),
+            Inline::code(entity.name.to_string()),
+            Inline::text(" the filter "),
+            Inline::code(filter.clone()),
+            Inline::text(" selects, the subject itself excepted."),
+        ];
+    }
     // From ess/22 an entry may move its rows (beyond10x/ess#229); an entry that only sets fields
     // reads as it always did.
     let Some(transition) = &affect.moves else {
@@ -61,7 +107,7 @@ fn affect_sentence(ir: &EssIr, affect: &ResolvedAffect) -> Vec<Inline> {
             Inline::text(" Beside its subject, it changes every "),
             Inline::code(entity.name.to_string()),
             Inline::text(" the filter "),
-            Inline::code(affect.filter.to_string()),
+            Inline::code(filter.clone()),
             Inline::text(" selects, the subject itself excepted"),
         ];
         out.extend(assignments(&affect.sets));
@@ -72,7 +118,7 @@ fn affect_sentence(ir: &EssIr, affect: &ResolvedAffect) -> Vec<Inline> {
         Inline::text(" Beside its subject, it moves every "),
         Inline::code(entity.name.to_string()),
         Inline::text(" the filter "),
-        Inline::code(affect.filter.to_string()),
+        Inline::code(filter.clone()),
         Inline::text(" selects to "),
         Inline::code(transition.to.to_string()),
         Inline::text(", along the declared move "),

@@ -559,7 +559,6 @@ fn view_reader_refusals_have_a_successful_full_pipeline_control() {
     }
     for (field, value, expected) in [
         ("shape", json!({}), "expected a string"),
-        ("filter", json!(42), "predicate"),
         ("naming", json!(false), "invalid type"),
         ("consistency", json!("instant"), "unknown variant"),
         ("consistency", json!({}), "invalid type"),
@@ -575,6 +574,23 @@ fn view_reader_refusals_have_a_successful_full_pipeline_control() {
         object(&mut malformed, "/views/0").insert(field.into(), value);
         reader_refused(&malformed, expected, &control);
     }
+    // A view filter is parsed in the view's own check since beyond10x/ess#448: the reader admits
+    // any node, and assembly refuses one that is not a predicate, at the view's path.
+    let mut malformed = control.clone();
+    object(&mut malformed, "/views/0").insert("filter".into(), json!(42));
+    let mut stages = Vec::new();
+    let Err(error) = pipeline(&malformed, &mut stages) else {
+        panic!("expected an assembly refusal for {malformed}");
+    };
+    assert_eq!(stages, ["reader", "assembly"], "{error}");
+    assert!(
+        error.contains(
+            "[unparsable_predicate] view.surface.records.Named.filter: predicate: expected an \
+             expression, list or mapping, found the number 42"
+        ),
+        "{error}"
+    );
+    admitted(&control);
 }
 
 #[test]

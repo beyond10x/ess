@@ -51,8 +51,215 @@ use crate::types::{NamedType, TypeBody, TypeRef, TypeRegistry};
 
 /// Specification format major versions this build implements.
 pub const SUPPORTED_FORMATS: &[u32] = &[
-    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
 ];
+
+/// What one specification format admits that the format before it did not.
+///
+/// One row of [`FORMAT_HISTORY`]. `ess specify formats` prints it, and `cargo xtask
+/// format-history` renders the `ess/` table of `website/docs/reference/spec-versions.md` from it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FormatHistoryEntry {
+    /// The format's major version, `N` in `ess/N`.
+    pub major: u32,
+    /// The release that first shipped it, or `None` while no release has.
+    pub release: Option<&'static str>,
+    /// The constructs it admits, one sentence each. Never empty.
+    pub added: &'static [&'static str],
+    /// Rules that read a document differently from this format on, one sentence each.
+    pub stricter: &'static [&'static str],
+}
+
+/// Every format in [`SUPPORTED_FORMATS`], in the same order, with what it added.
+///
+/// The only record of what each `ess/N` added that ships inside `ess`. A row missing, extra, out of
+/// order or with nothing added is a build error (the assertion below).
+pub const FORMAT_HISTORY: &[FormatHistoryEntry] = &[
+    FormatHistoryEntry {
+        major: 1,
+        release: Some("0.1.0"),
+        added: &["The first format: types, entities, commands, events, errors, views, actors, components, bindings and topology."],
+        stricter: &[],
+    },
+    FormatHistoryEntry {
+        major: 2,
+        release: Some("0.20.0"),
+        added: &["Finite `Binary64` fields, distinct from integer and decimal values."],
+        stricter: &[],
+    },
+    FormatHistoryEntry {
+        major: 3,
+        release: Some("0.23.0"),
+        added: &["`when_subject_state`; binding accessors into an event envelope."],
+        stricter: &[],
+    },
+    FormatHistoryEntry {
+        major: 4,
+        release: Some("0.23.0"),
+        added: &["Error wire names; command response fields mapped into event payloads."],
+        stricter: &["Emitted payload ownership is explicit and complete; below `ess/4` an emitted payload keeps its sparse semantics."],
+    },
+    FormatHistoryEntry {
+        major: 5,
+        release: Some("0.27.0"),
+        added: &["An enum variant's own `wire`, `display`, `summary` and `code`."],
+        stricter: &[],
+    },
+    FormatHistoryEntry {
+        major: 6,
+        release: Some("0.28.0"),
+        added: &["An input guard beside an external cause; `when_subject` over an enum field; `preserves`."],
+        stricter: &[],
+    },
+    FormatHistoryEntry {
+        major: 7,
+        release: Some("0.29.0"),
+        added: &["`replays`; an effect-free named error as the default of subject-state branches."],
+        stricter: &[],
+    },
+    FormatHistoryEntry {
+        major: 8,
+        release: Some("0.34.0"),
+        added: &["The string operators `starts_with`, `ends_with` and `contains`."],
+        stricter: &[],
+    },
+    FormatHistoryEntry {
+        major: 9,
+        release: Some("0.34.0"),
+        added: &["`when_subject: {predicate: …}` over the subject's stored fields."],
+        stricter: &[],
+    },
+    FormatHistoryEntry {
+        major: 10,
+        release: Some("0.34.0"),
+        added: &["Aggregate views: `aggregate:` and `group_by:`."],
+        stricter: &[],
+    },
+    FormatHistoryEntry {
+        major: 11,
+        release: Some("0.34.0"),
+        added: &["`alphabet:`, input `example:`, and `.count` on a `String`."],
+        stricter: &[],
+    },
+    FormatHistoryEntry {
+        major: 12,
+        release: Some("0.34.0"),
+        added: &["`outcome_groups:`, one refusal declared once for many commands."],
+        stricter: &[],
+    },
+    FormatHistoryEntry {
+        major: 13,
+        release: Some("0.35.0"),
+        added: &["`fixture_inputs:` on a command."],
+        stricter: &[],
+    },
+    FormatHistoryEntry {
+        major: 14,
+        release: Some("0.36.0"),
+        added: &["Value expressions in `payload:` and `sets:`."],
+        stricter: &[],
+    },
+    FormatHistoryEntry {
+        major: 15,
+        release: Some("0.37.0"),
+        added: &["Outcome shapes, `input.` in subject guards, case-insensitive comparison, `prefix:`, `Json`, `presence:`, and aggregates over `Optional` fields."],
+        stricter: &[],
+    },
+    FormatHistoryEntry {
+        major: 16,
+        release: Some("0.38.0"),
+        added: &["`input_absent:`, `existing_instance:`, actor `attributes:`, view `paging:`, bounded retry, `instances:` and `affects:`."],
+        stricter: &["A guard that cannot hold because every way it could hold needs an input that is not `Optional` to be absent (`not defined(f)`, `missing(f)`) is refused as a type mismatch; below `ess/16` it validates as before."],
+    },
+    FormatHistoryEntry {
+        major: 17,
+        release: Some("0.39.0"),
+        added: &["`returns: true` on an outcome."],
+        stricter: &[],
+    },
+    FormatHistoryEntry {
+        major: 18,
+        release: Some("0.41.0"),
+        added: &["Several states in `when_subject_state:`, `state` in `when_subject`, `when_related:`, and a binding's delivery context."],
+        stricter: &[],
+    },
+    FormatHistoryEntry {
+        major: 19,
+        release: Some("0.46.0"),
+        added: &["`payload:` sources for the fields of the error an outcome reports."],
+        stricter: &[],
+    },
+    FormatHistoryEntry {
+        major: 20,
+        release: Some("0.49.0"),
+        added: &["`state`, the related row's held lifecycle state, in a `when_related:` predicate."],
+        stricter: &[],
+    },
+    FormatHistoryEntry {
+        major: 21,
+        release: Some("0.53.0"),
+        added: &["`one_time_response:` names required String response fields whose values may be disclosed only by their originating response."],
+        stricter: &[],
+    },
+    FormatHistoryEntry {
+        major: 22,
+        release: Some("0.53.0"),
+        added: &[
+            "A `when_related:` guard's `via: input.<field>` may name an `Optional<…>` input, checked only when present; a command may guard on several related rows named by its input, each with its own `exists: false`.",
+            "A `{related: …}` value may read through an `Optional<…>` reference, absent where it is, or across two references: `via: [<field>, <field of the row it names>]`.",
+            "An `affects:` entry may move the records it selects: `moves: <Entity>.<transition>`, skipping a selected record outside the move's `from` states (beyond10x/ess#229); below `ess/22` it is refused naming `ess/22`.",
+            "An event binding may carry `when.where`, a finite condition over the event payload; it invokes only when the condition holds, and an Optional member the condition proves present may fill a required input.",
+            "An actor's `may:` may name a view, which only the actors naming it may read.",
+            "On the right of a comparison an unquoted word naming a field of the place is that field (`{fact: x}` written back); a plain `when:` reads `input.<field>`; two `Timestamp` fields compare as instants (`as: timestamp`); identity inputs compare only by `==` and `!=`; the right side may be one fact moved by one constant, `upper <= lower + 5` or `expires_at <= issued_at - 24h` (`{offset: {fact, add|subtract}}` written back), compared exactly for an `Integer` and by elapsed seconds for a `Timestamp`; `<text>.utf8_bytes` on either side of a comparison is the UTF-8 byte length of a `String` (`{utf8_bytes: <text>}` written back), refused in every other position and below `ess/22`, while a struct member named `utf8_bytes` keeps its meaning.",
+            r#"A union variant may be declared with no payload (`Open:`): a unit variant, written on the wire as its tag alone (`{"kind": "Open"}`) and generated as a unit enum variant; below `ess/22` it is refused naming `ess/22`."#,
+            "`on_failure:` may select its policy per refusal of the invoked command: `drop`, `retry` and `escalate` keyed, each with `outcomes:` or `except:`, exactly one `except:` as the explicit fallback.",
+            "An aggregate may declare `where:`, the rows of its group one measure reads (beyond10x/ess#363); below `ess/22` it is refused at the `where:` naming `ess/22`.",
+            "A `sets:` or `payload:` value may read `input.<path>`, a member of a struct input, absent where an `Optional` on the path is; `{input: <path>, else: …}` falls back where it is, and `else:` may read another input required along its whole route.",
+            "`distinct: {in, as, by}` holds when no two elements of a list share a key, the element or one scalar member, compared exactly or as instants (`kind:` written back); below `ess/22` it is refused naming `ess/22`.",
+            "A `when_related:` guard may test the rows a selector selects — `{entity, where}` with `exists`, `count` or `forall` — and a value may read one field of the one row a selector selects — `{related: {entity, where, field}}` (beyond10x/ess#228, #299); below `ess/22` the guard is refused naming `ess/22`, and the value keeps its nested-mapping meaning.",
+            r#"A command guard — its `when:`, `when_subject:` or `when_related:` predicate — may hold an instant to a calendar window at UTC or a fixed offset, `window: {at: now | <Timestamp field>, days: [mon, …], from: "HH:MM", to: "HH:MM", offset: Z | ±HH:MM}`; a named time zone is refused, so a window does not follow daylight saving."#,
+            "An `external:` refusal marked `compensates: true` changes the record its `instance:` names — `moves:` or `updates:` with `sets:` — and then answers its error (beyond10x/ess#197); every unmarked refusal still changes nothing, and below `ess/22` the marker is refused naming `ess/22`.",
+        ],
+        stricter: &["An outcome declaring `returns: true` is answered `200` with the command's response under `response`, in the `OpenAPI` projection and the synthesized Rust and Go servers; below `ess/22` it keeps `202` and no `response` member."],
+    },
+    FormatHistoryEntry {
+        major: 23,
+        release: Some("0.54.0"),
+        added: &[
+            "An `updates:` whose `sets:` writes the entity's identity re-keys the record: the row read under `instance:` comes to rest under the written identity, every field `sets:` does not name carried over, and the old identity names nothing (beyond10x/ess#429).",
+            "The command must declare its collision answer, a refusal guarded by `when_related: {entity: <the entity>, where: <identity> == input.<field>, exists: true}` over the input the identity is written from, or validate refuses the outcome as `missing_declaration`; the identity write is refused by name beside `compensates:`, in a create-or-update pair, on an entity a declared relation carries and on a struct identity, and below `ess/23` it is refused naming `ess/23`.",
+            "A value may read the held lifecycle state, `{subject: state}`, wherever `{subject: …}` is admitted — an error payload, an event payload and `sets:` — the state before the move (beyond10x/ess#458); below `ess/23` it is refused naming `ess/23`.",
+            "`deletes:` takes `instances:`, removing every stored row a filter selects and counting them with `{count: changed}`; an `affects:` entry may declare `deletes: <Entity>` over an entity of the outcome's own domain, and `affects:` is admitted beside a `deletes:` subject (beyond10x/ess#452).",
+            "An enum may declare typed variant attributes, `attributes: [{name, type}]`, each variant filling them with typed literals; guards, invariants and view filters read `<fact>.<attribute>`, lowered to variant membership (beyond10x/ess#450).",
+            "A refusal selected by `when_subject: {predicate: …}` asserts the whole record unchanged, as a state-guarded refusal does, and a predicate on `state` is witnessed in each state it claims that no earlier branch answers (beyond10x/ess#461).",
+            "Synthesis scopes a row-set selector by an equality between a `String` or `Uuid` member of a struct identity and the input or the subject, `at.region == input.place.region`, reads each row's literal identity member by member, arranges its decoys under other identities and never creates an identity a row already carries; the whole-struct `at == input.place` stays a type mismatch, and below `ess/23` such a selector validates and is refused by synthesis as unscoped, as before (beyond10x/ess#463).",
+            "A row-set selector that compares with the input is decided on a command that also names an existing record through the input, an update, a delete or an upsert; below `ess/23` such a branch stays refused (beyond10x/ess#462).",
+            "An `affects:` entry may write one record per element of an input list with `each: {in: input.<list>, as: <name>}` and `instance: <name>.<member>`: it updates the record an element names when it is held and creates it in the initial state when not, admitted only where a declared `distinct:` keeps that member distinct (beyond10x/ess#459).",
+        ],
+        stricter: &[],
+    },
+];
+
+// `FORMAT_HISTORY` and `SUPPORTED_FORMATS` name the same majors in the same order, and every row
+// says what it added; otherwise the build fails here.
+const _: () = {
+    assert!(
+        FORMAT_HISTORY.len() == SUPPORTED_FORMATS.len(),
+        "FORMAT_HISTORY needs one row per SUPPORTED_FORMATS major"
+    );
+    let mut index = 0;
+    while index < FORMAT_HISTORY.len() {
+        assert!(
+            FORMAT_HISTORY[index].major == SUPPORTED_FORMATS[index],
+            "FORMAT_HISTORY rows follow SUPPORTED_FORMATS in order"
+        );
+        assert!(
+            !FORMAT_HISTORY[index].added.is_empty(),
+            "every FORMAT_HISTORY row says what it added"
+        );
+        index += 1;
+    }
+};
 
 /// `true` when this build implements `format`.
 pub fn is_supported_format(format: FormatVersion) -> bool {
@@ -120,6 +327,9 @@ impl FormatVersion {
     /// Present-related predicate refusals compose after a held-row `wrong_state` refusal; a union
     /// variant may carry no payload (beyond10x/ess#418).
     pub const V22: Self = Self(22);
+    /// An `updates:` whose `sets:` writes the identity re-keys the record (beyond10x/ess#429); the
+    /// held lifecycle state as a value source, `{subject: state}` (beyond10x/ess#458).
+    pub const V23: Self = Self(23);
 
     /// How a format version is written.
     pub const PREFIX: &'static str = "ess/";
@@ -977,7 +1187,8 @@ impl Assembly {
                 )
                 .with_hint(
                     "upgrade the tooling that reads it rather than reinterpreting the document: a \
-                     later format may mean something different by the same words",
+                     later format may mean something different by the same words; `ess specify \
+                     formats` lists the formats this build implements and what each added",
                 ),
             );
         }

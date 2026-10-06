@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-275
 kind: story
-status: active
+status: implemented
 title: The caller-swapped run draws fresh identity inputs
 tags:
 - feature-request
@@ -19,10 +19,11 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/existence.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/adversary_275_pass2.rs
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T06:31:25Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-10-01T06:31:54Z", actor: "human:timo", revision: 6}
+- {from: "active", to: "implemented", at: "2026-10-06T09:43:05Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":3,"review_outcome":3,"verification":1}}}
 ---
 ## Outcome
 

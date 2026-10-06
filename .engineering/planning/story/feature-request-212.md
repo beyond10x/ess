@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-212
 kind: story
-status: active
+status: implemented
 title: ess verify conform mutate does not emit sets-drop, outcome-order-flip or the ==/!= and ±1 guard-boundary arms
 tags:
 - feature-request
@@ -11,10 +11,11 @@ refs:
   reference: beyond10x/ess#212
 relations:
 - serves: vision:O2
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-04T11:42:48Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-10-04T11:42:49Z", actor: "human:timo", revision: 5}
+- {from: "active", to: "implemented", at: "2026-10-06T09:42:52Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1,"review_outcome":1,"verification":1}}}
 ---
 ## Outcome
 

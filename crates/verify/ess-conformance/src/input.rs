@@ -1095,6 +1095,19 @@ pub(crate) fn primitive_literal(kind: Primitive, spelling: &str) -> Option<Node>
     primitive_value(kind, &value).is_some().then_some(value)
 }
 
+/// A binding `mapping:` constant as the value the invoked command receives (beyond10x/ess#445).
+///
+/// Over a `Boolean`, `Integer` or `Decimal` target ([`EssIr::literal_primitive`]) the constant is
+/// that value, read by [`primitive_literal`] — `true`, `3`, `0.5` — and never the text that spells
+/// it. Over text and an enum it is the text, as it always was. `None` is a typed constant
+/// `ess-domain` should have refused, which a caller reports rather than sending as text.
+pub(crate) fn mapping_literal(ir: &EssIr, target: &ResolvedTypeRef, value: &str) -> Option<Node> {
+    match ir.literal_primitive(target) {
+        Some(primitive) => primitive_literal(primitive, value),
+        None => Some(Node::Text(value.to_owned())),
+    }
+}
+
 /// Whether every declared field has to be supplied, or only the ones named.
 ///
 /// A command's input is [`Total`](Self::Total): a command is invoked with all of it, and a field

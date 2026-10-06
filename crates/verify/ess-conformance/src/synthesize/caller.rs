@@ -30,8 +30,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use ess_compiler::ir::{
-    EssIr, ResolvedCommand, ResolvedCondition, ResolvedField, ResolvedPayloadField,
-    ResolvedPayloadValue,
+    EssIr, ResolvedCommand, ResolvedCondition, ResolvedField, ResolvedInstance,
+    ResolvedPayloadField, ResolvedPayloadValue,
 };
 use ess_domain::command::caller_value::CALLER_NAMESPACE;
 use ess_domain::name::QualifiedName;
@@ -1063,10 +1063,19 @@ fn replace_observed(value: &mut serde_json::Value, captured: &BTreeMap<(String, 
 /// a refusal that sends its own run's stored identity again still sends it, an event field or a
 /// stored field that copies it expects the copy — and apart from every other row a target the
 /// scenarios share may hold.
+///
+/// An identity a command addresses without creating it is drawn afresh the same way
+/// (beyond10x/ess#465): a target may arrange the addressed record itself — under an external
+/// control, whose means it chooses — and the first run's literal would name a record the first run
+/// already had arranged.
 struct Identities<'a> {
     ir: &'a EssIr,
     /// Every command creating an identity from input, by name, with the inputs that become it.
     creating: BTreeMap<String, (&'a ResolvedCommand, BTreeSet<String>)>,
+    /// Every command taking an identity from input, by name, with those inputs: the ones that
+    /// become a created identity ([`Self::creating`]) and the ones a branch names as the instance
+    /// it acts on ([`supplied_instances`]).
+    inputs: BTreeMap<String, (&'a ResolvedCommand, BTreeSet<String>)>,
     /// Every declared field, input, event field and view column of an identity input's type, and
     /// every name the model copies an identity under whatever its type ([`derived`]): where a
     /// serialized run may carry a copy of an identity that is not text (see [`redraw`]).
@@ -1088,14 +1097,17 @@ struct Exhausted {
 impl<'a> Identities<'a> {
     fn of<'s>(ir: &'a EssIr, scenarios: impl IntoIterator<Item = &'s ConformanceScenario>) -> Self {
         let mut creating = BTreeMap::new();
+        let mut inputs = BTreeMap::new();
         let mut types = BTreeSet::new();
         for command in ir.commands().values() {
-            let fields: BTreeSet<String> = command
+            let created: BTreeSet<String> = command
                 .outcomes
                 .iter()
                 .filter_map(super::existence::identity_input)
                 .map(str::to_owned)
                 .collect();
+            let mut fields = created.clone();
+            fields.extend(supplied_instances(command));
             if fields.is_empty() {
                 continue;
             }
@@ -1106,7 +1118,10 @@ impl<'a> Identities<'a> {
                     .filter(|input| fields.contains(&input.name))
                     .map(|input| input.type_ref.to_string()),
             );
-            creating.insert(command.name.to_string(), (command, fields));
+            if !created.is_empty() {
+                creating.insert(command.name.to_string(), (command, created));
+            }
+            inputs.insert(command.name.to_string(), (command, fields));
         }
         let declared = ir
             .commands()
@@ -1127,10 +1142,12 @@ impl<'a> Identities<'a> {
             .filter(|field| types.contains(&field.type_ref.to_string()))
             .map(|field| field.name.clone())
             .collect();
-        keys.extend(derived(ir, &creating));
+        keys.extend(derived(ir, &inputs));
+        keys.extend(member_parameters(ir, &types));
         let mut identities = Self {
             ir,
             creating,
+            inputs,
             keys,
             taken: BTreeSet::new(),
             next: 0,
@@ -1141,14 +1158,15 @@ impl<'a> Identities<'a> {
         identities
     }
 
-    /// Every caller-supplied identity `steps` send as a literal.
+    /// Every caller-supplied identity `steps` send as a literal, to a command that creates it or
+    /// to one that addresses it.
     fn sent<'s>(&self, steps: &'s [ScenarioStep]) -> Vec<Sent<'a, 's>> {
         let mut sent = Vec::new();
         for step in steps {
             let ScenarioStep::ExecuteCommand { command, input, .. } = step else {
                 continue;
             };
-            let Some((creating, fields)) = self.creating.get(&command.to_string()) else {
+            let Some((sending, fields)) = self.inputs.get(&command.to_string()) else {
                 continue;
             };
             let literals: BTreeMap<String, Node> = input
@@ -1162,7 +1180,7 @@ impl<'a> Identities<'a> {
                 if let ScenarioValue::Literal { value } = value {
                     if fields.contains(name) && !matches!(value, Node::Null) {
                         sent.push(Sent {
-                            command: creating,
+                            command: sending,
                             field: name,
                             value,
                             input: literals.clone(),
@@ -1223,11 +1241,19 @@ impl<'a> Identities<'a> {
                 .filter(|other| key(other.value) == old)
                 .collect();
             let fresh = self
-                .draw(command, field, &avoid, &sending)
+                .draw(command, field, one.value, &avoid, &sending)
                 .ok_or_else(exhausted)?;
             let new = key(&fresh);
             avoid.insert(new.clone());
             self.taken.insert(new);
+            // A struct identity is replaced whole, and each member leaf by its fresh member too,
+            // wherever a member is copied on its own — a view parameter compared with
+            // `slot.shelf`, an event field set from it (beyond10x/ess#430).
+            for (from, to) in member_leaves(one.value, &fresh) {
+                if let Ok(to) = serde_json::to_value(to) {
+                    drawn.entry(key(from)).or_insert(to);
+                }
+            }
             drawn.insert(old, serde_json::to_value(&fresh).map_err(|_| exhausted())?);
         }
         Ok(drawn)
@@ -1239,10 +1265,14 @@ impl<'a> Identities<'a> {
     /// over — the witness builder answers every far distance of a narrow range with one value —
     /// then the values inside the guards that read it ([`super::guided_values`]), where a far
     /// witness would take another branch.
+    ///
+    /// A struct is fresh only where every member differs from the member it replaces
+    /// (beyond10x/ess#430): a member copied on its own must not name the first run's row.
     fn draw(
         &mut self,
         command: &ResolvedCommand,
         field: &str,
+        old: &Node,
         avoid: &BTreeSet<String>,
         sending: &[&Sent<'_, '_>],
     ) -> Option<Node> {
@@ -1260,7 +1290,7 @@ impl<'a> Identities<'a> {
         let guided = super::guided_values(self.ir, command, field);
         for value in witnesses.chain(guided) {
             let at = key(&value);
-            if self.taken.contains(&at) || avoid.contains(&at) {
+            if self.taken.contains(&at) || avoid.contains(&at) || !fresh_everywhere(old, &value) {
                 continue;
             }
             if sending.iter().all(|sent| {
@@ -1284,13 +1314,14 @@ struct Sent<'a, 's> {
 
 /// Every name the model copies a caller-supplied identity under, by where its value comes from
 /// rather than by the type it lands at (beyond10x/ess#275): an event field or a stored field a
-/// creating branch sets from the identity input — through a declared conversion into a plain
-/// `Integer`, or into an `Optional` of the identity's type — and, transitively, an event field or
-/// a stored field any branch sets from such a stored field. A view shows a stored field under its
-/// own name, so the stored names cover the view rows too.
+/// branch of a command taking it from input sets from that input, created or addressed
+/// (beyond10x/ess#465) — through a declared conversion into a plain `Integer`, or into an
+/// `Optional` of the identity's type — and, transitively, an event field or a stored field any
+/// branch sets from such a stored field. A view shows a stored field under its own name, so the
+/// stored names cover the view rows too.
 fn derived(
     ir: &EssIr,
-    creating: &BTreeMap<String, (&ResolvedCommand, BTreeSet<String>)>,
+    inputs: &BTreeMap<String, (&ResolvedCommand, BTreeSet<String>)>,
 ) -> BTreeSet<String> {
     fn copies(
         entry: &ResolvedPayloadField,
@@ -1301,7 +1332,12 @@ fn derived(
         match &entry.value {
             ResolvedPayloadValue::InputField { field, .. }
             | ResolvedPayloadValue::InputOrGenerated { field, .. }
-                if from_input.contains(field) =>
+                if from_input.contains(field)
+                    // A member of the identity input, read by an input path (ess/22, A4): the
+                    // field copies that member (beyond10x/ess#430).
+                    || field
+                        .split_once('.')
+                        .is_some_and(|(root, _)| from_input.contains(root)) =>
             {
                 found.insert(entry.target.clone());
             }
@@ -1331,7 +1367,7 @@ fn derived(
             .collect()
     };
     let mut found = BTreeSet::new();
-    for (command, fields) in creating.values() {
+    for (command, fields) in inputs.values() {
         for entry in entries(command) {
             copies(&entry, fields, &BTreeSet::new(), &mut found);
         }
@@ -1349,6 +1385,75 @@ fn derived(
             return found;
         }
     }
+}
+
+/// Every input a branch of `command` names as the instance it acts on (`moves:`, `updates:`,
+/// `deletes:` with `instance:` an input), whether or not another branch creates it: the identity
+/// the command addresses (beyond10x/ess#465).
+fn supplied_instances(command: &ResolvedCommand) -> impl Iterator<Item = String> + '_ {
+    command
+        .outcomes
+        .iter()
+        .filter_map(|outcome| match &outcome.subject.as_ref()?.instance {
+            ResolvedInstance::Supplied { field } => Some(field.name.clone()),
+            ResolvedInstance::Observed { .. } => None,
+        })
+}
+
+/// Every view parameter the filter compares with a member of its row's identity, where that
+/// identity is of a type a caller supplies (`types`): a parameter sent one member of a struct
+/// identity (beyond10x/ess#428), which a swapped run sends the fresh member in (beyond10x/ess#430).
+fn member_parameters(ir: &EssIr, types: &BTreeSet<String>) -> BTreeSet<String> {
+    let mut names = BTreeSet::new();
+    for view in ir.views().values() {
+        let identity = &ir.entity(&view.source).identity;
+        if !types.contains(&identity.type_ref.to_string()) {
+            continue;
+        }
+        for param in &view.params {
+            let member =
+                super::identity::compared_with(ir, view, &param.name).is_some_and(|field| {
+                    field
+                        .split_once('.')
+                        .is_some_and(|(root, _)| root == identity.name)
+                });
+            if member {
+                names.insert(param.name.clone());
+            }
+        }
+    }
+    names
+}
+
+/// Whether `new` differs from `old` in every member leaf, where both are structs; any two values
+/// otherwise (beyond10x/ess#430).
+fn fresh_everywhere(old: &Node, new: &Node) -> bool {
+    match (old, new) {
+        (Node::Map(before), Node::Map(after)) => before.iter().all(|(name, held)| {
+            after
+                .get(name)
+                .is_none_or(|replaced| fresh_everywhere(held, replaced))
+        }),
+        (Node::Map(_), _) | (_, Node::Map(_)) => true,
+        (before, after) => before != after,
+    }
+}
+
+/// Each scalar leaf of the struct `old` beside the leaf at the same path of `new`, where both are
+/// structs; nothing otherwise (beyond10x/ess#430).
+fn member_leaves<'n>(old: &'n Node, new: &'n Node) -> Vec<(&'n Node, &'n Node)> {
+    let (Node::Map(before), Node::Map(after)) = (old, new) else {
+        return Vec::new();
+    };
+    before
+        .iter()
+        .filter_map(|(name, held)| after.get(name).map(|replaced| (held, replaced)))
+        .flat_map(|(held, replaced)| match (held, replaced) {
+            (Node::Map(_), Node::Map(_)) => member_leaves(held, replaced),
+            (Node::Text(_) | Node::Number(_) | Node::Bool(_), _) => vec![(held, replaced)],
+            _ => Vec::new(),
+        })
+        .collect()
 }
 
 /// A value, serialized, as the set of taken identities holds it.
@@ -1380,6 +1485,15 @@ fn redraw_under(
     keys: &BTreeSet<String>,
     drawn: &BTreeMap<String, serde_json::Value>,
 ) {
+    // A drawn struct identity is replaced whole, before its members are read as anything else
+    // (beyond10x/ess#430): `key` and `Value::to_string` serialize one struct identically
+    // (`tests/caller_struct_identity.rs`).
+    if typed && value.is_object() {
+        if let Some(new) = drawn.get(&value.to_string()) {
+            *value = new.clone();
+            return;
+        }
+    }
     match value {
         serde_json::Value::Object(map) => {
             // A literal scenario value is the value it wraps, under the name that holds it.

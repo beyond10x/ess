@@ -258,7 +258,7 @@ jobs:
     name: Test ${{ matrix.shard }}
     needs: [build-tests, build-feature-off]
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       # Every shard reports, so one red run names every failing test rather than the first shard's.
       fail-fast: false
@@ -273,6 +273,11 @@ jobs:
 
       - name: Fetch the annotated release record
         run: git fetch --tags --force --prune origin
+
+      - name: Free runner disk
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
 
       # The shards compile no test binary, but their tests do build: generated projects through
       # `cargo`, fixtures through `rustc`, the WASM realization and the TypeScript and Go runtimes.
@@ -354,6 +359,12 @@ jobs:
         env:
           ESS_TUTORIAL_NETWORK: "1"
         run: task test-shard SHARD=${{ matrix.shard }}
+
+      - name: Drop the workspace archive
+        if: ${{ !cancelled() }}
+        run: |
+          rm -f target/nextest-archives/workspace.tar.zst
+          df -h /
 
       - name: Feature-off tests ${{ matrix.shard }}
         if: ${{ !cancelled() && steps.feature-off-archive.outcome == 'success' }}

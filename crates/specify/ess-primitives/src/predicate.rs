@@ -3905,6 +3905,181 @@ impl<'de> serde::Deserialize<'de> for Predicate {
     }
 }
 
+/// A predicate position of a declaration, as the document wrote it (beyond10x/ess#448).
+///
+/// Read as a [`Node`] and parsed at once, under the grammar the document's format admits — which
+/// only holds while the document is being read — but a predicate that does not parse does not end
+/// the document the way a [`Predicate`] field does. Its refusal is kept here, and the
+/// declaration's own pass reports it with [`Self::read`] at the declaration's path, beside every
+/// other refusal in the file. A refusal of the document's structure still ends the document.
+///
+/// Serialized, and published in a schema, exactly as a [`Predicate`] is: a parsed one as its
+/// canonical node, and one that did not parse as the node it was written as.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WrittenPredicate {
+    /// What the document wrote.
+    node: Node,
+    /// That node, parsed, or why it is not a predicate.
+    parsed: Reading,
+}
+
+/// What reading a [`WrittenPredicate`]'s node came to.
+///
+/// The refusal is kept as the parser's sentence and the one fact about it a reader acts on, rather
+/// than as a [`ParseError`] or a `Result`: every type reachable from an authored file is spelled by
+/// name and carries serde's attributes only, which `ess-xtask`'s consumer accounting reads.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Reading {
+    /// The node is this predicate.
+    Parsed(Predicate),
+    /// The node is not a predicate.
+    Refused {
+        /// The parser's own sentence.
+        message: String,
+        /// Whether it compares a fact with an unquoted `null` ([`ParseError::NullComparison`]).
+        null_comparison: bool,
+    },
+}
+
+impl From<Result<Predicate, ParseError>> for Reading {
+    fn from(read: Result<Predicate, ParseError>) -> Self {
+        match read {
+            Ok(predicate) => Self::Parsed(predicate),
+            Err(error) => Self::Refused {
+                null_comparison: matches!(error, ParseError::NullComparison { .. }),
+                message: error.to_string(),
+            },
+        }
+    }
+}
+
+impl WrittenPredicate {
+    /// What the document wrote.
+    pub fn node(&self) -> &Node {
+        &self.node
+    }
+
+    /// The predicate, or the parser's sentence saying why what was written is not one.
+    pub fn parsed(&self) -> Result<&Predicate, &str> {
+        match &self.parsed {
+            Reading::Parsed(predicate) => Ok(predicate),
+            Reading::Refused { message, .. } => Err(message),
+        }
+    }
+
+    /// The predicate, when what was written is one.
+    pub fn predicate(&self) -> Option<&Predicate> {
+        self.parsed().ok()
+    }
+
+    /// The predicate, to edit in place, when what was written is one. An edit changes what is
+    /// serialized and what [`Self::read`] returns; [`Self::node`] stays what the document wrote.
+    pub fn predicate_mut(&mut self) -> Option<&mut Predicate> {
+        match &mut self.parsed {
+            Reading::Parsed(predicate) => Some(predicate),
+            Reading::Refused { .. } => None,
+        }
+    }
+
+    /// The predicate, or the refusal its declaration reports `at` its site or path.
+    ///
+    /// A null comparison is [`ValidationCode::NullComparison`] and anything else
+    /// [`ValidationCode::UnparsablePredicate`]; the message is the parser's own sentence.
+    ///
+    /// [`ValidationCode::NullComparison`]: crate::error::ValidationCode::NullComparison
+    /// [`ValidationCode::UnparsablePredicate`]: crate::error::ValidationCode::UnparsablePredicate
+    pub fn read(
+        self,
+        at: impl Into<PredicateAt>,
+    ) -> Result<Predicate, crate::error::ValidationError> {
+        use crate::error::{ValidationCode, ValidationError};
+        match self.parsed {
+            Reading::Parsed(predicate) => Ok(predicate),
+            Reading::Refused {
+                message,
+                null_comparison,
+            } => {
+                let code = if null_comparison {
+                    ValidationCode::NullComparison
+                } else {
+                    ValidationCode::UnparsablePredicate
+                };
+                Err(match at.into() {
+                    PredicateAt::Site(site) => ValidationError::at(site, code, message),
+                    PredicateAt::Path(path) => ValidationError::new(code, path, message),
+                })
+            }
+        }
+    }
+}
+
+/// Where the refusal of a [`WrittenPredicate`] that does not parse is located.
+#[derive(Debug, Clone)]
+pub enum PredicateAt {
+    /// A typed site, which renders the path.
+    Site(crate::error::ConstructRef),
+    /// A document path written as a string, for a declaration whose head no site renders yet or
+    /// whose owner re-roots it (`docs/design/review-typed-diagnostics.md`).
+    Path(String),
+}
+
+impl From<crate::error::ConstructRef> for PredicateAt {
+    fn from(site: crate::error::ConstructRef) -> Self {
+        Self::Site(site)
+    }
+}
+
+impl From<String> for PredicateAt {
+    fn from(path: String) -> Self {
+        Self::Path(path)
+    }
+}
+
+impl From<Predicate> for WrittenPredicate {
+    fn from(predicate: Predicate) -> Self {
+        Self {
+            node: predicate.to_node(),
+            parsed: Reading::Parsed(predicate),
+        }
+    }
+}
+
+impl From<Node> for WrittenPredicate {
+    fn from(node: Node) -> Self {
+        let parsed = Predicate::from_node(&node).into();
+        Self { node, parsed }
+    }
+}
+
+impl serde::Serialize for WrittenPredicate {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match &self.parsed {
+            Reading::Parsed(predicate) => predicate.serialize(serializer),
+            Reading::Refused { .. } => self.node.serialize(serializer),
+        }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for WrittenPredicate {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Node::deserialize(deserializer).map(Self::from)
+    }
+}
+
+impl schemars::JsonSchema for WrittenPredicate {
+    fn schema_name() -> String {
+        <Predicate as schemars::JsonSchema>::schema_name()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        <Predicate as schemars::JsonSchema>::schema_id()
+    }
+
+    fn json_schema(generator: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+        <Predicate as schemars::JsonSchema>::json_schema(generator)
+    }
+}
+
 impl schemars::JsonSchema for Predicate {
     fn schema_name() -> String {
         "Predicate".to_owned()

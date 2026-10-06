@@ -2,17 +2,18 @@
 format: aep.planning-md/3
 id: story:outcome-groups
 kind: story
-status: active
+status: implemented
 title: One outcome can be declared for a group of commands
 refs:
 - provider: github
   reference: beyond10x/ess#105
 relations:
 - serves: vision:O2
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-26T02:40:29Z", actor: "human:timo", revision: 2, imported: true}
 - {from: "proposed", to: "active", at: "2026-09-26T02:41:00Z", actor: "human:timo", revision: 3, imported: true}
+- {from: "active", to: "implemented", at: "2026-10-06T09:43:37Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

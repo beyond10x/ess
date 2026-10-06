@@ -1406,6 +1406,9 @@ fn type_prose(declared: &ResolvedType) -> Vec<Block> {
             text.extend(inline_list(names(variants)));
             text.push(Inline::text("."));
             out.prose(text);
+            if let Some(table) = attribute_table(variants) {
+                out.push(table);
+            }
         }
         ResolvedBody::Union { tag, variants } => {
             out.prose(vec![
@@ -1442,6 +1445,36 @@ fn type_prose(declared: &ResolvedType) -> Vec<Block> {
         out.sentence(format!("Shown to a person as \"{display}\"."));
     }
     out.finish()
+}
+
+/// An enum's typed variant attributes (ess/23, beyond10x/ess#450) as a table: one row per
+/// variant, one column per attribute, `—` where an `Optional` attribute is left unfilled. `None`
+/// for an enum that declares none.
+fn attribute_table(variants: &[ess_domain::types::EnumVariant]) -> Option<Block> {
+    let first = variants
+        .first()
+        .filter(|first| !first.attributes.is_empty())?;
+    let mut columns = vec![vec![Inline::text("variant")]];
+    columns.extend(
+        first
+            .attributes
+            .iter()
+            .map(|attribute| vec![Inline::code(attribute.name.clone())]),
+    );
+    let rows = variants
+        .iter()
+        .map(|variant| {
+            let mut row = vec![vec![Inline::code(variant.name().to_owned())]];
+            row.extend(variant.attributes.iter().map(|attribute| {
+                attribute.value.as_ref().map_or_else(
+                    || vec![Inline::text("—")],
+                    |value| vec![Inline::code(value.clone())],
+                )
+            }));
+            row
+        })
+        .collect();
+    Some(Block::Table { columns, rows })
 }
 
 /// One outcome, including the two things a name alone loses: what decides it, and what it costs.
@@ -1482,7 +1515,13 @@ fn outcome_prose(
     } else if let Some(set) = &outcome.instances {
         out.extend(crate::set_effects::set_sentence(ir, set));
     } else {
-        out.extend(effect_sentence(ir, outcome.subject.as_ref()));
+        out.extend(effect_sentence(
+            ir,
+            outcome.subject.as_ref(),
+            outcome
+                .identity_write(ir)
+                .map(|write| write.target.as_str()),
+        ));
     }
     out.extend(crate::set_effects::affects_sentences(ir, outcome));
     if let Some(error) = &outcome.error {
@@ -1563,7 +1602,14 @@ fn sets_sentence(outcome: &ess_compiler::ir::ResolvedOutcome) -> Vec<Inline> {
 /// Written for every outcome and not only for the ones with a subject, because silence is the one
 /// answer a reader cannot interpret: "this branch changes no entity" and "the projection dropped the
 /// field" look identical on a page, and the first is a fact about the system.
-fn effect_sentence(ir: &EssIr, subject: Option<&ResolvedSubject>) -> Vec<Inline> {
+///
+/// `rekey` is the identity a re-keying `updates:` writes (ess/23, beyond10x/ess#429): the record
+/// moves to the identity written rather than changing where it is.
+fn effect_sentence(
+    ir: &EssIr,
+    subject: Option<&ResolvedSubject>,
+    rekey: Option<&str>,
+) -> Vec<Inline> {
     let Some(subject) = subject else {
         return vec![Inline::text("No entity in this specification changes.")];
     };
@@ -1603,6 +1649,16 @@ fn effect_sentence(ir: &EssIr, subject: Option<&ResolvedSubject>) -> Vec<Inline>
             Inline::text("It removes the "),
             Inline::code(entity.name.to_string()),
             Inline::text(" its input names; no view shows it afterwards."),
+        ],
+        ResolvedEffect::Updates if rekey.is_some() => vec![
+            Inline::text("It re-keys a "),
+            Inline::code(entity.name.to_string()),
+            Inline::text(": the record comes to rest under the identity written to "),
+            Inline::code(rekey.unwrap_or_default().to_owned()),
+            Inline::text(
+                ", every field the branch does not write carried over, and its old identity \
+                 names nothing afterwards.",
+            ),
         ],
         ResolvedEffect::Updates => vec![
             Inline::text("It changes a "),
@@ -2120,6 +2176,15 @@ fn mapping_bullet(ir: &EssIr, mapping: &ResolvedMapping) -> Vec<Inline> {
 
 /// Describe the admitted representation without claiming that literal invariants were evaluated.
 fn literal_guarantee(ir: &EssIr, target: &ResolvedTypeRef) -> Vec<Inline> {
+    // A `Boolean`, `Integer` or `Decimal` constant was checked exactly, by the rule `sets:` types a
+    // literal by (beyond10x/ess#445).
+    if let Some(primitive) = ir.literal_primitive(target) {
+        return vec![
+            Inline::text(". The compiler verified that this is a value of "),
+            Inline::code(primitive.to_string()),
+            Inline::text("."),
+        ];
+    }
     let mut current = target;
     let mut seen = BTreeSet::new();
     for _ in 0..WRAPPER_LIMIT {

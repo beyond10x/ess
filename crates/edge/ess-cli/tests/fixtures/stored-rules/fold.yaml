@@ -1,0 +1,70 @@
+format: ess/22
+system: demo
+version: v1
+domain: demo.rules
+summary: Each stored condition's result is a row field; the rule folds them with all or any.
+types:
+  - {name: demo.rules.ConditionId, kind: newtype, of: Uuid}
+  - {name: demo.rules.RuleId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.rules.Condition
+    identity: {name: condition_id, type: demo.rules.ConditionId}
+    fields:
+      - {name: rule_id, type: demo.rules.RuleId}
+      - {name: holds, type: Boolean}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+errors:
+  - {name: demo.rules.RuleNotMet, fields: [{name: rule_id, type: demo.rules.RuleId}]}
+events:
+  - name: demo.rules.ConditionAdded
+    fields: [{name: condition_id, type: demo.rules.ConditionId}]
+  - name: demo.rules.RuleMet
+    fields: [{name: rule_id, type: demo.rules.RuleId}]
+commands:
+  - name: demo.rules.AddCondition
+    input:
+      - {name: condition_id, type: demo.rules.ConditionId}
+      - {name: rule_id, type: demo.rules.RuleId}
+      - {name: holds, type: Boolean}
+    outcomes:
+      - name: added
+        creates: demo.rules.Condition
+        instance: condition_id
+        sets: {rule_id: input.rule_id, holds: input.holds}
+        emits: [demo.rules.ConditionAdded]
+        payload: {demo.rules.ConditionAdded: {condition_id: input.condition_id}}
+  - name: demo.rules.TestAll
+    input: [{name: rule_id, type: demo.rules.RuleId}]
+    outcomes:
+      - name: met
+        when_related:
+          entity: demo.rules.Condition
+          where: rule_id == input.rule_id
+          forall: holds == true
+        emits: [demo.rules.RuleMet]
+        payload: {demo.rules.RuleMet: {rule_id: input.rule_id}}
+      - {name: not-met, error: demo.rules.RuleNotMet}
+  - name: demo.rules.TestAny
+    input: [{name: rule_id, type: demo.rules.RuleId}]
+    outcomes:
+      - name: met
+        when_related:
+          entity: demo.rules.Condition
+          where: {all: [rule_id == input.rule_id, holds == true]}
+          exists: true
+        emits: [demo.rules.RuleMet]
+        payload: {demo.rules.RuleMet: {rule_id: input.rule_id}}
+      - {name: not-met, error: demo.rules.RuleNotMet}
+views:
+  - name: demo.rules.Conditions
+    source: demo.rules.Condition
+    consistency: read_your_writes
+    fields:
+      - {name: condition_id, type: demo.rules.ConditionId}
+      - {name: rule_id, type: demo.rules.RuleId}
+      - {name: holds, type: Boolean}
+components:
+  - component: rules
+    owns: {domains: [demo.rules]}
+    accepts: {commands: [demo.rules.AddCondition, demo.rules.TestAll, demo.rules.TestAny]}
+    reached_by: network

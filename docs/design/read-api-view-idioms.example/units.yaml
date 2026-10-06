@@ -1,0 +1,52 @@
+domain: idioms.units
+
+summary: >-
+  A unit is a newtype. Its name is the schema title every projection carries, and a value of one
+  unit is not assignable to a field of another.
+
+types:
+  - {name: idioms.units.Millis, kind: newtype, of: Integer}
+  - {name: idioms.units.Seconds, kind: newtype, of: Integer}
+
+events:
+  - name: idioms.units.CallRecorded
+    fields:
+      - {name: call_id, type: Uuid}
+
+entities:
+  - name: idioms.units.Call
+    identity: {name: call_id, type: Uuid}
+    fields:
+      - {name: queue_id, type: String}
+      - {name: talk_ms, type: idioms.units.Millis, summary: Talk time in milliseconds.}
+      - {name: wait_s, type: idioms.units.Seconds, summary: Time in queue in seconds.}
+    lifecycle:
+      initial: Recorded
+      states: [Recorded]
+      terminal: [Recorded]
+      transitions: []
+
+commands:
+  - name: idioms.units.RecordCall
+    input:
+      - {name: queue_id, type: String}
+      - {name: talk_ms, type: idioms.units.Millis}
+      - {name: wait_s, type: idioms.units.Seconds}
+    outcomes:
+      - name: recorded
+        creates: idioms.units.Call
+        instance: call_id
+        sets: {queue_id: input.queue_id, talk_ms: input.talk_ms, wait_s: input.wait_s}
+        emits: [idioms.units.CallRecorded]
+        payload:
+          idioms.units.CallRecorded: {call_id: {generated: true}}
+
+views:
+  # A reporting view that mixes two units: each field keeps its own.
+  - name: idioms.units.CallDurations
+    source: idioms.units.Call
+    consistency: read_your_writes
+    fields:
+      - {name: call_id, type: Uuid}
+      - {name: talk_ms, type: idioms.units.Millis}
+      - {name: wait_s, type: idioms.units.Seconds}

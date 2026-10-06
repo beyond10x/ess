@@ -2,11 +2,13 @@
 format: aep.planning-md/3
 id: release-plan:optional-recursive-rust-052
 kind: release-plan
-status: draft
+status: implemented
 title: Release ESS 0.52.0 for generated runtime contract adoption
 relations:
 - derived_from: story:optional-recursive-rust
-revision: 2
+revision: 3
+transitions:
+- {from: "draft", to: "implemented", at: "2026-10-06T09:44:38Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Intent
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-265
 kind: story
-status: active
+status: implemented
 title: An ungranted actor gets one declared refusal, witnessed per command
 tags:
 - feature-request
@@ -51,10 +51,11 @@ scope:
   path: docs/design/caller-values.md
 - confidence: cited
   path: website/docs/guides/synthesize.md
-revision: 29
+revision: 30
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T13:04:15Z", actor: "human:timo", revision: 25}
 - {from: "proposed", to: "active", at: "2026-09-30T13:04:17Z", actor: "human:timo", revision: 26}
+- {from: "active", to: "implemented", at: "2026-10-06T09:42:58Z", actor: "human:timo", revision: 30, decided_on: {"recorded":{"test_result":1,"review_outcome":2,"verification":1}}}
 ---
 ## Outcome
 

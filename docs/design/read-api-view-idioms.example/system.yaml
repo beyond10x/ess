@@ -1,0 +1,10 @@
+# The validated model of `docs/design/read-api-view-idioms.md`: one file per idiom, each its own
+# domain, so `crates/verify/ess-conformance/tests/read_api_view_idioms.rs` can read and synthesize
+# every idiom the note documents.
+format: ess/22
+system: idioms
+version: v1
+
+summary: >-
+  Read-API idioms for what a view deliberately does not compute: derived values, order-dependent
+  picks, units, maintained totals and joins, each stated with the constructs ESS already has.

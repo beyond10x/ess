@@ -95,12 +95,12 @@ tasks:
       - cargo nextest archive --locked {{.FEATURE_OFF_PACKAGES}} {{if eq .FEATURE_OFF "number-semantics"}}-E '{{.FEATURE_OFF_NUMBER_SEMANTICS}}'{{end}} --archive-file {{.NEXTEST_ARCHIVES}}/feature-off.tar.zst
 
   test-browser-product:
-    desc: Run the browser-product Firefox tests a 30-minute CI shard cannot hold; run before tagging a release.
+    desc: Run the browser-product Firefox tests a CI test shard cannot hold; run before tagging a release.
     cmds:
       - cargo test --locked -p ess-cli --test browser_response_conformance --test browser_product_adversary -- --include-ignored --test-threads=1
 
   test-slow-probes:
-    desc: Run the slow byte-identity and WASM-parity probes the 30-minute CI shards leave out; run before tagging a release.
+    desc: Run the slow byte-identity and WASM-parity probes the CI test shards leave out; run before tagging a release.
     cmds:
       - cargo test --locked -p ess-synth --test adversary_e_u2_bytes --test adversary_e_u6_bytes -- --ignored --test-threads=1
       - cargo test --locked -p ess-conformance --test adversary_244b_window_free_bytes --test adversary_w3_266_267_dump --test adversary_287_pass1 -- --ignored --test-threads=1
@@ -285,6 +285,7 @@ tasks:
       # The diagnostics reference page is rendered from the catalogue each crate exports, so a
       # code added without a catalogue entry, or without regenerating the page, fails here.
       - cargo xtask diagnostics --check
+      - cargo xtask format-history --check
       - cargo xtask site-data --check
       - cargo xtask admonitions
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-360
 kind: story
-status: active
+status: implemented
 title: A parameterized view witnesses fields copied from a related row
 tags:
 - feature-request
@@ -25,10 +25,11 @@ scope:
   path: crates/verify/ess-conformance/tests/fixtures/related-copied-view-parameter.yaml
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/related_copied_view_parameter.rs
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T12:22:57Z", actor: "human:timo", revision: 6, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T12:22:57Z", actor: "human:timo", revision: 7, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
+- {from: "active", to: "implemented", at: "2026-10-06T09:43:26Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

@@ -1,0 +1,51 @@
+format: ess/22
+system: demo
+version: v1
+domain: demo.window
+events:
+  - name: demo.window.CallRecorded
+    fields: [{name: call_id, type: Uuid}]
+entities:
+  - name: demo.window.Call
+    identity: {name: call_id, type: Uuid}
+    fields:
+      - {name: queue_id, type: Integer}
+      - {name: started_at, type: Timestamp}
+      - {name: duration_ms, type: Integer}
+    lifecycle:
+      initial: Recorded
+      states: [Recorded]
+      terminal: [Recorded]
+      transitions: []
+commands:
+  - name: demo.window.RecordCall
+    input:
+      - {name: queue_id, type: Integer}
+      - {name: started_at, type: Timestamp}
+      - {name: duration_ms, type: Integer}
+    outcomes:
+      - name: recorded
+        creates: demo.window.Call
+        instance: call_id
+        sets: {queue_id: input.queue_id, started_at: input.started_at, duration_ms: input.duration_ms}
+        emits: [demo.window.CallRecorded]
+        payload: {demo.window.CallRecorded: {call_id: {generated: true}}}
+views:
+  # A window the caller resolved into two instants: `from` inclusive, `to` exclusive.
+  - name: demo.window.CallsInRange
+    source: demo.window.Call
+    consistency: read_your_writes
+    params: [{name: from, type: Timestamp}, {name: to, type: Timestamp}]
+    filter: [started_at >= param.from, started_at < param.to]
+    fields:
+      - {name: calls, type: Integer, aggregate: {count: {}}}
+      - {name: talk_ms, type: Integer, aggregate: {sum: duration_ms}}
+  - name: demo.window.QueueCallsInRange
+    source: demo.window.Call
+    consistency: read_your_writes
+    params: [{name: from, type: Timestamp}, {name: to, type: Timestamp}]
+    filter: [started_at >= param.from, started_at < param.to]
+    group_by: [queue_id]
+    fields:
+      - {name: queue_id, type: Integer}
+      - {name: calls, type: Integer, aggregate: {count: {}}}

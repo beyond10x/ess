@@ -15,6 +15,14 @@ use crate::{
 use ess_primitives::error::{ValidationCode, ValidationError, ValidationErrors};
 use std::fmt::Write as _;
 
+/// The repair named beside the refusal of a stored-field guard and a lifecycle-state guard in one
+/// command (beyond10x/ess#461): the held state read as `state` in the fact strategy's predicate
+/// (ess/18) states the same command, and declaration order gives the refusal its precedence.
+pub(crate) const LIFECYCLE_MIX_HINT: &str =
+    "read the held state in the predicate instead: replace `when_subject_state:` with \
+     `when_subject: {predicate: state == Active}`, or refuse every other state with \
+     `when_subject: {predicate: state != Active}` declared before the default";
+
 /// Whether any branch of this command reads the existing subject's stored fields.
 pub fn uses(command: &CommandSpec) -> bool {
     command
@@ -197,11 +205,14 @@ pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors 
             .iter()
             .any(|outcome| outcome.condition.reads_held_state())
         {
-            errors.push(ValidationError::at(
-                command.site().key("outcomes"),
-                ValidationCode::ConflictingDeclaration,
-                "subject fact and lifecycle guards cannot be combined in one command",
-            ));
+            errors.push(
+                ValidationError::at(
+                    command.site().key("outcomes"),
+                    ValidationCode::ConflictingDeclaration,
+                    "subject fact and lifecycle guards cannot be combined in one command",
+                )
+                .with_hint(LIFECYCLE_MIX_HINT),
+            );
             continue;
         }
         let mut shared = true;
@@ -508,31 +519,36 @@ fn validate_partition(
         .collect();
     let default = command.default_outcome();
     let readable = readable_fields(entity, admits_state(types));
-    let analyze = if default.is_some() {
-        finite::analyze_enum_fields
-    } else {
-        finite::analyze_with_fields
-    };
-    let Some(cases) = analyze(
+    // Booleans are proved only where no default answers the rest: the enum-only proof otherwise.
+    let cases = finite::field_coverage(
         &DomainEnvironment::new(types, &readable),
         &DomainEnvironment::new(types, &command.input),
         &guards,
-    ) else {
-        if default.is_none() {
-            errors.push(
-                ValidationError::at(
-                    command.site().key("outcomes"),
-                    ValidationCode::NonExhaustiveBranches,
-                    "subject-fact/input coverage is open, unsupported, or exceeds 64 joint \
-                     assignments; declare a genuine default",
-                )
-                .with_hint(
-                    "drop the guard from the branch that answers every other stored row — usually \
-                     the success beside the refusal",
-                ),
-            );
+        default.is_none(),
+    );
+    let cases = match cases {
+        Ok(cases) => cases,
+        Err(declined) => {
+            if default.is_none() {
+                // Which of the three it is, so the author knows whether to drop a guard, close
+                // a field, or split the command (beyond10x/ess#426).
+                errors.push(
+                    ValidationError::at(
+                        command.site().key("outcomes"),
+                        ValidationCode::NonExhaustiveBranches,
+                        format!(
+                            "subject-fact/input coverage is not proved: {declined}; declare a \
+                             genuine default"
+                        ),
+                    )
+                    .with_hint(
+                        "drop the guard from the branch that answers every other stored row — \
+                         usually the success beside the refusal",
+                    ),
+                );
+            }
+            return errors;
         }
-        return errors;
     };
     for case in cases {
         let selected: Vec<&Outcome> = if case.selected.is_empty() {

@@ -1,0 +1,26 @@
+format: ess/22
+system: probe
+version: v1
+domain: probe.item
+entities:
+  - name: probe.item.Item
+    identity: {name: item_id, type: Uuid}
+    fields:
+      - {name: label, type: String}
+    lifecycle:
+      initial: Open
+      states: [Open]
+      terminal: [Open]
+views:
+  - name: probe.item.FirstView
+    source: probe.item.Item
+    fields:
+      - {name: item_id, type: Uuid}
+      - {name: label, type: String}
+    filter: label ~= "a"
+  - name: probe.item.SecondView
+    source: probe.item.Item
+    fields:
+      - {name: item_id, type: Uuid}
+      - {name: label, type: String}
+    filter: label =~ "b"

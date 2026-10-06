@@ -2,17 +2,18 @@
 format: aep.planning-md/3
 id: story:string-newtype-declares-its-alphabet
 kind: story
-status: active
+status: implemented
 title: A String newtype can declare its character set
 refs:
 - provider: github
   reference: beyond10x/ess#103
 relations:
 - serves: vision:O2
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-26T02:35:28Z", actor: "human:timo", revision: 2, imported: true}
 - {from: "proposed", to: "active", at: "2026-09-26T02:36:25Z", actor: "human:timo", revision: 3, imported: true}
+- {from: "active", to: "implemented", at: "2026-10-06T09:43:47Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

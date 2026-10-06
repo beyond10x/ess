@@ -2,14 +2,18 @@
 format: aep.planning-md/3
 id: story:recursive-typed-input-fixtures
 kind: story
-status: draft
+status: implemented
 title: Conformance synthesis admits finite recursive typed input fixtures
 refs:
 - provider: github
   reference: beyond10x/ess#416
 relations:
 - serves: vision:O2
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-06T09:43:39Z", actor: "human:timo", revision: 2, decided_on: {"recorded":{"test_result":1}}}
+- {from: "proposed", to: "active", at: "2026-10-06T09:43:39Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"test_result":1}}}
+- {from: "active", to: "implemented", at: "2026-10-06T09:43:39Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

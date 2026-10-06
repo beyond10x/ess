@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-276
 kind: story
-status: active
+status: implemented
 title: Declarations added or removed leave no residual in the diff
 tags:
 - feature-request
@@ -15,10 +15,11 @@ relations:
 scope:
 - confidence: cited
   path: crates/verify/ess-diff/src/diff.rs
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T06:31:25Z", actor: "human:timo", revision: 6}
 - {from: "proposed", to: "active", at: "2026-10-01T06:31:54Z", actor: "human:timo", revision: 7}
+- {from: "active", to: "implemented", at: "2026-10-06T09:43:05Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1,"review_outcome":1,"verification":1}}}
 ---
 ## Outcome
 

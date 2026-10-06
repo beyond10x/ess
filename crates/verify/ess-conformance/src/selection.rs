@@ -55,7 +55,11 @@ impl Declaration {
                 invariants: Vec::new(),
             },
             Self::Enum { variants } => ess_domain::types::RawTypeBody::Enum {
-                variants: ess_domain::types::EnumVariant::bare(variants.clone()),
+                variants: ess_domain::types::EnumVariant::bare(variants.clone())
+                    .into_iter()
+                    .map(ess_domain::types::RawEnumVariant::from)
+                    .collect(),
+                attributes: Vec::new(),
             },
             Self::Union { tag, variants } => ess_domain::types::RawTypeBody::Union {
                 tag: tag.clone(),

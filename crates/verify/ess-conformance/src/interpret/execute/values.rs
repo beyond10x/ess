@@ -221,6 +221,15 @@ pub(super) fn subject(
     )
 }
 
+/// `{subject: state}` (ess/23, beyond10x/ess#458): the lifecycle state the row held immediately
+/// before the outcome, as the text of its state.
+pub(super) fn held_state(before: Option<&Row>) -> Result<Option<Value>, Undetermined> {
+    let before = before.ok_or_else(|| Undetermined::NoValue {
+        what: "the pre-outcome subject's held state".to_owned(),
+    })?;
+    Ok(Some(Value::Known(Node::Text(before.state.to_string()))))
+}
+
 fn checked_read(
     ir: &EssIr,
     source: &str,

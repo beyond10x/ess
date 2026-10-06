@@ -365,6 +365,55 @@ pub(crate) enum Site {
     Measure { view: QualifiedName, field: String },
 }
 
+impl Site {
+    /// Where a refusal about the predicate at this site is located.
+    fn location(&self) -> String {
+        let outcome = |command: &QualifiedName, outcome: &OutcomeName, rest: &str| {
+            format!("command.{command}.outcomes.{outcome}.{rest}")
+        };
+        match self {
+            Self::Guard {
+                command,
+                outcome: name,
+            } => outcome(command, name, "when"),
+            Self::Subject {
+                command,
+                outcome: name,
+            } => outcome(command, name, "when_subject.predicate"),
+            Self::Related {
+                command,
+                outcome: name,
+            } => outcome(command, name, "when_related.predicate"),
+            Self::RowSetWhere {
+                command,
+                outcome: name,
+            } => outcome(command, name, "when_related.where"),
+            Self::RowSetForall {
+                command,
+                outcome: name,
+            } => outcome(command, name, "when_related.forall"),
+            Self::Selection {
+                command,
+                outcome: name,
+                place,
+            } => outcome(command, name, &place.join(".")),
+            Self::Instances {
+                command,
+                outcome: name,
+            } => outcome(command, name, "instances.where"),
+            Self::Affect {
+                command,
+                outcome: name,
+                index,
+            } => outcome(command, name, &format!("affects[{index}].where")),
+            Self::Invariant { entity, index } => format!("entity {entity}.invariants[{index}]"),
+            Self::TypeInvariant { name, index } => format!("types.{name}.invariants[{index}]"),
+            Self::View { view } => format!("view.{view}.filter"),
+            Self::Measure { view, field } => format!("view.{view}.fields.{field}.aggregate.where"),
+        }
+    }
+}
+
 /// The lexical trees of one source's authored predicates, read from the document beside its typed
 /// reading and kept until the header's format is known (`docs/design/expression-family-source22.md`,
 /// A1).
@@ -643,7 +692,7 @@ pub(crate) fn slot<'a>(
             .set_effects
             .affects
             .get_mut(*index)
-            .map(|affect| &mut affect.filter),
+            .and_then(|affect| affect.filter.as_mut()),
         Site::Invariant { entity, index } => entities
             .get_mut(entity)?
             .invariants
@@ -676,21 +725,28 @@ pub(crate) fn slot<'a>(
 /// the environment the checker checks that place in — a comparison of two `Timestamp` facts is
 /// tagged to compare instants, and a command's input guard reads `input.<path>` as the input it
 /// names (decision 6). The checker that runs next refuses what the decision cannot make sense of;
-/// this pass refuses nothing.
+/// this pass refuses only what lowering an enum attribute read (ess/23, beyond10x/ess#450) finds
+/// to be no value of the attribute, at the site it is written, in `refusals`.
 // One arm per predicate site, each building the environment that site is checked in.
 #[allow(clippy::too_many_lines)]
 pub(crate) fn resolutions(
     spec: &crate::spec::Specification,
     registry: &crate::types::TypeRegistry,
     written: &Written,
+    refusals: &mut ess_primitives::error::ValidationErrors,
 ) -> Vec<(Site, Predicate)> {
     use crate::command::subject_fact::INPUT_NAMESPACE;
+    // A read of an enum attribute (ess/23, beyond10x/ess#450) is lowered to membership in the
+    // environment each site is resolved in, so no later pass reads one.
+    use crate::expression::attributes::lower;
     use crate::expression::{
         read_input_namespace, resolve_lexical, resolve_lexical_reading, DomainEnvironment,
     };
     if spec.system().format.major() < FormatVersion::V22.major() {
         return Vec::new();
     }
+    let sink = std::cell::RefCell::new(Vec::new());
+    let refused = &sink;
     let declares =
         |fields: &[crate::types::Field], name: &str| fields.iter().any(|field| field.name == name);
     let outcome = |command: &QualifiedName, name: &OutcomeName| {
@@ -709,9 +765,18 @@ pub(crate) fn resolutions(
                     lexical: &LexicalPredicate| {
         let environment = DomainEnvironment::new(registry, fields);
         if declares(&entity.fields, INPUT_NAMESPACE) {
-            resolve_lexical(&environment, lexical)
+            lower(
+                &environment,
+                refused,
+                resolve_lexical(&environment, lexical),
+            )
         } else {
-            resolve_lexical(&environment.with_input(&command.input), lexical)
+            let environment = environment.with_input(&command.input);
+            lower(
+                &environment,
+                refused,
+                resolve_lexical(&environment, lexical),
+            )
         }
     };
     let mut resolved = Vec::new();
@@ -729,7 +794,7 @@ pub(crate) fn resolutions(
                 if namespace {
                     predicate = read_input_namespace(&predicate);
                 }
-                Some((current.clone(), predicate))
+                Some((current.clone(), lower(&environment, refused, predicate)))
             }),
             Site::Subject {
                 command,
@@ -827,7 +892,7 @@ pub(crate) fn resolutions(
                 let affect = outcome.set_effects.affects.get(*index)?;
                 let entity = spec.entities().get(&affect.entity)?;
                 Some((
-                    affect.filter.clone(),
+                    affect.filter.clone()?,
                     over_row(&entity.fields, entity, command, lexical),
                 ))
             }),
@@ -837,7 +902,11 @@ pub(crate) fn resolutions(
                 let environment = DomainEnvironment::new(registry, &fields);
                 Some((
                     invariant.predicate.clone(),
-                    resolve_lexical(&environment, lexical),
+                    lower(
+                        &environment,
+                        refused,
+                        resolve_lexical(&environment, lexical),
+                    ),
                 ))
             }),
             Site::TypeInvariant { name, index } => registry.get(name).and_then(|declared| {
@@ -856,7 +925,11 @@ pub(crate) fn resolutions(
                 let environment = DomainEnvironment::new(registry, fields);
                 Some((
                     invariant.predicate.clone(),
-                    resolve_lexical(&environment, lexical),
+                    lower(
+                        &environment,
+                        refused,
+                        resolve_lexical(&environment, lexical),
+                    ),
                 ))
             }),
             Site::View { view } => spec.views().get(view).and_then(|view| {
@@ -865,7 +938,14 @@ pub(crate) fn resolutions(
                 let fields = entity.observable_fields();
                 let environment =
                     DomainEnvironment::new(registry, &fields).with_params(&view.params);
-                Some((filter.clone(), resolve_lexical(&environment, lexical)))
+                Some((
+                    filter.clone(),
+                    lower(
+                        &environment,
+                        refused,
+                        resolve_lexical(&environment, lexical),
+                    ),
+                ))
             }),
             Site::Measure { view, field } => spec.views().get(view).and_then(|view| {
                 let condition = view
@@ -878,9 +958,23 @@ pub(crate) fn resolutions(
                 let fields = entity.observable_fields();
                 let environment =
                     DomainEnvironment::new(registry, &fields).with_params(&view.params);
-                Some((condition.clone(), resolve_lexical(&environment, lexical)))
+                Some((
+                    condition.clone(),
+                    lower(
+                        &environment,
+                        refused,
+                        resolve_lexical(&environment, lexical),
+                    ),
+                ))
             }),
         };
+        for refusal in sink.borrow_mut().drain(..) {
+            refusals.push(ess_primitives::error::ValidationError::new(
+                ess_primitives::error::ValidationCode::TypeMismatch,
+                site.location(),
+                refusal,
+            ));
+        }
         // Only the predicate this source wrote: anything else put there is not this tree's.
         if let Some((current, predicate)) = found {
             if current == lexical.literal() && current != predicate {

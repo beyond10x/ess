@@ -1,0 +1,120 @@
+domain: idioms.joined
+
+summary: >-
+  A view has one source. A field of another row is copied when the row is written, where the fact
+  is the value at that moment; where the fact is the other row's current value, the consumer joins
+  two views.
+
+types:
+  - {name: idioms.joined.AgentId, kind: newtype, of: Uuid}
+
+errors:
+  - {name: idioms.joined.UnknownAgent, summary: No agent carries the identity., fields: []}
+
+events:
+  - name: idioms.joined.AgentRegistered
+    fields:
+      - {name: agent_id, type: idioms.joined.AgentId}
+  - name: idioms.joined.AgentRelabelled
+    fields:
+      - {name: agent_id, type: idioms.joined.AgentId}
+  - name: idioms.joined.CallRecorded
+    fields:
+      - {name: call_id, type: Uuid}
+
+entities:
+  - name: idioms.joined.Agent
+    identity: {name: agent_id, type: idioms.joined.AgentId}
+    fields:
+      - {name: label, type: String}
+    lifecycle:
+      initial: Active
+      states: [Active]
+      terminal: [Active]
+      transitions: []
+
+  - name: idioms.joined.Call
+    identity: {name: call_id, type: Uuid}
+    fields:
+      - {name: agent_id, type: idioms.joined.AgentId}
+      - {name: agent_label, type: String, summary: The agent's label when the call was recorded.}
+    lifecycle:
+      initial: Recorded
+      states: [Recorded]
+      terminal: [Recorded]
+      transitions: []
+
+commands:
+  - name: idioms.joined.RegisterAgent
+    input:
+      - {name: label, type: String}
+    outcomes:
+      - name: registered
+        creates: idioms.joined.Agent
+        instance: agent_id
+        sets: {label: input.label}
+        emits: [idioms.joined.AgentRegistered]
+        payload:
+          idioms.joined.AgentRegistered: {agent_id: {generated: true}}
+
+  - name: idioms.joined.RelabelAgent
+    input:
+      - {name: agent_id, type: idioms.joined.AgentId}
+      - {name: label, type: String}
+    outcomes:
+      - name: unknown-agent
+        unknown_instance: true
+        error: idioms.joined.UnknownAgent
+      - name: relabelled
+        updates: idioms.joined.Agent
+        instance: agent_id
+        sets: {label: input.label}
+        emits: [idioms.joined.AgentRelabelled]
+        payload:
+          idioms.joined.AgentRelabelled: {agent_id: input.agent_id}
+
+  # Copy at write: the call keeps the label its agent had when the call was recorded.
+  - name: idioms.joined.RecordCall
+    input:
+      - {name: agent_id, type: idioms.joined.AgentId}
+    outcomes:
+      - name: unknown-agent
+        when_related: {via: input.agent_id, exists: false}
+        error: idioms.joined.UnknownAgent
+      - name: recorded
+        creates: idioms.joined.Call
+        instance: call_id
+        sets:
+          agent_id: input.agent_id
+          agent_label: {related: {via: input.agent_id, field: label}}
+        emits: [idioms.joined.CallRecorded]
+        payload:
+          idioms.joined.CallRecorded: {call_id: {generated: true}}
+
+views:
+  # Grouped by the copied label: one source, no join.
+  - name: idioms.joined.CallsByAgentLabel
+    source: idioms.joined.Call
+    consistency: read_your_writes
+    group_by: [agent_label]
+    fields:
+      - {name: agent_label, type: String}
+      - {name: calls, type: Integer, aggregate: {count: {}}}
+
+  # The two-view alternative, where the fact is the agent's current label: the consumer joins
+  # `Calls.agent_id` to `Agents.agent_id`. `Calls.agent_label` is the label copied when the call was
+  # recorded, so the one read shows both facts side by side.
+  - name: idioms.joined.Agents
+    source: idioms.joined.Agent
+    consistency: read_your_writes
+    fields:
+      - {name: agent_id, type: idioms.joined.AgentId}
+      - {name: label, type: String}
+
+  - name: idioms.joined.Calls
+    source: idioms.joined.Call
+    consistency: read_your_writes
+    fields:
+      - {name: call_id, type: Uuid}
+      - {name: agent_id, type: idioms.joined.AgentId}
+      - {name: agent_label, type: String}

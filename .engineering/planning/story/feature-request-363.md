@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-363
 kind: story
-status: proposed
+status: implemented
 title: One aggregate observation contains independently filtered measures
 refs:
 - provider: github
@@ -45,9 +45,11 @@ scope:
   path: crates/verify/ess-diff/src/diff.rs
 - confidence: cited
   path: docs/design/conditional-aggregate-measures.md
-revision: 8
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T21:17:07Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"approval":1,"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-10-06T09:43:26Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":1,"approval":1,"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-10-06T09:43:27Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"test_result":1,"approval":1,"review_outcome":1}}}
 ---
 ## Outcome
 

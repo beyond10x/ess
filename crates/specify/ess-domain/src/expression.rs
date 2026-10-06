@@ -6,6 +6,7 @@
 use std::collections::BTreeSet;
 use std::fmt;
 
+pub(crate) mod attributes;
 pub mod lexical;
 
 use ess_primitives::error::{ValidationCode, ValidationError, ValidationErrors};
@@ -81,6 +82,28 @@ pub enum Shape<T> {
     Json,
     /// A tagged union with no predicate selectors.
     Union,
+}
+
+/// The typed attributes of one enum, as a predicate reads them (`ess/23`, beyond10x/ess#450).
+#[derive(Debug, Clone)]
+pub struct EnumAttributes {
+    /// The enum's name.
+    pub name: String,
+    /// Each declared attribute: its name, the scalar a predicate reads it as, and its type as
+    /// written.
+    pub declared: Vec<(String, ScalarKind, String)>,
+    /// Each variant, in declaration order, with the value it gives each attribute it fills.
+    pub variants: Vec<(String, std::collections::BTreeMap<String, FactValue>)>,
+    /// For each attribute whose type is an enum, that enum's variants: the only words a predicate
+    /// may compare it with.
+    pub words: std::collections::BTreeMap<String, Vec<String>>,
+}
+
+impl EnumAttributes {
+    /// The declared attribute of that name.
+    pub fn attribute(&self, name: &str) -> Option<&(String, ScalarKind, String)> {
+        self.declared.iter().find(|(declared, ..)| declared == name)
+    }
 }
 
 /// A read-only adapter over declarations or resolved compiler types.
@@ -191,6 +214,14 @@ pub trait TypeEnvironment {
     }
     /// One declared struct member, without using wire aliases.
     fn member(&self, reference: &Self::Type, name: &str) -> Option<Self::Type>;
+    /// The typed attributes of the enum this terminal type is, with each variant's values read as
+    /// facts (`ess/23`, beyond10x/ess#450); `None` where it is no enum, or one that declares none.
+    ///
+    /// `None` by default: an IR's predicates were lowered to membership before it was compiled, so
+    /// nothing reads an attribute there.
+    fn enum_attributes(&self, _reference: &Self::Type) -> Option<EnumAttributes> {
+        None
+    }
     /// Whether the reserved filter parameter namespace exists in this environment.
     fn has_parameters(&self) -> bool {
         false
@@ -509,6 +540,62 @@ impl TypeEnvironment for DomainEnvironment<'_> {
             },
         })
     }
+    fn enum_attributes(&self, reference: &TypeRef) -> Option<EnumAttributes> {
+        let TypeRef::Named(declared) = reference else {
+            return None;
+        };
+        let TypeBody::Enum { variants } = &self.registry.get(declared)?.body else {
+            return None;
+        };
+        let first = variants.first()?;
+        if first.attributes.is_empty() {
+            return None;
+        }
+        let read = |type_ref: &TypeRef| attribute_scalar(self.registry, type_ref);
+        Some(EnumAttributes {
+            name: declared.to_string(),
+            declared: first
+                .attributes
+                .iter()
+                .map(|attribute| {
+                    (
+                        attribute.name.clone(),
+                        read(&attribute.type_ref),
+                        attribute.type_ref.to_string(),
+                    )
+                })
+                .collect(),
+            variants: variants
+                .iter()
+                .map(|variant| {
+                    let values = variant
+                        .attributes
+                        .iter()
+                        .filter_map(|attribute| {
+                            let text = attribute.value.as_ref()?;
+                            let value = match read(&attribute.type_ref) {
+                                ScalarKind::Bool => FactValue::Bool(text == "true"),
+                                ScalarKind::Number => FactValue::Number(
+                                    ess_primitives::facts::Number::decimal_literal(text)?,
+                                ),
+                                ScalarKind::Text => FactValue::Text(text.clone()),
+                            };
+                            Some((attribute.name.clone(), value))
+                        })
+                        .collect();
+                    (variant.name().to_owned(), values)
+                })
+                .collect(),
+            words: first
+                .attributes
+                .iter()
+                .filter_map(|attribute| {
+                    attribute_words(self.registry, &attribute.type_ref)
+                        .map(|words| (attribute.name.clone(), words))
+                })
+                .collect(),
+        })
+    }
     fn member(&self, reference: &TypeRef, name: &str) -> Option<TypeRef> {
         let TypeRef::Named(declared) = reference else {
             return None;
@@ -716,6 +803,9 @@ fn refuse_clock_reading<E: TypeEnvironment>(
     Ok(())
 }
 
+// One step per shape; the enum attribute refusal (ess/23, beyond10x/ess#450) took it past the
+// line limit.
+#[allow(clippy::too_many_lines)]
 fn resolve<E: TypeEnvironment>(
     environment: &E,
     path: &FactPath,
@@ -784,6 +874,18 @@ fn resolve<E: TypeEnvironment>(
                     Shape::Json => Some("a JSON value"),
                     _ => None,
                 };
+                if let Shape::Enum(variants) = &shape {
+                    if let Some(refused) = attribute_read(
+                        environment,
+                        &current,
+                        variants.len(),
+                        (path, segment),
+                        owner,
+                        &context,
+                    ) {
+                        return Err(refused);
+                    }
+                }
                 let next = match shape {
                     Shape::Struct => environment.member(&current, segment),
                     Shape::Scalar(ScalarKind::Text)
@@ -1318,6 +1420,66 @@ fn offset_spelled<E: TypeEnvironment>(
         })
 }
 
+/// Text that begins with one dotted word naming a view parameter or a command input
+/// (`param.queues`, `input.limits.max`): that word, and the rest of the text after it, trimmed —
+/// empty where the word is the whole text. `None` for any other text.
+fn parameter_spelling(text: &str) -> Option<(&str, &str)> {
+    let text = text.trim();
+    let end = text.find(char::is_whitespace).unwrap_or(text.len());
+    let (word, rest) = text.split_at(end);
+    let (namespace, name) = word.split_once('.')?;
+    let identifier = |segment: &str| {
+        segment
+            .chars()
+            .next()
+            .is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
+            && segment
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_')
+    };
+    (matches!(namespace, "param" | "input") && name.split('.').all(identifier))
+        .then(|| (word, rest.trim()))
+}
+
+/// Which membership a refused parameter operand was written under (beyond10x/ess#438).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Membership {
+    /// `in`, `any_of`, `one_of`.
+    AnyOf,
+    /// `not_in`, `none_of`.
+    NoneOf,
+    /// `in_ignore_case`.
+    Folded,
+}
+
+/// What a parameter or input word names, for the rewrite a refusal suggests.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Named {
+    /// A `List` or a `Map`: a quantifier ranges over it.
+    Collection,
+    /// One scalar value: an equality compares with it.
+    Value,
+}
+
+/// The hint for a comparison operand that starts with a parameter or an input and goes on as text
+/// (`param.limit_s * 1000`, beyond10x/ess#438): a comparison has no arithmetic but one constant
+/// offset, and a scale belongs before the read, in the unit the parameter is declared in.
+fn scaled_parameter(text: &str) -> Option<String> {
+    let (word, rest) = parameter_spelling(text)?;
+    if rest.is_empty() {
+        return None;
+    }
+    let constant = rest
+        .split(|c: char| !c.is_ascii_digit())
+        .rfind(|digits| !digits.is_empty())
+        .unwrap_or("1");
+    Some(format!(
+        "`{text}` is read as text, because a comparison does no arithmetic but one constant \
+         offset of a fact, such as `{word} + {constant}`: declare the parameter in the unit the \
+         field is stored in, and convert at the adapter before the read"
+    ))
+}
+
 /// Whether an offset's base names something here: a binder in scope, a root, or a dotted path
 /// through either — and, with `input_namespace`, `input.<path>` naming the input `<path>`.
 fn base_resolves<E: TypeEnvironment>(
@@ -1775,13 +1937,125 @@ impl<E: TypeEnvironment> Checker<'_, E> {
             } if right.is_some_and(|value| value.scalar.is_none()) => Some(path),
             _ => None,
         };
+        let hint = match expression {
+            Predicate::Compare { left, right, .. } => [left, right]
+                .into_iter()
+                .find_map(|operand| match operand {
+                    Operand::Literal(FactValue::Text(text)) => scaled_parameter(text),
+                    _ => None,
+                })
+                .map(|hint| format!("; {hint}"))
+                .unwrap_or_default(),
+            _ => String::new(),
+        };
         self.checked.errors.push(error(
             self.owner,
             ValidationCode::TypeMismatch,
             unreadable,
             None,
-            format!("`{expression}`: operator `{operator}` does not admit {operands}"),
+            format!("`{expression}`: operator `{operator}` does not admit {operands}{hint}"),
         ));
+    }
+
+    /// A membership operand spelled as one dotted word naming a view parameter or a command input
+    /// (`queue_id: {in: param.queues}`, beyond10x/ess#438): a membership list — `in`, `not_in` and
+    /// their aliases, and `in_ignore_case` — holds literal values only, so the word is the text it
+    /// spells and the list never reads what the caller sent. Refused in every format and against
+    /// every field type — a `String` field would otherwise admit the text silently — naming the
+    /// form that asks the question of what the word names ([`Self::membership_hint`]). `true` when
+    /// refused.
+    fn membership_parameter(
+        &mut self,
+        expression: &Predicate,
+        path: &FactPath,
+        value: &FactValue,
+        membership: Membership,
+    ) -> bool {
+        let FactValue::Text(text) = value else {
+            return false;
+        };
+        let Some((word, "")) = parameter_spelling(text) else {
+            return false;
+        };
+        let hint = self.membership_hint(path, word, membership);
+        self.checked.errors.push(error(
+            self.owner,
+            ValidationCode::TypeMismatch,
+            Some(path),
+            None,
+            format!(
+                "`{expression}` reads `{word}` as the text literal \"{word}\", not what it names: \
+                 a membership list holds literal values only. {hint}"
+            ),
+        ));
+        true
+    }
+
+    /// The rewrite of `path` in, or not in, what `word` names: membership in a `List` or a `Map`
+    /// through `exists:`, which is refused over anything else; equality with a single value; and,
+    /// where `word` names nothing here, no rewrite. `in_ignore_case` loses its case folding in
+    /// either rewrite, and the hint says so.
+    fn membership_hint(&self, path: &FactPath, word: &str, membership: Membership) -> String {
+        let negated = membership == Membership::NoneOf;
+        let exact = if membership == Membership::Folded {
+            ", which compares exactly rather than ignoring case"
+        } else {
+            ""
+        };
+        match self.named(word) {
+            Some(Named::Collection) => {
+                let exists = format!("exists: {{in: {word}, as: x, that: {path} == x}}");
+                let form = if negated {
+                    format!("not: {{{exists}}}")
+                } else {
+                    exists
+                };
+                format!(
+                    "To ask whether `{path}` is {}one of the values `{word}` holds, write \
+                     `{form}`{exact}",
+                    if negated { "not " } else { "" }
+                )
+            }
+            Some(Named::Value) => format!(
+                "`{word}` is one value, not a list: write `{path} {} {word}`{exact}",
+                if negated { "!=" } else { "==" }
+            ),
+            None => format!(
+                "`{word}` names no list or value here; membership in a list the caller sends is \
+                 written `exists: {{in: <list>, as: x, that: {path} == x}}`"
+            ),
+        }
+    }
+
+    /// What a `param.<name>` or `input.<name>` word names here, read without recording a read or
+    /// an error: an `input.<path>` also names the input `<path>` where the place reads its input
+    /// fields bare.
+    fn named(&self, word: &str) -> Option<Named> {
+        let path = FactPath::new(word).ok()?;
+        let namespace = crate::command::subject_fact::INPUT_NAMESPACE;
+        let resolved = resolve(self.environment, &path, self.owner, &self.bindings)
+            .ok()
+            .or_else(|| {
+                (path.namespace() == namespace && path.segments().len() > 1)
+                    .then(|| {
+                        resolve(
+                            self.environment,
+                            &FactPath::from_segments(&path.segments()[1..]),
+                            self.owner,
+                            &self.bindings,
+                        )
+                        .ok()
+                    })
+                    .flatten()
+            })?;
+        if resolved.scalar.is_some() {
+            return Some(Named::Value);
+        }
+        matches!(
+            self.environment.shape(&resolved.terminal),
+            Ok(Shape::List(_) | Shape::Map(_))
+        )
+        .then_some(Named::Collection)
     }
 
     fn enum_literal(&mut self, expression: &Predicate, typed: &ValueType, literal: &FactValue) {
@@ -2763,6 +3037,12 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                 ));
                 continue;
             };
+            // `in_ignore_case` is a membership list too (beyond10x/ess#438).
+            if op == FoldOp::InIgnoreCase
+                && self.membership_parameter(predicate, path, value, Membership::Folded)
+            {
+                continue;
+            }
             // The #74 refusal, as for `==`: a bare word naming a declared field reads as that text.
             if self.environment.root(text).is_some() {
                 self.checked.errors.push(error(
@@ -2843,16 +3123,19 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                 let Some(typed) = self.operand(&Operand::Fact(path.clone())) else {
                     return;
                 };
-                let op = if matches!(predicate, Predicate::AnyOf { .. }) {
-                    "AnyOf"
+                let (op, membership) = if matches!(predicate, Predicate::AnyOf { .. }) {
+                    ("AnyOf", Membership::AnyOf)
                 } else {
-                    "NoneOf"
+                    ("NoneOf", Membership::NoneOf)
                 };
                 if typed.scalar.is_none() {
                     self.mismatch(predicate, op, &typed, None);
                     return;
                 }
                 for value in values {
+                    if self.membership_parameter(predicate, path, value, membership) {
+                        continue;
+                    }
                     let kind = ScalarKind::literal(value);
                     if typed.scalar != Some(kind) {
                         let literal = ValueType {
@@ -2951,4 +3234,80 @@ impl<E: TypeEnvironment> Checker<'_, E> {
             }
         }
     }
+}
+
+/// The scalar a predicate reads an enum attribute of type `type_ref` as (`ess/23`,
+/// beyond10x/ess#450): through `Optional` and newtypes, a `Boolean` is a truth value, an `Integer`
+/// or a `Decimal` a number, and text or an enum text.
+fn attribute_scalar(registry: &TypeRegistry, type_ref: &TypeRef) -> ScalarKind {
+    let mut current = type_ref;
+    for _ in 0..=crate::types::MAX_TYPE_DEPTH {
+        match current {
+            TypeRef::Optional(inner) => current = inner,
+            TypeRef::Primitive(primitive) => {
+                return ScalarKind::of(*primitive).unwrap_or(ScalarKind::Text)
+            }
+            TypeRef::Named(name) => match registry.get(name).map(|declared| &declared.body) {
+                Some(TypeBody::Newtype { of, .. }) => current = of,
+                _ => return ScalarKind::Text,
+            },
+            TypeRef::List(_) | TypeRef::Map(..) => return ScalarKind::Text,
+        }
+    }
+    ScalarKind::Text
+}
+
+/// The variants of the enum an attribute of type `type_ref` is, through `Optional` and newtypes;
+/// `None` for any other type (`ess/23`, beyond10x/ess#450).
+fn attribute_words(registry: &TypeRegistry, type_ref: &TypeRef) -> Option<Vec<String>> {
+    let mut current = type_ref;
+    for _ in 0..=crate::types::MAX_TYPE_DEPTH {
+        match current {
+            TypeRef::Optional(inner) => current = inner,
+            TypeRef::Named(name) => match &registry.get(name)?.body {
+                TypeBody::Newtype { of, .. } => current = of,
+                TypeBody::Enum { variants } => {
+                    return Some(
+                        variants
+                            .iter()
+                            .map(|variant| variant.name().to_owned())
+                            .collect(),
+                    )
+                }
+                _ => return None,
+            },
+            _ => return None,
+        }
+    }
+    None
+}
+
+/// The refusal of an enum attribute a predicate reads where no comparison lowered it to
+/// membership (`ess/23`, beyond10x/ess#450): refused once, here, saying where an attribute is read.
+fn attribute_read<E: TypeEnvironment>(
+    environment: &E,
+    current: &E::Type,
+    variants: usize,
+    (path, segment): (&FactPath, &str),
+    owner: &str,
+    context: &str,
+) -> Option<ExpressionError> {
+    let attributes = environment.enum_attributes(current)?;
+    let (name, _, written) = attributes.attribute(segment)?;
+    Some(error(
+        owner,
+        ValidationCode::UnsupportedConstruct,
+        Some(path),
+        Some(segment),
+        format!(
+            "`{path}` reads the attribute `{name}` of `{}`, which is `{written}`; an attribute is \
+             read only where it is lowered to membership over the variants: compared with a \
+             literal of its type, in `any_of`, `none_of`, `defined(…)` or truthiness, or compared \
+             with another fact within {} predicate nodes, three per variant (`{}` has \
+             {variants}){context}",
+            attributes.name,
+            crate::command::finite::MAX_PREDICATE_NODES,
+            attributes.name,
+        ),
+    ))
 }

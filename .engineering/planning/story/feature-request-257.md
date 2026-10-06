@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-257
 kind: story
-status: active
+status: implemented
 title: An aggregate group key copied from a related row is witnessed
 tags:
 - feature-request
@@ -23,10 +23,11 @@ scope:
   path: crates/verify/ess-conformance/tests/aggregate_views_mutants.rs
 - confidence: inferred
   path: docs/design/aggregate-views.md
-revision: 14
+revision: 15
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T13:04:15Z", actor: "human:timo", revision: 11}
 - {from: "proposed", to: "active", at: "2026-09-30T13:04:17Z", actor: "human:timo", revision: 12}
+- {from: "active", to: "implemented", at: "2026-10-06T09:42:42Z", actor: "human:timo", revision: 15, decided_on: {"recorded":{"test_result":1,"review_outcome":2,"verification":1}}}
 ---
 ## Outcome
 

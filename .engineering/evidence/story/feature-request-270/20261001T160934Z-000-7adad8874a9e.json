@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-01T16:09:34Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-270",
+  "kind": "story",
+  "revision": 15,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "ESS 0.49.0 Release run 36888456509 succeeded at tag 0.49.0 (f86180f304f1); the closing comment or the 0.49.0 CHANGELOG section names beyond10x/ess#270 as shipped in 0.49.0. Recorded by the 2026-10-06 store reconciliation.",
+    "reference": "https://github.com/beyond10x/ess/actions/runs/36888456509"
+  }
+}

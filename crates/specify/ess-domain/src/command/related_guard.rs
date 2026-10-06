@@ -61,7 +61,7 @@ use crate::{
     types::TypeRegistry,
 };
 use ess_primitives::error::{ConstructRef, ValidationCode, ValidationError, ValidationErrors};
-use ess_primitives::predicate::Predicate;
+use ess_primitives::predicate::{Predicate, WrittenPredicate};
 use std::fmt::Write as _;
 
 /// The key an author writes.
@@ -102,7 +102,7 @@ pub struct RawRelatedGuard {
     /// What a row of `entity` must satisfy to be selected (ess/22): its fields bare, the input
     /// under `input.`, the addressed subject under `subject.`.
     #[serde(default, rename = "where", skip_serializing_if = "Option::is_none")]
-    pub filter: Option<Predicate>,
+    pub filter: Option<WrittenPredicate>,
     /// `false`: the branch is taken when no row carries that identity. Written instead of
     /// `predicate`, never beside it. Over a selector (ess/22): whether any row is selected.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -110,14 +110,14 @@ pub struct RawRelatedGuard {
     /// What must hold of that row's stored fields — and of the input, read under `input.` — for the
     /// branch to be taken. Written instead of `exists`, never beside it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub predicate: Option<Predicate>,
+    pub predicate: Option<WrittenPredicate>,
     /// Over a selector (ess/22): one comparison of the number of rows selected with a nonnegative
     /// whole number, `{eq: 1}`; the operator is `eq`, `ne`, `lt`, `lte`, `gt` or `gte`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub count: Option<super::row_set::RawCount>,
     /// Over a selector (ess/22): what every selected row satisfies; true of no rows.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub forall: Option<Predicate>,
+    pub forall: Option<WrittenPredicate>,
 }
 
 /// What a `when_related:` reads, as [`RawRelatedGuard::read`] decides from its keys.
@@ -152,7 +152,7 @@ impl RawRelatedGuard {
                     },
                     RelatedTest::Holds(predicate) => Self {
                         via,
-                        predicate: Some(predicate.clone()),
+                        predicate: Some(predicate.clone().into()),
                         ..empty
                     },
                 })
@@ -162,7 +162,7 @@ impl RawRelatedGuard {
             } => {
                 let selected = Self {
                     entity: Some(selection.entity.clone()),
-                    filter: Some(selection.filter.clone()),
+                    filter: Some(selection.filter.clone().into()),
                     ..empty
                 };
                 Some(match test {
@@ -181,7 +181,7 @@ impl RawRelatedGuard {
                         ..selected
                     },
                     super::row_set::RowSetTest::Forall(predicate) => Self {
-                        forall: Some(predicate.clone()),
+                        forall: Some(predicate.clone().into()),
                         ..selected
                     },
                 })
@@ -202,6 +202,11 @@ impl RawRelatedGuard {
             || self.filter.is_some()
             || self.count.is_some()
             || self.forall.is_some();
+        // Which keys were written is decided above, from what the document wrote; what they say
+        // is read here, before any of it is used (beyond10x/ess#448).
+        let written_predicate = self.predicate.is_some();
+        let (filter, predicate, forall) =
+            read_predicates(name, (self.filter, self.predicate, self.forall))?;
         let Some(via) = self.via else {
             if !selects {
                 return Err(at(
@@ -214,7 +219,7 @@ impl RawRelatedGuard {
                     INPUT_HINT,
                 ));
             }
-            if self.predicate.is_some() {
+            if written_predicate {
                 return Err(at(
                     ValidationCode::ConflictingDeclaration,
                     format!(
@@ -224,12 +229,8 @@ impl RawRelatedGuard {
                     "write `forall: <predicate>`",
                 ));
             }
-            let (selection, test) = super::row_set::read(
-                name,
-                self.entity,
-                self.filter,
-                (self.exists, self.count, self.forall),
-            )?;
+            let (selection, test) =
+                super::row_set::read(name, self.entity, filter, (self.exists, self.count, forall))?;
             return Ok(ReadGuard::RowSet(selection, test));
         };
         if selects {
@@ -256,7 +257,7 @@ impl RawRelatedGuard {
                 ))
             }
         };
-        let test = match (self.exists, self.predicate) {
+        let test = match (self.exists, predicate) {
             (Some(false), None) => RelatedTest::Absent,
             (None, Some(predicate)) => RelatedTest::Holds(predicate),
             (Some(true), None) => {
@@ -290,6 +291,37 @@ impl RawRelatedGuard {
         };
         Ok(ReadGuard::Identity(via, test))
     }
+}
+
+/// The three predicates a `when_related:` may write — `where`, `predicate`, `forall` — or the
+/// refusal of each one that does not parse, at its own key, together (beyond10x/ess#448).
+type ReadPredicates = (Option<Predicate>, Option<Predicate>, Option<Predicate>);
+
+fn read_predicates(
+    name: &super::OutcomeName,
+    (filter, predicate, forall): (
+        Option<WrittenPredicate>,
+        Option<WrittenPredicate>,
+        Option<WrittenPredicate>,
+    ),
+) -> Result<ReadPredicates, ValidationErrors> {
+    let mut unparsed = ValidationErrors::new();
+    let mut read = |written: Option<WrittenPredicate>, key: &str| match written
+        .map(|written| written.read(format!("outcomes.{name}.{KEY}.{key}")))
+    {
+        Some(Ok(predicate)) => Some(predicate),
+        Some(Err(error)) => {
+            unparsed.push(error);
+            None
+        }
+        None => None,
+    };
+    let read = (
+        read(filter, "where"),
+        read(predicate, "predicate"),
+        read(forall, "forall"),
+    );
+    unparsed.into_result(read)
 }
 
 /// The hint of the refusal of a `via` that names no input field, through ess/21.
@@ -884,6 +916,103 @@ fn orders_present_refusals(
         ));
     }
     Ok(orders)
+}
+
+/// Every related row the identity type alone settles where a relation could say which entity it
+/// is (beyond10x/ess#437): advisories, never refusals.
+///
+/// A `via` whose value a field carries — the subject field a stored `via` reads, or the field a
+/// branch fills from an input `via` ([`related_value::input_carrier`]) — names its entity through
+/// a relation on that field when one is declared, and otherwise through the one entity its type
+/// identifies. The second is legal, and it is a relation the specification relies on and never
+/// declares, so it is reported once per row, at the first branch reading it. An input `via` no
+/// field carries has nowhere a relation could be declared, and is not reported; nor is a `via`
+/// typed as a bare primitive, which [`crate::entity::implied_relations`] does not lint either. A
+/// row-set selector (`entity`, `where`) is a query, not a relation, and is not read here.
+/// Nor is a row of an entity whose identity an `updates:` rewrites (ess/23, beyond10x/ess#429):
+/// a relation carrying that identity is refused, so the warning could not be silenced.
+pub fn implied_relations(spec: &Specification) -> ValidationErrors {
+    let mut advisories = ValidationErrors::new();
+    if spec.system().format.major() < crate::system::FormatVersion::V18.major() {
+        return advisories;
+    }
+    let rekeyed = crate::entity::rekeyed(spec);
+    for command in spec.commands().values().filter(|command| uses(command)) {
+        for via in read_vias(command) {
+            let Some((carrier, field, via_type)) = carried(spec, command, via) else {
+                continue;
+            };
+            // Named identity types only, as for a stored field: a bare primitive such as `Uuid`
+            // is shared by many entities, and the rule does not ask about it.
+            if !matches!(via_type, TypeRef::Named(_)) {
+                continue;
+            }
+            let Some(target) =
+                related_value::implied_entity(spec, via_type, (carrier, field.as_str()))
+            else {
+                continue;
+            };
+            // A re-keyed entity's identity carries no relation (beyond10x/ess#429).
+            if rekeyed.contains(&target.name) {
+                continue;
+            }
+            let Some(outcome) = command.outcomes.iter().find(|outcome| {
+                matches!(&outcome.condition, OutcomeCondition::Related { via: read, .. } if read == via)
+            }) else {
+                continue;
+            };
+            advisories.push(
+                ValidationError::at(
+                    site(command, outcome),
+                    ValidationCode::ImpliedRelation,
+                    format!(
+                        "`{}` reads the row `{via}` names by its type alone: `{via_type}` \
+                         identifies `{}`, and no relation on `{}`'s `{field}` declares that it \
+                         names a `{}`",
+                        command.name, target.name, carrier.name, target.name
+                    ),
+                )
+                .with_hint(crate::entity::implied_relation_hint(
+                    &carrier.name,
+                    &field,
+                    &target.name,
+                    crate::entity::Cardinality::One,
+                    carrier.fields.iter().any(|held| {
+                        held.name == field && held.type_ref == target.identity.type_ref
+                    }),
+                )),
+            );
+        }
+    }
+    advisories
+}
+
+/// The entity and field carrying a related guard's `via`, and the identity type it holds: the
+/// addressed subject's stored field, or the field a branch fills from the input. `None` where no
+/// field carries it.
+fn carried<'a>(
+    spec: &'a Specification,
+    command: &'a CommandSpec,
+    via: &RelatedVia,
+) -> Option<(&'a EntitySpec, String, &'a TypeRef)> {
+    match via {
+        RelatedVia::Input(field) => {
+            let read = command.input_field(field)?;
+            let (holder, holder_field) = command.outcomes.iter().find_map(|outcome| {
+                let subject = outcome
+                    .subject
+                    .as_ref()
+                    .and_then(|subject| spec.entities().get(&subject.entity));
+                related_value::input_carrier(outcome, subject, field)
+            })?;
+            Some((holder, holder_field, identity_type(&read.type_ref)))
+        }
+        RelatedVia::Subject(field) => {
+            let subject = addressed_subject(spec, command)?;
+            let stored = subject.fields.iter().find(|held| held.name == *field)?;
+            Some((subject, field.clone(), identity_type(&stored.type_ref)))
+        }
+    }
 }
 
 /// The format gate, the entity `via` names, the predicates against that entity's fields, and the

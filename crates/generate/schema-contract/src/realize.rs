@@ -104,6 +104,45 @@ pub struct Plan {
     /// Model integers fixed to one value, by the pointer of the node that fixes them
     /// (beyond10x/ess#408).
     constants: BTreeMap<String, i64>,
+    /// A model enum's typed variant attributes, by the pointer of the enum (`ess/23`,
+    /// beyond10x/ess#450): each output gives the enum one accessor per attribute.
+    attributes: BTreeMap<String, Vec<EnumAttribute>>,
+}
+
+/// One typed attribute of a model enum, read from its `x-ess-attributes` annotation.
+#[derive(Debug, Clone)]
+pub(crate) struct EnumAttribute {
+    /// The attribute's name, as the model declares it.
+    pub(crate) name: String,
+    /// `boolean`, `integer`, `decimal` or `string`.
+    pub(crate) kind: String,
+    /// Whether a variant may leave it unfilled.
+    pub(crate) optional: bool,
+    /// Each filled value, by the variant's wire spelling.
+    pub(crate) values: BTreeMap<String, Value>,
+}
+
+impl EnumAttribute {
+    /// The annotation's entries; `None` where one is not the shape a model writes.
+    fn read(annotation: &Value) -> Option<Vec<Self>> {
+        annotation
+            .as_array()?
+            .iter()
+            .map(|entry| {
+                Some(Self {
+                    name: entry.get("name")?.as_str()?.to_owned(),
+                    kind: entry.get("kind")?.as_str()?.to_owned(),
+                    optional: entry.get("type")?.as_str()?.starts_with("Optional<"),
+                    values: entry
+                        .get("values")?
+                        .as_object()?
+                        .iter()
+                        .map(|(wire, value)| (wire.clone(), value.clone()))
+                        .collect(),
+                })
+            })
+            .collect()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -200,6 +239,7 @@ struct Builder {
     obligations: BTreeSet<Finding>,
     patterns: BTreeMap<String, String>,
     constants: BTreeMap<String, i64>,
+    attributes: BTreeMap<String, Vec<EnumAttribute>>,
 }
 
 impl Plan {
@@ -353,6 +393,7 @@ impl Plan {
             patterns: builder.patterns,
             binary64: BTreeSet::new(),
             constants: builder.constants,
+            attributes: builder.attributes,
         })
     }
 
@@ -633,6 +674,23 @@ impl Builder {
         }
     }
 
+    /// A model enum's `x-ess-attributes` (`ess/23`, beyond10x/ess#450), read into the accessors
+    /// each output gives the enum; the keyword itself is retained as an annotation.
+    fn enum_attributes(&mut self, object: &Map<String, Value>, pointer: &str) {
+        let Some(annotation) = object.get("x-ess-attributes").filter(|_| self.model) else {
+            return;
+        };
+        if let Some(attributes) = EnumAttribute::read(annotation) {
+            self.attributes.insert(pointer.to_owned(), attributes);
+        } else {
+            self.errors.insert(finding(
+                &path(pointer, "x-ess-attributes"),
+                "model_attributes",
+                "x-ess-attributes is not the list of attributes a model writes",
+            ));
+        }
+    }
+
     fn classify_keywords(&mut self, object: &Map<String, Value>, pointer: &str) {
         if !object.contains_key("type") {
             for keyword in [
@@ -651,7 +709,7 @@ impl Builder {
             let location = path(pointer, keyword);
             match keyword.as_str() {
                 "x-ess-name" | "x-ess-kind" | "x-ess-field" | "x-ess-map-key"
-                | "x-ess-union-tag"
+                | "x-ess-union-tag" | "x-ess-attributes"
                     if self.model =>
                 {
                     self.annotations.insert(finding(
@@ -757,6 +815,7 @@ impl Builder {
 
     fn object_schema(&mut self, object: &Map<String, Value>, pointer: &str) -> Shape {
         self.classify_keywords(object, pointer);
+        self.enum_attributes(object, pointer);
         let mut terms = Vec::new();
         if let Some(reference) = object.get("$ref").and_then(Value::as_str) {
             match local_definition(reference) {

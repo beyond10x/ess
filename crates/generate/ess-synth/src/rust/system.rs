@@ -602,8 +602,22 @@ fn mapping_expression(
             types_path(layout, types, to.name()),
             name::value_ident(field)
         ),
-        DeterminedInput::Literal { value, wraps } => {
-            let mut expression = format!("{value:?}.to_owned()");
+        DeterminedInput::Literal {
+            value,
+            wraps,
+            primitive,
+        } => {
+            // A constant is passed as the value it is, never as the text that spells it
+            // (beyond10x/ess#445).
+            let mut expression = match primitive {
+                ess_domain::types::Primitive::Boolean | ess_domain::types::Primitive::Integer => {
+                    value.to_owned()
+                }
+                ess_domain::types::Primitive::Decimal => {
+                    format!("{types}::primitives::Decimal({value:?}.to_owned())")
+                }
+                _ => format!("{value:?}.to_owned()"),
+            };
             for wrap in wraps.iter().rev() {
                 expression = format!("{}({expression})", types_path(layout, types, wrap.name()));
             }

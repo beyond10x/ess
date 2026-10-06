@@ -96,15 +96,21 @@
 //!
 //! `template: invoice-created` is a [`MappingSource::Literal`], and a literal reaches the model as
 //! text. So the target's *representation* is what decides whether the text can fill it: `Optional`
-//! and newtype wrappers are removed, and what is underneath must be `String` or an enum. That is
-//! why the example's literal fills a `TemplateId` — a `TemplateId` is a `String` underneath, and
-//! there is no other way to write one in a document.
+//! and newtype wrappers are removed, and what is underneath must be `String`, an enum, or one of the
+//! three primitives a literal spells. That is why the example's literal fills a `TemplateId` — a
+//! `TemplateId` is a `String` underneath, and there is no other way to write one in a document.
+//!
+//! `is_bridged: true` is a [`MappingSource::Scalar`]: an unquoted YAML Boolean, integer or decimal
+//! (beyond10x/ess#445). It is checked by the rule `sets:` and `payload:` type a literal by
+//! (`docs/design/typed-literals-and-unknown-instances.md`), so `'true'` and `true` over a `Boolean`
+//! are one value, and `3` over text is refused with `quote it` as the repair.
 //!
 //! | a literal filling | checked |
 //! |---|---|
 //! | an enum, directly or under wrappers | exactly: it must name a declared variant |
 //! | anything that is `String` underneath | that the input exists, and nothing about the value |
-//! | anything else | refused: text cannot be a `Money`, a `List` or an `Integer` |
+//! | a `Boolean`, `Integer` or `Decimal`, directly or under wrappers | exactly, as `sets:` does: `true` or `false`, a whole number, a decimal |
+//! | anything else | refused: text cannot be a `Money`, a `List` or a `Timestamp` |
 //! | wrappers resolving through themselves, with a base case | refused: it has values, and none is text |
 //! | wrappers resolving through themselves, with none | left to the type pass: no value of it exists |
 //!
@@ -147,7 +153,7 @@ use std::collections::BTreeMap;
 
 use ess_primitives::error::{ParseError, ValidationCode, ValidationError, ValidationErrors};
 
-use crate::command::{CommandSpec, EventSpec};
+use crate::command::{CommandSpec, EventSpec, ScalarKind};
 use crate::name::{Naming, QualifiedName};
 use crate::refs::Refs;
 use crate::system::Inhabitation;
@@ -263,7 +269,7 @@ pub struct RawBindingSpec {
     pub selection_inputs: Vec<crate::selection::SelectionInput>,
     /// Finite selectors in authored evaluation order.
     #[serde(default)]
-    pub selections: Vec<crate::selection::Selection>,
+    pub selections: Vec<crate::selection::RawSelection>,
     /// How many times the command may run. Required.
     pub delivery: Delivery,
     /// What happens when it does not run. Required.
@@ -300,7 +306,7 @@ pub struct RawTrigger {
     /// A finite typed predicate over the event payload; the binding invokes only when it holds
     /// (ess/22, beyond10x/ess#268). Only for an event cause; see the `condition` module.
     #[serde(default, rename = "where")]
-    pub condition: Option<ess_primitives::predicate::Predicate>,
+    pub condition: Option<ess_primitives::predicate::WrittenPredicate>,
 }
 
 /// What a binding does.
@@ -800,6 +806,24 @@ impl serde::Serialize for MappingTable {
                         path: path.clone(),
                     },
                 )?,
+                // Written back as the scalar it was read as, so a document read again means
+                // the same thing.
+                MappingSource::Scalar { value, scalar } => match scalar {
+                    ScalarKind::Boolean => {
+                        map.serialize_entry(&entry.target, &(value == "true"))?;
+                    }
+                    ScalarKind::Integer => match value.parse::<i64>() {
+                        Ok(number) => map.serialize_entry(&entry.target, &number)?,
+                        Err(_) => match value.parse::<u64>() {
+                            Ok(number) => map.serialize_entry(&entry.target, &number)?,
+                            Err(_) => map.serialize_entry(&entry.target, value)?,
+                        },
+                    },
+                    ScalarKind::Decimal => match value.parse::<f64>() {
+                        Ok(number) => map.serialize_entry(&entry.target, &number)?,
+                        Err(_) => map.serialize_entry(&entry.target, value)?,
+                    },
+                },
                 source => map.serialize_entry(&entry.target, &source.to_string())?,
             }
         }
@@ -847,6 +871,10 @@ struct SelectionMapping {
 enum AuthoredMappingSchema {
     String(String),
     Selection(SelectionMapping),
+    // An unquoted constant, typed against the input it fills (beyond10x/ess#445).
+    Boolean(bool),
+    Integer(i64),
+    Decimal(f64),
 }
 
 struct AuthoredMappingSource(MappingSource);
@@ -856,10 +884,43 @@ impl<'de> serde::Deserialize<'de> for AuthoredMappingSource {
         impl<'de> serde::de::Visitor<'de> for Source {
             type Value = AuthoredMappingSource;
             fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                f.write_str("an existing mapping string or closed {selection, path} object")
+                f.write_str(
+                    "an existing mapping string, a boolean, a number or closed {selection, path} \
+                     object",
+                )
             }
             fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
                 Ok(AuthoredMappingSource(MappingSource::parse(value)))
+            }
+            // Read rather than refused, as `sets:` reads them, so the rule that types a literal
+            // decides — and can say `quote it` where text was meant (beyond10x/ess#445).
+            fn visit_bool<E: serde::de::Error>(self, value: bool) -> Result<Self::Value, E> {
+                Ok(AuthoredMappingSource(MappingSource::Scalar {
+                    value: value.to_string(),
+                    scalar: ScalarKind::Boolean,
+                }))
+            }
+            fn visit_i64<E: serde::de::Error>(self, value: i64) -> Result<Self::Value, E> {
+                Ok(AuthoredMappingSource(MappingSource::Scalar {
+                    value: value.to_string(),
+                    scalar: ScalarKind::Integer,
+                }))
+            }
+            fn visit_u64<E: serde::de::Error>(self, value: u64) -> Result<Self::Value, E> {
+                Ok(AuthoredMappingSource(MappingSource::Scalar {
+                    value: value.to_string(),
+                    scalar: ScalarKind::Integer,
+                }))
+            }
+            fn visit_f64<E: serde::de::Error>(self, value: f64) -> Result<Self::Value, E> {
+                crate::command::decimal_text(value)
+                    .map(|value| {
+                        AuthoredMappingSource(MappingSource::Scalar {
+                            value,
+                            scalar: ScalarKind::Decimal,
+                        })
+                    })
+                    .ok_or_else(|| E::custom("a decimal literal must be a finite number"))
             }
             fn visit_map<A: serde::de::MapAccess<'de>>(
                 self,
@@ -923,6 +984,19 @@ pub enum MappingSource {
         /// The value, as written.
         value: String,
     },
+    /// A constant written as an unquoted YAML Boolean, integer or decimal: `is_bridged: true`
+    /// (beyond10x/ess#445).
+    ///
+    /// Kept apart from [`Literal`](Self::Literal) only until it is checked, exactly as
+    /// [`PayloadSource::Scalar`](crate::command::PayloadSource::Scalar) is: `3` over a `String` is
+    /// refused with the quoted spelling as its repair, where `'3'` is the text `3`. Once admitted it
+    /// compiles to what its quoted form does, so no IR byte depends on which of the two was written.
+    Scalar {
+        /// The canonical text of the scalar: `false`, `0`, `-3`, `1.5`.
+        value: String,
+        /// Which YAML scalar it was written as.
+        scalar: ScalarKind,
+    },
 }
 
 impl MappingSource {
@@ -974,7 +1048,7 @@ impl std::fmt::Display for MappingSource {
             Self::Selection { selection, path } => {
                 write!(f, "selection {selection} [{}]", path.join("."))
             }
-            Self::Literal { value } => f.write_str(value),
+            Self::Literal { value } | Self::Scalar { value, .. } => f.write_str(value),
         }
     }
 }
@@ -1194,7 +1268,8 @@ impl BindingSpec {
                 MappingSource::DeliveryContext { .. }
                 | MappingSource::HostContext { .. }
                 | MappingSource::HostRead { .. }
-                | MappingSource::EventField { .. } => {}
+                | MappingSource::EventField { .. }
+                | MappingSource::Scalar { .. } => {}
                 MappingSource::EventAccessor { segments } => {
                     if let Err(error) = crate::accessor::validate_segments(segments, &at) {
                         errors.push(error);
@@ -1404,7 +1479,48 @@ impl TryFrom<RawBindingSpec> for BindingSpec {
             }
         }
 
-        let condition = raw.when.condition.clone();
+        // A condition that does not parse is refused here, and withholds the binding
+        // (beyond10x/ess#448).
+        let condition = match raw.when.condition.clone().map(|condition| {
+            condition.read(
+                ess_primitives::error::ConstructRef::new(
+                    ess_primitives::error::ConstructKind::Binding,
+                    name.to_string(),
+                )
+                .key("when")
+                .key("where"),
+            )
+        }) {
+            Some(Ok(condition)) => Some(condition),
+            Some(Err(error)) => {
+                errors.push(error);
+                None
+            }
+            None => None,
+        };
+        // A selector whose `first.where` does not parse is refused here too (beyond10x/ess#448).
+        let selections = raw
+            .selections
+            .into_iter()
+            .enumerate()
+            .filter_map(|(index, selection)| {
+                let site = ess_primitives::error::ConstructRef::new(
+                    ess_primitives::error::ConstructKind::Binding,
+                    name.to_string(),
+                )
+                .key("selections")
+                .index(index)
+                .key("first")
+                .key("where");
+                match selection.read(site) {
+                    Ok(selection) => Some(selection),
+                    Err(error) => {
+                        errors.push(error);
+                        None
+                    }
+                }
+            })
+            .collect();
         let cause = match cause_of(&name, raw.when) {
             Ok(cause) => cause,
             Err(error) => return Err(errors.with(error)),
@@ -1416,7 +1532,7 @@ impl TryFrom<RawBindingSpec> for BindingSpec {
             command: raw.invoke.command,
             mapping,
             selection_inputs: raw.selection_inputs,
-            selections: raw.selections,
+            selections,
             delivery: raw.delivery,
             failure: raw.on_failure.failure,
             escalation: raw.on_failure.emits,
@@ -1877,7 +1993,10 @@ impl Ends<'_> {
                 errors.extend(self.check_selection(&at, selection, path, filled));
             }
             MappingSource::Literal { value } => {
-                errors.extend(self.check_literal(&at, value, filled));
+                errors.extend(self.check_literal(&at, value, None, filled));
+            }
+            MappingSource::Scalar { value, scalar } => {
+                errors.extend(self.check_literal(&at, value, Some(*scalar), filled));
             }
         }
 
@@ -2070,10 +2189,14 @@ impl Ends<'_> {
     }
 
     /// A literal, against the representation of the input it fills.
+    ///
+    /// `scalar` is the YAML scalar an unquoted constant was written as, `None` for text
+    /// (beyond10x/ess#445).
     fn check_literal(
         &self,
         at: &str,
         value: &str,
+        scalar: Option<ScalarKind>,
         filled: Option<(&CommandSpec, &Field)>,
     ) -> ValidationErrors {
         let mut errors = ValidationErrors::new();
@@ -2081,7 +2204,7 @@ impl Ends<'_> {
 
         // The prefix left off entirely. `recipient: customer_email` sends the field's name where its
         // value was meant, and nothing later in the pipeline can tell the difference.
-        if let Some(event) = self.event() {
+        if let (Some(event), None) = (self.event(), scalar) {
             if event.field(value).is_some() {
                 errors.push(
                     ValidationError::new(
@@ -2109,23 +2232,31 @@ impl Ends<'_> {
         let refuse = |reason: String| {
             ValidationError::new(ValidationCode::TypeMismatch, at.to_owned(), reason).with_hint(
                 format!(
-                    "only text and the variants of an enum can be written as a literal; take the \
-                     value from a field of `{}` instead",
+                    "a literal may be text, a variant of an enum, `true` or `false`, a whole \
+                     number or a decimal; take the value from a field of `{}` instead",
                     self.binding.cause
                 ),
             )
         };
+        let typed = || self.typed_literal(at, value, scalar, command, input);
 
         match representation(&input.type_ref, self.types, self.inhabitation) {
             // Text is as far as a literal can be checked — the module documentation says what that
-            // leaves unsaid about the value. The other two silences are the same rule, not a
-            // weaker check: a name nothing declares, and a type `check_inhabitation` refuses by
-            // name, are each reported by the pass that owns them, and saying it again here would
-            // report one mistake twice and repair it neither time. Every other way of having no
-            // values reaches one of the arms below, because for those nothing else speaks.
-            Resolution::Established(Representation::Text)
-            | Resolution::Undeclared
-            | Resolution::Uninhabited => {}
+            // leaves unsaid about the value. An unquoted constant over text is the one exception:
+            // the author meant the text, and one pair of quotes is the repair.
+            Resolution::Established(Representation::Text) => {
+                if scalar.is_some() {
+                    if let Some(error) = typed() {
+                        errors.push(error);
+                    }
+                }
+            }
+            // The other two silences are the same rule, not a weaker check: a name nothing
+            // declares, and a type `check_inhabitation` refuses by name, are each reported by the
+            // pass that owns them, and saying it again here would report one mistake twice and
+            // repair it neither time. Every other way of having no values reaches one of the arms
+            // below, because for those nothing else speaks.
+            Resolution::Undeclared | Resolution::Uninhabited => {}
             // Not the same silence: this one has values, so no other pass refuses it, and
             // admitting it would be admitting a literal nothing ever checked.
             Resolution::Cyclic(through) => errors.push(refuse(format!(
@@ -2133,6 +2264,11 @@ impl Ends<'_> {
                  representation a literal could be written as is ever reached",
                 command.name, input.name, input.type_ref
             ))),
+            Resolution::Established(Representation::Variants(_)) if scalar.is_some() => {
+                if let Some(error) = typed() {
+                    errors.push(error);
+                }
+            }
             Resolution::Established(Representation::Variants(variants)) => {
                 if !variants.iter().any(|variant| variant.name() == value) {
                     errors.push(
@@ -2148,12 +2284,17 @@ impl Ends<'_> {
                     );
                 }
             }
+            // `true`, `3` and `0.5`, quoted or not, exactly where `sets:` admits them.
             Resolution::Established(Representation::Primitive(primitive)) => {
-                errors.push(refuse(format!(
-                    "`{}.{}` is `{}`, which is `{primitive}` underneath, and a literal in a binding \
-                     is text",
-                    command.name, input.name, input.type_ref
-                )));
+                if crate::command::primitive_literal(primitive, value) == Err(None) {
+                    errors.push(refuse(format!(
+                        "`{}.{}` is `{}`, which is `{primitive}` underneath, and a literal in a \
+                         binding is text, `true` or `false`, a whole number or a decimal",
+                        command.name, input.name, input.type_ref
+                    )));
+                } else if let Some(error) = typed() {
+                    errors.push(error);
+                }
             }
             Resolution::Established(Representation::Structured) => {
                 errors.push(refuse(format!(
@@ -2165,6 +2306,31 @@ impl Ends<'_> {
         }
 
         errors
+    }
+
+    /// A literal, by the rule `sets:` and `payload:` type a literal by, applied unchanged
+    /// (beyond10x/ess#445): its `type_mismatch`, or `None` to admit it.
+    fn typed_literal(
+        &self,
+        at: &str,
+        value: &str,
+        scalar: Option<ScalarKind>,
+        command: &CommandSpec,
+        input: &Field,
+    ) -> Option<ValidationError> {
+        crate::command::mapping_literal(
+            command,
+            input,
+            value,
+            scalar,
+            self.types,
+            self.conversions,
+            self.inhabitation,
+        )
+        .map(|(reason, hint)| {
+            ValidationError::new(ValidationCode::TypeMismatch, at.to_owned(), reason)
+                .with_hint(hint)
+        })
     }
 
     /// Every input the command requires and the mapping does not fill.
@@ -2964,7 +3130,7 @@ on_failure: {escalate: {emits: billing.email.DeliveryEscalated}}
     }
 
     #[test]
-    fn a_literal_cannot_fill_an_input_that_is_not_text() {
+    fn a_literal_that_is_no_value_of_the_input_it_fills_is_refused() {
         let commands = command(
             COMMAND,
             &[
@@ -2974,7 +3140,7 @@ on_failure: {escalate: {emits: billing.email.DeliveryEscalated}}
             ],
         );
         let errors = check_against(
-            binding(&format!("{MAPPING}  priority: \"3\"\n")),
+            binding(&format!("{MAPPING}  priority: \"three\"\n")),
             &declared_events(),
             &commands,
             &conversions(),
@@ -2983,9 +3149,17 @@ on_failure: {escalate: {emits: billing.email.DeliveryEscalated}}
         let error = only(&errors);
         assert_eq!(error.code, ValidationCode::TypeMismatch);
         assert!(
-            error.message.contains("Integer") && error.message.contains("billing.email.Priority"),
+            error.message.contains("Integer") && error.message.contains("priority"),
             "the refusal names the representation it walked to: {error}"
         );
+        // A whole number is one of its values, as it is in `sets:` (beyond10x/ess#445).
+        let admitted = check_against(
+            binding(&format!("{MAPPING}  priority: \"3\"\n")),
+            &declared_events(),
+            &commands,
+            &conversions(),
+        );
+        assert!(admitted.is_empty(), "{admitted}");
     }
 
     #[test]

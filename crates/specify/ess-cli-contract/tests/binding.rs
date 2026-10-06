@@ -363,3 +363,131 @@ fn refuses_unsupported_constraints_and_primitive_promises() {
         assert!(compile(&model(&invalid), &binding).is_err());
     }
 }
+
+/// beyond10x/ess#466: a launcher whose `args` field takes every argv word after `--`.
+const LAUNCH_MODEL: &str = "format: ess/1
+system: demo
+version: v1
+types:
+  - name: demo.Word
+    kind: newtype
+    of: String
+  - name: demo.LaunchInput
+    kind: struct
+    fields:
+      - {name: connection, type: String}
+      - {name: args, type: 'List<String>'}
+  - name: demo.Launched
+    kind: struct
+    fields:
+      - {name: status, type: String}
+";
+
+const LAUNCH_BINDING: &str = "format: ess-cli/1
+binary: demo
+about: Launch a pinned program
+globals: {config: config, state: state-dir, output: output}
+callables:
+  launch:
+    target: {kind: local, owner: demo.cli, action: launch}
+    input: demo.LaunchInput
+    result: demo.Launched
+commands:
+  - path: [launch]
+    callable: launch
+    about: Launch with the arguments after --
+    arguments:
+      - {field: connection, source: {kind: option, long: connection}}
+      - {field: args, source: {kind: trailing}}
+";
+
+fn launch(
+    model_text: &str,
+    binding_text: &str,
+) -> Result<ess_cli_contract::CompiledBinding, String> {
+    compile(
+        &model(model_text),
+        &Binding::from_yaml(binding_text).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())
+}
+
+#[test]
+fn trailing_source_binds_a_required_list_of_strings() {
+    use ess_cli_contract::wire::ArgumentSource;
+    for model_text in [
+        LAUNCH_MODEL.to_owned(),
+        // An unconstrained String newtype is a String on the wire.
+        LAUNCH_MODEL.replace("type: 'List<String>'", "type: 'List<demo.Word>'"),
+    ] {
+        let compiled = launch(&model_text, LAUNCH_BINDING).unwrap();
+        let arguments = &compiled.plan().commands[0].arguments;
+        assert_eq!(arguments[1].field, "args");
+        assert!(matches!(arguments[1].source, ArgumentSource::Trailing {}));
+        assert!(compiled
+            .to_canonical_json()
+            .contains("\"source\": {\n            \"kind\": \"trailing\"\n          }"));
+    }
+}
+
+#[test]
+fn binding_refuses_second_trailing_source() {
+    let model_text = LAUNCH_MODEL.replace(
+        "      - {name: args, type: 'List<String>'}\n",
+        "      - {name: args, type: 'List<String>'}\n      - {name: more, type: 'List<String>'}\n",
+    );
+    let binding = format!("{LAUNCH_BINDING}      - {{field: more, source: {{kind: trailing}}}}\n");
+    let error = launch(&model_text, &binding).unwrap_err();
+    assert!(error.contains("at most one trailing source"), "{error}");
+}
+
+#[test]
+fn binding_refuses_trailing_on_other_shapes() {
+    for shape in [
+        "String",
+        "'List<Integer>'",
+        "'Optional<List<String>>'",
+        "'List<Optional<String>>'",
+    ] {
+        let model_text = LAUNCH_MODEL.replace("type: 'List<String>'", &format!("type: {shape}"));
+        let error = launch(&model_text, LAUNCH_BINDING).unwrap_err();
+        assert!(
+            error.contains("a trailing source binds a required List<String> field"),
+            "{shape}: {error}"
+        );
+    }
+}
+
+#[test]
+fn older_kind_refusal_names_trailing() {
+    let error = Binding::from_yaml(&LAUNCH_BINDING.replace("kind: trailing", "kind: variadic"))
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("unknown variant `variadic`"), "{error}");
+    assert!(error.contains("`trailing`"), "{error}");
+    // The variant has no fields, like the closed reader's other objects.
+    assert!(Binding::from_yaml(
+        &LAUNCH_BINDING.replace("{kind: trailing}", "{kind: trailing, index: 2}")
+    )
+    .is_err());
+}
+
+/// The design page's launcher example is a complete model and binding that compiles.
+#[test]
+fn design_page_trailing_example_compiles() {
+    let page = include_str!("../../../../docs/design/cli-presentation-binding.md");
+    let block = |first: &str| {
+        let start = page
+            .find(&format!("```yaml\n{first}\n"))
+            .unwrap_or_else(|| panic!("the design page has no `{first}` block"))
+            + "```yaml\n".len();
+        let end = start + page[start..].find("```").unwrap();
+        page[start..end].to_owned()
+    };
+    let binding = block("# launch-cli.yaml");
+    assert!(binding.contains("source: {kind: trailing}"), "{binding}");
+    let compiled = launch(&block("# launch-system.yaml"), &binding).unwrap();
+    assert!(compiled
+        .to_canonical_json()
+        .contains("\"kind\": \"trailing\""));
+}

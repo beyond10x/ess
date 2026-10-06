@@ -40,7 +40,9 @@ has no declared answer, and one declaring two not-found candidates has an ambigu
 `ess verify conform synthesize` prints a `note:` for each, not a refusal.
 
 An error field that describes the current state, such as `InvoiceStateConflict.state`, has no value
-for an instance that does not exist. Where the `wrong_state` error declares fields, the generated
+for an instance that does not exist. From `ess/23` it can say so: `{subject: state}` fills it with
+the state the record holds, the state before the move, and the literal of the move's target state
+fills a field naming the state that was asked for (`requested: Published`). Where the `wrong_state` error declares fields, the generated
 Rust and Go behaviour seams add a second variant for this answer that carries none of them:
 `IssueInvoiceOutcome::WrongStateUnknownInstance` in Rust, `IssueInvoiceOutcomeWrongStateUnknownInstance`
 in Go. The served surface answers it with the branch's `409`, the outcome and the error, and no
@@ -179,6 +181,36 @@ requires that no immediate (`read_your_writes`) view of the entity still holds a
 identity, then sends the command for it again and requires the unknown-instance answer. A suite
 holding the absence check is `ess-conformance/22` (coverage `/23`); Go and TypeScript runners
 refuse those majors by version.
+
+## An update can rename its subject
+
+From `format: ess/23`, an `updates:` whose `sets:` writes the entity's identity re-keys the record:
+the row its `instance:` names comes to rest under the identity written, every field `sets:` does
+not name carried over, and the old identity names nothing afterwards.
+
+```yaml
+- name: taken
+  when_related: {entity: demo.vault.Secret, where: name == input.new_name, exists: true}
+  error: demo.vault.NameTaken
+- name: renamed
+  updates: demo.vault.Secret
+  instance: name
+  sets: {name: input.new_name}
+- {name: no-such-secret, unknown_instance: true, error: demo.vault.NoSuchSecret}
+```
+
+The command must answer a new identity another record carries: a refusal guarded by exactly
+`when_related: {entity: <the entity>, where: <identity> == input.<field>, exists: true}` over the
+input the identity is written from, or validate refuses the outcome as `missing_declaration`. The
+guard reads the rows as they were before the branch, so a rename to the record's own identity is the
+collision. The identity write is refused by name beside `compensates:`, in a create-or-update pair,
+on an entity an `owns` or `references` relation carries and on a struct identity, and below `ess/23`
+it is refused naming `ess/23`. Its scenario requires the row under the new identity with its other
+fields, no row under the old one, and the same request again answered as an unknown instance; the
+collision's scenario requires every immediate view unchanged, for another record's identity and for the record's own.
+The generated Rust behaviour inserts the row under the new identity, then removes the old one,
+through its storage port; Go, Web and Clap refuse the write by name, and Entity Runtime lowering
+refuses it with `IdentityChangeUnsupported`.
 
 ## A creation can land in a declared state
 
@@ -327,6 +359,13 @@ compares each field that has a source, except a generated one, which is the impl
 choose. Earlier formats refuse the block as `unsupported_format_version`. The
 [fixture](https://github.com/beyond10x/ess/blob/main/crates/verify/ess-conformance/tests/fixtures/error-payload-sources.yaml)
 covers every refusal position.
+
+From `ess/23`, `{subject: state}` reads the lifecycle state the row held, the state before the move:
+in an error payload, an event payload and `sets:`, wherever `{subject: …}` is admitted, typed as the
+entity's own `State`. `current: {subject: state}` on a `wrong_state:` refusal says which state the
+record is in, and each `<entity>/state/<S>/refuses/<command>` scenario requires `S` there. Below
+`ess/23` it is refused naming `ess/23`. The generated Rust and Go behaviours read the held row's
+state; Entity Runtime lowering refuses it with the other `{subject: …}` values.
 
 A sourced error field is also what lets synthesis generate a refusal; see
 [Synthesize code from a specification](../synthesize.md#generated-behaviour-over-ports-you-provide).

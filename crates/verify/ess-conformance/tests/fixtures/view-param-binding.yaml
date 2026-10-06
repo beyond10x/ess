@@ -1,0 +1,72 @@
+format: ess/20
+system: demo
+version: v1
+domain: demo.vault
+summary: Items addressed by a struct identity, listed by owner, by delegate and by tenant.
+types:
+  - name: demo.vault.Ref
+    kind: struct
+    fields:
+      - {name: tenant, type: String}
+      - {name: key, type: String}
+entities:
+  - name: demo.vault.Item
+    identity: {name: ref, type: demo.vault.Ref}
+    fields:
+      - {name: owner, type: String}
+      - {name: delegate, type: String}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+actors:
+  - name: demo.vault.Writer
+    may: [demo.vault.CreateItem]
+commands:
+  - name: demo.vault.CreateItem
+    input:
+      - {name: ref, type: demo.vault.Ref}
+      - {name: owner, type: String}
+      - {name: delegate, type: String}
+    outcomes:
+      - name: created
+        creates: demo.vault.Item
+        instance: ref
+        sets: {owner: input.owner, delegate: input.delegate}
+        emits: [demo.vault.ItemCreated]
+        payload:
+          demo.vault.ItemCreated: {ref: input.ref}
+events:
+  - name: demo.vault.ItemCreated
+    fields:
+      - {name: ref, type: demo.vault.Ref}
+views:
+  - name: demo.vault.BySameName
+    source: demo.vault.Item
+    consistency: read_your_writes
+    params: [{name: owner, type: String}]
+    filter: owner == param.owner
+    fields:
+      - {name: ref, type: demo.vault.Ref}
+      - {name: owner, type: String}
+  - name: demo.vault.ByOtherName
+    source: demo.vault.Item
+    consistency: read_your_writes
+    params: [{name: who, type: String}]
+    filter: owner == param.who
+    fields:
+      - {name: ref, type: demo.vault.Ref}
+      - {name: owner, type: String}
+  - name: demo.vault.ByTenant
+    source: demo.vault.Item
+    consistency: read_your_writes
+    params: [{name: tenant, type: String}]
+    filter: ref.tenant == param.tenant
+    fields:
+      - {name: ref, type: demo.vault.Ref}
+      - {name: owner, type: String}
+  - name: demo.vault.ByCrossed
+    source: demo.vault.Item
+    consistency: read_your_writes
+    params: [{name: owner, type: String}]
+    filter: delegate == param.owner
+    fields:
+      - {name: ref, type: demo.vault.Ref}
+      - {name: delegate, type: String}

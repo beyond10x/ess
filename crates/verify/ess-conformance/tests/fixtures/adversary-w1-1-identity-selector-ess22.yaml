@@ -1,0 +1,73 @@
+format: ess/22
+system: demo
+version: v1
+domain: demo.team
+summary: Teams that name a successor team, refused where a team already carries the successor's identity.
+types:
+  - {name: demo.team.TeamId, kind: newtype, of: String}
+entities:
+  - name: demo.team.Team
+    identity: {name: team_id, type: demo.team.TeamId}
+    fields:
+      - {name: successor, type: Optional<demo.team.TeamId>}
+    lifecycle:
+      initial: Active
+      states: [Active]
+      terminal: [Active]
+      transitions: []
+errors:
+  - {name: demo.team.TeamExists, summary: A team already carries the identity., fields: []}
+  - {name: demo.team.NoSuchTeam, summary: No team carries the identity., fields: []}
+events:
+  - name: demo.team.TeamFormed
+    fields:
+      - {name: team_id, type: demo.team.TeamId}
+  - name: demo.team.SuccessorNamed
+    fields:
+      - {name: team_id, type: demo.team.TeamId}
+actors:
+  - {name: demo.team.Lead, may: [demo.team.FormTeam, demo.team.NameSuccessor]}
+commands:
+  - name: demo.team.FormTeam
+    input:
+      - {name: team_id, type: demo.team.TeamId}
+    outcomes:
+      - name: formed
+        creates: demo.team.Team
+        instance: team_id
+        emits: [demo.team.TeamFormed]
+        payload:
+          demo.team.TeamFormed: {team_id: input.team_id}
+      - {name: already-formed, existing_instance: true, error: demo.team.TeamExists}
+  - name: demo.team.NameSuccessor
+    input:
+      - {name: team_id, type: demo.team.TeamId}
+      - {name: successor_id, type: demo.team.TeamId}
+    outcomes:
+      - name: successor-is-a-team
+        when_related:
+          entity: demo.team.Team
+          where: team_id == input.successor_id
+          exists: true
+        error: demo.team.NoSuchTeam
+      - name: named
+        updates: demo.team.Team
+        instance: team_id
+        sets: {successor: input.successor_id}
+        emits: [demo.team.SuccessorNamed]
+        payload:
+          demo.team.SuccessorNamed: {team_id: input.team_id}
+      - {name: no-such-team, unknown_instance: true, error: demo.team.NoSuchTeam}
+views:
+  - name: demo.team.Teams
+    source: demo.team.Team
+    consistency: read_your_writes
+    fields:
+      - {name: team_id, type: demo.team.TeamId}
+      - {name: successor, type: Optional<demo.team.TeamId>}
+components:
+  - component: team-service
+    owns: {domains: [demo.team]}
+    accepts: {commands: [demo.team.FormTeam, demo.team.NameSuccessor]}
+    publishes: {events: [demo.team.TeamFormed, demo.team.SuccessorNamed]}
+    reached_by: network

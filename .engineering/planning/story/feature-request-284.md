@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-284
 kind: story
-status: active
+status: implemented
 title: ess ui check does not check that a page actor is granted the commands it binds
 tags:
 - feature-request
@@ -12,10 +12,11 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-04T14:01:05Z", actor: "human:timo", revision: 6}
 - {from: "proposed", to: "active", at: "2026-10-04T14:01:06Z", actor: "human:timo", revision: 7}
+- {from: "active", to: "implemented", at: "2026-10-06T09:43:09Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Outcome
 

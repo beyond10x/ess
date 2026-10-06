@@ -2,17 +2,18 @@
 format: aep.planning-md/3
 id: story:openapi-synchronous-read-status
 kind: story
-status: active
+status: implemented
 title: A synchronous read outcome is answered 200, not 202
 refs:
 - provider: github
   reference: beyond10x/ess#424
 relations:
 - serves: vision:O2
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-04T18:48:38Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-04T18:48:39Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-06T09:43:36Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Outcome
 

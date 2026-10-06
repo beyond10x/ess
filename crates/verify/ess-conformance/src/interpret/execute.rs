@@ -1044,8 +1044,10 @@ fn addressed_row(
             spec.name
         ))
     })?;
-    let entity = &ir.entity(entity).name;
-    let Some(held) = store.instance_typed(entity, identity) else {
+    let Some(held) = store.instance_typed(&ir.entity(entity).name, identity) else {
+        if creation_takes_absent(spec, entity, field) {
+            return Ok(None);
+        }
         return unknown_instance(ir, spec, store, input, generated, responses).map(Some);
     };
     let may_act = acting.iter().any(|(effect, ..)| match effect {
@@ -1056,6 +1058,29 @@ fn addressed_row(
         return Ok(None);
     }
     wrong_state(ir, spec, store, input, Some(held)).map(Some)
+}
+
+/// Whether a creation branch of `entity` takes its identity from the input `field`. On a command
+/// guarded by a row set, an absent addressed row such a branch takes is that creation's, not an
+/// unknown instance: the row sets answer, then the creation (an upsert, beyond10x/ess#462).
+fn creation_takes_absent(
+    spec: &ResolvedCommand,
+    entity: &ess_compiler::ir::EntityHandle,
+    field: &str,
+) -> bool {
+    spec.outcomes.iter().any(|outcome| {
+        outcome.error.is_none()
+            && outcome
+                .subject
+                .as_ref()
+                .is_some_and(|subject| subject.entity == *entity)
+            && existence::identity_source(outcome).is_some_and(|source| {
+                matches!(&source.value,
+                    ResolvedPayloadValue::InputField { field: taken, .. }
+                    | ResolvedPayloadValue::InputOrGenerated { field: taken, .. }
+                    if taken == field)
+            })
+    })
 }
 
 fn selected_subject_refusal(
@@ -1084,6 +1109,9 @@ fn selected_subject_refusal(
     })?;
     let entity = ir.entity(&subject.entity);
     let Some(held) = store.instance_typed(&entity.name, identity) else {
+        if row_set::uses(spec) && creation_takes_absent(spec, &subject.entity, &field.name) {
+            return Ok(None);
+        }
         return unknown_instance(ir, spec, store, input, generated, responses).map(Some);
     };
     if let ResolvedEffect::Moves { transition } = &subject.effect {
@@ -1485,6 +1513,11 @@ fn error_value(
             }
             Some(Value::Object(values))
         }
+        // The unknown-instance arm of a `wrong_state:` refusal holds no row, and its error carries
+        // no field read from one (ess/23, beyond10x/ess#458).
+        ResolvedPayloadValue::SubjectState { .. } => reads
+            .before
+            .map(|row| Value::Known(Node::Text(row.state.to_string()))),
         ResolvedPayloadValue::SubjectField {
             field: read,
             type_ref,
@@ -1747,9 +1780,31 @@ fn take(
                     Acted::Rests(after) => Some(after),
                     Acted::Removed => None,
                 };
+                // An `updates:` writing the identity re-keys the record (ess/23, beyond10x/ess#429):
+                // the row comes to rest under the identity written, and the old one names nothing.
+                let old = key.clone();
+                let key = match (&after, outcome.identity_write(ir)) {
+                    (Some(after), Some(write)) => rekeyed(spec, outcome, after, write)?,
+                    _ => key,
+                };
                 let held = work.next.instances.entry(entity.name.clone()).or_default();
                 match after {
                     Some(after) => {
+                        if key != old {
+                            // The declared collision refusal answers a carried identity first, so
+                            // this is a request the model did not decide.
+                            if held.contains_key(&key) {
+                                return Err(Undetermined::NotInterpreted {
+                                    construct: format!(
+                                        "a re-key of `{}` onto `{key:?}`, which another row \
+                                         carries, in `{}`",
+                                        entity.name,
+                                        branch(spec, outcome)
+                                    ),
+                                });
+                            }
+                            held.remove(&old);
+                        }
                         held.insert(key.clone(), after);
                         touched = Some((entity.name.clone(), key));
                     }
@@ -1791,6 +1846,26 @@ fn take(
     };
     responses.completed(reference(spec, outcome), prepared);
     Ok(Ok(step))
+}
+
+/// The identity a re-keying `updates:` leaves its row under: the value its `sets:` wrote for the
+/// identity (ess/23, beyond10x/ess#429).
+fn rekeyed(
+    spec: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    after: &Row,
+    write: &ResolvedPayloadField,
+) -> Result<Node, Undetermined> {
+    match after.fields.get(&write.target).map(Value::concrete) {
+        Some(Ok(Some(identity))) => Ok(identity),
+        _ => Err(Undetermined::NoValue {
+            what: format!(
+                "the new identity `{}` writes, in `{}`",
+                write.target,
+                branch(spec, outcome)
+            ),
+        }),
+    }
 }
 
 fn unsupported_instance(
@@ -1988,6 +2063,7 @@ fn value_at(
             let (key, row) = reader.one(selection)?;
             values::selected(ir, field, ir.entity(&selection.entity), key, row)
         }
+        ResolvedPayloadValue::SubjectState { .. } => values::held_state(work.before.as_ref()),
         ResolvedPayloadValue::SubjectField {
             field: read,
             type_ref,

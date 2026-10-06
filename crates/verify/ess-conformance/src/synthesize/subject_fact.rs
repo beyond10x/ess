@@ -350,13 +350,9 @@ pub(super) fn state_answered_rows(
         });
         match &branch.error {
             Some(error) => {
-                steps.push(super::expect_error(
-                    ir,
-                    branch,
-                    error,
-                    &supplied,
-                    &arrangement.settled,
-                ));
+                // The row rests in `held`, which `{subject: state}` reads (ess/23).
+                let before = super::with_held_state(ir, &arrangement.settled, entity, Some(held));
+                steps.push(super::expect_error(ir, branch, error, &supplied, &before));
                 steps.push(ScenarioStep::ExpectNoEvents);
             }
             None => steps.push(ScenarioStep::ExpectNoError),
@@ -482,6 +478,17 @@ fn evaluate_row(
             return Truth::Unknown;
         }
     }
+    // The identity, where the steps settled it and the predicate reads it, whole or a member of a
+    // struct identity: a row-set selector over the identity (ess/23, beyond10x/ess#429, #463) reads
+    // the row's own key. A predicate that does not read it is decided without it: the settled key
+    // is not a stored field, and binding it there would leave every such predicate unknown.
+    if identity_selectors(ir) && values.contains_key(&declared.identity.name) {
+        if reads_key(predicate, &declared.identity.name) {
+            fields.push(declared.identity.clone());
+        } else {
+            values.remove(&declared.identity.name);
+        }
+    }
     // The held state is bound as `state` at the lifecycle's own type, beside the stored fields.
     if reads_held_state(ir, entity, predicate) {
         let Some(held) = held else {
@@ -509,6 +516,22 @@ fn evaluate_row(
         Truth::Unknown if as_guard && unknown_by_absence(predicate, &facts) => Truth::False,
         truth => truth,
     }
+}
+
+/// Whether a row-set selector over the identity is read as the row's key (ess/23, beyond10x/ess#429):
+/// from `ess/23` only, so an `ess/22` document whose selector reads the identity keeps the suite it
+/// synthesized, refusals included.
+pub(super) fn identity_selectors(ir: &EssIr) -> bool {
+    ir.format().major() >= ess_domain::system::FormatVersion::V23.major()
+}
+
+/// Whether `predicate` reads the identity named `identity`: the whole of it, or a member of a
+/// struct identity (beyond10x/ess#463). Every identity gate of a row-set selector asks this.
+pub(super) fn reads_key(predicate: &Predicate, identity: &str) -> bool {
+    predicate
+        .fact_paths()
+        .iter()
+        .any(|path| path.namespace() == identity)
 }
 
 /// The distinction the second owner a link comparison names is arranged under: past every further
@@ -1979,6 +2002,369 @@ pub(super) fn refusal_witness(
     Ok((arrangement, input))
 }
 
+/// The row and input an external branch of a command reading stored fields is witnessed on
+/// (beyond10x/ess#464).
+///
+/// Its provider forced, an external branch answers only where no sibling answers before it: an
+/// input-guarded refusal, an accepting `when:` declared before it (beyond10x/ess#217), and every
+/// branch the stored row selects — `when_subject:`, with its `when:` where it declares one —
+/// whatever its declaration order, since the held state is read before accepting and external
+/// branches (`docs/design/cross-record-and-stored-field-guards.md`, "The precedence order", step
+/// 4). A witness no such sibling claims is answered alike under that order and under the model
+/// interpreter's declaration order.
+///
+/// `setup` and `input` are the plain witness, kept where they are such a witness: a scenario no
+/// guard claimed keeps its bytes. Otherwise the row and input are searched for together, by the
+/// search [`prepare`] arranges the guarded branches with, on a row in a state the branch's move
+/// starts from, and every stored field the guards read is observed before the command. Where no
+/// row and input serve, the scenario is refused naming the siblings that claim it
+/// (`ESS-SYNTH-003`).
+pub(super) fn external_witness(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    setup: Setup,
+    input: BTreeMap<String, Node>,
+) -> Result<(Setup, BTreeMap<String, Node>), RefusalCause> {
+    let Some(subject) = reading(command, outcome) else {
+        return Ok((setup, input));
+    };
+    let entity = &subject.entity;
+    if let (Some(instance), Some(state)) = (&setup.instance, &setup.before) {
+        let plain = Arrangement {
+            instance: instance.clone(),
+            state: state.clone(),
+            steps: Vec::new(),
+            source: BTreeSet::new(),
+            settled: setup.settled.clone(),
+            unwritten: BTreeSet::new(),
+        };
+        if leaves_external(ir, command, outcome, entity, &plain, &input)? {
+            return Ok((setup, input));
+        }
+    }
+    let fields = read_fields(ir, entity, &hints(command));
+    // The branch's own guard, read over the row where a sibling compares the inputs it reads with
+    // stored fields, steers the rows searched toward one an input it admits can match.
+    let mut hints = hints(command);
+    hints.extend(own_guard_on_row(command, outcome));
+    let label = fields.iter().cloned().collect::<Vec<_>>().join(",");
+    if let Some(refusal) = unarrangeable(ir, entity, &fields) {
+        return Err(refusal);
+    }
+    let moves_from = |state: &super::StateName| {
+        outcome
+            .subject
+            .as_ref()
+            .and_then(|own| own.effect.transition())
+            .is_none_or(|transition| transition.from.contains(state))
+    };
+    let tried = std::cell::Cell::new(0usize);
+    let searched = search(
+        ir,
+        entity,
+        actors,
+        &hints,
+        Distinction::PLAIN,
+        &label,
+        |node| {
+            if !moves_from(&node.state) {
+                return Ok(None);
+            }
+            for input in external_inputs(ir, command, outcome, entity, node)? {
+                tried.set(tried.get() + 1);
+                if leaves_external(ir, command, outcome, entity, node, &input)? {
+                    return Ok(Some(input));
+                }
+            }
+            Ok(None)
+        },
+    );
+    let (mut arrangement, input) = match searched {
+        Ok(found) => found,
+        Err(cause) if tried.get() == 0 => return Err(cause),
+        Err(_) => return Err(external_claimed(command, outcome, entity, tried.get())),
+    };
+    // Its writes moved off what the row holds, as every plain witness's are (beyond10x/ess#161),
+    // where the moved input still leaves the branch to answer.
+    let input = super::freshened_external(
+        ir,
+        command,
+        outcome,
+        input,
+        (Some(&arrangement.state), &arrangement.settled),
+        &|moved| {
+            leaves_external(ir, command, outcome, entity, &arrangement, moved).unwrap_or(false)
+        },
+    );
+    let bound = bind_links(
+        ir,
+        command,
+        outcome,
+        entity,
+        actors,
+        &mut arrangement,
+        &input,
+        &mut false,
+    )?;
+    observe_prepared(ir, entity, fields, false, &mut arrangement)?;
+    Ok((external_setup(outcome, subject, arrangement, bound), input))
+}
+
+/// The setup of an external branch [`external_witness`] found `arrangement` for, its links
+/// `bound`. A branch naming no subject of its own — an external refusal — is sent naming the row
+/// its siblings read, `subject`, which it leaves as it was.
+fn external_setup(
+    outcome: &ResolvedOutcome,
+    subject: &ResolvedSubject,
+    arrangement: Arrangement,
+    mut bound: BTreeMap<String, super::InstanceName>,
+) -> Setup {
+    if outcome.subject.is_none() {
+        if let ResolvedInstance::Supplied { field } = &subject.instance {
+            bound.insert(field.name.clone(), arrangement.instance);
+        }
+        return Setup {
+            steps: arrangement.steps,
+            bound,
+            source: arrangement.source,
+            ..Setup::none()
+        };
+    }
+    let after = match outcome.subject.as_ref().map(|own| &own.effect) {
+        Some(ResolvedEffect::Deletes) => None,
+        effect => Some(effect.and_then(ResolvedEffect::transition).map_or_else(
+            || arrangement.state.clone(),
+            |transition| transition.to.clone(),
+        )),
+    };
+    Setup {
+        steps: arrangement.steps,
+        instance: Some(arrangement.instance),
+        bound,
+        source: arrangement.source,
+        after,
+        before: Some(arrangement.state),
+        settled: arrangement.settled,
+    }
+}
+
+/// The external branch's own guard (`when:` beside `external:`) read over the row it is taken on,
+/// where every input it reads is one a sibling's stored guard compares with a stored field:
+/// `revision > 5` beside `stale: revision != input.revision` is `revision > 5` of the row. A
+/// witness the sibling does not claim sends the row's value, so only a row the guard admits has
+/// one. `None` for any other branch.
+fn own_guard_on_row(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> Option<Predicate> {
+    let ResolvedCondition::ExternalWhen { predicate, .. } = &outcome.condition else {
+        return None;
+    };
+    let mut compared: BTreeMap<FactPath, FactPath> = BTreeMap::new();
+    for hint in hints(command) {
+        let mut found = Vec::new();
+        leaves(&hint, &mut found);
+        for leaf in found {
+            let Predicate::Compare {
+                left: Operand::Fact(left),
+                right: Operand::Fact(right),
+                ..
+            } = &leaf
+            else {
+                continue;
+            };
+            match (input_path(left), input_path(right)) {
+                (Some(sent), None) => {
+                    compared.entry(sent).or_insert_with(|| right.clone());
+                }
+                (None, Some(sent)) => {
+                    compared.entry(sent).or_insert_with(|| left.clone());
+                }
+                _ => {}
+            }
+        }
+    }
+    predicate
+        .fact_paths()
+        .iter()
+        .all(|path| compared.contains_key(path))
+        .then(|| {
+            map_paths(predicate, &|path| {
+                compared.get(path).cloned().unwrap_or_else(|| path.clone())
+            })
+        })
+}
+
+/// The row after one route step through an external `driver` of a command reading stored fields
+/// (beyond10x/ess#464): run with the first input [`external_inputs`] offers on which no sibling
+/// the row selects claims it ([`leaves_external`]). `None` for a driver that is not external, or
+/// where every input is claimed. [`step`] never takes one, since no row selects it; the ordinary
+/// arrangement asks for this only where nothing else reaches the state.
+pub(super) fn external_step(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    driver: &Driver<'_>,
+    arrangement: &Arrangement,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+) -> Option<Arrangement> {
+    if !matches!(
+        driver.outcome.condition,
+        ResolvedCondition::External { .. } | ResolvedCondition::ExternalWhen { .. }
+    ) {
+        return None;
+    }
+    let inputs = external_inputs(ir, driver.command, driver.outcome, entity, arrangement).ok()?;
+    inputs
+        .into_iter()
+        .find(|input| {
+            leaves_external(
+                ir,
+                driver.command,
+                driver.outcome,
+                entity,
+                arrangement,
+                input,
+            )
+            .unwrap_or(false)
+        })
+        .map(|input| {
+            advanced(
+                ir,
+                driver,
+                arrangement,
+                actors,
+                &input,
+                Vec::new(),
+                false,
+                &Follow::default(),
+            )
+        })
+}
+
+/// `ESS-SYNTH-003` for [`external_witness`]: every branch the stored row selects, with its guards,
+/// as what claimed each of the `tried` inputs on every row searched.
+fn external_claimed(
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    entity: &EntityHandle,
+    tried: usize,
+) -> RefusalCause {
+    let claiming: Vec<String> = guarded(command)
+        .filter(|branch| branch.name != outcome.name)
+        .filter_map(|branch| {
+            let held = stored(&branch.condition)?;
+            Some(match input_guard(&branch.condition) {
+                Some(guard) => format!("`{}` ({held} and {guard})", branch.name),
+                None => format!("`{}` ({held})", branch.name),
+            })
+        })
+        .collect();
+    RefusalCause::GuardUnsatisfiable {
+        predicate: format!(
+            "`{}` forced on a `{entity}` row it is taken on, sent an input no branch the stored \
+             row selects claims: none of {}",
+            outcome.name,
+            claiming.join(", ")
+        ),
+        tried,
+    }
+}
+
+/// The inputs [`external_witness`] tries on `arrangement`'s row: [`linked_inputs`]'s, searched
+/// over the external branch's own input guard as well, so an input it admits is among them.
+fn external_inputs(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    entity: &EntityHandle,
+    arrangement: &Arrangement,
+) -> Result<Vec<BTreeMap<String, Node>>, RefusalCause> {
+    let ResolvedCondition::ExternalWhen { predicate: own, .. } = &outcome.condition else {
+        return linked_inputs(ir, command, entity, arrangement);
+    };
+    let grounded = grounded(ir, entity, &arrangement.settled, &hints(command));
+    let mut guards: Vec<&Predicate> = command
+        .outcomes
+        .iter()
+        .filter_map(|branch| input_guard(&branch.condition))
+        .collect();
+    guards.push(own);
+    guards.extend(grounded.iter());
+    let mut inputs =
+        candidates(ir, command, &guards, Distinction::PLAIN).map_err(RefusalCause::NoWitness)?;
+    if !grounded.is_empty() {
+        if let Ok(further) = candidates(ir, command, &guards, Distinction::further(1)) {
+            inputs.extend(further);
+        }
+    }
+    Ok(naming_owners(
+        ir,
+        command,
+        entity,
+        arrangement,
+        inputs,
+        &BTreeMap::new(),
+    ))
+}
+
+/// Whether the external branch `outcome`, its provider forced, answers `command` sent `input` for
+/// the row `arrangement` holds ([`external_witness`]): its own guard holds; no input-guarded
+/// refusal and no accepting `when:` declared before it claims the input; no branch the stored row
+/// selects is selected, whatever its declaration order, a stored guard the row leaves undecided
+/// counting as selected; and the row rests in a state its move starts from.
+fn leaves_external(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    entity: &EntityHandle,
+    arrangement: &Arrangement,
+    input: &BTreeMap<String, Node>,
+) -> Result<bool, RefusalCause> {
+    let facts = flatten(ir, command, input).map_err(RefusalCause::WitnessRejected)?;
+    if let ResolvedCondition::ExternalWhen { predicate, .. } = &outcome.condition {
+        if !decides(&facts, &[predicate], true)? {
+            return Ok(false);
+        }
+    }
+    let refusals: Vec<&Predicate> = super::sibling_refusals(command, outcome)
+        .filter_map(when)
+        .collect();
+    if !decides(&facts, &refusals, false)?
+        || super::claimed_by(&facts, &super::earlier_accepting(command, outcome))
+    {
+        return Ok(false);
+    }
+    for branch in guarded(command).filter(|branch| branch.name != outcome.name) {
+        let Some(predicate) = stored(&branch.condition) else {
+            continue;
+        };
+        match guard_truth_with(
+            ir,
+            entity,
+            &arrangement.settled,
+            &arrangement.unwritten,
+            Some(&arrangement.state),
+            &predicate,
+            Some((command, input)),
+        ) {
+            Truth::False => continue,
+            Truth::Unknown => return Ok(false),
+            Truth::True => {}
+        }
+        let refuted = match input_guard(&branch.condition) {
+            Some(guard) => decides(&facts, &[guard], false)?,
+            None => false,
+        };
+        if !refuted {
+            return Ok(false);
+        }
+    }
+    Ok(outcome
+        .subject
+        .as_ref()
+        .and_then(|own| own.effect.transition())
+        .is_none_or(|transition| transition.from.contains(&arrangement.state)))
+}
+
 /// The input [`refusal_witness`] sends to `arrangement`'s row, and the stored guards of the
 /// siblings it misses through that row rather than through its input: every row-only sibling's,
 /// and a mixed sibling's where its input half holds.
@@ -1986,7 +2372,6 @@ pub(super) fn refusal_witness(
 /// Where no candidate serves that way, a moving branch with a stored guard is tried as selected
 /// first on the row, which an accepting sibling declared after it then need not be refuted against
 /// (beyond10x/ess#278).
-#[allow(clippy::too_many_lines)]
 fn refusal_input(
     ir: &EssIr,
     entity: &EntityHandle,
@@ -1995,7 +2380,102 @@ fn refusal_input(
     outcome: &ResolvedOutcome,
     distinction: Distinction,
 ) -> Result<(BTreeMap<String, Node>, Vec<Predicate>), RefusalCause> {
-    let own: Vec<&Predicate> = input_guard(&outcome.condition).into_iter().collect();
+    refusal_input_also(ir, entity, arrangement, command, outcome, &[], distinction)
+}
+
+/// The held-state input refusals of `command` (beyond10x/ess#454): a refusal naming no subject of
+/// its own, selected by the addressed row — `when_subject:` or `when_subject_state:` — together
+/// with an input guard, which is returned beside it. Step 4 of the precedence order
+/// (`docs/design/cross-record-and-stored-field-guards.md`, "The precedence order"): it answers
+/// after existence, and on a row its stored guard rules out, not at all.
+pub(super) fn held_input_refusals(
+    command: &ResolvedCommand,
+) -> impl Iterator<Item = (&ResolvedOutcome, &Predicate)> {
+    command.outcomes.iter().filter_map(|outcome| {
+        if outcome.error.is_none() || outcome.subject.is_some() || outcome.replays.is_some() {
+            return None;
+        }
+        let guard = match &outcome.condition {
+            ResolvedCondition::SubjectPredicate { .. } | ResolvedCondition::SubjectField { .. } => {
+                input_guard(&outcome.condition)
+            }
+            ResolvedCondition::SubjectState { predicate, .. } => predicate.as_ref(),
+            _ => None,
+        }?;
+        Some((outcome, guard))
+    })
+}
+
+/// The overlap sends of a wrong-state row (beyond10x/ess#454): for each held-state input refusal
+/// ([`held_input_refusals`]) with a stored guard, an input its input guard admits, sent to the
+/// row `arrangement` holds in a state its stored guard rules out. The wrong-state answer is
+/// required there, so a target that checks the input before it reads the held state fails.
+///
+/// Each input is chosen as [`refusal_input`] chooses the plain one — `outcome`'s own input guard
+/// held and every sibling missed, through its input or through the row — with the refusal's input
+/// guard held as well, so the row is what refutes the refusal. Returned with the stored guards the
+/// send relies on the row for; a refusal no candidate serves that way, or whose input is the plain
+/// one, adds nothing.
+pub(super) fn held_state_overlaps(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    arrangement: &Arrangement,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    plain: &BTreeMap<String, Node>,
+) -> Vec<(BTreeMap<String, Node>, Vec<Predicate>)> {
+    let mut found: Vec<(BTreeMap<String, Node>, Vec<Predicate>)> = Vec::new();
+    for (refusal, guard) in held_input_refusals(command) {
+        if stored(&refusal.condition).is_none() {
+            continue;
+        }
+        let Ok((input, relied)) = refusal_input_also(
+            ir,
+            entity,
+            arrangement,
+            command,
+            outcome,
+            &[guard],
+            Distinction::PLAIN,
+        ) else {
+            continue;
+        };
+        if &input != plain && found.iter().all(|(other, _)| other != &input) {
+            found.push((input, relied));
+        }
+    }
+    found
+}
+
+/// The stored fields a held-state overlap send relies on the row for, observed before it where
+/// some field is read: the row is a fact the send is about, as [`refusal_witness`] observes it.
+pub(super) fn observe_relied(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    relied: &[Predicate],
+    arrangement: &Arrangement,
+) -> Result<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>), RefusalCause> {
+    let fields = read_fields(ir, entity, relied);
+    if fields.is_empty() {
+        return Ok((Vec::new(), BTreeSet::new()));
+    }
+    let (steps, view) = observe_fields(ir, entity, &fields, arrangement)?;
+    Ok((steps, BTreeSet::from([view.into()])))
+}
+
+/// [`refusal_input`], with every guard in `also` required to hold beside `outcome`'s own.
+#[allow(clippy::too_many_lines)]
+fn refusal_input_also(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    arrangement: &Arrangement,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    also: &[&Predicate],
+    distinction: Distinction,
+) -> Result<(BTreeMap<String, Node>, Vec<Predicate>), RefusalCause> {
+    let mut own: Vec<&Predicate> = input_guard(&outcome.condition).into_iter().collect();
+    own.extend(also.iter().copied());
     let branches: Vec<&ResolvedOutcome> = command
         .outcomes
         .iter()
@@ -4436,6 +4916,77 @@ fn observe_prepared(
     Ok(())
 }
 
+/// A complete refusal's input with every field an accepting sibling's `sets:` writes moved off
+/// the value the arranged row already holds there (ess/23, beyond10x/ess#461).
+///
+/// The refusal's scenario compares the complete row after the command, and that comparison sees a
+/// write only where the written value differs from the stored one: a record created with the
+/// description the refusal is then sent still reads the same after a target that refuses and
+/// writes it. So each such input takes the value a further witness gives it, as `super::freshened`
+/// moves an update's own writes, and is kept where the input is still
+/// admitted and still selects the refusal on the row. Every other branch, and a refusal below
+/// ess/23, keeps its input.
+fn refused_writes_apart(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    entity: &EntityHandle,
+    arrangement: &Arrangement,
+    mut input: BTreeMap<String, Node>,
+    order: Order,
+) -> BTreeMap<String, Node> {
+    if !outcome.complete_refusal {
+        return input;
+    }
+    let writes = command
+        .outcomes
+        .iter()
+        .filter(|branch| {
+            branch.subject.as_ref().is_some_and(|subject| {
+                &subject.entity == entity
+                    && matches!(
+                        subject.effect,
+                        ResolvedEffect::Updates | ResolvedEffect::Moves { .. }
+                    )
+            })
+        })
+        .flat_map(|branch| branch.sets.iter());
+    for set in writes {
+        let ResolvedPayloadValue::InputField { field, .. } = &set.value else {
+            continue;
+        };
+        let held = super::held_value(ir, &arrangement.settled, &set.target, &set.target_type);
+        if held.is_none() || ess_compiler::ir::read_input(&input, field) != held.as_ref() {
+            continue;
+        }
+        for nth in 1..=super::FRESH_WITNESSES {
+            let Some(moved) = candidates(ir, command, &[], Distinction::further(nth))
+                .ok()
+                .and_then(|inputs| inputs.into_iter().next())
+                .and_then(|further| ess_compiler::ir::read_input(&further, field).cloned())
+            else {
+                continue;
+            };
+            if Some(&moved) == held.as_ref() {
+                continue;
+            }
+            let mut next = input.clone();
+            if !super::set_at(&mut next, field, Some(moved)) {
+                continue;
+            }
+            let still = selects(ir, command, entity, arrangement, &next, order)
+                .ok()
+                .flatten()
+                .is_some_and(|branch| branch.name == outcome.name);
+            if super::admitted(ir, command, &next) && still {
+                input = next;
+                break;
+            }
+        }
+    }
+    input
+}
+
 /// Arrange the row the branch under test is selected for, and the input that selects it.
 pub(super) fn prepare(
     ir: &EssIr,
@@ -4517,6 +5068,7 @@ pub(super) fn prepare(
             && accept(&arrangement, next)
     };
     let (input, _) = super::sources_apart(ir, command, outcome, input, &keeps);
+    let input = refused_writes_apart(ir, command, outcome, entity, &arrangement, input, order);
     let bound = bind_links(
         ir,
         command,
@@ -4880,6 +5432,91 @@ pub(super) fn absent(
     Ok((steps, source))
 }
 
+/// The sends that witness step 2 of the precedence order on a command reading stored fields
+/// (beyond10x/ess#454, #455). A plain input refusal — `when:` with an `error:`, naming no subject —
+/// answers before the row is looked up, so it is sent for an identity no row carries: with its own
+/// witness, and with an input at its overlap with each input refusal declared after it, which it
+/// answers first. Each send requires the refusal, its error and no event.
+///
+/// Nothing for any other branch, nor where the refusal has no plain witness or the identity type
+/// has no value no other scenario sends; an input whose guards the fresh identity changes is not
+/// sent.
+fn unknown_identity_refusal(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    subject: &ResolvedSubject,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+) -> (Vec<ScenarioStep>, BTreeSet<EssSemanticRef>) {
+    let mut steps = Vec::new();
+    let mut source = BTreeSet::new();
+    let plain = super::is_input_guarded_refusal(outcome) && outcome.subject.is_none();
+    let (Some(error), Some(own), ResolvedInstance::Supplied { field }) = (
+        outcome.error.as_ref().filter(|_| plain),
+        when(outcome),
+        &subject.instance,
+    ) else {
+        return (steps, source);
+    };
+    let Ok(primary) = super::reach(ir, command, outcome, Distinction::PLAIN) else {
+        return (steps, source);
+    };
+    let Ok(identity) = super::fresh_identity(ir, command, &field.name, Some(&primary)) else {
+        return (steps, source);
+    };
+    let mut inputs = vec![primary];
+    for input in super::refusal_pair_inputs(ir, command, outcome) {
+        if !inputs.contains(&input) {
+            inputs.push(input);
+        }
+    }
+    let earlier: Vec<&Predicate> = super::sibling_refusals(command, outcome)
+        .filter_map(when)
+        .collect();
+    let command_ref = CommandRef::new(command.name.clone());
+    let branch = OutcomeRef::new(command_ref.clone(), outcome.name.clone());
+    let forbidden = not_emitted(ir, &[]);
+    for mut input in inputs {
+        input.insert(field.name.clone(), identity.clone());
+        let answers = flatten(ir, command, &input).is_ok_and(|facts| {
+            decides(&facts, &[own], true).unwrap_or(false)
+                && decides(&facts, &earlier, false).unwrap_or(false)
+        });
+        if !answers {
+            continue;
+        }
+        let supplied = supply(ir, command, &input, None, None, &BTreeMap::new());
+        steps.push(ScenarioStep::ExecuteCommand {
+            caller: BTreeMap::new(),
+            command: command_ref.clone(),
+            actor: actors.get(&command.name).cloned(),
+            input: supplied.clone(),
+        });
+        steps.push(ScenarioStep::ExpectOutcome {
+            outcome: branch.clone(),
+        });
+        steps.push(super::expect_error(
+            ir,
+            outcome,
+            error,
+            &supplied,
+            &BTreeMap::new(),
+        ));
+        for event in &forbidden {
+            steps.push(ScenarioStep::ExpectNoEvent {
+                event: event.clone(),
+            });
+        }
+    }
+    if !steps.is_empty() {
+        source.insert(command_ref.into());
+        source.insert(branch.into());
+        source.insert(super::ErrorRef::from(error).into());
+        source.extend(forbidden.into_iter().map(EssSemanticRef::from));
+    }
+    (steps, source)
+}
+
 /// What a routed branch's scenario observes around the command, beyond the arrangement.
 ///
 /// A branch naming no subject of its own is opened by the [`absent`] witness, and after it the
@@ -4888,7 +5525,8 @@ pub(super) fn absent(
 /// the stored fields as the branch left them. Returns the steps that belong after the branch's own
 /// assertions; the absent-subject steps are spliced into the arrangement. The [`boundaries`] a
 /// default is further witnessed against come last, with the further rows refused on their own under
-/// the scenario while it stands (a side of a counter limit, beyond10x/ess#226).
+/// the scenario while it stands (a side of a counter limit, beyond10x/ess#226). A complete refusal
+/// reading `state` is then witnessed in each further state it claims ([`claimed_states`]).
 pub(super) fn around(
     models: &super::caller::InvocationModels<'_>,
     command: &ResolvedCommand,
@@ -4896,7 +5534,7 @@ pub(super) fn around(
     actors: &BTreeMap<QualifiedName, ActorRef>,
     setup: &mut Setup,
     supplied: &BTreeMap<String, ScenarioValue>,
-) -> Result<(Vec<ScenarioStep>, Vec<RefusalCause>), RefusalCause> {
+) -> Result<Around, RefusalCause> {
     let ir = models.arrangement;
     // Whether the scenario already arranged the second owner a link comparison names (#193).
     let mut present = reading(command, outcome)
@@ -4917,13 +5555,230 @@ pub(super) fn around(
     )?;
     let (overlapping, overlap_source) =
         overlaps(models, command, outcome, actors, (&mut present, &mut taken))?;
-    let mut steps = around_row(models, command, outcome, actors, setup, supplied)?;
+    let (mut steps, mut unobserved) =
+        around_row(models, command, outcome, actors, setup, supplied)?;
     models.mark(super::caller::InvocationPhase::Act, &mut steps);
     steps.extend(further);
     steps.extend(overlapping);
     setup.source.extend(source);
     setup.source.extend(overlap_source);
-    Ok((steps, refused))
+    let claimed = claimed_states(models, command, outcome, actors, setup, &mut taken);
+    steps.extend(claimed.steps);
+    setup.source.extend(claimed.source);
+    unobserved.extend(claimed.unobserved);
+    Ok(Around {
+        steps,
+        refused,
+        unclaimed: claimed.refused,
+        unobserved,
+    })
+}
+
+/// What [`around`] adds to a branch's run.
+pub(super) struct Around {
+    /// The steps that belong after the branch's own assertions.
+    pub(super) steps: Vec<ScenarioStep>,
+    /// The further rows refused on their own while the scenario stands.
+    pub(super) refused: Vec<RefusalCause>,
+    /// Why a state a complete refusal claims has no row in its scenario ([`claimed_states`]), one
+    /// cause per such state; the scenario stands without it.
+    pub(super) unclaimed: Vec<RefusalCause>,
+    /// The subject fields a complete refusal's observation could not cover (beyond10x/ess#132),
+    /// empty for every other branch.
+    pub(super) unobserved: BTreeSet<String>,
+}
+
+/// The further rows of [`claimed_states`], or of one of them.
+#[derive(Default)]
+struct Claimed {
+    steps: Vec<ScenarioStep>,
+    source: BTreeSet<EssSemanticRef>,
+    refused: Vec<RefusalCause>,
+    unobserved: BTreeSet<String>,
+}
+
+/// The further rows a complete refusal whose predicate reads `state` is witnessed on (ess/23,
+/// beyond10x/ess#461): one per declared state, other than the one the scenario's own row rests in,
+/// where the predicate with `state` bound alone is not false.
+///
+/// `state != Active` claims every state but `Active`, and a row in only the first state the search
+/// reaches would pass a target that answers the refusal there and accepts the command in every
+/// other one. So each such state gets a row of its own, under a name no earlier step binds, arranged
+/// there and observed, its complete subject snapshot, and sent an input that selects the refusal on
+/// it; the refusal, its error and no event are required, and the subject unchanged. This is the rule
+/// the wrong-state family applies to the guarded branches answering a wrong state
+/// ([`state_answered_rows`]). A state no bounded arrangement reaches the refusal in is refused under
+/// the scenario while it stands, never dropped.
+fn claimed_states(
+    models: &super::caller::InvocationModels<'_>,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    setup: &Setup,
+    taken: &mut BTreeSet<super::InstanceName>,
+) -> Claimed {
+    let ir = models.arrangement;
+    let mut claimed = Claimed::default();
+    if !outcome.complete_refusal {
+        return claimed;
+    }
+    let (Some(subject), Some(predicate), Ok(path)) = (
+        reading(command, outcome),
+        stored(&outcome.condition),
+        FactPath::new(EntitySpec::STATE),
+    ) else {
+        return claimed;
+    };
+    let entity = &subject.entity;
+    if !reads_held_state(ir, entity, &predicate) {
+        return claimed;
+    }
+    let hints = hints(command);
+    let command_ref = CommandRef::new(command.name.clone());
+    let outcome_ref = OutcomeRef::new(command_ref.clone(), outcome.name.clone());
+    // The guarded branches declared before this one: in a state where one of them is selected by
+    // the state alone, declaration order answers with it, and this refusal is never taken there.
+    let earlier: Vec<Predicate> = guarded(command)
+        .take_while(|branch| branch.name != outcome.name)
+        .filter_map(|branch| stored(&branch.condition))
+        .collect();
+    for held in &ir.entity(entity).lifecycle.states {
+        if setup.before.as_ref() == Some(held) {
+            continue;
+        }
+        let mut facts = ess_primitives::facts::FactStore::new();
+        facts.set_if_absent(
+            path.clone(),
+            ess_primitives::facts::FactValue::text(held.to_string()),
+        );
+        if predicate.evaluate(&facts) == Truth::False
+            || earlier
+                .iter()
+                .any(|first| first.evaluate(&facts) == Truth::True)
+        {
+            continue;
+        }
+        match claimed_row(models, command, outcome, actors, held, taken, &hints) {
+            Ok(row) => {
+                claimed.steps.extend(row.steps);
+                claimed.source.extend(row.source);
+                claimed.source.insert(outcome_ref.clone().into());
+                claimed.unobserved.extend(row.unobserved);
+            }
+            Err(cause) => claimed.refused.push(in_state(cause, entity, held)),
+        }
+    }
+    claimed
+}
+
+/// The cause a claimed state's row was not arranged for, naming that state.
+fn in_state(cause: RefusalCause, entity: &EntityHandle, held: &super::StateName) -> RefusalCause {
+    match cause {
+        RefusalCause::GuardUnsatisfiable { predicate, tried } => RefusalCause::GuardUnsatisfiable {
+            predicate: format!("{predicate}, on a `{entity}` row held in `{held}`"),
+            tried,
+        },
+        other => other,
+    }
+}
+
+/// One row of [`claimed_states`], resting in `held`.
+fn claimed_row(
+    models: &super::caller::InvocationModels<'_>,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    held: &super::StateName,
+    taken: &mut BTreeSet<super::InstanceName>,
+    hints: &[Predicate],
+) -> Result<Claimed, RefusalCause> {
+    let ir = models.arrangement;
+    let subject = reading(command, outcome).ok_or(RefusalCause::StrategyWithoutGuard {
+        strategy: outcome.test_strategy,
+    })?;
+    let entity = &subject.entity;
+    let predicate = stored(&outcome.condition).ok_or(RefusalCause::StrategyWithoutGuard {
+        strategy: outcome.test_strategy,
+    })?;
+    let (mut arrangement, input) =
+        search_unbound(ir, entity, actors, hints, 1, "state", taken, |node| {
+            if &node.state != held {
+                return Ok(None);
+            }
+            reach_at(ir, command, outcome, entity, node)
+        })??;
+    let input = refused_writes_apart(
+        ir,
+        command,
+        outcome,
+        entity,
+        &arrangement,
+        input,
+        Order::Unique,
+    );
+    taken.extend(super::bound_instances(&arrangement.steps));
+    taken.insert(arrangement.instance.clone());
+    let (observed, view) =
+        observe_fields(ir, entity, &read_by(ir, entity, &predicate), &arrangement)?;
+    let preservation = preserve_refused_subject(
+        ir,
+        subject,
+        &Setup {
+            instance: Some(arrangement.instance.clone()),
+            after: Some(held.clone()),
+            settled: arrangement.settled.clone(),
+            ..Setup::none()
+        },
+    )?;
+    models.mark(
+        super::caller::InvocationPhase::Arrange,
+        &mut arrangement.steps,
+    );
+    let mut source = arrangement.source;
+    source.insert(view.into());
+    source.extend(preservation.source);
+    let mut steps = arrangement.steps;
+    steps.extend(observed);
+    steps.extend(preservation.before);
+    let command_ref = CommandRef::new(command.name.clone());
+    let supplied = supply(
+        ir,
+        command,
+        &input,
+        Some(subject),
+        Some(&arrangement.instance),
+        &BTreeMap::new(),
+    );
+    let mut act = vec![
+        ScenarioStep::ExecuteCommand {
+            caller: BTreeMap::new(),
+            command: command_ref.clone(),
+            actor: actors.get(&command.name).cloned(),
+            input: supplied.clone(),
+        },
+        ScenarioStep::ExpectOutcome {
+            outcome: OutcomeRef::new(command_ref, outcome.name.clone()),
+        },
+    ];
+    if let Some(error) = &outcome.error {
+        // The row rests in `held`, which `{subject: state}` reads (ess/23).
+        let before = super::with_held_state(ir, &arrangement.settled, entity, Some(held));
+        act.push(super::expect_error(ir, outcome, error, &supplied, &before));
+    }
+    for event in not_emitted(ir, &[]) {
+        source.insert(event.clone().into());
+        act.push(ScenarioStep::ExpectNoEvent { event });
+    }
+    act.push(ScenarioStep::ExpectNoEvents);
+    act.extend(preservation.after);
+    models.mark(super::caller::InvocationPhase::Act, &mut act);
+    steps.extend(act);
+    Ok(Claimed {
+        steps,
+        source,
+        refused: Vec::new(),
+        unobserved: preservation.unobserved.into_iter().collect(),
+    })
 }
 
 /// Whether `outcome` moves or updates the row it names.
@@ -4961,25 +5816,50 @@ fn around_row(
     actors: &BTreeMap<QualifiedName, ActorRef>,
     setup: &mut Setup,
     supplied: &BTreeMap<String, ScenarioValue>,
-) -> Result<Vec<ScenarioStep>, RefusalCause> {
+) -> Result<(Vec<ScenarioStep>, BTreeSet<String>), RefusalCause> {
     let ir = models.arrangement;
     let Some(subject) = reading(command, outcome) else {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), BTreeSet::new()));
     };
     // Only for the ess/9 predicate form: an ess/6 `{field, equals}` command keeps the suite it
     // generated before this construct, and its moving branch is observed as it always was.
     let changes = uses_predicate(command) && moves_row(outcome);
     if outcome.subject.is_none() {
-        let (mut steps, source) = absent(ir, command, subject, actors)?;
+        let (mut steps, mut source) = absent(ir, command, subject, actors)?;
+        let (refused, refused_source) =
+            unknown_identity_refusal(ir, command, outcome, subject, actors);
+        steps.extend(refused);
+        source.extend(refused_source);
         models.mark(super::caller::InvocationPhase::Act, &mut steps);
         setup.steps.splice(0..0, steps);
         setup.source.extend(source);
     } else if !changes {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), BTreeSet::new()));
     }
     let (Some(instance), Some(state)) = (&setup.instance, &setup.after) else {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), BTreeSet::new()));
     };
+    // From ess/23 a refusal selected by the stored row changes nothing on it, in any field
+    // (beyond10x/ess#461): the complete subject is snapshot before the command and compared after
+    // it, or what the views publish where they cover only part of it (#132), as a wrong-state
+    // refusal's is. Below ess/23 the guarded fields alone are required again, as they always were.
+    if outcome.complete_refusal && !changes {
+        let preservation = preserve_refused_subject(
+            ir,
+            subject,
+            &Setup {
+                instance: Some(instance.clone()),
+                after: Some(state.clone()),
+                settled: setup.settled.clone(),
+                ..Setup::none()
+            },
+        )?;
+        setup.steps.extend(preservation.before);
+        setup.source.extend(preservation.source);
+        let mut steps = vec![ScenarioStep::ExpectNoEvents];
+        steps.extend(preservation.after);
+        return Ok((steps, preservation.unobserved.into_iter().collect()));
+    }
     let mut left = setup.settled.clone();
     if changes {
         absorb(
@@ -5009,10 +5889,10 @@ fn around_row(
         observe_unchanged(ir, &subject.entity, &fields, &arrangement)?
     };
     let Some((observed, view)) = observation else {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), BTreeSet::new()));
     };
     setup.source.insert(view.into());
-    Ok(observed)
+    Ok((observed, BTreeSet::new()))
 }
 
 /// What one further row of [`boundaries`] is (beyond10x/ess#226).
@@ -5968,7 +6848,8 @@ fn send_for_row(
             outcome,
             error,
             &supplied,
-            &arrangement.settled,
+            // The row as arranged, its held state included (ess/23).
+            &super::with_held_state(ir, &arrangement.settled, entity, Some(&arrangement.state)),
         )),
         None => steps.push(ScenarioStep::ExpectNoError),
     }
@@ -5977,7 +6858,12 @@ fn send_for_row(
     absorb(
         &mut left,
         outcome,
-        super::settled(ir, outcome, &supplied, &arrangement.settled),
+        super::settled(
+            ir,
+            outcome,
+            &supplied,
+            &super::with_held_state(ir, &arrangement.settled, entity, Some(&arrangement.state)),
+        ),
     );
     if let Some(transition) = outcome
         .subject

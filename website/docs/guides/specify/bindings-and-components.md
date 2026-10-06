@@ -1,7 +1,7 @@
 ---
 title: Components and bindings
 sidebar_position: 6
-description: The component, binding and topology layers; binding failure, retries, accessors, selection, periodic causes and delivery context.
+description: The component, binding and topology layers; binding failure, retries, constants, accessors and stored reads in the invoked command.
 ---
 
 # Components and bindings
@@ -73,6 +73,30 @@ invocation really is a single attempt — one HTTP call with no retry, or one wh
 reads — because a specification claiming the stronger guarantee is a claim the system does not
 keep. A conformance suite for an `at_most_once` binding contains no redelivery scenario, since
 redelivery is the thing that word says will not happen.
+
+## Fill a command input with a constant
+
+A `mapping:` value without the `event.` prefix is a constant the binding writes, and it is typed
+against the input it fills as `sets:` and `payload:` type a literal:
+
+```yaml
+mapping:
+  leg_id: event.leg_id
+  is_bridged: true        # a Boolean input
+  weight: 3               # an Integer input, or a newtype of one
+  share: 0.5              # a Decimal input
+  template: invoice-created
+```
+
+`is_bridged: true` and `is_bridged: 'true'` are the same value: an unquoted YAML Boolean, integer
+or decimal and the quoted text of one are both admitted exactly where `sets:` admits them, and
+compile to the same IR. A constant that is not a value of the input is a `type_mismatch` with the
+hint `sets:` gives — `weight: true` over an `Integer`, `is_bridged: 1` over a `Boolean`. Over text
+or an enum the hint is `quote it`: `template: 3` meant the text `3`, and `template: '3'` says so.
+Every target reads the constant typed: the conformance suite expects `true` and `3` in the invoked
+command's input, not `"true"` and `"3"`, and the generated Rust and Go adapters pass a typed
+constant. Other primitives — a `Timestamp`, a `Uuid` — have no literal spelling here, and take
+their value from a field of the event.
 
 ## Bound a retry
 
@@ -195,153 +219,106 @@ authority; adding it to an event that never carries it would misdescribe the wir
 For execution and observation limits, see
 [Verify conformance](../verify/observations.md#observe-bounded-binding-accessors).
 
-## Select ordered records in a binding
+## Read stored state in the command a binding invokes
 
-`ess/3` adds binding-local `selection_inputs` and ordered `selections`.
-For an event whose `candidates` field already has type `List<example.calls.Leg>`:
-
-```yaml
-selection_inputs:
-  - name: candidates
-    from: event.candidates
-    as: List<example.calls.Leg>
-selections:
-  - name: first_agent
-    first:
-      in: candidates
-      where: item.role == Agent
-  - name: first_external
-    first:
-      in: candidates
-      excluding: [first_agent]
-      where: item.role == External
-  - name: preferred
-    first_present: [first_external, first_agent]
-mapping:
-  selected_id: {selection: preferred, path: [id]}
-```
-
-The record type must declare those fields and enum variants. Exclusion removes a
-selected list occurrence by its original index, so equal-valued records remain
-distinct. References point backward; `first_present` alternatives use the same
-list. The result is optional and must fit the command input's declared type.
-Whole records use `path: []`; field paths reuse bounded accessor rules.
-
-Malformed records are refused before selection, including records after an early
-match. Executable selection currently refuses inputs with unsupported declared
-invariants or clock-reading attachments, including nested members and list
-aliases, instead of dropping their constraints. Predicates use a bounded declared fragment: defined checks, typed literal
-equality/inequality and Boolean combinations. Selection does not sort or invent
-values. If the event carries a different representation, declare the exact
-conversion to the local list type. The host prepares that value once and can
-pass it to generated Rust/Go selection helpers; the local list is not a new
-field on the wire.
-
-## Declare a periodic host cause
-
-A periodic cause belongs to a named host instance with an explicit owner and
-authority. This `ess/3` binding fragment requires the declared command, component
-and mapped input types:
+A binding maps what the occurrence carries: the event's payload, its delivery context, a periodic
+host's context or read, and its selections. It does not read stored state, because a binding
+belongs to no component and so has no store to read from: there is no store behind a mapping
+(beyond10x/ess#440). When the command a binding causes needs a value held in stored state, for
+example the current `bridged` flag of the call a joined leg belongs to, map the identity and let
+the invoked command read the row:
 
 ```yaml
-when:
-  periodic:
-    every: PT2S
-    anchor: host_activation
-    first: after_period
-    cadence: fixed_rate
-    overlap: serial_per_instance
-    missed: one_pending_drop_excess
-    lifetime: host_instance
-    cancellation: stop_acknowledged
-    host:
-      owner: poll-service
-      authority: authenticated-session-status
-      eligibility: host_boolean
-      context_fields: [{name: agent_id, type: String}]
-      read_fields: [{name: status, type: String}]
-invoke: {command: example.poll.Refresh}
-mapping:
-  agent_id: host_context.agent_id
-  status: host_read.status
-delivery: at_most_once
-on_failure: drop
+format: ess/22
+system: demo
+version: v1
+domain: demo.calls
+types:
+  - {name: demo.calls.CallId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.calls.Call
+    identity: {name: call_id, type: demo.calls.CallId}
+    fields:
+      - {name: bridged, type: Boolean}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+events:
+  - name: demo.calls.CallOpened
+    fields:
+      - {name: call_id, type: demo.calls.CallId}
+  - name: demo.calls.LegJoined
+    fields:
+      - {name: leg_id, type: String}
+      - {name: call_id, type: demo.calls.CallId}
+  - name: demo.calls.LegMarked
+    fields:
+      - {name: leg_id, type: String}
+      - {name: call_bridged, type: Boolean}
+commands:
+  - name: demo.calls.OpenCall
+    input:
+      - {name: bridged, type: Boolean}
+    outcomes:
+      - name: opened
+        creates: demo.calls.Call
+        instance: call_id
+        sets: {bridged: input.bridged}
+        emits: [demo.calls.CallOpened]
+        payload:
+          demo.calls.CallOpened: {call_id: {generated: true}}
+  - name: demo.calls.JoinLeg
+    input:
+      - {name: leg_id, type: String}
+      - {name: call_id, type: demo.calls.CallId}
+    outcomes:
+      - name: joined
+        emits: [demo.calls.LegJoined]
+        payload:
+          demo.calls.LegJoined: {leg_id: input.leg_id, call_id: input.call_id}
+  - name: demo.calls.MarkLeg
+    input:
+      - {name: leg_id, type: String}
+      - {name: call_id, type: demo.calls.CallId}
+    outcomes:
+      - name: marked
+        emits: [demo.calls.LegMarked]
+        payload:
+          demo.calls.LegMarked:
+            leg_id: input.leg_id
+            # Read from the stored call when MarkLeg runs, under its one snapshot.
+            call_bridged: {related: {via: input.call_id, field: bridged}}
+bindings:
+  - id: mark-joined-leg
+    when: {event: demo.calls.LegJoined}
+    invoke: {command: demo.calls.MarkLeg}
+    mapping:
+      leg_id: event.leg_id
+      call_id: event.call_id
+    delivery: at_least_once
+    on_failure: drop
 ```
 
-Context is constant for the host lifetime; reads are fresh for each eligible
-occurrence. The first tick follows one period, work is serial, and excess busy
-ticks coalesce to one pending tick. Stop acknowledgement means the loop and its
-work have quiesced. Native generation reports `PeriodicHostRequired` until that
-real host capability is supplied; it does not fabricate a scheduler or event.
+The read belongs to the command for three reasons. A command reads the store once, immediately
+before it selects a branch, and every guard and value of that command uses that one snapshot
+([filtered related reads](https://github.com/beyond10x/ess/blob/main/docs/design/filtered-related-reads.md)).
+A second read in the binding would be a second snapshot, and the mapped value and the command's
+guards could disagree. A redelivery carries the context of the occurrence it repeats, and a store
+read made again on redelivery could return a different value. And the command already has every
+reading construct: `{related: {via: <field>, field: <field>}}` in `sets:` or `payload:`, a
+`when_related` or row-set guard to choose a branch by the related row, and a stored-subject guard.
+The conformance suite arranges the referenced row and asserts the value the invoked command
+emits, so the read is checked where it is made.
 
-## Read the channel an event arrived on
+A `mapping:` value written as `{related: …}` is refused as an unknown field of a selection.
 
-Some events do not carry their recipient in the payload. For example, a service subscribes to
-`accounts/{account_id}/messages` for each account, and the recipient is the subscription the
-event arrived on. `ess/18` lets an event binding declare that delivery context and read it:
+## Selections, periodic causes and delivery context
 
-```yaml
-when:
-  event: example.inbox.MessageReceived
-  context_authority: account-messages
-  context_fields:
-    - {name: account_id, type: example.inbox.AccountId}
-invoke: {command: example.inbox.RecordMessage}
-mapping:
-  account_id: context.account_id
-  message_id: event.message_id
-  peer: event.from
-delivery: at_least_once
-on_failure: retry
-```
+What a binding reads besides its event payload, and how a clock reading keeps its provenance, is on
+[Selections, periodic causes and delivery context](binding-context.md). Each section moved there:
 
-`context_fields` is a typed record separate from the payload. `context_authority` names the
-external channel whose authority binds it. It is a name, not a credential, and each key
-requires the other. `context.<field>` reads one declared field. The field's type must fit the
-input, or a declared conversion must cross it. The host binds the context from the channel the
-occurrence arrived on and supplies it with that occurrence. A redelivery carries the context
-of the occurrence it repeats.
-
-The rules:
-
-- A context is admitted only for an event an external channel delivers. If a command outcome
-  of the specification emits the event, or a binding escalates into it, the event has no
-  channel, and the context is refused.
-- A context mapping with no declaration is refused. It is never looked up in the payload.
-  `event.channel` is not a field.
-- `host_context.<field>` still belongs to a periodic host.
-- Below `ess/18`, both keys and `context.<field>` are refused.
-
-Conformance delivers the event itself, under two different contexts, and requires each
-invocation to carry its own. See
-[Verify conformance](../verify/observations.md#deliver-an-event-with-its-context).
-
-## Preserve clock-reading provenance
-
-An `ess/3` newtype can attach a reading contract while retaining its scalar wire
-representation:
-
-```yaml
-- name: example.clock.LocalReading
-  kind: newtype
-  of: String
-  reading:
-    encoding: local_date_time_millis_literal_z
-    origins: [{role: producer_process, offset: requires_observation}]
-```
-
-Supported encodings are offset date-time text, local millisecond text with a
-literal `Z`, and exact integer Unix seconds. A literal `Z` on local text does not
-establish UTC. The observation adapter supplies the process instance, clock
-epoch, origin and actual formatter offset for the particular occurrence.
-Comparison requires the same observed source and epoch. Unknown evidence and
-cross-source calibration remain unsupported; generic input predicates cannot
-silently discard the attachment.
-
-Normalization accepts years 1970–9999 and fixed offsets within ±14:00. Offset
-text allows no fraction or exactly three millisecond digits; local literal-Z
-text requires exactly three. Other precision, leap seconds and inferred host
-timezone settings are outside this bounded contract.
+- <a id="select-ordered-records-in-a-binding"></a>[Select ordered records in a binding](binding-context.md#select-ordered-records-in-a-binding)
+- <a id="declare-a-periodic-host-cause"></a>[Declare a periodic host cause](binding-context.md#declare-a-periodic-host-cause)
+- <a id="read-the-channel-an-event-arrived-on"></a>[Read the channel an event arrived on](binding-context.md#read-the-channel-an-event-arrived-on)
+- <a id="preserve-clock-reading-provenance"></a>[Preserve clock-reading provenance](binding-context.md#preserve-clock-reading-provenance)
 
 ## Conversions and wire names
 

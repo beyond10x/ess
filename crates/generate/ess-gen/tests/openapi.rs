@@ -1620,6 +1620,60 @@ components:
 ",
 )];
 
+/// The parameters of the served view's `GET`, by name, with `params` declared and `filter` reading
+/// them.
+fn view_parameters(params: &str, filter: &str) -> BTreeMap<String, Value> {
+    let text = SERVED[0]
+        .1
+        .replacen("format: ess/1\n", "format: ess/22\n", 1)
+        .replacen(
+            "    filter: state == Open\n",
+            &format!("    params:\n{params}    filter: {filter}\n"),
+            1,
+        );
+    let served = document(&inline(&[(SERVED[0].0, &text)]), "desk-service");
+    served["paths"]["/desk/views/open"]["get"]["parameters"]
+        .as_array()
+        .unwrap_or_else(|| panic!("parameters: {}", served["paths"]))
+        .iter()
+        .map(|parameter| {
+            (
+                parameter["name"].as_str().unwrap().to_owned(),
+                parameter.clone(),
+            )
+        })
+        .collect()
+}
+
+/// A `List<T>` view parameter is the query key repeated, `subjects=a&subjects=b`: `style: form`
+/// and `explode: true` are stated, which is `OpenAPI`'s default for a query parameter written out,
+/// and the schema is an array of `T`. A scalar parameter keeps the bytes it had.
+#[test]
+fn list_view_parameter_openapi_encoding_is_stated() {
+    const SCALAR: &str = "      - {name: subject, type: String}\n";
+    let both = view_parameters(
+        &format!("      - {{name: subjects, type: List<String>}}\n{SCALAR}"),
+        "[state == Open, subject == param.subject, {exists: {in: param.subjects, as: s, that: \
+         subject == s}}]",
+    );
+    let list = &both["subjects"];
+    assert_eq!(list["in"], "query", "{list:#}");
+    assert_eq!(list["style"], "form", "{list:#}");
+    assert_eq!(list["explode"], true, "{list:#}");
+    assert_eq!(list["schema"]["type"], "array", "{list:#}");
+    assert_eq!(list["schema"]["items"]["type"], "string", "{list:#}");
+    let alone = view_parameters(SCALAR, "[state == Open, subject == param.subject]");
+    assert_eq!(
+        both["subject"], alone["subject"],
+        "a scalar parameter is unchanged"
+    );
+    assert!(
+        alone["subject"].get("style").is_none() && alone["subject"].get("explode").is_none(),
+        "{:#}",
+        alone["subject"]
+    );
+}
+
 /// The same specification with the one declaration removed.
 fn kept_in_process() -> EssIr {
     let text = SERVED[0].1.replace("    reached_by: network\n", "");

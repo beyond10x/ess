@@ -737,11 +737,15 @@ fn the_gate_check_aggregates_every_lane_and_cannot_be_skipped() {
         );
     }
 
+    // A test shard downloads a 7 GB archive before its first test: on main's 0.53.0 run one
+    // download took 18m42s against a 94 s median, and the shard's own tests take up to 23
+    // minutes. Every other job compiles or checks and stays at 30.
     for id in gated_jobs(&ci) {
+        let bound = if id == "test" { 45 } else { 30 };
         assert_eq!(
             ci["jobs"][id.as_str()]["timeout-minutes"].as_u64(),
-            Some(30),
-            "`{id}` is not bounded at 30 minutes"
+            Some(bound),
+            "`{id}` is not bounded at {bound} minutes"
         );
     }
 }

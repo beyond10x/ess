@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-281
 kind: story
-status: draft
+status: implemented
 title: An ess-ui section has a heading, and a page can omit a section its kind contributes
 tags:
 - feature-request
@@ -13,7 +13,11 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 3
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-06T09:46:18Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}}
+- {from: "proposed", to: "active", at: "2026-10-06T09:46:19Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1}}}
+- {from: "active", to: "implemented", at: "2026-10-06T09:46:20Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

@@ -931,6 +931,10 @@ fn check_subject(
     field: &str,
     errors: &mut ValidationErrors,
 ) {
+    if field == crate::entity::EntitySpec::STATE {
+        check_subject_state(context, at, target, errors);
+        return;
+    }
     let Some(held) = existing_subject_field(context, at, "`{subject: …}`", field, errors) else {
         return;
     };
@@ -945,6 +949,51 @@ fn check_subject(
             &held.type_ref,
             target,
         ));
+    }
+}
+
+/// `{subject: state}` (ess/23, beyond10x/ess#458): the lifecycle state the row held immediately
+/// before the outcome, spelled as `when_subject`, `when_related` and invariants read it. Admitted
+/// wherever `{subject: …}` is — an existing row is read — and typed as the entity's own `State`,
+/// which no declared field can be called; below `ess/23` it is refused naming `ess/23`.
+fn check_subject_state(
+    context: &Context<'_>,
+    at: &ConstructRef,
+    target: &Field,
+    errors: &mut ValidationErrors,
+) {
+    if context.spec.system().format.major() < FormatVersion::V23.major() {
+        errors.push(
+            ValidationError::at(
+                at.clone(),
+                ValidationCode::UnsupportedFormatVersion,
+                "`{subject: state}`, the state the record held before the outcome, requires \
+                 specification format ess/23",
+            )
+            .with_hint(
+                "declare `format: ess/23`, or fill the field from the input or a literal state",
+            ),
+        );
+        return;
+    }
+    // The row the refusal or the outcome reads, by the rule every `{subject: …}` follows; the
+    // identity stands in for the row, since `state` is no declared field.
+    let Some((entity, _)) = context.subject else {
+        existing_subject_field(context, at, "`{subject: …}`", "state", errors);
+        return;
+    };
+    if existing_subject_field(context, at, "`{subject: …}`", &entity.identity.name, errors)
+        .is_none()
+    {
+        return;
+    }
+    let state = TypeRef::Named(entity.name.child(crate::entity::EntitySpec::STATE_TYPE));
+    if !context
+        .resolved
+        .conversions
+        .permits(&state, &target.type_ref)
+    {
+        errors.push(mismatch(at, "the subject's `state`", &state, target));
     }
 }
 

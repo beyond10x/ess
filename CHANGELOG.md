@@ -2,6 +2,151 @@
 
 ## [Unreleased]
 
+## [0.54.0] — 2026-10-06
+
+### Added
+
+- Source format `ess/23`. `ess specify formats [--since ess/N] [--format text|yaml|json]` lists
+  every format the build implements, what each added and the release that introduced it, from
+  the same `FORMAT_HISTORY` table that generates the `ess/` table of the spec-versions page; the
+  `unsupported_format_version` hint names the command (beyond10x/ess#460).
+- From `ess/23`, an `updates:` whose `sets:` writes the entity's identity re-keys the record: the
+  row comes to rest under the identity written, every other field is carried over and the old
+  identity names nothing. The command declares its collision refusal through `when_related`; the
+  write is refused by name beside `compensates:`, in a create-or-update pair, on a
+  relation-carried entity and on a struct identity. Generated Rust puts the renamed row before
+  deleting the old one; Go, Web and Clap refuse it with `MissingRepresentation` and Entity
+  Runtime with `IdentityChangeUnsupported` (beyond10x/ess#429).
+- From `ess/23`, `{subject: state}` reads the lifecycle state the record held before the outcome,
+  in error payloads, event payloads and `sets:`; refusal scenarios that arrange a state compare it
+  (beyond10x/ess#458).
+- From `ess/23`, `deletes:` takes `instances:`, removing every row a filter selects, and an
+  `affects:` entry may declare `deletes: <Entity>` over an entity of the outcome's own domain,
+  also beside a `deletes:` subject. A deleting entry over another domain's entity is refused,
+  naming the one-binding-per-receiving-domain idiom (beyond10x/ess#452).
+- From `ess/23`, an enum may declare typed variant attributes; guards, invariants and view filters
+  read `<fact>.<attribute>`, lowered to variant membership with the evaluator's three-valued
+  answers. Projections carry `x-ess-attributes`, a docs table and Rust, Go and TypeScript
+  accessors that answer wire spellings; `ess verify diff` reports an attribute change as
+  unclassified (beyond10x/ess#450).
+- A binding `mapping:` may fill a `Boolean`, `Integer` or `Decimal` input with a constant, typed by
+  the `sets:` rule; suites, the interpreter, AsyncAPI (a `Decimal` as its decimal string), docs
+  and generated Rust and Go adapters carry the typed value (beyond10x/ess#445).
+- Suite formats `ess-conformance/44` and `/45`: an act that claims one event N times needs N
+  occurrences, and the claims are matched to occurrences as a set, identically in the Rust, Go
+  and TypeScript runners, so the order they are written in never decides the verdict
+  (beyond10x/ess#427).
+- `ess generate --check` regenerates in memory and compares with `--out`, writing nothing; it
+  exits 1 naming each edited, missing or no-longer-generated file and a missing or stale
+  `.ess-output` record, so passing means plain `ess generate` changes nothing (beyond10x/ess#435).
+- `ess specify validate --format json|yaml` reports `completeness`: constructs synthesis gives no
+  scenario, scenarios outside the new `--component`, unanswered questions and their counts. Only
+  json and yaml run synthesis to answer; text output and the exit status are unchanged
+  (beyond10x/ess#434).
+- `ess specify validate` warns `ESS-ENTITY-019` for a stored field typed as one entity's named
+  identity that no relation carries, and `ESS-COMMAND-019` for a `when_related` row settled by
+  that type alone; warnings go to stderr and JSON, and the hint offers `owns` only for a field
+  typed exactly as the identity (beyond10x/ess#437).
+- Aggregate synthesis witnesses a list parameter over a group key and a window the caller
+  resolved into instants, with rows on and either side of each bound that only the bound refutes;
+  OpenAPI states a `List` view parameter as `style: form`, `explode: true` (beyond10x/ess#438,
+  beyond10x/ess#439).
+- Synthesis sends an input refusal guarded by the held state in the unknown-instance and
+  wrong-state scenarios, sends a plain input refusal for an unknown identity beside stored-row
+  branches, and sends the overlap of two input refusals requiring the first declared
+  (beyond10x/ess#454, beyond10x/ess#455).
+- From `ess/23`, a refusal selected by `when_subject: {predicate: …}` asserts the whole record
+  unchanged, and a predicate on `state` is witnessed in each state it claims; the ESS-COMMAND-004
+  hint names the state-predicate form (beyond10x/ess#461).
+- From `ess/23`, an `affects:` entry may write one record per element of an input list:
+  `each: {in: input.<list>, as: <name>}` with `instance: <name>.<member>` updates the record an
+  element names when it is held and creates it in the initial state when not, and `sets:` may
+  read `<name>.<member>`. It is admitted only where a declared `distinct:` keeps that member
+  distinct, and refused beside `where:`, `moves:` or `deletes:`, without a subject and below
+  `ess/23`. The interpreter executes it and the suite checks held, new and decoy rows; Entity
+  Runtime and the code targets refuse it by name (beyond10x/ess#459).
+- From `ess/23`, a row-set selector that compares with the input is decided on a command that
+  also names an existing record through the input: an update, a delete or an upsert; below
+  `ess/23` such a branch stays refused (beyond10x/ess#462).
+- From `ess/23`, synthesis scopes a row-set selector by an equality on a `String` or `Uuid`
+  member of a struct identity (`at.region == input.place.region`), reads each row identity member
+  by member and arranges decoys under other identities; the whole-struct `at == input.place`
+  stays `ESS-COMMAND-002` (beyond10x/ess#463).
+- `ess-cli/1` binds a trailing argument list: `source: {kind: trailing}` on one required
+  `List<String>` field per command takes every argv word after the first `--`, verbatim, never
+  parsed as options or JSON, and `[]` when nothing follows. Positionals are filled only before
+  `--`, and help renders `[-- <field:args>...]`. Other shapes and a second trailing source are
+  refused; a non-UTF-8 word is `cli_parse`, exit 2. No format change: existing bindings compile
+  to the same plan, and an older ess refuses the kind by name. Generated CLI packages carry new
+  `src/wire.rs` and `src/runtime.rs` bytes, so `ess generate cli --check` reports drift until
+  they are regenerated (beyond10x/ess#466).
+- Guides and design notes for requests answered with an existing idiom: adoption modes and which
+  generated files to commit (beyond10x/ess#436, beyond10x/ess#435), read-API view idioms for
+  derived values, the latest correlated row, per-key totals, units, order-dependent values and
+  single-source views (beyond10x/ess#441, #442, #443, #444, #446, #447), which branch answers
+  and a record unchanged in several states (beyond10x/ess#454, #456), rules stored as data
+  (beyond10x/ess#451), text shapes without patterns (beyond10x/ess#449), a replica read
+  (beyond10x/ess#432), what a specification promises when commands race (beyond10x/ess#453), a
+  view field derived from the lifecycle state (beyond10x/ess#457), reading stored state from the
+  command a binding invokes (beyond10x/ess#440), and generated case-record domains
+  (beyond10x/ess#426).
+
+### Changed
+
+- `ess specify validate` reports every predicate that does not parse, each at its declaration
+  with a line, beside the file's other refusals; a declaration with an unparsable predicate is
+  withheld whole. New validation names `unparsable_predicate` (`ESS-SPEC-012`) and
+  `null_comparison` (`ESS-SPEC-017`) keep the `SPEC` family (beyond10x/ess#448).
+- A membership operand naming a parameter or an input (`queue_id: {in: param.queues}`) is refused
+  as `type_mismatch` in every format; it was read as literal text. The hint names `exists` for a
+  list and `==` for a single value (beyond10x/ess#438).
+- A refusal of an existing generated output names the file, relative to the output root, and the
+  `ess` release that refused it (beyond10x/ess#433).
+- Refusals name the repair: a Boolean-looking enum variant says "quote it", a Boolean literal
+  over a variant names the variant, and a coverage proof that gives up says why
+  (beyond10x/ess#426).
+- An `affects:` entry with neither `where:` nor `each:` is refused as `missing_declaration`, and
+  the published schema no longer requires `where` on an entry (beyond10x/ess#459).
+- In every source format a row-set branch arranges its decoys both before and after the selected
+  rows, so a target that keeps only the newest or the oldest record per compared value fails;
+  four `ess/22` suites gain steps, with unchanged scenario ids and refusals (beyond10x/ess#463).
+- A command whose external branch is claimed, in every state it is taken from, by a held-state
+  branch with no input guard (`committed: when_subject_state: Validated` declared beside an
+  external `stale` from `Validated`) gets named refusals for that branch (`ESS-SYNTH-003`) and
+  for the states reached only through it (`ESS-SYNTH-004`), where earlier releases wrote
+  scenarios the precedence order answers otherwise. To keep the scenario, give the held-state
+  branch an input guard the external case does not meet (beyond10x/ess#464).
+
+### Fixed
+
+- On macOS, regenerating over an output the OS labelled `com.apple.provenance` succeeds and
+  leaves it unchanged: output ownership admits that label by exact name, and every other
+  `com.apple.*` attribute, `com.apple.quarantine` included, is still refused (beyond10x/ess#433).
+- Synthesis binds a view parameter from the field its filter compares it with, including a
+  differently named parameter and a member of a literal struct identity (beyond10x/ess#428).
+- The caller-swapped run draws a fresh value for every identity it sends, in every member of a
+  struct identity and for an instance a command addresses without creating it, and every copy
+  follows (beyond10x/ess#430, beyond10x/ess#465).
+- Below `ess/23`, bulk-removal refusals keep their 0.53.0 wording and no longer cascade into
+  "declares no outcomes".
+- The reference interpreter answers an upsert guarded by a row set through the row sets first,
+  then the creation, when the record is absent; an update or delete with no creation branch keeps
+  its unknown-instance answer (beyond10x/ess#462).
+- No synthesized scenario creates an identity a row already carries, a creating branch of a
+  row-set command no longer arranges its sibling update's record, and a stored identity no longer
+  leaves a row predicate that does not read it undecided (beyond10x/ess#463).
+- Synthesis no longer writes an external branch's scenario on a row and input that a held-state
+  guard (`when_subject`, `when_subject_state`) or a `when_related` guard claims, whatever the
+  declaration order: it finds a row and input no such guard claims, reading the branch's own
+  `when:` as a row guard, or refuses the scenario naming the guards (`ESS-SYNTH-003`). Rows
+  arranged through an external branch follow the same rule, and a state reached only through
+  one is arranged through it. An external branch naming no subject of its own is sent the
+  arranged row's identity, and one beside a `when_related` guard that reads a stored reference
+  is refused by name. Suite bytes change only for scenarios such a guard claimed, which the
+  reference interpreter failed (beyond10x/ess#464).
+- The version history lists `ess-mutation-report/4` and `ess-mutation-manifest/4` as shipped in
+  0.53.0; it called them unreleased.
+
 ## [0.53.0] — 2026-10-05
 
 ### Added

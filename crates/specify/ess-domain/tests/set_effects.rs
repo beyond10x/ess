@@ -3,7 +3,7 @@
 //!
 //! * `instances: {where: <predicate>}` on a `moves:` or `updates:` outcome: every stored row of the
 //!   entity the predicate selects, read with `input.<field>` operands. Beside `instance:`, or on a
-//!   `creates:`/`deletes:`, it is refused.
+//!   `creates:`, it is refused; on a `deletes:` it is admitted from ess/23 (beyond10x/ess#452).
 //! * `{count: changed}` in `payload:`: how many rows such an outcome changed, into an `Integer`.
 //! * `affects:` on an outcome with one subject: a list of `{entity, where, sets}` effects on other
 //!   rows, whose `where` reads `input.<field>` and `subject.<field>` (the subject before the
@@ -110,7 +110,14 @@ fn a_set_move_a_set_update_and_a_secondary_effect_are_admitted_under_ess_16() {
         panic!("one secondary effect: {:#?}", invited.set_effects.affects)
     };
     assert_eq!(affect.entity.to_string(), "demo.desk.Session");
-    assert_eq!(affect.filter.to_string(), "team == subject.team");
+    assert_eq!(
+        affect
+            .filter
+            .as_ref()
+            .expect("a `where:` entry")
+            .to_string(),
+        "team == subject.team"
+    );
     assert!(affect.sets.contains_key("on_hold"));
 }
 
@@ -406,4 +413,681 @@ fn a_refusal_changing_a_set_of_rows_is_refused() {
         "        instances: {where: team == input.team}\n        error: demo.desk.NotOpen\n",
     ));
     assert_code(&errors, ValidationCode::RefusalMutatedState, "instances");
+}
+
+// ---- deleting the selected rows (ess/23, beyond10x/ess#452) ------------------------------------
+
+/// `RevokeTokens` deletes every token a filter selects; `DeleteUser` deletes its subject and, in an
+/// `affects:` entry, every token the user owns.
+const DELETES: &str = include_str!("../../ess-compiler/tests/fixtures/set-deletes.yaml");
+
+/// The `affects:` entry of `DeleteUser`, as the fixture writes it.
+const DELETING_ENTRY: &str = "        affects:
+          - entity: demo.auth.Token
+            where: user_id == subject.user_id
+            deletes: demo.auth.Token
+";
+
+fn deletes_edited(from: &str, to: &str) -> String {
+    assert!(DELETES.contains(from), "the fixture holds:\n{from}");
+    DELETES.replacen(from, to, 1)
+}
+
+/// The one refusal sited under `command`, or a failure listing them all.
+fn only_under<'e>(
+    errors: &'e ValidationErrors,
+    command: &str,
+) -> &'e ess_primitives::error::ValidationError {
+    let found: Vec<_> = errors
+        .as_slice()
+        .iter()
+        .filter(|error| error.location.contains(command))
+        .collect();
+    let [refusal] = found.as_slice() else {
+        panic!("one refusal of {command}:\n{errors}")
+    };
+    refusal
+}
+
+fn no_empty_declaration(errors: &ValidationErrors) {
+    assert!(
+        errors
+            .as_slice()
+            .iter()
+            .all(|error| error.code != ValidationCode::EmptyDeclaration
+                && !error.to_string().contains("declares no outcomes")),
+        "the refusal comes alone, with no ESS-COMMAND-007 cascade:\n{errors}"
+    );
+}
+
+#[test]
+fn bulk_delete_and_a_deleting_affects_entry_are_admitted_under_ess_23() {
+    let spec = admitted(DELETES);
+    let outcome = |command: &str| {
+        spec.commands()
+            .values()
+            .find(|declared| declared.name.to_string() == command)
+            .map_or_else(
+                || panic!("{command} is declared"),
+                |declared| declared.outcomes[0].clone(),
+            )
+    };
+    let revoked = outcome("demo.auth.RevokeTokens");
+    assert!(
+        revoked.subject.is_none(),
+        "a set subject is not one instance"
+    );
+    let set = revoked
+        .set_effects
+        .instances
+        .as_ref()
+        .expect("`instances:` is kept beside `deletes:`");
+    assert_eq!(set.entity.to_string(), "demo.auth.Token");
+    assert_eq!(set.effect.verb(), "deletes");
+    let deleted = outcome("demo.auth.DeleteUser");
+    assert_eq!(
+        deleted
+            .subject
+            .as_ref()
+            .map(|subject| subject.effect.verb()),
+        Some("deletes")
+    );
+    let [entry] = deleted.set_effects.affects.as_slice() else {
+        panic!("one entry: {:#?}", deleted.set_effects.affects)
+    };
+    assert!(entry.deletes, "the entry removes the rows it selects");
+    assert!(entry.sets.is_empty() && entry.moves.is_none());
+    for outcome in [revoked, deleted] {
+        let written = serde_yaml::to_string(&RawOutcome::from(outcome.clone()))
+            .expect("an outcome serializes");
+        let read: RawOutcome =
+            serde_yaml::from_str(&written).unwrap_or_else(|error| panic!("{error}\n{written}"));
+        let back = ess_domain::command::Outcome::try_from(read)
+            .unwrap_or_else(|errors| panic!("{errors}\n{written}"));
+        assert_eq!(back, outcome, "{written}");
+    }
+}
+
+#[test]
+fn bulk_delete_with_sets_is_refused() {
+    let errors = refused(&deletes_edited(
+        "          demo.auth.TokensRevoked: {user_id: input.user_id, revoked: {count: changed}}\n",
+        "          demo.auth.TokensRevoked: {user_id: input.user_id, revoked: {count: changed}}\n        sets: {scope: input.scope}\n",
+    ));
+    let refusal = errors
+        .as_slice()
+        .iter()
+        .find(|error| error.code == ValidationCode::ConflictingDeclaration)
+        .unwrap_or_else(|| panic!("a conflicting_declaration:\n{errors}"));
+    assert!(
+        refusal
+            .location
+            .ends_with("RevokeTokens.outcomes.revoked.sets"),
+        "{refusal}"
+    );
+    assert!(
+        refusal.message.contains("`sets:`") && refusal.message.contains("`deletes:`"),
+        "the refusal names both keys: {refusal}"
+    );
+    no_empty_declaration(&errors);
+}
+
+#[test]
+fn affects_delete_entry_naming_other_entity_is_conflicting() {
+    let errors = refused(&deletes_edited(
+        "            deletes: demo.auth.Token\n",
+        "            deletes: demo.auth.Session\n",
+    ));
+    let refusal = only_under(&errors, "DeleteUser");
+    assert_eq!(
+        refusal.code,
+        ValidationCode::ConflictingDeclaration,
+        "{refusal}"
+    );
+    assert!(
+        refusal
+            .location
+            .ends_with("DeleteUser.outcomes.deleted.affects[0]"),
+        "{refusal}"
+    );
+    assert!(
+        refusal.message.contains("demo.auth.Session")
+            && refusal.message.contains("demo.auth.Token"),
+        "the message names both entities: {refusal}"
+    );
+    no_empty_declaration(&errors);
+}
+
+#[test]
+fn affects_delete_beside_other_entry_same_entity_is_conflicting() {
+    // A deleting entry, then a setting entry over the same entity.
+    let errors = refused(&deletes_edited(
+        DELETING_ENTRY,
+        &format!(
+            "{DELETING_ENTRY}          - entity: demo.auth.Token\n            where: user_id == subject.user_id\n            sets: {{scope: gone}}\n"
+        ),
+    ));
+    let refusal = errors
+        .as_slice()
+        .iter()
+        .find(|error| error.code == ValidationCode::ConflictingDeclaration)
+        .unwrap_or_else(|| panic!("a conflicting_declaration:\n{errors}"));
+    assert!(
+        refusal
+            .location
+            .ends_with("DeleteUser.outcomes.deleted.affects[1]"),
+        "refused at the second entry: {refusal}"
+    );
+    // A moving entry, then a deleting entry over the same entity.
+    let moving = deletes_edited(
+        "    lifecycle: {initial: Live, states: [Live], terminal: [Live]}\n",
+        "    lifecycle:\n      initial: Live\n      states: [Live, Expired]\n      terminal: [Expired]\n      transitions: [{name: expire, from: [Live], to: Expired}]\n",
+    )
+    .replacen(
+        DELETING_ENTRY,
+        &format!(
+            "        affects:\n          - entity: demo.auth.Token\n            where: user_id == subject.user_id\n            moves: demo.auth.Token.expire\n{}",
+            &DELETING_ENTRY["        affects:\n".len()..]
+        ),
+        1,
+    );
+    let errors = refused(&moving);
+    assert!(
+        errors
+            .as_slice()
+            .iter()
+            .any(|error| error.code == ValidationCode::ConflictingDeclaration
+                && error
+                    .location
+                    .ends_with("DeleteUser.outcomes.deleted.affects[1]")),
+        "refused at the second entry:\n{errors}"
+    );
+    // Over two different entities the same pair validates.
+    admitted(&deletes_edited(
+        DELETING_ENTRY,
+        &format!(
+            "{DELETING_ENTRY}          - entity: demo.auth.User\n            where: team == subject.team\n            sets: {{team: orphaned}}\n"
+        ),
+    ));
+}
+
+#[test]
+fn set_delete_below_ess23_is_refused_naming_ess23_without_cascade() {
+    let below = DELETES.replacen("format: ess/23", "format: ess/22", 1);
+    let errors = refused(&below);
+    for (command, key) in [
+        ("RevokeTokens", "RevokeTokens.outcomes.revoked.instances"),
+        ("DeleteUser", "DeleteUser.outcomes.deleted.affects"),
+    ] {
+        let refusal = only_under(&errors, command);
+        assert_eq!(
+            refusal.code,
+            ValidationCode::UnsupportedConstruct,
+            "{refusal}"
+        );
+        assert!(refusal.location.ends_with(key), "{refusal}");
+        assert!(
+            refusal.message.contains("ess/23"),
+            "names ess/23: {refusal}"
+        );
+    }
+    assert_eq!(errors.len(), 2, "{errors}");
+    no_empty_declaration(&errors);
+    // The entry's own `deletes:` beside a subject that updates.
+    let updating = deletes_edited(
+        "        deletes: demo.auth.User\n        instance: user_id\n",
+        "        updates: demo.auth.User\n        instance: user_id\n        sets: {team: gone}\n",
+    );
+    admitted(&updating);
+    let errors = refused(&updating.replacen("format: ess/23", "format: ess/22", 1));
+    let refusal = only_under(&errors, "DeleteUser");
+    assert_eq!(
+        refusal.code,
+        ValidationCode::UnsupportedFormatVersion,
+        "{refusal}"
+    );
+    assert!(
+        refusal
+            .location
+            .ends_with("DeleteUser.outcomes.deleted.affects[0].deletes"),
+        "{refusal}"
+    );
+    assert!(refusal.message.contains("ess/23"), "{refusal}");
+    no_empty_declaration(&errors);
+}
+
+/// A repository file, read at run time.
+fn repository_file(path: &str) -> String {
+    let at = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../..")
+        .join(path);
+    std::fs::read_to_string(&at).unwrap_or_else(|error| panic!("{}: {error}", at.display()))
+}
+
+/// The text under `heading` up to the next heading of the same level, or a failure naming it.
+fn section<'t>(text: &'t str, heading: &str) -> &'t str {
+    let start = text
+        .find(&format!("\n{heading}\n"))
+        .unwrap_or_else(|| panic!("missing heading `{heading}`"));
+    let body = &text[start + heading.len() + 2..];
+    body.find("\n## ").map_or(body, |end| &body[..end])
+}
+
+/// Every phrase is in `text`, read with its line breaks as spaces: where Markdown wraps a line does
+/// not change what the page says.
+fn contains_all(what: &str, text: &str, phrases: &[&str]) {
+    let read = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    for phrase in phrases {
+        assert!(read.contains(phrase), "{what} does not say {phrase:?}");
+    }
+}
+
+#[test]
+fn selection_effects_page_states_admitted_forms_and_cascade_idiom() {
+    let page = repository_file("website/docs/guides/specify/selection-effects.md");
+    let description = page
+        .lines()
+        .find(|line| line.starts_with("description:"))
+        .expect("the page has a description");
+    contains_all(
+        "the page's first paragraph (description)",
+        description,
+        &["`deletes:`", "`instances:`"],
+    );
+    let refusals = page
+        .split("\n\n")
+        .find(|paragraph| paragraph.contains("`instance:` beside `instances:`"))
+        .expect("the page lists the refused combinations");
+    assert!(
+        !refusals.contains("`deletes:`"),
+        "the refusal list no longer names `deletes:`:\n{refusals}"
+    );
+    section(&page, "## Delete every record a filter selects");
+    contains_all(
+        "`## Removal in other domains is one binding per domain`",
+        section(
+            &page,
+            "## Removal in other domains is one binding per domain",
+        ),
+        &[
+            "one event",
+            "one binding per receiving domain",
+            "`delivery:`",
+            "`on_failure:`",
+            "no order between bindings",
+            "atomicity",
+        ],
+    );
+}
+
+#[test]
+fn set_effects_note_records_bulk_delete() {
+    let note = repository_file("docs/design/set-effects-over-filtered-instances.md");
+    let heading = "## Deleting the selected rows (ess/23, beyond10x/ess#452)";
+    let deleting = section(&note, heading);
+    let at = note.find(heading).expect("found above");
+    let targets = note
+        .find("\n## Targets\n")
+        .expect("missing heading `## Targets`");
+    assert!(at < targets, "`{heading}` comes before `## Targets`");
+    contains_all(
+        heading,
+        deleting,
+        &[
+            "`deletes:` with `instances:`",
+            "`{count: changed}`",
+            "`affects:`",
+            "`deletes: <Entity>`",
+            "`SetEffectUnsupported`",
+            "one binding per receiving domain",
+        ],
+    );
+    contains_all(
+        "`## Out of scope`",
+        section(&note, "## Out of scope"),
+        &["cross-domain cascade"],
+    );
+}
+
+/// One record per element of an input list (ess/23, beyond10x/ess#459): an `affects:` entry with
+/// `each: {in: input.<list>, as: <name>}` and `instance: <name>.<member>` creates or updates the
+/// row each element's identity names, with `sets:` reading `<name>.<member>`.
+mod issue_459 {
+    use super::*;
+
+    const EACH: &str = include_str!("../../ess-compiler/tests/fixtures/set-each.yaml");
+    const ENTRY: &str =
+        "            each: {in: input.applied, as: doc}\n            instance: doc.document_id\n";
+    const DISTINCT: &str = "      - name: duplicated\n        when: {not: {distinct: {in: applied, as: d, by: d.document_id}}}\n        error: demo.feed.DuplicateDocument\n";
+
+    fn each_edited(from: &str, to: &str) -> String {
+        assert!(EACH.contains(from), "the fixture holds:\n{from}");
+        EACH.replacen(from, to, 1)
+    }
+
+    fn ran(spec: &Specification) -> &ess_domain::command::Outcome {
+        spec.commands()
+            .get(&"demo.feed.RunSource".parse().unwrap())
+            .expect("RunSource")
+            .outcomes
+            .iter()
+            .find(|outcome| outcome.name.as_str() == "ran")
+            .expect("ran")
+    }
+
+    /// A refusal with `code` sited at a location ending in `at`, carrying a hint, or a failure
+    /// listing them all.
+    fn refused_at(
+        errors: &ValidationErrors,
+        code: ValidationCode,
+        at: &str,
+    ) -> ess_primitives::error::ValidationError {
+        errors
+            .as_slice()
+            .iter()
+            .find(|error| error.code == code && error.location.ends_with(at))
+            .unwrap_or_else(|| panic!("expected {code:?} at `{at}`, got:\n{errors}"))
+            .clone()
+    }
+
+    #[test]
+    fn each_entry_is_admitted_under_ess_23_and_round_trips() {
+        let spec = admitted(EACH);
+        let outcome = ran(&spec);
+        let [entry] = outcome.set_effects.affects.as_slice() else {
+            panic!("one entry: {:#?}", outcome.set_effects)
+        };
+        let each = entry.each.as_ref().expect("the entry reads each element");
+        assert_eq!(each.list, "applied");
+        assert_eq!(each.binder, "doc");
+        assert_eq!(each.member, "document_id");
+        assert_eq!(
+            each.reads,
+            [
+                ("content_hash".to_owned(), "content_hash".to_owned()),
+                ("revision".to_owned(), "revision".to_owned()),
+            ]
+            .into_iter()
+            .collect()
+        );
+        assert!(entry.filter.is_none(), "{entry:#?}");
+        assert_eq!(
+            entry.sets.keys().collect::<Vec<_>>(),
+            ["source_id"],
+            "the element reads are the entry's, not literals: {entry:#?}"
+        );
+        let written = serde_yaml::to_string(&RawOutcome::from(outcome.clone())).unwrap();
+        assert!(written.contains("each:"), "{written}");
+        assert!(written.contains("doc.document_id"), "{written}");
+        assert!(!written.contains("where:"), "{written}");
+        let read: RawOutcome = serde_yaml::from_str(&written).unwrap();
+        let back = ess_domain::command::Outcome::try_from(read)
+            .unwrap_or_else(|errors| panic!("{errors}\n{written}"));
+        assert_eq!(back.set_effects, outcome.set_effects, "{written}");
+    }
+
+    #[test]
+    fn each_entry_without_distinct_is_refused() {
+        let errors = refused(&each_edited(DISTINCT, ""));
+        let refusal = refused_at(
+            &errors,
+            ValidationCode::MissingDeclaration,
+            "RunSource.outcomes.ran.affects[0].each",
+        );
+        for named in ["applied", "document_id", "distinct"] {
+            assert!(refusal.message.contains(named), "names {named}: {refusal}");
+        }
+        assert!(refusal.hint.is_some(), "{refusal}");
+        // A `distinct:` over another member does not hold the identity distinct.
+        let errors = refused(&each_edited("by: d.document_id", "by: d.content_hash"));
+        refused_at(
+            &errors,
+            ValidationCode::MissingDeclaration,
+            "RunSource.outcomes.ran.affects[0].each",
+        );
+        // On the accepting branch's own guard it holds as well.
+        admitted(&each_edited(
+            DISTINCT,
+            "",
+        ).replacen(
+            "        updates: demo.feed.Source\n",
+            "        when: {distinct: {in: applied, as: d, by: d.document_id}}\n        updates: demo.feed.Source\n",
+            1,
+        ).replacen(
+            "      - {name: no-such-source, unknown_instance: true, error: demo.feed.NoSuchSource}\n",
+            "      - {name: no-such-source, unknown_instance: true, error: demo.feed.NoSuchSource}\n      - {name: duplicated, error: demo.feed.DuplicateDocument}\n",
+            1,
+        ));
+    }
+
+    #[test]
+    fn each_entry_beside_where_or_move_or_delete_is_refused() {
+        for (beside, key) in [
+            (
+                "            where: source_id == subject.source_id\n",
+                "where:",
+            ),
+            (
+                "            moves: demo.feed.SeenDocument.reseen\n",
+                "moves:",
+            ),
+            ("            deletes: demo.feed.SeenDocument\n", "deletes:"),
+        ] {
+            let model = each_edited(ENTRY, &format!("{ENTRY}{beside}")).replacen(
+                "    lifecycle: {initial: Seen, states: [Seen], terminal: [Seen]}\n",
+                "    lifecycle:\n      initial: Seen\n      states: [Seen]\n      terminal: [Seen]\n      transitions:\n        - {name: reseen, from: [Seen], to: Seen}\n",
+                1,
+            );
+            let errors = refused(&model);
+            let refusal = refused_at(
+                &errors,
+                ValidationCode::ConflictingDeclaration,
+                "RunSource.outcomes.ran.affects[0].each",
+            );
+            assert!(refusal.message.contains("`each:`"), "{key}: {refusal}");
+            assert!(refusal.message.contains(key), "{key}: {refusal}");
+            assert!(refusal.hint.is_some(), "{key}: {refusal}");
+        }
+    }
+
+    #[test]
+    fn each_entry_without_subject_is_refused() {
+        let model = each_edited(
+            "        updates: demo.feed.Source\n        instance: source_id\n",
+            "",
+        )
+        .replacen("        sets: {label: input.label}\n        affects:", "        affects:", 1)
+        .replacen(
+            "      - {name: no-such-source, unknown_instance: true, error: demo.feed.NoSuchSource}\n",
+            "",
+            1,
+        );
+        let errors = refused(&model);
+        let refusal = refused_at(
+            &errors,
+            ValidationCode::MissingDeclaration,
+            "RunSource.outcomes.ran.affects",
+        );
+        assert!(refusal.message.contains("`each:`"), "{refusal}");
+        let hint = refusal.hint.as_deref().unwrap_or_default();
+        assert!(hint.contains("subject"), "{refusal}");
+    }
+
+    #[test]
+    fn each_entry_below_ess23_is_refused_naming_ess23() {
+        let below = EACH.replacen("format: ess/23", "format: ess/22", 1);
+        let errors = refused(&below);
+        let refusal = only_under(&errors, "RunSource");
+        assert_eq!(
+            refusal.code,
+            ValidationCode::UnsupportedFormatVersion,
+            "{refusal}"
+        );
+        assert!(
+            refusal
+                .location
+                .ends_with("RunSource.outcomes.ran.affects[0].each"),
+            "{refusal}"
+        );
+        assert!(refusal.message.contains("ess/23"), "{refusal}");
+        assert_eq!(errors.len(), 1, "{errors}");
+        no_empty_declaration(&errors);
+    }
+
+    /// An entry without `each:` declaring `instance:`, or naming no rows, is refused alone, with no
+    /// `empty_declaration` cascade; below ess/23 the refusal names ess/23 and says how to reach it.
+    #[test]
+    fn each_entry_shape_refusals_name_ess23_below_it_without_cascade() {
+        let with_instance = INVITE_AFFECTS.replacen(
+            "            where: team == subject.team\n",
+            "            where: team == subject.team\n            instance: s.session_id\n",
+            1,
+        );
+        let without_where =
+            INVITE_AFFECTS.replacen("            where: team == subject.team\n", "", 1);
+        for (format, below) in [("format: ess/16", true), ("format: ess/23", false)] {
+            for (entry, code, at) in [
+                (
+                    &with_instance,
+                    ValidationCode::ConflictingDeclaration,
+                    "Invite.outcomes.invited.affects[0].instance",
+                ),
+                (
+                    &without_where,
+                    ValidationCode::MissingDeclaration,
+                    "Invite.outcomes.invited.affects[0]",
+                ),
+            ] {
+                let model = edited(INVITE_AFFECTS, entry).replacen("format: ess/16", format, 1);
+                let errors = refused(&model);
+                let refusal = only_under(&errors, "Invite");
+                assert_eq!(refusal.code, code, "{format}: {refusal}");
+                assert!(refusal.location.ends_with(at), "{format}: {refusal}");
+                assert!(refusal.message.contains("`each:`"), "{format}: {refusal}");
+                assert_eq!(
+                    refusal.message.contains("ess/23"),
+                    below,
+                    "{format}: {refusal}"
+                );
+                let hint = refusal.hint.as_deref().unwrap_or_default();
+                assert_eq!(
+                    hint.contains("format: ess/23"),
+                    below,
+                    "{format}: {refusal}"
+                );
+                no_empty_declaration(&errors);
+            }
+        }
+    }
+
+    #[test]
+    fn each_entry_reads_are_checked_against_the_element_and_the_entity() {
+        // `instance:` names a member of the identity's type.
+        let errors = refused(&each_edited(
+            "instance: doc.document_id",
+            "instance: doc.content_hash",
+        ));
+        refused_at(
+            &errors,
+            ValidationCode::TypeMismatch,
+            "RunSource.outcomes.ran.affects[0].instance",
+        );
+        // A member the element does not declare.
+        let errors = refused(&each_edited(
+            "revision: doc.revision",
+            "revision: doc.missing",
+        ));
+        refused_at(
+            &errors,
+            ValidationCode::UndeclaredReference,
+            "RunSource.outcomes.ran.affects[0].sets.revision",
+        );
+        // A member of another type than the field it fills.
+        let errors = refused(&each_edited(
+            "revision: doc.revision",
+            "revision: doc.content_hash",
+        ));
+        refused_at(
+            &errors,
+            ValidationCode::TypeMismatch,
+            "RunSource.outcomes.ran.affects[0].sets.revision",
+        );
+        // `in:` names a list of the input.
+        let errors = refused(&each_edited("in: input.applied", "in: input.label"));
+        refused_at(
+            &errors,
+            ValidationCode::TypeMismatch,
+            "RunSource.outcomes.ran.affects[0].each",
+        );
+        // A required field an invariant reads is written by the entry, as by any creation.
+        let errors = refused(&each_edited(
+            "    lifecycle: {initial: Seen, states: [Seen], terminal: [Seen]}\n",
+            "    invariants:\n      - revision > 0\n    lifecycle: {initial: Seen, states: [Seen], terminal: [Seen]}\n",
+        ).replacen(", revision: doc.revision}", "}", 1));
+        refused_at(
+            &errors,
+            ValidationCode::InvariantReadsUnsetField,
+            "RunSource.outcomes.ran.affects[0]",
+        );
+    }
+
+    #[test]
+    fn set_effects_note_records_each_entry() {
+        let note = repository_file("docs/design/set-effects-over-filtered-instances.md");
+        let heading = "## One row per element of an input list (ess/23, beyond10x/ess#459)";
+        let each = section(&note, heading);
+        let at = note.find(heading).expect("found above");
+        let targets = note
+            .find("\n## Targets\n")
+            .expect("missing heading `## Targets`");
+        assert!(at < targets, "`{heading}` comes before `## Targets`");
+        contains_all(
+            heading,
+            each,
+            &[
+                "`each: {in: input.",
+                "`distinct:`",
+                "created in `initial`",
+                "updated if held",
+                "a refused run writes none",
+                "replace-a-set",
+                "conformance major",
+            ],
+        );
+    }
+
+    #[test]
+    fn each_entry_guide_section_states_the_form() {
+        let page = repository_file("website/docs/guides/specify/selection-effects.md");
+        let heading = "## Write one record per element of an input list";
+        let body = section(&page, heading);
+        let at = page.find(heading).expect("found above");
+        for earlier in [
+            "## Delete every record a filter selects",
+            "## Removal in other domains is one binding per domain",
+        ] {
+            let before = page
+                .find(earlier)
+                .unwrap_or_else(|| panic!("missing heading `{earlier}`"));
+            assert!(before < at, "`{heading}` comes after `{earlier}`");
+        }
+        contains_all(
+            heading,
+            body,
+            &[
+                "`each:`",
+                "`instance: <name>.<member>`",
+                "`distinct:`",
+                "an empty list writes nothing",
+                "not removed",
+            ],
+        );
+        let fence = body
+            .split("```yaml\n")
+            .nth(1)
+            .and_then(|rest| rest.split("```").next())
+            .unwrap_or_else(|| panic!("`{heading}` has no fenced model"));
+        assemble(fence)
+            .unwrap_or_else(|errors| panic!("the fenced model validates: {errors}\n{fence}"));
+    }
 }

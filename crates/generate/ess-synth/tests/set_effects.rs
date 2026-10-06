@@ -62,6 +62,47 @@ fn every_direct_workspace_entry_refuses_each_set_effect_by_name() {
     }
 }
 
+/// Deleting the selected rows (ess/23, beyond10x/ess#452): every code target refuses a bulk
+/// `deletes:` and a deleting `affects:` entry by name, as it refuses every set effect.
+#[test]
+fn set_delete_targets_refuse_by_name() {
+    const DELETES: &str =
+        include_str!("../../../specify/ess-compiler/tests/fixtures/set-deletes.yaml");
+    const REVOKED: &str = "demo.auth.RevokeTokens.outcomes.revoked.instances";
+    const DELETED: &str = "demo.auth.DeleteUser.outcomes.deleted.affects";
+    let ir = ir(DELETES);
+    for target in [Target::Rust, Target::Go] {
+        let failure = synthesize_for(&ir, target)
+            .err()
+            .unwrap_or_else(|| panic!("{target:?} refuses set deletions"));
+        let text = format!("{failure:?}");
+        for named in [REVOKED, DELETED] {
+            assert!(text.contains(named), "{target:?} names {named}: {text}");
+        }
+        assert!(
+            text.contains(&format!("{:?}", TargetFailureCode::MissingRepresentation)),
+            "{text}"
+        );
+    }
+    let plan = ess_synth::SynthesisPlan::of(&ir);
+    for (target, failure) in [
+        ("rust", ess_synth::rust::workspace(&ir, &plan).err()),
+        ("go", ess_synth::go::workspace(&ir, &plan).err()),
+        ("web", ess_synth::web::workspace(&ir, &plan).err()),
+        ("clap", ess_synth::clap::workspace(&ir, &plan).err()),
+    ] {
+        let failure = failure.unwrap_or_else(|| panic!("{target} refuses set deletions"));
+        let json = failure.to_canonical_json();
+        for named in [REVOKED, DELETED] {
+            assert!(json.contains(named), "{target} names {named}: {json}");
+        }
+        assert!(
+            json.contains(r#""code": "missing-representation""#),
+            "{target}: {json}"
+        );
+    }
+}
+
 #[test]
 fn issue_229_an_affects_entry_that_moves_its_rows_is_refused_by_name() {
     let from = "            where: team == subject.team\n";
@@ -83,6 +124,41 @@ fn issue_229_an_affects_entry_that_moves_its_rows_is_refused_by_name() {
         assert!(
             text.contains(&format!("{:?}", TargetFailureCode::MissingRepresentation)),
             "{text}"
+        );
+    }
+}
+
+/// One record per element of an input list (ess/23, beyond10x/ess#459): every code target refuses
+/// an `each:` entry by name, as it refuses every `affects:`.
+#[test]
+fn each_entry_targets_refuse_by_name() {
+    const EACH: &str = include_str!("../../../specify/ess-compiler/tests/fixtures/set-each.yaml");
+    const RAN: &str = "demo.feed.RunSource.outcomes.ran.affects";
+    let ir = ir(EACH);
+    for target in [Target::Rust, Target::Go] {
+        let failure = synthesize_for(&ir, target)
+            .err()
+            .unwrap_or_else(|| panic!("{target:?} refuses an each entry"));
+        let text = format!("{failure:?}");
+        assert!(text.contains(RAN), "{target:?} names {RAN}: {text}");
+        assert!(
+            text.contains(&format!("{:?}", TargetFailureCode::MissingRepresentation)),
+            "{text}"
+        );
+    }
+    let plan = ess_synth::SynthesisPlan::of(&ir);
+    for (target, failure) in [
+        ("rust", ess_synth::rust::workspace(&ir, &plan).err()),
+        ("go", ess_synth::go::workspace(&ir, &plan).err()),
+        ("web", ess_synth::web::workspace(&ir, &plan).err()),
+        ("clap", ess_synth::clap::workspace(&ir, &plan).err()),
+    ] {
+        let failure = failure.unwrap_or_else(|| panic!("{target} refuses an each entry"));
+        let json = failure.to_canonical_json();
+        assert!(json.contains(RAN), "{target} names {RAN}: {json}");
+        assert!(
+            json.contains(r#""code": "missing-representation""#),
+            "{target}: {json}"
         );
     }
 }

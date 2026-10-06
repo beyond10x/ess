@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:counter-reachability-arithmetic-completeness
 kind: story
-status: active
+status: implemented
 title: Counter reachability refuses incomplete arithmetic bounds
 refs:
 - provider: github
@@ -15,10 +15,11 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/counter_limit.rs
-revision: 13
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T21:39:27Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}}
 - {from: "proposed", to: "active", at: "2026-10-03T21:39:27Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"approval":1}}}
+- {from: "active", to: "implemented", at: "2026-10-06T09:42:49Z", actor: "human:timo", revision: 14, decided_on: {"recorded":{"test_result":3,"approval":1,"review_outcome":2,"verification":1}}}
 ---
 ## Outcome
 

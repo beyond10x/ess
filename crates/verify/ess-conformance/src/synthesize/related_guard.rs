@@ -175,6 +175,210 @@ pub(super) fn routes(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> bo
         )
 }
 
+/// Whether `outcome` is an external branch of a command reading a related row through its input
+/// (beyond10x/ess#464), which [`routes`] leaves out — its boundaries and further witnesses are its
+/// siblings' — but whose own scenario, and every run driving a row through it, is sent naming a
+/// present row no `when_related` branch claims ([`prepare_at_in`], [`drive`]).
+pub(super) fn arranges_external(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> bool {
+    uses(command)
+        && stored::field(command).is_none()
+        && outcome.replays.is_none()
+        && is_external(outcome)
+}
+
+/// Whether `outcome` is an external branch of a command whose `when_related` guard reads a stored
+/// reference of the addressed row (ess/22, beyond10x/ess#304), sent by the plain witness `setup`
+/// for a row whose reference is not known to be left out (beyond10x/ess#464). Which row such a
+/// reference names is not arranged for an external branch, so a missing one — or no addressed row
+/// at all, for a branch naming no subject of its own — would answer before it.
+pub(super) fn stored_external(
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    setup: &Setup,
+) -> bool {
+    is_external(outcome)
+        && outcome.replays.is_none()
+        && stored::field(command).is_some_and(|(field, _)| {
+            setup.settled.get(field).is_none_or(|held| {
+                !matches!(
+                    held.value,
+                    crate::scenario::ScenarioValue::Literal { value: Node::Null }
+                )
+            })
+        })
+}
+
+/// The refusal of a [`stored_external`] branch, naming the `when_related` branches over the
+/// stored reference.
+pub(super) fn stored_external_refused(
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+) -> RefusalCause {
+    let field = stored::field(command).map_or("", |(field, _)| field);
+    let claiming: Vec<String> = command
+        .outcomes
+        .iter()
+        .filter_map(|branch| match &branch.condition {
+            ResolvedCondition::Related { test, .. } => Some(match test {
+                ResolvedRelatedTest::Absent => format!("`{}` (exists: false)", branch.name),
+                ResolvedRelatedTest::Holds { predicate } => {
+                    format!("`{}` ({predicate})", branch.name)
+                }
+            }),
+            _ => None,
+        })
+        .collect();
+    RefusalCause::GuardUnsatisfiable {
+        predicate: format!(
+            "`{}` forced on a row whose stored reference `subject.{field}` no `when_related` \
+             branch claims: none of {}; such a reference is not arranged for an external branch",
+            outcome.name,
+            claiming.join(", ")
+        ),
+        tried: 0,
+    }
+}
+
+/// Whether `outcome` is decided by a provider.
+fn is_external(outcome: &ResolvedOutcome) -> bool {
+    matches!(
+        outcome.condition,
+        ResolvedCondition::External { .. } | ResolvedCondition::ExternalWhen { .. }
+    )
+}
+
+/// Whether `input`, or an arranged row `bound` names, points the command's related guards at a
+/// row: a reference sent, or one an arrangement bound. A reference left out reads no row, and
+/// selects no `when_related` branch.
+pub(super) fn reads_row(
+    command: &ResolvedCommand,
+    input: &BTreeMap<String, Node>,
+    bound: &BTreeMap<String, crate::scenario::InstanceName>,
+) -> bool {
+    rows(command).iter().any(|(via, _)| {
+        bound.contains_key(via.field())
+            || ess_compiler::ir::read_input(input, via.field())
+                .is_some_and(|value| !matches!(value, Node::Null))
+    })
+}
+
+/// The refusal of an external branch for which no present related row and input leave the
+/// branch to answer (beyond10x/ess#464), naming the `when_related` branches that claim it. A cause
+/// that is no unmet guard — a row that cannot be arranged at all — is its own.
+pub(super) fn external_unwitnessed(
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    cause: RefusalCause,
+) -> RefusalCause {
+    let RefusalCause::GuardUnsatisfiable { tried, .. } = cause else {
+        return cause;
+    };
+    let claiming: Vec<String> = command
+        .outcomes
+        .iter()
+        .filter_map(|branch| match &branch.condition {
+            ResolvedCondition::Related {
+                via,
+                test: ResolvedRelatedTest::Holds { predicate },
+                input,
+                ..
+            } => Some(match input {
+                Some(guard) => format!("`{}` ({via}: {predicate} and {guard})", branch.name),
+                None => format!("`{}` ({via}: {predicate})", branch.name),
+            }),
+            _ => None,
+        })
+        .collect();
+    RefusalCause::GuardUnsatisfiable {
+        predicate: format!(
+            "`{}` forced beside a present related row on which no `when_related` branch claims \
+             the input: none of {}",
+            outcome.name,
+            claiming.join(", ")
+        ),
+        tried,
+    }
+}
+
+/// Whether the forced external `outcome` answers `command` sent `input` for the present related
+/// row `row` (beyond10x/ess#464): its own guard holds; no input-guarded refusal and no accepting
+/// `when:` declared before it claims the input; and no `when_related` predicate branch holds on
+/// the row with its input guard, whatever its declaration order, one the row leaves undecided
+/// counting as holding.
+fn leaves_external(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    entity: &EntityHandle,
+    row: &Arrangement,
+    input: &BTreeMap<String, Node>,
+) -> Result<bool, RefusalCause> {
+    let facts = flatten(ir, command, input).map_err(RefusalCause::WitnessRejected)?;
+    if let ResolvedCondition::ExternalWhen { predicate, .. } = &outcome.condition {
+        if !decides(&facts, &[predicate], true)? {
+            return Ok(false);
+        }
+    }
+    let refusals: Vec<&Predicate> = super::sibling_refusals(command, outcome)
+        .filter_map(super::when)
+        .collect();
+    if !decides(&facts, &refusals, false)?
+        || super::claimed_by(&facts, &super::earlier_accepting(command, outcome))
+    {
+        return Ok(false);
+    }
+    for branch in &command.outcomes {
+        let ResolvedCondition::Related {
+            test: ResolvedRelatedTest::Holds { predicate },
+            ..
+        } = &branch.condition
+        else {
+            continue;
+        };
+        match subject_fact::guard_truth_with(
+            ir,
+            entity,
+            &row.settled,
+            &row.unwritten,
+            Some(&row.state),
+            predicate,
+            Some((command, input)),
+        ) {
+            Truth::False => continue,
+            Truth::Unknown => return Ok(false),
+            Truth::True => {}
+        }
+        let refuted = match input_guard(branch) {
+            Some(guard) => decides(&facts, &[guard], false)?,
+            None => false,
+        };
+        if !refuted {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+/// Whether the present row `row`, crossed with `input`, leaves `outcome` to answer: the branch
+/// [`selects`] picks there — or, for an external branch, which no row selects, the one no sibling
+/// claims ([`leaves_external`]).
+fn chooses(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    entity: &EntityHandle,
+    row: &Arrangement,
+    input: &BTreeMap<String, Node>,
+) -> bool {
+    if is_external(outcome) {
+        return leaves_external(ir, command, outcome, entity, row, input).unwrap_or(false);
+    }
+    selects(ir, command, entity, Some(row), input)
+        .ok()
+        .flatten()
+        .is_some_and(|branch| branch.name == outcome.name)
+}
+
 /// The refusal for a family that has no related row to send the command for.
 pub(super) fn unarranged() -> RefusalCause {
     RefusalCause::StrategyWithoutGuard {
@@ -2582,7 +2786,12 @@ fn with_row(
         &[super::ScenarioStep],
     ),
 ) -> Result<(Arrangement, usize, BTreeMap<String, Node>), RefusalCause> {
-    let guards: Vec<&Predicate> = command.outcomes.iter().filter_map(input_guard).collect();
+    let mut guards: Vec<&Predicate> = command.outcomes.iter().filter_map(input_guard).collect();
+    // An external branch's own guard, so an input it admits is among the candidates
+    // (beyond10x/ess#464).
+    if let ResolvedCondition::ExternalWhen { predicate, .. } = &outcome.condition {
+        guards.push(predicate);
+    }
     let predicates = predicates(command);
     // A related row's instant ordered against the current time is arranged only through its
     // creator's input, as a `now_offset` (ess/22, A3); one nothing can carry is refused by name.
@@ -2638,10 +2847,7 @@ fn with_row(
         Ok(inputs.into_iter().find(|input| {
             meets(node, input)
                 && around.is_none_or(|around| around.admits(ir, input))
-                && selects(ir, command, entity, Some(node), input)
-                    .ok()
-                    .flatten()
-                    .is_some_and(|branch| branch.name == outcome.name)
+                && chooses(ir, command, outcome, entity, node, input)
                 && (!strict
                     || subject_fact::witnesses_elements(
                         ir,

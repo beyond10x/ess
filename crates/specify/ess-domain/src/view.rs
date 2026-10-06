@@ -43,7 +43,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use ess_primitives::error::{ParseError, ValidationCode, ValidationError, ValidationErrors};
-use ess_primitives::predicate::Predicate;
+use ess_primitives::predicate::{Predicate, WrittenPredicate};
 
 use crate::name::{Naming, QualifiedName};
 use crate::types::{Field, Primitive, TypeBody, TypeRef, TypeRegistry, MAX_TYPE_DEPTH};
@@ -418,8 +418,12 @@ impl fmt::Display for Aggregate {
     }
 }
 
-impl From<&RawAggregate> for Aggregate {
-    fn from(raw: &RawAggregate) -> Self {
+impl RawAggregate {
+    /// The aggregate, with the refusal of a `where:` that does not parse added to `errors` at
+    /// `at` and the condition withheld (beyond10x/ess#448). The function is kept, so a view whose
+    /// only measure's condition failed is not also refused as declaring no aggregate.
+    fn read(&self, at: String, errors: &mut ValidationErrors) -> Aggregate {
+        let raw = self;
         let (function, input) = match &raw.function {
             RawFunction::Count(_) => (AggregateFunction::Count, None),
             RawFunction::CountDistinct(input) => {
@@ -430,11 +434,19 @@ impl From<&RawAggregate> for Aggregate {
             RawFunction::Max(input) => (AggregateFunction::Max, Some(input.clone())),
             RawFunction::Avg(input) => (AggregateFunction::Avg, Some(input.clone())),
         };
-        Self {
+        let r#where = match raw.r#where.clone().map(|condition| condition.read(at)) {
+            Some(Ok(condition)) => Some(condition),
+            Some(Err(error)) => {
+                errors.push(error);
+                None
+            }
+            None => None,
+        };
+        Aggregate {
             function,
             input,
             skip_absent: raw.skip_absent,
-            r#where: raw.r#where.clone(),
+            r#where,
         }
     }
 }
@@ -453,7 +465,7 @@ impl From<&Aggregate> for RawAggregate {
         Self {
             function,
             skip_absent: aggregate.skip_absent,
-            r#where: aggregate.r#where.clone(),
+            r#where: aggregate.r#where.clone().map(WrittenPredicate::from),
         }
     }
 }
@@ -507,8 +519,9 @@ pub struct RawAggregate {
     pub skip_absent: bool,
     /// `where:`: which of the group's rows this measure reads (`ess/22`). Its words are resolved
     /// against the view's source row and parameters once the document's format is known, as a
-    /// view filter's are (`crate::expression::lexical`).
-    pub r#where: Option<Predicate>,
+    /// view filter's are (`crate::expression::lexical`). One that does not parse is refused at the
+    /// view's own pass (beyond10x/ess#448).
+    pub r#where: Option<WrittenPredicate>,
 }
 
 /// One aggregate function as written, with its argument.
@@ -577,7 +590,7 @@ impl<'de> serde::Deserialize<'de> for RawAggregate {
                 let names = || RawAggregate::NAMES.join(", ");
                 let mut function: Option<RawFunction> = None;
                 let mut skip_absent: Option<bool> = None;
-                let mut condition: Option<Predicate> = None;
+                let mut condition: Option<WrittenPredicate> = None;
                 while let Some(key) = map.next_key::<String>()? {
                     if key == measure::WHERE {
                         if condition.is_some() {
@@ -590,10 +603,7 @@ impl<'de> serde::Deserialize<'de> for RawAggregate {
                                  condition, `true` for every row, or leave `where` out",
                             ));
                         }
-                        condition = Some(
-                            Predicate::from_node(&written)
-                                .map_err(|error| A::Error::custom(format!("`where`: {error}")))?,
-                        );
+                        condition = Some(WrittenPredicate::from(written));
                         continue;
                     }
                     if key == RawAggregate::SKIP_ABSENT {
@@ -1786,7 +1796,7 @@ pub struct RawViewSpec {
     pub params: Vec<Field>,
     /// Which instances it contains.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub filter: Option<Predicate>,
+    pub filter: Option<WrittenPredicate>,
     /// The view fields the admitted rows are partitioned by. Absent or `[]`: not grouped.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub group_by: Vec<String>,
@@ -1810,17 +1820,19 @@ impl TryFrom<RawViewSpec> for ViewSpec {
     fn try_from(raw: RawViewSpec) -> Result<Self, Self::Error> {
         let mut fields = Vec::with_capacity(raw.fields.len());
         let mut functions = BTreeMap::new();
-        for written in raw.fields {
+        let mut grouping = ValidationErrors::new();
+        let at = |suffix: &str| format!("view.{}.{suffix}", raw.name);
+        for (index, written) in raw.fields.into_iter().enumerate() {
             let (field, aggregate) = written.split();
             if let Some(aggregate) = &aggregate {
-                functions
-                    .entry(field.name.clone())
-                    .or_insert_with(|| Aggregate::from(aggregate));
+                let read = aggregate.read(
+                    at(&format!("fields[{index}].aggregate.where")),
+                    &mut grouping,
+                );
+                functions.entry(field.name.clone()).or_insert(read);
             }
             fields.push(field);
         }
-        let mut grouping = ValidationErrors::new();
-        let at = |suffix: &str| format!("view.{}.{suffix}", raw.name);
         // V3: a property of the written list, reported before the list is folded into the model.
         let mut seen = BTreeSet::new();
         for (index, key) in raw.group_by.iter().enumerate() {
@@ -1867,13 +1879,23 @@ impl TryFrom<RawViewSpec> for ViewSpec {
             group_by: raw.group_by,
             functions,
         });
+        // A filter that does not parse is refused here, at the view, and withholds the view
+        // (beyond10x/ess#448).
+        let filter = match raw.filter.map(|filter| filter.read(at("filter"))) {
+            Some(Ok(filter)) => Some(filter),
+            Some(Err(error)) => {
+                grouping.push(error);
+                None
+            }
+            None => None,
+        };
         let spec = Self {
             name: raw.name,
             source: raw.source,
             shape: raw.shape,
             fields,
             params: raw.params,
-            filter: raw.filter,
+            filter,
             aggregation,
             order_by: raw.order_by,
             paging: raw.paging,
@@ -1908,7 +1930,7 @@ impl From<ViewSpec> for RawViewSpec {
             shape: view.shape,
             fields,
             params: view.params,
-            filter: view.filter,
+            filter: view.filter.map(WrittenPredicate::from),
             group_by,
             order_by: view.order_by,
             paging: view.paging,

@@ -547,11 +547,22 @@ fn binding_mapping_object_values_and_empty_default_have_terminal_controls() {
         "read:extra",
         "mapping",
     );
-    refused(
+    // An unquoted integer in a binding `mapping:` is read as a typed scalar (beyond10x/ess#445,
+    // the rule `sets:` and `payload:` share), so the reader admits it and assembly refuses it
+    // against the text input with the quoted spelling as the repair; the quoted form is admitted.
+    let error = refused(
         APP,
         &INTERACTION.replace("mapping: {value: event.value}", "mapping: {value: 9}"),
-        "read:extra",
-        "string",
+        "assemble",
+        "quote it",
+    );
+    assert_eq!(error.details[0]["code"], "type_mismatch");
+    same_selected_cli(
+        &control,
+        &admitted(
+            APP,
+            &INTERACTION.replace("mapping: {value: event.value}", "mapping: {value: '9'}"),
+        ),
     );
     let empty_input = APP.replace("input: [{name: value, type: String}]", "input: []");
     let omitted = INTERACTION.replace("    mapping: {value: event.value}\n", "");
@@ -831,10 +842,6 @@ fn outcome_reference_payload_set_and_metadata_types_have_exact_reader_boundaries
         ("moves: 'pilot..Record.close'", "empty"),
         ("updates: 'pilot..Record'", "empty"),
         ("error: 'pilot..Rejected'", "empty"),
-        (
-            "when: 9",
-            "predicate: expected an expression, list or mapping, found the number 9",
-        ),
         ("external: []", "string"),
         ("instance: []", "string"),
         ("summary: []", "string"),
@@ -852,6 +859,20 @@ fn outcome_reference_payload_set_and_metadata_types_have_exact_reader_boundaries
         );
         refused(&source, "{}", "read:app", expected);
     }
+    // A `when:` predicate is parsed in its declaration's own check since beyond10x/ess#448, so one
+    // that does not parse is refused by assembly with the reader's sentence, at the outcome's path.
+    let source = APP.replace(
+        "      - name: done\n",
+        "      - name: done\n        when: 9\n",
+    );
+    let error = refused(
+        &source,
+        "{}",
+        "assemble",
+        "command.pilot.app.Work.outcomes.done.when: predicate: expected an expression, list or \
+         mapping, found the number 9",
+    );
+    assert_eq!(error.details[0]["code"], "unparsable_predicate");
     // An unquoted integer in a payload or `sets:` source is read as a typed scalar (ess#113,
     // `docs/design/typed-literals-and-unknown-instances.md`), so the reader admits it and the
     // specification's assembly refuses it: against its text target with the repair in the hint,

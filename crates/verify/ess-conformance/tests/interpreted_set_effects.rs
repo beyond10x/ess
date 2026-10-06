@@ -503,3 +503,322 @@ fn admitted_struct_set_fields_use_the_same_typed_leaf_sources() {
         ]))
     );
 }
+
+/// Deleting the selected rows (ess/23, beyond10x/ess#452).
+mod deletes {
+    use super::*;
+
+    const DELETES: &str =
+        include_str!("../../../specify/ess-compiler/tests/fixtures/set-deletes.yaml");
+
+    fn run(ir: &EssIr, store: &mut Store, command: &str, input: &BTreeMap<String, Node>) -> Step {
+        let mut steps = execute(
+            ir,
+            store,
+            &format!("demo.auth.{command}").parse().unwrap(),
+            input,
+            &Externals::Withheld,
+        )
+        .unwrap_or_else(|error| panic!("{command}: {error:?}"));
+        assert_eq!(steps.len(), 1);
+        let step = steps.remove(0);
+        *store = step.next.clone();
+        step
+    }
+
+    fn created(
+        ir: &EssIr,
+        store: &mut Store,
+        (command, event, field): (&str, &str, &str),
+        id: &str,
+        input: &BTreeMap<String, Node>,
+    ) {
+        let mut steps = execute_generating(
+            ir,
+            store,
+            &format!("demo.auth.{command}").parse().unwrap(),
+            input,
+            &Externals::Withheld,
+            &Generated::Given(BTreeMap::from([(
+                GeneratedSlot::new(format!("demo.auth.{event}").parse().unwrap(), field),
+                text(id),
+            )])),
+        )
+        .unwrap();
+        *store = steps.remove(0).next;
+    }
+
+    fn user(ir: &EssIr, store: &mut Store, id: &str) {
+        created(
+            ir,
+            store,
+            ("AddUser", "UserAdded", "user_id"),
+            id,
+            &values([("team", text("one"))]),
+        );
+    }
+
+    fn token(ir: &EssIr, store: &mut Store, id: &str, user: &str, scope: &str) {
+        created(
+            ir,
+            store,
+            ("IssueToken", "TokenIssued", "token_id"),
+            id,
+            &values([("user_id", text(user)), ("scope", text(scope))]),
+        );
+    }
+
+    fn held(store: &Store, entity: &str, id: &str) -> bool {
+        store
+            .instance(&format!("demo.auth.{entity}").parse().unwrap(), id)
+            .is_some()
+    }
+
+    #[test]
+    fn the_interpreter_removes_every_selected_row_and_counts_them() {
+        let ir = model(DELETES);
+        let mut store = Store::default();
+        for (id, user, scope) in [
+            ("a", "ann", "read"),
+            ("b", "ann", "read"),
+            ("c", "ann", "read"),
+            ("write", "ann", "write"),
+            ("bob", "bob", "read"),
+        ] {
+            token(&ir, &mut store, id, user, scope);
+        }
+        let input = values([("user_id", text("ann")), ("scope", text("read"))]);
+        let revoked = run(&ir, &mut store, "RevokeTokens", &input);
+        assert_eq!(
+            revoked.outcome.as_ref().map(ToString::to_string),
+            Some("demo.auth.RevokeTokens/revoked".to_owned())
+        );
+        assert_eq!(count(&revoked, "revoked"), Node::Number(3_i64.into()));
+        for id in ["a", "b", "c"] {
+            assert!(!held(&store, "Token", id), "{id} is removed");
+        }
+        for id in ["write", "bob"] {
+            assert!(held(&store, "Token", id), "{id} is kept");
+        }
+        let before = store.clone();
+        let again = run(&ir, &mut store, "RevokeTokens", &input);
+        assert_eq!(count(&again, "revoked"), Node::Number(0_i64.into()));
+        assert_eq!(store, before, "a zero-match call changes nothing");
+    }
+
+    #[test]
+    fn the_interpreter_removes_the_subject_and_the_rows_it_owns() {
+        let ir = model(DELETES);
+        let mut store = Store::default();
+        for id in ["ann", "bob"] {
+            user(&ir, &mut store, id);
+        }
+        for (id, owner) in [("a", "ann"), ("b", "ann"), ("bob-1", "bob")] {
+            token(&ir, &mut store, id, owner, "read");
+        }
+        let deleted = run(
+            &ir,
+            &mut store,
+            "DeleteUser",
+            &values([("user_id", text("ann"))]),
+        );
+        assert_eq!(
+            deleted.outcome.as_ref().map(ToString::to_string),
+            Some("demo.auth.DeleteUser/deleted".to_owned())
+        );
+        assert!(!held(&store, "User", "ann"));
+        assert!(held(&store, "User", "bob"));
+        for id in ["a", "b"] {
+            assert!(!held(&store, "Token", id), "{id} is removed with its owner");
+        }
+        assert!(
+            held(&store, "Token", "bob-1"),
+            "another user's token is kept"
+        );
+    }
+}
+
+/// One record per element of an input list (ess/23, beyond10x/ess#459): `RunSource` updates its
+/// source and, per element of `applied`, updates the `SeenDocument` the element names if held and
+/// creates it if not.
+mod issue_459 {
+    use super::*;
+    use ess_conformance::interpret::execute::Instance;
+
+    const EACH: &str = include_str!("../../../specify/ess-compiler/tests/fixtures/set-each.yaml");
+    const SEEN: &str = "demo.feed.SeenDocument";
+
+    fn source(ir: &EssIr, store: &mut Store, id: &str) {
+        let mut steps = execute_generating(
+            ir,
+            store,
+            &"demo.feed.AddSource".parse().unwrap(),
+            &values([("label", text("before"))]),
+            &Externals::Withheld,
+            &Generated::Given(BTreeMap::from([(
+                GeneratedSlot::new("demo.feed.SourceAdded".parse().unwrap(), "source_id"),
+                text(id),
+            )])),
+        )
+        .unwrap();
+        *store = steps.remove(0).next;
+    }
+
+    fn element(id: &str, hash: &str, revision: i64) -> Node {
+        Node::Map(
+            [
+                ("document_id".to_owned(), text(id)),
+                ("content_hash".to_owned(), text(hash)),
+                ("revision".to_owned(), Node::Number(revision.into())),
+            ]
+            .into_iter()
+            .collect(),
+        )
+    }
+
+    fn run(ir: &EssIr, store: &mut Store, source: &str, applied: Vec<Node>) -> Step {
+        let input = values([
+            ("source_id", text(source)),
+            ("label", text("ran")),
+            ("applied", Node::Seq(applied)),
+        ]);
+        let mut steps = execute(
+            ir,
+            store,
+            &"demo.feed.RunSource".parse().unwrap(),
+            &input,
+            &Externals::Withheld,
+        )
+        .unwrap_or_else(|error| panic!("{error:?}"));
+        assert_eq!(steps.len(), 1);
+        let step = steps.remove(0);
+        *store = step.next.clone();
+        step
+    }
+
+    fn outcome(step: &Step) -> String {
+        step.outcome
+            .as_ref()
+            .map(ToString::to_string)
+            .unwrap_or_default()
+    }
+
+    fn seen<'s>(store: &'s Store, id: &str) -> Option<&'s Instance> {
+        store.instance(&SEEN.parse().unwrap(), id)
+    }
+
+    fn rows(store: &Store) -> Vec<(&Node, &Instance)> {
+        store
+            .instances()
+            .filter(|(entity, _, _)| entity.to_string() == SEEN)
+            .map(|(_, identity, instance)| (identity, instance))
+            .collect()
+    }
+
+    fn holds(instance: &Instance, source: &str, hash: &str, revision: i64) {
+        assert_eq!(instance.state.to_string(), "Seen", "{instance:?}");
+        assert_eq!(instance.fields["source_id"], text(source), "{instance:?}");
+        assert_eq!(instance.fields["content_hash"], text(hash), "{instance:?}");
+        assert_eq!(
+            instance.fields["revision"],
+            Node::Number(revision.into()),
+            "{instance:?}"
+        );
+    }
+
+    /// One held record and a decoy, put in place by a first run for another source.
+    fn arranged(ir: &EssIr) -> Store {
+        let mut store = Store::default();
+        source(ir, &mut store, "s1");
+        source(ir, &mut store, "s2");
+        let first = run(
+            ir,
+            &mut store,
+            "s2",
+            vec![element("held", "h0", 1), element("decoy", "d0", 1)],
+        );
+        assert_eq!(outcome(&first), "demo.feed.RunSource/ran");
+        store
+    }
+
+    #[test]
+    fn each_entry_updates_held_and_creates_new() {
+        let ir = model(EACH);
+        let mut store = arranged(&ir);
+        let decoy = seen(&store, "decoy").cloned().expect("the decoy is held");
+        let step = run(
+            &ir,
+            &mut store,
+            "s1",
+            vec![element("held", "h1", 2), element("new", "n1", 3)],
+        );
+        assert_eq!(outcome(&step), "demo.feed.RunSource/ran");
+        holds(seen(&store, "held").expect("held"), "s1", "h1", 2);
+        holds(seen(&store, "new").expect("created"), "s1", "n1", 3);
+        assert_eq!(
+            seen(&store, "decoy"),
+            Some(&decoy),
+            "the decoy is unchanged"
+        );
+        assert_eq!(rows(&store).len(), 3, "{:#?}", rows(&store));
+        let label = store
+            .instance(&"demo.feed.Source".parse().unwrap(), "s1")
+            .expect("the subject");
+        assert_eq!(label.fields["label"], text("ran"), "the subject is updated");
+    }
+
+    #[test]
+    fn each_entry_one_row_per_identity() {
+        let ir = model(EACH);
+        let mut store = arranged(&ir);
+        run(&ir, &mut store, "s1", vec![element("held", "h1", 2)]);
+        run(&ir, &mut store, "s2", vec![element("held", "h2", 3)]);
+        let held: Vec<_> = rows(&store)
+            .into_iter()
+            .filter(|(identity, _)| **identity == text("held"))
+            .collect();
+        assert_eq!(held.len(), 1, "{held:#?}");
+        holds(held[0].1, "s2", "h2", 3);
+    }
+
+    #[test]
+    fn each_entry_empty_list_writes_nothing() {
+        let ir = model(EACH);
+        let mut store = arranged(&ir);
+        let before: Vec<_> = rows(&store)
+            .into_iter()
+            .map(|(identity, instance)| (identity.clone(), instance.clone()))
+            .collect();
+        let step = run(&ir, &mut store, "s1", Vec::new());
+        assert_eq!(
+            outcome(&step),
+            "demo.feed.RunSource/ran",
+            "an empty list is accepted"
+        );
+        let after: Vec<_> = rows(&store)
+            .into_iter()
+            .map(|(identity, instance)| (identity.clone(), instance.clone()))
+            .collect();
+        assert_eq!(after, before, "every row reads as arranged");
+    }
+
+    #[test]
+    fn each_entry_refused_run_writes_none() {
+        let ir = model(EACH);
+        let mut store = arranged(&ir);
+        let before = store.clone();
+        let refused = run(
+            &ir,
+            &mut store,
+            "s1",
+            vec![element("fresh", "f1", 1), element("fresh", "f2", 2)],
+        );
+        assert_eq!(outcome(&refused), "demo.feed.RunSource/duplicated");
+        assert!(refused.error.is_some(), "{refused:?}");
+        assert_eq!(store, before, "a refused run writes no element row");
+        let unknown = run(&ir, &mut store, "nobody", vec![element("fresh", "f1", 1)]);
+        assert_eq!(outcome(&unknown), "demo.feed.RunSource/no-such-source");
+        assert!(seen(&store, "fresh").is_none(), "no element row");
+        assert_eq!(store, before);
+    }
+}

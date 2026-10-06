@@ -609,7 +609,9 @@ export function admitDisclosureId(
 ): DisclosureCell {
   if (
     !['ess-conformance/34', 'ess-conformance/35'].includes(version) &&
-    !['ess-conformance/40', 'ess-conformance/41'].includes(version)
+    !['ess-conformance/40', 'ess-conformance/41'].includes(version) &&
+    // Counted event claims (beyond10x/ess#427) are cumulative over the one-time vocabulary.
+    !['ess-conformance/44', 'ess-conformance/45'].includes(version)
   ) {
     return fail();
   }

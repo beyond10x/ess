@@ -575,3 +575,53 @@ fn every_form_the_story_names_is_run_by_at_least_one_example_today() {
         missing.join(", ")
     );
 }
+
+/// The section from `heading` to the next level-two heading, where the page has it.
+fn level_two_section<'p>(page: &'p str, heading: &str) -> Option<&'p str> {
+    let start = page.find(&format!("\n{heading}\n"))? + 1;
+    let body = &page[start + heading.len()..];
+    let end = body.find("\n## ").map_or(body.len(), |at| at + 1);
+    Some(&page[start..start + heading.len() + end])
+}
+
+/// ESS has no pattern predicate (beyond10x/ess#449): the page says how a text shape is stated
+/// without one, and where a pattern the system stores as data belongs.
+#[test]
+fn text_shapes_section_names_the_pattern_boundary() {
+    const NOTE: &str = "docs/design/stored-rules-boundary.md";
+    let page = read(PAGE);
+    let section = level_two_section(&page, "## Text shapes without patterns")
+        .unwrap_or_else(|| panic!("{PAGE} has the heading `## Text shapes without patterns`"));
+    let case_insensitive = page
+        .find("\n## Case-insensitive operators\n")
+        .expect("the page has the case-insensitive operators");
+    assert!(
+        page.find(section).is_some_and(|at| at > case_insensitive),
+        "{PAGE}: the text shapes follow the case-insensitive operators"
+    );
+    for phrase in [
+        "no pattern predicate",
+        "`alphabet:`",
+        "`prefix:`",
+        "`.count`",
+        "`starts_with`",
+        "position-dependent",
+    ] {
+        assert!(
+            section.contains(phrase),
+            "{PAGE}: `## Text shapes without patterns` says {phrase:?}:\n{section}"
+        );
+    }
+    let linked = section.match_indices("](").any(|(at, _)| {
+        section[at + 2..]
+            .split(')')
+            .next()
+            .is_some_and(|target| target.ends_with(NOTE))
+    });
+    assert!(linked, "{PAGE}: the section links {NOTE}:\n{section}");
+    let note = read(NOTE);
+    assert!(
+        note.contains("\n## Patterns held as data\n"),
+        "{NOTE} has the heading `## Patterns held as data`"
+    );
+}

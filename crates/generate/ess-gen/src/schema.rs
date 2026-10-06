@@ -168,7 +168,7 @@ fn type_document(ir: &EssIr, declared: &ResolvedType, mint: &ProvenanceMint) -> 
     // public constructor, so a projection holding a `ResolvedType` cannot ask for its own handle —
     // and everything the type reaches is reachable from its body.
     let mut defs = types::definitions(ir, types::body_leaves(&declared.body));
-    defs.insert(declared.name.to_string(), types::body(declared));
+    defs.insert(declared.name.to_string(), types::body(ir, declared));
 
     let sliced = mint.of_seeds([DeclaredTypeRef::new(declared.name.clone()).into()]);
     let root = Node {

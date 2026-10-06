@@ -2,13 +2,14 @@
 format: aep.planning-md/3
 id: release-plan:adopter-priority-wave-20260911
 kind: release-plan
-status: active
+status: implemented
 title: Integrate adopter priority fixes and release ESS
 relations:
 - serves: vision:O2
-revision: 2
+revision: 3
 transitions:
 - {from: "draft", to: "active", at: "2026-09-11T06:20:32Z", actor: "human:timo", revision: 2, decided_on: {"recorded":{"test_result":4}}, imported: true}
+- {from: "active", to: "implemented", at: "2026-10-06T09:44:38Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"test_result":4}}}
 ---
 ## Authorization and scope
 

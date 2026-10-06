@@ -551,7 +551,11 @@ fn coverage_version(
         || crate::bounded_retry::used_by(suite)
         || crate::grant::used_by(suite)
         || crate::bounded_retry::refused_in(inventory);
-    crate::scenario::SuiteFormat::parse(if crate::synthesis_seeds::used_by(suite) {
+    // Counted event claims (beyond10x/ess#427) are cumulative over every pair below, seeds included.
+    let counted = crate::event_multiplicity::coverage_floor(suite).is_some();
+    crate::scenario::SuiteFormat::parse(if counted {
+        "ess-conformance/45"
+    } else if crate::synthesis_seeds::used_by(suite) {
         "ess-conformance/43"
     } else if crate::expression_format::coverage_floor(suite).is_some() {
         "ess-conformance/41"

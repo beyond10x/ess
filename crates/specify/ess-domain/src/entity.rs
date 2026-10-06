@@ -45,10 +45,10 @@ use std::fmt::Write as _;
 use std::str::FromStr;
 
 use ess_primitives::error::{
-    ConstructRef, ParseError, ValidationCode, ValidationError, ValidationErrors,
+    ConstructKind, ConstructRef, ParseError, ValidationCode, ValidationError, ValidationErrors,
 };
 use ess_primitives::node::Node;
-use ess_primitives::predicate::Predicate;
+use ess_primitives::predicate::{Predicate, PredicateAt, WrittenPredicate};
 
 use crate::command::set_effects;
 use crate::name::{Naming, QualifiedName};
@@ -673,22 +673,78 @@ impl serde::Serialize for Invariant {
     }
 }
 
-/// An invariant, as parsed.
+/// An invariant, as written.
 ///
-/// Well-formedness is settled here — an unparsable predicate is a [`ParseError`] reported by serde
-/// with document context — so that by the time [`EntitySpec::validate`] runs, the only question
-/// left is whether the fields it reads exist. A value object's invariants
+/// Parsed while the document is read, but one that does not parse does not end the document: it
+/// is refused at its declaration's `invariants[<index>]`, beside every other refusal in the file
+/// (beyond10x/ess#448), so that by the time [`EntitySpec::validate`] runs, the only question left
+/// is whether the fields it reads exist. A value object's invariants
 /// ([`crate::types::TypeBody`]) are read through this same type, because one language for
 /// invariants is the point of writing them as predicates at all.
 #[derive(Debug, Clone)]
-pub struct RawInvariant(Invariant);
+pub struct RawInvariant(WrittenPredicate);
+
+impl RawInvariant {
+    /// The invariant, or the refusal its declaration reports `at` its site or path.
+    pub fn read(self, at: impl Into<PredicateAt>) -> Result<Invariant, ValidationError> {
+        let statement = match self.0.node() {
+            Node::Text(text) => Some(text.clone()),
+            _ => None,
+        };
+        let predicate = self.0.read(at)?;
+        Ok(Invariant {
+            statement: statement.unwrap_or_else(|| predicate.to_string()),
+            predicate,
+        })
+    }
+
+    /// The refusal of every invariant in `invariants` that does not parse, the one at an index
+    /// located `at` it, each one's place held by an invariant that reads nothing.
+    ///
+    /// For the assembly, which reports these refusals and then converts the declaration as it
+    /// converts any other: withholding the invariant rather than the declaration keeps every
+    /// reference to the declaration from being refused a second time, and holding its place keeps
+    /// the index every later refusal of a sibling invariant is located by.
+    pub(crate) fn withhold_unparsed(
+        invariants: &mut [RawInvariant],
+        at: impl Fn(usize) -> PredicateAt,
+    ) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
+        for (index, invariant) in invariants.iter_mut().enumerate() {
+            if invariant.0.parsed().is_err() {
+                let withheld = Self(WrittenPredicate::from(Predicate::Always));
+                if let Err(error) = std::mem::replace(invariant, withheld).read(at(index)) {
+                    errors.push(error);
+                }
+            }
+        }
+        errors
+    }
+
+    /// Every invariant in `invariants` that parses, and the refusal of every one that does not,
+    /// the one at an index located `at` it.
+    pub(crate) fn read_all(
+        invariants: Vec<RawInvariant>,
+        at: impl Fn(usize) -> PredicateAt,
+        errors: &mut ValidationErrors,
+    ) -> Vec<Invariant> {
+        invariants
+            .into_iter()
+            .enumerate()
+            .filter_map(|(index, invariant)| match invariant.read(at(index)) {
+                Ok(invariant) => Some(invariant),
+                Err(error) => {
+                    errors.push(error);
+                    None
+                }
+            })
+            .collect()
+    }
+}
 
 impl<'de> serde::Deserialize<'de> for RawInvariant {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let node = Node::deserialize(deserializer)?;
-        Invariant::from_node(&node)
-            .map(Self)
-            .map_err(serde::de::Error::custom)
+        WrittenPredicate::deserialize(deserializer).map(Self)
     }
 }
 
@@ -714,9 +770,20 @@ impl schemars::JsonSchema for RawInvariant {
     }
 }
 
-impl From<RawInvariant> for Invariant {
-    fn from(raw: RawInvariant) -> Self {
-        raw.0
+impl TryFrom<RawInvariant> for Invariant {
+    /// The parser's sentence. [`RawInvariant::read`] locates it at the declaration that wrote it.
+    type Error = String;
+
+    fn try_from(raw: RawInvariant) -> Result<Self, Self::Error> {
+        let statement = match raw.0.node() {
+            Node::Text(text) => Some(text.clone()),
+            _ => None,
+        };
+        let predicate = raw.0.parsed().cloned().map_err(str::to_owned)?;
+        Ok(Self {
+            statement: statement.unwrap_or_else(|| predicate.to_string()),
+            predicate,
+        })
     }
 }
 
@@ -1439,6 +1506,121 @@ pub fn validate_relations(entities: &BTreeMap<QualifiedName, EntitySpec>) -> Val
     errors
 }
 
+/// Every stored field that implies a relation no declaration carries (beyond10x/ess#437): a field
+/// typed exactly, or `Optional<…>` or `List<…>` of, a declared named type that is the identity of
+/// exactly one entity, which no `references` the field's entity declares on it, and no `owns`
+/// another entity declares over it through it, carries.
+///
+/// Advisory: each is a [`ValidationCode::ImpliedRelation`] the compiler reports as a warning, and
+/// nothing here refuses. It is the resolution [`crate::command::related_value::referenced_entity`]
+/// falls back on, inverted: where that settles which entity an identity names by its type alone,
+/// this says the specification never said so. A field typed as a bare primitive, such as `Uuid`,
+/// is never linted — many entities share one, and naming one would be a guess. The identity
+/// itself is not a stored field and is not linted either. An aggregate view groups by fields drawn
+/// from its source entity, so a group key that implies a relation is reported here, on the field.
+///
+/// An entity whose identity an `updates:` rewrites (ess/23, beyond10x/ess#429) is never the target:
+/// a declared relation carrying its identity refuses that re-key, so a warning there could only be
+/// silenced by a refusal (correction round 1 of beyond10x/ess#437).
+pub fn implied_relations(spec: &crate::spec::Specification) -> ValidationErrors {
+    let entities = spec.entities();
+    let rekeyed = rekeyed(spec);
+    let mut advisories = ValidationErrors::new();
+    for holder in entities.values() {
+        for field in &holder.fields {
+            let (named, cardinality) = match &field.type_ref {
+                TypeRef::Named(name) => (name, Cardinality::One),
+                TypeRef::Optional(inner) => match inner.as_ref() {
+                    TypeRef::Named(name) => (name, Cardinality::One),
+                    _ => continue,
+                },
+                TypeRef::List(inner) => match inner.as_ref() {
+                    TypeRef::Named(name) => (name, Cardinality::Many),
+                    _ => continue,
+                },
+                _ => continue,
+            };
+            let mut identified = entities.values().filter(|entity| {
+                matches!(&entity.identity.type_ref, TypeRef::Named(identity) if identity == named)
+            });
+            let (Some(target), None) = (identified.next(), identified.next()) else {
+                continue;
+            };
+            if rekeyed.contains(&target.name) {
+                continue;
+            }
+            let referenced = holder.relations.iter().any(|relation| {
+                relation.kind == RelationKind::References && relation.via == field.name
+            });
+            let owned = entities.values().any(|owner| {
+                owner.relations.iter().any(|relation| {
+                    relation.kind == RelationKind::Owns
+                        && relation.target == holder.name
+                        && relation.via == field.name
+                })
+            });
+            if referenced || owned {
+                continue;
+            }
+            advisories.push(
+                ValidationError::at(
+                    ConstructRef::new(ConstructKind::Entity, holder.name.to_string())
+                        .key("fields")
+                        .named(field.name.as_str()),
+                    ValidationCode::ImpliedRelation,
+                    format!(
+                        "`{}` stores `{}`, typed `{}`, which identifies `{}`, and no relation \
+                         declares that it names a `{}`",
+                        holder.name, field.name, field.type_ref, target.name, target.name
+                    ),
+                )
+                .with_hint(implied_relation_hint(
+                    &holder.name,
+                    &field.name,
+                    &target.name,
+                    cardinality,
+                    field.type_ref == target.identity.type_ref,
+                )),
+            );
+        }
+    }
+    advisories
+}
+
+/// Every entity whose identity an `updates:` branch rewrites (ess/23, beyond10x/ess#429). A
+/// relation carrying such an identity is refused, so no implied relation to one is reported.
+pub(crate) fn rekeyed(spec: &crate::spec::Specification) -> BTreeSet<&QualifiedName> {
+    spec.commands()
+        .values()
+        .flat_map(|command| &command.outcomes)
+        .filter_map(|outcome| crate::command::identity_write::written(spec, outcome))
+        .map(|(entity, _)| &entity.name)
+        .collect()
+}
+
+/// The repair for a relation `holder`'s `field` implies to `target`: the `references` to declare,
+/// and — only where `exact`, a field typed exactly the target's identity, which is the only field
+/// an `owns` is carried by — the target's `owns` as the alternative.
+pub(crate) fn implied_relation_hint(
+    holder: &QualifiedName,
+    field: &str,
+    target: &QualifiedName,
+    cardinality: Cardinality,
+    exact: bool,
+) -> String {
+    let mut hint = format!(
+        "declare a `references` relation on `{holder}`: `{{name: {field}, kind: references, \
+         target: {target}, cardinality: {cardinality}, via: {field}}}`"
+    );
+    if exact {
+        let _ = write!(
+            hint,
+            ", or an `owns` relation on `{target}` carried by `{field}`"
+        );
+    }
+    hint
+}
+
 /// A relation whose target nothing declares.
 fn undeclared_target(
     entities: &BTreeMap<QualifiedName, EntitySpec>,
@@ -1714,22 +1896,46 @@ pub struct RawEntitySpec {
     pub states: RawStateMachine,
 }
 
+/// Where the invariant at `index` of entity `name` is: `entity <name>.invariants[<index>]`.
+fn invariant_site(name: &QualifiedName, index: usize) -> PredicateAt {
+    ConstructRef::new(ConstructKind::Entity, name.to_string())
+        .key("invariants")
+        .index(index)
+        .into()
+}
+
+impl RawEntitySpec {
+    /// The refusal of every invariant this entity writes that does not parse, each one's place
+    /// held (beyond10x/ess#448): see [`RawInvariant::withhold_unparsed`].
+    pub(crate) fn withhold_unparsed_invariants(&mut self) -> ValidationErrors {
+        let name = self.name.clone();
+        RawInvariant::withhold_unparsed(&mut self.invariants, |index| invariant_site(&name, index))
+    }
+}
+
 impl TryFrom<RawEntitySpec> for EntitySpec {
     type Error = ValidationErrors;
 
     fn try_from(raw: RawEntitySpec) -> Result<Self, Self::Error> {
+        let mut unparsed = ValidationErrors::new();
+        let invariants = RawInvariant::read_all(
+            raw.invariants,
+            |index| invariant_site(&raw.name, index),
+            &mut unparsed,
+        );
         let spec = Self {
             name: raw.name,
             identity: raw.identity,
             fields: raw.fields,
             relations: raw.relations,
             states: raw.states.into(),
-            invariants: raw.invariants.into_iter().map(Invariant::from).collect(),
+            invariants,
             naming: raw.naming,
         };
         let location = format!("entity {}", spec.name);
 
-        let mut errors = spec.states.validate_at(&location);
+        let mut errors = unparsed;
+        errors.extend(spec.states.validate_at(&location));
 
         // A duplicate field is document-local, and it has to be caught here: the second declaration
         // would be invisible to every later lookup, so an invariant reading it would be checked

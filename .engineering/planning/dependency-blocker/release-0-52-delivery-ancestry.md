@@ -2,12 +2,14 @@
 format: aep.planning-md/3
 id: dependency-blocker:release-0-52-delivery-ancestry
 kind: dependency-blocker
-status: open
+status: cleared
 title: Gates refuses GitHub update-branch ancestry in the release candidate
 relations:
 - blocks: task:release-0-52-0-20261003
 withholds: verification
-revision: 3
+revision: 4
+transitions:
+- {from: "open", to: "cleared", at: "2026-10-06T09:44:39Z", actor: "human:timo", revision: 4}
 ---
 ## Observed refusal
 
