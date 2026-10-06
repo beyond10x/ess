@@ -2,6 +2,98 @@
 
 ## [Unreleased]
 
+### Added
+
+- Source format `ess/23`. `ess specify formats [--since ess/N] [--format text|yaml|json]` lists
+  every format the build implements, what each added and the release that introduced it, from
+  the same `FORMAT_HISTORY` table that generates the `ess/` table of the spec-versions page; the
+  `unsupported_format_version` hint names the command (beyond10x/ess#460).
+- From `ess/23`, an `updates:` whose `sets:` writes the entity's identity re-keys the record: the
+  row comes to rest under the identity written, every other field is carried over and the old
+  identity names nothing. The command declares its collision refusal through `when_related`; the
+  write is refused by name beside `compensates:`, in a create-or-update pair, on a
+  relation-carried entity and on a struct identity. Generated Rust puts the renamed row before
+  deleting the old one; Go, Web and Clap refuse it with `MissingRepresentation` and Entity
+  Runtime with `IdentityChangeUnsupported` (beyond10x/ess#429).
+- From `ess/23`, `{subject: state}` reads the lifecycle state the record held before the outcome,
+  in error payloads, event payloads and `sets:`; refusal scenarios that arrange a state compare it
+  (beyond10x/ess#458).
+- From `ess/23`, `deletes:` takes `instances:`, removing every row a filter selects, and an
+  `affects:` entry may declare `deletes: <Entity>` over an entity of the outcome's own domain,
+  also beside a `deletes:` subject. A deleting entry over another domain's entity is refused,
+  naming the one-binding-per-receiving-domain idiom (beyond10x/ess#452).
+- From `ess/23`, an enum may declare typed variant attributes; guards, invariants and view filters
+  read `<fact>.<attribute>`, lowered to variant membership with the evaluator's three-valued
+  answers. Projections carry `x-ess-attributes`, a docs table and Rust, Go and TypeScript
+  accessors that answer wire spellings; `ess verify diff` reports an attribute change as
+  unclassified (beyond10x/ess#450).
+- A binding `mapping:` may fill a `Boolean`, `Integer` or `Decimal` input with a constant, typed by
+  the `sets:` rule; suites, the interpreter, AsyncAPI (a `Decimal` as its decimal string), docs
+  and generated Rust and Go adapters carry the typed value (beyond10x/ess#445).
+- Suite formats `ess-conformance/44` and `/45`: an act that claims one event N times needs N
+  occurrences, and the claims are matched to occurrences as a set, identically in the Rust, Go
+  and TypeScript runners, so the order they are written in never decides the verdict
+  (beyond10x/ess#427).
+- `ess generate --check` regenerates in memory and compares with `--out`, writing nothing; it
+  exits 1 naming each edited, missing or no-longer-generated file and a missing or stale
+  `.ess-output` record, so passing means plain `ess generate` changes nothing (beyond10x/ess#435).
+- `ess specify validate --format json|yaml` reports `completeness`: constructs synthesis gives no
+  scenario, scenarios outside the new `--component`, unanswered questions and their counts. Only
+  json and yaml run synthesis to answer; text output and the exit status are unchanged
+  (beyond10x/ess#434).
+- `ess specify validate` warns `ESS-ENTITY-019` for a stored field typed as one entity's named
+  identity that no relation carries, and `ESS-COMMAND-019` for a `when_related` row settled by
+  that type alone; warnings go to stderr and JSON, and the hint offers `owns` only for a field
+  typed exactly as the identity (beyond10x/ess#437).
+- Aggregate synthesis witnesses a list parameter over a group key and a window the caller
+  resolved into instants, with rows on and either side of each bound that only the bound refutes;
+  OpenAPI states a `List` view parameter as `style: form`, `explode: true` (beyond10x/ess#438,
+  beyond10x/ess#439).
+- Synthesis sends an input refusal guarded by the held state in the unknown-instance and
+  wrong-state scenarios, sends a plain input refusal for an unknown identity beside stored-row
+  branches, and sends the overlap of two input refusals requiring the first declared
+  (beyond10x/ess#454, beyond10x/ess#455).
+- From `ess/23`, a refusal selected by `when_subject: {predicate: …}` asserts the whole record
+  unchanged, and a predicate on `state` is witnessed in each state it claims; the ESS-COMMAND-004
+  hint names the state-predicate form (beyond10x/ess#461).
+- Guides and design notes for requests answered with an existing idiom: adoption modes and which
+  generated files to commit (beyond10x/ess#436, beyond10x/ess#435), read-API view idioms for
+  derived values, the latest correlated row, per-key totals, units, order-dependent values and
+  single-source views (beyond10x/ess#441, #442, #443, #444, #446, #447), which branch answers
+  and a record unchanged in several states (beyond10x/ess#454, #456), rules stored as data
+  (beyond10x/ess#451), text shapes without patterns (beyond10x/ess#449), a replica read
+  (beyond10x/ess#432), what a specification promises when commands race (beyond10x/ess#453), a
+  view field derived from the lifecycle state (beyond10x/ess#457), reading stored state from the
+  command a binding invokes (beyond10x/ess#440), and generated case-record domains
+  (beyond10x/ess#426).
+
+### Changed
+
+- `ess specify validate` reports every predicate that does not parse, each at its declaration
+  with a line, beside the file's other refusals; a declaration with an unparsable predicate is
+  withheld whole. New validation names `unparsable_predicate` (`ESS-SPEC-012`) and
+  `null_comparison` (`ESS-SPEC-017`) keep the `SPEC` family (beyond10x/ess#448).
+- A membership operand naming a parameter or an input (`queue_id: {in: param.queues}`) is refused
+  as `type_mismatch` in every format; it was read as literal text. The hint names `exists` for a
+  list and `==` for a single value (beyond10x/ess#438).
+- A refusal of an existing generated output names the file, relative to the output root, and the
+  `ess` release that refused it (beyond10x/ess#433).
+- Refusals name the repair: a Boolean-looking enum variant says "quote it", a Boolean literal
+  over a variant names the variant, and a coverage proof that gives up says why
+  (beyond10x/ess#426).
+- An `affects:` entry with neither `where:` nor `each:` is refused as `missing_declaration`, and
+  the published schema no longer requires `where` on an entry.
+
+### Fixed
+
+- Synthesis binds a view parameter from the field its filter compares it with, including a
+  differently named parameter and a member of a literal struct identity (beyond10x/ess#428).
+- The caller-swapped run draws a fresh value for every identity it sends, in every member of a
+  struct identity and for an instance a command addresses without creating it, and every copy
+  follows (beyond10x/ess#430, beyond10x/ess#465).
+- Below `ess/23`, bulk-removal refusals keep their 0.53.0 wording and no longer cascade into
+  "declares no outcomes".
+
 ## [0.53.0] — 2026-10-05
 
 ### Added
