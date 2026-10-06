@@ -1561,14 +1561,17 @@ fn fragment(node: &Node) -> Fragment {
     under_components(node, TYPE_KEY)
 }
 
-/// A binding constant as the JSON value the invoked command receives: the scalar over a
-/// `Boolean`, `Integer` or `Decimal` input, the text otherwise (beyond10x/ess#445).
+/// A binding constant as the JSON value the invoked command receives (beyond10x/ess#445): a
+/// boolean over a `Boolean` input, a number over an `Integer`, and the text otherwise — a
+/// `Decimal` as the decimal string its own schema types it as.
 fn literal_value(ir: &EssIr, mapping: &ResolvedMapping, value: &str) -> serde_json::Value {
     let text = || serde_json::Value::String(value.to_owned());
     match ir.literal_primitive(&mapping.target_type) {
         Some(ess_domain::types::Primitive::Boolean) => serde_json::Value::Bool(value == "true"),
-        Some(_) => serde_json::from_str::<serde_json::Number>(value)
-            .map_or_else(|_| text(), serde_json::Value::Number),
-        None => text(),
+        Some(ess_domain::types::Primitive::Integer) => {
+            serde_json::from_str::<serde_json::Number>(value)
+                .map_or_else(|_| text(), serde_json::Value::Number)
+        }
+        Some(_) | None => text(),
     }
 }

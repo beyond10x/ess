@@ -1,6 +1,7 @@
 //! A binding constant over a `Boolean`, `Integer` or `Decimal` input (beyond10x/ess#445) is
-//! projected typed: the `AsyncAPI` binding extension carries `true`, `3` and `0.5` as JSON scalars,
-//! and the generated documentation says the compiler checked the value against the input.
+//! projected typed: the `AsyncAPI` binding extension carries `true` and `3` as JSON scalars and
+//! `0.5` as the decimal string its input is typed as, and the generated documentation says the
+//! compiler checked the value against the input.
 
 use ess_compiler::ir::EssIr;
 use ess_compiler::resolve::compile;
@@ -119,7 +120,7 @@ fn binding_literal_asyncapi_and_docs_read_the_constant_typed() {
         found,
         vec![
             ("is_bridged".to_owned(), serde_json::json!(true)),
-            ("share".to_owned(), serde_json::json!(0.5)),
+            ("share".to_owned(), serde_json::json!("0.5")),
             ("template".to_owned(), serde_json::json!("invoice-created")),
             ("weight".to_owned(), serde_json::json!(3)),
         ]

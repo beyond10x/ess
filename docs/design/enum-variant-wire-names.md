@@ -128,12 +128,19 @@ The object form gains `attributes:`, a typed value per attribute the enum declar
   variants that satisfy it where each authored predicate is resolved
   (`ess-domain/src/expression/attributes.rs`): a comparison with a literal, `any_of`, `none_of`,
   `defined(…)` and truthiness become `any_of` over variants; a comparison with another fact
-  expands to one branch per variant within 128 predicate nodes. What cannot be lowered is refused
-  by name. Reading an attribute as a value (`input.plan.max_seats` in `sets:`) is refused in this
+  expands to one branch per variant within 128 predicate nodes. Which variants a read holds for
+  is the predicate evaluator's own answer for each variant's value, truthiness included; a variant
+  that leaves an `Optional` attribute unfilled is `Unknown` and in neither a read nor its
+  negation, which is pushed to the reads by De Morgan. A literal that is no value of the attribute
+  (another scalar, a word naming no variant of an enum-typed attribute) and an ordering over a
+  `Boolean` are refused by name, as over a plain fact; what else cannot be lowered is refused by
+  name too. Reading an attribute as a value (`input.plan.max_seats` in `sets:`) is refused in this
   cut.
 - **Projections.** `x-ess-attributes` on the enum's JSON Schema and OpenAPI node (one entry per
-  attribute: name, type, kind, and each value by wire spelling), a table in the generated
-  documentation, and one accessor per attribute in the types-only Rust, Go and TypeScript outputs.
+  attribute: name, type, kind, and each value by the variant's wire spelling; a value of an
+  enum-typed attribute is that enum's wire spelling, as its own schema lists it), a table in the
+  generated documentation, and one accessor per attribute in the types-only Rust, Go and TypeScript
+  outputs.
 - **Revision comparison.** No released delta format has a case for an attribute, so an attribute
   declared, removed or revalued stays in the residual and is `unclassified-changed`; a guard whose
   lowered membership moved is its own `outcome-condition-changed`.

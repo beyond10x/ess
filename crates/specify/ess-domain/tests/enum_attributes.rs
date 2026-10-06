@@ -450,3 +450,110 @@ const DEFAULTED: &str = "        payload:
         payload:
           demo.rules.RuleAdded: {operator: input.operator}
 ";
+
+/// Every lowered form agrees with the evaluator, variant by variant, and so does its negation: a
+/// read holds for a variant exactly where the evaluator holds the written predicate for that
+/// variant's values — `Unknown` where an `Optional` attribute is unfilled, never taken as `False`
+/// (adversary pass 1 on W3-2, findings 1 and 3, and the rest of their class).
+#[test]
+fn enum_attribute_reads_agree_with_the_evaluator_in_every_form() {
+    use ess_domain::expression::lexical::LexicalPredicate;
+    use ess_primitives::facts::{FactPath, FactStore};
+    use ess_primitives::predicate::Truth;
+
+    let values = [
+        ("GreaterThan", Some(2), true, ">"),
+        ("LessThan", Some(2), true, "<"),
+        ("Contains", None, false, "contains"),
+    ];
+    let forms = [
+        "operator.arity == 2",
+        "operator.arity != 2",
+        "operator.arity > 1",
+        "defined(operator.arity)",
+        "operator.takes_number",
+        "operator.label",
+        "{operator.arity: {any_of: [2]}}",
+        "{operator.arity: {none_of: [2]}}",
+        "{all: [operator.takes_number == true, operator.arity == 2]}",
+        "{any: [operator.takes_number == false, operator.arity != 2]}",
+    ];
+    for form in forms {
+        let negated = if form.starts_with('{') {
+            format!("{{not: {form}}}")
+        } else {
+            format!("{{not: '{form}'}}")
+        };
+        for written in [form.to_owned(), negated] {
+            let node: ess_primitives::node::Node =
+                serde_yaml::from_str(&written).unwrap_or_else(|error| panic!("{written}: {error}"));
+            let original = LexicalPredicate::from_node(&node)
+                .unwrap_or_else(|error| panic!("{written}: {error}"))
+                .literal();
+            let document = model("ess/23", OPERATOR, &written, "operator.label == '>'").replacen(
+                DEFAULTLESS,
+                DEFAULTED,
+                1,
+            );
+            let spec =
+                assemble(&document).unwrap_or_else(|errors| panic!("{written}: {errors:#?}"));
+            let lowered = guard(&spec, "numeric");
+            for (variant, arity, takes_number, label) in values {
+                let mut attributes = FactStore::new();
+                if let Some(arity) = arity {
+                    attributes.set(
+                        FactPath::from_segments(["operator", "arity"]),
+                        FactValue::Number(i64::from(arity).into()),
+                    );
+                }
+                attributes.set(
+                    FactPath::from_segments(["operator", "takes_number"]),
+                    FactValue::Bool(takes_number),
+                );
+                attributes.set(
+                    FactPath::from_segments(["operator", "label"]),
+                    FactValue::Text(label.to_owned()),
+                );
+                let mut member = FactStore::new();
+                member.set(
+                    FactPath::from_segments(["operator"]),
+                    FactValue::Text(variant.to_owned()),
+                );
+                assert_eq!(
+                    original.evaluate(&attributes) == Truth::True,
+                    lowered.evaluate(&member) == Truth::True,
+                    "`{written}` for `{variant}`: lowered to {lowered:?}"
+                );
+            }
+        }
+    }
+}
+
+/// A literal that is no value of the attribute is refused by name, never lowered to `never`, in
+/// every form that compares one (adversary pass 1 on W3-2, finding 2, and its class).
+#[test]
+fn enum_attribute_literal_of_another_type_is_refused_by_name() {
+    for (written, named) in [
+        ("operator.takes_number == 3", "`3`"),
+        ("operator.arity == true", "`true`"),
+        ("operator.arity >= true", "`true`"),
+        ("{operator.arity: {any_of: [2, true]}}", "`true`"),
+        ("{not: 'operator.takes_number == 3'}", "`3`"),
+        ("operator.takes_number >= false", "never ordered"),
+    ] {
+        let document = model("ess/23", OPERATOR, written, "operator.label == '>'").replacen(
+            DEFAULTLESS,
+            DEFAULTED,
+            1,
+        );
+        let errors = refused(&document);
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.code == ValidationCode::TypeMismatch
+                    && error.message.contains(named)
+                    && error.message.contains("demo.rules.Operator")),
+            "`{written}`: {errors:#?}"
+        );
+    }
+}

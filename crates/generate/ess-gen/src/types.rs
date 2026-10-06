@@ -1293,6 +1293,30 @@ pub(crate) fn attribute_kind(ir: &EssIr, type_ref: &ess_domain::types::TypeRef) 
     "string"
 }
 
+/// The wire spelling of the variant `value` names, where `type_ref` is an enum through `Optional`
+/// and newtypes; `None` for any other type.
+fn enum_wire(ir: &EssIr, type_ref: &ess_domain::types::TypeRef, value: &str) -> Option<String> {
+    use ess_domain::types::TypeRef;
+    let mut current = type_ref.clone();
+    for _ in 0..=ess_domain::types::MAX_TYPE_DEPTH {
+        current = match current {
+            TypeRef::Optional(inner) => *inner,
+            TypeRef::Named(name) => match &ir.types().get(&name)?.body {
+                ResolvedBody::Newtype { of, .. } => of.written(),
+                ResolvedBody::Enum { variants } => {
+                    return variants
+                        .iter()
+                        .find(|variant| variant.name() == value)
+                        .map(|variant| variant.wire().to_owned());
+                }
+                _ => return None,
+            },
+            _ => return None,
+        };
+    }
+    None
+}
+
 /// The `x-ess-attributes` annotation of an enum's variants: empty where it declares none.
 fn attributes(ir: &EssIr, variants: &[ess_domain::types::EnumVariant]) -> Vec<serde_json::Value> {
     let Some(first) = variants.first() else {
@@ -1311,7 +1335,12 @@ fn attributes(ir: &EssIr, variants: &[ess_domain::types::EnumVariant]) -> Vec<se
                         "boolean" => serde_json::Value::Bool(value == "true"),
                         "integer" => serde_json::from_str::<serde_json::Number>(value)
                             .map_or_else(|_| value.clone().into(), serde_json::Value::Number),
-                        _ => serde_json::Value::String(value.clone()),
+                        // A value of an enum is that variant's wire spelling, as the enum's own
+                        // schema lists it.
+                        _ => serde_json::Value::String(
+                            enum_wire(ir, &declared.type_ref, value)
+                                .unwrap_or_else(|| value.clone()),
+                        ),
                     };
                     Some((variant.wire().to_owned(), value))
                 })

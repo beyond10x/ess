@@ -94,6 +94,9 @@ pub struct EnumAttributes {
     pub declared: Vec<(String, ScalarKind, String)>,
     /// Each variant, in declaration order, with the value it gives each attribute it fills.
     pub variants: Vec<(String, std::collections::BTreeMap<String, FactValue>)>,
+    /// For each attribute whose type is an enum, that enum's variants: the only words a predicate
+    /// may compare it with.
+    pub words: std::collections::BTreeMap<String, Vec<String>>,
 }
 
 impl EnumAttributes {
@@ -581,6 +584,14 @@ impl TypeEnvironment for DomainEnvironment<'_> {
                         })
                         .collect();
                     (variant.name().to_owned(), values)
+                })
+                .collect(),
+            words: first
+                .attributes
+                .iter()
+                .filter_map(|attribute| {
+                    attribute_words(self.registry, &attribute.type_ref)
+                        .map(|words| (attribute.name.clone(), words))
                 })
                 .collect(),
         })
@@ -3244,6 +3255,31 @@ fn attribute_scalar(registry: &TypeRegistry, type_ref: &TypeRef) -> ScalarKind {
         }
     }
     ScalarKind::Text
+}
+
+/// The variants of the enum an attribute of type `type_ref` is, through `Optional` and newtypes;
+/// `None` for any other type (`ess/23`, beyond10x/ess#450).
+fn attribute_words(registry: &TypeRegistry, type_ref: &TypeRef) -> Option<Vec<String>> {
+    let mut current = type_ref;
+    for _ in 0..=crate::types::MAX_TYPE_DEPTH {
+        match current {
+            TypeRef::Optional(inner) => current = inner,
+            TypeRef::Named(name) => match &registry.get(name)?.body {
+                TypeBody::Newtype { of, .. } => current = of,
+                TypeBody::Enum { variants } => {
+                    return Some(
+                        variants
+                            .iter()
+                            .map(|variant| variant.name().to_owned())
+                            .collect(),
+                    )
+                }
+                _ => return None,
+            },
+            _ => return None,
+        }
+    }
+    None
 }
 
 /// The refusal of an enum attribute a predicate reads where no comparison lowered it to
