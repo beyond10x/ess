@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-464
 kind: story
-status: draft
+status: active
 title: 'synthesize: external outcome witness triggers an earlier when_subject guard (Loom RevalidateSelection)'
 tags:
 - ess-0.54.0
@@ -31,7 +31,10 @@ scope:
   path: crates/verify/ess-conformance/tests/guarded_external.rs
 - confidence: cited
   path: docs/design/cross-record-and-stored-field-guards.md
-revision: 3
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-06T01:58:04Z", actor: "human:timo", revision: 4}
+- {from: "proposed", to: "active", at: "2026-10-06T01:58:05Z", actor: "human:timo", revision: 5}
 ---
 ## Outcome
 Resolve beyond10x/ess#464: synthesize: an external outcome's witness triggers an earlier when_subject guard.
