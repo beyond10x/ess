@@ -224,7 +224,7 @@ pub const FORMAT_HISTORY: &[FormatHistoryEntry] = &[
     },
     FormatHistoryEntry {
         major: 23,
-        release: None,
+        release: Some("0.54.0"),
         added: &[
             "An `updates:` whose `sets:` writes the entity's identity re-keys the record: the row read under `instance:` comes to rest under the written identity, every field `sets:` does not name carried over, and the old identity names nothing (beyond10x/ess#429).",
             "The command must declare its collision answer, a refusal guarded by `when_related: {entity: <the entity>, where: <identity> == input.<field>, exists: true}` over the input the identity is written from, or validate refuses the outcome as `missing_declaration`; the identity write is refused by name beside `compensates:`, in a create-or-update pair, on an entity a declared relation carries and on a struct identity, and below `ess/23` it is refused naming `ess/23`.",

@@ -9,6 +9,20 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.54.0 — 2026-10-06
+
+### Counted event claims, generate --check and validation completeness
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.54.0)
+
+Suites `ess-conformance/44` and `/45` match repeated event claims as a set in the Rust, Go and TypeScript runners. `ess generate --check` reports drift without writing, `ess specify validate` reports completeness, `ess specify formats` lists every format, and a CLI binding takes a trailing argument list. A membership operand naming a parameter is refused.
+
+### Source format ess/23, re-keyed records, bulk deletes and enum attributes
+
+capability · significant impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.54.0)
+
+`ess/23` lets an update re-key its record, a value read the state held before the outcome, `deletes:` remove every row a filter selects, an `affects:` entry write one record per list element and an enum declare typed variant attributes. Synthesis witnesses state predicates, struct-identity selectors and row sets beside an addressed record.
+
 ## 0.53.0 — 2026-10-05
 
 ### Experimental protocol specifications and instant-ordered timestamps

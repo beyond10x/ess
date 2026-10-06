@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/counted-claims-and-checks-0.54.0
+repository: ess
+publishedAt: 2026-10-06T00:00:00Z
+title: Counted event claims, generate --check and validation completeness
+summary: >-
+  Suites `ess-conformance/44` and `/45` match repeated event claims as a set in the Rust, Go and
+  TypeScript runners. `ess generate --check` reports drift without writing, `ess specify
+  validate` reports completeness, `ess specify formats` lists every format, and a CLI binding
+  takes a trailing argument list. A membership operand naming a parameter is refused.
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.54.0
+  version: 0.54.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]
