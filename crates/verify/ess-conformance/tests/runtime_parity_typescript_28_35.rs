@@ -275,11 +275,19 @@ fn ordinary_status_suite() -> AdmittedSuite {
     AdmittedSuite::from_json(&value.to_string()).unwrap()
 }
 
+/// The package is built once per test process. nextest runs every test in a process of its own, so
+/// a directory shared between processes is rewritten and recompiled under another test's `node`
+/// (main's 0.53.0 run: `./predicate.js` "does not provide an export named 'Operand'"). The
+/// process id keeps each build to the process that reads it; the directory is emptied first
+/// because an id can recur in a later run.
 fn runtime_package() -> &'static PathBuf {
     static PACKAGE: OnceLock<PathBuf> = OnceLock::new();
     PACKAGE.get_or_init(|| {
-        let directory = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../target/backlog-input/ts-prerequisite-runtime");
+        let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
+            "../../../target/backlog-input/ts-prerequisite-runtime-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).unwrap();
         for artifact in ess_conformance::ts::emit(ordinary_status_suite().suite()).unwrap() {
             let path = directory.join(artifact.path);

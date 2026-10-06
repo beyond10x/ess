@@ -366,7 +366,7 @@ incremental = false
     destination
 }
 
-#[ignore = "browser-product lane: `task test-browser-product` (slower than a 30-minute CI shard)"]
+#[ignore = "browser-product lane: `task test-browser-product` (slower than a CI test shard)"]
 #[test]
 fn emitted_consumer_module_runs_independent_response_target_in_actual_firefox() {
     let _lease = BUILD_LEASE.lock().unwrap();
@@ -442,7 +442,7 @@ fn emitted_consumer_module_runs_independent_response_target_in_actual_firefox() 
     }
 }
 
-#[ignore = "browser-product lane: `task test-browser-product` (slower than a 30-minute CI shard)"]
+#[ignore = "browser-product lane: `task test-browser-product` (slower than a CI test shard)"]
 #[test]
 fn protected_actual_values_never_enter_browser_reports_dom_or_messages() {
     const PROTECTED_MODEL: &str =
@@ -693,7 +693,7 @@ fn native_order<const MODE: u8>(
     let handle = product.load(&manifest, blobs).unwrap();
     product.run(handle, [MODE + 1; 16], 0).unwrap()
 }
-#[ignore = "browser-product lane: `task test-browser-product` (slower than a 30-minute CI shard)"]
+#[ignore = "browser-product lane: `task test-browser-product` (slower than a CI test shard)"]
 #[test]
 fn full_generated_order_service_exercises_views_grants_lifecycle_and_real_binding_faults() {
     let _lease = BUILD_LEASE.lock().unwrap();
@@ -766,7 +766,7 @@ fn full_generated_order_service_exercises_views_grants_lifecycle_and_real_bindin
     }
 }
 
-#[ignore = "browser-product lane: `task test-browser-product` (slower than a 30-minute CI shard)"]
+#[ignore = "browser-product lane: `task test-browser-product` (slower than a CI test shard)"]
 #[test]
 fn generated_nested_observations_compare_independent_response_and_event_in_firefox() {
     const NESTED: &str = r"format: ess/14
@@ -930,7 +930,7 @@ commands:
     source
 }
 
-#[ignore = "browser-product lane: `task test-browser-product` (slower than a 30-minute CI shard)"]
+#[ignore = "browser-product lane: `task test-browser-product` (slower than a CI test shard)"]
 #[test]
 fn optional_presence_and_nested_ordered_values_execute_in_both_browser_routes() {
     let _lease = BUILD_LEASE.lock().unwrap();
@@ -1038,7 +1038,7 @@ fn run_frame(id: u32, handle: u32, nonce: u8) -> Vec<u8> {
     frame
 }
 
-#[ignore = "browser-product lane: `task test-browser-product` (slower than a 30-minute CI shard)"]
+#[ignore = "browser-product lane: `task test-browser-product` (slower than a CI test shard)"]
 #[test]
 fn completed_output_is_cleared_when_coverage_selection_or_runtime_changes() {
     let _lease = BUILD_LEASE.lock().unwrap();
@@ -1147,7 +1147,7 @@ fn mutate_original(label: &str, bytes: &mut Vec<u8>) {
     }
 }
 
-#[ignore = "browser-product lane: `task test-browser-product` (slower than a 30-minute CI shard)"]
+#[ignore = "browser-product lane: `task test-browser-product` (slower than a CI test shard)"]
 #[test]
 fn actual_emitted_rust_reader_refuses_original_byte_mutations_before_factories() {
     use ess_conformance::web_execution::{abi::load_request, bundle::hash};
@@ -1365,7 +1365,7 @@ fn stateful_browser_matrix(
     }
 }
 
-#[ignore = "browser-product lane: `task test-browser-product` (slower than a 30-minute CI shard)"]
+#[ignore = "browser-product lane: `task test-browser-product` (slower than a CI test shard)"]
 #[test]
 fn retained_actual_invocation_and_result_replay_execute_in_both_browser_routes() {
     const SOURCE: &str =
@@ -1450,7 +1450,7 @@ assert:
     contains: {id: {$instance: second}}
 ";
 
-#[ignore = "browser-product lane: `task test-browser-product` (slower than a 30-minute CI shard)"]
+#[ignore = "browser-product lane: `task test-browser-product` (slower than a CI test shard)"]
 #[test]
 fn response_owned_creation_identities_remain_distinct_and_correspond_in_both_browser_routes() {
     const GENERATED: &str = "demo.response.Create/outcome/created";
@@ -1498,7 +1498,7 @@ fn response_owned_creation_identities_remain_distinct_and_correspond_in_both_bro
     }
 }
 
-#[ignore = "browser-product lane: `task test-browser-product` (slower than a 30-minute CI shard)"]
+#[ignore = "browser-product lane: `task test-browser-product` (slower than a CI test shard)"]
 #[test]
 fn periodic_host_executes_real_ticks_reads_queue_and_stop_through_emitted_module() {
     const SOURCE: &str = include_str!("../../../specify/ess-domain/tests/fixtures/periodic.yaml");
@@ -1639,7 +1639,7 @@ fn run_capturing_worker_messages(
 /// through `Product`, then in actual Firefox through the exact emitted host. Status, all five
 /// counts, the fixed rule code and the value-free callback trace equal the manifest; browser and
 /// native report/run bytes are identical; no issued plaintext reaches any browser channel.
-#[ignore = "browser-product lane: `task test-browser-product` (slower than a 30-minute CI shard)"]
+#[ignore = "browser-product lane: `task test-browser-product` (slower than a CI test shard)"]
 #[test]
 fn shared_one_time_observer_manifest_executes_through_the_emitted_browser_product() {
     use ess_conformance::web_execution::bundle::{Execution, SourceDocument};
@@ -1930,7 +1930,7 @@ components:
 /// The installation receives the actual actor and caller of every command, keeps its own note
 /// rows, decides `forbidden` from the stored agent and refuses actors its grants do not admit.
 /// Each fault fails exactly its deciding scenarios, natively and in Firefox, in both routes.
-#[ignore = "browser-product lane: `task test-browser-product` (slower than a 30-minute CI shard)"]
+#[ignore = "browser-product lane: `task test-browser-product` (slower than a CI test shard)"]
 #[test]
 fn caller_grants_and_stored_agent_decide_outcomes_through_the_installation_in_both_routes() {
     const CREATED: &str = "demo.notes.CreateNote/outcome/created";
@@ -2068,7 +2068,7 @@ assert:
     counts: {at_least: 1, at_most: 1}
 ";
 
-#[ignore = "browser-product lane: `task test-browser-product` (slower than a 30-minute CI shard)"]
+#[ignore = "browser-product lane: `task test-browser-product` (slower than a CI test shard)"]
 #[test]
 fn entity_setup_rows_and_lookalike_typed_identities_execute_through_the_installation() {
     const SCENARIO: &str = "records.ids/authored/lookalike-identities";
@@ -2110,7 +2110,7 @@ const JOBS: &str =
 /// `now_offset` from the installation's wall clock and the target decides `now - 60s` against the
 /// same authority. A target deciding against its own historical epoch, or one running an hour
 /// ahead, fails exactly the side of the boundary its clock misplaces.
-#[ignore = "browser-product lane: `task test-browser-product` (slower than a 30-minute CI shard)"]
+#[ignore = "browser-product lane: `task test-browser-product` (slower than a CI test shard)"]
 #[test]
 fn installation_clock_shared_with_the_runner_decides_now_guards_in_both_routes() {
     const REFUSAL: &str = "demo.jobs.ScheduleJob/outcome/start-in-past";
@@ -2158,7 +2158,7 @@ fn run_receipts(browser: &mut browser::Browser, context: &str, runs: usize) -> s
 /// parallel. A durable store isolating by that namespace stays green on every one of them; the
 /// same store isolating by scenario name fails the repeated run in its own worker.
 #[allow(clippy::too_many_lines)]
-#[ignore = "browser-product lane: `task test-browser-product` (slower than a 30-minute CI shard)"]
+#[ignore = "browser-product lane: `task test-browser-product` (slower than a CI test shard)"]
 #[test]
 fn fresh_namespaces_isolate_repeated_reconnected_fresh_and_parallel_page_runs() {
     const SCENARIO: &str = "demo.response/authored/distinct-response-owned-identities";
@@ -2293,7 +2293,7 @@ fn fresh_namespaces_isolate_repeated_reconnected_fresh_and_parallel_page_runs() 
 /// Fixtures resolve after admission, inside the run namespace and before their scenario opens,
 /// through the same installation (design section 7). A provider resolving them under a shared
 /// namespace hands the service a principal it does not own, which the session event exposes.
-#[ignore = "browser-product lane: `task test-browser-product` (slower than a 30-minute CI shard)"]
+#[ignore = "browser-product lane: `task test-browser-product` (slower than a CI test shard)"]
 #[test]
 fn fixtures_resolve_in_the_run_namespace_before_their_scenario_opens() {
     const MODEL: &str =
@@ -2319,7 +2319,7 @@ fn fixtures_resolve_in_the_run_namespace_before_their_scenario_opens() {
 /// answers while a run is busy; a run completing after navigation moved on is not attached to the
 /// new focus; Abort terminates the worker as aborted/cleanup-unconfirmed with no report and no
 /// later worker message; a reconnected worker runs again under a fresh namespace.
-#[ignore = "browser-product lane: `task test-browser-product` (slower than a 30-minute CI shard)"]
+#[ignore = "browser-product lane: `task test-browser-product` (slower than a CI test shard)"]
 #[test]
 fn worker_runs_keep_navigation_live_detach_stale_completion_and_abort_without_a_report() {
     let _lease = BUILD_LEASE.lock().unwrap();
@@ -2412,7 +2412,7 @@ fn worker_runs_keep_navigation_live_detach_stale_completion_and_abort_without_a_
 /// parent it was narrowed from, validates only against its own admitted bytes, and the receipt
 /// and the page name the complete retained lineage, nearest first. An ordinary run claims none.
 #[allow(clippy::too_many_lines)]
-#[ignore = "browser-product lane: `task test-browser-product` (slower than a 30-minute CI shard)"]
+#[ignore = "browser-product lane: `task test-browser-product` (slower than a CI test shard)"]
 #[test]
 fn three_generation_coverage_reports_claim_only_the_parents_they_have_in_firefox() {
     use ess_conformance::{coverage::AdmittedInput, CountReport};
@@ -2572,7 +2572,7 @@ timeline:
 /// report carries exactly the inventory the native CLI declares for the same inputs
 /// (`author --suite-format 5`): knowledge, selection, counts and the refused source.
 #[allow(clippy::too_many_lines)]
-#[ignore = "browser-product lane: `task test-browser-product` (slower than a 30-minute CI shard)"]
+#[ignore = "browser-product lane: `task test-browser-product` (slower than a CI test shard)"]
 #[test]
 fn coverage_route_reports_the_native_cli_inventory_exactly_in_firefox() {
     let _lease = BUILD_LEASE.lock().unwrap();
@@ -2687,7 +2687,7 @@ fn coverage_route_reports_the_native_cli_inventory_exactly_in_firefox() {
 
 /// Section 9: `--suite-format` keeps its spelling and selects the product kind; the page states
 /// the version of the suite actually emitted, read from the suite, never the option label.
-#[ignore = "browser-product lane: `task test-browser-product` (slower than a 30-minute CI shard)"]
+#[ignore = "browser-product lane: `task test-browser-product` (slower than a CI test shard)"]
 #[test]
 fn suite_format_selects_the_product_kind_and_the_page_shows_the_emitted_suite_version() {
     let mut versions = Vec::new();
@@ -3123,7 +3123,7 @@ fn section_ten_validation_names_an_executed_test_for_every_family() {
 /// counts actual fetched bytes against the manifest and refuses an over-long path label as a
 /// resource limit before any fetch, while an exactly 1,024-byte label loads.
 #[allow(clippy::too_many_lines)]
-#[ignore = "browser-product lane: `task test-browser-product` (slower than a 30-minute CI shard)"]
+#[ignore = "browser-product lane: `task test-browser-product` (slower than a CI test shard)"]
 #[test]
 fn wasm_frame_memory_and_fetch_budgets_are_enforced_and_measured_in_firefox() {
     use ess_conformance::web_execution::{abi::load_request, MAX_FRAME, MAX_PATH};
