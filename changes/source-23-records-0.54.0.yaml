@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/source-23-records-0.54.0
+repository: ess
+publishedAt: 2026-10-06T00:00:00Z
+title: Source format ess/23, re-keyed records, bulk deletes and enum attributes
+summary: >-
+  `ess/23` lets an update re-key its record, a value read the state held before the outcome,
+  `deletes:` remove every row a filter selects, an `affects:` entry write one record per list
+  element and an enum declare typed variant attributes. Synthesis witnesses state predicates,
+  struct-identity selectors and row sets beside an addressed record.
+kind: capability
+impact: significant
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.54.0
+  version: 0.54.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.54.0] — 2026-10-06
+
 ### Added
 
 - Source format `ess/23`. `ess specify formats [--since ess/N] [--format text|yaml|json]` lists

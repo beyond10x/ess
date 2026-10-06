@@ -73,19 +73,31 @@ fn a_hand_edit_of_any_row_is_refused() {
 
 /// The base page said `ess/23` was introduced in 0.54.0 while the catalogue carries no release;
 /// `--check` refuses that cell.
+///
+/// A release commit leaves no row unreleased, so the catalogue between releases is the live one
+/// with its newest release cleared, and the page is the committed one agreeing with it.
 #[test]
 fn the_base_release_claim_for_an_unreleased_format_is_refused() {
-    let page = committed();
-    let unreleased = FORMAT_HISTORY
-        .iter()
-        .find(|entry| entry.release.is_none())
-        .expect("an unreleased format");
-    let prefix = format!("| `ess/{}` | unreleased |", unreleased.major);
-    assert!(page.contains(&prefix), "{prefix}");
-    let claimed = page.replacen(
-        &prefix,
-        &format!("| `ess/{}` | [0.54.0][r54] |", unreleased.major),
+    let mut history = FORMAT_HISTORY.to_vec();
+    let unreleased = history.last_mut().expect("a format");
+    unreleased.release = None;
+    let major = unreleased.major;
+    let block = format_history::render(&history);
+    let row = |rendered: &str| {
+        rendered
+            .lines()
+            .find(|line| line.starts_with(&format!("| `ess/{major}` |")))
+            .map(str::to_owned)
+            .expect("the newest row")
+    };
+    let page = committed().replacen(
+        &row(&format_history::render(FORMAT_HISTORY)),
+        &row(&block),
         1,
     );
-    assert!(format_history::compare(&claimed, &format_history::render(FORMAT_HISTORY)).is_err());
+    format_history::compare(&page, &block).expect("the page agrees with the unreleased catalogue");
+    let prefix = format!("| `ess/{major}` | unreleased |");
+    assert!(page.contains(&prefix), "{prefix}");
+    let claimed = page.replacen(&prefix, &format!("| `ess/{major}` | [0.54.0][r54] |"), 1);
+    assert!(format_history::compare(&claimed, &block).is_err());
 }

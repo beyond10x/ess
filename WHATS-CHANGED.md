@@ -6,6 +6,8 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.54.0](#counted-event-claims-generate---check-and-validation-completeness) | Counted event claims, generate --check and validation completeness | capability | notable |
+| [0.54.0](#source-format-ess23-re-keyed-records-bulk-deletes-and-enum-attributes) | Source format ess/23, re-keyed records, bulk deletes and enum attributes | capability | significant |
 | [0.53.0](#experimental-protocol-specifications-and-instant-ordered-timestamps) | Experimental protocol specifications and instant-ordered timestamps | capability | notable |
 | [0.53.0](#source-format-ess22-row-sets-and-calendar-windows) | Source format ess/22, row sets and calendar windows | capability | significant |
 | [0.52.0](#event-publishers-recursive-rust-contracts-and-consumer-fixes) | Event publishers, recursive Rust contracts and consumer fixes | capability | notable |
@@ -55,6 +57,20 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.54.0 — 2026-10-06
+
+### Counted event claims, generate --check and validation completeness
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.54.0)
+
+Suites `ess-conformance/44` and `/45` match repeated event claims as a set in the Rust, Go and TypeScript runners. `ess generate --check` reports drift without writing, `ess specify validate` reports completeness, `ess specify formats` lists every format, and a CLI binding takes a trailing argument list. A membership operand naming a parameter is refused.
+
+### Source format ess/23, re-keyed records, bulk deletes and enum attributes
+
+capability · significant impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.54.0)
+
+`ess/23` lets an update re-key its record, a value read the state held before the outcome, `deletes:` remove every row a filter selects, an `affects:` entry write one record per list element and an enum declare typed variant attributes. Synthesis witnesses state predicates, struct-identity selectors and row sets beside an addressed record.
 
 ## 0.53.0 — 2026-10-05
 
