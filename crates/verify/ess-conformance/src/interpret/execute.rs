@@ -1044,8 +1044,10 @@ fn addressed_row(
             spec.name
         ))
     })?;
-    let entity = &ir.entity(entity).name;
-    let Some(held) = store.instance_typed(entity, identity) else {
+    let Some(held) = store.instance_typed(&ir.entity(entity).name, identity) else {
+        if creation_takes_absent(spec, entity, field) {
+            return Ok(None);
+        }
         return unknown_instance(ir, spec, store, input, generated, responses).map(Some);
     };
     let may_act = acting.iter().any(|(effect, ..)| match effect {
@@ -1056,6 +1058,29 @@ fn addressed_row(
         return Ok(None);
     }
     wrong_state(ir, spec, store, input, Some(held)).map(Some)
+}
+
+/// Whether a creation branch of `entity` takes its identity from the input `field`. On a command
+/// guarded by a row set, an absent addressed row such a branch takes is that creation's, not an
+/// unknown instance: the row sets answer, then the creation (an upsert, beyond10x/ess#462).
+fn creation_takes_absent(
+    spec: &ResolvedCommand,
+    entity: &ess_compiler::ir::EntityHandle,
+    field: &str,
+) -> bool {
+    spec.outcomes.iter().any(|outcome| {
+        outcome.error.is_none()
+            && outcome
+                .subject
+                .as_ref()
+                .is_some_and(|subject| subject.entity == *entity)
+            && existence::identity_source(outcome).is_some_and(|source| {
+                matches!(&source.value,
+                    ResolvedPayloadValue::InputField { field: taken, .. }
+                    | ResolvedPayloadValue::InputOrGenerated { field: taken, .. }
+                    if taken == field)
+            })
+    })
 }
 
 fn selected_subject_refusal(
@@ -1084,6 +1109,9 @@ fn selected_subject_refusal(
     })?;
     let entity = ir.entity(&subject.entity);
     let Some(held) = store.instance_typed(&entity.name, identity) else {
+        if row_set::uses(spec) && creation_takes_absent(spec, &subject.entity, &field.name) {
+            return Ok(None);
+        }
         return unknown_instance(ir, spec, store, input, generated, responses).map(Some);
     };
     if let ResolvedEffect::Moves { transition } = &subject.effect {
