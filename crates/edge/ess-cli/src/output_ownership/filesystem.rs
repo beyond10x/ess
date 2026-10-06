@@ -477,11 +477,15 @@ fn ordinary_metadata(fd: &impl AsFd, file: bool) -> Result<()> {
     Ok(())
 }
 
-/// Access labels imposed by mandatory access-control platforms. Capabilities, ACLs, execution
-/// labels and overlay control attributes affect behavior outside the ownership ledger and remain
-/// foreign. Accept exact names only; an entire namespace is not evidence of platform ownership.
+/// Access labels imposed by mandatory access-control platforms, and the provenance label macOS
+/// attaches to files some processes write (beyond10x/ess#433: its native case on both macOS lanes
+/// refused regeneration without it). Capabilities, ACLs, execution labels such as
+/// `com.apple.quarantine` and overlay control attributes affect behavior outside the ownership
+/// ledger and remain foreign. Accept exact names only; an entire namespace is not evidence of
+/// platform ownership.
 fn platform_xattr(name: &[u8]) -> bool {
-    cfg!(target_os = "linux") && matches!(name, b"security.selinux" | b"security.SMACK64")
+    (cfg!(target_os = "linux") && matches!(name, b"security.selinux" | b"security.SMACK64"))
+        || (cfg!(target_os = "macos") && name == b"com.apple.provenance")
 }
 
 /// The extended-attribute names on `fd` that the platform did not impose — anything a person or
@@ -805,6 +809,11 @@ mod xattr_tests {
                 String::from_utf8_lossy(name)
             );
         }
+        assert_eq!(
+            platform_xattr(b"com.apple.provenance"),
+            cfg!(target_os = "macos"),
+            "com.apple.provenance is admitted on macOS only"
+        );
         for name in [
             &b"user.ess_test"[..],
             b"security.capability",

@@ -119,6 +119,9 @@
 
 ### Fixed
 
+- On macOS, regenerating over an output the OS labelled `com.apple.provenance` succeeds and
+  leaves it unchanged: output ownership admits that label by exact name, and every other
+  `com.apple.*` attribute, `com.apple.quarantine` included, is still refused (beyond10x/ess#433).
 - Synthesis binds a view parameter from the field its filter compares it with, including a
   differently named parameter and a member of a literal struct identity (beyond10x/ess#428).
 - The caller-swapped run draws a fresh value for every identity it sends, in every member of a
