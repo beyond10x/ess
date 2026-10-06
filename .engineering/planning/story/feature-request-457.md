@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-457
 kind: story
-status: active
+status: implemented
 title: A view field derived from the lifecycle state
 tags:
 - ess-0.54.0
@@ -26,10 +26,11 @@ scope:
   path: website/docs/guides/specify/values-and-views.md
 - confidence: cited
   path: website/docs/reference/predicates.md
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-05T13:26:30Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":2}}}
 - {from: "proposed", to: "active", at: "2026-10-05T13:26:30Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "active", to: "implemented", at: "2026-10-06T17:49:03Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}}
 ---
 ## Outcome
 Resolve beyond10x/ess#457: A view field derived from the lifecycle state.

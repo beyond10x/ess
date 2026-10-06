@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:ess-generate-check
 kind: story
-status: active
+status: implemented
 title: ess generate --check reports drift against committed output
 tags:
 - ess-0.54.0
@@ -21,10 +21,11 @@ scope:
   path: crates/edge/ess-cli/tests/generate_check.rs
 - confidence: cited
   path: website/docs/reference/cli.md
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-05T13:26:31Z", actor: "human:timo", revision: 6}
 - {from: "proposed", to: "active", at: "2026-10-05T13:26:32Z", actor: "human:timo", revision: 7}
+- {from: "active", to: "implemented", at: "2026-10-06T17:49:14Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Outcome
 `ess generate` gains `--check`: it regenerates in memory, compares with the output already under `--out`, writes nothing, and exits non-zero naming each file that drifted.

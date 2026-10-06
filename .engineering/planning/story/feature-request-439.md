@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-439
 kind: story
-status: active
+status: implemented
 title: 'Clock-relative view windows: named ranges in a time zone and sliding windows'
 tags:
 - ess-0.54.0
@@ -36,10 +36,11 @@ scope:
   path: docs/design/read-api-view-idioms.md
 - confidence: cited
   path: website/docs/reference/predicates.md
-revision: 14
+revision: 15
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-05T14:57:43Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-10-05T14:57:44Z", actor: "human:timo", revision: 14, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-10-06T17:48:18Z", actor: "human:timo", revision: 15, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}}
 ---
 ## Outcome
 Resolve beyond10x/ess#439: Clock-relative view windows: named ranges in a time zone and sliding windows.

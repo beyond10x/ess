@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-466
 kind: story
-status: active
+status: implemented
 title: ess-cli has no source for a trailing argument list (`-- <args…>`)
 tags:
 - ess-0.54.0
@@ -28,10 +28,11 @@ scope:
   path: crates/specify/ess-cli-contract/tests/binding.rs
 - confidence: cited
   path: docs/design/cli-presentation-binding.md
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-06T01:48:10Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-10-06T01:48:11Z", actor: "human:timo", revision: 5}
+- {from: "active", to: "implemented", at: "2026-10-06T17:49:32Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 Resolve beyond10x/ess#466: ess-cli has no source for a trailing argument list (`-- <args…>`).

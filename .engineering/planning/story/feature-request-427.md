@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-427
 kind: story
-status: active
+status: implemented
 title: 'Conformance: an authored scenario cannot assert how many times an event is published'
 tags:
 - ess-0.54.0
@@ -42,10 +42,11 @@ scope:
   path: website/docs/reference/formats.md
 - confidence: inferred
   path: website/docs/reference/spec-versions.md
-revision: 12
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-05T13:26:21Z", actor: "human:timo", revision: 10}
 - {from: "proposed", to: "active", at: "2026-10-05T13:26:22Z", actor: "human:timo", revision: 11}
+- {from: "active", to: "implemented", at: "2026-10-06T17:47:43Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}}
 ---
 ## Outcome
 Resolve beyond10x/ess#427: Conformance: an authored scenario cannot assert how many times an event is published.

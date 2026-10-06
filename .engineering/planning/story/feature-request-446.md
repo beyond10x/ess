@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-446
 kind: story
-status: active
+status: implemented
 title: Order-dependent aggregates and nested grouped results
 tags:
 - ess-0.54.0
@@ -23,10 +23,11 @@ scope:
   path: docs/design/read-api-view-idioms.example/latest.yaml
 - confidence: inferred
   path: docs/design/read-api-view-idioms.md
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-05T13:26:26Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-10-05T13:26:26Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-10-06T17:48:38Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}}
 ---
 ## Outcome
 Resolve beyond10x/ess#446: Order-dependent aggregates and nested grouped results.

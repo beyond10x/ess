@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-426
 kind: story
-status: draft
+status: implemented
 title: Import adapter from Canon protocol/1 to an ESS case-record domain
 tags:
 - ess-0.54.0
@@ -13,7 +13,11 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 12
+revision: 15
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-06T17:47:33Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"test_result":1,"review_outcome":4}}}
+- {from: "proposed", to: "active", at: "2026-10-06T17:47:34Z", actor: "human:timo", revision: 14, decided_on: {"recorded":{"test_result":1,"review_outcome":4}}}
+- {from: "active", to: "implemented", at: "2026-10-06T17:47:35Z", actor: "human:timo", revision: 15, decided_on: {"recorded":{"test_result":1,"review_outcome":4}}}
 ---
 ## Outcome
 Resolve beyond10x/ess#426: Import adapter from Canon protocol/1 to an ESS case-record domain.

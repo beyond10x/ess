@@ -2,12 +2,18 @@
 format: aep.planning-md/3
 id: story:slow-probe-244b-follows-intended-moves
 kind: story
-status: draft
+status: implemented
 title: 'The #244 window-free byte probe admits suite moves a later release intends'
 tags:
 - ci
 - ess-0.54.0
-revision: 1
+relations:
+- serves: vision:O2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-06T17:49:59Z", actor: "human:timo", revision: 2, decided_on: {"recorded":{"test_result":1}}}
+- {from: "proposed", to: "active", at: "2026-10-06T17:50:00Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"test_result":1}}}
+- {from: "active", to: "implemented", at: "2026-10-06T17:50:01Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}}
 ---
 # The #244 window-free byte probe admits suite moves a later release intends
 

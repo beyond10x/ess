@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-442
 kind: story
-status: active
+status: implemented
 title: A field derived from a correlated earlier record
 tags:
 - ess-0.54.0
@@ -25,10 +25,11 @@ scope:
   path: docs/design/filtered-related-reads.md
 - confidence: inferred
   path: docs/design/read-api-view-idioms.md
-revision: 13
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-05T13:26:24Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-10-05T13:26:24Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-10-06T17:49:11Z", actor: "human:timo", revision: 14, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}}
 ---
 ## Outcome
 Resolve beyond10x/ess#442: A field derived from a correlated earlier record.

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-456
 kind: story
-status: active
+status: implemented
 title: when_subject_state names one state, not a list
 tags:
 - ess-0.54.0
@@ -22,10 +22,11 @@ scope:
   path: crates/verify/ess-conformance/tests/adversary_state_scoped_pass1.rs
 - confidence: cited
   path: website/docs/guides/specify/guards-and-predicates.md
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-05T14:53:32Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-10-05T14:53:32Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-10-06T17:49:01Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Outcome
 Resolve beyond10x/ess#456: when_subject_state names one state, not a list.

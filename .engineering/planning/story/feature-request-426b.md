@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-426b
 kind: story
-status: active
+status: implemented
 title: The refusals a case-record generator hits name the repair
 tags:
 - ess-0.54.0
@@ -26,10 +26,11 @@ scope:
   path: crates/specify/ess-domain/tests/enum_refusal_shapes.rs
 - confidence: cited
   path: docs/design/typed-literals-and-unknown-instances.md
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-05T14:53:29Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-10-05T14:53:30Z", actor: "human:timo", revision: 5}
+- {from: "active", to: "implemented", at: "2026-10-06T17:47:39Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Outcome
 Resolve beyond10x/ess#426 (part b): the refusals a case-record generator hit say what to write instead.

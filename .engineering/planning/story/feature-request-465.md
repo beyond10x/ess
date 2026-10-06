@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-465
 kind: story
-status: active
+status: implemented
 title: Caller-swapped run resends the same identity to a non-creating command whose instance the target arranges for a forced outcome
 tags:
 - ess-0.54.0
@@ -26,10 +26,11 @@ scope:
   path: crates/verify/ess-conformance/tests/fixtures/caller-addressed-identity.yaml
 - confidence: cited
   path: docs/design/caller-values.md
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-06T00:09:32Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-10-06T00:09:33Z", actor: "human:timo", revision: 5}
+- {from: "active", to: "implemented", at: "2026-10-06T17:49:29Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 Resolve beyond10x/ess#465: Caller-swapped run resends the same identity to a non-creating command whose instance the target arranges for a forced outcome.

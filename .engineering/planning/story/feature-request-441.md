@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-441
 kind: story
-status: active
+status: implemented
 title: 'Derived values over aggregates: ratio, difference, scaling, rounding'
 tags:
 - ess-0.54.0
@@ -26,10 +26,11 @@ scope:
   path: docs/design/read-api-view-idioms.md
 - confidence: cited
   path: website/docs/guides/specify/aggregate-views.md
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-05T13:26:23Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":4}}}
 - {from: "proposed", to: "active", at: "2026-10-05T13:26:24Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":4}}}
+- {from: "active", to: "implemented", at: "2026-10-06T17:48:25Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"test_result":1,"review_outcome":4}}}
 ---
 ## Outcome
 Resolve beyond10x/ess#441: Derived values over aggregates: ratio, difference, scaling, rounding.

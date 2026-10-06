@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-430
 kind: story
-status: active
+status: implemented
 title: 'Caller-swapped run reuses a struct-typed identity input (follow-up to #275)'
 tags:
 - ess-0.54.0
@@ -23,10 +23,11 @@ scope:
   path: crates/verify/ess-conformance/tests/caller_struct_identity.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/fixtures/caller-struct-identity.yaml
-revision: 9
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-05T13:26:23Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":2}}}
 - {from: "proposed", to: "active", at: "2026-10-05T13:26:23Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "active", to: "implemented", at: "2026-10-06T17:47:53Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}}
 ---
 ## Outcome
 Resolve beyond10x/ess#430: Caller-swapped run reuses a struct-typed identity input (follow-up to #275).

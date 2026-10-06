@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-443
 kind: story
-status: active
+status: implemented
 title: A maintained per-key aggregate record (fold)
 tags:
 - ess-0.54.0
@@ -25,10 +25,11 @@ scope:
   path: docs/design/read-api-view-idioms.example/fold.yaml
 - confidence: inferred
   path: docs/design/read-api-view-idioms.md
-revision: 14
+revision: 15
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-05T13:26:25Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"review_outcome":2}}}
 - {from: "proposed", to: "active", at: "2026-10-05T13:26:25Z", actor: "human:timo", revision: 14, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "active", to: "implemented", at: "2026-10-06T17:48:28Z", actor: "human:timo", revision: 15, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}}
 ---
 ## Outcome
 Resolve beyond10x/ess#443: A maintained per-key aggregate record (fold).
