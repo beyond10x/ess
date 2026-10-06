@@ -2513,6 +2513,23 @@ fn residual_construct(declaration: &mut serde_json::Value, family: &str) {
             // `reading` is `reading-contract-changed`; leaving it here reported one change twice.
             remove_keys(declaration, &["reading"]);
             if let Some(body) = declaration.get_mut("body") {
+                // An enum's typed variant attributes (ess/23, beyond10x/ess#450) have no typed
+                // comparison in any released delta format, so they stay in the residual: an
+                // attribute declared, removed or revalued is `unclassified-changed`, never no
+                // change. A guard they move is the guard's own change.
+                let attributes: Vec<serde_json::Value> = body
+                    .get("variants")
+                    .and_then(serde_json::Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|variant| {
+                        let attributes = variant.get("attributes")?;
+                        Some(serde_json::json!([variant.get("name")?, attributes]))
+                    })
+                    .collect();
+                if !attributes.is_empty() {
+                    body["variant_attributes"] = serde_json::Value::Array(attributes);
+                }
                 residual_fields(body, "fields");
                 remove_keys(
                     body,

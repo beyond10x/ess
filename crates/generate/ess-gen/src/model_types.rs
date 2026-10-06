@@ -117,7 +117,7 @@ impl ModelTypes {
             definitions: selected
                 .values()
                 .map(|item| {
-                    let mut definition = serde_json::to_value(types::body(item))
+                    let mut definition = serde_json::to_value(types::body(ir, item))
                         .expect("typed schema nodes serialize");
                     if events.contains(&item.name) {
                         definition["x-ess-kind"] = Value::from("event-payload");

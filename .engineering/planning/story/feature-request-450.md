@@ -45,7 +45,7 @@ scope:
   path: docs/design/enum-variant-wire-names.md
 - confidence: cited
   path: website/docs/guides/specify/fields-and-invariants.md
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-05T20:40:14Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":5}}}
 - {from: "proposed", to: "active", at: "2026-10-05T20:40:14Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":5}}}
@@ -106,3 +106,7 @@ Accept, redesigned: typed per-variant enum attributes (ess/23). An enum declares
 - docs/design/enum-variant-wire-names.md  cited — variant object form being extended
 - website/docs/guides/specify/fields-and-invariants.md  cited — new `### Give enum variants typed attributes` after `### Cover every declared enum value` (79-95); #455 edits 35-46 first (edge recorded)
 - crates/specify/ess-domain/tests/enum_attributes.rs  inferred — scenarios above
+
+## Decision on diff classification
+
+Coordinator decision, 2026-10-06: ess verify diff reports an attribute change as unclassified-changed, and a guard whose lowered variant set moved as outcome-condition-changed (Unknown, as ess-diff/14 classifies it). No ess-diff/15 and no reclassification of a released kind in 0.54.0; acceptance enum_attribute_diff_classified becomes enum_attribute_diff_reported.

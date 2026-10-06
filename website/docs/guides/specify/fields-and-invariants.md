@@ -97,6 +97,67 @@ combinations participate. Every referenced input must fit that finite domain;
 Optional paths, open types, unsupported expressions and unknown results retain the
 requirement for a default. Existing defaults and external outcomes keep their behavior.
 
+### Give enum variants typed attributes
+
+When each key of a closed set carries facts known as the specification is written — an operator
+takes a number, a plan allows 50 seats — declare them on the enum rather than repeating the table
+in every guard. From `ess/23` an enum declares `attributes:` in the `{name, type}` shape of
+`fields:`, and each variant gives every one a typed literal under its own `attributes:`:
+
+```yaml
+format: ess/23
+system: demo
+version: v1
+domain: demo.rules
+types:
+  - name: demo.rules.Operator
+    kind: enum
+    attributes:
+      - {name: takes_number, type: Boolean}
+      - {name: arity, type: Optional<Integer>}
+    variants:
+      - {name: GreaterThan, attributes: {takes_number: true, arity: 2}}
+      - {name: LessThan, attributes: {takes_number: true, arity: 2}}
+      - {name: Contains, attributes: {takes_number: false}}
+events:
+  - name: demo.rules.RuleAdded
+    fields:
+      - {name: operator, type: demo.rules.Operator}
+commands:
+  - name: demo.rules.AddRule
+    input:
+      - {name: operator, type: demo.rules.Operator}
+    outcomes:
+      - name: numeric
+        when: operator.takes_number == true
+        emits: [demo.rules.RuleAdded]
+        payload:
+          demo.rules.RuleAdded: {operator: input.operator}
+      - name: textual
+        when: operator.takes_number == false
+        emits: [demo.rules.RuleAdded]
+        payload:
+          demo.rules.RuleAdded: {operator: input.operator}
+```
+
+An attribute is a `Boolean`, an `Integer`, a `Decimal`, a `String`, a newtype of one, an enum, or
+an `Optional` of these; a `List` attribute is refused by name. Each value is checked by the rule
+`sets:` types a literal by, every variant fills every attribute that is not `Optional`, and a value
+for an attribute the enum does not declare is refused. Below `ess/23` the declaration is refused
+as `unsupported_format_version`.
+
+A guard, an invariant or a view filter reads an attribute as `<fact>.<attribute>`. The comparison
+is lowered to membership over the variants that satisfy it: `operator.takes_number == true` is
+exactly `operator: {any_of: [GreaterThan, LessThan]}`, so the coverage proof, synthesis, suites and
+every runner see only variants. A comparison with another fact, `seats >= plan.max_seats`, expands
+to one branch per variant, within the 128 predicate nodes the coverage proof allows; past that it
+is refused by name. An `Optional` attribute a variant leaves out satisfies no comparison. Reading
+an attribute as a value — `sets: {x: input.plan.max_seats}` — is refused in this cut.
+
+The JSON Schema and OpenAPI projections annotate the enum with `x-ess-attributes`, the generated
+documentation lists each variant's values, and the types-only Rust, Go and TypeScript outputs give
+each enum an accessor per attribute.
+
 ### Order two instants
 
 A right-hand side without a dot is a literal, so `when: ends_at > starts_at` compares `ends_at`

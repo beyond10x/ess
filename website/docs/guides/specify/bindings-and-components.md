@@ -74,6 +74,30 @@ reads — because a specification claiming the stronger guarantee is a claim the
 keep. A conformance suite for an `at_most_once` binding contains no redelivery scenario, since
 redelivery is the thing that word says will not happen.
 
+## Fill a command input with a constant
+
+A `mapping:` value without the `event.` prefix is a constant the binding writes, and it is typed
+against the input it fills as `sets:` and `payload:` type a literal:
+
+```yaml
+mapping:
+  leg_id: event.leg_id
+  is_bridged: true        # a Boolean input
+  weight: 3               # an Integer input, or a newtype of one
+  share: 0.5              # a Decimal input
+  template: invoice-created
+```
+
+`is_bridged: true` and `is_bridged: 'true'` are the same value: an unquoted YAML Boolean, integer
+or decimal and the quoted text of one are both admitted exactly where `sets:` admits them, and
+compile to the same IR. A constant that is not a value of the input is a `type_mismatch` with the
+hint `sets:` gives — `weight: true` over an `Integer`, `is_bridged: 1` over a `Boolean`. Over text
+or an enum the hint is `quote it`: `template: 3` meant the text `3`, and `template: '3'` says so.
+Every target reads the constant typed: the conformance suite expects `true` and `3` in the invoked
+command's input, not `"true"` and `"3"`, and the generated Rust and Go adapters pass a typed
+constant. Other primitives — a `Timestamp`, a `Uuid` — have no literal spelling here, and take
+their value from a field of the event.
+
 ## Bound a retry
 
 `on_failure: retry` says nothing about how often. Where the count is a constant in the sender's
@@ -194,6 +218,97 @@ context. A recipient identifier absent from the event needs its own declared
 authority; adding it to an event that never carries it would misdescribe the wire.
 For execution and observation limits, see
 [Verify conformance](../verify/observations.md#observe-bounded-binding-accessors).
+
+## Read stored state in the command a binding invokes
+
+A binding maps what the occurrence carries: the event's payload, its delivery context, a periodic
+host's context or read, and its selections. It does not read stored state, because a binding
+belongs to no component and so has no store to read from: there is no store behind a mapping
+(beyond10x/ess#440). When the command a binding causes needs a value held in stored state, for
+example the current `bridged` flag of the call a joined leg belongs to, map the identity and let
+the invoked command read the row:
+
+```yaml
+format: ess/22
+system: demo
+version: v1
+domain: demo.calls
+types:
+  - {name: demo.calls.CallId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.calls.Call
+    identity: {name: call_id, type: demo.calls.CallId}
+    fields:
+      - {name: bridged, type: Boolean}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+events:
+  - name: demo.calls.CallOpened
+    fields:
+      - {name: call_id, type: demo.calls.CallId}
+  - name: demo.calls.LegJoined
+    fields:
+      - {name: leg_id, type: String}
+      - {name: call_id, type: demo.calls.CallId}
+  - name: demo.calls.LegMarked
+    fields:
+      - {name: leg_id, type: String}
+      - {name: call_bridged, type: Boolean}
+commands:
+  - name: demo.calls.OpenCall
+    input:
+      - {name: bridged, type: Boolean}
+    outcomes:
+      - name: opened
+        creates: demo.calls.Call
+        instance: call_id
+        sets: {bridged: input.bridged}
+        emits: [demo.calls.CallOpened]
+        payload:
+          demo.calls.CallOpened: {call_id: {generated: true}}
+  - name: demo.calls.JoinLeg
+    input:
+      - {name: leg_id, type: String}
+      - {name: call_id, type: demo.calls.CallId}
+    outcomes:
+      - name: joined
+        emits: [demo.calls.LegJoined]
+        payload:
+          demo.calls.LegJoined: {leg_id: input.leg_id, call_id: input.call_id}
+  - name: demo.calls.MarkLeg
+    input:
+      - {name: leg_id, type: String}
+      - {name: call_id, type: demo.calls.CallId}
+    outcomes:
+      - name: marked
+        emits: [demo.calls.LegMarked]
+        payload:
+          demo.calls.LegMarked:
+            leg_id: input.leg_id
+            # Read from the stored call when MarkLeg runs, under its one snapshot.
+            call_bridged: {related: {via: input.call_id, field: bridged}}
+bindings:
+  - id: mark-joined-leg
+    when: {event: demo.calls.LegJoined}
+    invoke: {command: demo.calls.MarkLeg}
+    mapping:
+      leg_id: event.leg_id
+      call_id: event.call_id
+    delivery: at_least_once
+    on_failure: drop
+```
+
+The read belongs to the command for three reasons. A command reads the store once, immediately
+before it selects a branch, and every guard and value of that command uses that one snapshot
+([filtered related reads](https://github.com/beyond10x/ess/blob/main/docs/design/filtered-related-reads.md)).
+A second read in the binding would be a second snapshot, and the mapped value and the command's
+guards could disagree. A redelivery carries the context of the occurrence it repeats, and a store
+read made again on redelivery could return a different value. And the command already has every
+reading construct: `{related: {via: <field>, field: <field>}}` in `sets:` or `payload:`, a
+`when_related` or row-set guard to choose a branch by the related row, and a stored-subject guard.
+The conformance suite arranges the referenced row and asserts the value the invoked command
+emits, so the read is checked where it is made.
+
+A `mapping:` value written as `{related: …}` is refused as an unknown field of a selection.
 
 ## Select ordered records in a binding
 

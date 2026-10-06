@@ -202,6 +202,9 @@ impl Emitter<'_> {
             .expect("String write");
         }
         writeln!(out, "\treturn nil, fmt.Errorf(\"value is not a declared string literal\")\n}}\n\nfunc (v *{name}) UnmarshalJSON(data []byte) error {{\n\tvar decoded string\n\tif err := essDecode(data, &decoded, false); err != nil {{\n\t\treturn err\n\t}}\n\tvalue := {name}(decoded)\n\tif _, err := value.MarshalJSON(); err != nil {{\n\t\treturn err\n\t}}\n\t*v = value\n\treturn nil\n}}").expect("String write");
+        if let Some(attributes) = self.plan.attributes.get(pointer) {
+            accessors(out, name, values, attributes);
+        }
     }
 
     fn record(
@@ -493,4 +496,60 @@ pub(super) fn module_name(name: &str) -> bool {
         && name
             .split('/')
             .all(|part| !part.is_empty() && part != "." && part != ".." && !part.starts_with('.'))
+}
+
+/// One method per typed variant attribute of the enum `name` (`ess/23`, beyond10x/ess#450),
+/// answering each variant's value: `bool`, `int64`, or the text — a `Decimal` as its decimal string
+/// — and, where a variant may leave the attribute unfilled, whether it is filled beside it.
+fn accessors(
+    out: &mut String,
+    name: &str,
+    values: &BTreeSet<String>,
+    attributes: &[super::EnumAttribute],
+) {
+    for attribute in attributes {
+        let ty = match attribute.kind.as_str() {
+            "boolean" => "bool",
+            "integer" => "int64",
+            _ => "string",
+        };
+        let zero = match attribute.kind.as_str() {
+            "boolean" => "false",
+            "integer" => "0",
+            _ => "\"\"",
+        };
+        let method = declaration_name(&attribute.name);
+        let result = if attribute.optional {
+            format!("({ty}, bool)")
+        } else {
+            ty.to_owned()
+        };
+        writeln!(
+            out,
+            "\n// {method} is the `{}` each variant declares.\nfunc (v {name}) {method}() {result} {{\n\tswitch v {{",
+            attribute.name
+        )
+        .expect("String write");
+        for (index, wire) in values.iter().enumerate() {
+            let Some(value) = attribute.values.get(wire) else {
+                continue;
+            };
+            let value = match value {
+                serde_json::Value::String(text) => quote(text),
+                other => other.to_string(),
+            };
+            let value = if attribute.optional {
+                format!("{value}, true")
+            } else {
+                value
+            };
+            writeln!(out, "\tcase {name}V{index}:\n\t\treturn {value}").expect("String write");
+        }
+        let missing = if attribute.optional {
+            format!("{zero}, false")
+        } else {
+            zero.to_owned()
+        };
+        writeln!(out, "\t}}\n\treturn {missing}\n}}").expect("String write");
+    }
 }

@@ -1406,6 +1406,9 @@ fn type_prose(declared: &ResolvedType) -> Vec<Block> {
             text.extend(inline_list(names(variants)));
             text.push(Inline::text("."));
             out.prose(text);
+            if let Some(table) = attribute_table(variants) {
+                out.push(table);
+            }
         }
         ResolvedBody::Union { tag, variants } => {
             out.prose(vec![
@@ -1442,6 +1445,36 @@ fn type_prose(declared: &ResolvedType) -> Vec<Block> {
         out.sentence(format!("Shown to a person as \"{display}\"."));
     }
     out.finish()
+}
+
+/// An enum's typed variant attributes (ess/23, beyond10x/ess#450) as a table: one row per
+/// variant, one column per attribute, `—` where an `Optional` attribute is left unfilled. `None`
+/// for an enum that declares none.
+fn attribute_table(variants: &[ess_domain::types::EnumVariant]) -> Option<Block> {
+    let first = variants
+        .first()
+        .filter(|first| !first.attributes.is_empty())?;
+    let mut columns = vec![vec![Inline::text("variant")]];
+    columns.extend(
+        first
+            .attributes
+            .iter()
+            .map(|attribute| vec![Inline::code(attribute.name.clone())]),
+    );
+    let rows = variants
+        .iter()
+        .map(|variant| {
+            let mut row = vec![vec![Inline::code(variant.name().to_owned())]];
+            row.extend(variant.attributes.iter().map(|attribute| {
+                attribute.value.as_ref().map_or_else(
+                    || vec![Inline::text("—")],
+                    |value| vec![Inline::code(value.clone())],
+                )
+            }));
+            row
+        })
+        .collect();
+    Some(Block::Table { columns, rows })
 }
 
 /// One outcome, including the two things a name alone loses: what decides it, and what it costs.
@@ -2143,6 +2176,15 @@ fn mapping_bullet(ir: &EssIr, mapping: &ResolvedMapping) -> Vec<Inline> {
 
 /// Describe the admitted representation without claiming that literal invariants were evaluated.
 fn literal_guarantee(ir: &EssIr, target: &ResolvedTypeRef) -> Vec<Inline> {
+    // A `Boolean`, `Integer` or `Decimal` constant was checked exactly, by the rule `sets:` types a
+    // literal by (beyond10x/ess#445).
+    if let Some(primitive) = ir.literal_primitive(target) {
+        return vec![
+            Inline::text(". The compiler verified that this is a value of "),
+            Inline::code(primitive.to_string()),
+            Inline::text("."),
+        ];
+    }
     let mut current = target;
     let mut seen = BTreeSet::new();
     for _ in 0..WRAPPER_LIMIT {

@@ -6,6 +6,7 @@
 use std::collections::BTreeSet;
 use std::fmt;
 
+pub(crate) mod attributes;
 pub mod lexical;
 
 use ess_primitives::error::{ValidationCode, ValidationError, ValidationErrors};
@@ -81,6 +82,28 @@ pub enum Shape<T> {
     Json,
     /// A tagged union with no predicate selectors.
     Union,
+}
+
+/// The typed attributes of one enum, as a predicate reads them (`ess/23`, beyond10x/ess#450).
+#[derive(Debug, Clone)]
+pub struct EnumAttributes {
+    /// The enum's name.
+    pub name: String,
+    /// Each declared attribute: its name, the scalar a predicate reads it as, and its type as
+    /// written.
+    pub declared: Vec<(String, ScalarKind, String)>,
+    /// Each variant, in declaration order, with the value it gives each attribute it fills.
+    pub variants: Vec<(String, std::collections::BTreeMap<String, FactValue>)>,
+    /// For each attribute whose type is an enum, that enum's variants: the only words a predicate
+    /// may compare it with.
+    pub words: std::collections::BTreeMap<String, Vec<String>>,
+}
+
+impl EnumAttributes {
+    /// The declared attribute of that name.
+    pub fn attribute(&self, name: &str) -> Option<&(String, ScalarKind, String)> {
+        self.declared.iter().find(|(declared, ..)| declared == name)
+    }
 }
 
 /// A read-only adapter over declarations or resolved compiler types.
@@ -191,6 +214,14 @@ pub trait TypeEnvironment {
     }
     /// One declared struct member, without using wire aliases.
     fn member(&self, reference: &Self::Type, name: &str) -> Option<Self::Type>;
+    /// The typed attributes of the enum this terminal type is, with each variant's values read as
+    /// facts (`ess/23`, beyond10x/ess#450); `None` where it is no enum, or one that declares none.
+    ///
+    /// `None` by default: an IR's predicates were lowered to membership before it was compiled, so
+    /// nothing reads an attribute there.
+    fn enum_attributes(&self, _reference: &Self::Type) -> Option<EnumAttributes> {
+        None
+    }
     /// Whether the reserved filter parameter namespace exists in this environment.
     fn has_parameters(&self) -> bool {
         false
@@ -509,6 +540,62 @@ impl TypeEnvironment for DomainEnvironment<'_> {
             },
         })
     }
+    fn enum_attributes(&self, reference: &TypeRef) -> Option<EnumAttributes> {
+        let TypeRef::Named(declared) = reference else {
+            return None;
+        };
+        let TypeBody::Enum { variants } = &self.registry.get(declared)?.body else {
+            return None;
+        };
+        let first = variants.first()?;
+        if first.attributes.is_empty() {
+            return None;
+        }
+        let read = |type_ref: &TypeRef| attribute_scalar(self.registry, type_ref);
+        Some(EnumAttributes {
+            name: declared.to_string(),
+            declared: first
+                .attributes
+                .iter()
+                .map(|attribute| {
+                    (
+                        attribute.name.clone(),
+                        read(&attribute.type_ref),
+                        attribute.type_ref.to_string(),
+                    )
+                })
+                .collect(),
+            variants: variants
+                .iter()
+                .map(|variant| {
+                    let values = variant
+                        .attributes
+                        .iter()
+                        .filter_map(|attribute| {
+                            let text = attribute.value.as_ref()?;
+                            let value = match read(&attribute.type_ref) {
+                                ScalarKind::Bool => FactValue::Bool(text == "true"),
+                                ScalarKind::Number => FactValue::Number(
+                                    ess_primitives::facts::Number::decimal_literal(text)?,
+                                ),
+                                ScalarKind::Text => FactValue::Text(text.clone()),
+                            };
+                            Some((attribute.name.clone(), value))
+                        })
+                        .collect();
+                    (variant.name().to_owned(), values)
+                })
+                .collect(),
+            words: first
+                .attributes
+                .iter()
+                .filter_map(|attribute| {
+                    attribute_words(self.registry, &attribute.type_ref)
+                        .map(|words| (attribute.name.clone(), words))
+                })
+                .collect(),
+        })
+    }
     fn member(&self, reference: &TypeRef, name: &str) -> Option<TypeRef> {
         let TypeRef::Named(declared) = reference else {
             return None;
@@ -716,6 +803,9 @@ fn refuse_clock_reading<E: TypeEnvironment>(
     Ok(())
 }
 
+// One step per shape; the enum attribute refusal (ess/23, beyond10x/ess#450) took it past the
+// line limit.
+#[allow(clippy::too_many_lines)]
 fn resolve<E: TypeEnvironment>(
     environment: &E,
     path: &FactPath,
@@ -784,6 +874,18 @@ fn resolve<E: TypeEnvironment>(
                     Shape::Json => Some("a JSON value"),
                     _ => None,
                 };
+                if let Shape::Enum(variants) = &shape {
+                    if let Some(refused) = attribute_read(
+                        environment,
+                        &current,
+                        variants.len(),
+                        (path, segment),
+                        owner,
+                        &context,
+                    ) {
+                        return Err(refused);
+                    }
+                }
                 let next = match shape {
                     Shape::Struct => environment.member(&current, segment),
                     Shape::Scalar(ScalarKind::Text)
@@ -3132,4 +3234,80 @@ impl<E: TypeEnvironment> Checker<'_, E> {
             }
         }
     }
+}
+
+/// The scalar a predicate reads an enum attribute of type `type_ref` as (`ess/23`,
+/// beyond10x/ess#450): through `Optional` and newtypes, a `Boolean` is a truth value, an `Integer`
+/// or a `Decimal` a number, and text or an enum text.
+fn attribute_scalar(registry: &TypeRegistry, type_ref: &TypeRef) -> ScalarKind {
+    let mut current = type_ref;
+    for _ in 0..=crate::types::MAX_TYPE_DEPTH {
+        match current {
+            TypeRef::Optional(inner) => current = inner,
+            TypeRef::Primitive(primitive) => {
+                return ScalarKind::of(*primitive).unwrap_or(ScalarKind::Text)
+            }
+            TypeRef::Named(name) => match registry.get(name).map(|declared| &declared.body) {
+                Some(TypeBody::Newtype { of, .. }) => current = of,
+                _ => return ScalarKind::Text,
+            },
+            TypeRef::List(_) | TypeRef::Map(..) => return ScalarKind::Text,
+        }
+    }
+    ScalarKind::Text
+}
+
+/// The variants of the enum an attribute of type `type_ref` is, through `Optional` and newtypes;
+/// `None` for any other type (`ess/23`, beyond10x/ess#450).
+fn attribute_words(registry: &TypeRegistry, type_ref: &TypeRef) -> Option<Vec<String>> {
+    let mut current = type_ref;
+    for _ in 0..=crate::types::MAX_TYPE_DEPTH {
+        match current {
+            TypeRef::Optional(inner) => current = inner,
+            TypeRef::Named(name) => match &registry.get(name)?.body {
+                TypeBody::Newtype { of, .. } => current = of,
+                TypeBody::Enum { variants } => {
+                    return Some(
+                        variants
+                            .iter()
+                            .map(|variant| variant.name().to_owned())
+                            .collect(),
+                    )
+                }
+                _ => return None,
+            },
+            _ => return None,
+        }
+    }
+    None
+}
+
+/// The refusal of an enum attribute a predicate reads where no comparison lowered it to
+/// membership (`ess/23`, beyond10x/ess#450): refused once, here, saying where an attribute is read.
+fn attribute_read<E: TypeEnvironment>(
+    environment: &E,
+    current: &E::Type,
+    variants: usize,
+    (path, segment): (&FactPath, &str),
+    owner: &str,
+    context: &str,
+) -> Option<ExpressionError> {
+    let attributes = environment.enum_attributes(current)?;
+    let (name, _, written) = attributes.attribute(segment)?;
+    Some(error(
+        owner,
+        ValidationCode::UnsupportedConstruct,
+        Some(path),
+        Some(segment),
+        format!(
+            "`{path}` reads the attribute `{name}` of `{}`, which is `{written}`; an attribute is \
+             read only where it is lowered to membership over the variants: compared with a \
+             literal of its type, in `any_of`, `none_of`, `defined(…)` or truthiness, or compared \
+             with another fact within {} predicate nodes, three per variant (`{}` has \
+             {variants}){context}",
+            attributes.name,
+            crate::command::finite::MAX_PREDICATE_NODES,
+            attributes.name,
+        ),
+    ))
 }

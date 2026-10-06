@@ -2251,13 +2251,16 @@ pub enum ResolvedMappingValue {
     /// A value written in the binding itself.
     ///
     /// Enum membership is verified through every Optional/newtype wrapper the document writes, and
-    /// String-backed targets admit text. A representation that resolves through itself is refused
-    /// in `ess-domain` rather than admitted, so a literal that reaches this IR was checked. Type
-    /// invariants and the existence of external resources are not verified; `invoice-created`
-    /// being accepted for a String-backed `TemplateId` does not establish that the template
-    /// exists.
+    /// String-backed targets admit text. A `Boolean`, `Integer` or `Decimal` target admits the
+    /// constants `sets:` admits, written quoted or not (`is_bridged: true`, beyond10x/ess#445), and
+    /// `value` is then the canonical text of the value: it is read against the mapping's
+    /// `target_type` ([`EssIr::literal_primitive`]), as `ResolvedPayloadValue::Literal` is, never
+    /// sent as text. A representation that resolves through itself is refused in `ess-domain`
+    /// rather than admitted, so a literal that reaches this IR was checked. Type invariants and the
+    /// existence of external resources are not verified; `invoice-created` being accepted for a
+    /// String-backed `TemplateId` does not establish that the template exists.
     Literal {
-        /// The value, as written.
+        /// The value: as written for text and an enum, canonical for a typed constant.
         value: String,
     },
 }
@@ -2853,6 +2856,30 @@ impl EssIr {
             preconditions: parts.preconditions,
             format: parts.format,
         }
+    }
+
+    /// The primitive a binding constant over `target` is read as, when it is one a literal spells
+    /// as a value rather than as text: `Boolean`, `Integer` or `Decimal`, through `Optional` and
+    /// newtype wrappers (beyond10x/ess#445).
+    ///
+    /// `None` for text, an enum and everything else, whose literal is the text itself. Every target
+    /// that reads a [`ResolvedMappingValue::Literal`] asks this one question, so the interpreter,
+    /// synthesis and the generators cannot disagree about which constants are typed.
+    pub fn literal_primitive(&self, target: &ResolvedTypeRef) -> Option<Primitive> {
+        let mut current = target.required();
+        for _ in 0..=ess_domain::types::MAX_TYPE_DEPTH {
+            match current {
+                ResolvedTypeRef::Primitive {
+                    name: name @ (Primitive::Boolean | Primitive::Integer | Primitive::Decimal),
+                } => return Some(*name),
+                ResolvedTypeRef::Declared { name } => match &self.named_type(name).body {
+                    ResolvedBody::Newtype { of, .. } => current = of.required(),
+                    _ => return None,
+                },
+                _ => return None,
+            }
+        }
+        None
     }
 
     /// The system's name.

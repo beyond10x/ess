@@ -333,11 +333,18 @@ impl Specification {
             headers.as_slice(),
             [Some(format)] if format.major() >= FormatVersion::V23.major()
         );
+        // And from `ess/23` an enum attribute (beyond10x/ess#450), lowered once the types are known.
+        let reads_attributes = matches!(
+            headers.as_slice(),
+            [Some(format)] if format.major() >= FormatVersion::V23.major()
+        );
         crate::command::converting_input_namespace(reads_input_namespace, || {
             crate::command::set_effects::converting_deletions(admits_deletions, || {
-                for (source, file) in files {
-                    parts.push(collected.absorb(&source, file, &mut errors));
-                }
+                crate::expression::attributes::converting(reads_attributes, || {
+                    for (source, file) in files {
+                        parts.push(collected.absorb(&source, file, &mut errors));
+                    }
+                });
             });
         });
 
@@ -383,7 +390,7 @@ impl Specification {
 
         // From `ess/22` a bare word on the right of a comparison may name a field; which one is
         // decided now that the format and every declaration are known (A1).
-        specification.resolve_written(&collected.spelled);
+        errors.extend(specification.resolve_written(&collected.spelled));
 
         errors.extend(specification.validate_after(&collected.refused));
         errors.extend(specification.validate_roster(&collected.roster));
@@ -391,10 +398,16 @@ impl Specification {
     }
 
     /// Replaces every authored predicate an `ess/22` source wrote with what its bare words name
-    /// there (`docs/design/expression-family-source22.md`, A1). Nothing moves below `ess/22`.
-    fn resolve_written(&mut self, written: &crate::expression::lexical::Written) {
+    /// there (`docs/design/expression-family-source22.md`, A1). Nothing moves below `ess/22`. What it
+    /// refuses is an enum attribute read that names no value of the attribute (ess/23).
+    fn resolve_written(
+        &mut self,
+        written: &crate::expression::lexical::Written,
+    ) -> ValidationErrors {
         let registry = self.types_with_lifecycles(&mut ValidationErrors::new());
-        let resolved = crate::expression::lexical::resolutions(self, &registry, written);
+        let mut refusals = ValidationErrors::new();
+        let resolved =
+            crate::expression::lexical::resolutions(self, &registry, written, &mut refusals);
         for (site, predicate) in resolved {
             if let crate::expression::lexical::Site::TypeInvariant { name, index } = &site {
                 // A declared type is held twice — in the registry and in its domain's list — and
@@ -425,6 +438,7 @@ impl Specification {
                 *slot = predicate;
             }
         }
+        refusals
     }
 
     /// Checks every reference in the specification.

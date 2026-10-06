@@ -20,6 +20,9 @@ pub(super) fn emit(plan: &Plan) -> Realization {
     for (name, node) in &plan.definitions {
         let rendered = render(node, plan, &mut report.obligations);
         writeln!(output, "export type {} = {rendered};\n", plan.names[name]).expect("String write");
+        if let Some(attributes) = plan.attributes.get(&node.pointer) {
+            accessors(&mut output, &plan.names[name], attributes);
+        }
     }
     Realization {
         declarations: output,
@@ -182,5 +185,50 @@ fn literal(value: &Value, pointer: &str, obligations: &mut BTreeSet<Finding>) ->
             value.to_string()
         }
         _ => value.to_string(),
+    }
+}
+
+/// One function per typed variant attribute of the enum `name` (`ess/23`, beyond10x/ess#450),
+/// answering each variant's value: `boolean`, `number`, or the text — a `Decimal` as its decimal
+/// string — and `undefined` where a variant leaves the attribute unfilled.
+fn accessors(output: &mut String, name: &str, attributes: &[super::EnumAttribute]) {
+    let mut function = String::new();
+    let mut chars = name.chars();
+    if let Some(first) = chars.next() {
+        function.push(first.to_ascii_lowercase());
+        function.push_str(chars.as_str());
+    }
+    for attribute in attributes {
+        let ty = match attribute.kind.as_str() {
+            "boolean" => "boolean",
+            "integer" => "number",
+            _ => "string",
+        };
+        let ty = if attribute.optional {
+            format!("{ty} | undefined")
+        } else {
+            ty.to_owned()
+        };
+        let method = super::declaration_name(&attribute.name);
+        writeln!(
+            output,
+            "/** The `{}` each variant declares. */\nexport function {function}{method}(value: {name}): {ty} {{\n  switch (value) {{",
+            attribute.name
+        )
+        .expect("String write");
+        for (wire, value) in &attribute.values {
+            writeln!(
+                output,
+                "    case {}:\n      return {value};",
+                serde_json::to_string(wire).expect("JSON string")
+            )
+            .expect("String write");
+        }
+        let fallthrough = if attribute.optional {
+            "  }\n  return undefined;\n}\n"
+        } else {
+            "  }\n  throw new Error(\"value is not a declared variant\");\n}\n"
+        };
+        output.push_str(fallthrough);
     }
 }
