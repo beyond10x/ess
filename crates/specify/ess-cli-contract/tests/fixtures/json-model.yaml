@@ -1,0 +1,24 @@
+format: ess/15
+system: demo
+version: v1
+types:
+  - name: demo.Input
+    kind: struct
+    fields:
+      - {name: profile, type: String}
+  - name: demo.Inner
+    kind: struct
+    fields:
+      - {name: document, type: Json}
+  - name: demo.Described
+    kind: struct
+    fields:
+      - {name: payload, type: Json}
+      - {name: maybe, type: 'Optional<Json>'}
+      - {name: items, type: 'List<Json>'}
+      - {name: keyed, type: 'Map<String, Json>'}
+      - {name: nested, type: 'Optional<demo.Inner>'}
+  - name: demo.Failure
+    kind: struct
+    fields:
+      - {name: reason, type: String}
