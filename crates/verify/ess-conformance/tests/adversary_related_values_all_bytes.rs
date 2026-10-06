@@ -5,6 +5,11 @@
 //! `fixtures/adversary-285-base-digests.tsv` holds, per model, the SHA-256 and length of
 //! `EssIr::to_canonical_json()`, of `ConformanceSuite::to_canonical_json()` and of the refusals
 //! joined by newlines, read from a build of an export of 26ad39057 with this file's walk.
+//!
+//! `arrangement-input-refusal.yaml`'s suite digest is re-pinned for beyond10x/ess#455 (32afe8ef4):
+//! its three overlapping input refusals now give the earlier one a witness outside the later
+//! guards and send each overlap separately, requiring the first declared. Its IR and refusal
+//! digests are unchanged, and the old suite digest is what the released 0.53.0 synthesizes.
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 

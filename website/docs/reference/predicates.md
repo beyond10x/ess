@@ -30,7 +30,7 @@ disagree with the page today, and fails once it agrees, so the marker cannot out
 | a struct type's `invariants` | the struct's own fields | Same grammar, checked against the type. |
 | a newtype's `invariants` | the wrapped value, as `value` | For example `value != ""` on a newtype of `String`. |
 | a view's `filter` | the source entity's fields and its lifecycle `state` | Selects the rows the view returns. |
-| a binding selection's `where` | one list item's fields | A bounded fragment: presence, typed equality and inequality, and `all`/`any`/`not`. See [select ordered records in a binding](../guides/specify/bindings-and-components.md#select-ordered-records-in-a-binding). |
+| a binding selection's `where` | one list item's fields | A bounded fragment: presence, typed equality and inequality, and `all`/`any`/`not`. See [select ordered records in a binding](../guides/specify/binding-context.md#select-ordered-records-in-a-binding). |
 
 Two outcome keys that look like guards are **not** predicates:
 
