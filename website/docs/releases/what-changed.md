@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.55.0 — 2026-10-06
+
+### CLI results carry Json, and an optional generated value reads a port
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.55.0)
+
+A CLI result field may be typed `Json` and is written as JSON rather than JSON text, so a caller parses an answer once. A `{generated: true}` value of type `Optional<T>` is now supplied by the implementation through a generator port in generated Rust and Go, instead of always being absent; a context that implements the port must add the method.
+
 ## 0.54.0 — 2026-10-06
 
 ### Counted event claims, generate --check and validation completeness

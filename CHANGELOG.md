@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.55.0] — 2026-10-06
+
 ### Added
 
 - `ess generate cli` admits a CLI result field typed `Json`, alone or under `Optional`, `List` or
