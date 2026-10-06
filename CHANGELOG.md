@@ -13,6 +13,16 @@
   bytes, so `ess generate cli --check` reports drift until they are regenerated
   (beyond10x/ess#468).
 
+### Changed
+
+- A `{generated: true}` payload value of type `Optional<T>` is now supplied by the
+  implementation: generated Rust and Go behaviours read it from a new context port method,
+  `generate_optional_<t>` returning `Option<T>` (`try_generate_optional_<t>` on `TryContext`) and
+  `GenerateOptional<T>` returning `*T` (`TryGenerateOptional<T>` on `FallibleContext`), instead of
+  always filling it absent. A context that implements the port must add the method. The generated
+  demonstration context answers it absent. An event field nothing sets stays absent and asks no
+  port (beyond10x/ess#467).
+
 ## [0.54.0] — 2026-10-06
 
 ### Added

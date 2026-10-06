@@ -11,7 +11,7 @@ pub(super) fn unmet(ir: &EssIr, uses: &Uses) -> BTreeSet<String> {
         .map(|(_, attribute)| format!("caller attribute: {attribute}"))
         .collect();
     for reference in uses.assigned.values() {
-        if !crate::served::supported(ir, reference) {
+        if !crate::served::answered(ir, reference) {
             unmet.insert(format!("assigned value: {reference}"));
         }
     }
@@ -37,7 +37,9 @@ pub(super) fn implementation(emit: &Emit<'_>, uses: &Uses) -> String {
     }
     for (method, reference) in &uses.assigned {
         let ty = emit.go_type(reference);
-        let body = if crate::served::supported(emit.ir, reference) {
+        let body = if reference.is_optional() {
+            "return nil, nil".to_owned()
+        } else if crate::served::supported(emit.ir, reference) {
             let value = value(emit, reference, "assigned");
             if crate::served::primitive(emit.ir, reference) == Some(Primitive::Uuid) {
                 format!("assigned, err := memoryUUID()\n\tif err != nil {{\n\t\tvar zero {ty}\n\t\treturn zero, err\n\t}}\n\treturn {value}, nil")
