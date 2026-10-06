@@ -3487,6 +3487,9 @@ fn run_as(
     // names a row nobody arranged, which `exists: false` claims, so it is kept only where it
     // reads no row; otherwise the branch is arranged as its siblings are, on a present row and an
     // input no `when_related` branch claims, or refused naming them.
+    if witness == Witness::Full && related_guard::stored_external(command, outcome, &setup) {
+        return Err(related_guard::stored_external_refused(command, outcome));
+    }
     let external_row = !related
         && witness == Witness::Full
         && related_guard::arranges_external(command, outcome)
@@ -3710,18 +3713,35 @@ fn unclaimed_external(
     if !has_subject_guards(command) {
         return Ok((setup, input));
     }
-    let (Some(subject), Some(held)) = (outcome.subject.as_ref(), setup.before.clone()) else {
+    // A branch naming no subject of its own — an external refusal — reads the row its siblings
+    // act on, which the held state of selects them by (beyond10x/ess#464).
+    let own = outcome.subject.as_ref();
+    let Some(subject) = own.or_else(|| {
+        command
+            .outcomes
+            .iter()
+            .filter_map(|branch| branch.subject.as_ref())
+            .find(|subject| matches!(subject.instance, ResolvedInstance::Supplied { .. }))
+    }) else {
         return Ok((setup, input));
     };
-    let facts = flatten(ir, command, &input).map_err(RefusalCause::WitnessRejected)?;
-    let claiming = held_state_claims(command, outcome, &held, &facts);
-    if claiming.is_empty() {
-        return Ok((setup, input));
+    // The plain witness is kept where its row rests in a held state no sibling claims it in. One
+    // naming no subject was sent for no row at all, which existence answers first.
+    let held = setup.before.clone();
+    match &held {
+        Some(held) => {
+            let facts = flatten(ir, command, &input).map_err(RefusalCause::WitnessRejected)?;
+            if held_state_claims(command, outcome, held, &facts).is_empty() {
+                return Ok((setup, input));
+            }
+        }
+        None if own.is_none() => {}
+        None => return Ok((setup, input)),
     }
     // The held states the branch is taken in: the ones its move starts from, every one where it
     // moves nothing.
     let lifecycle = &ir.entity(&subject.entity).lifecycle;
-    let states: Vec<StateName> = subject.effect.transition().map_or_else(
+    let states: Vec<StateName> = own.and_then(|own| own.effect.transition()).map_or_else(
         || lifecycle.states.iter().cloned().collect(),
         |transition| transition.from.iter().cloned().collect(),
     );
@@ -3738,31 +3758,157 @@ fn unclaimed_external(
             tried += 1;
             continue;
         };
-        let arranged = match plain.take_if(|_| state == held) {
+        let arranged = match plain.take_if(|_| held.as_ref() == Some(&state)) {
             Some(plain) => Ok(plain),
-            None => prepare(ir, outcome, actors, Some(&state)),
+            None if own.is_some() => prepare(ir, outcome, actors, Some(&state)),
+            None => held_row(ir, subject, &state, actors),
         };
         let Ok(mut setup) = arranged else {
             tried += 1;
             continue;
         };
-        if let Some(instance) = setup.instance.clone() {
-            let (observed, view) = observe_subject_state(ir, outcome, &instance, &state)?;
+        let instance = setup.instance.clone().or_else(|| match &subject.instance {
+            ResolvedInstance::Supplied { field } => setup.bound.get(&field.name).cloned(),
+            ResolvedInstance::Observed { .. } => None,
+        });
+        if let Some(instance) = instance {
+            let label = outcome.name.to_string();
+            let (observed, view) =
+                observe_selection_subject(ir, subject, &instance, &state, &label)?;
             setup.steps.extend(observed);
             setup.source.insert(view.into());
         }
+        // Its writes moved off what the row holds, as every plain witness's are
+        // (beyond10x/ess#161), where the moved input still reaches the branch.
+        let input = freshened_external(
+            ir,
+            command,
+            outcome,
+            input,
+            (Some(&state), &setup.settled),
+            &|moved| reaches_external(ir, command, outcome, &refuted, moved),
+        );
         return Ok((setup, input));
     }
+    let siblings: Vec<&ResolvedOutcome> = command
+        .outcomes
+        .iter()
+        .filter(|branch| branch.name != outcome.name)
+        .filter(|branch| {
+            matches!(
+                branch.condition,
+                ResolvedCondition::SubjectState { .. } | ResolvedCondition::StateChange { .. }
+            )
+        })
+        .collect();
     Err(RefusalCause::GuardUnsatisfiable {
         predicate: format!(
             "`{}` forced on a `{}` it is taken from, sent an input no branch selected by the held \
              state claims: none of {}",
             outcome.name,
             subject.entity.name(),
-            named_guards(&claiming)
+            named_guards(&siblings)
         ),
         tried,
     })
+}
+
+/// A re-witnessed external branch's input, freshened as [`arranged_plain`] freshens every plain
+/// witness (beyond10x/ess#161) where `keeps` still holds of the result: a write the row already
+/// holds proves nothing about the write. Where the whole move does not keep — it moved an input a
+/// sibling's guard reads back into that guard — only the inputs the branch's `sets:` entries read
+/// take their moved values, and otherwise the input is sent as the search chose it.
+fn freshened_external(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    input: BTreeMap<String, Node>,
+    (held, settled): (Option<&StateName>, &BTreeMap<String, Determined>),
+    keeps: &dyn Fn(&BTreeMap<String, Node>) -> bool,
+) -> BTreeMap<String, Node> {
+    let Ok(moved) = existence::fresh_created(ir, command, outcome, input.clone(), false)
+        .map(|fresh| freshened(ir, command, outcome, fresh, held, settled))
+    else {
+        return input;
+    };
+    if keeps(&moved) {
+        return moved;
+    }
+    let mut written = input.clone();
+    for set in &outcome.sets {
+        let ResolvedPayloadValue::InputField { field, .. } = &set.value else {
+            continue;
+        };
+        if let Some(value) = ess_compiler::ir::read_input(&moved, field) {
+            set_at(&mut written, field, Some(value.clone()));
+        }
+    }
+    if written != input && keeps(&written) {
+        written
+    } else {
+        input
+    }
+}
+
+/// A row of `subject`'s entity resting in `held`, for a branch naming no subject of its own: sent
+/// naming it through the field the subject is supplied by, and left as it was.
+fn held_row(
+    ir: &EssIr,
+    subject: &ResolvedSubject,
+    held: &StateName,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+) -> Result<Setup, RefusalCause> {
+    let ResolvedInstance::Supplied { field } = &subject.instance else {
+        return Err(RefusalCause::StrategyWithoutGuard {
+            strategy: TestStrategy::InjectFault,
+        });
+    };
+    let arrangement = arrange_first(
+        ir,
+        &subject.entity,
+        std::slice::from_ref(held),
+        actors,
+        Distinction::PLAIN,
+        &[],
+    )
+    .map_err(|reason| RefusalCause::InstanceRequired {
+        entity: EntityRef::from(&subject.entity),
+        need: InstanceNeed::Updates,
+        reason,
+    })?;
+    Ok(Setup {
+        steps: arrangement.steps,
+        bound: BTreeMap::from([(field.name.clone(), arrangement.instance)]),
+        source: arrangement.source,
+        ..Setup::none()
+    })
+}
+
+/// Whether `input` reaches the external `outcome` beside siblings the held state selects through
+/// `held`, their input guards: its own guard holds, no input-guarded refusal and no accepting
+/// `when:` declared before it claims it, and every guard of `held` is refuted — the reading
+/// [`reach_external_beside`] chose it under.
+fn reaches_external(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    held: &[&Predicate],
+    input: &BTreeMap<String, Node>,
+) -> bool {
+    let Ok(facts) = flatten(ir, command, input) else {
+        return false;
+    };
+    let own: Vec<&Predicate> = match &outcome.condition {
+        ResolvedCondition::ExternalWhen { predicate, .. } => vec![predicate],
+        _ => Vec::new(),
+    };
+    let refusals: Vec<&Predicate> = sibling_refusals(command, outcome)
+        .filter_map(when)
+        .collect();
+    decides(&facts, &own, true).unwrap_or(false)
+        && decides(&facts, &refusals, false).unwrap_or(false)
+        && !claimed_by(&facts, &earlier_accepting(command, outcome))
+        && decides(&facts, held, false).unwrap_or(false)
 }
 
 /// The siblings selected by the held state `held` that claim an external branch's input, as
@@ -4883,25 +5029,27 @@ fn advance(
                 },
             })?
         } else if subject_fact::uses(driver.command) {
+            let unwitnessable = || Unreachable::Unwitnessable {
+                outcome: OutcomeRef::new(
+                    CommandRef::new(driver.command.name.clone()),
+                    driver.outcome.name.clone(),
+                ),
+            };
+            // An external driver, which no row selects, is run only where nothing else reaches the
+            // state: with an input no branch the row selects claims (beyond10x/ess#464).
+            let external = || {
+                subject_fact::external_step(ir, entity, &driver, &arrangement, actors)
+                    .ok_or_else(unwitnessable)
+            };
             match subject_fact::step(ir, entity, &driver, &arrangement, actors) {
                 Some(next) => next,
                 None if arranging.is_empty() => {
-                    return subject_fact::reach_state(ir, entity, target, actors, distinction)
-                        .map_err(|_| Unreachable::Unwitnessable {
-                            outcome: OutcomeRef::new(
-                                CommandRef::new(driver.command.name.clone()),
-                                driver.outcome.name.clone(),
-                            ),
-                        });
+                    match subject_fact::reach_state(ir, entity, target, actors, distinction) {
+                        Ok(found) => return Ok(found),
+                        Err(_) => external()?,
+                    }
                 }
-                None => {
-                    return Err(Unreachable::Unwitnessable {
-                        outcome: OutcomeRef::new(
-                            CommandRef::new(driver.command.name.clone()),
-                            driver.outcome.name.clone(),
-                        ),
-                    })
-                }
+                None => external()?,
             }
         } else {
             let invoked = invoke(

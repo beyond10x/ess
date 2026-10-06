@@ -186,6 +186,59 @@ pub(super) fn arranges_external(command: &ResolvedCommand, outcome: &ResolvedOut
         && is_external(outcome)
 }
 
+/// Whether `outcome` is an external branch of a command whose `when_related` guard reads a stored
+/// reference of the addressed row (ess/22, beyond10x/ess#304), sent by the plain witness `setup`
+/// for a row whose reference is not known to be left out (beyond10x/ess#464). Which row such a
+/// reference names is not arranged for an external branch, so a missing one — or no addressed row
+/// at all, for a branch naming no subject of its own — would answer before it.
+pub(super) fn stored_external(
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    setup: &Setup,
+) -> bool {
+    is_external(outcome)
+        && outcome.replays.is_none()
+        && stored::field(command).is_some_and(|(field, _)| {
+            setup.settled.get(field).is_none_or(|held| {
+                !matches!(
+                    held.value,
+                    crate::scenario::ScenarioValue::Literal { value: Node::Null }
+                )
+            })
+        })
+}
+
+/// The refusal of a [`stored_external`] branch, naming the `when_related` branches over the
+/// stored reference.
+pub(super) fn stored_external_refused(
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+) -> RefusalCause {
+    let field = stored::field(command).map_or("", |(field, _)| field);
+    let claiming: Vec<String> = command
+        .outcomes
+        .iter()
+        .filter_map(|branch| match &branch.condition {
+            ResolvedCondition::Related { test, .. } => Some(match test {
+                ResolvedRelatedTest::Absent => format!("`{}` (exists: false)", branch.name),
+                ResolvedRelatedTest::Holds { predicate } => {
+                    format!("`{}` ({predicate})", branch.name)
+                }
+            }),
+            _ => None,
+        })
+        .collect();
+    RefusalCause::GuardUnsatisfiable {
+        predicate: format!(
+            "`{}` forced on a row whose stored reference `subject.{field}` no `when_related` \
+             branch claims: none of {}; such a reference is not arranged for an external branch",
+            outcome.name,
+            claiming.join(", ")
+        ),
+        tried: 0,
+    }
+}
+
 /// Whether `outcome` is decided by a provider.
 fn is_external(outcome: &ResolvedOutcome) -> bool {
     matches!(

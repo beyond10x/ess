@@ -763,6 +763,86 @@ fn row_set_sibling_witnessed_or_refused() {
     }
 }
 
+// ---- an external witness no sibling claims keeps its bytes --------------------------------------
+
+/// The canonical bytes of the one-scenario suite holding `id`, as `<length>:<hash>`: the digest
+/// adversary pass 1 of beyond10x/ess#464 pinned these scenarios with at base (bc4884203).
+fn scenario_digest(result: &Synthesis, id: &str) -> String {
+    let mut one = result.suite.clone();
+    one.scenarios.retain(|other, _| other.to_string() == id);
+    assert_eq!(one.scenarios.len(), 1, "no scenario {id}");
+    let json = one.to_canonical_json().unwrap();
+    let hash = json.bytes().fold(0u64, |h, b| {
+        h.wrapping_mul(1_099_511_628_211).wrapping_add(u64::from(b))
+    });
+    format!("{}:{hash:x}", json.len())
+}
+
+/// External witnesses no sibling claimed at base (bc4884203), each passing the model interpreter
+/// there, keep their bytes: the plain witness is kept wherever no sibling claims it. `stalled` is
+/// sent `Gentle` beside `shut`, which claims only `Rough`; `unlisted` beside a `stale` that claims
+/// only a stored revision above the input's. [`repository_model_suites_change_only_where_claimed`]
+/// leaves every external witness beside such a guard out, claimed or not, so this is where an
+/// unclaimed one is held.
+#[test]
+fn unclaimed_external_witnesses_keep_their_bytes() {
+    let door = DOOR.replace("PUSH", "Rough");
+    let gt = MODEL.replace("revision != input.revision", "revision > input.revision");
+    let pinned: [(&str, &str, &str); 5] = [
+        (
+            "door",
+            "demo.doors.Operate/outcome/stalled",
+            "4856:38de8940626a100",
+        ),
+        (
+            "door",
+            "demo.doors.Door/transition/jam/by/demo.doors.Operate/stalled",
+            "4879:a00983a30a269bec",
+        ),
+        (
+            "door",
+            "demo.doors.Door/state/Jammed/refuses/demo.doors.Operate",
+            "5366:e6d3404ee10ab81d",
+        ),
+        (
+            "gt",
+            "demo.desk.CheckPick/outcome/unlisted",
+            "4501:86dd28889c3dcb9b",
+        ),
+        (
+            "gt",
+            "demo.desk.Pick/transition/refuse/by/demo.desk.CheckPick/unlisted",
+            "4529:3cea3716e45084e9",
+        ),
+    ];
+    let door_result = synthesis(&door);
+    let gt_result = synthesis(&gt);
+    for (label, text, result) in [("door", &door, &door_result), ("gt", &gt, &gt_result)] {
+        assert_eq!(
+            not_passed(&run(text, &result.suite)),
+            Vec::<String>::new(),
+            "{label}"
+        );
+    }
+    let moved: Vec<String> = pinned
+        .iter()
+        .filter_map(|(model, id, base)| {
+            let result = if *model == "door" {
+                &door_result
+            } else {
+                &gt_result
+            };
+            let here = scenario_digest(result, id);
+            (here != *base).then(|| format!("{model}: {id}: base {base}, here {here}"))
+        })
+        .collect();
+    assert_eq!(
+        moved,
+        Vec::<String>::new(),
+        "an unclaimed external witness moved"
+    );
+}
+
 // ---- every repository model, before and after ---------------------------------------------------
 
 /// The digests of every model of the base of beyond10x/ess#464 (bc4884203), written by this file
