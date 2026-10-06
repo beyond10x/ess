@@ -82,8 +82,11 @@ addressed row never supplies a fabricated subject or turns a subject-dependent s
 The accepted #282/#304 precedence governs: early input-reference missing-row refusals, ordinary
 input refusals, addressed-row existence and held-state checks keep their priority; stored-reference
 and present-related predicates follow them. Row-set tests join this latter stored-read phase,
-before selecting the accepting/default branch. `exists: false` on a row set is an empty-set test,
-not the early identity-reference absence branch. A nonmoving outcome remains independent of held
+before selecting the accepting/default branch. An absent addressed row that a creation branch of
+the same entity takes from the same input identity field is that creation's, not an unknown
+instance: on an upsert (an `external:` creation beside an updating or deleting default) the row
+sets answer first, then the creation (beyond10x/ess#462). `exists: false` on a row set is an
+empty-set test, not the early identity-reference absence branch. A nonmoving outcome remains independent of held
 state under #282's rule. If a command combines multiple related conditions under #283, identity
 absence and Optional absence retain #283/#304's explicit rules; no row-set test promotes itself
 to their earlier phase. Value reads occur only after that branch is selected and still read the

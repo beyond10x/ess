@@ -1,0 +1,68 @@
+format: ess/23
+system: demo
+version: v1
+domain: demo.vault
+summary: Shelves keyed by a struct identity; a store is refused on a sealed shelf.
+types:
+  - name: demo.vault.Place
+    kind: struct
+    fields:
+      - {name: region, type: String}
+      - {name: shelf, type: String}
+entities:
+  - name: demo.vault.Shelf
+    identity: {name: at, type: demo.vault.Place}
+    fields:
+      - {name: mode, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+commands:
+  - name: demo.vault.OpenShelf
+    input:
+      - {name: at, type: demo.vault.Place}
+      - {name: mode, type: String}
+    outcomes:
+      - name: opened
+        creates: demo.vault.Shelf
+        instance: at
+        sets: {mode: input.mode}
+        emits: [demo.vault.ShelfOpened]
+        payload:
+          demo.vault.ShelfOpened: {at: input.at}
+  - name: demo.vault.Store
+    input:
+      - {name: place, type: demo.vault.Place}
+    outcomes:
+      - name: sealed
+        when_related:
+          entity: demo.vault.Shelf
+          where: {all: [at.region == input.place.region, at.shelf == input.place.shelf, mode == sealed]}
+          exists: true
+        error: demo.vault.Sealed
+      - name: stored
+        emits: [demo.vault.Stored]
+        payload:
+          demo.vault.Stored: {place: input.place}
+errors:
+  - {name: demo.vault.Sealed, summary: The shelf is sealed.}
+events:
+  - name: demo.vault.ShelfOpened
+    fields: [{name: at, type: demo.vault.Place}]
+  - name: demo.vault.Stored
+    fields: [{name: place, type: demo.vault.Place}]
+actors:
+  - name: demo.vault.Clerk
+    may: [demo.vault.OpenShelf, demo.vault.Store]
+views:
+  - name: demo.vault.Shelves
+    source: demo.vault.Shelf
+    consistency: read_your_writes
+    fields:
+      - {name: at, type: demo.vault.Place}
+      - {name: mode, type: String}
+      - {name: state, type: demo.vault.Shelf.State}
+components:
+  - component: vault-lib
+    summary: Shelves keyed by a struct identity.
+    owns: {domains: [demo.vault]}
+    accepts: {commands: [demo.vault.OpenShelf, demo.vault.Store]}
+    reached_by: in_process

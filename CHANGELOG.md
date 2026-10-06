@@ -56,6 +56,28 @@
 - From `ess/23`, a refusal selected by `when_subject: {predicate: …}` asserts the whole record
   unchanged, and a predicate on `state` is witnessed in each state it claims; the ESS-COMMAND-004
   hint names the state-predicate form (beyond10x/ess#461).
+- From `ess/23`, an `affects:` entry may write one record per element of an input list:
+  `each: {in: input.<list>, as: <name>}` with `instance: <name>.<member>` updates the record an
+  element names when it is held and creates it in the initial state when not, and `sets:` may
+  read `<name>.<member>`. It is admitted only where a declared `distinct:` keeps that member
+  distinct, and refused beside `where:`, `moves:` or `deletes:`, without a subject and below
+  `ess/23`. The interpreter executes it and the suite checks held, new and decoy rows; Entity
+  Runtime and the code targets refuse it by name (beyond10x/ess#459).
+- From `ess/23`, a row-set selector that compares with the input is decided on a command that
+  also names an existing record through the input: an update, a delete or an upsert; below
+  `ess/23` such a branch stays refused (beyond10x/ess#462).
+- From `ess/23`, synthesis scopes a row-set selector by an equality on a `String` or `Uuid`
+  member of a struct identity (`at.region == input.place.region`), reads each row identity member
+  by member and arranges decoys under other identities; the whole-struct `at == input.place`
+  stays `ESS-COMMAND-002` (beyond10x/ess#463).
+- `ess-cli/1` binds a trailing argument list: `source: {kind: trailing}` on one required
+  `List<String>` field per command takes every argv word after the first `--`, verbatim, never
+  parsed as options or JSON, and `[]` when nothing follows. Positionals are filled only before
+  `--`, and help renders `[-- <field:args>...]`. Other shapes and a second trailing source are
+  refused; a non-UTF-8 word is `cli_parse`, exit 2. No format change: existing bindings compile
+  to the same plan, and an older ess refuses the kind by name. Generated CLI packages carry new
+  `src/wire.rs` and `src/runtime.rs` bytes, so `ess generate cli --check` reports drift until
+  they are regenerated (beyond10x/ess#466).
 - Guides and design notes for requests answered with an existing idiom: adoption modes and which
   generated files to commit (beyond10x/ess#436, beyond10x/ess#435), read-API view idioms for
   derived values, the latest correlated row, per-key totals, units, order-dependent values and
@@ -82,7 +104,10 @@
   over a variant names the variant, and a coverage proof that gives up says why
   (beyond10x/ess#426).
 - An `affects:` entry with neither `where:` nor `each:` is refused as `missing_declaration`, and
-  the published schema no longer requires `where` on an entry.
+  the published schema no longer requires `where` on an entry (beyond10x/ess#459).
+- In every source format a row-set branch arranges its decoys both before and after the selected
+  rows, so a target that keeps only the newest or the oldest record per compared value fails;
+  four `ess/22` suites gain steps, with unchanged scenario ids and refusals (beyond10x/ess#463).
 
 ### Fixed
 
@@ -93,6 +118,12 @@
   follows (beyond10x/ess#430, beyond10x/ess#465).
 - Below `ess/23`, bulk-removal refusals keep their 0.53.0 wording and no longer cascade into
   "declares no outcomes".
+- The reference interpreter answers an upsert guarded by a row set through the row sets first,
+  then the creation, when the record is absent; an update or delete with no creation branch keeps
+  its unknown-instance answer (beyond10x/ess#462).
+- No synthesized scenario creates an identity a row already carries, a creating branch of a
+  row-set command no longer arranges its sibling update's record, and a stored identity no longer
+  leaves a row predicate that does not read it undecided (beyond10x/ess#463).
 
 ## [0.53.0] — 2026-10-05
 
