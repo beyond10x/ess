@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-06T19:43:55Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-468",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "Unit branch unit/ess-055-468 at 0d9534941: ess-cli-contract 32 and ess-cli-project 174 tests passed, 0 failed; clippy -D warnings and task fmt-check exit 0. Final head 419da20dd: local gate and PR beyond10x/ess#475 CI run 37514743019 green",
+    "reference": "https://github.com/beyond10x/ess/actions/runs/37514743019"
+  }
+}
