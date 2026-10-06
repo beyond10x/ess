@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-453
 kind: story
-status: active
+status: implemented
 title: 'Concurrency: a process-local lock serialising every transition'
 tags:
 - ess-0.54.0
@@ -22,10 +22,11 @@ scope:
   path: website/docs/guides/verify/explore.md
 - confidence: cited
   path: website/docs/guides/verify/one-time-responses.md
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-05T13:26:29Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-10-05T13:26:30Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-10-06T17:48:55Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Outcome
 Resolve beyond10x/ess#453: Concurrency: a process-local lock serialising every transition.

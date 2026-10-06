@@ -39,7 +39,35 @@ fn primitive(primitive: Primitive) -> Result<Shape, Error> {
         Primitive::String => Ok(Shape::String),
         Primitive::Boolean => Ok(Shape::Boolean),
         Primitive::Integer => Ok(Shape::Integer),
+        // Resolved everywhere, and refused by `compile` outside a result.
+        Primitive::Json => Ok(Shape::Json),
         other => Err(refuse(format!("unsupported CLI primitive `{other}`"))),
+    }
+}
+
+/// Whether a `Json` value sits anywhere in a shape.
+fn carries_json(shape: &Shape) -> bool {
+    match shape {
+        Shape::Json => true,
+        Shape::String | Shape::Boolean | Shape::Integer | Shape::Enum { .. } => false,
+        Shape::Optional { of } | Shape::List { of } => carries_json(of),
+        Shape::Map { value } => carries_json(value),
+        Shape::Struct { fields } => fields.values().any(carries_json),
+    }
+}
+
+/// An argv word has no JSON spelling the binding declares, so no input field carries `Json`.
+fn input_without_json(input: &ValueContract) -> Result<(), Error> {
+    let Shape::Struct { fields } = &input.shape else {
+        // `input_fields` has already refused every input but a declared struct.
+        return Ok(());
+    };
+    match fields.iter().find(|(_, shape)| carries_json(shape)) {
+        Some((name, _)) => Err(refuse(format!(
+            "CLI input field `{name}` carries `Json`, which has no argv spelling; \
+             `Json` is admitted only in result fields"
+        ))),
+        None => Ok(()),
     }
 }
 
@@ -409,6 +437,27 @@ fn invalid_input(
     Ok(())
 }
 
+/// A callable's declared error codes and their data contracts.
+fn error_contracts(
+    model: &EssIr,
+    declared: &BTreeMap<String, String>,
+) -> Result<BTreeMap<String, ValueContract>, Error> {
+    let mut errors = BTreeMap::new();
+    for (code, reference) in declared {
+        if !identifier(code) || code.starts_with("cli_") {
+            return Err(refuse("invalid or reserved error code"));
+        }
+        let error = contract(model, reference)?;
+        if carries_json(&error.shape) {
+            return Err(refuse(format!(
+                "CLI error `{code}` carries `Json`; `Json` is admitted only in result fields"
+            )));
+        }
+        errors.insert(code.clone(), error);
+    }
+    Ok(errors)
+}
+
 /// Resolve all used ESS types and owners, then validate the supported CLI projection.
 pub fn compile(model: &EssIr, binding: &Binding) -> Result<CompiledBinding, Error> {
     if !token(&binding.binary) {
@@ -445,15 +494,10 @@ pub fn compile(model: &EssIr, binding: &Binding) -> Result<CompiledBinding, Erro
             .as_ref()
             .map(|input| contract(model, input))
             .transpose()?;
+        input.as_ref().map_or(Ok(()), input_without_json)?;
         let result = contract(model, &declared.result)?;
         validate_target(model, &declared.target, fields, &result.shape)?;
-        let mut errors = BTreeMap::new();
-        for (code, reference) in &declared.errors {
-            if !identifier(code) || code.starts_with("cli_") {
-                return Err(refuse("invalid or reserved error code"));
-            }
-            errors.insert(code.clone(), contract(model, reference)?);
-        }
+        let errors = error_contracts(model, &declared.errors)?;
         if let Some(code) = &declared.invalid_input {
             invalid_input(code, declared.input.is_some(), &errors)?;
         }

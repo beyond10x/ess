@@ -491,3 +491,171 @@ fn design_page_trailing_example_compiles() {
         .to_canonical_json()
         .contains("\"kind\": \"trailing\""));
 }
+
+/// beyond10x/ess#468: a command that answers an arbitrary JSON document declares it `Json`.
+/// `ess-cli-project`'s `json_results.rs` generates a package from the same two documents.
+const JSON_MODEL: &str = include_str!("fixtures/json-model.yaml");
+const JSON_BINDING: &str = include_str!("fixtures/json-cli.yaml");
+
+#[test]
+fn json_result_fields_compile_to_the_json_shape() {
+    use ess_cli_contract::wire::Shape;
+    use std::collections::BTreeMap;
+    let json = || Box::new(Shape::Json);
+    let compiled = launch(JSON_MODEL, JSON_BINDING).unwrap();
+    assert_eq!(
+        compiled.plan().callables["describe"].result.shape,
+        Shape::Struct {
+            fields: BTreeMap::from([
+                ("payload".to_owned(), Shape::Json),
+                ("maybe".to_owned(), Shape::Optional { of: json() }),
+                ("items".to_owned(), Shape::List { of: json() }),
+                ("keyed".to_owned(), Shape::Map { value: json() }),
+                (
+                    "nested".to_owned(),
+                    Shape::Optional {
+                        of: Box::new(Shape::Struct {
+                            fields: BTreeMap::from([("document".to_owned(), Shape::Json)]),
+                        }),
+                    },
+                ),
+            ]),
+        }
+    );
+    assert!(compiled.to_canonical_json().contains("\"kind\": \"json\""));
+    // The result itself may be `Json`, alone or wrapped.
+    for (result, shape) in [
+        ("Json", Shape::Json),
+        ("'Optional<Json>'", Shape::Optional { of: json() }),
+        ("'List<Json>'", Shape::List { of: json() }),
+        ("'Map<String, Json>'", Shape::Map { value: json() }),
+    ] {
+        let binding = JSON_BINDING.replace("result: demo.Described", &format!("result: {result}"));
+        let compiled = launch(JSON_MODEL, &binding).unwrap();
+        assert_eq!(
+            compiled.plan().callables["describe"].result.shape,
+            shape,
+            "{result}"
+        );
+    }
+}
+
+#[test]
+fn json_result_shape_accepts_any_json_value_and_refuses_the_rest() {
+    use serde_json::json;
+    let compiled = launch(JSON_MODEL, JSON_BINDING).unwrap();
+    let shape = &compiled.plan().callables["describe"].result.shape;
+    for document in [
+        json!({"a": [1, true, null], "b": {"c": "d"}}),
+        json!([1, "two", {"three": 3.5}]),
+        json!("{\"not\": \"parsed\"}"),
+        json!(-3),
+        json!(1.5),
+        json!(false),
+        json!(null),
+    ] {
+        let value = json!({
+            "payload": document,
+            "maybe": document,
+            "items": [document, {}],
+            "keyed": {"k": document},
+            "nested": {"document": document},
+        });
+        assert!(shape.accepts(&value), "rejected {value}");
+    }
+    assert!(shape.accepts(&json!({"payload": {}, "items": [], "keyed": {}})));
+    for invalid in [
+        json!({"items": [], "keyed": {}}),
+        json!({"payload": {}, "keyed": {}}),
+        json!({"payload": {}, "items": {}, "keyed": {}}),
+        json!({"payload": {}, "items": [], "keyed": []}),
+        json!({"payload": {}, "items": [], "keyed": "{}"}),
+        json!({"payload": {}, "items": [], "keyed": {}, "nested": {}}),
+        json!({"payload": {}, "items": [], "keyed": {}, "extra": 1}),
+        json!([{"payload": {}, "items": [], "keyed": {}}]),
+        json!("{\"payload\": {}, \"items\": [], \"keyed\": {}}"),
+    ] {
+        assert!(!shape.accepts(&invalid), "accepted {invalid}");
+    }
+}
+
+#[test]
+fn json_input_and_error_fields_are_refused_naming_result_fields() {
+    for field in [
+        "Json",
+        "'Optional<Json>'",
+        "'List<Json>'",
+        "'Map<String, Json>'",
+        "demo.Inner",
+    ] {
+        let model = JSON_MODEL.replacen(
+            "{name: profile, type: String}",
+            &format!("{{name: profile, type: {field}}}"),
+            1,
+        );
+        assert_eq!(
+            launch(&model, JSON_BINDING).unwrap_err(),
+            "CLI input field `profile` carries `Json`, which has no argv spelling; \
+             `Json` is admitted only in result fields",
+            "{field}"
+        );
+    }
+    let binding = JSON_BINDING.replace("{failed: demo.Failure}", "{failed: demo.Inner}");
+    assert_eq!(
+        launch(JSON_MODEL, &binding).unwrap_err(),
+        "CLI error `failed` carries `Json`; `Json` is admitted only in result fields"
+    );
+}
+
+/// The `Shape` every `ess` before 0.55.0 reads a compiled plan with: the closed tagged enum of
+/// `wire.rs` at 0.54.0, with no `json` kind.
+#[derive(Debug, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[allow(dead_code)]
+enum OlderShape {
+    String,
+    Boolean,
+    Integer,
+    Enum {
+        variants: Vec<String>,
+    },
+    Optional {
+        of: Box<OlderShape>,
+    },
+    List {
+        of: Box<OlderShape>,
+    },
+    Map {
+        value: Box<OlderShape>,
+    },
+    Struct {
+        fields: std::collections::BTreeMap<String, OlderShape>,
+    },
+}
+
+#[test]
+fn an_older_plan_reader_refuses_the_json_shape_by_name() {
+    use ess_cli_contract::wire::Plan;
+    let text = launch(JSON_MODEL, JSON_BINDING)
+        .unwrap()
+        .to_canonical_json();
+    let plan: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let shape = plan["callables"]["describe"]["result"]["shape"].clone();
+    let error = serde_json::from_value::<OlderShape>(shape)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("unknown variant `json`"), "{error}");
+    // This reader round-trips it, and stays closed past it.
+    let read: Plan = serde_json::from_str(&text).unwrap();
+    assert_eq!(
+        format!("{}\n", serde_json::to_string_pretty(&read).unwrap()),
+        text
+    );
+    let later = text.replacen("\"kind\": \"json\"", "\"kind\": \"json5\"", 1);
+    assert_ne!(later, text);
+    let error = serde_json::from_str::<Plan>(&later)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("unknown variant `json5`"), "{error}");
+    assert!(error.contains("`json`"), "{error}");
+}

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-429
 kind: story
-status: active
+status: implemented
 title: No effect for an outcome that changes a record's identity (rename)
 tags:
 - ess-0.54.0
@@ -48,10 +48,11 @@ scope:
   path: website/docs/guides/specify/commands-and-outcomes.md
 - confidence: cited
   path: website/docs/reference/spec-versions.md
-revision: 9
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-05T13:26:20Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-10-05T13:26:20Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-10-06T17:47:50Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}}
 ---
 ## Outcome
 Resolve beyond10x/ess#429: No effect for an outcome that changes a record's identity (rename).

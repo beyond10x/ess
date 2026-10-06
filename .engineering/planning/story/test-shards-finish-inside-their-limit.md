@@ -2,12 +2,18 @@
 format: aep.planning-md/3
 id: story:test-shards-finish-inside-their-limit
 kind: story
-status: draft
+status: implemented
 title: Every CI test shard finishes inside its 30-minute limit
 tags:
 - ci
 - ess-0.54.0
-revision: 1
+relations:
+- serves: vision:O2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-06T17:50:02Z", actor: "human:timo", revision: 2, decided_on: {"recorded":{"test_result":1}}}
+- {from: "proposed", to: "active", at: "2026-10-06T17:50:03Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"test_result":1}}}
+- {from: "active", to: "implemented", at: "2026-10-06T17:50:04Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}}
 ---
 # Every CI test shard finishes inside its 30-minute limit
 

@@ -1,0 +1,16 @@
+format: ess-cli/1
+binary: json-demo
+about: Describe a document
+globals: {config: config, state: state-dir, output: output}
+callables:
+  describe:
+    target: {kind: local, owner: demo.cli, action: describe}
+    input: demo.Input
+    result: demo.Described
+    errors: {failed: demo.Failure}
+commands:
+  - path: [describe]
+    callable: describe
+    about: Describe a document
+    arguments:
+      - {field: profile, source: {kind: option, long: profile}}

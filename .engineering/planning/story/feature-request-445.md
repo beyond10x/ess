@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-445
 kind: story
-status: active
+status: implemented
 title: A binding mapping cannot write a Boolean or number literal
 tags:
 - ess-0.54.0
@@ -50,10 +50,11 @@ scope:
   path: docs/design/typed-literals-and-unknown-instances.md
 - confidence: cited
   path: website/docs/guides/specify/bindings-and-components.md
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-05T20:40:15Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":4}}}
 - {from: "proposed", to: "active", at: "2026-10-05T20:40:15Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":4}}}
+- {from: "active", to: "implemented", at: "2026-10-06T17:48:35Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"test_result":1,"review_outcome":5}}}
 ---
 ## Outcome
 Resolve beyond10x/ess#445: A binding mapping cannot write a Boolean or number literal.

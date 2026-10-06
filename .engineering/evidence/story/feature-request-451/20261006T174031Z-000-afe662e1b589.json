@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-06T17:40:31Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-451",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "ESS 0.54.0 Release preparation run 37503232859 succeeded at tag 0.54.0 (0da18eee381e) after PR beyond10x/ess#470 merged with a green Gate; the release carries beyond10x/ess#451",
+    "reference": "https://github.com/beyond10x/ess/actions/runs/37503232859"
+  }
+}

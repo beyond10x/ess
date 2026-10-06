@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-438
 kind: story
-status: active
+status: implemented
 title: List-typed view parameters and parameter defaults
 tags:
 - ess-0.54.0
@@ -41,10 +41,11 @@ scope:
   path: website/docs/guides/specify/aggregate-views.md
 - confidence: cited
   path: website/docs/reference/predicates.md
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-05T14:57:43Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":4}}}
 - {from: "proposed", to: "active", at: "2026-10-05T14:57:43Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":4}}}
+- {from: "active", to: "implemented", at: "2026-10-06T17:48:15Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"test_result":1,"review_outcome":5}}}
 ---
 ## Outcome
 Resolve beyond10x/ess#438: List-typed view parameters and parameter defaults.

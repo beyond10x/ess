@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-428
 kind: story
-status: active
+status: implemented
 title: Synthesis binds a view parameter only to a stored field of the same name (ESS-SYNTH-005)
 tags:
 - ess-0.54.0
@@ -24,10 +24,11 @@ scope:
   path: crates/verify/ess-conformance/tests/related_copied_view_parameter.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/view_param_binding.rs
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-05T13:26:22Z", actor: "human:timo", revision: 6}
 - {from: "proposed", to: "active", at: "2026-10-05T13:26:22Z", actor: "human:timo", revision: 7}
+- {from: "active", to: "implemented", at: "2026-10-06T17:47:46Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 Resolve beyond10x/ess#428: Synthesis binds a view parameter only to a stored field of the same name (ESS-SYNTH-005).

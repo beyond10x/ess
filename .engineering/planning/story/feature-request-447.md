@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-447
 kind: story
-status: active
+status: implemented
 title: 'Multi-source views: joins and computed columns'
 tags:
 - ess-0.54.0
@@ -23,10 +23,11 @@ scope:
   path: docs/design/read-api-view-idioms.example/joined.yaml
 - confidence: inferred
   path: docs/design/read-api-view-idioms.md
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-05T13:26:27Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-10-05T13:26:27Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-10-06T17:48:41Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Outcome
 Resolve beyond10x/ess#447: Multi-source views: joins and computed columns.

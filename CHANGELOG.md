@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+## [0.55.0] — 2026-10-06
+
+### Added
+
+- `ess generate cli` admits a CLI result field typed `Json`, alone or under `Optional`, `List` or
+  a `String`-keyed `Map`. The compiled plan carries a `json` shape; the generated adapter writes
+  the value as JSON rather than JSON text, and its result check accepts any JSON value there and
+  refuses a reply outside the declared shape as `cli_result`. An input or error field carrying
+  `Json` is refused, naming result fields as where it is admitted; a reader without the `json`
+  shape refuses such a plan as an unknown variant. Generated CLI packages carry new `src/wire.rs`
+  bytes, so `ess generate cli --check` reports drift until they are regenerated
+  (beyond10x/ess#468).
+
+### Changed
+
+- A `{generated: true}` payload value of type `Optional<T>` is now supplied by the
+  implementation: generated Rust and Go behaviours read it from a new context port method,
+  `generate_optional_<t>` returning `Option<T>` (`try_generate_optional_<t>` on `TryContext`) and
+  `GenerateOptional<T>` returning `*T` (`TryGenerateOptional<T>` on `FallibleContext`), instead of
+  always filling it absent. A context that implements the port must add the method. The generated
+  demonstration context answers it absent. An event field nothing sets stays absent and asks no
+  port (beyond10x/ess#467).
+
 ## [0.54.0] — 2026-10-06
 
 ### Added

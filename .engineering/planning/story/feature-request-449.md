@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-449
 kind: story
-status: active
+status: implemented
 title: A regular-expression predicate
 tags:
 - ess-0.54.0
@@ -21,10 +21,11 @@ scope:
   path: docs/design/string-predicate-operators.md
 - confidence: cited
   path: website/docs/reference/predicates.md
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-05T14:53:33Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"review_outcome":2}}}
 - {from: "proposed", to: "active", at: "2026-10-05T14:53:33Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":2}}}
+- {from: "active", to: "implemented", at: "2026-10-06T17:48:46Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}}
 ---
 ## Outcome
 Resolve beyond10x/ess#449: A regular-expression predicate.

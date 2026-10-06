@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-459
 kind: story
-status: active
+status: implemented
 title: An outcome cannot create or update one record per element of a collection
 tags:
 - ess-0.54.0
@@ -49,10 +49,11 @@ scope:
   path: docs/design/set-effects-over-filtered-instances.md
 - confidence: cited
   path: website/docs/guides/specify/selection-effects.md
-revision: 13
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-05T23:52:42Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"review_outcome":5}}}
 - {from: "proposed", to: "active", at: "2026-10-05T23:52:43Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"review_outcome":5}}}
+- {from: "active", to: "implemented", at: "2026-10-06T17:49:08Z", actor: "human:timo", revision: 14, decided_on: {"recorded":{"test_result":1,"review_outcome":9}}}
 ---
 ## Outcome
 Resolve beyond10x/ess#459: An outcome cannot create or update one record per element of a collection.

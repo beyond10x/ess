@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-435
 kind: story
-status: active
+status: implemented
 title: 'Guidance: which generated files a brownfield repository commits, and why the diff is large'
 tags:
 - ess-0.54.0
@@ -26,10 +26,11 @@ scope:
   path: website/docs/guides/generate-artifacts.md
 - confidence: cited
   path: website/sidebars.ts
-revision: 9
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-05T13:26:27Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":5}}}
 - {from: "proposed", to: "active", at: "2026-10-05T13:26:27Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":5}}}
+- {from: "active", to: "implemented", at: "2026-10-06T17:48:06Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"test_result":1,"review_outcome":5}}}
 ---
 ## Outcome
 Resolve beyond10x/ess#435: Guidance: which generated files a brownfield repository commits, and why the diff is large.

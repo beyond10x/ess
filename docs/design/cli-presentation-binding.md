@@ -84,6 +84,13 @@ Integer, enums, unconstrained newtypes/structs, Optional, List and string-keyed 
 Integer values use exact JSON integer tokens within `i64::MIN..=i64::MAX`, including
 negative argv values; decimal and exponent spellings are outside this projection's
 integer codec. No integer is converted through floating point before dispatch.
+A result field may also be `Json`, alone or under Optional, List or a string-keyed
+Map: the plan's shape is `{kind: json}`, the adapter writes the value as JSON rather
+than JSON text, and the result check accepts any JSON value there while the shape
+around it is checked as usual (`cli_result`). An input or error field that carries
+`Json` is refused by name, because an argv word has no JSON spelling the binding
+declares; a reader older than the `json` kind refuses a plan carrying it as an
+unknown variant (beyond10x/ess#468).
 Other primitives, unions, recursive types and invariants are explicit refusals in
 this version, rather than validation promises the generated adapter cannot keep.
 

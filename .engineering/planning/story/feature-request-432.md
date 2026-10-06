@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-432
 kind: story
-status: active
+status: implemented
 title: 'Topology: one central write path with a read replica in each environment'
 tags:
 - ess-0.54.0
@@ -19,10 +19,11 @@ scope:
   path: crates/specify/ess-compiler/tests/replica_read_idiom.rs
 - confidence: cited
   path: website/docs/guides/specify/values-and-views.md
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-05T13:26:28Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-10-05T13:26:29Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-10-06T17:47:56Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Outcome
 Resolve beyond10x/ess#432: Topology: one central write path with a read replica in each environment.

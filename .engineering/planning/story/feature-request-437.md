@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-437
 kind: story
-status: active
+status: implemented
 title: Flag relations a specification implies but does not declare
 tags:
 - ess-0.54.0
@@ -36,10 +36,11 @@ scope:
   path: website/docs/guides/specify/values-and-views.md
 - confidence: inferred
   path: website/docs/reference/diagnostics.md
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-05T20:40:16Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":4}}}
 - {from: "proposed", to: "active", at: "2026-10-05T20:40:17Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":4}}}
+- {from: "active", to: "implemented", at: "2026-10-06T17:48:12Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"test_result":1,"review_outcome":6}}}
 ---
 ## Outcome
 Resolve beyond10x/ess#437: Flag relations a specification implies but does not declare.

@@ -113,7 +113,9 @@ ess generate cli --path model --binding cli.yaml --out generated/cli --check
 The generator emits a standalone Rust/Clap package, resolved binding, help and
 completion artifacts. The generated adapter validates input and handler output
 types; dynamic schema validation and application actions remain explicit runtime
-obligations. A callable's `invalid_input: <code>` names one of its declared errors
+obligations. A result field may be `Json` (alone or under `Optional`, `List` or a
+`String`-keyed `Map`), written as JSON rather than JSON text; an input or error field
+may not. A callable's `invalid_input: <code>` names one of its declared errors
 as the answer, with `{}` data, for every invalid input in place of `cli_input` and
 `cli_dynamic_input`. Its default handler reports unavailable. It does not install an
 adapter, store credentials or contact a provider merely because parsing succeeds.

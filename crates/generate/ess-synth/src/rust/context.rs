@@ -12,7 +12,7 @@ pub(super) fn unmet(ir: &EssIr, uses: &Uses) -> BTreeSet<String> {
         .map(|(_, attribute)| format!("caller attribute: {attribute}"))
         .collect();
     for reference in uses.assigned.values() {
-        if !crate::served::supported(ir, reference) {
+        if !crate::served::answered(ir, reference) {
             unmet.insert(format!("assigned value: {reference}"));
         }
     }
@@ -42,7 +42,9 @@ pub(super) fn implementation(ir: &EssIr, layout: &Layout, uses: &Uses) -> String
         let ty = layout
             .absolute_type(reference)
             .replace("crate::", &format!("{types}::"));
-        let value = if crate::served::supported(ir, reference) {
+        let value = if reference.is_optional() {
+            "Ok(None)".to_owned()
+        } else if crate::served::supported(ir, reference) {
             format!("Ok({})", value(ir, layout, reference))
         } else {
             format!(
