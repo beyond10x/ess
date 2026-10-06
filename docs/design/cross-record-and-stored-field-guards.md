@@ -772,6 +772,22 @@ Validation (`ess_domain::command::subject_state`), synthesis (`synthesize::sibli
 `synthesize/related_guard.rs`) and the model interpreter (`interpret::execute`,
 `related_absent` then `refused_by_input`) follow it.
 
+Synthesis witnesses an external branch, and every run that drives a row through one, on a row
+and an input that no branch answering before it claims (beyond10x/ess#464): no input-guarded
+refusal, no accepting `when:` declared before it, no branch the held state selects
+(`when_subject`, `when_subject_state`, `when_state_changes`) and no `when_related` predicate
+branch on a present related row, the last two whatever their declaration order. Such a witness
+is answered alike under this order and under the model interpreter's, which reads held-state,
+related and external branches in one declaration-order pass. A plain witness nothing claims is
+kept as it was. An external branch naming no subject of its own is sent naming such a row its
+siblings act on, and a witness found by search is freshened as every plain witness is
+(beyond10x/ess#161). Where no row and input miss every such branch, the scenario is refused naming
+them (`ESS-SYNTH-003`), and a run that needs the row is not arranged; an external run on a command
+reading stored fields is taken only where no other branch reaches the state. A `when_related`
+guard reading a stored reference of the addressed row is not arranged for an external branch,
+which is refused naming it unless its row leaves the reference out. A row set's scenario is
+refused by the same check as every other send of a row-set command.
+
 An input refusal guarded by the held state as well (`when_subject:` beside `when:`) answers at
 step 4, not step 2. Synthesis witnesses the step 3/4 boundary for it: the unknown-instance and
 wrong-state scenarios also send an input it claims and require their own answer
