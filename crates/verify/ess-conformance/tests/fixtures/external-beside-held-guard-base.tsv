@@ -9,7 +9,7 @@ crates/edge/ess-cli/tests/fixtures/parse-refusals/two-unparsable-compact.yaml	AS
 crates/edge/ess-cli/tests/fixtures/parse-refusals/two-unparsable-filters.yaml	ASSEMBLE c844e56560535811e06f:582
 crates/edge/ess-cli/tests/fixtures/room-booking/flat.yaml	ASSEMBLE 4ef3609146c148a602d6:333
 crates/edge/ess-cli/tests/fixtures/room-booking/window.yaml	suite=78efcd7ef475a325f187:4284 refusals=e3b0c44298fc1c149afb:0 claimable=
-crates/edge/ess-cli/tests/fixtures/stored-rules/fold.yaml	suite=53e9fd22ca6230de007c:19177 refusals=e3b0c44298fc1c149afb:0 claimable=
+crates/edge/ess-cli/tests/fixtures/stored-rules/fold.yaml	suite=e5c675f0fadf9361b85b:22808 refusals=e3b0c44298fc1c149afb:0 claimable=
 crates/edge/ess-cli/tests/fixtures/stored-rules/model.yaml	suite=6745c077d1991a36d721:6231 refusals=e3b0c44298fc1c149afb:0 claimable=
 crates/edge/ess-cli/tests/fixtures/synthesis-seeds/model/system.yaml	ASSEMBLE b84b2c09f4674505b597:212
 crates/generate/ess-cli-project/tests/fixtures/model.yaml	suite=a5bebff8cddf98e79497:361 refusals=e3b0c44298fc1c149afb:0 claimable=
@@ -100,12 +100,12 @@ crates/verify/ess-conformance/tests/fixtures/explore-retry/retry.yaml	suite=0620
 crates/verify/ess-conformance/tests/fixtures/explore-stored-rows.yaml	suite=3ad408d3fb1aabc4e4e9:196394 refusals=e3b0c44298fc1c149afb:0 claimable=
 crates/verify/ess-conformance/tests/fixtures/explore.yaml	suite=dd9a46ef0015799d1d4e:114279 refusals=e3b0c44298fc1c149afb:0 claimable=
 crates/verify/ess-conformance/tests/fixtures/external-beside-held-guard.yaml	suite=fe14566d46bb51734fe7:37388 refusals=e3b0c44298fc1c149afb:0 claimable=demo.desk.CheckPick/outcome/unlisted,demo.desk.Pick/transition/refuse/by/demo.desk.CheckPick/unlisted
-crates/verify/ess-conformance/tests/fixtures/filtered-related-reads.yaml	suite=f11c1e0a6dca64a8cbbf:60656 refusals=e3b0c44298fc1c149afb:0 claimable=
+crates/verify/ess-conformance/tests/fixtures/filtered-related-reads.yaml	suite=87654d72cef5a4e77c0b:70006 refusals=e3b0c44298fc1c149afb:0 claimable=
 crates/verify/ess-conformance/tests/fixtures/held-state-input-refusal.yaml	suite=e19c3186dbe9e696e4b6:26474 refusals=e3b0c44298fc1c149afb:0 claimable=
-crates/verify/ess-conformance/tests/fixtures/identity-changing-updates.yaml	suite=3630997dab57da462994:20479 refusals=e3b0c44298fc1c149afb:0 claimable=
+crates/verify/ess-conformance/tests/fixtures/identity-changing-updates.yaml	suite=c59251a2281e1e006b82:21241 refusals=e3b0c44298fc1c149afb:0 claimable=
 crates/verify/ess-conformance/tests/fixtures/input-guard-overlap.yaml	suite=6869945457bdc09ca66c:25491 refusals=e3b0c44298fc1c149afb:0 claimable=
 crates/verify/ess-conformance/tests/fixtures/keypad.yaml	suite=6983817f70dd11c7fe99:4343 refusals=e3b0c44298fc1c149afb:0 claimable=
-crates/verify/ess-conformance/tests/fixtures/latest-correlated-record.yaml	suite=674e3423cc5b2fa4baeb:36925 refusals=e3b0c44298fc1c149afb:0 claimable=
+crates/verify/ess-conformance/tests/fixtures/latest-correlated-record.yaml	suite=5d66de303b3579e486ba:44757 refusals=e3b0c44298fc1c149afb:0 claimable=
 crates/verify/ess-conformance/tests/fixtures/mutation-arms.yaml	suite=7823efce3ebddc523a96:27758 refusals=f5fb7c50fcb75559fa97:279 claimable=
 crates/verify/ess-conformance/tests/fixtures/mutation-gained-refusal.yaml	suite=d9cb4815eda3cf11561f:5789 refusals=e3b0c44298fc1c149afb:0 claimable=
 crates/verify/ess-conformance/tests/fixtures/mutation-survivor.yaml	suite=500751245277d64bd27e:139284 refusals=e3b0c44298fc1c149afb:0 claimable=
@@ -137,6 +137,8 @@ crates/verify/ess-conformance/tests/fixtures/response-union.yaml	suite=2a4e26941
 crates/verify/ess-conformance/tests/fixtures/restart.yaml	suite=2a8aadba77578cd5ed44:2770 refusals=e3b0c44298fc1c149afb:0 claimable=
 crates/verify/ess-conformance/tests/fixtures/retained-commit.yaml	suite=c9532c652864a0935a79:125449 refusals=e3b0c44298fc1c149afb:0 claimable=
 crates/verify/ess-conformance/tests/fixtures/retained-replay.yaml	suite=a93e280decfa407e130a:8401 refusals=e3b0c44298fc1c149afb:0 claimable=
+crates/verify/ess-conformance/tests/fixtures/row-set-struct-identity.yaml	suite=98dbd71a398763f9afa2:14287 refusals=e3b0c44298fc1c149afb:0 claimable=
+crates/verify/ess-conformance/tests/fixtures/row-set-upsert.yaml	suite=1f7d289bb120b1178043:5274 refusals=e3b0c44298fc1c149afb:0 claimable=demo.shelf.Restock/outcome/refused,demo.shelf.Restock/outcome/restocked,demo.shelf.Shelve/outcome/added,demo.shelf.Shelve/outcome/refused,demo.shelf.Shelve/outcome/replaced,demo.shelf.Unshelve/outcome/refused,demo.shelf.Unshelve/outcome/removed
 crates/verify/ess-conformance/tests/fixtures/state-in-subject-predicate.yaml	suite=db49e2aec3c2f0f40957:36777 refusals=e3b0c44298fc1c149afb:0 claimable=
 crates/verify/ess-conformance/tests/fixtures/state-scoped-refusals.yaml	suite=dd8bec458ee376315ba2:67717 refusals=3d3441549461ff5efa99:2589 claimable=
 crates/verify/ess-conformance/tests/fixtures/stored-field-guards.yaml	suite=e55baa7c2c4be0a2989c:26862 refusals=06a644cde2b8fc51e318:546 claimable=
@@ -148,7 +150,7 @@ crates/verify/ess-conformance/tests/fixtures/subject-history.yaml	suite=7f7db8eb
 crates/verify/ess-conformance/tests/fixtures/subject-state-source.yaml	suite=16fcb4a208e5a4d23413:44802 refusals=e3b0c44298fc1c149afb:0 claimable=
 crates/verify/ess-conformance/tests/fixtures/subject-state.yaml	suite=02ec9f9351a35b423ecc:38170 refusals=e3b0c44298fc1c149afb:0 claimable=
 crates/verify/ess-conformance/tests/fixtures/typed-text-operands.yaml	suite=873d896010305d98984e:60475 refusals=e3b0c44298fc1c149afb:0 claimable=
-crates/verify/ess-conformance/tests/fixtures/unique-within-scope.yaml	suite=9c099a6a236d3a1b8392:27295 refusals=e3b0c44298fc1c149afb:0 claimable=
+crates/verify/ess-conformance/tests/fixtures/unique-within-scope.yaml	suite=f842a87910116bcc39ab:31128 refusals=e3b0c44298fc1c149afb:0 claimable=
 crates/verify/ess-conformance/tests/fixtures/view-paging.yaml	suite=8e958bf5e5914513e834:9440 refusals=e3b0c44298fc1c149afb:0 claimable=
 crates/verify/ess-conformance/tests/fixtures/view-param-binding.yaml	suite=b8ca05ac64212c0ef7bd:7498 refusals=e3b0c44298fc1c149afb:0 claimable=
 crates/verify/ess-conformance/tests/fixtures/when-subject-eventual.yaml	suite=dd22493eb4d33d9bc62b:28607 refusals=2a80cca606aa08bb095f:1009 claimable=

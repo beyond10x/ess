@@ -845,9 +845,10 @@ fn unclaimed_external_witnesses_keep_their_bytes() {
 
 // ---- every repository model, before and after ---------------------------------------------------
 
-/// The digests of every model of the base of beyond10x/ess#464 (bc4884203), written by this file
-/// with `EXTERNAL_WITNESS_BASE_WRITE=<path>` before the change: one line per model, as
-/// [`model_line`] writes it.
+/// The digests of every model of the base of beyond10x/ess#464, written by this file with
+/// `EXTERNAL_WITNESS_BASE_WRITE=<path>` before the change: one line per model, as [`model_line`]
+/// writes it. Re-pinned at 463722028, the integration tree with #462/#463 merged and #464 not,
+/// whose row-set decoy order moved five suites (beyond10x/ess#463).
 const BASE: &str = include_str!("fixtures/external-beside-held-guard-base.tsv");
 
 fn root() -> PathBuf {
@@ -1136,7 +1137,7 @@ fn repository_model_suites_change_only_where_claimed() {
             moved.push(format!("{label}\n  base {base}\n  here {line}"));
         }
     }
-    assert_eq!(compared, 191, "every pinned model is read");
+    assert_eq!(compared, 193, "every pinned model is read");
     assert_eq!(
         skipped,
         UNAFFORDABLE.len(),
