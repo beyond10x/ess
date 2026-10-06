@@ -1994,6 +1994,244 @@ pub(super) fn refusal_witness(
     Ok((arrangement, input))
 }
 
+/// The row and input an external branch of a command reading stored fields is witnessed on
+/// (beyond10x/ess#464).
+///
+/// Its provider forced, an external branch answers only where no sibling answers before it: an
+/// input-guarded refusal, an accepting `when:` declared before it (beyond10x/ess#217), and every
+/// branch the stored row selects — `when_subject:`, with its `when:` where it declares one —
+/// whatever its declaration order, since the held state is read before accepting and external
+/// branches (`docs/design/cross-record-and-stored-field-guards.md`, "The precedence order", step
+/// 4). A witness no such sibling claims is answered alike under that order and under the model
+/// interpreter's declaration order.
+///
+/// `setup` and `input` are the plain witness, kept where they are such a witness: a scenario no
+/// guard claimed keeps its bytes. Otherwise the row and input are searched for together, by the
+/// search [`prepare`] arranges the guarded branches with, on a row in a state the branch's move
+/// starts from, and every stored field the guards read is observed before the command. Where no
+/// row and input serve, the scenario is refused naming the siblings that claim it
+/// (`ESS-SYNTH-003`).
+pub(super) fn external_witness(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    setup: Setup,
+    input: BTreeMap<String, Node>,
+) -> Result<(Setup, BTreeMap<String, Node>), RefusalCause> {
+    let Some(subject) = reading(command, outcome) else {
+        return Ok((setup, input));
+    };
+    let entity = &subject.entity;
+    if let (Some(instance), Some(state)) = (&setup.instance, &setup.before) {
+        let plain = Arrangement {
+            instance: instance.clone(),
+            state: state.clone(),
+            steps: Vec::new(),
+            source: BTreeSet::new(),
+            settled: setup.settled.clone(),
+            unwritten: BTreeSet::new(),
+        };
+        if leaves_external(ir, command, outcome, entity, &plain, &input)? {
+            return Ok((setup, input));
+        }
+    }
+    let hints = hints(command);
+    let fields = read_fields(ir, entity, &hints);
+    let label = fields.iter().cloned().collect::<Vec<_>>().join(",");
+    if let Some(refusal) = unarrangeable(ir, entity, &fields) {
+        return Err(refusal);
+    }
+    let moves_from = |state: &super::StateName| {
+        outcome
+            .subject
+            .as_ref()
+            .and_then(|own| own.effect.transition())
+            .is_none_or(|transition| transition.from.contains(state))
+    };
+    let tried = std::cell::Cell::new(0usize);
+    let searched = search(
+        ir,
+        entity,
+        actors,
+        &hints,
+        Distinction::PLAIN,
+        &label,
+        |node| {
+            if !moves_from(&node.state) {
+                return Ok(None);
+            }
+            for input in external_inputs(ir, command, outcome, entity, node)? {
+                tried.set(tried.get() + 1);
+                if leaves_external(ir, command, outcome, entity, node, &input)? {
+                    return Ok(Some(input));
+                }
+            }
+            Ok(None)
+        },
+    );
+    let (mut arrangement, input) = match searched {
+        Ok(found) => found,
+        Err(cause) if tried.get() == 0 => return Err(cause),
+        Err(_) => return Err(external_claimed(command, outcome, entity, tried.get())),
+    };
+    let bound = bind_links(
+        ir,
+        command,
+        outcome,
+        entity,
+        actors,
+        &mut arrangement,
+        &input,
+        &mut false,
+    )?;
+    observe_prepared(ir, entity, fields, false, &mut arrangement)?;
+    let after = match outcome.subject.as_ref().map(|own| &own.effect) {
+        Some(ResolvedEffect::Deletes) => None,
+        effect => Some(effect.and_then(ResolvedEffect::transition).map_or_else(
+            || arrangement.state.clone(),
+            |transition| transition.to.clone(),
+        )),
+    };
+    Ok((
+        Setup {
+            steps: arrangement.steps,
+            instance: Some(arrangement.instance),
+            bound,
+            source: arrangement.source,
+            after,
+            before: Some(arrangement.state),
+            settled: arrangement.settled,
+        },
+        input,
+    ))
+}
+
+/// `ESS-SYNTH-003` for [`external_witness`]: every branch the stored row selects, with its guards,
+/// as what claimed each of the `tried` inputs on every row searched.
+fn external_claimed(
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    entity: &EntityHandle,
+    tried: usize,
+) -> RefusalCause {
+    let claiming: Vec<String> = guarded(command)
+        .filter(|branch| branch.name != outcome.name)
+        .filter_map(|branch| {
+            let held = stored(&branch.condition)?;
+            Some(match input_guard(&branch.condition) {
+                Some(guard) => format!("`{}` ({held} and {guard})", branch.name),
+                None => format!("`{}` ({held})", branch.name),
+            })
+        })
+        .collect();
+    RefusalCause::GuardUnsatisfiable {
+        predicate: format!(
+            "`{}` forced on a `{entity}` row it is taken on, sent an input no branch the stored \
+             row selects claims: none of {}",
+            outcome.name,
+            claiming.join(", ")
+        ),
+        tried,
+    }
+}
+
+/// The inputs [`external_witness`] tries on `arrangement`'s row: [`linked_inputs`]'s, searched
+/// over the external branch's own input guard as well, so an input it admits is among them.
+fn external_inputs(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    entity: &EntityHandle,
+    arrangement: &Arrangement,
+) -> Result<Vec<BTreeMap<String, Node>>, RefusalCause> {
+    let ResolvedCondition::ExternalWhen { predicate: own, .. } = &outcome.condition else {
+        return linked_inputs(ir, command, entity, arrangement);
+    };
+    let grounded = grounded(ir, entity, &arrangement.settled, &hints(command));
+    let mut guards: Vec<&Predicate> = command
+        .outcomes
+        .iter()
+        .filter_map(|branch| input_guard(&branch.condition))
+        .collect();
+    guards.push(own);
+    guards.extend(grounded.iter());
+    let mut inputs =
+        candidates(ir, command, &guards, Distinction::PLAIN).map_err(RefusalCause::NoWitness)?;
+    if !grounded.is_empty() {
+        if let Ok(further) = candidates(ir, command, &guards, Distinction::further(1)) {
+            inputs.extend(further);
+        }
+    }
+    Ok(naming_owners(
+        ir,
+        command,
+        entity,
+        arrangement,
+        inputs,
+        &BTreeMap::new(),
+    ))
+}
+
+/// Whether the external branch `outcome`, its provider forced, answers `command` sent `input` for
+/// the row `arrangement` holds ([`external_witness`]): its own guard holds; no input-guarded
+/// refusal and no accepting `when:` declared before it claims the input; no branch the stored row
+/// selects is selected, whatever its declaration order, a stored guard the row leaves undecided
+/// counting as selected; and the row rests in a state its move starts from.
+fn leaves_external(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    entity: &EntityHandle,
+    arrangement: &Arrangement,
+    input: &BTreeMap<String, Node>,
+) -> Result<bool, RefusalCause> {
+    let facts = flatten(ir, command, input).map_err(RefusalCause::WitnessRejected)?;
+    if let ResolvedCondition::ExternalWhen { predicate, .. } = &outcome.condition {
+        if !decides(&facts, &[predicate], true)? {
+            return Ok(false);
+        }
+    }
+    let refusals: Vec<&Predicate> = super::sibling_refusals(command, outcome)
+        .filter_map(when)
+        .collect();
+    if !decides(&facts, &refusals, false)?
+        || super::claimed_by(&facts, &super::earlier_accepting(command, outcome))
+    {
+        return Ok(false);
+    }
+    for branch in guarded(command).filter(|branch| branch.name != outcome.name) {
+        let Some(predicate) = stored(&branch.condition) else {
+            continue;
+        };
+        match guard_truth_with(
+            ir,
+            entity,
+            &arrangement.settled,
+            &arrangement.unwritten,
+            Some(&arrangement.state),
+            &predicate,
+            Some((command, input)),
+        ) {
+            Truth::False => continue,
+            Truth::Unknown => return Ok(false),
+            Truth::True => {}
+        }
+        let refuted = match input_guard(&branch.condition) {
+            Some(guard) => decides(&facts, &[guard], false)?,
+            None => false,
+        };
+        if !refuted {
+            return Ok(false);
+        }
+    }
+    Ok(outcome
+        .subject
+        .as_ref()
+        .and_then(|own| own.effect.transition())
+        .is_none_or(|transition| transition.from.contains(&arrangement.state)))
+}
+
 /// The input [`refusal_witness`] sends to `arrangement`'s row, and the stored guards of the
 /// siblings it misses through that row rather than through its input: every row-only sibling's,
 /// and a mixed sibling's where its input half holds.

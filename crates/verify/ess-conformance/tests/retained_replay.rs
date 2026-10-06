@@ -590,23 +590,86 @@ fn external_stale_synthesis() -> ess_conformance::synthesize::Synthesis {
     ess_conformance::synthesize::synthesize(&compile(&spec, &SourceMap::new()).unwrap())
 }
 
+/// The refusals `external_stale_synthesis` names: `stale` answers after `committed`, which the
+/// held state `Validated` selects for every input, so neither its own witnesses nor a `Stale` row
+/// arranged through it exist (beyond10x/ess#464), each refused by name.
+fn external_stale_refusals(
+    result: &ess_conformance::synthesize::Synthesis,
+) -> BTreeMap<String, String> {
+    result
+        .refusals
+        .iter()
+        .map(|refusal| {
+            (
+                refusal
+                    .scenario
+                    .as_ref()
+                    .map_or_else(String::new, ToString::to_string),
+                refusal.to_string(),
+            )
+        })
+        .collect()
+}
+
 #[test]
 fn external_stale_arrangement_preserves_real_commit_and_validate_refusal_obligations() {
     let result = external_stale_synthesis();
-    assert!(result.refusals.is_empty(), "{:?}", result.refusals);
+    // beyond10x/ess#464: the held state answers before an external branch ("Which branch answers", guards-and-predicates.md), so `committed` claims every `stale` witness.
+    let refused = external_stale_refusals(&result);
+    for id in [
+        "retained.core.Commit/outcome/stale",
+        "retained.core.Transaction/transition/stale/by/retained.core.Commit/stale",
+    ] {
+        assert!(
+            refused
+                .get(id)
+                .is_some_and(|text| text.starts_with("refusal[ESS-SYNTH-003]")
+                    && text.contains("`committed`")),
+            "{id} is refused naming `committed`: {refused:#?}"
+        );
+    }
+    // beyond10x/ess#464: a `Stale` row is arranged only through `stale` ("Which branch answers", guards-and-predicates.md), so its obligations are refused naming that route.
+    for id in [
+        "retained.core.Transaction/state/Stale/refuses/retained.core.Commit",
+        "retained.core.Transaction/state/Stale/refuses/retained.core.Validate",
+        "retained.core.Transaction/state/Stale/refuses/retained.core.Reject",
+    ] {
+        assert!(
+            refused
+                .get(id)
+                .is_some_and(|text| text.starts_with("refusal[ESS-SYNTH-004]")
+                    && text.contains("`retained.core.Commit/stale`")),
+            "{id} is refused naming the route through `stale`: {refused:#?}"
+        );
+    }
+    assert_eq!(refused.len(), 5, "nothing else is refused: {refused:#?}");
     let mut suite = result.suite;
+    // beyond10x/ess#464: no scenario forces `stale`, which `committed` answers before ("Which branch answers", guards-and-predicates.md).
+    assert!(
+        suite.scenarios.values().all(|scenario| !scenario
+            .steps
+            .iter()
+            .any(|step| matches!(step, ScenarioStep::ConfigureExternalOutcome { .. }))),
+        "no stale witness is written"
+    );
     suite.scenarios.retain(|id, _| {
         id.to_string().starts_with("retained.core.Commit/")
             || id.to_string().ends_with("/refuses/retained.core.Commit")
-            || id.to_string()
-                == "retained.core.Transaction/state/Stale/refuses/retained.core.Validate"
+            || id.to_string().ends_with("/refuses/retained.core.Validate")
     });
-    assert!(suite.scenarios.keys().any(|id| id
-        .to_string()
-        .contains("/state/Stale/refuses/retained.core.Commit")));
-    assert!(suite.scenarios.keys().any(|id| id
-        .to_string()
-        .contains("/state/Stale/refuses/retained.core.Validate")));
+    // beyond10x/ess#464: the Commit and Validate refusal obligations of every reachable state stay ("Which branch answers", guards-and-predicates.md).
+    for id in [
+        "retained.core.Transaction/state/Proposed/refuses/retained.core.Commit",
+        "retained.core.Transaction/state/Rejected/refuses/retained.core.Commit",
+        "retained.core.Transaction/state/Validated/refuses/retained.core.Validate",
+        "retained.core.Transaction/state/Rejected/refuses/retained.core.Validate",
+        "retained.core.Transaction/state/Committed/refuses/retained.core.Validate",
+    ] {
+        assert!(
+            suite.scenarios.keys().any(|key| key.to_string() == id),
+            "{id} is an obligation"
+        );
+    }
     let admitted = AdmittedSuite::from_suite(&suite).unwrap();
     let target = StateBackend {
         mode: "external-stale",
@@ -763,11 +826,11 @@ fn emit_runtime(root: &std::path::Path) {
     )
     .unwrap();
     let mut external = external_stale_synthesis().suite;
+    // beyond10x/ess#464: no `Stale` row is arranged through `stale` ("Which branch answers", guards-and-predicates.md); the Validate refusals of the reachable states are witnessed instead.
     external.scenarios.retain(|id, _| {
         id.to_string().starts_with("retained.core.Commit/")
             || id.to_string().ends_with("/refuses/retained.core.Commit")
-            || id.to_string()
-                == "retained.core.Transaction/state/Stale/refuses/retained.core.Validate"
+            || id.to_string().ends_with("/refuses/retained.core.Validate")
     });
     std::fs::write(
         root.join("external-stale.json"),
@@ -1187,11 +1250,30 @@ impl ConformanceTarget for AdversaryRefusalProjectionBackend {
 
 #[test]
 fn adversary_source7_wrong_state_refusal_requires_actual_complete_subject_observation() {
-    let mut suite = external_stale_synthesis().suite;
-    suite.scenarios.retain(|id, _| {
-        id.to_string() == "retained.core.Transaction/state/Stale/refuses/retained.core.Validate"
-    });
-    assert_eq!(suite.scenarios.len(), 1);
+    let result = external_stale_synthesis();
+    let stale = "retained.core.Transaction/state/Stale/refuses/retained.core.Validate";
+    // beyond10x/ess#464: a `Stale` row is arranged only through `stale`, which `committed` answers before ("Which branch answers", guards-and-predicates.md), so this obligation is refused by name.
+    assert!(
+        !result
+            .suite
+            .scenarios
+            .keys()
+            .any(|id| id.to_string() == stale),
+        "{stale} is not written"
+    );
+    assert!(
+        external_stale_refusals(&result)
+            .get(stale)
+            .is_some_and(|text| text.contains("`retained.core.Commit/stale`")),
+        "{stale} is refused naming the route: {:?}",
+        result.refusals
+    );
+    let mut suite = result.suite;
+    suite
+        .scenarios
+        .retain(|id, _| id.to_string().ends_with("/refuses/retained.core.Validate"));
+    // beyond10x/ess#464: the Validate refusals of the reachable states carry the check ("Which branch answers", guards-and-predicates.md).
+    assert_eq!(suite.scenarios.len(), 3, "{:?}", suite.scenarios.keys());
     let admitted = AdmittedSuite::from_suite(&suite).unwrap();
     let target = AdversaryRefusalProjectionBackend {
         inner: StateBackend {
@@ -1203,8 +1285,11 @@ fn adversary_source7_wrong_state_refusal_requires_actual_complete_subject_observ
         },
     };
     let report = Runner::for_suite(admitted.suite()).run_admitted(&admitted, &target);
-    assert_eq!(report.scenarios[0].status, Status::Failed,
-        "the new source7 refusal witness must not certify preservation of an omitted actual subject field: {:?}", report.scenarios[0]);
+    assert_eq!(report.scenarios.len(), 3, "{report:?}");
+    for scenario in &report.scenarios {
+        assert_eq!(scenario.status, Status::Failed,
+            "the new source7 refusal witness must not certify preservation of an omitted actual subject field: {scenario:?}");
+    }
 }
 
 #[test]
