@@ -13,7 +13,7 @@ This page is generated from the change records kept in the repository. A release
 
 ### CLI results carry Json, and an optional generated value reads a port
 
-capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.55.0)
+capability · notable impact · [release post](https://beyond10x.github.io/ess/releases/json-cli-results-and-optional-generator-ports) · [release notes](https://github.com/beyond10x/ess/releases/tag/0.55.0)
 
 A CLI result field may be typed `Json` and is written as JSON rather than JSON text, so a caller parses an answer once. A `{generated: true}` value of type `Optional<T>` is now supplied by the implementation through a generator port in generated Rust and Go, instead of always being absent; a context that implements the port must add the method.
 
