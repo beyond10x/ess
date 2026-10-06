@@ -9834,22 +9834,18 @@ fn arrange_toward_bound(
 }
 
 /// The input `creator` publishes its new row's identity from, where `filter` reads the identity
-/// itself (a row-set selector, ess/23, beyond10x/ess#429), so the arrangement is steered through
-/// it, from `ess/23` only; `None` for every other filter, and below `ess/23`, which map what they
-/// mapped before.
+/// itself or a member of a struct identity (a row-set selector, ess/23, beyond10x/ess#429, #463),
+/// so the arrangement is steered through it, from `ess/23` only; `None` for every other filter,
+/// and below `ess/23`, which map what they mapped before.
 fn steered_identity<'a>(
     ir: &EssIr,
     identity: &ess_compiler::ir::ResolvedField,
     filter: &Predicate,
     creator: &'a ResolvedOutcome,
 ) -> Option<&'a str> {
-    (subject_fact::identity_selectors(ir)
-        && filter
-            .fact_paths()
-            .iter()
-            .any(|path| path.segments().len() == 1 && path.namespace() == identity.name))
-    .then(|| published_identity_input(creator))
-    .flatten()
+    (subject_fact::identity_selectors(ir) && subject_fact::reads_key(filter, &identity.name))
+        .then(|| published_identity_input(creator))
+        .flatten()
 }
 
 /// `reached` with the identity it was created under, where the steering chose it.

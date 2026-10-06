@@ -232,6 +232,7 @@ pub const FORMAT_HISTORY: &[FormatHistoryEntry] = &[
             "`deletes:` takes `instances:`, removing every stored row a filter selects and counting them with `{count: changed}`; an `affects:` entry may declare `deletes: <Entity>` over an entity of the outcome's own domain, and `affects:` is admitted beside a `deletes:` subject (beyond10x/ess#452).",
             "An enum may declare typed variant attributes, `attributes: [{name, type}]`, each variant filling them with typed literals; guards, invariants and view filters read `<fact>.<attribute>`, lowered to variant membership (beyond10x/ess#450).",
             "A refusal selected by `when_subject: {predicate: …}` asserts the whole record unchanged, as a state-guarded refusal does, and a predicate on `state` is witnessed in each state it claims that no earlier branch answers (beyond10x/ess#461).",
+            "Synthesis scopes a row-set selector by an equality between a `String` or `Uuid` member of a struct identity and the input or the subject, `at.region == input.place.region`, reads each row's literal identity member by member, arranges its decoys under other identities and never creates an identity a row already carries; the whole-struct `at == input.place` stays a type mismatch, and below `ess/23` such a selector validates and is refused by synthesis as unscoped, as before (beyond10x/ess#463).",
         ],
         stricter: &[],
     },
