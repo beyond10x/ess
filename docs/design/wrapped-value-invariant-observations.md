@@ -196,7 +196,7 @@ New scenario identity is:
 
 `selector-digest` is lowercase SHA256 of the canonical compact JSON Position DTO, with no
 newline. Root/type/view are separate typed segments. Admission recomputes it and verifies
-the id's nominal type/root/view against the expectation. Duplicate ids with different
+the id's nominal type, root and view against the expectation. Duplicate ids with different
 position authority are invalid. No command, candidate ordinal, witness selector, invariant
 statement, work budget or graph allocation number participates. Unrelated declaration order
 cannot re-key a semantic route. Existing direct-position ids and assertions stay byte-exact;

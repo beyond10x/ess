@@ -49,11 +49,11 @@ types:
       [SPEC, DOMAIN, TYPE, ENTITY, COMMAND, EVENT, ERROR, VIEW, ACTOR, BINDING, COMPONENT, TOPOLOGY]
 
   # The classes — the `002` in `ESS-BINDING-002`, one number per kind across every family
-  # (`crates/specify/ess-compiler/src/resolve.rs:196`). Eighteen, not the twelve that module's own
+  # (`crates/specify/ess-compiler/src/resolve.rs:196`). Nineteen, not the twelve that module's own
   # doc-comment still says: the four accessor classes arrived with `ess/3` bounded accessors,
-  # `NullComparison` with ess#93 and `UnsetAtCreation` with ess#112, and the sentence above them did
-  # not move. Counted from the constants, which is the only count that is a
-  # fact. Family and class are independent, so they are two fields here rather than one string.
+  # `NullComparison` with ess#93, `UnsetAtCreation` with ess#112 and `ImpliedRelation` with ess#437,
+  # and the sentence above them did not move. Counted from the constants, which is the only count
+  # that is a fact. Family and class are independent, so they are two fields here rather than one string.
   - name: toolchain.specify.DiagnosticClass
     kind: enum
     variants:
@@ -75,6 +75,7 @@ types:
       - AccessorResource
       - NullComparison
       - UnsetAtCreation
+      - ImpliedRelation
 
   - name: toolchain.specify.Severity
     kind: enum

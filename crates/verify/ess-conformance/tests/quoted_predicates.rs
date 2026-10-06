@@ -27,8 +27,19 @@ fn source_command_guard_refuses_the_measured_disjunction() {
         "format: ess/3\nsystem: quoted\nversion: v1\ndomain: quoted.core\ncommands:\n  - name: quoted.core.Send\n    input:\n      - {{name: to, type: String}}\n      - {{name: text, type: String}}\n    outcomes:\n      - name: accepted\n        when: {predicate}\n"
     )
     };
-    let error = ess_domain::spec::RawSpecFile::parse(&source(json!(r#"to == "" or text == """#)))
-        .unwrap_err();
+    // Refused at the guard that wrote it rather than by the reader (beyond10x/ess#448).
+    let raw = ess_domain::spec::RawSpecFile::parse(&source(json!(r#"to == "" or text == """#)))
+        .expect("the reader holds a predicate that does not parse for its declaration's check");
+    let errors = ess_domain::Specification::assemble([(
+        ess_domain::system::Source::new("quoted.yaml"),
+        raw,
+    )])
+    .unwrap_err();
+    let error = errors
+        .as_slice()
+        .iter()
+        .find(|error| error.code == ess_primitives::error::ValidationCode::UnparsablePredicate)
+        .unwrap_or_else(|| panic!("the disjunction is refused as a predicate: {errors}"));
     assert!(
         error.to_string().contains("structured any/all/not"),
         "{error}"
