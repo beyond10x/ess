@@ -69,7 +69,18 @@ fn published(ir: &EssIr, event: &EventRef, field: &str) -> bool {
 /// The declared type of a row field of `view`'s source, the identity included, or of a member of
 /// one where `field` is a dotted path through structs (beyond10x/ess#428).
 fn row_type(ir: &EssIr, view: &ResolvedView, field: &str) -> Option<ResolvedTypeRef> {
-    let entity = ir.entity(&view.source);
+    member_type(ir, &view.source, field)
+}
+
+/// The declared type of a field of `entity`, the identity included, or of a member of one where
+/// `field` is a dotted path through structs: a view's row (beyond10x/ess#428) and a row-set
+/// selector's (beyond10x/ess#463) are typed alike.
+pub(super) fn member_type(
+    ir: &EssIr,
+    entity: &ess_compiler::ir::EntityHandle,
+    field: &str,
+) -> Option<ResolvedTypeRef> {
+    let entity = ir.entity(entity);
     let mut segments = field.split('.');
     let root = segments.next()?;
     let mut type_ref = if entity.identity.name == root {
@@ -97,7 +108,7 @@ fn row_type(ir: &EssIr, view: &ResolvedView, field: &str) -> Option<ResolvedType
 }
 
 /// The member at `path` below the root of a literal struct value, where every segment is there.
-fn project<'a>(value: &'a Node, path: &[&str]) -> Option<&'a Node> {
+pub(super) fn project<'a>(value: &'a Node, path: &[&str]) -> Option<&'a Node> {
     path.iter().try_fold(value, |held, segment| match held {
         Node::Map(members) => members.get(*segment),
         _ => None,

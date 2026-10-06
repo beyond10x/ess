@@ -107,6 +107,21 @@ identity, and a creation that publishes its identity from an input is steered th
 (`arrange_toward_bound`). Each applies only where the selector reads the identity, so no other
 model's suite moves.
 
+A member of a struct identity is read the same way (beyond10x/ess#463): `at.region ==
+input.place.region` scopes the selector where the member is a `String` or `Uuid`
+(`row_set::scoped`, typed by `identity::member_type`, which view parameters share), and every gate
+above asks whether the selector reads the identity at all, whole or a member
+(`subject_fact::reads_key`). A row predicate that does not read the identity is decided without
+it, so a stored key no longer leaves the predicate unknown. Where the selector pins every member of
+the identity to the input, a decoy refuting any other conjunct is that same record: it is arranged
+on the empty branch only (`row_set::arrange_rows`). A creation that names an identity a row of the
+scenario already carries is refused, whatever the creator declares (`row_set::recreates`, and
+`row_set::consistent` for the command under test), and a creating branch of a row-set command no
+longer borrows its sibling update's addressed record (`row_set::subject_setup`): an upsert whose
+creation an input guard selects otherwise arranged the very identity it was sent to create. An
+identity every creation publishes only as an observed value has no member projection, and its
+selector is refused saying so. The whole-struct `at == input.place` stays a type mismatch.
+
 ## Targets
 
 | target | answer |
@@ -120,6 +135,7 @@ model's suite moves.
 
 ## Not in this cut
 
-A struct identity, whole or one member of it; a `moves:` that writes the identity; cascading a
+Re-keying a struct identity, whole or one member of it (a selector over its members is read,
+beyond10x/ess#463, but the write stays refused); a `moves:` that writes the identity; cascading a
 new key to the records a relation carries it in; a collision answer written in any other shape than
 the exact selector above; Go, Web, Clap and Entity Runtime realisations.

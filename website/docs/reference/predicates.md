@@ -1297,11 +1297,18 @@ so a command declares the branches for those counts itself, as above.
 Synthesis arranges the rows through the declared creating commands: one decoy per conjunct of the
 selector, refuting that conjunct alone, then as many rows as the branch needs — one, two, none or
 three, in that order — and, for a `forall`, one of them refuting it where the branch needs it false.
-A copied value differs from every decoy's and from zero. The branch the rows decide is checked again
+Where a row is selected, the decoys are arranged again after it, so the selected row is neither the
+oldest nor the newest record holding a value the selector compares, and a target that keeps one
+record per such value fails. A copied value differs from every decoy's and from zero. The branch the rows decide is checked again
 over every step of the scenario, a row arranged through the command under test included, and
 every other scenario sending a row-set command keeps only the branch its rows decide. A selector
 needs an equality between a `String` or `Uuid` field and the input or the subject, so a scenario
-counts only its own rows; without one, and on a command reading two selectors, synthesis reports
+counts only its own rows. From `ess/23` a `String` or `Uuid` member of a struct identity counts as
+such a field: `at.region == input.place.region` beside `at.shelf == input.place.shelf` selects the
+record the place names, its decoys are arranged under other identities, and no scenario creates an
+identity a row already carries. Compare the members one by one: `at == input.place` compares two
+structs and is refused as `ESS-COMMAND-002`. Without such an equality, and on a command reading
+two selectors, synthesis reports
 `ESS-SYNTH-001` naming the branch. Generated Rust and Go keep such a command a hand-written
 obligation, naming the row set; Entity Runtime refuses it as `RowSetUnsupported`.
 

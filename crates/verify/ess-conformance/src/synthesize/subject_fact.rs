@@ -478,17 +478,16 @@ fn evaluate_row(
             return Truth::Unknown;
         }
     }
-    // The identity, where the steps settled it and the predicate reads it: a row-set selector over
-    // the identity (ess/23, beyond10x/ess#429) reads the row's own key. Bound only then, so every
-    // other predicate binds the fields it bound before.
-    if identity_selectors(ir)
-        && values.contains_key(&declared.identity.name)
-        && predicate
-            .fact_paths()
-            .iter()
-            .any(|path| path.segments().len() == 1 && path.namespace() == declared.identity.name)
-    {
-        fields.push(declared.identity.clone());
+    // The identity, where the steps settled it and the predicate reads it, whole or a member of a
+    // struct identity: a row-set selector over the identity (ess/23, beyond10x/ess#429, #463) reads
+    // the row's own key. A predicate that does not read it is decided without it: the settled key
+    // is not a stored field, and binding it there would leave every such predicate unknown.
+    if identity_selectors(ir) && values.contains_key(&declared.identity.name) {
+        if reads_key(predicate, &declared.identity.name) {
+            fields.push(declared.identity.clone());
+        } else {
+            values.remove(&declared.identity.name);
+        }
     }
     // The held state is bound as `state` at the lifecycle's own type, beside the stored fields.
     if reads_held_state(ir, entity, predicate) {
@@ -524,6 +523,15 @@ fn evaluate_row(
 /// synthesized, refusals included.
 pub(super) fn identity_selectors(ir: &EssIr) -> bool {
     ir.format().major() >= ess_domain::system::FormatVersion::V23.major()
+}
+
+/// Whether `predicate` reads the identity named `identity`: the whole of it, or a member of a
+/// struct identity (beyond10x/ess#463). Every identity gate of a row-set selector asks this.
+pub(super) fn reads_key(predicate: &Predicate, identity: &str) -> bool {
+    predicate
+        .fact_paths()
+        .iter()
+        .any(|path| path.namespace() == identity)
 }
 
 /// The distinction the second owner a link comparison names is arranged under: past every further

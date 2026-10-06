@@ -186,6 +186,65 @@ fn the_retried_scenario_arranges_one_match_and_a_decoy_per_conjunct() {
     }
 }
 
+/// A target that keeps one record per value of a selector's field, the newest or the oldest
+/// replacing the rest, answers from that record and not from the set. So among the rows sharing
+/// each sent value, the selected row is neither the first arranged nor the last: a decoy holding
+/// that value is arranged on each side of it.
+#[test]
+fn the_selected_row_is_neither_the_first_nor_the_last_of_any_value_it_shares() {
+    let suite = suite(READS, &REQUIRED_READS);
+    let id = "demo.jobs.Retry/outcome/retried";
+    let rows = recorded(&suite, id);
+    let sent = steps(&suite, id)
+        .iter()
+        .rev()
+        .find_map(|step| match step {
+            ScenarioStep::ExecuteCommand { command, input, .. }
+                if command.to_string() == "demo.jobs.Retry" =>
+            {
+                Some(input.clone())
+            }
+            _ => None,
+        })
+        .expect("the command under test is sent");
+    let text = |name: &str| {
+        sent[name]
+            .as_literal()
+            .and_then(Node::as_text)
+            .unwrap()
+            .to_owned()
+    };
+    let (worker, batch) = (text("worker_id"), text("batch_id"));
+    let selected = rows
+        .iter()
+        .position(|(w, b, _)| *w == worker && *b == batch)
+        .expect("one row is selected");
+    for (field, sharing) in [
+        (
+            "worker_id",
+            rows.iter()
+                .enumerate()
+                .filter(|(_, (w, _, _))| *w == worker)
+                .map(|(at, _)| at)
+                .collect::<Vec<_>>(),
+        ),
+        (
+            "batch_id",
+            rows.iter()
+                .enumerate()
+                .filter(|(_, (_, b, _))| *b == batch)
+                .map(|(at, _)| at)
+                .collect::<Vec<_>>(),
+        ),
+    ] {
+        assert!(
+            sharing.first() != Some(&selected) && sharing.last() != Some(&selected),
+            "the selected row is the first or the last of the rows sharing its {field}: \
+             {rows:#?}"
+        );
+    }
+}
+
 #[test]
 fn the_healthy_interpreter_passes_every_row_set_scenario() {
     for (text, required, target) in [
