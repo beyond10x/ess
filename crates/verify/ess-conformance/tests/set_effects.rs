@@ -1598,6 +1598,58 @@ mod issue_459 {
         );
     }
 
+    /// The fixture with an enum member of `variants` on the element and the row, which the entry
+    /// reads.
+    fn with_enum(variants: &str) -> String {
+        let model = MODEL
+            .replacen(
+                "  - name: demo.feed.AppliedDocument\n",
+                &format!(
+                    "  - {{name: demo.feed.Kind, kind: enum, variants: [{variants}]}}\n  - name: demo.feed.AppliedDocument\n"
+                ),
+                1,
+            )
+            .replacen(
+                "      - {name: revision, type: Integer}\nentities:",
+                "      - {name: revision, type: Integer}\n      - {name: kind, type: demo.feed.Kind}\nentities:",
+                1,
+            )
+            .replacen(
+                "      - {name: revision, type: Integer}\n    lifecycle: {initial: Seen",
+                "      - {name: revision, type: Integer}\n      - {name: kind, type: demo.feed.Kind}\n    lifecycle: {initial: Seen",
+                1,
+            )
+            .replacen("revision: doc.revision}", "revision: doc.revision, kind: doc.kind}", 1);
+        format!("{model}      - {{name: kind, type: demo.feed.Kind}}\n")
+    }
+
+    /// The held row's two elements sit at adjacent distinctions, so an enum member of an even
+    /// number of variants differs between them as an odd one does, and the interpreter passes the
+    /// scenario that reads it.
+    #[test]
+    fn each_entry_reading_an_even_variant_enum_member_is_witnessed() {
+        for variants in ["Pdf, Html", "Pdf, Html, Text", "Pdf, Html, Text, Csv"] {
+            let model = with_enum(variants);
+            assert!(model.contains("kind: doc.kind"), "{model}");
+            let ir = ir_of(&model);
+            let synthesis = ess_conformance::synthesize::synthesize(&ir);
+            assert!(
+                synthesis.refusals.is_empty(),
+                "[{variants}]: {:#?}",
+                synthesis.refusals
+            );
+            let statuses = run(
+                &synthesis.suite,
+                &ess_conformance::interpret::Interpreted::for_model(ir),
+            );
+            assert_eq!(
+                statuses.get(RAN),
+                Some(&Status::Passed),
+                "[{variants}]: {statuses:#?}"
+            );
+        }
+    }
+
     #[test]
     fn each_entry_targets_refuse_by_name() {
         // The conformance half: the interpreted model passes the scenario, and a create-only and

@@ -208,17 +208,24 @@ commands:
 `instance: <name>.<member>` names a member holding the entity's identity type, and a `sets:` source
 may read `<name>.<member>` at the field's own type, beside the sources every entry takes. The list
 must be held free of repeated identities by a declared `distinct:` over that member: a refusal
-whose `when:` is `{not: {distinct: {in: <list>, as: x, by: x.<member>}}}`, as above, or the
-`distinct:` in the branch's own `when:`. Without it two elements could name one record and the
-result would depend on their order, so validation refuses the entry.
+whose plain `when:` is `{not: {distinct: {in: <list>, as: x, by: x.<member>}}}`, as above, or the
+`distinct:` in the branch's own `when:`. A refusal that also reads the stored record
+(`when_subject:`) does not count, since it refuses only where that guard holds. Without it two
+elements could name one record and the result would depend on their order, so validation refuses
+the entry.
 
 Writing is per element, so an empty list writes nothing; a record the list does not name is not
-removed. A refused run writes none of the records. `each:` beside `where:`, `moves:` or `deletes:`
-is refused, and so is an entry on a branch without a subject: `affects:` sits beside a branch that
-moves or updates one named record. Below `ess/23` `each:` is refused, naming `ess/23`.
+removed, and an updated record keeps every field the entry does not write. An element naming the
+branch's own subject is skipped: the subject keeps what its branch writes. A refused run writes
+none of the records. `each:` beside `where:`, `moves:` or `deletes:` is refused, and so is an entry
+on a branch without a subject: `affects:` sits beside a branch that moves or updates one named
+record. Below `ess/23` `each:` is refused, naming `ess/23`.
 
-The suite sends the command once to put a record in place and a decoy beside it, then sends it
-again with one element naming that record and one naming a new identity, and reads back the updated
-record, the created one in `initial`, the decoy as it was, and exactly one record per identity.
+The suite sends the command once to put a record in place and a decoy beside it, gives the record
+a field the entry does not write where another command can, sends the command with an empty list,
+then sends it with one element naming that record and one naming a new identity, and reads back the
+updated record with the field it kept, the created one in `initial`, the decoy as it was, and
+exactly one record per identity. Each refusal of the command is then read to have written no
+record its list named.
 Every generated code target (Rust, Go, Web, Clap) refuses the entry by name, and Entity Runtime
 lowering refuses it with `SetEffectUnsupported`.

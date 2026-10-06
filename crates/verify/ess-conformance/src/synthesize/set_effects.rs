@@ -100,6 +100,7 @@ pub(super) fn set_effects(
                 }
             }
         }
+        refused_writes_none(models.arrangement, command, suite);
     }
 }
 
@@ -1481,7 +1482,10 @@ fn each_lists<'o>(
         let element = |nth: usize| {
             crate::witness::fields(ir, members, Distinction::further(11 + 4 * attempt + nth)).ok()
         };
-        let (Some(held_row), Some(decoy), Some(mut again), Some(new)) =
+        // The second call's element for the held row sits at the distinction next to the first's:
+        // adjacent distinctions differ for every scalar kind, a `Boolean` and an enum of an even
+        // number of variants included, where two of one parity would not.
+        let (Some(held_row), Some(mut again), Some(decoy), Some(new)) =
             (element(0), element(1), element(2), element(3))
         else {
             continue;
@@ -1546,7 +1550,7 @@ fn first_call(
     each: &EachLists<'_>,
     input: &BTreeMap<String, Node>,
     (steps, source): (&mut Vec<ScenarioStep>, &mut BTreeSet<EssSemanticRef>),
-) -> Result<BTreeMap<String, ScenarioValue>, RefusalCause> {
+) -> Result<First, RefusalCause> {
     let ir = models.arrangement;
     let subject = outcome
         .subject
@@ -1573,12 +1577,51 @@ fn first_call(
     );
     steps.extend(setup.steps);
     source.extend(setup.source);
+    send((command, outcome), actors, supplied.clone(), steps, source);
+    let carried = each
+        .again
+        .get(&each.each.member)
+        .and_then(|held| carry(ir, command, each, held, actors))
+        .map(|carry| {
+            steps.extend(carry.steps);
+            source.extend(carry.source);
+            carry.kept
+        })
+        .unwrap_or_default();
+    empty_call(
+        models,
+        (command, outcome),
+        actors,
+        taken,
+        each,
+        input,
+        (steps, source),
+    )?;
+    Ok(First { supplied, carried })
+}
+
+/// What the arrangement of an `each:` segment leaves for the reads: what the first call supplied,
+/// which the decoy is read under, and the fields another command wrote on the held row that the
+/// entry does not write, which an update carries (beyond10x/ess#459).
+struct First {
+    supplied: BTreeMap<String, ScenarioValue>,
+    carried: BTreeMap<String, Determined>,
+}
+
+/// The command sent, and the branch required of it.
+fn send(
+    (command, outcome): (&ResolvedCommand, &ResolvedOutcome),
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    supplied: BTreeMap<String, ScenarioValue>,
+    steps: &mut Vec<ScenarioStep>,
+    source: &mut BTreeSet<EssSemanticRef>,
+) {
     let command_ref = CommandRef::new(command.name.clone());
     let branch = OutcomeRef::new(command_ref.clone(), outcome.name.clone());
     steps.push(ScenarioStep::ExecuteCommand {
         command: command_ref.clone(),
         actor: actors.get(&command.name).cloned(),
-        input: supplied.clone(),
+        input: supplied,
         caller: BTreeMap::new(),
     });
     steps.push(ScenarioStep::ExpectOutcome {
@@ -1586,7 +1629,137 @@ fn first_call(
     });
     source.insert(command_ref.into());
     source.insert(branch.into());
-    Ok(supplied)
+}
+
+/// A call of another command putting a field the `each:` entry does not write on the held row
+/// (beyond10x/ess#459): "updated if held" carries it, so a target replacing the row loses it. The
+/// first accepting `updates:` branch over the entity, naming its row by a supplied identity and
+/// changing no other row, that writes such a field with a value the scenario decides and that the
+/// held identity reaches; `None` where there is none, and then no field the entry leaves can tell
+/// a replacement from an update.
+fn carry(
+    ir: &EssIr,
+    under_test: &ResolvedCommand,
+    each: &EachLists<'_>,
+    held: &Node,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+) -> Option<Carry> {
+    let entity = &each.affect.entity;
+    let initial = &ir.entity(entity).lifecycle.initial;
+    let written: BTreeSet<&str> = each
+        .affect
+        .sets
+        .iter()
+        .map(|set| set.target.as_str())
+        .chain(each.each.reads.iter().map(|read| read.target.as_str()))
+        .collect();
+    for command in ir.commands().values() {
+        if command.name == under_test.name {
+            continue;
+        }
+        for outcome in &command.outcomes {
+            let Some(subject) = &outcome.subject else {
+                continue;
+            };
+            let ess_compiler::ir::ResolvedInstance::Supplied { field } = &subject.instance else {
+                continue;
+            };
+            if outcome.error.is_some()
+                || outcome.instances.is_some()
+                || !outcome.affects.is_empty()
+                || subject.entity != *entity
+                || subject.effect != ResolvedEffect::Updates
+            {
+                continue;
+            }
+            let Ok(mut input) = reach(ir, command, outcome, Distinction::PLAIN) else {
+                continue;
+            };
+            input.insert(field.name.clone(), held.clone());
+            if !super::selects_branch(ir, command, outcome, Some(initial), &input)
+                .is_ok_and(|reached| reached)
+            {
+                continue;
+            }
+            let supplied = supply(ir, command, &input, None, None, &BTreeMap::new());
+            let kept: BTreeMap<String, Determined> =
+                settled(ir, outcome, &supplied, &BTreeMap::new())
+                    .into_iter()
+                    .filter(|(target, determined)| {
+                        !written.contains(target.as_str())
+                            && determined.value.as_literal().is_some()
+                    })
+                    .collect();
+            if kept.is_empty() {
+                continue;
+            }
+            let (mut steps, mut source) = (Vec::new(), BTreeSet::new());
+            send(
+                (command, outcome),
+                actors,
+                supplied,
+                &mut steps,
+                &mut source,
+            );
+            return Some(Carry {
+                steps,
+                source,
+                kept,
+            });
+        }
+    }
+    None
+}
+
+/// The call [`carry`] found, and the fields it leaves on the held row.
+struct Carry {
+    steps: Vec<ScenarioStep>,
+    source: BTreeSet<EssSemanticRef>,
+    kept: BTreeMap<String, Determined>,
+}
+
+/// The command sent with an empty list, for a further subject, requiring the accepting branch
+/// (beyond10x/ess#459): an empty list is an accepted answer and writes nothing, which the reads
+/// after the command under test then hold of every element row. Left out where the branch's guard
+/// does not admit an empty list.
+fn empty_call(
+    models: &InvocationModels<'_>,
+    (command, outcome): (&ResolvedCommand, &ResolvedOutcome),
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    taken: &mut BTreeSet<InstanceName>,
+    each: &EachLists<'_>,
+    input: &BTreeMap<String, Node>,
+    (steps, source): (&mut Vec<ScenarioStep>, &mut BTreeSet<EssSemanticRef>),
+) -> Result<(), RefusalCause> {
+    let ir = models.arrangement;
+    let subject = outcome
+        .subject
+        .as_ref()
+        .expect("affects_segment checked the subject");
+    let mut sent = input.clone();
+    sent.insert(each.each.list.clone(), Node::Seq(Vec::new()));
+    let distinction = next(ir, &subject.entity, taken);
+    let setup = prepare_in(ir, outcome, actors, None, distinction)?;
+    let Some(instance) = setup.instance.clone() else {
+        return Ok(());
+    };
+    if !super::selects_branch(ir, command, outcome, setup.before.as_ref(), &sent)
+        .is_ok_and(|reached| reached)
+    {
+        return Ok(());
+    }
+    let supplied = supply(
+        ir,
+        command,
+        &sent,
+        Some(subject),
+        Some(&instance),
+        &setup.bound,
+    );
+    steps.extend(setup.steps);
+    source.extend(setup.source);
+    send((command, outcome), actors, supplied, steps, source);
+    Ok(())
 }
 
 /// What one element leaves in the row it names: the entry's `sets:` under `supplied`, and every
@@ -1620,17 +1793,14 @@ fn element_row(
 
 /// The reads of an `each:` segment after the command (ess/23, beyond10x/ess#459), from every view
 /// holding every row of the entity and publishing every field the entry writes: the held row with
-/// the second call's element, the new row with its own, both in `initial`, and the decoy as the
+/// the second call's element and every field [`carry`] put on it, the new row with its own, both in `initial`, and the decoy as the
 /// first call left it; then a snapshot by each element's identity of the second call, which selects
 /// exactly one row. Or a refusal where no view publishes them.
 fn each_reads(
     ir: &EssIr,
     outcome: &ResolvedOutcome,
     each: &EachLists<'_>,
-    (first, second): (
-        &BTreeMap<String, ScenarioValue>,
-        &BTreeMap<String, ScenarioValue>,
-    ),
+    (first, second): (&First, &BTreeMap<String, ScenarioValue>),
     steps: &mut Vec<ScenarioStep>,
     source: &mut BTreeSet<EssSemanticRef>,
 ) -> Result<(), RefusalCause> {
@@ -1668,15 +1838,15 @@ fn each_reads(
     }
     let identity = &declared.identity.name;
     let initial = &declared.lifecycle.initial;
+    // The held row carries what another command wrote and the entry does not write.
+    let mut held = first.carried.clone();
+    held.extend(element_row(ir, outcome, each, second, &each.again));
     let rows = [
-        (
-            &each.again,
-            element_row(ir, outcome, each, second, &each.again),
-        ),
+        (&each.again, held),
         (&each.new, element_row(ir, outcome, each, second, &each.new)),
         (
             &each.decoy,
-            element_row(ir, outcome, each, first, &each.decoy),
+            element_row(ir, outcome, each, &first.supplied, &each.decoy),
         ),
     ];
     for view in views {
@@ -1863,4 +2033,132 @@ fn reaches_other_rows(ir: &EssIr, steps: &[ScenarioStep]) -> bool {
                     && (branch.instances.is_some() || !branch.affects.is_empty())
             })
     })
+}
+
+/// Appends to each refusal scenario of a command with an `each:` entry (ess/23, beyond10x/ess#459)
+/// the reads of the entry's entity absent for every identity the refused call's list named: a
+/// refused run writes none of the rows. An identity an earlier accepted call of the scenario already
+/// sent is left out, since that call may have put its row in place; so is a list holding a reference.
+fn refused_writes_none(ir: &EssIr, command: &ResolvedCommand, suite: &mut ConformanceSuite) {
+    let entries: Vec<(&ResolvedAffect, &ess_compiler::ir::ResolvedEach)> = command
+        .outcomes
+        .iter()
+        .filter(|outcome| outcome.error.is_none())
+        .flat_map(|outcome| &outcome.affects)
+        .filter_map(|affect| affect.each.as_ref().map(|each| (affect, each)))
+        .collect();
+    if entries.is_empty() {
+        return;
+    }
+    let command_ref = CommandRef::new(command.name.clone());
+    for refusal in command
+        .outcomes
+        .iter()
+        .filter(|outcome| outcome.error.is_some())
+    {
+        let id = ScenarioId::Outcome {
+            outcome: OutcomeRef::new(command_ref.clone(), refusal.name.clone()),
+        };
+        let Some(scenario) = suite.scenarios.get_mut(&id) else {
+            continue;
+        };
+        let Some(at) = scenario.steps.iter().rposition(|step| {
+            matches!(step, ScenarioStep::ExecuteCommand { command, .. } if *command == command_ref)
+        }) else {
+            continue;
+        };
+        let ScenarioStep::ExecuteCommand { input, .. } = &scenario.steps[at] else {
+            continue;
+        };
+        let mut reads = Vec::new();
+        let mut views = BTreeSet::new();
+        for (affect, each) in &entries {
+            let Some(ScenarioValue::Literal {
+                value: Node::Seq(items),
+            }) = input.get(&each.list)
+            else {
+                continue;
+            };
+            let mut named: Vec<&Node> = Vec::new();
+            for item in items {
+                let Node::Map(members) = item else {
+                    continue;
+                };
+                let Some(identity) = members.get(&each.member) else {
+                    continue;
+                };
+                // An earlier call that a refusal answered put no row in place.
+                let earlier = scenario.steps[..at]
+                    .iter()
+                    .enumerate()
+                    .any(|(index, step)| {
+                        matches!(step, ScenarioStep::ExecuteCommand { input, .. }
+                        if input.values().any(|value| mentions(value, identity)))
+                            && !refused_at(ir, scenario.steps.get(index + 1))
+                    });
+                if !earlier && !named.contains(&identity) {
+                    named.push(identity);
+                }
+            }
+            let identity_name = &ir.entity(&affect.entity).identity.name;
+            for view in observing(ir, &affect.entity) {
+                let name = ViewRef::new(view.name.clone());
+                for identity in &named {
+                    if !reads
+                        .iter()
+                        .any(|step| matches!(step, ScenarioStep::QueryView { view, .. } if *view == name))
+                    {
+                        reads.push(ScenarioStep::QueryView {
+                            view: name.clone(),
+                            params: BTreeMap::new(),
+                        });
+                    }
+                    reads.push(ScenarioStep::ExpectSubjectAbsent {
+                        view: name.clone(),
+                        subject: [(
+                            identity_name.clone(),
+                            ScenarioValue::literal((*identity).clone()),
+                        )]
+                        .into_iter()
+                        .collect(),
+                    });
+                    views.insert(name.clone());
+                }
+            }
+        }
+        scenario.steps.extend(reads);
+        scenario
+            .source
+            .extend(views.into_iter().map(EssSemanticRef::from));
+    }
+}
+
+/// Whether `step` requires a branch reporting an error: the answer to a call that changed nothing.
+fn refused_at(ir: &EssIr, step: Option<&ScenarioStep>) -> bool {
+    let Some(ScenarioStep::ExpectOutcome { outcome }) = step else {
+        return false;
+    };
+    ir.commands()
+        .values()
+        .filter(|command| command.name.to_string() == outcome.command.to_string())
+        .flat_map(|command| &command.outcomes)
+        .any(|branch| branch.name == outcome.outcome && branch.error.is_some())
+}
+
+/// Whether `value` holds `node` anywhere: as itself, or inside a list or mapping.
+fn mentions(value: &ScenarioValue, node: &Node) -> bool {
+    fn within(held: &Node, node: &Node) -> bool {
+        held == node
+            || match held {
+                Node::Seq(items) => items.iter().any(|item| within(item, node)),
+                Node::Map(members) => members.values().any(|member| within(member, node)),
+                _ => false,
+            }
+    }
+    match value {
+        ScenarioValue::Literal { value } => within(value, node),
+        ScenarioValue::List { items } => items.iter().any(|item| mentions(item, node)),
+        ScenarioValue::Members { members } => members.values().any(|member| mentions(member, node)),
+        _ => false,
+    }
 }

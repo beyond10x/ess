@@ -934,6 +934,52 @@ mod issue_459 {
         no_empty_declaration(&errors);
     }
 
+    /// An entry without `each:` declaring `instance:`, or naming no rows, is refused alone, with no
+    /// `empty_declaration` cascade; below ess/23 the refusal names ess/23 and says how to reach it.
+    #[test]
+    fn each_entry_shape_refusals_name_ess23_below_it_without_cascade() {
+        let with_instance = INVITE_AFFECTS.replacen(
+            "            where: team == subject.team\n",
+            "            where: team == subject.team\n            instance: s.session_id\n",
+            1,
+        );
+        let without_where =
+            INVITE_AFFECTS.replacen("            where: team == subject.team\n", "", 1);
+        for (format, below) in [("format: ess/16", true), ("format: ess/23", false)] {
+            for (entry, code, at) in [
+                (
+                    &with_instance,
+                    ValidationCode::ConflictingDeclaration,
+                    "Invite.outcomes.invited.affects[0].instance",
+                ),
+                (
+                    &without_where,
+                    ValidationCode::MissingDeclaration,
+                    "Invite.outcomes.invited.affects[0]",
+                ),
+            ] {
+                let model = edited(INVITE_AFFECTS, entry).replacen("format: ess/16", format, 1);
+                let errors = refused(&model);
+                let refusal = only_under(&errors, "Invite");
+                assert_eq!(refusal.code, code, "{format}: {refusal}");
+                assert!(refusal.location.ends_with(at), "{format}: {refusal}");
+                assert!(refusal.message.contains("`each:`"), "{format}: {refusal}");
+                assert_eq!(
+                    refusal.message.contains("ess/23"),
+                    below,
+                    "{format}: {refusal}"
+                );
+                let hint = refusal.hint.as_deref().unwrap_or_default();
+                assert_eq!(
+                    hint.contains("format: ess/23"),
+                    below,
+                    "{format}: {refusal}"
+                );
+                no_empty_declaration(&errors);
+            }
+        }
+    }
+
     #[test]
     fn each_entry_reads_are_checked_against_the_element_and_the_entity() {
         // `instance:` names a member of the identity's type.

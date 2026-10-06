@@ -16,6 +16,9 @@ struct Plan<'a> {
     /// One row per element of an input list (ess/23, beyond10x/ess#459): the rows are named by
     /// the elements rather than selected, and `keys` is empty.
     each: Option<&'a ess_compiler::ir::ResolvedEach>,
+    /// The subject's identity where an `each:` entry is over the subject's own entity: an element
+    /// naming it is skipped, the subject itself excepted as under every `affects:` entry.
+    excepted: Option<Node>,
 }
 
 #[derive(Clone, Copy)]
@@ -61,6 +64,7 @@ pub(super) fn apply(
                 },
             )?,
             each: None,
+            excepted: None,
         });
     }
     if !outcome.affects.is_empty() {
@@ -79,6 +83,7 @@ pub(super) fn apply(
                     sets: &affect.sets,
                     keys: Vec::new(),
                     each: affect.each.as_ref(),
+                    excepted: (affected.name == entity.name).then(|| key.clone()),
                 });
                 continue;
             };
@@ -101,6 +106,7 @@ pub(super) fn apply(
                 sets: &affect.sets,
                 keys,
                 each: None,
+                excepted: None,
             });
         }
     }
@@ -198,8 +204,8 @@ fn carry_out(
 /// One `each:` entry applied to `work` (ess/23, beyond10x/ess#459): for each element of its input
 /// list, in order, the row the element's identity member names is updated if held and created in
 /// the lifecycle's `initial` state if not, and comes to hold the entry's `sets:` and the element's
-/// members it reads. Returns the identities written, in the order written; an empty list writes
-/// nothing.
+/// members it reads; an element naming the subject is skipped, the subject itself excepted.
+/// Returns the identities written, in the order written; an empty list writes nothing.
 fn elements(
     ir: &EssIr,
     plan: &Plan<'_>,
@@ -236,6 +242,11 @@ fn elements(
                     each.binder, each.member, each.list
                 ),
             })?;
+        // The subject itself is excepted, as under every `affects:` entry: it holds what its own
+        // branch writes.
+        if plan.excepted.as_ref() == Some(&key) {
+            continue;
+        }
         work.location = vec![
             "set-effect".into(),
             occurrence.to_string(),

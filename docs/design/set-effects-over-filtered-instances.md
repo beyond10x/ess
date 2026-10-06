@@ -216,19 +216,24 @@ affects:
 **Semantics.** `each: {in: input.<list>, as: <name>}` walks a `List` of a struct in the command's
 input, in order. For each element, `instance: <name>.<member>` reads an identity of the entry's
 entity, and the row it names is updated if held and created in `initial` if not: the existence
-pair's create-or-update (beyond10x/ess#164), applied per element. `sets:` writes each such row. A
+pair's create-or-update (beyond10x/ess#164), applied per element. An update changes only the fields
+the entry writes; every other field of the held row is carried. `sets:` writes each such row. A
 source there may read `<name>.<member>`, a member of the element at the field's own type or the
 `Optional` of it, beside the sources every `affects:` entry takes; `{subject: …}`, `{related: …}`,
 `{increment: …}` and `{caller: …}` stay refused as on every set effect, and the subject's identity
 is read from the input that names it. An element is read one member deep and not inside a nested
-mapping. An empty list writes nothing and is an accepted answer. A row the list does not name is
-not removed: replace-a-set, removing the rows a list no longer names, is not in this cut, and
+mapping. Where the entry is over the subject's own entity, an element naming the subject is
+skipped: the subject itself is excepted, as under every `affects:` entry, and holds what its own
+branch writes. An empty list writes nothing and is an accepted answer. A row the list does not name
+is not removed: replace-a-set, removing the rows a list no longer names, is not in this cut, and
 composes later with the deleting entry above.
 
 **Duplicate identities.** Two elements naming one identity would leave a row that depends on their
 order. The entry is admitted only where a declared `distinct:` holds that member distinct across
 the list: `{distinct: {in: <list>, as: x, by: x.<member>}}` conjoined in the branch's own `when:`,
-or negated in the `when:` of a refusal of the command (`when: {not: {distinct: …}}`). Without one,
+or negated in the plain `when:` of a refusal of the command (`when: {not: {distinct: …}}`). A
+refusal also guarded by the stored subject (`when_subject:`) or a related row (`when_related:`)
+refuses a repeated member only where that guard holds too, so it does not count. Without one,
 validate refuses with `missing_declaration` naming the list and the member.
 
 **Refusals.** `each:` beside `where:`, `moves:` or `deletes:` in one entry is
@@ -244,7 +249,9 @@ subject of its own is refused with `missing_declaration` naming the `each:` entr
 `each:` as an outcome's own set subject is a labelled follow-up, not this cut. A required field an
 entity invariant reads must be written by the entry, as by any creation (`ESS-COMMAND-018`). Below
 `ess/23` `each:` is refused with `unsupported_format_version` naming `ess/23`, at the key and before
-conversion; the entry keeps its place and changes nothing, so the refusal comes alone.
+conversion; the entry keeps its place and changes nothing, so the refusal comes alone. An entry
+with `instance:` and no `each:`, or with no `where:`, is refused before conversion too, alone, and
+below `ess/23` the refusal names `ess/23` and says to declare it.
 
 **Atomicity.** A refused command changes nothing, the rule every outcome keeps, so a refused run
 writes none of the rows. Partial failure inside an implementation stays out of scope, as for every
@@ -253,21 +260,30 @@ set effect (below).
 **Conformance.** The entry appends to the branch's own scenario. A second subject is arranged and
 the command is sent for it with two elements, the row to be held and a decoy, so the rows exist
 without any other command creating the entity: the existence pair arranges its updating sibling
-through the same command. The command under test is then sent with two elements, one naming the
-held row with other values and one naming an identity no row holds. Afterwards every view
-publishing the entity's identity and every field the entry writes, immediate, unfiltered,
-unparameterised and unpaged, must read the held row with the element's values, the new row with
-its element's values, both in `initial` where the view publishes the state, and the decoy as the
-first call left it; and a snapshot by each element's identity selects exactly one row, the
-existence pair's one-row-per-identity check, so a target adding a second row for a held identity
-fails. A target that only creates, or only updates, fails the scenario. Where no view publishes
-those, the scenario is refused by name (`NoWitness`), as is an entry over an entity another entry
-of the outcome also writes, and a branch with more than one `each:` entry. Every step used
-(`execute_command`, `expect_outcome`, `query_view`, `expect_view` `contains`, `snapshot_subject`)
-already exists, so no conformance major and no new suite step is taken: a suite carrying the entry
-keeps the format its other steps select.
+through the same command. Where another command updates a row of the entity by a supplied identity
+and writes a field the entry does not write, it is sent for the held row, so the row holds a value
+an update carries and a replacement loses. The command is then sent for a third subject with an
+empty list, requiring the accepting branch, where its guard admits one. The command under test is
+then sent with two elements, one naming the held row with other values and one naming an identity
+no row holds; the held row's two elements are built at adjacent witness distinctions, which differ
+for every scalar kind, a `Boolean` and an enum of an even number of variants included. Afterwards
+every view publishing the entity's identity and every field the entry writes, immediate,
+unfiltered, unparameterised and unpaged, must read the held row with the element's values and the
+carried field, the new row with its element's values, both in `initial` where the view publishes
+the state, and the decoy as the first call left it; and a snapshot by each element's identity
+selects exactly one row, the existence pair's one-row-per-identity check, so a target adding a
+second row for a held identity fails. A target that only creates, only updates, replaces a held
+row, or refuses an empty list fails the scenario. Each refusal scenario of the command then reads
+the entry's entity absent, by `deletes:`'s absence check, for every identity the refused call's
+list names and no earlier accepted call sent, so a target that writes the rows and then refuses
+fails it. Where no view publishes those, the scenario is refused by name (`NoWitness`), as is an
+entry over an entity another entry of the outcome also writes, and a branch with more than one
+`each:` entry. Every step used (`execute_command`, `expect_outcome`, `query_view`, `expect_view`
+`contains`, `snapshot_subject`, `expect_subject_absent`) already exists, so no conformance major and
+no new suite step is taken: a suite carrying the entry keeps the format its other steps select.
 
-**Targets.** The interpreter writes the rows after the subject, element by element in list order.
+**Targets.** The interpreter writes the rows after the subject, element by element in list order,
+skipping an element that names the subject.
 Entity Runtime refuses the entry with `SetEffectUnsupported`, and Rust, Go, Web and Clap synthesis
 as `MissingRepresentation`, as for every `affects:`. `ess-diff`'s `outcome-set-effect-changed` line
 names the entry and its list, and the generated documentation says it writes one row per element of

@@ -494,39 +494,75 @@ pub(super) fn affects(
 }
 
 /// An `affects:` entry without `each:` selects its rows by `where:`: `instance:` beside it, or no
-/// `where:` at all, is refused (ess/23, beyond10x/ess#459).
+/// `where:` at all, is refused (ess/23, beyond10x/ess#459). An assembled specification of one
+/// header reaches this with both already refused and taken off by [`refuse_each`]; the refusal here
+/// is the backstop for an outcome converted on its own.
 fn selected_by_filter(
     name: &OutcomeName,
     index: usize,
     raw: &RawAffect,
 ) -> Result<(), ValidationErrors> {
+    let at = format!("outcomes.{name}.affects[{index}]");
     if raw.instance.is_some() {
-        return Err(refusal(
-            name,
-            &format!("affects[{index}].instance"),
-            ValidationCode::ConflictingDeclaration,
+        return Err(
+            instance_without_each(name.as_str(), index, format!("{at}.instance"), false).into(),
+        );
+    }
+    if raw.filter.is_none() {
+        return Err(no_rows_named(name.as_str(), index, at, false).into());
+    }
+    Ok(())
+}
+
+/// The refusal of `instance:` in an `affects:` entry without `each:`, at `at`; below ess/23 it
+/// names the format `each:` needs.
+fn instance_without_each(name: &str, index: usize, at: String, below_23: bool) -> ValidationError {
+    let (message, hint) = if below_23 {
+        (
+            format!(
+                "outcome `{name}` declares `instance:` in `affects[{index}]`, which selects its \
+                 rows by `where:`; `instance:` names the row an element of `each:` writes, which \
+                 requires specification format ess/23"
+            ),
+            "drop `instance:`, or declare `format: ess/23` and write one row per element with \
+             `each:` and `instance:`",
+        )
+    } else {
+        (
             format!(
                 "outcome `{name}` declares `instance:` in `affects[{index}]`, which selects its \
                  rows by `where:`; `instance:` names the row an element of `each:` writes"
             ),
             "drop `instance:`, or write one row per element with `each: {in: input.<list>, as: \
              <name>}` and `instance: <name>.<member>` in place of `where:`",
-        ));
-    }
-    if raw.filter.is_none() {
-        return Err(refusal(
-            name,
-            &format!("affects[{index}]"),
-            ValidationCode::MissingDeclaration,
+        )
+    };
+    ValidationError::new(ValidationCode::ConflictingDeclaration, at, message).with_hint(hint)
+}
+
+/// The refusal of an `affects:` entry naming no rows, with neither `where:` nor `each:`, at `at`;
+/// below ess/23 it names the format `each:` needs.
+fn no_rows_named(name: &str, index: usize, at: String, below_23: bool) -> ValidationError {
+    let (message, hint) = if below_23 {
+        (
+            format!(
+                "outcome `{name}` declares `affects[{index}]` with no `where:`, so the entry names \
+                 no rows; an entry naming its rows by `each:` requires specification format ess/23"
+            ),
+            "select the rows with `where: <predicate>`, or declare `format: ess/23` and write one \
+             row per element with `each:` and `instance:`",
+        )
+    } else {
+        (
             format!(
                 "outcome `{name}` declares `affects[{index}]` with neither `where:` nor `each:`, \
                  so the entry names no rows"
             ),
             "select the rows with `where: <predicate>`, or write one row per element of an input \
-             list with `each:` and `instance:` (ess/23)",
-        ));
-    }
-    Ok(())
+             list with `each:` and `instance:`",
+        )
+    };
+    ValidationError::new(ValidationCode::MissingDeclaration, at, message).with_hint(hint)
 }
 
 /// The refusal of `target` set more than once in `affects[index]`.
@@ -1924,8 +1960,11 @@ fn each_below_ess_23(at: String) -> ValidationError {
     .with_hint("declare `format: ess/23`")
 }
 
-/// Refuses, before any outcome is converted, each `each:` inside an `affects:` entry under one
-/// header from `ess/16` below `ess/23` (beyond10x/ess#459), at the key written, naming `ess/23`.
+/// Refuses, before any outcome is converted, under one header from `ess/16` (beyond10x/ess#459):
+/// below `ess/23` each `each:` inside an `affects:` entry, naming `ess/23`; and in every such format
+/// an entry without `each:` that declares `instance:` or no `where:`, naming `ess/23` below it. The
+/// refused `instance:` is taken off, and an entry naming no rows is given a `where:` selecting
+/// every row, so the refusal comes alone.
 ///
 /// The entry keeps its place, so every later entry's refusal names the position written, and is
 /// left changing nothing: its `each:`, `instance:` and `sets:` — whose element reads would be read
@@ -1947,25 +1986,40 @@ pub(crate) fn refuse_each(
         return;
     };
     let major = format.unwrap_or(FormatVersion::V1).major();
-    if major < FormatVersion::V16.major() || major >= FormatVersion::V23.major() {
+    if major < FormatVersion::V16.major() {
         return;
     }
+    let below_23 = major < FormatVersion::V23.major();
     for (_, file) in files.iter_mut() {
         for command in &mut file.commands {
             for outcome in &mut command.outcomes {
+                let name = outcome.name.as_str().to_owned();
                 for (index, affect) in outcome.affects.iter_mut().enumerate() {
-                    if affect.each.take().is_none() {
+                    let at = format!("command.{}.outcomes.{name}.affects[{index}]", command.name);
+                    if below_23 && affect.each.take().is_some() {
+                        errors.push(each_below_ess_23(format!("{at}.each")));
+                        affect.instance = None;
+                        affect.sets.0.clear();
+                        affect
+                            .filter
+                            .get_or_insert_with(|| Predicate::Always.into());
                         continue;
                     }
-                    errors.push(each_below_ess_23(format!(
-                        "command.{}.outcomes.{}.affects[{index}].each",
-                        command.name, outcome.name
-                    )));
-                    affect.instance = None;
-                    affect.sets.0.clear();
-                    affect
-                        .filter
-                        .get_or_insert_with(|| Predicate::Always.into());
+                    if affect.each.is_some() {
+                        continue;
+                    }
+                    if affect.instance.take().is_some() {
+                        errors.push(instance_without_each(
+                            &name,
+                            index,
+                            format!("{at}.instance"),
+                            below_23,
+                        ));
+                    }
+                    if affect.filter.is_none() {
+                        errors.push(no_rows_named(&name, index, at, below_23));
+                        affect.filter = Some(Predicate::Always.into());
+                    }
                 }
             }
         }
@@ -2204,7 +2258,8 @@ fn each_rules(
 
 /// Whether a declared `distinct:` holds `each`'s identity member distinct across its list: conjoined
 /// in the outcome's own guard, or refused by a refusal of the command whose guard holds where it
-/// does not (`not distinct`, alone or among the alternatives of an `any:`).
+/// does not (`not distinct`, alone or among the alternatives of an `any:`), a refusal whose
+/// condition is a plain `when:` over the input.
 fn held_distinct(command: &CommandSpec, outcome: &Outcome, each: &Each) -> bool {
     let names = |distinct: &ess_primitives::predicate::Distinct| {
         let list = match distinct.over.segments() {
@@ -2222,7 +2277,12 @@ fn held_distinct(command: &CommandSpec, outcome: &Outcome, each: &Each) -> bool 
             .outcomes
             .iter()
             .filter(|other| other.error.is_some())
-            .filter_map(|other| input_guard(&other.condition))
+            // Only a refusal guarded by its input alone answers every repeated list: one scoped by
+            // the stored subject or a related row refuses only where that guard holds too.
+            .filter_map(|other| match &other.condition {
+                super::OutcomeCondition::When(predicate) => Some(predicate),
+                _ => None,
+            })
             .any(|predicate| refuses(predicate, &names))
 }
 
