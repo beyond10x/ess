@@ -294,6 +294,7 @@ fn validate_command(
     let mut flags = global_flags.clone();
     let mut positions = BTreeMap::new();
     let mut stdin_sources = 0;
+    let mut trailing = 0;
     for argument in &mut command.arguments {
         let field = fields
             .iter()
@@ -334,6 +335,22 @@ fn validate_command(
                 }
                 for flag in [inline, file, stdin] {
                     reserve(&mut flags, flag)?;
+                }
+            }
+            // Absent and empty would be two spellings of one value, so the list is required.
+            ArgumentSource::Trailing {} => {
+                trailing += 1;
+                if trailing > 1 {
+                    return Err(refuse("at most one trailing source per command"));
+                }
+                if shape
+                    != (Shape::List {
+                        of: Box::new(Shape::String),
+                    })
+                {
+                    return Err(refuse(
+                        "a trailing source binds a required List<String> field",
+                    ));
                 }
             }
         }

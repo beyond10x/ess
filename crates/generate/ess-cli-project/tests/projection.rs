@@ -181,6 +181,24 @@ fn emits_a_deterministic_standalone_parser_process_package() {
     assert!(artifacts["manifest.json"].contains("handler"));
 }
 
+/// beyond10x/ess#466: a new argument source changes no existing plan. `fixtures/binding.json` is
+/// the plan ESS 0.53.0 projected from this fixture.
+#[test]
+fn existing_binding_plan_bytes_unchanged() {
+    let model = Specification::assemble(vec![(
+        Source::new("system.yaml"),
+        RawSpecFile::parse(include_str!("fixtures/model.yaml")).unwrap(),
+    )])
+    .unwrap();
+    let ir = ess_compiler::compile(&model, &ess_compiler::source::SourceMap::new()).unwrap();
+    let binding = Binding::from_yaml(include_str!("fixtures/cli.yaml")).unwrap();
+    let artifacts = ess_cli_project::project(&compile(&ir, &binding).unwrap());
+    assert_eq!(
+        artifacts["binding.json"],
+        include_str!("fixtures/binding.json")
+    );
+}
+
 #[test]
 fn generated_package_compiles_offline_and_executes_process_fixtures() {
     let model = Specification::assemble(vec![(

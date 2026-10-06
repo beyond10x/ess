@@ -156,6 +156,8 @@ pub enum ArgumentSource {
         /// Boolean flag selecting a hidden TTY prompt.
         hidden_tty: String,
     },
+    /// Every argv word after the first `--`, verbatim, into one required `List<String>`.
+    Trailing {},
 }
 
 /// One input field's source.
