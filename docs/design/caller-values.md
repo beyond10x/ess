@@ -135,7 +135,14 @@ the callers' roles swapped: `second` creates a note and must record `second`'s a
 caller by name, fails the half in which that caller's role is the other one. Scenario ids stay the
 ones the model obliges; no new id family is needed.
 
-The second run renames every instance and instant it binds (`-swapped`). An `observed` reference is
+The second run renames every instance and instant it binds (`-swapped`). It also draws a fresh value
+for every literal identity it sends, whether the command creates that instance or a branch names the
+input as the instance it acts on (#275, #465), and replaces every copy of it: an event payload, a
+view row or parameter, an error field. A target may arrange an addressed record itself, for an
+`external:` outcome it is forced into, so the first run's literal would name a record the first run
+already had arranged. A struct identity is fresh in every member (#430). Where the type has no value
+left — the one row of a singleton entity — the scenario takes the one-row route or keeps its first
+run with a note, and never sends one identity twice. An `observed` reference is
 read by the runner from the **first** occurrence of its event in the scenario — the first run's — so
 the second run captures the field itself, right after the step that first expects the event, and
 reads the capture instead. A scenario with a fixture prelude, a retained replay or a periodic check

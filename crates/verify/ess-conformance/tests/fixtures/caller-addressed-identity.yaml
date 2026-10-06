@@ -1,0 +1,97 @@
+format: ess/22
+system: demo
+version: v1
+domain: demo.ledger
+summary: Prepared batches committed by an authenticated caller, some refused by an external check.
+entities:
+  - name: demo.ledger.Batch
+    identity: {name: transaction, type: Uuid}
+    fields:
+      - {name: tenant, type: String}
+      - {name: committed_by, type: String}
+    lifecycle:
+      initial: Prepared
+      states: [Prepared, Held, Committed]
+      terminal: [Held, Committed]
+      transitions:
+        - {name: hold, from: [Prepared], to: Held}
+        - {name: commit, from: [Prepared], to: Committed}
+actors:
+  - name: demo.ledger.Clerk
+    attributes:
+      - {name: subject, type: String}
+    may: [demo.ledger.PrepareBatch, demo.ledger.CommitTransaction, demo.ledger.ReviewTransaction]
+commands:
+  - name: demo.ledger.PrepareBatch
+    input:
+      - {name: tenant, type: String}
+      - {name: transaction, type: Uuid}
+    outcomes:
+      - name: prepared
+        creates: demo.ledger.Batch
+        instance: transaction
+        sets: {tenant: input.tenant, committed_by: {caller: subject}}
+        emits: [demo.ledger.BatchPrepared]
+        payload:
+          demo.ledger.BatchPrepared: {transaction: input.transaction}
+  - name: demo.ledger.CommitTransaction
+    input:
+      - {name: tenant, type: String}
+      - {name: transaction, type: Uuid}
+    outcomes:
+      - name: invalid-reference
+        external: a staged entry references a missing record
+        error: demo.ledger.InvalidReference
+      - name: malformed-reference
+        external: a staged entry carries a malformed reference
+        error: demo.ledger.MalformedReference
+      - name: delete-target-missing
+        external: a staged deletion names no record
+        error: demo.ledger.DeleteTargetMissing
+      - name: committed
+        moves: demo.ledger.Batch.commit
+        instance: transaction
+        sets: {committed_by: {caller: subject}}
+        emits: [demo.ledger.BatchCommitted]
+        payload:
+          demo.ledger.BatchCommitted: {transaction: input.transaction}
+      - name: wrong-state
+        wrong_state: true
+        error: demo.ledger.NotPrepared
+  - name: demo.ledger.ReviewTransaction
+    input:
+      - {name: transaction, type: Uuid}
+    outcomes:
+      - name: flagged
+        external: the reviewer flags the batch
+        emits: [demo.ledger.BatchFlagged]
+        payload:
+          demo.ledger.BatchFlagged: {transaction: input.transaction, flagged_by: {caller: subject}}
+      - name: held
+        moves: demo.ledger.Batch.hold
+        instance: transaction
+        emits: [demo.ledger.BatchHeld]
+        payload:
+          demo.ledger.BatchHeld: {transaction: input.transaction}
+      - name: not-reviewable
+        wrong_state: true
+        error: demo.ledger.NotPrepared
+events:
+  - name: demo.ledger.BatchPrepared
+    fields:
+      - {name: transaction, type: Uuid}
+  - name: demo.ledger.BatchCommitted
+    fields:
+      - {name: transaction, type: Uuid}
+  - name: demo.ledger.BatchHeld
+    fields:
+      - {name: transaction, type: Uuid}
+  - name: demo.ledger.BatchFlagged
+    fields:
+      - {name: transaction, type: Uuid}
+      - {name: flagged_by, type: String}
+errors:
+  - name: demo.ledger.InvalidReference
+  - name: demo.ledger.MalformedReference
+  - name: demo.ledger.DeleteTargetMissing
+  - name: demo.ledger.NotPrepared
