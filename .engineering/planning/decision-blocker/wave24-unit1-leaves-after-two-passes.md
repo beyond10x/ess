@@ -2,11 +2,13 @@
 format: aep.planning-md/3
 id: decision-blocker:wave24-unit1-leaves-after-two-passes
 kind: decision-blocker
-status: open
+status: cleared
 title: Unit 1 leaves wave 24 after two adversary passes
 relations:
 - blocks: story:browser-fixture-startup-deadline
-revision: 1
+revision: 3
+transitions:
+- {from: "open", to: "cleared", at: "2026-10-07T00:55:02Z", actor: "human:timo", revision: 3}
 ---
 # Unit 1 leaves wave 24 after two adversary passes
 
@@ -86,3 +88,17 @@ not carried as a story.
 - `Stage::ALL` against the declared variants holds, and the five-variant list is complete.
 - The panic-site scan's own results are correct today; all 270 region lines were read and the unit's
   hand enumeration of index, slice and arithmetic panics was right.
+
+## Decision (2026-10-07)
+
+Restart. `story:browser-fixture-startup-deadline` is re-implemented from current `main` in a later
+wave, after the Entity Runtime pin and the generated-types `arbitrary_precision` fix, and the
+flake is re-measured on `main` before any change. The flake recurred on 0.55.0's own CI:
+`coverage_browser::a_start_past_the_deadline_is_a_fixture_environment_refusal_not_a_bidi_defect`
+failed once and passed on rerun. The diff this unit left is kept in the worktree archive
+`wt-1933f8986f66` as reference only.
+
+Of the four stories carried out of this unit, `the-startup-clamp-does-not-outlive-the-startup` is
+implemented; `a-browser-that-answered-http-once-is-still-a-slow-start` and
+`the-startup-lock-does-not-cover-the-first-round-trip` are active and unshipped;
+`a-marked-region-is-not-a-scan-of-what-runs` is a draft.

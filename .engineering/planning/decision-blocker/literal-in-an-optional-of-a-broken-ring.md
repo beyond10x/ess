@@ -2,11 +2,13 @@
 format: aep.planning-md/3
 id: decision-blocker:literal-in-an-optional-of-a-broken-ring
 kind: decision-blocker
-status: open
+status: cleared
 title: A literal into an Optional of a broken ring is refused by nobody, and the two stories disagree about whether it should be
 relations:
 - blocks: story:literal-representation-walk-exhaustion
-revision: 1
+revision: 3
+transitions:
+- {from: "open", to: "cleared", at: "2026-10-07T00:55:02Z", actor: "human:timo", revision: 3}
 ---
 ## Finding
 
@@ -61,3 +63,13 @@ Which reading is right:
 
 The decision is recorded, one of the two readings is implemented, and the case that currently rules
 out the other is re-written rather than weakened — with its new assertion naming this story.
+
+## Decision (2026-10-07)
+
+A broken ring is **one** mistake. The `self_reference` refusals about `Beta` and `Gamma` are the
+diagnostic, validation already fails on them, and the literal into `Alpha` owes no second
+diagnostic at the mapping site. The 36 shapes stand as they are and
+`counting_optionals_outside_the_ring_would_move_shapes_the_matrix_asserts_on` is unchanged.
+
+Recorded in the `Landing::Ring` doc of
+`crates/specify/ess-domain/tests/literal_representation_adversary_pass2.rs`. No behaviour change.

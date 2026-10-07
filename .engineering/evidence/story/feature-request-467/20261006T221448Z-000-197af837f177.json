@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-06T22:14:48Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-467",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "ESS 0.55.0 Release preparation run 37535594342 succeeded at tag 0.55.0 (1132a87a7) after https://github.com/beyond10x/ess/pull/475 merged with a green Gate; the release carries https://github.com/beyond10x/ess/issues/467",
+    "reference": "https://github.com/beyond10x/ess/actions/runs/37535594342"
+  }
+}
