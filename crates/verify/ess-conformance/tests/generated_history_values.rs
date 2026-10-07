@@ -762,22 +762,23 @@ fn provider_before_unknown() -> String {
     GENERATED_TIMESTAMP.replace("      - name: early", "      - name: offered\n        external: The provider answers before stored fallback selection.\n        preserves: demo.sessions.Session\n        instance: session_id\n      - name: early")
 }
 
+/// A provider branch declared before the stored-field guard is refused by validation
+/// (beyond10x/ess#486): the held state selects first, so no provider alternative is collected
+/// before `early`'s guard is read.
 #[test]
-fn a_proven_provider_alternative_survives_an_unresolved_fallback() {
-    assert_history_outcome(&provider_before_unknown(), "offered", Verdict::Linearizable);
-}
-
-#[test]
-fn a_dead_provider_alternative_does_not_erase_an_unresolved_fallback() {
-    let ir = model(&provider_before_unknown());
-    let result = linearize::check(
-        &ir,
-        &recorded(&ir, Some("early")),
-        linearize::DEFAULT_BUDGET,
+fn a_provider_declared_before_a_stored_guard_is_refused() {
+    let source = provider_before_unknown();
+    let raw = RawSpecFile::parse(&source).expect("the source parses");
+    let errors = Specification::assemble([(Source::new("history-values.yaml"), raw)]).map_or_else(
+        |errors| errors.to_string(),
+        |_| panic!("the source is admitted"),
     );
     assert!(
-        matches!(result, Err(CheckRefusal::Model { .. })),
-        "{result:?}"
+        errors.contains(
+            "`early` is selected by the held state, which answers before the external branch \
+             `offered` declared above it"
+        ),
+        "{errors}"
     );
 }
 

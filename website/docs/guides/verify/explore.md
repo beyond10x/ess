@@ -71,9 +71,9 @@ The model decides which outcome a step expects in the order Entity Runtime and s
 2. then existence: `existing_instance:` where a creation names an identity a record already
    carries, and `unknown_instance:` where a command reading its stored row names one none carries;
 3. then the branches selected by the stored row (`when_subject_state:`, `when_state_changes:`,
-   `when_subject:`), the first declared that holds, before any accepting guard; where an accepting
-   `when:` declared before it holds too, the draw is reported in `ambiguous` and redrawn, because
-   declaration order and this precedence answer it differently;
+   `when_subject:`), the first declared that holds, before any accepting guard; validation refuses
+   an accepting `when:` or external branch declared before them that one request can satisfy
+   together with them, so declaration order gives the same answer;
 4. otherwise the one accepting `when:` that holds, or the default when none does;
 5. then `wrong_state`, where the outcome from step 3 or 4 moves the subject from a state no move of the
    command starts from. An outcome that moves nothing answers in every state, an eligible external

@@ -618,39 +618,23 @@ fn bulk_declared_first() -> String {
     )
 }
 
-/// Where an accepting guard declared before the stored-row branch that holds holds as well, the
-/// interpreter (declaration order) answers `bulk` and the precedence order `exhausted`: that draw
-/// alone is redrawn and reported, in both lanes alike, and every other draw of `Use` is decided.
+/// An accepting guard declared before the stored-row branch it overlaps is refused by validation
+/// (beyond10x/ess#486): the interpreter (declaration order) answered `bulk` there and the
+/// precedence order `exhausted`, so the explorer had to redraw that draw as ambiguous.
 #[test]
-fn an_accepting_guard_declared_before_the_held_row_is_the_one_undecided_draw() {
-    let ir = ir(&bulk_declared_first());
-    let cases = json!([{"name": "bulk", "mode": "bulk", "allowExcluded": true}]);
-    let root = scratch("bulk-first-declared");
-    let lanes = [
-        ("typescript", typescript(&root, &ir, &cases)),
-        ("go", go(&root, &ir, &cases)),
-    ];
-    std::fs::remove_dir_all(&root).ok();
-    for (language, lane) in &lanes {
-        let found = &lane.results["bulk"];
-        assert_eq!(lane.asserts["bulk"], "ok", "{language}: {found}");
-        assert!(
-            strings(&found["ambiguous"]).contains(&"exploredraw.keys.Use: bulk, exhausted"),
-            "{language}: {found}"
+fn an_accepting_guard_declared_before_the_held_row_is_refused() {
+    let source = bulk_declared_first();
+    let raw = RawSpecFile::parse(&source).expect("the fixture parses");
+    let errors = Specification::assemble(vec![(Source::new("explore-stored-rows.yaml"), raw)])
+        .map_or_else(
+            |errors| errors.to_string(),
+            |_| panic!("the fixture validates"),
         );
-        for outcome in [
-            "exploredraw.keys.Use/bulk",
-            "exploredraw.keys.Use/exhausted",
-            "exploredraw.keys.Use/used",
-        ] {
-            assert!(
-                strings(&found["reached"]).contains(&outcome),
-                "{language}: `{outcome}` unreached: {found}"
-            );
-        }
-    }
-    assert_eq!(
-        lanes[0].1.results["bulk"], lanes[1].1.results["bulk"],
-        "typescript and go explore the declared-first overlap differently"
+    assert!(
+        errors.contains(
+            "`exhausted` is selected by the held state, which answers before the accepting branch \
+             `bulk` declared above it"
+        ),
+        "{errors}"
     );
 }

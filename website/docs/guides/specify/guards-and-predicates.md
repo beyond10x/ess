@@ -116,6 +116,14 @@ For a command acting on a record its input names:
    answers where the branch selected moves from a state its move does not start from;
 4. then the accepting and external branches, in declaration order.
 
+Declare the branches the held state selects before the accepting and external ones. Validation
+refuses an accepting `when:` or an `external:` branch declared above a `when_subject_state:`,
+`when_subject:` or `when_state_changes:` branch of the same command when one request can satisfy
+both input guards (`ESS-COMMAND-004`, naming both), because there step 3 answers and the first
+declared does not. Guards over a `Boolean` or an enum input that no value satisfies together may
+come in either order; an `external:` branch with no `when:`, and a guard over an open or `Optional`
+input, counts as overlapping. Reordering changes no answer.
+
 A `when_related:` guard adds steps of its own; the design note lists them.
 
 An input refusal that holds only for a live record is guarded by the held state as well. "A blank
