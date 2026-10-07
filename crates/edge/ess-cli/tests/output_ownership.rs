@@ -3,6 +3,7 @@
 #[path = "../src/output_ownership/mod.rs"]
 mod ownership;
 mod ownership_admission;
+mod ownership_idle_record;
 mod ownership_protocol;
 mod ownership_relocation;
 mod ownership_relocation_adversary;
@@ -146,8 +147,12 @@ fn selected_site_regeneration_retires_withdrawn_copy_and_keeps_authored_neighbor
     assert_eq!(fs::read(f.0.join("page.md")).unwrap(), source);
 }
 
+/// An owned file whose bytes differ from the ledger refuses regeneration before any write, in the
+/// root that generated it too, naming the file and the re-enroll route (beyond10x/ess#484: a
+/// settled record has no binding to tell this root from a copy). A missing owned file is still
+/// recreated.
 #[test]
-fn identical_generation_keeps_complete_enrollment_bytes_and_repairs_owned_edits() {
+fn identical_generation_keeps_enrollment_bytes_and_an_edited_owned_file_refuses() {
     let _serial = serial();
     let f = Fixture::new();
     let first = f.site(false);
@@ -163,8 +168,38 @@ fn identical_generation_keeps_complete_enrollment_bytes_and_repairs_owned_edits(
     let expected = fs::read(f.0.join("out/index.html")).unwrap();
     fs::write(f.0.join("out/index.html"), "edited owned output").unwrap();
     fs::remove_file(f.0.join("out/assets/style.css")).unwrap();
-    let repair = f.site(false);
-    assert!(repair.status.success(), "{repair:?}");
+    let edited = snapshot(&f.0);
+    let refused = f.site(false);
+    assert!(
+        !refused.status.success(),
+        "an edited owned file was replaced: {refused:?}"
+    );
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    let out = f.0.join("out");
+    for named in [
+        "index.html".to_owned(),
+        format!("Remove {}", out.join(".ess-output").display()),
+        format!(
+            "ess generate output adopt --ownership-root {}",
+            out.display()
+        ),
+    ] {
+        assert!(
+            stderr.contains(&named),
+            "the refusal names {named}: {stderr}"
+        );
+    }
+    assert!(
+        !stderr.contains("style.css"),
+        "a missing owned file is not a difference: {stderr}"
+    );
+    assert_eq!(snapshot(&f.0), edited, "the refusal wrote");
+
+    // Moving the edited file aside, the route's first step, leaves only missing owned files,
+    // which generation recreates.
+    fs::rename(f.0.join("out/index.html"), f.0.join("index.html.aside")).unwrap();
+    let recreated = f.site(false);
+    assert!(recreated.status.success(), "{recreated:?}");
     assert_eq!(fs::read(f.0.join("out/index.html")).unwrap(), expected);
     assert!(f.0.join("out/assets/style.css").is_file());
 }

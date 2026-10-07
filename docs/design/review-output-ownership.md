@@ -9,7 +9,7 @@ validation remain owed. The typed anchor/transaction model is in `models/output-
 - Keep existing ordinary generator command signatures and emitted artifact bytes. Each tree output defaults to its own output-root anchor; standalone generated files use their parent. The fixed G01–G14 owner-family table from the retained anchor candidate is selected. Model/input/version/content do not identify the owner. All-generation updates its separately collected five projection owners together; a selected generator updates only its own owner.
 - Compose gains an explicit enclosing ownership root when it selects any file outputs. Its one anchor-wide owner replaces the complete selected companion/client set; omitting an output retires its formerly owned files. No-output compose remains nonwriting. Ordinary flat routes do not gain wider-anchor configuration in this change.
 - Default first generation refuses existing unowned destinations. Legacy adoption is a separate output-management operation from a settled generated reference root. The reference ledger and every selected actual file must agree; target files enroll only when their bytes equal the reference. Missing target files may remain absent and unowned until ordinary generation creates them. Unknown/extra legacy files stay unowned. Pending/corrupt/dirty references, other-owner collisions, overlapping reference/target roots and invalid native paths refuse. The actual source/reference owner key is selected from the fixed family/location table; an arbitrary ownership override is not offered.
-- Ordinary regeneration may repair edited/missing files already owned by its selected family; snapshot their actual pre-operation state for rollback. Stale retirement removes only selected owned paths; remove only recorded created directories that are empty. Authored neighbours and authored descendants blocking file/directory transitions are preserved.
+- Ordinary regeneration recreates missing files already owned by its selected family. An owned file whose bytes differ from the ledger refuses before any mutation, in the root that generated it as well as in a copy, naming the files and the re-enroll route (beyond10x/ess#484); regeneration replaces only bytes it recorded. Snapshot the actual pre-operation state for rollback. Stale retirement removes only selected owned paths; remove only recorded created directories that are empty. Authored neighbours and authored descendants blocking file/directory transitions are preserved.
 - Recovery is explicit and independent of current model inputs. A generation observing pending state refuses and identifies its root. Recovery follows the recorded operation; it never reinterprets changed command destinations. Check/no-output paths create no state or stages and perform no recovery.
 
 ## Filesystem contract
@@ -62,7 +62,7 @@ A failed operation returns an error plus a recoverable checkpoint when restorati
 
 ## Typed home and validation
 
-The model declares Anchor (UUID, native root binding, ledger digest) and its at-most-one owned Transaction (UUID, anchor_id, exact before/after plans). The ownership relation is selected because the transaction cannot outlive or be recovered independently of its enrolled anchor; the anchor is never automatically removed. NativePath, OwnerKey, Digest, Ledger, BlobRef and PathChange are concrete values. Prepare, Commit and Restore command outcomes cause the declared transaction transitions. The model gives identities and decision structure; it does not replace the runtime checkpoint grammar or prove filesystem behavior.
+The model declares Anchor (UUID, ledger digest) and its at-most-one owned Transaction (UUID, anchor_id, native root binding, exact before/after plans). The binding belongs to the transaction because only an in-flight transaction is recovered where it was recorded; a settled anchor records no machine path (beyond10x/ess#484). The ownership relation is selected because the transaction cannot outlive or be recovered independently of its enrolled anchor; the anchor is never automatically removed. NativePath, OwnerKey, Digest, Ledger, BlobRef and PathChange are concrete values. Prepare, Commit and Restore command outcomes cause the declared transaction transitions. The model gives identities and decision structure; it does not replace the runtime checkpoint grammar or prove filesystem behavior.
 
 Preserve W01–W17 from the retained scoper reports, updated for separate reference adoption and Linux/macOS support. Require meaningful red-before-green tests for interrupted staging, every mutation and cleanup boundary, repeat/recovery, stale ownership, authored sentinels, native names, collisions, changed compose outputs, selected-owner isolation and no-write checks. Keep every existing gate, finite initial consumer eligibility and exact attributed cases. New helper declarations receive explicit classifications; ordinary function bodies still require behavior evidence. Any actual signature/profile change is a new accounting obligation, not permission to expand e005.
 
@@ -115,43 +115,70 @@ list representing the root-relative owner location. Digest strings are lowercase
 ordinary modes exclude privilege bits. Runtime admission supplies these constraints in addition
 to the entity model's abstract types.
 
-The checkpoint contains the anchor UUID, absolute native-root binding and directory identity,
-sequence, settled ledger or exact current transaction, and a checksum over the canonical payload
-excluding that checksum. Immutable backups and new/restore stages have recorded names and
+The checkpoint contains the anchor UUID, sequence, settled ledger or exact current transaction,
+and a checksum over the canonical payload excluding that checksum. A checkpoint holding a
+transaction also contains the absolute native-root binding and directory identity; a settled one
+does not (`ess-output-state/3`, below). Immutable backups and new/restore stages have recorded names and
 identities. Publish a synchronized state.next over state.json and synchronize its directory;
-state.next is never authoritative during recovery. Reserve .ess-output and the initialization
+state.next is never authoritative during recovery. A run cut before that rename leaves the
+checkpoint, binding included, in state.next: every write-mode command that finds the root
+settled removes it, one that changes nothing included, and `--check` reports it. Reserve .ess-output and the initialization
 prefix .ess-output-init- in generated destinations and enrollment discovery. Preserve unknown
 reserved entries and unpublished initialization orphans; do not grant cleanup authority from
 a filename.
 
 The binding protects an in-flight transaction, not a settled one (beyond10x/ess#306). A
 repository that commits its generated output carries `.ess-output` to every other checkout of
-it: a clone, a second worktree, a moved checkout or CI. There the recorded root and directory
-identity cannot match. An Idle checkpoint has nothing to recover, so the reader admits it when
-every ledger-owned file present in the root has its recorded length and digest; an absent
-owned file is admitted and recreated by generation. Mode is not compared, since checkouts apply
-different umasks; for the same reason a publication whose bytes equal an owned file's recorded
-bytes keeps the recorded mode in its ledger and leaves the file untouched, so an unchanged
-regeneration in a checkout with another umask stays a no-op. An owned path with other bytes, a
-directory, a symlink, or a symlinked or non-directory parent refuses before mutation, as it
-does for publication; copying `.ess-output` alone into a foreign root is not an ownership
-transfer and never replaces or retires an authored file. The refusal lists the differing
-files (the first ten and a count) and prints the route that re-enrolls the root: move those
-files aside or delete them, remove `.ess-output`, adopt from a fresh reference once per
-recorded owner (naming each owner key), then regenerate. Adoption itself is unchanged. An admitted copy is bound to
-the current absolute root and directory identity in memory only. Nothing is written for the
-binding itself: check, recovery, adoption that changes nothing and a publication that changes
-nothing leave the committed `state.json` byte-identical, so a regenerate-and-diff check stays
-clean. The first checkpoint an operation publishes anyway (Staging, or adoption's metadata
-transaction) records the new binding with the anchor UUID, producer and ledger unchanged; an
-operation cut before it leaves the copied checkpoint in force. The carried ledger still decides
-which files each owner may replace or retire. A Staging, Prepared, Committed or Restored
+it: a clone, a second worktree, a moved checkout or CI. A settled (Idle) checkpoint therefore
+records no root path and no directory identity, so the committed record holds nothing about the
+machine that wrote it (beyond10x/ess#484), and nothing in it tells the root that generated it
+from a copy. The reader admits an Idle checkpoint in any root when every ledger-owned file present
+has its recorded length and digest; an absent owned file is admitted and recreated by
+generation. Mode is not compared, since checkouts apply different umasks; for the same reason a
+publication whose bytes equal an owned file's recorded bytes keeps the recorded mode in its
+ledger and leaves the file untouched, so an unchanged regeneration in a checkout with another
+umask stays a no-op. An owned path with other bytes, a directory, a symlink, or a symlinked or
+non-directory parent refuses before mutation, in the root that generated it as well as in a
+copy: generation replaces only bytes it recorded, so an edited generated file is never silently
+overwritten, and copying `.ess-output` alone into a foreign root is not an ownership transfer
+and never replaces or retires an authored file. The refusal lists the differing files (the
+first ten and a count) and prints the route that re-enrolls the root: move those files aside or
+delete them, remove `.ess-output`, adopt from a fresh reference once per recorded owner (naming
+each owner key), then regenerate. `--check` reports each such file with that route, not with
+regeneration. Adoption itself is unchanged. An admitted checkpoint is bound to the current
+absolute root and directory identity in memory only. Nothing is written for the binding itself:
+check, recovery, adoption that changes nothing and a publication that changes nothing leave the
+committed `state.json` byte-identical, so a regenerate-and-diff check stays clean. The first
+checkpoint an operation publishes with a transaction (Staging, or adoption's metadata
+transaction) records the binding with the anchor UUID, producer and ledger unchanged, and the
+settled checkpoint that ends the operation drops it again; an operation cut before it leaves
+the copied checkpoint in force. The carried ledger still decides which files each owner may
+replace or retire. A Staging, Prepared, Committed or Restored
 checkpoint whose binding does not match still refuses before any mutation and deletes no
 evidence. When the recorded path differs, the refusal names it as the place recovery must run.
 When the path is the same and only the directory identity differs, the root was replaced by a
 copy while an operation was in progress; its recorded transaction and blob identities no longer
 hold, so it is not recoverable there, and the refusal names removing `.ess-output` and adopting
 the existing files instead. Like the checksum, the binding is not an authentication boundary.
+
+`ess-output-state/3` is `/2` with the binding moved onto the transaction: `root` and `directory`
+are present exactly when the checkpoint holds one. The reader admits `/1`, `/2` and `/3` and holds
+each to its own shape: `/1` and `/2` carry both fields in every phase, a settled `/3` checkpoint
+carries neither, and a `/3` checkpoint with a transaction carries both. A release that reads only
+`/1` and `/2` refuses a `/3` checkpoint before any write: a settled one as an invalid output
+state missing `root` (0.55.0, observed), a pending one as an unsupported output-state version.
+Every publication writes `/3`.
+Every settled checkpoint this release writes is `/3`, including the one that closes a recovery or
+an adoption of a transaction begun under `/1` or `/2`; the transaction's own checkpoints keep
+the version it began under. A write-mode command (generation, adoption or recovery) that finds a
+settled `/1` or `/2` checkpoint and changes nothing rewrites it as `/3`, keeping its anchor,
+ledger and producer and recording this release where `/1` recorded none; that is one checkpoint
+replacement, not a transaction. `--check` does not report such a checkpoint as drift and prints
+one warning that names `root` and `directory` and the write-mode run that removes them.
+
+A publication holds every selected owned preimage it captures to the ledger as well, with the
+same message and route as the read, so an owned file edited after the record was read is
+refused rather than backed up, replaced and its backup deleted.
 
 Existing producer artifact bytes and their format identities remain unchanged. Older ESS
 versions have no output-state reader or participating lock protocol; their generation commands

@@ -436,7 +436,7 @@ fn widget(fixture: &Fixture) {
 }
 
 #[test]
-fn typescript_uses_root_id_and_preserves_equal_and_stale_check_behavior() {
+fn typescript_uses_root_id_and_checks_equal_output_and_refuses_edited_output() {
     let fixture = Fixture::new("typescript-positive");
     widget(&fixture);
     let expected = fs::read(
@@ -460,10 +460,19 @@ fn typescript_uses_root_id_and_preserves_equal_and_stale_check_behavior() {
         fs::read(fixture.root.join("generated/widget.ts")).unwrap(),
         expected
     );
+    // An owned file whose bytes `.ess-output` does not record refuses the check, naming the file
+    // and the re-enroll route rather than calling it stale, since regeneration refuses it too
+    // (beyond10x/ess#484); nothing is written.
     fixture.write("generated/widget.ts", b"sentinel stale\n");
     let output = fixture.typescript("urn:example:widget:1", "generated/widget.ts", true);
     assert_eq!(output.status.code(), Some(1));
-    assert!(String::from_utf8_lossy(&output.stdout).contains(": stale"));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    for named in ["widget.ts", "ess generate output adopt"] {
+        assert!(
+            stderr.contains(named),
+            "the refusal names {named}: {stderr}"
+        );
+    }
     assert_eq!(
         fs::read(fixture.root.join("generated/widget.ts")).unwrap(),
         b"sentinel stale\n"

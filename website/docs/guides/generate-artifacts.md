@@ -51,7 +51,9 @@ each generated document.
 
 Output ownership was introduced in 0.21.0. Generation records the files it owns beneath
 the output root in `.ess-output`. Repeating a command replaces that owner's files and removes
-its obsolete files, while preserving authored neighbours. A selected projection updates only
+its obsolete files, while preserving authored neighbours. It replaces only bytes it recorded: an
+owned file that was edited since refuses the command before anything is written, naming the file
+and the way back (below), and a deleted owned file is recreated. A selected projection updates only
 its own files; generating all five projections publishes their combined change as one
 recoverable operation. Changing a synthesis or data-library target replaces that generator's
 previous file set.
@@ -93,11 +95,15 @@ What does carry ownership is the whole generated tree: a clone of a repository t
 output with `.ess-output`, a second worktree, a moved checkout, CI, or a copy of the complete
 output directory. Generation there keeps the recorded owners, so it still replaces only the files
 those owners wrote. A regeneration that changes nothing writes nothing, `.ess-output/state.json`
-included, whatever umask the checkout was made with; the first one that does write records the
-new location. If files the state records have different bytes in the new location, generation
-refuses and prints the way back: move those files aside, remove `.ess-output`, adopt each
-named owner from a fresh reference, then regenerate. An output root with an interrupted operation refuses in any other location
-and names the root it was recorded at; recover it there before copying, committing or moving it.
+included, whatever umask the checkout was made with. A settled `state.json` records no absolute
+path, device or inode, so committing it publishes nothing about the machine that wrote it. If
+files the state records have different bytes, in the root that generated them or in a copy,
+generation refuses and prints the way back: move those files aside, remove `.ess-output`, adopt
+each named owner from a fresh reference, then regenerate. An output root with an interrupted
+operation refuses in any other location and names the root it was recorded at; recover it there
+before copying, committing or moving it. A `state.json` written before this rule still records
+its root; the next generation rewrites it without the path even when no file changes, and
+`--check` warns about it rather than reporting drift.
 
 This contract applies to cooperating ESS writers on one local mounted filesystem on Linux or
 macOS, with controlled parent directories. Each file replacement is atomic; readers can see
@@ -813,7 +819,9 @@ and every file `.ess-output` records for them, so a committed file no projection
 fails too, and so does a missing `.ess-output` record or one regeneration would rewrite. It exits 0
 when the tree is current, and 1 with one line per drifted file. It requires `--out`. Run the same
 command without `--check` to reconcile the tree, review the diff, and commit it with the
-specification change.
+specification change. A generated file edited by hand is the exception: its line names the
+re-enroll route instead, because regeneration refuses a file whose bytes `.ess-output` does not
+record.
 [Commit what a reviewer reads, regenerate the rest](./commit-generated-files.md) says which
 projections to commit.
 
