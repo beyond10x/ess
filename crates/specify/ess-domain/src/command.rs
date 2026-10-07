@@ -2756,6 +2756,9 @@ impl CommandSpec {
         }
 
         errors.extend(self.validate_branch_coverage(types));
+        if let Some(types) = types {
+            errors.extend(self.validate_held_state_order(types));
+        }
         errors.extend(outcome_shapes::validate_command(self));
         errors.extend(absent_input::validate_command(self));
         errors
@@ -3257,6 +3260,74 @@ impl CommandSpec {
                             outcome.name, read.path, subject.instance),
                     ));
                 }
+            }
+        }
+        errors
+    }
+
+    /// Refuses a branch the held state selects declared after an accepting or external branch
+    /// whose input guard one request can satisfy together with its own.
+    ///
+    /// The held state selects at step 4 of the precedence order, and the accepting and external
+    /// branches at step 6, whatever their declaration order
+    /// (`docs/design/cross-record-and-stored-field-guards.md`, "The precedence order"). Where both
+    /// guards hold, the model interpreter and Entity Runtime took the first declared and the Rust
+    /// and Go targets the held-state branch (beyond10x/ess#486). Declared in precedence order, the
+    /// two orders are one, so every consumer answers alike. Input guards the finite prover shows
+    /// disjoint never hold together, so their order is free; a guard it declines, and a branch with
+    /// no input guard, counts as one that can hold with any other.
+    fn validate_held_state_order(&self, types: &TypeRegistry) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
+        let environment = crate::expression::DomainEnvironment::new(types, &self.input);
+        let together = |first: Option<&Predicate>, second: Option<&Predicate>| {
+            let (Some(first), Some(second)) = (first, second) else {
+                return true;
+            };
+            finite::analyze(&environment, &[first, second]).is_none_or(|cases| {
+                cases
+                    .iter()
+                    .any(|case| case.selected.contains(&0) && case.selected.contains(&1))
+            })
+        };
+        let mut later_steps: Vec<&Outcome> = Vec::new();
+        for outcome in &self.outcomes {
+            let condition = &outcome.condition;
+            if condition.reads_held_state() || condition.reads_subject_fact() {
+                let Some(earlier) = later_steps
+                    .iter()
+                    .find(|earlier| together(earlier.condition.predicate(), condition.predicate()))
+                else {
+                    continue;
+                };
+                let kind = if earlier.error.is_none()
+                    && matches!(earlier.condition, OutcomeCondition::When(_))
+                {
+                    "accepting"
+                } else {
+                    "external"
+                };
+                errors.push(
+                    ValidationError::at(
+                        self.site().key("outcomes").named(outcome.name.as_str()),
+                        ValidationCode::ConflictingDeclaration,
+                        format!(
+                            "`{}` is selected by the held state, which answers before the {kind} \
+                             branch `{}` declared above it; where both guards hold, the \
+                             declaration order and the precedence order disagree",
+                            outcome.name, earlier.name
+                        ),
+                    )
+                    .with_hint(format!(
+                        "declare `{}` before `{}`: the held state selects first in either order",
+                        outcome.name, earlier.name
+                    )),
+                );
+            } else if match condition {
+                OutcomeCondition::When(_) => outcome.error.is_none(),
+                OutcomeCondition::External { .. } | OutcomeCondition::ExternalWhen { .. } => true,
+                _ => false,
+            } {
+                later_steps.push(outcome);
             }
         }
         errors

@@ -523,19 +523,23 @@ fn external_witness_mutate_baseline_passes() {
     }
 }
 
+/// Declared before `stale`, `unlisted` is refused by validation (beyond10x/ess#486): the held state
+/// selects first in either order, and the model interpreter read them in declaration order.
 #[test]
-fn external_declared_first_still_refutes() {
+fn external_declared_first_is_refused_by_validation() {
     let first = moved_before(MODEL, UNLISTED_BRANCH, STALE_BRANCH);
-    let result = synthesis(&first);
-    for id in [UNLISTED, REFUSED_BY_UNLISTED] {
-        let (held, sent) = sent_against_row(scenario(&result, id));
-        assert_eq!(
-            held, sent,
-            "{id}: declared first, `unlisted` is still sent an input `stale` does not claim"
-        );
-    }
-    let statuses = run(&first, &result.suite);
-    assert_eq!(not_passed(&statuses), Vec::<String>::new());
+    let (documents, _) = parsed(&first);
+    let errors = Specification::assemble(documents).map_or_else(
+        |errors| errors.to_string(),
+        |_| panic!("the model validates:\n{first}"),
+    );
+    assert!(
+        errors.contains(
+            "`stale` is selected by the held state, which answers before the external branch \
+             `unlisted` declared above it"
+        ),
+        "{errors}"
+    );
 }
 
 /// The `revision` of the `List` the forced `unlisted` send names, and the one sent; `None` for a
