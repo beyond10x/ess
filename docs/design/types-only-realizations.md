@@ -187,13 +187,19 @@ must have named target accounting; a first matching untagged alternative does no
 establish external dispatch semantics.
 
 Rust emits a standalone Cargo library with an explicit package name, Serde and
-`serde_json` with arbitrary-precision numbers. Required fields use a deserialization
+`serde_json`. Where the selected types hold JSON numbers in `serde_json` (a `Number`, a
+`Value`, or a union decoded through a `Value` whose alternatives can hold a number), the
+library declares a default-on `exact-numbers` feature that enables `serde_json`'s
+arbitrary-precision numbers. A consumer that depends on it with `default-features = false`
+gets those numbers as binary64, and the types report names each affected value under
+`rust_exact_numbers`. Required fields use a deserialization
 hook that does not treat missing nullable fields as null. Optional fields use
 `EssPresence<T>` independently of their value type. Open objects retain unknown
 properties; serialization refuses additional-key collisions with declared fields.
 String literal sets become enums with exact wire renames. Untagged union decoding
-tries typed alternatives from a retained JSON value, preserving unknown data and
-number precision; the chosen Rust variant does not certify source branch validation.
+tries typed alternatives from a retained JSON value, preserving unknown data, and number
+precision with the default `exact-numbers` feature (binary64 without it); the chosen Rust
+variant does not certify source branch validation.
 Fixed prefix tuples become tuple structs. Unsupported native intersections or
 variable prefix layouts refuse explicitly rather than becoming an untyped JSON bag.
 Anonymous native declarations derive names from source identity, not traversal order.

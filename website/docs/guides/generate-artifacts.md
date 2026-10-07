@@ -333,7 +333,7 @@ dispatch. Unsupported native intersections, non-string literals and variable pre
 layouts refuse before publication. Go uses only its standard library; Rust pins Serde
 and serde_json in the generated manifest. Where the selected types hold JSON numbers
 in serde_json (`serde_json::Number`, `serde_json::Value`, or a union decoded through a
-`Value`), the manifest declares a default-on `exact-numbers` crate feature that enables
+`Value` whose alternatives can hold a number), the manifest declares a default-on `exact-numbers` crate feature that enables
 serde_json's `arbitrary_precision`. A consumer that depends on the library with
 `default-features = false` gets those numbers as binary64, and the report names each
 affected value under the `rust_exact_numbers` rule. A library whose types hold none

@@ -123,7 +123,7 @@ impl Emitter<'_> {
     fn account(&mut self, node: &Node) {
         match &node.shape {
             Shape::Integer => {
-                self.report.obligations.insert(finding(&node.pointer, "integer", "serde_json::Number retains exact JSON numbers but does not enforce integrality; validate the source constraint"));
+                self.report.obligations.insert(finding(&node.pointer, "integer", "serde_json::Number holds exact JSON numbers with the default `exact-numbers` feature and binary64 without it, and does not enforce integrality; validate the source constraint"));
             }
             Shape::Union { mode, .. } => {
                 if matches!(mode, UnionMode::OneOf) {
@@ -308,8 +308,14 @@ impl Emitter<'_> {
         let value_type = if raw {
             "::std::boxed::Box<::serde_json::value::RawValue>"
         } else {
-            // A number reaching an alternative passes through this `Value` first.
-            self.exact.insert(pointer.to_owned());
+            // A number an alternative can hold passes through this `Value` first, and decodes
+            // differently with and without `arbitrary_precision` (`-0` into an `i32`, for one).
+            if variants
+                .iter()
+                .any(|variant| holds_number(self.plan, variant))
+            {
+                self.exact.insert(pointer.to_owned());
+            }
             "::serde_json::Value"
         };
         writeln!(out, "impl<'de> ::serde::Deserialize<'de> for {name} {{\n    fn deserialize<D: ::serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {{\n        let value = <{value_type} as ::serde::Deserialize>::deserialize(deserializer)?;").expect("String write");
@@ -390,6 +396,25 @@ impl Emitter<'_> {
         self.named(&name, node);
         name
     }
+}
+
+/// Whether `node` can hold a JSON number at any depth, references followed: a `Number`, an
+/// `Integer`, a native-width integer or unrestricted JSON (beyond10x/ess#483).
+fn holds_number(plan: &Plan, node: &Node) -> bool {
+    let mut pending = vec![node];
+    let mut followed = BTreeSet::new();
+    while let Some(node) = pending.pop() {
+        match &node.shape {
+            Shape::Json | Shape::Number | Shape::Integer | Shape::SizedInteger(_) => return true,
+            Shape::Ref(name) => {
+                if followed.insert(name) {
+                    pending.push(&plan.definitions[name]);
+                }
+            }
+            _ => pending.extend(children(node)),
+        }
+    }
+    false
 }
 
 fn field_name(wire: &str) -> String {

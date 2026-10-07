@@ -62,6 +62,30 @@ events:
       - {name: ratio, type: Binary64}
 ";
 
+/// A tagged union whose numeric alternative is a bounded `Integer`, realized as `i32`.
+const SIZED: &str = r"format: ess/22
+system: catalog
+version: v1
+domain: catalog.items
+types:
+  - name: catalog.items.Small
+    kind: newtype
+    of: Integer
+    invariants:
+      - value >= 0
+      - value <= 10
+  - name: catalog.items.Amount
+    kind: union
+    tag: kind
+    variants:
+      count: catalog.items.Small
+      text: String
+events:
+  - name: catalog.items.AmountRecorded
+    fields:
+      - {name: amount, type: catalog.items.Amount}
+";
+
 fn model_plan(source: &str, roots: &[&str]) -> Plan {
     let mut sources = SourceMap::new();
     sources.insert(Source::DOCUMENT, source.to_owned());
@@ -209,7 +233,8 @@ fn a_binary64_model_keeps_raw_value_and_gets_no_exact_numbers_feature() {
 }
 
 /// A `serde_json::Value` holds numbers too: an unrestricted value, an open record's extra values,
-/// and a union's alternatives, which the Rust target selects by decoding through one.
+/// and a union the Rust target decodes through one when an alternative, at any depth, can hold a
+/// number. A union of text and booleans holds none and is not named.
 #[test]
 fn json_values_and_value_decoded_unions_also_get_the_feature_and_are_named() {
     let rust = bundle_plan(
@@ -217,9 +242,12 @@ fn json_values_and_value_decoded_unions_also_get_the_feature_and_are_named() {
             "Holder": {"type": "object", "additionalProperties": false, "required": ["payload"],
                 "properties": {"payload": true}},
             "Open": {"type": "object", "required": ["id"], "properties": {"id": {"type": "string"}}},
-            "Either": {"anyOf": [{"type": "string"}, {"type": "boolean"}]}
+            "Either": {"anyOf": [{"type": "string"}, {"type": "boolean"}]},
+            "Counted": {"anyOf": [{"type": "string"}, {"type": "object",
+                "additionalProperties": false, "required": ["n"],
+                "properties": {"n": {"type": "integer"}}}]}
         }),
-        &["Holder", "Open", "Either"],
+        &["Holder", "Open", "Either", "Counted"],
     )
     .rust("value_types")
     .unwrap();
@@ -236,10 +264,38 @@ fn json_values_and_value_decoded_unions_also_get_the_feature_and_are_named() {
     assert_eq!(
         pointers(&findings),
         BTreeSet::from([
-            "/components/schemas/Either",
+            "/components/schemas/Counted",
+            "/components/schemas/Counted/anyOf/1/properties/n",
             "/components/schemas/Holder/properties/payload",
             "/components/schemas/Open",
         ]),
+        "{findings:?}"
+    );
+}
+
+/// A union whose only number is a native-width integer, reached through a reference. Through a
+/// `Value` that integer decodes differently with and without `arbitrary_precision` (`-0` is
+/// accepted only with it), so the union is named and the feature declared; the `i32` is not named.
+#[test]
+fn a_union_holding_only_a_native_width_integer_is_named() {
+    let rust = model_plan(SIZED, &["catalog.items.AmountRecorded"])
+        .rust("catalog_types")
+        .unwrap();
+    assert!(rust.declarations.contains("(pub i32);"));
+    assert!(!rust.declarations.contains("::serde_json::Number"));
+    let manifest = &rust.supporting["Cargo.toml"];
+    assert_eq!(
+        section(manifest, "features"),
+        [
+            format!("default = [\"{FEATURE}\"]"),
+            format!("{FEATURE} = [\"serde_json/arbitrary_precision\"]"),
+        ],
+        "{manifest}"
+    );
+    let findings = exact_number_findings(&rust);
+    assert_eq!(
+        pointers(&findings),
+        BTreeSet::from(["/$defs/catalog.items.Amount"]),
         "{findings:?}"
     );
 }

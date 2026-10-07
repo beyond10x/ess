@@ -152,13 +152,15 @@ fn complete_non_binary64_output_maps_remain_identical() {
             output
         });
     assert_eq!(
-        digest, "796d5fa159e206b3925b9f3955a00239b6bcfd2fd1251fb9b806081ddd952279",
+        digest, "d132dabbc1afa8661656272f55e95191569e0e56abdf6e2b8f77019b3fd68235",
         "complete old output map SHA-256 frozen at c4ba992, refrozen for beyond10x/ess#394 (`score >= 0` \
          publishes `minimum`), for beyond10x/ess#406/#407 (model `Timestamp` is native, model \
          anonymous shapes are named by position; bundle output keeps its hash names), at 48d5cc77b \
          (a generated model crate pins `time =0.3.45`, the version generated servers pin) and for \
          beyond10x/ess#483 (the Rust manifest enables `arbitrary_precision` only through a default-on \
-         `exact-numbers` feature, and the Rust report names each `rust_exact_numbers` value)"
+         `exact-numbers` feature, the Rust report names each `rust_exact_numbers` value, a \
+         `Value`-decoded union only where an alternative can hold a number, and the `integer` \
+         obligation says it is exact only with that feature)"
     );
 }
 
