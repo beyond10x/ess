@@ -24,6 +24,23 @@
   that feature.
   Regenerating changes `Cargo.toml` and the Rust `types-report.json`, so committed generated output
   differs until it is regenerated (https://github.com/beyond10x/ess/issues/483).
+- `ess generate` writes `ess-output-state/3`: a settled `.ess-output/state.json` no longer records
+  the output root's absolute path (`root`) or its device and inode (`directory`); only a checkpoint
+  with a pending transaction carries them, for recovery. The reader accepts `/1`, `/2` and `/3`. A
+  write-mode generation that finds a settled `/1` or `/2` record rewrites it as `/3` even when no
+  file changes, so committed records change once; `--check` does not report that as drift and
+  prints one warning naming `root` and `directory`. Releases before this one refuse a settled `/3`
+  record before writing, in write and `--check` mode, with
+  `error: invalid output state: missing field 'root'` (exit 1): a CI job pinned to an older `ess`
+  fails from the first commit of a `/3` record, so move such a pin together with the regeneration
+  (https://github.com/beyond10x/ess/issues/484).
+- Generation no longer replaces an owned file whose bytes differ from what `.ess-output` records,
+  in the folder that generated it as well as in a clone. It refuses before writing, naming the files
+  and the re-enroll route: move them aside, remove `.ess-output`, run `ess generate output adopt`
+  once per recorded owner, then regenerate. A missing owned file is still recreated.
+  `ess generate --check` names such a file with that route, and the single-file `--check` routes
+  refuse with it. A commit that updates generated files without their `.ess-output` record now
+  refuses regeneration instead of being repaired (https://github.com/beyond10x/ess/issues/484).
 
 ## [0.55.0] — 2026-10-06
 
