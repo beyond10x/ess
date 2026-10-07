@@ -212,7 +212,9 @@ fn rollback_preserves_an_unselected_owner_and_actual_readonly_file_modes() {
         vec![ownership::Publication::tree("model-types", [("shared/b", "other")]).unwrap()],
     )
     .unwrap();
-    fs::write(anchor.join("shared/a"), "edited actual preimage").unwrap();
+    // The actual preimage differs from the ledger in its read-only mode. Other bytes would refuse
+    // the publication before any write (beyond10x/ess#484), so the mode is what rollback has to
+    // restore from the file rather than from the ledger.
     fs::set_permissions(anchor.join("shared/a"), fs::Permissions::from_mode(0o400)).unwrap();
     fs::write(anchor.join("shared/authored"), "preserve").unwrap();
     let before = visible(&anchor);
@@ -347,7 +349,8 @@ fn native_alias_refusal_preserves_the_owned_file_before_a_shape_transition() {
         assert!(composition(&root, &["--out", "anchor/client"])
             .status
             .success());
-        fs::write(root.join("anchor/client"), "edited owned preimage").unwrap();
+        // Read-only rather than edited: other bytes would refuse before the alias check this
+        // case decides (beyond10x/ess#484).
         fs::set_permissions(
             root.join("anchor/client"),
             fs::Permissions::from_mode(0o400),

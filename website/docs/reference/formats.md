@@ -52,12 +52,12 @@ until cleanup finishes. An unpublished `state.next` is not recovery authority. P
 state and initialization entries for diagnosis. Older ESS versions have no reader or lock
 protocol for this format.
 
-The checkpoint records the root's absolute path and directory identity. A settled (idle)
-checkpoint found at another root, such as a committed output tree in a clone or a second
-worktree, is admitted there when every owned file present has its recorded length and digest,
-and refused otherwise. It is not rewritten for that: the next checkpoint an operation writes
-anyway records the current binding with the same owners, file inventory and producer. A
-checkpoint with a pending transaction refuses at any other root.
+A checkpoint with a pending transaction records the root's absolute path and directory identity,
+and refuses at any other root. A settled (idle) checkpoint records neither, so a committed
+`.ess-output/state.json` names nothing about the machine that wrote it. A settled checkpoint is
+admitted in any root, the one that generated it or a clone or second worktree of it, when every
+owned file present has its recorded length and digest, and refused otherwise, naming the
+differing files and the route that re-enrolls the root.
 
 `ess-output-state/2` (added in 0.34.0) is `/1` plus one required nonempty string, `producer`: the `ess`
 release that last published into the root, as `ess X.Y.Z`. Every publication writes `/2`; the
@@ -65,6 +65,16 @@ reader accepts `/1` without `producer` and `/2` with it, and refuses either shap
 version. A publication that changes the root and finds a different recorded producer prints a
 `note:` naming both releases. Recovery and adoption keep the producer they found. Releases before
 `/2` refuse a `/2` checkpoint as an unsupported output-state version.
+
+`ess-output-state/3` is `/2` with the root binding (`root`, `directory`) present only while a
+transaction is pending. Every publication writes `/3`; the reader accepts `/1`, `/2` and `/3`,
+and refuses a `/1` or `/2` checkpoint without the binding, a settled `/3` checkpoint with it and
+a pending `/3` checkpoint without it. A generation that finds a settled `/1` or `/2` checkpoint
+rewrites it as `/3` even when no file changes, keeping its owners and producer. With `--check`
+it reports no drift for it and prints one warning naming `root` and `directory`. Recovery and
+adoption keep the version they found. Releases before `/3` refuse a `/3` checkpoint before
+writing: a settled one as an invalid output state missing `root`, a pending one as an
+unsupported output-state version.
 [Design](https://github.com/beyond10x/ess/blob/main/docs/design/specification-requires-release.md). See [the generation workflow](../guides/generate-artifacts.md#repeated-generation-and-recovery)
 for the filesystem assumptions and recovery command.
 

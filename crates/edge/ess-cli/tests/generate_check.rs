@@ -65,6 +65,13 @@ fn generated_files(root: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
+/// The one `--check` line that names `drifted`.
+fn drift_line<'a>(err: &'a str, drifted: &Path) -> &'a str {
+    err.lines()
+        .find(|line| line.contains(&*drifted.to_string_lossy()))
+        .unwrap_or_else(|| panic!("stderr names {}: {err}", drifted.display()))
+}
+
 #[test]
 fn generate_check_reports_drift_and_exits_nonzero() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -86,24 +93,56 @@ fn generate_check_reports_drift_and_exits_nonzero() {
 
     assert_eq!(check.status.code(), Some(1), "drift exits 1: {check:?}");
     let err = stderr(&check);
-    for drifted in [edited, deleted] {
-        let line = err
-            .lines()
-            .find(|line| line.contains(&*drifted.to_string_lossy()))
-            .unwrap_or_else(|| panic!("stderr names {}: {err}", drifted.display()));
+    // Regeneration recreates a missing owned file.
+    assert!(
+        drift_line(&err, deleted).contains("regenerate it with `ess generate`"),
+        "the drift line says how to repair it: {err}"
+    );
+    // It refuses an edited one (beyond10x/ess#484), so the line names the re-enroll route and
+    // does not promise that regenerating repairs it.
+    let edited_line = drift_line(&err, edited);
+    for named in [
+        "move it aside",
+        "remove `.ess-output`",
+        "ess generate output adopt",
+    ] {
         assert!(
-            line.contains("regenerate it with `ess generate`"),
-            "the drift line says how to repair it: {line}"
+            edited_line.contains(named),
+            "the drift line names {named}: {edited_line}"
         );
     }
+    assert!(
+        !edited_line.contains("regenerate it with"),
+        "the drift line promises a repair regeneration refuses: {edited_line}"
+    );
     assert_eq!(
         err.lines()
-            .filter(|line| line.contains("regenerate it with"))
+            .filter(|line| line.starts_with(&*out.to_string_lossy()))
             .count(),
         2,
         "one line per drifted file and no other: {err}"
     );
     assert_eq!(snapshot(&out), before, "--check wrote nothing");
+
+    let regenerate = ess(&["--kind", "openapi"], Some(&out));
+    let refused = stderr(&regenerate);
+    assert!(
+        !regenerate.status.success(),
+        "regeneration replaced it: {refused}"
+    );
+    for named in [
+        edited.to_string_lossy().into_owned(),
+        format!(
+            "ess generate output adopt --ownership-root {}",
+            out.display()
+        ),
+    ] {
+        assert!(
+            refused.contains(&named),
+            "the refusal names {named}: {refused}"
+        );
+    }
+    assert_eq!(snapshot(&out), before, "the refusal wrote");
 }
 
 #[test]

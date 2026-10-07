@@ -81,9 +81,24 @@ pub(crate) fn check(anchor: &Path) -> Result<CheckGuard> {
         filesystem::discovery(&fd, &mount, true)?;
         if let Some((_, payload)) = read_state(&fd, &root, &mount)? {
             ensure_idle(&payload, &root)?;
+            warn_legacy(&payload, &root);
         }
     }
     Ok(CheckGuard { _locks: locks })
+}
+/// A check admits a settled `/1` or `/2` record without calling it drift, although the same
+/// command without `--check` rewrites it as `/3` (ess#484): say once what it still records.
+fn warn_legacy(payload: &Payload, root: &Path) {
+    if payload.legacy() {
+        eprintln!(
+            "warning: {} is {} and records this machine's absolute output path (`root`) and its \
+             device and inode (`directory`); rerun this command without `--check` to rewrite it \
+             as {}, which records neither",
+            root.join(state::RESERVED).join("state.json").display(),
+            payload.format,
+            state::FORMAT
+        );
+    }
 }
 /// One output file whose bytes under the root are not the ones generation would leave there.
 pub(crate) struct Drift {
@@ -97,15 +112,24 @@ pub(crate) struct Drift {
 }
 
 const REGENERATE: &str = "regenerate it with `ess generate`";
+/// Generation refuses an owned file whose bytes are not the recorded ones, in every root (ess#484).
+const REENROLL: &str = "regeneration refuses it: move it aside, or delete it if it is generated, \
+     then remove `.ess-output`, run `ess generate output adopt` once per recorded owner and \
+     regenerate";
+/// The record of a root holding such a file: regeneration refuses before it would rewrite it.
+const BLOCKED: &str = "regeneration refuses until the owned files named here are moved aside or \
+     deleted and the root is re-enrolled with `ess generate output adopt`";
 
 /// Compare the selected owners' rendered files with what `anchor` holds, writing nothing.
 ///
 /// `--check` passing means the same command without it changes nothing, so drift is everything
 /// [`publish`] would change or refuse: a file absent, with other bytes, or recorded in
-/// `.ess-output` for a selected owner that no longer produces it; and the record itself, when it
-/// is missing or [`plan`] would rewrite it. A root recorded for another path (a clone, a CI
-/// checkout) is compared as it is; the relocation check that guards a publication would refuse the
-/// very drift this reports. A pending operation refuses, as it does for [`check`].
+/// `.ess-output` for a selected owner that no longer produces it; an owned file whose bytes are
+/// not the recorded ones, which publication refuses in every root; and the record itself, when it
+/// is missing or [`plan`] would rewrite it. Each says what brings it back, and an owned file with
+/// other bytes names the re-enroll route rather than regeneration. A settled `/1` or `/2` record
+/// is the one exception: the command without `--check` rewrites it as `/3`, and that is reported
+/// as a warning, not drift. A pending operation refuses, as it does for [`check`].
 pub(crate) fn drift(anchor: &Path, publications: &[Publication]) -> Result<Vec<Drift>> {
     let path = filesystem::absolute(anchor)?;
     let locks = Locks::acquire(&[(path.clone(), Access::Shared)])?;
@@ -115,12 +139,21 @@ pub(crate) fn drift(anchor: &Path, publications: &[Publication]) -> Result<Vec<D
             let mount = Mount::of(fd)?;
             filesystem::discovery(fd, &mount, true)?;
             let recorded = match read_state_at(fd, &path, &mount, false)? {
-                Some((_, payload)) => Some(ensure_idle(&payload, &path)?.clone()),
+                Some((_, payload)) => {
+                    let ledger = ensure_idle(&payload, &path)?.clone();
+                    warn_legacy(&payload, &path);
+                    Some(ledger)
+                }
                 None => None,
             };
             Some((fd, mount, recorded))
         }
         None => None,
+    };
+    // Owned files present with bytes the record does not hold: publication refuses them.
+    let refused: BTreeSet<PathBuf> = match &state {
+        Some((fd, mount, Some(ledger))) => differing(fd, ledger, mount)?.into_iter().collect(),
+        _ => BTreeSet::new(),
     };
     let mut drifted = BTreeMap::new();
     let mut generated = BTreeSet::new();
@@ -129,24 +162,11 @@ pub(crate) fn drift(anchor: &Path, publications: &[Publication]) -> Result<Vec<D
         for (relative, bytes) in &publication.files {
             generated.insert(NativePath::from_relative(relative)?);
             let reason = match &state {
-                Some((fd, mount, _)) => {
-                    filesystem::aliases(fd, relative, mount)?;
-                    match filesystem::image(fd, relative, mount)? {
-                        (Image::Absent, _) => Some("is missing"),
-                        (image, actual) => {
-                            present = true;
-                            match (image, actual) {
-                                (Image::File { .. }, Some(actual)) if actual == *bytes => None,
-                                (Image::File { .. }, _) => Some("differs from the generated bytes"),
-                                _ => Some("is a directory, not the generated file"),
-                            }
-                        }
-                    }
-                }
+                Some((fd, mount, _)) => generated_drift(fd, mount, relative, bytes, &mut present)?,
                 None => Some("is missing"),
             };
             if let Some(reason) = reason {
-                drifted.insert(relative.clone(), (reason, REGENERATE));
+                drifted.insert(relative.clone(), (reason, remedy(&refused, relative)));
             }
         }
     }
@@ -156,19 +176,29 @@ pub(crate) fn drift(anchor: &Path, publications: &[Publication]) -> Result<Vec<D
             let selected: BTreeSet<_> = publications.iter().map(|p| &p.owner).collect();
             for (recorded, (owner, _)) in ledger.files() {
                 if selected.contains(&&owner) && !generated.contains(&recorded) {
+                    let output = recorded.output()?;
+                    let fix = remedy(&refused, &output);
                     drifted.insert(
-                        recorded.output()?,
-                        (
-                            "is recorded in .ess-output but no longer generated",
-                            REGENERATE,
-                        ),
+                        output,
+                        ("is recorded in .ess-output but no longer generated", fix),
                     );
                 }
+            }
+            for output in &refused {
+                drifted.entry(output.clone()).or_insert((
+                    "differs from the bytes .ess-output records for it",
+                    REENROLL,
+                ));
             }
             // The ledger `publish` would write, from the same read-only plan it decides with.
             let planned = plan(Some(fd), mount, ledger, publications.to_vec())?;
             if planned.transaction.before != planned.transaction.after {
-                drifted.insert(record, ("records another generation", REGENERATE));
+                let fix = if refused.is_empty() {
+                    REGENERATE
+                } else {
+                    BLOCKED
+                };
+                drifted.insert(record, ("records another generation", fix));
             }
         }
         // Generation would refuse every file already here as an unowned destination.
@@ -193,6 +223,36 @@ pub(crate) fn drift(anchor: &Path, publications: &[Publication]) -> Result<Vec<D
             remedy,
         })
         .collect())
+}
+/// Why the generated file at `relative` is not current, if it is not; `present` records that
+/// something already sits at a generated path.
+fn generated_drift(
+    root: &File,
+    mount: &Mount,
+    relative: &Path,
+    bytes: &[u8],
+    present: &mut bool,
+) -> Result<Option<&'static str>> {
+    filesystem::aliases(root, relative, mount)?;
+    Ok(match filesystem::image(root, relative, mount)? {
+        (Image::Absent, _) => Some("is missing"),
+        (image, actual) => {
+            *present = true;
+            match (image, actual) {
+                (Image::File { .. }, Some(actual)) if actual == bytes => None,
+                (Image::File { .. }, _) => Some("differs from the generated bytes"),
+                _ => Some("is a directory, not the generated file"),
+            }
+        }
+    })
+}
+/// What brings a drifted file back: regeneration, unless publication refuses the bytes it holds.
+fn remedy(refused: &BTreeSet<PathBuf>, path: &Path) -> &'static str {
+    if refused.contains(path) {
+        REENROLL
+    } else {
+        REGENERATE
+    }
 }
 pub(crate) fn publish(anchor: &Path, publications: Vec<Publication>) -> Result<()> {
     publish_observed(anchor, publications, &mut |_| Ok(()))
@@ -472,13 +532,13 @@ fn read_state(root: &File, path: &Path, mount: &Mount) -> Result<Option<(File, P
     read_state_at(root, path, mount, true)
 }
 
-/// [`read_state`], where `relocating: false` admits a settled record bound to another root
-/// without checking its owned files: for a comparison that writes nothing and reports them.
+/// [`read_state`], where `held: false` admits a settled record without holding its owned files to
+/// their recorded bytes: for a comparison that writes nothing and reports them.
 fn read_state_at(
     root: &File,
     path: &Path,
     mount: &Mount,
-    relocating: bool,
+    held: bool,
 ) -> Result<Option<(File, Payload)>> {
     let members = filesystem::names(root)?;
     if !members.iter().any(|n| n == OsStr::new(state::RESERVED)) {
@@ -499,15 +559,27 @@ fn read_state_at(
     let mut payload = state::decode(&bytes.context("missing output-state bytes")?)?;
     let binding = NativePath::absolute(path)?;
     let identity = filesystem::identity(root)?;
-    if payload.root != binding || payload.directory != identity {
-        if relocating || !matches!(payload.checkpoint, Checkpoint::Idle { .. }) {
-            relocate(&payload, root, path, mount)?;
+    match &payload.checkpoint {
+        Checkpoint::Idle { ledger } => {
+            // A settled record carries no binding to tell this root from a copy (ess#484), so
+            // every root is held to its recorded bytes, the one that generated it included.
+            if held {
+                settled(ledger, root, path, mount)?;
+            }
         }
-        // Bound in memory only: the next checkpoint an operation writes anyway records it, so
-        // a regeneration that changes nothing leaves a committed state byte-identical (ess#306).
-        payload.root = binding;
-        payload.directory = identity;
+        _ => {
+            if payload.root.as_ref() != Some(&binding)
+                || payload.directory.as_ref() != Some(&identity)
+            {
+                pending_elsewhere(&payload, path)?;
+            }
+        }
     }
+    // Bound in memory only: a settled `/3` checkpoint never records it, and the first checkpoint
+    // with a transaction does, so a regeneration that changes nothing leaves a committed state
+    // byte-identical (ess#306, ess#484).
+    payload.root = Some(binding);
+    payload.directory = Some(identity);
     let tx = match &payload.checkpoint {
         Checkpoint::Idle { .. } => None,
         _ => Some(transaction(&payload)?),
@@ -562,41 +634,64 @@ fn read_state_at(
     Ok(Some((directory, payload)))
 }
 
-/// Admit a checkpoint recorded for another root (a clone, a second worktree, a moved checkout)
-/// only when it is settled and every owned file present here still has its recorded bytes. An
-/// in-flight transaction is recovered only where it was recorded; a ledger carried without its
-/// files is not an ownership transfer.
-fn relocate(payload: &Payload, root: &File, path: &Path, mount: &Mount) -> Result<()> {
-    let recorded = Path::new("/").join(payload.root.path()?);
-    let ledger = match &payload.checkpoint {
-        Checkpoint::Idle { ledger } => ledger,
-        _ if recorded == path => {
-            let tx = transaction(payload)?;
-            let touched = tx
-                .changes
-                .iter()
-                .filter(|c| {
-                    matches!(c.before, Image::File { .. }) || matches!(c.after, Image::File { .. })
-                })
-                .map(|c| c.path.output())
-                .collect::<Result<Vec<_>>>()?;
-            bail!(
-                "output-state directory identity mismatch: {} was replaced by a copy while a \
-                 generated-output operation was in progress, so that operation cannot be \
-                 recovered here; remove {} and enroll the root again. {}",
-                path.display(),
-                path.join(state::RESERVED).display(),
-                adoption_route(path, &tx.before, &touched)?
-            );
-        }
-        _ => bail!(
-            "output-state root binding mismatch: pending generated output was recorded at {}; \
-             recover it there with `ess generate output recover --ownership-root {}` before \
-             copying or moving it",
-            recorded.display(),
-            recorded.display()
-        ),
-    };
+/// Refuse an in-flight transaction recorded for another root, or for this path in a directory
+/// that replaced the one it was recorded in: it is recovered only where it was recorded.
+fn pending_elsewhere(payload: &Payload, path: &Path) -> Result<()> {
+    let recorded = Path::new("/").join(
+        payload
+            .root
+            .as_ref()
+            .context("pending output state lacks its root binding")?
+            .path()?,
+    );
+    if recorded == path {
+        let tx = transaction(payload)?;
+        let touched = tx
+            .changes
+            .iter()
+            .filter(|c| {
+                matches!(c.before, Image::File { .. }) || matches!(c.after, Image::File { .. })
+            })
+            .map(|c| c.path.output())
+            .collect::<Result<Vec<_>>>()?;
+        bail!(
+            "output-state directory identity mismatch: {} was replaced by a copy while a \
+             generated-output operation was in progress, so that operation cannot be \
+             recovered here; remove {} and enroll the root again. {}",
+            path.display(),
+            path.join(state::RESERVED).display(),
+            adoption_route(path, &tx.before, &touched)?
+        );
+    }
+    bail!(
+        "output-state root binding mismatch: pending generated output was recorded at {}; \
+         recover it there with `ess generate output recover --ownership-root {}` before \
+         copying or moving it",
+        recorded.display(),
+        recorded.display()
+    )
+}
+
+/// Admit a settled checkpoint only when every owned file present here still has its recorded
+/// bytes. It records no root (ess#484), so this holds alike in the root that generated it and in
+/// a clone, a second worktree or a moved checkout: generation replaces only bytes it recorded, and
+/// a ledger carried without its files is not an ownership transfer.
+fn settled(ledger: &Ledger, root: &File, path: &Path, mount: &Mount) -> Result<()> {
+    let differing = differing(root, ledger, mount)?;
+    ensure!(
+        differing.is_empty(),
+        "owned files in {} differ from the bytes `{}` records for them, and generation replaces \
+         only bytes it recorded; copying `{}` alone is not an ownership transfer either. {}",
+        path.display(),
+        state::RESERVED,
+        state::RESERVED,
+        adoption_route(path, ledger, &differing)?
+    );
+    Ok(())
+}
+
+/// The ledger-owned paths present in `root` whose bytes are not the recorded ones.
+fn differing(root: &File, ledger: &Ledger, mount: &Mount) -> Result<Vec<PathBuf>> {
     let mut differing = Vec::new();
     for (relative, (_, data)) in ledger.files() {
         let output = relative.output()?;
@@ -604,16 +699,7 @@ fn relocate(payload: &Payload, root: &File, path: &Path, mount: &Mount) -> Resul
             differing.push(output);
         }
     }
-    ensure!(
-        differing.is_empty(),
-        "output state at {} was recorded for {}, and owned files here differ from the recorded \
-         bytes; copying `{}` alone is not an ownership transfer. {}",
-        path.display(),
-        recorded.display(),
-        state::RESERVED,
-        adoption_route(path, ledger, &differing)?
-    );
-    Ok(())
+    Ok(differing)
 }
 
 /// Whether an owned path holds its recorded bytes or is absent. Mode is not compared, since
@@ -803,8 +889,8 @@ fn initialize(
         format: state::FORMAT.to_owned(),
         profile: Profile::current(),
         anchor_id: state::new_uuid()?,
-        root: NativePath::absolute(path)?,
-        directory: filesystem::identity(root)?,
+        root: Some(NativePath::absolute(path)?),
+        directory: Some(filesystem::identity(root)?),
         sequence: 0,
         checkpoint: Checkpoint::Idle {
             ledger: Ledger::default(),
@@ -1160,15 +1246,19 @@ fn publish_observers(
         Ledger::default()
     };
     let mut planned = plan(existing.as_ref(), &mount, &ledger, publications)?;
-    if admitted.is_some()
-        && planned.transaction.before == planned.transaction.after
+    if planned.transaction.before == planned.transaction.after
         && planned
             .transaction
             .changes
             .iter()
             .all(|c| c.before == c.after)
     {
-        return Ok(());
+        if let Some(found) = admitted {
+            if !found.1.legacy() {
+                return Ok(());
+            }
+            return settle_legacy(locks, &path, mount, observer, found, ledger);
+        }
     }
     admission::paths(
         &locks,
@@ -1235,6 +1325,31 @@ fn publish_observers(
         observer,
     };
     run_plan(&mut session, &mut payload, planned)
+}
+/// A settled `/1` or `/2` record still names this machine's root (ess#484): rewrite it as `/3` in
+/// one checkpoint replacement, keeping its anchor, ledger and producer. Nothing is published, so
+/// there is no transaction and no producer note.
+fn settle_legacy(
+    mut locks: Locks,
+    path: &Path,
+    mount: Mount,
+    mut observer: Observer<'_>,
+    (directory, mut payload): (File, Payload),
+    ledger: Ledger,
+) -> Result<()> {
+    locks.revalidate()?;
+    let root = locks.create_root(path, &mut observer)?;
+    payload.upgrade();
+    let directory_identity = filesystem::identity(&directory)?;
+    Session {
+        locks,
+        root,
+        mount,
+        directory,
+        directory_identity,
+        observer,
+    }
+    .checkpoint(&mut payload, Checkpoint::Idle { ledger })
 }
 fn run_plan(session: &mut Session<'_>, payload: &mut Payload, mut planned: Plan) -> Result<()> {
     session.checkpoint(
