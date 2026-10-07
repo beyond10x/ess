@@ -330,6 +330,9 @@ fn a_mixed_entrypoint_does_not_hide_a_refused_update_value() {
     assert_constructs_are_catalogued(&diagnostics);
 }
 
+/// The alphabet still refused is one on a declared response field, which entity-core admits and does
+/// not enforce: a command whose entity has no definition version is walked as refused, and its
+/// response is still checked.
 #[test]
 fn a_missing_definition_version_does_not_hide_an_alphabet() {
     let ir = with_command(
@@ -337,8 +340,8 @@ fn a_missing_definition_version_does_not_hide_an_alphabet() {
         &update("touched", "          note: input.note\n"),
         &[(
             "domains/local.yaml",
-            "  - name: contract.local.Shared\n    kind: newtype\n    of: String\n",
-            "  - name: contract.local.Shared\n    kind: newtype\n    of: String\n    alphabet: \"abc\"\n",
+            "  - name: contract.local.Receipt\n    kind: newtype\n    of: String\n",
+            "  - name: contract.local.Receipt\n    kind: newtype\n    of: String\n    alphabet: \"0123456789-ceiprt\"\n",
         )],
     );
     let diagnostics = refused_with(&ir, &LoweringOptions::default());
@@ -518,6 +521,31 @@ fn every_source_construct_code_has_a_row_and_every_row_a_source_construct_code()
     let before = names.len();
     names.dedup();
     assert_eq!(names.len(), before, "two rows share a construct name");
+}
+
+/// entity-core 0.27.0 carries a String alphabet and a text's length
+/// (<https://github.com/beyond10x/entity-runtime/issues/54>), so both rows are lowered. The shapes
+/// it does not take keep refused rows of their own, and the two codes name those rows rather than
+/// the lowered ones.
+#[test]
+fn an_alphabet_and_a_text_count_are_lowered_rows() {
+    let lowered = ["`alphabet:`", "`.count` of a text"];
+    for name in lowered {
+        let row = CONSTRUCTS
+            .iter()
+            .find(|construct| construct.name == name)
+            .unwrap_or_else(|| panic!("{name} has a row"));
+        assert!(matches!(row.lowering, Lowering::Lowered { .. }), "{row:?}");
+    }
+    for code in [
+        LoweringCode::AlphabetUnsupported,
+        LoweringCode::TextLengthUnsupported,
+    ] {
+        assert!(
+            !lowered.contains(&code.construct()),
+            "{code:?} names a lowered row"
+        );
+    }
 }
 
 /// Every row cites at least one test, and every cited test exists, so a row cannot claim a

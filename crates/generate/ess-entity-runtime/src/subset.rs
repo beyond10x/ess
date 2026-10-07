@@ -69,7 +69,10 @@ pub(crate) const CLEARED: &str = "`{cleared: true}` outside a creation's `sets:`
 pub(crate) const SILENT_PRESERVE: &str = "`preserves:` with no response";
 pub(crate) const TEXT_ORDERING: &str = "`<`, `<=`, `>`, `>=` over text";
 pub(crate) const ALPHABET: &str = "`alphabet:`";
+pub(crate) const ALPHABET_RESPONSE: &str = "`alphabet:` on a response field";
 pub(crate) const TEXT_COUNT: &str = "`.count` of a text";
+pub(crate) const TEXT_COUNT_UNTYPED: &str =
+    "`.count` of a text in a list or map element or a union payload";
 pub(crate) const SUBJECT_VALUE: &str = "`{subject: …}`";
 pub(crate) const INCREMENT: &str = "`{increment: …}`";
 pub(crate) const FALLBACK: &str = "`{input: …, else: …}`";
@@ -173,6 +176,24 @@ pub const CONSTRUCTS: &[Construct] = &[
         "`prefix:` on a newtype",
         "a `starts_with` rule",
         &["tests/lowering.rs::a_prefix_lowers_to_a_starts_with_rule"],
+    ),
+    lowered(
+        ALPHABET,
+        "`alphabet` on each string field, argument and member it reaches; a newtype chain's \
+         alphabets intersected, in the outer one's order",
+        &[
+            "tests/lowering.rs::an_alphabet_lowers_onto_every_string_field_and_argument_it_reaches",
+            "tests/lowering.rs::nested_alphabets_lower_to_their_intersection_in_the_outer_order",
+        ],
+    ),
+    lowered(
+        TEXT_COUNT,
+        "`<path>.count` on a declared `string`, its length in Unicode scalar values",
+        &[
+            "tests/lowering.rs::a_text_length_invariant_lowers_to_count_on_the_stored_field",
+            "tests/lowering.rs::a_text_length_in_a_guard_lowers_to_count_in_unicode_scalar_values",
+            "tests/adversary_guards_lowering.rs::adv_an_input_text_length_in_a_stored_field_predicate_lowers_to_the_arguments",
+        ],
     ),
     lowered(
         "`relations:`",
@@ -310,18 +331,27 @@ pub const CONSTRUCTS: &[Construct] = &[
         &["tests/lowering.rs::an_operation_that_clears_a_field_is_refused_rather_than_left_to_the_host"],
     ),
     refused(
-        ALPHABET,
+        ALPHABET_RESPONSE,
         LoweringCode::AlphabetUnsupported,
-        Needs::EntityCore("a condition over the characters of a text"),
-        &["tests/lowering.rs::an_alphabet_and_a_text_length_are_refused_by_name_by_the_lowering"],
+        Needs::EntityCore(
+            "a response checked against its declared schema; an alphabet there is admitted and \
+             not enforced",
+        ),
+        &[
+            "tests/lowering.rs::an_alphabet_on_a_declared_response_field_is_refused_by_name",
+            "tests/lowerable_subset.rs::a_missing_definition_version_does_not_hide_an_alphabet",
+        ],
     ),
     refused(
-        TEXT_COUNT,
+        TEXT_COUNT_UNTYPED,
         LoweringCode::TextLengthUnsupported,
-        Needs::EntityCore("the length of a text; `count` reads arrays and maps only"),
+        Needs::EntityCore(
+            "a text's length read through a quantifier element or a union payload, which its \
+             run-time walk reads without the field's declaration",
+        ),
         &[
-            "tests/lowering.rs::an_alphabet_and_a_text_length_are_refused_by_name_by_the_lowering",
-            "tests/adversary_guards_lowering.rs::adv_an_input_text_length_in_a_stored_field_predicate_is_refused_by_name",
+            "tests/lowering.rs::a_text_length_inside_a_quantifier_element_is_refused_by_name",
+            "tests/lowering.rs::a_text_length_invariant_under_a_list_element_or_a_union_payload_is_refused_by_name",
         ],
     ),
     refused(
@@ -741,13 +771,14 @@ impl LoweringCode {
             ),
             Self::AlphabetUnsupported => (
                 "AlphabetUnsupported",
-                ALPHABET,
-                "A newtype a lowered field reaches declares an alphabet.",
+                ALPHABET_RESPONSE,
+                "A response field's type declares an alphabet.",
             ),
             Self::TextLengthUnsupported => (
                 "TextLengthUnsupported",
-                TEXT_COUNT,
-                "A predicate reads the length of a text.",
+                TEXT_COUNT_UNTYPED,
+                "A predicate reads the length of a text in a list or map element or a union \
+                 payload.",
             ),
             Self::ValueExpressionUnsupported => (
                 "ValueExpressionUnsupported",
