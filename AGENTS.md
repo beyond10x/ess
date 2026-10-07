@@ -153,6 +153,10 @@ Before pushing a release tag, run `task check`, `task web-check`, `task test-bro
 `task test` alone builds about 45 GiB into the tree's `target/` (44.8 GiB measured on 2026-10-07 at
 0.56.0), so start the local release bar only with that much free disk beyond what other work on the
 machine needs, and watch free space during the step rather than only between steps.
+Set `ESS_TYPES_NODE` to a `node_modules` outside the checkout that holds `@types/node` at the version
+`ci.yml` installs (`npm install --prefix <dir> @types/node@26.3.0`): without it the TypeScript cases
+in `adversary_287_pass1` fail with `TS2688: Cannot find type definition file for 'node'` and
+`cargo test` stops at that target, so the binaries after it never run.
 Consumer coverage is not part of that bar while it is parked (revision 3, above).
 The release workflow runs the reusable gate, the WebAssembly realization check and native
 packaging concurrently at that exact commit, then retains a read-only preparation artifact only
