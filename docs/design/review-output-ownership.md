@@ -120,7 +120,9 @@ and a checksum over the canonical payload excluding that checksum. A checkpoint 
 transaction also contains the absolute native-root binding and directory identity; a settled one
 does not (`ess-output-state/3`, below). Immutable backups and new/restore stages have recorded names and
 identities. Publish a synchronized state.next over state.json and synchronize its directory;
-state.next is never authoritative during recovery. Reserve .ess-output and the initialization
+state.next is never authoritative during recovery. A run cut before that rename leaves the
+checkpoint, binding included, in state.next: every write-mode command that finds the root
+settled removes it, one that changes nothing included, and `--check` reports it. Reserve .ess-output and the initialization
 prefix .ess-output-init- in generated destinations and enrollment discovery. Preserve unknown
 reserved entries and unpublished initialization orphans; do not grant cleanup authority from
 a filename.
@@ -166,11 +168,17 @@ carries neither, and a `/3` checkpoint with a transaction carries both. A releas
 `/1` and `/2` refuses a `/3` checkpoint before any write: a settled one as an invalid output
 state missing `root` (0.55.0, observed), a pending one as an unsupported output-state version.
 Every publication writes `/3`.
-A write-mode generation that finds a settled `/1` or `/2` checkpoint rewrites it as `/3` even when
-no owned file changes, keeping its anchor, ledger and producer and recording this release where
-`/1` recorded none; that is one checkpoint replacement, not a transaction. `--check` does not
-report such a checkpoint as drift and prints one warning that names `root` and `directory` and
-the write-mode run that removes them. Recovery and adoption keep the version they read.
+Every settled checkpoint this release writes is `/3`, including the one that closes a recovery or
+an adoption of a transaction begun under `/1` or `/2`; the transaction's own checkpoints keep
+the version it began under. A write-mode command (generation, adoption or recovery) that finds a
+settled `/1` or `/2` checkpoint and changes nothing rewrites it as `/3`, keeping its anchor,
+ledger and producer and recording this release where `/1` recorded none; that is one checkpoint
+replacement, not a transaction. `--check` does not report such a checkpoint as drift and prints
+one warning that names `root` and `directory` and the write-mode run that removes them.
+
+A publication holds every selected owned preimage it captures to the ledger as well, with the
+same message and route as the read, so an owned file edited after the record was read is
+refused rather than backed up, replaced and its backup deleted.
 
 Existing producer artifact bytes and their format identities remain unchanged. Older ESS
 versions have no output-state reader or participating lock protocol; their generation commands

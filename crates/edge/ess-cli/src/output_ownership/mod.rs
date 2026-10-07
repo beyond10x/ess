@@ -79,8 +79,15 @@ pub(crate) fn check(anchor: &Path) -> Result<CheckGuard> {
     if let Ok(fd) = locks.existing(&root) {
         let mount = Mount::of(&fd)?;
         filesystem::discovery(&fd, &mount, true)?;
-        if let Some((_, payload)) = read_state(&fd, &root, &mount)? {
+        if let Some((directory, payload)) = read_state(&fd, &root, &mount)? {
             ensure_idle(&payload, &root)?;
+            // The same command without `--check` removes it, so a check that passed would not
+            // mean that command changes nothing.
+            ensure!(
+                !has_slot(&directory)?,
+                "{} {STALE_SLOT}; {CLEAR_SLOT}",
+                root.join(state::RESERVED).join(SLOT).display()
+            );
             warn_legacy(&payload, &root);
         }
     }
@@ -111,6 +118,13 @@ pub(crate) struct Drift {
     pub(crate) remedy: &'static str,
 }
 
+/// The unpublished checkpoint slot beside `state.json`: written, synchronized and renamed over it,
+/// and never authoritative.
+const SLOT: &str = "state.next";
+/// Why a slot left beside a settled record is reported: it may hold a pending checkpoint's
+/// binding (ess#484), and the same command without `--check` removes it.
+const STALE_SLOT: &str = "is an unpublished checkpoint an interrupted run left behind";
+const CLEAR_SLOT: &str = "rerun this command without `--check` to remove it";
 const REGENERATE: &str = "regenerate it with `ess generate`";
 /// Generation refuses an owned file whose bytes are not the recorded ones, in every root (ess#484).
 const REENROLL: &str = "regeneration refuses it: move it aside, or delete it if it is generated, \
@@ -134,14 +148,16 @@ pub(crate) fn drift(anchor: &Path, publications: &[Publication]) -> Result<Vec<D
     let path = filesystem::absolute(anchor)?;
     let locks = Locks::acquire(&[(path.clone(), Access::Shared)])?;
     let root = locks.existing(&path).ok();
+    let mut slot = false;
     let state = match &root {
         Some(fd) => {
             let mount = Mount::of(fd)?;
             filesystem::discovery(fd, &mount, true)?;
             let recorded = match read_state_at(fd, &path, &mount, false)? {
-                Some((_, payload)) => {
+                Some((directory, payload)) => {
                     let ledger = ensure_idle(&payload, &path)?.clone();
                     warn_legacy(&payload, &path);
+                    slot = has_slot(&directory)?;
                     Some(ledger)
                 }
                 None => None,
@@ -170,6 +186,12 @@ pub(crate) fn drift(anchor: &Path, publications: &[Publication]) -> Result<Vec<D
             }
         }
     }
+    if slot {
+        drifted.insert(
+            Path::new(state::RESERVED).join(SLOT),
+            (STALE_SLOT, CLEAR_SLOT),
+        );
+    }
     let record = Path::new(state::RESERVED).join("state.json");
     match &state {
         Some((fd, mount, Some(ledger))) => {
@@ -191,7 +213,7 @@ pub(crate) fn drift(anchor: &Path, publications: &[Publication]) -> Result<Vec<D
                 ));
             }
             // The ledger `publish` would write, from the same read-only plan it decides with.
-            let planned = plan(Some(fd), mount, ledger, publications.to_vec())?;
+            let planned = plan(Some(fd), mount, ledger, publications.to_vec(), None)?;
             if planned.transaction.before != planned.transaction.after {
                 let fix = if refused.is_empty() {
                     REGENERATE
@@ -421,7 +443,10 @@ fn adopt_observers(
             previous == &selected,
             "adoption cannot change or shrink an already enrolled owner"
         );
-        return Ok(());
+        return match admitted {
+            Some(found) => settle_found(locks, &path, mount, observer, found),
+            None => Ok(()),
+        };
     }
     let mut after = before.clone();
     after.owners.push(selected);
@@ -588,7 +613,7 @@ fn read_state_at(
         if name == OsStr::new("state.json") {
             continue;
         }
-        if name == OsStr::new("state.next") {
+        if name == OsStr::new(SLOT) {
             let (image, _) = filesystem::image_within(
                 &directory,
                 Path::new(state::RESERVED),
@@ -677,7 +702,12 @@ fn pending_elsewhere(payload: &Payload, path: &Path) -> Result<()> {
 /// a clone, a second worktree or a moved checkout: generation replaces only bytes it recorded, and
 /// a ledger carried without its files is not an ownership transfer.
 fn settled(ledger: &Ledger, root: &File, path: &Path, mount: &Mount) -> Result<()> {
-    let differing = differing(root, ledger, mount)?;
+    refuse_differing(path, ledger, &differing(root, ledger, mount)?)
+}
+
+/// Refuse owned files at `path` whose bytes the ledger does not record, naming them and the route
+/// that re-enrolls the root.
+fn refuse_differing(path: &Path, ledger: &Ledger, differing: &[PathBuf]) -> Result<()> {
     ensure!(
         differing.is_empty(),
         "owned files in {} differ from the bytes `{}` records for them, and generation replaces \
@@ -685,7 +715,7 @@ fn settled(ledger: &Ledger, root: &File, path: &Path, mount: &Mount) -> Result<(
         path.display(),
         state::RESERVED,
         state::RESERVED,
-        adoption_route(path, ledger, &differing)?
+        adoption_route(path, ledger, differing)?
     );
     Ok(())
 }
@@ -809,33 +839,11 @@ impl Session<'_> {
             ..payload.clone()
         };
         let bytes = state::encode(&next)?;
-        if filesystem::names(&self.directory)?
-            .iter()
-            .any(|n| n == OsStr::new("state.next"))
-        {
-            let (image, _) = filesystem::image_within(
-                &self.directory,
-                Path::new(state::RESERVED),
-                Path::new("state.next"),
-                &self.mount,
-            )?;
-            ensure!(
-                matches!(image, Image::File { .. }),
-                "unsafe unpublished checkpoint slot"
-            );
-            filesystem::remove(
-                &self.directory,
-                OsStr::new("state.next"),
-                false,
-                &self.mount,
-                &mut self.observer,
-                "old-state-next",
-            )?;
-        }
+        self.remove_slot("old-state-next")?;
         filesystem::write_new(
             &self.directory,
             Path::new(state::RESERVED),
-            OsStr::new("state.next"),
+            OsStr::new(SLOT),
             &bytes,
             0o600,
             &self.mount,
@@ -845,7 +853,7 @@ impl Session<'_> {
         self.validate()?;
         filesystem::rename(
             &self.directory,
-            OsStr::new("state.next"),
+            OsStr::new(SLOT),
             &self.directory,
             OsStr::new("state.json"),
             false,
@@ -856,6 +864,48 @@ impl Session<'_> {
         // A failure after rename is ambiguous. Callers retain the visible checkpoint, never
         // overwrite it with a guessed rollback based on this in-memory payload.
         *payload = next;
+        Ok(())
+    }
+    /// Remove an unpublished checkpoint slot, which is never authoritative, reporting whether
+    /// there was one.
+    fn remove_slot(&mut self, label: &str) -> Result<bool> {
+        if !has_slot(&self.directory)? {
+            return Ok(false);
+        }
+        let (image, _) = filesystem::image_within(
+            &self.directory,
+            Path::new(state::RESERVED),
+            Path::new(SLOT),
+            &self.mount,
+        )?;
+        ensure!(
+            matches!(image, Image::File { .. }),
+            "unsafe unpublished checkpoint slot"
+        );
+        filesystem::remove(
+            &self.directory,
+            OsStr::new(SLOT),
+            false,
+            &self.mount,
+            &mut self.observer,
+            label,
+        )?;
+        Ok(true)
+    }
+    /// Leave the settled record an operation found, and changed nothing in, naming no machine
+    /// (ess#484). A `/1` or `/2` record is rewritten as `/3` in one checkpoint replacement,
+    /// keeping its anchor, ledger and producer; nothing is published, so there is no transaction
+    /// and no producer note. A slot an interrupted run left, which may hold a pending
+    /// checkpoint's binding, is removed.
+    fn settle_found(&mut self, payload: &mut Payload, ledger: Ledger) -> Result<()> {
+        self.validate()?;
+        if payload.legacy() {
+            payload.upgrade();
+            return self.checkpoint(payload, Checkpoint::Idle { ledger });
+        }
+        if self.remove_slot("stale-state-next")? {
+            filesystem::sync(&self.directory, &mut self.observer, "stale-state-next")?;
+        }
         Ok(())
     }
     fn tx_directory(&self, tx: &Transaction, required: bool) -> Result<Option<File>> {
@@ -938,11 +988,15 @@ struct Plan {
 }
 // One read-only pass shares the actual preimage cache across files and directory transitions.
 #[allow(clippy::too_many_lines)]
+/// `hold` names the root when the plan is for a publication: every selected owned preimage it
+/// captures must then still have its recorded bytes, as the read required, or it would be backed
+/// up, replaced and its backup deleted (ess#484). A comparison that reports passes `None`.
 fn plan(
     root: Option<&File>,
     mount: &Mount,
     ledger: &Ledger,
     publications: Vec<Publication>,
+    hold: Option<&Path>,
 ) -> Result<Plan> {
     ensure!(
         !publications.is_empty(),
@@ -975,13 +1029,23 @@ fn plan(
         actual.insert(p.clone(), image.clone());
         Ok(image)
     };
-    for (path, (owner, _)) in &old_files {
+    let mut differing = Vec::new();
+    for (path, (owner, recorded)) in &old_files {
         if selected.contains(owner) {
+            let image = inspect(path)?;
             ensure!(
-                !matches!(inspect(path)?, Image::Directory { .. }),
+                !matches!(image, Image::Directory { .. }),
                 "owned file has an incompatible file type or symlink"
             );
+            if let Image::File { data } = image {
+                if data.length != recorded.length || data.digest != recorded.digest {
+                    differing.push(path.output()?);
+                }
+            }
         }
+    }
+    if let Some(anchor) = hold {
+        refuse_differing(anchor, ledger, &differing)?;
     }
     // Inspect the entire concrete destination set before deciding enrollment. A late type/link
     // conflict must remain visible even when an earlier ordinary file is still unowned.
@@ -1245,7 +1309,15 @@ fn publish_observers(
     } else {
         Ledger::default()
     };
-    let mut planned = plan(existing.as_ref(), &mount, &ledger, publications)?;
+    // The record was read and held above; the plan captures the preimages it will back up.
+    observer("before:plan:preimages")?;
+    let mut planned = plan(
+        existing.as_ref(),
+        &mount,
+        &ledger,
+        publications,
+        Some(&path),
+    )?;
     if planned.transaction.before == planned.transaction.after
         && planned
             .transaction
@@ -1254,10 +1326,7 @@ fn publish_observers(
             .all(|c| c.before == c.after)
     {
         if let Some(found) = admitted {
-            if !found.1.legacy() {
-                return Ok(());
-            }
-            return settle_legacy(locks, &path, mount, observer, found, ledger);
+            return settle_found(locks, &path, mount, observer, found);
         }
     }
     admission::paths(
@@ -1326,20 +1395,22 @@ fn publish_observers(
     };
     run_plan(&mut session, &mut payload, planned)
 }
-/// A settled `/1` or `/2` record still names this machine's root (ess#484): rewrite it as `/3` in
-/// one checkpoint replacement, keeping its anchor, ledger and producer. Nothing is published, so
-/// there is no transaction and no producer note.
-fn settle_legacy(
+/// A write-mode command that finds its root settled and changes nothing still leaves no machine
+/// path behind (ess#484): see [`Session::settle_found`]. It opens a session only when there is
+/// something to write.
+fn settle_found(
     mut locks: Locks,
     path: &Path,
     mount: Mount,
     mut observer: Observer<'_>,
     (directory, mut payload): (File, Payload),
-    ledger: Ledger,
 ) -> Result<()> {
+    if !payload.legacy() && !has_slot(&directory)? {
+        return Ok(());
+    }
+    let ledger = ensure_idle(&payload, path)?.clone();
     locks.revalidate()?;
     let root = locks.create_root(path, &mut observer)?;
-    payload.upgrade();
     let directory_identity = filesystem::identity(&directory)?;
     Session {
         locks,
@@ -1349,7 +1420,13 @@ fn settle_legacy(
         directory_identity,
         observer,
     }
-    .checkpoint(&mut payload, Checkpoint::Idle { ledger })
+    .settle_found(&mut payload, ledger)
+}
+/// Whether an unpublished checkpoint slot sits in the reserved directory.
+fn has_slot(directory: &File) -> Result<bool> {
+    Ok(filesystem::names(directory)?
+        .iter()
+        .any(|name| name == OsStr::new(SLOT)))
 }
 fn run_plan(session: &mut Session<'_>, payload: &mut Payload, mut planned: Plan) -> Result<()> {
     session.checkpoint(
@@ -1710,6 +1787,9 @@ fn cleanup(
         &mut session.observer,
         "transaction-cleanup-complete",
     )?;
+    // The settled checkpoint this release writes is `/3`, whatever version the transaction began
+    // under, so it names no machine (ess#484); a recorded producer is kept.
+    payload.upgrade();
     session.checkpoint(
         payload,
         Checkpoint::Idle {
@@ -1741,7 +1821,7 @@ fn recover_observed(anchor: &Path, observer: Observer<'_>) -> Result<()> {
     };
     let checkpoint = payload.checkpoint.clone();
     match checkpoint {
-        Checkpoint::Idle { .. } => Ok(()),
+        Checkpoint::Idle { ledger } => session.settle_found(&mut payload, ledger),
         Checkpoint::Staging { transaction } => {
             verify_images(&session, &transaction, true, false)?;
             cleanup(&mut session, &mut payload, &transaction, true)

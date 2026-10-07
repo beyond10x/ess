@@ -532,3 +532,109 @@ fn each_output_state_version_is_held_to_its_own_binding_shape() {
         assert_eq!(snapshot(&pending), before, "{kept:?}: a refusal wrote");
     }
 }
+
+/// A run cut before its first checkpoint replaces `state.json` leaves that checkpoint, binding
+/// and all, in `state.next`. The slot is never authoritative: `--check` reports it, and every
+/// write-mode command that finds the root settled removes it, the ones that change nothing
+/// included (adversary pass 1, F1).
+#[test]
+fn a_stale_checkpoint_slot_is_reported_by_check_and_removed_by_every_settling_command() {
+    let _serial = serial();
+    for command in ["publish", "adopt", "recover"] {
+        let f = Fixture::new();
+        let root = f.0.join("slot");
+        let reference = f.0.join("reference");
+        ownership::probe::publish(&root, OLD, &mut |_| Ok(())).unwrap();
+        ownership::probe::publish(&reference, OLD, &mut |_| Ok(())).unwrap();
+        let cut = ownership::probe::publish(&root, NEW, &mut |event| {
+            if event == "before:rename:checkpoint" {
+                anyhow::bail!("cut at {event}")
+            }
+            Ok(())
+        });
+        assert!(cut.is_err(), "{command}");
+        let slot = root.join(".ess-output/state.next");
+        assert!(
+            fs::read_to_string(&slot).unwrap().contains("\"root\":"),
+            "{command}: the slot holds the pending checkpoint's binding"
+        );
+        let record = fs::read(state_path(&root)).unwrap();
+
+        let publication = ownership::Publication::tree("synthesis", OLD.iter().copied()).unwrap();
+        let drifted: Vec<PathBuf> = ownership::drift(&root, &[publication])
+            .unwrap()
+            .into_iter()
+            .map(|drift| drift.path)
+            .collect();
+        assert_eq!(
+            drifted,
+            [PathBuf::from(".ess-output/state.next")],
+            "{command}: --check does not report the slot"
+        );
+        assert!(
+            ownership::check(&root).is_err(),
+            "{command}: a check passed over a stale slot"
+        );
+        assert!(slot.exists(), "{command}: a check removed the slot");
+
+        match command {
+            "publish" => ownership::probe::publish(&root, OLD, &mut |_| Ok(())).unwrap(),
+            "adopt" => ownership::probe::adopt(&root, &reference, &mut |_| Ok(())).unwrap(),
+            _ => ownership::recover(&root).unwrap(),
+        }
+        assert!(!slot.exists(), "{command} left the stale slot");
+        assert_eq!(
+            fs::read(state_path(&root)).unwrap(),
+            record,
+            "{command} rewrote a current record"
+        );
+    }
+}
+
+/// An owned file edited after the record was read and before generation captures its preimage
+/// is refused, not overwritten and its backup deleted: the plan holds every selected owned
+/// preimage to the ledger, with the read's message and route (adversary pass 1, F4).
+#[test]
+fn an_owned_file_edited_after_the_record_is_read_is_refused_not_overwritten() {
+    let _serial = serial();
+    let f = Fixture::new();
+    let root = f.0.join("raced");
+    ownership::probe::publish(&root, OLD, &mut |_| Ok(())).unwrap();
+    let record = fs::read(state_path(&root)).unwrap();
+    let mut edited = false;
+    let published = ownership::probe::publish(&root, NEW, &mut |event| {
+        if event == "before:plan:preimages" {
+            fs::write(root.join("same"), "edited between the read and the plan").unwrap();
+            edited = true;
+        }
+        Ok(())
+    });
+    assert!(edited, "the seam between the read and the plan did not run");
+    let refused = format!(
+        "{:#}",
+        published.expect_err("an edit made after the read was overwritten")
+    );
+    for named in [
+        "differ from the bytes".to_owned(),
+        "if they are generated: same.".to_owned(),
+        format!(
+            "ess generate output adopt --ownership-root {}",
+            root.display()
+        ),
+    ] {
+        assert!(
+            refused.contains(&named),
+            "the refusal names {named}: {refused}"
+        );
+    }
+    assert_eq!(
+        fs::read(root.join("same")).unwrap(),
+        b"edited between the read and the plan"
+    );
+    assert!(!root.join("new/leaf").exists(), "the refusal wrote output");
+    assert_eq!(
+        fs::read(state_path(&root)).unwrap(),
+        record,
+        "the refusal wrote a checkpoint"
+    );
+}

@@ -72,7 +72,9 @@ and refuses a `/1` or `/2` checkpoint without the binding, a settled `/3` checkp
 a pending `/3` checkpoint without it. A generation that finds a settled `/1` or `/2` checkpoint
 rewrites it as `/3` even when no file changes, keeping its owners and producer. With `--check`
 it reports no drift for it and prints one warning naming `root` and `directory`. Recovery and
-adoption keep the version they found. Releases before `/3` refuse a `/3` checkpoint before
+adoption settle as `/3` too, keeping a recorded producer. A `state.next` left by an interrupted
+run, which may hold a pending checkpoint and its binding, is never authoritative: a write-mode
+command that finds the root settled removes it, and `--check` reports it. Releases before `/3` refuse a `/3` checkpoint before
 writing: a settled one as an invalid output state missing `root`, a pending one as an
 unsupported output-state version.
 [Design](https://github.com/beyond10x/ess/blob/main/docs/design/specification-requires-release.md). See [the generation workflow](../guides/generate-artifacts.md#repeated-generation-and-recovery)
