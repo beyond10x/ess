@@ -331,7 +331,13 @@ unions and fixed prefix tuples. Native unions select the first structurally deco
 branch; schema exclusivity and refinements remain report obligations, not application
 dispatch. Unsupported native intersections, non-string literals and variable prefix
 layouts refuse before publication. Go uses only its standard library; Rust pins Serde
-and serde_json with arbitrary-precision number support in the generated manifest.
+and serde_json in the generated manifest. Where the selected types hold JSON numbers
+in serde_json (`serde_json::Number`, `serde_json::Value`, or a union decoded through a
+`Value` whose alternatives can hold a number), the manifest declares a default-on `exact-numbers` crate feature that enables
+serde_json's `arbitrary_precision`. A consumer that depends on the library with
+`default-features = false` gets those numbers as binary64, and the report names each
+affected value under the `rust_exact_numbers` rule. A library whose types hold none
+declares no feature and leaves serde_json's number handling to its consumer.
 
 The `ess-types-report/3` envelope records typed input provenance, the language and explicit native package/module
 configuration. These are data libraries, not complete schema validators or application
