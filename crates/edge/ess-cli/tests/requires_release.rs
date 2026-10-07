@@ -223,6 +223,28 @@ fn state(root: &Path) -> serde_json::Value {
     serde_json::from_slice(&fs::read(root.join(".ess-output/state.json")).unwrap()).unwrap()
 }
 
+/// The binding an `ess-output-state/1` or `/2` writer recorded for `root`: its absolute path as
+/// `UnixBytes1` components, and its directory's device and inode.
+fn binding(root: &Path) -> (serde_json::Value, serde_json::Value) {
+    use std::fmt::Write as _;
+    use std::os::unix::{ffi::OsStrExt as _, fs::MetadataExt as _};
+    let mut components = Vec::new();
+    for part in root.components() {
+        if let std::path::Component::Normal(name) = part {
+            let mut hex = String::new();
+            for byte in name.as_bytes() {
+                write!(&mut hex, "{byte:02x}").unwrap();
+            }
+            components.push(hex);
+        }
+    }
+    let meta = fs::metadata(root).unwrap();
+    (
+        serde_json::json!({"encoding": "UnixBytes1", "components": components}),
+        serde_json::json!({"device": meta.dev(), "inode": meta.ino()}),
+    )
+}
+
 /// Rewrite the checkpoint's payload and its checksum, as a different release would have left it.
 fn rewrite_state(root: &Path, edit: impl FnOnce(&mut serde_json::Value)) {
     use sha2::{Digest as _, Sha256};
@@ -264,7 +286,7 @@ fn generated_output_records_its_producer_and_a_changing_regeneration_by_another_
     assert_eq!(first.status.code(), Some(0), "{}", stderr(&first));
     assert!(first.stderr.is_empty(), "{}", stderr(&first));
     let payload = state(&out)["payload"].clone();
-    assert_eq!(payload["format"], "ess-output-state/2");
+    assert_eq!(payload["format"], "ess-output-state/3");
     assert_eq!(payload["producer"], format!("ess {THIS}"));
 
     // The same release regenerating a change says nothing.
@@ -297,17 +319,22 @@ fn a_version_one_checkpoint_is_read_and_its_first_changing_publication_records_t
     let fixture = Fixture::new("format: ess-inputs/1\n");
     let out = fixture.0.join("out");
     assert_eq!(fixture.ess(GENERATE).status.code(), Some(0));
+    // As 0.21.0 to 0.33.0 wrote it: no producer, and bound to the root it was written in.
+    let (root, directory) = binding(&out);
     rewrite_state(&out, |payload| {
         payload["format"] = "ess-output-state/1".into();
         payload.as_object_mut().unwrap().remove("producer");
+        payload["root"] = root;
+        payload["directory"] = directory;
     });
     edit_summary(&fixture, "An edit.");
     let output = fixture.ess(GENERATE);
     assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
     assert!(output.stderr.is_empty(), "{}", stderr(&output));
     let payload = state(&out)["payload"].clone();
-    assert_eq!(payload["format"], "ess-output-state/2");
+    assert_eq!(payload["format"], "ess-output-state/3");
     assert_eq!(payload["producer"], format!("ess {THIS}"));
+    assert!(payload.get("root").is_none(), "{payload}");
 }
 
 #[test]

@@ -5,10 +5,13 @@ ownership relation, and the durable decision transitions selected by the
 [output ownership design](../../docs/design/review-output-ownership.md).
 
 The anchor owns at most one current transaction. The transaction has no meaning outside that
-anchor; its `anchor_id` carries the relation. The anchor remains enrolled after final-file
-retirement. Committed and Restored decisions survive cleanup; only the subsequent settled anchor
-checkpoint omits the transaction. Cleanup and filesystem effects are specified by the design,
-not inferred from a model transition.
+anchor; its `anchor_id` carries the relation. The native root binding belongs to the transaction,
+because only an in-flight transaction is recovered where it was recorded: a settled anchor records
+no absolute path, so a committed checkpoint holds nothing about the machine that wrote it
+([ess#484](https://github.com/beyond10x/ess/issues/484)). The anchor remains enrolled after
+final-file retirement. Committed and Restored decisions survive cleanup; only the subsequent
+settled anchor checkpoint omits the transaction. Cleanup and filesystem effects are specified by
+the design, not inferred from a model transition.
 
 This is the entity and decision model, not the complete JSON admission schema or a filesystem
 proof. The runtime reader must also enforce canonical native-byte encoding, digest syntax,
