@@ -49,7 +49,9 @@ The last column says what lowering the construct would need. *entity-core* means
 | `{increment: …}` | `ValueExpressionUnsupported` | entity-core: arithmetic over a stored value |
 | `{cleared: true}` outside a creation's `sets:` | `ClearedValueUnsupported` | entity-core: a removal a definition states; `Remove` is a host-selected action only |
 | `alphabet:` on a response field | `AlphabetUnsupported` | entity-core: a response checked against its declared schema; an alphabet there is admitted and not enforced |
-| `.count` of a text in a list or map element or a union payload | `TextLengthUnsupported` | entity-core: a text's length read through a quantifier element or a union payload, which its run-time walk reads without the field's declaration |
+| a text literal written outside its field's `alphabet:` | `AlphabetUnsupported` | No form: ESS admits the literal and entity-core refuses the row it writes on every request; the specification has to hold the literal to the alphabet |
+| nested `alphabet:`s that share no character | `AlphabetUnsupported` | entity-core: an alphabet with no characters, which it refuses at registration; only the empty text is a value |
+| `.count` of a text through a quantifier element or a union payload | `TextLengthUnsupported` | entity-core: a text's length read through a quantifier element or a union payload, which its run-time walk reads without the field's declaration |
 | an `Optional` value written by an update | `OptionalBoundOutputUnsupported` | entity-core: `PresentArgument` on an operation write; it covers creation, event and response members only |
 | a command with no entity subject | `StatelessCommandUnsupported` | No form: entity-core decides over one entity instance and has no stateless decision |
 | one command over several entities | `CommandSpansEntities` | No form: an operation belongs to one entity definition |
@@ -109,8 +111,8 @@ A harness matches on the code. The construct is the one a diagnostic under that 
 | `SilentPreserveUnsupported` | `preserves:` with no response | An accepting outcome keeps its row and has nothing to show for it. |
 | `TargetDefinitionRefused` | Entity Runtime definition validation | Entity Runtime refused a lowered definition, or two lowerings of one input differ. |
 | `TextOrderingUnsupported` | `<`, `<=`, `>`, `>=` over text | A guard orders text. |
-| `AlphabetUnsupported` | `alphabet:` on a response field | A response field's type declares an alphabet. |
-| `TextLengthUnsupported` | `.count` of a text in a list or map element or a union payload | A predicate reads the length of a text in a list or map element or a union payload. |
+| `AlphabetUnsupported` | `alphabet:` on a response field | A response field's type declares an alphabet, a literal written into a field holds a character outside its alphabet, or nested alphabets share no character. |
+| `TextLengthUnsupported` | `.count` of a text through a quantifier element or a union payload | A predicate reads the length of a text through a quantifier element or a union payload. |
 | `ValueExpressionUnsupported` | a value expression | A `sets:` or `payload:` source reads the subject or another row, increments, falls back, or nests. |
 | `CaseFoldUnsupported` | `equals_ignore_case`, `in_ignore_case` | A guard compares text without ASCII case. |
 | `OutcomeShapeUnsupported` | an ess/15 outcome shape | An outcome is an `unknown_instance:` refusal, deletes, creates `into:` a state, or accepts nothing. |

@@ -357,6 +357,126 @@ fn a_missing_definition_version_does_not_hide_an_alphabet() {
     assert_constructs_are_catalogued(&diagnostics);
 }
 
+/// `contract.local.Shared` over the alphabet `kep xactly`.
+const SHARED_ALPHABET: (&str, &str, &str) = (
+    "domains/local.yaml",
+    "  - name: contract.local.Shared\n    kind: newtype\n    of: String\n",
+    "  - name: contract.local.Shared\n    kind: newtype\n    of: String\n    alphabet: \"kep xactly\"\n",
+);
+
+/// `contract.local.ChildId` as a text over lowercase hexadecimal digits and `-`.
+const CHILD_ID_ALPHABET: (&str, &str, &str) = (
+    "domains/local.yaml",
+    "  - name: contract.local.ChildId\n    kind: newtype\n    of: Uuid\n",
+    "  - name: contract.local.ChildId\n    kind: newtype\n    of: String\n    alphabet: \"0123456789abcdef-\"\n",
+);
+
+/// ESS holds a literal to a declared prefix and to an enum's variants, not to an alphabet. Every
+/// place the lowering writes a text literal into a field entity-core validates — an update's
+/// `sets:`, a creation's `sets:`, a creation's identity — refuses one with a character outside the
+/// field's alphabet by name; the same literal inside the alphabet lowers.
+#[test]
+fn a_literal_outside_its_fields_alphabet_is_refused_by_name_wherever_it_is_written() {
+    let refused_literals =
+        |outcomes: &str, extra: &[(&'static str, &'static str, &'static str)]| {
+            refused(&with_command("Tune", outcomes, extra))
+                .into_iter()
+                .filter(|diagnostic| diagnostic.code == LoweringCode::AlphabetUnsupported)
+                .map(|diagnostic| (diagnostic.path, diagnostic.construct))
+                .collect::<Vec<_>>()
+        };
+    let construct = "a text literal written outside its field's `alphabet:`";
+    assert_eq!(
+        refused_literals(
+            &update("tuned", "          note: \"kept!\"\n"),
+            &[SHARED_ALPHABET]
+        ),
+        [("contract.local.Tune.tuned.note".to_owned(), construct)],
+        "an update's `sets:`"
+    );
+    assert_eq!(
+        refused_literals(
+            &CREATE.replace("note: input.note", "note: \"kept!\""),
+            &[SHARED_ALPHABET, STORED]
+        ),
+        [("contract.local.Tune.made.note".to_owned(), construct)],
+        "a creation's `sets:`"
+    );
+    assert_eq!(
+        refused_literals(
+            &CREATE.replace("{child_id: input.child_id}", "{child_id: \"kept!\"}"),
+            &[CHILD_ID_ALPHABET, STORED]
+        ),
+        [("contract.local.Tune.made.identity".to_owned(), construct)],
+        "a creation's identity"
+    );
+    assert_eq!(
+        refused_literals(
+            &update("tuned", "          note: \"kept\"\n"),
+            &[SHARED_ALPHABET]
+        ),
+        Vec::<(String, &str)>::new(),
+        "a literal inside the alphabet"
+    );
+}
+
+/// Four nested alphabets that overlap pairwise, `abc` over `ac` over `bc` over `ab`, share no
+/// character: `ac` empties the intersection. Every string the type reaches is refused by name once,
+/// by the layer that empties it, naming the layers, and nothing reaches entity-core's own refusal
+/// of an empty alphabet.
+#[test]
+fn alphabets_that_share_no_character_are_refused_by_name_once_per_string() {
+    let ir = with_command(
+        "Plain",
+        &update("touched", "          note: input.note\n"),
+        &[(
+            "domains/local.yaml",
+            "  - name: contract.local.Shared\n    kind: newtype\n    of: String\n",
+            "  - name: contract.local.Base\n    kind: newtype\n    of: String\n    alphabet: \"ab\"\n\n  - name: contract.local.Middle\n    kind: newtype\n    of: contract.local.Base\n    alphabet: \"bc\"\n\n  - name: contract.local.Inner\n    kind: newtype\n    of: contract.local.Middle\n    alphabet: \"ac\"\n\n  - name: contract.local.Shared\n    kind: newtype\n    of: contract.local.Inner\n    alphabet: \"abc\"\n",
+        )],
+    );
+    let diagnostics = refused(&ir);
+    assert_eq!(
+        count(&diagnostics, LoweringCode::TargetDefinitionRefused),
+        0,
+        "{diagnostics:#?}"
+    );
+    let empty = diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == LoweringCode::AlphabetUnsupported)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        empty
+            .iter()
+            .map(|diagnostic| diagnostic.path.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "contract.local.Child.fields.note",
+            "contract.local.Plain.input.note",
+            "contract.local.Run.input.note"
+        ],
+        "{diagnostics:#?}"
+    );
+    for diagnostic in empty {
+        assert_eq!(
+            diagnostic.construct,
+            "nested `alphabet:`s that share no character"
+        );
+        for layer in [
+            "contract.local.Inner",
+            "contract.local.Middle",
+            "contract.local.Base",
+        ] {
+            assert!(diagnostic.message.contains(layer), "{diagnostic:?}");
+        }
+        assert!(
+            diagnostic.message.contains("share no character"),
+            "{diagnostic:?}"
+        );
+    }
+    assert_constructs_are_catalogued(&diagnostics);
+}
+
 /// A set outcome's own `sets:` and `{count: changed}` are part of the set effect, which is refused
 /// once; they are not refused again on their own.
 #[test]

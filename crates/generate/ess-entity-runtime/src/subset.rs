@@ -70,9 +70,11 @@ pub(crate) const SILENT_PRESERVE: &str = "`preserves:` with no response";
 pub(crate) const TEXT_ORDERING: &str = "`<`, `<=`, `>`, `>=` over text";
 pub(crate) const ALPHABET: &str = "`alphabet:`";
 pub(crate) const ALPHABET_RESPONSE: &str = "`alphabet:` on a response field";
+pub(crate) const ALPHABET_LITERAL: &str = "a text literal written outside its field's `alphabet:`";
+pub(crate) const ALPHABET_EMPTY: &str = "nested `alphabet:`s that share no character";
 pub(crate) const TEXT_COUNT: &str = "`.count` of a text";
 pub(crate) const TEXT_COUNT_UNTYPED: &str =
-    "`.count` of a text in a list or map element or a union payload";
+    "`.count` of a text through a quantifier element or a union payload";
 pub(crate) const SUBJECT_VALUE: &str = "`{subject: …}`";
 pub(crate) const INCREMENT: &str = "`{increment: …}`";
 pub(crate) const FALLBACK: &str = "`{input: …, else: …}`";
@@ -340,6 +342,30 @@ pub const CONSTRUCTS: &[Construct] = &[
         &[
             "tests/lowering.rs::an_alphabet_on_a_declared_response_field_is_refused_by_name",
             "tests/lowerable_subset.rs::a_missing_definition_version_does_not_hide_an_alphabet",
+        ],
+    ),
+    refused(
+        ALPHABET_LITERAL,
+        LoweringCode::AlphabetUnsupported,
+        Needs::NoTarget(
+            "ESS admits the literal and entity-core refuses the row it writes on every request; \
+             the specification has to hold the literal to the alphabet",
+        ),
+        &[
+            "tests/lowerable_subset.rs::a_literal_outside_its_fields_alphabet_is_refused_by_name_wherever_it_is_written",
+            "tests/adversary_alphabet_count_pass1.rs::adv_a_sets_literal_outside_the_alphabet_does_not_lower_to_a_creation_entity_core_always_refuses",
+        ],
+    ),
+    refused(
+        ALPHABET_EMPTY,
+        LoweringCode::AlphabetUnsupported,
+        Needs::EntityCore(
+            "an alphabet with no characters, which it refuses at registration; only the empty \
+             text is a value",
+        ),
+        &[
+            "tests/lowerable_subset.rs::alphabets_that_share_no_character_are_refused_by_name_once_per_string",
+            "tests/adversary_alphabet_count_pass1.rs::adv_alphabets_that_overlap_pairwise_and_share_no_character_are_not_a_target_definition_refusal",
         ],
     ),
     refused(
@@ -772,12 +798,13 @@ impl LoweringCode {
             Self::AlphabetUnsupported => (
                 "AlphabetUnsupported",
                 ALPHABET_RESPONSE,
-                "A response field's type declares an alphabet.",
+                "A response field's type declares an alphabet, a literal written into a field \
+                 holds a character outside its alphabet, or nested alphabets share no character.",
             ),
             Self::TextLengthUnsupported => (
                 "TextLengthUnsupported",
                 TEXT_COUNT_UNTYPED,
-                "A predicate reads the length of a text in a list or map element or a union \
+                "A predicate reads the length of a text through a quantifier element or a union \
                  payload.",
             ),
             Self::ValueExpressionUnsupported => (
