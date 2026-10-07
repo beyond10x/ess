@@ -41,7 +41,7 @@ use serde_json::{Map, Number, Value};
 use sha2::{Digest, Sha256};
 
 /// The exact Entity Runtime source revision this projector targets.
-pub const ENTITY_RUNTIME_REVISION: &str = "4746bd7cc37d27c7cc5815c44a62a96f3ddc1f44";
+pub const ENTITY_RUNTIME_REVISION: &str = "a6dad5c075d4ab781034ed95bf220bd4d2911871";
 
 /// Caller-owned coordinates which ESS does not encode itself.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -452,12 +452,18 @@ pub enum LoweringCode {
     /// A typed guard orders text (`<`, `<=`, `>`, `>=` over a string), which ESS orders by its UTF-8
     /// bytes and entity-core has no operator for.
     TextOrderingUnsupported,
-    /// A newtype declares an alphabet (ess/11), and entity-core has no condition that iterates the
-    /// characters of a text.
+    /// An alphabet (ess/11) entity-core cannot hold as ESS does: on a declared response field,
+    /// which entity-core admits and does not enforce because a response is not checked against its
+    /// declared schema; under a text literal written into a field, which ESS admits and entity-core
+    /// refuses on every write; or as nested alphabets that share no character, which intersect to
+    /// an empty alphabet entity-core refuses. Every other string a lowered alphabet reaches is
+    /// checked.
     AlphabetUnsupported,
-    /// A predicate reads the length of a text (`keys.count` over a `String`, ess/11), and
-    /// entity-core resolves `count` on arrays and maps only, so the lowered rule would be
-    /// `Unknown` for every row.
+    /// A predicate reads the length of a text (`keys.count` over a `String`, ess/11) through a
+    /// quantifier element or a union payload. entity-core's run-time walk reads those without the
+    /// declaration that makes the value a text, so it refuses the address at registration (an
+    /// element) or resolves it to nothing (a union payload). A text length it reaches from a schema
+    /// root, through members and list ordinals, lowers to `<path>.count`.
     TextLengthUnsupported,
     /// A `payload:` or `sets:` source reads the subject, increments, falls back to a generated value
     /// or nests (ess/14), and entity-core has no value expression for it.
@@ -618,6 +624,58 @@ struct CreationOutcomeIdentity {
     mapping: Option<ResolvedPayloadField>,
 }
 
+/// Where a predicate's base sits on entity-core's run-time walk, which reads a text's length only
+/// where it carries the declaration that makes the value a text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Reach {
+    /// A declared field or member reached from a schema root, through members and list ordinals:
+    /// `<path>.count` on a text resolves.
+    Root,
+    /// The element a nominal rule's quantifier ranges over (a list item or a map value), read
+    /// through its binder: entity-core refuses a text length there at registration.
+    Element,
+    /// A union's payload: the walk continues untyped past the content key, so a text length
+    /// resolves to nothing.
+    UnionPayload,
+}
+
+impl Reach {
+    /// What a text length read here sits inside, or `None` where entity-core addresses it.
+    fn untyped(self) -> Option<&'static str> {
+        match self {
+            Self::Root => None,
+            Self::Element => Some("a quantifier element"),
+            Self::UnionPayload => Some("a union payload"),
+        }
+    }
+
+    /// `inner`, entered from here: the outermost position that loses the declaration is kept.
+    fn within(self, inner: Self) -> Self {
+        if self == Self::Root {
+            inner
+        } else {
+            self
+        }
+    }
+}
+
+/// How a nominal rule's base is reached: through an `Optional`, and where on the run-time walk.
+#[derive(Debug, Clone, Copy)]
+struct Placement {
+    optional: bool,
+    reach: Reach,
+}
+
+impl Placement {
+    /// A field of the entity's own schema.
+    fn root(optional: bool) -> Self {
+        Self {
+            optional,
+            reach: Reach::Root,
+        }
+    }
+}
+
 impl Projector<'_> {
     fn diagnostic(
         &mut self,
@@ -644,13 +702,17 @@ impl Projector<'_> {
         });
     }
 
-    /// Refuse every text length `predicate` reads over `fields`: entity-core resolves `count` on
-    /// arrays and maps only, so a lowered `keys.count` would be `Unknown` for every row. Lifting
-    /// it needs an entity-core length address (`docs/design/string-alphabet-and-length.md`,
-    /// section 8).
+    /// Refuse every text length `predicate` reads over `fields` that entity-core cannot address.
+    /// entity-core 0.27.0 reads `<path>.count` on a declared `string` only along its run-time walk
+    /// from a schema root, which carries each field's declaration through members and list
+    /// ordinals. A read rooted in a quantifier's binder, or a predicate whose base sits at `reach`
+    /// in a quantifier element or a union payload, is read without it: an element's length is
+    /// refused at registration and a union payload's resolves to nothing
+    /// (`docs/design/string-alphabet-and-length.md`, section 6).
     ///
     /// A `when_subject` predicate's `input.<field>` reads (beyond10x/ess#157) are resolved over
-    /// `input`, so `input.note.count` is refused like `note.count`.
+    /// `input`, so `input.note.count` lowers to `$args.input.note.count` like `note.count` to
+    /// `$fields.note.count`.
     ///
     /// Every lowered predicate site passes through here, so the case-insensitive operators
     /// (beyond10x/ess#140) are refused here too: entity-core has no condition that folds case.
@@ -660,6 +722,7 @@ impl Projector<'_> {
         input: Option<&[ResolvedField]>,
         predicate: &Predicate,
         at: &str,
+        reach: Reach,
     ) {
         for window in predicate.windows() {
             self.diagnostic(
@@ -735,13 +798,22 @@ impl Projector<'_> {
             );
         }
         for read in checked.reads {
-            if read.resolution.access.text_length {
+            if !read.resolution.access.text_length {
+                continue;
+            }
+            let inside = if read.free {
+                reach.untyped()
+            } else {
+                Some("a quantifier element")
+            };
+            if let Some(inside) = inside {
                 self.diagnostic(
                     LoweringCode::TextLengthUnsupported,
                     at,
                     format!(
-                        "`{}` reads the length of a text, which Entity Runtime has no address \
-                         for; a lowered rule would be Unknown for every row",
+                        "`{}` reads the length of a text inside {inside}, which Entity Runtime \
+                         reads without the declaration that makes it a text; it has no address \
+                         for that length",
                         read.path
                     ),
                 );
@@ -780,7 +852,7 @@ impl Projector<'_> {
                     );
                 }
                 let input = (!site.input.is_empty()).then_some(site.input.as_slice());
-                self.refuse_text_lengths(&site.fields, input, site.predicate, &at);
+                self.refuse_text_lengths(&site.fields, input, site.predicate, &at, Reach::Root);
             }
         }
     }
@@ -869,7 +941,7 @@ impl Projector<'_> {
             self.lower_nominal_invariants(
                 &entity.identity.type_ref,
                 &format!("$fields.{}", entity.identity.name),
-                false,
+                Placement::root(false),
                 &format!("{}.fields.{}", name, entity.identity.name),
                 &mut Vec::new(),
                 &mut invariants,
@@ -878,7 +950,7 @@ impl Projector<'_> {
                 self.lower_nominal_invariants(
                     &field.type_ref,
                     &format!("$fields.{}", field.name),
-                    field.type_ref.is_optional(),
+                    Placement::root(field.type_ref.is_optional()),
                     &format!("{}.fields.{}", name, field.name),
                     &mut Vec::new(),
                     &mut invariants,
@@ -1065,14 +1137,58 @@ impl Projector<'_> {
                 active.push(qualified.clone());
                 let resolved = self.service.source().named_type(name);
                 let field = match &resolved.body {
-                    ResolvedBody::Newtype { of, .. } => self.lower_field_inner(
-                        of,
-                        required,
-                        location,
-                        path,
-                        member_position,
-                        active,
-                    ),
+                    ResolvedBody::Newtype { of, alphabet, .. } => {
+                        let mut field = self.lower_field_inner(
+                            of,
+                            required,
+                            location,
+                            path,
+                            member_position,
+                            active,
+                        );
+                        if alphabet.is_some() {
+                            // The outer layer's characters every inner layer also holds, in the
+                            // outer layer's order (`docs/design/string-alphabet-and-length.md`,
+                            // section 1). Each refusal is made once per string, by the layer that
+                            // first declares an alphabet or first empties the intersection.
+                            let inner = self.effective_alphabet_of(of);
+                            let effective = self.effective_alphabet_of(type_ref);
+                            if inner.is_none()
+                                && matches!(location, SemanticLocation::CommandResponse { .. })
+                            {
+                                self.diagnostic(
+                                    LoweringCode::AlphabetUnsupported,
+                                    path,
+                                    format!(
+                                        "`{qualified}` declares an alphabet on a response field, \
+                                         which Entity Runtime admits and does not enforce: a \
+                                         response is not checked against its declared schema"
+                                    ),
+                                );
+                            }
+                            if effective.as_deref() == Some("") && inner.as_deref() != Some("") {
+                                let layers = self
+                                    .alphabet_layers(type_ref)
+                                    .iter()
+                                    .map(|(name, alphabet)| format!("`{name}` ({alphabet:?})"))
+                                    .collect::<Vec<_>>()
+                                    .join(", ");
+                                self.diagnostic_naming(
+                                    LoweringCode::AlphabetUnsupported,
+                                    subset::ALPHABET_EMPTY,
+                                    path,
+                                    format!(
+                                        "the alphabets of {layers} share no character, so the \
+                                         empty text is the one value: Entity Runtime refuses an \
+                                         empty alphabet, and ESS's own witness has no value for \
+                                         one"
+                                    ),
+                                );
+                            }
+                            field.alphabet = effective.filter(|alphabet| !alphabet.is_empty());
+                        }
+                        field
+                    }
                     ResolvedBody::Struct { fields, .. } => {
                         let mut properties = BTreeMap::new();
                         for field in fields {
@@ -1166,14 +1282,25 @@ impl Projector<'_> {
         &mut self,
         type_ref: &ResolvedTypeRef,
         base: &str,
-        optional: bool,
+        placement: Placement,
         semantic_path: &str,
         active: &mut Vec<QualifiedName>,
         out: &mut Vec<RuleDefinition>,
     ) {
+        let Placement { optional, reach } = placement;
         match type_ref {
             ResolvedTypeRef::Optional { of } => {
-                self.lower_nominal_invariants(of, base, true, semantic_path, active, out);
+                self.lower_nominal_invariants(
+                    of,
+                    base,
+                    Placement {
+                        optional: true,
+                        reach,
+                    },
+                    semantic_path,
+                    active,
+                    out,
+                );
             }
             ResolvedTypeRef::List { of } | ResolvedTypeRef::Map { value: of, .. } => {
                 let binder = format!("item{:04}", out.len());
@@ -1181,7 +1308,10 @@ impl Projector<'_> {
                 self.lower_nominal_invariants(
                     of,
                     &format!("${binder}"),
-                    false,
+                    Placement {
+                        optional: false,
+                        reach: reach.within(Reach::Element),
+                    },
                     semantic_path,
                     active,
                     out,
@@ -1211,11 +1341,13 @@ impl Projector<'_> {
                 active.push(qualified);
                 let resolved = self.service.source().named_type(name);
                 match &resolved.body {
+                    // An alphabet is no rule: it is the `alphabet` key of the field it reaches
+                    // (`lower_field_inner`).
                     ResolvedBody::Newtype {
                         of,
-                        alphabet,
                         prefix,
                         invariants,
+                        ..
                     } => {
                         // A declared prefix is `value starts_with <prefix>`, which entity-core
                         // has an operator for (beyond10x/ess#146).
@@ -1245,17 +1377,6 @@ impl Projector<'_> {
                                 message: Some(format!("value starts with {prefix:?}")),
                             });
                         }
-                        if alphabet.is_some() {
-                            self.diagnostic(
-                                LoweringCode::AlphabetUnsupported,
-                                semantic_path,
-                                format!(
-                                    "`{}` declares an alphabet, and Entity Runtime has no condition \
-                                     that iterates the characters of a text",
-                                    resolved.name
-                                ),
-                            );
-                        }
                         let value = [ResolvedField {
                             name: ess_domain::NamedType::VALUE.to_owned(),
                             type_ref: of.clone(),
@@ -1267,6 +1388,7 @@ impl Projector<'_> {
                                 None,
                                 &invariant.predicate,
                                 semantic_path,
+                                reach,
                             );
                         }
                         for (index, invariant) in invariants.iter().enumerate() {
@@ -1293,7 +1415,7 @@ impl Projector<'_> {
                         self.lower_nominal_invariants(
                             of,
                             base,
-                            optional,
+                            placement,
                             semantic_path,
                             active,
                             out,
@@ -1306,6 +1428,7 @@ impl Projector<'_> {
                                 None,
                                 &invariant.predicate,
                                 semantic_path,
+                                reach,
                             );
                         }
                         for (index, invariant) in invariants.iter().enumerate() {
@@ -1333,7 +1456,10 @@ impl Projector<'_> {
                             self.lower_nominal_invariants(
                                 &field.type_ref,
                                 &format!("{base}.{}", field.name),
-                                optional || field.type_ref.is_optional(),
+                                Placement {
+                                    optional: optional || field.type_ref.is_optional(),
+                                    reach,
+                                },
                                 &format!("{semantic_path}.{}", field.name),
                                 active,
                                 out,
@@ -1349,7 +1475,10 @@ impl Projector<'_> {
                             self.lower_nominal_invariants(
                                 shape,
                                 &format!("{base}.{content}"),
-                                false,
+                                Placement {
+                                    optional: false,
+                                    reach: reach.within(Reach::UnionPayload),
+                                },
                                 &format!("{semantic_path}.{variant}"),
                                 active,
                                 out,
@@ -2093,12 +2222,17 @@ impl Projector<'_> {
                 target_type,
                 ..
             }) => {
-                match self.literal(
-                    target_type,
-                    value,
-                    &format!("{}.{}.identity", command.name, outcome.name.as_str()),
-                ) {
-                    Some(value) => IdentityValue::Literal { value },
+                let path = format!("{}.{}.identity", command.name, outcome.name.as_str());
+                match self.literal(target_type, value, &path) {
+                    Some(value) => {
+                        // The literal is written into the identity field as well as the event.
+                        self.refuse_literal_outside_alphabet(
+                            &entity.identity.type_ref,
+                            &value,
+                            &path,
+                        );
+                        IdentityValue::Literal { value }
+                    }
                     None => IdentityValue::Literal { value: Value::Null },
                 }
             }
@@ -2975,22 +3109,23 @@ impl Projector<'_> {
                     })
                 }
             }
-            ResolvedPayloadValue::Literal { value } => self
-                .literal(
-                    &mapping.target_type,
-                    value,
-                    &format!(
-                        "{}.{}.{}",
-                        command.name,
-                        outcome.name.as_str(),
-                        mapping.target
-                    ),
-                )
-                .map(escape_template_literal)
-                .map(|value| ProducedValue {
-                    kind: ProducedValueKind::Always(value),
+            ResolvedPayloadValue::Literal { value } => {
+                let path = format!(
+                    "{}.{}.{}",
+                    command.name,
+                    outcome.name.as_str(),
+                    mapping.target
+                );
+                let value = self.literal(&mapping.target_type, value, &path)?;
+                // A stored field is validated as it is written; an event payload has no schema.
+                if matches!(target, BoundTarget::EntityField { .. }) {
+                    self.refuse_literal_outside_alphabet(&mapping.target_type, &value, &path);
+                }
+                Some(ProducedValue {
+                    kind: ProducedValueKind::Always(escape_template_literal(value)),
                     slot: None,
-                }),
+                })
+            }
             ResolvedPayloadValue::ResponseField { field, type_ref }
                 if mapping.conversion.is_none() =>
             {
@@ -3106,6 +3241,74 @@ impl Projector<'_> {
                     })
                 }
             }
+        }
+    }
+
+    /// The alphabets a newtype chain declares, outermost first, each with the type declaring it.
+    /// Empty for a type that is not a newtype, and for a chain that declares none.
+    fn alphabet_layers(&self, type_ref: &ResolvedTypeRef) -> Vec<(QualifiedName, String)> {
+        let mut layers = Vec::new();
+        let mut seen = BTreeSet::new();
+        let mut current = type_ref;
+        loop {
+            match current {
+                ResolvedTypeRef::Optional { of } => current = of,
+                ResolvedTypeRef::Declared { name } if seen.insert(name.name().clone()) => {
+                    let declared = self.service.source().named_type(name);
+                    let ResolvedBody::Newtype { of, alphabet, .. } = &declared.body else {
+                        break;
+                    };
+                    if let Some(alphabet) = alphabet {
+                        layers.push((declared.name.clone(), alphabet.clone()));
+                    }
+                    current = of;
+                }
+                _ => break,
+            }
+        }
+        layers
+    }
+
+    /// The characters every value of `type_ref` is drawn from: the intersection of its newtype
+    /// chain's alphabets in the outer one's order, as ESS reads it
+    /// (`ess_domain::types::effective_alphabet`). `None` when no layer declares one.
+    fn effective_alphabet_of(&self, type_ref: &ResolvedTypeRef) -> Option<String> {
+        let layers = self.alphabet_layers(type_ref);
+        ess_domain::types::effective_alphabet(layers.iter().map(|(_, alphabet)| alphabet.as_str()))
+    }
+
+    /// Refuse a text literal the lowering writes into a field whose effective alphabet does not hold
+    /// each of its characters. ESS holds a literal to a declared prefix and to an enum's variants,
+    /// not to an alphabet, so it admits one; entity-core validates the row it is about to write, so
+    /// the lowered branch would fail on every request ESS takes it for.
+    fn refuse_literal_outside_alphabet(
+        &mut self,
+        type_ref: &ResolvedTypeRef,
+        literal: &Value,
+        path: &str,
+    ) {
+        let Value::String(text) = literal else {
+            return;
+        };
+        let Some(alphabet) = self.effective_alphabet_of(type_ref) else {
+            return;
+        };
+        if let Some((index, character)) = text
+            .chars()
+            .enumerate()
+            .find(|(_, character)| !alphabet.contains(*character))
+        {
+            self.diagnostic_naming(
+                LoweringCode::AlphabetUnsupported,
+                subset::ALPHABET_LITERAL,
+                path,
+                format!(
+                    "the literal {text:?} writes {character:?} (position {}) into a field whose \
+                     alphabet is {alphabet:?}; Entity Runtime validates the row it writes, so the \
+                     branch would fail on every request",
+                    index + 1
+                ),
+            );
         }
     }
 

@@ -439,8 +439,8 @@ dependencies = [
 
 [[package]]
 name = "entity-core"
-version = "0.24.1"
-source = "git+https://github.com/beyond10x/entity-runtime?tag=0.24.1#4746bd7cc37d27c7cc5815c44a62a96f3ddc1f44"
+version = "0.28.0"
+source = "git+https://github.com/beyond10x/entity-runtime?tag=0.28.0#a6dad5c075d4ab781034ed95bf220bd4d2911871"
 dependencies = [
  "serde",
  "serde_json",
