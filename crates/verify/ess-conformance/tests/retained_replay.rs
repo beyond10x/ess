@@ -581,7 +581,9 @@ fn external_stale_synthesis() -> ess_conformance::synthesize::Synthesis {
     let model = include_str!("fixtures/retained-commit.yaml");
     let start = model.find("  - name: retained.core.Stale\n").unwrap();
     let end = model.find("  - name: retained.core.Commit\n").unwrap();
-    let model = format!("{}{}", &model[..start], &model[end..]).replace("      - name: replayed\n", "      - name: stale\n        external: canonical head advanced\n        moves: retained.core.Transaction.stale\n        instance: transaction_id\n        emits: [retained.core.Changed]\n      - name: replayed\n");
+    // After both held-state branches: validation refuses an external branch declared above one
+    // (beyond10x/ess#486).
+    let model = format!("{}{}", &model[..start], &model[end..]).replace("      - name: refused\n        error: retained.core.TransactionStateConflict\n", "      - name: stale\n        external: canonical head advanced\n        moves: retained.core.Transaction.stale\n        instance: transaction_id\n        emits: [retained.core.Changed]\n      - name: refused\n        error: retained.core.TransactionStateConflict\n");
     let spec = Specification::assemble([(
         Source::new("external-stale.yaml"),
         RawSpecFile::parse(&model).unwrap(),

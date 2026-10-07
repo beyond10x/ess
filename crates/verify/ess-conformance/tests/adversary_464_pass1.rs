@@ -17,7 +17,9 @@
 //! unit's own tests do.
 //!
 //! `when_subject_state:` beside `when_subject:`, `when_subject_state:` beside `when_related:`, and
-//! `wrong_state:` beside `when_subject_state:` are refused by validation, so no case builds them.
+//! `wrong_state:` beside `when_subject_state:` are refused by validation, so no case builds them;
+//! nor, since beyond10x/ess#486, a held-state branch declared after the external, which case 7
+//! holds to that refusal.
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
@@ -570,23 +572,26 @@ fn adversary_464_external_guard_overlapping_held_sibling_is_refused_by_name() {
 
 // ---- 7. an accepting `when_subject` declared after the external ----------------------------------
 
+/// Validation refuses this order (beyond10x/ess#486): `same` is selected by the held state, which
+/// answers before the external branch declared above it.
 #[test]
-fn adversary_464_accepting_when_subject_after_external_is_refuted_or_named() {
+fn adversary_464_accepting_when_subject_after_external_is_refused_by_validation() {
     let text = replaced(
         MODEL,
         "      - name: accepted\n        moves: demo.desk.Pick.accept\n",
         "      - name: same\n        when_subject:\n          predicate: revision == input.revision\n        moves: demo.desk.Pick.accept\n        instance: pick_id\n        emits: [demo.desk.PickAccepted]\n        payload:\n          demo.desk.PickAccepted: {pick_id: input.pick_id}\n      - name: accepted\n        moves: demo.desk.Pick.accept\n",
     );
-    let result = assert_reference_passes("same", &text);
-    let id = "demo.desk.CheckPick/outcome/unlisted";
-    let refused = refusal_of(&result, id);
+    let raw = RawSpecFile::parse(&text).unwrap_or_else(|error| panic!("{error}\n{text}"));
+    let errors = Specification::assemble(vec![(Source::new("model.yaml"), raw)]).map_or_else(
+        |errors| errors.to_string(),
+        |_| panic!("the model validates:\n{text}"),
+    );
     assert!(
-        !ids(&result).contains(&id.to_owned())
-            && refused
-                .as_ref()
-                .is_some_and(|text| text.contains("`stale`") && text.contains("`same`")),
-        "every row and input is claimed by `stale` or `same`, so {id} is refused naming both: \
-         {refused:?}"
+        errors.contains(
+            "`same` is selected by the held state, which answers before the external branch \
+             `unlisted` declared above it"
+        ),
+        "{errors}"
     );
 }
 

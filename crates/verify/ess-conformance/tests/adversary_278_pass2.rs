@@ -275,13 +275,16 @@ fn adversary_278_p2_a_truthy_text_guard_is_not_alike_a_nonempty_one() {
 /// fixed for a required enum.
 #[test]
 fn adversary_278_p2_an_equivalent_twin_over_an_optional_input_is_not_listed() {
-    let text = pinned(&spec(
+    // `held-for-rollback` before `promoted`: over an `Optional` input the finite prover does not
+    // show `result == Regression` and `result in [Healthy]` disjoint, and validation refuses a
+    // held-state branch after an accepting one it may overlap (beyond10x/ess#486).
+    let text = rollback_first(&pinned(&spec(
         "Optional<demo.rollout.Result>",
         &[
             branch(HELD, "result == Healthy"),
             branch(PROMOTED, "{result: [Healthy]}"),
         ],
-    ));
+    )));
     let result = synthesize(&ir(&text));
     let contradictions: Vec<String> = refusals(&result)
         .into_iter()
@@ -315,12 +318,11 @@ fn adversary_278_p2_an_earlier_twin_selected_on_no_row_is_not_named_the_cause() 
     );
 }
 
-/// `noted` (accepting) declared before the mixed branch and `refused` (an input-guarded refusal)
-/// after it, all three `result == Healthy`. Input-guarded refusals answer before any accepting
-/// branch whatever the order (step 2 before step 5), so every such input is taken first by
-/// `refused`, and by nothing else.
+/// `noted` (accepting) declared before the mixed branch, both `result == Healthy`, is refused by
+/// validation (beyond10x/ess#486): the held state selects `held-for-promotion` first in either
+/// order.
 #[test]
-fn adversary_278_p2_a_refusal_is_named_before_an_earlier_accepting_twin() {
+fn adversary_278_p2_an_earlier_accepting_twin_is_refused_by_validation() {
     let text = spec(
         "demo.rollout.Result",
         &[
@@ -329,11 +331,37 @@ fn adversary_278_p2_a_refusal_is_named_before_an_earlier_accepting_twin() {
             branch(REFUSED, "result == Healthy"),
         ],
     );
-    let result = synthesize(&ir(&text));
-    let held = refusal_of(&result, HELD_REFUSES);
-    assert_eq!(
-        taken_by(&held),
-        vec!["refused".to_owned()],
-        "the refusal answers every `result == Healthy` input first: {held}"
+    let raw = RawSpecFile::parse(&text).unwrap_or_else(|error| panic!("{error}\n{text}"));
+    let errors = Specification::assemble([(Source::new("rollout.yaml"), raw)]).map_or_else(
+        |errors| errors.to_string(),
+        |_| panic!("the model validates:\n{text}"),
     );
+    assert!(
+        errors.contains(
+            "`held-for-promotion` is selected by the held state, which answers before the \
+             accepting branch `noted` declared above it"
+        ),
+        "{errors}"
+    );
+}
+
+/// `text` with `held-for-rollback` declared before `held-for-promotion`.
+fn rollback_first(text: &str) -> String {
+    let held = text
+        .find("      - name: held-for-promotion\n")
+        .expect("`held-for-promotion` is declared");
+    let rollback = text
+        .find("      - name: held-for-rollback\n")
+        .expect("`held-for-rollback` is declared");
+    let rolled_back = text
+        .find("      - name: rolled-back\n")
+        .expect("`rolled-back` is declared");
+    assert!(held < rollback && rollback < rolled_back);
+    format!(
+        "{}{}{}{}",
+        &text[..held],
+        &text[rollback..rolled_back],
+        &text[held..rollback],
+        &text[rolled_back..]
+    )
 }

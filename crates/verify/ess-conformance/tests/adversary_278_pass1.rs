@@ -653,24 +653,24 @@ fn adversary_278_an_equivalent_twin_is_synthesized_and_passes() {
     assert_eq!(not_passed(&run(&result, &target)), Vec::<String>::new());
 }
 
-/// `noted` declared *before* the mixed branch takes every `Healthy` input, so `Held`'s refusal
-/// through `held-for-promotion` is refused. The diagnostic must not say the search needed a row
-/// holding the mixed branch's stored guard: such a row exists in every state (no deployment is
-/// pinned here), and what no candidate could do is refute `noted`. Dropping the equal twin from
-/// `none of:` and naming the row instead hides that.
+/// `noted` declared *before* the mixed branch, with the same input guard, is refused by validation
+/// (beyond10x/ess#486): the held state selects `held-for-promotion` first in either order, so no
+/// synthesis is asked to refute `noted` for it.
 #[test]
-fn adversary_278_an_earlier_twin_is_not_reported_as_a_missing_row() {
-    let result = synthesize(&ir(&unpromoted(&spec(&[NOTED, HELD]))));
-    let refused = refusals(&result);
-    let held = refused
-        .iter()
-        .find(|refusal| refusal.starts_with(HELD_REFUSES));
-    if let Some(held) = held {
-        assert!(
-            !held.contains("row in this state holding"),
-            "the refusal blames a row a scenario arranges, not the twin declared first: {held}"
-        );
-    }
+fn adversary_278_an_earlier_twin_is_refused_by_validation() {
+    let source = unpromoted(&spec(&[NOTED, HELD]));
+    let raw = RawSpecFile::parse(&source).unwrap_or_else(|error| panic!("{error}\n{source}"));
+    let errors = Specification::assemble([(Source::new("rollout.yaml"), raw)]).map_or_else(
+        |errors| errors.to_string(),
+        |_| panic!("the model validates:\n{source}"),
+    );
+    assert!(
+        errors.contains(
+            "`held-for-promotion` is selected by the held state, which answers before the \
+             accepting branch `noted` declared above it"
+        ),
+        "{errors}"
+    );
 }
 
 // ---- 3. a suite outside the 209: two input-only twins beside a stored-field branch ------------

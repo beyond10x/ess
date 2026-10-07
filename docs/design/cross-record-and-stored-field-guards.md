@@ -761,6 +761,15 @@ of its own:
    identity no row carries `exists: false`, a stored row its predicate refusal;
 6. accepting and external branches in declaration order (#217).
 
+Validation refuses an accepting or external branch declared before a branch step 4 selects where
+one request can satisfy both input guards (beyond10x/ess#486, `ConflictingDeclaration`, naming
+both). Guards the finite prover shows disjoint may come in either order; a branch with no input
+guard, and a guard the prover declines, counts as overlapping. The model interpreter and the
+Entity Runtime lowering read steps 4 and 6 in one declaration-order pass, and the Rust and Go
+targets emit step 4 first, so a command declared the other way round answered differently on each
+where both guards held. On every command that validates, declaration order gives this order's
+answer for those steps.
+
 There is no cycle: step 1 applies only to `when_related` commands, which Entity Runtime does not
 lower. The kernel half of the order — input refusals decided before any row is loaded, the first
 declared answering — is what Entity Runtime's lowering produces, pinned by
@@ -778,7 +787,8 @@ refusal, no accepting `when:` declared before it, no branch the held state selec
 (`when_subject`, `when_subject_state`, `when_state_changes`) and no `when_related` predicate
 branch on a present related row, the last two whatever their declaration order. Such a witness
 is answered alike under this order and under the model interpreter's, which reads held-state,
-related and external branches in one declaration-order pass. A plain witness nothing claims is
+related and external branches in one declaration-order pass; since beyond10x/ess#486 no external
+branch is declared before a held-state one whose input guard it may share. A plain witness nothing claims is
 kept as it was. An external branch naming no subject of its own is sent naming such a row its
 siblings act on, and a witness found by search is freshened as every plain witness is
 (beyond10x/ess#161). Where no row and input miss every such branch, the scenario is refused naming

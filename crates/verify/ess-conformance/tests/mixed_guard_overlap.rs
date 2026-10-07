@@ -246,21 +246,22 @@ fn issue_278_the_suite_does_not_fail_against_the_interpreter() {
 /// Declared the other way round, `promoted` answers wherever `result == Healthy`, so
 /// `held-for-promotion` is unreachable and is refused rather than witnessed on a row `promoted`
 /// claims.
+/// Declared after its twin, the mixed branch would never be taken under declaration order and
+/// always under the precedence order; validation refuses that order (beyond10x/ess#486).
 #[test]
 fn issue_278_a_mixed_branch_declared_after_its_twin_is_refused() {
-    let result = synthesize(&ir(&swapped(ROLLOUT)));
-    let ids = scenario_ids(&result);
-    assert!(!ids.contains(REQUIRED[0]), "{ids:#?}");
-    let refused = refusals(&result);
-    assert!(
-        refused
-            .iter()
-            .any(|refusal| refusal.starts_with(REQUIRED[0]) && refusal.contains("ESS-SYNTH-003")),
-        "{refused:#?}"
+    let source = swapped(ROLLOUT);
+    let raw = RawSpecFile::parse(&source).unwrap_or_else(|error| panic!("{error}\n{source}"));
+    let errors = Specification::assemble([(Source::new("rollout.yaml"), raw)]).map_or_else(
+        |errors| errors.to_string(),
+        |_| panic!("the model validates:\n{source}"),
     );
     assert!(
-        ids.contains("demo.rollout.RecordResult/outcome/promoted"),
-        "{ids:#?}"
+        errors.contains(
+            "`held-for-promotion` is selected by the held state, which answers before the \
+             accepting branch `promoted` declared above it"
+        ),
+        "{errors}"
     );
 }
 
@@ -304,7 +305,6 @@ fn contradictions(message: &str) -> Vec<String> {
 fn fixture_set() -> Vec<(String, EssIr)> {
     let mut set = vec![
         ("rollout".to_owned(), ir(ROLLOUT)),
-        ("rollout swapped".to_owned(), ir(&swapped(ROLLOUT))),
         ("rollout pinned".to_owned(), ir(&pinned(ROLLOUT))),
     ];
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
