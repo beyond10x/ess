@@ -737,11 +737,14 @@ fn the_gate_check_aggregates_every_lane_and_cannot_be_skipped() {
         );
     }
 
-    // A test shard downloads a 7 GB archive before its first test: on main's 0.53.0 run one
-    // download took 18m42s against a 94 s median, and the shard's own tests take up to 23
-    // minutes. Every other job compiles or checks and stays at 30.
+    // A test shard downloads its archives before its first test: on main's 0.53.0 run one
+    // download took 18m42s against a 94 s median, and on run 37615777010 (2026-10-07) the
+    // downloads of shards 19 and 20 took 1,512 s and 1,730 s, the first reaching its 12-minute
+    // timeout and retrying. The shard's own tests take up to 23 minutes, so 45 minutes left the
+    // retry no room and cancelled two shards near their last test; 70 covers about 29 minutes of
+    // downloads, 23 of tests and the setup. Every other job compiles or checks and stays at 30.
     for id in gated_jobs(&ci) {
-        let bound = if id == "test" { 45 } else { 30 };
+        let bound = if id == "test" { 70 } else { 30 };
         assert_eq!(
             ci["jobs"][id.as_str()]["timeout-minutes"].as_u64(),
             Some(bound),
