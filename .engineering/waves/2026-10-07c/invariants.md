@@ -31,3 +31,6 @@ Read `AGENTS.md` at the worktree root first; it wins over this list.
   or `crates/specify/ess-compiler/src/ir/`. If a fix needs one of them, stop and report it.
 - Disk is shared and tight. Check `df -h /` before every build; under 20G free, stop and report.
   Use `CARGO_INCREMENTAL=0` for every cargo command.
+- While the other session's selection-plan wave 3 runs, also keep off: `crates/generate/ess-entity-runtime/src/lib.rs`;
+  `crates/generate/ess-synth/src/rust/behaviour.rs`, `src/go/behaviour.rs`, `src/determined.rs`, `src/plan.rs`;
+  `crates/specify/ess-domain/src/command/subject_state.rs` and `src/command/related_guard.rs`. If a fix needs one, stop and report it.
