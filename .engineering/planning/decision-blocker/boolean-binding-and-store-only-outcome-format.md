@@ -2,13 +2,15 @@
 format: aep.planning-md/3
 id: decision-blocker:boolean-binding-and-store-only-outcome-format
 kind: decision-blocker
-status: open
+status: cleared
 title: Which source format carries Boolean binding conditions and store-only outcomes?
 relations:
 - blocks: story:binding-conditions-compare-boolean-event-fields
 - blocks: story:an-outcome-that-only-stores-is-observed-through-a-view
 - serves: vision:O2
-revision: 1
+revision: 3
+transitions:
+- {from: "open", to: "cleared", at: "2026-10-07T23:38:48Z", actor: "human:timo", revision: 3}
 ---
 ## Question
 
@@ -25,3 +27,9 @@ from a new format. `release-plan:ess-24-one-language` already holds an unschedul
 | (a) carry both in `ess/24` | both stories move to `release-plan:ess-24-one-language`; 0.57.0 ships gaps 3 and 4 only; the issue is answered with the plan and closed | no format bump in 0.57.0; the two gaps wait for `ess/24` |
 | (b) start `ess/24` in 0.57.0 with these two | 0.57.0 bumps the source format for two constructs | a format bump that the larger `ess/24` scope then extends or bumps again |
 | (c) `ess/23` additive | accept the new keys in `ess/23` | breaks this repository's format rule for a change of meaning |
+
+## Decision
+
+Option (a), 2026-10-07: both stories are carried by `release-plan:ess-24-one-language` with the
+rest of `ess/24`. ESS 0.57.0 ships gap 3 and answers gap 4 with the idiom; the issue is answered
+with this plan and closed.
