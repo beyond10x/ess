@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:selection-plan-design-and-type
 kind: story
-status: active
+status: implemented
 title: A command's branches are ordered by one derived selection plan
 relations:
 - decomposes: epic:one-selection-plan
@@ -10,22 +10,31 @@ relations:
 scope:
 - confidence: cited
   path: crates/specify/ess-compiler/src/ir.rs
-- confidence: inferred
+- confidence: cited
   path: crates/specify/ess-compiler/src/ir/precedence.rs
-- confidence: inferred
+- confidence: cited
   path: crates/specify/ess-compiler/tests/fixtures/selection-precedence-table.tsv
-- confidence: inferred
+- confidence: cited
+  path: crates/specify/ess-compiler/tests/precedence_plan.rs
+- confidence: cited
   path: crates/specify/ess-compiler/tests/selection_precedence_table.rs
 - confidence: cited
   path: crates/specify/ess-domain/src/command.rs
-- confidence: inferred
+- confidence: cited
   path: crates/specify/ess-domain/src/command/precedence.rs
 - confidence: cited
+  path: crates/specify/ess-domain/tests/precedence_classification.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/precedence_plan_answers.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/precedence_plan_override.rs
+- confidence: cited
   path: docs/design/selection-plan.md
-revision: 10
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-07T11:44:27Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":4}}}
 - {from: "proposed", to: "active", at: "2026-10-07T11:44:27Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":4}}}
+- {from: "active", to: "implemented", at: "2026-10-07T13:10:56Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"test_result":1,"review_outcome":6,"verification":1}}}
 ---
 # Story: A command's branches are ordered by one derived selection plan
 
@@ -84,49 +93,53 @@ Any consumer reading the plan: those are the next four stories.
 
 ## Scope
 
-Derived 2026-10-07 by `aep:story-scoper` on `985f58cc3a`. Every line is **cited** (read from the
-story or the tree) or **inferred** (a reading that could be wrong).
+Rewritten 2026-10-07 at wave close from the implementor's confirmation table and the merged diff
+(`6cb4b1dd0`). The scoper's original lines are kept below with each correction stated.
 
-- **Primary surface:** `crates/specify/ess-compiler` (the plan type over `ResolvedCommand`, plus the pinned table test) — inferred
-- **Documents:** `docs/design/selection-plan.md` (new) — cited, story "What it delivers" 1
-- **Files:** `crates/specify/ess-compiler/src/ir/precedence.rs` (new), with `mod` + `pub use` in `ir.rs` beside `mod refusal;` (`ir.rs:91-92`) — inferred
-- **Files:** `crates/specify/ess-domain/src/command/precedence.rs` (new), with one `pub mod` line in `command.rs:205-221` — inferred
-- **Files:** `crates/specify/ess-compiler/tests/selection_precedence_table.rs` + `tests/fixtures/selection-precedence-table.tsv` (new) — inferred
-- **Symbols:** `OutcomeCondition` `ess-domain/src/command.rs:523`; `ResolvedCondition` `ess-compiler/src/ir.rs:590`; `ResolvedCommand` `ir.rs:1693`; `EssIr::to_canonical_json` `ir.rs:3228` — cited
-- **Names taken:** `ess_domain::selection::SelectionPlan` (`selection.rs:233`), carried as IR field `pub plan:` (`ir.rs:2394`) in `ess_compiler::ir::ResolvedSelectionPlan` (`ir.rs:2392`). The new type is neither `SelectionPlan` nor in a `selection` module — cited
-- **Confidence:** medium. Every symbol and consumer site was read; the file placement is a design choice the story leaves open.
-- **Would collide with:** any unit editing `ess-domain/src/command.rs` (PR #487 adds 71 lines there), `ess-compiler/src/ir.rs` near `mod refusal`, or the "precedence order" section of `docs/design/cross-record-and-stored-field-guards.md` (#487 edits it) — cited
-- **Safety fact:** the plan is a method and no `Serialize` type gains a field, so `to_canonical_json` (`ir.rs:3228-3233`) and `to_compact_json`/`source_digest` (`ir.rs:3240-3260`) cannot change — inferred
+### What landed (cited, from the merge)
 
-### Design decisions for the implementor (inferred unless marked)
+- `docs/design/selection-plan.md` (new): eight phases over the six precedence steps, the
+  classification's home, the name, derived-never-serialized, and where the plan's reading and the
+  written precedence pages part.
+- `crates/specify/ess-domain/src/command/precedence.rs` (new): `Phase`, `Rank`, `Place`,
+  `Composition` (with `upsert` and a private `ReadFirst`), `place`, `order`, and the scoped
+  `#[doc(hidden)]` phase-order override; one `pub mod` line in `command.rs`.
+- `crates/specify/ess-compiler/src/ir/precedence.rs` (new): `ess_compiler::ir::PrecedencePlan`,
+  `PlannedPhase`; `mod` + `pub use` in `ir.rs`.
+- Tests: `ess-domain/tests/precedence_classification.rs`,
+  `ess-compiler/tests/precedence_plan.rs`, `ess-compiler/tests/selection_precedence_table.rs` with
+  `tests/fixtures/selection-precedence-table.tsv` (header `models=196 commands=338`), two fixture
+  models (`precedence-upsert-unknown-instance.yaml`, `precedence-row-set-updating-branch.yaml`),
+  `ess-conformance/tests/precedence_plan_override.rs`, `precedence_plan_answers.rs`, and the
+  adversary files `adversary_selection_plan_u1_pass1.rs` (both crates) and `…_pass2.rs`.
 
-1. **Where the classification lives:** in `ess-domain` (`command/precedence.rs`), as a data-free `Phase` enum plus `fn phase(branch: BranchShape, command: Composition) -> Phase`. `ess-compiler` depends on `ess-domain` (`ess-compiler/Cargo.toml:13`), not the other way round. The shape follows `TestStrategy` (`command.rs:783`, computed by `OutcomeCondition::test_strategy` `command.rs:698`, re-used at `resolve.rs:2277`; cited). Each crate maps its own enum into `BranchShape` with no wildcard arm; `ess-compiler` orders branches into the plan.
-2. **Not a per-condition method** (cited): the phase depends on the whole command — the branch's `error`/`subject`/`replays` (`execute.rs:1336-1345`), a sibling `WrongState`, several input rows and the format version (`execute.rs:677-690`), a stored `via` (`execute.rs:616`), any `RelatedSet` (`execute.rs:680`). The format version is reachable on both sides: `EssIr::format()` (`ir.rs:3008`), `spec.system().format` (`related_guard.rs:826`).
-3. **Derived on demand, never stored** (cited): a constructor over `(&ResolvedCommand, FormatVersion)`, no `Serialize`. Not a `#[serde(skip)]` field (`ir.rs:846`): synthesis clones a command and drops outcomes (`synthesize/related_guard.rs:456-464`), so a cached plan would go stale.
-4. **Eight phases:** `InputAbsent` and `Default` sit outside the six steps.
+### The scoper's inferred lines, as the implementor found them
 
-### ResolvedCondition variants → precedence step (14 variants, `ir.rs:590-713`; cited)
+| scoper's line | found |
+|---|---|
+| primary surface `ess-compiler` | confirmed; the classification itself is in `ess-domain` |
+| `ir/precedence.rs` beside `mod refusal;` | confirmed |
+| `command/precedence.rs`, one `pub mod` in `command.rs:205-221` | confirmed (line 213) |
+| table test + `.tsv` fixture | confirmed |
+| no `Serialize` field, IR bytes cannot move | confirmed by measurement: every digest equals the base write |
+| decision 1, `fn phase(BranchShape, Composition) -> Phase` | **corrected**: `place(..) -> Place {phase, rank}`; a rank places `existing_instance`, `unknown_instance`, `wrong_state` and an unguarded refusal inside their phase |
+| decision 4, eight phases | confirmed |
+| compile-only walk needs no exemption list | confirmed: 194 models at the time, 138 compile, 56 fail assembly as single files |
+| "the precedent pins 193 models" | **corrected**: 194 at base, 196 with the unit's two fixtures |
+| stored `via` with `existing_instance` | existence first, as the interpreter; no repository command has it |
+| trivially-true or `replays:` refusal | validation refuses `replays:` beside `error:`; an unguarded refusal is placed by `Rank::Unguarded` (in `PresentRelated` on stored-reference and row-set commands, first in `HeldState` elsewhere) |
 
-- `InputAbsent` → before step 1, its own entry (`execute.rs:356-372`)
-- `ExistingInstance` → before step 1 when any `Related`/`RelatedSet` branch exists (`execute.rs:501-511`), else step 3 (`execute.rs:523`). The design says "reading an input" (`cross-record…md:746`); the code includes the stored `via` and `RelatedSet`
-- `Related{via: Input, test: Absent}` → step 1, in `exists: false` declaration order (`execute.rs:1139-1179`, `related.rs:38-69`)
-- `When` + `error`, no subject or replays, non-trivial guard → step 2 (`refused_by_input`, `execute.rs:1330-1349`); any other `When` + `error` at the head of `select` (`execute.rs:821-830`). Entity Runtime puts every `When` + `error` in category 0 (`ess-entity-runtime/src/lib.rs:1816-1828`)
-- `UnknownInstance` → step 3 (`execute.rs:589`, `:1933`); inside `take` it also answers for a selected move (`execute.rs:1760`)
-- `SubjectState`, `StateChange`, `SubjectField`, `SubjectPredicate` → step 4; a held-state-guarded input refusal too (design `:791-794`). The interpreter reads steps 4 and 6 in one declaration-order pass (`execute.rs:865-906`); #486 makes that agree
-- `WrongState` → step 4, answered inside `take` when the step-6 branch's move does not start from the held state (`execute.rs:1772`, `:1963`)
-- `Related{test: Holds}` + `error` → step 5 only under ess/22 and (`WrongState` or several input rows) (`execute.rs:677-690`), or a stored `via` (`execute.rs:616`); otherwise step 6
-- `Related{via: Subject, …}` (stored reference) → read after steps 3-4: absent selects nothing, a missing row answers `exists: false`, a present row's refusal at step 5 (`stored_reference`, `execute.rs:1238`)
-- `RelatedSet` + `error` → step 5 (`execute.rs:948-957`; `addressed_row` first, `execute.rs:602-606`); an accepting `RelatedSet` → step 6
-- `When` without `error`, `External`, `ExternalWhen`, accepting `Related{Holds}` → step 6, declaration order (`execute.rs:907-933`)
-- `Otherwise` → after step 6 (`execute.rs:937-943`)
+### Found by the adversary passes and corrected (introduced by the unit)
 
-### Pinned table test
+- an unguarded refusal on stored-reference and row-set commands (C1, C2);
+- `unknown_instance:` on a row-set upsert closes `PresentRelated` (R1);
+- the row-set `wrong_state:` rule reads "every accepting branch acting on the row moves, and none
+  from the state it holds" (R3);
+- the table fails on an unpinned model and re-pins from its own header (T).
 
-- **Reuse:** copy `walk` (`external_beside_held_guard.rs:873-891`) and `models` (`:993-1052`) into an `ess-compiler` test; parse → `Specification::assemble` → `resolve::compile` only, so the `UNAFFORDABLE` exemption (`:1056-1060`) is unnecessary — cited / inferred
-- **Re-pin switch:** follow `EXTERNAL_WITNESS_BASE_WRITE` (`:1084`) — cited
+### Left for later stories
 
-**Could not establish:** what happens on a command with both a stored `via` and
-`existing_instance:` (interpreter checks existence first, `execute.rs:502-506`; design step 1
-covers only an input `via`); whether validation's `!accepting_related_move` condition
-(`related_guard.rs:901`) matters for valid models; the table's command count (the precedent pins
-193 models); where a trivially-true `when:` refusal, or one with `replays:`, belongs.
+- `related_guard::orders_present_refusals` (validation) does not order a stored reference's
+  refusals first when an accepting related branch moves the subject; the interpreter does. No
+  repository command reaches it: `story:validation-reads-selection-plan`.
+- Multi-file systems outside `examples/` are not in the table (the walker's limit).
