@@ -464,6 +464,21 @@ fn projection(command: &ResolvedCommand, field: &str) -> ResolvedCommand {
     projected
 }
 
+/// `command` with the Optional input references `fields` names left out (ess/22,
+/// beyond10x/ess#304): every branch reading a row through one of them dropped, and each input
+/// itself, so a run sends none of them and reads no row there.
+fn leaving_out(command: &ResolvedCommand, fields: &[&str]) -> ResolvedCommand {
+    let mut reduced = command.clone();
+    reduced.outcomes.retain(|outcome| match &outcome.condition {
+        ResolvedCondition::Related { via, .. } => !fields.contains(&via.field()),
+        _ => true,
+    });
+    reduced
+        .input
+        .retain(|input| !fields.contains(&input.name.as_str()));
+    reduced
+}
+
 /// The branch of `projected` standing for `outcome`, where it kept one.
 fn kept<'p>(
     projected: &'p ResolvedCommand,
@@ -589,8 +604,9 @@ fn leaves_to(
 /// For every row the command's guards read but the one `focus` names, a row of its entity that
 /// leaves `outcome` to answer ([`leaves_to`]) whatever the input — or, where not `strict`, one no
 /// branch answering before it is known to hold on without the input, which the input search then
-/// decides ([`Around`]) — arranged in the blocks from `base` at `distinction`. Refused where no
-/// bounded arrangement holds such a row.
+/// decides ([`Around`]) — arranged in the blocks from `base` at `distinction`, inside an arrangement
+/// of the entities `arranging` names (beyond10x/ess#474). Refused where no bounded arrangement holds
+/// such a row.
 fn beside<'c>(
     ir: &EssIr,
     (command, outcome): (&'c ResolvedCommand, &ResolvedOutcome),
@@ -598,6 +614,7 @@ fn beside<'c>(
     actors: &BTreeMap<QualifiedName, ActorRef>,
     distinction: Distinction,
     (base, strict): (usize, bool),
+    arranging: &[&EntityHandle],
 ) -> Result<Vec<Beside<'c>>, RefusalCause> {
     let mut arranged = Vec::new();
     for (index, (via, entity)) in rows(command)
@@ -614,16 +631,30 @@ fn beside<'c>(
             leaves_to(ir, (command, outcome), (via.field(), entity, node), None)
                 .unwrap_or(Truth::False)
         };
-        let row = search_rows(ir, entity, actors, (at, None), &predicates, |node| {
-            Ok(truth(node) == Truth::True)
+        let row = search_rows_within(
+            ir,
+            entity,
+            actors,
+            (at, None),
+            &predicates,
+            arranging,
+            |node| Ok(truth(node) == Truth::True),
+        )
+        .or_else(|| {
+            row_at(ir, entity, actors, at, arranging).filter(|node| truth(node) == Truth::True)
         })
-        .or_else(|| row_at(ir, entity, actors, at, &[]).filter(|node| truth(node) == Truth::True))
         .or_else(|| {
             (!strict)
                 .then(|| {
-                    search_rows(ir, entity, actors, (at, None), &predicates, |node| {
-                        Ok(truth(node) != Truth::False)
-                    })
+                    search_rows_within(
+                        ir,
+                        entity,
+                        actors,
+                        (at, None),
+                        &predicates,
+                        arranging,
+                        |node| Ok(truth(node) != Truth::False),
+                    )
                 })
                 .flatten()
         })
@@ -938,6 +969,7 @@ pub(super) fn wrong_state_overlap(
             actors,
             Distinction::PLAIN,
             (BESIDE, true),
+            &[],
         )?;
         for other in others {
             addressed.steps.extend(other.row.steps);
@@ -1041,51 +1073,17 @@ pub(super) fn drive(
     if stored::field(driver.command).is_some() {
         return Err(unarranged());
     }
-    // Several rows (beyond10x/ess#283): the run is driven around one of them, every other row
-    // arranged beside it first so that nothing answering before the driven branch can hold there,
-    // whatever the input.
     if several(driver.command) {
-        let (via, _) = focus(ir, driver.command, driver.outcome).ok_or_else(unarranged)?;
-        let projected = projection(driver.command, via.field());
-        let around = super::Driver {
-            command: &projected,
-            outcome: kept(&projected, driver.outcome)?,
-            effect: driver.effect,
-        };
-        let others = beside(
+        return drive_several(
             ir,
-            (driver.command, driver.outcome),
-            via.field(),
-            actors,
-            distinction,
-            (BESIDE_DRIVEN, true),
-        )?;
-        let mut bound = bound.clone();
-        for other in &others {
-            if bound.contains_key(other.via.field()) {
-                return Err(unarranged());
-            }
-            bound.insert(other.via.field().to_owned(), other.row.instance.clone());
-        }
-        let mut invocation = drive(
-            ir,
-            &around,
+            driver,
             instance,
             actors,
             distinction,
-            (&bound, known),
+            (bound, known),
             input,
             arranging,
-        )?;
-        let mut steps = Vec::new();
-        for other in others {
-            steps.extend(other.row.steps);
-            invocation.source.extend(other.row.source);
-            invocation.source.insert(entity_ref(other.entity));
-        }
-        steps.append(&mut invocation.steps);
-        invocation.steps = steps;
-        return Ok(invocation);
+        );
     }
     let (via, entity) = read(driver.command).ok_or_else(unarranged)?;
     let field = via.field();
@@ -1151,6 +1149,108 @@ pub(super) fn drive(
         arranging,
     )
     .map(|(invocation, _)| invocation)
+}
+
+/// [`drive`] on a command reading several rows (beyond10x/ess#283): the run driven around one of
+/// them, every other row arranged beside it first so that nothing answering before the driven
+/// branch can hold there, whatever the input.
+///
+/// A row beside of an entity `arranging` already names would be arranged by a run that arranges
+/// that row beside again, without end (beyond10x/ess#474): an Optional reference to it is left out
+/// ([`leaving_out`]), so no row is read there, and a required one stops the run.
+// One argument per thing an arranging run is told, as [`drive`] takes them.
+#[allow(clippy::too_many_arguments)]
+fn drive_several(
+    ir: &EssIr,
+    driver: &super::Driver<'_>,
+    instance: Option<&crate::scenario::InstanceName>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    (bound, known): (
+        &BTreeMap<String, crate::scenario::InstanceName>,
+        &[super::ScenarioStep],
+    ),
+    input: Option<&BTreeMap<String, Node>>,
+    arranging: &[&EntityHandle],
+) -> Result<super::Invocation, RefusalCause> {
+    let (via, _) = focus(ir, driver.command, driver.outcome).ok_or_else(unarranged)?;
+    let recurring: Vec<&ResolvedRelatedVia> = rows(driver.command)
+        .into_iter()
+        .filter(|(other, entity)| other.field() != via.field() && arranging.contains(entity))
+        .map(|(other, _)| other)
+        .collect();
+    if !recurring.is_empty() {
+        if recurring.iter().any(|other| {
+            !matches!(other, ResolvedRelatedVia::Input { .. })
+                || !other.type_ref().is_optional()
+                || bound.contains_key(other.field())
+        }) {
+            return Err(unarranged());
+        }
+        let fields: Vec<&str> = recurring.iter().map(|other| other.field()).collect();
+        let reduced = leaving_out(driver.command, &fields);
+        let around = super::Driver {
+            command: &reduced,
+            outcome: kept(&reduced, driver.outcome)?,
+            effect: driver.effect,
+        };
+        let input = input.map(|chosen| {
+            let mut chosen = chosen.clone();
+            chosen.retain(|field, _| !fields.contains(&field.as_str()));
+            chosen
+        });
+        return drive(
+            ir,
+            &around,
+            instance,
+            actors,
+            distinction,
+            (bound, known),
+            input.as_ref(),
+            arranging,
+        );
+    }
+    let projected = projection(driver.command, via.field());
+    let around = super::Driver {
+        command: &projected,
+        outcome: kept(&projected, driver.outcome)?,
+        effect: driver.effect,
+    };
+    let others = beside(
+        ir,
+        (driver.command, driver.outcome),
+        via.field(),
+        actors,
+        distinction,
+        (BESIDE_DRIVEN, true),
+        arranging,
+    )?;
+    let mut bound = bound.clone();
+    for other in &others {
+        if bound.contains_key(other.via.field()) {
+            return Err(unarranged());
+        }
+        bound.insert(other.via.field().to_owned(), other.row.instance.clone());
+    }
+    let mut invocation = drive(
+        ir,
+        &around,
+        instance,
+        actors,
+        distinction,
+        (&bound, known),
+        input,
+        arranging,
+    )?;
+    let mut steps = Vec::new();
+    for other in others {
+        steps.extend(other.row.steps);
+        invocation.source.extend(other.row.source);
+        invocation.source.insert(entity_ref(other.entity));
+    }
+    steps.append(&mut invocation.steps);
+    invocation.steps = steps;
+    Ok(invocation)
 }
 
 /// [`drive`] for a creating branch an aggregate view's rows are created through, where rows given
@@ -1612,6 +1712,7 @@ fn arranged(
         actors,
         distinction,
         (BESIDE, false),
+        &[],
     )?;
     let around = Around {
         command,
@@ -1854,6 +1955,7 @@ pub(super) fn prepare_absent_in(
             actors,
             distinction,
             (BESIDE, false),
+            &[],
         )?;
         let (setup, input) = absent_at(models, &projected, own, actors, distinction, &others)?;
         for other in &others {
@@ -2629,13 +2731,27 @@ fn search_rows(
     hints: &[Predicate],
     accepts: impl Fn(&Arrangement) -> Result<bool, RefusalCause>,
 ) -> Option<Arrangement> {
+    search_rows_within(ir, entity, actors, (at, under), hints, &[], accepts)
+}
+
+/// [`search_rows`] inside an arrangement of the entities `arranging` names: a creator of the row
+/// that would need one of them again stops at the cycle (beyond10x/ess#474).
+fn search_rows_within(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    (at, under): (usize, subject_fact::Under<'_>),
+    hints: &[Predicate],
+    arranging: &[&EntityHandle],
+    accepts: impl Fn(&Arrangement) -> Result<bool, RefusalCause>,
+) -> Option<Arrangement> {
     subject_fact::search_under(
         ir,
         entity,
         actors,
         hints,
         (Distinction::further(at), "related decoy"),
-        &[],
+        arranging,
         under,
         |node| Ok(accepts(node)?.then_some(())),
     )
