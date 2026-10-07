@@ -1,0 +1,119 @@
+format: ess/23
+system: demo
+version: v1
+domain: demo.shelf
+summary: The row-set upsert of row-set-upsert.yaml with an unknown_instance branch and an input-guarded creation, where the unknown identity is answered after the row sets (docs/design/selection-plan.md).
+entities:
+  - name: demo.shelf.Library
+    identity: {name: library, type: String}
+    fields:
+      - {name: curator, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: demo.shelf.Book
+    identity: {name: book, type: String}
+    fields: []
+    lifecycle: {initial: Shelved, states: [Shelved], terminal: [Shelved]}
+errors:
+  - {name: demo.shelf.Refused, summary: A library of the curator is open., fields: []}
+  - {name: demo.shelf.UnknownBook, summary: No book carries the identity., fields: []}
+events:
+  - name: demo.shelf.LibraryOpened
+    fields: [{name: library, type: String}]
+  - name: demo.shelf.BookShelved
+    fields: [{name: book, type: String}]
+  - name: demo.shelf.BookRestocked
+    fields: [{name: book, type: String}]
+  - name: demo.shelf.BookRemoved
+    fields: [{name: book, type: String}]
+commands:
+  - name: demo.shelf.OpenLibrary
+    input:
+      - {name: library, type: String}
+      - {name: curator, type: String}
+    outcomes:
+      - name: opened
+        creates: demo.shelf.Library
+        instance: library
+        sets: {curator: input.curator}
+        emits: [demo.shelf.LibraryOpened]
+        payload:
+          demo.shelf.LibraryOpened: {library: input.library}
+  - name: demo.shelf.Shelve
+    input:
+      - {name: book, type: String}
+      - {name: curator, type: String}
+      - {name: mode, type: String}
+    outcomes:
+      - name: unknown-book
+        unknown_instance: true
+        error: demo.shelf.UnknownBook
+      - name: refused
+        when_related:
+          entity: demo.shelf.Library
+          where: curator == input.curator
+          exists: true
+        error: demo.shelf.Refused
+      - name: added
+        when: mode == "new"
+        creates: demo.shelf.Book
+        instance: book
+        emits: [demo.shelf.BookShelved]
+        payload:
+          demo.shelf.BookShelved: {book: input.book}
+      - name: replaced
+        updates: demo.shelf.Book
+        instance: book
+        emits: [demo.shelf.BookShelved]
+        payload:
+          demo.shelf.BookShelved: {book: input.book}
+  - name: demo.shelf.Restock
+    input:
+      - {name: book, type: String}
+      - {name: curator, type: String}
+    outcomes:
+      - name: unknown-book
+        unknown_instance: true
+        error: demo.shelf.UnknownBook
+      - name: refused
+        when_related:
+          entity: demo.shelf.Library
+          where: curator == input.curator
+          exists: true
+        error: demo.shelf.Refused
+      - name: restocked
+        updates: demo.shelf.Book
+        instance: book
+        emits: [demo.shelf.BookRestocked]
+        payload:
+          demo.shelf.BookRestocked: {book: input.book}
+  - name: demo.shelf.Unshelve
+    input:
+      - {name: book, type: String}
+      - {name: curator, type: String}
+    outcomes:
+      - name: refused
+        when_related:
+          entity: demo.shelf.Library
+          where: curator == input.curator
+          exists: true
+        error: demo.shelf.Refused
+      - name: removed
+        deletes: demo.shelf.Book
+        instance: book
+        emits: [demo.shelf.BookRemoved]
+        payload:
+          demo.shelf.BookRemoved: {book: input.book}
+views:
+  - name: demo.shelf.Libraries
+    source: demo.shelf.Library
+    consistency: read_your_writes
+    fields:
+      - {name: library, type: String}
+      - {name: curator, type: String}
+      - {name: state, type: demo.shelf.Library.State}
+  - name: demo.shelf.Books
+    source: demo.shelf.Book
+    consistency: read_your_writes
+    fields:
+      - {name: book, type: String}
+      - {name: state, type: demo.shelf.Book.State}
