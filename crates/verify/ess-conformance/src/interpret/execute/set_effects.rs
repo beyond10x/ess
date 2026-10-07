@@ -1,8 +1,7 @@
 //! Filtered set effects select from the pre-outcome store, then apply writes in declaration order.
 use super::{
-    act, at_rest, input, Acted, Completeness, EssIr, Instance, Node, ResolvedCommand,
-    ResolvedEffect, ResolvedInstance, ResolvedOutcome, ResolvedPayloadField, Store, TypedFacts,
-    Undetermined, Work,
+    act, at_rest, input, Acted, EssIr, Node, ResolvedCommand, ResolvedEffect, ResolvedInstance,
+    ResolvedOutcome, ResolvedPayloadField, Row, State, Undetermined, Value, Work,
 };
 use ess_compiler::ir::{ResolvedEntity, ResolvedField};
 use ess_primitives::facts::{FactPath, FactSource, FactValue, Scales};
@@ -16,13 +15,19 @@ struct Plan<'a> {
     keys: Vec<Node>,
 }
 
+#[derive(Clone, Copy)]
+struct Eligibility<'a> {
+    excluded: Option<&'a Node>,
+    effect: Option<&'a ResolvedEffect>,
+}
+
 /// None means this is not an instances outcome. Some(0) is its successful zero-match result.
 pub(super) fn apply(
     ir: &EssIr,
     spec: &ResolvedCommand,
     outcome: &ResolvedOutcome,
-    before: &Store,
-    supplied: &super::Invocation<'_>,
+    before: &State,
+    supplied: &super::Context<'_>,
     work: &mut Work<'_>,
 ) -> Result<Option<usize>, Undetermined> {
     if outcome.instances.is_none() && outcome.affects.is_empty() {
@@ -37,15 +42,18 @@ pub(super) fn apply(
             entity,
             effect: set.effect.clone(),
             sets: &outcome.sets,
-            keys: select(ir, before, entity, &set.filter, &input, None, None)?
-                .into_iter()
-                .filter(|key| match &set.effect {
-                    ResolvedEffect::Moves { transition } => before
-                        .instance_typed(&entity.name, key)
-                        .is_some_and(|row| transition.from.contains(&row.state)),
-                    _ => true,
-                })
-                .collect(),
+            keys: select(
+                ir,
+                before,
+                entity,
+                &set.filter,
+                &input,
+                None,
+                Eligibility {
+                    excluded: None,
+                    effect: Some(&set.effect),
+                },
+            )?,
         });
     }
     if !outcome.affects.is_empty() {
@@ -61,7 +69,10 @@ pub(super) fn apply(
                 &affect.filter,
                 &input,
                 Some(&facts),
-                (affected.name == entity.name).then_some(key),
+                Eligibility {
+                    excluded: (affected.name == entity.name).then_some(key),
+                    effect: None,
+                },
             )?;
             plans.push(Plan {
                 entity: affected,
@@ -73,13 +84,21 @@ pub(super) fn apply(
     }
     let mut applied = 0;
     let mut touched = BTreeSet::new();
-    for plan in plans {
+    for (occurrence, plan) in plans.into_iter().enumerate() {
         for key in plan.keys {
             let row = work
                 .next
                 .instance_typed(&plan.entity.name, &key)
                 .expect("a selected row remains held through moves and updates")
                 .clone();
+            work.location = vec![
+                "set-effect".into(),
+                occurrence.to_string(),
+                "row".into(),
+                plan.entity.name.to_string(),
+                format!("{key:?}"),
+                "sets".into(),
+            ];
             let Acted::Rests(after) = act(ir, plan.sets, &plan.effect, &row, supplied, work)?
             else {
                 return Err(Undetermined::Request(
@@ -105,12 +124,11 @@ pub(super) fn apply(
 fn validate_writes(
     ir: &EssIr,
     sets: &[ResolvedPayloadField],
-    after: &Instance,
+    after: &Row,
 ) -> Result<(), Undetermined> {
     for field in sets {
         match after.fields.get(&field.target) {
-            Some(value) => input::validate_typed_value(ir, &field.target_type, value)
-                .map_err(Undetermined::Request)?,
+            Some(value) => super::history::validate(ir, &field.target_type, value)?,
             None if field.target_type.is_optional() => {}
             None => {
                 return Err(Undetermined::NoValue {
@@ -125,9 +143,9 @@ fn validate_writes(
 fn subject<'a>(
     ir: &'a EssIr,
     outcome: &ResolvedOutcome,
-    store: &'a Store,
+    store: &'a State,
     supplied: &'a BTreeMap<String, Node>,
-) -> Result<(&'a ResolvedEntity, &'a Node, &'a Instance), Undetermined> {
+) -> Result<(&'a ResolvedEntity, &'a Node, &'a Row), Undetermined> {
     let declared = outcome.subject.as_ref().ok_or_else(|| {
         Undetermined::Request("secondary effects require an existing subject".into())
     })?;
@@ -157,40 +175,41 @@ fn row_facts<'a>(
     fields: &'a [ResolvedField],
     entity: &ResolvedEntity,
     key: &Node,
-    row: &Instance,
-) -> Result<TypedFacts<'a>, Undetermined> {
-    let mut values = row.fields.clone();
-    values.insert(entity.identity.name.clone(), key.clone());
-    let facts = input::bind(ir, fields, &values, Completeness::Partial)
-        .map_err(|why| Undetermined::Request(why.to_string()))?;
-    let mut facts = TypedFacts::new(ir, fields, facts);
-    facts.set(
-        FactPath::new("state").expect("fixed path"),
-        FactValue::text(row.state.to_string()),
-    );
-    Ok(facts)
+    row: &Row,
+) -> Result<super::history::Facts<'a>, Undetermined> {
+    let mut row = row.clone();
+    row.fields
+        .insert(entity.identity.name.clone(), Value::Known(key.clone()));
+    super::history::Facts::row(ir, fields, &row)
 }
 
 fn select(
     ir: &EssIr,
-    store: &Store,
+    store: &State,
     entity: &ResolvedEntity,
     filter: &Predicate,
     input: &input::InputFacts<'_>,
-    subject: Option<&TypedFacts<'_>>,
-    excluded: Option<&Node>,
+    subject: Option<&super::history::Facts<'_>>,
+    eligibility: Eligibility<'_>,
 ) -> Result<Vec<Node>, Undetermined> {
     let fields = fields(entity);
     let mut selected = Vec::new();
     for (_, key, row) in store
         .instances()
-        .filter(|(name, key, _)| *name == &entity.name && Some(*key) != excluded)
+        .filter(|(name, key, _)| *name == &entity.name && Some(*key) != eligibility.excluded)
     {
+        if matches!(eligibility.effect, Some(ResolvedEffect::Moves { transition })
+            if !transition.from.contains(&row.state))
+        {
+            continue;
+        }
         let row = row_facts(ir, &fields, entity, key, row)?;
-        match filter.evaluate(&Facts {
-            row: &row,
-            input,
-            subject: subject.map(|facts| facts as &dyn FactSource),
+        match row.evaluate_with(|candidate| {
+            filter.evaluate(&Facts {
+                row: candidate,
+                input,
+                subject: subject.map(|facts| facts as &dyn FactSource),
+            })
         }) {
             Truth::True => selected.push(key.clone()),
             Truth::False => {}
@@ -228,6 +247,19 @@ impl FactSource for Facts<'_> {
     fn present(&self, path: &FactPath) -> bool {
         self.source(path)
             .is_some_and(|(source, path)| source.present(&path))
+    }
+    fn observed_presence(&self, path: &FactPath) -> Option<bool> {
+        self.source(path).map_or(Some(false), |(source, path)| {
+            source.observed_presence(&path)
+        })
+    }
+    fn observe(&self, path: &FactPath) -> Option<FactValue> {
+        self.source(path)
+            .and_then(|(source, path)| source.observe(&path))
+    }
+    fn cardinality(&self, path: &FactPath) -> Option<usize> {
+        self.source(path)
+            .and_then(|(source, path)| source.cardinality(&path))
     }
     fn scales(&self) -> &Scales {
         self.input.scales()

@@ -190,7 +190,7 @@ fn terminal_binding(model: &Model, cli: &str) -> Terminal {
     );
     assert_eq!(output.exit_code, 0);
     assert_eq!(output.stdout, "{\"ok\":true,\"result\":17}\n");
-    assert!(output.stderr.is_empty());
+    assert_eq!(output.stderr.len(), 0);
     assert_eq!(
         recorder.calls,
         [json!({
@@ -686,7 +686,7 @@ fn root_and_domain_names_and_roster_have_named_admission_refusals() {
         input[document][field] = Value::Null;
         let error = admit(&input).unwrap_err();
         assert_eq!(error.stage, Stage::Assembly);
-        assert!(!error.message.is_empty());
+        assert_ne!(error.message.len(), 0);
         assert!(!error.trace.contains(&Stage::Compiler));
         terminal(&admitted(&fixture()));
     }
@@ -924,13 +924,13 @@ fn conversion_membership_direction_and_reason_survive_model_assembly_without_cli
         let mut input = fixture();
         input[0]["conversions"] = json!([conversion]);
         let changed = admitted(&input);
-        assert!(control.raw[0].conversions.is_empty());
+        assert_eq!(control.raw[0].conversions.len(), 0);
         assert_eq!(changed.raw[0].conversions.len(), 1);
         assert_eq!(
             serde_json::to_value(&changed.raw[0].conversions).unwrap(),
             input[0]["conversions"]
         );
-        assert!(control.ir.conversions().is_empty());
+        assert_eq!(control.ir.conversions().len(), 0);
         assert_eq!(changed.ir.conversions().len(), 1);
         assert_eq!(
             changed.ir.conversions()[0].from.to_string(),
@@ -1131,8 +1131,8 @@ fn assert_raw_assembly_member_renaming(control: &Model, changed: &Model) {
     }
     // Assembly moves domain type bodies into the system registry rather than
     // retaining duplicate definitions in DomainSpec.
-    assert!(old_domain.types.is_empty());
-    assert!(new_domain.types.is_empty());
+    assert_eq!(old_domain.types.len(), 0);
+    assert_eq!(new_domain.types.len(), 0);
     assert_ne!(control.spec.system().types, changed.spec.system().types);
 }
 

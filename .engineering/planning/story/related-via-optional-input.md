@@ -3,7 +3,7 @@ format: aep.planning-md/3
 id: story:related-via-optional-input
 kind: story
 status: active
-title: when_related reads through an Optional input; an absent reference reads no row (ess/21)
+title: when_related reads through an Optional input; absence reads no row (ess/22)
 refs:
 - provider: github
   reference: beyond10x/ess#304
@@ -12,11 +12,18 @@ relations:
 - serves: vision:O2
 - depends_on: story:feature-request-287
 - supersedes: story:feature-request-304
+- depends_on: story:counter-reachability-arithmetic-completeness
 scope:
 - confidence: cited
   path: crates/generate/ess-gen/src/openapi.rs
 - confidence: cited
+  path: crates/generate/ess-gen/tests/related_guard.rs
+- confidence: inferred
+  path: crates/specify/ess-compiler/src/ir.rs
+- confidence: cited
   path: crates/specify/ess-compiler/src/resolve.rs
+- confidence: inferred
+  path: crates/specify/ess-compiler/tests/related_guard_ir.rs
 - confidence: cited
   path: crates/specify/ess-domain/src/command/related_guard.rs
 - confidence: cited
@@ -25,11 +32,23 @@ scope:
   path: crates/specify/ess-domain/tests/related_guard.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/interpret/execute.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/interpret/execute/related.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/related_guard.rs
 - confidence: cited
+  path: crates/verify/ess-conformance/tests/fixtures/related-guard-optional.yaml
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/interpreted_command_execution.rs
+- confidence: cited
   path: crates/verify/ess-conformance/tests/related_guard_optional.rs
-revision: 10
+- confidence: inferred
+  path: docs/design/cross-record-and-stored-field-guards.md
+- confidence: inferred
+  path: website/docs/reference/predicates.md
+revision: 19
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T20:11:54Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":4}}}
 - {from: "proposed", to: "active", at: "2026-10-01T20:11:54Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":4}}}
@@ -65,10 +84,9 @@ origin/main moved to `8700d0808` (0.50.0) during the review; among the cited fil
 
 ## Acceptance
 
-`crates/specify/ess-domain/tests/related_guard.rs`: `issue_304_an_optional_input_via_validates_under_ess_21`, `issue_304_an_optional_via_below_ess_21_is_refused_naming_ess_21`, `issue_304_an_absent_reference_reaching_no_branch_is_non_exhaustive`; `issue_211_via_is_an_input_field_typed_as_another_entitys_identity` stays green. `crates/specify/ess-compiler/tests/related_guard_ir.rs`: `issue_304_ess_20_related_fixtures_compile_to_identical_ir`. New `crates/verify/ess-conformance/tests/related_guard_optional.rs`: `issue_304_absent_present_and_missing_are_each_witnessed`, `issue_304_a_target_treating_absent_as_missing_fails`, `issue_304_a_target_ignoring_a_present_reference_fails`. `crates/verify/ess-conformance/tests/interpreted_command_execution.rs`: `issue_304_an_absent_optional_reference_reads_no_related_row`. `crates/generate/ess-gen/tests/related_guard.rs`: `issue_304_an_optional_reference_is_documented_as_checked_when_present`.
+`crates/specify/ess-domain/tests/related_guard.rs`: `issue_304_an_optional_input_via_validates_under_ess_22`, `issue_304_an_optional_via_below_ess_22_is_refused_naming_ess_22`, `issue_304_an_absent_reference_reaching_no_branch_is_non_exhaustive`; `issue_211_via_is_an_input_field_typed_as_another_entitys_identity` stays green. `crates/specify/ess-compiler/tests/related_guard_ir.rs`: `issue_304_ess_20_related_fixtures_compile_to_identical_ir`. New `crates/verify/ess-conformance/tests/related_guard_optional.rs`: `issue_304_absent_present_and_missing_are_each_witnessed`, `issue_304_a_target_treating_absent_as_missing_fails`, `issue_304_a_target_ignoring_a_present_reference_fails`. `crates/verify/ess-conformance/tests/interpreted_command_execution.rs`: `issue_304_an_absent_optional_reference_reads_no_related_row`. `crates/generate/ess-gen/tests/related_guard.rs`: `issue_304_an_optional_reference_is_documented_as_checked_when_present`.
 
 The stored-reference (subject via) tests belong to story:related-via-stored-reference; generation of either via to story:related-guard-behaviour.
-
 
 ## Scope
 
@@ -81,8 +99,40 @@ Base 0.50.0+. #287 touches `synthesize/related_guard.rs` and `related.rs`: the s
 
 `CHANGELOG.md` is a merge-time edit (epic).
 
-## Source version allocation, 2026-10-02
+## Bounded prerequisite disposition for the serial batch, 2026-10-03
 
-The operator explicitly prioritized issue389 for the fast lane. The coordinator allocates the next unshipped source major, ess/21, to its one-time response disclosure contract. The previously planned coordinated downstream syntax bundle moves together to ess/22; its accepted behavior, dependency ordering and requirement to ship as one bundle are unchanged. Prior mentions of ess/21 in this artifact record the earlier allocation, not the current implementation target. No released source/IR/suite meaning is rewritten by this planning change.
+Read-only ancestry inspection found singleton core1f131e170, release integration482bc33c2 and tag0.51.0 ancestors of current main1ff305685. feature-request-287 itself records that released core and remaining ignored cross-caller reinstall, Uuid and ordered-view scenario-withdrawal limits. Optional-input requires the landed singleton synthesis change and serialized edits to related witness arrangement; its named acceptance does not require the retained failing shapes. The coordinator therefore treats that landed core as satisfying this unit's sequencing prerequisite while preserving the broader #287 artifact as active and preserving every ignored limitation as unresolved. This is a bounded planning disposition, not a new test result or whole-story completion. The depends_on edge remains visible with this qualification.
 
-This allocation must be reflected in binding designs and compatibility tests before implementation. The389 design independently names its new IR and ordinary/coverage suite versions from actual current source; those numbers are not inferred from the source-format number.
+Current main's interpreter declines present related predicates; later guard-generation work must implement them or integrate a bounded reviewed equivalent. Candidate ee50829da is not landed and relies on earlier held-subject work on a74-commit line: do not import that line wholesale under this five-wave approval. Optional absence must skip both row lookup and related-branch selection, rather than fall into the unconditional decline. Merge readiness still depends on the ess/21 format bundle decision.
+
+## Precedence reconciliation for the approved serial batch
+
+The earlier "input via unchanged (step 1)" phrase preserves the early lookup/missing-row behavior. It does not override the accepted ess/21 held-state-before-related-predicate-refusal decision in story:feature-request-282, implemented first in this batch. Optional absence skips every related lookup/branch regardless of placement; required/present input lookup retains the early missing-row refusal, while present-row predicate refusal follows the held-state decision under ess/21. Below ess/21 preserve the existing supported contract. Source: this story's #282 dependency in its design and story:feature-request-282 Decisions/Acceptance. This is a coordinator clarification of the overlapping accepted decisions; implementation must prove the distinctions rather than introduce a separate order.
+
+## Current allocation and acceptance ownership
+
+The accepted bundle now allocates these syntax additions to source ess/22; ess/21 is reserved for one-time responses. This supersedes historical ess/21 references in the original fit, cost, decisions and sequencing paragraphs without erasing those dated assessments. Older formats through21 must refuse each newly admitted Optional-input/stored-reference form by its source location; required input-via behavior and serialized bytes of unchanged old models remain stable. The named acceptance tests above use ess_22 accordingly.
+
+Execution order remains #282, Optional input, stored reference, then generated guard behavior319. Optional-input owns absent/present/missing input reference admission, interpretation, synthesis and documented target obligations. Stored-reference owns the corresponding addressed pre-branch field lookup, subject existence/state precedence, Optional stored absence and stored-reference fault controls. Common declaration/IR infrastructure may be introduced in the first slice but does not claim the second slice's acceptance. Input absence never means a missing related row: it performs no lookup and selects no related branch. For present references, preserve #282's distinction between early missing-row refusal and later present-row predicate evaluation.
+
+Named Rust/Go/Web generation obligations are permitted only at the intermediate304 boundary because319 implements those targets in this same bundle. They cannot satisfy final generated-target acceptance or close the combined issue. No duplicate implementation of the already integrated stored-field interpreter is needed; compose on current #292/nested correction/282 source and retain all existing controls. This is planning reconciliation based on read-only current-source inspection, not a new test result.
+
+## Prepared tests refresh after reviewed precedence integration
+
+Reviewed #282 candidate31e7362f89464846f069591b313529bbc2f65f9d is integrated fe251b2a4 with14 interpreter-command checks,546 neighboring checks, strict lint, and final independent approval. The prepared Optional-input test commit4cf695b0cb2cc637c6fcd1415cce490385a006b5 remains the starting unit. Existing worker review_292 now refreshes that managed unit onto10fdf93606e568a172d6edfd8cd5b2cd2908dfd7, preserving all prepared304 tests and integrated282 controls. Only source preparation and merge-conflict resolution are assigned; no production implementation or baseline execution is claimed. External412 baseline and the remaining five-file report migration execute first under the serial resource contract. Source22 admission, old-reader refusal, declared Optional type retention, no lookup on absence and present-reference precedence remain the acceptance authority. Stored-reference304 and generated behavior319 remain later units.
+
+## Refresh preparation after runtime parity integration
+
+Reviewed generated RYW candidatebcd8685fff937fcde4465ef387c5eef4526772f2 is integrated2255315a48a947f363d46cb3c691a57b4879f3b1 after final whole review2. Existing Optional-input managed preparation363f95d0a78b9daf4f4cc8b67e2d8c16d0706efb is clean, with no live lease or ignored/untracked files. Assign the available implementation worker a source-only refresh onto this exact integration base, preserving the original715added test lines and all named acceptance controls in the six existing test paths. Resolve necessary merge conflicts without weakening assertions, keep source22 and older-format refusals, and report any semantic or additional-path need before editing it. No production implementation or runtime/compiler execution is granted in this preparation;413A owns the sole ESS lane for refreshed package acceptance and still must be independently reviewed and integrated before dependent production work. No baseline success is inferred from source preparation. Root alone owns canonical planning/integration.
+
+## Refreshed Optional-input preparation retained
+
+Bot mergee8e3e8d9349488505acf940dc1372c2a2d7662f8 composes prepared363f95d0a with reviewed integration2255315a4. There were no conflicts or manual source changes. Delta remains exactly six paths,715additions,0removals. Normalized original4cf695b0, prior363f95d0 and final added lines all hashcc7e65b8008b33b78212fd4ff2569e0ee3e4a9df04e21a8f4e6a60eecb5757d3; final patchSHA54cd386efd7a9a3c64763b8dcb76d7adc81af864dfd01fb675dbcede361e8370. Root consumed handoffSHAe52508de42c5da1498658e47330468d2991f56b2648975d23b4e0bca5969d3eb and verified bot identities. All eleven named new controls and existing required-input controls remain intact. No compiler, target, runtime, lint or formatter ran; source preparation is not baseline or acceptance evidence. Worktree is clean and lease ended. Production and actual baseline remain next after413A integration and lane handoff.
+
+## Implementation boundary resolved from refreshed source
+
+Read-only map v2ff754040cb8890b204404781c8c741960caa456ab1c82fe70fd661c0eb400043 binds six minimal production seams: domain command/related_guard.rs; compiler ir.rs; interpreter execute.rs and execute/related.rs; synthesis synthesize/related_guard.rs and synthesize.rs. The existing resolved Input via already retains the declared Optional type; shared related_sentence supplies documentation/OpenAPI wording. Keep the domain String representation for this input-only slice and defer the String-to-RelatedVia migration to the stored-reference sibling. Bare subject-via forms remain refused here. Historical command/mod.rs is not an existing path; the later structural migration would concern command.rs.
+
+Structured scope now includes the synthesis scheduler and all prepared acceptance files. The eleven-test acceptance inventory explicitly includes issue_304_an_optional_input_via_keeps_its_declared_type_in_the_ir and issue_304_present_and_absent_references_preserve_issue_282_precedence, in addition to the nine earlier listed names. Required-input and legacy-byte controls remain unchanged. Correct both already scoped design/reference documents before completion.
+
+Map v1 remains retained; v2 uses installed Go1.27, full owning-package and all-target strictlint bounds7200seconds, and focused baseline/treatment bounds900seconds. The legacy suite10 reference means preserving unchanged old bytes, not choosing that writer: current34/35 and coordinated36–41 allocations remain unchanged. Actual baseline/production remain pending reviewed413A integration; its full-package run has now exposed a separately owned retained-replay fixture failure which must be corrected first. No new acceptance or compiler execution is claimed by this mapping.

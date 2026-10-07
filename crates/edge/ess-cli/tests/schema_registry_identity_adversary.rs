@@ -360,7 +360,7 @@ fn registry_admission_and_selected_typescript_projection_have_distinct_boundarie
         "registry",
     ]);
     assert_eq!(projected.status.code(), Some(0), "{projected:?}");
-    assert!(projected.stderr.is_empty());
+    assert_eq!(projected.stderr.len(), 0);
     let expected = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/schema-contract/expected/widget.ts");
     assert_eq!(projected.stdout, fs::read(expected).unwrap());

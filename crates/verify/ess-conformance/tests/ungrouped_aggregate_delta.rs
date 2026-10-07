@@ -112,7 +112,7 @@ fn a_count_beside_a_maximum_asserts_the_count_change_and_says_the_maximum_is_not
     );
     let purpose = counted.purpose.to_string();
     assert!(purpose.contains("`longest`"), "{purpose}");
-    assert!(refused(&result, "ESS-SYNTH-016").is_empty());
+    assert_eq!(refused(&result, "ESS-SYNTH-016").len(), 0);
 }
 
 #[test]

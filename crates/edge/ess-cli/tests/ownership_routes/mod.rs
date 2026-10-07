@@ -697,7 +697,7 @@ fn a_published_incomplete_coverage_suite_keeps_semantic_exit_one() {
         ess_conformance::AdmittedSuite::from_json(std::str::from_utf8(&output.stdout).unwrap())
             .unwrap();
     assert!(!suite.coverage().unwrap().is_complete());
-    assert!(!suite.coverage().unwrap().refused.is_empty());
+    assert_ne!(suite.coverage().unwrap().refused.len(), 0);
     assert!(!one(&f.0.join("partial"), "conformance-go").is_empty());
     assert_eq!(
         fs::read(f.0.join("partial/essconform/suite.json")).unwrap(),

@@ -32,7 +32,7 @@ scope:
   path: generated
 - confidence: cited
   path: website/docs/guides/synthesize.md
-revision: 11
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T20:11:53Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":6}}}
 - {from: "proposed", to: "active", at: "2026-10-01T20:11:54Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":6}}}
@@ -111,14 +111,6 @@ Last in the epic: after story:go-generated-behaviour (Go ports), story:served-st
 generates). `determined.rs` was changed by #310: base on 0.51.0. `CHANGELOG.md` is a merge-time
 edit (epic).
 
-## Source version allocation, 2026-10-02
+## Serial integration precedence clarification, 2026-10-03
 
-The operator explicitly prioritized issue389 for the fast lane. The coordinator allocates the next unshipped source major, ess/21, to its one-time response disclosure contract. The previously planned coordinated downstream syntax bundle moves together to ess/22; its accepted behavior, dependency ordering and requirement to ship as one bundle are unchanged. Prior mentions of ess/21 in this artifact record the earlier allocation, not the current implementation target. No released source/IR/suite meaning is rewritten by this planning change.
-
-This allocation must be reflected in binding designs and compatibility tests before implementation. The389 design independently names its new IR and ordinary/coverage suite versions from actual current source; those numbers are not inferred from the source-format number.
-
-## Verified correction to the reference premise
-
-The Fit review's earlier statement that the interpreter already executes when_related is too broad for current source. Atff128cbdb, interpret/execute.rs551–595 supports only a narrow missing input-reference path, and interpretable rejects remaining Related conditions at697–698. Coordinator actual execution of tests/fixtures/related-guard-sign-in.yaml with `ess verify conform run --target interpreted --report-format 2 --format json` produced2 passed/2 unsupported, exit1; retained carrier target/backlog-input/capability-related-guard-sign-in.json records the exact scenarios and diagnostics.
-
-The accepted generated-behavior outcome and all required/Optional/stored-via acceptance remain unchanged. Before treating native interpretation as an independent comparison for those generated behaviors, implement and verify the corresponding native related-row semantics under the complete runtime sequence, including presence/absence, precedence, typed facts and no-row-read for an absent Optional reference. verification-report:consumer-interpreter-capability-audit records the specific gaps. This correction withdraws a stale premise; it is not a decision to leave generated behavior as an obligation, and it does not waive the ess/22 coordinated dependency bundle or the actual Go1.25.10 CI evidence requirement.
+The Decisions phrase "an input via answers at step 1" is too broad beside the accepted #282 decision. For this approved serial batch, interpret it as the early input-reference lookup/missing-row branch only. A present related-row predicate refusal follows the addressed row's held-state check under ess/21, as story:feature-request-282 explicitly requires. Stored-reference lookup still needs the subject row and follows its existence and held-state decisions. Preserve the earlier missing-related-row branch, input refusal order, Optional absence skip and nonmoving state independence. Source: story:feature-request-282 Decisions and its named acceptance controls, and this story's own acceptance of that story's precedence step. This is a coordinator reconciliation of existing accepted decisions, not an extra precedence policy or a claim of executed tests; verify it against the authoritative design after wave 2 integration.

@@ -276,6 +276,11 @@ fn command(service: &mut Service, name: &str, input: &json::Value) -> Result<Str
             reopen_ticket,
             encode_outcome_desk_ticket_reopen_ticket
         ),
+        "desk.ticket.ForgetStats" => run!(
+            decode_command_desk_ticket_forget_stats,
+            forget_stats,
+            encode_outcome_desk_ticket_forget_stats
+        ),
         "desk.ticket.Reprioritize" => run!(
             decode_command_desk_ticket_reprioritize,
             reprioritize,

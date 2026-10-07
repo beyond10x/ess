@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-03T22:51:39Z",
+  "actor": "human:timo",
+  "artifact": "story:counter-reachability-arithmetic-completeness",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "413A frozen source bbc9d2 treatment: arithmetic 5 passed, full counter_limit 17 passed, no failures/ignored; canonical ordinary/shared digests unchanged; full package, lint and independent review remain pending",
+    "reference": "sha256:15cf0fe051ff7fbb9ee5af3f7e5504eca36a64d2691608a150fbe7599b832280,sha256:530c97bf8ed192d29aa8182ae877d0b34f57eb7f43e45650925b4c1752e6ff35"
+  }
+}

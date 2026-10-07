@@ -713,7 +713,7 @@ mod interpreter {
                 );
             } else {
                 assert_eq!(step.next, store);
-                assert!(step.events.is_empty());
+                assert_eq!(step.events.len(), 0);
                 assert_eq!(
                     step.error.as_ref().unwrap().error.to_string(),
                     "demo.secrets.NotConfigured"

@@ -893,9 +893,10 @@ pub const PRECEDENCE_CONTRADICTED: u16 = 19;
 /// The repair for a family asked to send a command guarded by a related row (ess/18, #211): only the
 /// command's own outcome scenarios and its drivers arrange that row, and any other family has none
 /// to point it at.
-const RELATED_UNARRANGED: &str = "the command is selected by a row of another entity its input \
-     names (`when_related:`), which this scenario family does not arrange; cover it with an \
-     authored scenario (ess-scenario/1)";
+const RELATED_UNARRANGED: &str = "the command is selected by the row its `when_related:` guard \
+     reads — the one its input names, or the one a stored field of the subject it addresses names \
+     (ess/22) — which this scenario family does not arrange; cover it with an authored scenario \
+     (ess-scenario/1)";
 
 /// `RefusalCause::CountUnwitnessed`'s number in the `SYNTH` family, the next after
 /// [`crate::aggregate::UNWITNESSED`].
@@ -1264,8 +1265,9 @@ impl fmt::Display for RefusalCause {
                 strategy: strategy @ TestStrategy::ArrangeRelatedRow,
             } => write!(
                 f,
-                "its command's strategy is `{strategy}`: a row of another entity the input names \
-                 selects its branch, and this scenario family arranges none"
+                "its command's strategy is `{strategy}`: the row its `when_related:` guard reads \
+                 — the one its input names, or the one a stored field of the subject it addresses \
+                 names (ess/22) — selects its branch, and this scenario family arranges none"
             ),
             Self::StrategyWithoutGuard { strategy } => {
                 write!(f, "its strategy is `{strategy}` and it declares no guard")
@@ -1610,7 +1612,7 @@ impl fmt::Display for BindingGap {
 
 /// Why a scenario could not get the instance it needed.
 ///
-/// Four shapes, and the difference is which line of the specification an author goes and edits.
+/// Five shapes, and the difference is which line of the specification an author goes and edits.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Unreachable {
     /// No outcome brings an instance of the entity into existence.
@@ -1645,6 +1647,16 @@ pub enum Unreachable {
         /// The field that links a row to its owner.
         via: String,
     },
+    /// A move on the route reads a related row through a stored field of the row being arranged
+    /// (`when_related: {via: <field>}`, ess/22, beyond10x/ess#304), and no arranging run can set
+    /// that field so the move's branch is selected: left out, or naming a row of the related entity
+    /// arranged one level deep.
+    StoredReference {
+        /// The branch the route runs through.
+        outcome: Box<OutcomeRef>,
+        /// Why neither run can be built.
+        why: Box<str>,
+    },
 }
 
 impl Unreachable {
@@ -1665,6 +1677,12 @@ impl Unreachable {
             Self::OwnerHoldsOne { .. } => {
                 "an owner under `cardinality: one` holds one row, so an order over one owner's \
                  rows has nothing to rank; declare `cardinality: many` if an owner holds several"
+            }
+            Self::StoredReference { .. } => {
+                "an arranging run sends a branch reading a stored reference with the reference \
+                 left out, or naming a row of the related entity arranged one level deep; declare \
+                 the reference `Optional<…>`, give the related entity a route to a row that \
+                 selects the branch, or cover the state with an authored scenario (ess-scenario/1)"
             }
         }
     }
@@ -1688,6 +1706,12 @@ impl fmt::Display for Unreachable {
                 f,
                 "the rows are read by the owner `{via}` names, and the owning relation is \
                  `cardinality: one`, so an owner holds one row"
+            ),
+            Self::StoredReference { outcome, why } => write!(
+                f,
+                "the route runs through `{outcome}`, which reads a related row through a stored \
+                 field of the row being arranged, and no arranging run sets it to select that \
+                 branch: {why}"
             ),
         }
     }
@@ -2131,7 +2155,7 @@ pub(crate) fn needs_of(
 }
 
 /// Whether a component is the handler of a command: it accepts it, or owns the domain it is in.
-fn handles(ir: &EssIr, component: &ResolvedComponent, command: &QualifiedName) -> bool {
+pub(crate) fn handles(ir: &EssIr, component: &ResolvedComponent, command: &QualifiedName) -> bool {
     component
         .accepts
         .iter()
@@ -2155,7 +2179,7 @@ fn emits(ir: &EssIr, component: &ResolvedComponent, event: &QualifiedName) -> bo
 }
 
 /// Whether a component projects a view: a view is declared inside a domain, so this is ownership.
-fn owns_view(ir: &EssIr, component: &ResolvedComponent, view: &QualifiedName) -> bool {
+pub(crate) fn owns_view(ir: &EssIr, component: &ResolvedComponent, view: &QualifiedName) -> bool {
     ir.views()
         .get(view)
         .is_some_and(|declared| component.owns.contains(&declared.domain))
@@ -2234,6 +2258,24 @@ fn outcome_scenario_in(
     let (more, depends) = related_boundaries(models, command, outcome, actors, &id, refusals);
     steps.extend(more);
     source.extend(depends);
+    // ess/22 (#304): a branch an absent Optional reference selects is witnessed once more on a
+    // further instance, with the reference left out, so a target reading absence as a missing row
+    // — or reading some row of the entity — fails this scenario.
+    if related_guard::absent_selects(models.arrangement, command, outcome) {
+        let nth = related_guard::boundary_goals(models.arrangement, command, outcome).len() + 1;
+        if let Some((more, depends, _)) = exercise_as(
+            models,
+            command,
+            outcome,
+            actors,
+            &id,
+            refusals,
+            Witness::RelatedAbsent(nth),
+        ) {
+            steps.extend(more);
+            source.extend(depends);
+        }
+    }
     Some((
         id,
         ConformanceScenario::new(purpose(command, outcome), steps, source),
@@ -2362,6 +2404,10 @@ enum Witness {
         /// Which of that predicate's boundaries.
         goal: usize,
     },
+    /// A further instance sent with the Optional reference the command's related guards read left
+    /// out, between related rows that select a refusal (ess/22, beyond10x/ess#304,
+    /// [`related_guard::prepare_absent_in`]), at the `n`th further distinction.
+    RelatedAbsent(usize),
 }
 
 /// Arrange the instance the branch acts on, run the branch, and assert everything it promises.
@@ -2706,6 +2752,10 @@ fn run_as(
                     related_at,
                     Some(named),
                 )?
+            }
+            Witness::RelatedAbsent(nth) => {
+                related_at = Distinction::further(nth);
+                related_guard::prepare_absent_in(models, command, outcome, actors, related_at)?
             }
             Witness::LiteralFallbacks | Witness::Listed(_) => {
                 return Err(related_guard::unarranged())
@@ -3615,6 +3665,13 @@ struct Arrangement {
     unwritten: BTreeSet<String>,
 }
 
+/// A wrong-state arrangement, the input sent to it, and identities arranged for that input.
+type RefusalArrangement = (
+    Arrangement,
+    BTreeMap<String, Node>,
+    BTreeMap<String, InstanceName>,
+);
+
 /// The `Optional` fields of `entity` the creating branch `creator` does not write, and nothing but
 /// a later act on the row itself can: absent on the row as it leaves it (beyond10x/ess#239).
 ///
@@ -3845,7 +3902,21 @@ fn advance(
         // arrangement built selects it, so that is checked rather than assumed. Where the plain
         // witness does not, the route is searched again for a row that does — the same search a
         // branch guarded by the stored fields is arranged with.
-        let moved = if subject_fact::uses(driver.command) {
+        // A move whose command reads a related row through a stored field of this row (ess/22,
+        // beyond10x/ess#304) is sent with that reference left out, or naming a row arranged for it.
+        let moved = if related_guard::stored::field(driver.command).is_some() {
+            related_guard::stored::step(ir, &driver, &arrangement, actors, distinction, arranging)
+                .map_err(|cause| Unreachable::StoredReference {
+                outcome: Box::new(OutcomeRef::new(
+                    CommandRef::new(driver.command.name.clone()),
+                    driver.outcome.name.clone(),
+                )),
+                why: match cause {
+                    RefusalCause::GuardUnsatisfiable { predicate, .. } => predicate.into(),
+                    other => other.to_string().into(),
+                },
+            })?
+        } else if subject_fact::uses(driver.command) {
             match subject_fact::step(ir, entity, &driver, &arrangement, actors) {
                 Some(next) => next,
                 None if arranging.is_empty() => {
@@ -6389,6 +6460,22 @@ fn expression_value(
     supplied: &BTreeMap<String, ScenarioValue>,
     before: &BTreeMap<String, Determined>,
 ) -> Option<ScenarioValue> {
+    expression_value_at(
+        ir,
+        field,
+        supplied,
+        before,
+        std::slice::from_ref(&field.target),
+    )
+}
+
+fn expression_value_at(
+    ir: &EssIr,
+    field: &ess_compiler::ir::ResolvedPayloadField,
+    supplied: &BTreeMap<String, ScenarioValue>,
+    before: &BTreeMap<String, Determined>,
+    target_location: &[String],
+) -> Option<ScenarioValue> {
     match &field.value {
         ResolvedPayloadValue::SubjectField { field: read, .. } => {
             before.get(read).map(|held| held.value.clone())
@@ -6400,10 +6487,7 @@ fn expression_value(
             .get(&related::key(via, read))
             .map(|held| held.value.clone()),
         ResolvedPayloadValue::Increment { by } => {
-            let ScenarioValue::Literal {
-                value: Node::Number(held),
-            } = &before.get(&field.target)?.value
-            else {
+            let Node::Number(held) = before_literal_at(before, target_location)? else {
                 return None;
             };
             let by = ess_primitives::facts::Number::decimal_literal(by)?;
@@ -6430,7 +6514,12 @@ fn expression_value(
         ResolvedPayloadValue::Struct { fields } => {
             let mut leaves = BTreeMap::new();
             for leaf in fields {
-                leaves.insert(leaf.target.clone(), leaf_value(ir, leaf, supplied, before)?);
+                let mut location = target_location.to_vec();
+                location.push(leaf.target.clone());
+                leaves.insert(
+                    leaf.target.clone(),
+                    leaf_value(ir, leaf, supplied, before, &location)?,
+                );
             }
             Some(ScenarioValue::Literal {
                 value: Node::Map(leaves),
@@ -6447,6 +6536,22 @@ fn expression_value(
     }
 }
 
+fn before_literal_at<'a>(
+    before: &'a BTreeMap<String, Determined>,
+    location: &[String],
+) -> Option<&'a Node> {
+    let (root, remaining) = location.split_first()?;
+    let ScenarioValue::Literal { value } = &before.get(root)?.value else {
+        return None;
+    };
+    remaining.iter().try_fold(value, |node, member| {
+        let Node::Map(fields) = node else {
+            return None;
+        };
+        fields.get(member)
+    })
+}
+
 /// [`arranged`], or [`arranged_without_fallbacks`], for the invocation `witness` names.
 fn arranged_as(
     ir: &EssIr,
@@ -6461,7 +6566,9 @@ fn arranged_as(
         Witness::LiteralFallbacks => arranged_without_fallbacks(ir, command, outcome, actors),
         Witness::Listed(nth) => arranged_in_listed_state(ir, command, outcome, actors, nth),
         // Only a command reading a related row builds one, and `run_as` arranges it there.
-        Witness::RelatedBoundary { .. } => Err(related_guard::unarranged()),
+        Witness::RelatedBoundary { .. } | Witness::RelatedAbsent(_) => {
+            Err(related_guard::unarranged())
+        }
     }
 }
 
@@ -6663,6 +6770,7 @@ fn leaf_value(
     leaf: &ess_compiler::ir::ResolvedPayloadField,
     supplied: &BTreeMap<String, ScenarioValue>,
     before: &BTreeMap<String, Determined>,
+    target_location: &[String],
 ) -> Option<Node> {
     if leaf.conversion.is_some() {
         return None;
@@ -6673,7 +6781,7 @@ fn leaf_value(
             Some(ScenarioValue::Literal { value }) => Some(value.clone()),
             _ => None,
         },
-        _ => match expression_value(ir, leaf, supplied, before)? {
+        _ => match expression_value_at(ir, leaf, supplied, before, target_location)? {
             ScenarioValue::Literal { value } => Some(value),
             _ => None,
         },
@@ -6699,7 +6807,15 @@ fn determined_leaves(
         && field.conversion.is_none()
         && expression_value(ir, field, supplied, before).is_none()
     {
-        collect_leaves(ir, field, prefix, supplied, before, &mut out);
+        collect_leaves(
+            ir,
+            field,
+            prefix,
+            supplied,
+            before,
+            std::slice::from_ref(&field.target),
+            &mut out,
+        );
     }
     out
 }
@@ -6712,6 +6828,7 @@ fn collect_leaves(
     prefix: &str,
     supplied: &BTreeMap<String, ScenarioValue>,
     before: &BTreeMap<String, Determined>,
+    target_location: &[String],
     out: &mut BTreeMap<String, Node>,
 ) {
     let ResolvedPayloadValue::Struct { fields } = &field.value else {
@@ -6719,11 +6836,13 @@ fn collect_leaves(
     };
     for leaf in fields {
         let path = format!("{prefix}.{}", leaf.target);
+        let mut location = target_location.to_vec();
+        location.push(leaf.target.clone());
         if matches!(leaf.value, ResolvedPayloadValue::Struct { .. }) {
             if leaf.conversion.is_none() {
-                collect_leaves(ir, leaf, &path, supplied, before, out);
+                collect_leaves(ir, leaf, &path, supplied, before, &location, out);
             }
-        } else if let Some(value) = leaf_value(ir, leaf, supplied, before) {
+        } else if let Some(value) = leaf_value(ir, leaf, supplied, before, &location) {
             flatten_leaf(ir, &leaf.target_type, &path, &value, 0, out);
         }
     }
@@ -6812,7 +6931,15 @@ fn shown_leaves(
             row.entry(path)
                 .or_insert_with(|| ScenarioValue::literal(value));
         }
-        undetermined_leaves(ir, field, &field.target, supplied, before, &mut required);
+        undetermined_leaves(
+            ir,
+            field,
+            &field.target,
+            supplied,
+            before,
+            std::slice::from_ref(&field.target),
+            &mut required,
+        );
     }
     required
 }
@@ -6825,6 +6952,7 @@ fn undetermined_leaves(
     prefix: &str,
     supplied: &BTreeMap<String, ScenarioValue>,
     before: &BTreeMap<String, Determined>,
+    target_location: &[String],
     out: &mut Vec<String>,
 ) {
     let ResolvedPayloadValue::Struct { fields } = &field.value else {
@@ -6832,11 +6960,13 @@ fn undetermined_leaves(
     };
     for leaf in fields {
         let path = format!("{prefix}.{}", leaf.target);
+        let mut location = target_location.to_vec();
+        location.push(leaf.target.clone());
         if matches!(leaf.value, ResolvedPayloadValue::Struct { .. }) {
             if leaf.conversion.is_none() {
-                undetermined_leaves(ir, leaf, &path, supplied, before, out);
+                undetermined_leaves(ir, leaf, &path, supplied, before, &location, out);
             }
-        } else if leaf_value(ir, leaf, supplied, before).is_none()
+        } else if leaf_value(ir, leaf, supplied, before, &location).is_none()
             && !may_be_null(ir, &leaf.target_type, 0)
         {
             out.push(path);
@@ -7102,6 +7232,148 @@ fn freshened(
             }
             let mut next = input.clone();
             next.insert(field.clone(), moved);
+            if admitted(ir, command, &next)
+                && selects_branch(ir, command, outcome, held, &next).unwrap_or(false)
+            {
+                input = next;
+                break;
+            }
+        }
+    }
+    unread_apart(ir, command, outcome, input, held, settled)
+}
+
+/// One `sets:` entry a `sets-drop` mutant of the mutation audit removed: `target: input.source`
+/// on `command`'s `outcome` (beyond10x/ess#212). Only [`with_dropped_write`] names one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DroppedWrite {
+    /// The command, by qualified name.
+    pub(crate) command: String,
+    /// The outcome.
+    pub(crate) outcome: String,
+    /// The entity field the dropped entry wrote.
+    pub(crate) target: String,
+    /// The input field it wrote it from.
+    pub(crate) source: String,
+}
+
+thread_local! {
+    /// The dropped write of the `sets-drop` mutant being synthesized on this thread, if any.
+    static DROPPED: std::cell::RefCell<Option<DroppedWrite>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Runs `synthesize` with `dropped` as the write the model under synthesis no longer makes, and
+/// restores what was there before, also on a panic.
+///
+/// The mutant's model has lost the entry, so nothing in it says that its now unread input once fed
+/// that field. [`unread_apart`] reads this to send the input apart from what the row holds there,
+/// under whatever names, so a target that still writes it shows another row. Every synthesis
+/// outside the mutation audit runs with none, and its bytes are unchanged.
+pub(crate) fn with_dropped_write<R>(
+    dropped: Option<DroppedWrite>,
+    synthesize: impl FnOnce() -> R,
+) -> R {
+    struct Restore(Option<DroppedWrite>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let previous = self.0.take();
+            DROPPED.with(|it| *it.borrow_mut() = previous);
+        }
+    }
+    let previous = DROPPED.with(|it| it.replace(dropped));
+    let _restore = Restore(previous);
+    synthesize()
+}
+
+/// The dropped write [`with_dropped_write`] names for `command`'s `outcome`, if any.
+fn dropped_writes(command: &str, outcome: &str) -> Vec<DroppedWrite> {
+    DROPPED.with(|it| {
+        it.borrow()
+            .iter()
+            .filter(|it| it.command == command && it.outcome == outcome)
+            .cloned()
+            .collect()
+    })
+}
+
+/// The branch's input, with every field no `sets:` entry reads moved apart from what the row holds
+/// in the field of the same name and identical declared type, where the branch leaves that field
+/// alone (beyond10x/ess#212), and from what it holds in the field a `sets-drop` mutant's dropped
+/// entry wrote from it ([`with_dropped_write`]).
+///
+/// Where the two coincide, the row reads the same whether or not the implementation also wrote the
+/// input there, so a target that did — or the model of a `sets-drop` mutant, which leaves a field
+/// the declared model writes as it was — passed. The input field naming the instance is never
+/// moved, a further witness gives the moved field its value as [`freshened`] takes one, and the
+/// branch is decided again by [`selects_branch`]; where nothing can move, the input stands.
+///
+/// Only the same-named field: it is the write an implementation makes by accident, and the one
+/// `title: input.title` drops. Every same-typed field would move inputs in suites whose rows only
+/// share a type with them, such as a payment's amount beside the invoice's total, and a choice of
+/// witness is all this is — it says nothing about which field an input belongs to.
+fn unread_apart(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    mut input: BTreeMap<String, Node>,
+    held: Option<&StateName>,
+    settled: &BTreeMap<String, Determined>,
+) -> BTreeMap<String, Node> {
+    let Some(subject) = &outcome.subject else {
+        return input;
+    };
+    let written: BTreeSet<&str> = outcome.sets.iter().map(|set| set.target.as_str()).collect();
+    let read: BTreeSet<&str> = outcome
+        .sets
+        .iter()
+        .filter_map(|set| match &set.value {
+            ResolvedPayloadValue::InputField { field, .. } => Some(field.as_str()),
+            _ => None,
+        })
+        .collect();
+    let identity = subject.instance.field().name.as_str();
+    let entity = ir.entity(&subject.entity);
+    let dropped = dropped_writes(&command.name.to_string(), &outcome.name.to_string());
+    for field in &command.input {
+        if read.contains(field.name.as_str()) || field.name == identity {
+            continue;
+        }
+        // The fields a `sets-drop` mutant's dropped entry wrote from this input, whatever its name.
+        let wrote: Vec<&str> = dropped
+            .iter()
+            .filter(|it| it.source == field.name)
+            .map(|it| it.target.as_str())
+            .collect();
+        let stored: Vec<Node> = entity
+            .fields
+            .iter()
+            .filter(|it| {
+                !written.contains(it.name.as_str())
+                    && ((it.name == field.name && it.type_ref == field.type_ref)
+                        || wrote.contains(&it.name.as_str()))
+            })
+            .filter_map(|it| held_value(ir, settled, &it.name, &it.type_ref))
+            .collect();
+        if !input
+            .get(&field.name)
+            .is_some_and(|value| stored.contains(value))
+        {
+            continue;
+        }
+        for nth in 1..=FRESH_WITNESSES {
+            let Some(moved) = candidates(ir, command, &[], Distinction::further(nth))
+                .ok()
+                .and_then(|inputs| inputs.into_iter().next())
+                .and_then(|mut further| further.remove(&field.name))
+            else {
+                continue;
+            };
+            if stored.contains(&moved) || equals_a_sibling(command, &input, &field.name, &moved) {
+                continue;
+            }
+            let mut next = input.clone();
+            next.insert(field.name.clone(), moved);
             if admitted(ir, command, &next)
                 && selects_branch(ir, command, outcome, held, &next).unwrap_or(false)
             {
@@ -8486,7 +8758,7 @@ fn refused_here(
         .collect();
     let attempt = movers.first().copied()?;
 
-    let (arrangement, input) = refusal_arrangement(ir, handle, state, actors, attempt)
+    let (arrangement, input, bound) = refusal_arrangement(ir, handle, state, actors, attempt)
         .map_err(|cause| refusals.push(Refusal::about(id, cause)))
         .ok()?;
 
@@ -8508,7 +8780,7 @@ fn refused_here(
         Some(&arrangement.instance),
         // The command under test moves the row the arrangement already created, so its input
         // names that row; an owner, where there was one, was arranged inside `arrange`.
-        &BTreeMap::new(),
+        &bound,
     );
     steps.push(ScenarioStep::ExecuteCommand {
         caller: std::collections::BTreeMap::new(),
@@ -8792,7 +9064,18 @@ fn unknown_instance(
     let mut last = None;
     let mut reached = None;
     for outcome in acting {
-        match reach(ir, command, outcome, Distinction::PLAIN) {
+        // A command reading a related row through an Optional input (ess/22, #304) reaches the
+        // branch with the reference left out: no related row is read, so none is arranged. One
+        // reading it through a stored field of the addressed subject, Optional or not, reads it
+        // only after the subject's existence has answered, and an unknown subject has none.
+        let input = if related_guard::optional(command)
+            || related_guard::stored::field(command).is_some()
+        {
+            related_guard::absent_input(ir, command, outcome, Distinction::PLAIN)
+        } else {
+            reach(ir, command, outcome, Distinction::PLAIN)
+        };
+        match input {
             Ok(input) => {
                 reached = Some((*outcome, input));
                 break;
@@ -9363,8 +9646,8 @@ fn refusal_arrangement(
     state: &StateName,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     attempt: &Driver<'_>,
-) -> Result<(Arrangement, BTreeMap<String, Node>), RefusalCause> {
-    let arrangement =
+) -> Result<RefusalArrangement, RefusalCause> {
+    let mut arrangement =
         arrange(ir, handle, state, actors, Distinction::PLAIN, &[]).map_err(|reason| {
             RefusalCause::InstanceRequired {
                 entity: EntityRef::from(handle),
@@ -9387,10 +9670,16 @@ fn refusal_arrangement(
             attempt.command,
             attempt.outcome,
             Distinction::PLAIN,
-        );
+        )
+        .map(|(arrangement, input)| (arrangement, input, BTreeMap::new()));
+    }
+    if related_guard::orders_present_related_refusal(ir, attempt.command) {
+        let (input, bound) =
+            related_guard::wrong_state_overlap(ir, attempt.command, actors, &mut arrangement)?;
+        return Ok((arrangement, input, bound));
     }
     let input = reach(ir, attempt.command, attempt.outcome, Distinction::PLAIN)?;
-    Ok((arrangement, input))
+    Ok((arrangement, input, BTreeMap::new()))
 }
 
 /// Full refusal observation is an explicit compiler obligation of the new source profile.

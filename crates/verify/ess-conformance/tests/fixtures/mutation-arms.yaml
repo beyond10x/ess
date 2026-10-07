@@ -1,0 +1,138 @@
+format: ess/16
+system: notes
+version: v1
+domain: notes.core
+summary: Notes edited after they are written, graded by overlapping guards and admitted at a boundary.
+naming:
+  wire: notes
+  display: Notes
+
+types:
+  - name: notes.core.Kind
+    kind: enum
+    variants: [A, B, C]
+
+entities:
+  - name: notes.core.Note
+    identity: {name: note_id, type: Uuid}
+    fields:
+      - {name: title, type: String}
+      - {name: memo, type: String}
+    lifecycle:
+      initial: Open
+      states: [Open]
+      terminal: [Open]
+
+errors:
+  - name: notes.core.TooLow
+    summary: The amount is far too low.
+  - name: notes.core.Low
+    summary: The amount is too low.
+  - name: notes.core.Rejected
+    summary: The note is not admitted.
+
+events:
+  - name: notes.core.Written
+    fields:
+      - {name: note_id, type: Uuid}
+  - name: notes.core.Edited
+    fields:
+      - {name: note_id, type: Uuid}
+  - name: notes.core.Small
+    fields: []
+  - name: notes.core.Flagged
+    fields: []
+  - name: notes.core.Other
+    fields: []
+
+commands:
+  # `title` is projected by a view and `memo` is read by nothing, so dropping the first write is
+  # observable and dropping the second is not.
+  - name: notes.core.Write
+    input:
+      - {name: title, type: String}
+      - {name: memo, type: String}
+    outcomes:
+      - name: written
+        creates: notes.core.Note
+        instance: note_id
+        sets: {title: input.title, memo: input.memo}
+        emits: [notes.core.Written]
+        payload:
+          notes.core.Written:
+            note_id: {generated: true}
+  - name: notes.core.Edit
+    input:
+      - {name: note_id, type: Uuid}
+      - {name: title, type: String}
+      - {name: memo, type: String}
+    outcomes:
+      - name: edited
+        updates: notes.core.Note
+        instance: note_id
+        sets: {title: input.title, memo: input.memo}
+        emits: [notes.core.Edited]
+        payload:
+          notes.core.Edited:
+            note_id: input.note_id
+  # `small` and `flagged` overlap from 51 to 99, where the first declared answers.
+  - name: notes.core.Grade
+    input:
+      - {name: amount, type: Integer}
+    outcomes:
+      - name: small
+        when: amount < 100
+        emits: [notes.core.Small]
+      - name: flagged
+        when: amount > 50
+        emits: [notes.core.Flagged]
+      - name: other
+        emits: [notes.core.Other]
+  # `first` and `second` are disjoint, so their order decides nothing.
+  - name: notes.core.Sort
+    input:
+      - {name: kind, type: notes.core.Kind}
+    outcomes:
+      - name: first
+        when: kind == A
+        emits: [notes.core.Small]
+      - name: second
+        when: kind == B
+        emits: [notes.core.Flagged]
+      - name: rest
+        emits: [notes.core.Other]
+  # Two input-guarded refusals that overlap below 10, where the first declared answers.
+  - name: notes.core.Measure
+    input:
+      - {name: amount, type: Integer}
+    outcomes:
+      - name: too-low
+        when: amount < 10
+        error: notes.core.TooLow
+      - name: low
+        when: amount < 20
+        error: notes.core.Low
+      - name: measured
+        emits: [notes.core.Other]
+  # One equality leaf beside a non-strict ordering against an integral literal.
+  - name: notes.core.Admit
+    input:
+      - {name: kind, type: notes.core.Kind}
+      - {name: amount, type: Integer}
+    outcomes:
+      - name: admitted
+        when:
+          all:
+            - kind == A
+            - amount >= 10
+        emits: [notes.core.Small]
+      - name: refused
+        error: notes.core.Rejected
+
+views:
+  - name: notes.core.Notes
+    source: notes.core.Note
+    consistency: read_your_writes
+    fields:
+      - {name: note_id, type: Uuid}
+      - {name: title, type: String}

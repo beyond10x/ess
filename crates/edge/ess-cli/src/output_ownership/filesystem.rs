@@ -793,7 +793,7 @@ mod xattr_tests {
     fn a_destination_without_attributes_is_ordinary() {
         let dir = tempfile::tempdir().expect("tempdir");
         let file = File::create(dir.path().join("out")).expect("create");
-        assert!(foreign_xattrs(&file).expect("listing").is_empty());
+        assert_eq!(foreign_xattrs(&file).expect("listing").len(), 0);
         ordinary_metadata(&file, true).expect("no attribute, no refusal");
     }
 }

@@ -227,6 +227,147 @@ fn generate_ui_react_with_a_model_writes_the_bound_project() {
     assert!(!refused_out.exists(), "a refused binding writes nothing");
 }
 
+/// beyond10x/ess#330, #328: with `--model`, a choice's `options` naming an enum of the model
+/// list its variants — `ess ui check` passes the document and `ess generate ui` writes them —
+/// and a choice over a view sends the view's identity; without `--model` the check names the
+/// options under `options_enum`.
+#[test]
+fn a_choice_lists_a_model_enum_and_sends_a_views_identity_with_model() {
+    let scratch = tempfile::tempdir().expect("a scratch directory");
+    let document = scratch.path().join("desk.yaml");
+    std::fs::write(
+        &document,
+        "format: ess-ui/1\napp: desk\nmodel: gatepass\nplacement_profile: fat\n\
+         shells: {app: {regions: {main: {kind: page_outlet}}}}\n\
+         navigation: {home: desk, sections: [{name: all, pages: [desk]}]}\n\
+         pages: {desk: {kind: detail_page, title: Desk, \
+         state: {building: {type: string, class: page_state, store: url}}, \
+         sections: [{name: expected, component: collection, reads: visit.ExpectedVisits}, \
+         {name: building, component: choice, options: visit.Building, binds: state.building}, \
+         {name: visit, component: choice, reads: visit.ExpectedVisits, binds: state.building}]}}\n",
+    )
+    .expect("writable");
+    let checked = ess(&[
+        "ui",
+        "check",
+        "--path",
+        utf8(&document),
+        "--model",
+        "examples/gatepass",
+    ]);
+    assert_eq!(
+        checked.status.code(),
+        Some(0),
+        "{}{}",
+        text(&checked.stdout),
+        text(&checked.stderr)
+    );
+    let unmodelled = ess(&["ui", "check", "--path", utf8(&document)]);
+    assert_eq!(unmodelled.status.code(), Some(1));
+    assert!(
+        text(&unmodelled.stdout).contains("options_enum pages/desk/sections/building/options"),
+        "{}",
+        text(&unmodelled.stdout)
+    );
+
+    let out = scratch.path().join("desk");
+    let output = ess(&[
+        "generate",
+        "ui",
+        "--target",
+        "react",
+        "--path",
+        utf8(&document),
+        "--model",
+        "examples/gatepass",
+        "--out",
+        utf8(&out),
+    ]);
+    assert_eq!(output.status.code(), Some(0), "{}", text(&output.stderr));
+    let page = std::fs::read_to_string(out.join("src/pages/Desk.tsx")).expect("the page");
+    for variant in ["North", "South", "Annex"] {
+        assert!(
+            page.contains(&format!("\"{variant}\"")),
+            "{variant}:\n{page}"
+        );
+    }
+    assert!(page.contains(r#"identity={"visit_id"}"#), "{page}");
+    let binding = std::fs::read_to_string(out.join("src/binding.ts")).expect("the binding");
+    assert!(
+        binding.contains(r#""visit.Building": "gatepass.visit.Building""#),
+        "{binding}"
+    );
+}
+
+/// beyond10x/ess#330 (adversary pass 1): `ess ui load` and `ess ui test` take `--model`, so a
+/// document whose options name a model enum loads and is tested with its variants; without it
+/// the refusal names the flag.
+#[test]
+fn ui_load_and_ui_test_take_a_model() {
+    let scratch = tempfile::tempdir().expect("a scratch directory");
+    let document = scratch.path().join("desk.yaml");
+    std::fs::write(
+        &document,
+        "format: ess-ui/1\napp: desk\nmodel: gatepass\nplacement_profile: fat\n\
+         shells: {app: {regions: {main: {kind: page_outlet}}}}\n\
+         navigation: {home: desk, sections: [{name: all, pages: [desk]}]}\n\
+         pages: {desk: {kind: detail_page, title: Desk, \
+         state: {building: {type: string, class: page_state, store: url}}, \
+         sections: [\
+         {name: building, component: choice, options: visit.Building, binds: state.building}]}}\n",
+    )
+    .expect("writable");
+    let tests = scratch.path().join("desk-tests.yaml");
+    std::fs::write(
+        &tests,
+        "format: ess-ui-test/1\ndocument: desk.yaml\ntests:\n- name: building\n  steps:\n\
+         \x20 - open: desk\n\
+         \x20 - expect: {at: pages/desk/sections/building, text: Annex}\n",
+    )
+    .expect("writable");
+
+    let loaded = ess(&[
+        "ui",
+        "load",
+        "--path",
+        utf8(&document),
+        "--model",
+        "examples/gatepass",
+    ]);
+    assert_eq!(loaded.status.code(), Some(0), "{}", text(&loaded.stderr));
+    let unmodelled = ess(&["ui", "load", "--path", utf8(&document)]);
+    assert_eq!(unmodelled.status.code(), Some(1));
+    assert!(
+        text(&unmodelled.stderr).contains("--model"),
+        "{}",
+        text(&unmodelled.stderr)
+    );
+
+    let tested = ess(&[
+        "ui",
+        "test",
+        "--path",
+        utf8(&document),
+        "--model",
+        "examples/gatepass",
+        utf8(&tests),
+    ]);
+    assert_eq!(
+        tested.status.code(),
+        Some(0),
+        "{}{}",
+        text(&tested.stdout),
+        text(&tested.stderr)
+    );
+    let untested = ess(&["ui", "test", "--path", utf8(&document), utf8(&tests)]);
+    assert_eq!(untested.status.code(), Some(1));
+    assert!(
+        text(&untested.stdout).contains("ess ui test --model"),
+        "{}",
+        text(&untested.stdout)
+    );
+}
+
 #[test]
 fn generate_ui_offers_react_and_tui_as_its_targets() {
     let unknown = ess(&[
@@ -431,7 +572,7 @@ fn ui_test_runs_the_example_tests() {
         serde_json::from_slice(&output.stdout).expect("the report is JSON");
     assert_eq!(report["format"], "ess-ui-test-report/1");
     let tests = report["tests"].as_array().expect("a tests list");
-    assert!(!tests.is_empty());
+    assert_ne!(tests.len(), 0);
     assert!(
         tests.iter().all(|test| test["status"] == "passed"),
         "{tests:#?}"

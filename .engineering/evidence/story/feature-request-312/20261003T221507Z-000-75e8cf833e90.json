@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-03T22:15:07Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-312",
+  "kind": "story",
+  "revision": 18,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "TS33 candidate33817a2c: actual33/33 TypeScript/Node zeroignored/filtered/skipped, scopedstrictClippy/package/repositoryformat0. TestlogSHA0246aae731b9d8a20008466ec0bd50aae4004ff03c62e902be81b95e0c5250c4. Independent whole-unit r1 audited all164 nonempty parity mode comparisons and frozen source/evidence; no reviewer runtime rerun claimed."
+  }
+}

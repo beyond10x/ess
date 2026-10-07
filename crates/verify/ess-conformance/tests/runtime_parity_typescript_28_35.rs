@@ -684,7 +684,7 @@ fn typescript_structured_depth_admission_matches_native_envelope_limit() {
                 .output()
                 .unwrap();
             assert_eq!(output.status.code(), Some(2));
-            assert!(host.stop().is_empty());
+            assert_eq!(host.stop().len(), 0);
         }
     }
 }
@@ -842,7 +842,7 @@ fn refused_depth_document(raw: &str, label: &str) {
         .unwrap();
     assert_eq!(output.status.code(), Some(2), "TypeScript admitted {label}");
     assert!(!report.exists());
-    assert!(host.stop().is_empty());
+    assert_eq!(host.stop().len(), 0);
 }
 
 #[test]

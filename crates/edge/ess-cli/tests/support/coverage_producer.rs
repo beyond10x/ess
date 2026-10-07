@@ -475,11 +475,11 @@ pub fn export_controls() {
                     ]),
             );
             assert!(!output.status.success(), "{output:?}");
-            assert!(output.stdout.is_empty());
+            assert_eq!(output.stdout.len(), 0);
             let stderr = String::from_utf8_lossy(&output.stderr);
             assert!(
                 stderr.contains(
-                    "suite/5, /6 and /7 require explicit --report-format 2 before execution"
+                    "suite/8 through /35 require explicit --report-format 2 before execution"
                 ),
                 "{stderr}"
             );

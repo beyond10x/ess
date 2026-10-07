@@ -611,7 +611,8 @@ pub enum ResolvedCondition {
     /// [`Absent`](ResolvedRelatedTest::Absent) branch: never a predicate branch and never the
     /// default.
     Related {
-        /// The input field carrying the other entity's identity.
+        /// The field carrying the other entity's identity: an input field, or from ess/22 a stored
+        /// field of the addressed subject as it was before the branch (beyond10x/ess#304).
         via: ResolvedRelatedVia,
         /// The entity whose identity that field carries.
         entity: EntityHandle,
@@ -1090,6 +1091,21 @@ pub fn related_sentence(
     entity: &EntityHandle,
     test: &ResolvedRelatedTest,
 ) -> String {
+    // An Optional input reference (ess/22, beyond10x/ess#304) is checked only when present: an
+    // absent one reads no row and selects no related branch, so it is never a missing row.
+    if via.type_ref().is_optional() {
+        return match test {
+            ResolvedRelatedTest::Absent => format!(
+                "Taken when `{via}`, checked only when present, names an identity no `{}` carries",
+                entity.name()
+            ),
+            ResolvedRelatedTest::Holds { predicate } => format!(
+                "Taken when `{via}`, checked only when present, names a `{}` that exists and whose \
+                 stored fields satisfy `{predicate}`",
+                entity.name()
+            ),
+        };
+    }
     match test {
         ResolvedRelatedTest::Absent => format!(
             "Taken when no `{}` carries the identity `{via}` names",
@@ -1111,14 +1127,18 @@ pub enum ResolvedRelatedVia {
     Subject {
         /// The entity field.
         field: String,
-        /// Its resolved type: the referenced entity's identity.
+        /// Its resolved type as declared: the referenced entity's identity, or — for a
+        /// `when_related` guard from ess/22 (beyond10x/ess#304) — `Optional<…>` of it, checked only
+        /// when present.
         type_ref: ResolvedTypeRef,
     },
     /// A field of the command's input.
     Input {
         /// The input field.
         field: String,
-        /// Its resolved type: the referenced entity's identity.
+        /// Its resolved type as declared: the referenced entity's identity, or — for a
+        /// `when_related` guard from ess/22 (beyond10x/ess#304) — `Optional<…>` of it, checked only
+        /// when present.
         type_ref: ResolvedTypeRef,
     },
 }

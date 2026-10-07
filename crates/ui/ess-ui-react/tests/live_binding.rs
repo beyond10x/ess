@@ -125,10 +125,10 @@ const PLAIN: [(&str, u64); 7] = [
     ("src/runtime/actions.tsx", 0x1440_0f25_3b4c_8e3b),
     ("src/runtime/composites/confirm.tsx", 0xbeef_774c_44b0_0be3),
     ("src/runtime/composites/form.tsx", 0x752b_3696_9db6_fbcc),
-    ("src/runtime/data.ts", 0x6e29_be89_c0e8_5da2),
+    ("src/runtime/data.ts", 0x036a_4d67_6dc4_1ac6),
     ("www/index.html", 0x5972_6d4a_5ee2_5ce2),
 ];
-const PLAIN_PROJECT: u64 = 0x248f_5b40_a796_0d09;
+const PLAIN_PROJECT: u64 = 0x865c_4747_c10a_6afd;
 
 #[test]
 fn without_a_model_the_project_is_byte_identical() {

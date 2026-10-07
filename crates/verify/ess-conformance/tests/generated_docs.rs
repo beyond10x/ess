@@ -20,7 +20,9 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-use ess_conformance::scenario::{SuiteFormat, SuiteProvenance, SUPPORTED_SUITE_FORMATS};
+use ess_conformance::scenario::{
+    ScenarioInitialState, SuiteFormat, SuiteProvenance, SUPPORTED_SUITE_FORMATS,
+};
 use ess_conformance::ConformanceSuite;
 use ess_primitives::evidence::SpecDigest;
 
@@ -32,7 +34,7 @@ fn suite(major: u32) -> ConformanceSuite {
         spec_digest: SpecDigest::new("ab".repeat(32)).expect("a digest"),
         contract_digest: SpecDigest::new("cd".repeat(32)).expect("a digest"),
         component: None,
-        scenario_initial_state: None,
+        scenario_initial_state: (major >= 34).then_some(ScenarioInitialState::Empty),
     })
 }
 

@@ -158,7 +158,7 @@ fn execute(binding: &CompiledBinding) -> (i32, String, String, Vec<Value>) {
         None,
     );
     assert_eq!(output.exit_code, 0, "{output:?}");
-    assert!(output.stderr.is_empty());
+    assert_eq!(output.stderr.len(), 0);
     assert_eq!(
         serde_json::from_str::<Value>(&output.stdout).unwrap(),
         json!({"ok":true,"result":17})
@@ -595,7 +595,7 @@ fn binding_identity_naming_summary_and_refs_change_without_cli_effect() {
         b.summary.as_deref(),
         Some("A revised interaction description.")
     );
-    assert!(a.refs.is_empty());
+    assert_eq!(a.refs.len(), 0);
     assert_eq!(
         b.refs.iter().map(ToString::to_string).collect::<Vec<_>>(),
         vec!["aep:binding-review"]

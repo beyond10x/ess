@@ -16,7 +16,7 @@ fn model() -> EssIr {
 #[test]
 fn every_fresh_suite_declares_empty_logical_scenario_state_in_format34() {
     let synthesis = synthesize(&model());
-    assert!(synthesis.refusals.is_empty());
+    assert_eq!(synthesis.refusals.len(), 0);
     let bytes = synthesis.suite.to_canonical_json().unwrap();
     let wire: serde_json::Value = serde_json::from_str(&bytes).unwrap();
     assert_eq!(wire["provenance"]["scenario_initial_state"], "empty");

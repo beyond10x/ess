@@ -464,7 +464,8 @@ fn authored_refusal(
         | Cause::AmbiguousWindow { .. }
         | Cause::HaltsAtNothing { .. }
         | Cause::InvalidPredicate { .. }
-        | Cause::ExternalAnswerUnstated { .. } => Effect::CandidateNotEmitted,
+        | Cause::ExternalAnswerUnstated { .. }
+        | Cause::GuardsContradictOutcome { .. } => Effect::CandidateNotEmitted,
     };
     Ok(Refusal {
         origin: Origin::Authored,
@@ -592,7 +593,7 @@ mod tests {
         let mut synthesis = crate::synthesize(&ir);
         let id = ScenarioId::parse("billing.invoice.CreateInvoice/outcome/accepted").unwrap();
         let first = synthesis.suite.scenarios[&id].clone();
-        assert!(synthesis.refusals.is_empty());
+        assert_eq!(synthesis.refusals.len(), 0, "{:?}", synthesis.refusals);
         crate::synthesize::insert(
             &mut synthesis.suite,
             id.clone(),

@@ -134,6 +134,16 @@ pub fn diff(before: &EssIr, after: &EssIr) -> Result<EssDelta, DiffRefusal> {
     ))
 }
 
+/// What moved, and whom each change breaks (beyond10x/ess#290).
+///
+/// The same changes [`diff`] reports, each carrying a
+/// [`ChangeCompatibility`](crate::compatibility::ChangeCompatibility) derived from both revisions,
+/// written as `ess-diff/14` or later. Opt-in: [`diff`] keeps its format and bytes.
+pub fn classified(before: &EssIr, after: &EssIr) -> Result<EssDelta, DiffRefusal> {
+    let delta = diff(before, after)?;
+    Ok(delta.classify(&crate::compatibility::UseIndex::new(before, after)))
+}
+
 // ---- shared comparisons ----------------------------------------------------------------------
 
 /// Every key either side declares, once, in name order.

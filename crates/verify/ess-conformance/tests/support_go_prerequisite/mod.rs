@@ -178,9 +178,13 @@ impl ConformanceTarget for Fixture {
         Ok(result)
     }
     fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
+        let at_least = match &request.consistency {
+            ess_primitives::consistency::QueryConsistency::Current => String::new(),
+            ess_primitives::consistency::QueryConsistency::AtLeast { token } => token.to_string(),
+        };
         self.record(
             "query",
-            json!({"view":request.view,"params":request.params}),
+            json!({"view":request.view,"params":request.params,"at_least":at_least}),
         );
         self.failure("query")?;
         if self.kind == "structured" {
@@ -396,8 +400,11 @@ fn dispatch(target: &Fixture, request: &Value) -> Result<Value, TargetError> {
                 input: fields(&args["Input"]),
                 correlation,
             })?;
+            let consistency = result
+                .consistency
+                .map_or_else(String::new, |token| token.to_string());
             Ok(
-                json!({"Outcome":result.outcome.map(|outcome|outcome.outcome.to_string()),"Response":result.response,"DirectEvents":result.direct_events.into_iter().map(|event|json!({"Event":event.event,"Payload":event.payload})).collect::<Vec<_>>()}),
+                json!({"Outcome":result.outcome.map(|outcome|outcome.outcome.to_string()),"Response":result.response,"DirectEvents":result.direct_events.into_iter().map(|event|json!({"Event":event.event,"Payload":event.payload})).collect::<Vec<_>>(),"Consistency":consistency}),
             )
         }
         "events" => {
@@ -457,12 +464,19 @@ fn dispatch(target: &Fixture, request: &Value) -> Result<Value, TargetError> {
             Ok(Value::Null)
         }
         "query" => {
+            let consistency = match text("AtLeast") {
+                "" => ess_primitives::consistency::QueryConsistency::Current,
+                token => ess_primitives::consistency::QueryConsistency::at_least(
+                    ess_primitives::consistency::ConsistencyToken::new(token)
+                        .expect("the generated runtime sends an admitted consistency token"),
+                ),
+            };
             let result = target.query_view(SemanticViewRequest {
                 view: text("View").parse().unwrap(),
                 params: fields(&args["Params"]),
                 correlation,
                 deadline,
-                consistency: ess_primitives::consistency::QueryConsistency::Current,
+                consistency,
             })?;
             Ok(json!({"Rows":result.rows}))
         }

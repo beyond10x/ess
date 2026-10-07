@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:rust-binding-unused-event
 kind: story
-status: active
+status: draft
 title: Generated Rust bindings compile when mapping reads no event field
 relations:
 - serves: vision:O2
@@ -12,10 +12,7 @@ scope:
   path: crates/generate/ess-synth/src/rust/system.rs
 - confidence: inferred
   path: crates/generate/ess-synth/tests
-revision: 5
-transitions:
-- {from: "draft", to: "proposed", at: "2026-10-02T12:46:38Z", actor: "human:timo", revision: 4, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
-- {from: "proposed", to: "active", at: "2026-10-02T12:46:38Z", actor: "human:timo", revision: 5, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
+revision: 3
 ---
 ## Outcome
 

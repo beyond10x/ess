@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-03T22:30:22Z",
+  "actor": "human:timo",
+  "artifact": "story:counter-reachability-arithmetic-completeness",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "413A test-only baseline: arithmetic libfilter3passed/2failed at MAX and MIN with unchanged production, logSHAf7b64cf0181b4dc26d8c2402feee67d17d5f35ca74caadf9d5692025cc15e227. Initial counter_limit compile failure E0277 was corrected only in test hash formatting; original failure retained. Corrected fullcounter_limit baseline17/17 zeroignored/filtered exit0 logSHA347c7f19fdd2ac0da536ebcf6183a64d6ef6d4376efc3cb49ec7fff3dfea8225, testfreeze2b7d64232621c327024b418597767a6e198154e162cdf5efc8c8b8c7bca45d47a. No independent finite/shared counter semantic failure."
+  }
+}

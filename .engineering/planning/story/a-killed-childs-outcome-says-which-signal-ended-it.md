@@ -11,10 +11,12 @@ scope:
   path: crates/edge/ess-cli/src/recovery/process.rs
 - confidence: cited
   path: crates/edge/ess-cli/tests/execution_recovery.rs
-revision: 6
+- confidence: cited
+  path: crates/edge/ess-cli/tests/support/fake_recovery.rs
+revision: 7
 transitions:
-- {from: "draft", to: "proposed", at: "2026-10-02T13:12:41Z", actor: "human:timo", revision: 5, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
-- {from: "proposed", to: "active", at: "2026-10-02T13:12:41Z", actor: "human:timo", revision: 6, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
+- {from: "draft", to: "proposed", at: "2026-10-03T07:30:24Z", actor: "human:timo", revision: 4}
+- {from: "proposed", to: "active", at: "2026-10-03T07:30:24Z", actor: "human:timo", revision: 5}
 ---
 # A killed child's outcome says which signal ended it
 
@@ -56,15 +58,8 @@ attributable from its output alone.
 - `crates/edge/ess-cli/src/recovery/process.rs` — `cited`
 - `crates/edge/ess-cli/tests/execution_recovery.rs` — `cited`
 
-## Accepted delivery scope, 2026-10-02
+## Integrated reviewed handoff
 
-Current source still has the reported ambiguity: recovery/process.rs stores only code and timed_out, while the execution_recovery status assertion prints only its fault label. This is a bounded diagnostic defect. Accept preserving recovery dispositions and serialized journal formats while exposing the observed Unix terminating signal in the in-process Outcome and printing the complete termination distinction in failed assertions. On non-Unix platforms a signal unavailable from the platform is explicitly absent; do not invent a signal. Timeout remains a distinct harness decision even when the subsequent reap observes SIGKILL.
+The source owner's active story and independently reviewed commit0e7fb770827c10038985105c8f4997ea74545043 were transferred in the final handoff. Exact main e68684ef matches the patch parent on all three touched files, and the patch applied unchanged as d2fdeb4ca on the grouped release carrier. The diagnostic preserves actual Unix signal, existing timeout/indeterminate decisions, absent non-Unix signal, and complete assertion output. No serialized journal format or retry disposition changes.
 
-Named acceptance:
-- ordinary_child_exit_preserves_status: zero and nonzero exit codes remain intact with no signal and no timeout;
-- externally_signaled_child_reports_signal: on Unix, a deterministic self-signaling Rust fixture has no exit code, its actual signal and timed_out false;
-- deadline_killed_child_reports_timeout: a bounded long-running child remains timed_out and Indeterminate, distinct from the preceding signal case;
-- spawn_refusal_is_not_signal: refusal remains NotLaunched, with no exit code or signal;
-- recovery_assertion_reports_termination: the existing fault-injection status assertion includes complete diagnostic Outcome information.
-
-No guessed OOM cause, changed retry disposition, descendant-killing policy, dependency addition or journal format is authorized. A measured signal is not proof of which external actor sent it. Add focused regression coverage and retain same-test red/green evidence. Necessary fake Outcome literals in CLI tests are an inferred additional scope surface; enumerate them before editing.
+The original consumer-child-signal-pass1 review approves the exact patch with no findings. Retained evidence reports same-test red-to-green, execution_recovery120 passed/0 failed, formatting and strict lint. These are prior source-owner observations; final combined release gates remain required. No generic restart capability is claimed. The receiving coordinator preserves original source and review evidence until publication.

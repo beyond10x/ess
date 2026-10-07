@@ -139,7 +139,7 @@ fn event_model(component: &str, event: &str, network: bool) -> EssIr {
 fn checked_failure(ir: &EssIr, target: Target, failure: &ess_synth::TargetFailure) {
     assert_eq!(failure.target(), target.name());
     assert_eq!(failure.plan(), &SynthesisPlan::of(ir));
-    assert!(!failure.causes().is_empty());
+    assert_ne!(failure.causes().len(), 0);
     assert!(failure
         .causes()
         .iter()
@@ -199,7 +199,7 @@ fn helper_like_event_names_remain_legal_without_the_codec_scope() {
 #[test]
 fn multiple_causes_keep_a_complete_unchanged_plan_and_canonical_order() {
     let ir = fixture(
-        "types:\n  - name: demo.core.FooBar\n    kind: newtype\n    of: String\n  - name: demo.core.Foo_Bar\n    kind: newtype\n    of: String\n  - name: demo.core.Loop\n    kind: struct\n    fields:\n      - { name: next, type: Optional<demo.core.Loop> }\n",
+        "types:\n  - name: demo.core.FooBar\n    kind: newtype\n    of: String\n  - name: demo.core.Foo_Bar\n    kind: newtype\n    of: String\n  - name: demo.core.Loop\n    kind: struct\n    fields:\n      - { name: next, type: Optional<Optional<demo.core.Loop>> }\n",
         "components: []\n",
     );
     let error = synthesize(&ir)
@@ -353,7 +353,7 @@ fn an_unaccepted_outcome_binding_has_no_web_codec_local_scope() {
     );
     let web =
         synthesize_for(&ir, Target::Web).expect("unaccepted commands retain their partial report");
-    assert!(!web.target.as_ref().unwrap().refusals.is_empty());
+    assert_ne!(web.target.as_ref().unwrap().refusals.len(), 0);
     compile_emitted(&directory.join("generated/web/demo"), &web, true);
 }
 

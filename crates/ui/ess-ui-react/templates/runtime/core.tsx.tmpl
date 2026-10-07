@@ -172,6 +172,8 @@ export interface SectionInfo {
   total?: number;
   params?: Record<string, unknown>;
   selection?: unknown;
+  /** The first row, reported by the section a header title reads its record from. */
+  row?: unknown;
 }
 
 const RegistryContext = createContext<(name: string, info: SectionInfo) => void>(() => undefined);
@@ -359,6 +361,19 @@ export function useData(reads: ReadSpec | undefined): ReadState | undefined {
   return reads !== undefined ? filterRead(own, reads.filter, scope.values) : section;
 }
 
+/**
+ * The rows of a live nested node, handed to the composite inside as a section frame hands its
+ * own; a stale read is marked stale.
+ */
+export function DataScope(props: { data: ReadState; children?: ReactNode }): ReactNode {
+  return (
+    <DataContext.Provider value={props.data}>
+      {props.data.stale ? <span className="ui-stale-badge">stale</span> : null}
+      {props.children}
+    </DataContext.Provider>
+  );
+}
+
 function Skeleton(props: { style: "skeleton" | "spinner" | "none" }): ReactNode {
   if (props.style === "none") {
     return null;
@@ -387,6 +402,8 @@ export function SectionFrame(props: {
   emptyAction?: ReactNode;
   degrades?: Record<string, string>;
   profile?: string;
+  /** The page header's title reads this section's record: report its first row. */
+  reportsRow?: boolean;
   children?: ReactNode;
 }): ReactNode {
   const { data, states = {} } = props;
@@ -405,7 +422,7 @@ export function SectionFrame(props: {
     observer.observe(ref.current);
     return () => observer.disconnect();
   }, [load, active, onActivate]);
-  useReport(props.name, { total: data?.total, params: data?.params });
+  useReport(props.name, { total: data?.total, params: data?.params, row: props.reportsRow ? data?.rows[0] : undefined });
   const mark = data?.stale ? states.stale?.mark ?? "badge" : undefined;
   let body: ReactNode = props.children;
   if (load === "on_demand" && !active) {
@@ -471,6 +488,8 @@ export interface PageLink {
 export function HeaderFrame(props: {
   "data-ui-path": string;
   title?: string;
+  /** A field of the record a section holds, shown in place of `title` once present. */
+  titleFrom?: { section: string; field: string };
   total?: string;
   filters?: string;
   switchTo?: PageLink[];
@@ -482,10 +501,13 @@ export function HeaderFrame(props: {
   const scope = useScope();
   const sections = (scope.values.section ?? {}) as Record<string, SectionInfo>;
   const total = props.total ? sections[props.total]?.total : undefined;
+  const record = props.titleFrom ? sections[props.titleFrom.section]?.row : undefined;
+  const field = props.titleFrom && record !== undefined ? getPath(record, props.titleFrom.field.split(".")) : undefined;
+  const title = field === undefined || field === null ? props.title : formatValue(field);
   return (
     <header className="ui-header" data-ui-path={props["data-ui-path"]}>
       <div className="ui-header-title">
-        {props.title ? <h1>{props.title}</h1> : null}
+        {title ? <h1>{title}</h1> : null}
         {total !== undefined ? <span className="ui-total">{total}</span> : null}
         {(props.live ?? []).map((channel) => (
           <span key={channel} className="ui-live" data-lifecycle={String(getPath(scope.values.channel, [channel, "lifecycle"]) ?? "connecting")}>

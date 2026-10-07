@@ -188,7 +188,7 @@ fn actual_synthesized_bounded_retry_and_final_failure_claims_pass() {
             .find(|scenario| scenario.scenario.to_string() == id)
             .unwrap();
         assert_eq!(scenario.status, Status::Passed, "{scenario:#?}");
-        assert!(!scenario.checks.is_empty());
+        assert_ne!(scenario.checks.len(), 0);
     }
     assert!(
         report

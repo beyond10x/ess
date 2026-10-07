@@ -31,13 +31,16 @@ fn document_root_retains_typed_fields_recursive_references_and_original_location
         Bundle::read(&imported.to_json().unwrap()).unwrap(),
         imported
     );
-    assert!(imported
-        .validate(
-            "Application",
-            &json!({"settings":{"enabled":true},"nullable":null,"children":[]})
-        )
-        .unwrap()
-        .is_empty());
+    assert_eq!(
+        imported
+            .validate(
+                "Application",
+                &json!({"settings":{"enabled":true},"nullable":null,"children":[]})
+            )
+            .unwrap()
+            .len(),
+        0
+    );
     for invalid in [
         json!({}),
         json!({"settings":{"enabled":true}}),
@@ -113,10 +116,7 @@ fn document_import_refuses_collisions_dialect_changes_and_nonlocal_references() 
     )
     .unwrap();
     assert_eq!(imported.roots().len(), 2);
-    assert!(imported
-        .validate("Root", &json!("value"))
-        .unwrap()
-        .is_empty());
+    assert_eq!(imported.validate("Root", &json!("value")).unwrap().len(), 0);
 }
 
 #[test]
@@ -219,8 +219,8 @@ fn root_closure_keeps_qualification_without_inventing_service_metadata() {
     );
     assert_eq!(bundle.declared_dialect(), Some("3.0.0"));
     assert_eq!(bundle.source_digest().len(), 64);
-    assert!(bundle.accounting().refusals.is_empty());
-    assert!(bundle.accounting().coverage_gaps.is_empty());
+    assert_eq!(bundle.accounting().refusals.len(), 0);
+    assert_eq!(bundle.accounting().coverage_gaps.len(), 0);
     assert_eq!(bundle.accounting().unresolved_references, 0);
     assert_eq!(value.to_string(), before);
     let projected = bundle.schema("Root", "urn:example:root").unwrap();
@@ -294,8 +294,8 @@ fn annotations_are_not_walked_as_schemas_and_reference_siblings_survive() {
         bundle.definitions()["Root"]["default"],
         value["components"]["schemas"]["Root"]["default"]
     );
-    assert!(!bundle.validate("Root", &json!("ab")).unwrap().is_empty());
-    assert!(bundle.validate("Root", &json!("abc")).unwrap().is_empty());
+    assert_ne!(bundle.validate("Root", &json!("ab")).unwrap().len(), 0);
+    assert_eq!(bundle.validate("Root", &json!("abc")).unwrap().len(), 0);
 }
 
 #[test]
@@ -307,14 +307,20 @@ fn recursive_schemas_and_escaped_component_names_keep_their_identity() {
     }}});
     let bundle = import(&value, &["Node/~ space"]);
     assert_eq!(bundle.definitions().len(), 1);
-    assert!(bundle
-        .validate("Node/~ space", &json!({"next": {"next": null}}))
-        .unwrap()
-        .is_empty());
-    assert!(!bundle
-        .validate("Node/~ space", &json!({"next": 1}))
-        .unwrap()
-        .is_empty());
+    assert_eq!(
+        bundle
+            .validate("Node/~ space", &json!({"next": {"next": null}}))
+            .unwrap()
+            .len(),
+        0
+    );
+    assert_ne!(
+        bundle
+            .validate("Node/~ space", &json!({"next": 1}))
+            .unwrap()
+            .len(),
+        0
+    );
 }
 
 #[test]
@@ -351,12 +357,9 @@ fn one_of_is_exclusive_and_false_roots_accept_no_value() {
             .len(),
         1
     );
-    assert!(!bundle.validate("Exclusive", &json!(1)).unwrap().is_empty());
-    assert!(bundle
-        .validate("Exclusive", &json!(1.5))
-        .unwrap()
-        .is_empty());
-    assert!(!bundle.validate("Never", &Value::Null).unwrap().is_empty());
+    assert_ne!(bundle.validate("Exclusive", &json!(1)).unwrap().len(), 0);
+    assert_eq!(bundle.validate("Exclusive", &json!(1.5)).unwrap().len(), 0);
+    assert_ne!(bundle.validate("Never", &Value::Null).unwrap().len(), 0);
 }
 
 #[test]

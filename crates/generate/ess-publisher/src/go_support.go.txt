@@ -1,0 +1,152 @@
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"sync"
+	"time"
+)
+
+// Transport is where a publisher sends one message. Implement it over any client, or use the
+// natsjs module for a JetStream connection. It returns once the broker has accepted or refused.
+type Transport interface {
+	Publish(ctx context.Context, subject string, payload []byte) error
+}
+
+// PublishError is a publish that did not land: which subject, how many payloads, and why.
+type PublishError struct {
+	Subject string
+	Items   int
+	Err     error
+}
+
+func (e *PublishError) Error() string {
+	return fmt.Sprintf("publishing %d payload(s) on %q failed: %v", e.Items, e.Subject, e.Err)
+}
+
+func (e *PublishError) Unwrap() error { return e.Err }
+
+// ErrClosed is returned for a payload offered after Close.
+var ErrClosed = errors.New("the publisher is closed")
+
+// PublisherOptions says how a publisher reports what it cannot return.
+type PublisherOptions struct {
+	// OnError is called with every failed background flush; the batch is dropped
+	// (at_most_once). Nil drops failures silently.
+	OnError func(error)
+}
+
+var _ = json.Marshal
+
+// batcher is one array channel: a buffer flushed at maxItems or after maxDelay.
+type batcher struct {
+	subject   string
+	maxItems  int
+	maxDelay  time.Duration
+	transport Transport
+	onError   func(error)
+
+	mu       sync.Mutex
+	payloads [][]byte
+	timer    *time.Timer
+	closed   bool
+	inflight sync.WaitGroup
+}
+
+func newBatcher(subject string, maxItems int, maxDelay time.Duration, transport Transport, onError func(error)) *batcher {
+	return &batcher{subject: subject, maxItems: maxItems, maxDelay: maxDelay, transport: transport, onError: onError}
+}
+
+func (b *batcher) enqueue(payload []byte) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.closed {
+		return &PublishError{Subject: b.subject, Items: 1, Err: ErrClosed}
+	}
+	b.payloads = append(b.payloads, payload)
+	if len(b.payloads) >= b.maxItems {
+		b.stopTimer()
+		batch := b.take()
+		b.inflight.Add(1)
+		go func() {
+			defer b.inflight.Done()
+			b.report(b.send(context.Background(), batch))
+		}()
+		return nil
+	}
+	if b.timer == nil {
+		b.inflight.Add(1)
+		b.timer = time.AfterFunc(b.maxDelay, func() {
+			defer b.inflight.Done()
+			b.mu.Lock()
+			b.timer = nil
+			batch := b.take()
+			b.mu.Unlock()
+			b.report(b.send(context.Background(), batch))
+		})
+	}
+	return nil
+}
+
+// stopTimer cancels a pending delayed flush; the caller holds mu.
+func (b *batcher) stopTimer() {
+	if b.timer != nil && b.timer.Stop() {
+		b.inflight.Done()
+	}
+	b.timer = nil
+}
+
+// take empties the buffer; the caller holds mu.
+func (b *batcher) take() [][]byte {
+	batch := b.payloads
+	b.payloads = nil
+	return batch
+}
+
+func (b *batcher) send(ctx context.Context, batch [][]byte) error {
+	if len(batch) == 0 {
+		return nil
+	}
+	payload := append(append([]byte{'['}, bytes.Join(batch, []byte{','})...), ']')
+	if err := b.transport.Publish(ctx, b.subject, payload); err != nil {
+		return &PublishError{Subject: b.subject, Items: len(batch), Err: err}
+	}
+	return nil
+}
+
+func (b *batcher) report(err error) {
+	if err != nil && b.onError != nil {
+		b.onError(err)
+	}
+}
+
+// sendNow publishes payloads as one message, refusing them after close.
+func (b *batcher) sendNow(ctx context.Context, batch [][]byte) error {
+	b.mu.Lock()
+	closed := b.closed
+	b.mu.Unlock()
+	if closed {
+		return &PublishError{Subject: b.subject, Items: len(batch), Err: ErrClosed}
+	}
+	return b.send(ctx, batch)
+}
+
+func (b *batcher) flush(ctx context.Context) error {
+	b.mu.Lock()
+	b.stopTimer()
+	batch := b.take()
+	b.mu.Unlock()
+	return b.send(ctx, batch)
+}
+
+func (b *batcher) close(ctx context.Context) error {
+	b.mu.Lock()
+	b.closed = true
+	b.stopTimer()
+	batch := b.take()
+	b.mu.Unlock()
+	err := b.send(ctx, batch)
+	b.inflight.Wait()
+	return err
+}

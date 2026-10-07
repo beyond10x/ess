@@ -81,7 +81,7 @@ fn adversary_w1fix_an_authored_missing_over_an_optional_struct_is_written_in_sui
         "the authored presence predicate is refused:\n{stdout}\n{stderr}"
     );
     assert!(success, "{stdout}\n{stderr}");
-    assert!(stdout.contains("ess-conformance/26"), "{stdout}");
+    assert!(stdout.contains("ess-conformance/34"), "{stdout}");
 }
 
 /// `ess verify conform synthesize` re-selects the format after merging authored scenarios into the
@@ -118,8 +118,8 @@ fn adversary_w1fix_the_synthesize_verb_writes_the_invariant_suite_in_26() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(
-        written.contains("\"suite_version\": \"ess-conformance/26\"")
-            || written.contains("\"suite_version\":\"ess-conformance/26\""),
+        written.contains("\"suite_version\": \"ess-conformance/34\"")
+            || written.contains("\"suite_version\":\"ess-conformance/34\""),
         "{written}"
     );
 }

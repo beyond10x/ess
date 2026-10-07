@@ -10,7 +10,7 @@
 //!
 //! | fact | read from |
 //! |---|---|
-//! | which outcome the input selects | the precedence order: a missing related row's `exists: false` branch (`related_absent`), then the first declared input-guarded refusal whose `when:` holds, before anything else is read (`refused_by_input`); else the first accepting or external branch declared whose guard holds, over [`input::flatten`], then the one `Otherwise` branch |
+//! | which outcome the input selects | the precedence order: a missing related row's `exists: false` branch (`related_absent`; an absent Optional reference, ess/22, reads no row and selects no related branch), then the first declared input-guarded refusal whose `when:` holds (`refused_by_input`); addressed-row existence and held state; a related row named by a stored field of the addressed subject (ess/22, `stored_reference`): absent, none; missing, its `exists: false` branch; for the ess/22 `wrong_state` composition and every stored reference, the present-related predicate refusal; then the first accepting or external branch declared whose guard holds, over [`input::flatten`], then the one `Otherwise` branch |
 //! | whether an external branch is taken | [`Externals`] — never the input, never this module |
 //! | whether the subject may move | the transition's own `from` set against the state held in the [`Store`] |
 //! | what a refused move answers | the command's `wrong_state:` branch; for an identity nobody holds, its `unknown_instance:` branch, else its one declared not-found refusal, else `wrong_state:` |
@@ -47,11 +47,13 @@
 
 pub(super) mod caller;
 mod existence;
+pub(crate) mod history;
 mod related;
 mod set_effects;
 mod subject;
 mod values;
 use caller::Invocation;
+use history::{Context, Row, State, Transition, Value};
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -128,12 +130,6 @@ impl Store {
         self.instances().filter_map(|(entity, identity, instance)| {
             identity.as_text().map(|text| (entity, text, instance))
         })
-    }
-
-    /// The next value of the counter.
-    fn tick(&mut self) -> u64 {
-        self.minted += 1;
-        self.minted
     }
 }
 
@@ -364,6 +360,7 @@ pub(super) fn without_input(
     command: &QualifiedName,
     caller: Option<&caller::Caller<'_>>,
 ) -> Result<Step, Undetermined> {
+    let store = State::import(store);
     let spec = ir
         .commands()
         .get(command)
@@ -373,22 +370,26 @@ pub(super) fn without_input(
         .iter()
         .find(|outcome| outcome.condition == ResolvedCondition::InputAbsent)
     else {
-        return Ok(undeclared(store));
+        return undeclared(&store).publish();
     };
     // Admission restricts this marker to a refusal with no effects or input-dependent payload.
     take(
         ir,
         spec,
         outcome,
-        store,
-        &Invocation {
+        &store,
+        &Context {
             input: &BTreeMap::new(),
             caller,
+            operation: None,
+            unresolved: std::cell::RefCell::default(),
+            domains: history::Domains::default(),
         },
         &Generated::Counter,
         &mut super::response::Authority::default(),
     )?
-    .map_err(Undetermined::Request)
+    .map_err(Undetermined::Request)?
+    .publish()
 }
 
 /// Executes `command` with `input` against `store`, returning every distinct step the model allows.
@@ -450,6 +451,39 @@ pub(super) fn responding(
     generated: &Generated,
     responses: &mut super::response::Authority,
 ) -> Result<Vec<Step>, Undetermined> {
+    responding_core(
+        ir,
+        &State::import(store),
+        command,
+        &Context {
+            input: input.input,
+            caller: input.caller,
+            operation: None,
+            unresolved: std::cell::RefCell::default(),
+            domains: history::Domains::default(),
+        },
+        externals,
+        generated,
+        responses,
+    )?
+    .into_iter()
+    .map(Transition::publish)
+    .collect()
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "command execution keeps its ordered selection and response authorities together"
+)]
+fn responding_core(
+    ir: &EssIr,
+    store: &State,
+    command: &QualifiedName,
+    input: &Context<'_>,
+    externals: &Externals,
+    generated: &Generated,
+    responses: &mut super::response::Authority,
+) -> Result<Vec<Transition>, Undetermined> {
     let spec = ir
         .commands()
         .get(command)
@@ -463,8 +497,13 @@ pub(super) fn responding(
             return Ok(vec![step]);
         }
     }
-    if let Some(steps) = related_absent(ir, spec, store, input, generated, responses)? {
-        return Ok(steps);
+    // A related row named by a stored field of the addressed subject (ess/22, beyond10x/ess#304)
+    // is read after that row's existence and held state, below — not before the input refusals.
+    let stored = related::stored(spec);
+    if stored.is_none() {
+        if let Some(steps) = related_absent(ir, spec, store, input, generated, responses)? {
+            return Ok(steps);
+        }
     }
     if let Some(steps) = refused_by_input(ir, spec, store, input)? {
         return Ok(steps);
@@ -476,7 +515,36 @@ pub(super) fn responding(
     let facts = input::flatten(ir, spec, input)
         .map_err(|errors| Undetermined::Request(errors.to_string()))?;
     let mut held_subjects = BTreeMap::new();
+    if let Some((field, entity)) = stored {
+        let read = stored_reference(
+            ir,
+            spec,
+            store,
+            input,
+            (&facts, command, externals),
+            generated,
+            responses,
+            (field, entity),
+        )?;
+        match read {
+            Stored::Answered(steps) => return Ok(steps),
+            Stored::Absent => {}
+            Stored::Row(row) => {
+                for outcome in &spec.outcomes {
+                    if matches!(outcome.condition, ResolvedCondition::Related { .. }) {
+                        held_subjects.insert(
+                            outcome.name.clone(),
+                            subject::Held::new(ir, ir.entity(entity), row)?,
+                        );
+                    }
+                }
+            }
+        }
+    }
     for outcome in &spec.outcomes {
+        if stored.is_some() && matches!(outcome.condition, ResolvedCondition::Related { .. }) {
+            continue;
+        }
         if let Some(held) = related::held(ir, store, input, &outcome.condition)? {
             held_subjects.insert(outcome.name.clone(), held);
             continue;
@@ -515,6 +583,26 @@ pub(super) fn responding(
             subject::Held::new(ir, ir.entity(&subject.entity), held)?,
         );
     }
+    let orders_present_related_refusal = orders_present_related_refusal(ir, spec);
+    // A stored reference was read after the addressed row's existence and held state answered
+    // ([`stored_reference`]); its present-related refusal answers before every accepting branch.
+    let orders_present_related_refusal = orders_present_related_refusal || stored.is_some();
+    if orders_present_related_refusal && stored.is_none() {
+        if let Some(steps) = subject_refusals_before_present_related(
+            ir,
+            spec,
+            store,
+            input,
+            &facts,
+            command,
+            externals,
+            &held_subjects,
+            generated,
+            responses,
+        )? {
+            return Ok(steps);
+        }
+    }
     let selected = select(
         spec,
         &facts,
@@ -522,18 +610,26 @@ pub(super) fn responding(
         externals,
         &held_subjects,
         input.caller,
+        input,
+        true,
+        orders_present_related_refusal,
     )?;
 
     if selected.is_empty() {
+        if input.unresolved.borrow().is_some() {
+            return Ok(Vec::new());
+        }
         return Ok(vec![undeclared(store)]);
     }
-    let mut steps: Vec<Step> = Vec::with_capacity(selected.len());
+    let mut steps: Vec<Transition> = Vec::with_capacity(selected.len());
     let mut unmatched: Vec<String> = Vec::new();
     for outcome in selected {
-        match take(ir, spec, outcome, store, input, generated, responses)? {
-            Ok(step) if !steps.contains(&step) => steps.push(step),
-            Ok(_) => {}
-            Err(why) => unmatched.push(format!("`{}`: {why}", branch(spec, outcome))),
+        match take(ir, spec, outcome, store, input, generated, responses) {
+            Ok(Ok(step)) if !steps.contains(&step) => steps.push(step),
+            Ok(Ok(_)) => {}
+            Ok(Err(why)) => unmatched.push(format!("`{}`: {why}", branch(spec, outcome))),
+            Err(Undetermined::Request(why)) if input.operation.is_some() => unmatched.push(why),
+            Err(why) => input.defer(why)?,
         }
     }
     if steps.is_empty() {
@@ -545,6 +641,45 @@ pub(super) fn responding(
     Ok(steps)
 }
 
+fn orders_present_related_refusal(ir: &EssIr, spec: &ResolvedCommand) -> bool {
+    ir.format().major() >= ess_domain::system::FormatVersion::V22.major()
+        && spec.outcomes.iter().any(is_present_related_refusal)
+        && spec
+            .outcomes
+            .iter()
+            .any(|outcome| matches!(outcome.condition, ResolvedCondition::WrongState))
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the preflight shares the command execution's existing authorities"
+)]
+fn subject_refusals_before_present_related(
+    ir: &EssIr,
+    spec: &ResolvedCommand,
+    store: &State,
+    input: &Context<'_>,
+    facts: &input::InputFacts<'_>,
+    command: &QualifiedName,
+    externals: &Externals,
+    held_subjects: &BTreeMap<OutcomeName, subject::Held<'_>>,
+    generated: &Generated,
+    responses: &mut super::response::Authority,
+) -> Result<Option<Vec<Transition>>, Undetermined> {
+    let after_related = select(
+        spec,
+        facts,
+        command,
+        externals,
+        held_subjects,
+        input.caller,
+        input,
+        false,
+        false,
+    )?;
+    selected_subject_refusals(ir, spec, store, input, generated, responses, &after_related)
+}
+
 /// The branches `facts` select under `externals`, in the declared precedence
 /// (`docs/design/input-guard-overlap-precedence.md`), read in order and stopped at the first that
 /// answers, so a guard after it is never read: an Unknown there leaves the answer as it is, and an
@@ -553,11 +688,18 @@ pub(super) fn responding(
 /// 1. The input-guarded refusals, before any other branch and before the provider is asked
 ///    (beyond10x/ess#178): the first declared whose guard holds answers (beyond10x/ess#227). Most
 ///    requests are answered earlier by [`refused_by_input`]; this step reads the refusals it leaves.
-/// 2. The accepting `when:` branches and the external branches, in declaration order: the first
+/// 2. For the ess/22 `wrong_state` composition, the present-related predicate refusal whose guard
+///    holds, after addressed-row existence and held state have been checked (beyond10x/ess#282).
+/// 3. The accepting `when:` branches and the external branches, in declaration order: the first
 ///    whose guard holds answers (beyond10x/ess#217), and an external one holds where its provider
 ///    takes it — forced, never while withheld, and either way while open, where it stays one
 ///    possible answer beside whatever the declarations after it select.
-/// 3. The default, where no guard and no provider answered.
+/// 4. The default, where no guard and no provider answered.
+#[allow(
+    clippy::too_many_arguments,
+    clippy::too_many_lines,
+    reason = "selection preserves source-declared guard precedence in one ordered routine"
+)]
 fn select<'s>(
     spec: &'s ResolvedCommand,
     facts: &input::InputFacts<'_>,
@@ -565,6 +707,9 @@ fn select<'s>(
     externals: &Externals,
     held_subjects: &BTreeMap<OutcomeName, subject::Held<'_>>,
     caller: Option<&caller::Caller<'_>>,
+    context: &Context<'_>,
+    include_present_related_refusals: bool,
+    prioritize_present_related_refusals: bool,
 ) -> Result<Vec<&'s ResolvedOutcome>, Undetermined> {
     let invocation = caller::Facts::new(facts, caller, &spec.input);
     let holds = |outcome: &ResolvedOutcome, guard: &Predicate| match guard.evaluate(&invocation) {
@@ -613,15 +758,48 @@ fn select<'s>(
             }
         }
     }
+    if selected.is_empty() && prioritize_present_related_refusals {
+        for outcome in spec
+            .outcomes
+            .iter()
+            .filter(|outcome| is_present_related_refusal(outcome))
+        {
+            let held = held_subjects
+                .get(&outcome.name)
+                .map(|held| held.selects(&outcome.condition, facts, caller, branch(spec, outcome)))
+                .transpose();
+            match held {
+                Ok(Some(Some(true))) => {
+                    selected.push(outcome);
+                    break;
+                }
+                Ok(_) => {}
+                Err(why) => {
+                    context.defer(why)?;
+                    return Ok(Vec::new());
+                }
+            }
+        }
+    }
     if selected.is_empty() {
         let mut answered = false;
         for outcome in &spec.outcomes {
-            if let Some(takes) = held_subjects
-                .get(&outcome.name)
-                .map(|held| held.selects(&outcome.condition, facts, caller, branch(spec, outcome)))
-                .transpose()?
+            let held = (!is_present_related_refusal(outcome) || include_present_related_refusals)
+                .then(|| held_subjects.get(&outcome.name))
                 .flatten()
-            {
+                .map(|held| held.selects(&outcome.condition, facts, caller, branch(spec, outcome)))
+                .transpose();
+            let takes = match held {
+                Ok(takes) => takes.flatten(),
+                Err(why) => {
+                    context.defer(why)?;
+                    // Only the provider choices already collected are proved. Neither this
+                    // unresolved guard nor its fallback is a selected branch.
+                    answered = true;
+                    break;
+                }
+            };
+            if let Some(takes) = takes {
                 if takes {
                     selected.push(outcome);
                     answered = true;
@@ -670,22 +848,122 @@ fn select<'s>(
     Ok(selected)
 }
 
+fn is_present_related_refusal(outcome: &ResolvedOutcome) -> bool {
+    outcome.error.is_some()
+        && matches!(
+            outcome.condition,
+            ResolvedCondition::Related {
+                test: ResolvedRelatedTest::Holds { .. },
+                ..
+            }
+        )
+}
+
+/// The addressed-row existence or held-state answers selected before a present-related predicate
+/// refusal (ess/22, beyond10x/ess#282). `selected` is the complete alternative set the later
+/// accepting/external step would take with those refusals omitted. Each alternative keeps its own
+/// subject authority: an invalid moving branch becomes the lifecycle refusal while an independent
+/// nonmoving or external branch remains possible beside it. If every selected alternative may act,
+/// selection continues to the present-related refusal phase without preparing any response.
+fn selected_subject_refusals(
+    ir: &EssIr,
+    spec: &ResolvedCommand,
+    store: &State,
+    input: &Context<'_>,
+    generated: &Generated,
+    responses: &mut super::response::Authority,
+    selected: &[&ResolvedOutcome],
+) -> Result<Option<Vec<Transition>>, Undetermined> {
+    let mut refusals = Vec::with_capacity(selected.len());
+    for outcome in selected {
+        refusals.push(selected_subject_refusal(
+            ir, spec, store, input, generated, responses, outcome,
+        )?);
+    }
+    if refusals.iter().all(Option::is_none) {
+        return Ok(None);
+    }
+
+    let mut steps = Vec::with_capacity(selected.len());
+    let mut unmatched = Vec::new();
+    for (outcome, refusal) in selected.iter().copied().zip(refusals) {
+        if let Some(step) = refusal {
+            if !steps.contains(&step) {
+                steps.push(step);
+            }
+            continue;
+        }
+        match take(ir, spec, outcome, store, input, generated, responses) {
+            Ok(Ok(step)) if !steps.contains(&step) => steps.push(step),
+            Ok(Ok(_)) => {}
+            Ok(Err(why)) => unmatched.push(format!("`{}`: {why}", branch(spec, outcome))),
+            Err(Undetermined::Request(why)) if input.operation.is_some() => unmatched.push(why),
+            Err(why) => input.defer(why)?,
+        }
+    }
+    if steps.is_empty() {
+        return Err(Undetermined::Request(format!(
+            "no branch the model allows is described by the given values — {}",
+            unmatched.join("; ")
+        )));
+    }
+    Ok(Some(steps))
+}
+
+fn selected_subject_refusal(
+    ir: &EssIr,
+    spec: &ResolvedCommand,
+    store: &State,
+    input: &Context<'_>,
+    generated: &Generated,
+    responses: &mut super::response::Authority,
+    outcome: &ResolvedOutcome,
+) -> Result<Option<Transition>, Undetermined> {
+    let Some(subject) = &outcome.subject else {
+        return Ok(None);
+    };
+    if subject.effect == ResolvedEffect::Creates {
+        return Ok(None);
+    }
+    let ResolvedInstance::Supplied { field } = &subject.instance else {
+        return Ok(None);
+    };
+    let identity = input.get(&field.name).ok_or_else(|| {
+        Undetermined::Request(format!(
+            "`{}` names its subject in `{}`, and the input has none",
+            spec.name, field.name
+        ))
+    })?;
+    let entity = ir.entity(&subject.entity);
+    let Some(held) = store.instance_typed(&entity.name, identity) else {
+        return unknown_instance(ir, spec, store, input, generated, responses).map(Some);
+    };
+    if let ResolvedEffect::Moves { transition } = &subject.effect {
+        if !transition.from.contains(&held.state) {
+            return wrong_state(ir, spec, store, input, Some(held)).map(Some);
+        }
+    }
+    Ok(None)
+}
+
 /// The answer of a command guarded by a related row (`when_related:`, ess/18) whose related row is
 /// missing: its `exists: false` branch, before any input-guarded refusal — step 1 of the
 /// precedence order (`docs/design/cross-record-and-stored-field-guards.md`, "The precedence
 /// order"). `None` on a command with no related guard, or where the row is stored.
 ///
-/// `existing_instance:` is resolved before this helper on such a command. A related row named
-/// through a stored field of the subject, or through an input the request does not carry,
-/// is declined too: nothing here reads it.
+/// `existing_instance:` is resolved before this helper on such a command. An absent Optional
+/// reference (ess/22, beyond10x/ess#304) answers `None` without a lookup. A related row named
+/// through a required input the request does not carry is declined: nothing here reads it. One
+/// named through a stored field of the addressed subject is never asked here; it is read at its
+/// own later step ([`stored_reference`]).
 fn related_absent(
     ir: &EssIr,
     spec: &ResolvedCommand,
-    store: &Store,
-    input: &Invocation<'_>,
+    store: &State,
+    input: &Context<'_>,
     generated: &Generated,
     responses: &mut super::response::Authority,
-) -> Result<Option<Vec<Step>>, Undetermined> {
+) -> Result<Option<Vec<Transition>>, Undetermined> {
     let related: Vec<&ResolvedOutcome> = spec
         .outcomes
         .iter()
@@ -698,12 +976,17 @@ fn related_absent(
     let ResolvedCondition::Related { via, entity, .. } = &first.condition else {
         unreachable!("filtered to related guards above")
     };
-    let ResolvedRelatedVia::Input { field, .. } = via else {
+    let ResolvedRelatedVia::Input { field, type_ref } = via else {
         return gap(format!(
             "the guard over a row named by a stored field of `{}`",
             branch(spec, first)
         ));
     };
+    // An absent Optional reference (ess/22, beyond10x/ess#304) reads no row and selects no
+    // related branch: it is not a missing row, and selection carries on without it.
+    if related::absent_optional(type_ref, input.get(field)) {
+        return Ok(None);
+    }
     let Some(identity) = input.get(field) else {
         return gap(format!(
             "the guard over a related row of `{}` with no identity in `{field}`",
@@ -714,7 +997,20 @@ fn related_absent(
     if store.instance_typed(entity, identity).is_some() {
         return Ok(None);
     }
-    let Some(absent) = related.iter().find(|outcome| {
+    missing_row(ir, spec, store, input, generated, responses)
+}
+
+/// The command's `exists: false` branch taken, for a related row no row carries the identity of;
+/// `None` where it declares none.
+fn missing_row(
+    ir: &EssIr,
+    spec: &ResolvedCommand,
+    store: &State,
+    input: &Context<'_>,
+    generated: &Generated,
+    responses: &mut super::response::Authority,
+) -> Result<Option<Vec<Transition>>, Undetermined> {
+    let Some(absent) = spec.outcomes.iter().find(|outcome| {
         matches!(
             &outcome.condition,
             ResolvedCondition::Related {
@@ -734,6 +1030,101 @@ fn related_absent(
             "no branch the model allows is described by the given values — `{}`: {why}",
             branch(spec, absent)
         ))),
+    }
+}
+
+/// What reading a stored reference left selection with ([`stored_reference`]).
+enum Stored<'a> {
+    /// The addressed row's existence, its held state, or a missing related row answered.
+    Answered(Vec<Transition>),
+    /// The reference is absent: no row is read and no related branch is selected.
+    Absent,
+    /// The related row the reference names, for the related branches to read.
+    Row(&'a Row),
+}
+
+/// The related row named by a stored field of the addressed subject (`when_related: {via:
+/// <field>}`, ess/22, beyond10x/ess#304), read at its step of the precedence order
+/// (`docs/design/cross-record-and-stored-field-guards.md`, "The precedence order"): after the
+/// input-guarded refusals, the addressed row's existence — an identity no row holds takes the
+/// command's not-found answer — and its held state — a selected branch moving from a state the
+/// row does not hold takes `wrong_state` — and before every accepting branch.
+///
+/// The field is read from the subject as it was before the branch. Absent, it names no row; an
+/// identity no row carries is answered by the `exists: false` branch; otherwise the row it names is
+/// the one the related branches read.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the stored read shares the command execution's existing authorities"
+)]
+fn stored_reference<'s>(
+    ir: &EssIr,
+    spec: &ResolvedCommand,
+    store: &'s State,
+    input: &Context<'_>,
+    (facts, command, externals): (&input::InputFacts<'_>, &QualifiedName, &Externals),
+    generated: &Generated,
+    responses: &mut super::response::Authority,
+    (field, entity): (&str, &ess_compiler::ir::EntityHandle),
+) -> Result<Stored<'s>, Undetermined> {
+    let subject = spec
+        .outcomes
+        .iter()
+        .filter_map(|outcome| outcome.subject.as_ref())
+        .find(|subject| subject.effect != ResolvedEffect::Creates)
+        .ok_or_else(|| Undetermined::NotInterpreted {
+            construct: "a stored-field related guard with no addressed subject".into(),
+        })?;
+    let ResolvedInstance::Supplied { field: named } = &subject.instance else {
+        return Err(Undetermined::NotInterpreted {
+            construct: "a stored-field related guard without a supplied subject".into(),
+        });
+    };
+    let identity = input.get(&named.name).ok_or_else(|| {
+        Undetermined::Request(format!(
+            "`{}` names its subject in `{}`, and the input has none",
+            spec.name, named.name
+        ))
+    })?;
+    // 3. The addressed row's existence.
+    let Some(addressed) = store.instance_typed(&ir.entity(&subject.entity).name, identity) else {
+        return Ok(Stored::Answered(vec![unknown_instance(
+            ir, spec, store, input, generated, responses,
+        )?]));
+    };
+    // 4. Its held state, for the branch the request selects with no related row read.
+    let selected = select(
+        spec,
+        facts,
+        command,
+        externals,
+        &BTreeMap::new(),
+        input.caller,
+        input,
+        false,
+        false,
+    )?;
+    if let Some(steps) =
+        selected_subject_refusals(ir, spec, store, input, generated, responses, &selected)?
+    {
+        return Ok(Stored::Answered(steps));
+    }
+    // 5. The stored reference, as the subject held it before the branch.
+    match related::reference(ir, store, addressed, field, entity)? {
+        related::Reference::Absent => Ok(Stored::Absent),
+        related::Reference::Row(row) => Ok(Stored::Row(row)),
+        related::Reference::Missing => {
+            match missing_row(ir, spec, store, input, generated, responses)? {
+                Some(steps) => Ok(Stored::Answered(steps)),
+                None => Err(Undetermined::Undecidable {
+                    outcome: "related-row selection".into(),
+                    guard: format!(
+                        "no `{}` row holds the identity `{field}` stores",
+                        ir.entity(entity).name
+                    ),
+                }),
+            }
+        }
     }
 }
 
@@ -759,9 +1150,9 @@ fn related_absent(
 fn refused_by_input(
     ir: &EssIr,
     spec: &ResolvedCommand,
-    store: &Store,
-    input: &Invocation<'_>,
-) -> Result<Option<Vec<Step>>, Undetermined> {
+    store: &State,
+    input: &Context<'_>,
+) -> Result<Option<Vec<Transition>>, Undetermined> {
     let refusals: Vec<(&ResolvedOutcome, &Predicate)> = spec
         .outcomes
         .iter()
@@ -873,8 +1264,8 @@ fn reads_now(predicate: &Predicate) -> bool {
 }
 
 /// The step for a request no declared branch covers.
-fn undeclared(store: &Store) -> Step {
-    Step {
+fn undeclared(store: &State) -> Transition {
+    Transition {
         outcome: None,
         error: None,
         events: Vec::new(),
@@ -904,22 +1295,50 @@ fn reference(spec: &ResolvedCommand, outcome: &ResolvedOutcome) -> OutcomeRef {
 fn declared_error(
     ir: &EssIr,
     outcome: &ResolvedOutcome,
-    input: &Invocation<'_>,
-    held: Option<&Instance>,
-    store: &Store,
-) -> Result<Option<DeclaredErrorValue>, Undetermined> {
+    input: &Context<'_>,
+    held: Option<&Row>,
+    store: &State,
+) -> Result<Option<history::Error>, Undetermined> {
     let Some(handle) = outcome.error.as_ref().filter(|_| outcome.refuses) else {
         return Ok(None);
     };
-    let mut error = DeclaredErrorValue::new(ErrorRef::from(handle));
+    let mut error = history::Error::new(ErrorRef::from(handle));
     let reads = values::Reads {
         original: store,
         before: held,
         outcome,
     };
+    let location = vec!["error".into(), error.error.to_string()];
     for field in &outcome.error_payload {
-        if let Some(value) = error_value(ir, field, input, reads)? {
+        if let Some(value) = error_value(ir, field, input, reads, &location)? {
+            if input.operation.is_some() {
+                history::validate(ir, &field.target_type, &value)?;
+            }
             error = error.with(field.target.clone(), value);
+        }
+    }
+    if let Some(operation) = input.operation {
+        for field in &ir.error(handle).fields {
+            if outcome
+                .error_payload
+                .iter()
+                .any(|source| source.target == field.name)
+            {
+                continue;
+            }
+            let mut path = location.clone();
+            path.push(field.name.clone());
+            let value = history::generated(
+                ir,
+                &field.type_ref,
+                history::Origin {
+                    operation: operation.into(),
+                    branch: outcome.name.to_string(),
+                    location: path,
+                },
+                &input.domains,
+            )?;
+            error = error.with(field.name.clone(), value);
         }
     }
     Ok(Some(error))
@@ -928,34 +1347,61 @@ fn declared_error(
 fn error_value(
     ir: &EssIr,
     field: &ResolvedPayloadField,
-    input: &Invocation<'_>,
+    input: &Context<'_>,
     reads: values::Reads<'_>,
-) -> Result<Option<Node>, Undetermined> {
+    location: &[String],
+) -> Result<Option<Value>, Undetermined> {
+    let mut path = location.to_vec();
+    path.push(field.target.clone());
     Ok(match &field.value {
-        ResolvedPayloadValue::Generated => None,
+        ResolvedPayloadValue::Generated => match input.operation {
+            None => None,
+            Some(operation) => Some(history::generated(
+                ir,
+                &field.target_type,
+                history::Origin {
+                    operation: operation.into(),
+                    branch: reads.outcome.name.to_string(),
+                    location: path,
+                },
+                &input.domains,
+            )?),
+        },
         ResolvedPayloadValue::CallerAttribute {
             attribute,
             type_ref,
-        } => input.caller_value(ir, attribute, type_ref)?,
+        } => input
+            .caller_value(ir, attribute, type_ref)?
+            .map(Value::Known),
         ResolvedPayloadValue::Struct { fields } => {
             let mut values = BTreeMap::new();
             for member in fields {
-                if let Some(value) = error_value(ir, member, input, reads)? {
+                if let Some(value) = error_value(ir, member, input, reads, &path)? {
                     values.insert(member.target.clone(), value);
                 }
             }
-            Some(Node::Map(values))
+            Some(Value::Object(values))
         }
         ResolvedPayloadValue::SubjectField {
             field: read,
             type_ref,
-        } => values::subject(ir, read, type_ref, &field.target_type, reads.before)?,
+        } => values::subject(
+            ir,
+            read,
+            type_ref,
+            &field.target_type,
+            field.conversion.as_deref(),
+            reads.before,
+        )?,
         ResolvedPayloadValue::RelatedField { .. } => reads.related(ir, field, input)?,
         ResolvedPayloadValue::InputField { field: read, .. } => input
             .get(read)
             .filter(|value| **value != Node::Null)
-            .cloned(),
-        ResolvedPayloadValue::Literal { value } => Some(literal(ir, &field.target_type, value)?),
+            .cloned()
+            .map(Value::Known),
+        ResolvedPayloadValue::Literal { value } => {
+            Some(Value::Known(literal(ir, &field.target_type, value)?))
+        }
         other => {
             return Err(Undetermined::NotInterpreted {
                 construct: format!("the value source `{}` of an error", other.describe()),
@@ -966,16 +1412,28 @@ fn error_value(
 
 /// The store a branch is building, and where its assigned values come from.
 struct Work<'g> {
-    original: &'g Store,
+    domains: &'g history::Domains,
+    original: &'g State,
     outcome: &'g ResolvedOutcome,
-    next: Store,
+    next: State,
     supply: Supply<'g>,
-    /// Immutable pre-outcome fields, including the exact identity held outside `Instance.fields`.
-    before: Option<Instance>,
+    /// Immutable pre-outcome fields, including the exact identity held outside `Row.fields`.
+    before: Option<Row>,
     response: Option<super::response::Value>,
+    operation: Option<&'g str>,
+    location: Vec<String>,
+    /// The field location being written, independent of history-generation provenance.
+    target_location: Vec<String>,
 }
 
 impl Work<'_> {
+    fn origin(&self) -> history::Origin {
+        history::Origin {
+            operation: self.operation.expect("history-only generation").into(),
+            branch: self.outcome.name.to_string(),
+            location: self.location.clone(),
+        }
+    }
     fn reads(&self) -> values::Reads<'_> {
         values::Reads {
             original: self.original,
@@ -993,7 +1451,7 @@ fn create(
     ir: &EssIr,
     outcome: &ResolvedOutcome,
     subject: &ResolvedSubject,
-    input: &Invocation<'_>,
+    input: &Context<'_>,
     work: &mut Work<'_>,
 ) -> Result<Result<Node, Unmatched>, Undetermined> {
     let entity = ir.entity(&subject.entity);
@@ -1024,12 +1482,18 @@ fn create(
         .clone()
         .unwrap_or_else(|| entity.lifecycle.initial.clone());
     let mut fields = BTreeMap::new();
+    work.location = vec![
+        "row".into(),
+        entity.name.to_string(),
+        format!("{key:?}"),
+        "sets".into(),
+    ];
     write(ir, &outcome.sets, input, &mut fields, work)?;
     work.next
         .instances
         .entry(entity.name.clone())
         .or_default()
-        .insert(key, Instance { state, fields });
+        .insert(key, Row { state, fields });
     Ok(Ok(identity))
 }
 
@@ -1051,7 +1515,8 @@ fn creation_identity(
         let identity = or_no_step!(assign(ir, event, &field.name, &field.type_ref, work))
             .ok_or_else(|| Undetermined::NoValue {
                 what: format!("the identity of a new `{entity}`"),
-            })?;
+            })?
+            .require("the actual new row identity")?;
         let key = identity.clone();
         if work.next.instance_typed(entity, &key).is_none() {
             return Ok(Ok((identity, key)));
@@ -1071,23 +1536,31 @@ fn creation_identity(
 /// Takes one selected outcome: resolves its subject, writes, emits, and checks what now rests.
 ///
 /// `Ok(Err(_))` is a branch the given values do not describe, which yields no step.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one transaction routine keeps outcome effects atomic across native and history modes"
+)]
 fn take(
     ir: &EssIr,
     spec: &ResolvedCommand,
     outcome: &ResolvedOutcome,
-    store: &Store,
-    input: &Invocation<'_>,
+    store: &State,
+    input: &Context<'_>,
     generated: &Generated,
     responses: &mut super::response::Authority,
-) -> Result<Result<Step, Unmatched>, Undetermined> {
+) -> Result<Result<Transition, Unmatched>, Undetermined> {
     let mut prepared = None;
     let mut work = Work {
+        domains: &input.domains,
         original: store,
         outcome,
         next: store.clone(),
         supply: Supply::of(generated),
         before: values::selected_subject(ir, spec, outcome, store, input),
         response: None,
+        operation: input.operation,
+        location: Vec::new(),
+        target_location: Vec::new(),
     };
     let mut created: Option<(String, Node)> = None;
     let mut touched: Option<(QualifiedName, Node)> = None;
@@ -1121,6 +1594,12 @@ fn take(
                         ir, spec, store, input, generated, responses,
                     )?));
                 };
+                work.location = vec![
+                    "row".into(),
+                    entity.name.to_string(),
+                    format!("{key:?}"),
+                    "sets".into(),
+                ];
                 let after = match act(ir, &outcome.sets, effect, held, input, &mut work)? {
                     Acted::NotFromHere => {
                         return Ok(Ok(wrong_state(
@@ -1170,7 +1649,7 @@ fn take(
     if let Some((entity, key)) = &touched {
         at_rest(ir, &work.next, entity, key)?;
     }
-    let step = Step {
+    let step = Transition {
         outcome: Some(reference(spec, outcome)),
         error: declared_error(ir, outcome, input, work.before.as_ref(), store)?,
         events,
@@ -1203,8 +1682,8 @@ fn act(
     ir: &EssIr,
     sets: &[ResolvedPayloadField],
     effect: &ResolvedEffect,
-    held: &Instance,
-    input: &Invocation<'_>,
+    held: &Row,
+    input: &Context<'_>,
     work: &mut Work<'_>,
 ) -> Result<Acted, Undetermined> {
     let mut after = held.clone();
@@ -1228,7 +1707,7 @@ enum Acted {
     /// branch's.
     NotFromHere,
     /// The instance rests on, holding this.
-    Rests(Instance),
+    Rests(Row),
     /// The instance is removed.
     Removed,
 }
@@ -1245,11 +1724,11 @@ enum Acted {
 fn unknown_instance(
     ir: &EssIr,
     spec: &ResolvedCommand,
-    store: &Store,
-    input: &Invocation<'_>,
+    store: &State,
+    input: &Context<'_>,
     generated: &Generated,
     responses: &mut super::response::Authority,
-) -> Result<Step, Undetermined> {
+) -> Result<Transition, Undetermined> {
     match spec
         .outcomes
         .iter()
@@ -1275,10 +1754,10 @@ fn unknown_instance(
 fn wrong_state(
     ir: &EssIr,
     spec: &ResolvedCommand,
-    store: &Store,
-    input: &Invocation<'_>,
-    held: Option<&Instance>,
-) -> Result<Step, Undetermined> {
+    store: &State,
+    input: &Context<'_>,
+    held: Option<&Row>,
+) -> Result<Transition, Undetermined> {
     match spec
         .outcomes
         .iter()
@@ -1295,11 +1774,11 @@ fn refusal(
     ir: &EssIr,
     spec: &ResolvedCommand,
     outcome: &ResolvedOutcome,
-    store: &Store,
-    input: &Invocation<'_>,
-    held: Option<&Instance>,
-) -> Result<Step, Undetermined> {
-    Ok(Step {
+    store: &State,
+    input: &Context<'_>,
+    held: Option<&Row>,
+) -> Result<Transition, Undetermined> {
+    Ok(Transition {
         outcome: Some(reference(spec, outcome)),
         error: declared_error(ir, outcome, input, held, store)?,
         events: Vec::new(),
@@ -1311,8 +1790,8 @@ fn refusal(
 fn write(
     ir: &EssIr,
     sets: &[ResolvedPayloadField],
-    input: &Invocation<'_>,
-    fields: &mut BTreeMap<String, Node>,
+    input: &Context<'_>,
+    fields: &mut BTreeMap<String, Value>,
     work: &mut Work<'_>,
 ) -> Result<(), Undetermined> {
     for set in sets {
@@ -1338,30 +1817,70 @@ fn write(
 fn value(
     ir: &EssIr,
     field: &ResolvedPayloadField,
-    input: &Invocation<'_>,
+    input: &Context<'_>,
     work: &mut Work<'_>,
-) -> Result<Option<Node>, Undetermined> {
+) -> Result<Option<Value>, Undetermined> {
+    work.location.push(field.target.clone());
+    work.target_location.push(field.target.clone());
+    let result = value_at(ir, field, input, work);
+    work.target_location.pop();
+    work.location.pop();
+    let value = result?;
+    if input.operation.is_some() {
+        history::validate(
+            ir,
+            &field.target_type,
+            value.as_ref().unwrap_or(&Value::Absent),
+        )?;
+    }
+    Ok(value)
+}
+
+fn value_at(
+    ir: &EssIr,
+    field: &ResolvedPayloadField,
+    input: &Context<'_>,
+    work: &mut Work<'_>,
+) -> Result<Option<Value>, Undetermined> {
     match &field.value {
         ResolvedPayloadValue::ResponseField { .. } => {
-            values::response(ir, field, work.response.as_ref())
+            values::response(ir, field, work.response.as_ref()).map(|value| value.map(Value::Known))
         }
         ResolvedPayloadValue::RelatedField { .. } => work.reads().related(ir, field, input),
         ResolvedPayloadValue::SubjectField {
             field: read,
             type_ref,
-        } => values::subject(ir, read, type_ref, &field.target_type, work.before.as_ref()),
-        ResolvedPayloadValue::Increment { by } => {
-            values::increment(ir, field, by, work.before.as_ref()).map(Some)
-        }
+        } => values::subject(
+            ir,
+            read,
+            type_ref,
+            &field.target_type,
+            field.conversion.as_deref(),
+            work.before.as_ref(),
+        ),
+        ResolvedPayloadValue::Increment { by } => values::increment(
+            ir,
+            field,
+            by,
+            work.before.as_ref(),
+            &work.target_location,
+            work.operation.is_some(),
+        )
+        .map(Some),
         ResolvedPayloadValue::CallerAttribute {
             attribute,
             type_ref,
-        } => input.caller_value(ir, attribute, type_ref),
+        } => input
+            .caller_value(ir, attribute, type_ref)
+            .map(|value| value.map(Value::Known)),
         ResolvedPayloadValue::InputField { field: source, .. } => Ok(input
             .get(source)
             .filter(|value| **value != Node::Null)
-            .cloned()),
-        ResolvedPayloadValue::Literal { value } => literal(ir, &field.target_type, value).map(Some),
+            .cloned()
+            .map(Value::Known)),
+        ResolvedPayloadValue::Literal { value } => {
+            literal(ir, &field.target_type, value).map(|value| Some(Value::Known(value)))
+        }
         ResolvedPayloadValue::Generated => mint(ir, &field.target_type, work),
         ResolvedPayloadValue::Struct { fields } => {
             let mut members = BTreeMap::new();
@@ -1370,16 +1889,18 @@ fn value(
                     members.insert(member.target.clone(), value);
                 }
             }
-            Ok(Some(Node::Map(members)))
+            Ok(Some(Value::Object(members)))
         }
         ResolvedPayloadValue::InputOrGenerated {
             field: source,
             otherwise,
             ..
         } => match input.get(source).filter(|value| **value != Node::Null) {
-            Some(value) => Ok(Some(value.clone())),
+            Some(value) => Ok(Some(Value::Known(value.clone()))),
             None => match otherwise {
-                Some(text) => literal(ir, &field.target_type, text).map(Some),
+                Some(text) => {
+                    literal(ir, &field.target_type, text).map(|value| Some(Value::Known(value)))
+                }
                 None => mint(ir, &field.target_type, work),
             },
         },
@@ -1427,17 +1948,20 @@ fn assign(
     field: &str,
     target: &ResolvedTypeRef,
     work: &mut Work<'_>,
-) -> Result<Result<Option<Node>, Unmatched>, Undetermined> {
+) -> Result<Result<Option<Value>, Unmatched>, Undetermined> {
     let Some(given) = work.supply.given else {
         return mint(ir, target, work).map(Ok);
     };
     let slot = GeneratedSlot::new(event.clone(), field);
     match given.get(&slot) {
+        None if work.operation.is_some() && work.supply.mint_absent => {
+            mint(ir, target, work).map(Ok)
+        }
         None | Some(Node::Null) if target.is_optional() => Ok(Ok(None)),
         None if work.supply.mint_absent => mint(ir, target, work).map(Ok),
         None => Ok(Err(format!("no value was given for `{event}.{field}`"))),
         Some(value) => Ok(match input::validate_typed_value(ir, target, value) {
-            Ok(()) => Ok(Some(value.clone())),
+            Ok(()) => Ok(Some(Value::Known(value.clone()))),
             Err(why) => Err(format!(
                 "the value given for `{event}.{field}` is not a `{target}`: {why}"
             )),
@@ -1454,7 +1978,15 @@ fn mint(
     ir: &EssIr,
     target: &ResolvedTypeRef,
     work: &mut Work<'_>,
-) -> Result<Option<Node>, Undetermined> {
+) -> Result<Option<Value>, Undetermined> {
+    if work.operation.is_some() {
+        return history::generated(ir, target, work.origin(), work.domains).map(
+            |value| match value {
+                Value::Absent => None,
+                value => Some(value),
+            },
+        );
+    }
     if target.is_optional() {
         return Ok(None);
     }
@@ -1462,10 +1994,10 @@ fn mint(
         what: format!("a value of `{target}`"),
     };
     if let Representation::Primitive(Primitive::Uuid) = representation(ir, target) {
-        Ok(Some(Node::Text(format!(
+        Ok(Some(Value::Known(Node::Text(format!(
             "00000000-0000-4000-8000-{:012}",
             work.next.tick()
-        ))))
+        )))))
     } else {
         let field = ess_compiler::ir::ResolvedField {
             name: "generated".into(),
@@ -1478,7 +2010,7 @@ fn mint(
             &[field],
             crate::witness::Distinction::further(distinction),
         )
-        .map(|mut values| values.remove("generated"))
+        .map(|mut values| values.remove("generated").map(Value::Known))
         .map_err(|_| no_value())
     }
 }
@@ -1517,13 +2049,13 @@ fn emit(
     ir: &EssIr,
     spec: &ResolvedCommand,
     outcome: &ResolvedOutcome,
-    input: &Invocation<'_>,
+    input: &Context<'_>,
     created: Option<&(String, Node)>,
     changed: Option<usize>,
     work: &mut Work<'_>,
-) -> Result<Result<Vec<ObservedEvent>, Unmatched>, Undetermined> {
+) -> Result<Result<Vec<history::Event>, Unmatched>, Undetermined> {
     let mut events = Vec::with_capacity(outcome.emits.len());
-    for handle in &outcome.emits {
+    for (index, handle) in outcome.emits.iter().enumerate() {
         let declared = ir.event(handle);
         let determined = outcome
             .payload
@@ -1538,15 +2070,21 @@ fn emit(
                 }
                 _ => None,
             });
-        let mut event = ObservedEvent::new(EventRef::from(handle));
+        let mut event = history::Event::new(EventRef::from(handle));
         for field in &declared.fields {
+            work.location = vec![
+                "event".into(),
+                index.to_string(),
+                declared.name.to_string(),
+                field.name.clone(),
+            ];
             let source = determined
                 .and_then(|payload| payload.fields.iter().find(|it| it.target == field.name));
             // The field `instance:` names publishes the created identity, whatever source the
             // payload declares for it: `{generated: true}` there says only that the implementation
             // assigns it, and it assigned it once, when the instance was created.
             let value = match (identity == Some(field.name.as_str()), source) {
-                (true, _) => created.map(|(_, identity)| identity.clone()),
+                (true, _) => created.map(|(_, identity)| Value::Known(identity.clone())),
                 (
                     false,
                     Some(ResolvedPayloadField {
@@ -1570,7 +2108,7 @@ fn emit(
                     let count = changed.ok_or_else(|| {
                         Undetermined::Request("changed count without a set subject".into())
                     })?;
-                    Some(Node::Number(Number::from(count)))
+                    Some(Value::Known(Node::Number(Number::from(count))))
                 }
                 (false, Some(source)) => value(ir, source, input, work)?,
 
@@ -1607,7 +2145,7 @@ fn emit(
 /// nothing: the value is the implementation's, and the model has not said it breaks anything.
 fn at_rest(
     ir: &EssIr,
-    store: &Store,
+    store: &State,
     entity: &QualifiedName,
     key: &Node,
 ) -> Result<(), Undetermined> {
@@ -1619,16 +2157,39 @@ fn at_rest(
     };
     let mut fields = declared.fields.clone();
     fields.push(declared.identity.clone());
-    let mut values = instance.fields.clone();
-    values.insert(declared.identity.name.clone(), key.clone());
-    let facts = input::bind(ir, &fields, &values, Completeness::Partial)
-        .map_err(|errors| Undetermined::Request(errors.to_string()))?;
-    let facts = TypedFacts::new(ir, &fields, facts);
+    let mut row = instance.clone();
+    row.fields
+        .insert(declared.identity.name.clone(), Value::Known(key.clone()));
+    let facts = history::Facts::row(ir, &fields, &row)?;
     for invariant in &declared.invariants {
-        if invariant.predicate.evaluate(&facts) == Truth::False {
+        let universal = facts.evaluate_with(|candidate| invariant.predicate.evaluate(candidate));
+        if universal == Truth::True {
+            continue;
+        }
+        if universal == Truth::False {
             return Err(Undetermined::BrokenInvariant {
                 instance: format!("`{entity}` `{key:?}`"),
                 invariant: invariant.statement.clone(),
+            });
+        }
+        let result = invariant.predicate.outcome(&facts);
+        if result.truth == Truth::False {
+            return Err(Undetermined::BrokenInvariant {
+                instance: format!("`{entity}` `{key:?}`"),
+                invariant: invariant.statement.clone(),
+            });
+        }
+        if result.truth == Truth::Unknown
+            && result
+                .causes
+                .iter()
+                .filter(|cause| cause.truth == Truth::Unknown)
+                .flat_map(|cause| &cause.missing)
+                .any(|path| facts.unobserved(path))
+        {
+            return Err(Undetermined::Undecidable {
+                outcome: format!("invariant of `{entity}` at `{key:?}`"),
+                guard: invariant.statement.clone(),
             });
         }
     }

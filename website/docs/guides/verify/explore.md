@@ -45,19 +45,37 @@ same way, for at most 1,000 replays.
 
 `assertExplored` (`AssertExplored`) fails on a disagreement, on a declared outcome of an included
 command that no sequence reached, and on the outcomes of an excluded command. The explorer models a
-subset: `when`, `otherwise` and `wrong_state` conditions; `creates` with an observed identity and
-`moves`/`updates` of a supplied subject; integer, boolean, string and UUID inputs, their newtypes,
-enums and structs of them. Anything else is excluded with the reason in `excluded`, and accepting
-that is an explicit `allowExcluded`. Where two guards both hold — which the model admits over an
-infinite domain — the draw is reported in `ambiguous` and redrawn rather than decided; a view
-filter or invariant over a field no command set is reported in `undetermined`. Neither fails.
+subset: `when`, `otherwise`, `wrong_state`, `unknown_instance`, `existing_instance` and external
+conditions, and the conditions read from the stored row — `when_subject_state`,
+`when_state_changes` and `when_subject` (a stored field or a predicate over the stored fields);
+`creates` with an observed identity and `moves`/`updates` of a supplied subject; integer, boolean,
+string and UUID inputs, their newtypes, enums and structs of them. Anything else is excluded with
+the reason in `excluded` — `when_related`, which reads another entity's row, among them — and
+accepting that is an explicit `allowExcluded`. Where two guards both hold — which the model admits
+over an infinite domain — the draw is reported in `ambiguous` and redrawn rather than decided; a
+view filter, invariant or stored-row guard over a field no command set, or one the row holds as
+null, is reported in `undetermined` and the command stays in exploration. Neither fails.
+
+A text input is drawn from `""`, `"a"`, `"b"`, the text literals of the command's guards and its
+own `example:`; for every `.count` a guard compares it with, say `secret.count < 12`, it is also
+drawn at 11, 12 and 13 characters, cut from its example, or from its own name where it has none.
+An Integer or enum input also draws its `example:`. These draws are part of what a seed names, so a
+failure recorded under a release before beyond10x/ess#221 and #223 replays a different sequence
+wherever a command reads its stored row, declares `existing_instance:`, or has a text input with an
+`example:` or a `.count` guard: replay it with the release that recorded it.
 
 The model decides which outcome a step expects in the order Entity Runtime and synthesis use:
 
 1. an input-guarded refusal (an outcome with a `when:` and an `error:`), the first declared whose
    guard holds, before the record, its state or an external branch is read;
-2. otherwise the one accepting `when:` that holds, or the default when none does;
-3. then `wrong_state`, where the outcome from step 2 moves the subject from a state no move of the
+2. then existence: `existing_instance:` where a creation names an identity a record already
+   carries, and `unknown_instance:` where a command reading its stored row names one none carries;
+3. then the branches selected by the stored row (`when_subject_state:`, `when_state_changes:`,
+   `when_subject:`), the first declared that holds, before any accepting guard; where an accepting
+   `when:` declared before it holds too, the draw is reported in `ambiguous` and redrawn, because
+   declaration order and this precedence answer it differently;
+4. otherwise the one accepting `when:` that holds, or the default when none does;
+5. then `wrong_state`, where the outcome from step 3 or 4 moves the subject from a state no move of the
    command starts from. An outcome that moves nothing answers in every state, an eligible external
    branch included.
 
@@ -68,6 +86,44 @@ as disagreeing.
 The model is `ir.json`, the compact IR the suite's `spec_digest` is taken over. The explorer refuses
 a package whose `ir.json` does not hash to `suite.json`'s digest; regenerate the package rather than
 editing either file.
+
+### Restart the target between commands
+
+Every sequence runs in one process lifetime unless you ask for restarts. An implementation that
+mints identities from a counter kept only in its process passes every such sequence, and after a
+restart its next creation reuses an identity it has already stored. To check that, give the target
+a `restart` method (Go: implement `RestartTarget`) that stops every process of your implementation
+and starts it again over the same durable state, and ask for restarts:
+
+```ts
+const result = await explore(() => newTarget(), { seeds: 200, steps: 60, restartEvery: 10 });
+assertExplored(result);
+```
+
+```go
+result, err := essconform.Explore(func() essconform.Target { return newTarget() },
+    essconform.ExploreOptions{Seeds: 200, Steps: 60, RestartEvery: 10})
+```
+
+After every `restartEvery` commands of a sequence the explorer restarts the target and reads every
+view again. A row the restart lost fails at the `restart` step of the trace, and a later creation
+that mints an identity a record already carries fails as a reused identity. A restart draws no
+random number, so a seed runs the same commands with restarts as without. A restart is a check
+only once a command has followed it: a restart after the last command of a sequence is followed by
+one more drawn command, and only a restart a command followed counts as performed.
+
+The explorer cannot see your processes. Clearing memory inside a process that keeps running is not
+a restart, because the counter lives in the process and survives it, and a `restart` that answers
+without restarting anything is reported as performed and passes. Both are defects in the target,
+and only its author can rule them out.
+
+`restarts` in the result reports the interval and how many restarts were performed. A target
+without `restart`, or whose `restart` throws `unsupported` (returns `ErrUnsupported`), is reported
+in `restarts.unsupported` and the rest of the exploration runs without restarts. `assertExplored`
+fails on it, and on restarts no sequence was long enough to reach, whatever `allowExcluded` says.
+Without `restartEvery` the result has no `restarts` and nothing changes. Restarts are
+sequential-only: `exploreConcurrent` refuses options carrying `restartEvery`, and Go
+`ConcurrentOptions` has no such field.
 
 ## Check a concurrent history
 

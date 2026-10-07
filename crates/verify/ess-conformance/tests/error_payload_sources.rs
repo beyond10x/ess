@@ -240,7 +240,7 @@ fn a_suite_for_errors_without_sources_asserts_no_field() {
         "",
     );
     let expected = expected_errors(&compiled(&text));
-    assert!(!expected.is_empty());
+    assert_ne!(expected.len(), 0);
     assert!(
         expected.iter().all(|(_, fields)| fields.is_empty()),
         "{expected:#?}"

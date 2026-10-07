@@ -40,6 +40,7 @@ type Task = { task_id: string; title: string; priority: unknown; state: "Open" |
 // An in-memory implementation of the tasks specification. A real target calls your service here.
 function newTarget(): Target {
   const tasks = new Map<string, Task>();
+  let writes = 0;
   return {
     identity: () => ({ name: "tasks-in-memory", version: "dev" }),
     beginScenario: () => {},
@@ -47,15 +48,18 @@ function newTarget(): Target {
 
     executeCommand(request: CommandRequest): CommandResult {
       const input = request.input;
+      // Every answer names the write a read_your_writes read of tasks.list.Tasks is made no older than.
+      const consistency = String(++writes);
       switch (request.command) {
         case "tasks.list.AddTask": {
           if (Number(String(input.priority)) < 0) {
-            return { outcome: "rejected", error: "tasks.list.InvalidPriority" };
+            return { outcome: "rejected", error: "tasks.list.InvalidPriority", consistency };
           }
           const task_id = randomUUID();
           tasks.set(task_id, { task_id, title: input.title, priority: input.priority, state: "Open" });
           return {
             outcome: "added",
+            consistency,
             directEvents: [
               { event: "tasks.list.TaskAdded", payload: { task_id, title: input.title } },
             ],
@@ -64,11 +68,12 @@ function newTarget(): Target {
         case "tasks.list.CompleteTask": {
           const task = tasks.get(input.task_id);
           if (task === undefined || task.state !== "Open") {
-            return { outcome: "already-done", error: "tasks.list.AlreadyDone" };
+            return { outcome: "already-done", error: "tasks.list.AlreadyDone", consistency };
           }
           task.state = "Done";
           return {
             outcome: "completed",
+            consistency,
             directEvents: [
               { event: "tasks.list.TaskCompleted", payload: { task_id: task.task_id } },
             ],
@@ -107,6 +112,10 @@ await test("conformance", async (t) => {
   await run(t, (): Target => newTarget());
 });
 ```
+
+`tasks.list.Tasks` is `read_your_writes`, so every command answer carries a `consistency` token,
+refusals included, and the runner reads the view no older than it; an answer without one fails the
+view's next check.
 
 ## Run it
 

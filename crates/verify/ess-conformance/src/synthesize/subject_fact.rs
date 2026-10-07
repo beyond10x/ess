@@ -2525,7 +2525,8 @@ const MAX_REACHABLE: usize = 4096;
 /// Every value `counter` holds on some run that lies within [`COUNTER_REACH`] of `literal`, or
 /// between a start and that window, one widest step either side: the starts, and each start moved
 /// by any sequence of its amounts, never leaving that span. `None` where the starts are not known
-/// or the span holds more than [`MAX_REACHABLE`] values.
+/// or any required span arithmetic is unrepresentable, or the span holds more than
+/// [`MAX_REACHABLE`] values.
 fn reachable(counter: &Counter, literal: Number) -> Option<BTreeSet<Number>> {
     let starts = counter.starts.as_ref()?;
     if starts.is_empty() {
@@ -2535,18 +2536,22 @@ fn reachable(counter: &Counter, literal: Number) -> Option<BTreeSet<Number>> {
     let widest = counter
         .amounts
         .iter()
-        .filter_map(|by| Some((*by).max(negated(*by)?)))
+        .map(|by| Some((*by).max(negated(*by)?)))
+        .collect::<Option<Vec<_>>>()?
+        .into_iter()
         .max()?;
+    let lower_window = literal.checked_add(negated(reach)?)?;
+    let upper_window = literal.checked_add(reach)?;
     let low = starts
         .iter()
         .copied()
-        .chain(literal.checked_add(negated(reach)?))
+        .chain([lower_window])
         .min()?
         .checked_add(negated(widest)?)?;
     let high = starts
         .iter()
         .copied()
-        .chain(literal.checked_add(reach))
+        .chain([upper_window])
         .max()?
         .checked_add(widest)?;
     let mut seen = BTreeSet::new();
@@ -3284,6 +3289,22 @@ fn successors(
     follow: &Follow,
 ) -> Vec<Arrangement> {
     let mut out = Vec::new();
+    // A move reading a related row through a stored field of this row (ess/22,
+    // beyond10x/ess#304) is sent with that reference left out, or naming a row arranged for it.
+    if super::related_guard::stored::field(driver.command).is_some() {
+        if let Ok(mut next) = super::related_guard::stored::step(
+            ir,
+            driver,
+            arrangement,
+            actors,
+            Distinction::PLAIN,
+            arranging,
+        ) {
+            follow.raise(ir, driver, &arrangement.settled, &mut next.settled);
+            out.push(next);
+        }
+        return out;
+    }
     if uses(driver.command) {
         let own = self::hints(driver.command);
         let fields = read_fields(ir, entity, &own);
@@ -5902,5 +5923,70 @@ fn eventual_observation(
         after,
         source,
         unobserved: Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod counter413a_arithmetic_completeness {
+    use super::{reachable, BTreeSet, Counter, Number};
+
+    fn counter(amounts: &[i64]) -> Counter {
+        Counter {
+            starts: Some(vec![Number::from(0_i64)]),
+            amounts: amounts.iter().copied().map(Number::from).collect(),
+        }
+    }
+
+    #[test]
+    fn max_literal_cannot_drop_the_required_upper_window() {
+        let result = reachable(&counter(&[1]), Number::from(i64::MAX));
+        assert!(
+            result.is_none(),
+            "overflowing upper window must be incomplete, not a complete tiny set: {result:?}"
+        );
+    }
+
+    #[test]
+    fn min_literal_cannot_drop_the_required_lower_window() {
+        let result = reachable(&counter(&[-1]), Number::from(i64::MIN));
+        assert!(
+            result.is_none(),
+            "overflowing lower window must be incomplete, not a complete tiny set: {result:?}"
+        );
+    }
+
+    #[test]
+    fn representable_windows_with_unrepresentable_padding_remain_incomplete() {
+        for (literal, step) in [(i64::MAX - 16, 1), (i64::MIN + 16, -1)] {
+            let result = reachable(&counter(&[step]), Number::from(literal));
+            assert!(
+                result.is_none(),
+                "widest-step padding at {literal} must remain checked: {result:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_unrepresentable_negative_magnitude_cannot_be_omitted_from_the_widest_step() {
+        // The positive sibling makes filter_map's silent omission observable: it cannot stand in
+        // for the larger negative step whose magnitude does not fit the signed arithmetic.
+        let result = reachable(&counter(&[i64::MIN, 1]), Number::from(0_i64));
+        assert!(
+            result.is_none(),
+            "every step's required magnitude must be representable: {result:?}"
+        );
+    }
+
+    #[test]
+    fn finite_two_and_empty_start_completeness_are_unchanged() {
+        let result = reachable(&counter(&[1]), Number::from(2_i64));
+        let expected: BTreeSet<_> = (0_i64..=19).map(Number::from).collect();
+        assert_eq!(result, Some(expected));
+        let mut empty = counter(&[i64::MIN, 1]);
+        empty.starts = Some(Vec::new());
+        assert_eq!(
+            reachable(&empty, Number::from(i64::MAX)),
+            Some(BTreeSet::new())
+        );
     }
 }

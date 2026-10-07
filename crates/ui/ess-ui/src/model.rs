@@ -231,6 +231,11 @@ pub struct Document {
     /// Value-to-tone maps, named by `tone_by.tones`.
     #[serde(default)]
     pub tone_maps: BTreeMap<String, ToneMap>,
+    /// Every name a choice's `options` write that resolved to an enum of the model the document
+    /// was loaded with ([`crate::load_str_with`]), to its qualified name (beyond10x/ess#330).
+    /// Never authored: empty for a document loaded without a model.
+    #[serde(skip)]
+    pub model_enums: BTreeMap<String, String>,
 }
 
 /// Whose grants decide what is visible.
@@ -560,6 +565,10 @@ pub struct Page {
     pub switch_to: Vec<String>,
     /// Extra condition beyond grants.
     pub visible: Option<Expr>,
+    /// The ESS actor whose grants the commands of the page are bound to (beyond10x/ess#284), as
+    /// written: `ess ui check --model` resolves it and holds every command the page binds to it.
+    /// Renderers do not read it.
+    pub actor: Option<String>,
     /// How sections are arranged.
     pub layout: PageLayout,
     /// Page state.
@@ -925,6 +934,9 @@ pub enum StaleMark {
 pub struct Node {
     /// Name, state, visibility, degrades and unmapped notes.
     pub common: NodeCommon,
+    /// How channel events change the node's own read, while the node is shown
+    /// (beyond10x/ess#354). Only a composite with its own `reads` takes one.
+    pub live: Option<Live>,
     /// A composite, a widget instance or a primitive.
     pub body: Body,
 }
@@ -933,10 +945,41 @@ impl<'de> Deserialize<'de> for Node {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let mapping = Mapping::deserialize(deserializer)?;
         let (frame, rest) = split(mapping, NODE_COMMON_KEYS);
+        let (live, rest) = split(rest, &["live"]);
         let common: NodeCommon = from_mapping(frame).map_err(D::Error::custom)?;
         let body = Body::from_mapping(rest, true).map_err(D::Error::custom)?;
-        Ok(Self { common, body })
+        let live = node_live(live, &body).map_err(D::Error::custom)?;
+        Ok(Self { common, live, body })
     }
+}
+
+/// A nested node's `live` block: admitted only on a composite with its own `reads`, without
+/// `when_paged_away` (a nested node's rows are not paged by a section), and matching events by
+/// the read's `key` when it names no `match` (#320).
+fn node_live(frame: Mapping, body: &Body) -> Result<Option<Live>, String> {
+    let Some(value) = frame.into_iter().next().map(|(_, value)| value) else {
+        return Ok(None);
+    };
+    let mut live: Live =
+        serde_yaml::from_value(value).map_err(|error| format!("`live`: {error}"))?;
+    let Some(reads) = body.live_reads() else {
+        return Err(
+            "`live` applies a channel's events to the node's own `reads`, and this node reads \
+             nothing: give it `reads`, or move `live` to the section that reads"
+                .to_owned(),
+        );
+    };
+    if live.when_paged_away.is_some() {
+        return Err(
+            "`live.when_paged_away` applies to a section's paged rows; a nested node's rows are \
+             not paged by a section, so it takes none"
+                .to_owned(),
+        );
+    }
+    if live.match_field.is_none() {
+        live.match_field.clone_from(&reads.key);
+    }
+    Ok(Some(live))
 }
 
 /// What a node, section or overlay holds.
@@ -956,6 +999,15 @@ impl Body {
         match self {
             Self::Composite(composite) => composite.reads(),
             Self::Widget(_) | Self::Primitive(_) => None,
+        }
+    }
+
+    /// The read a nested node's `live` changes (beyond10x/ess#354): a composite's own read, or the
+    /// read a choice takes its options from.
+    pub fn live_reads(&self) -> Option<&Reads> {
+        match self {
+            Self::Composite(Composite::Choice(choice)) => choice.reads.as_ref(),
+            _ => self.reads(),
         }
     }
 
@@ -1304,6 +1356,10 @@ pub struct Choice {
     /// Fixed options, in order.
     #[serde(default)]
     pub options: Vec<ChoiceOption>,
+    /// The row field each option of `reads` sends (beyond10x/ess#328).
+    pub value: Option<String>,
+    /// The row field each option of `reads` shows (beyond10x/ess#328).
+    pub label: Option<String>,
     /// State the value is written to.
     pub binds: Option<Expr>,
     /// Many values.
@@ -1315,6 +1371,53 @@ pub struct Choice {
     pub creatable: Option<Creatable>,
     /// Author remark.
     pub note: Option<String>,
+}
+
+impl Choice {
+    /// The row field the author names as each option's value: `value`, else the read's `key`.
+    pub fn value_field(&self) -> Option<&str> {
+        self.value
+            .as_deref()
+            .or_else(|| self.reads.as_ref()?.key.as_deref())
+    }
+
+    /// The option a row of `reads` offers: the value it sends and the value its label shows.
+    ///
+    /// The value is the row's [`Self::value_field`] when the author names one, and a row without
+    /// that field offers no option, so no other value can be sent in its place. Otherwise it is,
+    /// in order: the row's field named `field` (the form field the choice picks for), its field
+    /// named `identity` (the identity of the entity the view projects, from the binding), its
+    /// `id`, and last the row itself; a field present as `null` is present, and `null` is sent.
+    /// The label is the row's `label` field when the author names one and the row holds a value
+    /// there; otherwise the row's `label`, else its `name`, else the value, a `null` counting as
+    /// absent.
+    pub fn row_option(
+        &self,
+        row: &Value,
+        field: Option<&str>,
+        identity: Option<&str>,
+    ) -> Option<(Value, Value)> {
+        let value = match self.value_field() {
+            Some(named) => row.get(named)?.clone(),
+            None => field
+                .and_then(|field| row.get(field))
+                .or_else(|| identity.and_then(|identity| row.get(identity)))
+                .or_else(|| row.get("id"))
+                .unwrap_or(row)
+                .clone(),
+        };
+        // A label field present as `null` is absent.
+        let present = |key: &str| row.get(key).filter(|cell| !cell.is_null());
+        let label = self
+            .label
+            .as_deref()
+            .and_then(present)
+            .or_else(|| present("label"))
+            .or_else(|| present("name"))
+            .cloned()
+            .unwrap_or_else(|| value.clone());
+        Some((value, label))
+    }
 }
 
 /// One fixed option.
@@ -1408,6 +1511,9 @@ pub struct FilterWindow {
 pub struct Header {
     /// Header title (`from_page` expanded on pages).
     pub title: Option<String>,
+    /// A field of the record a section of the page holds, shown as the title once the record
+    /// holds it; `title` is shown until then (beyond10x/ess#354).
+    pub title_from: Option<TitleFrom>,
     /// Section whose total is shown.
     pub total: Option<String>,
     /// Primary actions, in order.
@@ -1426,6 +1532,17 @@ pub struct Header {
     pub metrics: Vec<Node>,
     /// Help text or link.
     pub help: Option<Help>,
+}
+
+/// The record field a header shows as its title: the first row the named section holds, with
+/// that section's live changes applied.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TitleFrom {
+    /// A section of the page that reads; its first row is the record.
+    pub section: String,
+    /// The row field shown; a dotted path reads into a nested value.
+    pub field: String,
 }
 
 /// Help text or link.
@@ -2500,7 +2617,7 @@ pub enum Resume {
     Unmapped(UnmappedMarker),
 }
 
-/// How a section applies a channel's events.
+/// How a section, or a nested node that reads, applies a channel's events.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Live {

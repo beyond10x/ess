@@ -15,6 +15,7 @@ For response fields that must never be disclosed again after issuance, see
 $ ess verify conform run \
     --suite target/billing-suite.json \
     --target billing \
+    --report-format 2 \
     --report-out target/billing-conformance.json
 ```
 
@@ -26,9 +27,10 @@ implementations of their examples. `interpreted` selects the specification itsel
 model — outcomes, transitions, `sets:` writes, emitted events and declared refusals — and does not
 yet interpret views or bindings, so a scenario that reads one comes back as an unsatisfied
 obligation, and a run over a suite holding at least one such scenario fails.
-The default standalone report is `ess-conformance-report/1`. Its historical `scenarios_failed`
-count includes every non-pass, including Go skips and Rust errors or unsupported results. Those
-legacy bytes and meanings remain unchanged.
+A freshly synthesized suite is `ess-conformance/34`, which runs only with `--report-format 2`.
+The default standalone report, `ess-conformance-report/1`, is for suites up to
+`ess-conformance/4`. Its historical `scenarios_failed` count includes every non-pass, including Go
+skips and Rust errors or unsupported results. Those legacy bytes and meanings remain unchanged.
 
 To run directly from a specification instead of a pre-generated suite:
 
@@ -36,6 +38,7 @@ To run directly from a specification instead of a pre-generated suite:
 $ ess verify conform run \
     --path examples/billing \
     --target billing \
+    --report-format 2 \
     --format json
 ```
 
@@ -75,10 +78,29 @@ uses it even when the command answers `not_granted`. Before sending a command wh
 refusal, it observes those events again in the same correlation context and fails if any count grew.
 A command that publishes and then refuses therefore fails even when its answer contains no events.
 
-A custom suite runner must perform both observations; the pre-send observation is part of the
-`expect_not_granted` contract, not a separate suite step. Comparing views is insufficient for an
-event that changes no view. If the adapter cannot observe the log, report unsupported as described
-below; an answer-only check cannot establish that nothing was published.
+A custom suite runner, one that reads `suite.json` itself instead of using the generated package,
+must do the same. For every `execute_command` or `execute_command_without_input` step whose next
+step is `expect_not_granted`:
+
+1. Look ahead before sending. Read the next step and take its `unpublished` list. The suite has no
+   separate observation step; the pre-send count belongs to `expect_not_granted`.
+2. Count before the send. Observe each listed event once, with the scenario's correlation (the one
+   `BeginScenario` received and every command carries), and count the occurrences of that event.
+   The count reads what the log already holds, so the generated runners pass a deadline that does
+   not wait (`attempts: 1`).
+3. Send the command in that correlation. The step requires the standard refusal naming the actor
+   the step names. A command that ran, or a refusal that hands back events, fails the step.
+4. Count again after the refusal. Observe each listed event with the same correlation, and fail the
+   step if any count is higher than before. Count occurrences rather than comparing sets or
+   payloads: a refused send that publishes a second occurrence equal to an earlier one has still
+   added one.
+5. If the target cannot observe the log, before or after, the scenario is `unsupported` and never
+   passed. If the pre-send count is unavailable, the command is not sent.
+
+Neither the command's answer nor the views can stand in for these observations. The answer carries
+only direct events, so it misses an event published elsewhere before the refusal. Comparing views
+misses an event that changes no view. A runner that checks only the answer or the views has not
+verified `unpublished` and must not report the scenario passed.
 
 A refused command reports both the outcome name and the error, for example
 `{outcome: "rejected", error: "tasks.list.InvalidPriority"}`. A method the implementation cannot
@@ -252,12 +274,14 @@ field does not block a representable child. The Go report clock supports nonnega
 Rust report/run timestamps support the full u64 range. Payload Number meaning is a separate finite
 binary64 boundary. Modeled Binary64 remains unsupported by conformance, including suite/5.
 
-`conform web --suite-format 5` emits a paired `ess-conformance-replay/1` document and matching player.
-The actual player checks the closed projection, exact suite reference and full input before creating
-replay state, then displays selection and refusals. It emits no execution report. The reduced model
-omits literal assignment values and full view evaluation; digest comparison neither reconstructs
-the full compiled model nor authenticates its publisher. Existing players do not acquire these
-checks when handed new metadata; regenerate and distribute the paired bundle together.
+`conform web` emits a browser product: the original specification files, the admitted suite
+(`suite.json`) or, with `--suite-format 5`, the complete coverage input (`input.json`), a
+Rust-derived `declarations.json` and a `browser.json` manifest binding them by digest. The page
+navigates every declaration without executing anything. Building the emitted `rust/browser_host.rs`
+with your own target installation (see the emitted `README.md`) gives `runner.wasm`, which re-admits
+the original bytes before any target call and runs the Rust runner; only those runs produce
+reports. The historical `ess-conformance-replay/1` reader stays available from the library
+(`web::emit_input`) and is no longer what this command writes.
 
 `ess verify impact --suite-input` accepts complete admitted coverage and reports its selection separately.
 Unknown or incomplete inventory and missing parents refuse. Persisted output remains `ess-impact/3`

@@ -44,6 +44,9 @@ jsonschema = { version = "0.52.1", default-features = false }
 [dev-dependencies]
 ess-compiler.workspace = true
 ess-domain.workspace = true
+# Match generated servers' Rust 1.85-compatible timestamp dependency so model and server
+# crates can share a workspace. Offline fixtures also need its optional macro dependency.
+time = { version = "=0.3.45", features = ["formatting", "parsing", "macros"] }
 
 [lints]
 workspace = true

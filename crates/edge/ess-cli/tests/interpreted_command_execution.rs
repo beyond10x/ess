@@ -35,13 +35,13 @@ fn run(target: &str) -> BTreeMap<String, serde_json::Value> {
         .args(["verify", "conform", "run", "--target", target])
         .args(["--path", "examples/billing"])
         .args(["--suite", SUITE])
-        .args(["--format", "json"])
+        .args(["--report-format", "2", "--format", "json"])
         .output()
         .expect("the `ess` binary runs");
     let report: serde_json::Value =
         serde_json::from_slice(&output.stdout).unwrap_or_else(|error| {
             panic!(
-                "`--target {target}` renders report/1 as JSON: {error}\n{}",
+                "`--target {target}` renders report/2 as JSON: {error}\n{}",
                 String::from_utf8_lossy(&output.stderr)
             )
         });

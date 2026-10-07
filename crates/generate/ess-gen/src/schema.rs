@@ -50,7 +50,7 @@ pub(crate) mod types;
 
 #[path = "model_types.rs"]
 mod model_types;
-pub use model_types::{ModelRoot, ModelTypeError, ModelTypes};
+pub use model_types::{ModelTypeError, ModelTypes};
 
 use ess_compiler::ir::{ResolvedEntity, ResolvedType};
 use ess_compiler::refs::{

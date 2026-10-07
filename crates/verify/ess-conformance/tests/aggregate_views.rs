@@ -559,7 +559,7 @@ fn an_extreme_or_mean_over_the_identity_is_refused_and_its_distinct_count_is_not
     let model = with_views(
         "  - name: metrics.session.Ids\n    source: metrics.session.Session\n    consistency: read_your_writes\n    filter: state == Completed\n    group_by: [agent_id]\n    fields:\n      - {name: agent_id, type: String}\n      - {name: ids, type: Integer, aggregate: {count_distinct: session_id}}\n",
     );
-    assert!(unwitnessed(&model, "metrics.session.Ids").is_empty());
+    assert_eq!(unwitnessed(&model, "metrics.session.Ids").len(), 0);
     let rows = contains(
         scenario(&synthesis(&model).suite, "metrics.session.Ids/aggregate"),
         "metrics.session.Ids",

@@ -58,6 +58,7 @@ constructs keeps its bytes and its compiled digest under the older header.
 | `ess/19` | [0.46.0][r46] | `payload:` sources for the fields of the error an outcome reports. |
 | `ess/20` | [0.49.0][r49] | `state`, the related row's held lifecycle state, in a `when_related:` predicate. |
 | `ess/21` | Unreleased | `one_time_response:` names required String response fields whose values may be disclosed only by their originating response. |
+| `ess/22` | Unreleased | A `when_related:` guard's `via: input.<field>` may name an `Optional<…>` input, checked only when present. |
 
 The paragraphs below give each version's rules.
 
@@ -472,6 +473,14 @@ transition only such outcomes perform, is `unwitnessed` rather than `survived`. 
 each mutant's `unsatisfiable_guard`. `--collect` still reads `/2` and `/1` manifests, and refuses
 either when it carries `unsatisfiable_guard`.
 
+`ess-mutation-manifest/4` and `ess-mutation-report/4` are unreleased. The manifest adds the
+`sets-drop` and `precedence-swap` classes, the `component` an emission was scoped to, and each
+mutant's `out_of_scope`; an emission declares `/4` only where it holds one of these, and `/3`
+otherwise, so a `/3` reader still collects it. The report adds `component` and the
+`out_of_scope` list, and is written only for an emission scoped to a component; every other report
+stays `/3`. `--collect` still reads `/3`, `/2` and `/1`, and refuses any of them that carries a
+`/4` class, a `component` or an `out_of_scope` mutant, naming `/4`.
+
 ## Every other family
 
 Each family below is read by a build that admits only the versions listed, and refuses a document
@@ -489,6 +498,10 @@ claiming a higher number. [Formats and digests](./formats.md) says what each doc
 | `ess-docs/1` | [0.4.0][r4] | The document representation between a model and its pages. |
 | `ess-realization/1` | [0.8.0][r8] | An authored realization: one exact ESS system bound to its implementations. `ess-realization/2`, introduced in [0.21.0][r21], admits implementation-only selections. |
 | `ess-realization-ir/1` | [0.8.0][r8] | A compiled realization. `ess-realization-ir/2`, introduced in [0.21.0][r21], compiles `ess-realization/2`. |
+| `ess-transport/1`, `ess-transport-ir/1` | [0.52.0][r52] | How the events of one exact ESS travel: broker, subject, envelope, delivery and the stream that captures each subject, and its compiled form. |
+| `ess-transport/2`, `ess-transport-ir/2` | Unreleased | Adds channel subjects whose whole-token `{name}` expressions are bound to required String event payload paths, and its compiled form. A reader of the previous version refuses it. |
+| `ess-protospec/1` | Unreleased (experimental) | Finite communicating participants with typed state and messages, bounded channels, logical timers and safety properties. |
+| `ess-prototrace/1` | Unreleased (experimental) | Ordered protocol actions and observations bound to a model digest, with explicit model or target origin and capture completeness. |
 | `ess-build/1`, `ess-build-ir/1` | [0.9.0][r9] | An authored build and its compiled form. |
 | `ess-runtime/1`, `ess-runtime-ir/1` | [0.9.0][r9] | An authored runtime mapping and its compiled form. |
 | `ess-release/1`, `ess-release-catalog/1` | [0.9.0][r9] | A release manifest, and the catalog of candidate releases. |
@@ -497,7 +510,8 @@ claiming a higher number. [Formats and digests](./formats.md) says what each doc
 | `ess-component/1`, `ess-component-ir/1` | [0.13.0][r13] | A deliverable component and its compiled form. |
 | `ess-release-bundle/1` | [0.13.0][r13] | Independently released runtime and chart releases, bundled. |
 | `ess-types-report/3` | [0.19.0][r19] | Structural target accounting for a generated type library. The family's first published version is `/3`. |
-| `ess-types-report/4` | Unreleased | Typed event/type roots for event-bearing standalone data libraries. |
+| `ess-client-report/1` | [0.52.0][r52] | Accounting for a generated event publisher: its operations and the obligations it leaves to the application. |
+| `ess-client-report/2` | Unreleased | Accounting for a generated event publisher with at least one parameterized subject: each such operation adds its normalized `parameters`. |
 | `ess-normalization-target/1` | [0.19.0][r19] | A normalization library report. `ess-normalization-target/2` and `ess-normalization-target/3`, introduced in [0.20.0][r20], report format-3 recipes and format-4, 5 and 6 recipes respectively. |
 | `ess-openapi-import/1`, `ess-openapi-service-subset/1` | [0.20.0][r20] | An OpenAPI import envelope, and the fixed import profile it names. |
 | `ess-conformance-input/1`, `ess-conformance-replay/1` | [0.21.0][r21] | A retained original suite and its parents, and a paired browser replay. |
@@ -569,3 +583,4 @@ published release that carries them.
 [r46]: https://github.com/beyond10x/ess/releases/tag/0.46.0
 [r461]: https://github.com/beyond10x/ess/releases/tag/0.46.1
 [r49]: https://github.com/beyond10x/ess/releases/tag/0.49.0
+[r52]: https://github.com/beyond10x/ess/releases/tag/0.52.0

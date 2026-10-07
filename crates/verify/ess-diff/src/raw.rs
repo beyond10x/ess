@@ -20,6 +20,7 @@
 //! | both sides name one system | `conflicting_declaration` |
 //! | every change is named by the id its own content derives, and carries the relation its own content derives | `conflicting_declaration` |
 //! | the changes are in canonical order, with no id twice | `conflicting_declaration`, `duplicate_declaration` |
+//! | from `ess-diff/14`, every change carries the compatibility its content and recorded type uses derive; below it, none does | `missing_declaration`, `conflicting_declaration`, `unsupported_format_version` |
 //!
 //! The third is what makes a derived id worth writing down. The document carries `id` and `relation`
 //! so that a reviewer can quote one and a consumer in another language does not have to reimplement
@@ -34,6 +35,7 @@
 use ess_primitives::error::{ValidationCode, ValidationError, ValidationErrors};
 
 use crate::change::{ChangeId, SemanticChange, SemanticRelation};
+use crate::compatibility::{RawChangeCompatibility, CLASSIFIED_DELTA_FORMAT};
 use crate::delta::{DeltaFormat, EssDelta, EssRevisionRef};
 
 /// A delta document as it is written, before anything has checked what it claims.
@@ -60,6 +62,9 @@ pub struct RawSemanticChange {
     pub id: String,
     /// How the document says it relates the two revisions.
     pub relation: SemanticRelation,
+    /// Whom the document says it breaks: required from `ess-diff/14`, refused below it.
+    #[serde(default)]
+    pub compatibility: Option<RawChangeCompatibility>,
     /// Which construct moved, and what happened to it.
     pub change: SemanticChange,
 }
@@ -166,15 +171,70 @@ impl TryFrom<RawEssDelta> for EssDelta {
                 }
             }
             previous = Some(id);
+
+            check_compatibility(raw.format, index, written, &mut errors);
         }
 
-        let changes: Vec<SemanticChange> = raw
-            .changes
-            .into_iter()
-            .map(|written| written.change)
-            .collect();
+        errors.into_result(assembled(raw))
+    }
+}
 
-        errors.into_result(Self::assembled(raw.format, raw.before, raw.after, changes))
+/// The delta `raw` writes, once every claim has been checked.
+fn assembled(raw: RawEssDelta) -> EssDelta {
+    let classified = raw.format.major() >= CLASSIFIED_DELTA_FORMAT;
+    let (changes, compatibility): (Vec<SemanticChange>, Vec<_>) = raw
+        .changes
+        .into_iter()
+        .map(|written| (written.change, written.compatibility))
+        .unzip();
+    let compatibility = classified.then(|| {
+        compatibility
+            .into_iter()
+            .flatten()
+            .map(RawChangeCompatibility::admitted)
+            .collect()
+    });
+    EssDelta::assembled(raw.format, raw.before, raw.after, changes, compatibility)
+}
+
+/// The fifth claim: from `ess-diff/14` a change carries the compatibility its content derives, and
+/// below it none does.
+fn check_compatibility(
+    format: DeltaFormat,
+    index: usize,
+    written: &RawSemanticChange,
+    errors: &mut ValidationErrors,
+) {
+    let location = format!("delta.changes[{index}].compatibility");
+    match (
+        &written.compatibility,
+        format.major() >= CLASSIFIED_DELTA_FORMAT,
+    ) {
+        (Some(_), false) => errors.push(
+            ValidationError::new(
+                ValidationCode::UnsupportedFormatVersion,
+                location,
+                format!(
+                    "`{format}` carries no compatibility; it is \
+                     `ess-diff/{CLASSIFIED_DELTA_FORMAT}` vocabulary"
+                ),
+            )
+            .with_hint("a later format may mean something different by the same words"),
+        ),
+        (None, true) => errors.push(ValidationError::new(
+            ValidationCode::MissingDeclaration,
+            location,
+            format!(
+                "`{format}` classifies every change, and `{}` carries no compatibility",
+                written.change.id()
+            ),
+        )),
+        (Some(compatibility), true) => {
+            if let Err(found) = compatibility.check(&written.change, &location) {
+                errors.extend(found);
+            }
+        }
+        (None, false) => {}
     }
 }
 

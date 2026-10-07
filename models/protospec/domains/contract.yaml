@@ -1,0 +1,43 @@
+domain: protospec.contract
+summary: The typed identities and ownership of bounded protocol conformance.
+entities:
+  - name: protospec.contract.Protocol
+    identity: {name: protocol_id, type: String}
+    fields:
+      - {name: source_digest, type: String}
+    relations:
+      - {name: participants, kind: owns, target: protospec.contract.Participant, cardinality: many, via: protocol_id}
+      - {name: channels, kind: owns, target: protospec.contract.Channel, cardinality: many, via: protocol_id}
+      - {name: requirements, kind: owns, target: protospec.contract.Requirement, cardinality: many, via: protocol_id}
+    lifecycle: {initial: Declared, states: [Declared], terminal: [Declared]}
+  - name: protospec.contract.Participant
+    identity: {name: participant_id, type: String}
+    fields:
+      - {name: protocol_id, type: String}
+      - {name: role, type: String}
+      - {name: machine_state, type: String}
+    relations:
+      - {name: timers, kind: owns, target: protospec.contract.Timer, cardinality: many, via: participant_id}
+    lifecycle: {initial: Declared, states: [Declared], terminal: [Declared]}
+  - name: protospec.contract.Channel
+    identity: {name: channel_id, type: String}
+    fields:
+      - {name: protocol_id, type: String}
+      - {name: sender, type: String}
+      - {name: receiver, type: String}
+      - {name: capacity, type: Integer}
+    lifecycle: {initial: Declared, states: [Declared], terminal: [Declared]}
+  - name: protospec.contract.Timer
+    identity: {name: timer_id, type: String}
+    fields:
+      - {name: participant_id, type: String}
+      - {name: generation, type: Integer}
+      - {name: deadline_ms, type: Integer}
+    lifecycle: {initial: Declared, states: [Declared], terminal: [Declared]}
+  - name: protospec.contract.Requirement
+    identity: {name: requirement_id, type: String}
+    fields:
+      - {name: protocol_id, type: String}
+      - {name: source, type: String}
+      - {name: observation_boundary, type: String}
+    lifecycle: {initial: Declared, states: [Declared], terminal: [Declared]}

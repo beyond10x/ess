@@ -145,7 +145,7 @@ fn execute(binding: &CompiledBinding) -> (ProcessOutput, Vec<Value>) {
         None,
     );
     assert_eq!(output.exit_code, 0);
-    assert!(output.stderr.is_empty());
+    assert_eq!(output.stderr.len(), 0);
     assert_eq!(
         serde_json::from_str::<Value>(&output.stdout).unwrap(),
         json!({"ok": true, "result": 17})

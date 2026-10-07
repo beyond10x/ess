@@ -112,7 +112,7 @@ fn the_example_assembles_with_its_aggregation() {
     // Aggregate fields stay among the fields, at their declared types.
     assert_eq!(by_agent.fields.len(), 6);
     let totals = &spec.views()[&name("metrics.session.QueueTotals")];
-    assert!(totals.aggregation.as_ref().unwrap().group_by.is_empty());
+    assert_eq!(totals.aggregation.as_ref().unwrap().group_by.len(), 0);
 }
 
 #[test]

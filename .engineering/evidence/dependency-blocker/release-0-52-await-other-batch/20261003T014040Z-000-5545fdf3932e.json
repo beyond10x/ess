@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-03T01:40:40Z",
+  "actor": "human:timo",
+  "artifact": "dependency-blocker:release-0-52-await-other-batch",
+  "kind": "dependency-blocker",
+  "revision": 2,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "GitHub PR402 merged as2f554561bef25125a93a1fb1d6517d50cb24ed20; all required PR checks green; merged into release candidate c0abe1a02",
+    "reference": "https://github.com/beyond10x/ess/pull/402"
+  }
+}

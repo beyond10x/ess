@@ -51,7 +51,7 @@ fn same_path_projection_refusal_preserves_the_unadmitted_input() {
                 )
                 .unwrap();
                 assert_eq!(output.status.code(), Some(1));
-                assert!(output.stdout.is_empty());
+                assert_eq!(output.stdout.len(), 0);
                 assert!(String::from_utf8_lossy(&output.stderr)
                     .contains("/interface/types/A/items/extra~0~1"));
                 assert_eq!(std::fs::read_to_string(&input).unwrap(), bytes);

@@ -4,6 +4,134 @@
 
 ### Added
 
+- Synthesized Rust and Go network components include ephemeral in-memory stores and executable
+  server entry points, with `--listen`, explicit `--callers` selection and optional same-origin
+  static files. Startup refuses unresolved reachable obligations. The default authenticates no
+  caller; `actor-header` is an explicit demonstration mode. Generated Rust libraries retain their
+  dependency-free default and WASM support; the native server dependencies support Rust 1.85
+  (beyond10x/ess#318, beyond10x/ess#314).
+
+- Experimental `ess-protospec/1` models finite communicating peers, typed scalar messages,
+  bounded channels, logical timers and safety properties. `ess specify protocol` validates and
+  compiles the sidecar; `ess verify protocol` simulates, replays observations and explores a
+  declared finite scheduling profile. Native Rust adapters keep implementation observations
+  distinct from model traces, with explicit inconclusive results for missing evidence or exhausted
+  bounds. [Runnable examples](examples/protocols/README.md) cover terminal-response flushing and
+  an RFC 3261 rejection with a lost ACK; existing ESS and conformance-suite formats are unchanged.
+
+### Changed
+
+- Generated behaviour contexts expose fallible companion methods, so an unavailable context
+  answer refuses execution before storage or event effects. Existing context implementations keep
+  their original methods; generated memory contexts implement the fallible seam.
+
+## [0.52.0] — 2026-10-03
+
+### Added
+
+- `ess-transport/1` binds events from an exact specification to broker, subject, envelope,
+  delivery and stream declarations, compiling to `ess-transport-ir/1`. Transport validation
+  refuses missing or ambiguous JetStream coverage; AsyncAPI generation uses the declared
+  bindings (beyond10x/ess#390, beyond10x/ess#392).
+- `ess generate client` emits typed Rust and Go event publishers with batching, flush/close
+  operations, transport seams and optional NATS JetStream adapters. `ess-client-report/1`
+  records generated operations and application obligations. At-least-once delivery remains
+  explicitly unsupported (beyond10x/ess#395).
+- Integer field bounds declared by supported invariants are projected into JSON Schema.
+  Model-based Go and Rust type generation selects native integer widths for complete ranges;
+  incomplete ranges retain exact-number types. Integer newtypes carry their own bounds and
+  constants in schemas and generated native types (beyond10x/ess#394).
+- Rust synthesis represents a struct's direct optional self-reference through deterministic
+  boxed references, shared by declarations, constructors, accessors and wire codecs. Both Rust
+  layouts and the shared Web codec support it; unsupported recursive layouts still refuse.
+  Existing acyclic generated artifacts and serialized names remain unchanged
+  (beyond10x/ess#400).
+- `ess generate types --root` accepts an event and selects its payload plus referenced types.
+  `--all-events` selects all event payloads and can be combined with `--all-types`
+  (beyond10x/ess#393).
+
+- `ess-ui/1` reads accept `filter:` for bounded listing and choice rows, with matching React
+  and terminal semantics after live effects and before local paging. Filters never reach the
+  server, share raw requests, and are not authorization. Seven `filter_*` checks reject invalid
+  expressions, scopes, placements and server paging, and warn about parameter and export
+  alternatives. Dynamic menu filters now follow the same fail-closed semantics in both renderers
+  (beyond10x/ess#365). Older readers refuse the new read key.
+
+### Changed
+
+- **Breaking for generated model data libraries**: timestamps use Go `time.Time` and Rust
+  `EssTimestamp(time::OffsetDateTime)` with RFC 3339 wire values and native spelling
+  normalization. Anonymous shapes use positional names with a deterministic collision fallback;
+  integer-constant newtypes expose constants and default constructors. `ess generate types`
+  and `ess generate client` accept `--names short`, refusing ambiguous short names. Imported
+  schema bundle output is unchanged (beyond10x/ess#406, beyond10x/ess#407,
+  beyond10x/ess#408, beyond10x/ess#409).
+- Release CI prepares verified artifacts with read-only permissions; the organization bot
+  publishes the verified release from the trusted delivery environment.
+
+- **Breaking for generated model data libraries with bounded integers**: top-level integer
+  invariants publish JSON Schema bounds, and Rust/Go libraries use signed 32- or 64-bit fields
+  when both bounds fit that width. One-sided and unbounded integers retain their exact-number
+  representation; imported schema bundles are unchanged. Bounds and constants remain explicit
+  runtime validation obligations (beyond10x/ess#394).
+
+- **Breaking for a realization of a view with parameters, and for hand-written server code**:
+  synthesized Go and Rust servers decode a view's declared parameters from the query string by
+  wire name and pass them, typed, to the view port, whose method now takes them. A missing
+  required or undecodable value is a `400` refusal; undeclared keys are ignored; queries for views
+  with parameters stay obligations. The generated Rust `http::Request` has a new public field
+  `query: String` and derives `Default`, so a hand-written `Request { … }` literal sets `query` or
+  ends with `..Default::default()`. Two parameters of one view that spell one identifier in a
+  target are refused, and a served view with a non-scalar parameter is refused (beyond10x/ess#311).
+- Served surfaces agree on what they refuse and in which words: Decimal, Uuid and Bytes values
+  and map keys admit exactly the published pattern in Go and Rust, and both answer `431` past
+  the request-head size or 100 headers. The Rust server no longer exits when a caller hangs up
+  early, and drops a connection silent for 1 s.
+
+- **Breaking for a Go realization**: `ess generate synthesize --target go` generates every command
+  behaviour and view query the plan marks generated, at parity with the Rust target, in a new
+  package `types/behaviour`: `<Entity>Storage` (`Get`, `Put`, `Delete`, `List` in a stable
+  order), `Context`, `Ports` (one field per storage port) and `New(ports) *Generated`, evaluated in
+  Rust's order, existence selection included. Entities check their invariants
+  (`BrokenInvariant()`). `<ctx>.Unimplemented` now covers owed seams only, so code that passed it
+  as the whole behaviour bundle no longer compiles; pass `behaviour.New(ports)` and implement the
+  owed seams. Package names `behaviour` and `invariant` are reserved, and a domain named like a
+  standard-library package a generated file imports gets a renamed package. A store and a server
+  entry point are not generated yet (beyond10x/ess#314).
+- The gatepass example's `AdmitVisitor` stores the printed badge (`sets: {badge: input.badge}`).
+
+### Fixed
+
+- Recovery process diagnostics retain the observed Unix termination signal separately from
+  timeout and exit status. Failure assertions print the complete outcome without guessing
+  which actor sent a signal; non-Unix platforms report no signal.
+- Contradictory integer equality invariants stay unsatisfiable in generated JSON Schema
+  for required fields and integer newtypes, independent of declaration order. Optional
+  fields retain their existing null and absence semantics.
+- Synthesized server creation identities and Web/Clap existence handling agree with the
+  declared command behavior; generated contract guidance describes the actual seams.
+- Conformance synthesis handles the corrected optional inputs, copied-field guards,
+  Boolean outcomes, bindings and response expectations from the consumer defect batch.
+- Browser runner startup reports failures, isolates concurrent invocations and cleans up its
+  process resources consistently.
+- Generated Rust documentation prefixes every line and escapes standalone carriage returns,
+  so compiler-admitted multiline descriptions produce compilable source. Successful LF and
+  CRLF output stays byte-identical; source text and wire semantics are unchanged
+  (beyond10x/ess#400).
+
+## [0.51.0] — 2026-10-01
+
+### Added
+
+- `ess_ui::binding`: the route table between an `ess-ui/1` document and the HTTP surface ESS
+  synthesizes, built by `ess_ui_check::binding(document, sources)` from `ess_gen::http::routes`
+  for what the document names. It refuses by node path a name no network component serves, a
+  non-scalar view parameter, a paged view, and state held in `server` or `server_session`.
+  `ess_ui::binding::classify(status, body)` reads a served command's answer (Accepted, Refused,
+  NotGranted, Malformed, Unfinished, Transport); its cases are recorded from the gatepass Rust and
+  Go servers in `crates/ui/ess-ui/tests/vectors/answers.json`. `ess ui check --model` reports
+  `read_params`: a read binding a parameter the view does not declare, and a required parameter
+  left unbound (beyond10x/ess#311).
 - `ess generate ui --target react --model <spec>`: the generated React app reads and commands the
   synthesized server through the binding. It emits `src/binding.ts` and a binding-driven
   `httpAdapter`; the base URL per component comes from
@@ -37,77 +165,6 @@
   adds `token_values`, `token_names`, `token_refs`, `theme_tokens`, `theme_choice`,
   `tone_map_refs` and `tone_map_unused`. A reader older than this release refuses a document
   using any of these keys rather than ignoring them. No renderer reads tokens yet.
-
-- `ess-ui/1` reads accept `filter:` for bounded listing and choice rows, with matching React
-  and terminal semantics after live effects and before local paging. Filters never reach the
-  server, share raw requests, and are not authorization. Seven `filter_*` checks reject invalid
-  expressions, scopes, placements and server paging, and warn about parameter and export
-  alternatives. Dynamic menu filters now follow the same fail-closed semantics in both renderers
-  (beyond10x/ess#365). Older readers refuse the new read key.
-
-### Changed
-
-- **Breaking for a realization of a view with parameters, and for hand-written server code**:
-  synthesized Go and Rust servers decode a view's declared parameters from the query string by
-  wire name and pass them, typed, to the view port, whose method now takes them. A missing
-  required or undecodable value is a `400` refusal; undeclared keys are ignored; queries for views
-  with parameters stay obligations. The generated Rust `http::Request` has a new public field
-  `query: String` and derives `Default`, so a hand-written `Request { … }` literal sets `query` or
-  ends with `..Default::default()`. Two parameters of one view that spell one identifier in a
-  target are refused, and a served view with a non-scalar parameter is refused (beyond10x/ess#311).
-- Served surfaces agree on what they refuse and in which words: Decimal, Uuid and Bytes values
-  and map keys admit exactly the published pattern in Go and Rust, and both answer `431` past
-  the request-head size or 100 headers. The Rust server no longer exits when a caller hangs up
-  early, and drops a connection silent for 1 s.
-
-- **Breaking for a Go realization**: `ess generate synthesize --target go` generates every command
-  behaviour and view query the plan marks generated, at parity with the Rust target, in a new
-  package `types/behaviour`: `<Entity>Storage` (`Get`, `Put`, `Delete`, `List` in a stable
-  order), `Context`, `Ports` (one field per storage port) and `New(ports) *Generated`, evaluated in
-  Rust's order, existence selection included. Entities check their invariants
-  (`BrokenInvariant()`). `<ctx>.Unimplemented` now covers owed seams only, so code that passed it
-  as the whole behaviour bundle no longer compiles; pass `behaviour.New(ports)` and implement the
-  owed seams. Package names `behaviour` and `invariant` are reserved, and a domain named like a
-  standard-library package a generated file imports gets a renamed package (beyond10x/ess#314).
-- The gatepass example's `AdmitVisitor` stores the printed badge (`sets: {badge: input.badge}`).
-
-- Network-served components get generated in-memory storage and standalone Go and Rust server
-  entries, with explicit caller configuration and optional static files. Entries refuse startup
-  when reachable behavior or context answers remain obligations; their stores are ephemeral.
-  Additive fallible context adapters preserve existing realization interfaces and prepare context
-  answers before committing storage changes (beyond10x/ess#318).
-- Generated Go, Web and Clap dispatch now handles supported existence-selected branches, and
-  generated Rust creation preserves a declared input-supplied identity
-  (beyond10x/ess#379, beyond10x/ess#316).
-
-### Fixed
-
-- Conformance synthesis arranges fields copied from related rows for subject guards and view
-  parameters, preserving Optional policies, named transitions and aggregate-owned setup
-  (beyond10x/ess#307, beyond10x/ess#360).
-- Conformance witnesses cover recreation after deletion, guarded deletion, shared aggregate keys,
-  constrained replay identities, captured identities in set-effect filters and closed Boolean
-  outcome partitions (beyond10x/ess#317, beyond10x/ess#342, beyond10x/ess#309,
-  beyond10x/ess#308, beyond10x/ess#288, beyond10x/ess#298).
-- Generated Rust bindings compile when their mappings do not read event fields.
-- Browser startup remains bounded through the first protocol exchange, retains its startup lock
-  through that exchange and retries a lost startup socket.
-- Recovery diagnostics retain an observed child termination signal without confusing it with a
-  timeout or a normal exit code.
-
-## [0.51.0] — 2026-10-01
-
-### Added
-
-- `ess_ui::binding`: the route table between an `ess-ui/1` document and the HTTP surface ESS
-  synthesizes, built by `ess_ui_check::binding(document, sources)` from `ess_gen::http::routes`
-  for what the document names. It refuses by node path a name no network component serves, a
-  non-scalar view parameter, a paged view, and state held in `server` or `server_session`.
-  `ess_ui::binding::classify(status, body)` reads a served command's answer (Accepted, Refused,
-  NotGranted, Malformed, Unfinished, Transport); its cases are recorded from the gatepass Rust and
-  Go servers in `crates/ui/ess-ui/tests/vectors/answers.json`. `ess ui check --model` reports
-  `read_params`: a read binding a parameter the view does not declare, and a required parameter
-  left unbound (beyond10x/ess#311).
 
 ### Changed
 

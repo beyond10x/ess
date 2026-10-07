@@ -139,7 +139,7 @@ fn a_view_and_a_command_bind_to_the_paths_the_served_surface_answers() {
         view.path,
         derived(&sources, "pass-service", "gatepass.visit.ExpectedVisits")
     );
-    assert!(view.params.is_empty());
+    assert_eq!(view.params.len(), 0);
 
     let command = &served.commands["gatepass.visit.RegisterVisit"];
     assert_eq!(command.path, "/visits/commands/register-visit");
@@ -398,4 +398,95 @@ fn the_binding_serialises_to_stable_json() {
   }
 }"#;
     assert_eq!(first, expected);
+}
+
+/// The `shop` fixture model with an enum `shop.stock.Shelf` whose first variant is sent as `top`
+/// and shown as `Top shelf`.
+fn shelved_shop() -> Vec<(String, String)> {
+    let mut sources = shop_with_components(&[]);
+    // Variant naming is a format ess/5 construct.
+    let system = sources
+        .iter_mut()
+        .find(|(label, _)| label == "system.yaml")
+        .expect("the system");
+    system.1 = system.1.replace("format: ess/1", "format: ess/5");
+    let stock = sources
+        .iter_mut()
+        .find(|(label, _)| label == "domains/stock.yaml")
+        .expect("the stock domain");
+    stock.1 = stock
+        .1
+        .replace(
+            "    of: Uuid\n",
+            "    of: Uuid\n  - name: shop.stock.Shelf\n    kind: enum\n    variants:\n      \
+             - name: Top\n        wire: top\n        display: Top shelf\n      - Bottom\n",
+        )
+        // ess/5 maps every payload field.
+        .replace(
+            "            label: input.label\n",
+            "            label: input.label\n            item_id: {generated: true}\n",
+        );
+    let audit = sources
+        .iter_mut()
+        .find(|(label, _)| label == "domains/audit.yaml")
+        .expect("the audit domain");
+    audit.1 = audit.1.replace(
+        "            note: input.note\n",
+        "            note: input.note\n            entry_id: {generated: true}\n",
+    );
+    sources
+}
+
+/// beyond10x/ess#328, #330: a view a choice reads carries its rows' identity field, the default
+/// value of the choice's options; a model enum a choice's options name is carried with its
+/// variants, under the name the document writes, so a renderer holding only the binding lists
+/// them. A view no choice reads carries no identity, so a binding without choices keeps its bytes.
+#[test]
+fn a_choice_carries_its_views_identity_and_its_model_enums_variants() {
+    let sources = shelved_shop();
+    let model = ess_ui_check::model_from_sources(&sources, Path::new("shop"))
+        .unwrap_or_else(|error| panic!("{error}"));
+    let text = document(
+        "shop",
+        "fat",
+        "{kind: detail_page, title: Shop, sections: [{name: summary, reads: stock.Items}, \
+          {name: pick, component: choice, reads: stock.Items}, \
+          {name: shelf, component: choice, options: stock.Shelf}]}",
+    );
+    let loaded = ess_ui::load_str_with(&text, &model).unwrap_or_else(|error| panic!("{error}"));
+    let bound = binding(&loaded, &sources).unwrap_or_else(|error| panic!("{error}"));
+    let items = bound
+        .view("stock.Items")
+        .expect("the choice's view is bound");
+    assert_eq!(items.identity.as_deref(), Some("item_id"));
+    assert_eq!(bound.names["stock.Shelf"], "shop.stock.Shelf");
+    let variants: Vec<(&str, &str)> = bound.enums["shop.stock.Shelf"]
+        .iter()
+        .map(|variant| (variant.value.as_str(), variant.label.as_str()))
+        .collect();
+    assert_eq!(variants, [("top", "Top shelf"), ("Bottom", "Bottom")]);
+    let reloaded = ess_ui::load_str_with(&text, &bound).unwrap_or_else(|error| panic!("{error}"));
+    assert_eq!(
+        reloaded, loaded,
+        "the binding resolves what the model resolved"
+    );
+
+    let plain = document(
+        "shop",
+        "fat",
+        "{kind: detail_page, title: Shop, sections: [{name: summary, reads: stock.Items}]}",
+    );
+    let bound = bound_with_model(&plain, &sources);
+    assert_eq!(
+        bound
+            .view("stock.Items")
+            .and_then(|view| view.identity.clone()),
+        None
+    );
+    assert!(bound.enums.is_empty());
+}
+
+fn bound_with_model(text: &str, sources: &[(String, String)]) -> Binding {
+    let document = ess_ui::load_str(text).unwrap_or_else(|error| panic!("{error}"));
+    binding(&document, sources).unwrap_or_else(|error| panic!("{error}"))
 }

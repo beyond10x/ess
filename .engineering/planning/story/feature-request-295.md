@@ -12,23 +12,43 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 2
+revision: 4
 ---
 ## Outcome
 
-Resolve beyond10x/ess#295: mutate: emit-drop is stillborn on every outcome that emits one event, so single-event emission is never audited.
+Audit single-event substitution with an honest unavailable-site result.
 
 ## Origin
 
-beyond10x/ess#295, from a downstream hardening run on ess 0.48.0; reproduced minimally (triage item 6b, `~/.cache/ess-gaps/triage-cb/`).
+beyond10x/ess#295. Original issue reproduction is retained in the local triage record; current source and CLI were inspected on the accepted bundle in 2026-10-03.
 
 ## Fit review
 
-295/212 final fit, read-only at next-tree7cc1bf440, own executions0, lease released. Seven answers for295: (1) Need: mutation auditing must test a single required event, without requiring a fake second event; issue295's suggestions are event replacement or deleting a suite ExpectEvent. Minimal case is a subjectless Ping→Ponged, plus creating/updating/moving variants. (2) Class: capability gap, not contradiction of current semantics: public mutation-audit.md:29–34 explicitly documents sole-event Stillborn; mutation_audit.rs:188–225 pins it. (3) Existing behavior: outcome_sites mutate.rs:704 enumerates every emit; apply:899 deletes its emits+payload entry; compile:994 uses normal validator; command.rs:2313–2320 refuses ordinary sole-event branches. Existing deletes/returns/replays can remain admissible, so 'every single-event outcome' is overbroad. Existing accepts:nothing cannot be simply added to a mutating branch: outcome_shapes.rs:74–94 refuses subject/sets/replay and only admits when/default. (4) Fit: retain model-valid alteration and ordinary suite runners. Blindly dropping ExpectEvent weakens the suite and cannot make the unchanged correct target fail, violating mutate.rs:1–30/public guide:20–27; that proposal should be rejected. Compatible event-swap fits specification mutation but requires deterministic replacement/payload rules and an explicit no-compatible-alternative policy, so it does not by itself cover every sole-event model. (5) Second adopter: a cache invalidation command publishes only CacheInvalidated; missed event obligation is equally material. (6) Cost depends on chosen operator: no authored syntax needed for a bounded swap, but operator identity, cardinality, CLI enum, public Rust enum and emitted manifest semantics require explicit compatibility decision; do not relabel swap as existing drop silently. (7) Alternatives: keep honest Stillborn (current); compatible event-swap (bounded useful extension); actual target-emission suppression against original suite (tests missing assertions but is a separate implementation-mutation mechanism); suite-expectation deletion (reject: weakening). Recommendation: defer295 implementation until root selects/binds operator + no-alternative policy; gap is real and still present, design not yet accepted (canonical295 rev1 has Pending fit).
+1. Need: The retained combined CLI reproduces five stillborn emit-drop mutants against a green 32-scenario billing baseline (exit 3). Removing the only event violates ESS-COMMAND-007, so these sites have not been audited.
+2. Classification: gap. This is audit/report tooling, with no new authored specification surface.
+3. Existing idiom: mutate currently excludes skipped/unsupported baseline scenarios but refuses Failed/Error; no known-failing option exists. EmitDrop compiles source edits normally and fails when it removes the only observable event. Existing primitives do not supply the requested capability.
+4. Fit: docs/design/mutation-scope-and-known-failures.md specifies shared native/collected scoring, existing synthesize_for component selection, original-byte admission and ordinary conformance truth. It coordinates manifest/report4 with #236 and accepted #212 operators, preserving older reader behavior. Native and generated Go/TypeScript evidence are required, not count-only claims.
+5. Second adopters: an order service with a tracked cancellation defect and a catalog component audited independently from billing.
+6. Cost: explicit declaration/accounting1 documents, mutation manifest/report4, CLI flags and strict parsers; no source, ordinary suite or ordinary conformance report version change. Full implementation identity is needed for direct mutation audits; legacy name-only reports stay readable under their old contract.
+7. Alternatives: change nothing leaves the gap; weakening expectations or declaring intended behavior optional hides the obligation; a strict-mode waiver changes conformance truth. The proposed design keeps explicit mutation eligibility separate from the ordinary failed result.
 
-Overlap/scope:212 is still unimplemented, but unlike295 has coordinator-adopted redesign in canonical rev3: non-creating sets-drop + witness separation; precedence-swap for adjacent overlapping accepting when branches/input refusals; leaf equality flip + outward integral±1 guard arms. mutate.rs still has nine classes:68–119, only ordering strictness at525–558, only SetsRetarget at676–691, no precedence swap. Shared code/test/docs batch is coherent, but295 is neither duplicate nor supplied by that acceptance. Existing212 report/manifest '/3 because strings' assumption needs compatibility recheck: EmittedMutant.class at mutate.rs:2318 is a deserialized closed MutantClass enum, so old collectors reject new class names even though JSON spells strings. Smallest295 regression seam: mutation_audit.rs public mutants→apply→compile→evaluate on a brand-free single-event fixture and target; controls for two-event drop, fieldful compatible/incompatible replacement, no replacement event, entity effect, deterministic IDs/bytes, then mutation_external.rs emit/collect equality. Existing retained execution: group-packages-f863ee.log:2757–2774 mutation13pass; :2776–2789 external8pass, demonstrating current behavior only. Main mutate source and mutation tests match0.51.0 exactly. Unknowns: no newly executed minimal probe in this intake; no measurement of proposed replacement killability or full format compatibility.
+## Decisions
 
-The seven-answer paragraph above is retained verbatim from the handoff. This report is the sole
-authorized ignored scratch write; no source, planning-store or remote state was changed. GitHub
-issue bodies/comments for beyond10x/ess#295 and #212 were read through the previously authorized
-read-only fallback. The coordinator owns any design or lifecycle decision.
+Adopt redesigned separate emit-swap operator using an existing compatible event published by all accepting components and ordinary source compilation. Preserve emit-drop. No admissible alternative is an explicit incomplete site, not a kill. Reject dropping suite assertions.
+
+Design is proposed for independent review, not yet approved for implementation. The accepted bundle includes this issue; the binding contract and any review correction must be recorded before dispatch.
+
+## Acceptance
+
+Every applicable named control in docs/design/mutation-scope-and-known-failures.md is required, including actual direct and external emit/collect equivalence, planted faulty scorer/runner controls, strict failed conformance preservation, stale/mismatched declarations, component-crossing commands, and old-reader refusals. Source-only tests and unsupported execution do not satisfy target coverage. For #295 specifically creating/updating/moving swaps, invalid and absent alternatives, wrong-event survivors and discarded-event assertions must execute. For #294/#296, default refusal, excluded-only inconclusive, stale passing entries, unlisted failures and exact suite/spec/build matching must execute.
+
+## Scope
+
+- crates/verify/ess-conformance/src/mutate.rs and report/admission support (cited shared scorer and manifest reader).
+- crates/edge/ess-cli/ CLI definitions, mutation/run/report wiring and actual CLI tests (inferred entry points; locate exact modules before edits).
+- crates/verify/ess-conformance/tests/ and generated Go/TypeScript acceptance (cited runtime/report contracts).
+- docs/design/mutation-scope-and-known-failures.md and affected website guides/references (cited design).
+
+## Design review revisions
+
+The first independent review required three corrections, now specified in docs/design/mutation-scope-and-known-failures.md. Component mutant selection remains changed-scenario based; whole-system refusal deltas cannot attribute a mutant. Selected commands without executable scenarios are explicit unavailable obligations outside the mutant denominator. Manifest4 collects exact-suite-bound report2 only; legacy report1 remains confined to legacy manifests. Known-failure declarations bind a separate public build digest, supplied by the execution host before target calls, using closed ess-conformance-execution/1 sidecars for external collected reports. Protected one-time target identity stays redacted. This supersedes the earlier name/version-only assumption and adds the explicit execution-context format/cost. Native executable identity and generated/external host provenance require changed-build and private-sentinel controls. The proposal still requires its final independent design review before implementation dispatch.

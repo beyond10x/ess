@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-342
 kind: story
-status: implemented
+status: active
 title: Guarded deletion leaves no subject in synthesized assertions
 refs:
 - provider: github
@@ -17,11 +17,10 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/outcome_shapes.rs
-revision: 7
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T09:12:15Z", actor: "human:timo", revision: 5, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T09:12:15Z", actor: "human:timo", revision: 6, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
-- {from: "active", to: "implemented", at: "2026-10-02T13:29:01Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":2}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 ---
 ## Outcome
 

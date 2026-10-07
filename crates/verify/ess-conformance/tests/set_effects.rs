@@ -948,7 +948,7 @@ views:
 fn the_actual_interpreter_executes_the_complete_set_effect_suite() {
     let ir = ir_of(MODEL);
     let synthesis = ess_conformance::synthesize::synthesize(&ir);
-    assert!(synthesis.refusals.is_empty());
+    assert_eq!(synthesis.refusals.len(), 0);
     let statuses = run(
         &synthesis.suite,
         &ess_conformance::interpret::Interpreted::for_model(ir),

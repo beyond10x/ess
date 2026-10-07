@@ -16,10 +16,12 @@
 //! identically in every mutant's suite and could never kill one. That is why no authored scenario
 //! is run here at all.
 //!
-//! No class *weakens* the specification. Dropping a `sets` entry says the value is the
-//! implementation's to choose, and a correct target satisfies a weaker specification by
-//! definition, so such a mutant could never be killed and would be noise shaped like signal. Each
-//! of the issue's classes is replaced by the altering version of the same fault.
+//! No class *weakens* the specification. On a branch that creates its row, dropping a `sets` entry
+//! says the value is the implementation's to choose, and a correct target satisfies a weaker
+//! specification by definition, so such a mutant could never be killed and would be noise shaped
+//! like signal. On a branch that acts on an existing row the same drop *alters* it: the field keeps
+//! what the row held instead of taking the input (beyond10x/ess#212), so `sets-drop` is offered
+//! there and only there.
 //!
 //! # Why the parsed documents, and not the IR
 //!
@@ -61,10 +63,13 @@ pub const FAMILY: &str = "MUTATE";
 
 /// The document family the audit writes.
 pub const REPORT_FORMAT: &str = "ess-mutation-report/3";
+/// The report [`collect`] writes for an emission scoped to one component: `/3` with the component
+/// named and the mutants it leaves out listed (beyond10x/ess#236).
+pub const REPORT_FORMAT_4: &str = "ess-mutation-report/4";
 
 // ---- the classes --------------------------------------------------------------------------------
 
-/// The nine altering classes, a closed set with an [`ALL`](Self::ALL) constant as `Fault` has.
+/// The eleven altering classes, a closed set with an [`ALL`](Self::ALL) constant as `Fault` has.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
 )]
@@ -75,7 +80,9 @@ pub enum MutantClass {
     FromDrop,
     /// Send a transition to the first other state, in an entity with at least two states.
     TransitionTo,
-    /// Swap the strictness of an ordering comparison in an outcome's `when`: `>=`↔`>`, `<=`↔`<`.
+    /// Move a guard boundary in an outcome's `when`: swap the strictness of an ordering comparison
+    /// (`>=`↔`>`, `<=`↔`<`); move the integral literal of a `>=` or `<=` one step outward, the
+    /// direction the swap does not take; or flip `==`↔`!=` on a leaf that is not the whole guard.
     GuardBoundary,
     /// Take a `sets` value from the first other input field of the identical written type.
     SetsRetarget,
@@ -89,6 +96,12 @@ pub enum MutantClass {
     EmitDrop,
     /// Flip one ranking key's direction.
     OrderFlip,
+    /// Drop one `sets` entry reading an input field, on a branch that updates or moves an existing
+    /// row: the field keeps what the row held.
+    SetsDrop,
+    /// Swap two adjacent branches guarded by the input alone, both accepting or both refusing, so
+    /// the second answers where both guards hold.
+    PrecedenceSwap,
 }
 
 impl MutantClass {
@@ -103,7 +116,18 @@ impl MutantClass {
         Self::ErrorSwap,
         Self::EmitDrop,
         Self::OrderFlip,
+        Self::SetsDrop,
+        Self::PrecedenceSwap,
     ];
+
+    /// The oldest manifest format whose readers know this class: [`MANIFEST_FORMAT_4`] for the two
+    /// classes beyond10x/ess#212 added, [`MANIFEST_FORMAT_1`] for the rest.
+    pub fn manifest_format(self) -> &'static str {
+        match self {
+            Self::SetsDrop | Self::PrecedenceSwap => MANIFEST_FORMAT_4,
+            _ => MANIFEST_FORMAT_1,
+        }
+    }
 
     /// The kebab name `--class` takes, and the first segment of a mutant's id.
     pub fn as_str(self) -> &'static str {
@@ -117,6 +141,8 @@ impl MutantClass {
             Self::ErrorSwap => "error-swap",
             Self::EmitDrop => "emit-drop",
             Self::OrderFlip => "order-flip",
+            Self::SetsDrop => "sets-drop",
+            Self::PrecedenceSwap => "precedence-swap",
         }
     }
 }
@@ -282,6 +308,45 @@ pub enum Mutation {
         /// The ranked field.
         field: String,
     },
+    /// Move the integral literal of the `leaf`-th ordering comparison of `outcome`'s `when`, a
+    /// `>=` or `<=`, one step outward: `x >= 10` becomes `x >= 9`. A class `guard-boundary` site.
+    GuardOutward {
+        /// The command.
+        command: String,
+        /// The outcome.
+        outcome: String,
+        /// Which ordering comparison, counted in pre-order from zero as [`Self::GuardBoundary`]
+        /// counts it.
+        leaf: usize,
+    },
+    /// Flip the `leaf`-th `==` or `!=` comparison of `outcome`'s `when`, in pre-order, where it is
+    /// not the whole guard. A class `guard-boundary` site.
+    GuardEquality {
+        /// The command.
+        command: String,
+        /// The outcome.
+        outcome: String,
+        /// Which equality comparison, counted in pre-order from zero.
+        leaf: usize,
+    },
+    /// Drop the `sets` entry for `target` of a branch that acts on an existing row.
+    SetsDrop {
+        /// The command.
+        command: String,
+        /// The outcome.
+        outcome: String,
+        /// The entity field no longer set.
+        target: String,
+    },
+    /// Swap `first` with `second`, the outcome declared right after it.
+    PrecedenceSwap {
+        /// The command.
+        command: String,
+        /// The outcome declared first.
+        first: String,
+        /// The outcome declared right after it.
+        second: String,
+    },
 }
 
 impl Mutation {
@@ -290,7 +355,11 @@ impl Mutation {
         match self {
             Self::FromDrop { .. } => MutantClass::FromDrop,
             Self::TransitionTo { .. } => MutantClass::TransitionTo,
-            Self::GuardBoundary { .. } => MutantClass::GuardBoundary,
+            Self::GuardBoundary { .. } | Self::GuardOutward { .. } | Self::GuardEquality { .. } => {
+                MutantClass::GuardBoundary
+            }
+            Self::SetsDrop { .. } => MutantClass::SetsDrop,
+            Self::PrecedenceSwap { .. } => MutantClass::PrecedenceSwap,
             Self::SetsRetarget { .. } => MutantClass::SetsRetarget,
             Self::GuardNegate { .. } => MutantClass::GuardNegate,
             Self::GuardConnective { .. } => MutantClass::GuardConnective,
@@ -316,12 +385,32 @@ impl Mutation {
                 outcome,
                 leaf,
             } => format!("{command}/{outcome}/{leaf}"),
+            Self::GuardOutward {
+                command,
+                outcome,
+                leaf,
+            } => format!("{command}/{outcome}/{leaf}-outward"),
+            Self::GuardEquality {
+                command,
+                outcome,
+                leaf,
+            } => format!("{command}/{outcome}/equality-{leaf}"),
             Self::SetsRetarget {
                 command,
                 outcome,
                 target,
                 ..
+            }
+            | Self::SetsDrop {
+                command,
+                outcome,
+                target,
             } => format!("{command}/{outcome}/{target}"),
+            Self::PrecedenceSwap {
+                command,
+                first,
+                second,
+            } => format!("{command}/{first}/{second}"),
             Self::GuardNegate { command, outcome }
             | Self::ErrorSwap {
                 command, outcome, ..
@@ -548,6 +637,132 @@ fn swap_strictness(node: &mut Predicate) {
     }
 }
 
+fn is_equality(node: &Predicate) -> bool {
+    matches!(
+        node,
+        Predicate::Compare {
+            op: CompareOp::Eq | CompareOp::Ne,
+            ..
+        }
+    )
+}
+
+/// Every `==` and `!=` comparison of a guard, in pre-order, or none where one of them is the whole
+/// guard, or the whole guard negated: flipping it there is what `guard-negate` already does.
+fn equality_leaves(guard: &Predicate) -> Vec<&Predicate> {
+    let whole = match guard {
+        Predicate::Not(inner) => inner,
+        other => other,
+    };
+    if is_equality(whole) {
+        return Vec::new();
+    }
+    let mut found = Vec::new();
+    preorder(guard, &mut |node| {
+        if is_equality(node) {
+            found.push(node);
+        }
+    });
+    found
+}
+
+fn flip_equality(node: &mut Predicate) {
+    if let Predicate::Compare { op, .. } = node {
+        *op = match *op {
+            CompareOp::Eq => CompareOp::Ne,
+            CompareOp::Ne => CompareOp::Eq,
+            other => other,
+        };
+    }
+}
+
+/// An ordering comparison of an input with an integral literal under `>=` or `<=`, the literal
+/// moved one step outward — away from the accepting side, so the accepting side gains the value
+/// just past the old boundary. `None` for a strict comparison, whose strictness swap already moves
+/// it outward, for a literal that is not an integer, and where the step leaves `i64`.
+fn outward(node: &Predicate) -> Option<Predicate> {
+    use ess_primitives::facts::{FactValue, Number};
+    use ess_primitives::predicate::Operand;
+    let Predicate::Compare { left, op, right } = node else {
+        return None;
+    };
+    let step = |value: &FactValue, by: i64| -> Option<Operand> {
+        let FactValue::Number(number) = value else {
+            return None;
+        };
+        let moved = number.as_i64()?.checked_add(by)?;
+        Some(Operand::Literal(FactValue::Number(Number::from(moved))))
+    };
+    let (left, right) = match (left, op, right) {
+        (Operand::Fact(_), CompareOp::Ge, Operand::Literal(value)) => {
+            (left.clone(), step(value, -1)?)
+        }
+        (Operand::Fact(_), CompareOp::Le, Operand::Literal(value)) => {
+            (left.clone(), step(value, 1)?)
+        }
+        (Operand::Literal(value), CompareOp::Le, Operand::Fact(_)) => {
+            (step(value, -1)?, right.clone())
+        }
+        (Operand::Literal(value), CompareOp::Ge, Operand::Fact(_)) => {
+            (step(value, 1)?, right.clone())
+        }
+        _ => return None,
+    };
+    Some(Predicate::Compare {
+        left,
+        op: *op,
+        right,
+    })
+}
+
+fn move_outward(node: &mut Predicate) {
+    if let Some(moved) = outward(node) {
+        *node = moved;
+    }
+}
+
+/// Whether an outcome is guarded by its input alone: a `when:` that is not `Always`, and nothing
+/// the held row, a related row, a provider or a replay decides. Only such branches are ordered by
+/// declaration among themselves (`docs/design/input-guard-overlap-precedence.md`).
+fn guarded_by_input_alone(outcome: &RawOutcome) -> bool {
+    outcome
+        .when
+        .as_ref()
+        .is_some_and(|when| *when != Predicate::Always)
+        && outcome.when_subject.is_none()
+        && outcome.when_related.is_none()
+        && outcome.when_subject_state.is_none()
+        && outcome.when_state_changes.is_none()
+        && outcome.external.is_none()
+        && outcome.replays.is_none()
+        && !outcome.wrong_state
+        && !outcome.unknown_instance
+        && !outcome.input_absent
+        && !outcome.existing_instance
+}
+
+/// Whether an outcome acts on a row that already exists: it updates or moves one, and creates none.
+fn acts_on_existing_row(outcome: &RawOutcome) -> bool {
+    outcome.creates.is_none() && (outcome.updates.is_some() || outcome.moves.is_some())
+}
+
+/// Whether `target`, a field of the row `outcome` updates or moves, is declared `Optional<…>`.
+///
+/// Such a field nothing wrote is held absent, and no synthesized row expectation states an
+/// absence, so a `sets-drop` there leaves a suite that asks nothing about the field: unkillable by
+/// construction, the noise the audit does not generate. It is left out of `sets-drop` by name.
+fn optional_field(documents: &[Document], outcome: &RawOutcome, target: &str) -> bool {
+    let entity = match (&outcome.updates, &outcome.moves) {
+        (Some(entity), _) => entity.to_string(),
+        (None, Some(moves)) => namespace(&moves.to_string()).to_owned(),
+        (None, None) => return false,
+    };
+    entities(documents)
+        .find(|it| it.name.to_string() == entity)
+        .and_then(|it| it.fields.iter().find(|field| field.name == target))
+        .is_some_and(|field| field.type_ref.is_optional())
+}
+
 fn swap_connective(node: &mut Predicate) {
     *node = match std::mem::take(node) {
         Predicate::All(children) => Predicate::Any(children),
@@ -650,13 +865,7 @@ fn outcome_sites(documents: &[Document], command: &RawCommandSpec, found: &mut V
             mutation(command_name.clone(), outcome_name.clone())
         };
         if let Some(when) = &outcome.when {
-            for leaf in 0..ordering_leaves(when).len() {
-                found.push(Mutation::GuardBoundary {
-                    command: command_name.clone(),
-                    outcome: outcome_name.clone(),
-                    leaf,
-                });
-            }
+            boundary_sites(&command_name, &outcome_name, when, found);
             if *when != Predicate::Always {
                 found.push(at(|command, outcome| Mutation::GuardNegate {
                     command,
@@ -675,6 +884,13 @@ fn outcome_sites(documents: &[Document], command: &RawCommandSpec, found: &mut V
             let PayloadSource::InputField { field } = &set.source else {
                 continue;
             };
+            if acts_on_existing_row(outcome) && !optional_field(documents, outcome, &set.target) {
+                found.push(Mutation::SetsDrop {
+                    command: command_name.clone(),
+                    outcome: outcome_name.clone(),
+                    target: set.target.clone(),
+                });
+            }
             let Some(written) = command.input.iter().find(|input| input.name == *field) else {
                 continue;
             };
@@ -706,6 +922,53 @@ fn outcome_sites(documents: &[Document], command: &RawCommandSpec, found: &mut V
                 command: command_name.clone(),
                 outcome: outcome_name.clone(),
                 event: event.to_string(),
+            });
+        }
+    }
+    precedence_sites(command, found);
+}
+
+/// The `guard-boundary` sites of one outcome's `when`: each ordering comparison's strictness swap
+/// and, where it has one, its outward literal; then each equality that is not the whole guard.
+fn boundary_sites(command: &str, outcome: &str, when: &Predicate, found: &mut Vec<Mutation>) {
+    for (leaf, node) in ordering_leaves(when).into_iter().enumerate() {
+        found.push(Mutation::GuardBoundary {
+            command: command.to_owned(),
+            outcome: outcome.to_owned(),
+            leaf,
+        });
+        if outward(node).is_some() {
+            found.push(Mutation::GuardOutward {
+                command: command.to_owned(),
+                outcome: outcome.to_owned(),
+                leaf,
+            });
+        }
+    }
+    for leaf in 0..equality_leaves(when).len() {
+        found.push(Mutation::GuardEquality {
+            command: command.to_owned(),
+            outcome: outcome.to_owned(),
+            leaf,
+        });
+    }
+}
+
+/// The `precedence-swap` sites of one command: two adjacent branches the input alone guards, both
+/// accepting or both refusing, where the first declared whose guard holds answers. An input-guarded
+/// refusal comes before every accepting branch whatever the order, so a refusal and an accepting
+/// branch are never a pair.
+fn precedence_sites(command: &RawCommandSpec, found: &mut Vec<Mutation>) {
+    for pair in command.outcomes.windows(2) {
+        let [first, second] = pair else { continue };
+        if guarded_by_input_alone(first)
+            && guarded_by_input_alone(second)
+            && first.error.is_some() == second.error.is_some()
+        {
+            found.push(Mutation::PrecedenceSwap {
+                command: command.name.to_string(),
+                first: first.name.to_string(),
+                second: second.name.to_string(),
             });
         }
     }
@@ -743,8 +1006,13 @@ fn describe(documents: &[Document], mutation: &Mutation) -> Option<String> {
             format!("`to: {current}` becomes `to: {to}`")
         }
         Mutation::GuardBoundary { .. }
+        | Mutation::GuardOutward { .. }
+        | Mutation::GuardEquality { .. }
         | Mutation::GuardNegate { .. }
         | Mutation::GuardConnective { .. } => return describe_guard(documents, mutation),
+        Mutation::SetsDrop { .. } | Mutation::PrecedenceSwap { .. } => {
+            return describe_drop_or_swap(documents, mutation)
+        }
         Mutation::SetsRetarget {
             command,
             outcome,
@@ -795,6 +1063,38 @@ fn describe(documents: &[Document], mutation: &Mutation) -> Option<String> {
     })
 }
 
+/// What a `sets-drop` or `precedence-swap` changes, or `None` when its site is absent.
+fn describe_drop_or_swap(documents: &[Document], mutation: &Mutation) -> Option<String> {
+    Some(match mutation {
+        Mutation::SetsDrop {
+            command,
+            outcome,
+            target,
+        } => {
+            let set = self::outcome(documents, command, outcome)?
+                .sets
+                .0
+                .iter()
+                .find(|set| set.target == *target)?;
+            format!("`{target}: {}` is no longer set", set.source)
+        }
+        Mutation::PrecedenceSwap {
+            command,
+            first,
+            second,
+        } => {
+            let guard = |name: &str| self::outcome(documents, command, name)?.when.as_ref();
+            format!(
+                "`{first}` (`{}`) and `{second}` (`{}`) change places, so `{second}` answers \
+                 where both hold",
+                guard(first)?,
+                guard(second)?
+            )
+        }
+        _ => return None,
+    })
+}
+
 /// What a guard mutation changes: the node before and after, or `None` when its site is absent.
 fn describe_guard(documents: &[Document], mutation: &Mutation) -> Option<String> {
     Some(match mutation {
@@ -811,6 +1111,26 @@ fn describe_guard(documents: &[Document], mutation: &Mutation) -> Option<String>
             if let Some(node) = ordering_leaves(&changed).get(*leaf) {
                 after = node.to_string();
             }
+            format!("`{before}` becomes `{after}`")
+        }
+        Mutation::GuardOutward {
+            command,
+            outcome,
+            leaf,
+        } => {
+            let when = self::outcome(documents, command, outcome)?.when.as_ref()?;
+            let before = ordering_leaves(when).get(*leaf).copied()?;
+            format!("`{before}` becomes `{}`", outward(before)?)
+        }
+        Mutation::GuardEquality {
+            command,
+            outcome,
+            leaf,
+        } => {
+            let when = self::outcome(documents, command, outcome)?.when.as_ref()?;
+            let before = equality_leaves(when).get(*leaf).copied()?;
+            let mut after = before.clone();
+            flip_equality(&mut after);
             format!("`{before}` becomes `{after}`")
         }
         Mutation::GuardNegate { command, outcome } => {
@@ -869,8 +1189,13 @@ pub fn apply(documents: &[Document], mutation: &Mutation) -> Result<Vec<Document
                 .to = to;
         }
         Mutation::GuardBoundary { .. }
+        | Mutation::GuardOutward { .. }
+        | Mutation::GuardEquality { .. }
         | Mutation::GuardNegate { .. }
         | Mutation::GuardConnective { .. } => apply_guard(&mut mutated, mutation)?,
+        Mutation::SetsDrop { .. } | Mutation::PrecedenceSwap { .. } => {
+            apply_drop_or_swap(&mut mutated, mutation)?;
+        }
         Mutation::SetsRetarget {
             command,
             outcome,
@@ -922,6 +1247,50 @@ pub fn apply(documents: &[Document], mutation: &Mutation) -> Result<Vec<Document
     Ok(mutated)
 }
 
+/// Applies a `sets-drop` or `precedence-swap` in place, or says why its site is not there.
+fn apply_drop_or_swap(mutated: &mut [Document], mutation: &Mutation) -> Result<(), String> {
+    let absent = || format!("the specification has no site `{}`", mutation.site());
+    match mutation {
+        Mutation::SetsDrop {
+            command,
+            outcome,
+            target,
+        } => {
+            let found = outcome_mut(mutated, command, outcome).ok_or_else(absent)?;
+            let before = found.sets.0.len();
+            found.sets.0.retain(|set| set.target != *target);
+            if found.sets.0.len() == before {
+                return Err(absent());
+            }
+        }
+        Mutation::PrecedenceSwap {
+            command,
+            first,
+            second,
+        } => {
+            let outcomes = &mut mutated
+                .iter_mut()
+                .flat_map(|(_, file)| &mut file.commands)
+                .find(|it| it.name.to_string() == *command)
+                .ok_or_else(absent)?
+                .outcomes;
+            let at = outcomes
+                .iter()
+                .position(|it| it.name.to_string() == *first)
+                .ok_or_else(absent)?;
+            if outcomes
+                .get(at + 1)
+                .is_none_or(|next| next.name.to_string() != *second)
+            {
+                return Err(absent());
+            }
+            outcomes.swap(at, at + 1);
+        }
+        _ => return Err(absent()),
+    }
+    Ok(())
+}
+
 /// Applies a guard mutation in place, or says why its site is not there.
 fn apply_guard(mutated: &mut [Document], mutation: &Mutation) -> Result<(), String> {
     let absent = || format!("the specification has no site `{}`", mutation.site());
@@ -937,6 +1306,35 @@ fn apply_guard(mutated: &mut [Document], mutation: &Mutation) -> Result<(), Stri
             if !edit_nth(when, &is_ordering, *leaf, &swap_strictness) {
                 return Err(absent());
             }
+        }
+        Mutation::GuardOutward {
+            command,
+            outcome,
+            leaf,
+        } => {
+            let when = outcome_mut(mutated, command, outcome)
+                .and_then(|it| it.when.as_mut())
+                .ok_or_else(absent)?;
+            if ordering_leaves(when)
+                .get(*leaf)
+                .is_none_or(|node| outward(node).is_none())
+            {
+                return Err(absent());
+            }
+            edit_nth(when, &is_ordering, *leaf, &move_outward);
+        }
+        Mutation::GuardEquality {
+            command,
+            outcome,
+            leaf,
+        } => {
+            let when = outcome_mut(mutated, command, outcome)
+                .and_then(|it| it.when.as_mut())
+                .ok_or_else(absent)?;
+            if *leaf >= equality_leaves(when).len() {
+                return Err(absent());
+            }
+            edit_nth(when, &is_equality, *leaf, &flip_equality);
         }
         Mutation::GuardNegate { command, outcome } => {
             let when = outcome_mut(mutated, command, outcome)
@@ -1010,7 +1408,7 @@ pub fn compile(documents: Vec<Document>, texts: &SourceMap) -> Result<EssIr, Sti
 /// The command and outcome mutant `id` of `class` is on, for the classes that edit one outcome.
 ///
 /// The id is `<class>/<command>/<outcome>[/…]`: a qualified command name holds no `/`, and
-/// neither does an outcome name.
+/// neither does an outcome name. A `precedence-swap` is on the outcome declared first.
 fn outcome_site(class: MutantClass, id: &str) -> Option<(&str, &str)> {
     match class {
         MutantClass::GuardBoundary
@@ -1018,7 +1416,9 @@ fn outcome_site(class: MutantClass, id: &str) -> Option<(&str, &str)> {
         | MutantClass::GuardNegate
         | MutantClass::GuardConnective
         | MutantClass::ErrorSwap
-        | MutantClass::EmitDrop => {}
+        | MutantClass::EmitDrop
+        | MutantClass::SetsDrop
+        | MutantClass::PrecedenceSwap => {}
         MutantClass::FromDrop | MutantClass::TransitionTo | MutantClass::OrderFlip => return None,
     }
     let mut segments = id
@@ -1034,8 +1434,28 @@ fn outcome_site(class: MutantClass, id: &str) -> Option<(&str, &str)> {
 /// `None` for any other mutation, where either guard is not a plain input guard, where the
 /// baseline's guard is not satisfied either (the mutant did not make it dead), and wherever
 /// [`satisfiable`] cannot decide.
+///
+/// For a `precedence-swap`, the overlap of the two guards in the baseline, where no input satisfies
+/// it: the two branches never compete, so their order decides nothing.
 fn unsatisfiable_guard(baseline: &EssIr, mutant: &EssIr, mutation: &Mutation) -> Option<String> {
+    if let Mutation::PrecedenceSwap {
+        command,
+        first,
+        second,
+    } = mutation
+    {
+        let (found, one) = guard_of(baseline, command, first)?;
+        let (_, other) = guard_of(baseline, command, second)?;
+        let overlap = Predicate::All(vec![one.clone(), other.clone()]);
+        return (!satisfiable(baseline, found, &overlap)?).then(|| overlap.to_string());
+    }
     let (Mutation::GuardBoundary {
+        command, outcome, ..
+    }
+    | Mutation::GuardOutward {
+        command, outcome, ..
+    }
+    | Mutation::GuardEquality {
         command, outcome, ..
     }
     | Mutation::GuardNegate { command, outcome }
@@ -1498,20 +1918,39 @@ impl Counts {
     }
 }
 
-/// The `ess-mutation-report/3` document: keys sorted, no timestamp, so its bytes are a function of
-/// the tree and the target.
+/// A mutant of a component-scoped emission whose site belongs to another component, which is
+/// that component's to answer: listed, not scored.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct OutOfScope {
+    /// What changed.
+    pub change: String,
+    /// Its class.
+    pub class: MutantClass,
+    /// `<class>/<site>`.
+    pub id: String,
+}
+
+/// The `ess-mutation-report/3` document, or `/4` where it is scored for one component: keys sorted,
+/// no timestamp, so its bytes are a function of the tree and the target.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct MutationReport {
     /// The unmutated suite.
     pub baseline: SuiteSize,
-    /// How many mutants came to each verdict.
+    /// The component the suites were scoped to; only in [`REPORT_FORMAT_4`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub component: Option<String>,
+    /// How many mutants came to each verdict. Out-of-scope mutants are not counted.
     pub counts: Counts,
-    /// [`REPORT_FORMAT`].
+    /// [`REPORT_FORMAT`], or [`REPORT_FORMAT_4`] where a component is named.
     pub format: String,
     /// The implementation that answered.
     pub implementation: String,
-    /// Every mutant, in byte order of id.
+    /// Every scored or stillborn mutant, in byte order of id.
     pub mutants: Vec<MutantEntry>,
+    /// The mutants that change no scenario of the component's suite, in byte order of id; only in
+    /// [`REPORT_FORMAT_4`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub out_of_scope: Option<Vec<OutOfScope>>,
     /// The original specification's digest.
     pub spec_digest: String,
     /// `<system> <version>`.
@@ -1563,11 +2002,16 @@ impl MutationReport {
     pub fn render_text(&self) -> String {
         let counts = &self.counts;
         let not_scored = &self.baseline.not_scored;
+        let out_of_scope = self.out_of_scope.as_deref().unwrap_or_default();
         let mut out = format!(
-            "mutation audit of {} against {}: {} mutant(s), {} killed, {} survived, {} \
+            "mutation audit of {}{} against {}: {} mutant(s), {} killed, {} survived, {} \
              inconclusive, {} stillborn, {} unwitnessed, {} equivalent (baseline: {} \
-             scenario(s), {} refusal(s){})\n",
+             scenario(s), {} refusal(s){}){}\n",
             self.specification,
+            self.component
+                .as_ref()
+                .map(|component| format!(" for component `{component}`"))
+                .unwrap_or_default(),
             self.implementation,
             counts.mutants,
             counts.killed,
@@ -1583,6 +2027,11 @@ impl MutationReport {
             } else {
                 format!(", {} not scored", not_scored.len())
             },
+            if self.component.is_some() {
+                format!("; {} out of scope", out_of_scope.len())
+            } else {
+                String::new()
+            },
         );
         for skipped in not_scored {
             let status = match skipped.status {
@@ -1594,6 +2043,16 @@ impl MutationReport {
                 "not scored {}: the baseline's run reported it {status}",
                 skipped.scenario
             );
+        }
+        if let Some(component) = &self.component {
+            for left in out_of_scope {
+                let _ = writeln!(
+                    out,
+                    "out of scope {}: {} — its site belongs to another component than \
+                     `{component}`",
+                    left.id, left.change
+                );
+            }
         }
         for verdict in [
             Verdict::Survived,
@@ -1676,8 +2135,11 @@ pub enum AuditRefusal {
     /// A mutation names a site the specification does not have.
     NoSuchSite(String),
     /// A collected audit cannot be scored at all: its manifest or its baseline report is missing
-    /// or unreadable, or the manifest names a directory outside the emission.
+    /// or unreadable, the manifest names a directory outside the emission, or it was emitted for
+    /// another component than the one asked for.
     Uncollectable(String),
+    /// The specification declares no component of the name asked for.
+    UnknownComponent(String),
 }
 
 impl AuditRefusal {
@@ -1690,7 +2152,8 @@ impl AuditRefusal {
             | Self::Unloadable(_)
             | Self::Admission(_)
             | Self::NoSuchSite(_)
-            | Self::Uncollectable(_) => None,
+            | Self::Uncollectable(_)
+            | Self::UnknownComponent(_) => None,
         }
     }
 
@@ -1762,6 +2225,9 @@ impl fmt::Display for AuditRefusal {
             Self::NoSuchSite(message) => f.write_str(message),
             Self::Uncollectable(message) => {
                 write!(f, "the emitted audit cannot be collected: {message}")
+            }
+            Self::UnknownComponent(message) => {
+                write!(f, "the audit cannot be scoped: {message}")
             }
         }
     }
@@ -2094,8 +2560,45 @@ struct Ran {
     spec_digest: String,
 }
 
-fn run<T: ConformanceTarget>(ir: &EssIr, new_target: &impl Fn() -> T) -> Result<Ran, AuditRefusal> {
-    let (suite, refused) = synthesized(ir);
+/// The write a `sets-drop` mutation removes, as synthesis of its model is told it
+/// ([`with_dropped_write`](crate::synthesize::with_dropped_write)); `None` for any other mutation,
+/// and where the entry does not read an input field.
+fn dropped_write(
+    documents: &[Document],
+    mutation: &Mutation,
+) -> Option<crate::synthesize::DroppedWrite> {
+    let Mutation::SetsDrop {
+        command,
+        outcome,
+        target,
+    } = mutation
+    else {
+        return None;
+    };
+    let set = self::outcome(documents, command, outcome)?
+        .sets
+        .0
+        .iter()
+        .find(|set| set.target == *target)?;
+    let PayloadSource::InputField { field } = &set.source else {
+        return None;
+    };
+    Some(crate::synthesize::DroppedWrite {
+        command: command.clone(),
+        outcome: outcome.clone(),
+        target: target.clone(),
+        source: field.clone(),
+    })
+}
+
+/// The suite `ir` obliges, run once on a fresh target; `dropped` is the write a `sets-drop`
+/// mutant's model no longer makes.
+fn run<T: ConformanceTarget>(
+    ir: &EssIr,
+    dropped: Option<crate::synthesize::DroppedWrite>,
+    new_target: &impl Fn() -> T,
+) -> Result<Ran, AuditRefusal> {
+    let (suite, refused) = crate::synthesize::with_dropped_write(dropped, || synthesized(ir));
     let admitted = AdmittedSuite::from_suite(&suite)
         .map_err(|error| AuditRefusal::Admission(error.to_string()))?;
     let executed = Runner::for_suite(&suite).run_admitted(&admitted, &new_target());
@@ -2154,7 +2657,7 @@ fn baseline<T: ConformanceTarget>(
     ir: &EssIr,
     new_target: &impl Fn() -> T,
 ) -> Result<BaselineRun, AuditRefusal> {
-    let ran = run(ir, new_target)?;
+    let ran = run(ir, None, new_target)?;
     let scenarios = ran.observed.scenarios.len();
     Ok(BaselineRun {
         ruler: Ruler::new(
@@ -2206,7 +2709,7 @@ fn measure<T: ConformanceTarget>(
             return Ok(entry);
         }
     };
-    let ran = run(&ir, new_target)?;
+    let ran = run(&ir, dropped_write(documents, &mutant.mutation), new_target)?;
     let dead = unsatisfiable_guard(baseline_ir, &ir, &mutant.mutation);
     ruler.judge(&mut entry, &ran.observed, &ran.refused, dead);
     Ok(entry)
@@ -2250,10 +2753,12 @@ pub fn audit<T: ConformanceTarget>(
     }
     Ok(MutationReport {
         baseline: baseline.ruler.size(baseline.scenarios),
+        component: None,
         counts,
         format: REPORT_FORMAT.to_owned(),
         implementation: baseline.implementation,
         mutants: entries,
+        out_of_scope: None,
         spec_digest: baseline.spec_digest,
         specification: format!("{} {}", baseline_ir.system(), baseline_ir.version()),
     })
@@ -2261,8 +2766,13 @@ pub fn audit<T: ConformanceTarget>(
 
 // ---- an external target: emit, then collect -----------------------------------------------------
 
-/// The document family [`emit`] writes beside the suites.
+/// The document family [`emit`] writes beside the suites where nothing in it needs
+/// [`MANIFEST_FORMAT_4`], so a reader of `/3` still collects it.
 pub const MANIFEST_FORMAT: &str = "ess-mutation-manifest/3";
+/// The manifest [`emit_for`] writes where it names a component, or holds a mutant of a class only
+/// this format's readers know ([`MutantClass::manifest_format`]): `/3` with the component, and each
+/// mutant it leaves out marked `out_of_scope` (beyond10x/ess#212, beyond10x/ess#236).
+pub const MANIFEST_FORMAT_4: &str = "ess-mutation-manifest/4";
 /// The manifest 0.41.0 wrote, which [`collect`] still reads: it names each suite's refusals and no
 /// mutant's `unsatisfiable_guard`, so no mutant it names is scored `equivalent`.
 pub const MANIFEST_FORMAT_2: &str = "ess-mutation-manifest/2";
@@ -2321,6 +2831,11 @@ pub struct EmittedMutant {
     pub dir: Option<String>,
     /// `<class>/<site>`.
     pub id: String,
+    /// `true` where the emission is scoped to a component and the mutant's site belongs to another
+    /// component: it then has no suite, and is listed rather than scored. Only in
+    /// `ess-mutation-manifest/4`, and only beside its `component`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub out_of_scope: bool,
     /// Synthesis refusals of its suite; absent on a stillborn mutant.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub refusals: Option<usize>,
@@ -2347,7 +2862,8 @@ pub struct EmittedMutant {
 }
 
 impl EmittedMutant {
-    /// Its suite, or `None` for a stillborn mutant; an entry that is neither is refused.
+    /// Its suite, or `None` for a stillborn or out-of-scope mutant; an entry that is none of these
+    /// is refused.
     fn suite(&self) -> Result<Option<EmittedSuite>, String> {
         match (
             &self.dir,
@@ -2357,11 +2873,22 @@ impl EmittedMutant {
             &self.stillborn,
         ) {
             (None, None, None, None, Some(_))
-                if self.refused.is_none() && self.unsatisfiable_guard.is_none() =>
+                if !self.out_of_scope
+                    && self.refused.is_none()
+                    && self.unsatisfiable_guard.is_none() =>
             {
                 Ok(None)
             }
-            (Some(dir), Some(refusals), Some(scenarios), Some(spec_digest), None) => {
+            (None, None, None, None, None)
+                if self.out_of_scope
+                    && self.refused.is_none()
+                    && self.unsatisfiable_guard.is_none() =>
+            {
+                Ok(None)
+            }
+            (Some(dir), Some(refusals), Some(scenarios), Some(spec_digest), None)
+                if !self.out_of_scope =>
+            {
                 Ok(Some(EmittedSuite {
                     dir: dir.clone(),
                     refusals,
@@ -2371,20 +2898,26 @@ impl EmittedMutant {
                 }))
             }
             _ => Err(format!(
-                "`{}` is neither a stillborn mutant nor one with a suite",
+                "`{}` is neither a stillborn mutant, an out-of-scope one nor one with a suite",
                 self.id
             )),
         }
     }
 }
 
-/// The `ess-mutation-manifest/3` document: what [`emit`] wrote, and what [`collect`] scores.
+/// The `ess-mutation-manifest/3` or `/4` document: what [`emit`] wrote, and what [`collect`]
+/// scores.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Manifest {
     /// The unmutated suite.
     pub baseline: EmittedSuite,
-    /// [`MANIFEST_FORMAT`], or [`MANIFEST_FORMAT_1`] for a manifest an earlier release wrote.
+    /// The component every suite was scoped to, as `synthesize --component` scopes one; only in
+    /// [`MANIFEST_FORMAT_4`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub component: Option<String>,
+    /// [`MANIFEST_FORMAT_4`] or [`MANIFEST_FORMAT`], or [`MANIFEST_FORMAT_2`] or
+    /// [`MANIFEST_FORMAT_1`] for a manifest an earlier release wrote.
     pub format: String,
     /// Every mutant, in byte order of id.
     pub mutants: Vec<EmittedMutant>,
@@ -2401,24 +2934,72 @@ impl Manifest {
     }
 
     /// Reads a manifest, refusing another format, an incoherent mutant entry, a suite's refusals
-    /// that `/2` or `/3` omits, `/1` carries or disagree with its count, an `unsatisfiable_guard`
-    /// before `/3`, or a directory that leaves the emission.
+    /// that `/2` and later omit, `/1` carries or disagree with its count, an `unsatisfiable_guard`
+    /// before `/3`, a `component`, an `out_of_scope` mutant or a class only `/4` knows before
+    /// `/4`, an `out_of_scope` mutant without a `component`, or a directory that leaves the
+    /// emission.
     pub fn from_json(text: &str) -> Result<Self, String> {
+        // The format first, so a manifest of a version this reader does not know is refused by
+        // that name rather than by whichever of its fields this reader does not know.
+        let declared = serde_json::from_str::<serde_json::Value>(text)
+            .ok()
+            .and_then(|value| value.get("format")?.as_str().map(str::to_owned));
+        // Whether suites name their refusals (`/2` on), whether a mutant may name a dead guard
+        // (`/3` on), and whether the emission may be scoped to a component or hold a class only
+        // `/4` knows.
+        let version_of = |format: &str| match format {
+            MANIFEST_FORMAT_4 => Some(4),
+            MANIFEST_FORMAT => Some(3),
+            MANIFEST_FORMAT_2 => Some(2),
+            MANIFEST_FORMAT_1 => Some(1),
+            _ => None,
+        };
+        if let Some(other) = declared.as_deref().filter(|it| version_of(it).is_none()) {
+            return Err(format!(
+                "{MANIFEST_FILE} is `{other}`, not `{MANIFEST_FORMAT_4}`, `{MANIFEST_FORMAT}`, \
+                 `{MANIFEST_FORMAT_2}` or `{MANIFEST_FORMAT_1}`"
+            ));
+        }
         let manifest: Self =
             serde_json::from_str(text).map_err(|error| format!("{MANIFEST_FILE}: {error}"))?;
-        // Whether suites name their refusals (`/2` on), and whether a mutant may name a dead guard
-        // (`/3` only).
-        let (keyed, guarded) = match manifest.format.as_str() {
-            MANIFEST_FORMAT => (true, true),
-            MANIFEST_FORMAT_2 => (true, false),
-            MANIFEST_FORMAT_1 => (false, false),
-            other => {
-                return Err(format!(
-                    "{MANIFEST_FILE} is `{other}`, not `{MANIFEST_FORMAT}`, `{MANIFEST_FORMAT_2}` \
-                     or `{MANIFEST_FORMAT_1}`"
-                ))
-            }
+        let Some(version) = version_of(&manifest.format) else {
+            return Err(format!(
+                "{MANIFEST_FILE} is `{}`, not `{MANIFEST_FORMAT_4}`, `{MANIFEST_FORMAT}`, \
+                 `{MANIFEST_FORMAT_2}` or `{MANIFEST_FORMAT_1}`",
+                manifest.format
+            ));
         };
+        let (keyed, guarded, scoped) = (version >= 2, version >= 3, version >= 4);
+        if !scoped {
+            if manifest.component.is_some() {
+                return Err(format!(
+                    "{MANIFEST_FILE} names a `component`, which `{}` does not have; it is \
+                     `{MANIFEST_FORMAT_4}`",
+                    manifest.format
+                ));
+            }
+            if let Some(mutant) = manifest.mutants.iter().find(|mutant| {
+                version_of(mutant.class.manifest_format()).is_some_and(|needs| needs > version)
+            }) {
+                return Err(format!(
+                    "{MANIFEST_FILE}: `{}` is a `{}` mutant, a class `{}` does not have; it is \
+                     `{}`",
+                    mutant.id,
+                    mutant.class,
+                    manifest.format,
+                    mutant.class.manifest_format()
+                ));
+            }
+        }
+        if let Some(mutant) = manifest.mutants.iter().find(|mutant| mutant.out_of_scope) {
+            if manifest.component.is_none() {
+                return Err(format!(
+                    "{MANIFEST_FILE}: `{}` is `out_of_scope`, which only an emission naming a \
+                     `component` ({MANIFEST_FORMAT_4}) has",
+                    mutant.id
+                ));
+            }
+        }
         let refused = |suite: &EmittedSuite| -> Result<(), String> {
             match (&suite.refused, keyed) {
                 (None, false) => Ok(()),
@@ -2507,7 +3088,27 @@ fn contained(dir: &str) -> Result<(), String> {
 /// nothing newer onto the suite major that carries them, which the audit's report/1 evidence does
 /// not read.
 fn synthesized(ir: &EssIr) -> (crate::ConformanceSuite, Vec<RefusalKey>) {
-    let synthesis = crate::synthesize(ir);
+    synthesized_from(crate::synthesize(ir), ir)
+}
+
+/// [`synthesized`], scoped to `component` as `synthesize --component` scopes a suite
+/// ([`synthesize_for`](crate::synthesize::synthesize_for)); the whole system's where it is `None`.
+fn synthesized_for(
+    ir: &EssIr,
+    component: Option<&str>,
+) -> Result<(crate::ConformanceSuite, Vec<RefusalKey>), AuditRefusal> {
+    match component {
+        None => Ok(synthesized(ir)),
+        Some(component) => crate::synthesize::synthesize_for(ir, component)
+            .map(|synthesis| synthesized_from(synthesis, ir))
+            .map_err(|unknown| AuditRefusal::UnknownComponent(unknown.to_string())),
+    }
+}
+
+fn synthesized_from(
+    synthesis: crate::Synthesis,
+    ir: &EssIr,
+) -> (crate::ConformanceSuite, Vec<RefusalKey>) {
     let mut suite = synthesis.suite;
     suite
         .scenarios
@@ -2518,14 +3119,15 @@ fn synthesized(ir: &EssIr) -> (crate::ConformanceSuite, Vec<RefusalKey>) {
     (suite, refused)
 }
 
-/// Writes the suite `ir` obliges, and the model beside it, into `dir`.
+/// Writes `suite`, synthesized from `ir` with the synthesis refusals `refused`, and the model
+/// beside it, into `dir`.
 fn emit_suite(
     ir: &EssIr,
+    (suite, refused): (crate::ConformanceSuite, Vec<RefusalKey>),
     dir: &str,
     files: &mut std::collections::BTreeMap<String, String>,
 ) -> Result<EmittedSuite, AuditRefusal> {
     contained(dir).map_err(AuditRefusal::NoSuchSite)?;
-    let (suite, refused) = synthesized(ir);
     let json = suite
         .to_canonical_json()
         .map_err(|error| AuditRefusal::Admission(error.to_string()))?;
@@ -2554,9 +3156,27 @@ pub fn emit(
     texts: &SourceMap,
     classes: &[MutantClass],
 ) -> Result<Emission, AuditRefusal> {
+    emit_for(documents, texts, classes, None)
+}
+
+/// [`emit`], with every suite scoped to `component` where one is named, as `synthesize
+/// --component` scopes it (beyond10x/ess#236).
+///
+/// A mutant whose site belongs to another component (`in_component`) is that component's to
+/// answer, so it is marked `out_of_scope` with no suite, and listed rather than scored; a mutant on
+/// the component's own site is scored, a survivor included. The manifest names the component and is `ess-mutation-manifest/4`, as is
+/// one holding a mutant of a class only `/4` knows; any other is `/3`. Refuses a component the
+/// specification does not declare, naming those it does.
+pub fn emit_for(
+    documents: &[Document],
+    texts: &SourceMap,
+    classes: &[MutantClass],
+    component: Option<&str>,
+) -> Result<Emission, AuditRefusal> {
     let baseline_ir = compile(documents.to_vec(), texts).map_err(AuditRefusal::Unloadable)?;
     crate::admission::model(&baseline_ir)
         .map_err(|error| AuditRefusal::Admission(error.to_string()))?;
+    let baseline_suite = synthesized_for(&baseline_ir, component)?;
     let selected = mutants(documents, classes);
     if selected.is_empty() {
         let mut classes = classes.to_vec();
@@ -2565,16 +3185,27 @@ pub fn emit(
         return Err(AuditRefusal::NoSite { classes });
     }
     let mut files = std::collections::BTreeMap::new();
-    let baseline = emit_suite(&baseline_ir, BASELINE_DIR, &mut files)?;
+    let baseline = emit_suite(&baseline_ir, baseline_suite, BASELINE_DIR, &mut files)?;
+    let scope = component.and_then(|name| {
+        baseline_ir
+            .components()
+            .values()
+            .find(|declared| declared.name.as_str() == name)
+    });
+    let transitions = performers(&baseline_ir.to_compact_json()).unwrap_or_default();
     let mut entries = Vec::with_capacity(selected.len());
     for mutant in &selected {
         contained(&mutant.id).map_err(AuditRefusal::NoSuchSite)?;
         let mutated = apply(documents, &mutant.mutation).map_err(AuditRefusal::NoSuchSite)?;
+        let out_of_scope = scope.is_some_and(|component| {
+            !in_component(&baseline_ir, component, &transitions, &mutant.mutation)
+        });
         let mut entry = EmittedMutant {
             change: mutant.change.clone(),
             class: mutant.class,
             dir: None,
             id: mutant.id.clone(),
+            out_of_scope,
             refusals: None,
             refused: None,
             scenarios: None,
@@ -2583,9 +3214,17 @@ pub fn emit(
             stillborn: None,
             unsatisfiable_guard: None,
         };
+        if out_of_scope {
+            entries.push(entry);
+            continue;
+        }
         match compile(mutated, texts) {
             Ok(ir) => {
-                let suite = emit_suite(&ir, &mutant.id, &mut files)?;
+                let synthesized = crate::synthesize::with_dropped_write(
+                    dropped_write(documents, &mutant.mutation),
+                    || synthesized_for(&ir, component),
+                )?;
+                let suite = emit_suite(&ir, synthesized, &mutant.id, &mut files)?;
                 entry.dir = Some(suite.dir);
                 entry.refusals = Some(suite.refusals);
                 entry.refused = suite.refused;
@@ -2599,15 +3238,83 @@ pub fn emit(
         files.insert(format!("{}/{MUTANT_FILE}", mutant.id), canonical(&entry));
         entries.push(entry);
     }
+    let format = if component.is_some()
+        || entries
+            .iter()
+            .any(|entry| entry.class.manifest_format() == MANIFEST_FORMAT_4)
+    {
+        MANIFEST_FORMAT_4
+    } else {
+        MANIFEST_FORMAT
+    };
     let manifest = Manifest {
         spec_digest: baseline.spec_digest.clone(),
         baseline,
-        format: MANIFEST_FORMAT.to_owned(),
+        component: component.map(str::to_owned),
+        format: format.to_owned(),
         mutants: entries,
         specification: format!("{} {}", baseline_ir.system(), baseline_ir.version()),
     };
     files.insert(MANIFEST_FILE.to_owned(), manifest.to_canonical_json());
     Ok(Emission { manifest, files })
+}
+
+/// Refuses `manifest` where `component` is named and the emission was scoped to another component,
+/// or to none.
+fn emitted_for(manifest: &Manifest, component: Option<&str>) -> Result<(), AuditRefusal> {
+    let Some(asked) = component else {
+        return Ok(());
+    };
+    match &manifest.component {
+        Some(emitted) if emitted == asked => Ok(()),
+        Some(emitted) => Err(AuditRefusal::Uncollectable(format!(
+            "it was emitted for component `{emitted}`, not `{asked}`; collect it with \
+             `--component {emitted}` or without `--component`"
+        ))),
+        None => Err(AuditRefusal::Uncollectable(format!(
+            "it was emitted for the whole system, not for component `{asked}`; collect it \
+             without `--component`"
+        ))),
+    }
+}
+
+/// Whether the site `mutation` edits belongs to `component`, by the membership `synthesize
+/// --component` scopes a suite with (beyond10x/ess#236): an outcome's guard, `sets`, error or events,
+/// and two outcomes' order, belong to the component that handles their command; a view's ranking
+/// to the component that owns the view; a transition to a component that handles a command
+/// performing it, as `performers` lists them from the baseline model.
+fn in_component(
+    ir: &EssIr,
+    component: &ess_compiler::ir::ResolvedComponent,
+    performers: &Performers,
+    mutation: &Mutation,
+) -> bool {
+    let handles = |command: &str| {
+        ess_domain::name::QualifiedName::new(command)
+            .is_ok_and(|name| crate::synthesize::handles(ir, component, &name))
+    };
+    match mutation {
+        Mutation::GuardBoundary { command, .. }
+        | Mutation::GuardOutward { command, .. }
+        | Mutation::GuardEquality { command, .. }
+        | Mutation::SetsRetarget { command, .. }
+        | Mutation::GuardNegate { command, .. }
+        | Mutation::GuardConnective { command, .. }
+        | Mutation::ErrorSwap { command, .. }
+        | Mutation::EmitDrop { command, .. }
+        | Mutation::SetsDrop { command, .. }
+        | Mutation::PrecedenceSwap { command, .. } => handles(command),
+        Mutation::OrderFlip { view, .. } => ess_domain::name::QualifiedName::new(view)
+            .is_ok_and(|name| crate::synthesize::owns_view(ir, component, &name)),
+        Mutation::FromDrop {
+            entity, transition, ..
+        }
+        | Mutation::TransitionTo {
+            entity, transition, ..
+        } => performers
+            .get(&format!("{entity}.{transition}"))
+            .is_some_and(|by| by.iter().any(|(command, _)| handles(command))),
+    }
 }
 
 /// One report, read against the suite it claims to be a run of.
@@ -2728,9 +3435,22 @@ fn score(read: &impl Fn(&str) -> Option<String>, suite: &EmittedSuite) -> Result
 /// the baseline's is `inconclusive`, with the reason in `unscored`: nothing contradicted it, and
 /// nobody found out.
 pub fn collect(read: impl Fn(&str) -> Option<String>) -> Result<MutationReport, AuditRefusal> {
+    collect_for(read, None)
+}
+
+/// [`collect`], refusing an emission scoped to another component than `component`, or to none,
+/// where one is named; `None` collects the emission for whatever component its manifest names.
+///
+/// An emission scoped to a component is scored into an `ess-mutation-report/4` naming it, with each
+/// mutant marked `out_of_scope` listed and not scored or counted.
+pub fn collect_for(
+    read: impl Fn(&str) -> Option<String>,
+    component: Option<&str>,
+) -> Result<MutationReport, AuditRefusal> {
     let text = read(MANIFEST_FILE)
         .ok_or_else(|| AuditRefusal::Uncollectable(format!("no {MANIFEST_FILE}")))?;
     let manifest = Manifest::from_json(&text).map_err(AuditRefusal::Uncollectable)?;
+    emitted_for(&manifest, component)?;
     let baseline = score(&read, &manifest.baseline)
         .map_err(|why| AuditRefusal::Uncollectable(format!("the baseline: {why}")))?;
     // The emitted baseline model says which outcomes perform each transition; where it is gone, a
@@ -2746,11 +3466,24 @@ pub fn collect(read: impl Fn(&str) -> Option<String>) -> Result<MutationReport, 
     )?;
 
     let mut entries = Vec::with_capacity(manifest.mutants.len());
+    let mut out_of_scope = Vec::new();
     let mut counts = Counts {
-        mutants: manifest.mutants.len(),
+        mutants: manifest
+            .mutants
+            .iter()
+            .filter(|mutant| !mutant.out_of_scope)
+            .count(),
         ..Counts::default()
     };
     for mutant in &manifest.mutants {
+        if mutant.out_of_scope {
+            out_of_scope.push(OutOfScope {
+                change: mutant.change.clone(),
+                class: mutant.class,
+                id: mutant.id.clone(),
+            });
+            continue;
+        }
         let mut entry = MutantEntry {
             added_refusals: None,
             baseline_refusals: None,
@@ -2796,12 +3529,21 @@ pub fn collect(read: impl Fn(&str) -> Option<String>) -> Result<MutationReport, 
         entries.push(entry);
     }
     entries.sort_by(|left, right| left.id.cmp(&right.id));
+    out_of_scope.sort_by(|left, right| left.id.cmp(&right.id));
+    let scoped = manifest.component.is_some();
     Ok(MutationReport {
         baseline: ruler.size(manifest.baseline.scenarios),
+        component: manifest.component,
         counts,
-        format: REPORT_FORMAT.to_owned(),
+        format: if scoped {
+            REPORT_FORMAT_4
+        } else {
+            REPORT_FORMAT
+        }
+        .to_owned(),
         implementation: baseline.implementation,
         mutants: entries,
+        out_of_scope: scoped.then_some(out_of_scope),
         spec_digest: manifest.spec_digest,
         specification: manifest.specification,
     })

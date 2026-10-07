@@ -426,8 +426,9 @@ pub enum OutcomeCondition {
     /// It reads a row the command does not address, so it sits on any branch: a `creates:`, a
     /// refusal naming no subject. One hop, by identity only — see [`related_guard`].
     Related {
-        /// The input field carrying the other entity's identity, without its `input.` prefix.
-        via: String,
+        /// The input field carrying the other entity's identity: `input.<field>`, from ess/22 possibly
+        /// `Optional<…>` of that identity (beyond10x/ess#304).
+        via: RelatedVia,
         /// What the branch requires of that row.
         test: RelatedTest,
         /// Additional input eligibility, the ordinary `when:`.

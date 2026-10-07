@@ -165,8 +165,8 @@ fn authored_setup_reaches_real_storage_and_resets_between_scenarios() {
             .iter()
             .all(|check| check.status == Status::Passed));
     }
-    assert!(rows(&target).is_empty());
-    assert!(events(&target).is_empty());
+    assert_eq!(rows(&target).len(), 0);
+    assert_eq!(events(&target).len(), 0);
 }
 
 #[test]
@@ -214,7 +214,7 @@ fn invalid_facts_never_replace_or_add_rows() {
             Err(TargetError::Unavailable { .. })
         ));
         assert_eq!(rows(&target), before);
-        assert!(events(&target).is_empty());
+        assert_eq!(events(&target).len(), 0);
     }
     let mut duplicate = request();
     duplicate
@@ -236,16 +236,16 @@ fn setup_requires_current_scenario_authority_and_end_revokes_it() {
     let mut wrong = request();
     wrong.correlation = CorrelationId::new("another-scenario").unwrap();
     assert!(target.establish_entity(wrong).is_err());
-    assert!(rows(&target).is_empty());
+    assert_eq!(rows(&target).len(), 0);
     target.establish_entity(request()).unwrap();
     target.end_scenario(&context()).unwrap();
     assert!(target.establish_entity(request()).is_err());
-    assert!(rows(&target).is_empty());
+    assert_eq!(rows(&target).len(), 0);
     target.begin_scenario(&context()).unwrap();
     target.establish_entity(request()).unwrap();
     assert_eq!(rows(&target).len(), 1);
     target.begin_scenario(&context()).unwrap();
-    assert!(rows(&target).is_empty());
+    assert_eq!(rows(&target).len(), 0);
 }
 
 #[test]
@@ -256,7 +256,7 @@ fn setup_is_immediately_visible_even_to_eventual_views() {
     for _ in 0..3 {
         assert_eq!(rows(&target).len(), 1);
     }
-    assert!(events(&target).is_empty());
+    assert_eq!(events(&target).len(), 0);
 }
 
 #[test]
@@ -266,7 +266,7 @@ fn unknown_invariant_refuses_and_integer_identity_is_preserved() {
     ));
     target.begin_scenario(&context()).unwrap();
     assert!(target.establish_entity(request()).is_err());
-    assert!(rows(&target).is_empty());
+    assert_eq!(rows(&target).len(), 0);
     let ir = model(&MODEL.replace("type: Uuid", "type: Integer"));
     let target = Interpreted::for_model(ir);
     target.begin_scenario(&context()).unwrap();

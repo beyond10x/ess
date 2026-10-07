@@ -471,7 +471,7 @@ fn identity_reference(ir: &EssIr, entity: &EntityHandle) -> bool {
 }
 
 /// The input a branch's `sets:` writes into the subject field `field` unchanged.
-fn set_from_input<'a>(outcome: &'a ResolvedOutcome, field: &str) -> Option<&'a str> {
+pub(super) fn set_from_input<'a>(outcome: &'a ResolvedOutcome, field: &str) -> Option<&'a str> {
     outcome.sets.iter().find_map(|set| match &set.value {
         ResolvedPayloadValue::InputField { field: input, .. }
             if set.target == field && set.conversion.is_none() =>

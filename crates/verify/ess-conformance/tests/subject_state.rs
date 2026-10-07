@@ -256,7 +256,7 @@ fn absent_or_different_subject_is_never_created_or_selected_as_initial() {
         };
         let result = backend.execute_command(request).unwrap();
         assert!(result.outcome.is_none());
-        assert!(result.direct_events.is_empty());
+        assert_eq!(result.direct_events.len(), 0);
         assert_eq!(*backend.row.borrow(), held);
     }
 }

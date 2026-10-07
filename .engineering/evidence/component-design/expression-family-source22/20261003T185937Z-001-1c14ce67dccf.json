@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-03T18:59:37Z",
+  "actor": "human:timo",
+  "artifact": "component-design:expression-family-source22",
+  "kind": "component-design",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "Finding5: typed distinct key equality and timestamp/decimal/large-integer/finite-domain witness controls specified across required lanes",
+    "reference": "docs/design/expression-family-source22.md#review1-finding5",
+    "review": "review-result:expression-family-source22-20261003-r1",
+    "outcome": "fixed"
+  }
+}

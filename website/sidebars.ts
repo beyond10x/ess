@@ -56,6 +56,7 @@ const sidebars: SidebarsConfig = {
             'guides/verify/synthesize-a-suite',
             'guides/verify/author-scenarios',
             'guides/verify/runners',
+            'guides/verify/one-time-responses',
             'guides/verify/mutation-audit',
             'guides/verify/explore',
           ],
@@ -76,6 +77,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'reference/cli',
         'reference/diagnostics',
+        'reference/entity-runtime-lowering',
         'reference/formats',
         'reference/ess-ui',
         'reference/ess-ui-test',

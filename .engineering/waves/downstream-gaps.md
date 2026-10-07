@@ -37,14 +37,13 @@ Release 0.49.0 from `integrate/gaps-w1` once #265 and #278 merge: #229 (ess/20),
 
 ## Backlog order (reconciled 2026-10-01, after the fit review of every open request)
 
-Base spec before UI spec (operator, 2026-10-01). Within base spec: defects and regressions, then accepted gaps, then deferred. Formats: ess/20 shipped alone in 0.49.0. On 2026-10-02 the operator placed issue389 on the fast lane: its one-time response disclosure contract takes the next unshipped major, ess/21. Every previously accepted syntax change below remains one coordinated bundle and moves together to ess/22; its semantics and dependency ordering are unchanged.
+Base spec before UI spec (operator, 2026-10-01). Within base spec: defects and regressions, then accepted gaps, then deferred. Formats: ess/20 ships alone in 0.49.0; every accepted syntax change below lands together in ess/21.
 
 | priority | stories |
 |---|---|
 | 1 base defects | 251 (regression since 0.43), 266, 267, 272, 273, 274, 279, 280, 288, 289 |
 | 2 base gaps, synthesis and tooling | 287 (singleton, no new key), 222, 212, 221 with 223, 236, 231 (lowerable-subset table now) |
-| fast lane, ess/21 syntax | 389 one-time response disclosure, with validation and executable non-disclosure checks |
-| 3 base gaps, ess/22 syntax | 282, 283, 285, 286, 268 (closes 194), 269, 200, related-record-effects, family F: 225, 228, 233, 237, 244a |
+| 3 base gaps, ess/21 syntax | 282, 283, 285, 286, 268 (closes 194), 269, 200, related-record-effects, family F: 225, 228, 233, 237, 244a |
 | deferred (decision-blocker) | 197 (refusal-may-change-state), 244b (calendar-window-time-zone), 231 part 2 (entity-core-lowering-features) |
 | 4 UI spec | 284, 281 item 1, ui-spec-style-tokens |
 

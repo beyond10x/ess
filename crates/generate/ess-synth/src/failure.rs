@@ -58,7 +58,7 @@ impl TargetFailureCause {
         sources.sort();
         sources.dedup();
         assert!(!sources.is_empty() && sources.iter().all(|source| !source.is_empty()));
-        assert!(!detail.is_empty());
+        assert_ne!(detail.len(), 0, "a target failure names its detail");
         Self {
             code,
             sources,
@@ -88,7 +88,7 @@ impl TargetFailure {
     ) -> Self {
         causes.sort();
         causes.dedup();
-        assert!(!causes.is_empty());
+        assert_ne!(causes.len(), 0, "a target failure names at least one cause");
         Self {
             format: if causes.iter().any(|cause| {
                 matches!(

@@ -423,7 +423,7 @@ fn copied_field_guard_and_view_share_arrangement() {
     assert!(synthesis.refusals.is_empty(), "{:?}", synthesis.refusals);
     for id in POLICY_CASES {
         let scenario = scenario(&synthesis, id);
-        assert!(!policy_reports(scenario).is_empty());
+        assert_ne!(policy_reports(scenario).len(), 0);
         assert!(scenario.steps.iter().any(|step| matches!(step,
             ScenarioStep::QueryView { view, params } if view.to_string() == "mini.m.RunsForTarget"
                 && matches!(params.get("target"), Some(ScenarioValue::Instance { .. }))
@@ -490,9 +490,9 @@ fn issue_307_each_policy_copy_and_branch_has_a_decisive_mutant() {
     );
 }
 
-/// Related sources remain an explicit interpreter limitation, not acceptance evidence.
+/// The native interpreter executes every branch that reads a copied related-source field.
 #[test]
-fn issue_307_the_interpreter_names_its_related_source_limitation() {
+fn issue_307_the_interpreter_executes_related_sources() {
     let model = ir();
     let result = synthesize(&model);
     let target = ess_conformance::interpret::Interpreted::for_model(model);
@@ -500,25 +500,36 @@ fn issue_307_the_interpreter_names_its_related_source_limitation() {
     let report = Runner::for_suite(admitted.suite())
         .run_admitted(&admitted, &target)
         .into_report();
-    let mut unsupported = false;
-    for run in &report.scenarios {
+    let expected = [PROMOTED, ROLLED_BACK, FINISHED];
+    let selected: Vec<_> = report
+        .scenarios
+        .iter()
+        .filter(|run| expected.contains(&run.scenario.to_string().as_str()))
+        .collect();
+    assert!(
+        !selected.is_empty(),
+        "no copied-field outcomes: {report:#?}"
+    );
+    assert_eq!(selected.len(), expected.len(), "{selected:#?}");
+    for id in expected {
         assert!(
-            matches!(run.status, Status::Passed | Status::Unsupported),
-            "{}: {:?}",
-            run.scenario,
-            run.checks
+            selected
+                .iter()
+                .any(|run| run.scenario.to_string() == id && run.status == Status::Passed),
+            "{id}: {selected:#?}"
         );
-        if run.status == Status::Unsupported {
-            unsupported = true;
-            assert!(
-                format!("{:?}", run.checks).contains("is not interpreted yet"),
-                "{:?}",
-                run.checks
-            );
-        }
     }
     assert!(
-        unsupported,
-        "update this limitation control when related sources are interpreted"
+        selected.iter().all(|run| run.status == Status::Passed),
+        "{selected:#?}"
+    );
+    let failed: Vec<_> = report
+        .scenarios
+        .iter()
+        .filter(|run| run.status != Status::Passed)
+        .collect();
+    assert!(
+        failed.is_empty(),
+        "native interpreter failures: {failed:#?}"
     );
 }

@@ -1,0 +1,294 @@
+/// Where a publisher sends one message. Implement it over any client, or use the generated `nats/`
+/// crate for a JetStream context. Called from one sender thread per `array` operation and from a caller for a single
+/// channel; it blocks until the broker has accepted or refused the message.
+pub trait Transport: Send + Sync + 'static {
+    /// Why a publish failed.
+    type Error: ::std::fmt::Display + Send + 'static;
+    /// Publishes `payload` on `subject` and waits for the broker's answer.
+    fn publish(&self, subject: &str, payload: &[u8]) -> ::std::result::Result<(), Self::Error>;
+}
+
+/// A publish that did not land: which subject, how many payloads, and why.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PublishError {
+    /// The rendered subject, or the template when rendering itself failed.
+    pub subject: String,
+    /// How many payloads the message carried.
+    pub items: usize,
+    /// The encoder's, address renderer's or transport's reason.
+    pub message: String,
+}
+
+impl PublishError {
+    fn new(subject: impl Into<String>, items: usize, message: impl Into<String>) -> Self {
+        Self { subject: subject.into(), items, message: message.into() }
+    }
+}
+
+impl ::std::fmt::Display for PublishError {
+    fn fmt(&self, formatter: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        write!(formatter, "publishing {} payload(s) on `{}` failed: {}", self.items, self.subject, self.message)
+    }
+}
+
+impl ::std::error::Error for PublishError {}
+
+/// Called with every failed background flush. The batch it names is dropped (`at_most_once`).
+pub type ErrorCallback = ::std::sync::Arc<dyn Fn(PublishError) + Send + Sync>;
+
+/// How a publisher reports what it cannot return.
+#[derive(Clone, Default)]
+pub struct PublisherOptions {
+    /// Called with every failed background flush; `None` drops failures silently.
+    pub on_error: Option<ErrorCallback>,
+}
+
+type Sink = ::std::sync::Arc<dyn Fn(&str, &[u8]) -> ::std::result::Result<(), String> + Send + Sync>;
+
+fn sink<T: Transport>(transport: T) -> Sink {
+    ::std::sync::Arc::new(move |subject, payload| transport.publish(subject, payload).map_err(|error| error.to_string()))
+}
+
+fn encode<P: ::serde::Serialize>(subject: &str, payload: &P) -> ::std::result::Result<Vec<u8>, PublishError> {
+    ::serde_json::to_vec(payload).map_err(|error| PublishError::new(subject, 1, error.to_string()))
+}
+
+fn parameter_token(template: &str, name: &str, value: &str) -> ::std::result::Result<(), PublishError> {
+    if value.is_empty() || value.contains('.') || value.contains(['*', '>']) || value.chars().any(char::is_whitespace) {
+        return Err(PublishError::new(template, 1, format!("address parameter `{name}` must be one nonempty NATS subject token with no `.`, whitespace, `*` or `>`")));
+    }
+    Ok(())
+}
+
+fn array(payloads: &[Vec<u8>]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(payloads.iter().map(Vec::len).sum::<usize>() + payloads.len() + 1);
+    out.push(b'[');
+    for (index, payload) in payloads.iter().enumerate() {
+        if index > 0 { out.push(b','); }
+        out.extend_from_slice(payload);
+    }
+    out.push(b']');
+    out
+}
+
+struct Bucket {
+    payloads: Vec<Vec<u8>>,
+    oldest: ::std::time::Instant,
+}
+
+type Answer = ::std::sync::mpsc::Sender<::std::result::Result<(), PublishError>>;
+
+enum BatchCommand {
+    Enqueue { subject: String, payload: Vec<u8>, answer: Answer },
+    Send { subject: String, payloads: Vec<Vec<u8>>, answer: Answer },
+    Flush { answer: Answer },
+    Close { answer: Answer },
+    #[cfg(test)]
+    BucketCount { answer: ::std::sync::mpsc::Sender<usize> },
+}
+
+/// One message, or one ordered group of messages whose first failure answers a caller.
+enum SendJob {
+    Background { subject: String, payloads: Vec<Vec<u8>> },
+    Answered { batches: Vec<(String, Vec<Vec<u8>>)>, answer: Answer },
+}
+
+/// One `array` operation: a worker that owns one nonempty bucket per concrete subject and never
+/// performs I/O, and one sender that publishes drained batches in the order they were drained.
+struct Batcher {
+    template: &'static str,
+    commands: ::std::sync::Mutex<Option<::std::sync::mpsc::Sender<BatchCommand>>>,
+    worker: ::std::sync::Mutex<Option<::std::thread::JoinHandle<()>>>,
+    sender: ::std::sync::Mutex<Option<::std::thread::JoinHandle<()>>>,
+}
+
+impl Batcher {
+    fn start(template: &'static str, max_items: usize, max_delay: ::std::time::Duration, sink: Sink, on_error: Option<ErrorCallback>) -> Self {
+        let (commands, receiver) = ::std::sync::mpsc::channel();
+        let (jobs, queued) = ::std::sync::mpsc::channel::<SendJob>();
+        // The sender holds no lock and serves no command, so a broker acknowledgement never delays
+        // a publish, and the error callback may publish to this same operation.
+        let sender = ::std::thread::spawn(move || {
+            for job in queued {
+                match job {
+                    SendJob::Background { subject, payloads } => {
+                        if let Err(error) = send_batch(&sink, subject, payloads) {
+                            if let Some(report) = &on_error { report(error); }
+                        }
+                    }
+                    SendJob::Answered { batches, answer } => {
+                        let mut first = Ok(());
+                        for (subject, payloads) in batches {
+                            if let Err(error) = send_batch(&sink, subject, payloads) {
+                                if first.is_ok() { first = Err(error); }
+                            }
+                        }
+                        let _ = answer.send(first);
+                    }
+                }
+            }
+        });
+        let worker = ::std::thread::spawn(move || {
+            let mut buckets: ::std::collections::BTreeMap<String, Bucket> = ::std::collections::BTreeMap::new();
+            loop {
+                let wait = buckets.values().map(|bucket| bucket.oldest + max_delay).min().map(|deadline| deadline.saturating_duration_since(::std::time::Instant::now()));
+                let command = match wait {
+                    Some(wait) => match receiver.recv_timeout(wait) {
+                        Ok(command) => Some(command),
+                        Err(::std::sync::mpsc::RecvTimeoutError::Timeout) => None,
+                        Err(::std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                    },
+                    None => match receiver.recv() { Ok(command) => Some(command), Err(_) => break },
+                };
+                match command {
+                    None => {
+                        let now = ::std::time::Instant::now();
+                        let due: Vec<String> = buckets.iter().filter(|(_, bucket)| bucket.oldest + max_delay <= now).map(|(subject, _)| subject.clone()).collect();
+                        for subject in due {
+                            let bucket = buckets.remove(&subject).expect("a due bucket exists");
+                            let _ = jobs.send(SendJob::Background { subject, payloads: bucket.payloads });
+                        }
+                    }
+                    Some(BatchCommand::Enqueue { subject, payload, answer }) => {
+                        let bucket = buckets.entry(subject.clone()).or_insert_with(|| Bucket { payloads: Vec::new(), oldest: ::std::time::Instant::now() });
+                        bucket.payloads.push(payload);
+                        if bucket.payloads.len() >= max_items.max(1) {
+                            let bucket = buckets.remove(&subject).expect("the full bucket exists");
+                            let _ = jobs.send(SendJob::Background { subject, payloads: bucket.payloads });
+                        }
+                        let _ = answer.send(Ok(()));
+                    }
+                    Some(BatchCommand::Send { subject, payloads, answer }) => {
+                        let _ = jobs.send(SendJob::Answered { batches: vec![(subject, payloads)], answer });
+                    }
+                    Some(BatchCommand::Flush { answer }) => {
+                        let _ = jobs.send(SendJob::Answered { batches: drain(&mut buckets), answer });
+                    }
+                    Some(BatchCommand::Close { answer }) => {
+                        let _ = jobs.send(SendJob::Answered { batches: drain(&mut buckets), answer });
+                        break;
+                    }
+                    #[cfg(test)]
+                    Some(BatchCommand::BucketCount { answer }) => {
+                        let _ = answer.send(buckets.len());
+                    }
+                }
+            }
+        });
+        Self {
+            template,
+            commands: ::std::sync::Mutex::new(Some(commands)),
+            worker: ::std::sync::Mutex::new(Some(worker)),
+            sender: ::std::sync::Mutex::new(Some(sender)),
+        }
+    }
+
+    fn commands(&self) -> Option<::std::sync::mpsc::Sender<BatchCommand>> {
+        self.commands.lock().unwrap_or_else(::std::sync::PoisonError::into_inner).as_ref().cloned()
+    }
+
+    fn request(&self, command: impl FnOnce(Answer) -> BatchCommand, items: usize) -> ::std::result::Result<(), PublishError> {
+        let (answer, result) = ::std::sync::mpsc::channel();
+        let Some(commands) = self.commands() else { return Err(PublishError::new(self.template, items, "the publisher is closed")); };
+        commands.send(command(answer)).map_err(|_| PublishError::new(self.template, items, "the publisher is closed"))?;
+        drop(commands);
+        result.recv().unwrap_or_else(|_| Err(PublishError::new(self.template, items, "the publisher is closed")))
+    }
+
+    fn enqueue(&self, subject: String, payload: Vec<u8>) -> ::std::result::Result<(), PublishError> {
+        self.request(|answer| BatchCommand::Enqueue { subject, payload, answer }, 1)
+    }
+
+    fn send(&self, subject: String, payloads: Vec<Vec<u8>>) -> ::std::result::Result<(), PublishError> {
+        if payloads.is_empty() { return Ok(()); }
+        let items = payloads.len();
+        self.request(|answer| BatchCommand::Send { subject, payloads, answer }, items)
+    }
+
+    /// Hands every bucket to the sender and waits until it, and everything handed over before it,
+    /// has been published.
+    fn flush(&self) -> ::std::result::Result<(), PublishError> {
+        self.request(|answer| BatchCommand::Flush { answer }, 0)
+    }
+
+    fn stop(&self) -> ::std::result::Result<(), PublishError> {
+        let commands = self.commands.lock().unwrap_or_else(::std::sync::PoisonError::into_inner).take();
+        let result = if let Some(commands) = commands {
+            let (answer, received) = ::std::sync::mpsc::channel();
+            commands.send(BatchCommand::Close { answer }).map_err(|_| PublishError::new(self.template, 0, "the publisher worker stopped")).and_then(|()| received.recv().unwrap_or_else(|_| Err(PublishError::new(self.template, 0, "the publisher worker stopped"))))
+        } else { Ok(()) };
+        if let Some(worker) = self.worker.lock().unwrap_or_else(::std::sync::PoisonError::into_inner).take() { let _ = worker.join(); }
+        if let Some(sender) = self.sender.lock().unwrap_or_else(::std::sync::PoisonError::into_inner).take() { let _ = sender.join(); }
+        result
+    }
+
+    #[cfg(test)]
+    fn bucket_count(&self) -> usize {
+        let (answer, result) = ::std::sync::mpsc::channel();
+        self.commands().expect("the test batcher is open").send(BatchCommand::BucketCount { answer }).expect("the test worker accepts inspection");
+        result.recv().expect("the test worker answers inspection")
+    }
+}
+
+fn send_batch(sink: &Sink, subject: String, payloads: Vec<Vec<u8>>) -> ::std::result::Result<(), PublishError> {
+    if payloads.is_empty() { return Ok(()); }
+    sink(&subject, &array(&payloads)).map_err(|message| PublishError::new(subject, payloads.len(), message))
+}
+
+/// Retires every bucket, in lexical subject order.
+fn drain(buckets: &mut ::std::collections::BTreeMap<String, Bucket>) -> Vec<(String, Vec<Vec<u8>>)> {
+    ::std::mem::take(buckets).into_iter().map(|(subject, bucket)| (subject, bucket.payloads)).collect()
+}
+
+impl Drop for Batcher {
+    fn drop(&mut self) { let _ = self.stop(); }
+}
+
+#[cfg(test)]
+mod parameterized_bucket_retirement_tests {
+    use super::*;
+
+    #[test]
+    fn every_drain_retires_bucket_and_deadline_state() {
+        let sink: Sink = ::std::sync::Arc::new(|_, _| Ok(()));
+        let batcher = Batcher::start("usage.{service}", 100, ::std::time::Duration::from_secs(60), sink, None);
+        for index in 0..1_000 {
+            batcher.enqueue(format!("usage.service-{index}"), b"{}".to_vec()).unwrap();
+            batcher.flush().unwrap();
+            assert_eq!(batcher.bucket_count(), 0);
+        }
+        batcher.stop().unwrap();
+
+        let sink: Sink = ::std::sync::Arc::new(|_, _| Ok(()));
+        let full = Batcher::start("usage.{service}", 1, ::std::time::Duration::from_secs(60), sink, None);
+        full.enqueue("usage.full".to_owned(), b"{}".to_vec()).unwrap();
+        assert_eq!(full.bucket_count(), 0);
+        full.stop().unwrap();
+
+        let sink: Sink = ::std::sync::Arc::new(|_, _| Ok(()));
+        let timed = Batcher::start("usage.{service}", 100, ::std::time::Duration::from_millis(1), sink, None);
+        timed.enqueue("usage.timed".to_owned(), b"{}".to_vec()).unwrap();
+        ::std::thread::sleep(::std::time::Duration::from_millis(20));
+        assert_eq!(timed.bucket_count(), 0);
+        timed.stop().unwrap();
+
+        let sink: Sink = ::std::sync::Arc::new(|_, _| Err("refused".to_owned()));
+        let failed = Batcher::start("usage.{service}", 1, ::std::time::Duration::from_secs(60), sink, None);
+        failed.enqueue("usage.failed".to_owned(), b"{}".to_vec()).unwrap();
+        assert_eq!(failed.bucket_count(), 0);
+        failed.stop().unwrap();
+
+        let release = ::std::sync::Arc::new(::std::sync::atomic::AtomicBool::new(false));
+        let held = release.clone();
+        let sink: Sink = ::std::sync::Arc::new(move |_, _| {
+            while !held.load(::std::sync::atomic::Ordering::SeqCst) { ::std::thread::sleep(::std::time::Duration::from_millis(1)); }
+            Ok(())
+        });
+        let in_flight = Batcher::start("usage.{service}", 1, ::std::time::Duration::from_secs(60), sink, None);
+        in_flight.enqueue("usage.same".to_owned(), b"{}".to_vec()).unwrap();
+        in_flight.enqueue("usage.same".to_owned(), b"{}".to_vec()).unwrap();
+        assert_eq!(in_flight.bucket_count(), 0);
+        release.store(true, ::std::sync::atomic::Ordering::SeqCst);
+        in_flight.stop().unwrap();
+    }
+}

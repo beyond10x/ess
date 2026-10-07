@@ -394,7 +394,7 @@ fn interpreted_absence_preserves_rows_and_differs_from_empty_and_ungranted_reque
         refused.error.unwrap().error.to_string(),
         "demo.notes.BodyMissing"
     );
-    assert!(refused.direct_events.is_empty());
+    assert_eq!(refused.direct_events.len(), 0);
     assert!(refused.response.is_none());
     assert!(refused.consistency.is_some());
     let undeclared = target
@@ -405,7 +405,7 @@ fn interpreted_absence_preserves_rows_and_differs_from_empty_and_ungranted_reque
         .unwrap();
     assert!(undeclared.outcome.is_none());
     assert!(undeclared.error.is_none());
-    assert!(undeclared.direct_events.is_empty());
+    assert_eq!(undeclared.direct_events.len(), 0);
     let ungranted = target.execute_command_without_input(AbsentInputRequest {
         actor: Some("demo.notes.Stranger".parse().unwrap()),
         ..absent

@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-03T19:36:00Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-312",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Pre-282 baseline f5857f857: six explicit conformance test targets exit101, 20 passed/18 failed; ten mutation failures reproduce report1 major guard, four Go parity tests stop at stale34-versus26 assertions before Go executes. Log SHA256 c68684261a16dd8dbf637af37aa2b4154d000359bfb126e118631c22122b8dce. No source changes and no baseline waiver. Publication-safe copy of the same observation; private original retained locally, not a new test run.",
+    "reference": "sha256:c68684261a16dd8dbf637af37aa2b4154d000359bfb126e118631c22122b8dce"
+  }
+}

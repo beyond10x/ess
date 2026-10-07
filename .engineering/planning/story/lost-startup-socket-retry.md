@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:lost-startup-socket-retry
 kind: story
-status: implemented
+status: active
 title: Retry a lost startup socket while the browser remains alive
 relations:
 - serves: vision:O2
@@ -12,11 +12,10 @@ scope:
   path: crates/edge/ess-cli/tests/browser_startup_slow_serve_boundary.rs
 - confidence: cited
   path: crates/edge/ess-cli/tests/support/browser.rs
-revision: 5
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T11:44:46Z", actor: "human:timo", revision: 3, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T11:44:46Z", actor: "human:timo", revision: 4, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
-- {from: "active", to: "implemented", at: "2026-10-02T13:29:06Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":2}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 ---
 ## Outcome
 

@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-04T03:49:21Z",
+  "actor": "human:timo",
+  "artifact": "task:retained-replay-fixture-consistency",
+  "kind": "task",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:retained-replay-fixture-consistency-20261004-r1",
+    "reference": "sha256:f902a296495fa71a67ddb6dad080168ade95468a406af9d3501b57ae34c76467",
+    "review": "review-result:retained-replay-fixture-consistency-20261004-r1",
+    "outcome": "no-op"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-03T21:13:31Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-312",
+  "kind": "story",
+  "revision": 13,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Repository task fmt-check with Rust1.98.1 at0e431c8e8: observed terminal exit0 after reviewed import correction; no source writes. Original failed log and invalid aa6d assertion remain preserved with corrective f3ae record.",
+    "reference": "local-evidence:bundle-compatibility/integrated-fmt-check-corrected.log"
+  }
+}

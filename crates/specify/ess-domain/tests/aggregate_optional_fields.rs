@@ -204,7 +204,11 @@ fn skip_absent_is_written_true_or_not_at_all() {
     let error = parse_error(&view(
         "    fields:\n      - {name: n, type: Optional<Integer>, aggregate: {sum: duration, skip_absent: true, skip_absent: true}}\n",
     ));
-    assert!(!error.is_empty());
+    assert_ne!(
+        error.len(),
+        0,
+        "the duplicate key is refused with a message"
+    );
 }
 
 #[test]

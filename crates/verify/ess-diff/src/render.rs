@@ -19,6 +19,7 @@
 use std::fmt::Write as _;
 
 use crate::change::SemanticRelation;
+use crate::compatibility::Compatibility;
 use crate::delta::EssDelta;
 use crate::impact::{ArtifactAnswer, ArtifactObligation, EssImpact, Invalidation};
 
@@ -52,6 +53,17 @@ pub fn text(delta: &EssDelta) -> String {
         delta.count(SemanticRelation::Narrowed),
         delta.count(SemanticRelation::Changed)
     );
+    // Only on a classified delta: the unclassified rendering keeps the lines it always had.
+    if let (Some(breaking), Some(unknown), Some(compatible)) = (
+        delta.count_verdict(Compatibility::Breaking),
+        delta.count_verdict(Compatibility::Unknown),
+        delta.count_verdict(Compatibility::Compatible),
+    ) {
+        let _ = writeln!(
+            out,
+            "compatibility: {breaking} breaking, {unknown} unknown, {compatible} compatible"
+        );
+    }
     out.push('\n');
 
     for change in delta.changes() {
@@ -64,6 +76,9 @@ pub fn text(delta: &EssDelta) -> String {
             change.describe()
         );
         let _ = writeln!(out, "           {}", change.id());
+        if let Some(compatibility) = delta.compatibility_of(&change.id()) {
+            let _ = writeln!(out, "           {}", compatibility.describe());
+        }
     }
 
     out

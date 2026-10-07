@@ -134,7 +134,7 @@ fn read_filter_hides_patched_rows_and_a_later_partial_patch_restores_them() {
     app.advance(Duration::from_secs(1));
     assert_eq!(app.rows("first").len(), 1);
     app.advance(Duration::from_secs(1));
-    assert!(app.rows("first").is_empty());
+    assert_eq!(app.rows("first").len(), 0);
     app.advance(Duration::from_secs(1));
     assert_eq!(
         app.rows("first")[0]["label"].as_str(),

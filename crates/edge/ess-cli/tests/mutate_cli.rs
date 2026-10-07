@@ -219,7 +219,7 @@ fn a_misspelled_class_is_a_usage_error() {
 }
 
 #[test]
-fn the_help_names_the_nine_classes_and_the_exit_statuses() {
+fn the_help_names_the_eleven_classes_and_the_exit_statuses() {
     let output = mutate(&["--help"]);
     let help = text(&output.stdout)
         .split_whitespace()
@@ -229,7 +229,8 @@ fn the_help_names_the_nine_classes_and_the_exit_statuses() {
     assert!(
         help.contains(
             "[possible values: from-drop, transition-to, guard-boundary, sets-retarget, \
-             guard-negate, guard-connective, error-swap, emit-drop, order-flip]"
+             guard-negate, guard-connective, error-swap, emit-drop, order-flip, sets-drop, \
+             precedence-swap]"
         ),
         "{help}"
     );

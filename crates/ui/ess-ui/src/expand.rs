@@ -13,10 +13,12 @@
 //! `shorthands.index` and instantiates it; the operators (`first_present`,
 //! `each_value_of_enum_type`, `remove_inherited`, `merge_under`) are interpreted here.
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde_yaml::{Mapping, Value};
 
+use crate::binding::{EnumLookup, ModelEnums};
 use crate::model::{Widget, COMPOSITE_KINDS};
 use crate::schema::{Schema, Shape};
 use crate::{LoadError, NodePath, FORMAT};
@@ -42,7 +44,11 @@ const OPAQUE: &[&str] = &[
     "variant_by",
 ];
 
-pub(crate) fn expand(raw: Value, schema: &Schema) -> Result<Value> {
+pub(crate) fn expand(
+    raw: Value,
+    schema: &Schema,
+    model: Option<&dyn ModelEnums>,
+) -> Result<(Value, BTreeMap<String, String>)> {
     let root = NodePath::root();
     let Value::Mapping(mut document) = raw else {
         return Err(LoadError::new(root, "a document is a map"));
@@ -101,10 +107,13 @@ pub(crate) fn expand(raw: Value, schema: &Schema) -> Result<Value> {
         .and_then(Value::as_mapping)
         .cloned()
         .unwrap_or_default();
+    let resolved = RefCell::new(BTreeMap::new());
     let composites = Local {
         schema,
         types: &types,
         scope: Scope::Composites,
+        model,
+        resolved: &resolved,
     };
     for key in ["shells", "pages", "widgets"] {
         if let Some(value) = document.get_mut(key) {
@@ -120,6 +129,8 @@ pub(crate) fn expand(raw: Value, schema: &Schema) -> Result<Value> {
         schema,
         types: &types,
         scope: Scope::All,
+        model,
+        resolved: &resolved,
     };
     for key in ["shells", "pages", "widgets"] {
         if let Some(value) = document.get_mut(key) {
@@ -139,7 +150,7 @@ pub(crate) fn expand(raw: Value, schema: &Schema) -> Result<Value> {
             }
         }
     }
-    Ok(Value::Mapping(document))
+    Ok((Value::Mapping(document), resolved.into_inner()))
 }
 
 /// `Composite.union.other_tag_values`: a `component` names a widget only when it names no member,
@@ -330,6 +341,10 @@ struct Local<'a> {
     schema: &'a Schema,
     types: &'a Mapping,
     scope: Scope,
+    /// The model a name the document does not declare is looked up in, when one is given.
+    model: Option<&'a dyn ModelEnums>,
+    /// Every `options` name the model resolved, to its qualified name.
+    resolved: &'a RefCell<BTreeMap<String, String>>,
 }
 
 /// The `UNMAPPED: <reason>` marker (`unmapped_marker.pattern`).
@@ -614,20 +629,17 @@ impl Local<'_> {
                     return Err(not_accepted(at, "choice options", accepted, short));
                 }
                 let type_name = key_text(short);
-                let values = self
-                    .types
-                    .get(type_name.as_str())
+                let declared = self.types.get(type_name.as_str());
+                if declared.is_none() {
+                    *short = self.model_options(&type_name, at)?;
+                    return Ok(());
+                }
+                let values = declared
                     .and_then(|ty| ty["enum"].as_sequence())
                     .ok_or_else(|| {
                         LoadError::new(
                             at.clone(),
                             format!("`{type_name}` is not an enum type of this document"),
-                        )
-                        .with_hint(
-                            "a renderer runs without the ESS model, so it cannot list a model \
-                             enum's variants; list them, or declare them under `types`, and \
-                             `ess ui check --model` holds a form field's options to its command \
-                             input's variants",
                         )
                     })?;
                 let shape = &self.schema.template("choice", "options")["as"];
@@ -648,6 +660,59 @@ impl Local<'_> {
             }
         }
         Ok(())
+    }
+
+    /// `choice` options naming an enum the document does not declare: one of the model the
+    /// document is loaded with, one option per variant in declaration order, sending its wire
+    /// spelling and showing its display name (beyond10x/ess#330). Every refusal starts with
+    /// `choice options: `, which `ess ui check` files under `options_enum`.
+    fn model_options(&self, name: &str, at: &NodePath) -> Result<Value> {
+        let refuse =
+            |message: String| LoadError::new(at.clone(), format!("choice options: {message}"));
+        let Some(model) = self.model else {
+            return Err(refuse(format!(
+                "`{name}` is not an enum type of this document, and no model was given to look \
+                 it up in; load the document with its model (`--model`), list the variants, or \
+                 declare them under `types`"
+            )));
+        };
+        let system = model.system();
+        match model.lookup_at(name, at) {
+            EnumLookup::Enum {
+                name: qualified,
+                variants,
+            } => {
+                self.resolved
+                    .borrow_mut()
+                    .insert(name.to_owned(), qualified);
+                Ok(Value::Sequence(
+                    variants
+                        .into_iter()
+                        .map(|variant| {
+                            let mut option = Mapping::new();
+                            option.insert(Value::from("value"), Value::from(variant.value));
+                            option.insert(Value::from("label"), Value::from(variant.label));
+                            Value::Mapping(option)
+                        })
+                        .collect(),
+                ))
+            }
+            EnumLookup::NotEnum { name: qualified } => Err(refuse(format!(
+                "`{name}` names `{qualified}` of model `{system}`, which is not an enum"
+            ))),
+            EnumLookup::Ambiguous(candidates) => Err(refuse(format!(
+                "`{name}` could name any of {} in model `{system}`; write the qualified name",
+                candidates
+                    .iter()
+                    .map(|candidate| format!("`{candidate}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ))),
+            EnumLookup::Unknown => Err(refuse(format!(
+                "`{name}` is not an enum type of this document and names no type of model \
+                 `{system}`"
+            ))),
+        }
     }
 
     /// `Action`: `sets` toggles, a `confirm` record, and an absent `name`.

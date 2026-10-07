@@ -2387,6 +2387,6 @@ fn authored_aggregate_presence_keeps_026_and_valid_scalar_reads_keep_the_predica
         );
     }
     let authored = authoring(&ir, &body("total.amount > 0"));
-    assert!(authored.refusals.is_empty());
+    assert_eq!(authored.refusals.len(), 0);
     assert_eq!(authored.scenarios.len(), 1);
 }

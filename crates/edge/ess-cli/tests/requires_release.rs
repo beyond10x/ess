@@ -168,7 +168,7 @@ fn a_newer_ess_warns_once_per_command_and_continues() {
             let err = stderr(&strict);
             assert_eq!(strict.status.code(), Some(1), "{position:?}: {err}");
             assert!(err.contains(&format!("requires ess {required}")), "{err}");
-            assert!(strict.stdout.is_empty());
+            assert_eq!(strict.stdout.len(), 0);
         }
     }
 }

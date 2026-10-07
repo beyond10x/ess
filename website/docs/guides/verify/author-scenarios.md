@@ -88,6 +88,31 @@ the subset still shows what was left out. Narrow it again with `--suite-input` i
 A subset passing is not the whole suite passing: only a nonempty, complete, all-pass selection
 qualifies as conformance ([Opt into declared coverage](runners.md#opt-into-declared-coverage)).
 
+## Expect the branch the input selects
+
+`validate` reads each act's literal input against the command's `when:` guards, in the order a
+conforming target answers them: input-guarded refusals first, the first declared of them; then
+accepting `when:` and external branches in declaration order; the default only where no `when:`
+holds. An act is refused with `ESS-AUTHOR-041` when that order decidedly does not take the branch
+it expects under `outcome:`. Where no `outcome:` is written, the check applies to the branches that
+report its `error:`, and the act is refused only when none of them is taken.
+
+```yaml
+# `id-required: ticket_id == ""` is an input-guarded refusal, so it answers before `closed`.
+timeline:
+  - at: 2026-01-05T09:00:00Z
+    command: demo.tickets.SetTicketOpen
+    input: {ticket_id: "", open: false}
+    outcome: closed
+```
+
+The refusal names the branch that answers first and its guard, or the expected branch's own guard
+that the input refutes. Only what the input decides is read. What a branch reads beyond the input
+(a held state, a stored or related row, an external answer, the target's clock) is not decided, and
+neither is a guard over a field sent as `{$instance: …}` or another reference. A guard over `now`
+is decided only where it reads the same at every run, such as a start already in the past when the
+operand was introduced. Where any of these leaves the answer open, the act is accepted.
+
 ## Expect an external branch in an authored scenario
 
 No input decides a branch declared `external:`, so an authored act that expects one names it under
@@ -149,10 +174,14 @@ A refused command takes no branch and publishes nothing, so `no_events:` is the 
 carry. It is checked against the target's whole event log: the log may hold no more of each listed event
 after the send than just before it, counting repeats, and a refusal that hands back events fails.
 So a target that runs the command and only then refuses it fails. The generated runners perform
-these observations through `ObserveEvents` / `observeEvents`; a custom runner must also collect
-the pre-send count before executing the command, then compare it with the post-refusal count.
-See [the target interface](./runners.md) for the event-log and unsupported-observation contract.
-No extra authored step is needed. The act is refused:
+these observations through `ObserveEvents` / `observeEvents`. A custom runner must do the same.
+On reaching the act's `execute_command`, it looks ahead to the `expect_not_granted` that follows.
+Before sending, it observes each `no_events:` event in the scenario's correlation and counts the
+occurrences. After the refusal, it observes each event again in the same correlation. The step
+fails if any count grew. A target that cannot observe its log leaves the scenario `unsupported`,
+never passed. The command's answer and view comparisons cannot replace these observations. See
+[the target interface](./runners.md#hold-your-own-implementation-to-the-suite) for the full
+contract. No extra authored step is needed. The act is refused:
 
 | When | Refusal |
 |---|---|

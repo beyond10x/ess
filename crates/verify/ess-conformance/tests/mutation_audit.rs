@@ -315,6 +315,8 @@ fn the_billing_audit_pins_every_mutant_and_kills_every_one_that_ran() {
             ("guard-connective", 0),
             ("guard-negate", 2),
             ("order-flip", 1),
+            ("precedence-swap", 0),
+            ("sets-drop", 0),
             ("sets-retarget", 0),
             ("transition-to", 3),
         ]),
@@ -333,7 +335,7 @@ fn the_billing_audit_pins_every_mutant_and_kills_every_one_that_ran() {
 /// The oracle fixture's survivors. None.
 const ORACLE_SURVIVORS: &[(&str, Why)] = &[];
 
-/// The oracle fixture's twenty-one mutants. `from-drop/…cancel/Held` is stillborn for the reason
+/// The oracle fixture's twenty-three mutants. `from-drop/…cancel/Held` is stillborn for the reason
 /// `ESS-ENTITY-011` gives: `cancel` is `Held`'s only way out, so dropping it strands the state.
 const ORACLE_VERDICTS: &[(&str, Verdict, &str)] = &[
     (
@@ -406,10 +408,22 @@ const ORACLE_VERDICTS: &[(&str, Verdict, &str)] = &[
         Verdict::Killed,
         "oracle.order.AmendOrder/outcome/rejected",
     ),
+    // `weight_grams >= -1` (beyond10x/ess#212): the mutant's own boundary witness, `-1`, is sent
+    // and required accepted, and the reference rejects it.
+    (
+        "guard-boundary/oracle.order.AmendOrder/amended/0-outward",
+        Verdict::Killed,
+        "oracle.order.AmendOrder/outcome/amended",
+    ),
     (
         "guard-boundary/oracle.order.PlaceOrder/accepted/0",
         Verdict::Killed,
         "oracle.order.PlaceOrder/outcome/rejected",
+    ),
+    (
+        "guard-boundary/oracle.order.PlaceOrder/accepted/0-outward",
+        Verdict::Killed,
+        "oracle.order.PlaceOrder/outcome/accepted",
     ),
     (
         "guard-negate/oracle.order.AmendOrder/amended",
@@ -455,10 +469,12 @@ fn the_oracle_audit_pins_every_mutant_and_kills_every_one_that_ran() {
             ("emit-drop", 6),
             ("error-swap", 5),
             ("from-drop", 2),
-            ("guard-boundary", 2),
+            ("guard-boundary", 4),
             ("guard-connective", 0),
             ("guard-negate", 2),
             ("order-flip", 0),
+            ("precedence-swap", 0),
+            ("sets-drop", 0),
             ("sets-retarget", 1),
             ("transition-to", 3),
         ]),
@@ -468,8 +484,8 @@ fn the_oracle_audit_pins_every_mutant_and_kills_every_one_that_ran() {
     pinned_verdicts(&report, ORACLE_VERDICTS);
     pinned_survivors(&report, ORACLE_SURVIVORS);
     assert_eq!(report.implementation, "oracle-reference");
-    assert_eq!(report.counts.mutants, 21);
-    assert_eq!(report.counts.killed, 11);
+    assert_eq!(report.counts.mutants, 23);
+    assert_eq!(report.counts.killed, 13);
     assert_eq!(report.counts.stillborn, 10);
 }
 
@@ -568,7 +584,7 @@ fn the_interpreted_target_matches_the_complete_billing_mutation_audit() {
     })
     .unwrap();
     let reference = mutate::audit(&files, &texts, MutantClass::ALL, Billing::new).unwrap();
-    assert!(report.baseline.not_scored.is_empty());
+    assert_eq!(report.baseline.not_scored.len(), 0);
     assert_eq!(report.baseline.scenarios, 32);
     assert_eq!(report.baseline, reference.baseline);
     assert_eq!(report.counts, reference.counts);
@@ -652,8 +668,9 @@ fn the_verdict_classification_reads_scenario_statuses() {
 
 // ---- P1-8: the closed class list -----------------------------------------------------------------
 
+/// Eleven since beyond10x/ess#212 added `sets-drop` and `precedence-swap`.
 #[test]
-fn the_classes_are_exactly_the_nine_altering_classes() {
+fn the_classes_are_exactly_the_eleven_altering_classes() {
     let names: Vec<&str> = MutantClass::ALL
         .iter()
         .map(|class| class.as_str())
@@ -670,6 +687,8 @@ fn the_classes_are_exactly_the_nine_altering_classes() {
             "error-swap",
             "emit-drop",
             "order-flip",
+            "sets-drop",
+            "precedence-swap",
         ]
     );
 }

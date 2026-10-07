@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-298
 kind: story
-status: implemented
+status: active
 title: A Boolean input is not treated as a closed domain
 tags:
 - feature-request
@@ -33,11 +33,10 @@ scope:
   path: docs/design/closed-enum-outcome-coverage.md
 - confidence: cited
   path: website/docs/guides/specify/fields-and-invariants.md
-revision: 22
+revision: 21
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T10:49:58Z", actor: "human:timo", revision: 13, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T10:49:58Z", actor: "human:timo", revision: 14, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
-- {from: "active", to: "implemented", at: "2026-10-02T13:29:03Z", actor: "human:timo", revision: 22, decided_on: {"recorded":{"test_result":1}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 ---
 ## Outcome
 

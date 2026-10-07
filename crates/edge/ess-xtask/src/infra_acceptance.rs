@@ -2589,7 +2589,7 @@ mod tests {
     fn a_secret_value_is_found_in_plain_and_base64_form_and_nowhere_else() {
         let needles = secret_needles("ess-acceptance-0123");
         assert_eq!(needles[1].1, "ZXNzLWFjY2VwdGFuY2UtMDEyMw==");
-        assert!(leaks(br#"{"token":"[redacted]"}"#, &needles).is_empty());
+        assert_eq!(leaks(br#"{"token":"[redacted]"}"#, &needles).len(), 0);
         assert_eq!(leaks(b"x ess-acceptance-0123 y", &needles), ["plain"]);
         assert_eq!(
             leaks(b"data: ZXNzLWFjY2VwdGFuY2UtMDEyMw==", &needles),

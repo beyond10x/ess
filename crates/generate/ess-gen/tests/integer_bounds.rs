@@ -156,6 +156,67 @@ fn a_validator_refuses_what_the_invariants_refuse() {
     );
 }
 
+const NEWTYPES: &str = "format: ess/20
+system: demo
+version: v1
+domain: demo.metering
+types:
+  - name: demo.metering.ItemVersion
+    kind: newtype
+    of: Integer
+    invariants:
+      - value == 2
+  - name: demo.metering.Count
+    kind: newtype
+    of: Integer
+    invariants:
+      - value >= 0
+      - value < 1000
+  - name: demo.metering.Code
+    kind: newtype
+    of: String
+    invariants:
+      - value != 'x'
+  - name: demo.metering.Item
+    kind: struct
+    fields:
+      - {name: version, type: demo.metering.ItemVersion}
+      - {name: count, type: demo.metering.Count}
+      - {name: code, type: demo.metering.Code}
+";
+
+#[test]
+fn a_newtype_of_integer_carries_its_own_bounds() {
+    let artifacts = run(&JsonSchema, &compiled(NEWTYPES)).expect("generates");
+    let schema: Value =
+        serde_json::from_str(&artifacts["schema/types/demo.metering.Item.schema.json"].contents)
+            .expect("JSON");
+    let defs = &schema["$defs"];
+    assert_eq!(
+        defs["demo.metering.ItemVersion"]["const"],
+        json!(2),
+        "{schema:#}"
+    );
+    assert_eq!(
+        defs["demo.metering.Count"]["minimum"],
+        json!(0),
+        "{schema:#}"
+    );
+    assert_eq!(
+        defs["demo.metering.Count"]["maximum"],
+        json!(999),
+        "{schema:#}"
+    );
+    assert!(
+        defs["demo.metering.Code"].get("const").is_none(),
+        "{schema:#}"
+    );
+    let validator = jsonschema::validator_for(&schema).expect("a valid schema");
+    assert!(validator.is_valid(&json!({"version": 2, "count": 3, "code": "a"})));
+    assert!(!validator.is_valid(&json!({"version": 3, "count": 3, "code": "a"})));
+    assert!(!validator.is_valid(&json!({"version": 2, "count": 1000, "code": "a"})));
+}
+
 fn constrained_version(invariants: &[&str]) -> Value {
     let source = MODEL.replace("version == 2", &invariants.join("\n      - "));
     let artifacts = run(&JsonSchema, &compiled(&source)).expect("generates");
@@ -167,12 +228,16 @@ fn constrained_version(invariants: &[&str]) -> Value {
 fn contradictory_equalities_preserve_every_constraint_in_either_order() {
     let mut accepted = Vec::new();
     for invariants in [
-        ["version == 1", "version == 2"],
-        ["version == 2", "version == 1"],
+        &["version == 1", "version == 2"][..],
+        &["version == 2", "version == 1"][..],
+        &["version == 1", "version == 2", "version == 1"][..],
+        &["version == 2", "version == 1", "version == 2"][..],
+        &["version == 1", "version == 2", "version == 3"][..],
+        &["version == 3", "version == 2", "version == 1"][..],
     ] {
-        let schema = constrained_version(&invariants);
+        let schema = constrained_version(invariants);
         let validator = jsonschema::validator_for(&schema).expect("valid schema");
-        for version in [1, 2] {
+        for version in [0, 1, 2, 3, 4] {
             let instance = json!({"version": version, "amount": 30, "level": null,
                 "weight": "1.5", "offset": 4});
             if validator.is_valid(&instance) {
@@ -234,5 +299,124 @@ fn contradictory_optional_equalities_keep_null_and_absence() {
         let validator = jsonschema::validator_for(&schema).expect("valid schema");
         assert!(validator.is_valid(&json!({"version": 2, "amount": 30,
             "weight": "1.5", "offset": 4})));
+    }
+}
+
+#[test]
+fn contradictory_newtype_equalities_reject_both_values_in_either_order() {
+    let mut accepted = Vec::new();
+    for invariants in [
+        &["value == 1", "value == 2"][..],
+        &["value == 2", "value == 1"][..],
+        &["value == 1", "value == 2", "value == 1"][..],
+        &["value == 2", "value == 1", "value == 2"][..],
+        &["value == 1", "value == 2", "value == 3"][..],
+        &["value == 3", "value == 2", "value == 1"][..],
+    ] {
+        let source = NEWTYPES.replace("value == 2", &invariants.join("\n      - "));
+        let artifacts = run(&JsonSchema, &compiled(&source)).expect("generates");
+        let schema: Value = serde_json::from_str(
+            &artifacts["schema/types/demo.metering.Item.schema.json"].contents,
+        )
+        .expect("JSON");
+        let validator = jsonschema::validator_for(&schema).expect("valid schema");
+        for version in [0, 1, 2, 3, 4] {
+            let instance = json!({"version": version, "count": 3, "code": "a"});
+            if validator.is_valid(&instance) {
+                accepted.push(format!("{invariants:?} accepted {instance}"));
+            }
+        }
+    }
+    assert!(accepted.is_empty(), "{}", accepted.join("\n"));
+}
+
+#[test]
+fn adversary_three_equalities_match_conjunction_at_integer_boundaries() {
+    let permutations = [
+        [0, 1, 2],
+        [0, 2, 1],
+        [1, 0, 2],
+        [1, 2, 0],
+        [2, 0, 1],
+        [2, 1, 0],
+    ];
+    for values in [
+        [i64::MIN, i64::MAX, i64::MIN],
+        [-1, 0, 1],
+        [i64::MIN, i64::MIN, i64::MIN],
+        [i64::MAX, i64::MAX, i64::MAX],
+        [2, 2, 2],
+    ] {
+        for order in permutations {
+            for newtype in [false, true] {
+                let field = if newtype { "value" } else { "version" };
+                let invariants = order.map(|index| format!("{field} == {}", values[index]));
+                let (source, path) = if newtype {
+                    (
+                        NEWTYPES.replace("value == 2", &invariants.join("\n      - ")),
+                        "schema/types/demo.metering.Item.schema.json",
+                    )
+                } else {
+                    (
+                        MODEL.replace("version == 2", &invariants.join("\n      - ")),
+                        "schema/types/demo.metering.Reading.schema.json",
+                    )
+                };
+                let artifacts = run(&JsonSchema, &compiled(&source)).expect("generates");
+                let schema: Value = serde_json::from_str(&artifacts[path].contents).expect("JSON");
+                let validator = jsonschema::validator_for(&schema).expect("valid schema");
+                for candidate in [i64::MIN, -1, 0, 1, 2, i64::MAX] {
+                    let instance = if newtype {
+                        json!({"version": candidate, "count": 3, "code": "a"})
+                    } else {
+                        json!({"version": candidate, "amount": 30, "level": null,
+                            "weight": "1.5", "offset": 4})
+                    };
+                    let expected = values.iter().all(|value| candidate == *value);
+                    assert_eq!(
+                        validator.is_valid(&instance),
+                        expected,
+                        "newtype={newtype}, invariants={invariants:?}, instance={instance}, schema={schema}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn adversary_optional_three_equalities_preserve_presence_in_every_order() {
+    for order in [
+        [0, 1, 2],
+        [0, 2, 1],
+        [1, 0, 2],
+        [1, 2, 0],
+        [2, 0, 1],
+        [2, 1, 0],
+    ] {
+        let values = [i64::MIN, 0, i64::MAX];
+        let invariants = order.map(|index| format!("level == {}", values[index]));
+        for null_when_absent in [false, true] {
+            let mut source = MODEL.replace("level == 3", &invariants.join("\n      - "));
+            if !null_when_absent {
+                source = source.replace("        presence: null_when_absent\n", "");
+            }
+            let artifacts = run(&JsonSchema, &compiled(&source)).expect("generates");
+            let schema: Value = serde_json::from_str(
+                &artifacts["schema/types/demo.metering.Reading.schema.json"].contents,
+            )
+            .expect("JSON");
+            let validator = jsonschema::validator_for(&schema).expect("valid schema");
+            let mut instance = json!({"version": 2, "amount": 30, "level": null,
+                "weight": "1.5", "offset": 4});
+            if !null_when_absent {
+                instance.as_object_mut().expect("object").remove("level");
+            }
+            assert!(validator.is_valid(&instance), "{invariants:?}: {instance}");
+            for value in values {
+                instance["level"] = json!(value);
+                assert!(!validator.is_valid(&instance), "{invariants:?}: {instance}");
+            }
+        }
     }
 }

@@ -84,7 +84,7 @@ fn native_target_executes_legacy_union_response_suites() {
             &admitted,
             &ess_conformance::interpret::Interpreted::for_model(model),
         );
-        assert!(!run.scenarios.is_empty());
+        assert_ne!(run.scenarios.len(), 0);
         assert!(
             run.scenarios
                 .iter()

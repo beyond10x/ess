@@ -432,7 +432,7 @@ fn review_legacy_slice_stamps_are_owed_even_when_raw_hashes_match() {
         })
         .map(|(path, _)| path.clone())
         .collect();
-    assert!(!slice_paths.is_empty());
+    assert_ne!(slice_paths.len(), 0);
     let current = GeneratedTree {
         files: artifacts
             .iter()

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-365
 kind: story
-status: implemented
+status: active
 title: UI bounded reads support checked row filters in both renderers
 refs:
 - provider: github
@@ -31,11 +31,10 @@ scope:
   path: schemas/ui/ess-ui.schema.yaml
 - confidence: cited
   path: website/docs/reference/ess-ui.md
-revision: 16
+revision: 15
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T10:09:54Z", actor: "human:timo", revision: 10, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T10:09:54Z", actor: "human:timo", revision: 11, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
-- {from: "active", to: "implemented", at: "2026-10-02T13:29:04Z", actor: "human:timo", revision: 16, decided_on: {"recorded":{"test_result":1,"review_outcome":3}}, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 ---
 ## Outcome
 

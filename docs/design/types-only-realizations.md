@@ -44,12 +44,16 @@ Publish the checked schema selection alongside the library and report. Neither t
 selection nor its output changes the model language or yet binds an ESS field to an
 imported schema root; that connection requires its own checked identity contract.
 
-## Shared Structural Plan
+A root may also name an event (beyond10x/ess#393). The event's payload is selected as
+a struct of its fields under the event's own qualified name, display name and wire
+names, annotated `x-ess-kind: event-payload`, with the closure of the types its fields
+reach. Its `type`, `properties`, `required` and `additionalProperties` are the ones the
+event's JSON Schema projection publishes, so a producer library holds exactly the
+object the event carries and the model declares those fields once. `--all-events`
+selects every event payload and may be combined with `--all-types`; `--root` beside
+either `--all-*` selector is refused.
 
-Existing event payloads can also be selected with `generate types --event`, alone or beside
-explicit type roots. This uses the same sealed selection and structural plan, with typed event
-root provenance in `ess-types-report/4`; type-only and bundle outputs retain `/3`.
-See [Event payload roots](event-payload-type-roots.md) for the selector and compatibility contract.
+## Shared Structural Plan
 
 A language-neutral, in-memory plan owns selected roots, component identities,
 declaration names and concrete structural nodes. Nodes distinguish unrestricted JSON,
@@ -97,6 +101,13 @@ field with an integer literal on its right (`>=`, `>`, `<=`, `<`, `==`) publishe
 instead of `const`. `x-ess-invariants` is still published verbatim; every other
 invariant shape stays an annotation only.
 
+A newtype of `Integer` gets the same keywords on its own definition from invariants
+over its wrapped value, `value` (`ess_domain::types` `VALUE`): `value == 2` publishes
+`const: 2`, `value >= 0` and `value < 1000` publish `minimum: 0` and `maximum: 999`.
+The realizer then wraps the native width: Rust `pub struct X(pub i32);`, Go
+`type X struct { Value int32 }`. An event field typed with such a newtype carries the
+constant even though an event declares no invariants of its own.
+
 ## Target Accounting
 
 The output report `ess-types-report/3` names the source and typed input identity,
@@ -115,6 +126,41 @@ Patterns, numerical bounds, integer checks, array cardinality and uniqueness,
 exact object closure and exclusive unions are still checked by JSON Schema.
 Runtime aliases, flattening, coercion and external dispatch absent from the source
 remain unimplemented rather than guessed. No implicit root discriminator is added.
+
+### Producer-facing model libraries (beyond10x/ess#406–#409)
+
+Four rules apply to **model input only**; bundle input keeps its output byte for byte, so no
+existing bundle adopter's API moves.
+
+- **Timestamps are native.** A `string` with `format: date-time` from a model `Timestamp` is
+  realized as Go `time.Time` and Rust `EssTimestamp(pub time::OffsetDateTime)`, both RFC 3339 on
+  the wire. Native serialization preserves the timestamp value and numeric offset, while it may
+  normalize the spelling (for example, fractional seconds `.500` become `.5`). It does not
+  preserve the original JSON string byte for byte. A string that is not RFC 3339 is refused at
+  decode. The Rust library then depends on
+  `time` (`=0.3.45`, features `formatting` and `parsing`), matching the generated server's
+  Rust 1.85-compatible dependency. This lets model and server crates resolve together and
+  keeps the offline dependency closure in the workspace lockfile. The former `=0.3.55`
+  model pin conflicts with that server pin and requires Rust 1.88.
+- **Anonymous shapes are named by position.** The name is the owning declaration followed by each
+  pointer step (`properties/<field>` → the field in UpperCamelCase, `items` → `Item`,
+  `additionalProperties` → `Value`, `prefixItems/N` → `PositionN`, `anyOf|oneOf|allOf/N` →
+  `VariantN`): Go `UsageRecordedUsage` for a `List<Measurement>` field. A positional name that is
+  already allocated falls back to the hash-derived `EssShape<hex>`, so a collision never refuses.
+- **A newtype fixed to one integer carries it.** Where a newtype's `const` is an integer (from
+  `value == N`), Rust emits `pub const VALUE` and `Default`, Go emits `const <Name>Value` and
+  `New<Name>()`. The constant is still a runtime obligation in the report.
+- **Short names are opt-in.** `--names short` on `ess generate types` and `ess generate client`
+  declares each component under the last segment of its qualified name and refuses
+  (`short_name_collision`) when two selected components share one. Bundle input refuses the flag.
+
+The `time` 0.3.45 dependency is affected by
+[RUSTSEC-2026-0009](https://rustsec.org/advisories/RUSTSEC-2026-0009.html) in its RFC 2822
+parser. ESS's generated timestamp decoder selects `Rfc3339` directly and exposes no format
+selection input; server clock generation only formats RFC 3339. The affected parser is therefore
+not reached through these ESS operations. The native model round-trip test also rejects an
+RFC 2822 date with nested comments. This disposition covers those operations only, not downstream
+code that calls other `time` APIs. No security-check allowlist or policy exception is introduced.
 
 ## Language Mappings
 

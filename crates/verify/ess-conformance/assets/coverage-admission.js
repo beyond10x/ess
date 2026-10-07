@@ -495,7 +495,7 @@ function inventory(suite) {
       require(number !== undefined && r.subject !== null && r.source === null, 'invalid generated refusal')
       require(r.effect === ([5, 11, 12, 14].includes(number) ? 'check_not_emitted' : 'candidate_not_emitted'), 'refusal effect differs from code')
     } else {
-      require(Array.from({ length: 40 }, (_, i) => `ESS-AUTHOR-${String(i + 1).padStart(3, '0')}`).filter(c => c !== 'ESS-AUTHOR-036').includes(r.code) && r.effect === 'candidate_not_emitted', 'invalid authored refusal')
+      require(Array.from({ length: 41 }, (_, i) => `ESS-AUTHOR-${String(i + 1).padStart(3, '0')}`).filter(c => c !== 'ESS-AUTHOR-036').includes(r.code) && r.effect === 'candidate_not_emitted', 'invalid authored refusal')
       const source = c.authored_sources[r.source]
       require(r.source !== null && source !== undefined && source.disposition === 'refused' && source.scenario === r.scenario, 'refusal source disagrees')
       refusedSources.add(r.source)

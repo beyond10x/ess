@@ -323,6 +323,12 @@ refuses:
 
 A path that names no node is not a refusal: it fails in both renderers.
 
+A choice whose `options` name an enum of the ESS model, rather than one the document declares
+under `types`, lists that enum's variants when the run is given the model:
+`ess ui test --model <specification>`. Reads still come from the fixtures. Without `--model` the
+run starts, and a test fails at the step that leaves a page showing such a choice on screen,
+naming where its `options` are written.
+
 ## In the browser
 
 `--playwright <out>` writes the same tests as a Playwright spec for the project

@@ -1861,7 +1861,7 @@
             },
             "weight_grams": {
               "kind": "literal",
-              "value": 1.0
+              "value": 2.0
             }
           }
         },

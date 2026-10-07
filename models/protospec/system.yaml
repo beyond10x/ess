@@ -1,0 +1,4 @@
+format: ess/1
+system: protospec
+version: v1
+domains: [protospec.contract]

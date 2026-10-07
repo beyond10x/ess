@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-03T21:09:17Z",
+  "actor": "human:timo",
+  "artifact": "component-design:conditional-aggregate-measures-source22",
+  "kind": "component-design",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:conditional-aggregate-measures-363-20261003-r1",
+    "reference": "finding-5-six-function-execution",
+    "review": "review-result:conditional-aggregate-measures-363-20261003-r1",
+    "outcome": "fixed"
+  }
+}

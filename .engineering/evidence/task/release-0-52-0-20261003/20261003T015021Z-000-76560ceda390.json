@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-03T01:50:21Z",
+  "actor": "human:timo",
+  "artifact": "task:release-0-52-0-20261003",
+  "kind": "task",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:release-equality-adversary-20261003",
+    "reference": "b4b74139b1f71212677a280dddfa525ad32c6eb6",
+    "review": "review-result:release-equality-adversary-20261003",
+    "outcome": "no-op"
+  }
+}

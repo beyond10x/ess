@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-03T21:32:43Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-312",
+  "kind": "story",
+  "revision": 16,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Common Gates at86945c94e82f355a6f7851c78c71d18fb720de70 passed259commits; signed receipt verification exit0, scanner_invocations0. This is security/privacy evidence, not replacement for repository acceptance.",
+    "reference": "local-evidence:bundle-compatibility/gates-86945c94e.json"
+  }
+}

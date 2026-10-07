@@ -138,7 +138,7 @@ commands:
 fn adversary_139_the_declared_spelling_passes_the_synthesized_suite() {
     let suite = suite(PRESENCE);
     let statuses = statuses(&suite, &Orders(Spelling::Declared));
-    assert!(!statuses.is_empty());
+    assert_ne!(statuses.len(), 0);
     assert!(
         statuses.iter().all(|status| *status == Status::Passed),
         "{statuses:?}"
@@ -210,7 +210,7 @@ fn adversary_139_some_invocation_leaves_each_policy_field_absent() {
                 _ => None,
             })
             .collect();
-        assert!(!invocations.is_empty());
+        assert_ne!(invocations.len(), 0);
         assert!(
             invocations.iter().any(|input| !input.contains_key(field)),
             "every one of {} invocations sends `{field}`, so no scenario observes how its absence \
@@ -478,7 +478,7 @@ fn adversary_146_the_issue_repro_passes_against_an_implementation_enforcing_its_
         map: channel_grammar,
     };
     let statuses = statuses(&suite, &target);
-    assert!(!statuses.is_empty());
+    assert_ne!(statuses.len(), 0);
     assert!(
         statuses.iter().all(|s| *s == Status::Passed),
         "{statuses:?}"

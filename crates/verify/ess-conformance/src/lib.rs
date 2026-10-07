@@ -180,6 +180,7 @@ pub mod ts;
 mod typed_fields;
 pub mod view_paging;
 pub mod web;
+pub mod web_execution;
 pub mod web_replay;
 pub mod witness;
 mod witness_memo;
@@ -213,3 +214,6 @@ pub use target::{
     SemanticCommandResult, SemanticViewRequest, SemanticViewResult, TargetError, ViewRow,
 };
 pub use witness::WitnessGap;
+
+/// Bounded protocol execution and trace conformance.
+pub mod protocol;

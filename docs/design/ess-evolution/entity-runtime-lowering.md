@@ -564,6 +564,12 @@ validation error and weaken or rewrite the definition around it.
 
 ## Finite source forms refused by this target
 
+This table is the set the first projector refused. The complete current set — every
+`LoweringCode`, every refused construct and what lowering it would need — is generated from
+`ess_entity_runtime::subset` into `website/docs/reference/entity-runtime-lowering.md`, and
+`crates/generate/ess-entity-runtime/tests/lowerable_subset.rs` holds that page to the code
+(beyond10x/ess#231).
+
 | Code | Exact source form | Current limiting target type |
 | --- | --- | --- |
 | `StatelessCommandUnsupported` | accepted command with no subject-bearing outcome, for example `billing.email.SendEmail` | ER `decide` acts on one `EntityInstance`; there is no stateless definition/decision type |

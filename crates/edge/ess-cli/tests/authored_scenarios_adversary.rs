@@ -22,6 +22,7 @@ impl Fixture {
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
+        fs::create_dir_all(path.parent().expect("fixture parent")).unwrap();
         fs::create_dir(&path).unwrap();
         Self(path)
     }
@@ -83,8 +84,10 @@ fn command(operation: Operation, flat: bool, format: &str) -> Command {
         Operation::Go => command.args(["synthesize", "--target", "go"]),
         Operation::Author => command.arg("author"),
         Operation::Web => command.arg("web"),
-        Operation::Billing => command.args(["run", "--target", "billing"]),
-        Operation::Oracle => command.args(["run", "--target", "oracle-fixture"]),
+        Operation::Billing => command.args(["run", "--target", "billing", "--report-format", "2"]),
+        Operation::Oracle => {
+            command.args(["run", "--target", "oracle-fixture", "--report-format", "2"])
+        }
     };
     command
         .arg("--path")
@@ -332,7 +335,7 @@ fn committed_suite_bypasses_poisoned_scenarios_and_missing_model_for_both_runner
                 } else {
                     "oracle-fixture"
                 })
-                .args(["--format", "json", "--path"])
+                .args(["--report-format", "2", "--format", "json", "--path"])
                 .arg(fixture.0.join("missing-model"))
                 .arg("--suite")
                 .arg(&suite)

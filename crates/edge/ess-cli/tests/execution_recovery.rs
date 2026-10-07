@@ -492,7 +492,7 @@ fn the_observed_union_covers_both_inventories_and_each_side_knows_its_own_only_a
         vec![address(ObjectKind::Deployment, "legacy")],
         "a baseline-only retirement's whole inventory is baseline-only"
     );
-    assert!(retirement.desired_only().is_empty());
+    assert_eq!(retirement.desired_only().len(), 0);
 }
 
 /// A snapshot proves nothing about an address it did not read.
@@ -1000,7 +1000,7 @@ fn the_journal_grammar_classifies_every_named_prefix() {
         .expect("Observed publishes");
     let no_prepared = read_history(&host, &store, &reserved.id().nonce).expect("reads");
     assert_eq!(no_prepared.state, JournalState::Incomplete);
-    assert!(no_prepared.unresolved_preparations().is_empty());
+    assert_eq!(no_prepared.unresolved_preparations().len(), 0);
 
     journal
         .append(
@@ -1029,7 +1029,7 @@ fn the_journal_grammar_classifies_every_named_prefix() {
         )
         .expect("the disposition publishes");
     let acknowledged = read_history(&host, &store, &reserved.id().nonce).expect("reads");
-    assert!(acknowledged.unresolved_preparations().is_empty());
+    assert_eq!(acknowledged.unresolved_preparations().len(), 0);
     assert_eq!(
         acknowledged.acknowledged_without_after(),
         vec![Index::new(0).unwrap()],
@@ -1046,7 +1046,7 @@ fn the_journal_grammar_classifies_every_named_prefix() {
         )
         .expect("the After observation publishes");
     let after = read_history(&host, &store, &reserved.id().nonce).expect("reads");
-    assert!(after.acknowledged_without_after().is_empty());
+    assert_eq!(after.acknowledged_without_after().len(), 0);
     assert_eq!(
         after.state,
         JournalState::Incomplete,
@@ -4471,7 +4471,7 @@ fn r04_an_unavailable_observation_is_never_read_as_an_empty_target() {
         report.refusal.as_ref().map(|refusal| refusal.code),
         Some(RefusalCode::ObservationUnavailable)
     );
-    assert!(again.calls().is_empty());
+    assert_eq!(again.calls().len(), 0);
     for service in SERVICES.iter().chain(RETIREMENTS) {
         assert!(scenario.cluster.has_release("app", service));
     }
@@ -4691,7 +4691,7 @@ fn r19_an_observation_past_the_monotonic_budget_refuses_at_the_launch_check() {
         .entries
         .iter()
         .any(|entry| matches!(entry.fact, JournalFact::Prepared(_))));
-    assert!(dispositions(&history).is_empty());
+    assert_eq!(dispositions(&history).len(), 0);
 }
 
 /// Secret containment: no credential reaches any byte this run produces, at any depth.
@@ -5420,7 +5420,7 @@ fn r18_every_named_valid_incomplete_prefix_classifies_on_its_own() {
     // 3. `Observed` without `Prepared`: nothing was decided, so nothing is indeterminate.
     let observed = build(Upto::Observed);
     let history = read_history(&host, &store, &observed.id().nonce).expect("reads");
-    assert!(history.unresolved_preparations().is_empty());
+    assert_eq!(history.unresolved_preparations().len(), 0);
 
     // 4. `Prepared` without a disposition: indeterminate, and not reconstructible as a non-launch.
     let prepared = build(Upto::Prepared);
@@ -5439,8 +5439,8 @@ fn r18_every_named_valid_incomplete_prefix_classifies_on_its_own() {
     let after = build(Upto::After);
     let history = read_history(&host, &store, &after.id().nonce).expect("reads");
     assert_eq!(history.state, JournalState::Incomplete);
-    assert!(history.unresolved_preparations().is_empty());
-    assert!(history.acknowledged_without_after().is_empty());
+    assert_eq!(history.unresolved_preparations().len(), 0);
+    assert_eq!(history.acknowledged_without_after().len(), 0);
 
     // 7 and 8. The two closed shapes.
     for (upto, terminal) in [(Upto::Stopped, "Stopped"), (Upto::Completed, "Completed")] {

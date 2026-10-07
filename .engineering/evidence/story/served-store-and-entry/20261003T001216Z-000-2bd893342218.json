@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-03T00:12:16Z",
+  "actor": "human:timo",
+  "artifact": "story:served-store-and-entry",
+  "kind": "story",
+  "revision": 21,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "cargo test -p ess-synth --locked --offline --no-fail-fast: 408 passed, 0 failed, 1 existing ignored; acceptance 34 passed; strict Clippy and fmt exit 0",
+    "reference": "99ad5fc34"
+  }
+}

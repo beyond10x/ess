@@ -12,9 +12,10 @@
 //! which struct a dotted fact names.
 
 use ess_compiler::ir::{
-    EssIr, ResolvedBody, ResolvedCommand, ResolvedCondition, ResolvedEffect, ResolvedEntity,
-    ResolvedField, ResolvedInstance, ResolvedOutcome, ResolvedPayloadField, ResolvedPayloadValue,
-    ResolvedSubject, ResolvedTypeRef,
+    EntityHandle, EssIr, ResolvedBody, ResolvedCommand, ResolvedCondition, ResolvedEffect,
+    ResolvedEntity, ResolvedField, ResolvedInstance, ResolvedOutcome, ResolvedPayloadField,
+    ResolvedPayloadValue, ResolvedRelatedTest, ResolvedRelatedVia, ResolvedSubject,
+    ResolvedTypeRef,
 };
 use ess_domain::types::Primitive;
 use ess_primitives::facts::{FactPath, FactValue};
@@ -117,6 +118,7 @@ pub(crate) fn command(ir: &EssIr, command: &ResolvedCommand) -> Result<(), Strin
         }
     }
     existence_identity(command)?;
+    related_composition(ir, command)?;
     for outcome in &command.outcomes {
         self::outcome(ir, command, outcome, guarded, selection)
             .map_err(|construct| format!("{construct}, in `{}`", outcome.name))?;
@@ -145,7 +147,21 @@ fn outcome(
     }
     let selection_entity = selection.map(|subject| ir.entity(&subject.entity));
     match &outcome.condition {
-        ResolvedCondition::Related { .. } => return Err("`when_related:`".to_owned()),
+        ResolvedCondition::Related {
+            entity,
+            test,
+            input,
+            ..
+        } => {
+            // The predicate reads the related row as a `when_subject` predicate reads the
+            // addressed one: its stored fields and `state`, the input under `input.`, the caller.
+            if let ResolvedRelatedTest::Holds { predicate } = test {
+                supported(ir, &Env::Subject(command, ir.entity(entity)), predicate)?;
+            }
+            if let Some(input) = input {
+                supported(ir, &Env::Input(command), input)?;
+            }
+        }
         ResolvedCondition::InputAbsent => return Err("`input_absent:`".to_owned()),
         ResolvedCondition::When { predicate }
         | ResolvedCondition::ExternalWhen { predicate, .. } => {
@@ -275,20 +291,12 @@ fn outcome(
     }
     let held = !matches!(subject.effect, ResolvedEffect::Creates);
     for set in &outcome.sets {
-        let target = entity
+        entity
             .fields
             .iter()
             .find(|field| field.name == set.target)
             .ok_or_else(|| format!("a `sets:` of `{}`, not a field of the entity", set.target))?;
         value(ir, command, set, held.then_some(entity), true)?;
-        if matches!(set.value, ResolvedPayloadValue::Increment { .. })
-            && !integer(ir, &target.type_ref)
-        {
-            return Err(format!(
-                "`{{increment:}}` of `{}`, which is not an `Integer`",
-                set.target
-            ));
-        }
     }
     payloads(ir, command, outcome, held.then_some(entity))
 }
@@ -356,6 +364,12 @@ fn value(
             }
             by.parse::<i64>()
                 .map_err(|_| format!("`{{increment: {by}}}`, which is not a whole number"))?;
+            if !integer(ir, target) {
+                return Err(format!(
+                    "`{{increment:}}` of `{}`, which is not an `Integer`",
+                    field.target
+                ));
+            }
         }
         ResolvedPayloadValue::InputOrGenerated {
             type_ref,
@@ -1036,6 +1050,114 @@ fn existence_identity(command: &ResolvedCommand) -> Result<(), String> {
                 );
             }
             read = Some(field);
+        }
+    }
+    Ok(())
+}
+
+// ---- a related row (`when_related:`, ess/18, ess/22; beyond10x/ess#319) -------------------------
+
+/// The one related row a command reads: where its identity is named and whose row it is. The
+/// compiler admits one per command (`ess_domain::command::related_guard`), so the first branch
+/// naming it names it for all.
+pub(crate) fn related(command: &ResolvedCommand) -> Option<(&ResolvedRelatedVia, &EntityHandle)> {
+    command
+        .outcomes
+        .iter()
+        .find_map(|outcome| match &outcome.condition {
+            ResolvedCondition::Related { via, entity, .. } => Some((via, entity)),
+            _ => None,
+        })
+}
+
+/// The command's `exists: false` branch, which answers a missing related row.
+pub(crate) fn related_absent(command: &ResolvedCommand) -> Option<&ResolvedOutcome> {
+    command.outcomes.iter().find(|outcome| {
+        matches!(
+            outcome.condition,
+            ResolvedCondition::Related {
+                test: ResolvedRelatedTest::Absent,
+                ..
+            }
+        )
+    })
+}
+
+/// A present-related predicate refusal: a `when_related:` predicate branch carrying an error.
+pub(crate) fn is_present_related_refusal(outcome: &ResolvedOutcome) -> bool {
+    outcome.error.is_some()
+        && matches!(
+            outcome.condition,
+            ResolvedCondition::Related {
+                test: ResolvedRelatedTest::Holds { .. },
+                ..
+            }
+        )
+}
+
+/// Whether the present-related predicate refusals answer before every accepting branch, once the
+/// addressed row's existence and held state have answered, as the interpreter orders them: for
+/// every stored reference, and from ess/22 beside a `wrong_state:` branch (beyond10x/ess#282,
+/// #304).
+pub(crate) fn orders_present_related_refusal(ir: &EssIr, command: &ResolvedCommand) -> bool {
+    let stored = matches!(
+        related(command),
+        Some((ResolvedRelatedVia::Subject { .. }, _))
+    );
+    stored
+        || (ir.format().major() >= ess_domain::system::FormatVersion::V22.major()
+            && command.outcomes.iter().any(is_present_related_refusal)
+            && command
+                .outcomes
+                .iter()
+                .any(|outcome| outcome.condition == ResolvedCondition::WrongState))
+}
+
+/// The subject a stored reference is read from: the first branch addressing an existing row.
+pub(crate) fn addressed_subject(command: &ResolvedCommand) -> Option<&ResolvedSubject> {
+    command
+        .outcomes
+        .iter()
+        .filter_map(|outcome| outcome.subject.as_ref())
+        .find(|subject| subject.effect != ResolvedEffect::Creates)
+}
+
+/// The compositions a generated related read answers as the interpreter does: the row is stored
+/// where every component accepting the command stores it, no `external:` branch is asked beside
+/// it, and a stored reference is read from a subject the input names.
+fn related_composition(ir: &EssIr, command: &ResolvedCommand) -> Result<(), String> {
+    let Some((via, entity)) = related(command) else {
+        return Ok(());
+    };
+    if command.outcomes.iter().any(|outcome| {
+        matches!(
+            outcome.condition,
+            ResolvedCondition::External { .. } | ResolvedCondition::ExternalWhen { .. }
+        )
+    }) {
+        return Err("`external:` beside `when_related:` in one command".to_owned());
+    }
+    let related = ir.entity(entity);
+    let unstored = ir.components().values().any(|component| {
+        component
+            .accepts
+            .iter()
+            .any(|accepted| accepted.name() == &command.name)
+            && !component.owns.contains(&related.domain)
+    });
+    if unstored {
+        return Err(format!(
+            "a `when_related:` row of `{}`, which no component accepting the command stores",
+            related.name
+        ));
+    }
+    if let ResolvedRelatedVia::Subject { .. } = via {
+        let supplied = addressed_subject(command)
+            .is_some_and(|subject| matches!(subject.instance, ResolvedInstance::Supplied { .. }));
+        if !supplied {
+            return Err(
+                "a stored `when_related:` reference on no subject the input names".to_owned(),
+            );
         }
     }
     Ok(())

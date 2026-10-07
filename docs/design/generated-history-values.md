@@ -75,7 +75,7 @@ Expression transfers must exhaustively match all current `ResolvedPayloadValue` 
 - **Struct:** retain each member separately. One unknown member must not hide known siblings or whole-object presence. A full replacement discards old members as current semantics dictate.
 - **SubjectField:** copy original field, including nested shape and origin; known absence obeys current optional rules. No same-outcome read-after-write.
 - **RelatedField:** resolve actual old typed address and read that actual row. A known address with unknown leaf copies only that leaf. If address is abstract, either prove the lookup result/address decision independently of its possible values or report the actual unresolved addressing dependency; never choose a witness address. Missing row remains distinct from absent optional field.
-- **Increment:** known operands use existing exact Number arithmetic. Unknown operands produce a derived abstract value only when the admitted source range, increment and target constraints prove totality/no overflow and required presence. Zero increment of an already valid required same-type value is a basic positive control; bounded safe range transfer is another. Otherwise overflow/constraint validity is genuinely unresolved. No f64 representative and no blanket rule that every unknown increment refuses. Bounds/precision logic should reuse existing exact type/range helpers; implementation scope must name any necessary additional helper instead of silently widening crates.
+- **Increment:** known operands use existing exact Number arithmetic. Unknown operands produce a derived abstract value only when the admitted source range, increment and target constraints prove totality/no overflow and required presence. Source admission rejects zero increments; preserve that rejection. An admitted same-field SubjectField copy supplies the unchanged-value positive control, alongside legal nonzero exact known arithmetic above binary64 precision. A bounded safe unknown transfer requires an actual admitted source case or an explicit supported-language disposition; an internal arithmetic identity or an unadmitted nominal conversion is not source coverage. Otherwise overflow/constraint validity is genuinely unresolved. No f64 representative and no blanket rule that every unknown increment refuses. Bounds/precision logic should reuse existing exact type/range helpers; implementation scope must name any necessary additional helper instead of silently widening crates.
 - **Cleared:** known absence, removing previous uncertainty. Clears do not retain an origin that could later make `defined` unknown.
 - **ChangedCount:** exact count after actual set membership/effect eligibility is known; never derived from a sampled selector. If count is not observed, unknown membership can still affect later state, so dropping count does not by itself make it safe.
 - **ResponseField:** retains current history authority boundary. Native actual response execution remains concrete and unchanged.
@@ -134,6 +134,32 @@ Search result precedence:
 This rule avoids both immediate global refusal because one candidate is unknown and false violation from dropping unknown candidates. Unresolved markers must survive memoization keyed by full abstract Held plus done-set; they are not ordinary dead nodes. Include provenance in equivalent-state and liveness caches.
 
 View reachability requires additional care. `reach` currently finds every prefix on complete valid paths and `judge` uses those prefixes. A proven command ordering alone does not justify a read violation if another unresolved ordering could explain that read. Keep incomplete reachability explicit: a read explained by proven reachable states can pass at the existing per-subject consistency level; a purported read violation depending on excluding unresolved states must become a model refusal, not a violation. Direct contradictions independent of stored generated data, such as a duplicate row, retain their current definite meaning. Lifecycle-only view admission can stay as today; this task does not claim new support for field-dependent view filters currently listed as not judged. Preserve that separate limitation visibly.
+
+## Bounded generated-domain feasibility
+
+The history-only feasibility query has one ephemeral context: completed Inhabited/Empty
+proofs for one immutable IR, a separate active dependency set, depth32, 16,384 shared proof
+work units, at most64 structural witness attempts and at most256 finite combinations.
+An active hit, insufficient depth/work, unavailable facts or Unknown invariant is Unresolved;
+none proves Empty or definite optional absence. Unresolved is never cached as a completed
+type proof. A later query with adequate resources can therefore recover.
+
+Concrete validation retains its existing String-error wrapper. The private proof entry
+distinguishes Invalid from Unresolved and applies false-dominant conjunction to constraints
+and members: a proved invalid member/invariant excludes a candidate despite another Unknown,
+while an unresolved candidate prevents exhaustive emptiness. One completely validated
+candidate proves existence even when other finite candidates remain unresolved. Such a
+candidate is discarded and never becomes stored content or observed history authority.
+
+The bounded witness entry tries structural absent/empty bases and productive recursive union
+alternatives, with the actual union content key, before falling back to complete finite
+enumeration. It shares work accounting with child feasibility, concrete validation, exact
+bound extraction and absence queries. Node/key copies, declaration traversal, Cartesian
+products and predicate work are charged before expensive construction/evaluation; the existing
+fact projector is guarded by a bounded preflight of its actual representation/declarations.
+This budget limits proof search, not the admitted source language or native concrete execution.
+It is not a wall-clock timeout or a declaration that every inhabited constrained domain can
+be established by bounded structural/finite search.
 
 ## Scope proposed for approval
 

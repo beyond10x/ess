@@ -26,10 +26,9 @@ use ess_conformance::mutate::{
     REPORT_FILE, SUITE_FILE,
 };
 use ess_conformance::runner::Runner;
-use ess_conformance::AdmittedSuite;
+use ess_conformance::{AdmittedSuite, CountReport};
 use ess_domain::spec::RawSpecFile;
 use ess_domain::system::Source;
-use ess_primitives::verification::VerificationStatus;
 
 const DEAD: &str = "guard-connective/shop.order.ReportStatus/settled/0";
 const DEAD_GUARD: &str = "(status == Paid and status == Shipped)";
@@ -136,13 +135,27 @@ fn emitted(
             .expect("an emitted suite is admitted");
         let run = Runner::for_suite(admitted.suite())
             .run_admitted(&admitted, &Interpreted::for_model(ir.clone()));
-        let mut report = run.standalone();
+        let text = CountReport::from_run(&run, &admitted)
+            .unwrap()
+            .to_canonical_json()
+            .unwrap();
+        let mut report: serde_json::Value = serde_json::from_str(&text).unwrap();
         if stand_in {
-            report.failed_scenarios.clear();
-            report.scenarios_failed = 0;
-            report.status = VerificationStatus::Passed;
+            // Deliberate collector input, not evidence that this target passed.
+            let ids: Vec<_> = admitted.suite().scenarios.keys().collect();
+            report["outcomes"] = serde_json::json!({
+                "passed": ids, "failed": [], "error": [], "unsupported": [], "skipped": []
+            });
+            report["counts"] = serde_json::json!({
+                "total": ids.len(), "passed": ids.len(), "failed": 0,
+                "error": 0, "unsupported": 0, "skipped": 0
+            });
+            report["execution_status"] = "passed".into();
+            report["conformance_status"] = "inconclusive".into();
         }
-        written.insert(format!("{dir}/{REPORT_FILE}"), report.to_canonical_json());
+        let text = serde_json::to_string(&report).unwrap();
+        CountReport::from_json(&text, &admitted).expect("coherent report/2 collector input");
+        written.insert(format!("{dir}/{REPORT_FILE}"), text);
     }
     (emission, written)
 }
@@ -230,8 +243,17 @@ fn an_ordering_the_domain_does_not_decide_keeps_its_scoring() {
     // between the candidates tried, so the domain does not decide it: the verdict is what it was.
     let spec = ordered();
     let collected = collect(&emitted(&spec, &[MutantClass::GuardBoundary], true).1);
-    assert!(!collected.mutants.is_empty());
-    for entry in &collected.mutants {
+    assert_ne!(collected.mutants.len(), 0);
+    // The strictness swaps, which leave the guard dead. The outward literals (`amount >= 4`,
+    // `amount <= 6`, beyond10x/ess#212) leave it satisfiable, so against these stand-in reports
+    // they survive, which is not what this test is about.
+    let swaps: Vec<_> = collected
+        .mutants
+        .iter()
+        .filter(|entry| !entry.id.ends_with("-outward"))
+        .collect();
+    assert_eq!(swaps.len(), 2, "{:#?}", collected.mutants);
+    for entry in swaps {
         assert_eq!(entry.unsatisfiable_guard, None, "{entry:?}");
         assert_ne!(entry.verdict, Verdict::Equivalent, "{entry:?}");
         assert_ne!(entry.verdict, Verdict::Survived, "{entry:?}");
@@ -647,7 +669,7 @@ fn assert_transitions(report: &MutationReport) {
                 .all(|key| key.scenario.as_deref() == Some("desk.case.Review/outcome/escalated")),
             "{entry:?}"
         );
-        assert!(!named.is_empty());
+        assert_ne!(named.len(), 0);
     }
     // A transition a witnessed outcome performs keeps its scoring.
     for entry in report

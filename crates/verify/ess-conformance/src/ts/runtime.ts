@@ -1172,7 +1172,7 @@ export function checkedRefusal(
     case 'authored': {
       sourceIdentity(refusal.source);
       let valid = false;
-      for (let n = 1; n <= 40; n += 1) {
+      for (let n = 1; n <= 41; n += 1) {
         if (n === 36) {
           continue;
         }
@@ -3148,6 +3148,9 @@ export class ScenarioRun {
   readonly nowFixed = new Map<number, string>();
   /** The token the last command returned, for a read_your_writes query. */
   consistency = '';
+  /** A read-your-writes query suppressed because the preceding command returned no token. */
+  unreadableView = '';
+  unreadableCommand = '';
   /** What the last query_view returned, for the expect_view after it. */
   lastView: Row[] = [];
   /** The total the last read carried, for a paged view (suite/26). */
@@ -3868,6 +3871,9 @@ export class ScenarioRun {
     // A pre-setup query cannot establish facts about the newly acknowledged state.
     this.queried = '';
     this.lastView = [];
+    this.lastTotal = undefined;
+    this.unreadableView = '';
+    this.unreadableCommand = '';
     return true;
   }
 
@@ -3889,6 +3895,16 @@ export class ScenarioRun {
     if (params === null) {
       return false;
     }
+    if (this.lastCommand !== '' && this.consistency === '') {
+      // Current is weaker than the read-your-writes claim. Keep the cause for expect_view, and
+      // discard any earlier query so it cannot satisfy the assertion after this command.
+      this.unreadableView = step.view;
+      this.unreadableCommand = this.lastCommand;
+      this.queried = '';
+      this.lastView = [];
+      this.lastTotal = undefined;
+      return true;
+    }
     let result: ViewResult;
     try {
       result = await this.target.queryView({
@@ -3906,6 +3922,8 @@ export class ScenarioRun {
       }
       return this.targetError(index, `querying \`${step.view}\`: ${errorText(error)}`);
     }
+    this.unreadableView = '';
+    this.unreadableCommand = '';
     this.lastView = result?.rows ?? [];
     if (!this.disclosureMaps(this.lastView)) return false;
     this.lastTotal = typeof result?.total === 'number' ? result.total : undefined;
@@ -3914,6 +3932,13 @@ export class ScenarioRun {
   }
 
   snapshotSubject(index: number, step: Step): boolean {
+    if (this.queried === '') {
+      this.recordStatus(statusError);
+      this.failures.push(
+        `step ${index}: ESS-CF-SUITE: no consistent view query preceded the subject snapshot`,
+      );
+      return false;
+    }
     if (this.queried !== step.view)
       return this.fail(index, `subject snapshot requires a preceding query of ${step.view}`);
     const capture = step.step === 'snapshot_subject' || step.step === 'snapshot_complete_subject';
@@ -4033,6 +4058,23 @@ export class ScenarioRun {
   }
 
   async expectView(index: number, step: Step, retry: boolean): Promise<boolean> {
+    if (!retry && this.unreadableView === step.view) {
+      return this.fail(
+        index,
+        `ESS-CF-VIEW: \`${this.unreadableCommand}\` returned no consistency token, so ` +
+          `\`${step.view}\` was not read; asking at Current would answer a weaker question than ` +
+          'read-your-writes',
+      );
+    }
+    if (!retry && this.queried !== step.view) {
+      this.recordStatus(statusError);
+      this.failures.push(
+        this.queried === ''
+          ? `step ${index}: ESS-CF-SUITE: no view had been read before expecting \`${step.view}\``
+          : `step ${index}: ESS-CF-SUITE: the view last read was \`${this.queried}\`, not \`${step.view}\``,
+      );
+      return false;
+    }
     const attempts = retry ? this.harness.deadline().attempts : 1;
     let last = '';
     for (let attempt = 0; attempt < attempts; attempt += 1) {

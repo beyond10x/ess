@@ -460,7 +460,7 @@ fn indirect_environment_and_volume_sites_cannot_lose_their_resolved_targets() {
         let source = infra_compiler::compile(&Observation::try_from(raw).unwrap());
         let admitted = source.try_transform(|_| {}).unwrap();
         let container = &admitted.model().workloads["app/deployment/web"].containers[0];
-        assert!(container.env.is_empty());
+        assert_eq!(container.env.len(), 0);
         let (config, secret) = if via_environment {
             let infra_compiler::ResolvedEnvFromSource::ConfigMap { config_map, .. } =
                 &container.env_from[0].source

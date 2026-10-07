@@ -1,0 +1,14 @@
+{
+  "at": "2026-10-04T11:10:59Z",
+  "actor": "human:timo",
+  "artifact": "story:counter-reachability-arithmetic-completeness",
+  "kind": "story",
+  "revision": 13,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:arithmetic-completeness-413a-20261004-r2",
+    "review": "review-result:arithmetic-completeness-413a-20261004-r2",
+    "outcome": "fixed"
+  }
+}

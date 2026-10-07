@@ -152,7 +152,7 @@ fn every_handle_in_the_ir_names_something_the_ir_holds() {
         );
     }
     for command in ir.commands().values() {
-        assert!(!ir.domain(&command.domain).name.to_string().is_empty());
+        assert_ne!(ir.domain(&command.domain).name.to_string().len(), 0);
         for field in &command.input {
             for leaf in field.type_ref.named_leaves() {
                 let _ = ir.named_type(leaf);

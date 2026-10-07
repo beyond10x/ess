@@ -116,16 +116,25 @@ fn each_target_reports_the_implementation_name_it_declares() {
             .args(["--path", "examples/billing"])
             .arg("--suite")
             .arg(&suite)
-            .args(["--format", "json"])
+            .args(["--report-format", "2", "--format", "json"])
             .output()
             .expect("the `ess` binary runs");
         let report: serde_json::Value = serde_json::from_slice(&output.stdout)
-            .unwrap_or_else(|error| panic!("{target} renders report/1 as JSON: {error}"));
+            .unwrap_or_else(|error| panic!("{target} renders report/2 as JSON: {error}"));
         assert_eq!(
-            report["implementation"]["name"], implementation,
+            implementation_name(&report),
+            implementation,
             "`--target {target}` reports `{implementation}`"
         );
     }
+}
+
+/// The implementation a report/2 summary names, which it writes as `<name> <version>`.
+fn implementation_name(report: &serde_json::Value) -> &str {
+    let named = report["summary"]["implementation"]
+        .as_str()
+        .expect("the summary names the implementation");
+    named.split_once(' ').map_or(named, |(name, _)| name)
 }
 
 /// What `ess verify conform run --target interpreted` answers for the committed billing suite.
@@ -141,7 +150,7 @@ fn the_complete_committed_billing_suite_passes_against_interpreted() {
         .args(["--path", "examples/billing"])
         .arg("--suite")
         .arg(&suite)
-        .args(["--format", "json"])
+        .args(["--report-format", "2", "--format", "json"])
         .output()
         .expect("the `ess` binary runs");
     assert_eq!(
@@ -152,12 +161,13 @@ fn the_complete_committed_billing_suite_passes_against_interpreted() {
     );
 
     let report: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("report/1 is rendered as JSON");
+        serde_json::from_slice(&output.stdout).expect("report/2 is rendered as JSON");
     assert_eq!(
-        report["implementation"]["name"], "interpreted",
+        implementation_name(&report),
+        "interpreted",
         "the report names which implementation answered"
     );
-    assert_eq!(report["status"], "passed");
+    assert_eq!(report["summary"]["execution_status"], "passed");
 
     let scenarios = report["scenarios"].as_array().expect("scenarios");
     assert_eq!(
@@ -319,19 +329,17 @@ fn the_interpreted_target_runs_a_specification_that_reads_the_caller() {
             && ran.contains("demo.notes.EditNote/outcome/not-the-author"),
         "the run executed the caller model's suite: {ran:?}"
     );
-    // What the interpreter cannot carry out yet (a caller value source, a stored-field guard) is
-    // an unsatisfied obligation, never a guessed value. This negative control must stay nonvacuous
-    // when other capabilities become supported.
-    assert_eq!(output.status.code(), Some(1));
-    assert!(scenarios
-        .iter()
-        .any(|scenario| scenario["status"] == "unsupported"));
+    // The interpreter reads the invocation's caller and the subject's stored fields
+    // (`interpret/execute/caller.rs`, story:feature-request-292), so the caller value source and
+    // the stored-field guard this model holds are carried out: every scenario and check passes.
+    assert_eq!(output.status.code(), Some(0), "{stderr}");
+    assert_eq!(scenarios.len(), 3, "{ran:?}");
     for scenario in scenarios {
+        assert_eq!(scenario["status"], "passed", "{scenario:#}");
         for check in scenario["checks"].as_array().expect("checks") {
-            let status = check["status"].as_str().expect("a check status");
-            assert!(
-                status == "passed" || status == "unsupported",
-                "`{}` holds no failed or errored check: {check:#}",
+            assert_eq!(
+                check["status"], "passed",
+                "`{}` holds no unsupported, failed or errored check: {check:#}",
                 scenario["scenario"]
             );
         }

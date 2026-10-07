@@ -73,8 +73,18 @@ fn count_cli_preserves_default_bytes_and_standalone_detailed_pairing() {
                 "--allow-incomplete",
             ],
         );
-        assert!(default.status.success() && explicit.status.success());
+        // The default is report/1. A fresh suite is ess-conformance/34 (#312,
+        // docs/design/scenario-initial-state-and-cross-caller-witnesses.md), which report/1 is
+        // refused for before the target runs, so the default and explicit report/1 refuse alike.
+        assert!(!default.status.success() && !explicit.status.success());
+        assert_eq!(default.stdout.len(), 0);
         assert_eq!(default.stdout, explicit.stdout);
+        assert_eq!(default.stderr, explicit.stderr);
+        assert!(
+            String::from_utf8_lossy(&default.stderr)
+                .contains("require explicit --report-format 2 before execution"),
+            "{default:?}"
+        );
         let destination = directory.join(format!("report-{format}.json"));
         let result = run_suite(
             &directory,
@@ -130,7 +140,7 @@ fn count_cli_configuration_and_original_suite_refusals_preserve_destinations() {
         args.extend(["--report-out", destination.to_str().unwrap()]);
         let output = run_suite(&directory, &args);
         assert!(!output.status.success());
-        assert!(output.stdout.is_empty());
+        assert_eq!(output.stdout.len(), 0);
         assert_eq!(
             std::fs::read_to_string(&destination).unwrap(),
             "untouched\n"
@@ -138,13 +148,14 @@ fn count_cli_configuration_and_original_suite_refusals_preserve_destinations() {
     }
     let suite = std::fs::read_to_string(directory.join("suite.json")).unwrap();
     for bad in [
-        suite.replace("ess-conformance/4", "ess-conformance/5"),
+        suite.replace("ess-conformance/34", "ess-conformance/35"),
         suite.replace("\"provenance\": {", "\"provenance\": {\"future\": 1,"),
         suite.replace(
             "\"scenarios\": {",
             "\"scenarios\": {}, \"scen\\u0061rios\": {",
         ),
     ] {
+        assert_ne!(bad, suite, "each refusal case changes the suite it runs");
         std::fs::write(directory.join("suite.json"), bad).unwrap();
         for args in [
             vec![],
@@ -155,7 +166,7 @@ fn count_cli_configuration_and_original_suite_refusals_preserve_destinations() {
             args.extend(["--report-out", destination.to_str().unwrap()]);
             let output = run_suite(&directory, &args);
             assert!(!output.status.success());
-            assert!(output.stdout.is_empty());
+            assert_eq!(output.stdout.len(), 0);
             assert_eq!(
                 std::fs::read_to_string(&destination).unwrap(),
                 "untouched\n"

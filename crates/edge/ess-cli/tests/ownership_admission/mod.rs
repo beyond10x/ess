@@ -167,7 +167,7 @@ fn every_refusal_cleanup_process_and_io_cut_retains_only_exact_admission_orphans
         .enumerate()
         .filter(|(_, event)| event.contains("remove:") || event.contains("removed-entry-parent"))
         .collect::<Vec<_>>();
-    assert!(!cuts.is_empty());
+    assert_ne!(cuts.len(), 0);
     for (cut, event) in &cuts {
         for process in [false, true] {
             let f = Fixture::new();
@@ -231,14 +231,13 @@ fn native_refusal_process_driver() {
             Ok(())
         });
         panic!("requested process cut was never reached: {result:?}");
-    } else {
-        let f = Fixture::new();
-        let root = f.0.join("target");
-        fs::create_dir(&root).unwrap();
-        let before = snapshot(&f.0);
-        assert!(refused(&root, &mut |_| Ok(())).is_err());
-        assert_eq!(snapshot(&f.0), before);
     }
+    let f = Fixture::new();
+    let root = f.0.join("target");
+    fs::create_dir(&root).unwrap();
+    let before = snapshot(&f.0);
+    assert!(refused(&root, &mut |_| Ok(())).is_err());
+    assert_eq!(snapshot(&f.0), before);
 }
 
 #[test]
@@ -491,7 +490,7 @@ fn existing_only_adoption_retains_its_files_and_absences_without_any_admission_m
         anyhow::bail!("existing-only adoption attempted admission mutation");
     })
     .unwrap();
-    assert!(events.is_empty());
+    assert_eq!(events.len(), 0);
     let after = snapshot(&f.0);
     let visible = after
         .iter()
@@ -639,7 +638,7 @@ fn native_name_refusal_cleans_private_probes_and_preserves_cause_if_cleanup_fail
     );
     assert!(format!("{refusal:#}").contains("injected refusal cleanup failure"));
     let after = snapshot(&f.0);
-    assert!(!preserved(&before, &after).is_empty());
+    assert_ne!(preserved(&before, &after).len(), 0);
     ownership::recover(&root).unwrap();
     assert_eq!(snapshot(&f.0), after);
 }

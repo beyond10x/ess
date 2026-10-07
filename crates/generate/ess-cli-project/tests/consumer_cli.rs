@@ -94,7 +94,7 @@ fn execute(compiled: &CompiledBinding, value: Option<&str>) -> (ProcessOutput, V
 fn accepted(compiled: &CompiledBinding, value: Option<&str>, expected: Value) {
     let (output, inputs) = execute(compiled, value);
     assert_eq!(output.exit_code, 0);
-    assert!(output.stderr.is_empty());
+    assert_eq!(output.stderr.len(), 0);
     assert_eq!(
         serde_json::from_str::<Value>(&output.stdout).unwrap(),
         json!({"ok":true,"result":"handled"})
@@ -104,12 +104,12 @@ fn accepted(compiled: &CompiledBinding, value: Option<&str>, expected: Value) {
 fn refused(compiled: &CompiledBinding, value: &str) {
     let (output, inputs) = execute(compiled, Some(value));
     assert_eq!(output.exit_code, 2);
-    assert!(output.stdout.is_empty());
+    assert_eq!(output.stdout.len(), 0);
     assert_eq!(
         serde_json::from_str::<Value>(&output.stderr).unwrap(),
         json!({"ok":false,"error":{"code":"cli_input","data":{}}})
     );
-    assert!(inputs.is_empty());
+    assert_eq!(inputs.len(), 0);
 }
 
 #[test]
@@ -198,7 +198,7 @@ fn optional_list_and_string_map_shapes_change_validation() {
     accepted(&optional, None, json!({}));
     let (required, inputs) = execute(&scalar, None);
     assert_eq!(required.exit_code, 2);
-    assert!(inputs.is_empty());
+    assert_eq!(inputs.len(), 0);
 }
 
 #[test]

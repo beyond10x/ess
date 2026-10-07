@@ -282,7 +282,7 @@ fn the_correct_target_passes_and_reaches_every_declared_outcome() {
         assert_eq!(lane.asserts["correct"], "ok", "{correct}");
         assert!(correct.get("failure").is_none(), "{correct}");
         assert_eq!(strings(&correct["reached"]), DECLARED);
-        assert!(strings(&correct["unreached"]).is_empty());
+        assert_eq!(strings(&correct["unreached"]).len(), 0);
         assert_eq!(correct["sequences"], 200);
         assert_eq!(correct["steps"], 60);
         assert_eq!(correct["executed"], 12000);
@@ -420,7 +420,7 @@ fn an_unsupported_command_fails_unless_its_outcomes_are_explicitly_accepted() {
 
         let short = result(lane, "one-step");
         assert_eq!(short["executed"], 1);
-        assert!(!strings(&short["unreached"]).is_empty());
+        assert_ne!(strings(&short["unreached"]).len(), 0);
         assert!(
             lane.asserts["one-step"].starts_with("failed: explore: ")
                 && lane.asserts["one-step"].ends_with("declared outcome(s) no sequence reached:"),

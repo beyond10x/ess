@@ -34,7 +34,7 @@ scope:
   path: crates/verify/ess-conformance/tests/presence_suite_versions_go.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/typescript_runtime.rs
-revision: 17
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-28T10:17:58Z", actor: "human:timo", revision: 14}
 - {from: "proposed", to: "active", at: "2026-09-28T10:17:59Z", actor: "human:timo", revision: 15}
@@ -90,9 +90,3 @@ Derived 2026-09-28 by the coordinator from the files above — cited unless mark
   `tests/typescript_runtime.rs`, new per-language parity tests — inferred
 - not touched: `go/mod.rs`, `ts/mod.rs`, `go/explore.go`, `ts/explore.ts` (the concurrent-history
   branch edits them) — decision
-
-## Regression found by full runtime parity mandate, 2026-10-02
-
-Shared gates now require every supported suite major and every native scenario step/value/expectation in TypeScript execution. The old28–33 exclusions and named missing-step allowance are removed. Native Unsupported is compared as unsupported, not rewritten to skipped. Existing three feature-generation refusals are replaced by successful-generation requirements; separate port tests must establish real execution.
-
-Before any port integration, the unchanged-runtime controls are red: runtime_suite_admission plus typescript_suite_versions filtered every_ execute0 passed/3 failed/0 ignored, exit101. The failures identify Go and TS suite28–33 refusals and all five missing TypeScript tags. Feature emission filtered preserve executes2 passed/3 failed/0 ignored, exit101, naming the three current emitter refusals. Raw logs: runtime-parity-gates-red.log and runtime-feature-emission-red.log in ess-backlog-next-20261002/target/backlog-input, each with an exit file. task fmt-check and git diff --check pass. These are intentional failing acceptance controls, not finished implementation or release evidence.

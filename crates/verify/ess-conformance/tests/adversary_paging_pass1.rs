@@ -276,7 +276,7 @@ fn an_eventual_paged_view_passes_a_correct_target_and_fails_one_that_ignores_pag
 #[test]
 fn a_target_that_drops_a_partial_last_page_fails() {
     let suite = suite_of(MODEL);
-    assert!(!paged_ids(&suite).is_empty());
+    assert_ne!(paged_ids(&suite).len(), 0);
     let wrong = run(
         &suite,
         &Jobs::new(Mode::DropsPartialLastPage, "job_id", &["job_id", "type"]),
@@ -307,7 +307,7 @@ fn an_input_named_like_a_paging_parameter_is_not_sent_on_the_unpaged_reads() {
             "sets: {type: input.type, size: input.size}",
         );
     let suite = suite_of(&text);
-    assert!(!paged_ids(&suite).is_empty());
+    assert_ne!(paged_ids(&suite).len(), 0);
     let mut half_paged = Vec::new();
     for (id, scenario) in &suite.scenarios {
         let steps = &scenario.steps;

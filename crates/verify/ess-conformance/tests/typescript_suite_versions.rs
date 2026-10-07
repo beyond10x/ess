@@ -35,6 +35,7 @@ use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
 use ess_conformance::coverage::{AdmittedInput, Origins, Scope};
 use ess_conformance::now_offset::WithWall;
 use ess_conformance::report::Status;
+use ess_conformance::scenario::ScenarioInitialState;
 use ess_conformance::target::*;
 use ess_conformance::{AdmittedSuite, AdvancingClock, Ids, Runner, RunnerConfig};
 use ess_domain::{command::OutcomeName, spec::RawSpecFile, system::Source, Specification};
@@ -202,6 +203,12 @@ impl Case<'_> {
         for refusal in &synthesis.refusals {
             println!("{}: synthesis refused {}", self.name, refusal.code());
         }
+        assert_eq!(
+            synthesis.suite.provenance.scenario_initial_state,
+            Some(ScenarioInitialState::Empty),
+            "{}: fresh ordinary suite initial state",
+            self.name
+        );
         let admitted =
             AdmittedSuite::from_suite(&synthesis.suite).unwrap_or_else(|error| panic!("{error}"));
         self.check(&admitted, || {
@@ -222,6 +229,12 @@ impl Case<'_> {
         let input: AdmittedInput =
             ess_conformance::coverage_build::build(model, &[], Scope::System, Origins::Generated)
                 .unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(
+            input.selected().suite().provenance.scenario_initial_state,
+            Some(ScenarioInitialState::Empty),
+            "{}: fresh coverage suite initial state",
+            self.name
+        );
         self.check(input.selected(), || {
             ess_conformance::ts::emit_input(&input).expect("the package emits")
         });
@@ -802,18 +815,18 @@ const DIALER_CASE: Case<'static> = Case {
 };
 
 #[test]
-fn issue_188_a_dotted_leaf_suite_26_runs_in_typescript_with_the_rust_verdicts() {
+fn issue_188_a_dotted_leaf_fresh_suite_34_runs_in_typescript_with_the_rust_verdicts() {
     Case {
-        version: "ess-conformance/26",
+        version: "ess-conformance/34",
         ..DIALER_CASE
     }
     .ordinary(&ir(DIALER));
 }
 
 #[test]
-fn issue_188_a_dotted_leaf_coverage_suite_27_runs_in_typescript_with_the_rust_verdicts() {
+fn issue_188_a_dotted_leaf_fresh_coverage_suite_35_runs_in_typescript_with_the_rust_verdicts() {
     Case {
-        version: "ess-conformance/27",
+        version: "ess-conformance/35",
         ..DIALER_CASE
     }
     .coverage(&ir(DIALER));
@@ -876,18 +889,18 @@ const PRESENCE_CASE: Case<'static> = Case {
 };
 
 #[test]
-fn field_presence_suite_24_runs_in_typescript_with_the_rust_verdicts() {
+fn field_presence_fresh_suite_34_runs_in_typescript_with_the_rust_verdicts() {
     Case {
-        version: "ess-conformance/24",
+        version: "ess-conformance/34",
         ..PRESENCE_CASE
     }
     .ordinary(&ir(PRESENCE));
 }
 
 #[test]
-fn field_presence_coverage_suite_25_runs_in_typescript_with_the_rust_verdicts() {
+fn field_presence_fresh_coverage_suite_35_runs_in_typescript_with_the_rust_verdicts() {
     Case {
-        version: "ess-conformance/25",
+        version: "ess-conformance/35",
         ..PRESENCE_CASE
     }
     .coverage(&ir(PRESENCE));
@@ -913,18 +926,18 @@ const OUTCOME_SHAPES_CASE: Case<'static> = Case {
 };
 
 #[test]
-fn outcome_shapes_suite_22_run_in_typescript_with_the_rust_verdicts() {
+fn outcome_shapes_fresh_suite_34_run_in_typescript_with_the_rust_verdicts() {
     Case {
-        version: "ess-conformance/22",
+        version: "ess-conformance/34",
         ..OUTCOME_SHAPES_CASE
     }
     .ordinary(&ir(OUTCOME_SHAPES));
 }
 
 #[test]
-fn outcome_shapes_coverage_suite_23_run_in_typescript_with_the_rust_verdicts() {
+fn outcome_shapes_fresh_coverage_suite_35_run_in_typescript_with_the_rust_verdicts() {
     Case {
-        version: "ess-conformance/23",
+        version: "ess-conformance/35",
         ..OUTCOME_SHAPES_CASE
     }
     .coverage(&ir(OUTCOME_SHAPES));
@@ -950,18 +963,18 @@ const ABSENT_INPUT_CASE: Case<'static> = Case {
 };
 
 #[test]
-fn a_command_without_input_suite_26_runs_in_typescript_with_the_rust_verdicts() {
+fn a_command_without_input_fresh_suite_34_runs_in_typescript_with_the_rust_verdicts() {
     Case {
-        version: "ess-conformance/26",
+        version: "ess-conformance/34",
         ..ABSENT_INPUT_CASE
     }
     .ordinary(&ir(ABSENT_INPUT));
 }
 
 #[test]
-fn a_command_without_input_coverage_suite_27_runs_in_typescript_with_the_rust_verdicts() {
+fn a_command_without_input_fresh_coverage_suite_35_runs_in_typescript_with_the_rust_verdicts() {
     Case {
-        version: "ess-conformance/27",
+        version: "ess-conformance/35",
         ..ABSENT_INPUT_CASE
     }
     .coverage(&ir(ABSENT_INPUT));
@@ -1060,18 +1073,18 @@ const CALLER_CASE: Case<'static> = Case {
 };
 
 #[test]
-fn caller_values_suite_26_run_in_typescript_with_the_rust_verdicts() {
+fn caller_values_fresh_suite_34_run_in_typescript_with_the_rust_verdicts() {
     Case {
-        version: "ess-conformance/26",
+        version: "ess-conformance/34",
         ..CALLER_CASE
     }
     .ordinary(&ir(CALLER));
 }
 
 #[test]
-fn caller_values_coverage_suite_27_run_in_typescript_with_the_rust_verdicts() {
+fn caller_values_fresh_coverage_suite_35_run_in_typescript_with_the_rust_verdicts() {
     Case {
-        version: "ess-conformance/27",
+        version: "ess-conformance/35",
         ..CALLER_CASE
     }
     .coverage(&ir(CALLER));
@@ -1095,18 +1108,18 @@ const CURRENT_TIME_CASE: Case<'static> = Case {
 };
 
 #[test]
-fn now_offset_values_suite_26_run_in_typescript_with_the_rust_verdicts() {
+fn now_offset_values_fresh_suite_34_run_in_typescript_with_the_rust_verdicts() {
     Case {
-        version: "ess-conformance/26",
+        version: "ess-conformance/34",
         ..CURRENT_TIME_CASE
     }
     .ordinary(&ir(CURRENT_TIME));
 }
 
 #[test]
-fn now_offset_values_coverage_suite_27_run_in_typescript_with_the_rust_verdicts() {
+fn now_offset_values_fresh_coverage_suite_35_run_in_typescript_with_the_rust_verdicts() {
     Case {
-        version: "ess-conformance/27",
+        version: "ess-conformance/35",
         ..CURRENT_TIME_CASE
     }
     .coverage(&ir(CURRENT_TIME));
@@ -1140,18 +1153,19 @@ const AGGREGATE_CASE: Case<'static> = Case {
 };
 
 #[test]
-fn aggregate_views_and_their_change_suite_26_run_in_typescript_with_the_rust_verdicts() {
+fn aggregate_views_and_their_change_fresh_suite_34_run_in_typescript_with_the_rust_verdicts() {
     Case {
-        version: "ess-conformance/26",
+        version: "ess-conformance/34",
         ..AGGREGATE_CASE
     }
     .ordinary(&ir(&aggregate_model()));
 }
 
 #[test]
-fn aggregate_views_and_their_change_coverage_suite_27_run_in_typescript_with_the_rust_verdicts() {
+fn aggregate_views_and_their_change_fresh_coverage_suite_35_run_in_typescript_with_the_rust_verdicts(
+) {
     Case {
-        version: "ess-conformance/27",
+        version: "ess-conformance/35",
         ..AGGREGATE_CASE
     }
     .coverage(&ir(&aggregate_model()));
@@ -1179,18 +1193,18 @@ const PAGING_CASE: Case<'static> = Case {
 };
 
 #[test]
-fn view_paging_suite_26_runs_in_typescript_with_the_rust_verdicts() {
+fn view_paging_fresh_suite_34_runs_in_typescript_with_the_rust_verdicts() {
     Case {
-        version: "ess-conformance/26",
+        version: "ess-conformance/34",
         ..PAGING_CASE
     }
     .ordinary(&ir(PAGING));
 }
 
 #[test]
-fn view_paging_coverage_suite_27_runs_in_typescript_with_the_rust_verdicts() {
+fn view_paging_fresh_coverage_suite_35_runs_in_typescript_with_the_rust_verdicts() {
     Case {
-        version: "ess-conformance/27",
+        version: "ess-conformance/35",
         ..PAGING_CASE
     }
     .coverage(&ir(PAGING));
@@ -1216,18 +1230,18 @@ const BOUNDED_RETRY_CASE: Case<'static> = Case {
 };
 
 #[test]
-fn bounded_retry_suite_26_runs_in_typescript_with_the_rust_verdicts() {
+fn bounded_retry_fresh_suite_34_runs_in_typescript_with_the_rust_verdicts() {
     Case {
-        version: "ess-conformance/26",
+        version: "ess-conformance/34",
         ..BOUNDED_RETRY_CASE
     }
     .ordinary(&ir(BOUNDED_RETRY));
 }
 
 #[test]
-fn bounded_retry_coverage_suite_27_runs_in_typescript_with_the_rust_verdicts() {
+fn bounded_retry_fresh_coverage_suite_35_runs_in_typescript_with_the_rust_verdicts() {
     Case {
-        version: "ess-conformance/27",
+        version: "ess-conformance/35",
         ..BOUNDED_RETRY_CASE
     }
     .coverage(&ir(BOUNDED_RETRY));
@@ -1250,19 +1264,19 @@ const QUEUE_CASE: Case<'static> = Case {
 };
 
 #[test]
-fn defined_over_an_optional_aggregate_suite_26_runs_in_typescript_with_the_rust_verdicts() {
+fn defined_over_an_optional_aggregate_fresh_suite_34_runs_in_typescript_with_the_rust_verdicts() {
     Case {
-        version: "ess-conformance/26",
+        version: "ess-conformance/34",
         ..QUEUE_CASE
     }
     .ordinary(&ir(QUEUE));
 }
 
 #[test]
-fn defined_over_an_optional_aggregate_coverage_suite_27_runs_in_typescript_with_the_rust_verdicts()
-{
+fn defined_over_an_optional_aggregate_fresh_coverage_suite_35_runs_in_typescript_with_the_rust_verdicts(
+) {
     Case {
-        version: "ess-conformance/27",
+        version: "ess-conformance/35",
         ..QUEUE_CASE
     }
     .coverage(&ir(QUEUE));
@@ -1369,18 +1383,18 @@ const RELATED_CASE: Case<'static> = Case {
 };
 
 #[test]
-fn related_values_run_in_typescript_with_the_rust_verdicts() {
+fn related_values_fresh_suite_34_run_in_typescript_with_the_rust_verdicts() {
     Case {
-        version: "ess-conformance/4",
+        version: "ess-conformance/34",
         ..RELATED_CASE
     }
     .ordinary(&ir(SHIPPING));
 }
 
 #[test]
-fn related_values_coverage_run_in_typescript_with_the_rust_verdicts() {
+fn related_values_fresh_coverage_suite_35_run_in_typescript_with_the_rust_verdicts() {
     Case {
-        version: "ess-conformance/5",
+        version: "ess-conformance/35",
         ..RELATED_CASE
     }
     .coverage(&ir(SHIPPING));
@@ -1411,18 +1425,18 @@ const SET_EFFECTS_CASE: Case<'static> = Case {
 };
 
 #[test]
-fn set_effects_run_in_typescript_with_the_rust_verdicts() {
+fn set_effects_fresh_suite_34_run_in_typescript_with_the_rust_verdicts() {
     Case {
-        version: "ess-conformance/12",
+        version: "ess-conformance/34",
         ..SET_EFFECTS_CASE
     }
     .ordinary(&ir(SET_EFFECTS));
 }
 
 #[test]
-fn set_effects_coverage_run_in_typescript_with_the_rust_verdicts() {
+fn set_effects_fresh_coverage_suite_35_run_in_typescript_with_the_rust_verdicts() {
     Case {
-        version: "ess-conformance/13",
+        version: "ess-conformance/35",
         ..SET_EFFECTS_CASE
     }
     .coverage(&ir(SET_EFFECTS));
@@ -1453,18 +1467,18 @@ const RETAINED_REPLAY_CASE: Case<'static> = Case {
 };
 
 #[test]
-fn retained_results_suite_12_run_in_typescript_with_the_rust_verdicts() {
+fn retained_results_fresh_suite_34_run_in_typescript_with_the_rust_verdicts() {
     Case {
-        version: "ess-conformance/12",
+        version: "ess-conformance/34",
         ..RETAINED_REPLAY_CASE
     }
     .ordinary(&ir(RETAINED_REPLAY));
 }
 
 #[test]
-fn retained_results_coverage_suite_13_run_in_typescript_with_the_rust_verdicts() {
+fn retained_results_fresh_coverage_suite_35_run_in_typescript_with_the_rust_verdicts() {
     Case {
-        version: "ess-conformance/13",
+        version: "ess-conformance/35",
         ..RETAINED_REPLAY_CASE
     }
     .coverage(&ir(RETAINED_REPLAY));

@@ -16,6 +16,66 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// Retain the default product beside a separately emitted historical replay fixture.
+/// Existing replay assertions exercise the explicit legacy API, with unchanged originals.
+#[allow(dead_code)]
+pub fn legacy_replay_fixture(site: &Path) {
+    use ess_conformance::web_execution::bundle::{Blob, Loaded};
+    let original_manifest = fs::read_to_string(site.join("browser.json")).unwrap();
+    let manifest: Value = serde_json::from_str(&original_manifest).unwrap();
+    let sources = manifest["sources"].as_array().unwrap();
+    let references = sources
+        .iter()
+        .chain([&manifest["execution"]["file"], &manifest["presentation"]]);
+    let blobs = references
+        .map(|reference| {
+            let path = reference["path"].as_str().unwrap().to_owned();
+            Blob {
+                bytes: fs::read(site.join(&path)).unwrap(),
+                path,
+            }
+        })
+        .collect();
+    Loaded::admit(&original_manifest, blobs).unwrap();
+    let originals: Vec<_> = sources
+        .iter()
+        .map(|reference| {
+            fs::read_to_string(site.join(reference["path"].as_str().unwrap())).unwrap()
+        })
+        .collect();
+    let texts: Vec<_> = originals.iter().map(String::as_str).collect();
+    let parsed = ess_domain::spec::RawSpecFile::parse_all(&texts);
+    let spec =
+        ess_domain::Specification::assemble(sources.iter().zip(parsed).map(|(reference, raw)| {
+            (
+                ess_domain::system::Source::new(reference["path"].as_str().unwrap()),
+                raw.unwrap(),
+            )
+        }))
+        .unwrap();
+    let model = ess_compiler::compile(&spec, &ess_compiler::source::SourceMap::new()).unwrap();
+    let original =
+        fs::read_to_string(site.join(manifest["execution"]["file"]["path"].as_str().unwrap()))
+            .unwrap();
+    let artifacts = match manifest["execution"]["kind"].as_str().unwrap() {
+        "ordinary_suite" => {
+            let admitted = ess_conformance::AdmittedSuite::from_json(&original).unwrap();
+            ess_conformance::web::emit(&model, admitted.suite()).unwrap()
+        }
+        "coverage_input" => {
+            let input = ess_conformance::coverage::AdmittedInput::from_json(&original).unwrap();
+            ess_conformance::web::emit_input(&model, &input).unwrap()
+        }
+        other => panic!("unexpected admitted product kind: {other}"),
+    };
+    fs::rename(site, site.with_extension("product")).unwrap();
+    for (path, artifact) in artifacts {
+        let output = site.join(path);
+        fs::create_dir_all(output.parent().unwrap()).unwrap();
+        fs::write(output, artifact.contents).unwrap();
+    }
+}
+
 pub struct Server {
     pub url: String,
     stopped: Arc<AtomicBool>,
@@ -673,5 +733,11 @@ impl Browser {
                 .expect("script returns a JSON string"),
         )
         .unwrap()
+    }
+
+    /// Retain actual page and worker console events in the existing `BiDi` receipt.
+    #[allow(dead_code)]
+    pub fn subscribe_logs(&mut self) {
+        self.call("session.subscribe", &json!({"events":["log.entryAdded"]}));
     }
 }

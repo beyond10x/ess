@@ -75,7 +75,7 @@ fn schema_like_annotation_literals_do_not_trigger_wire_preflight() {
     })))
     .unwrap();
     assert_eq!(report.accounting().normalizations.len(), 4);
-    assert!(report.accounting().coverage_gaps.is_empty());
+    assert_eq!(report.accounting().coverage_gaps.len(), 0);
     let checked = read_import(&report.to_canonical_json()).unwrap();
     assert_eq!(checked, report);
     assert!(project_import(&checked).is_ok());

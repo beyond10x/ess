@@ -11,7 +11,7 @@ refs:
   reference: beyond10x/ess#237
 relations:
 - serves: vision:O2
-revision: 6
+revision: 5
 ---
 ## Outcome
 
@@ -86,8 +86,6 @@ Tested with `ess 0.44.0`; rules re-read in the 0.48.0 read tree (`gaps-270`, `e3
 
 - Coordinator (2026-10-01): adopted as family F below. Format: ess/21, because ess/20 ships alone in 0.49.0 and family F lands as one bump. Family F (one design across #225, #228, #233, #237, #244): A1 a bare right-hand root names a field, input or binder; A2 one `± constant` offset (Integer or Timestamp); A3 `now` in `when_subject`/`when_related`; A4 `input.<dotted path>` in values; B `when_related: {entity, where, exists | count | forall}` over row sets; C `distinct` over lists and `.utf8_bytes`.
 
-## Source version allocation, 2026-10-02
+## Current design disposition
 
-The operator explicitly prioritized issue389 for the fast lane. The coordinator allocates the next unshipped source major, ess/21, to its one-time response disclosure contract. The previously planned coordinated downstream syntax bundle moves together to ess/22; its accepted behavior, dependency ordering and requirement to ship as one bundle are unchanged. Prior mentions of ess/21 in this artifact record the earlier allocation, not the current implementation target. No released source/IR/suite meaning is rewritten by this planning change.
-
-This allocation must be reflected in binding designs and compatibility tests before implementation. The389 design independently names its new IR and ordinary/coverage suite versions from actual current source; those numbers are not inferred from the source-format number.
+Second independent review approved the complete shared row-set/filtered-value contract at 8606b103c (review-result:filtered-related-read-design-20261003-r2). All seven first-round findings were fixed. Design review is complete; implementation and target acceptance remain pending. This supersedes the earlier pending-design-review wording, not the predecessor gates or draft implementation status. The shared normative page is docs/design/filtered-related-reads.md and the syntax allocation is source22. No source21 family allocation remains current. #299 depends on #285 and #228/#237; the shared page also binds the latter stories' row-set implementation.

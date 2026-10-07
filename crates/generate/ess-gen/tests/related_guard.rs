@@ -10,6 +10,8 @@ use ess_domain::system::Source;
 
 const SIGN_IN: &str =
     include_str!("../../../verify/ess-conformance/tests/fixtures/related-guard-sign-in.yaml");
+const OPTIONAL_RELEASE: &str =
+    include_str!("../../../verify/ess-conformance/tests/fixtures/related-guard-optional.yaml");
 
 fn ir(text: &str) -> EssIr {
     let raw = RawSpecFile::parse(text).unwrap_or_else(|error| panic!("{error}"));
@@ -60,4 +62,26 @@ fn issue_211_beside_existing_instance_both_refusals_are_conflicts() {
         statuses[1],
         ("no-configuration".to_owned(), ess_gen::http::CONFLICT)
     );
+}
+
+#[test]
+fn issue_304_an_optional_reference_is_documented_as_checked_when_present() {
+    let model = ir(OPTIONAL_RELEASE);
+    let artifacts = ess_gen::generate_all(&model).unwrap();
+    for family in ["docs/", "openapi/"] {
+        let rendered = artifacts
+            .iter()
+            .filter(|(path, _)| path.starts_with(family))
+            .map(|(_, artifact)| artifact.contents.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            rendered.contains("input.candidate") && rendered.contains("when present"),
+            "{family} says the Optional reference is checked only when present:\n{rendered}"
+        );
+        assert!(
+            !rendered.contains("no `demo.release.Candidate` carries the identity `input.candidate` names when absent"),
+            "{family} must not describe an absent Optional as a missing related row:\n{rendered}"
+        );
+    }
 }

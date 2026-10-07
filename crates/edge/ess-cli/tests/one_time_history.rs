@@ -33,7 +33,7 @@ fn marked_history_import_refuses_before_input_io_and_preserves_output() {
             .output()
             .unwrap();
         assert_eq!(output.status.code(), Some(2));
-        assert!(output.stdout.is_empty());
+        assert_eq!(output.stdout.len(), 0);
         let diagnostics = String::from_utf8(output.stderr).unwrap();
         assert!(
             diagnostics.contains("UnsupportedOneTimeDisclosure"),

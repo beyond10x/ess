@@ -41,6 +41,8 @@ use super::{
 };
 use crate::witness::MAX_CANDIDATES;
 
+pub(super) mod stored;
+
 /// The step between the blocks of distinctions the related rows are arranged at: the number
 /// [`super::related`] uses, for the reason it gives (every enum of up to twelve variants reads a
 /// decoy one away from the row as another variant).
@@ -58,6 +60,12 @@ const NESTED: usize = 9;
 /// The block the companions of a named row are created in (beyond10x/ess#270, [`surround`]): apart
 /// from every other, so they name no row a scenario, a driver or a nested arrangement does.
 const COMPANION: usize = 11;
+
+/// Input for a related-row overlap and the arranged identities it references.
+type BoundInput = (
+    BTreeMap<String, Node>,
+    BTreeMap<String, crate::scenario::InstanceName>,
+);
 
 /// The distinction the related row of the `distinction`th witness is arranged at, in block `base`:
 /// four apart, so no row and no decoy either side of it (one away) is another witness's, and every
@@ -233,6 +241,8 @@ fn selects<'c>(
                 ResolvedCondition::External { .. }
                     | ResolvedCondition::ExternalWhen { .. }
                     | ResolvedCondition::ExistingInstance
+                    // Selected from the addressed row's held state, before this row is read.
+                    | ResolvedCondition::WrongState
             )
     }) {
         if let ResolvedCondition::Related { test, .. } = &branch.condition {
@@ -268,12 +278,101 @@ fn selects<'c>(
         .find(|branch| super::is_input_guarded_refusal(branch))
     {
         selected = vec![first];
+    } else if let Some(first) = orders_present_related_refusal(ir, command)
+        .then(|| {
+            selected.iter().copied().find(|branch| {
+                branch.error.is_some()
+                    && matches!(
+                        branch.condition,
+                        ResolvedCondition::Related {
+                            test: ResolvedRelatedTest::Holds { .. },
+                            ..
+                        }
+                    )
+            })
+        })
+        .flatten()
+    {
+        // From ess/22 the present-related predicate refusal answers before every accepting branch.
+        // Validation keeps two selected related refusals ambiguous, so this first match does not
+        // introduce a declaration-order tie-break between them.
+        selected = vec![first];
     }
     Ok(match selected.as_slice() {
         [] => command.outcomes.iter().find(|branch| state_default(branch)),
         [only] => Some(*only),
         _ => None,
     })
+}
+
+pub(super) fn orders_present_related_refusal(ir: &EssIr, command: &ResolvedCommand) -> bool {
+    // A stored reference is read after the addressed row's existence and held state, and its
+    // present-related refusal answers before every accepting branch (beyond10x/ess#304).
+    if stored::field(command).is_some() {
+        return true;
+    }
+    ir.format().major() >= ess_domain::system::FormatVersion::V22.major()
+        && command
+            .outcomes
+            .iter()
+            .any(|branch| matches!(branch.condition, ResolvedCondition::WrongState))
+        && command.outcomes.iter().any(|branch| {
+            branch.error.is_some()
+                && matches!(
+                    branch.condition,
+                    ResolvedCondition::Related {
+                        test: ResolvedRelatedTest::Holds { .. },
+                        ..
+                    }
+                )
+        })
+}
+
+/// Arrange a present related row that selects the predicate refusal, while the addressed
+/// subject is already in the wrong state. This is the overlap the wrong-state scenario must send
+/// to distinguish the ess/22 order from a target that reads the related row first.
+pub(super) fn wrong_state_overlap(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    addressed: &mut Arrangement,
+) -> Result<BoundInput, RefusalCause> {
+    // The held state answers before a stored reference is read: the subject is sent as its
+    // arrangement left it (beyond10x/ess#304).
+    if stored::field(command).is_some() {
+        return Ok((stored::wrong_state_input(ir, command)?, BTreeMap::new()));
+    }
+    let refusal = command
+        .outcomes
+        .iter()
+        .find(|outcome| {
+            outcome.error.is_some()
+                && matches!(
+                    outcome.condition,
+                    ResolvedCondition::Related {
+                        test: ResolvedRelatedTest::Holds { .. },
+                        ..
+                    }
+                )
+        })
+        .ok_or_else(unarranged)?;
+    let (via, entity) = read(command).ok_or_else(unarranged)?;
+    let (row, _, input) = with_row(
+        ir,
+        command,
+        refusal,
+        entity,
+        actors,
+        (OWN, Distinction::PLAIN, &[]),
+        None,
+        None,
+        (&BTreeMap::new(), &addressed.steps),
+    )?;
+    addressed.steps.extend(row.steps);
+    addressed.source.extend(row.source);
+    addressed.source.insert(entity_ref(entity));
+    let bound = BTreeMap::from([(via.field().to_owned(), row.instance)]);
+    Ok((input, bound))
 }
 
 /// The first branch of the command acting on an existing row the input names, and that input.
@@ -332,6 +431,10 @@ pub(super) fn drive(
     input: Option<&BTreeMap<String, Node>>,
     arranging: &[&EntityHandle],
 ) -> Result<super::Invocation, RefusalCause> {
+    // A stored reference is read from the row being driven, which [`stored::step`] is given.
+    if stored::field(driver.command).is_some() {
+        return Err(unarranged());
+    }
     let (via, entity) = read(driver.command).ok_or_else(unarranged)?;
     let field = via.field();
     let names_subject = driver.outcome.subject.as_ref().is_some_and(|subject| {
@@ -365,6 +468,9 @@ pub(super) fn drive(
     // 1).
     // Reached from `ess/20` only: below it the run stopped above.
     if arranging.contains(&entity) {
+        // Where no row one level deep selects the branch — the row would need a related row of
+        // its own again — an Optional reference the branch is answered without is left out
+        // (ess/22, beyond10x/ess#304): no row is read, so none is arranged.
         return nested(
             ir,
             driver,
@@ -374,7 +480,10 @@ pub(super) fn drive(
             bound,
             input,
             arranging,
-        );
+        )
+        .or_else(|cause| {
+            without_reference(ir, driver, instance, actors, distinction, bound, input).ok_or(cause)
+        });
     }
     // An owner the caller already bound for a link input — the one `created_owned` arranged for the
     // subject this run creates — is the owner the run is sent naming: the related row is arranged
@@ -606,6 +715,42 @@ fn nested(
     Ok(invocation)
 }
 
+/// [`drive`] with the Optional input reference the command's related guards read left out (ess/22,
+/// beyond10x/ess#304), where that selects the branch: no row is read, so none is arranged. `None`
+/// for a required reference, a related branch, and a branch the absent reference does not select —
+/// with the caller's input as it is but for the reference, where the caller chose one.
+fn without_reference(
+    ir: &EssIr,
+    driver: &super::Driver<'_>,
+    instance: Option<&crate::scenario::InstanceName>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    bound: &BTreeMap<String, crate::scenario::InstanceName>,
+    chosen: Option<&BTreeMap<String, Node>>,
+) -> Option<super::Invocation> {
+    let (ResolvedRelatedVia::Input { field, .. }, _) = read(driver.command)? else {
+        return None;
+    };
+    if !optional(driver.command) {
+        return None;
+    }
+    let input = match chosen {
+        Some(chosen) => {
+            let mut chosen = chosen.clone();
+            chosen.remove(field);
+            selects_absent(ir, driver.command, &chosen)
+                .ok()
+                .flatten()
+                .is_some_and(|branch| branch.name == driver.outcome.name)
+                .then_some(chosen)?
+        }
+        None => absent_input(ir, driver.command, driver.outcome, distinction).ok()?,
+    };
+    Some(super::invoke_with(
+        ir, driver, instance, actors, bound, &input,
+    ))
+}
+
 /// The link inputs over rows of `entity` ([`subject_fact::link_pins`]) the send of `outcome`
 /// already names an arranged owner through: `bound`, and the field the branch names its subject
 /// by, where `instance` is that subject — the one `super::supply` sends before anything `bound`
@@ -823,6 +968,160 @@ pub(super) fn unaccompanied(
         .collect()
 }
 
+/// Whether the command's related guards read through an Optional input (ess/22, beyond10x/ess#304),
+/// so a request may leave the reference absent.
+pub(super) fn optional(command: &ResolvedCommand) -> bool {
+    read(command).is_some_and(|(via, _)| via.type_ref().is_optional())
+}
+
+/// Which branch the command selects for this input with the Optional reference absent, if exactly
+/// one does: no row is read and no `when_related` branch is selected, so only the branches that read
+/// no related row answer — the first input-guarded refusal whose guard holds, else the one accepting
+/// branch whose guard holds, else the default. Held state and the command's own identity are
+/// answered before it, as for a present reference, and are not asked here.
+fn selects_absent<'c>(
+    ir: &EssIr,
+    command: &'c ResolvedCommand,
+    input: &BTreeMap<String, Node>,
+) -> Result<Option<&'c ResolvedOutcome>, RefusalCause> {
+    let facts = flatten(ir, command, input).map_err(RefusalCause::WitnessRejected)?;
+    let mut selected = Vec::new();
+    for branch in command.outcomes.iter().filter(|branch| {
+        !state_default(branch)
+            && !matches!(
+                branch.condition,
+                ResolvedCondition::External { .. }
+                    | ResolvedCondition::ExternalWhen { .. }
+                    | ResolvedCondition::ExistingInstance
+                    | ResolvedCondition::WrongState
+                    | ResolvedCondition::Related { .. }
+            )
+    }) {
+        if let Some(guard) = input_guard(branch) {
+            if !decides(&facts, &[guard], true)? {
+                continue;
+            }
+        }
+        selected.push(branch);
+    }
+    if let Some(first) = selected
+        .iter()
+        .copied()
+        .find(|branch| super::is_input_guarded_refusal(branch))
+    {
+        selected = vec![first];
+    }
+    Ok(match selected.as_slice() {
+        [] => command.outcomes.iter().find(|branch| state_default(branch)),
+        [only] => Some(*only),
+        _ => None,
+    })
+}
+
+/// An input that reaches `outcome` with the Optional reference the command's related guards read
+/// left out (ess/22, beyond10x/ess#304). Refused for a command whose reference is required, and
+/// where no candidate input reaches the branch without it.
+pub(super) fn absent_input(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    distinction: Distinction,
+) -> Result<BTreeMap<String, Node>, RefusalCause> {
+    let (via, _) = read(command)
+        .filter(|(via, _)| optional(command) || matches!(via, ResolvedRelatedVia::Subject { .. }))
+        .ok_or_else(unarranged)?;
+    if matches!(outcome.condition, ResolvedCondition::Related { .. }) {
+        return Err(unarranged());
+    }
+    // Every input guard of the command, as [`with_row`] searches with: an input-guarded refusal
+    // beside the branch must be refuted by the input sent, which a search over the branch's own
+    // guard alone does not look for (beyond10x/ess#304 adversary pass 1).
+    let guards: Vec<&Predicate> = command.outcomes.iter().filter_map(input_guard).collect();
+    for mut input in
+        candidates(ir, command, &guards, distinction).map_err(RefusalCause::NoWitness)?
+    {
+        input.remove(via.field());
+        if selects_absent(ir, command, &input)?.is_some_and(|branch| branch.name == outcome.name) {
+            return Ok(input);
+        }
+    }
+    Err(unarranged())
+}
+
+/// Whether `outcome` is a branch an absent Optional reference selects (ess/22, beyond10x/ess#304):
+/// its scenario then carries the absent witness ([`prepare_absent_in`]).
+pub(super) fn absent_selects(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+) -> bool {
+    routes(command, outcome)
+        && optional(command)
+        && absent_input(ir, command, outcome, Distinction::PLAIN).is_ok()
+}
+
+/// The setup and input of the absent witness for `outcome` (ess/22, beyond10x/ess#304): the
+/// branch's own subject arranged at `distinction`, between two related rows each selecting a
+/// present-related refusal where one is found, and the command sent with the Optional reference
+/// left out. A target that treats absence as a missing row answers `exists: false`; one that reads
+/// some row of the entity answers a refusal; neither answers `outcome`.
+pub(super) fn prepare_absent_in(
+    models: &super::caller::InvocationModels<'_>,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+) -> Result<(Setup, BTreeMap<String, Node>), RefusalCause> {
+    let ir = models.arrangement;
+    if stored::field(command).is_some() {
+        return stored::absent_at(models, command, outcome, actors, distinction);
+    }
+    let (via, entity) = read(command).ok_or_else(unarranged)?;
+    let field = via.field();
+    let input = absent_input(ir, command, outcome, distinction)?;
+    let mut setup = own_arrangement(ir, command, outcome, actors, distinction, (field, entity))?;
+    if setup.bound.contains_key(field) {
+        return Err(unarranged());
+    }
+    let mut steps = Vec::new();
+    if !super::singleton::is_singleton(ir, entity) {
+        let refusing = |node: &Arrangement| {
+            selects(ir, command, entity, Some(node), &input).map(|branch| {
+                branch.is_some_and(|branch| {
+                    branch.error.is_some()
+                        && matches!(
+                            branch.condition,
+                            ResolvedCondition::Related {
+                                test: ResolvedRelatedTest::Holds { .. },
+                                ..
+                            }
+                        )
+                })
+            })
+        };
+        let first = block_start(OWN, distinction);
+        for at in [first - 1, first + 1] {
+            let decoy = search_rows(
+                ir,
+                entity,
+                actors,
+                (at, None),
+                &predicates(command),
+                refusing,
+            )
+            .or_else(|| row_at(ir, entity, actors, at, &[]));
+            if let Some(decoy) = decoy {
+                steps.extend(decoy.steps);
+                setup.source.extend(decoy.source);
+            }
+        }
+    }
+    std::mem::swap(&mut steps, &mut setup.steps);
+    setup.steps.append(&mut steps);
+    setup.source.insert(entity_ref(entity));
+    Ok((setup, input))
+}
+
 /// [`prepare_at_in`], and whether the scenario is [`unaccompanied`].
 fn arranged_at(
     models: &super::caller::InvocationModels<'_>,
@@ -833,6 +1132,9 @@ fn arranged_at(
     goal: Option<&Goal>,
 ) -> Result<(Setup, BTreeMap<String, Node>, bool), RefusalCause> {
     let ir = models.arrangement;
+    if stored::field(command).is_some() {
+        return stored::arranged_at(models, command, outcome, actors, distinction, goal);
+    }
     let (via, entity) = read(command).ok_or_else(unarranged)?;
     let field = via.field();
     // A missing row reads no predicate, so no boundary of one is witnessed on it.

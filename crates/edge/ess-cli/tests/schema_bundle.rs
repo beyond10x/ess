@@ -232,7 +232,7 @@ fn types_bundle_is_deterministic_and_never_replaces_its_input() {
     let report: Value = serde_json::from_slice(&before[1]).unwrap();
     assert_eq!(report["format"], "ess-types-report/3");
     assert_eq!(report["declarations"], json!({"Root": "Root"}));
-    assert!(!report["obligations"].as_array().unwrap().is_empty());
+    assert_ne!(report["obligations"].as_array().unwrap().len(), 0);
     let input = fixture.0.join("types/source.bundle.json");
     let result = fixture.run(&[
         "types-bundle",

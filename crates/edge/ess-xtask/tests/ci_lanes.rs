@@ -641,6 +641,72 @@ fn the_test_shards_run_the_archives_two_jobs_build_side_by_side_and_compile_noth
     }
 }
 
+fn assert_transport_network_controls(ci: &Value, taskfile: &Value) {
+    let job = &ci["jobs"]["transport-network"];
+    assert!(
+        job["if"].is_null(),
+        "required transport execution cannot be conditional"
+    );
+    assert!(
+        job["continue-on-error"].is_null(),
+        "transport failure cannot be ignored"
+    );
+    assert_eq!(text(&job["env"]["ESS_TRANSPORT_PREFETCH_DEPS"]), "1");
+    let image = text(&job["env"]["ESS_TEST_NATS_IMAGE"]);
+    let digest = image
+        .strip_prefix("nats@sha256:")
+        .expect("NATS image is digest pinned");
+    assert!(digest.len() == 64 && digest.bytes().all(|byte| byte.is_ascii_hexdigit()));
+    assert_ne!(
+        text(&job["env"]["ESS_ASYNCAPI_CLI"]).len(),
+        0,
+        "the network job pins the AsyncAPI CLI"
+    );
+    let commands = shell_commands(taskfile, "test-transport-network");
+    assert_eq!(commands.len(), 2, "both external controls are required");
+    let steps = job["steps"].as_sequence().expect("transport job has steps");
+    for (command, required_test) in commands.iter().zip([
+        "the_official_asyncapi_cli_accepts_the_parameterized_document",
+        "both_generated_adapters_publish_parameterized_batches_to_actual_nats",
+    ]) {
+        assert!(command.split_whitespace().any(|word| word == required_test));
+        assert!(command.contains("-- --ignored --exact --nocapture"));
+        let matching: Vec<_> = steps
+            .iter()
+            .filter(|step| text(&step["run"]) == command)
+            .collect();
+        let [step] = matching.as_slice() else {
+            panic!("required transport control must execute exactly once: {required_test}");
+        };
+        assert!(step["if"].is_null() && step["continue-on-error"].is_null());
+    }
+}
+
+#[test]
+fn transport_ci_executes_both_ignored_external_controls_without_skipping() {
+    let ci = yaml(".github/workflows/ci.yml");
+    let taskfile = yaml("Taskfile.yml");
+    assert_transport_network_controls(&ci, &taskfile);
+    let mut missing = ci.clone();
+    missing["jobs"]["transport-network"]["steps"] = Value::Sequence(Vec::new());
+    assert!(
+        std::panic::catch_unwind(|| assert_transport_network_controls(&missing, &taskfile))
+            .is_err()
+    );
+    let mut skipped = ci.clone();
+    skipped["jobs"]["transport-network"]["if"] = Value::Bool(false);
+    assert!(
+        std::panic::catch_unwind(|| assert_transport_network_controls(&skipped, &taskfile))
+            .is_err()
+    );
+    let mut ignored = ci;
+    ignored["jobs"]["transport-network"]["continue-on-error"] = Value::Bool(true);
+    assert!(
+        std::panic::catch_unwind(|| assert_transport_network_controls(&ignored, &taskfile))
+            .is_err()
+    );
+}
+
 #[test]
 fn the_gate_check_aggregates_every_lane_and_cannot_be_skipped() {
     let ci = yaml(".github/workflows/ci.yml");
@@ -1052,6 +1118,86 @@ fn prior_gate_step(release: &Value) -> &Value {
         .iter()
         .find(|step| text(&step["id"]) == "prior-gate")
         .expect("resolve looks for a prior Gate")
+}
+
+/// A public workflow may inspect GitHub to reuse exact prior evidence, but release publication is
+/// an organization-bot operation from the trusted coordinator. The preparation run therefore has
+/// no write permission and carries no `gh release` mutation that would use `github.token` as
+/// `github-actions[bot]`.
+#[test]
+fn release_preparation_has_no_publication_authority_or_command() {
+    let release = yaml(".github/workflows/release.yml");
+    let source =
+        fs::read_to_string(workspace_root().join(".github/workflows/release.yml")).unwrap();
+    let mut write_permissions = Vec::new();
+    let mut inspect = |scope: &str, permissions: &Value| {
+        if let Some(access) = permissions.as_str() {
+            if access == "write-all" {
+                write_permissions.push(format!("{scope}: {access}"));
+            }
+        }
+        for (name, access) in permissions.as_mapping().into_iter().flatten() {
+            let access = text(access);
+            if access == "write" || access == "write-all" {
+                write_permissions.push(format!("{scope}.{}: {access}", text(name)));
+            }
+        }
+    };
+    inspect("workflow", &release["permissions"]);
+    for (id, job) in release["jobs"].as_mapping().into_iter().flatten() {
+        inspect(&format!("job.{}", text(id)), &job["permissions"]);
+    }
+    assert!(
+        write_permissions.is_empty(),
+        "the public release workflow retains write permissions: {write_permissions:?}"
+    );
+    let mutations: Vec<&str> = ["gh release create", "gh release edit", "gh release upload"]
+        .into_iter()
+        .filter(|command| source.contains(command))
+        .collect();
+    assert!(
+        mutations.is_empty(),
+        "the public release workflow still publishes with the Actions token: {mutations:?}"
+    );
+}
+
+/// The trusted coordinator consumes one successful artifact, so its name must bind the resolved
+/// tag and commit and its contents must be exactly the checked archives, checksums and notes. The
+/// upload action is the same pinned revision already admitted by `package.yml`.
+#[test]
+fn release_preparation_retains_an_exact_tag_and_commit_artifact() {
+    let release = yaml(".github/workflows/release.yml");
+    assert_eq!(text(&release["name"]), "Release preparation");
+    let steps = release["jobs"]["release"]["steps"]
+        .as_sequence()
+        .expect("release preparation steps");
+    let upload = steps
+        .iter()
+        .find(|step| {
+            text(&step["uses"])
+                == "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
+        })
+        .expect("release preparation uploads no retained artifact");
+    assert_eq!(
+        text(&upload["with"]["name"]),
+        "ess-release-${{ needs.resolve.outputs.tag }}-${{ needs.resolve.outputs.commit }}"
+    );
+    let paths = text(&upload["with"]["path"]);
+    let actual: BTreeSet<&str> = paths
+        .lines()
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+        .collect();
+    assert_eq!(
+        actual,
+        BTreeSet::from([
+            "dist/ess-${{ needs.resolve.outputs.tag }}-*.tar.gz",
+            "dist/SHA256SUMS",
+            "notes.md",
+        ]),
+        "the retained release artifact does not contain exactly the verified files"
+    );
+    assert_eq!(text(&upload["with"]["if-no-files-found"]), "error");
 }
 
 #[test]
@@ -1712,6 +1858,10 @@ fn the_release_builds_intel_macos_on_apple_silicon_and_keeps_its_four_archives()
         .find(|run| run.contains("SHA256SUMS"))
         .expect("the release writes SHA256SUMS");
     assert!(publish.contains("\"$archive_count\" != 4"), "{publish}");
+    assert!(
+        publish.contains("-type f -name \"*.tar.gz\""),
+        "the release counts only expected-looking names and could retain another archive: {publish}"
+    );
     assert!(
         publish.contains("sha256sum *.tar.gz > SHA256SUMS"),
         "{publish}"

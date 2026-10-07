@@ -169,7 +169,7 @@ fn pipeline(app: &str, extra: &str, trace: &mut Vec<&'static str>) -> Result<Ter
         None,
     );
     assert_eq!(output.exit_code, 0);
-    assert!(output.stderr.is_empty());
+    assert_eq!(output.stderr.len(), 0);
     assert_eq!(
         serde_json::from_str::<Value>(&output.stdout).unwrap(),
         json!({"ok":true,"result":17})
@@ -558,7 +558,7 @@ fn binding_mapping_object_values_and_empty_default_have_terminal_controls() {
     let explicit = INTERACTION.replace("mapping: {value: event.value}", "mapping: {}");
     let raw_omitted = RawSpecFile::parse(&omitted).unwrap();
     let raw_explicit = RawSpecFile::parse(&explicit).unwrap();
-    assert!(raw_omitted.bindings[0].mapping.0.is_empty());
+    assert_eq!(raw_omitted.bindings[0].mapping.0.len(), 0);
     assert_eq!(
         raw_omitted.bindings[0].mapping,
         raw_explicit.bindings[0].mapping

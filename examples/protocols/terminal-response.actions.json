@@ -1,0 +1,7 @@
+[
+  {"kind":"input","participant":"caller","name":"finish","payload":{}},
+  {"kind":"deliver","transmission":1},
+  {"kind":"input","participant":"responder","name":"transport_flushed","payload":{}},
+  {"kind":"input","participant":"responder","name":"close","payload":{}},
+  {"kind":"deliver","transmission":2}
+]

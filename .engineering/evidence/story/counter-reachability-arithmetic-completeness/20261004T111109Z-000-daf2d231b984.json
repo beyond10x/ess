@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-04T11:11:09Z",
+  "actor": "human:timo",
+  "artifact": "story:counter-reachability-arithmetic-completeness",
+  "kind": "story",
+  "revision": 13,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-conformance --locked --offline --test counter_limit (RUSTUP_TOOLCHAIN=1.98.1)",
+    "reference": "baseline: arithmetic tests 3 passed / 2 failed on base (story Focused treatment section) vs treatment: 25 passed / 0 failed; full package 2611 passed / 0 failed / 8 ignored (package-run-5)"
+  }
+}

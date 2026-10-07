@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-04T13:23:44Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-212",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-conformance (mutation and synthesis targets) and ess-cli mutate targets (integration tree)",
+    "reference": "baseline: mutation_arms and mutation_component fail to compile on base, adversary 2 failed before correction; treatment: conformance 300 passed 0 failed, ess-cli 80 passed 0 failed, xtask docs/generate/cli-reference checks exit 0"
+  }
+}

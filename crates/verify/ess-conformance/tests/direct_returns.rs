@@ -344,7 +344,7 @@ fn pure_return_source_requires_its_format_and_a_successful_typed_response() {
     ] {
         let raw = RawSpecFile::parse(&source).unwrap();
         let error = Specification::assemble([(Source::new("invalid.yaml"), raw)]).unwrap_err();
-        assert!(!error.to_string().is_empty());
+        assert_ne!(error.to_string().len(), 0);
     }
 }
 

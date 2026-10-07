@@ -285,7 +285,11 @@ impl<T: ConformanceTarget> ConformanceTarget for Recorder<T> {
         )
     }
     fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
-        let described = json!({"params": nodes(&request.params)});
+        let at_least = match &request.consistency {
+            ess_primitives::consistency::QueryConsistency::Current => String::new(),
+            ess_primitives::consistency::QueryConsistency::AtLeast { token } => token.to_string(),
+        };
+        let described = json!({"params": nodes(&request.params), "at_least": at_least});
         let key = request.view.to_string();
         let answer = self.inner.query_view(request);
         self.record(

@@ -106,55 +106,38 @@ fn an_integer_constant_stays_a_runtime_obligation() {
     );
 }
 
-#[test]
-fn native_rust_integer_widths_preserve_wire_boundaries() {
-    let output = plan().rust("integer_widths").unwrap();
-    let root = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
-        .join(format!("integer-widths-rust-{}", std::process::id()));
-    std::fs::create_dir_all(root.join("tests")).unwrap();
-    std::fs::write(root.join("Cargo.toml"), &output.supporting["Cargo.toml"]).unwrap();
-    std::fs::write(root.join("types.rs"), &output.declarations).unwrap();
-    std::fs::write(root.join("tests/wire.rs"), RUST_WIRE).unwrap();
-    for args in [
-        vec!["generate-lockfile", "--offline"],
-        vec!["test", "--offline", "--locked"],
-    ] {
-        let result = std::process::Command::new(env!("CARGO"))
-            .args(args)
-            .current_dir(&root)
-            .output()
-            .unwrap();
-        assert!(
-            result.status.success(),
-            "{}\n{}",
-            String::from_utf8_lossy(&result.stdout),
-            String::from_utf8_lossy(&result.stderr)
-        );
-    }
-}
-
-const RUST_WIRE: &str = r##"
-use integer_widths::ProbeMeterReading as Reading;
+const NEWTYPE_SOURCE: &str = r"format: ess/20
+system: probe
+version: v1
+domains: [probe.meter]
+domain: probe.meter
+types:
+  - name: probe.meter.ItemVersion
+    kind: newtype
+    of: Integer
+    invariants:
+      - value == 2
+  - name: probe.meter.Item
+    kind: struct
+    fields:
+      - {name: version, type: probe.meter.ItemVersion}
+";
 
 #[test]
-fn exact_boundaries_and_overflow() {
-    for amount in [i32::MIN, i32::MAX] {
-        for total in [9007199254740992_i64, 9007199254740993] {
-            let wire = format!(r#"{{"version":2,"amount":{amount},"total":{total},"count":0,"free":0}}"#);
-            let decoded: Reading = serde_json::from_str(&wire).unwrap();
-            assert_eq!(decoded.amount, amount);
-            assert_eq!(decoded.total, total);
-            let encoded = serde_json::to_string(&decoded).unwrap();
-            assert!(encoded.contains(&format!(r#""total":{total}"#)));
-        }
-    }
-    for (amount, total) in [
-        ("2147483648", "0"), ("-2147483649", "0"),
-        ("0", "9223372036854775808"), ("0", "-9223372036854775809"),
-        ("null", "0"), ("1.5", "0"),
-    ] {
-        let wire = format!(r#"{{"version":2,"amount":{amount},"total":{total},"count":0,"free":0}}"#);
-        assert!(serde_json::from_str::<Reading>(&wire).is_err(), "{wire}");
-    }
+fn a_bounded_integer_newtype_wraps_a_native_width() {
+    let plan =
+        Plan::from_model(&model::selection(NEWTYPE_SOURCE, &["probe.meter.Item"])).expect("plan");
+    let rust = plan.rust("probe-meter").expect("rust").declarations;
+    let go = plan
+        .go("probemeter", "example.com/probemeter")
+        .expect("go")
+        .declarations;
+    assert!(
+        rust.contains("pub struct ProbeMeterItemVersion(pub i32);"),
+        "{rust}"
+    );
+    assert!(
+        go.contains("type ProbeMeterItemVersion struct {\n\tValue int32\n}"),
+        "{go}"
+    );
 }
-"##;

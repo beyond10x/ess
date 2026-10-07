@@ -1,0 +1,63 @@
+format: ess/15
+system: demo
+version: v1
+domain: demo.items
+types:
+  - {name: demo.items.ItemId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.items.Item
+    identity: {name: id, type: demo.items.ItemId}
+    lifecycle:
+      initial: Open
+      states: [Open, Closed]
+      terminal: [Closed]
+      transitions: [{name: close, from: [Open], to: Closed}]
+errors:
+  - {name: demo.items.NotFound}
+  - {name: demo.items.Conflict}
+events:
+  - name: demo.items.Created
+    fields: [{name: id, type: demo.items.ItemId}]
+  - name: demo.items.Closed
+    fields: [{name: id, type: demo.items.ItemId}]
+  - name: demo.items.Noted
+    fields: [{name: flag, type: Boolean}, {name: note, type: Optional<String>}]
+commands:
+  - name: demo.items.Create
+    outcomes:
+      - name: created
+        creates: demo.items.Item
+        instance: id
+        emits: [demo.items.Created]
+        payload: {demo.items.Created: {id: {generated: true}}}
+  - name: demo.items.Close
+    input: [{name: id, type: demo.items.ItemId}, {name: deny, type: Boolean}]
+    outcomes:
+      - {name: denied, when: deny == true, error: demo.items.Conflict}
+      - name: closed
+        moves: demo.items.Item.close
+        instance: id
+        emits: [demo.items.Closed]
+        payload: {demo.items.Closed: {id: input.id}}
+      - {name: wrong-state, wrong_state: true, error: demo.items.Conflict}
+      - {name: not-found, unknown_instance: true, error: demo.items.NotFound}
+  - name: demo.items.PlainNote
+    input: [{name: flag, type: Boolean}, {name: note, type: String}]
+    outcomes:
+      - name: noted
+        emits: [demo.items.Noted]
+        payload: {demo.items.Noted: {flag: input.flag, note: input.note}}
+  - name: demo.items.OptionalNote
+    input: [{name: flag, type: Boolean}, {name: note, type: Optional<String>}]
+    outcomes:
+      - name: noted
+        emits: [demo.items.Noted]
+        payload: {demo.items.Noted: {flag: input.flag, note: input.note}}
+actors:
+  - name: demo.items.Operator
+    may: [demo.items.Create, demo.items.Close, demo.items.PlainNote, demo.items.OptionalNote]
+views:
+  - name: demo.items.Items
+    source: demo.items.Item
+    consistency: read_your_writes
+    fields: [{name: id, type: demo.items.ItemId}, {name: state, type: demo.items.Item.State}]

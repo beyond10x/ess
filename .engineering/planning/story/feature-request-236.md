@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-236
 kind: story
-status: draft
+status: active
 title: 'mutate --emit has no --component: a repository implementing one component cannot score mutants'
 tags:
 - feature-request
@@ -11,7 +11,10 @@ refs:
   reference: beyond10x/ess#236
 relations:
 - serves: vision:O2
-revision: 3
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-04T11:42:49Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-10-04T11:42:50Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Outcome
 

@@ -114,7 +114,7 @@ fn coverage_cli_authored_roots_relocate_without_losing_exact_text_and_refuse_unr
             ],
         );
         assert!(!output.status.success(), "{output:?}");
-        assert!(output.stdout.is_empty());
+        assert_eq!(output.stdout.len(), 0);
         assert_eq!(fs::read_to_string(&destination).unwrap(), "unchanged\n");
     }
 }
@@ -269,7 +269,7 @@ fn explicit_suite5_cli_produces_exact_inventory_and_requires_report2_before_exec
         args.extend(extra);
         let output = command(&args);
         assert!(!output.status.success());
-        assert!(output.stdout.is_empty());
+        assert_eq!(output.stdout.len(), 0);
         assert_eq!(fs::read_to_string(&destination).unwrap(), "unchanged\n");
         assert!(
             String::from_utf8_lossy(&output.stderr).contains("report"),
@@ -473,5 +473,5 @@ fn impact_cli_requires_exact_complete_input_and_keeps_the_persisted_v3_shape() {
         "json",
     ]);
     assert!(!output.status.success());
-    assert!(output.stdout.is_empty());
+    assert_eq!(output.stdout.len(), 0);
 }

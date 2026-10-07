@@ -1172,6 +1172,16 @@ pub trait FactSource {
         self.observe(path).is_some()
     }
 
+    /// Observed presence, or `None` when neither presence nor absence is known.
+    ///
+    /// Concrete sources keep their existing [`Self::present`] meaning. A source representing
+    /// unobserved implementation data can distinguish unknown optional presence from known
+    /// absence, without inventing a scalar fact. Wrappers forward this observation with the same
+    /// path mapping as [`Self::fact`].
+    fn observed_presence(&self, path: &FactPath) -> Option<bool> {
+        Some(self.present(path))
+    }
+
     /// The ordered scales available for non-numeric comparison.
     fn scales(&self) -> &Scales {
         Scales::empty()

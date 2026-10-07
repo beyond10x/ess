@@ -153,7 +153,7 @@ The module exports memory and four functions:
 // Required export signatures; this design does not claim implementation is complete.
 fn ess_browser_abi_version() -> u32; // exactly 0x0001_0000
 fn ess_browser_reserve(len: u32) -> u32; // owned request buffer or 0
-fn ess_browser_dispatch(len: u32) -> u32; // owned response address or 0 on fatal ABI failure
+fn ess_browser_dispatch(len: u32) -> u32; // owned response address; a fatal ABI failure is a tag-5 error response
 fn ess_browser_response_len() -> u32;
 ```
 

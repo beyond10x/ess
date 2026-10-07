@@ -2166,7 +2166,7 @@ impl<'a> Resolver<'a> {
             let set_effects = self.set_effects(command, outcome, input, entities);
             complete &= set_effects.is_some();
             let (instances, affects) = set_effects.unwrap_or_default();
-            let related = self.related_guard(command, outcome, input);
+            let related = self.related_guard(command, outcome, input, entities);
             complete &=
                 related.is_some() || !matches!(outcome.condition, OutcomeCondition::Related { .. });
             resolved.push(ResolvedOutcome {
@@ -2833,26 +2833,47 @@ impl<'a> Resolver<'a> {
     /// `when_related:` (ess/18, #211): the input field a related-guard branch reads and the entity
     /// whose identity it carries, by the rule `ess-domain` validated it with. `None` for a branch
     /// that reads no related row, and for one whose read did not resolve.
+    ///
+    /// From ess/22 (beyond10x/ess#304) the field may be a stored field of the subject the command
+    /// addresses, read as it was before the branch: [`ResolvedRelatedVia::Subject`], at the field's
+    /// declared type, `Optional<…>` included.
     fn related_guard(
         &self,
         command: &CommandSpec,
         outcome: &Outcome,
         input: Option<&[ResolvedField]>,
+        entities: &BTreeMap<QualifiedName, ResolvedEntity>,
     ) -> Option<(ResolvedRelatedVia, EntityHandle)> {
         let OutcomeCondition::Related { via, .. } = &outcome.condition else {
             return None;
         };
-        let read = input?.iter().find(|field| &field.name == via)?;
-        match ess_domain::command::related_guard::related_entity(self.spec, command, via) {
-            Referenced::Entity(entity) => Some((
+        let related =
+            ess_domain::command::related_guard::related_entity_via(self.spec, command, via);
+        let Referenced::Entity(entity) = related else {
+            return None;
+        };
+        let read = match via {
+            RelatedVia::Input(field) => {
+                let read = input?.iter().find(|held| held.name == *field)?;
                 ResolvedRelatedVia::Input {
                     field: read.name.clone(),
                     type_ref: read.type_ref.clone(),
-                },
-                EntityHandle::new(entity.name.clone()),
-            )),
-            Referenced::NoEntity | Referenced::Ambiguous(_) => None,
-        }
+                }
+            }
+            RelatedVia::Subject(field) => {
+                let subject = ess_domain::command::subject_fact::common_subject(command)?;
+                let stored = entities
+                    .get(&subject.entity)?
+                    .fields
+                    .iter()
+                    .find(|held| held.name == *field)?;
+                ResolvedRelatedVia::Subject {
+                    field: stored.name.clone(),
+                    type_ref: stored.type_ref.clone(),
+                }
+            }
+        };
+        Some((read, EntityHandle::new(entity.name.clone())))
     }
 
     /// `{related: {via, field}}` (ess/16, #166): the entity `via` names, by the rule

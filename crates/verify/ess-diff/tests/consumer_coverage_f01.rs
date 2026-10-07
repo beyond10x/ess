@@ -71,10 +71,10 @@ fn one_change(needle: &str, replacement: &str) -> SemanticChange {
     assert_ne!(needle, replacement);
     let before = compiled(DOMAIN);
     let control = compiled(DOMAIN);
-    assert!(ess_diff::diff(&before, &control)
-        .unwrap()
-        .changes()
-        .is_empty());
+    assert_eq!(
+        ess_diff::diff(&before, &control).unwrap().changes().len(),
+        0
+    );
     let after = compiled(&DOMAIN.replacen(needle, replacement, 1));
     assert_ne!(before.source_digest(), after.source_digest());
     let delta = ess_diff::diff(&before, &after).expect("same system");

@@ -203,6 +203,38 @@ fn an_increment_is_a_sets_source_over_a_required_number() {
 }
 
 #[test]
+fn nested_increment_uses_its_declared_location() {
+    let body = r"format: ess/20
+system: demo
+version: v1
+domain: demo.counter
+types:
+  - name: demo.counter.Packet
+    kind: struct
+    fields: [{name: amount, type: Integer}]
+entities:
+  - name: demo.counter.Counter
+    identity: {name: counter_id, type: Uuid}
+    fields: [{name: packet, type: demo.counter.Packet}]
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+events:
+  - {name: demo.counter.Advanced, fields: []}
+commands:
+  - name: demo.counter.Advance
+    input: [{name: counter_id, type: Uuid}]
+    outcomes:
+      - name: advanced
+        updates: demo.counter.Counter
+        instance: counter_id
+        sets: {packet: {amount: {increment: 1}}}
+        emits: [demo.counter.Advanced]
+";
+    spec(body).unwrap_or_else(|error| {
+        panic!("the nested target itself supplies increment location authority: {error}")
+    });
+}
+
+#[test]
 fn a_fallback_reads_an_optional_input() {
     let body = model(
         "ess/14",

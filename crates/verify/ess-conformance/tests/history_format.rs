@@ -399,7 +399,7 @@ fn reading_is_deterministic_and_ignores_key_order() {
         .replace("ID", HISTORY_ID);
     let reordered = history::read(text.as_bytes(), &digest).expect("admitted");
     assert_eq!(reordered.seed, 3);
-    assert!(reordered.operations.is_empty());
+    assert_eq!(reordered.operations.len(), 0);
 }
 
 /// A `Returned` operation carries the outcome it answered with (correction round 1, item 3).

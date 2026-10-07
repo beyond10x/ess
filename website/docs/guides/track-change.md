@@ -46,6 +46,53 @@ or the pretty JSON shown by `ess specify compile`.
 [Delta writer](https://github.com/beyond10x/ess/blob/main/crates/verify/ess-diff/src/delta.rs),
 [comparison](https://github.com/beyond10x/ess/blob/main/crates/verify/ess-diff/src/diff.rs).
 
+## Fail on a breaking change
+
+A relation says which way a set moved, not who is broken by it. `--compatibility` classifies each
+change for three readers of the model: **callers** written against `--from` invoking `--to`,
+**readers** written against `--from` reading what `--to` produces, and **history**, `--to` reading
+the entity state and events `--from` already wrote. Each answer is `compatible`, `unknown` or
+`breaking`, and the change's verdict is the worst of the three.
+
+```sh
+ess verify diff --from before --to after --compatibility
+ess verify diff --from before --to after --fail-on breaking
+ess verify diff --from before --to after --fail-on breaking --acknowledgements reviewed.json
+```
+
+- A type change is read through where the type is used, nested inside structs, newtypes, unions,
+  lists, maps or optionals: a command input or view parameter is an `input`, a response, event,
+  error or view row an `output`, an entity field or event a `stored` value. A component setting and
+  an external channel's or periodic host's context fields are `input` too. A removed variant breaks
+  callers and history and no reader; an added variant breaks readers of an output and nobody else.
+  Any other mention of the type is `unmodelled`: a change to the type, other than documentation or
+  adding or removing it, is then `unknown` in every dimension.
+- A grant or command removed breaks callers, a view removed breaks readers, an event or entity
+  removed breaks history. Additions and display-name, summary or example changes are compatible.
+- Everything else, such as a wire rename, an added field or a predicate rewrite, is `unknown`: the
+  answer depends on how consumers treat it, and the model does not say.
+
+`--fail-on breaking` exits **4** when an unacknowledged change is breaking in a considered
+dimension; `--fail-on breaking-or-unknown` also fails on `unknown`. `--dimension callers` (repeatable)
+limits the dimensions considered. Without `--compatibility` or `--fail-on`, the output and the exit
+status are unchanged. With either, JSON output is `ess-diff/14`, and every change carries
+`compatibility`.
+
+An acknowledgements file lets reviewed changes pass. It is bound to the exact pair compared: take
+both digests from the delta, and list change ids from it.
+
+```json
+{
+  "format": "ess-diff-acknowledgements/1",
+  "before": "<before.spec_digest>",
+  "after": "<after.spec_digest>",
+  "acknowledged": ["type/demo.calls.Channel/variant-removed/Chat"]
+}
+```
+
+A file naming other digests, an id the delta does not hold or an id twice is refused with exit 1.
+[Classification and gate](https://github.com/beyond10x/ess/blob/main/crates/verify/ess-diff/src/compatibility.rs).
+
 ## Find the work owed again
 
 Without `--suite`, impact reports construct dependencies and generated-artifact obligations:

@@ -283,7 +283,7 @@ fn missing_and_wrong_state_outcomes_issue_no_response() {
     let missing = update(&target, 3).unwrap();
     assert_eq!(missing.outcome.unwrap().outcome.to_string(), "missing");
     assert!(missing.response.is_none());
-    assert!(missing.direct_events.is_empty());
+    assert_eq!(missing.direct_events.len(), 0);
     target
         .establish_entity(EntitySetupRequest {
             entity: "demo.response.Row".parse().unwrap(),
@@ -296,7 +296,7 @@ fn missing_and_wrong_state_outcomes_issue_no_response() {
     let done = update(&target, 3).unwrap();
     assert_eq!(done.outcome.unwrap().outcome.to_string(), "done");
     assert!(done.response.is_none());
-    assert!(done.direct_events.is_empty());
+    assert_eq!(done.direct_events.len(), 0);
 }
 
 #[test]
@@ -449,6 +449,6 @@ fn failed_creation_discards_its_prepared_response_identity() {
         .unwrap_err()
         .to_string()
         .contains("invariant"));
-    assert!(created_rows(&target).is_empty());
+    assert_eq!(created_rows(&target).len(), 0);
     assert_eq!(create(&target, 3).unwrap(), create(&fresh, 3).unwrap());
 }

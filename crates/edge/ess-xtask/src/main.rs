@@ -1385,7 +1385,7 @@ mod tests {
     }
 
     #[test]
-    fn release_publication_is_evaluated_after_every_dependency_finishes() {
+    fn release_preparation_is_evaluated_after_every_dependency_finishes() {
         let workflow: serde_yaml::Value =
             serde_yaml::from_str(include_str!("../../../../.github/workflows/release.yml"))
                 .unwrap();
@@ -1460,17 +1460,21 @@ mod tests {
         assert!(
             !include_str!("../../../../.github/workflows/release.yml").contains("task site-build")
         );
-        let publication = jobs["release"]["steps"]
+        let artifact = jobs["release"]["steps"]
             .as_sequence()
             .unwrap()
             .iter()
-            .filter_map(|step| step["run"].as_str())
-            .find(|run| run.contains("gh release create"))
+            .find(|step| {
+                step["uses"].as_str().is_some_and(|uses| {
+                    uses == "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
+                })
+            })
             .unwrap();
-        assert!(publication.contains("--verify-tag --draft"));
-        assert!(
-            publication.find("gh release upload").unwrap()
-                < publication.find("--draft=false").unwrap()
+        assert_eq!(
+            artifact["with"]["name"].as_str(),
+            Some(
+                "ess-release-${{ needs.resolve.outputs.tag }}-${{ needs.resolve.outputs.commit }}"
+            )
         );
     }
 
@@ -1621,10 +1625,41 @@ mod tests {
     }
 
     #[test]
-    fn the_release_record_is_checked_after_every_release_run() {
+    fn the_release_record_is_checked_after_publication_and_failed_preparation() {
         let workflow = include_str!("../../../../.github/workflows/release-record.yml");
-        assert!(workflow.contains("workflows: [Release]"));
+        assert!(workflow.contains("workflows: [Release preparation]"));
         assert!(workflow.contains("types: [completed]"));
+        assert!(
+            workflow.contains("with:\n          ref: main"),
+            "a release event checks out its historical tag instead of the current strict checker"
+        );
+        assert!(
+            workflow.contains("fetch-depth: 0"),
+            "the release record cannot compare remote version tags to main from a shallow checkout"
+        );
+        assert!(
+            workflow.contains("fetch-tags: true"),
+            "the release record does not fetch the version tags it promises to verify"
+        );
         assert!(workflow.contains("cargo xtask release status"));
+    }
+
+    #[test]
+    fn successful_release_preparation_is_not_treated_as_publication() {
+        let workflow = include_str!("../../../../.github/workflows/release-record.yml");
+        assert!(
+            workflow.contains("release:\n    types: [published]"),
+            "a bot-published release does not trigger the final release record"
+        );
+        assert!(
+            workflow.contains("workflows: [Release preparation]"),
+            "the release record does not observe failed preparation runs"
+        );
+        assert!(
+            workflow.contains("github.event.workflow_run.conclusion != 'success'"),
+            "a successful preparation immediately checks for publication and misreports the tag"
+        );
+        assert!(workflow.contains("schedule:"));
+        assert!(workflow.contains("workflow_dispatch:"));
     }
 }

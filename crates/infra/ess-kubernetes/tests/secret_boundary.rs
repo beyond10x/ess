@@ -591,7 +591,7 @@ fn failed_all_namespace_request_cannot_fall_back_to_current_namespace() {
             !output.status.success(),
             "a narrower successful response must never rescue a failed cluster scan"
         );
-        assert!(output.stdout.is_empty());
+        assert_eq!(output.stdout.len(), 0);
         assert!(!String::from_utf8_lossy(&output.stderr).contains(SENTINEL));
         assert!(!destination.exists());
         let mut expected = if explicit_context {
@@ -616,7 +616,7 @@ fn successful_context_listing_preserves_output_bytes() {
         .expect("synthetic context listing");
     assert!(output.status.success());
     assert_eq!(output.stdout, b"synthetic-context\nsecond-context\n");
-    assert!(output.stderr.is_empty());
+    assert_eq!(output.stderr.len(), 0);
 }
 
 fn adversary_failure(operation: &str, mode: &str, preserve_existing: bool) -> (Output, PathBuf) {
@@ -652,7 +652,7 @@ fn signal_terminated_kubectl_discards_both_streams_before_refusing() {
     for operation in ["contexts", "current-context", "secrets"] {
         let (output, destination) = adversary_failure(operation, "signal", true);
         assert_eq!(output.status.code(), Some(1));
-        assert!(output.stdout.is_empty());
+        assert_eq!(output.stdout.len(), 0);
         let stderr = String::from_utf8(output.stderr).expect("safe diagnostic UTF-8");
         assert!(!stderr.contains(SENTINEL), "signal path leaked: {stderr}");
         assert!(
@@ -677,7 +677,7 @@ fn signal_terminated_kubectl_discards_both_streams_before_refusing() {
 fn failed_collection_reports_original_exit_status_without_child_values() {
     let (output, destination) = adversary_failure("secrets", "statuses", true);
     assert_eq!(output.status.code(), Some(1));
-    assert!(output.stdout.is_empty());
+    assert_eq!(output.stdout.len(), 0);
     let stderr = String::from_utf8(output.stderr).expect("safe diagnostic UTF-8");
     assert!(!stderr.contains(SENTINEL));
     assert!(stderr
@@ -697,7 +697,7 @@ fn failed_payloads_larger_than_pipe_capacity_are_not_partially_reported_or_writt
     for operation in ["contexts", "secrets"] {
         let (output, destination) = adversary_failure(operation, "large", false);
         assert_eq!(output.status.code(), Some(1));
-        assert!(output.stdout.is_empty());
+        assert_eq!(output.stdout.len(), 0);
         let stderr = String::from_utf8(output.stderr).expect("safe diagnostic UTF-8");
         assert!(!stderr.contains(SENTINEL), "large response leaked");
         assert!(stderr.len() < 4096, "diagnostic grew with child output");

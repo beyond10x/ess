@@ -215,6 +215,7 @@ impl Fixture {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
+        browser::legacy_replay_fixture(&generated);
         let (model, suite, replay): (Value, Value, Option<Value>) = if route == 5 {
             let replay: Value =
                 serde_json::from_slice(&fs::read(generated.join("replay.json")).unwrap()).unwrap();
@@ -835,7 +836,7 @@ fn b01_conflicting_captures_outcomes_and_missing_assignment_input_are_diagnostic
                 contains(&r, "assignment input \"copied\" is missing");
             } else {
                 assert_eq!(r["world"]["instances"], json!({}));
-                assert!(!r["world"]["notes"].as_array().unwrap().is_empty());
+                assert_ne!(r["world"]["notes"].as_array().unwrap().len(), 0);
                 contains(&r, "Unknown");
             }
         }
@@ -876,6 +877,7 @@ fn b08_missing_required_authored_parameter_still_refuses() {
         let message = if route == 4 {
             String::from_utf8(output.stdout).unwrap()
         } else {
+            browser::legacy_replay_fixture(&evidence.join("site"));
             let replay = fs::read_to_string(evidence.join("site/replay.json")).unwrap();
             ess_conformance::web_replay::AdmittedReplay::from_json(&replay).unwrap();
             replay
@@ -1162,7 +1164,7 @@ fn adversary_query_only_prefix_remains_visible_and_reconstructible() {
         let mut f = Fixture::emit("adversary-query-only", route, SPEC, &scenario(false));
         f.steps()
             .retain(|step| matches!(step["step"].as_str(), Some("query_view" | "expect_view")));
-        assert!(!f.steps().is_empty());
+        assert_ne!(f.steps().len(), 0);
         f.persist();
         let result = f.browse(&mut firefox, r"await click('Views');const initial=snapshot();await click('Step');const reached=snapshot();await click('◂ Back');const back=snapshot();await click('Step');return JSON.stringify({initial,reached,back,replayed:snapshot()});");
         assert_eq!(result["initial"], result["back"]);
@@ -1396,6 +1398,7 @@ fn adversary2_switching_to_a_distinct_authored_scenario_cancels_pending_play() {
         )
         .unwrap();
         assert!(output.status.success(), "{output:?}");
+        browser::legacy_replay_fixture(&f.site);
         if route == 5 {
             let original = fs::read_to_string(f.site.join("replay.json")).unwrap();
             ess_conformance::web_replay::AdmittedReplay::from_json(&original).unwrap();

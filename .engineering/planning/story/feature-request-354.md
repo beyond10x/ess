@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-354
 kind: story
-status: draft
+status: active
 title: Nested reading nodes and record headers participate in live updates
 refs:
 - provider: github
@@ -10,7 +10,10 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-04T12:53:10Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-10-04T12:53:10Z", actor: "human:timo", revision: 3}
 ---
 ## Outcome
 

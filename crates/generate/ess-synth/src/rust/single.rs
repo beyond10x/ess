@@ -261,7 +261,7 @@ fn manifest(ir: &EssIr, plan: &SynthesisPlan, server: bool) -> Artifact {
     }
     out.push_str("\n[dependencies]\n");
     if server {
-        out.push_str("clap = { version = \"4.6.7\", features = [\"derive\"], optional = true }\nuuid = { version = \"1.26.1\", features = [\"v4\"], optional = true }\ntime = { version = \"0.3.55\", features = [\"formatting\"], optional = true }\n");
+        out.push_str("clap = { version = \"=4.6.7\", features = [\"derive\"], optional = true }\nuuid = { version = \"=1.26.1\", features = [\"v4\"], optional = true }\ntime = { version = \"=0.3.45\", features = [\"formatting\"], optional = true }\n");
         for component in super::http::served(ir) {
             let _ = writeln!(out, "\n[[bin]]\nname = \"{}-server\"\npath = \"src/bin/{}-server.rs\"\nrequired-features = [\"server\"]", component.name, component.name);
         }

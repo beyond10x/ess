@@ -35,6 +35,16 @@
 //! Every channel carries `x-ess-address-source`, so a reader can tell an address somebody chose from
 //! one this generator derived.
 //!
+//! # With a transport document
+//!
+//! [`TransportedAsyncApi`] is the same projection with an `ess-transport/1` document beside the
+//! model (beyond10x/ess#390, beyond10x/ess#392; `docs/design/event-transport-binding.md`). A bound
+//! channel's address is its subject (`x-ess-address-source: transport`), it references its broker
+//! under `servers`, and `x-ess-stream` names the stream that captures it. An `array` envelope makes
+//! the message payload an array of the event payload. The send operation carries `x-ess-delivery`
+//! and `x-ess-batch`. An event the transport does not bind keeps exactly the projection above, and
+//! without a transport document every byte is unchanged.
+//!
 //! # `delivery` and `on_failure` do not get lost here
 //!
 //! Review F3 made both required words, and `Failure::Drop` in particular a word an author has to
@@ -136,8 +146,8 @@
 use std::collections::BTreeMap;
 
 use ess_compiler::ir::{
-    ResolvedBinding, ResolvedComponent, ResolvedEffect, ResolvedEvent, ResolvedFailure,
-    ResolvedMapping, ResolvedMappingValue, TypeHandle,
+    ResolvedBinding, ResolvedBody, ResolvedComponent, ResolvedEffect, ResolvedEvent,
+    ResolvedFailure, ResolvedMapping, ResolvedMappingValue, ResolvedTypeRef, TypeHandle,
 };
 use ess_compiler::EssIr;
 use ess_domain::binding::{Delivery, Failure};
@@ -146,6 +156,7 @@ use ess_domain::name::QualifiedName;
 use crate::artifact::{Artifact, Generator};
 use crate::openapi::under_components;
 use ess_compiler::refs::{BindingRef, CommandRef, ComponentRef, EssSemanticRef};
+use ess_transport::{Channel as TransportChannel, Envelope, TransportIr};
 
 use crate::provenance::{Provenance, ProvenanceMint, SlicedProvenance};
 use crate::schema::types::{self, Node};
@@ -171,6 +182,10 @@ const TYPE_KEY: &str = "type.";
 /// One `AsyncAPI` 3.0 document per component: what it publishes, and what it reacts to.
 pub struct AsyncApi;
 
+/// The same documents, with the brokers, subjects, streams, parameters and envelopes an
+/// `ess-transport/1` or `/2` document binds the events to.
+pub struct TransportedAsyncApi(pub ess_transport::TransportIr);
+
 impl Generator for AsyncApi {
     fn name(&self) -> &'static str {
         "asyncapi"
@@ -185,21 +200,45 @@ impl Generator for AsyncApi {
     }
 
     fn generate(&self, ir: &EssIr, mint: &ProvenanceMint) -> Vec<Artifact> {
-        ir.components()
-            .values()
-            .map(|component| {
-                let sliced = component_slice(ir, component, mint);
-                let document = document(ir, component, &sliced.provenance);
-                let body = serde_yaml::to_string(&document)
-                    .unwrap_or_else(|error| panic!("an AsyncAPI document serialises: {error}"));
-                Artifact::sliced(
-                    format!("{}.yaml", component.name),
-                    format!("{}{body}", sliced.provenance.commented("#")),
-                    sliced.slice,
-                )
-            })
-            .collect()
+        documents(ir, mint, None)
     }
+}
+
+impl Generator for TransportedAsyncApi {
+    fn name(&self) -> &'static str {
+        "asyncapi"
+    }
+
+    fn describes(&self) -> &'static str {
+        "an AsyncAPI 3.0 document per component, with the brokers, subjects, streams and envelopes \
+         its transport document binds"
+    }
+
+    fn directory(&self) -> &'static str {
+        "asyncapi"
+    }
+
+    fn generate(&self, ir: &EssIr, mint: &ProvenanceMint) -> Vec<Artifact> {
+        documents(ir, mint, Some(&self.0))
+    }
+}
+
+/// One document per component.
+fn documents(ir: &EssIr, mint: &ProvenanceMint, transport: Option<&TransportIr>) -> Vec<Artifact> {
+    ir.components()
+        .values()
+        .map(|component| {
+            let sliced = component_slice(ir, component, mint);
+            let document = document(ir, component, &sliced.provenance, transport);
+            let body = serde_yaml::to_string(&document)
+                .unwrap_or_else(|error| panic!("an AsyncAPI document serialises: {error}"));
+            Artifact::sliced(
+                format!("{}.yaml", component.name),
+                format!("{}{body}", sliced.provenance.commented("#")),
+                sliced.slice,
+            )
+        })
+        .collect()
 }
 
 /// A map that keeps the order it was built in.
@@ -218,6 +257,10 @@ impl<T> Table<T> {
     /// Appends an entry.
     fn push(&mut self, key: impl Into<String>, value: T) {
         self.0.push((key.into(), value));
+    }
+
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 }
 
@@ -253,11 +296,42 @@ struct Document {
     periodic: Vec<ResolvedBinding>,
     asyncapi: &'static str,
     info: Info,
+    /// The brokers a bound channel of this component uses; absent without a transport document.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    servers: Option<Table<Server>>,
     #[serde(rename = "defaultContentType")]
     default_content_type: &'static str,
     channels: Table<Channel>,
     operations: Table<Operation>,
     components: Components,
+}
+
+/// One broker, as `AsyncAPI` names a server.
+#[derive(serde::Serialize)]
+struct Server {
+    host: String,
+    protocol: &'static str,
+    description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    variables: Option<Table<ServerVariable>>,
+}
+
+/// A server variable: here only `host`, where the transport document does not fix it.
+#[derive(serde::Serialize)]
+struct ServerVariable {
+    description: &'static str,
+}
+
+/// The stream that captures a bound channel's subject.
+#[derive(serde::Serialize)]
+struct StreamExtension {
+    name: String,
+    subjects: Vec<String>,
+    storage: ess_transport::Storage,
+    retention: ess_transport::Retention,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_age_seconds: Option<u64>,
+    owner: ess_transport::Owner,
 }
 
 /// Command response semantics; never represented as a new channel or message.
@@ -318,15 +392,38 @@ impl Reference {
 #[derive(serde::Serialize)]
 struct Channel {
     address: String,
+    #[serde(skip_serializing_if = "Table::is_empty")]
+    parameters: Table<ChannelParameter>,
     #[serde(skip_serializing_if = "Option::is_none")]
     title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     summary: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    servers: Vec<Reference>,
     messages: Table<Reference>,
     #[serde(rename = "x-ess-event")]
     event: String,
     #[serde(rename = "x-ess-address-source")]
     address_source: &'static str,
+    #[serde(rename = "x-ess-stream", skip_serializing_if = "Option::is_none")]
+    stream: Option<StreamExtension>,
+}
+
+/// One `AsyncAPI` channel address parameter and ESS's stronger payload-source contract.
+#[derive(serde::Serialize)]
+struct ChannelParameter {
+    description: String,
+    location: String,
+    #[serde(rename = "x-ess-source")]
+    source: ChannelParameterSource,
+}
+
+#[derive(serde::Serialize)]
+struct ChannelParameterSource {
+    kind: &'static str,
+    path: Vec<String>,
+    scope: &'static str,
+    constraint: &'static str,
 }
 
 /// Something this component does with a channel: `send` it, or `receive` from it.
@@ -344,6 +441,12 @@ struct Operation {
     /// Only on a `send`: who reacts to this event, and under what failure policy.
     #[serde(rename = "x-ess-consumed-by", skip_serializing_if = "Vec::is_empty")]
     consumed_by: Vec<Consumer>,
+    /// Only on a bound `send`: what the publisher promises about each message.
+    #[serde(rename = "x-ess-delivery", skip_serializing_if = "Option::is_none")]
+    delivery: Option<Delivery>,
+    /// Only on a bound `send` with an `array` envelope: how the publisher fills it.
+    #[serde(rename = "x-ess-batch", skip_serializing_if = "Option::is_none")]
+    batch: Option<ess_transport::Batch>,
 }
 
 /// A binding, from the side that handles it.
@@ -482,7 +585,24 @@ struct Message {
     summary: Option<String>,
     #[serde(rename = "contentType")]
     content_type: &'static str,
-    payload: Reference,
+    payload: Payload,
+    /// `array` where the transport document carries several payloads in one message.
+    #[serde(rename = "x-ess-envelope", skip_serializing_if = "Option::is_none")]
+    envelope: Option<&'static str>,
+}
+
+/// A message payload: the event payload schema, or an array of it.
+#[derive(serde::Serialize)]
+#[serde(untagged)]
+enum Payload {
+    /// One event payload per message.
+    Single(Reference),
+    /// A JSON array of event payloads per message.
+    Array {
+        #[serde(rename = "type")]
+        kind: &'static str,
+        items: Reference,
+    },
 }
 
 /// One payload schema, as this document carries it.
@@ -544,7 +664,12 @@ fn component_slice(
 type Reactions<'a> = BTreeMap<&'a QualifiedName, Vec<&'a ResolvedBinding>>;
 
 /// Builds one component's document.
-fn document(ir: &EssIr, component: &ResolvedComponent, provenance: &Provenance) -> Document {
+fn document(
+    ir: &EssIr,
+    component: &ResolvedComponent,
+    provenance: &Provenance,
+    transport: Option<&TransportIr>,
+) -> Document {
     let reactions: Reactions<'_> = ir
         .reactions()
         .into_iter()
@@ -555,13 +680,33 @@ fn document(ir: &EssIr, component: &ResolvedComponent, provenance: &Provenance) 
     let mut operations = Table::new();
     let mut messages = Table::new();
 
+    let mut brokers = Vec::new();
     for plan in &plans {
         let event = plan.event;
         let identity = event.name.to_string();
-        channels.push(identity.clone(), channel(event));
-        messages.push(identity.clone(), message(event));
+        let bound = transport.and_then(|transport| {
+            transport
+                .channel(&identity)
+                .map(|channel| (transport, channel))
+        });
+        let mut projected = channel(event);
+        let mut published = message(event);
+        if let Some((transport, bound)) = bound {
+            bind_channel(&mut projected, transport, bound, ir, event);
+            bind_message(&mut published, bound);
+            if !brokers.contains(&bound.broker) {
+                brokers.push(bound.broker.clone());
+            }
+        }
+        channels.push(identity.clone(), projected);
+        messages.push(identity.clone(), published);
         if plan.publishes {
-            operations.push(format!("send.{identity}"), send(ir, event, &reactions));
+            let mut operation = send(ir, event, &reactions);
+            if let Some((_, bound)) = bound {
+                operation.delivery = Some(bound.delivery);
+                operation.batch = bound.batch;
+            }
+            operations.push(format!("send.{identity}"), operation);
         }
         if !plan.handles.is_empty() {
             operations.push(format!("receive.{identity}"), receive(ir, component, plan));
@@ -586,10 +731,11 @@ fn document(ir: &EssIr, component: &ResolvedComponent, provenance: &Provenance) 
         info: Info {
             title: component_title(component).to_owned(),
             version: ir.version().to_string(),
-            description: Some(describe(ir, component)),
+            description: Some(describe(ir, component, transport.is_some())),
             component: component.name.to_string(),
             provenance: provenance.clone(),
         },
+        servers: transport.map(|transport| servers(transport, &brokers)),
         default_content_type: CONTENT_TYPE,
         channels,
         operations,
@@ -658,7 +804,7 @@ fn component_title(component: &ResolvedComponent) -> &str {
 ///
 /// The transport caveat lives here, once, rather than on every operation: it is a fact about the
 /// specification, and repeating it beside each channel would train a reader to skip it.
-fn describe(ir: &EssIr, component: &ResolvedComponent) -> String {
+fn describe(ir: &EssIr, component: &ResolvedComponent, transported: bool) -> String {
     let mut parts = vec![format!(
         "`{}` in the `{}` specification.",
         component.name,
@@ -670,13 +816,159 @@ fn describe(ir: &EssIr, component: &ResolvedComponent) -> String {
     if let Some(summary) = ir.summary().as_deref() {
         parts.push(summary.to_owned());
     }
-    parts.push(
+    parts.push(if transported {
+        "A transport document binds the events below that carry `x-ess-address-source: \
+         transport`: their address is the subject, `servers` names the broker, `x-ess-stream` the \
+         stream that captures the subject, and the payload is an array where the envelope is. Other \
+         addresses are names and not topics. Security schemes, message keys and partitioning are \
+         absent because neither the model nor the transport document states them."
+            .to_owned()
+    } else {
         "The specification declares no transport, so each address below is a name and not a topic \
          on a named broker. Servers, protocol bindings, security schemes, message keys, \
          partitioning, retention and ordering are absent because the model does not state them."
-            .to_owned(),
-    );
+            .to_owned()
+    });
     parts.join("\n\n")
+}
+
+/// The brokers this document's bound channels use, in first-use order.
+fn servers(transport: &TransportIr, used: &[String]) -> Table<Server> {
+    let mut servers = Table::new();
+    for id in used {
+        let broker = &transport.brokers()[id];
+        let streams: Vec<&str> = transport
+            .streams()
+            .iter()
+            .filter(|(_, stream)| &stream.broker == id)
+            .map(|(name, _)| name.as_str())
+            .collect();
+        let mut description = format!("Broker `{id}`, {}", broker.protocol.as_str());
+        if broker.jetstream {
+            description.push_str(" with JetStream");
+            if !streams.is_empty() {
+                description.push_str("; streams: ");
+                description.push_str(&streams.join(", "));
+            }
+        }
+        description.push('.');
+        let (host, variables) = if let Some(host) = &broker.host {
+            (host.clone(), None)
+        } else {
+            let mut variables = Table::new();
+            variables.push(
+                "host",
+                ServerVariable {
+                    description:
+                        "Where the broker listens; the transport document does not fix it.",
+                },
+            );
+            ("{host}".to_owned(), Some(variables))
+        };
+        servers.push(
+            id.clone(),
+            Server {
+                host,
+                protocol: broker.protocol.as_str(),
+                description,
+                variables,
+            },
+        );
+    }
+    servers
+}
+
+/// A channel the transport document binds: its subject, broker and capturing stream.
+fn bind_channel(
+    channel: &mut Channel,
+    transport: &TransportIr,
+    bound: &TransportChannel,
+    ir: &EssIr,
+    event: &ResolvedEvent,
+) {
+    channel.address.clone_from(&bound.subject);
+    channel.address_source = "transport";
+    for (name, source) in &bound.parameters {
+        let semantic = source.event_path().to_vec();
+        let wire = event_wire_path(ir, event, &semantic);
+        let pointer = wire
+            .iter()
+            .map(|segment| segment.replace('~', "~0").replace('/', "~1"))
+            .collect::<Vec<_>>()
+            .join("/");
+        let (item, scope) = if bound.envelope == Envelope::Array {
+            ("/0", "every_item")
+        } else {
+            ("", "one_item")
+        };
+        channel.parameters.push(
+            name,
+            ChannelParameter {
+                description: format!(
+                    "Equals event.{} and is one concrete NATS subject token.",
+                    semantic.join(".")
+                ),
+                location: format!("$message.payload#{item}/{pointer}"),
+                source: ChannelParameterSource {
+                    kind: "event_path",
+                    path: semantic,
+                    scope,
+                    constraint: "nats_subject_token",
+                },
+            },
+        );
+    }
+    channel.servers = vec![Reference::to(format!("#/servers/{}", bound.broker))];
+    channel.stream = bound.stream.as_ref().map(|name| {
+        let stream = &transport.streams()[name];
+        StreamExtension {
+            name: name.clone(),
+            subjects: stream.subjects.clone(),
+            storage: stream.storage,
+            retention: stream.retention,
+            max_age_seconds: stream.max_age_seconds,
+            owner: stream.owner,
+        }
+    });
+}
+
+fn event_wire_path(ir: &EssIr, event: &ResolvedEvent, semantic: &[String]) -> Vec<String> {
+    let mut out = Vec::with_capacity(semantic.len());
+    let mut field = event
+        .field(&semantic[0])
+        .unwrap_or_else(|| unreachable!("transport compilation resolved the event path"));
+    out.push(types::wire_name(field).to_owned());
+    for member in &semantic[1..] {
+        let ResolvedTypeRef::Declared { name } = &field.type_ref else {
+            unreachable!("transport compilation admitted only required struct intermediates")
+        };
+        let ResolvedBody::Struct { fields, .. } = &ir.named_type(name).body else {
+            unreachable!("transport compilation admitted only required struct intermediates")
+        };
+        field = fields
+            .iter()
+            .find(|field| field.name == *member)
+            .unwrap_or_else(|| unreachable!("transport compilation resolved the event path"));
+        out.push(types::wire_name(field).to_owned());
+    }
+    out
+}
+
+/// A message the transport document carries in an `array` envelope.
+fn bind_message(message: &mut Message, bound: &TransportChannel) {
+    if bound.envelope == Envelope::Array {
+        let Payload::Single(reference) = std::mem::replace(
+            &mut message.payload,
+            Payload::Single(Reference::to(String::new())),
+        ) else {
+            unreachable!("a message is built with a single payload")
+        };
+        message.payload = Payload::Array {
+            kind: "array",
+            items: reference,
+        };
+        message.envelope = Some("array");
+    }
 }
 
 /// The channel one event travels on.
@@ -690,11 +982,14 @@ fn channel(event: &ResolvedEvent) -> Channel {
     );
     Channel {
         address,
+        parameters: Table::new(),
         title: Some(display_of(event).to_owned()),
         summary: event.naming.summary.clone(),
+        servers: Vec::new(),
         messages,
         event: identity,
         address_source,
+        stream: None,
     }
 }
 
@@ -716,7 +1011,11 @@ fn message(event: &ResolvedEvent) -> Message {
         title: Some(display_of(event).to_owned()),
         summary: event.naming.summary.clone(),
         content_type: CONTENT_TYPE,
-        payload: Reference::to(format!("#/components/schemas/{EVENT_KEY}{}", event.name)),
+        payload: Payload::Single(Reference::to(format!(
+            "#/components/schemas/{EVENT_KEY}{}",
+            event.name
+        ))),
+        envelope: None,
     }
 }
 
@@ -772,6 +1071,8 @@ fn send(ir: &EssIr, event: &ResolvedEvent, reactions: &Reactions<'_>) -> Operati
         ))],
         reactions: Vec::new(),
         consumed_by,
+        delivery: None,
+        batch: None,
     }
 }
 
@@ -875,6 +1176,8 @@ fn receive(ir: &EssIr, component: &ResolvedComponent, plan: &Plan<'_>) -> Operat
         ))],
         reactions,
         consumed_by: Vec::new(),
+        delivery: None,
+        batch: None,
     }
 }
 

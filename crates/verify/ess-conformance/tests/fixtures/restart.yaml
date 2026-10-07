@@ -1,0 +1,74 @@
+# The fixture for exploration with restarts (beyond10x/ess#297).
+#
+# One command that creates an entry with a generated identity, and one `read_your_writes` view of
+# every entry. The targets beside it are `restart_target.go` and `restart-target.mjs`: each runs
+# its implementation as a child process over a state directory and restarts that process when the
+# explorer asks, so a counter kept only in the process starts again after a restart.
+
+format: ess/1
+system: restart
+version: v1
+domains:
+  - restart.ledger
+
+domain: restart.ledger
+
+summary: Entries recorded one at a time, each under an identity the implementation mints.
+
+types:
+  - name: restart.ledger.EntryId
+    kind: newtype
+    of: Uuid
+
+entities:
+  - name: restart.ledger.Entry
+    identity:
+      name: entry_id
+      type: restart.ledger.EntryId
+    fields:
+      - name: amount
+        type: Integer
+    lifecycle:
+      initial: Recorded
+      states: [Recorded]
+      terminal: [Recorded]
+
+actors:
+  - name: restart.ledger.Clerk
+    may:
+      - restart.ledger.RecordEntry
+
+commands:
+  - name: restart.ledger.RecordEntry
+    input:
+      - name: amount
+        type: Integer
+    outcomes:
+      - name: recorded
+        creates: restart.ledger.Entry
+        instance: entry_id
+        emits:
+          - restart.ledger.EntryRecorded
+        payload:
+          restart.ledger.EntryRecorded:
+            amount: input.amount
+        sets:
+          amount: input.amount
+
+events:
+  - name: restart.ledger.EntryRecorded
+    fields:
+      - name: entry_id
+        type: restart.ledger.EntryId
+      - name: amount
+        type: Integer
+
+views:
+  - name: restart.ledger.Entries
+    source: restart.ledger.Entry
+    consistency: read_your_writes
+    fields:
+      - name: entry_id
+        type: restart.ledger.EntryId
+      - name: amount
+        type: Integer

@@ -337,6 +337,157 @@ fn go_gives_the_reference_verdict_for_every_denied_scenario() {
     );
 }
 
+/// The runner's side of `expect_not_granted`, the one a custom runner has to reproduce
+/// (beyond10x/ess#347): before sending a command whose next step is `expect_not_granted`, it
+/// observes each `unpublished` event; after the refusal it observes each again; every observation
+/// and the send carry the scenario's one correlation. A target that cannot observe its log never
+/// has the refused command sent, and the scenario is `unsupported`, not passed.
+#[test]
+fn the_runner_observes_each_unpublished_event_before_the_refused_send_and_again_after_it() {
+    let mut suite = ess_conformance::synthesize(&compiled(&desk())).suite;
+    suite
+        .scenarios
+        .retain(|id, _| id.to_string() == "desk.ops.Ping/grant/denied");
+    assert_eq!(suite.scenarios.len(), 1, "the denied `Ping` scenario");
+    let ScenarioStep::ExpectNotGranted { unpublished, .. } = suite
+        .scenarios
+        .values()
+        .next()
+        .unwrap()
+        .steps
+        .last()
+        .unwrap()
+    else {
+        panic!("the denied scenario ends in `expect_not_granted`");
+    };
+    let unpublished: Vec<String> = unpublished.iter().map(ToString::to_string).collect();
+    assert_eq!(unpublished, ["desk.ops.Pinged", "desk.ops.Tallied"]);
+    let admitted = AdmittedSuite::from_suite(&suite).expect("admits");
+
+    let observing = Recorder::new(true);
+    let report = Runner::for_suite(&suite)
+        .run_admitted(&admitted, &observing)
+        .into_report();
+    assert_eq!(report.scenarios[0].status, Status::Passed, "{report:#?}");
+    assert_eq!(
+        observing.calls(),
+        [
+            "observe desk.ops.Pinged",
+            "observe desk.ops.Tallied",
+            "execute desk.ops.Ping as desk.ops.Watcher",
+            "observe desk.ops.Pinged",
+            "observe desk.ops.Tallied",
+        ],
+        "observed before the send and again after the refusal"
+    );
+    let correlations = observing.correlations.borrow();
+    assert_eq!(correlations.len(), 6, "the context, five requests");
+    assert!(
+        correlations.iter().all(|seen| *seen == correlations[0]),
+        "every observation and the send carry the scenario's correlation: {correlations:?}"
+    );
+
+    let blind = Recorder::new(false);
+    let report = Runner::for_suite(&suite)
+        .run_admitted(&admitted, &blind)
+        .into_report();
+    assert_eq!(
+        report.scenarios[0].status,
+        Status::Unsupported,
+        "{report:#?}"
+    );
+    assert_eq!(
+        blind.calls(),
+        ["observe desk.ops.Pinged"],
+        "a target that cannot observe its log never has the refused command sent"
+    );
+}
+
+/// The gated `Desk`, recording each request the runner makes of it.
+struct Recorder {
+    desk: Desk,
+    observes: bool,
+    calls: std::cell::RefCell<Vec<String>>,
+    correlations: std::cell::RefCell<Vec<String>>,
+}
+
+impl Recorder {
+    fn new(observes: bool) -> Self {
+        Self {
+            desk: Desk::gated(),
+            observes,
+            calls: std::cell::RefCell::default(),
+            correlations: std::cell::RefCell::default(),
+        }
+    }
+
+    fn calls(&self) -> Vec<String> {
+        self.calls.borrow().clone()
+    }
+}
+
+impl ConformanceTarget for Recorder {
+    fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
+        self.desk.identity()
+    }
+    fn begin_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
+        self.correlations
+            .borrow_mut()
+            .push(format!("{:?}", scenario.correlation));
+        self.desk.begin_scenario(scenario)
+    }
+    fn end_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
+        self.desk.end_scenario(scenario)
+    }
+    fn execute_command(
+        &self,
+        request: SemanticCommandRequest,
+    ) -> Result<SemanticCommandResult, TargetError> {
+        self.calls.borrow_mut().push(format!(
+            "execute {} as {}",
+            request.command,
+            request
+                .actor
+                .as_ref()
+                .map_or_else(|| "nobody".to_owned(), ToString::to_string)
+        ));
+        self.correlations
+            .borrow_mut()
+            .push(format!("{:?}", request.correlation));
+        self.desk.execute_command(request)
+    }
+    fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
+        self.desk.query_view(request)
+    }
+    fn observe_events(
+        &self,
+        request: EventObservationRequest,
+    ) -> Result<Vec<ObservedEvent>, TargetError> {
+        self.calls
+            .borrow_mut()
+            .push(format!("observe {}", request.event));
+        self.correlations
+            .borrow_mut()
+            .push(format!("{:?}", request.correlation));
+        if !self.observes {
+            return Err(TargetError::unsupported(
+                format!("observing `{}`", request.event),
+                "this target cannot read its event log",
+            ));
+        }
+        self.desk.observe_events(request)
+    }
+    fn configure_external_outcome(
+        &self,
+        control: ExternalOutcomeControl,
+    ) -> Result<(), TargetError> {
+        self.desk.configure_external_outcome(control)
+    }
+    fn redeliver_event(&self, request: RedeliveryRequest) -> Result<(), TargetError> {
+        self.desk.redeliver_event(request)
+    }
+}
+
 struct Desk {
     gated: bool,
     sequence: std::cell::Cell<u64>,

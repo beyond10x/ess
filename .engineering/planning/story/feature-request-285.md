@@ -12,7 +12,7 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 7
+revision: 5
 ---
 ## Outcome
 
@@ -42,9 +42,3 @@ Per `.agents/skills/assessing-external-requests/SKILL.md` (coordinator, 2026-10-
 Backlog reconciliation (coordinator, 2026-10-01).
 
 - The one-hop Optional group key (ESS-SYNTH-017) may already be fixed by #257 (merged on `integrate/gaps-w1`). Check it before scheduling.
-
-## Source version allocation, 2026-10-02
-
-The operator explicitly prioritized issue389 for the fast lane. The coordinator allocates the next unshipped source major, ess/21, to its one-time response disclosure contract. The previously planned coordinated downstream syntax bundle moves together to ess/22; its accepted behavior, dependency ordering and requirement to ship as one bundle are unchanged. Prior mentions of ess/21 in this artifact record the earlier allocation, not the current implementation target. No released source/IR/suite meaning is rewritten by this planning change.
-
-This allocation must be reflected in binding designs and compatibility tests before implementation. The389 design independently names its new IR and ordinary/coverage suite versions from actual current source; those numbers are not inferred from the source-format number.
