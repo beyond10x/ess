@@ -122,9 +122,7 @@ fn concurrent_generate_runs_creating_distinct_roots_under_one_directory_all_publ
         .map(|e| e.unwrap().file_name())
         .collect();
     names.sort();
-    let mut created: Vec<_> = (0..RUNS)
-        .map(|i| OsString::from(format!("x{i}")))
-        .collect();
+    let mut created: Vec<_> = (0..RUNS).map(|i| OsString::from(format!("x{i}"))).collect();
     created.sort();
     assert_eq!(names, created, "the shared directory holds only the roots");
 }
@@ -173,6 +171,11 @@ fn concurrent_generate_runs_creating_the_same_root_leave_one_complete_publicatio
         );
     }
     assert_eq!(leftovers(&shared), Vec::<PathBuf>::new());
+    let refused = outputs.iter().filter(|o| !o.status.success()).count();
+    println!(
+        "{refused} of {} runs refused as busy; the rest published or found the root published",
+        outputs.len()
+    );
 }
 
 /// A shared lock on the parent, as `check` or a run creating a sibling holds, does not refuse
@@ -323,6 +326,47 @@ fn a_second_run_creating_the_same_root_first_leaves_the_other_refused_busy() {
     }
 }
 
+/// Name admission never enters a root another run created after this run locked its parent: the
+/// directory is that run's, not this one's. Here the second run publishes fewer files, so entering
+/// its root would make this run probe a missing name there.
+#[test]
+fn admission_never_enters_a_root_another_run_created_after_locking() {
+    let _serial = serial();
+    let f = Fixture::new();
+    let shared = f.0.join("shared");
+    fs::create_dir(&shared).unwrap();
+    let root = shared.join("pair/out");
+    let more: Vec<_> = FILES
+        .iter()
+        .copied()
+        .chain([("extra.html", "only the first run")])
+        .collect();
+    let mut published = None;
+    let mut entered = Vec::new();
+    let refusal = ownership::probe::publish_admission(&root, &more, &mut |event| {
+        if published.is_none() && event == "before:mkdir:admission-namespace" {
+            publish(&root)?;
+            published = Some(snapshot(&root));
+        } else if published.is_some() && !leftovers(&root).is_empty() {
+            entered.push(event.to_owned());
+        }
+        Ok(())
+    })
+    .unwrap_err();
+    assert!(published.is_some(), "the second run published");
+    assert_eq!(
+        entered,
+        Vec::<String>::new(),
+        "admission wrote inside another run's root"
+    );
+    assert!(
+        format!("{refusal:#}").contains(&busy_at(&root)),
+        "{refusal:#}"
+    );
+    assert_eq!(Some(snapshot(&root)), published);
+    assert_eq!(leftovers(&shared), Vec::<PathBuf>::new());
+}
+
 /// A run that created the root but finds it locked by another run refuses as busy naming the root
 /// and leaves the directory, empty, to the run holding it.
 #[test]
@@ -347,7 +391,10 @@ fn a_created_root_bound_by_another_run_before_it_is_locked_is_left_to_that_run()
         format!("{refusal:#}").contains(&busy_at(&root)),
         "{refusal:#}"
     );
-    assert!(root.is_dir(), "the refused run removed a root another run holds");
+    assert!(
+        root.is_dir(),
+        "the refused run removed a root another run holds"
+    );
     assert_eq!(
         snapshot(&root),
         BTreeMap::new(),
@@ -420,7 +467,10 @@ fn an_enrolled_or_reserved_ancestor_still_refuses_a_new_root_beneath_it() {
                 || message.contains("output root is beneath enrolled or reserved ancestor"),
             "{name}: {message}"
         );
-        assert!(!root.exists(), "{name}: a root was created inside an enrolled one");
+        assert!(
+            !root.exists(),
+            "{name}: a root was created inside an enrolled one"
+        );
         assert_eq!(Some(snapshot(&ancestor)), published, "{name}");
         assert!(ownership::check(&ancestor).is_ok(), "{name}");
     }

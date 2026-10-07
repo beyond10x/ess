@@ -128,24 +128,84 @@ pub(super) enum Access {
     Shared,
     Exclusive,
 }
+/// Directory locks held for one operation. Every existing ancestor of a root is locked shared and
+/// an existing root is locked as requested. A missing root that is requested exclusively is
+/// locked when this run creates it, so runs creating different roots under one directory do not
+/// exclude each other (beyond10x/ess#485).
 pub(super) struct Locks {
     directories: BTreeMap<PathBuf, File>,
     requested: Vec<(PathBuf, Access)>,
+    /// The components of each exclusively requested root that did not exist when it was locked,
+    /// top-down, by root. Only this run creates them: one that appears first is another run
+    /// creating the same path.
+    absent: BTreeMap<PathBuf, Vec<PathBuf>>,
+}
+/// The first component of a root that was missing when it was locked and that this run has not
+/// created yet. Admission must not enter it once it exists.
+pub(super) struct Fresh {
+    root: PathBuf,
+    path: PathBuf,
+}
+impl Fresh {
+    pub(super) fn name(&self) -> Option<&OsStr> {
+        self.path.file_name()
+    }
+    /// The refusal for a component another run created first.
+    pub(super) fn busy(&self) -> anyhow::Error {
+        anyhow::anyhow!(
+            "output ownership busy at {}: another run created {} first",
+            self.root.display(),
+            self.path.display()
+        )
+    }
+    /// Refuse as busy once the component exists in `parent`, the directory locked above it.
+    pub(super) fn absent(&self, parent: &impl AsFd) -> Result<()> {
+        let name = self.path.file_name().context("directory name")?;
+        match fs::statat(parent, name, AtFlags::SYMLINK_NOFOLLOW) {
+            Err(Errno::NOENT) => Ok(()),
+            Ok(_) => Err(self.busy()),
+            Err(e) => Err(e).with_context(|| format!("inspecting {}", self.path.display())),
+        }
+    }
+}
+fn busy(root: &Path) -> String {
+    format!("output ownership busy at {}", root.display())
+}
+/// Refuse a root beneath `ancestor` when `fd`, that ancestor, holds enrolled or reserved state.
+fn beneath_enrolled(fd: &File, ancestor: &Path) -> Result<()> {
+    for name in names(fd)? {
+        if name.eq_ignore_ascii_case(OsStr::new(state::RESERVED)) {
+            bail!(
+                "output root is beneath enrolled or reserved ancestor {}; use its existing ownership root",
+                ancestor.display()
+            );
+        }
+    }
+    Ok(())
 }
 impl Locks {
     pub(super) fn acquire(requested: &[(PathBuf, Access)]) -> Result<Self> {
         let mut needed = BTreeMap::new();
+        let mut absent = BTreeMap::new();
         for (root, access) in requested {
             ensure!(
                 !root.components().any(|c| state::reserved(c.as_os_str())),
                 "ownership root intersects reserved state namespace"
             );
             let mut existing = root.as_path();
+            let mut missing = Vec::new();
             while !existing.try_exists()? {
+                missing.push(existing.to_path_buf());
                 existing = existing.parent().context("no existing output ancestor")?;
             }
+            if *access == Access::Exclusive && !missing.is_empty() {
+                missing.reverse();
+                absent.insert(root.clone(), missing);
+            }
             for path in existing.ancestors() {
-                let lock = if path == existing && *access == Access::Exclusive {
+                // Exclusive only on the root itself. The nearest existing ancestor of a missing
+                // root is shared like every other ancestor; `create_root` locks what it creates.
+                let lock = if path == root.as_path() && *access == Access::Exclusive {
                     Access::Exclusive
                 } else {
                     Access::Shared
@@ -170,6 +230,7 @@ impl Locks {
         let mut result = Self {
             directories: BTreeMap::new(),
             requested: requested.to_vec(),
+            absent,
         };
         for (path, access) in paths {
             let fd = if let Some(parent) = path.parent() {
@@ -204,24 +265,41 @@ impl Locks {
                     Access::Exclusive => FlockOperation::NonBlockingLockExclusive,
                 },
             )
-            .with_context(|| format!("output ownership busy at {}", path.display()))?;
+            .with_context(|| busy(&path))?;
             result.directories.insert(path, fd);
         }
         result.revalidate()?;
         for (root, _) in requested {
             for ancestor in root.ancestors().skip(1) {
                 if let Some(fd) = result.directories.get(ancestor) {
-                    for name in names(fd)? {
-                        if name.eq_ignore_ascii_case(OsStr::new(state::RESERVED)) {
-                            bail!("output root is beneath enrolled or reserved ancestor {}; use its existing ownership root",ancestor.display());
-                        }
-                    }
+                    beneath_enrolled(fd, ancestor)?;
                 }
             }
         }
         Ok(result)
     }
+    /// The next component of `root` this run must create, when `root` was missing at locking.
+    pub(super) fn fresh(&self, root: &Path) -> Option<Fresh> {
+        self.absent
+            .get(root)
+            .and_then(|missing| missing.first())
+            .map(|path| Fresh {
+                root: root.to_path_buf(),
+                path: path.clone(),
+            })
+    }
+    /// Every locked directory is still bound to its path, and no component this run is to
+    /// create has been created by another run.
     pub(super) fn revalidate(&self) -> Result<()> {
+        for root in self.absent.keys() {
+            if let Some(fresh) = self.fresh(root) {
+                fresh.absent(
+                    self.directories
+                        .get(fresh.path.parent().context("missing root ancestor")?)
+                        .context("missing locked ancestor")?,
+                )?;
+            }
+        }
         for (path, fd) in &self.directories {
             let fresh = if let Some(parent) = path.parent() {
                 fs::openat(
@@ -264,6 +342,11 @@ impl Locks {
             .context("no locked admission ancestor")?;
         Ok((path.to_path_buf(), fd.try_clone()?))
     }
+    /// Create the missing components of `root` top-down, locking each new parent shared and the
+    /// root exclusive before anything is written into it. Another run that created a component
+    /// first, or bound the new root before this run locked it, refuses this run as busy at the
+    /// root. A refused run leaves what it created in place, empty and unenrolled, because another
+    /// run may already hold it.
     pub(super) fn create_root(&mut self, root: &Path, observer: &mut Observer<'_>) -> Result<File> {
         ensure!(
             self.requested
@@ -288,22 +371,51 @@ impl Locks {
                 .directories
                 .get(path.parent().context("root parent")?)
                 .context("locked root parent")?;
+            let name = path.file_name().context("root name")?;
             observer("before:create-anchor-directory")?;
-            fs::mkdirat(
-                parent,
-                path.file_name().context("root name")?,
-                Mode::from_raw_mode(0o755),
-            )?;
+            match fs::mkdirat(parent, name, Mode::from_raw_mode(0o755)) {
+                Ok(()) => {}
+                Err(Errno::EXIST) => {
+                    return Err(Fresh {
+                        root: root.to_path_buf(),
+                        path: path.clone(),
+                    }
+                    .busy())
+                }
+                Err(e) => return Err(e.into()),
+            }
             observer("after:create-anchor-directory")?;
             sync(parent, observer, "anchor-parent")?;
-            let fd = File::from(fs::openat(
-                parent,
-                path.file_name().context("root name")?,
-                DIRECTORY,
-                Mode::empty(),
-            )?);
+            let fd = File::from(fs::openat(parent, name, DIRECTORY, Mode::empty())?);
             mount.check(&fd)?;
-            fs::flock(&fd, FlockOperation::NonBlockingLockExclusive)?;
+            // Until this lock, a run that finds the new directory existing can bind it.
+            let is_root = path == root;
+            fs::flock(
+                &fd,
+                if is_root {
+                    FlockOperation::NonBlockingLockExclusive
+                } else {
+                    FlockOperation::NonBlockingLockShared
+                },
+            )
+            .with_context(|| busy(root))?;
+            if is_root {
+                // Such a run that already published and released it left more than the admission
+                // orphans every operation tolerates.
+                ensure!(
+                    names(&fd)?
+                        .iter()
+                        .all(|name| super::admission::orphan(name)),
+                    "{}: another run published it first",
+                    busy(root)
+                );
+            } else {
+                // Such a run may have enrolled it as its own root.
+                beneath_enrolled(&fd, &path)?;
+            }
+            if let Some(missing) = self.absent.get_mut(root) {
+                missing.retain(|created| created != &path);
+            }
             self.directories.insert(path, fd);
         }
         self.existing(root)
