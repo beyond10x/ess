@@ -345,8 +345,8 @@ impl Locks {
     /// Create the missing components of `root` top-down, locking each new parent shared and the
     /// root exclusive before anything is written into it. Another run that created a component
     /// first, or bound the new root before this run locked it, refuses this run as busy at the
-    /// root. A refused run leaves what it created in place, empty and unenrolled, because another
-    /// run may already hold it.
+    /// root. A refused run leaves what it created in place, because another run may already hold
+    /// it: unenrolled when nothing else claimed it, or holding the root that other run enrolled.
     pub(super) fn create_root(&mut self, root: &Path, observer: &mut Observer<'_>) -> Result<File> {
         ensure!(
             self.requested
