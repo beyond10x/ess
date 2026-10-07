@@ -63,11 +63,41 @@ dependency is implemented and its files collide with nothing drafted.
 | unit | managed worktree id | branch | build directory | scratch root | stage |
 |---|---|---|---|---|---|
 | integration | `ess-selection-plan` | `integrate/selection-plan` | its own `target/` | — | at `0f4e89a2c` |
-| U1 | `ess-selection-plan-w3-u1` (to create) | `unit/selection-plan-w3-u1-lowering` | its own `target/` | `~/.cache/ess-selection-plan/w3-u1-scratch` | not dispatched |
-| U2 | `ess-selection-plan-w3-u2` (to create) | `unit/selection-plan-w3-u2-emitters` | its own `target/` | `~/.cache/ess-selection-plan/w3-u2-scratch` | not dispatched |
-| U3 | `ess-selection-plan-w3-u3` (to create) | `unit/selection-plan-w3-u3-validation` | its own `target/` | `~/.cache/ess-selection-plan/w3-u3-scratch` | not dispatched |
+| U1 | `ess-selection-plan-w3-u1` | `unit/selection-plan-w3-u1-lowering` | its own `target/` | `~/.cache/ess-selection-plan/w3-u1-scratch` | merged `7425b6ebf` |
+| U2 | `ess-selection-plan-w3-u2` | `unit/selection-plan-w3-u2-emitters` | its own `target/` | `~/.cache/ess-selection-plan/w3-u2-scratch` | merged `4d923b0e8` |
+| U3 | `ess-selection-plan-w3-u3` | `unit/selection-plan-w3-u3-validation` | its own `target/` | `~/.cache/ess-selection-plan/w3-u3-scratch` | merged `f32c29191` |
 
 Dispatch types: `aep:implementor` per unit, then `aep:adversary` per unit, at most two passes each.
+
+## 3a. Close — 2026-10-08
+
+| unit | unit commit | merged | adversary passes | verification |
+|---|---|---|---|---|
+| U1 lowering | `ac263b14a` | `7425b6ebf` | 2: 5 findings fixed (the compiler-table re-pin and one doc line by the coordinator) | lowered definitions of 239 models identical to the base table except the added exception fixture; 16 requests answer alike in base and plan order on entity_core |
+| U2 emitters | `293531f9a` | `4d923b0e8` | 1: no answer change; F1 (probe blind spots) pinned, F2 (precheck) covered by the adversary's cases; no implementation change followed, so no second pass | adversary base-against-unit comparison of 9,720 Rust and 9,600 Go models identical; E-U2/E-U6 309 of 309 |
+| U3 validation | `c7dea8ca5` | `f32c29191` | 2: 4 findings fixed (per-pair tie-breaks, then the earliest-read phase) | 18,530 (model, check) outputs identical to the base, 131 refused, same text |
+
+Integrated package gate on `4d923b0e8`: `ess-domain` 147, `ess-compiler` 64,
+`ess-entity-runtime` 43, `ess-synth` 104 result blocks, all ok; clippy and fmt exit 0.
+
+Decided during the wave: validation refuses a `when: true` refusal (Timo, option A;
+beyond10x/ess#489, PR #490), after four consumers answered that shape differently. R2
+(`wrong_state:` beside a present-related refusal and acceptance) stays refused by validation:
+this epic changes no verdict.
+
+Disk: the wave paused about 40 minutes at conductor's hold (DEC-20261007-106) after `/` fell to
+2 G; caches were discarded per unit as each merged.
+
+Cost per agent (as the harness reported: tokens / tool uses / wall seconds):
+
+| agent | rounds |
+|---|---|
+| U1 implementor | 201,432 / 95 / 779; 262,554 / 53 / 782 |
+| U2 implementor | 342,002 / 65 / 2,499; 355,348 / 200 / 274 (two runs cut by HTTP 429 and resumed) |
+| U3 implementor | 286,237 / 138 / 1,683; 334,703 / 26 / 329; 374,121 / 30 / 779; 409,365 / 24 / 627 |
+| U1 adversary | 228,103 / 99 / 1,934; 305,960 / 140 / 410 |
+| U2 adversary | 328,692 / 139 / 3,172 |
+| U3 adversary | 160,245 / 47 / 1,780; 173,627 / 57 / 1,971; 253,043 / 83 / 542 |
 
 ## 4. Commits this wave makes
 

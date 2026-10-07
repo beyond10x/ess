@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-07T22:16:26Z",
+  "actor": "human:timo",
+  "artifact": "story:entity-runtime-lowering-reads-selection-plan",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-entity-runtime --locked --test lowered_definitions_table (lowered definitions of 239 repository models against the table written at base 1046621a8: identical except the added exception fixture) and --test selection_precedence (16 requests on entity_core: the plan's order and the base order give the same answers): VERIFIED",
+    "reference": "~/.cache/ess-selection-plan/w3-u1-scratch/lowered-definitions-table.base.tsv vs crates/generate/ess-entity-runtime/tests/fixtures/lowered-definitions-table.tsv"
+  }
+}

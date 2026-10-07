@@ -308,12 +308,14 @@ carries such a step.
 
 Entity Runtime selects the first branch whose guard holds. The lowering in
 `crates/generate/ess-entity-runtime/src/lib.rs` ordered guarded branches by source position, so
-`closed` written before `id-required` won the overlap. It now orders every input-guarded refusal
-first, then the other guarded branches, the default, and the wrong-state branch. The sort is stable
-on source position, so among accepting guarded branches the first declared answers, which
+`closed` written before `id-required` won the overlap. It now orders the branches by the command's
+precedence plan ([One derived precedence plan per command](selection-plan.md)): every input-guarded
+refusal first, then the branches the held state selects, then the accepting and external branches,
+then the default and the wrong-state branch, which entity-core requires last. Accepting branches
+keep their declaration order, so the first declared answers, which
 `the_first_declared_accepting_branch_answers_the_overlap` in the test below pins. An external branch
-is lowered as a guard over the provider's verdict in the same category, so an accepting branch
-declared before it answers first whatever the verdict says, which
+is lowered as a guard over the provider's verdict among the accepting branches, so an accepting
+branch declared before it answers first whatever the verdict says, which
 `an_accepting_branch_declared_before_an_external_one_answers_first` pins.
 
 The ordering is exercised by `crates/generate/ess-entity-runtime/tests/input_guard_overlap.rs`

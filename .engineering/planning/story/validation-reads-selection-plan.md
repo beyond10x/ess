@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:validation-reads-selection-plan
 kind: story
-status: active
+status: implemented
 title: Validation reads the selection plan's phases
 relations:
 - decomposes: epic:one-selection-plan
@@ -17,10 +17,11 @@ scope:
   path: crates/specify/ess-domain/src/command/subject_state.rs
 - confidence: inferred
   path: crates/specify/ess-domain/tests/held_state_order.rs
-revision: 7
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-07T13:18:14Z", actor: "human:timo", revision: 6}
 - {from: "proposed", to: "active", at: "2026-10-07T13:18:15Z", actor: "human:timo", revision: 7}
+- {from: "active", to: "implemented", at: "2026-10-07T23:30:52Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":1,"review_outcome":2,"verification":1}}}
 ---
 # Story: Validation reads the selection plan's phases
 
@@ -76,3 +77,22 @@ line is **cited** or **inferred**.
 6. Derive the "accepting"/"external" word from the phase with the exact current text; `held_state_order.rs` asserts the message byte for byte.
 7. Route the membership filters through the phase too.
 8. Leave `row_set.rs:401-409` alone and name it in the PR.
+
+## Scope as landed
+
+Written 2026-10-07 at the merge (`f32c29191`, unit commit `c7dea8ca5`) from the implementor's
+confirmation table and the adversary passes; the scoper's Scope above stays as it was.
+
+| scoper's line | as landed |
+|---|---|
+| #486 rule, `subject_state.rs`, `related_guard.rs` sites (cited) | confirmed; each reads phases from `precedence::place` and order from `phase_order` |
+| `row_set.rs:401-409` refusal-first rule | untouched, as briefed |
+| membership filters drop "branches answered in other phases" | **wrong**: they drop branches the partition cannot prove (markers, `external:`, defaults); kept, comments reworded |
+| decision 3, read the plan's step 5 instead of `orders_present_refusals` | **not taken**: it would admit `wrong_state:` beside a present-related refusal and acceptance (ess/22, input row), which validation refuses today (R2); the epic changes no verdict, so the rule stays and an adversary test pins R2 |
+| decision 5, a `#[cfg(test)]` classifier seam | not needed: wave 2's `with_phase_order` reaches the checks |
+| decision 6, the accepting/external word from the phase | not possible (both are `Accepting`); taken from the condition shape, message bytes unchanged |
+| per-pair `refusal_settles` (round 1) | **replaced** in round 2: the input refusal answers first only when its phase is read first among the selected branches; a present-related refusal stops answering first only when an accepting branch is read before it |
+
+Acceptance bullet 2 ("none of the three checks matches on `OutcomeCondition` to decide order") is
+met except `orders_present_refusals`, kept for R2 as above. Measured: 18,530 (model, check)
+outputs identical to the base.

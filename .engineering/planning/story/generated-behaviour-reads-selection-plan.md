@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:generated-behaviour-reads-selection-plan
 kind: story
-status: active
+status: implemented
 title: The Rust and Go emitters order generated selection by the selection plan
 relations:
 - decomposes: epic:one-selection-plan
@@ -19,10 +19,11 @@ scope:
   path: crates/generate/ess-synth/src/rust/behaviour.rs
 - confidence: inferred
   path: crates/generate/ess-synth/tests
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-07T13:18:13Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-10-07T13:18:14Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-10-07T23:30:52Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":1,"review_outcome":2,"verification":1}}}
 ---
 # Story: The Rust and Go emitters order generated selection by the selection plan
 
