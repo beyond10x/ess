@@ -41,6 +41,17 @@
   `ess generate --check` names such a file with that route, and the single-file `--check` routes
   refuse with it. A commit that updates generated files without their `.ess-output` record now
   refuses regeneration instead of being repaired (https://github.com/beyond10x/ess/issues/484).
+- A leftover `.ess-output/state.next` (never authoritative) is removed by every write-mode
+  command that finds the root settled, and `ess generate --check` reports one; recovery and
+  adoption close with an `ess-output-state/3` checkpoint
+  (https://github.com/beyond10x/ess/issues/484).
+
+### Fixed
+
+- Concurrent `ess generate` runs that create different new output roots under one directory, such
+  as a shared `$TMPDIR`, no longer refuse each other as `output ownership busy`. A run locks only
+  the root it creates exclusively, and its ancestors shared; two runs creating the same root still
+  exclude each other (https://github.com/beyond10x/ess/issues/485).
 
 ## [0.55.0] — 2026-10-06
 
