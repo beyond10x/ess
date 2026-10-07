@@ -19,13 +19,19 @@ scope:
   path: crates/generate/ess-entity-runtime/src/lib.rs
 - confidence: cited
   path: crates/generate/ess-entity-runtime/src/subset.rs
+- confidence: cited
+  path: crates/generate/ess-entity-runtime/tests/adversary_guards_lowering.rs
 - confidence: inferred
   path: crates/generate/ess-entity-runtime/tests/lowerable_subset.rs
 - confidence: cited
   path: crates/generate/ess-entity-runtime/tests/lowering.rs
+- confidence: cited
+  path: docs/design/ess-evolution/entity-runtime-lowering.md
+- confidence: cited
+  path: docs/design/string-alphabet-and-length.md
 - confidence: inferred
   path: website/docs/reference/entity-runtime-lowering.md
-revision: 10
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-07T01:43:16Z", actor: "human:timo", revision: 9}
 - {from: "proposed", to: "active", at: "2026-10-07T01:43:16Z", actor: "human:timo", revision: 10}
@@ -67,3 +73,22 @@ From https://github.com/beyond10x/entity-runtime/issues/54 (comment of 2026-10-0
 Spec first: model the change in this repository's ESS specification, validate it with the newest
 `ess`, regenerate, then implement against the generated code. If the specification cannot express
 it, stop and report that; do not hand-write a parallel model.
+
+## Scope corrections (2026-10-07)
+
+From the implementor's phase-1 report:
+
+- `tests/adversary_guards_lowering.rs` is in scope: its case
+  `adv_an_input_text_length_in_a_stored_field_predicate_is_refused_by_name` becomes a lowering case.
+- Both inferred lines held: `tests/lowerable_subset.rs` carries the subset and page checks, and
+  `website/docs/reference/entity-runtime-lowering.md` is generated from `src/subset.rs`
+  (`ESS_LOWERING_REFERENCE=write cargo test -p ess-entity-runtime --test lowerable_subset`).
+- `docs/design/string-alphabet-and-length.md` (§1, §6, §8) and
+  `docs/design/ess-evolution/entity-runtime-lowering.md:75` describe the refusals and the old
+  revision; they are updated with the change.
+- No Entity Runtime conformance lane exists in this repository. The acceptance line that asked for
+  one is met by runtime decisions inside the lowering tests: the lowered definition is registered
+  with entity-core and a value outside the alphabet, and a text over the count, is refused by
+  entity-core itself.
+- Also still refused (added in phase 1): a text length read through a union payload, which
+  entity-core's runtime does not type (0.28.0 `runtime.rs` `walk`, per the implementor).
