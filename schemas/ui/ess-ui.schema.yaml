@@ -45,8 +45,8 @@ type_rule:
     enum:     {form: {enum: [a, b]}, example: {enum: [light, dark]}}
     one_of:   {form: {one_of: [T1, T2]}, example: {one_of: [duration, expr]}}
     record:   {form: {record: {field: T}}, example: {record: {amount: number, currency: {enum: [EUR, USD, GBP]}}}}
-    ref:      {form: {ref: kind}, kinds: [shell, page, section, overlay, channel, state, page_kind, composite_kind, widget, tone_map, view, command, event], example: {ref: view},
-               note: "view, command and event resolve in the ESS model; the others in the document"}
+    ref:      {form: {ref: kind}, kinds: [shell, page, section, overlay, channel, state, page_kind, composite_kind, widget, tone_map, view, command, event, actor], example: {ref: view},
+               note: "view, command, event and actor resolve in the ESS model; the others in the document"}
     const:    {form: {const: value}, example: {const: ess-ui/1}}
 
 expressions:
@@ -387,7 +387,10 @@ constructs:
       sections, each loading on its own. Start from a page kind and declare only what differs.
       `layout` arranges sections renderer-neutrally. Use `switch_to` for sibling pages shown as
       a view switch; switching keeps every current param the target page declares, by name, so
-      sibling views of one record stay on that record.
+      sibling views of one record stay on that record. `actor` names the ESS actor the page is
+      built for: checked against the model, every command the page sends (its sections, header
+      and overlays) must be in that actor's `may`, as the served surface would refuse it
+      otherwise. A page without `actor` is checked as before; renderers do not read it.
     inheritance:
       from: kind
       merge: shorthands.inheritance
@@ -406,6 +409,7 @@ constructs:
       aliases:   {type: {list: string}, note: legacy route paths}
       switch_to: {type: {list: {ref: page}}, note: sibling pages offered in the header}
       visible:   {type: expr, note: "extra condition beyond grants, such as a feature flag"}
+      actor:     {type: {ref: actor}, note: "the ESS actor whose grants bind every command the page sends; with a model, each must be granted to it"}
       layout:    {type: PageLayout, default: stack, note: how sections are arranged}
       state:     {type: {map: {key: name, value: {optional: State}}}, note: page state}
       header:    {type: header, note: "title, total, actions, live status"}
@@ -708,11 +712,12 @@ constructs:
     group: composites
     order: 6
     summary: Page title, count, primary actions, view switch, filters and live status.
-    doc: Every page has one header, placed by position (`header`) rather than by `component`, so it is not a member of the composite union. `total` names the section whose total is shown; `live` lists channels whose connection state is shown, so a stale page is visibly stale.
+    doc: Every page has one header, placed by position (`header`) rather than by `component`, so it is not a member of the composite union. `total` names the section whose total is shown; `live` lists channels whose connection state is shown, so a stale page is visibly stale, and never applies events. `title_from` shows a field of the record a section of the page holds (its first row, with its live changes applied) in place of `title`, which stays the text shown until the record holds the field. A header metric takes its own `live`, as any nested composite with `reads` does.
     shorthand:
       - {at: title, accepts: {const: from_page}, expands_to: $page.title}
     fields:
       title:   {type: {one_of: [string, {const: from_page}]}, note: header title}
+      title_from: {type: {record: {section: {ref: section}, field: name}}, note: "a field of the first row of a section that reads, shown as the title once present; `title` until then"}
       total:   {type: {ref: section}, note: section whose total is shown}
       actions: {type: {list: Action}, note: primary actions}
       switch:  {type: {list: name}, note: "pages from switch_to, or modes of this page"}
@@ -977,7 +982,11 @@ constructs:
       section and an overlay all hold one member. `header` and `overlay` are composites placed by
       position, so they are not members. A `component` that names no member names a widget. The
       bare-name shorthand accepts a member only: a widget is always written
-      `{component: <widget>, args: …}`.
+      `{component: <widget>, args: …}`. A nested composite with its own `reads` (a tab's node, a
+      header metric, a record's item) takes `live` as a section does: the channel's events change
+      its own rows while it is shown. A node that is not shown (an inactive tab, a collapsed
+      `expand`, a node whose `visible` is false) applies no event and reads its view again when
+      it is shown. `live` on a node that reads nothing is refused, and so is `when_paged_away`.
     union:
       tag: component
       members: [collection, record, form, choice, filter_bar, confirm, metric, chart, board, graph_editor, rich_text, references]
@@ -990,6 +999,7 @@ constructs:
       state:     {type: {map: {key: name, value: State}}, note: state local to this composite}
       visible:   {type: expr, note: shows the composite only when true}
       degrades:  {type: Degrades, note: fallbacks for this composite}
+      live:      {type: Live, note: "how channel events change the composite's own `reads` while it is shown; only on a member with `reads`, without `when_paged_away`"}
       unmapped:  {type: {list: string}, note: gaps found by a retrofit}
     example: {component: metric, from: channel.metrics.open_deals, label: Open deals}
 
@@ -1305,11 +1315,13 @@ constructs:
   Live:
     group: live
     order: 2
-    summary: How a section applies a channel's events to its rows.
+    summary: How a section, or a nested composite that reads, applies a channel's events to its rows.
     doc: >
       `effect` decides what an event does: patch a row, insert or patch, insert at the top of a
       feed, remove, replace, or re-read. `only_if: matches(params)` drops live rows outside the
       section's filters; `when_paged_away: count_new` shows "12 new" instead of shifting rows.
+      Every effect acts on rows, whatever shows them: a record shows the first row, a metric
+      takes its value or aggregate from the rows, a list shows them all.
     fields:
       channel:         {type: {ref: channel}, required: true, note: channel to consume}
       on:              {type: {list: {ref: event}}, note: subset of the channel's events}

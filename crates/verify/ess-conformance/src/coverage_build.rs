@@ -464,7 +464,8 @@ fn authored_refusal(
         | Cause::AmbiguousWindow { .. }
         | Cause::HaltsAtNothing { .. }
         | Cause::InvalidPredicate { .. }
-        | Cause::ExternalAnswerUnstated { .. } => Effect::CandidateNotEmitted,
+        | Cause::ExternalAnswerUnstated { .. }
+        | Cause::GuardsContradictOutcome { .. } => Effect::CandidateNotEmitted,
     };
     Ok(Refusal {
         origin: Origin::Authored,

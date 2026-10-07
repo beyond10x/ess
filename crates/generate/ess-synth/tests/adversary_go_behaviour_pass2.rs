@@ -355,7 +355,7 @@ fn synthesized_tree(synthesis: &Synthesis) -> (Value, String, String, String) {
 
 /// One bounded context using existence selection (update-or-create and an existing-instance
 /// refusal), a held-state guard, an aggregate view and invariants together, beside one command a
-/// `when_related:` guard keeps owed.
+/// `when_related:` guard beside an `external:` branch keeps owed.
 const MIXED: &str = "format: ess/18
 system: mix
 version: v1
@@ -454,6 +454,7 @@ commands:
       - name: no-slot
         when_related: {via: input.slot_id, exists: false}
         error: mix.shop.NoSlot
+      - {name: provider-refused, external: the slot provider refuses the hold, error: mix.shop.NoSlot}
       - name: held
         emits: [mix.shop.SlotBooked]
         payload:

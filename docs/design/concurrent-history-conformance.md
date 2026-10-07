@@ -52,7 +52,10 @@ new check catches and no earlier check catches.
    failed produces false violations.
 5. **`Unknown` is never a pass.** A search that exhausts its budget reports `Unknown` and exits 3.
 6. **No target restart.** No specification, realization or `ConformanceTarget` method declares
-   restart support, so injecting one would be an undeclared fault.
+   restart support, so injecting one would be an undeclared fault. Sequential exploration has
+   restarts a caller asks for and a target declares since beyond10x/ess#297
+   ([Restarts](mutation-audit-and-model-runner.md#restarts-beyond10xess297)); concurrent
+   exploration still has none.
 
 ## Prior art
 

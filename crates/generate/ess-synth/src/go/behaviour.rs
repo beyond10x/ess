@@ -18,7 +18,8 @@
 //! refusals; the existence lookup; on a subject-guarded command the addressed row and the branches
 //! that select by it; the accepting and external branches in declaration order; the default. The
 //! branch taken then reads its own subject. A guard that is unknown, or a request no declared
-//! branch answers, is the typed refusal naming the command.
+//! branch answers, is the typed refusal naming the command. A `when_related:` guard reads its
+//! related row in the Rust target's order, through the related entity's storage interface.
 //!
 //! # What Go spells differently
 //!
@@ -38,8 +39,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
 use ess_compiler::ir::{
-    EssIr, ResolvedBody, ResolvedCommand, ResolvedCondition, ResolvedEffect, ResolvedEntity,
-    ResolvedInstance, ResolvedOutcome, ResolvedPayloadField, ResolvedPayloadValue, ResolvedTypeRef,
+    EntityHandle, EssIr, ResolvedBody, ResolvedCommand, ResolvedCondition, ResolvedEffect,
+    ResolvedEntity, ResolvedInstance, ResolvedOutcome, ResolvedPayloadField, ResolvedPayloadValue,
+    ResolvedRelatedTest, ResolvedRelatedVia, ResolvedTypeRef,
 };
 use ess_domain::name::QualifiedName;
 use ess_domain::types::Primitive;
@@ -1371,6 +1373,9 @@ struct Locals {
     input: String,
     broken: String,
     breaks: String,
+    reference: String,
+    related: String,
+    row: String,
 }
 
 impl Locals {
@@ -1389,6 +1394,9 @@ impl Locals {
             input: fresh(reserved, "input"),
             broken: fresh(reserved, "broken"),
             breaks: fresh(reserved, "breaks"),
+            reference: fresh(reserved, "reference"),
+            related: fresh(reserved, "related"),
+            row: fresh(reserved, "row"),
         }
     }
 }
@@ -1461,6 +1469,23 @@ impl<'a> Writer<'a> {
     #[allow(clippy::too_many_lines)]
     fn body(&mut self) {
         let command = self.command;
+        let related = determined::related(command);
+        let orders =
+            related.is_some() && determined::orders_present_related_refusal(self.ir, command);
+        // A related row named by the input is read first: `existing_instance:`, then a missing
+        // row's `exists: false`, answer before the input-guarded refusals (ess/18).
+        if let Some((ResolvedRelatedVia::Input { field, type_ref }, entity)) = related {
+            if let Some(existing) = determined::existing_instance(command) {
+                self.existing_lookup(existing);
+            }
+            let member = self.input_member(field);
+            let reference = if type_ref.is_optional() {
+                member
+            } else {
+                format!("&{member}")
+            };
+            self.related_read(entity, &reference, &format!("input.{field}"));
+        }
         for outcome in &command.outcomes {
             if let (ResolvedCondition::When { predicate }, Some(_), None) =
                 (&outcome.condition, &outcome.error, &outcome.subject)
@@ -1476,8 +1501,56 @@ impl<'a> Writer<'a> {
                 });
             }
         }
-        if let Some(existing) = determined::existing_instance(command) {
-            self.existing_lookup(existing);
+        if !matches!(related, Some((ResolvedRelatedVia::Input { .. }, _))) {
+            if let Some(existing) = determined::existing_instance(command) {
+                self.existing_lookup(existing);
+            }
+        }
+        if let Some((ResolvedRelatedVia::Subject { field, type_ref }, entity)) = related {
+            // A stored reference is read from the addressed row, as it was before the branch, once
+            // that row's existence and held state have answered (ess/22, beyond10x/ess#304).
+            let subject = determined::addressed_subject(command)
+                .expect("the plan admits a stored reference on an addressed subject");
+            let addressed = self.ir.entity(&subject.entity);
+            let identity = self.input_member(&subject.instance.field().name);
+            self.lines.push(&format!(
+                "// The addressed row, whose stored `{field}` names the related row."
+            ));
+            self.get(addressed, &identity);
+            self.lines.open(&format!("if !{} {{", self.locals.found));
+            self.unknown_arm();
+            self.lines.close("}");
+            self.precheck(false);
+            let member = format!(
+                "{}.Data.{}",
+                self.locals.held,
+                Self::data_member(addressed, field)
+            );
+            let reference = if type_ref.is_optional() {
+                member
+            } else {
+                format!("&{member}")
+            };
+            self.related_read(entity, &reference, &format!("subject.{field}"));
+        } else if orders {
+            self.precheck(true);
+        }
+        if orders {
+            for outcome in command
+                .outcomes
+                .iter()
+                .filter(|outcome| determined::is_present_related_refusal(outcome))
+            {
+                self.lines.push(&format!(
+                    "// `{}`: a present related row's refusal, before every accepting branch.",
+                    outcome.name
+                ));
+                let related = self.locals.related.clone();
+                self.lines.open(&format!("if {related} != nil {{"));
+                let truth = self.related_guard(outcome);
+                self.decided(&truth, |writer| writer.take(outcome, Held::None));
+                self.lines.close("}");
+            }
         }
         let guarded = determined::subject_guarded(command);
         let held = if guarded {
@@ -1517,6 +1590,22 @@ impl<'a> Writer<'a> {
                     let truth = self.predicate(&Env::Input(command), predicate, "");
                     self.decided(&truth, |writer| writer.take(outcome, held));
                 }
+                // A present related row selects its predicate branches in declaration order; an
+                // absent reference selects none. Already answered where they come first.
+                ResolvedCondition::Related {
+                    test: ResolvedRelatedTest::Holds { .. },
+                    ..
+                } if !(orders && determined::is_present_related_refusal(outcome)) => {
+                    self.lines.push(&format!(
+                        "// `{}`: selected by the present related row, in declaration order.",
+                        outcome.name
+                    ));
+                    let related = self.locals.related.clone();
+                    self.lines.open(&format!("if {related} != nil {{"));
+                    let truth = self.related_guard(outcome);
+                    self.decided(&truth, |writer| writer.take(outcome, held));
+                    self.lines.close("}");
+                }
                 ResolvedCondition::External { .. } => {
                     self.lines.push(&format!(
                         "// `{}`: an external branch, where the context takes it.",
@@ -1549,7 +1638,7 @@ impl<'a> Writer<'a> {
         {
             self.lines
                 .push(&format!("// `{}`: the default.", default.name));
-            if guarded {
+            if guarded || related.is_some() {
                 // Its own block: the branch reads the row again under the names the selection
                 // already declared.
                 self.lines.open("{");
@@ -1663,6 +1752,180 @@ impl<'a> Writer<'a> {
         if optional {
             self.lines.close("}");
         }
+    }
+
+    /// The related row a `when_related:` guard reads (ess/18, ess/22; beyond10x/ess#319), as the
+    /// pointer `related`: read by identity through the related entity's storage port where the
+    /// pointer `reference` names one, and no row read where it is nil. A reference naming no row
+    /// takes the `exists: false` branch, which the compiler requires wherever a predicate branch
+    /// reads it.
+    fn related_read(&mut self, entity: &EntityHandle, reference: &str, named: &str) {
+        let declared = self.ir.entity(entity);
+        let storage = self.storage(&declared.name);
+        let snapshot = self.emit.qualify(
+            self.emit.layout.package_of(&declared.name),
+            self.emit.layout.snapshot(&declared.name),
+        );
+        let (local, related, row, found) = (
+            self.locals.reference.clone(),
+            self.locals.related.clone(),
+            self.locals.row.clone(),
+            self.locals.found.clone(),
+        );
+        self.lines.push(&format!(
+            "// `when_related:` reads the `{}` row `{named}` names, through its storage port; an",
+            declared.name
+        ));
+        self.lines
+            .push("// absent reference reads no row and selects no related branch.");
+        self.lines.push(&format!("var {related} *{snapshot}"));
+        self.lines.push(&format!("{local} := {reference}"));
+        self.lines.open(&format!("if {local} != nil {{"));
+        self.lines.push(&format!(
+            "{row}, {found} := {}.ports.{storage}.Get(*{local})",
+            self.receiver
+        ));
+        self.lines.open(&format!("if {found} {{"));
+        self.lines.push(&format!("{related} = &{row}"));
+        self.lines.close("}");
+        self.lines.close("}");
+        if let Some(absent) = determined::related_absent(self.command) {
+            self.lines.push(&format!(
+                "// `{}`: the reference names an identity no row carries.",
+                absent.name
+            ));
+            self.lines
+                .open(&format!("if {local} != nil && {related} == nil {{"));
+            self.take(absent, Held::None);
+            self.lines.close("}");
+        }
+        self.lines.push(&format!("_ = {related}"));
+    }
+
+    /// The reading of a `when_related:` predicate branch over the present row `related`, with
+    /// its input guard.
+    fn related_guard(&mut self, outcome: &ResolvedOutcome) -> String {
+        let command = self.command;
+        let ResolvedCondition::Related {
+            entity,
+            test: ResolvedRelatedTest::Holds { predicate },
+            input,
+            ..
+        } = &outcome.condition
+        else {
+            unreachable!("only a predicate branch reads the present related row")
+        };
+        let entity = self.ir.entity(entity);
+        let related = self.locals.related.clone();
+        let row = self.predicate(&Env::Subject(command, entity), predicate, &related);
+        match input {
+            Some(input) => {
+                self.uses.helpers.insert("allOf");
+                let input = self.predicate(&Env::Input(command), input, "");
+                format!("allOf({row}, {input})")
+            }
+            None => row,
+        }
+    }
+
+    /// The addressed-row existence and held-state answers of the branch the request selects with
+    /// no present-related refusal read, before the related refusals (beyond10x/ess#282, #304), as
+    /// the interpreter orders them. `with_related` reads the present row's accepting branches, as
+    /// an input reference is read by then; a stored reference is not read yet.
+    fn precheck(&mut self, with_related: bool) {
+        let command = self.command;
+        self.lines.push(
+            "// The addressed row's existence and held state, for the branch the request selects",
+        );
+        self.lines
+            .push("// before any present related row's refusal.");
+        self.lines.open("for {");
+        for outcome in &command.outcomes {
+            match &outcome.condition {
+                ResolvedCondition::When { predicate } if outcome.error.is_none() => {
+                    let truth = self.predicate(&Env::Input(command), predicate, "");
+                    self.decided(&truth, |writer| {
+                        writer.check_subject(outcome);
+                        writer.lines.push("break");
+                    });
+                }
+                ResolvedCondition::Related {
+                    test: ResolvedRelatedTest::Holds { .. },
+                    ..
+                } if with_related && outcome.error.is_none() => {
+                    let related = self.locals.related.clone();
+                    self.lines.open(&format!("if {related} != nil {{"));
+                    let truth = self.related_guard(outcome);
+                    self.decided(&truth, |writer| {
+                        writer.check_subject(outcome);
+                        writer.lines.push("break");
+                    });
+                    self.lines.close("}");
+                }
+                _ => {}
+            }
+        }
+        if let Some(default) = command
+            .outcomes
+            .iter()
+            .find(|outcome| outcome.condition == ResolvedCondition::Otherwise)
+        {
+            self.check_subject(default);
+        }
+        self.lines.push("break");
+        self.lines.close("}");
+    }
+
+    /// The existence and held-state answers of one selected branch's subject, returning where
+    /// either refuses; nothing for a branch addressing no existing row.
+    fn check_subject(&mut self, outcome: &ResolvedOutcome) {
+        let Some(subject) = &outcome.subject else {
+            return;
+        };
+        let ResolvedInstance::Supplied { field } = &subject.instance else {
+            return;
+        };
+        if subject.effect == ResolvedEffect::Creates {
+            return;
+        }
+        let entity = self.ir.entity(&subject.entity);
+        let identity = self.input_member(&field.name);
+        self.lines.open("{");
+        self.get(entity, &identity);
+        self.lines.open(&format!("if !{} {{", self.locals.found));
+        self.unknown_arm();
+        self.lines.close("}");
+        let held = self.locals.held.clone();
+        self.lines.push(&format!("_ = {held}"));
+        if let ResolvedEffect::Moves { transition } = &subject.effect {
+            if transition.from.len() < entity.lifecycle.states.len() {
+                let reads = self.wrong_state_reads(entity);
+                if reads.0 {
+                    let held_state = self.locals.held_state.clone();
+                    self.lines.push(&format!("{held_state} := {held}.State"));
+                }
+                if reads.1 {
+                    let before = self.locals.before.clone();
+                    self.lines.push(&format!("{before} := {held}.Data"));
+                }
+                let variants: Vec<String> = transition
+                    .from
+                    .iter()
+                    .map(|state| {
+                        self.emit
+                            .reference_variant(entity.state_type.name(), state.as_str())
+                    })
+                    .collect();
+                self.lines.push(&format!("switch {held}.State.(type) {{"));
+                self.lines.push(&format!("case {}:", variants.join(", ")));
+                self.lines.push("default:");
+                self.lines.indent();
+                let wrong = self.wrong_state_answer();
+                self.lines.push(&format!("return {wrong}"));
+                self.lines.close("}");
+            }
+        }
+        self.lines.close("}");
     }
 
     /// The storage field of an entity, recorded as used.

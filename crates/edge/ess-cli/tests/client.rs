@@ -45,6 +45,39 @@ streams:
   - {name: USAGE, broker: events, subjects: [usage], storage: file, retention: limits, owner: external}
 ";
 
+const PARAMETER_MODEL: &str = "format: ess/20
+system: routing
+version: v1
+domain: routing.events
+types:
+  - name: routing.events.Source
+    kind: struct
+    fields:
+      - {name: service, wire: serviceName, type: String}
+events:
+  - name: routing.events.UsageRecorded
+    fields:
+      - {name: source, wire: origin, type: routing.events.Source}
+components:
+  - component: producer
+    owns: {domains: [routing.events]}
+    publishes: {events: [routing.events.UsageRecorded]}
+";
+
+const PARAMETER_BODY: &str = "brokers:
+  - {id: events, protocol: nats, jetstream: true}
+channels:
+  - event: routing.events.UsageRecorded
+    broker: events
+    subject: 'usage.{service}'
+    parameters: {service: event.source.service}
+    envelope: array
+    delivery: at_most_once
+    batch: {max_items: 100, max_delay_ms: 5000}
+streams:
+  - {name: USAGE, broker: events, subjects: ['usage.>'], storage: file, retention: limits, owner: external}
+";
+
 struct Fixture(PathBuf);
 
 impl Fixture {
@@ -112,6 +145,41 @@ impl Drop for Fixture {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);
     }
+}
+
+fn parameter_fixture() -> Fixture {
+    let fixture = Fixture::new(BODY);
+    fs::write(fixture.0.join("model/system.yaml"), PARAMETER_MODEL).unwrap();
+    let generated = fixture.ess(&[
+        "generate",
+        "--path",
+        "model",
+        "--kind",
+        "schema",
+        "--out",
+        "parameter-digest",
+    ]);
+    assert!(generated.status.success(), "{generated:?}");
+    let schema: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(
+            fixture
+                .0
+                .join("parameter-digest/schema/events/routing.events.UsageRecorded.schema.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let digest = schema["x-ess-provenance"]["source_digest"]
+        .as_str()
+        .unwrap();
+    fs::write(
+        fixture.0.join("transport.yaml"),
+        format!(
+            "type: ess-transport/2\nspecification:\n  system: routing\n  version: v1\n  source_digest: sha256:{digest}\n{PARAMETER_BODY}"
+        ),
+    )
+    .unwrap();
+    fixture
 }
 
 #[test]
@@ -227,4 +295,57 @@ fn at_least_once_and_an_unknown_component_are_refused() {
         "rust",
     ]);
     assert_eq!(unknown.status.code(), Some(1), "{unknown:?}");
+}
+
+#[test]
+fn parameterized_rust_and_go_clients_use_report_2_and_subject_templates() {
+    let fixture = parameter_fixture();
+    let rust = fixture.client(&[
+        "--target",
+        "rust",
+        "--package",
+        "routing-client",
+        "--out",
+        "rust",
+    ]);
+    assert!(rust.status.success(), "{rust:?}");
+    let rust_source = fs::read_to_string(fixture.0.join("rust/lib.rs")).unwrap();
+    assert!(
+        rust_source.contains("USAGE_RECORDED_SUBJECT_TEMPLATE"),
+        "{rust_source}"
+    );
+    assert!(
+        rust_source.contains("payload.origin.service_name"),
+        "{rust_source}"
+    );
+    let report: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(fixture.0.join("rust/client-report.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(report["format"], "ess-client-report/2");
+    assert_eq!(
+        report["operations"][0]["parameters"]["service"]["path"][1],
+        "service"
+    );
+
+    let go = fixture.client(&[
+        "--target",
+        "go",
+        "--package",
+        "routingclient",
+        "--module",
+        "example.invalid/routingclient",
+        "--out",
+        "go",
+    ]);
+    assert!(go.status.success(), "{go:?}");
+    let go_source = fs::read_to_string(fixture.0.join("go/publisher.go")).unwrap();
+    assert!(
+        go_source.contains("UsageRecordedSubjectTemplate"),
+        "{go_source}"
+    );
+    assert!(
+        go_source.contains("payload.Origin.ServiceName"),
+        "{go_source}"
+    );
 }

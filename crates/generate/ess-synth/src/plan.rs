@@ -698,6 +698,18 @@ pub(crate) fn behavior_contract(ir: &EssIr, command: &ResolvedCommand) -> String
         }
         branches.push(branch);
     }
+    let precedence = related_precedence(ir, command);
+    format!(
+        "given `{}` input, decide and enact exactly one outcome.{precedence} Declared outcomes (declaration order, not selection precedence): {}",
+        command.name,
+        branches.join("; ")
+    )
+}
+
+/// The selection precedence a command reading a related row is owed against, as the interpreter
+/// applies it (`docs/design/cross-record-and-stored-field-guards.md#the-precedence-order`); empty
+/// for a command reading none.
+fn related_precedence(ir: &EssIr, command: &ResolvedCommand) -> String {
     // The inventory below retains source order. For related guards the implementation is owed,
     // so its reader also needs the conditional order from the binding design:
     // docs/design/cross-record-and-stored-field-guards.md#the-precedence-order.
@@ -705,6 +717,10 @@ pub(crate) fn behavior_contract(ir: &EssIr, command: &ResolvedCommand) -> String
         .outcomes
         .iter()
         .any(|outcome| matches!(outcome.condition, ResolvedCondition::Related { .. }));
+    // Several rows read through the input (ess/22, beyond10x/ess#283): missing rows in the declaration
+    // order of their `exists: false` branches, and the present-related refusals before acceptance
+    // whether or not `wrong_state:` is declared.
+    let several = crate::determined::several_rows(command);
     let orders_present_related_refusal = ir.format().major()
         >= ess_domain::system::FormatVersion::V22.major()
         && command
@@ -733,7 +749,7 @@ pub(crate) fn behavior_contract(ir: &EssIr, command: &ResolvedCommand) -> String
             } => Some(field),
             _ => None,
         });
-    let precedence = if let Some(field) = stored {
+    if let Some(field) = stored {
         format!(
             " Selection precedence: on commands with `when_related:` reading the stored reference \
              `{field}` of the addressed subject, choose the first declared input refusal whose \
@@ -747,15 +763,24 @@ pub(crate) fn behavior_contract(ir: &EssIr, command: &ResolvedCommand) -> String
              nothing answers in every state."
         )
     } else if has_related {
-        let present_related = if orders_present_related_refusal {
+        let present_related = if several {
+            "then choose the first declared present `when_related:` predicate refusal whose \
+             predicate and optional input guard hold, across rows; "
+        } else if orders_present_related_refusal {
             "then choose the present `when_related:` predicate refusal whose predicate and \
              optional input guard hold; "
         } else {
             ""
         };
+        let missing = if several {
+            " (read the related rows in the declaration order of their `exists: false` branches, \
+             and the first missing one answers)"
+        } else {
+            ""
+        };
         format!(
             " Selection precedence: on commands with `when_related:`, check `existing_instance` then \
-         `exists: false` before input-guarded refusals; choose the first declared input refusal \
+         `exists: false`{missing} before input-guarded refusals; choose the first declared input refusal \
          whose guard holds; then check addressed-row existence (`unknown_instance`, and \
          `existing_instance` on commands without `when_related:`); then the held state \
          (`when_subject_state` and `when_subject`), with `wrong_state` only if the selected branch \
@@ -766,12 +791,7 @@ pub(crate) fn behavior_contract(ir: &EssIr, command: &ResolvedCommand) -> String
         )
     } else {
         String::new()
-    };
-    format!(
-        "given `{}` input, decide and enact exactly one outcome.{precedence} Declared outcomes (declaration order, not selection precedence): {}",
-        command.name,
-        branches.join("; ")
-    )
+    }
 }
 
 /// A condition as a contract phrase.

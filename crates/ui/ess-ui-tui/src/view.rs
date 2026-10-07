@@ -370,10 +370,16 @@ impl App {
                 bold(),
             )];
         };
+        // `title_from`: the field of the record the named section holds, live changes applied;
+        // the literal title until the record holds it (beyond10x/ess#354).
+        let from_record = header.title_from.as_ref().and_then(|from| {
+            let row = self.rows(&from.section).into_iter().next()?;
+            let value = field_path(&row, &from.field);
+            (!value.is_null()).then(|| display(&value))
+        });
         let mut title = vec![Span::styled(
-            header
-                .title
-                .clone()
+            from_record
+                .or_else(|| header.title.clone())
                 .or_else(|| page.title.clone())
                 .unwrap_or_else(|| self.page.clone()),
             bold(),
@@ -720,7 +726,39 @@ impl App {
             record: false,
             ..*place
         };
-        self.body_lines(&node.body, &inner)
+        let mut lines = self.body_lines(&node.body, &inner);
+        // After the body, so the marks it recorded keep their lines.
+        lines.extend(self.live_stale(node));
+        lines
+    }
+
+    /// Draws through `built`, a collection made from a graph editor or references list whose own
+    /// `Reads` is `origin`, so a nested live node's own rows are the rows drawn
+    /// (beyond10x/ess#354).
+    fn aliased<R>(
+        &self,
+        built: &ess_ui::Collection,
+        origin: &ess_ui::Reads,
+        draw: impl FnOnce() -> R,
+    ) -> R {
+        let Some(reads) = built.reads.as_ref() else {
+            return draw();
+        };
+        let pair = (
+            std::ptr::from_ref(reads) as usize,
+            std::ptr::from_ref(origin) as usize,
+        );
+        let previous = self.alias.replace(Some(pair));
+        let drawn = draw();
+        self.alias.replace(previous);
+        drawn
+    }
+
+    /// `[stale]` after a nested live node whose channel is stale: a stale value is marked stale,
+    /// never shown as current (beyond10x/ess#354).
+    fn live_stale(&self, node: &Node) -> Option<Line<'static>> {
+        let live = node.live.as_ref()?;
+        (self.channel_status(&live.channel) == "stale").then(|| Line::styled("[stale]", reversed()))
     }
 
     fn body_lines(&self, body: &Body, place: &Place<'_>) -> Vec<Line<'static>> {
@@ -765,13 +803,10 @@ impl App {
                 self.collection_lines(collection, place, Some("row_actions"))
             }
             Composite::Record(record) => {
-                let request = record
+                let row = record
                     .reads
                     .as_ref()
-                    .map(|reads| self.request(reads, &place.ctx));
-                let row = request
-                    .as_ref()
-                    .and_then(|request| self.rows_of(request))
+                    .and_then(|reads| self.reader_result(reads, &self.request(reads, &place.ctx)))
                     .and_then(|result| result.rows.first().cloned())
                     .or_else(|| place.ctx.row.cloned())
                     .unwrap_or(Value::Null);
@@ -820,6 +855,7 @@ impl App {
                             ..inner
                         };
                         lines.extend(self.body_lines(&node.body, &nested));
+                        lines.extend(self.live_stale(node));
                     }
                 }
                 for node in &record.item {
@@ -885,11 +921,15 @@ impl App {
                     .map(|node| Line::from(flatten(self.node_lines(node, place))))
                     .collect();
                 let before = self.marks.borrow().len();
-                lines.extend(self.collection_lines(&collection, place, None));
+                lines.extend(self.aliased(&collection, &editor.reads, || {
+                    self.collection_lines(&collection, place, None)
+                }));
                 for mark in self.marks.borrow_mut().iter_mut().skip(before) {
                     mark.line += editor.toolbar.len();
                 }
-                lines.extend(self.graph_edge_lines(editor, &collection, place));
+                lines.extend(self.aliased(&collection, &editor.reads, || {
+                    self.graph_edge_lines(editor, &collection, place)
+                }));
                 lines
             }
             Composite::RichText(text) => {
@@ -928,7 +968,10 @@ impl App {
                 lines
             }
             Composite::References(references) => {
-                self.collection_lines(&references_collection(references), place, None)
+                let collection = references_collection(references);
+                self.aliased(&collection, &references.reads, || {
+                    self.collection_lines(&collection, place, None)
+                })
             }
         }
     }
@@ -1737,13 +1780,13 @@ impl App {
             }
         } else if let (Some(reads), Some(kind)) = (&metric.reads, metric.aggregate) {
             let request = self.request(reads, &place.ctx);
-            if let Some(result) = self.rows_of(&request) {
+            if let Some(result) = self.reader_result(reads, &request) {
                 value = aggregate(kind, metric.field.as_deref(), &result.rows);
             }
         } else if let Some(reads) = &metric.reads {
             let request = self.request(reads, &place.ctx);
             if let Some(row) = self
-                .rows_of(&request)
+                .reader_result(reads, &request)
                 .and_then(|result| result.rows.first())
             {
                 value = metric

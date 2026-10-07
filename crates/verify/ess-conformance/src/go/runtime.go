@@ -344,7 +344,7 @@ func checkedRefusal(value any, selection map[string]any, sources map[string]any,
 			return nil, err
 		}
 		valid := false
-		for n := 1; n <= 40; n++ {
+		for n := 1; n <= 41; n++ {
 			if n == 36 {
 				continue
 			}

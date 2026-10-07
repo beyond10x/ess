@@ -610,6 +610,9 @@ impl Checker<'_> {
                 self.body(sink, path, &overlay.body);
             }
             NodeRef::Node(node) => {
+                if let Some(live) = &node.live {
+                    self.channel(sink, &path.child("live"), &live.channel);
+                }
                 degrades_known(sink, path, &node.common);
                 self.body(sink, path, &node.body);
             }
@@ -651,6 +654,31 @@ impl Checker<'_> {
         }
         for channel in &header.live {
             self.channel(sink, &path.child("live"), channel);
+        }
+        // beyond10x/ess#354: the title's record is the first row of a section that reads.
+        if let Some(from) = &header.title_from {
+            let at = path.child("title_from");
+            let section = page_of(self.document, path).and_then(|(_, page)| {
+                page.sections
+                    .iter()
+                    .find(|section| section.name == from.section)
+            });
+            match section {
+                None => sink.push(
+                    "section_refs",
+                    &at,
+                    format!("`{}` names no section of this page", from.section),
+                ),
+                Some(section) if section.body.reads().is_none() => sink.push(
+                    "header_record",
+                    &at,
+                    format!(
+                        "section `{}` reads nothing, so it holds no record for the title",
+                        from.section
+                    ),
+                ),
+                Some(_) => {}
+            }
         }
     }
 
@@ -1307,7 +1335,7 @@ fn uses_capability<'a>(
             Some(&section.common.degrades),
         ),
         NodeRef::Node(node) => (
-            uses_body(lack, capability, &node.body),
+            uses_body(lack, capability, &node.body) || (node.live.is_some() && applies("Live")),
             Some(&node.common.degrades),
         ),
         NodeRef::Overlay(overlay) => (

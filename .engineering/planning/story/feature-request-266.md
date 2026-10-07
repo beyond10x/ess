@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-266
 kind: story
-status: proposed
+status: active
 title: Synthesized scenarios account for bindings that move state
 tags:
 - feature-request
@@ -19,9 +19,10 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/existence.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
-revision: 14
+revision: 15
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T13:04:15Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-10-04T13:32:48Z", actor: "human:timo", revision: 15, decided_on: {"recorded":{"review_outcome":1}}}
 ---
 ## Outcome
 

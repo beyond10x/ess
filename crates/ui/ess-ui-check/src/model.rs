@@ -18,6 +18,16 @@
 //! A document with `actor: anonymous` is read by nobody signed in, so no grant decides what it
 //! shows, and `section_readable` does not apply to it.
 //!
+//! # A page's actor is held to its grants exactly
+//!
+//! A page that names its `actor` (beyond10x/ess#284) is built for that actor, and every command
+//! it sends — from its sections, header and overlays — must be one the actor `may` invoke
+//! (`ActorSpec::may_invoke`). No pooling: another actor's grant does not admit it, and a command
+//! no actor is granted is granted to nobody, as a served surface refuses it to every caller. A
+//! model that serves nothing leaves enforcing the grant to its caller, and the page is that
+//! caller, so it is held the same way. An actor the model does not declare is `actor_in_model`;
+//! a page without `actor`, or an `UNMAPPED:` one, is not held to any actor's grants.
+//!
 //! Widget declarations are not checked here: `args.<param>` is unbound in them. Their views,
 //! commands and events are checked at each use, on the expanded body.
 
@@ -59,6 +69,9 @@ pub struct Model {
     /// Each command's input fields by qualified name, as [`View::fields`] holds a row's.
     pub(crate) inputs: BTreeMap<String, Fields>,
     events: BTreeSet<String>,
+    /// Every declared actor by qualified name, with the qualified names of the commands it may
+    /// invoke.
+    actors: BTreeMap<String, BTreeSet<String>>,
     readable: BTreeSet<DomainHandle>,
     /// The qualified names a document type can name: the model's types, entities and views.
     pub(crate) type_names: BTreeSet<String>,
@@ -242,6 +255,18 @@ impl Model {
                 .map(|(name, command)| (name.to_string(), fields_of(ir, &command.input)))
                 .collect(),
             events: ir.events().keys().map(ToString::to_string).collect(),
+            actors: ir
+                .actors()
+                .iter()
+                .map(|(name, actor)| {
+                    let may = actor
+                        .may
+                        .iter()
+                        .map(|command| command.name().to_string())
+                        .collect();
+                    (name.to_string(), may)
+                })
+                .collect(),
             readable,
             type_names: ir
                 .types()
@@ -344,10 +369,14 @@ impl Model {
         // grants, so every view is read without one and `section_readable` does not apply. An
         // UNMAPPED actor is reported by `unmapped_reported` and decides nothing here either.
         let grants_apply = matches!(document.actor, None | Some(ActorSource::FromSession));
+        let page_actors = self.page_actors(document, sink);
         for named in names(document) {
             match named.kind {
                 Kind::Event(event) => self.event_ref(sink, &named.at, event),
-                Kind::Command(command) => self.command_ref(sink, &named.at, command),
+                Kind::Command(command) => {
+                    self.command_ref(sink, &named.at, command);
+                    self.page_actor_grants(document, &page_actors, sink, &named.at, command);
+                }
                 Kind::View { name, bound, body } => {
                     let Some((qualified, view)) = self.view(name) else {
                         self.view_ref(sink, &named.at, name);
@@ -365,6 +394,93 @@ impl Model {
             }
         }
         self.values(document, sink);
+    }
+
+    /// Each page that names an actor of the model, with that actor's qualified name. A name the
+    /// model does not declare is reported as `actor_in_model`; an `UNMAPPED:` marker names nobody.
+    fn page_actors<'d>(
+        &self,
+        document: &'d Document,
+        sink: &mut Sink,
+    ) -> BTreeMap<&'d str, String> {
+        let mut resolved = BTreeMap::new();
+        for (page, written) in document
+            .pages
+            .iter()
+            .filter_map(|(page, body)| Some((page.as_str(), body.actor.as_deref()?)))
+        {
+            if written.starts_with("UNMAPPED: ") {
+                continue; // reported by `unmapped_reported`
+            }
+            if let Some(actor) =
+                self.qualify(written, |candidate| self.actors.contains_key(candidate))
+            {
+                resolved.insert(page, actor);
+                continue;
+            }
+            let declared = if self.actors.is_empty() {
+                "which declares none".to_owned()
+            } else {
+                format!(
+                    "which declares {}",
+                    self.actors
+                        .keys()
+                        .map(|actor| format!("`{actor}`"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            };
+            sink.push(
+                "actor_in_model",
+                &NodePath::root().child("pages").child(page).child("actor"),
+                format!(
+                    "`{written}` names no actor of model `{}`, {declared}",
+                    self.system
+                ),
+            );
+        }
+        resolved
+    }
+
+    /// `command`, sent at `at`, is granted to the actor of the page `at` lies in, when that page
+    /// names one. A command the model does not have is `command_in_model`'s alone.
+    fn page_actor_grants(
+        &self,
+        document: &Document,
+        page_actors: &BTreeMap<&str, String>,
+        sink: &mut Sink,
+        at: &NodePath,
+        command: &str,
+    ) {
+        let Some((page, _)) = page_of(document, at) else {
+            return;
+        };
+        let (Some(actor), Some(command)) = (page_actors.get(page), self.command(command)) else {
+            return;
+        };
+        let may = &self.actors[actor];
+        if may.contains(&command) {
+            return;
+        }
+        let granted = if may.is_empty() {
+            "it may invoke no command".to_owned()
+        } else {
+            format!(
+                "it may invoke {}",
+                may.iter()
+                    .map(|granted| format!("`{granted}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        };
+        sink.push(
+            "page_actor_grants",
+            at,
+            format!(
+                "page `{page}` sends `{command}`, which its actor `{actor}` is not granted: \
+                 {granted}"
+            ),
+        );
     }
 
     /// The qualified name and row fields of the view `reads` names, when the model has it.
@@ -394,6 +510,10 @@ impl Model {
                         }
                     }
                 }
+                continue;
+            }
+            if let NodeRef::Header(header) = located.node {
+                self.title_from(document, path, header, sink);
                 continue;
             }
             let Some(Body::Composite(composite)) = crate::walk::body_of(located.node) else {
@@ -441,13 +561,57 @@ impl Model {
                     };
                     for (key, named) in [("value", &choice.value), ("label", &choice.label)] {
                         if let Some(named) = named {
-                            wire_field(sink, &path.child(key), &qualified, &view.wires, named);
+                            wire_field(
+                                sink,
+                                &path.child(key),
+                                &qualified,
+                                &view.wires,
+                                named,
+                                "a choice",
+                            );
                         }
                     }
                 }
                 _ => {}
             }
         }
+    }
+
+    /// `header.title_from.field` names a key the rows of the named section's view carry, by wire
+    /// name, as a choice's `value` and `label` do (beyond10x/ess#354): a field the rows never
+    /// carry leaves the literal title on screen for good. A dotted field is held by its first
+    /// segment.
+    fn title_from(
+        &self,
+        document: &Document,
+        path: &NodePath,
+        header: &ess_ui::Header,
+        sink: &mut Sink,
+    ) {
+        let Some(from) = &header.title_from else {
+            return;
+        };
+        let page = match path.segments() {
+            [pages, page, ..] if pages == "pages" => document.pages.get(page),
+            _ => None,
+        };
+        let Some((qualified, view)) = page
+            .and_then(|page| page.sections.iter().find(|s| s.name == from.section))
+            .and_then(|section| section.body.reads())
+            .and_then(|reads| reads.view.as_deref())
+            .and_then(|name| self.view(name))
+        else {
+            return;
+        };
+        let field = from.field.split('.').next().unwrap_or(&from.field);
+        wire_field(
+            sink,
+            &path.child("title_from").child("field"),
+            &qualified,
+            &view.wires,
+            field,
+            "a header title",
+        );
     }
 
     /// A form field whose choice lists fixed options, over a command input that is an enum:
@@ -544,23 +708,25 @@ impl Model {
     }
 }
 
-/// A choice's `value` or `label` names a key the rows of `view` carry: a field's wire name, since
-/// served rows are keyed by wire name (beyond10x/ess#328). Else reports it under `row_fields`,
-/// naming the wire name to write when `name` is the model name of a field renamed on the wire.
+/// A choice's `value` or `label`, or a header's `title_from.field` (`subject` names which), names
+/// a key the rows of `view` carry: a field's wire name, since served rows are keyed by wire name
+/// (beyond10x/ess#328, #354). Else reports it under `row_fields`, naming the wire name to write
+/// when `name` is the model name of a field renamed on the wire.
 fn wire_field(
     sink: &mut Sink,
     at: &NodePath,
     view: &str,
     wires: &BTreeMap<String, String>,
     name: &str,
+    subject: &str,
 ) {
     if wires.values().any(|wire| wire == name) {
         return;
     }
     let message = match wires.get(name) {
         Some(wire) => format!(
-            "`{name}` is the model name of a field the rows of `{view}` carry as `{wire}`; a \
-             choice names the key its rows carry, so write `{wire}`"
+            "`{name}` is the model name of a field the rows of `{view}` carry as `{wire}`; \
+             {subject} names the key its rows carry, so write `{wire}`"
         ),
         None => format!(
             "`{name}` is no row field of `{view}`; its rows carry {}",
@@ -869,7 +1035,15 @@ fn names(document: &Document) -> Vec<Named<'_>> {
                 body_names(path, &section.body, &mut push);
             }
             NodeRef::Overlay(overlay) => body_names(path, &overlay.body, &mut push),
-            NodeRef::Node(node) => body_names(path, &node.body, &mut push),
+            NodeRef::Node(node) => {
+                // A nested node's `live.on` names events like a section's (beyond10x/ess#354).
+                if let Some(live) = &node.live {
+                    for event in &live.on {
+                        push(path.child("live"), Kind::Event(event));
+                    }
+                }
+                body_names(path, &node.body, &mut push);
+            }
             NodeRef::Action(action) => action_names(path, action, &mut push),
             NodeRef::FormGroup(group) => {
                 if let Some(command) = &group.does {

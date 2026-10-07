@@ -10,12 +10,12 @@ use ess_compiler::EssIr;
 
 use crate::{render, resolved, Format};
 
-/// `ess specify transport`: an `ess-transport/1` document against one exact ESS.
+/// `ess specify transport`: an `ess-transport/1` or `/2` document against one exact ESS.
 #[derive(Debug, clap::Subcommand)]
 pub enum Command {
-    /// Validate and resolve an `ess-transport/1` document.
+    /// Validate and resolve an `ess-transport/1` or `/2` document.
     Validate(Input),
-    /// Compile a document into canonical `ess-transport-ir/1`.
+    /// Compile a document into its canonical `ess-transport-ir/1` or `/2` form.
     Compile {
         #[command(flatten)]
         input: Input,
@@ -27,7 +27,7 @@ pub enum Command {
 
 #[derive(Debug, clap::Args)]
 pub struct Input {
-    /// An `ess-transport/1` JSON or YAML document.
+    /// An `ess-transport/1` or `/2` JSON or YAML document.
     #[arg(long)]
     path: PathBuf,
     /// One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml`.

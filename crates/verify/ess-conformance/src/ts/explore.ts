@@ -22,6 +22,19 @@
 // the explorer no longer expects that command's ordinary branch where an external one is eligible.
 // A branch the target cannot arrange is reported `unarrangeable`, never as a disagreement.
 //
+// # Restarts
+//
+// Every sequence runs in one process lifetime unless the caller asks for restarts. With
+// `restartEvery` set, the explorer restarts the target after every that many commands of a
+// sequence through `restart` (`RestartTarget`), then reads every view again: the model does not
+// change across a restart, so a row the restarted implementation lost is a disagreement, and an
+// identity a later creation mints again — a counter kept only in the process — is the identity
+// disagreement every creation is already checked for (beyond10x/ess#297). A restart draws nothing,
+// so a seed names the same commands with restarts as without. A restart is a check only once a
+// command has followed it: one after a sequence's last command is followed by one more drawn
+// command, and only a restart a command followed counts in `restarts.performed`. A target that
+// cannot restart is reported in `restarts.unsupported` and never passes.
+//
 // # A port, not a second opinion
 //
 // `src/go/explore.go` is this file in Go, function for function. The random draws, their order and
@@ -61,6 +74,7 @@ import type {
   CommandResult,
   Node,
   Row,
+  ScenarioContext,
   Target,
   ViewRequest,
 } from './runtime.js';
@@ -73,6 +87,39 @@ export interface ExploreOptions {
   steps?: number;
   /** Run exactly this one sequence, overriding `seeds`: how a reported failure is replayed. */
   seed?: number;
+  /**
+   * Restart the target through `RestartTarget` after every this many commands of a sequence, and
+   * check every view again. Absent or zero means no restart, which is what an exploration did
+   * before restarts existed.
+   */
+  restartEvery?: number;
+}
+
+/**
+ * What a durable implementation offers so that exploration can restart it. Optional: a target
+ * without `restart`, or whose `restart` throws ErrUnsupported, has restarts reported unsupported,
+ * which never passes.
+ *
+ * `restart` stops every process of the implementation and starts it again over the same durable
+ * state, inside the scenario already begun, and settles once the restarted implementation answers
+ * requests. Clearing memory inside a process that keeps running is not a restart: a counter that
+ * lives in the process survives it, and that counter is what a restart is for.
+ */
+export interface RestartTarget {
+  restart(scenario: ScenarioContext): Answer<void>;
+}
+
+/** How far the restarts an exploration was asked for got. */
+export interface RestartReach {
+  /** The interval asked for, in commands. */
+  every: number;
+  /**
+   * Restarts that completed and a command then followed, across every sequence and none of the
+   * shrinking replays.
+   */
+  performed: number;
+  /** Why the target could not restart, when it could not. */
+  unsupported?: string;
 }
 
 /** One command or view left out of every sequence, and why. */
@@ -113,6 +160,11 @@ export interface ExploreResult {
    * keeps its bytes.
    */
   external?: ExternalReach[];
+  /**
+   * How far the restarts `restartEvery` asked for got. Absent when none were asked for, so a result
+   * without restarts keeps its bytes.
+   */
+  restarts?: RestartReach;
   failure?: ExploreFailure;
 }
 
@@ -1467,6 +1519,8 @@ interface Step {
   external: string;
   /** Identities deliberately absent in the serial draw/replay model. */
   fresh?: [string, string][];
+  /** A restart of the target rather than a command. */
+  restart?: true;
 }
 
 const NO_RECORD = Symbol('no record');
@@ -1618,6 +1672,9 @@ interface Session {
   undetermined: Set<string>;
   /** Every command the target was asked to arrange a branch for in this sequence. */
   forced: Set<string>;
+  /** The consistency token the last command returned. */
+  token: string;
+  scenario: string;
 }
 
 function render(value: Node): string {
@@ -1643,6 +1700,7 @@ async function perform(
     if (isUnsupported(error)) throw new Unsupported(errorText(error));
     return { kind: 'target', detail: `the target threw ${errorText(error)}` };
   }
+  s.token = result.consistency ?? '';
   const got = result.outcome ?? '';
   if (got !== outcome.name) {
     return {
@@ -1877,7 +1935,28 @@ function checkInvariants(s: Session): Disagreement | null {
 
 // ---- sequences ----------------------------------------------------------------------------------
 
+/** Why a target without `restart` cannot restart. */
+const NO_RESTART = 'the target offers no restart';
+
+/**
+ * Restarts the target and reads every view again. The model does not move: what the restarted
+ * implementation answers must be what it answered before. Throws `Unsupported` when the target
+ * cannot restart.
+ */
+async function restartTarget(s: Session): Promise<Disagreement | null> {
+  const restartable = s.target as Target & Partial<RestartTarget>;
+  if (typeof restartable.restart !== 'function') throw new Unsupported(NO_RESTART);
+  try {
+    await restartable.restart({ scenario: s.scenario, correlation: s.correlation });
+  } catch (error) {
+    if (isUnsupported(error)) throw new Unsupported(errorText(error));
+    return { kind: 'target', detail: `restarting, the target threw ${errorText(error)}` };
+  }
+  return checkViews(s, s.token);
+}
+
 function line(step: Step): string {
+  if (step.restart === true) return 'restart';
   const external = step.external === '' ? '' : ` [external: ${step.external}]`;
   return `${step.command} ${goMarshal(step.input)}${external}`;
 }
@@ -1907,6 +1986,7 @@ async function open(
     correlation,
     undetermined: new Set<string>(),
     forced: new Set<string>(),
+    token: '',
     scenario,
   };
   await preconditions(session);
@@ -1966,6 +2046,24 @@ async function replay(
   const executed: Step[] = [];
   try {
     for (const recorded of trace) {
+      if (recorded.restart === true) {
+        let restarted: Disagreement | null;
+        try {
+          restarted = await restartTarget(s);
+        } catch (error) {
+          if (error instanceof Unsupported) continue;
+          throw error;
+        }
+        executed.push(recorded);
+        if (restarted !== null) {
+          return {
+            kind: restarted.kind,
+            message: describe(restarted, executed.length - 1, recorded),
+            executed,
+          };
+        }
+        continue;
+      }
       const command = p.commands.find((candidate) => candidate.name === recorded.command);
       if (command === undefined) continue;
       const input = JSON.parse(JSON.stringify(recorded.input)) as Row;
@@ -2036,6 +2134,10 @@ export async function explore(
   newTarget: () => Answer<Target>,
   options: ExploreOptions = {},
 ): Promise<ExploreResult> {
+  const every = options.restartEvery ?? 0;
+  if (!Number.isInteger(every) || every < 0) {
+    throw new Error('the restart interval must be a whole number of steps, zero or more');
+  }
   const p = plan(loadModel());
   const steps = options.steps ?? DEFAULT_STEPS;
   const seeds: number[] = [];
@@ -2048,6 +2150,9 @@ export async function explore(
   let executed = 0;
   let sequences = 0;
   let failure: ExploreFailure | undefined;
+  // The restarts a command followed, and why the target cannot restart, which stops every later one.
+  let performed = 0;
+  let refused = '';
 
   for (const seed of seeds) {
     if (p.commands.length === 0 || failure !== undefined) break;
@@ -2056,11 +2161,16 @@ export async function explore(
     const s = await open(p, newTarget, `explore/seed-${seed}`);
     s.undetermined = undetermined;
     const trace: Step[] = [];
+    // The restart steps in `trace`, which are not commands, and how many of them no command has
+    // followed yet. A restart is a check only once a command has followed it, so one after the last
+    // command is followed by one more.
+    let restarts = 0;
+    let pending = 0;
     let found: Found | null = null;
     try {
       for (
         let attempts = 0;
-        trace.length < steps && attempts < steps * ATTEMPTS_PER_STEP;
+        (trace.length - restarts < steps || pending > 0) && attempts < steps * ATTEMPTS_PER_STEP;
         attempts += 1
       ) {
         if (p.commands.length === 0) break;
@@ -2125,11 +2235,38 @@ export async function explore(
         }
         executed += 1;
         trace.push(step);
+        performed += pending;
+        pending = 0;
         reached.add(`${command.name}/${outcome.expected.name}`);
         if (disagreement !== null) {
           found = {
             kind: disagreement.kind,
             message: describe(disagreement, trace.length - 1, step),
+            executed: [...trace],
+          };
+          break;
+        }
+        // No restart after the command that follows the last scheduled one.
+        const commands = trace.length - restarts;
+        if (every === 0 || refused !== '' || commands % every !== 0 || commands > steps) continue;
+        const restart: Step = { command: '', input: {}, refs: [], external: '', restart: true };
+        let restarted: Disagreement | null;
+        try {
+          restarted = await restartTarget(s);
+        } catch (error) {
+          if (error instanceof Unsupported) {
+            refused = error.message;
+            continue;
+          }
+          throw error;
+        }
+        pending += 1;
+        restarts += 1;
+        trace.push(restart);
+        if (restarted !== null) {
+          found = {
+            kind: restarted.kind,
+            message: describe(restarted, trace.length - 1, restart),
             executed: [...trace],
           };
           break;
@@ -2174,6 +2311,10 @@ export async function explore(
     ambiguous: sortStrings([...ambiguous]),
   };
   if (external.length > 0) result.external = external;
+  if (every > 0) {
+    result.restarts = { every, performed };
+    if (refused !== '') result.restarts.unsupported = refused;
+  }
   if (failure !== undefined) result.failure = failure;
   return result;
 }
@@ -2280,14 +2421,29 @@ export function exploreProblem(result: ExploreResult, options: AssertOptions = {
         '\naccept them explicitly with { allowExcluded: true }',
     );
   }
+  // Restarts asked for and not performed are never a pass, `allowExcluded` or not: a caller that
+  // cannot restart its target does not set `restartEvery`.
+  const restarts = result.restarts;
+  if (restarts !== undefined) {
+    if (restarts.unsupported !== undefined && restarts.unsupported !== '') {
+      problems.push(
+        `explore: restarts were requested every ${restarts.every} step(s), and the target cannot restart: ${restarts.unsupported}`,
+      );
+    } else if (restarts.performed === 0) {
+      problems.push(
+        `explore: restarts were requested every ${restarts.every} step(s), and no sequence performed one`,
+      );
+    }
+  }
   return problems.length === 0 ? null : problems.join('\n');
 }
 
 /**
  * assertExplored throws when an exploration failed, when a declared outcome went unreached, or
  * when an excluded command's outcomes, or external outcomes the target could not arrange, were
- * never tried and `allowExcluded` is not set. What the
- * model could not place, and the draws it would not decide, are printed and do not fail.
+ * never tried and `allowExcluded` is not set, or when restarts were asked for and none was
+ * performed. What the model could not place, and the draws it would not decide, are printed and do
+ * not fail.
  */
 export function assertExplored(result: ExploreResult, options: AssertOptions = {}): void {
   for (const note of result.undetermined) console.log(`explore: undetermined: ${note}`);
@@ -2350,7 +2506,10 @@ export interface InterleavedTarget extends Target {
   invokeCommand(request: CommandRequest): Answer<PendingCommand>;
 }
 
-/** What one concurrent exploration is asked to do. */
+/**
+ * What one concurrent exploration is asked to do. There is no `restartEvery`: restarts are
+ * sequential-only, and `exploreConcurrent` refuses options that carry one.
+ */
 export interface ConcurrentOptions {
   /** The specification `ess` checks each history against, as `--path` takes it. */
   path?: string;
@@ -3140,6 +3299,13 @@ export async function exploreConcurrent(
   newTarget: () => Answer<Target>,
   options: ConcurrentOptions = {},
 ): Promise<ConcurrentResult> {
+  // Restarts are sequential-only. A caller that passes `restartEvery` here, which the type does not
+  // admit, is told so rather than given a run that never restarted.
+  if ('restartEvery' in options) {
+    throw new Error(
+      'explore: `restartEvery` is set; concurrent exploration does not restart the target, restarts are for `explore` only',
+    );
+  }
   const clients = options.clients ?? 0;
   if (clients !== 0 && !(clients >= 2 && clients <= 4)) {
     throw new Error(

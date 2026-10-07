@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-04T13:41:16Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-391",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "task test-transport-network (pinned NATS 2.15.0, AsyncAPI CLI 4.1.1) in the unit tree; ess-transport, ess-publisher, ess-xtask, ess-gen asyncapi_transport, ess-cli transport/client on the integration tree",
+    "reference": "baseline: released 0.52.0 refuses /2; adversary 5 red (publish blocked on ack, callback deadlock, duplicate parameter, missing format rows); treatment: real broker 300 items in 4 subject-homogeneous messages per adapter, validator pass, /1 bytes equal 0.52.0, integration tree tests 0 failed"
+  }
+}

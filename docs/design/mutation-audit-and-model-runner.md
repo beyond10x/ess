@@ -607,6 +607,45 @@ same text in both languages. `originalLength` records the length before shrinkin
 - `unreached` is every declared outcome of an **included** command that is not in `reached`.
 - `excludedOutcomes` is every declared outcome of an excluded command.
 
+### Restarts (beyond10x/ess#297)
+
+Every sequence above runs in one process lifetime, so an implementation that mints identities from
+a counter kept only in its process passes, and its first creation after a restart reuses an
+identity it has already stored. A scenario reset does not show it: `beginScenario` makes a fresh
+context, and a fresh context is what the counter starts from anyway.
+
+- **Opt-in, twice.** The caller asks with `restartEvery` (`RestartEvery`), a whole number of
+  commands; absent or zero is the exploration that existed before, and the result then carries no
+  `restarts` key, so its bytes do not change. The target offers `restart(scenario)` (Go:
+  `RestartTarget`), a method neither `Target` nor the suite runtime declares, so no existing target
+  stops compiling. A negative or fractional interval is refused like an unusable model.
+- **What a restart is.** Stop every process of the implementation and start it again over the
+  same durable state, inside the scenario already begun; return once it answers. Clearing memory
+  inside a process that keeps running is not one. ESS cannot see a process, so this is the
+  contract the target signs, and a `restart` that answers without restarting is reported as
+  performed: that defect is the target author's to rule out; the fixtures run their implementation as a child process and count
+  the process ids they start.
+- **Where.** After every `restartEvery`-th command of a sequence, the last one included. A restart
+  is a check only once a command has followed it, so one after the last command is followed by one
+  more drawn command, and `performed` counts only restarts a command followed. A restart
+  draws no random number, so one seed names the same commands with and without restarts and in
+  both languages. It is a step of the trace, written `restart`, and the shrinker may remove it
+  like any other.
+- **What is checked.** After a restart, every view is read again with the last command's
+  consistency token; the model does not move, so a lost row is `view-rows` at the restart step.
+  The creation after it is checked as every creation is: an identity a record already carries is
+  `identity: the target created … again, over an existing record`.
+- **Unsupported is never a pass.** A target without `restart`, or whose `restart` answers
+  `ErrUnsupported`, stops restarts for the rest of the exploration, which goes on without them;
+  `restarts.unsupported` says why. `assertExplored` fails on it, and on `performed: 0`,
+  `allowExcluded` or not: the caller asked for restarts, and a caller whose target cannot restart
+  does not ask.
+- **Not here.** Concurrent exploration still has no restart (decision 6 of
+  [concurrent-history conformance](concurrent-history-conformance.md)); TypeScript
+  `exploreConcurrent` refuses options carrying `restartEvery`, and Go `ConcurrentOptions` has no
+  such field, and the synthesized suite
+  has no restart step: that would be a new suite format with a step every runtime implements.
+
 ### The mutants Part 2 must kill
 
 The four engine mutants from the issue, in a toy target over a fixture specification, in both

@@ -379,6 +379,8 @@ fn adversary_304_the_unit_fixture_below_ess_22_is_refused_naming_ess_22() {
 
 #[test]
 fn adversary_304_two_optional_vias_are_one_related_row_refusal() {
+    // Since beyond10x/ess#283 an ess/22 command may read two rows through its input; this one is
+    // still refused, because the second row is read by a predicate and has no `exists: false`.
     let text = replaced(
         MODEL,
         "      - {name: candidate, type: Optional<demo.release.CandidateId>}\n",
@@ -389,12 +391,12 @@ fn adversary_304_two_optional_vias_are_one_related_row_refusal() {
         "        when_related: {via: input.candidate, predicate: state != Accepted}\n",
         "        when_related: {via: input.other, predicate: state != Accepted}\n",
     );
-    let errors = assemble(&text).expect_err("two related rows are refused");
+    let errors = assemble(&text).expect_err("the second row has no `exists: false` answer");
     assert!(
         has(
             &errors,
-            ValidationCode::ConflictingDeclaration,
-            "one related row"
+            ValidationCode::NonExhaustiveBranches,
+            "the row `input.other` names"
         ),
         "{errors}"
     );

@@ -212,3 +212,44 @@ fn a_stored_reference_lowers_to_resolved_related_via_subject() {
         "the canonical IR says the reference is read from the subject: {canonical}"
     );
 }
+
+const MULTIPLE: &str =
+    include_str!("../../../verify/ess-conformance/tests/fixtures/related-guard-multiple.yaml");
+
+#[test]
+fn issue_283_each_branch_carries_the_row_its_own_via_names() {
+    let model = ir(MULTIPLE);
+    let command = &model.commands()[&"demo.run.StartRun".parse().unwrap()];
+    let reads: Vec<String> = command
+        .outcomes
+        .iter()
+        .filter_map(|outcome| match &outcome.condition {
+            ResolvedCondition::Related {
+                via, entity, test, ..
+            } => Some(format!(
+                "{}: {via} -> {} ({})",
+                outcome.name,
+                entity.name(),
+                match test {
+                    ResolvedRelatedTest::Absent => "absent".to_owned(),
+                    ResolvedRelatedTest::Holds { predicate } => predicate.to_string(),
+                }
+            )),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        reads,
+        [
+            "no-such-switch: input.switch -> demo.run.Switch (absent)",
+            "switch-paused: input.switch -> demo.run.Switch (state == Paused)",
+            "no-such-capability: input.capability -> demo.run.Capability (absent)",
+            "capability-revoked: input.capability -> demo.run.Capability (state == Revoked)",
+        ]
+    );
+    assert_eq!(
+        command.outcomes[4].condition,
+        ResolvedCondition::Otherwise,
+        "the creation is the default"
+    );
+}

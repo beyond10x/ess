@@ -88,6 +88,8 @@ struct Opts {
     row_key: Option<String>,
     /// The row key a choice takes each option's value from (the form field it picks for).
     choice_value: Option<String>,
+    /// The local holding the rows a live nested node reads for its composite (#354).
+    data: Option<&'static str>,
 }
 
 impl Opts {
@@ -101,6 +103,7 @@ impl Opts {
             framed: false,
             row_key: None,
             choice_value: None,
+            data: None,
         }
     }
 }
@@ -119,6 +122,8 @@ pub(crate) struct Gen<'d> {
     /// `PlacementProfile.profiles.<profile>.defaults`, read from the embedded schema.
     profiles: BTreeMap<String, BTreeMap<String, Store>>,
     page_profile: Option<String>,
+    /// The page being written, whose params a nested live node keys its channel session by.
+    page: Option<String>,
     section_profile: Option<String>,
     /// The locals of each generated component being written, innermost last.
     locals: Vec<BTreeSet<String>>,
@@ -245,6 +250,7 @@ impl<'d> Gen<'d> {
             errors: Vec::new(),
             profiles: schema_profiles(),
             page_profile: None,
+            page: None,
             section_profile: None,
             locals: Vec::new(),
             components: BTreeSet::new(),
@@ -846,8 +852,12 @@ impl<'d> Gen<'d> {
         let mut opts = opts.clone();
         opts.framed = false;
         opts.row_key = None;
+        opts.data = None;
         opts.degrades.clone_from(&node.common.degrades);
-        let rendered = self.body(at, &node.body, &opts);
+        let rendered = match &node.live {
+            Some(live) => self.live_node(at, node, live, &opts),
+            None => self.body(at, &node.body, &opts),
+        };
         let rendered = if node.common.state.is_empty() {
             rendered
         } else {
@@ -865,6 +875,90 @@ impl<'d> Gen<'d> {
             format!("<{name} />")
         };
         self.visible(&node.common, rendered)
+    }
+
+    /// A nested node with `live` (beyond10x/ess#354): its own component reads the node's view
+    /// and applies the channel's events to it — polls it in a bound project — while it is
+    /// mounted, and hands the rows to the composite as a section frame does. A node not shown (an
+    /// inactive tab, a collapsed `expand`, a hidden node) is not mounted: it holds no channel and
+    /// reads again when it is shown.
+    fn live_node(&mut self, at: &NodePath, node: &Node, live: &Live, opts: &Opts) -> String {
+        let reads = node.body.live_reads();
+        let Some(spec) = reads.and_then(Self::reads) else {
+            // The loader admits `live` only beside `reads`; a read naming no view reads nothing.
+            return self.body(at, &node.body, opts);
+        };
+        let name = self.component_name(&format!(
+            "{}Live{}",
+            self.prefix,
+            ts::pascal(&at.to_string())
+        ));
+        let mut lines = Vec::new();
+        self.begin_component();
+        let use_scope = self.import("runtime/core", "useScope");
+        let use_read = self.import("runtime/data", "useRead");
+        lines.push(format!("const __scope = {use_scope}();"));
+        lines.push(format!(
+            "const __read = {use_read}({spec}, __scope.values, true, true);"
+        ));
+        let session = if self.bound {
+            None
+        } else {
+            self.node_session(at, reads, &live.channel)
+        };
+        let data = self.live_rows(
+            &mut lines,
+            at,
+            live,
+            reads,
+            &node.common.degrades,
+            "node",
+            session,
+        );
+        let data = self.filtered_data(&mut lines, data, reads);
+        self.end_component();
+        let mut inner = opts.clone();
+        inner.rows = Rows::FromSection;
+        inner.row_key.clone_from(&live.match_field);
+        inner.data = Some(data);
+        let body = self.body(at, &node.body, &inner);
+        let scope = self.import("runtime/core", "DataScope");
+        let rendered = El::new(&scope).expr("data", data).child(body).render();
+        self.hoist(&name, &lines, &rendered);
+        format!("<{name} />")
+    }
+
+    /// The session value a nested live node keys a `session: {per}` channel by: its read's param
+    /// of that name, else the page's param; refused at `at` when there is neither.
+    fn node_session(
+        &mut self,
+        at: &NodePath,
+        reads: Option<&Reads>,
+        channel: &str,
+    ) -> Option<String> {
+        let per = self
+            .doc
+            .channels
+            .get(channel)?
+            .session
+            .as_ref()?
+            .per
+            .clone();
+        if let Some(value) = reads.and_then(|reads| reads.params.get(&per)) {
+            return Some(value.0.clone());
+        }
+        let page = self.page.as_ref().and_then(|name| self.doc.pages.get(name));
+        if page.is_some_and(|page| page.params.contains_key(&per)) {
+            return Some(format!("params.{per}"));
+        }
+        self.refuse(
+            &at.child("live"),
+            &format!(
+                "channel `{channel}` has one instance per `{per}` (session.per), and nothing here \
+                 gives a `{per}`: no param of this node's read and no page param of that name"
+            ),
+        );
+        Some(format!("params.{per}"))
     }
 
     fn visible(&mut self, common: &NodeCommon, rendered: String) -> String {
@@ -1118,9 +1212,18 @@ impl<'d> Gen<'d> {
                     .as_ref()
                     .map(|binds| binds.0.clone())
                     .or_else(|| opts.binds.clone());
+                // A live choice's node reads for it and hands its rows down (#354).
+                let handed = opts.data.filter(|_| c.reads.is_some());
                 El::new(&component)
                     .path_if(!opts.framed, &path)
-                    .opt("reads", c.reads.as_ref().and_then(Self::reads))
+                    .opt(
+                        "reads",
+                        c.reads
+                            .as_ref()
+                            .filter(|_| handed.is_none())
+                            .and_then(Self::reads),
+                    )
+                    .opt("data", handed.map(str::to_owned))
                     .opt("options", options)
                     .opt("binds", binds.map(|b| ts::string(&b)))
                     .opt(
@@ -1764,26 +1867,29 @@ impl<'d> Gen<'d> {
     }
 
     #[allow(clippy::too_many_lines)] // one component, one hook per concern
-    /// How often a bound `live:` section polls, in milliseconds: no served surface streams, so the
-    /// section takes its `no_live` fallback, polling unless it says `refuse`. Its read's
+    /// How often a bound `live:` section or nested node polls, in milliseconds: no served surface
+    /// streams, so it takes its `no_live` fallback, polling unless it says `refuse`. Its read's
     /// `refresh:` is the interval (5 s without one) and must be a duration from 1 s to 24 h; one
-    /// the generator cannot read as a duration is refused, never replaced by the default.
-    fn poll_interval(&mut self, at: &NodePath, section: &Section) -> u64 {
-        let fallback = section
-            .common
-            .degrades
-            .get("no_live")
-            .map_or("poll", String::as_str);
+    /// the generator cannot read as a duration is refused, never replaced by the default. `what`
+    /// names the holder in a refusal: `section`, or `node` (beyond10x/ess#354).
+    fn poll_interval(
+        &mut self,
+        at: &NodePath,
+        degrades: &BTreeMap<String, String>,
+        reads: Option<&Reads>,
+        what: &str,
+    ) -> u64 {
+        let fallback = degrades.get("no_live").map_or("poll", String::as_str);
         if fallback == "refuse" {
             self.refuse(
                 &at.child("live"),
-                "the served surface streams no events, and this section's \
-                 `degrades: {no_live: refuse}` refuses to poll instead",
+                &format!(
+                    "the served surface streams no events, and this {what}'s \
+                     `degrades: {{no_live: refuse}}` refuses to poll instead"
+                ),
             );
         }
-        let Some(refresh) =
-            Self::section_reads(&section.body).and_then(|reads| reads.refresh.as_ref())
-        else {
+        let Some(refresh) = reads.and_then(|reads| reads.refresh.as_ref()) else {
             return POLL_MS;
         };
         let at = at.child("reads").child("refresh");
@@ -1791,7 +1897,7 @@ impl<'d> Gen<'d> {
             self.refuse(
                 &at,
                 &format!(
-                    "a live section bound to the served surface polls at its `refresh:`, and `{}` \
+                    "a live {what} bound to the served surface polls at its `refresh:`, and `{}` \
                      is not a whole number of ms, s, m or h this generator can poll at",
                     refresh.0
                 ),
@@ -1802,7 +1908,7 @@ impl<'d> Gen<'d> {
             self.refuse(
                 &at,
                 &format!(
-                    "a live section bound to the served surface polls at its `refresh:`, and \
+                    "a live {what} bound to the served surface polls at its `refresh:`, and \
                      {every} ms is outside 1 s to 24 h"
                 ),
             );
@@ -1822,23 +1928,52 @@ impl<'d> Gen<'d> {
         let Some(live) = &section.live else {
             return "__read";
         };
+        let reads = Self::section_reads(&section.body);
+        let session = if self.bound {
+            None
+        } else {
+            self.session_expr(at, Some(page), &live.channel)
+        };
+        self.live_rows(
+            lines,
+            at,
+            live,
+            reads,
+            &section.common.degrades,
+            "section",
+            session,
+        )
+    }
+
+    /// `const __data = …`: `__read` with `live` applied — polled at the read's `refresh:` in a
+    /// bound project, played from the channel otherwise, keyed by `session` for a `session: {per}`
+    /// channel. A live insert is kept only when it passes the read's `filter`.
+    #[allow(clippy::too_many_arguments)]
+    fn live_rows(
+        &mut self,
+        lines: &mut Vec<String>,
+        at: &NodePath,
+        live: &Live,
+        reads: Option<&Reads>,
+        degrades: &BTreeMap<String, String>,
+        what: &str,
+        session: Option<String>,
+    ) -> &'static str {
         if self.bound {
-            let every = self.poll_interval(at, section);
+            let every = self.poll_interval(at, degrades, reads, what);
             let use_poll = self.import("runtime/data", "usePoll");
             lines.push(format!("const __data = {use_poll}(__read, {every});"));
             return "__data";
         }
         let use_live = self.import("runtime/live", "useLive");
-        let mut session = match self.session_expr(at, Some(page), &live.channel) {
+        let mut session = match session {
             Some(session) => {
                 let evaluate = self.import("runtime/expr", "evaluate");
                 format!(", {evaluate}({}, __scope.values)", ts::string(&session))
             }
             None => String::new(),
         };
-        if let Some(filter) =
-            Self::section_reads(&section.body).and_then(|reads| reads.filter.as_ref())
-        {
+        if let Some(filter) = reads.and_then(|reads| reads.filter.as_ref()) {
             if session.is_empty() {
                 session.push_str(", undefined");
             }
@@ -1860,11 +1995,9 @@ impl<'d> Gen<'d> {
         &mut self,
         lines: &mut Vec<String>,
         data: &'static str,
-        section: &Section,
+        reads: Option<&Reads>,
     ) -> &'static str {
-        let Some(filter) =
-            Self::section_reads(&section.body).and_then(|reads| reads.filter.as_ref())
-        else {
+        let Some(filter) = reads.and_then(|reads| reads.filter.as_ref()) else {
             return data;
         };
         let filter_read = self.import("runtime/data", "filterRead");
@@ -1892,6 +2025,15 @@ impl<'d> Gen<'d> {
         frame
     }
 
+    /// Whether the page header's title reads its record from `section` (`header.title_from`,
+    /// beyond10x/ess#354): that section reports its first row.
+    fn titles_header(page: &Page, section: &Section) -> bool {
+        page.header
+            .as_ref()
+            .and_then(|header| header.title_from.as_ref())
+            .is_some_and(|from| from.section == section.name)
+    }
+
     fn section_component(&mut self, name: &str, page: &Page, at: &NodePath, section: &Section) {
         let mut lines = Vec::new();
         self.section_profile = section.profile.as_ref().and_then(variant);
@@ -1901,6 +2043,9 @@ impl<'d> Gen<'d> {
             .path(&at.to_string())
             .expr("name", ts::string(&section.name))
             .opt("title", quoted(section.title.as_ref()));
+        if Self::titles_header(page, section) && reads.is_some() {
+            frame = frame.expr("reportsRow", "true");
+        }
         if let Some(reads) = &reads {
             let use_scope = self.import("runtime/core", "useScope");
             let trigger = self.import("runtime/core", "useLoadTrigger");
@@ -1930,7 +2075,7 @@ impl<'d> Gen<'d> {
                 "const __read = {use_read}({reads}, __scope.values, {enabled});"
             ));
             let data = self.live_data(&mut lines, page, at, section);
-            let data = self.filtered_data(&mut lines, data, section);
+            let data = self.filtered_data(&mut lines, data, Self::section_reads(&section.body));
             frame = frame
                 .expr("data", data)
                 .expr("active", "__active")
@@ -1969,6 +2114,7 @@ impl<'d> Gen<'d> {
             framed: true,
             row_key: section.row_key().map(str::to_owned),
             choice_value: None,
+            data: None,
         };
         if let Body::Composite(Composite::Form(form)) = &section.body {
             let (local, setter) = self.draft_hook(&mut lines, at, form.draft.as_ref());
@@ -2033,9 +2179,16 @@ impl<'d> Gen<'d> {
                 ("link", quoted(help.link.as_ref())),
             ])
         });
+        let title_from = header.title_from.as_ref().map(|from| {
+            ts::object([
+                ("section", Some(ts::string(&from.section))),
+                ("field", Some(ts::string(&from.field))),
+            ])
+        });
         El::new(&frame)
             .path(&at.to_string())
             .opt("title", quoted(header.title.as_ref()))
+            .opt("titleFrom", title_from)
             .opt("total", quoted(header.total.as_ref()))
             .opt("filters", quoted(header.filters.as_ref()))
             .opt("switchTo", switch_to)
@@ -2160,6 +2313,7 @@ impl<'d> Gen<'d> {
         self.prefix.clone_from(&owner);
         self.components = BTreeSet::from([format!("{owner}Page")]);
         self.page_profile = page.profile.as_ref().and_then(variant);
+        self.page = Some(name.to_owned());
         let at = NodePath::root().child("pages").child(name);
         let mut section_components = BTreeMap::new();
         for section in &page.sections {
@@ -2247,6 +2401,7 @@ impl<'d> Gen<'d> {
             extra.push(("channel".to_owned(), "__channel".to_owned()));
         }
         self.page_profile = None;
+        self.page = None;
         let rendered = self.scope_layer("state", &values, &setters, &extra, hosted);
         self.import("react", "type ReactNode");
         let mut w = Writer::default();
@@ -2407,6 +2562,7 @@ impl<'d> Gen<'d> {
         self.prefix.clone_from(&owner);
         self.components = BTreeSet::from([owner.clone()]);
         self.page_profile = None;
+        self.page = None;
         let at = NodePath::root().child("shells").child(name);
         let mut lines = Vec::new();
         self.begin_component();

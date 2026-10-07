@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-04T12:52:55Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-328",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-ui -p ess-ui-check -p ess-ui-tui -p ess-ui-react -p ess-ui-test -p ess-ui-docs; ess-cli --test ui_commands (integration tree)",
+    "reference": "baseline: new choice_projection/model_enums/choice_contract targets fail to compile or fail on base; adversary 5 failed before correction; treatment: 567 passed, 5 failed only for missing esbuild (same on base), ui_commands 17/17"
+  }
+}

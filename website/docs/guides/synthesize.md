@@ -231,15 +231,28 @@ and a field without one is read from the row the refusal is answered for: its fi
 name and type, or, for a field of the entity's state type, the state it rests in. A request no
 declared branch answers, or a guard that is Unknown, is the typed refusal naming the command.
 
+A `when_related:` guard is generated too, through an input reference, an Optional one and a
+stored field of the addressed subject. The behaviour reads the related row by identity through the
+related entity's storage port, and reads none for an absent reference. The order is the
+conformance interpreter's. For an input reference: `existing_instance:`, then a missing row's
+`exists: false` branch, then the input-guarded refusals. For a stored reference: the input-guarded
+refusals, the addressed row's existence and held state, then the reference as the row held it
+before the branch. Where a stored reference is read, or from `ess/22` where `wrong_state:` sits
+beside a present-row refusal, the addressed row's existence and held state answer before the
+present-row refusals, and those answer before every accepting branch. Otherwise the present-row
+predicate branches are read in declaration order with the accepting branches. A `{related:}` value
+still keeps its command owed.
+
 A command stays a **whole** obligation when any one outcome uses a construct the generator cannot
 express, and the plan names the first one it found. They are:
 
 | Where | Constructs that keep the command an obligation |
 |---|---|
 | the command | a typed `response:`; `when_subject_state:` beside `external:`; more than one default branch |
+| related rows | `when_related:` beside `external:`; a related row of a domain that a component accepting the command does not own (that component has no storage port for it) |
 | subject guards | a subject guard with no supplied subject to read, or beside a branch addressing another subject; a subject predicate choosing between a move and an update |
 | unknown identity | a supplied subject with neither `unknown_instance:` nor `wrong_state:` to answer an identity no record carries; a `wrong_state:` refusal with fields describing the rows of more than one subject |
-| branches | `when_related:`, `input_absent:`, `replays:`, `instances:`, `affects:`; a `wrong_state:` or `unknown_instance:` branch that acts or emits, except the creation of create-or-update |
+| branches | `input_absent:`, `replays:`, `instances:`, `affects:`; a `wrong_state:` or `unknown_instance:` branch that acts or emits, except the creation of create-or-update |
 | selection by existence | a creation that `existing_instance:` or a creating `unknown_instance:` decides, whose identity is not read from the input (for create-or-update, a required input field; beside `existing_instance:`, the same input field on every creation) |
 | effects | `creates:` leaving a required field unset; a move, update or delete whose identity is observed; `sets:` without a subject |
 | values | a declared conversion; a value of another type; `{subject:}` on a branch that holds no row; `{increment:}` with no previous value or on a field that is not an `Integer`; a struct source leaving a required member unset; `{related:}`; `{count: changed}`; a response field; `{cleared}` on an event or error |

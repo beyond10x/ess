@@ -236,8 +236,8 @@ struct GenerateArgs {
     /// projection is legal, and the note is what tells it apart from a clean one.
     #[arg(long)]
     strict: bool,
-    /// An `ess-transport/1` document binding events to brokers, subjects and streams; only with
-    /// `--kind asyncapi`.
+    /// An `ess-transport/1` or `ess-transport/2` document binding events to brokers, subjects
+    /// and streams; only with `--kind asyncapi`.
     #[arg(long)]
     transport: Option<PathBuf>,
 }
