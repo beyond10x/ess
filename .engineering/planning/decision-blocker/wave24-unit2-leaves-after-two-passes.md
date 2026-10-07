@@ -2,11 +2,13 @@
 format: aep.planning-md/3
 id: decision-blocker:wave24-unit2-leaves-after-two-passes
 kind: decision-blocker
-status: open
+status: cleared
 title: Unit 2 leaves wave 24 after two adversary passes
 relations:
 - blocks: story:planning-store-carries-workstation-paths
-revision: 1
+revision: 3
+transitions:
+- {from: "open", to: "cleared", at: "2026-10-07T00:55:03Z", actor: "human:timo", revision: 3}
 ---
 # Unit 2 leaves wave 24 after two adversary passes
 
@@ -69,3 +71,17 @@ order-dependent". Pass 2 established it is environment-dependent and determinist
 `cargo test -p ess-xtask --locked` fails on `DEBUG`, a partial pin fails on `NUM_JOBS`, the
 Taskfile's full `env` passes. Both my runs used the pinned env. The unit's number was right and I
 measured a different build.
+
+## Decision (2026-10-07)
+
+Retire. Measured on `main` at `1132a87a7`:
+`git grep -lE '/(home|Users|root)/[A-Za-z0-9._+@-]' -- .engineering/` names 2 files and neither
+carries a workstation path (one reads `/export/home/...`, the other quotes a pattern). The journal
+that held most of the 60 files no longer exists in the git store, and the common Gates
+`personal-paths` scan already fails any commit that carries a home-directory path. The lane this
+unit built was never merged.
+
+`story:planning-store-carries-workstation-paths` and its three draft follow-ups
+(`the-unread-tree-bullet-is-read-whole`,
+`the-lane-does-not-pin-a-count-that-its-own-bookkeeping-moves`,
+`the-metadata-guard-rejects-every-build-but-one`) are archived with this reason.

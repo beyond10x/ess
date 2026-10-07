@@ -254,20 +254,20 @@ enum Landing {
     /// The chain returned to a name. `inhabited` is whether values of *that name* exist, which is
     /// what `story:literal-representation-walk-exhaustion` decided the ring answers turn on.
     ///
-    /// Deliberately **not** the question the `Structured` arm below asks, and the difference is a
-    /// recorded open finding rather than an oversight. Measured on this tree:
+    /// Deliberately **not** the question the `Structured` arm below asks. Measured on this tree:
     /// `Alpha = Optional<Beta>` with `Beta = Gamma`, `Gamma = Beta` draws two `self_reference`
-    /// lines about `Beta` and `Gamma` and nothing at all about the mapping — yet `Alpha` itself is
+    /// lines about `Beta` and `Gamma` and nothing at all about the mapping, yet `Alpha` itself is
     /// inhabited, its one value being absence, which no literal can spell. Read the way the
-    /// `Structured` arm now reads, that is `OwnedByNobody`, and 36 of these shapes are in this
+    /// `Structured` arm reads, that would be `OwnedByNobody`; 36 of these shapes are in this
     /// matrix.
     ///
-    /// It is left standing because deciding it belongs to the story that owns this arm, not to
-    /// `story:structured-ring-is-refused-by-two-passes`: answering it would make the walk's rule
-    /// identical to the mutant
-    /// [`counting_optionals_outside_the_ring_would_move_shapes_the_matrix_asserts_on`] exists to
-    /// rule out, and that case would then be unsatisfiable. Two stories disagree here and a person
-    /// should say which is right.
+    /// Decided on 2026-10-07 (`decision-blocker:literal-in-an-optional-of-a-broken-ring`): a broken
+    /// ring is **one** mistake. The `self_reference` refusals about the ring's names are its
+    /// diagnostic, the document already fails validation on them, and the literal into `Alpha` is a
+    /// consequence that owes no second diagnostic at the mapping. So the 36 shapes stand as they
+    /// are, and [`counting_optionals_outside_the_ring_would_move_shapes_the_matrix_asserts_on`]
+    /// keeps ruling out the other reading, which would make the walk count the `Optional` outside
+    /// the ring.
     Ring { inhabited: bool },
     /// The walk stopped on a struct or a union.
     Structured {

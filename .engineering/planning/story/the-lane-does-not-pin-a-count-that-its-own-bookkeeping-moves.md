@@ -2,14 +2,16 @@
 format: aep.planning-md/3
 id: story:the-lane-does-not-pin-a-count-that-its-own-bookkeeping-moves
 kind: story
-status: draft
+status: archived
 title: The lane does not pin a count that its own bookkeeping moves
 scope:
 - confidence: cited
   path: crates/edge/ess-xtask/tests/host_paths.rs
 - confidence: cited
   path: crates/edge/ess-xtask/tests/host_paths_lane/mod.rs
-revision: 3
+revision: 5
+transitions:
+- {from: "draft", to: "archived", at: "2026-10-07T00:55:06Z", actor: "human:timo", revision: 5}
 ---
 # The lane does not pin a count that its own bookkeeping moves
 
@@ -52,3 +54,9 @@ why.
 Related: `story:scrub-the-planning-store-or-say-why-not` asks whether the store should carry these
 paths at all. If it is scrubbed, this story changes shape but does not go away — the counts still
 move.
+
+## Archived (2026-10-07)
+
+Archived with `decision-blocker:wave24-unit2-leaves-after-two-passes` cleared: the finding no
+longer reproduces on `main` (2 store files match the home-path pattern and neither carries a
+workstation path), and the common Gates `personal-paths` scan refuses such a path in any commit.

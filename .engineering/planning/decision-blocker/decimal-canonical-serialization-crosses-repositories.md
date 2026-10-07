@@ -6,7 +6,7 @@ status: open
 title: The Decimal half of canonical number serialization moves persisted bytes and needs a reader in another repository
 relations:
 - blocks: story:primitive-canonical-serialization
-revision: 1
+revision: 2
 ---
 ## What is blocked
 
@@ -74,3 +74,17 @@ them past this wave's cleanup unless somebody moves them.
 one". It **is** a number writer (`quote` → `serde_json::to_string(&Node)`, `report.rs:424`), but
 `story:review-primitive-semantics`'s scope list does not contain it, so the attribution is wrong
 even though the path is right. Recorded rather than edited.
+
+## Decision (2026-10-07)
+
+Authored literals: refuse at validation an authored `Decimal` that binary64 cannot hold exactly;
+serialization is unchanged. That is `story:an-inexact-authored-decimal-is-refused`.
+
+The exact-decimal writer this blocker holds (both doors moved, a Decimal as a JSON string,
+`ess-conformance/6`, `ess-conformance-report/2`, the Atlas ADR and AEP's `adapt_json` reader
+first) stays parked with `obligation:review-contract-rollout-coordination`, so this blocker stays
+open.
+
+Not covered by the refusal: a `Decimal` that arrives at run time (an implementation's reply, a
+conformance report value). It still collapses to binary64 when written, and that is what this
+blocker continues to hold.

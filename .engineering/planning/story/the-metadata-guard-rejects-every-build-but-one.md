@@ -2,14 +2,16 @@
 format: aep.planning-md/3
 id: story:the-metadata-guard-rejects-every-build-but-one
 kind: story
-status: draft
+status: archived
 title: The metadata guard rejects every build but one
 scope:
 - confidence: inferred
   path: Taskfile.yml
 - confidence: cited
   path: crates/edge/ess-xtask/src/consumer_coverage/metadata_tests.rs
-revision: 3
+revision: 5
+transitions:
+- {from: "draft", to: "archived", at: "2026-10-07T00:55:06Z", actor: "human:timo", revision: 5}
 ---
 # The metadata guard rejects every build but one
 
@@ -43,3 +45,9 @@ whether their invocation or their change is at fault.
 
 - `crates/edge/ess-xtask/src/consumer_coverage/metadata_tests.rs` — `cited`
 - `Taskfile.yml` — `inferred`, if the requirement is to be stated in one place
+
+## Archived (2026-10-07)
+
+Archived with `decision-blocker:wave24-unit2-leaves-after-two-passes` cleared: the finding no
+longer reproduces on `main` (2 store files match the home-path pattern and neither carries a
+workstation path), and the common Gates `personal-paths` scan refuses such a path in any commit.

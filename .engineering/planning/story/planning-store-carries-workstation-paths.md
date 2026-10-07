@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:planning-store-carries-workstation-paths
 kind: story
-status: active
+status: archived
 title: 60 tracked files under .engineering/ carry home-directory paths the host-path lane does not scan
 relations:
 - serves: vision:O2
@@ -12,10 +12,11 @@ scope:
   path: .engineering/planning
 - confidence: cited
   path: crates/edge/ess-xtask/tests/host_paths.rs
-revision: 5
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-12T04:18:09Z", actor: "human:timo", revision: 4, imported: true}
 - {from: "proposed", to: "active", at: "2026-09-12T04:18:11Z", actor: "human:timo", revision: 5, imported: true}
+- {from: "active", to: "archived", at: "2026-10-07T00:55:04Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":2}}}
 ---
 ## Finding
 
@@ -58,3 +59,9 @@ One of these, decided rather than drifted into:
   knows what it does not cover.
 
 Either way the lane's documentation and the repository's state agree afterwards.
+
+## Archived (2026-10-07)
+
+Archived with `decision-blocker:wave24-unit2-leaves-after-two-passes` cleared: the finding no
+longer reproduces on `main` (2 store files match the home-path pattern and neither carries a
+workstation path), and the common Gates `personal-paths` scan refuses such a path in any commit.
