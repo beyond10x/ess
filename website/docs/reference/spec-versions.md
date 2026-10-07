@@ -600,7 +600,7 @@ claiming a higher number. [Formats and digests](./formats.md) says what each doc
 | `ess-conformance-input/1`, `ess-conformance-replay/1` | [0.21.0][r21] | A retained original suite and its parents, and a paired browser replay. |
 | `ess-inputs/1` | [0.21.0][r21] | A directory's input manifest, `ess-inputs.yaml`. `ess-inputs/2`, introduced in [0.34.0][r34], adds `requires:`. |
 | `ess-ui/1` | [0.47.0][r47] | A renderer-neutral UI document: the application, the ESS system its views, commands and events resolve against, and its pages and widgets, read by `ess ui load` ([reference](./ess-ui.md)). |
-| `ess-output-state/1` | [0.21.0][r21] | The generated-output checkpoint. `ess-output-state/2`, introduced in [0.34.0][r34], records the producing release. |
+| `ess-output-state/1` | [0.21.0][r21] | The generated-output checkpoint. `ess-output-state/2`, introduced in [0.34.0][r34], records the producing release. `ess-output-state/3` records the root binding only while a transaction is pending, so a settled checkpoint names no machine path. |
 | `ess-cli/1`, `ess-cli-plan/1` | [0.21.0][r21] | A CLI presentation binding, and the plan it resolves to. |
 | `ess-cli-artifacts/1`, `ess-cli-generation/1` | [0.21.0][r21] | The generated CLI package's manifest, and the report `ess generate cli` prints. |
 | `ess-execution-registry/1`, `ess-execution-authority/1` | [0.21.0][r21] | The deployment recovery registry, and one authority inside it. |

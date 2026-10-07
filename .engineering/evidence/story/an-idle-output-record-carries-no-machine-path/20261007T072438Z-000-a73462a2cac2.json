@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-07T07:24:38Z",
+  "actor": "human:timo",
+  "artifact": "story:an-idle-output-record-carries-no-machine-path",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-cli --locked --test <15 named output-ownership binaries>: 15 red before the change (output_ownership 9, generate_check 1, generate_check_adversary 1, ownership_relocation_adversary_p2 2, requires_release 2), all 15 binaries green after (222 cases); ess-cli clippy and fmt exit 0; cargo test -p ess-xtask 400 passed; ess specify validate --path models/output-ownership valid; installed 0.55.0 refuses a /3 record without writing",
+    "reference": "unit/ess-wave-20261007b-u3-idle-record e2ba76b37f"
+  }
+}

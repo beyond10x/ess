@@ -152,11 +152,15 @@ fn complete_non_binary64_output_maps_remain_identical() {
             output
         });
     assert_eq!(
-        digest, "8537c51db75f2994ed6679511dec7edc870ae7462eb9911619908c74cebe583b",
+        digest, "d132dabbc1afa8661656272f55e95191569e0e56abdf6e2b8f77019b3fd68235",
         "complete old output map SHA-256 frozen at c4ba992, refrozen for beyond10x/ess#394 (`score >= 0` \
          publishes `minimum`), for beyond10x/ess#406/#407 (model `Timestamp` is native, model \
-         anonymous shapes are named by position; bundle output keeps its hash names) and at 48d5cc77b \
-         (a generated model crate pins `time =0.3.45`, the version generated servers pin)"
+         anonymous shapes are named by position; bundle output keeps its hash names), at 48d5cc77b \
+         (a generated model crate pins `time =0.3.45`, the version generated servers pin) and for \
+         beyond10x/ess#483 (the Rust manifest enables `arbitrary_precision` only through a default-on \
+         `exact-numbers` feature, the Rust report names each `rust_exact_numbers` value, a \
+         `Value`-decoded union only where an alternative can hold a number, and the `integer` \
+         obligation says it is exact only with that feature)"
     );
 }
 
@@ -172,13 +176,26 @@ fn rust_original_token_wire_corpus() {
         include_str!("fixtures/binary64_wire_tests.rs.txt"),
     )
     .unwrap();
-    for args in [
-        vec!["generate-lockfile", "--offline"],
-        vec!["test", "--offline", "--locked"],
+    // A Binary64-only library declares no exact-numbers feature (beyond10x/ess#483), so the
+    // corpus runs as built and again with the `arbitrary_precision` a consumer's graph may unify on.
+    for (args, arbitrary_precision) in [
+        (vec!["generate-lockfile", "--offline"], "0"),
+        (vec!["test", "--offline", "--locked"], "0"),
+        (
+            vec![
+                "test",
+                "--offline",
+                "--locked",
+                "--features",
+                "serde_json/arbitrary_precision",
+            ],
+            "1",
+        ),
     ] {
         let result = std::process::Command::new(env!("CARGO"))
             .args(args)
             .current_dir(&root)
+            .env("ESS_EXPECT_ARBITRARY_PRECISION", arbitrary_precision)
             .output()
             .unwrap();
         println!(

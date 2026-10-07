@@ -11,7 +11,7 @@ refs:
   reference: beyond10x/entity-runtime#54
 relations:
 - depends_on: story:feature-request-231
-revision: 1
+revision: 2
 ---
 # Entity Runtime lowering covers the five constructs entity-core gains
 
@@ -32,3 +32,10 @@ upstream as beyond10x/entity-runtime#54 (open, filed 2026-10-05). The open block
 ## Milestone
 
 None until beyond10x/entity-runtime#54 ships; then the next ESS minor.
+
+## Narrowed (2026-10-07)
+
+entity-core 0.27.0 ships two of the five features: `<text>.count` and a String `alphabet`. They move
+to `story:entity-runtime-lowers-alphabet-and-text-count`. This story keeps the three entity-core
+has not shipped: `{increment: n}` in `sets:`, `{cleared: true}`, and an Optional-to-Optional
+`updates:`.
