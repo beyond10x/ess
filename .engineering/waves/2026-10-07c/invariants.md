@@ -34,3 +34,8 @@ Read `AGENTS.md` at the worktree root first; it wins over this list.
 - While the other session's selection-plan wave 3 runs, also keep off: `crates/generate/ess-entity-runtime/src/lib.rs`;
   `crates/generate/ess-synth/src/rust/behaviour.rs`, `src/go/behaviour.rs`, `src/determined.rs`, `src/plan.rs`;
   `crates/specify/ess-domain/src/command/subject_state.rs` and `src/command/related_guard.rs`. If a fix needs one, stop and report it.
+- Until another session's one-selection-plan wave 4 unit merges, no unit edits
+  `crates/verify/ess-conformance/src/interpret/execute.rs`, `interpret/execute/related.rs` or
+  `interpret/execute/existence.rs`, and the draft stories feature-request-361, feature-request-362
+  and the-interpreter-executes-stored-field-guards do not start. That session's wave 5 edits
+  `synthesize.rs` and `synthesize/` after this wave's pull request merges.
