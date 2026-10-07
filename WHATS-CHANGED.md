@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.56.0](#a-held-state-branch-must-be-declared-before-an-overlapping-accepting-or-external-branch) | A held-state branch must be declared before an overlapping accepting or external branch | breaking | notable |
 | [0.56.0](#committed-output-records-carry-no-machine-path-and-generated-rust-types-stop-forcing-arbitrary-precision) | Committed output records carry no machine path, and generated Rust types stop forcing arbitrary precision | capability | notable |
 | [0.55.0](#cli-results-carry-json-and-an-optional-generated-value-reads-a-port) | CLI results carry Json, and an optional generated value reads a port | capability | notable |
 | [0.54.0](#counted-event-claims-generate---check-and-validation-completeness) | Counted event claims, generate --check and validation completeness | capability | notable |
@@ -61,6 +62,12 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
 
 ## 0.56.0 — 2026-10-07
+
+### A held-state branch must be declared before an overlapping accepting or external branch
+
+breaking · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.56.0)
+
+Validation refuses an accepting `when:` or `external:` branch declared before a branch the held state selects when one request can satisfy both guards (`ESS-COMMAND-004`, naming both branches). Every consumer then answers alike. To fix a refused specification, declare the held-state branch first.
 
 ### Committed output records carry no machine path, and generated Rust types stop forcing arbitrary precision
 
