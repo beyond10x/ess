@@ -18,7 +18,7 @@ scope:
   path: crates/generate/schema-contract/src/realize/rust.rs
 - confidence: inferred
   path: crates/generate/schema-contract/tests/types_manifest_features.rs
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-07T01:43:17Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-10-07T01:43:17Z", actor: "human:timo", revision: 6}
@@ -79,3 +79,12 @@ Per `.agents/skills/assessing-external-requests/SKILL.md`, run on ess 0.55.0.
 Spec first: model the change in this repository's ESS specification, validate it with the newest
 `ess`, regenerate, then implement against the generated code. If the specification cannot express
 it, stop and report that; do not hand-write a parallel model.
+
+## Correction (2026-10-07)
+
+Two lines above are wrong, found by the implementor: neither `ess generate types` nor
+`ess generate schema types-bundle` has a `--check` flag (only `ess generate output` does). The
+cost line and the CHANGELOG acceptance line read instead: regenerating changes the Rust
+`Cargo.toml` and `types-report.json`, so committed generated output differs until it is
+regenerated. Also changed by this story: the `binary64_structural.rs` frozen hash and the
+`ess-publisher` transport `Cargo.toml` hash are re-pinned; every other pinned file keeps its bytes.

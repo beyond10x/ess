@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### Added
+
+- Entity Runtime lowering targets entity-core 0.28.0. A String type's `alphabet` lowers to
+  `alphabet` on every string field, argument and member it reaches, and nested alphabets lower to
+  their intersection. `<text>.count` lowers to `<path>.count`, counted in Unicode scalar values.
+  Still refused by name: an alphabet on a declared response field, a text literal outside its
+  field's alphabet, or nested alphabets that share no character (`AlphabetUnsupported`), and a
+  text length read through a quantifier element or a union payload (`TextLengthUnsupported`)
+  (https://github.com/beyond10x/entity-runtime/issues/54).
+
+### Changed
+
+- Generated Rust type libraries (`ess generate types`, `ess generate schema types-bundle`) no
+  longer force `serde_json/arbitrary_precision` onto every consumer. The manifest declares a
+  default-on `exact-numbers` crate feature that enables it, and only where the realized types hold
+  JSON numbers in `serde_json::Number` or `serde_json::Value`, including unions decoded through a
+  `Value`. Depending on the library with `default-features = false` gives binary64 numbers, and
+  `types-report.json` names each affected value under the new `rust_exact_numbers` obligation.
+  Regenerating changes `Cargo.toml` and the Rust `types-report.json`, so committed generated output
+  differs until it is regenerated (https://github.com/beyond10x/ess/issues/483).
+
 ## [0.55.0] — 2026-10-06
 
 ### Added
