@@ -36,7 +36,7 @@ use ess_primitives::predicate::{CompareOp, Operand, Predicate};
 use crate::scenario::{ConformanceScenario, InstanceName, ScenarioId, ScenarioStep};
 use crate::witness::WitnessGap;
 
-use super::{Note, Refusal, RefusalCause, Synthesis};
+use super::{RefusalCause, Synthesis};
 
 /// Why a scenario has no second row of a singleton entity.
 const TWO_ROWS: &str =
@@ -242,18 +242,7 @@ pub(super) fn withdraw_second_creations(ir: &EssIr, synthesis: &mut Synthesis) {
         }
     }
     for (id, cause) in withdrawn {
-        synthesis.suite.scenarios.remove(&id);
-        synthesis.notes.retain(|note| match note {
-            Note::PartialObservation { scenario, .. }
-            | Note::UnseparatedSources { scenario, .. }
-            | Note::UnwitnessedOverlap { scenario, .. }
-            | Note::UnswappedCallers { scenario, .. }
-            | Note::CrossCallerUnswapped { scenario, .. }
-            | Note::CrossCallerUnwitnessed { scenario, .. }
-            | Note::UnaccompaniedRelatedCopy { scenario, .. } => *scenario != id,
-            _ => true,
-        });
-        synthesis.refusals.push(Refusal::about(&id, cause));
+        super::withdraw(synthesis, &id, cause);
     }
 }
 
