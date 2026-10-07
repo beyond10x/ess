@@ -7,6 +7,7 @@ mod ownership_idle_record;
 mod ownership_protocol;
 mod ownership_relocation;
 mod ownership_relocation_adversary;
+mod ownership_root_lock;
 mod ownership_routes;
 use std::{
     collections::BTreeMap,
