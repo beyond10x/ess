@@ -639,6 +639,24 @@ impl fmt::Display for ConformanceReport {
         )?;
         for result in &self.scenarios {
             writeln!(f, "  {result}")?;
+            // An `error` is the target's failure to carry a step out, and only its diagnostic says
+            // which: without it the caller sees an id and nothing to act on
+            // (https://github.com/beyond10x/ess/issues/471).
+            if result.status != Status::Error {
+                continue;
+            }
+            for check in result
+                .checks
+                .iter()
+                .filter(|check| check.status == Status::Error)
+            {
+                let Some(diagnostic) = &check.diagnostic else {
+                    continue;
+                };
+                for line in &diagnostic.observed {
+                    writeln!(f, "      {}: {line}", check.code)?;
+                }
+            }
         }
         let counts = self.counts();
         write!(f, "  {} scenarios: ", self.scenarios.len())?;
