@@ -157,6 +157,10 @@ Set `ESS_TYPES_NODE` to a `node_modules` outside the checkout that holds `@types
 `ci.yml` installs (`npm install --prefix <dir> @types/node@26.3.0`): without it the TypeScript cases
 in `adversary_287_pass1` fail with `TS2688: Cannot find type definition file for 'node'` and
 `cargo test` stops at that target, so the binaries after it never run.
+Put the JavaScript tools `ci.yml` installs globally on `PATH` too (`typescript@6.0.3`,
+`prettier@3.8.1`, `esbuild@0.28.2`, for example `npm install --prefix <dir>` and `<dir>/node_modules/.bin`
+first on `PATH`): without `esbuild` the generated React app's `npm run dev` and `npm run preview`
+cases in `ess-ui-react` exit 127 and `cargo test` stops there.
 Consumer coverage is not part of that bar while it is parked (revision 3, above).
 The release workflow runs the reusable gate, the WebAssembly realization check and native
 packaging concurrently at that exact commit, then retains a read-only preparation artifact only
