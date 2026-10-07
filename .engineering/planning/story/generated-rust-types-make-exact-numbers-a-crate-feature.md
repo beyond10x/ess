@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:generated-rust-types-make-exact-numbers-a-crate-feature
 kind: story
-status: draft
+status: active
 title: Generated Rust types turn on serde_json arbitrary_precision only where exact numbers need it, and let a consumer turn it off
 tags:
 - feature-request
@@ -18,7 +18,10 @@ scope:
   path: crates/generate/schema-contract/src/realize/rust.rs
 - confidence: inferred
   path: crates/generate/schema-contract/tests/types_manifest_features.rs
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-07T01:43:17Z", actor: "human:timo", revision: 5}
+- {from: "proposed", to: "active", at: "2026-10-07T01:43:17Z", actor: "human:timo", revision: 6}
 ---
 ## Outcome
 

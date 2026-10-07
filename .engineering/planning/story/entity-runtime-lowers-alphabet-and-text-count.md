@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:entity-runtime-lowers-alphabet-and-text-count
 kind: story
-status: draft
+status: active
 title: Entity Runtime lowering covers a String alphabet and a text count (entity-core 0.27.0)
 refs:
 - provider: github
@@ -25,7 +25,10 @@ scope:
   path: crates/generate/ess-entity-runtime/tests/lowering.rs
 - confidence: inferred
   path: website/docs/reference/entity-runtime-lowering.md
-revision: 8
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-07T01:43:16Z", actor: "human:timo", revision: 9}
+- {from: "proposed", to: "active", at: "2026-10-07T01:43:16Z", actor: "human:timo", revision: 10}
 ---
 ## Outcome
 
