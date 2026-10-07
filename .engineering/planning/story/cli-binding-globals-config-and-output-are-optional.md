@@ -2,14 +2,17 @@
 format: aep.planning-md/3
 id: story:cli-binding-globals-config-and-output-are-optional
 kind: story
-status: draft
+status: active
 title: A CLI binding may omit the config and output globals (ess-cli/2)
 refs:
 - provider: github
   reference: beyond10x/ess#481
 relations:
 - serves: vision:O2
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-07T11:19:48Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-10-07T11:19:49Z", actor: "human:timo", revision: 3}
 ---
 ## Outcome
 
