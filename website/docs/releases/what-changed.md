@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.56.0 — 2026-10-07
+
+### Committed output records carry no machine path, and generated Rust types stop forcing arbitrary precision
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.56.0)
+
+A settled `.ess-output/state.json` no longer records the output's absolute path, device or inode, and regeneration refuses an edited owned file. Generated Rust types turn on arbitrary precision only where they hold JSON numbers. Entity Runtime lowers alphabets and text counts, and concurrent generation under a shared directory no longer refuses as busy.
+
 ## 0.55.0 — 2026-10-06
 
 ### CLI results carry Json, and an optional generated value reads a port

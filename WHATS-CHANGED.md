@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.56.0](#committed-output-records-carry-no-machine-path-and-generated-rust-types-stop-forcing-arbitrary-precision) | Committed output records carry no machine path, and generated Rust types stop forcing arbitrary precision | capability | notable |
 | [0.55.0](#cli-results-carry-json-and-an-optional-generated-value-reads-a-port) | CLI results carry Json, and an optional generated value reads a port | capability | notable |
 | [0.54.0](#counted-event-claims-generate---check-and-validation-completeness) | Counted event claims, generate --check and validation completeness | capability | notable |
 | [0.54.0](#source-format-ess23-re-keyed-records-bulk-deletes-and-enum-attributes) | Source format ess/23, re-keyed records, bulk deletes and enum attributes | capability | significant |
@@ -58,6 +59,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.56.0 — 2026-10-07
+
+### Committed output records carry no machine path, and generated Rust types stop forcing arbitrary precision
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.56.0)
+
+A settled `.ess-output/state.json` no longer records the output's absolute path, device or inode, and regeneration refuses an edited owned file. Generated Rust types turn on arbitrary precision only where they hold JSON numbers. Entity Runtime lowers alphabets and text counts, and concurrent generation under a shared directory no longer refuses as busy.
 
 ## 0.55.0 — 2026-10-06
 

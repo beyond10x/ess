@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/output-records-and-type-library-features-0.56.0
+repository: ess
+publishedAt: 2026-10-07T00:00:00Z
+title: Committed output records carry no machine path, and generated Rust types stop forcing arbitrary precision
+summary: >-
+  A settled `.ess-output/state.json` no longer records the output's absolute path, device or inode,
+  and regeneration refuses an edited owned file. Generated Rust types turn on arbitrary precision
+  only where they hold JSON numbers. Entity Runtime lowers alphabets and text counts, and
+  concurrent generation under a shared directory no longer refuses as busy.
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.56.0
+  version: 0.56.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.56.0] — 2026-10-07
+
 ### Added
 
 - Entity Runtime lowering targets entity-core 0.28.0. A String type's `alphabet` lowers to
