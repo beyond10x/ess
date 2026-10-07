@@ -12,7 +12,7 @@ use ess_domain::component::ComponentName;
 use ess_domain::name::QualifiedName;
 use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
-use ess_entity_runtime::{lower, LoweringCode, LoweringOptions};
+use ess_entity_runtime::{lower, LoweredService, LoweringCode, LoweringOptions};
 use ess_service_contract::extract;
 use ess_synth::SynthesisPlan;
 
@@ -64,7 +64,7 @@ fn name(value: &str) -> QualifiedName {
     QualifiedName::new(value).unwrap()
 }
 
-fn lower_billing(ir: &EssIr) -> Result<(), Vec<(LoweringCode, String, String)>> {
+fn lower_billing(ir: &EssIr) -> Result<LoweredService, Vec<(LoweringCode, String, String)>> {
     let plan = SynthesisPlan::of(ir);
     let service = extract(ir, &plan, &ComponentName::new("invoice-service").unwrap()).unwrap();
     let options = LoweringOptions {
@@ -74,15 +74,13 @@ fn lower_billing(ir: &EssIr) -> Result<(), Vec<(LoweringCode, String, String)>> 
             .collect(),
         scales: BTreeMap::new(),
     };
-    lower(&service, &options)
-        .map(|_| ())
-        .map_err(|diagnostics| {
-            diagnostics
-                .into_vec()
-                .into_iter()
-                .map(|d| (d.code, d.path.clone(), d.message.clone()))
-                .collect()
-        })
+    lower(&service, &options).map_err(|diagnostics| {
+        diagnostics
+            .into_vec()
+            .into_iter()
+            .map(|d| (d.code, d.path.clone(), d.message.clone()))
+            .collect()
+    })
 }
 
 const KEPT_INPUT: &str = "      - name: invoice_id\n        type: billing.invoice.InvoiceId\n\n    outcomes:\n      - name: cancelled\n";
@@ -109,23 +107,28 @@ fn cancel(condition: &str) -> EssIr {
     )
 }
 
-/// `note.count > 3` under `when_subject` is refused as `TextLengthUnsupported` (a lowered rule would
-/// be Unknown for every row). The same read of the *input* text through `input.` is the same
-/// missing address: entity-core has no length for `$args.input.note` either.
+/// `input.note.count` under `when_subject` reads the length of the *input* text. entity-core 0.27.0
+/// addresses a declared argument's length as `$args.input.note.count`, so it lowers there, beside
+/// the row's `$fields.reminder_count`, and never to a stored field named `input`.
 #[test]
-fn adv_an_input_text_length_in_a_stored_field_predicate_is_refused_by_name() {
+fn adv_an_input_text_length_in_a_stored_field_predicate_lowers_to_the_arguments() {
     let ir = cancel("        when_subject: {predicate: 'reminder_count < input.note.count'}\n");
-    let refused = lower_billing(&ir).expect_err(
-        "`input.note.count` has no entity-core address, so the lowering must refuse it rather than \
-         emit a rule that is Unknown for every row",
-    );
+    let lowered = lower_billing(&ir)
+        .unwrap_or_else(|refused| panic!("an input text length lowers: {refused:?}"));
+    let posted = lowered.definitions()[&name("billing.invoice.Invoice")].operations
+        ["billing.invoice.CancelInvoice"]
+        .outcomes
+        .iter()
+        .find(|outcome| outcome.name == "posted")
+        .expect("posted is lowered");
+    let when = serde_json::to_value(&posted.when)
+        .expect("condition serializes")
+        .to_string();
     assert!(
-        refused.iter().any(
-            |(code, _, message)| *code == LoweringCode::TextLengthUnsupported
-                && message.contains("note.count")
-        ),
-        "{refused:?}"
+        when.contains("\"$args.input.note.count\"") && when.contains("\"$fields.reminder_count\""),
+        "{when}"
     );
+    assert!(!when.contains("$fields.input"), "{when}");
 }
 
 /// The fold refusal in the input guard (`when:`) as well as under `when_subject`.

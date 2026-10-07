@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/held-state-branch-order-0.56.0
+repository: ess
+publishedAt: 2026-10-07T00:00:00Z
+title: A held-state branch must be declared before an overlapping accepting or external branch
+summary: >-
+  Validation refuses an accepting `when:` or `external:` branch declared before a branch the held
+  state selects when one request can satisfy both guards (`ESS-COMMAND-004`, naming both branches).
+  Every consumer then answers alike. To fix a refused specification, declare the held-state branch
+  first.
+kind: breaking
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.56.0
+  version: 0.56.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

@@ -149,17 +149,13 @@ fn payload(root: &Path) -> serde_json::Value {
         .clone()
 }
 
-fn recorded_root(root: &Path) -> PathBuf {
-    let mut path = PathBuf::from("/");
-    for part in payload(root)["root"]["components"].as_array().unwrap() {
-        let hex = part.as_str().unwrap();
-        let bytes: Vec<u8> = (0..hex.len())
-            .step_by(2)
-            .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
-            .collect();
-        path.push(String::from_utf8(bytes).unwrap());
-    }
-    path
+/// A settled `ess-output-state/3` checkpoint records neither the root nor its directory identity
+/// (beyond10x/ess#484), so no checkout commits another one's location.
+fn unbound(root: &Path) -> bool {
+    let payload = payload(root);
+    payload["format"] == "ess-output-state/3"
+        && payload.get("root").is_none()
+        && payload.get("directory").is_none()
 }
 
 /// Commit a generated crate (with `.ess-output`) into a repository and return (spec, repo).
@@ -221,9 +217,9 @@ fn a_clone_under_another_umask_regenerates_unchanged_with_a_clean_diff() {
 }
 
 /// The CI flow, in the default umask: clone, regenerate, diff clean; then a specification change
-/// regenerates, and `state.json` changes with the outputs and records the clone.
+/// regenerates, and `state.json` changes with the outputs and records no root.
 #[test]
-fn a_clone_regenerates_clean_and_a_specification_change_records_the_clone() {
+fn a_clone_regenerates_clean_and_a_specification_change_records_no_root() {
     let _serial = serial();
     let f = Fixture::new();
     let (spec, repo) = committed_repository(&f);
@@ -247,7 +243,7 @@ fn a_clone_regenerates_clean_and_a_specification_change_records_the_clone() {
         "unchanged regeneration dirtied a clone"
     );
     git("022", &clone, &["diff", "--exit-code"]);
-    assert_eq!(recorded_root(&crate_dir), repo.join("crate"));
+    assert!(unbound(&crate_dir), "{}", payload(&crate_dir));
 
     let domain = spec.join("domains/visit.yaml");
     let text = fs::read_to_string(&domain).unwrap();
@@ -273,7 +269,7 @@ fn a_clone_regenerates_clean_and_a_specification_change_records_the_clone() {
             .any(|l| l.starts_with(" M crate/") && !l.contains(".ess-output")),
         "a specification change regenerated no output: {status}"
     );
-    assert_eq!(recorded_root(&crate_dir), crate_dir);
+    assert!(unbound(&crate_dir), "{}", payload(&crate_dir));
     assert_eq!(payload(&crate_dir)["checkpoint"]["phase"], "Idle");
     assert_eq!(
         fs::read(clone.join("AUTHORED.md")).unwrap(),
@@ -479,10 +475,10 @@ fn an_authored_file_where_an_owned_directory_was_survives_retirement() {
     );
 }
 
-/// Several operations in one process, across three roots, each record their own root and never
-/// the one the copy came from.
+/// Several operations in one process, across three roots, each leave a settled record that names
+/// no root, neither their own nor the one the copy came from.
 #[test]
-fn operations_in_one_process_record_their_own_root() {
+fn operations_in_one_process_record_no_root() {
     let _serial = serial();
     let f = Fixture::new();
     let a = f.0.join("a");
@@ -494,18 +490,18 @@ fn operations_in_one_process_record_their_own_root() {
     drop(ownership::check(&b).unwrap());
     ownership::recover(&b).unwrap();
     ownership::probe::publish(&a, OLD, &mut |_| Ok(())).unwrap();
-    assert_eq!(recorded_root(&b), a);
+    assert!(unbound(&b), "{}", payload(&b));
     ownership::probe::publish(&b, NEW, &mut |_| Ok(())).unwrap();
-    assert_eq!(recorded_root(&b), b);
-    assert_eq!(recorded_root(&a), a);
+    assert!(unbound(&b), "{}", payload(&b));
+    assert!(unbound(&a), "{}", payload(&a));
     copy_tree(&b, &c);
     ownership::probe::publish(&c, OLD, &mut |_| Ok(())).unwrap();
-    assert_eq!(recorded_root(&c), c);
-    assert_eq!(recorded_root(&b), b);
+    assert!(unbound(&c), "{}", payload(&c));
+    assert!(unbound(&b), "{}", payload(&b));
     assert!(!c.join("new/leaf").exists());
     assert_eq!(fs::read(c.join("same")).unwrap(), b"original");
     // Back in the original root, the first state still governs.
     ownership::probe::publish(&a, NEW, &mut |_| Ok(())).unwrap();
     assert!(!a.join("retired/old").exists());
-    assert_eq!(recorded_root(&a), a);
+    assert!(unbound(&a), "{}", payload(&a));
 }

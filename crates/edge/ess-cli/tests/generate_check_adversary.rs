@@ -81,6 +81,10 @@ fn changed(
 /// previous generation, as when a change commits `site/` and not the dot directory beside it.
 /// `--check` passes, and the documented reconcile step (the same command without `--check`)
 /// then rewrites `.ess-output/state.json`: CI is green on a tree regeneration changes.
+///
+/// Since beyond10x/ess#484 an owned file whose bytes differ from the record refuses regeneration
+/// in every root, so `--check` names those files with the re-enroll route, and regeneration
+/// refuses them without writing.
 #[test]
 fn check_passing_means_regeneration_leaves_the_tree_unchanged_with_a_stale_record() {
     let _serial = serial();
@@ -106,10 +110,33 @@ fn check_passing_means_regeneration_leaves_the_tree_unchanged_with_a_stale_recor
     let after = snapshot(&out);
     let rewritten = changed(&before, &after);
 
+    let named = stderr(&check);
+    let guide_line = named
+        .lines()
+        .find(|line| line.contains("guide.html"))
+        .unwrap_or_else(|| panic!("--check names guide.html: {named}"));
     assert!(
-        regenerate.status.success(),
-        "regeneration over the stale record: {regenerate:?}"
+        guide_line.contains("ess generate output adopt"),
+        "the drift line names the re-enroll route: {guide_line}"
     );
+    let refused = stderr(&regenerate);
+    assert!(
+        !regenerate.status.success(),
+        "regeneration replaced bytes the record does not hold: {refused}"
+    );
+    for named in [
+        "guide.html".to_owned(),
+        format!(
+            "ess generate output adopt --ownership-root {}",
+            out.display()
+        ),
+    ] {
+        assert!(
+            refused.contains(&named),
+            "the refusal names {named}: {refused}"
+        );
+    }
+    assert!(rewritten.is_empty(), "the refusal wrote {rewritten:?}");
     assert!(
         check.status.code() == Some(1) || rewritten.is_empty(),
         "--check exited {:?} (stderr: {}), and then the same command without --check rewrote \

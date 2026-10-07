@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.56.0] — 2026-10-07
+
+### Added
+
+- Entity Runtime lowering targets entity-core 0.28.0. A String type's `alphabet` lowers to
+  `alphabet` on every string field, argument and member it reaches, and nested alphabets lower to
+  their intersection. `<text>.count` lowers to `<path>.count`, counted in Unicode scalar values.
+  Still refused by name: an alphabet on a declared response field, a text literal outside its
+  field's alphabet, or nested alphabets that share no character (`AlphabetUnsupported`), and a
+  text length read through a quantifier element or a union payload (`TextLengthUnsupported`)
+  (https://github.com/beyond10x/entity-runtime/issues/54).
+
 ### Changed
 
 - Validation refuses an accepting `when:` branch or an `external:` branch declared before a branch
@@ -12,8 +24,47 @@
   an `Optional` input). Where both guards held, the model interpreter and Entity Runtime answered
   the first declared branch and the Rust and Go targets the held-state branch, as the precedence
   order says. Declared held-state first, every consumer answers alike, and reordering changes no
-  answer. A specification that declares them the other way round no longer validates
-  (beyond10x/ess#486).
+  answer. A specification that declares them the other way round no longer validates; to fix
+  it, declare the held-state branch before the accepting or external one
+  (https://github.com/beyond10x/ess/issues/486).
+- Generated Rust type libraries (`ess generate types`, `ess generate schema types-bundle`) no
+  longer force `serde_json/arbitrary_precision` onto every consumer. The manifest declares a
+  default-on `exact-numbers` crate feature that enables it, and only where the realized types hold
+  JSON numbers in `serde_json::Number` or `serde_json::Value`, or decode through a `Value` a union
+  whose alternatives can hold a number. Depending on the library with `default-features = false`
+  gives binary64 numbers. `types-report.json` names each affected value under the new
+  `rust_exact_numbers` obligation, and the `integer` obligation now says it is exact only with
+  that feature.
+  Regenerating changes `Cargo.toml` and the Rust `types-report.json`, so committed generated output
+  differs until it is regenerated (https://github.com/beyond10x/ess/issues/483).
+- `ess generate` writes `ess-output-state/3`: a settled `.ess-output/state.json` no longer records
+  the output root's absolute path (`root`) or its device and inode (`directory`); only a checkpoint
+  with a pending transaction carries them, for recovery. The reader accepts `/1`, `/2` and `/3`. A
+  write-mode generation that finds a settled `/1` or `/2` record rewrites it as `/3` even when no
+  file changes, so committed records change once; `--check` does not report that as drift and
+  prints one warning naming `root` and `directory`. Releases before this one refuse a settled `/3`
+  record before writing, in write and `--check` mode, with
+  `error: invalid output state: missing field 'root'` (exit 1): a CI job pinned to an older `ess`
+  fails from the first commit of a `/3` record, so move such a pin together with the regeneration
+  (https://github.com/beyond10x/ess/issues/484).
+- Generation no longer replaces an owned file whose bytes differ from what `.ess-output` records,
+  in the folder that generated it as well as in a clone. It refuses before writing, naming the files
+  and the re-enroll route: move them aside, remove `.ess-output`, run `ess generate output adopt`
+  once per recorded owner, then regenerate. A missing owned file is still recreated.
+  `ess generate --check` names such a file with that route, and the single-file `--check` routes
+  refuse with it. A commit that updates generated files without their `.ess-output` record now
+  refuses regeneration instead of being repaired (https://github.com/beyond10x/ess/issues/484).
+- A leftover `.ess-output/state.next` (never authoritative) is removed by every write-mode
+  command that finds the root settled, and `ess generate --check` reports one; recovery and
+  adoption close with an `ess-output-state/3` checkpoint
+  (https://github.com/beyond10x/ess/issues/484).
+
+### Fixed
+
+- Concurrent `ess generate` runs that create different new output roots under one directory, such
+  as a shared `$TMPDIR`, no longer refuse each other as `output ownership busy`. A run locks only
+  the root it creates exclusively, and its ancestors shared; two runs creating the same root still
+  exclude each other (https://github.com/beyond10x/ess/issues/485).
 
 ## [0.55.0] — 2026-10-06
 

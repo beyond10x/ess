@@ -523,13 +523,39 @@ fn generated_libraries_match_the_api_and_drift_check_never_repairs_files() {
         fs::write(root.join("source.recipe.json"), "stale").unwrap();
         fs::remove_file(root.join("normalization-report.json")).unwrap();
         fs::write(root.join("consumer.txt"), "unowned").unwrap();
+        // An owned file whose bytes `.ess-output` does not record refuses, checking or writing,
+        // naming the file and the re-enroll route (beyond10x/ess#484), and nothing is written.
+        for check in [true, false] {
+            if !check {
+                args.pop();
+            }
+            let result = fixture.run("normalize-generate", &args);
+            let stderr = String::from_utf8_lossy(&result.stderr);
+            assert!(!result.status.success(), "check: {check}");
+            for named in ["source.recipe.json", "ess generate output adopt"] {
+                assert!(
+                    stderr.contains(named),
+                    "check: {check}: names {named}: {stderr}"
+                );
+            }
+            assert_eq!(fs::read(root.join("source.recipe.json")).unwrap(), b"stale");
+            assert!(!root.join("normalization-report.json").exists());
+        }
+        // Moved aside, both owned files are missing: the check names them without repairing
+        // them, and the write recreates them.
+        fs::rename(
+            root.join("source.recipe.json"),
+            fixture.0.join(format!("{target}.recipe.aside")),
+        )
+        .unwrap();
+        args.push("--check");
         let result = fixture.run("normalize-generate", &args);
         assert!(!result.status.success());
         assert_eq!(
             result.stdout,
-            b"normalization-report.json: missing\nsource.recipe.json: stale\n"
+            b"normalization-report.json: missing\nsource.recipe.json: missing\n"
         );
-        assert_eq!(fs::read(root.join("source.recipe.json")).unwrap(), b"stale");
+        assert!(!root.join("source.recipe.json").exists());
         assert!(!root.join("normalization-report.json").exists());
         args.pop();
         assert!(fixture.run("normalize-generate", &args).status.success());

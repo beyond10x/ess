@@ -2,6 +2,7 @@ use super::{ownership, snapshot, Fixture};
 use anyhow::Result;
 use std::{
     fs,
+    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -23,7 +24,10 @@ fn prepare() -> (Fixture, PathBuf) {
     let f = Fixture::new();
     let root = f.0.join("transaction");
     publish(&root, OLD);
-    fs::write(root.join("same"), "actual edited preimage").unwrap();
+    // The actual preimage differs from the ledger in its mode. Other bytes would refuse the
+    // publication before any write (beyond10x/ess#484), so a mode is the difference a transaction
+    // still has to snapshot from the file rather than from the ledger, and restore.
+    fs::set_permissions(root.join("same"), fs::Permissions::from_mode(0o600)).unwrap();
     fs::write(root.join("authored"), "preserve authored neighbor").unwrap();
     (f, root)
 }
