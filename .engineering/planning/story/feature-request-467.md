@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-467
 kind: story
-status: active
+status: implemented
 title: A generated Optional event field goes through a generator port
 tags:
 - ess-0.55.0
@@ -12,10 +12,11 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-06T11:58:57Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-10-06T11:58:57Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-10-07T00:53:35Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 # A generated Optional event field goes through a generator port
 
