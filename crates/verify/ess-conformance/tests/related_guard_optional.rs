@@ -52,12 +52,19 @@ fn invocations(
             ScenarioStep::ExecuteCommand { command, input, .. }
                 if command.to_string() == COMMAND =>
             {
-                assert!(pending.is_none(), "an invocation is asserted before the next one");
+                assert!(
+                    pending.is_none(),
+                    "an invocation is asserted before the next one"
+                );
                 pending = Some(input.clone());
             }
             ScenarioStep::ExpectOutcome { outcome } => {
                 if let Some(input) = pending.take() {
-                    found.push((input, outcome.to_string()));
+                    // The id of the scenario witnessing this outcome: the form the constants name.
+                    let id = ess_conformance::scenario::ScenarioId::Outcome {
+                        outcome: outcome.clone(),
+                    };
+                    found.push((input, id.to_string()));
                 }
             }
             ScenarioStep::ExecuteCommand { .. } => {
@@ -70,17 +77,28 @@ fn invocations(
             _ => {}
         }
     }
-    assert!(pending.is_none(), "the final invocation has an outcome assertion");
+    assert!(
+        pending.is_none(),
+        "the final invocation has an outcome assertion"
+    );
     found
 }
 
 #[test]
 fn issue_304_absent_present_and_missing_are_each_witnessed() {
     let result = synthesis();
-    assert!(related_refusals(&result).is_empty(), "{:#?}", result.refusals);
+    assert!(
+        related_refusals(&result).is_empty(),
+        "{:#?}",
+        result.refusals
+    );
     for id in [NO_CANDIDATE, NOT_ACCEPTED, PUBLISHED] {
         assert!(
-            result.suite.scenarios.keys().any(|key| key.to_string() == id),
+            result
+                .suite
+                .scenarios
+                .keys()
+                .any(|key| key.to_string() == id),
             "{id} exists; refusals: {:#?}",
             result.refusals
         );
@@ -93,9 +111,9 @@ fn issue_304_absent_present_and_missing_are_each_witnessed() {
         .flat_map(invocations)
         .collect();
     assert!(
-        witnessed.iter().any(|(input, outcome)| {
-            !input.contains_key("candidate") && outcome == PUBLISHED
-        }),
+        witnessed
+            .iter()
+            .any(|(input, outcome)| { !input.contains_key("candidate") && outcome == PUBLISHED }),
         "absence skips the lookup and selects the accepting branch: {witnessed:#?}"
     );
     assert!(
@@ -206,10 +224,7 @@ impl ConformanceTarget for Faulty {
     }
 }
 
-fn statuses<T: ConformanceTarget>(
-    result: &Synthesis,
-    target: &T,
-) -> BTreeMap<String, Status> {
+fn statuses<T: ConformanceTarget>(result: &Synthesis, target: &T) -> BTreeMap<String, Status> {
     let admitted =
         AdmittedSuite::from_suite(&result.suite).unwrap_or_else(|error| panic!("{error}"));
     Runner::for_suite(admitted.suite())

@@ -872,9 +872,9 @@ fn issue_304_step(
     ir: &EssIr,
     store: &Store,
     command: &str,
-    input: BTreeMap<String, Node>,
+    input: &BTreeMap<String, Node>,
 ) -> ess_conformance::interpret::execute::Step {
-    let mut steps = execute(ir, store, &name(command), &input, &Externals::Withheld)
+    let mut steps = execute(ir, store, &name(command), input, &Externals::Withheld)
         .unwrap_or_else(|error| panic!("{command} is interpreted: {error}"));
     assert_eq!(steps.len(), 1, "{command} has one selected outcome");
     steps.remove(0)
@@ -895,22 +895,14 @@ fn issue_304_created(step: &ess_conformance::interpret::execute::Step, event: &s
         .to_owned()
 }
 
-fn issue_304_create(
-    ir: &EssIr,
-    store: &Store,
-    command: &str,
-    event: &str,
-) -> (Store, String) {
-    let step = issue_304_step(ir, store, command, BTreeMap::new());
+fn issue_304_create(ir: &EssIr, store: &Store, command: &str, event: &str) -> (Store, String) {
+    let step = issue_304_step(ir, store, command, &BTreeMap::new());
     let identity = issue_304_created(&step, event);
     (step.next, identity)
 }
 
 fn issue_304_publish_input(release_id: &str, candidate: Option<&str>) -> BTreeMap<String, Node> {
-    let mut input = BTreeMap::from([(
-        "release_id".to_owned(),
-        Node::Text(release_id.to_owned()),
-    )]);
+    let mut input = BTreeMap::from([("release_id".to_owned(), Node::Text(release_id.to_owned()))]);
     if let Some(candidate) = candidate {
         input.insert("candidate".to_owned(), Node::Text(candidate.to_owned()));
     }
@@ -930,7 +922,7 @@ fn issue_304_an_absent_optional_reference_reads_no_related_row() {
         &ir,
         &store,
         "demo.release.PublishRelease",
-        issue_304_publish_input(&release, None),
+        &issue_304_publish_input(&release, None),
     );
     assert_eq!(
         issue_304_outcome(&published),
@@ -958,7 +950,7 @@ fn issue_304_present_and_absent_references_preserve_issue_282_precedence() {
         &ir,
         &store,
         "demo.release.PublishRelease",
-        issue_304_publish_input(&release, Some(&candidate)),
+        &issue_304_publish_input(&release, Some(&candidate)),
     );
     assert_eq!(
         issue_304_outcome(&proposed),
@@ -969,16 +961,13 @@ fn issue_304_present_and_absent_references_preserve_issue_282_precedence() {
         &ir,
         &store,
         "demo.release.AcceptCandidate",
-        BTreeMap::from([(
-            "candidate_id".to_owned(),
-            Node::Text(candidate.clone()),
-        )]),
+        &BTreeMap::from([("candidate_id".to_owned(), Node::Text(candidate.clone()))]),
     );
     let published = issue_304_step(
         &ir,
         &accepted.next,
         "demo.release.PublishRelease",
-        issue_304_publish_input(&release, Some(&candidate)),
+        &issue_304_publish_input(&release, Some(&candidate)),
     );
     assert_eq!(
         issue_304_outcome(&published),
@@ -989,10 +978,7 @@ fn issue_304_present_and_absent_references_preserve_issue_282_precedence() {
         &ir,
         &published.next,
         "demo.release.PublishRelease",
-        issue_304_publish_input(
-            &release,
-            Some("00000000-0000-4000-8000-999999999999"),
-        ),
+        &issue_304_publish_input(&release, Some("00000000-0000-4000-8000-999999999999")),
     );
     assert_eq!(
         issue_304_outcome(&missing),
@@ -1010,7 +996,7 @@ fn issue_304_present_and_absent_references_preserve_issue_282_precedence() {
         &ir,
         &store,
         "demo.release.PublishRelease",
-        issue_304_publish_input(&release, Some(&proposed_candidate)),
+        &issue_304_publish_input(&release, Some(&proposed_candidate)),
     );
     assert_eq!(
         issue_304_outcome(&wrong_state),
@@ -1022,7 +1008,7 @@ fn issue_304_present_and_absent_references_preserve_issue_282_precedence() {
         &ir,
         &store,
         "demo.release.PublishRelease",
-        issue_304_publish_input(&release, None),
+        &issue_304_publish_input(&release, None),
     );
     assert_eq!(
         issue_304_outcome(&absent),

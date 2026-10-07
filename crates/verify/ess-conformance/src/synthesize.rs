@@ -2234,6 +2234,24 @@ fn outcome_scenario_in(
     let (more, depends) = related_boundaries(models, command, outcome, actors, &id, refusals);
     steps.extend(more);
     source.extend(depends);
+    // ess/22 (#304): a branch an absent Optional reference selects is witnessed once more on a
+    // further instance, with the reference left out, so a target reading absence as a missing row
+    // — or reading some row of the entity — fails this scenario.
+    if related_guard::absent_selects(models.arrangement, command, outcome) {
+        let nth = related_guard::boundary_goals(models.arrangement, command, outcome).len() + 1;
+        if let Some((more, depends, _)) = exercise_as(
+            models,
+            command,
+            outcome,
+            actors,
+            &id,
+            refusals,
+            Witness::RelatedAbsent(nth),
+        ) {
+            steps.extend(more);
+            source.extend(depends);
+        }
+    }
     Some((
         id,
         ConformanceScenario::new(purpose(command, outcome), steps, source),
@@ -2362,6 +2380,10 @@ enum Witness {
         /// Which of that predicate's boundaries.
         goal: usize,
     },
+    /// A further instance sent with the Optional reference the command's related guards read left
+    /// out, between related rows that select a refusal (ess/22, beyond10x/ess#304,
+    /// [`related_guard::prepare_absent_in`]), at the `n`th further distinction.
+    RelatedAbsent(usize),
 }
 
 /// Arrange the instance the branch acts on, run the branch, and assert everything it promises.
@@ -2706,6 +2728,10 @@ fn run_as(
                     related_at,
                     Some(named),
                 )?
+            }
+            Witness::RelatedAbsent(nth) => {
+                related_at = Distinction::further(nth);
+                related_guard::prepare_absent_in(models, command, outcome, actors, related_at)?
             }
             Witness::LiteralFallbacks | Witness::Listed(_) => {
                 return Err(related_guard::unarranged())
@@ -6502,7 +6528,9 @@ fn arranged_as(
         Witness::LiteralFallbacks => arranged_without_fallbacks(ir, command, outcome, actors),
         Witness::Listed(nth) => arranged_in_listed_state(ir, command, outcome, actors, nth),
         // Only a command reading a related row builds one, and `run_as` arranges it there.
-        Witness::RelatedBoundary { .. } => Err(related_guard::unarranged()),
+        Witness::RelatedBoundary { .. } | Witness::RelatedAbsent(_) => {
+            Err(related_guard::unarranged())
+        }
     }
 }
 
@@ -8856,7 +8884,14 @@ fn unknown_instance(
     let mut last = None;
     let mut reached = None;
     for outcome in acting {
-        match reach(ir, command, outcome, Distinction::PLAIN) {
+        // A command reading a related row through an Optional input (ess/22, #304) reaches the
+        // branch with the reference left out: no related row is read, so none is arranged.
+        let input = if related_guard::optional(command) {
+            related_guard::absent_input(ir, command, outcome, Distinction::PLAIN)
+        } else {
+            reach(ir, command, outcome, Distinction::PLAIN)
+        };
+        match input {
             Ok(input) => {
                 reached = Some((*outcome, input));
                 break;

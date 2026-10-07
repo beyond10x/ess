@@ -9,6 +9,8 @@ use ess_compiler::source::SourceMap;
 use ess_domain::command::TestStrategy;
 use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
+use sha2::{Digest, Sha256};
+use std::fmt::Write as _;
 
 const SIGN_IN: &str =
     include_str!("../../../verify/ess-conformance/tests/fixtures/related-guard-sign-in.yaml");
@@ -85,7 +87,10 @@ fn issue_304_an_optional_input_via_keeps_its_declared_type_in_the_ir() {
             panic!("the Optional carrier remains an input via: {via:?}")
         };
         assert_eq!(field, "candidate");
-        assert!(type_ref.is_optional(), "the declared wrapper is retained: {via:?}");
+        assert!(
+            type_ref.is_optional(),
+            "the declared wrapper is retained: {via:?}"
+        );
         assert_eq!(
             type_ref.required().written().to_string(),
             "demo.release.CandidateId"
@@ -100,14 +105,20 @@ fn issue_304_ess_20_related_fixtures_compile_to_identical_ir() {
     let command = &model.commands()[&"demo.release.PublishRelease".parse().unwrap()];
     for outcome in &command.outcomes[..2] {
         let ResolvedCondition::Related { via, .. } = &outcome.condition else {
-            panic!("the legacy related condition remains present: {:?}", outcome.condition)
+            panic!(
+                "the legacy related condition remains present: {:?}",
+                outcome.condition
+            )
         };
         let ResolvedRelatedVia::Input { field, type_ref } = via else {
             panic!("the legacy input via remains an input: {via:?}")
         };
         assert_eq!(field, "candidate");
         assert_eq!(type_ref.written().to_string(), "demo.release.CandidateId");
-        assert!(!type_ref.is_optional(), "legacy required input changed: {via:?}");
+        assert!(
+            !type_ref.is_optional(),
+            "legacy required input changed: {via:?}"
+        );
     }
     let canonical = model.to_canonical_json();
     assert!(canonical.contains(r#""field": "candidate""#), "{canonical}");
@@ -115,4 +126,55 @@ fn issue_304_ess_20_related_fixtures_compile_to_identical_ir() {
         !canonical.contains("Optional<demo.release.CandidateId>"),
         "the old required-input model's bytes do not gain the new wrapper: {canonical}"
     );
+    // Every related-guard fixture at ess/20 and below compiles to exactly the canonical IR bytes
+    // it did at 9ccbc0beb, before the Optional form existed: SHA-256 and length of
+    // `to_canonical_json()`, read from a build of that commit's clean export.
+    for (name, text, digest, length) in LEGACY_RELATED_IR {
+        let canonical = ir(text).to_canonical_json();
+        let actual =
+            Sha256::digest(canonical.as_bytes())
+                .iter()
+                .fold(String::new(), |mut hex, byte| {
+                    write!(hex, "{byte:02x}").expect("writing to a String");
+                    hex
+                });
+        assert_eq!(
+            (actual.as_str(), canonical.len()),
+            (digest, length),
+            "{name}: canonical IR bytes differ from 9ccbc0beb:\n{canonical}"
+        );
+    }
 }
+
+/// The ess/20-and-below related-guard fixtures, with the SHA-256 and byte length of their
+/// canonical IR at 9ccbc0beb.
+const LEGACY_RELATED_IR: [(&str, &str, &str, usize); 4] = [
+    (
+        "related-guard-copied-value.yaml",
+        include_str!(
+            "../../../verify/ess-conformance/tests/fixtures/related-guard-copied-value.yaml"
+        ),
+        "2f88b3a80c3a08f99c5e0dbc84bfd0627f48afdafa9192dbb2967ede5e5441e3",
+        12_758,
+    ),
+    (
+        "related-guard-owner-link.yaml",
+        include_str!(
+            "../../../verify/ess-conformance/tests/fixtures/related-guard-owner-link.yaml"
+        ),
+        "838035241c8956c472168b6ce368230b275f184179c8845f12160e4dcde0bd57",
+        18_375,
+    ),
+    (
+        "related-guard-release.yaml",
+        RELEASE,
+        "f94e97df357fa758fd87a94f6d4e4cd0364dd017618c5a9e9e77c579544504ee",
+        15_482,
+    ),
+    (
+        "related-guard-sign-in.yaml",
+        SIGN_IN,
+        "29cfb8aef921be1c775da1863c17e42292ccda00ffebf79fb99cb5e8730eea5e",
+        13_029,
+    ),
+];

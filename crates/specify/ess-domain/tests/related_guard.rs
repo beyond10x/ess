@@ -699,7 +699,10 @@ fn issue_304_an_optional_input_via_validates_under_ess_22() {
     let original = accepted(OPTIONAL_RELEASE);
     let command = &original.commands()[&"demo.release.PublishRelease".parse().unwrap()];
     let OutcomeCondition::Related { via, .. } = &command.outcomes[0].condition else {
-        panic!("the missing-row branch is related: {:?}", command.outcomes[0])
+        panic!(
+            "the missing-row branch is related: {:?}",
+            command.outcomes[0]
+        )
     };
     assert_eq!(via.to_string(), "input.candidate");
 
@@ -717,11 +720,7 @@ fn issue_304_an_optional_via_below_ess_22_is_refused_naming_ess_22() {
     for format in ["ess/21", "ess/20", "ess/18"] {
         let errors = refused(&optional_release_at(format));
         assert!(
-            has(
-                &errors,
-                ValidationCode::UnsupportedFormatVersion,
-                "ess/22"
-            ),
+            has(&errors, ValidationCode::UnsupportedFormatVersion, "ess/22"),
             "{format}: {errors}"
         );
         assert!(
@@ -743,11 +742,7 @@ fn issue_304_an_absent_reference_reaching_no_branch_is_non_exhaustive() {
     );
     let errors = refused(&no_accepting_branch);
     assert!(
-        has(
-            &errors,
-            ValidationCode::NonExhaustiveBranches,
-            "candidate"
-        ),
+        has(&errors, ValidationCode::NonExhaustiveBranches, "candidate"),
         "{errors}"
     );
     assert!(
