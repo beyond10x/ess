@@ -17,9 +17,11 @@
 - Generated Rust type libraries (`ess generate types`, `ess generate schema types-bundle`) no
   longer force `serde_json/arbitrary_precision` onto every consumer. The manifest declares a
   default-on `exact-numbers` crate feature that enables it, and only where the realized types hold
-  JSON numbers in `serde_json::Number` or `serde_json::Value`, including unions decoded through a
-  `Value`. Depending on the library with `default-features = false` gives binary64 numbers, and
-  `types-report.json` names each affected value under the new `rust_exact_numbers` obligation.
+  JSON numbers in `serde_json::Number` or `serde_json::Value`, or decode through a `Value` a union
+  whose alternatives can hold a number. Depending on the library with `default-features = false`
+  gives binary64 numbers. `types-report.json` names each affected value under the new
+  `rust_exact_numbers` obligation, and the `integer` obligation now says it is exact only with
+  that feature.
   Regenerating changes `Cargo.toml` and the Rust `types-report.json`, so committed generated output
   differs until it is regenerated (https://github.com/beyond10x/ess/issues/483).
 

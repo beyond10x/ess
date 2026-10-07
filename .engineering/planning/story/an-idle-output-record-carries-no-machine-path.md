@@ -20,7 +20,7 @@ scope:
   path: docs/design/review-output-ownership.md
 - confidence: cited
   path: models/output-ownership/domains/ownership.yaml
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-07T03:42:51Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-07T03:42:51Z", actor: "human:timo", revision: 3}
@@ -73,3 +73,10 @@ Per `.agents/skills/assessing-external-requests/SKILL.md`, measured on ess 0.55.
   formats), and the design page states the new rule.
 - A test decodes a written `/3` Idle record and finds no absolute path component, no device and no
   inode.
+
+## Decision on edited owned files (2026-10-07)
+
+Option B of `decision-blocker:idle-output-record-without-binding`: without a binding, the #306 copy
+check runs in every folder. An owned file with other bytes refuses before mutation, listing the
+files and the re-enroll route, including in the folder that generated it; a missing owned file is
+still recreated. The `--check` advice and the CHANGELOG "Changed" entry say so.
