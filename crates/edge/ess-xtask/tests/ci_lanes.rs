@@ -643,11 +643,19 @@ fn the_test_shards_run_the_archives_two_jobs_build_side_by_side_and_compile_noth
 
 fn assert_transport_network_controls(ci: &Value, taskfile: &Value) {
     let job = &ci["jobs"]["transport-network"];
-    assert!(job["if"].is_null(), "required transport execution cannot be conditional");
-    assert!(job["continue-on-error"].is_null(), "transport failure cannot be ignored");
+    assert!(
+        job["if"].is_null(),
+        "required transport execution cannot be conditional"
+    );
+    assert!(
+        job["continue-on-error"].is_null(),
+        "transport failure cannot be ignored"
+    );
     assert_eq!(text(&job["env"]["ESS_TRANSPORT_PREFETCH_DEPS"]), "1");
     let image = text(&job["env"]["ESS_TEST_NATS_IMAGE"]);
-    let digest = image.strip_prefix("nats@sha256:").expect("NATS image is digest pinned");
+    let digest = image
+        .strip_prefix("nats@sha256:")
+        .expect("NATS image is digest pinned");
     assert!(digest.len() == 64 && digest.bytes().all(|byte| byte.is_ascii_hexdigit()));
     assert!(!text(&job["env"]["ESS_ASYNCAPI_CLI"]).is_empty());
     let commands = shell_commands(taskfile, "test-transport-network");
@@ -659,7 +667,10 @@ fn assert_transport_network_controls(ci: &Value, taskfile: &Value) {
     ]) {
         assert!(command.split_whitespace().any(|word| word == required_test));
         assert!(command.contains("-- --ignored --exact --nocapture"));
-        let matching: Vec<_> = steps.iter().filter(|step| text(&step["run"]) == command).collect();
+        let matching: Vec<_> = steps
+            .iter()
+            .filter(|step| text(&step["run"]) == command)
+            .collect();
         let [step] = matching.as_slice() else {
             panic!("required transport control must execute exactly once: {required_test}");
         };
@@ -674,13 +685,22 @@ fn transport_ci_executes_both_ignored_external_controls_without_skipping() {
     assert_transport_network_controls(&ci, &taskfile);
     let mut missing = ci.clone();
     missing["jobs"]["transport-network"]["steps"] = Value::Sequence(Vec::new());
-    assert!(std::panic::catch_unwind(|| assert_transport_network_controls(&missing, &taskfile)).is_err());
+    assert!(
+        std::panic::catch_unwind(|| assert_transport_network_controls(&missing, &taskfile))
+            .is_err()
+    );
     let mut skipped = ci.clone();
     skipped["jobs"]["transport-network"]["if"] = Value::Bool(false);
-    assert!(std::panic::catch_unwind(|| assert_transport_network_controls(&skipped, &taskfile)).is_err());
+    assert!(
+        std::panic::catch_unwind(|| assert_transport_network_controls(&skipped, &taskfile))
+            .is_err()
+    );
     let mut ignored = ci;
     ignored["jobs"]["transport-network"]["continue-on-error"] = Value::Bool(true);
-    assert!(std::panic::catch_unwind(|| assert_transport_network_controls(&ignored, &taskfile)).is_err());
+    assert!(
+        std::panic::catch_unwind(|| assert_transport_network_controls(&ignored, &taskfile))
+            .is_err()
+    );
 }
 
 #[test]

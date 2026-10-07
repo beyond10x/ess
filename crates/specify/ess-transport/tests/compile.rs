@@ -1,5 +1,7 @@
 //! `ess-transport/1` compiles against the specification it names, or says every reason it does not.
 
+use std::fmt::Write as _;
+
 use ess_compiler::resolve::compile as compile_model;
 use ess_compiler::source::SourceMap;
 use ess_compiler::EssIr;
@@ -84,20 +86,6 @@ fn a_bound_event_resolves_to_its_subject_and_capturing_stream() {
     assert_eq!(
         json,
         compile(&spec, &ir).expect("again").to_canonical_json()
-    );
-
-    let changed = text.replace(
-        "environment: event.source.environment",
-        "environment: event.id",
-    );
-    let changed = TransportSpec::from_yaml(&changed).expect("changed source parses");
-    let changed = compile(&changed, &ir)
-        .expect("changed source compiles")
-        .to_canonical_json();
-    assert_ne!(json, changed, "a source-path mutation must change IR2 bytes");
-    assert!(
-        changed.contains("\"path\": [\n            \"id\"\n          ]"),
-        "{changed}"
     );
 }
 
@@ -336,9 +324,11 @@ fn parameter_diagnostics(ir: &EssIr, text: &str) -> Vec<(&'static str, String)> 
 }
 
 fn with_other_stream(mut text: String, subject: &str) -> String {
-    text.push_str(&format!(
+    write!(
+        text,
         "  - name: OTHER\n    broker: events\n    subjects: ['{subject}']\n    storage: file\n    retention: limits\n    owner: external\n"
-    ));
+    )
+    .expect("writes to a String");
     text
 }
 
@@ -356,13 +346,19 @@ fn transport_v2_compiles_payload_parameters_to_typed_deterministic_ir() {
     let compiled = compile(&spec, &ir).expect("parameterized transport compiles");
     let json = compiled.to_canonical_json();
 
-    assert!(json.contains("\"format\": \"ess-transport-ir/2\""), "{json}");
+    assert!(
+        json.contains("\"format\": \"ess-transport-ir/2\""),
+        "{json}"
+    );
     assert!(
         json.contains("\"subject\": \"usage.{service}.{environment}\""),
         "{json}"
     );
     assert!(json.contains("\"kind\": \"event_path\""), "{json}");
-    assert!(json.contains("\"source\",\n            \"service\""), "{json}");
+    assert!(
+        json.contains("\"source\",\n            \"service\""),
+        "{json}"
+    );
     assert!(
         json.contains("\"source\",\n            \"environment\""),
         "{json}"
@@ -370,6 +366,23 @@ fn transport_v2_compiles_payload_parameters_to_typed_deterministic_ir() {
     assert_eq!(
         json,
         compile(&spec, &ir).expect("again").to_canonical_json()
+    );
+
+    let changed = text.replace(
+        "environment: event.source.environment",
+        "environment: event.id",
+    );
+    let changed = TransportSpec::from_yaml(&changed).expect("changed source parses");
+    let changed = compile(&changed, &ir)
+        .expect("changed source compiles")
+        .to_canonical_json();
+    assert_ne!(
+        json, changed,
+        "a source-path mutation must change IR2 bytes"
+    );
+    assert!(
+        changed.contains("\"path\": [\n            \"id\"\n          ]"),
+        "{changed}"
     );
 }
 
@@ -408,7 +421,11 @@ fn every_admitted_event_path_depth_and_literal_v2_compile() {
         .to_canonical_json()
         .contains("\"format\": \"ess-transport-ir/2\""));
 
-    let null_parameters = literal.replace("    subject: usage\n", "    subject: usage\n    parameters: null\n");
+    let null_parameters = literal.replace(
+        "    subject: 'usage'\n",
+        "    subject: 'usage'\n    parameters: null\n",
+    );
+    assert_ne!(null_parameters, literal, "the null mapping was inserted");
     assert!(TransportSpec::from_yaml(&null_parameters).is_err());
     let null_json = serde_json::to_string(
         &serde_yaml::from_str::<serde_yaml::Value>(&null_parameters).unwrap(),
@@ -457,11 +474,9 @@ fn stream_intersection_unifies_repeated_and_source_aliased_parameters() {
         "    parameters:\n      left: event.source.service\n      right: event.source.environment\n",
         "['usage.*.*']",
     ), "usage.a.b");
-    assert!(
-        parameter_diagnostics(&ir, &independent)
-            .iter()
-            .any(|(code, path)| *code == "ESS-TRANSPORT-016" && path == "channels[0].subject")
-    );
+    assert!(parameter_diagnostics(&ir, &independent)
+        .iter()
+        .any(|(code, path)| *code == "ESS-TRANSPORT-016" && path == "channels[0].subject"));
 }
 
 #[test]
@@ -476,24 +491,23 @@ fn a_cover_is_universal_and_every_other_stream_must_be_disjoint() {
         parameters,
         "['usage.a.a']",
     );
-    assert!(
-        parameter_diagnostics(&ir, &exact_only)
-            .iter()
-            .any(|(code, _)| *code == "ESS-TRANSPORT-015")
-    );
+    assert!(parameter_diagnostics(&ir, &exact_only)
+        .iter()
+        .any(|(code, _)| *code == "ESS-TRANSPORT-015"));
 
-    let overlapping = with_other_stream(parameter_transport(
-        &ir,
-        "routing.events.UsageRecorded",
-        "usage.{same}.{same}",
-        parameters,
-        "['usage.*.*']",
-    ), "usage.a.a");
-    assert!(
-        parameter_diagnostics(&ir, &overlapping)
-            .iter()
-            .any(|(code, _)| *code == "ESS-TRANSPORT-016")
+    let overlapping = with_other_stream(
+        parameter_transport(
+            &ir,
+            "routing.events.UsageRecorded",
+            "usage.{same}.{same}",
+            parameters,
+            "['usage.*.*']",
+        ),
+        "usage.a.a",
     );
+    assert!(parameter_diagnostics(&ir, &overlapping)
+        .iter()
+        .any(|(code, _)| *code == "ESS-TRANSPORT-016"));
 
     let two_covers = with_other_stream(
         parameter_transport(
@@ -505,14 +519,14 @@ fn a_cover_is_universal_and_every_other_stream_must_be_disjoint() {
         ),
         "usage.>",
     );
-    assert!(
-        parameter_diagnostics(&ir, &two_covers)
-            .iter()
-            .any(|(code, _)| *code == "ESS-TRANSPORT-016")
-    );
+    assert!(parameter_diagnostics(&ir, &two_covers)
+        .iter()
+        .any(|(code, _)| *code == "ESS-TRANSPORT-016"));
 }
 
+/// Long because it is a table of refusal cases, not logic.
 #[test]
+#[allow(clippy::too_many_lines)]
 fn transport_v2_reports_the_closed_template_and_event_path_diagnostics() {
     let ir = parameter_model();
     for (case, subject, parameters, expected_code, expected_path) in [
@@ -665,6 +679,35 @@ fn transport_v2_reports_the_closed_template_and_event_path_diagnostics() {
 }
 
 #[test]
+fn a_parameter_mapped_twice_is_refused_with_018_in_yaml_and_json() {
+    let ir = parameter_model();
+    let yaml = parameter_transport(
+        &ir,
+        "routing.events.UsageRecorded",
+        "usage.{service}",
+        "    parameters:\n      service: event.source.service\n      service: event.id\n",
+        "['usage.>']",
+    );
+    let expected = vec![(
+        "ESS-TRANSPORT-018",
+        "channels[0].parameters.service".to_owned(),
+    )];
+    assert_eq!(parameter_diagnostics(&ir, &yaml), expected);
+    let json = format!(
+        "{{\"type\":\"ess-transport/2\",\"specification\":{{\"system\":\"routing\",\"version\":\"v1\",\"source_digest\":\"sha256:{}\"}},\"brokers\":[{{\"id\":\"events\",\"protocol\":\"nats\",\"jetstream\":true}}],\"channels\":[{{\"event\":\"routing.events.UsageRecorded\",\"broker\":\"events\",\"subject\":\"usage.{{service}}\",\"parameters\":{{\"service\":\"event.source.service\",\"service\":\"event.id\"}},\"envelope\":\"array\",\"delivery\":\"at_most_once\",\"batch\":{{\"max_items\":100,\"max_delay_ms\":5000}}}}],\"streams\":[{{\"name\":\"USAGE\",\"broker\":\"events\",\"subjects\":[\"usage.>\"],\"storage\":\"file\",\"retention\":\"limits\",\"owner\":\"external\"}}]}}",
+        ir.source_digest()
+    );
+    let spec = TransportSpec::from_json(&json).expect("duplicate JSON members parse");
+    let found: Vec<_> = compile(&spec, &ir)
+        .expect_err("a repeated parameter is refused")
+        .0
+        .into_iter()
+        .map(|diagnostic| (diagnostic.code, diagnostic.path))
+        .collect();
+    assert_eq!(found, expected);
+}
+
+#[test]
 fn parameterized_subjects_cannot_reinterpret_a_literal_event_wire_name() {
     let ir = parameter_model();
     let text = parameter_transport(
@@ -674,11 +717,9 @@ fn parameterized_subjects_cannot_reinterpret_a_literal_event_wire_name() {
         "    parameters:\n      service: event.source.service\n",
         "['usage.>']",
     );
-    assert!(
-        parameter_diagnostics(&ir, &text)
-            .iter()
-            .any(|(code, path)| *code == "ESS-TRANSPORT-011" && path == "channels[0].subject")
-    );
+    assert!(parameter_diagnostics(&ir, &text)
+        .iter()
+        .any(|(code, path)| *code == "ESS-TRANSPORT-011" && path == "channels[0].subject"));
 }
 
 #[test]
@@ -710,10 +751,9 @@ fn transport_v1_rejects_parameters_and_keeps_braces_literal() {
         "    parameters:\n      service: event.source.service\n      environment: event.source.environment\n",
         "",
     );
-    let v1_literal_json = serde_json::to_string(
-        &serde_yaml::from_str::<serde_yaml::Value>(&v1_literal).unwrap(),
-    )
-    .unwrap();
+    let v1_literal_json =
+        serde_json::to_string(&serde_yaml::from_str::<serde_yaml::Value>(&v1_literal).unwrap())
+            .unwrap();
     let duplicate_type = v1_literal_json.replacen(
         "\"type\":\"ess-transport/1\"",
         "\"type\":\"ess-transport/1\",\"type\":\"ess-transport/1\"",
@@ -723,11 +763,9 @@ fn transport_v1_rejects_parameters_and_keeps_braces_literal() {
     assert!(TransportSpec::from_json(&duplicate_type).is_err());
     let spec = TransportSpec::from_yaml(&v1_literal).expect("strict transport/1 parses");
     let compiled = compile(&spec, &ir).expect("braces stay literal under transport/1");
-    assert!(
-        compiled
-            .to_canonical_json()
-            .contains("\"format\": \"ess-transport-ir/1\"")
-    );
+    assert!(compiled
+        .to_canonical_json()
+        .contains("\"format\": \"ess-transport-ir/1\""));
     assert_eq!(
         compiled.channels()["routing.events.UsageRecorded"].subject,
         "usage.{service}.{environment}"

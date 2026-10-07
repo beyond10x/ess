@@ -188,11 +188,8 @@ fn parameterized_generated_with(body: &str) -> Generated {
         "type: ess-transport/2\nspecification:\n  system: routing\n  version: v1\n  source_digest: sha256:{}\n{body}",
         ir.source_digest()
     );
-    let transport = ess_transport::compile(
-        &TransportSpec::from_yaml(&text).expect("parses"),
-        &ir,
-    )
-    .expect("compiles");
+    let transport = ess_transport::compile(&TransportSpec::from_yaml(&text).expect("parses"), &ir)
+        .expect("compiles");
     let roots: BTreeSet<String> = PublisherPlan::roots(&ir, "producer", &transport)
         .into_iter()
         .collect();
@@ -230,7 +227,13 @@ fn released_sha256(text: &str) -> String {
     // A release bump deliberately changes generated banners; normalize only that independent
     // version fact before comparing the transport/1 generator bytes released by 0.52.0.
     let normalized = text.replace(env!("CARGO_PKG_VERSION"), "0.52.0");
-    format!("{:x}", Sha256::digest(normalized.as_bytes()))
+    Sha256::digest(normalized.as_bytes())
+        .iter()
+        .fold(String::new(), |mut text, byte| {
+            use std::fmt::Write as _;
+            let _ = write!(text, "{byte:02x}");
+            text
+        })
 }
 
 #[test]
@@ -245,28 +248,74 @@ fn transport_1_publisher_files_keep_the_released_0_52_0_bytes() {
     )
     .expect("renders");
     let rust_expected = BTreeMap::from([
-        ("Cargo.toml", "2325520266d68aaf5339e092b86afcb13c776f1f778669d5a34b3f05ee884a76"),
-        ("client-report.json", "3574a3a961a5931f3e47652769a0fa22c5ad6558580f2be6d98781420b82146b"),
-        ("lib.rs", "5eadda7a48de2e8d7379966fc0e176509a31d0d5f2096d4cf2aed002b03fb096"),
-        ("nats/Cargo.toml", "4b476cba08b6e6b649480fca5e0670ca3523bf7e7d7a83407612ac20405d07f3"),
-        ("nats/lib.rs", "55a802b681debfa59947ba750c08c54e979bb7cf89a6ea7ebdd6264e3360e6fa"),
+        (
+            "Cargo.toml",
+            "2325520266d68aaf5339e092b86afcb13c776f1f778669d5a34b3f05ee884a76",
+        ),
+        (
+            "client-report.json",
+            "3574a3a961a5931f3e47652769a0fa22c5ad6558580f2be6d98781420b82146b",
+        ),
+        (
+            "lib.rs",
+            "5eadda7a48de2e8d7379966fc0e176509a31d0d5f2096d4cf2aed002b03fb096",
+        ),
+        (
+            "nats/Cargo.toml",
+            "4b476cba08b6e6b649480fca5e0670ca3523bf7e7d7a83407612ac20405d07f3",
+        ),
+        (
+            "nats/lib.rs",
+            "55a802b681debfa59947ba750c08c54e979bb7cf89a6ea7ebdd6264e3360e6fa",
+        ),
     ]);
-    assert_eq!(rust.keys().map(String::as_str).collect::<Vec<_>>(), rust_expected.keys().copied().collect::<Vec<_>>());
+    assert_eq!(
+        rust.keys().map(String::as_str).collect::<Vec<_>>(),
+        rust_expected.keys().copied().collect::<Vec<_>>()
+    );
     for (path, expected) in rust_expected {
-        assert_eq!(released_sha256(&rust[path]), expected, "released Rust bytes changed at {path}");
+        assert_eq!(
+            released_sha256(&rust[path]),
+            expected,
+            "released Rust bytes changed at {path}"
+        );
     }
 
     let module = "example.invalid/meteringclient";
-    let go = ess_publisher::go(&generated.plan, &generated.transport, "meteringclient", module);
+    let go = ess_publisher::go(
+        &generated.plan,
+        &generated.transport,
+        "meteringclient",
+        module,
+    );
     let go_expected = BTreeMap::from([
-        ("client-report.json", "949ac1792bfda5155bc0ccf719816eb2cd8d62165ad3e35226dd0eef7c19c70e"),
-        ("natsjs/go.mod", "45766bb361d6be8847dc60b8f09ded6006172381f40ea580b3700882e8ab2059"),
-        ("natsjs/natsjs.go", "65ff37bbd70686810aafa7229856bedadd38e9b35f3040f23a190d0ecef137be"),
-        ("publisher.go", "05ee3855d25072526660e37caf2f89fa3c018e2c652f0275330def37b46ac4a9"),
+        (
+            "client-report.json",
+            "949ac1792bfda5155bc0ccf719816eb2cd8d62165ad3e35226dd0eef7c19c70e",
+        ),
+        (
+            "natsjs/go.mod",
+            "45766bb361d6be8847dc60b8f09ded6006172381f40ea580b3700882e8ab2059",
+        ),
+        (
+            "natsjs/natsjs.go",
+            "65ff37bbd70686810aafa7229856bedadd38e9b35f3040f23a190d0ecef137be",
+        ),
+        (
+            "publisher.go",
+            "05ee3855d25072526660e37caf2f89fa3c018e2c652f0275330def37b46ac4a9",
+        ),
     ]);
-    assert_eq!(go.keys().map(String::as_str).collect::<Vec<_>>(), go_expected.keys().copied().collect::<Vec<_>>());
+    assert_eq!(
+        go.keys().map(String::as_str).collect::<Vec<_>>(),
+        go_expected.keys().copied().collect::<Vec<_>>()
+    );
     for (path, expected) in go_expected {
-        assert_eq!(released_sha256(&go[path]), expected, "released Go bytes changed at {path}");
+        assert_eq!(
+            released_sha256(&go[path]),
+            expected,
+            "released Go bytes changed at {path}"
+        );
     }
 }
 
@@ -816,8 +865,12 @@ fn a_new_same_subject_bucket_waits_behind_its_in_flight_predecessor() {
         queued.publish_usage_recorded(&item("d", "service-a", "eu")).unwrap();
         finished_by_worker.store(true, ::std::sync::atomic::Ordering::SeqCst);
     });
-    std::thread::sleep(std::time::Duration::from_millis(20));
-    assert!(!finished.load(::std::sync::atomic::Ordering::SeqCst));
+    // Give the same-subject publishes up to 200ms to be offered while `a`/`b` is unacknowledged;
+    // whether they have returned yet is not asserted here, only the order on the wire below.
+    for _ in 0..200 {
+        if finished.load(::std::sync::atomic::Ordering::SeqCst) { break; }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
     transport.release.store(true, ::std::sync::atomic::Ordering::SeqCst);
     thread.join().unwrap();
     Arc::try_unwrap(publisher).ok().expect("only publisher owner").close().unwrap();
@@ -853,7 +906,10 @@ fn the_parameterized_rust_publisher_compiles_offline_and_behaves() {
     )
     .expect("renders");
     files.insert("types.rs".to_owned(), types.declarations);
-    files.insert("tests/publisher.rs".to_owned(), PARAMETER_RUST_TEST.to_owned());
+    files.insert(
+        "tests/publisher.rs".to_owned(),
+        PARAMETER_RUST_TEST.to_owned(),
+    );
     let report: serde_json::Value = serde_json::from_str(&files["client-report.json"]).unwrap();
     assert_eq!(report["format"], "ess-client-report/2");
     let operations = report["operations"].as_array().expect("operations");
@@ -861,10 +917,7 @@ fn the_parameterized_rust_publisher_compiles_offline_and_behaves() {
         .iter()
         .find(|operation| operation["event"] == "routing.events.UsageRecorded")
         .expect("dynamic operation");
-    assert_eq!(
-        dynamic["parameters"]["service"]["path"][1],
-        "service"
-    );
+    assert_eq!(dynamic["parameters"]["service"]["path"][1], "service");
     let literal = operations
         .iter()
         .find(|operation| operation["event"] == "routing.events.Audited")
@@ -1032,9 +1085,15 @@ func TestSameSubjectFIFOAcrossInFlightDrain(t *testing.T) {
         if err := publisher.PublishUsageRecorded(ctx, parameterItem(t,"c","service-a","eu")); err != nil { done <- err; return }
         done <- publisher.PublishUsageRecorded(ctx, parameterItem(t,"d","service-a","eu"))
     }()
-    select { case err := <-done: t.Fatalf("new bucket passed in-flight predecessor: %v", err); case <-time.After(20*time.Millisecond): }
+    // Give the same-subject publishes up to 200ms to be offered while a/b is unacknowledged;
+    // whether they have returned yet is not asserted here, only retirement and wire order.
+    var offered error
+    returned := false
+    select { case offered = <-done: returned = true; case <-time.After(200*time.Millisecond): }
     close(transport.release)
-    if err := <-done; err != nil { t.Fatal(err) }
+    if !returned { offered = <-done }
+    if offered != nil { t.Fatal(offered) }
+    if buckets := publisher.usageRecorded.bucketCount(); buckets != 0 { t.Fatalf("the c/d bucket was not retired: %d", buckets) }
     if err := publisher.Close(ctx); err != nil { t.Fatal(err) }
     transport.mu.Lock(); defer transport.mu.Unlock()
     if len(transport.sent) != 2 { t.Fatalf("sent %v", transport.sent) }
@@ -1060,7 +1119,12 @@ fn the_parameterized_go_publisher_compiles_and_behaves() {
     let generated = parameterized_generated();
     let module = "example.invalid/routingclient";
     let types = generated.types.go("routingclient", module).expect("go");
-    let mut files = ess_publisher::go(&generated.plan, &generated.transport, "routingclient", module);
+    let mut files = ess_publisher::go(
+        &generated.plan,
+        &generated.transport,
+        "routingclient",
+        module,
+    );
     files.extend(types.supporting);
     files.insert("types.go".to_owned(), types.declarations);
     files.insert("publisher_test.go".to_owned(), PARAMETER_GO_TEST.to_owned());
@@ -1156,7 +1220,7 @@ async fn main() {
 }
 "##;
 
-const NATS_GO_MANIFEST: &str = r#"module example.invalid/parameterized-acceptance
+const NATS_GO_MANIFEST: &str = r"module example.invalid/parameterized-acceptance
 
 go 1.23.0
 
@@ -1166,9 +1230,17 @@ require (
     github.com/nats-io/nats.go v1.48.0
 )
 
+require (
+    github.com/klauspost/compress v1.18.0 // indirect
+    github.com/nats-io/nkeys v0.4.11 // indirect
+    github.com/nats-io/nuid v1.0.1 // indirect
+    golang.org/x/crypto v0.37.0 // indirect
+    golang.org/x/sys v0.32.0 // indirect
+)
+
 replace example.invalid/routingclient => ../go
 replace example.invalid/routingclient/natsjs => ../go/natsjs
-"#;
+";
 
 const NATS_GO_MAIN: &str = r#"package main
 
@@ -1286,8 +1358,9 @@ impl OwnedNatsContainer {
                 String::from_utf8_lossy(&inspection.stderr)
             ));
         }
-        let remaining = String::from_utf8(inspection.stdout)
-            .map_err(|error| format!("docker container lookup for {id} returned non-UTF-8: {error}"))?;
+        let remaining = String::from_utf8(inspection.stdout).map_err(|error| {
+            format!("docker container lookup for {id} returned non-UTF-8: {error}")
+        })?;
         if remaining.lines().any(|found| found == id) {
             return Err(format!("owned container {id} still exists after removal"));
         }
@@ -1397,6 +1470,37 @@ fn actual_nats() -> (String, Option<OwnedNatsContainer>) {
     (format!("nats://{address}"), Some(container))
 }
 
+/// Writes the generated Go publisher and its `JetStream` harness, then downloads the harness's
+/// dependency graph so the deciding run can be readonly and proxy-off.
+fn prepare_go_nats_harness(generated: &Generated, root: &Path) {
+    let module = "example.invalid/routingclient";
+    let go_types = generated.types.go("routingclient", module).expect("go");
+    let mut go_files = ess_publisher::go(
+        &generated.plan,
+        &generated.transport,
+        "routingclient",
+        module,
+    );
+    go_files.extend(go_types.supporting);
+    go_files.insert("types.go".to_owned(), go_types.declarations);
+    write(&root.join("go"), &go_files);
+    fs::create_dir_all(root.join("go-acceptance")).unwrap();
+    fs::write(root.join("go-acceptance/go.mod"), NATS_GO_MANIFEST).unwrap();
+    fs::write(root.join("go-acceptance/main.go"), NATS_GO_MAIN).unwrap();
+    let prepared = Command::new("go")
+        .args(["mod", "download", "all"])
+        .current_dir(root.join("go-acceptance"))
+        .output()
+        .expect("go dependency preparation runs");
+    assert!(
+        prepared.status.success(),
+        "go mod download all\n{}\n{}",
+        String::from_utf8_lossy(&prepared.stdout),
+        String::from_utf8_lossy(&prepared.stderr)
+    );
+    assert!(root.join("go-acceptance/go.sum").is_file());
+}
+
 #[test]
 #[ignore = "requires ESS_TEST_NATS_URL or a pinned ESS_TEST_NATS_IMAGE; CI runs this test explicitly"]
 fn both_generated_adapters_publish_parameterized_batches_to_actual_nats() {
@@ -1412,7 +1516,13 @@ fn both_generated_adapters_publish_parameterized_batches_to_actual_nats() {
     let root = scratch("generated-parameterized-nats");
 
     let rust_types = generated.types.rust("routing-client").expect("rust");
-    let mut rust_files = ess_publisher::rust(&generated.plan, &generated.transport, "routing-client", &rust_types.supporting["Cargo.toml"]).expect("renders");
+    let mut rust_files = ess_publisher::rust(
+        &generated.plan,
+        &generated.transport,
+        "routing-client",
+        &rust_types.supporting["Cargo.toml"],
+    )
+    .expect("renders");
     rust_files.insert("types.rs".to_owned(), rust_types.declarations);
     write(&root.join("rust"), &rust_files);
     fs::create_dir_all(root.join("rust/acceptance/src")).unwrap();
@@ -1440,27 +1550,7 @@ fn both_generated_adapters_publish_parameterized_batches_to_actual_nats() {
     }
     assert!(root.join("rust/acceptance/Cargo.lock").is_file());
 
-    let module = "example.invalid/routingclient";
-    let go_types = generated.types.go("routingclient", module).expect("go");
-    let mut go_files = ess_publisher::go(&generated.plan, &generated.transport, "routingclient", module);
-    go_files.extend(go_types.supporting);
-    go_files.insert("types.go".to_owned(), go_types.declarations);
-    write(&root.join("go"), &go_files);
-    fs::create_dir_all(root.join("go-acceptance")).unwrap();
-    fs::write(root.join("go-acceptance/go.mod"), NATS_GO_MANIFEST).unwrap();
-    fs::write(root.join("go-acceptance/main.go"), NATS_GO_MAIN).unwrap();
-    let prepared = Command::new("go")
-        .args(["mod", "download", "all"])
-        .current_dir(root.join("go-acceptance"))
-        .output()
-        .expect("go dependency preparation runs");
-    assert!(
-        prepared.status.success(),
-        "go mod download all\n{}\n{}",
-        String::from_utf8_lossy(&prepared.stdout),
-        String::from_utf8_lossy(&prepared.stderr)
-    );
-    assert!(root.join("go-acceptance/go.sum").is_file());
+    prepare_go_nats_harness(&generated, &root);
 
     let (nats_url, owned_container) = actual_nats();
     let rust = Command::new(env!("CARGO"))
@@ -1483,8 +1573,18 @@ fn both_generated_adapters_publish_parameterized_batches_to_actual_nats() {
     if let Some(container) = owned_container {
         println!("{}", container.stop());
     }
-    assert!(rust.status.success(), "{}\n{}", String::from_utf8_lossy(&rust.stdout), String::from_utf8_lossy(&rust.stderr));
+    assert!(
+        rust.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&rust.stdout),
+        String::from_utf8_lossy(&rust.stderr)
+    );
     println!("{}", String::from_utf8_lossy(&rust.stdout));
-    assert!(go.status.success(), "{}\n{}", String::from_utf8_lossy(&go.stdout), String::from_utf8_lossy(&go.stderr));
+    assert!(
+        go.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&go.stdout),
+        String::from_utf8_lossy(&go.stderr)
+    );
     println!("{}", String::from_utf8_lossy(&go.stdout));
 }

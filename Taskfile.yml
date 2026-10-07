@@ -35,9 +35,11 @@ tasks:
         --package ess-kubernetes
         --package ess-openapi
         --package ess-primitives
+        --package ess-publisher
         --package ess-realization
         --package ess-service-contract
         --package ess-synth
+        --package ess-transport
         --package ess-ui
         --package ess-ui-check
         --package ess-ui-docs

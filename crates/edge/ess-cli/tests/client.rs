@@ -151,14 +151,20 @@ fn parameter_fixture() -> Fixture {
     let fixture = Fixture::new(BODY);
     fs::write(fixture.0.join("model/system.yaml"), PARAMETER_MODEL).unwrap();
     let generated = fixture.ess(&[
-        "generate", "--path", "model", "--kind", "schema", "--out", "parameter-digest",
+        "generate",
+        "--path",
+        "model",
+        "--kind",
+        "schema",
+        "--out",
+        "parameter-digest",
     ]);
     assert!(generated.status.success(), "{generated:?}");
     let schema: serde_json::Value = serde_json::from_str(
         &fs::read_to_string(
-            fixture.0.join(
-                "parameter-digest/schema/events/routing.events.UsageRecorded.schema.json",
-            ),
+            fixture
+                .0
+                .join("parameter-digest/schema/events/routing.events.UsageRecorded.schema.json"),
         )
         .unwrap(),
     )
@@ -308,7 +314,10 @@ fn parameterized_rust_and_go_clients_use_report_2_and_subject_templates() {
         rust_source.contains("USAGE_RECORDED_SUBJECT_TEMPLATE"),
         "{rust_source}"
     );
-    assert!(rust_source.contains("payload.origin.service_name"), "{rust_source}");
+    assert!(
+        rust_source.contains("payload.origin.service_name"),
+        "{rust_source}"
+    );
     let report: serde_json::Value = serde_json::from_str(
         &fs::read_to_string(fixture.0.join("rust/client-report.json")).unwrap(),
     )
@@ -331,6 +340,12 @@ fn parameterized_rust_and_go_clients_use_report_2_and_subject_templates() {
     ]);
     assert!(go.status.success(), "{go:?}");
     let go_source = fs::read_to_string(fixture.0.join("go/publisher.go")).unwrap();
-    assert!(go_source.contains("UsageRecordedSubjectTemplate"), "{go_source}");
-    assert!(go_source.contains("payload.Origin.ServiceName"), "{go_source}");
+    assert!(
+        go_source.contains("UsageRecordedSubjectTemplate"),
+        "{go_source}"
+    );
+    assert!(
+        go_source.contains("payload.Origin.ServiceName"),
+        "{go_source}"
+    );
 }

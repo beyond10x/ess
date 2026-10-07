@@ -37,9 +37,9 @@ func (f *retainedFixture) ExecuteCommand(request CommandRequest) (CommandResult,
 		if f.mode == "mutate-nested-input" {
 			request.Input["document"].(map[string]any)["value"] = "changed by target"
 		}
-		return CommandResult{Outcome: "seeded", Response: response, DirectEvents: []ObservedEvent{{Event: "retained.core.Seeded", Payload: map[string]Node{"record_id": replayID}}}}, nil
+		return CommandResult{Outcome: "seeded", Response: response, Consistency: "actual-write", DirectEvents: []ObservedEvent{{Event: "retained.core.Seeded", Payload: map[string]Node{"record_id": replayID}}}}, nil
 	}
-	result := CommandResult{Outcome: "replayed", Response: response}
+	result := CommandResult{Outcome: "replayed", Response: response, Consistency: "actual-write"}
 	switch f.mode {
 	case "next-result":
 		response["number"] = json.Number("9007199254740992")
@@ -63,7 +63,10 @@ func (f *retainedFixture) ExecuteCommand(request CommandRequest) (CommandResult,
 	}
 	return result, nil
 }
-func (f *retainedFixture) QueryView(ViewRequest) (ViewResult, error) {
+func (f *retainedFixture) QueryView(request ViewRequest) (ViewResult, error) {
+	if request.AtLeast != "actual-write" {
+		return ViewResult{}, fmt.Errorf("retained fixture query consistency = %q, want actual-write", request.AtLeast)
+	}
 	stamp := "2026-09-22T01:02:03Z"
 	if f.calls > 1 && f.mode == "mutated-subject" {
 		stamp = "2026-09-22T01:02:04Z"

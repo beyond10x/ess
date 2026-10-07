@@ -131,10 +131,13 @@ fn transport_1_asyncapi_keeps_the_released_0_52_0_bytes() {
     let spec = TransportSpec::from_yaml(&text).expect("parses");
     let transport = ess_transport::compile(&spec, &ir).expect("compiles");
     let artifacts = run(&TransportedAsyncApi(transport), &ir).expect("generates");
-    let digest = format!(
-        "{:x}",
-        Sha256::digest(artifacts["asyncapi/producer.yaml"].contents.as_bytes())
-    );
+    let digest = Sha256::digest(artifacts["asyncapi/producer.yaml"].contents.as_bytes())
+        .iter()
+        .fold(String::new(), |mut text, byte| {
+            use std::fmt::Write as _;
+            let _ = write!(text, "{byte:02x}");
+            text
+        });
     assert_eq!(
         digest, "e16157db3270fc266628440c35f7c0377d96f265c99890c0efc17775c1fa43f5",
         "released transported AsyncAPI bytes changed"
@@ -255,20 +258,17 @@ fn address_parameters_use_wire_locations_and_closed_semantic_metadata() {
     let ir = parameterized_model();
     let document = parameterized(&ir);
     let channel = &document["channels"]["routing.events.UsageRecorded"];
-    assert_eq!(
-        channel["address"],
-        "usage.{service}.{again}.{environment}"
-    );
+    assert_eq!(channel["address"], "usage.{service}.{again}.{environment}");
     let service = &channel["parameters"]["service"];
-    assert_eq!(service["location"], "$message.payload#/0/origin/serviceName");
+    assert_eq!(
+        service["location"],
+        "$message.payload#/0/origin/serviceName"
+    );
     assert_eq!(service["x-ess-source"]["kind"], "event_path");
     assert_eq!(service["x-ess-source"]["path"][0], "source");
     assert_eq!(service["x-ess-source"]["path"][1], "service");
     assert_eq!(service["x-ess-source"]["scope"], "every_item");
-    assert_eq!(
-        service["x-ess-source"]["constraint"],
-        "nats_subject_token"
-    );
+    assert_eq!(service["x-ess-source"]["constraint"], "nats_subject_token");
     assert_eq!(
         channel["parameters"]["environment"]["location"],
         "$message.payload#/0/origin/environment"
@@ -307,8 +307,7 @@ fn parameter_locations_escape_every_wire_json_pointer_segment() {
     let ir = compile(&spec, &sources).expect("compiles");
     let document = parameterized(&ir);
     assert_eq!(
-        document["channels"]["routing.events.UsageRecorded"]["parameters"]["service"]
-            ["location"],
+        document["channels"]["routing.events.UsageRecorded"]["parameters"]["service"]["location"],
         "$message.payload#/0/root~0~1part/service~0~1id"
     );
 }

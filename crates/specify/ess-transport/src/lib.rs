@@ -140,7 +140,7 @@ pub struct ChannelSpec {
     pub subject: String,
     /// Address-expression name to required event payload path.
     #[serde(default, deserialize_with = "channel_parameters")]
-    pub parameters: Option<BTreeMap<String, String>>,
+    pub parameters: Option<ParameterMappings>,
     /// How one message carries it.
     pub envelope: Envelope,
     /// What the publisher promises about each message.
@@ -150,13 +150,67 @@ pub struct ChannelSpec {
     pub batch: Option<Batch>,
 }
 
-fn channel_parameters<'de, D>(
-    deserializer: D,
-) -> Result<Option<BTreeMap<String, String>>, D::Error>
+fn channel_parameters<'de, D>(deserializer: D) -> Result<Option<ParameterMappings>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    <BTreeMap<String, String> as serde::Deserialize>::deserialize(deserializer).map(Some)
+    <ParameterMappings as serde::Deserialize>::deserialize(deserializer).map(Some)
+}
+
+/// A channel's authored `parameters` map. It keeps every name the document wrote more than once,
+/// so [`compile`] refuses the repetition with `ESS-TRANSPORT-018` instead of letting a later source
+/// silently win.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ParameterMappings {
+    sources: BTreeMap<String, String>,
+    repeated: BTreeSet<String>,
+}
+
+impl ParameterMappings {
+    /// The names the document mapped more than once.
+    pub fn repeated(&self) -> &BTreeSet<String> {
+        &self.repeated
+    }
+}
+
+impl std::ops::Deref for ParameterMappings {
+    type Target = BTreeMap<String, String>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.sources
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for ParameterMappings {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct Mappings;
+
+        impl<'de> serde::de::Visitor<'de> for Mappings {
+            type Value = ParameterMappings;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a map from address-expression name to event path")
+            }
+
+            fn visit_map<A>(self, mut access: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::MapAccess<'de>,
+            {
+                let mut mappings = ParameterMappings::default();
+                while let Some((name, source)) = access.next_entry::<String, String>()? {
+                    if mappings.sources.insert(name.clone(), source).is_some() {
+                        mappings.repeated.insert(name);
+                    }
+                }
+                Ok(mappings)
+            }
+        }
+
+        deserializer.deserialize_map(Mappings)
+    }
 }
 
 /// One stream, before resolution.
@@ -187,7 +241,6 @@ pub struct TransportSpec {
     specification: SpecificationIdentity,
     brokers: Vec<BrokerSpec>,
     channels: Vec<ChannelSpec>,
-    #[serde(default)]
     streams: Vec<StreamSpec>,
 }
 
@@ -196,9 +249,10 @@ pub struct TransportSpec {
 struct AuthoredTransportSpec {
     #[serde(rename = "type")]
     format: String,
-    specification: SpecificationRef,
+    specification: SpecificationIdentity,
     brokers: Vec<BrokerSpec>,
     channels: Vec<ChannelSpec>,
+    #[serde(default)]
     streams: Vec<StreamSpec>,
 }
 
@@ -207,8 +261,7 @@ impl<'de> serde::Deserialize<'de> for TransportSpec {
     where
         D: serde::Deserializer<'de>,
     {
-        let authored =
-            <AuthoredTransportSpec as serde::Deserialize>::deserialize(deserializer)?;
+        let authored = <AuthoredTransportSpec as serde::Deserialize>::deserialize(deserializer)?;
         if authored.format == TRANSPORT_FORMAT
             && authored
                 .channels
@@ -618,24 +671,7 @@ fn channels(
         };
 
         if let Some(event) = event {
-            match (&address, event.naming.wire.as_deref()) {
-                (Some((_, SubjectLanguage::Template(_))), Some(wire)) => refusals.refuse(
-                    "ESS-TRANSPORT-011",
-                    format!("{path}.subject"),
-                    format!(
-                        "the event's wire name is `{wire}`; a parameterized subject requires it absent"
-                    ),
-                ),
-                (_, Some(wire)) if wire != channel.subject => refusals.refuse(
-                    "ESS-TRANSPORT-011",
-                    format!("{path}.subject"),
-                    format!(
-                        "the event's wire name is `{wire}`; the subject `{}` must equal it",
-                        channel.subject
-                    ),
-                ),
-                _ => {}
-            }
+            check_wire_name(channel, event, address.as_ref(), &path, refusals);
         }
 
         match (channel.envelope, channel.batch) {
@@ -694,6 +730,33 @@ fn channels(
     channels
 }
 
+fn check_wire_name(
+    channel: &ChannelSpec,
+    event: &ResolvedEvent,
+    address: Option<&(BTreeMap<String, ParameterSource>, SubjectLanguage)>,
+    path: &str,
+    refusals: &mut Refusals,
+) {
+    match (address, event.naming.wire.as_deref()) {
+        (Some((_, SubjectLanguage::Template(_))), Some(wire)) => refusals.refuse(
+            "ESS-TRANSPORT-011",
+            format!("{path}.subject"),
+            format!(
+                "the event's wire name is `{wire}`; a parameterized subject requires it absent"
+            ),
+        ),
+        (_, Some(wire)) if wire != channel.subject => refusals.refuse(
+            "ESS-TRANSPORT-011",
+            format!("{path}.subject"),
+            format!(
+                "the event's wire name is `{wire}`; the subject `{}` must equal it",
+                channel.subject
+            ),
+        ),
+        _ => {}
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum SubjectToken {
     Static(String),
@@ -714,6 +777,17 @@ fn parameterized_address(
     refusals: &mut Refusals,
 ) -> Option<(BTreeMap<String, ParameterSource>, SubjectLanguage)> {
     let start = refusals.0.len();
+    for name in channel
+        .parameters
+        .iter()
+        .flat_map(ParameterMappings::repeated)
+    {
+        refusals.refuse(
+            "ESS-TRANSPORT-018",
+            format!("{path}.parameters.{name}"),
+            format!("parameter `{name}` is mapped more than once"),
+        );
+    }
     let authored_tokens = match tokens(&channel.subject) {
         Ok(tokens) => tokens,
         Err(reason) => {
@@ -729,6 +803,76 @@ fn parameterized_address(
         }
     };
 
+    let (parsed, expressions) = parse_template(channel, authored_tokens, path, refusals);
+
+    if refusals.0.len() != start {
+        return None;
+    }
+
+    if expressions.is_empty() {
+        if let Some(parameters) = channel.parameters.as_ref() {
+            if parameters.is_empty() {
+                refusals.refuse(
+                    "ESS-TRANSPORT-018",
+                    format!("{path}.parameters"),
+                    "a literal subject has no parameter mappings",
+                );
+            } else {
+                for name in parameters.keys() {
+                    refusals.refuse(
+                        "ESS-TRANSPORT-018",
+                        format!("{path}.parameters.{name}"),
+                        format!("parameter `{name}` is not used by the subject"),
+                    );
+                }
+            }
+        }
+        return (refusals.0.len() == start).then_some((BTreeMap::new(), SubjectLanguage::Concrete));
+    }
+
+    let authored_parameters = check_mappings(channel, &expressions, path, refusals)?;
+
+    let event = event?;
+    let mut parameters = BTreeMap::new();
+    for name in &expressions {
+        let Some(source) = authored_parameters.get(name) else {
+            continue;
+        };
+        match resolve_event_path(event, ir, source) {
+            Ok(resolved) => {
+                parameters.insert(name.clone(), ParameterSource::EventPath { path: resolved });
+            }
+            Err((code, message)) => {
+                refusals.refuse(code, format!("{path}.parameters.{name}"), message);
+            }
+        }
+    }
+
+    if refusals.0.len() != start {
+        return None;
+    }
+    let language = parsed
+        .into_iter()
+        .map(|(fixed, expression)| match (fixed, expression) {
+            (Some(fixed), None) => SubjectToken::Static(fixed),
+            (None, Some(expression)) => {
+                SubjectToken::Variable(parameters[&expression].event_path().to_vec())
+            }
+            _ => unreachable!("one parsed subject token kind"),
+        })
+        .collect();
+    Some((parameters, SubjectLanguage::Template(language)))
+}
+
+/// One authored subject token: a fixed token, or the name of a whole-token address expression.
+type ParsedToken = (Option<String>, Option<String>);
+
+fn parse_template(
+    channel: &ChannelSpec,
+    authored_tokens: Vec<&str>,
+    path: &str,
+    refusals: &mut Refusals,
+) -> (Vec<ParsedToken>, BTreeSet<String>) {
     let mut parsed = Vec::with_capacity(authored_tokens.len());
     let mut expressions = BTreeSet::new();
     for token in authored_tokens {
@@ -771,34 +915,17 @@ fn parameterized_address(
         }
     }
 
-    if refusals.0.len() != start {
-        return None;
-    }
+    (parsed, expressions)
+}
 
-    if expressions.is_empty() {
-        if let Some(parameters) = channel.parameters.as_ref() {
-            if parameters.is_empty() {
-                refusals.refuse(
-                    "ESS-TRANSPORT-018",
-                    format!("{path}.parameters"),
-                    "a literal subject has no parameter mappings",
-                );
-            } else {
-                for name in parameters.keys() {
-                    refusals.refuse(
-                        "ESS-TRANSPORT-018",
-                        format!("{path}.parameters.{name}"),
-                        format!("parameter `{name}` is not used by the subject"),
-                    );
-                }
-            }
-        }
-        return (refusals.0.len() == start)
-            .then_some((BTreeMap::new(), SubjectLanguage::Concrete));
-    }
-
+fn check_mappings<'a>(
+    channel: &'a ChannelSpec,
+    expressions: &BTreeSet<String>,
+    path: &str,
+    refusals: &mut Refusals,
+) -> Option<&'a ParameterMappings> {
     let Some(authored_parameters) = channel.parameters.as_ref() else {
-        for name in &expressions {
+        for name in expressions {
             refusals.refuse(
                 "ESS-TRANSPORT-018",
                 format!("{path}.parameters.{name}"),
@@ -815,7 +942,7 @@ fn parameterized_address(
         );
         return None;
     }
-    for name in &expressions {
+    for name in expressions {
         if !authored_parameters.contains_key(name) {
             refusals.refuse(
                 "ESS-TRANSPORT-018",
@@ -833,41 +960,7 @@ fn parameterized_address(
             );
         }
     }
-
-    let Some(event) = event else {
-        return None;
-    };
-    let mut parameters = BTreeMap::new();
-    for name in &expressions {
-        let Some(source) = authored_parameters.get(name) else {
-            continue;
-        };
-        match resolve_event_path(event, ir, source) {
-            Ok(resolved) => {
-                parameters.insert(name.clone(), ParameterSource::EventPath { path: resolved });
-            }
-            Err((code, message)) => refusals.refuse(
-                code,
-                format!("{path}.parameters.{name}"),
-                message,
-            ),
-        }
-    }
-
-    if refusals.0.len() != start {
-        return None;
-    }
-    let language = parsed
-        .into_iter()
-        .map(|(fixed, expression)| match (fixed, expression) {
-            (Some(fixed), None) => SubjectToken::Static(fixed),
-            (None, Some(expression)) => SubjectToken::Variable(
-                parameters[&expression].event_path().to_vec(),
-            ),
-            _ => unreachable!("one parsed subject token kind"),
-        })
-        .collect();
-    Some((parameters, SubjectLanguage::Template(language)))
+    Some(authored_parameters)
 }
 
 fn resolve_event_path(
@@ -882,9 +975,7 @@ fn resolve_event_path(
     {
         return Err((
             "ESS-TRANSPORT-019",
-            format!(
-                "`{source}` is not `event.<field>` with one to three payload field members"
-            ),
+            format!("`{source}` is not `event.<field>` with one to three payload field members"),
         ));
     }
     let semantic: Vec<String> = parts[1..].iter().map(|part| (*part).to_owned()).collect();
@@ -941,12 +1032,15 @@ fn required_struct_field<'a>(
             ),
         ));
     };
-    fields.iter().find(|field| field.name == member).ok_or_else(|| {
-        (
-            "ESS-TRANSPORT-019",
-            format!("struct `{}` has no field `{member}`", declared.name),
-        )
-    })
+    fields
+        .iter()
+        .find(|field| field.name == member)
+        .ok_or_else(|| {
+            (
+                "ESS-TRANSPORT-019",
+                format!("struct `{}` has no field `{member}`", declared.name),
+            )
+        })
 }
 
 fn covers(pattern: &str, language: &[SubjectToken]) -> bool {
@@ -957,8 +1051,7 @@ fn covers(pattern: &str, language: &[SubjectToken]) -> bool {
     } else {
         pattern.as_slice()
     };
-    if (has_tail && language.len() <= prefix.len())
-        || (!has_tail && language.len() != prefix.len())
+    if (has_tail && language.len() <= prefix.len()) || (!has_tail && language.len() != prefix.len())
     {
         return false;
     }
@@ -980,8 +1073,7 @@ fn intersects(pattern: &str, language: &[SubjectToken]) -> bool {
     } else {
         pattern.as_slice()
     };
-    if (has_tail && language.len() <= prefix.len())
-        || (!has_tail && language.len() != prefix.len())
+    if (has_tail && language.len() <= prefix.len()) || (!has_tail && language.len() != prefix.len())
     {
         return false;
     }

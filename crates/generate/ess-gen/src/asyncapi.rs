@@ -409,7 +409,7 @@ struct Channel {
     stream: Option<StreamExtension>,
 }
 
-/// One AsyncAPI channel address parameter and ESS's stronger payload-source contract.
+/// One `AsyncAPI` channel address parameter and ESS's stronger payload-source contract.
 #[derive(serde::Serialize)]
 struct ChannelParameter {
     description: String,

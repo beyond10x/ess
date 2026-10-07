@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-04T03:42:49Z",
+  "actor": "human:timo",
+  "artifact": "task:retained-replay-fixture-consistency",
+  "kind": "task",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Frozen 8e7c21a0: whole retained_replay 36/36; actual generated Go 189 pass events, zero fail/skip; strict target Clippy exit0; unchanged-source formats pass",
+    "reference": "sha256:89f2b3c879794947dca60992667247d12b6eeb6f1b050aea335940e351713ba5"
+  }
+}

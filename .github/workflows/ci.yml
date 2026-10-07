@@ -353,7 +353,6 @@ jobs:
     timeout-minutes: 30
     env:
       ESS_ASYNCAPI_CLI: ${{ runner.temp }}/ess-asyncapi/node_modules/.bin/asyncapi
-      # Official NATS 2.15.0 Linux amd64 image; the Rust test owns readiness and cleanup.
       ESS_TEST_NATS_IMAGE: nats@sha256:eda962d67930eda338222072d9a9f3818855d922ad224c399b0b01d251e9b91b
       ESS_TRANSPORT_PREFETCH_DEPS: "1"
     steps:
@@ -383,8 +382,6 @@ jobs:
       - name: Pull the pinned JetStream server
         run: docker pull "$ESS_TEST_NATS_IMAGE"
 
-      # The opt-in Rust test prefetches the actual generated Rust/Go dependency graphs,
-      # retains their lock/sum files, and executes the resulting programs offline.
       - name: Validate parameterized AsyncAPI with the official tool
         run: cargo test --offline --locked -p ess-gen --test asyncapi_transport the_official_asyncapi_cli_accepts_the_parameterized_document -- --ignored --exact --nocapture
 

@@ -307,5 +307,8 @@ fn parameterized_transport_compiles_and_reaches_asyncapi() {
     assert!(generate.status.success(), "{}", text(&generate));
     let document = fs::read_to_string(fixture.0.join("out/asyncapi/producer.yaml")).unwrap();
     assert!(document.contains("parameters:"), "{document}");
-    assert!(document.contains("location: $message.payload#/0/source/service"), "{document}");
+    assert!(
+        document.contains("location: $message.payload#/0/source/service"),
+        "{document}"
+    );
 }

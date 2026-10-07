@@ -374,13 +374,12 @@ fn rust_field_name(wire: &str) -> String {
     let name = result.trim_matches('_');
     match name {
         "self" | "super" | "crate" => format!("{name}_value"),
-        "as" | "async" | "await" | "break" | "const" | "continue" | "dyn" | "else"
-        | "enum" | "extern" | "false" | "fn" | "for" | "if" | "impl" | "in" | "let"
-        | "loop" | "match" | "mod" | "move" | "mut" | "pub" | "ref" | "return"
-        | "static" | "struct" | "trait" | "true" | "type" | "unsafe" | "use" | "where"
-        | "while" | "abstract" | "become" | "box" | "do" | "final" | "macro"
-        | "override" | "priv" | "typeof" | "unsized" | "virtual" | "yield" | "try"
-        | "gen" => format!("r#{name}"),
+        "as" | "async" | "await" | "break" | "const" | "continue" | "dyn" | "else" | "enum"
+        | "extern" | "false" | "fn" | "for" | "if" | "impl" | "in" | "let" | "loop" | "match"
+        | "mod" | "move" | "mut" | "pub" | "ref" | "return" | "static" | "struct" | "trait"
+        | "true" | "type" | "unsafe" | "use" | "where" | "while" | "abstract" | "become"
+        | "box" | "do" | "final" | "macro" | "override" | "priv" | "typeof" | "unsized"
+        | "virtual" | "yield" | "try" | "gen" => format!("r#{name}"),
         _ => name.to_owned(),
     }
 }
@@ -440,43 +439,7 @@ pub fn rust(
         RUST_SUPPORT
     });
     for op in &plan.operations {
-        let name = upper(&op.stem);
-        if op.parameters.is_empty() {
-            let _ = writeln!(
-                lib,
-                "\n/// The subject `{}` is published to.\npub const {name}_SUBJECT: &str = {:?};",
-                op.event, op.subject
-            );
-        } else {
-            let _ = writeln!(
-                lib,
-                "\n/// The subject template `{}` is rendered from each payload.\npub const {name}_SUBJECT_TEMPLATE: &str = {:?};",
-                op.event, op.subject
-            );
-        }
-        if let Some(batch) = op.batch {
-            let _ = writeln!(
-                lib,
-                "/// Flush `{}` when this many payloads are buffered.\npub const {name}_MAX_ITEMS: usize = {};\n/// Flush `{}` when the oldest buffered payload has waited this long.\npub const {name}_MAX_DELAY: ::std::time::Duration = ::std::time::Duration::from_millis({});",
-                op.event, batch.max_items, op.event, batch.max_delay_ms
-            );
-        }
-        if let Some(stream) = &op.stream {
-            if op.parameters.is_empty() {
-                let _ = writeln!(
-                    lib,
-                    "/// The stream capturing `{name}_SUBJECT`. The publisher never creates, updates or deletes it.\npub const {name}_STREAM: &str = {stream:?};"
-                );
-            } else {
-                let _ = writeln!(
-                    lib,
-                    "/// The stream capturing every expansion of `{name}_SUBJECT_TEMPLATE`. The publisher never creates, updates or deletes it.\npub const {name}_STREAM: &str = {stream:?};"
-                );
-            }
-        }
-        if !op.parameters.is_empty() {
-            rust_subject_renderer(&mut lib, op);
-        }
+        rust_constants(&mut lib, op);
     }
     let _ = writeln!(
         lib,
@@ -522,6 +485,22 @@ pub fn rust(
     for op in &plan.operations {
         rust_operation(&mut lib, op, dynamic);
     }
+    rust_lifecycle(&mut lib, plan, dynamic);
+
+    let mut files = BTreeMap::new();
+    let (nats_manifest, nats_source) = rust_nats(package);
+    files.insert("Cargo.toml".to_owned(), manifest);
+    files.insert("nats/Cargo.toml".to_owned(), nats_manifest);
+    files.insert("nats/lib.rs".to_owned(), nats_source);
+    files.insert("lib.rs".to_owned(), lib);
+    files.insert(
+        "client-report.json".to_owned(),
+        report(plan, transport, "rust"),
+    );
+    Ok(files)
+}
+
+fn rust_lifecycle(lib: &mut String, plan: &PublisherPlan, dynamic: bool) {
     let arrays: Vec<&Operation> = plan
         .operations
         .iter()
@@ -548,18 +527,46 @@ pub fn rust(
         }
     }
     lib.push_str("        result\n    }\n}\n");
+}
 
-    let mut files = BTreeMap::new();
-    let (nats_manifest, nats_source) = rust_nats(package);
-    files.insert("Cargo.toml".to_owned(), manifest);
-    files.insert("nats/Cargo.toml".to_owned(), nats_manifest);
-    files.insert("nats/lib.rs".to_owned(), nats_source);
-    files.insert("lib.rs".to_owned(), lib);
-    files.insert(
-        "client-report.json".to_owned(),
-        report(plan, transport, "rust"),
-    );
-    Ok(files)
+fn rust_constants(lib: &mut String, op: &Operation) {
+    let name = upper(&op.stem);
+    if op.parameters.is_empty() {
+        let _ = writeln!(
+            lib,
+            "\n/// The subject `{}` is published to.\npub const {name}_SUBJECT: &str = {:?};",
+            op.event, op.subject
+        );
+    } else {
+        let _ = writeln!(
+            lib,
+            "\n/// The subject template `{}` is rendered from each payload.\npub const {name}_SUBJECT_TEMPLATE: &str = {:?};",
+            op.event, op.subject
+        );
+    }
+    if let Some(batch) = op.batch {
+        let _ = writeln!(
+            lib,
+            "/// Flush `{}` when this many payloads are buffered.\npub const {name}_MAX_ITEMS: usize = {};\n/// Flush `{}` when the oldest buffered payload has waited this long.\npub const {name}_MAX_DELAY: ::std::time::Duration = ::std::time::Duration::from_millis({});",
+            op.event, batch.max_items, op.event, batch.max_delay_ms
+        );
+    }
+    if let Some(stream) = &op.stream {
+        if op.parameters.is_empty() {
+            let _ = writeln!(
+                lib,
+                "/// The stream capturing `{name}_SUBJECT`. The publisher never creates, updates or deletes it.\npub const {name}_STREAM: &str = {stream:?};"
+            );
+        } else {
+            let _ = writeln!(
+                lib,
+                "/// The stream capturing every expansion of `{name}_SUBJECT_TEMPLATE`. The publisher never creates, updates or deletes it.\npub const {name}_STREAM: &str = {stream:?};"
+            );
+        }
+    }
+    if !op.parameters.is_empty() {
+        rust_subject_renderer(lib, op);
+    }
 }
 
 fn rust_subject_renderer(lib: &mut String, op: &Operation) {
@@ -689,45 +696,13 @@ pub fn go(
         env!("CARGO_PKG_VERSION"),
         plan.component
     );
-    src.push_str(if dynamic { GO_DYNAMIC_SUPPORT } else { GO_SUPPORT });
+    src.push_str(if dynamic {
+        GO_DYNAMIC_SUPPORT
+    } else {
+        GO_SUPPORT
+    });
     for op in &plan.operations {
-        let name = camel(&op.stem);
-        if op.parameters.is_empty() {
-            let _ = writeln!(
-                src,
-                "\n// {name}Subject is the subject `{}` is published to.\nconst {name}Subject = {:?}",
-                op.event, op.subject
-            );
-        } else {
-            let _ = writeln!(
-                src,
-                "\n// {name}SubjectTemplate is rendered from each `{}` payload.\nconst {name}SubjectTemplate = {:?}",
-                op.event, op.subject
-            );
-        }
-        if let Some(batch) = op.batch {
-            let _ = writeln!(
-                src,
-                "\n// {name}MaxItems and {name}MaxDelay are when `{}` flushes.\nconst (\n\t{name}MaxItems = {}\n\t{name}MaxDelay = {} * time.Millisecond\n)",
-                op.event, batch.max_items, batch.max_delay_ms
-            );
-        }
-        if let Some(stream) = &op.stream {
-            if op.parameters.is_empty() {
-                let _ = writeln!(
-                    src,
-                    "\n// {name}Stream captures {name}Subject. The publisher never creates, updates or deletes it.\nconst {name}Stream = {stream:?}"
-                );
-            } else {
-                let _ = writeln!(
-                    src,
-                    "\n// {name}Stream captures every expansion of {name}SubjectTemplate. The publisher never creates, updates or deletes it.\nconst {name}Stream = {stream:?}"
-                );
-            }
-        }
-        if !op.parameters.is_empty() {
-            go_subject_renderer(&mut src, op);
-        }
+        go_constants(&mut src, op);
     }
     let _ = writeln!(
         src,
@@ -793,6 +768,46 @@ pub fn go(
         report(plan, transport, "go"),
     );
     files
+}
+
+fn go_constants(src: &mut String, op: &Operation) {
+    let name = camel(&op.stem);
+    if op.parameters.is_empty() {
+        let _ = writeln!(
+            src,
+            "\n// {name}Subject is the subject `{}` is published to.\nconst {name}Subject = {:?}",
+            op.event, op.subject
+        );
+    } else {
+        let _ = writeln!(
+            src,
+            "\n// {name}SubjectTemplate is rendered from each `{}` payload.\nconst {name}SubjectTemplate = {:?}",
+            op.event, op.subject
+        );
+    }
+    if let Some(batch) = op.batch {
+        let _ = writeln!(
+            src,
+            "\n// {name}MaxItems and {name}MaxDelay are when `{}` flushes.\nconst (\n\t{name}MaxItems = {}\n\t{name}MaxDelay = {} * time.Millisecond\n)",
+            op.event, batch.max_items, batch.max_delay_ms
+        );
+    }
+    if let Some(stream) = &op.stream {
+        if op.parameters.is_empty() {
+            let _ = writeln!(
+                src,
+                "\n// {name}Stream captures {name}Subject. The publisher never creates, updates or deletes it.\nconst {name}Stream = {stream:?}"
+            );
+        } else {
+            let _ = writeln!(
+                src,
+                "\n// {name}Stream captures every expansion of {name}SubjectTemplate. The publisher never creates, updates or deletes it.\nconst {name}Stream = {stream:?}"
+            );
+        }
+    }
+    if !op.parameters.is_empty() {
+        go_subject_renderer(src, op);
+    }
 }
 
 /// `Flush` and `Close`, over every `array` channel.
