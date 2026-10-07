@@ -7,22 +7,35 @@
 //! order (`docs/design/cross-record-and-stored-field-guards.md`, step 4 before step 6) and the Rust
 //! and Go targets answer `unreminded`. Validation refuses that declaration order; declared the
 //! other way round, Entity Runtime answers `unreminded`.
+//!
+//! The lowering takes its branch order from the command's precedence plan
+//! (`docs/design/selection-plan.md`, `story:entity-runtime-lowering-reads-selection-plan`): with
+//! the held-state and accepting phases exchanged through the plan's one test seam, the lowered
+//! order and Entity Runtime's answers exchange with them, and the default and the wrong-state
+//! branch keep the places entity-core requires of them in every phase order.
+//!
+//! A held-state branch may still be declared after an accepting branch whose input guard the finite
+//! prover shows disjoint from its own: the epic's one named exception. The plan lowers it first
+//! where the base lowering kept declaration order, so the bytes move and, the guards never holding
+//! together, the answers do not (`tests/fixtures/held-state-after-disjoint-accepting.yaml`).
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 use std::path::Path;
 
 use entity_core::{
-    identity, EntityInstance, FieldKind, LoadedDecision, PreloadDecision, Registry, Runtime,
+    identity, EntityInstance, Evaluation, FieldKind, LoadedDecision, PreloadDecision, Registry,
+    Runtime,
 };
 use ess_compiler::ir::EssIr;
 use ess_compiler::resolve::compile_locating;
 use ess_compiler::source::SourceMap;
+use ess_domain::command::precedence::{with_phase_order, Phase};
 use ess_domain::component::ComponentName;
 use ess_domain::name::QualifiedName;
 use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
-use ess_entity_runtime::{lower, LoweringOptions};
-use ess_service_contract::extract;
+use ess_entity_runtime::{lower, LoweredService, LoweringOptions};
+use ess_service_contract::{extract, ServiceIr};
 use ess_synth::SynthesisPlan;
 use serde_json::{json, Value};
 
@@ -99,8 +112,12 @@ fn registry_of(ir: &EssIr) -> Registry {
     let plan = SynthesisPlan::of(ir);
     let service = extract(ir, &plan, &ComponentName::new("invoice-service").unwrap())
         .expect("service extracts");
-    let lowered = lower(
-        &service,
+    registry(&lowered(&service))
+}
+
+fn lowered(service: &ServiceIr<'_>) -> LoweredService {
+    lower(
+        service,
         &LoweringOptions {
             definition_versions: ["billing.invoice.Account", "billing.invoice.Invoice"]
                 .iter()
@@ -109,7 +126,21 @@ fn registry_of(ir: &EssIr) -> Registry {
             scales: BTreeMap::new(),
         },
     )
-    .unwrap_or_else(|diagnostics| panic!("{diagnostics:?}"));
+    .unwrap_or_else(|diagnostics| panic!("{diagnostics:?}"))
+}
+
+/// `CancelInvoice`'s branches in their lowered order.
+fn lowered_order(lowered: &LoweredService) -> Vec<String> {
+    lowered.definitions()[&QualifiedName::new("billing.invoice.Invoice").unwrap()]
+        .as_definition()
+        .operations["billing.invoice.CancelInvoice"]
+        .outcomes
+        .iter()
+        .map(|outcome| outcome.name.clone())
+        .collect()
+}
+
+fn registry(lowered: &LoweredService) -> Registry {
     let mut registry = Registry::new();
     for definition in lowered.definitions().values() {
         registry
@@ -193,4 +224,230 @@ fn declared_first_the_held_state_branch_answers_on_entity_runtime() {
     assert_eq!(taken(&registry, false, 0), "unreminded");
     assert_eq!(taken(&registry, true, 1), "rushed");
     assert_eq!(taken(&registry, false, 1), "cancelled");
+}
+
+/// The precedence order with the held-state phase (step 4) and the accepting phase (step 6)
+/// exchanged.
+const EXCHANGED: [Phase; 8] = [
+    Phase::InputAbsent,
+    Phase::RelatedRow,
+    Phase::InputRefusal,
+    Phase::Existence,
+    Phase::Accepting,
+    Phase::PresentRelated,
+    Phase::HeldState,
+    Phase::Default,
+];
+
+#[test]
+fn exchanged_held_state_and_accepting_phases_exchange_the_lowered_order_on_entity_runtime() {
+    let ir = compiled(&[UNREMINDED, RUSHED]);
+    let plan = SynthesisPlan::of(&ir);
+    let service = extract(&ir, &plan, &ComponentName::new("invoice-service").unwrap())
+        .expect("service extracts");
+
+    let declared = lowered(&service);
+    assert_eq!(
+        lowered_order(&declared),
+        ["unreminded", "rushed", "cancelled", "wrong-state"]
+    );
+
+    let exchanged = with_phase_order(EXCHANGED, || lowered(&service));
+    assert_eq!(
+        lowered_order(&exchanged),
+        ["rushed", "unreminded", "cancelled", "wrong-state"]
+    );
+    let registry = registry(&exchanged);
+    assert_eq!(taken(&registry, true, 0), "rushed");
+    assert_eq!(taken(&registry, false, 0), "unreminded");
+    assert_eq!(taken(&registry, true, 1), "rushed");
+    assert_eq!(taken(&registry, false, 1), "cancelled");
+}
+
+/// The plan read backwards puts the default first and the wrong-state branch (step 4) before the
+/// default; entity-core requires the default last among the branches it selects and drops the
+/// wrong-state branch from selection, so the lowering keeps both after every other branch.
+#[test]
+fn the_default_and_the_wrong_state_branch_stay_last_in_any_phase_order() {
+    let ir = compiled(&[UNREMINDED, RUSHED]);
+    let plan = SynthesisPlan::of(&ir);
+    let service = extract(&ir, &plan, &ComponentName::new("invoice-service").unwrap())
+        .expect("service extracts");
+    let mut reversed = Phase::PRECEDENCE;
+    reversed.reverse();
+
+    let lowered = with_phase_order(reversed, || lowered(&service));
+    assert_eq!(
+        lowered_order(&lowered),
+        ["rushed", "unreminded", "cancelled", "wrong-state"]
+    );
+    let registry = registry(&lowered);
+    assert_eq!(taken(&registry, true, 0), "rushed");
+    assert_eq!(taken(&registry, false, 0), "unreminded");
+    assert_eq!(taken(&registry, false, 1), "cancelled");
+}
+
+/// `tests/fixtures/held-state-after-disjoint-accepting.yaml`, whose `demo.ticket.Close` declares
+/// the held-state branch `first-close` (`when: rush == false`) after the accepting `rushed`
+/// (`when: rush == true`).
+fn ticket_model() -> EssIr {
+    let label = "held-state-after-disjoint-accepting.yaml";
+    let text = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures")
+            .join(label),
+    )
+    .expect("fixture is readable");
+    let mut sources = SourceMap::new();
+    sources.insert(label.to_owned(), text.clone());
+    let specification = Specification::assemble(vec![(
+        Source::new(label),
+        RawSpecFile::parse(&text).unwrap(),
+    )])
+    .unwrap_or_else(|errors| panic!("the fixture validates: {errors}"));
+    compile_locating(&specification, &sources, &[label.to_owned()]).expect("fixture compiles")
+}
+
+fn ticket_lowered(service: &ServiceIr<'_>) -> LoweredService {
+    lower(
+        service,
+        &LoweringOptions {
+            definition_versions: BTreeMap::from([(
+                QualifiedName::new("demo.ticket.Ticket").unwrap(),
+                NonZeroU32::MIN,
+            )]),
+            scales: BTreeMap::new(),
+        },
+    )
+    .unwrap_or_else(|diagnostics| panic!("{diagnostics:?}"))
+}
+
+/// `demo.ticket.Close`'s branches in their lowered order.
+fn close_order(lowered: &LoweredService) -> Vec<String> {
+    lowered.definitions()[&QualifiedName::new("demo.ticket.Ticket").unwrap()]
+        .as_definition()
+        .operations["demo.ticket.Close"]
+        .outcomes
+        .iter()
+        .map(|outcome| outcome.name.clone())
+        .collect()
+}
+
+const TICKET: &str = "5d3f0c1e-8a4b-4e2f-9b6a-1c7d2e3f4a5b";
+
+/// Which branch `demo.ticket.Close` takes with `note` and `rush` on a ticket in `state` reopened
+/// `reopened` times.
+fn closed_by(registry: &Registry, state: &str, reopened: u32, note: &str, rush: bool) -> String {
+    let runtime = Runtime::new(registry);
+    let row = EntityInstance {
+        entity: "demo.ticket.Ticket".to_owned(),
+        version: 1,
+        id: identity::address(FieldKind::String, &json!(TICKET)).expect("identity address"),
+        lifecycle_state: state.to_owned(),
+        revision: 1,
+        fields: serde_json::from_value(json!({
+            "ticket_id": TICKET, "note": "", "reopened": reopened
+        }))
+        .expect("ticket fields"),
+    };
+    let arguments =
+        json!({"input": {"ticket_id": TICKET, "note": note, "rush": rush}, "bound": {}});
+    match runtime.decide_before_load(
+        &row.entity,
+        row.version,
+        row.id.clone(),
+        "demo.ticket.Close",
+        arguments,
+    ) {
+        Ok(PreloadDecision::Refused(refusal)) => format!("before load: {}", refusal.outcome),
+        Ok(PreloadDecision::Load(prepared)) => match prepared.select_with(&row) {
+            Ok(LoadedDecision::NeedsFulfillment(prepared)) => prepared.outcome().to_string(),
+            Ok(LoadedDecision::Complete(Evaluation::Accepted(decision))) => {
+                format!("accepted {:?}", decision.record.outcome)
+            }
+            Ok(LoadedDecision::Complete(Evaluation::Refused(refusal))) => {
+                format!("refused {}", refusal.outcome)
+            }
+            Err(error) => format!("error {error:?}"),
+        },
+        Err(error) => format!("error before load: {error:?}"),
+    }
+}
+
+/// The epic's named exception, pinned in the lowered-definitions table: the plan lowers
+/// `first-close` before `rushed`, where the base lowering kept their declaration order, and the
+/// two orders answer every request alike. Exchanging the held-state and accepting phases gives the
+/// base lowering's order for this command.
+#[test]
+fn a_held_state_branch_after_a_disjoint_accepting_one_moves_bytes_and_no_answer() {
+    let ir = ticket_model();
+    let plan = SynthesisPlan::of(&ir);
+    let service =
+        extract(&ir, &plan, &ComponentName::new("tickets").unwrap()).expect("service extracts");
+    let planned = ticket_lowered(&service);
+    let declared = with_phase_order(EXCHANGED, || ticket_lowered(&service));
+    assert_eq!(
+        close_order(&planned),
+        [
+            "invalid-note",
+            "first-close",
+            "rushed",
+            "closed",
+            "not-open"
+        ]
+    );
+    assert_eq!(
+        close_order(&declared),
+        [
+            "invalid-note",
+            "rushed",
+            "first-close",
+            "closed",
+            "not-open"
+        ]
+    );
+
+    let (planned, declared) = (registry(&planned), registry(&declared));
+    let mut answers = Vec::new();
+    for state in ["Open", "Closed"] {
+        for reopened in [0, 1] {
+            for note in ["", "late"] {
+                for rush in [true, false] {
+                    let here = closed_by(&planned, state, reopened, note, rush);
+                    let base = closed_by(&declared, state, reopened, note, rush);
+                    assert_eq!(
+                        here, base,
+                        "{state}, reopened {reopened}, note {note:?}, rush {rush}"
+                    );
+                    answers.push(here);
+                }
+            }
+        }
+    }
+    let refused = "before load: invalid-note";
+    assert_eq!(
+        answers,
+        [
+            // Open, reopened 0: `note: ""` refused, then `rush` picks `rushed` or `first-close`.
+            refused,
+            refused,
+            "rushed",
+            "first-close",
+            // Open, reopened 1: `first-close` does not hold, so `rush: false` takes the default.
+            refused,
+            refused,
+            "rushed",
+            "closed",
+            // Closed: no move starts there, so entity-core answers the wrong-state branch.
+            refused,
+            refused,
+            "refused not-open",
+            "refused not-open",
+            refused,
+            refused,
+            "refused not-open",
+            "refused not-open",
+        ],
+        "every branch answers some request, in both orders"
+    );
 }
