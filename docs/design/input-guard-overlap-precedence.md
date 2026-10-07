@@ -195,7 +195,9 @@ outcomes:
 No input separates the two branches: every input `held-for-promotion` admits, `promoted` admits
 too. Only the row does, and on a row whose `auto_promote` is unset or false both are selected. The
 rule is the one above, with no tiebreak of its own: **the first declared whose guards hold
-answers**, so `held-for-promotion` is taken there, and declared after `promoted` it is never taken.
+answers**, so `held-for-promotion` is taken there. Declared after `promoted` it was never taken by
+the model interpreter or Entity Runtime and always by the Rust and Go targets; validation refuses
+that order (beyond10x/ess#486).
 A stored-field guard is not a tiebreak; it is part of the branch's guard, and declaration order
 decides between branches whose guards both hold, as Entity Runtime's lowering and
 [the precedence order](cross-record-and-stored-field-guards.md#the-precedence-order) (step 5)

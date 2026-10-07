@@ -11,6 +11,12 @@ This page is generated from the change records kept in the repository. A release
 
 ## 0.56.0 — 2026-10-07
 
+### A held-state branch must be declared before an overlapping accepting or external branch
+
+breaking · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.56.0)
+
+Validation refuses an accepting `when:` or `external:` branch declared before a branch the held state selects when one request can satisfy both guards (`ESS-COMMAND-004`, naming both branches). Every consumer then answers alike. To fix a refused specification, declare the held-state branch first.
+
 ### Committed output records carry no machine path, and generated Rust types stop forcing arbitrary precision
 
 capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.56.0)

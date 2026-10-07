@@ -43,6 +43,15 @@ fn external_subject_cannot_hide_uncovered_held_state() {
 #[test]
 fn external_subject_cannot_reject_valid_held_state() {
     assemble(&model(false, true)).expect("valid complete two-entity control");
-    assemble(&model(true, true))
-        .expect("external outcome ordering cannot change declared Call states");
+    // Declared first, the external branch is refused for its order alone (beyond10x/ess#486): every
+    // refusal names a held-state branch it is declared above, and none a declared Call state.
+    let reordered = assemble(&model(true, true)).unwrap_err();
+    let order = "is selected by the held state, which answers before the external branch \
+                 `external-observed` declared above it";
+    assert_eq!(reordered.matches(order).count(), 2, "{reordered}");
+    assert_eq!(
+        reordered.matches("] command.").count(),
+        2,
+        "external outcome ordering cannot change declared Call states:\n{reordered}"
+    );
 }

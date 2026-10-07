@@ -16,6 +16,17 @@
 
 ### Changed
 
+- Validation refuses an accepting `when:` branch or an `external:` branch declared before a branch
+  the held state selects (`when_subject:`, `when_subject_state:`, `when_state_changes:`) in the
+  same command where one request can satisfy both input guards, as `ESS-COMMAND-004` naming both
+  branches, with the reorder as the hint. An `external:` branch with no input guard can always
+  overlap, and so can guards the finite prover does not separate (an open `Integer` or `String`,
+  an `Optional` input). Where both guards held, the model interpreter and Entity Runtime answered
+  the first declared branch and the Rust and Go targets the held-state branch, as the precedence
+  order says. Declared held-state first, every consumer answers alike, and reordering changes no
+  answer. A specification that declares them the other way round no longer validates; to fix
+  it, declare the held-state branch before the accepting or external one
+  (https://github.com/beyond10x/ess/issues/486).
 - Generated Rust type libraries (`ess generate types`, `ess generate schema types-bundle`) no
   longer force `serde_json/arbitrary_precision` onto every consumer. The manifest declares a
   default-on `exact-numbers` crate feature that enables it, and only where the realized types hold
