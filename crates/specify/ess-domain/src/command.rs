@@ -2588,6 +2588,21 @@ impl CommandSpec {
             })
     }
 
+    /// The composition [`precedence::place`] reads for this command, in the format `types`
+    /// records. Checked as it is parsed, before a registry records its document's format, a command
+    /// is read in the grammar its parser admits: `ess/22`, unless the source is older
+    /// ([`ess_primitives::predicate::reads_source22_operands`]).
+    pub(crate) fn composition(&self, types: Option<&TypeRegistry>) -> precedence::Composition {
+        let format = types.and_then(TypeRegistry::format).unwrap_or_else(|| {
+            if ess_primitives::predicate::reads_source22_operands() {
+                crate::system::FormatVersion::V22
+            } else {
+                crate::system::FormatVersion::V21
+            }
+        });
+        precedence::Composition::of(self, format)
+    }
+
     fn validate_replay(&self, outcome: &Outcome) -> ValidationErrors {
         let mut errors = ValidationErrors::new();
         let Some(name) = &outcome.replays else {
@@ -3277,7 +3292,70 @@ impl CommandSpec {
     /// two orders are one, so every consumer answers alike. Input guards the finite prover shows
     /// disjoint never hold together, so their order is free; a guard it declines, and a branch with
     /// no input guard, counts as one that can hold with any other.
+    ///
+    /// Which branch is which, and which of the two phases answers first, is the precedence
+    /// classification's ([`precedence::place`], [`precedence::phase_order`]): the held-state
+    /// branches are those [`Phase::HeldState`](precedence::Phase::HeldState) reads in declaration
+    /// order, and a phase order reading [`Phase::Accepting`](precedence::Phase::Accepting) first
+    /// refuses the opposite declaration order.
     fn validate_held_state_order(&self, types: &TypeRegistry) -> ValidationErrors {
+        /// A branch of the two phases the interpreter reads in one declaration-order pass.
+        #[derive(Clone, Copy)]
+        enum OnePass {
+            /// Read in declaration order in [`Phase::HeldState`](precedence::Phase::HeldState).
+            HeldState,
+            /// In [`Phase::Accepting`](precedence::Phase::Accepting): `accepting` or `external`.
+            Accepting(&'static str),
+        }
+        impl OnePass {
+            fn of(outcome: &Outcome, composition: precedence::Composition) -> Option<Self> {
+                let branch = precedence::BranchShape::of(outcome);
+                let place = precedence::place(&branch, &composition);
+                match (place.phase, place.rank) {
+                    (precedence::Phase::HeldState, precedence::Rank::Declared) => {
+                        Some(Self::HeldState)
+                    }
+                    (precedence::Phase::Accepting, _) => match branch.condition {
+                        precedence::ConditionShape::When { .. } => {
+                            Some(Self::Accepting("accepting"))
+                        }
+                        precedence::ConditionShape::External
+                        | precedence::ConditionShape::ExternalWhen => {
+                            Some(Self::Accepting("external"))
+                        }
+                        // A related row is read beside no held state: `related_guard` and
+                        // `row_set` refuse the pair before either order is asked about.
+                        _ => None,
+                    },
+                    _ => None,
+                }
+            }
+
+            /// What the branch is, as the subject of the refusal.
+            fn subject(self) -> String {
+                match self {
+                    Self::HeldState => "selected by the held state".to_owned(),
+                    Self::Accepting(kind) => format!("an {kind} branch"),
+                }
+            }
+
+            /// The branch it answers before, as the refusal names it.
+            fn object(self) -> String {
+                match self {
+                    Self::HeldState => "the held-state branch".to_owned(),
+                    Self::Accepting(kind) => format!("the {kind} branch"),
+                }
+            }
+
+            /// What selects first, as the hint names it.
+            fn first(self) -> String {
+                match self {
+                    Self::HeldState => "the held state".to_owned(),
+                    Self::Accepting(kind) => format!("an {kind} branch"),
+                }
+            }
+        }
+
         let mut errors = ValidationErrors::new();
         let environment = crate::expression::DomainEnvironment::new(types, &self.input);
         let together = |first: Option<&Predicate>, second: Option<&Predicate>| {
@@ -3290,46 +3368,43 @@ impl CommandSpec {
                     .any(|case| case.selected.contains(&0) && case.selected.contains(&1))
             })
         };
-        let mut later_steps: Vec<&Outcome> = Vec::new();
+        let composition = self.composition(Some(types));
+        let held_state_first =
+            precedence::Phase::HeldState.position() < precedence::Phase::Accepting.position();
+        let mut read_second: Vec<(&Outcome, OnePass)> = Vec::new();
         for outcome in &self.outcomes {
-            let condition = &outcome.condition;
-            if condition.reads_held_state() || condition.reads_subject_fact() {
-                let Some(earlier) = later_steps
-                    .iter()
-                    .find(|earlier| together(earlier.condition.predicate(), condition.predicate()))
-                else {
-                    continue;
-                };
-                let kind = if earlier.error.is_none()
-                    && matches!(earlier.condition, OutcomeCondition::When(_))
-                {
-                    "accepting"
-                } else {
-                    "external"
-                };
-                errors.push(
-                    ValidationError::at(
-                        self.site().key("outcomes").named(outcome.name.as_str()),
-                        ValidationCode::ConflictingDeclaration,
-                        format!(
-                            "`{}` is selected by the held state, which answers before the {kind} \
-                             branch `{}` declared above it; where both guards hold, the \
-                             declaration order and the precedence order disagree",
-                            outcome.name, earlier.name
-                        ),
-                    )
-                    .with_hint(format!(
-                        "declare `{}` before `{}`: the held state selects first in either order",
-                        outcome.name, earlier.name
-                    )),
-                );
-            } else if match condition {
-                OutcomeCondition::When(_) => outcome.error.is_none(),
-                OutcomeCondition::External { .. } | OutcomeCondition::ExternalWhen { .. } => true,
-                _ => false,
-            } {
-                later_steps.push(outcome);
+            let Some(pass) = OnePass::of(outcome, composition) else {
+                continue;
+            };
+            if matches!(pass, OnePass::HeldState) != held_state_first {
+                read_second.push((outcome, pass));
+                continue;
             }
+            let Some((earlier, read)) = read_second.iter().find(|(earlier, _)| {
+                together(earlier.condition.predicate(), outcome.condition.predicate())
+            }) else {
+                continue;
+            };
+            errors.push(
+                ValidationError::at(
+                    self.site().key("outcomes").named(outcome.name.as_str()),
+                    ValidationCode::ConflictingDeclaration,
+                    format!(
+                        "`{}` is {}, which answers before {} `{}` declared above it; where both \
+                         guards hold, the declaration order and the precedence order disagree",
+                        outcome.name,
+                        pass.subject(),
+                        read.object(),
+                        earlier.name
+                    ),
+                )
+                .with_hint(format!(
+                    "declare `{}` before `{}`: {} selects first in either order",
+                    outcome.name,
+                    earlier.name,
+                    pass.first()
+                )),
+            );
         }
         errors
     }
@@ -3380,7 +3455,7 @@ impl CommandSpec {
             .iter()
             .any(|outcome| outcome.condition.reads_held_state())
         {
-            return subject_state::validate_shape(self);
+            return subject_state::validate_shape(self, &self.composition(types));
         }
         // Likewise a command reading the subject's stored fields: its partition crosses those
         // fields with the input, and their types are the entity's, known at assembly.
