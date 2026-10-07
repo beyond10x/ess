@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:entity-runtime-lowering-reads-selection-plan
 kind: story
-status: draft
+status: active
 title: The Entity Runtime lowering orders branches by the selection plan
 relations:
 - decomposes: epic:one-selection-plan
@@ -17,7 +17,10 @@ scope:
   path: crates/generate/ess-entity-runtime/tests
 - confidence: inferred
   path: website/docs/reference/entity-runtime-lowering.md
-revision: 7
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-07T13:18:12Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":3}}}
+- {from: "proposed", to: "active", at: "2026-10-07T13:18:13Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":3}}}
 ---
 # Story: The Entity Runtime lowering orders branches by the selection plan
 

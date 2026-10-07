@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:validation-reads-selection-plan
 kind: story
-status: draft
+status: active
 title: Validation reads the selection plan's phases
 relations:
 - decomposes: epic:one-selection-plan
@@ -17,7 +17,10 @@ scope:
   path: crates/specify/ess-domain/src/command/subject_state.rs
 - confidence: inferred
   path: crates/specify/ess-domain/tests/held_state_order.rs
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-07T13:18:14Z", actor: "human:timo", revision: 6}
+- {from: "proposed", to: "active", at: "2026-10-07T13:18:15Z", actor: "human:timo", revision: 7}
 ---
 # Story: Validation reads the selection plan's phases
 
