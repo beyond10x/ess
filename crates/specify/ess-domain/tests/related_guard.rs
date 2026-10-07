@@ -386,6 +386,10 @@ fn issue_211_two_branches_one_related_row_selects_are_conflicting() {
 pub const RELEASE: &str =
     include_str!("../../../verify/ess-conformance/tests/fixtures/related-guard-release.yaml");
 
+/// A moving command whose related-row identity is optional (beyond10x/ess#304, `ess/22`).
+pub const OPTIONAL_RELEASE: &str =
+    include_str!("../../../verify/ess-conformance/tests/fixtures/related-guard-optional.yaml");
+
 const NOT_ACCEPTED: &str =
     "        when_related: {via: input.candidate, predicate: state != Accepted}\n";
 
@@ -673,4 +677,84 @@ fn issue_282_overlap_below_ess_22_keeps_its_refusal() {
             "{format}: {errors}"
         );
     }
+}
+
+// ---- an Optional input naming the related row (beyond10x/ess#304, `ess/22`) -----------------
+
+fn optional_release_at(format: &str) -> String {
+    let at_format = replaced(
+        OPTIONAL_RELEASE,
+        "format: ess/22\n",
+        &format!("format: {format}\n"),
+    );
+    replaced(
+        &at_format,
+        "      - {name: wrong-state, wrong_state: true, error: demo.release.ReleaseStateConflict}\n",
+        "",
+    )
+}
+
+#[test]
+fn issue_304_an_optional_input_via_validates_under_ess_22() {
+    let original = accepted(OPTIONAL_RELEASE);
+    let command = &original.commands()[&"demo.release.PublishRelease".parse().unwrap()];
+    let OutcomeCondition::Related { via, .. } = &command.outcomes[0].condition else {
+        panic!("the missing-row branch is related: {:?}", command.outcomes[0])
+    };
+    assert_eq!(via.to_string(), "input.candidate");
+
+    let related_first = "      - name: no-candidate\n        when_related: {via: input.candidate, exists: false}\n        error: demo.release.NoCandidate\n      - name: not-accepted\n        when_related: {via: input.candidate, predicate: state != Accepted}\n        error: demo.release.CandidateNotAccepted\n      - {name: wrong-state, wrong_state: true, error: demo.release.ReleaseStateConflict}\n";
+    let wrong_state_first = "      - {name: wrong-state, wrong_state: true, error: demo.release.ReleaseStateConflict}\n      - name: not-accepted\n        when_related: {via: input.candidate, predicate: state != Accepted}\n        error: demo.release.CandidateNotAccepted\n      - name: no-candidate\n        when_related: {via: input.candidate, exists: false}\n        error: demo.release.NoCandidate\n";
+    accepted(&replaced(
+        OPTIONAL_RELEASE,
+        related_first,
+        wrong_state_first,
+    ));
+}
+
+#[test]
+fn issue_304_an_optional_via_below_ess_22_is_refused_naming_ess_22() {
+    for format in ["ess/21", "ess/20", "ess/18"] {
+        let errors = refused(&optional_release_at(format));
+        assert!(
+            has(
+                &errors,
+                ValidationCode::UnsupportedFormatVersion,
+                "ess/22"
+            ),
+            "{format}: {errors}"
+        );
+        assert!(
+            errors.as_slice().iter().any(|error| {
+                let rendered = error.to_string();
+                rendered.contains("when_related") && rendered.contains("candidate")
+            }),
+            "{format}: the refusal identifies the Optional via at its declaration: {errors}"
+        );
+    }
+}
+
+#[test]
+fn issue_304_an_absent_reference_reaching_no_branch_is_non_exhaustive() {
+    let no_accepting_branch = replaced(
+        OPTIONAL_RELEASE,
+        "      - name: published\n        moves: demo.release.Release.publish\n        instance: release_id\n        emits: [demo.release.ReleasePublished]\n        payload: {demo.release.ReleasePublished: {release_id: input.release_id}}\n",
+        "",
+    );
+    let errors = refused(&no_accepting_branch);
+    assert!(
+        has(
+            &errors,
+            ValidationCode::NonExhaustiveBranches,
+            "candidate"
+        ),
+        "{errors}"
+    );
+    assert!(
+        errors
+            .as_slice()
+            .iter()
+            .any(|error| error.to_string().contains("absent")),
+        "the uncovered Optional-input case is named: {errors}"
+    );
 }
