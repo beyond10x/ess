@@ -2095,11 +2095,15 @@ fn guard_of<'ir>(
 
 /// Whether some input satisfies `guard`, or `None` where that is not decided here.
 ///
-/// Decided only where every test in the guard compares one scalar input leaf, never optional,
-/// never a count and never a `Timestamp`, with literals by equality, membership or truth. Over such
-/// a guard, which literal each leaf equals — or none — is all that decides it, so each leaf's
-/// domain is finite: a boolean's two values, an enum's variants, and for any other text or number
-/// its literals and one value none of them equals. Every combination of those domains is
+/// Decided only where every test in the guard compares one scalar input leaf, never a count and
+/// never a `Timestamp`, with literals by equality, membership or truth, or asks whether it is
+/// `defined`. Over such a guard, which literal each leaf equals — or none — and whether an
+/// `Optional` leaf is present is all that decides it, so each leaf's domain is finite: a boolean's
+/// two values, an enum's variants, and for any other text or number its literals and one value
+/// none of them equals; an `Optional` leaf's domain adds its absence
+/// (<https://github.com/beyond10x/ess/issues/501>). A combination under which the guard is
+/// unknown — a comparison of an absent leaf — decides nothing, so the guard is called
+/// unsatisfiable only where every combination refutes it. Every combination of those domains is
 /// evaluated, and only where their product is at most
 /// [`MAX_CANDIDATES`](crate::witness::MAX_CANDIDATES): completeness is that product, counted before
 /// any type rule or invariant is applied, never how
@@ -2121,12 +2125,12 @@ fn satisfiable(
         return None;
     }
     let environment = ess_compiler::expression::Environment::new(ir, &command.input);
-    let mut domains: Vec<(FactPath, Vec<FactValue>)> = Vec::new();
+    let mut domains: Vec<(FactPath, Vec<Option<FactValue>>)> = Vec::new();
     let mut combinations: usize = 1;
     for (path, literals) in &leaves {
         let resolved =
             ess_domain::expression::resolve_path(&environment, path, "mutation audit").ok()?;
-        if resolved.optional || resolved.access.collection || resolved.access.text_length {
+        if resolved.access.collection || resolved.access.text_length {
             return None;
         }
         let scalar = resolved.scalar?;
@@ -2145,8 +2149,9 @@ fn satisfiable(
         ) {
             return None;
         }
-        let mut domain: Vec<FactValue> = Vec::new();
+        let mut domain: Vec<Option<FactValue>> = Vec::new();
         let mut add = |value: FactValue| {
+            let value = Some(value);
             if !domain.contains(&value) {
                 domain.push(value);
             }
@@ -2185,33 +2190,39 @@ fn satisfiable(
                 add(other);
             }
         }
+        // Absence is one more value of an `Optional` leaf, the one `defined` refutes.
+        if resolved.optional {
+            domain.push(None);
+        }
         combinations = combinations.checked_mul(domain.len())?;
         if combinations > crate::witness::MAX_CANDIDATES {
             return None;
         }
         domains.push((path.clone(), domain));
     }
+    let mut undecided = false;
     for index in 0..combinations {
         let mut rest = index;
         let facts: ess_primitives::facts::FactStore = domains
             .iter()
-            .map(|(path, domain)| {
+            .filter_map(|(path, domain)| {
                 let value = domain[rest % domain.len()].clone();
                 rest /= domain.len();
-                (path.clone(), value)
+                value.map(|value| (path.clone(), value))
             })
             .collect();
         match guard.evaluate(&facts) {
             ess_primitives::predicate::Truth::True => return Some(true),
             ess_primitives::predicate::Truth::False => {}
-            ess_primitives::predicate::Truth::Unknown => return None,
+            ess_primitives::predicate::Truth::Unknown => undecided = true,
         }
     }
-    Some(false)
+    (!undecided).then_some(false)
 }
 
 /// Whether `predicate` tests only input leaves against literals by `==`, `!=`, membership or
-/// truth, under `all`, `any` and `not`; each leaf read is recorded with the literals it meets.
+/// truth, or for presence, under `all`, `any` and `not`; each leaf read is recorded with the
+/// literals it meets.
 fn equality_tests(
     predicate: &Predicate,
     leaves: &mut std::collections::BTreeMap<
@@ -2251,6 +2262,11 @@ fn equality_tests(
                 .entry(path.clone())
                 .or_default()
                 .push(ess_primitives::facts::FactValue::Bool(true));
+            true
+        }
+        // Presence meets no literal; the leaf's domain is what `satisfiable` gives its type.
+        Predicate::Defined(path) => {
+            leaves.entry(path.clone()).or_default();
             true
         }
         _ => false,

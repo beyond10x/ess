@@ -521,13 +521,56 @@ fn search(
 pub(crate) type Searched = Result<(Vec<BTreeMap<String, Node>>, bool), WitnessGap>;
 
 /// [`search`], run.
-#[allow(clippy::too_many_lines)]
 fn search_uncached(
     ir: &EssIr,
     command: &ResolvedCommand,
     guards: &[&Predicate],
     distinction: Distinction,
     between: bool,
+) -> Searched {
+    search_with(ir, command, guards, distinction, between, Goals::Every)
+}
+
+/// The candidates for one goal: the walk [`candidates`] tries, then, where the walk was cut short,
+/// inputs solved for `goal` satisfied and for nothing else
+/// (<https://github.com/beyond10x/ess/issues/501>).
+///
+/// [`candidates`] solves every goal [`Directed`] lists, one per child of each connective, which
+/// over a goal that repeats a guard inside itself is hundreds of searches; a caller asking for one
+/// input that satisfies one predicate needs the first of them only. Not remembered, since no other
+/// search asks for the same predicate.
+///
+/// # Errors
+///
+/// [`WitnessGap`] when some field of the input has no safe value at all.
+pub(crate) fn solving(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    goal: &Predicate,
+    distinction: Distinction,
+) -> Result<Vec<BTreeMap<String, Node>>, WitnessGap> {
+    search_with(ir, command, &[goal], distinction, false, Goals::Satisfied)
+        .map(|(inputs, _)| inputs)
+}
+
+/// Which goals [`Directed`] solves for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Goals {
+    /// Every goal [`Directed::goals`] lists.
+    Every,
+    /// Each guard satisfied, and nothing else.
+    Satisfied,
+}
+
+/// [`search_uncached`], solving `goals` where the walk is cut short.
+#[allow(clippy::too_many_lines)]
+fn search_with(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    guards: &[&Predicate],
+    distinction: Distinction,
+    between: bool,
+    goals: Goals,
 ) -> Searched {
     let mut added = false;
     // A quantifier's body reads its element through a binder. Rebound onto the element a one-
@@ -675,7 +718,7 @@ fn search_uncached(
     // a branch it witnessed is sent the input it was always sent; only a caller that found nothing
     // in it reaches the guard-directed candidates after it.
     if product(&ladders) > MAX_CANDIDATES {
-        let solved = Directed::new(&mut builder, command, guards, &ladders).solve()?;
+        let solved = Directed::new(&mut builder, command, guards, &ladders, goals).solve()?;
         extend_paired(&mut builder, command, &solved, &presence_omits, &mut inputs)?;
     }
     let inputs = admitted_inputs(ir, command, inputs);
@@ -1101,6 +1144,8 @@ struct Directed<'a, 'ir> {
     reads: Vec<Option<usize>>,
     /// Each atom's decision at a group's combination (`None`: undecided), filled on demand.
     truths: BTreeMap<(usize, usize), Vec<Option<bool>>>,
+    /// Which goals are solved for.
+    wanted: Goals,
 }
 
 impl<'a, 'ir> Directed<'a, 'ir> {
@@ -1109,6 +1154,7 @@ impl<'a, 'ir> Directed<'a, 'ir> {
         command: &'a ResolvedCommand,
         guards: &'a [&'a Predicate],
         ladders: &[(FactPath, Vec<Choice>)],
+        wanted: Goals,
     ) -> Self {
         let mut atoms: Vec<&Predicate> = Vec::new();
         for guard in guards {
@@ -1184,6 +1230,7 @@ impl<'a, 'ir> Directed<'a, 'ir> {
             groups,
             reads,
             truths: BTreeMap::new(),
+            wanted,
         }
     }
 
@@ -1206,6 +1253,9 @@ impl<'a, 'ir> Directed<'a, 'ir> {
 
     fn goals(&self) -> Vec<Vec<(&'a Predicate, bool)>> {
         let guards = self.guards;
+        if self.wanted == Goals::Satisfied {
+            return guards.iter().map(|guard| vec![(*guard, true)]).collect();
+        }
         let mut goals = Vec::new();
         for (at, guard) in guards.iter().enumerate() {
             let mut only = vec![(*guard, true)];

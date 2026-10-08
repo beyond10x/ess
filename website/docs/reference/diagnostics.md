@@ -206,6 +206,7 @@ refusal[ESS-SYNTH-011]: entity billing.invoice.Invoice has no scenario `…`
 | `ESS-SYNTH-019` | A synthesized step requires a branch for an input its own guard refutes, or another branch answers first under the precedence order. | Nothing to change in the specification; this is a defect in ess to report, with the specification that produced it. |
 | `ESS-SYNTH-020` | A reference a `{related: …}` value follows may be absent, and no arrangement leaves it absent to witness the absent value; the branch's scenario stands without it. | Fill the reference from an Optional input that the branch, or the branch creating the row that holds it, can be sent without; or cover the absent value with an authored scenario (ess-scenario/1). |
 | `ESS-SYNTH-021` | An invariant compares two Timestamp facts without the tag that compares them as instants. | Write the comparison in an ess/22 source, which tags it, or write `{compare: {left, op, right, as: timestamp}}`. |
+| `ESS-SYNTH-022` | No input was found where one child of an `any`/`all` alone decides it and it decides the guard; the branch's scenario stands without that input. | Cover the child with an authored scenario (ess-scenario/1) that sends an input where it alone decides the connective, or write the guard so that such an input exists. |
 
 ## Mutation audit: `ESS-MUTATE`
 
