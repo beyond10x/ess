@@ -62,6 +62,13 @@
 
 ### Fixed
 
+- `ess verify conform synthesize` keeps the `external:` and success scenarios of a command that
+  has an input no guard reads whose newtype invariant refuses the default witness, beside several
+  string guards on another input. They were refused with `ESS-SYNTH-003` ("no candidate of the 4
+  tried"). The candidate search now starts that input at the first value its invariant admits,
+  instead of varying it last and dropping every candidate before it. That value is the one the
+  search reached first before, so suites the search already served keep their scenarios
+  (https://github.com/beyond10x/ess/issues/511).
 - `ess verify conform run --target interpreted` decides a command with a current-time (`now`)
   guard, where it answered every scenario of that command `unsupported`, authored ones included.
   The interpreter decides at the instant of the step being executed, which is also the instant
