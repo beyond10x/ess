@@ -19,6 +19,12 @@
 
 ### Changed
 
+- Validation refuses a refusal whose `when:` always holds (`when: true` beside `error:`), as
+  `ESS-COMMAND-004` naming the branch, with the hint to give it the condition it refuses on or to
+  drop `when:` and declare it as the default refusal. Such a refusal had no one step in the
+  precedence order: beside another refusal that held, the model interpreter answered the other
+  refusal, while Entity Runtime and the Rust and Go targets answered this one. An accepting
+  `when: true` branch is unchanged (beyond10x/ess#489).
 - In `ess-cli/1` and `ess-cli/2`, `null`, `~` and `""` as a global's flag are refused with an error
   naming the global; before, they were read as a flag called `null`
   (https://github.com/beyond10x/ess/issues/481).
