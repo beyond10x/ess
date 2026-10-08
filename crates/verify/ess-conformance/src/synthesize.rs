@@ -13093,6 +13093,9 @@ type Row = BTreeMap<String, Node>;
 /// One further row per child of a connective with two or more children, where the child decides
 /// `alone` and every other child the opposite (beyond10x/ess#155) — skipping a child the plain
 /// witness or an earlier row already isolates, and one no candidate isolates.
+///
+/// `also` further restricts the rows that count: a nested connective's rows must also decide the
+/// guard otherwise than its connective mutant does ([`nested_connectives`]).
 #[allow(clippy::too_many_arguments)]
 fn one_per_child(
     ir: &EssIr,
@@ -13100,6 +13103,7 @@ fn one_per_child(
     guard: &Predicate,
     children: &[Predicate],
     alone: bool,
+    also: &dyn Fn(&crate::InputFacts<'_>) -> bool,
     primary: &Row,
     rows: &mut Vec<Row>,
     keep: &dyn Fn(Row, &mut Vec<Row>),
@@ -13108,7 +13112,9 @@ fn one_per_child(
         return;
     }
     for index in 0..children.len() {
-        let isolates = |facts: &crate::InputFacts<'_>| exactly_one(facts, children, index, alone);
+        let isolates = |facts: &crate::InputFacts<'_>| {
+            exactly_one(facts, children, index, alone) && also(facts)
+        };
         if flatten(ir, command, primary).is_ok_and(|facts| isolates(&facts))
             || rows
                 .iter()
@@ -13123,6 +13129,145 @@ fn one_per_child(
                 break;
             }
         }
+    }
+}
+
+/// No further restriction on the rows [`one_per_child`] keeps.
+fn always(_: &crate::InputFacts<'_>) -> bool {
+    true
+}
+
+/// One `any:` or `all:` node of a guard below its top-level connectives, with two or more
+/// children (<https://github.com/beyond10x/ess/issues/501>).
+struct NestedConnective<'p> {
+    /// The node's children.
+    children: &'p [Predicate],
+    /// The whole guard with this node's connective swapped, as its connective mutant writes it.
+    swapped: Predicate,
+    /// Whether the guarded branch witnesses it (a positive `any`, a negative `all`), rather than
+    /// the default of a guarded sibling (a positive `all`, a negative `any`).
+    guarded: bool,
+}
+
+/// Every connective of `guard` the top-level rule of beyond10x/ess#155 does not reach, in
+/// pre-order: each `any:` or `all:` node with two or more children below an `any:` or a `not:`.
+///
+/// The top-level `all:` chain, flattened by [`conjuncts`], and each `any:` among its conjuncts are
+/// witnessed per child by [`boundary_inputs`] already. Polarity is positive at the root and flips
+/// under `not:`: a connective mutant of a positive `any` (or a negative `all`) makes the guard
+/// harder to satisfy, so only a row the guarded branch takes can tell it apart, and the opposite
+/// for a positive `all` (or a negative `any`), whose rows are the default's.
+fn nested_connectives(guard: &Predicate) -> Vec<NestedConnective<'_>> {
+    fn walk<'p>(
+        root: &Predicate,
+        node: &'p Predicate,
+        at: &mut Vec<usize>,
+        positive: bool,
+        top: bool,
+        found: &mut Vec<NestedConnective<'p>>,
+    ) {
+        match node {
+            Predicate::All(children) | Predicate::Any(children) => {
+                let any = matches!(node, Predicate::Any(_));
+                if !top && children.len() >= 2 {
+                    found.push(NestedConnective {
+                        children,
+                        swapped: swapped_at(root, at),
+                        guarded: any == positive,
+                    });
+                }
+                let below_top = top && positive && !any;
+                for (index, child) in children.iter().enumerate() {
+                    at.push(index);
+                    walk(root, child, at, positive, below_top, found);
+                    at.pop();
+                }
+            }
+            Predicate::Not(inner) => {
+                at.push(0);
+                walk(root, inner, at, !positive, false, found);
+                at.pop();
+            }
+            _ => {}
+        }
+    }
+    let mut found = Vec::new();
+    walk(guard, guard, &mut Vec::new(), true, true, &mut found);
+    found
+}
+
+/// `guard` with the connective at `at` — child indices from the root, `0` through a `not:` —
+/// swapped between `all:` and `any:`.
+fn swapped_at(guard: &Predicate, at: &[usize]) -> Predicate {
+    let Some((first, rest)) = at.split_first() else {
+        return match guard {
+            Predicate::All(children) => Predicate::Any(children.clone()),
+            Predicate::Any(children) => Predicate::All(children.clone()),
+            other => other.clone(),
+        };
+    };
+    match guard {
+        Predicate::All(children) | Predicate::Any(children) => {
+            let children = children
+                .iter()
+                .enumerate()
+                .map(|(index, child)| {
+                    if index == *first {
+                        swapped_at(child, rest)
+                    } else {
+                        child.clone()
+                    }
+                })
+                .collect();
+            if matches!(guard, Predicate::All(_)) {
+                Predicate::All(children)
+            } else {
+                Predicate::Any(children)
+            }
+        }
+        Predicate::Not(inner) => Predicate::Not(Box::new(swapped_at(inner, rest))),
+        other => other.clone(),
+    }
+}
+
+/// The rows each [`NestedConnective`] of `guard` witnessed on the `guarded` side is further
+/// witnessed at (<https://github.com/beyond10x/ess/issues/501>): one per child, where that child
+/// holds and its siblings fail on the guarded side, or that child alone fails on the default's,
+/// and where the guard is decided otherwise than its connective mutant decides it — the enclosing
+/// connectives let this node decide the guard. A guard with no nested connective adds nothing.
+#[allow(clippy::too_many_arguments)]
+fn nested_rows(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    guard: &Predicate,
+    guarded: bool,
+    primary: &Row,
+    rows: &mut Vec<Row>,
+    keep: &dyn Fn(Row, &mut Vec<Row>),
+) {
+    for nested in nested_connectives(guard) {
+        if nested.guarded != guarded {
+            continue;
+        }
+        let swapped = &nested.swapped;
+        let decisive = |facts: &crate::InputFacts<'_>| {
+            matches!(
+                (facts.decide(guard), facts.decide(swapped)),
+                (Decision::Satisfied, Decision::Refuted(_))
+                    | (Decision::Refuted(_), Decision::Satisfied)
+            )
+        };
+        one_per_child(
+            ir,
+            command,
+            guard,
+            nested.children,
+            guarded,
+            &decisive,
+            primary,
+            rows,
+            keep,
+        );
     }
 }
 
@@ -13183,9 +13328,12 @@ fn boundary_inputs(
                     continue;
                 };
                 one_per_child(
-                    ir, command, guard, children, true, primary, &mut rows, &keep,
+                    ir, command, guard, children, true, &always, primary, &mut rows, &keep,
                 );
             }
+            // Each child of every connective below the top-level ones that the guarded branch
+            // witnesses (https://github.com/beyond10x/ess/issues/501).
+            nested_rows(ir, command, guard, true, primary, &mut rows, &keep);
             for candidate in overlap_inputs(ir, command, outcome) {
                 keep(candidate, &mut rows);
             }
@@ -13241,7 +13389,12 @@ fn boundary_inputs(
                 // conjuncts they reach at their neighbours; a conjunct already refuted alone by the
                 // plain witness or an earlier row adds nothing.
                 let owned: Vec<Predicate> = conjuncts.iter().map(|it| (*it).clone()).collect();
-                one_per_child(ir, command, guard, &owned, false, primary, &mut rows, &keep);
+                one_per_child(
+                    ir, command, guard, &owned, false, &always, primary, &mut rows, &keep,
+                );
+                // Each child of every connective below the top-level ones that a default witnesses
+                // (https://github.com/beyond10x/ess/issues/501).
+                nested_rows(ir, command, guard, false, primary, &mut rows, &keep);
                 // A case-insensitive guard's literal in a case only Unicode folding equates with it
                 // (beyond10x/ess#140): ASCII folding refutes it, so the default is sent it, and a target
                 // that folds Unicode takes the guarded branch and fails.

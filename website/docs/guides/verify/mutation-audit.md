@@ -68,9 +68,12 @@ Where a guard mutant leaves its outcome's guard satisfied by no input, the mutan
 (`ESS-MUTATE-005`) unless a scenario still kills it: turning `any: [status == Paid, status ==
 Shipped]` into `all:` writes a rule that can never be taken, so there is nothing for a scenario to
 catch. Its entry names the guard as `unsatisfiable_guard`. The guard is decided only for
-equality, membership and truth tests of input fields against literals, by trying every
-combination of each field's values that could matter: a boolean's two, an enum's variants, and for
-any other field its literals and one value none of them equals, up to 64 combinations. An
+equality, membership and truth tests of input fields against literals, and `defined` tests of
+input fields, by trying every combination of each field's values that could matter: a boolean's
+two, an enum's variants, and for any other field its literals and one value none of them equals,
+plus absence for an `Optional` field, up to 64 combinations. A `precedence-swap` of two branches
+no input selects together, such as `defined(x)` and `not defined(x)`, is equivalent on the same
+rule. An
 ordering, a text match, a quantifier, or a guard with more combinations is not decided, and such a
 mutant is scored as before. A mutant with a changed scenario that was not scored stays
 *inconclusive*: that scenario might have killed it.

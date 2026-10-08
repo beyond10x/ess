@@ -53,6 +53,12 @@
   (https://github.com/beyond10x/ess/issues/480, https://github.com/beyond10x/ess/issues/471).
 - The text conformance report prints `<check code>: <cause>` under each scenario that ended in
   error; the JSON report is unchanged (https://github.com/beyond10x/ess/issues/471).
+- Synthesis witnesses every `any:` and `all:` of an input guard once per child at any depth, not
+  only at the top level, so the `guard-connective` mutant of an `all:` nested in an `any:` (or the
+  reverse, or one under `not:`) is killed. `ess verify conform mutate` decides `defined` tests of
+  `Optional` input fields, so a `precedence-swap` of two branches no input selects together, such
+  as `defined(x)` and `not defined(x)`, is `equivalent` rather than `survived`. Suites for guards
+  with only top-level connectives are unchanged (https://github.com/beyond10x/ess/issues/501).
 
 ## [0.56.0] — 2026-10-07
 

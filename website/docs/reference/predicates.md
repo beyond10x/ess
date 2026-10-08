@@ -1333,6 +1333,13 @@ It reports a refusal naming the scenario it could not build, and `synthesize` st
 | `starts_with`, `ends_with`, `contains` | yes. The candidates are the literal, the guard's own literals composed around the field's text, and the literal with one character changed. |
 | `all`/`any` over many fields (`all: [any: [a > 10, b > 10], c > 10]`) | within two limits. Synthesis first tries up to 64 candidates in a fixed order. If none fits, it solves the guard from its own literals, one field at a time, or one group at a time for fields compared with each other, and tries up to 64 more. A guard past either limit is refused with `ESS-SYNTH-003`. First, each goal is broken down at most 64 times, and each `any` is tried first child first, so a guard that needs many disjunctions to take a later child can be refused. Second, a field compared only with other fields gets its base value, 0 and -1, so a strict chain over four such fields is refused. Where none of those fits either, a `Decimal` is also tried at the exact midpoint of every two adjacent literals it is compared with, so `amount > 0.1 and amount < 0.2` is met by `0.15`. |
 
+Every `all`/`any` with two or more children is witnessed once per child, at any depth. An `any`
+(or an `all` under `not`) sends its branch one more input per child, where that child alone holds;
+an `all` (or an `any` under `not`) sends the default branch one more input per child, where that
+child alone fails. Below the top level, the input must also be one where that connective decides
+the whole guard. So a target that writes `or` for a nested `and`, such as
+`any: [all: [a, b], all: [a, c]]`, fails a scenario.
+
 Every input also satisfies the invariants over it. That covers the invariants of each struct the
 input holds, and those of each entity a branch copies the input into. For
 `sets: {fingerprint: input.fingerprint}` beside the entity invariant
