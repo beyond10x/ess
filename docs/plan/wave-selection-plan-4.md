@@ -45,3 +45,24 @@ Dispatch types: `aep:implementor`, then `aep:adversary`, at most two passes each
 The opening store commit (this page, the two stories moved to `active`); one commit per unit; the
 two merges into `integrate/selection-plan`; the closing store commit. Delivery to `main` is the
 wave-3 pull request or its successor, merged through the App on a green `Gate`. No tag, no release.
+
+## 5. Close — 2026-10-08
+
+| unit | unit commit | merge | adversary passes | outcome |
+|---|---|---|---|---|
+| U2 synthesis bytes pin | `e53c49a678` | `2b93026b1a` | 2 (1 blocker, 1 warning, 1 note; then nothing found) | the table pins 251 models plus `synthesize_for` per component (47 models, 59 lines); 12 in-test claim-search models written out as fixtures and checked against their builders |
+| U1 interpreter | `0465e5a0fa` | `5c539f1b33` | 2 (2 warnings each), then a correction round the coordinator verified | `responding_core` walks the plan; real-order answers equal the base (186 models / 450 commands suites, 148 models mutation audits); 136 of 140 phase-pair checks agree, the 4 others are the documented fixed points |
+
+`story:interpreter-reads-selection-plan` moved to `implemented`. `story:synthesis-reads-selection-plan` stays
+`active` for units 2-5 (waves 5 and later).
+
+For units 4 and 5 of the synthesis story: eight synthesis mutants survive every test the U2 adversary ran
+(`related_guard` `rfind` and no-related, three `row_set` order flips, `authored::not_taken`'s early return,
+`reaches_external` without held / without earlier). Whether they are equivalent is not known; a unit that
+rewrites those lines adds a test that reaches them or says why it cannot.
+
+The excluded model (`conditional-measures-generated.yaml`, about 224 s) is pinned only by the ignored
+`adversary_244b_window_free_bytes`; every synthesis unit's gate runs it once with `--ignored`.
+
+Wave 2's https://github.com/beyond10x/ess/pull/488 needed one fix after https://github.com/beyond10x/ess/pull/490
+merged: two adversary cases built `when: true` refusals, which validation now refuses; they assert the refusal.

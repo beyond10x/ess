@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-08T02:58:49Z",
+  "actor": "human:timo",
+  "artifact": "story:interpreter-reads-selection-plan",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "cargo test -p ess-conformance --locked --lib (145 passed) and 22 --test targets incl. interpreter_selection_plan and both adversary files (209 passed, 0 failed); cargo clippy --lib --tests -D warnings exit 0; task fmt-check exit 0; on unit commit 0465e5a0fa"
+  }
+}
