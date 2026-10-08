@@ -40,6 +40,7 @@ fn empty_suite_outcome(target: &str) -> (String, Option<i32>) {
         serde_json::from_str(&text).expect("the committed suite is JSON");
     suite["scenarios"] = serde_json::json!({});
 
+    fs::create_dir_all(env!("CARGO_TARGET_TMPDIR")).expect("the test target directory");
     let path = Path::new(env!("CARGO_TARGET_TMPDIR")).join("adversary-pass2-empty-suite.json");
     let mut file = fs::File::create(&path).expect("a suite file under the test target directory");
     file.write_all(format!("{suite:#}\n").as_bytes())
