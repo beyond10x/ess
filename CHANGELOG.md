@@ -72,6 +72,16 @@
   so a guard the target cannot decide is named. The library adds `Runner::command_clock`, a
   command clock that reads the runner's step instant
   (https://github.com/beyond10x/ess/issues/510).
+- `ess verify conform mutate` scores a guard mutant on a branch carrying both `when:` and
+  `when_subject:` as `equivalent` (`ESS-MUTATE-005`) where its mutated `when:` can hold only with an
+  input field absent that the `when_subject:` predicate needs to compare: such a comparison is
+  `Unknown` on every row, never `True`, so the branch is selected on no row and no scenario can
+  take it. `when: defined(expected_version)` beside `when_subject: version != input.expected_version`,
+  negated to `not defined(expected_version)`, was reported `unwitnessed` (its suite refused the
+  branch with `ESS-SYNTH-003`). The entry's `unsatisfiable_guard` names the mutated `when:` and the
+  stored predicate together. A stored predicate that can still hold, through a test reading no
+  absent input or through another disjunct, keeps its scoring, and a failed scenario still kills
+  the mutant.
 - `ess verify conform mutate` scores a `precedence-swap` of two branches that answer alike as
   `equivalent` (`ESS-MUTATE-005`), where it reported a survivor no implementation could kill:
   the same error, the same or no payload, and neither branch changing state, setting or emitting
