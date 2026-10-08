@@ -38,6 +38,7 @@ use ess_compiler::ir::{
     ResolvedInstance, ResolvedOutcome, ResolvedPayloadField, ResolvedPayloadValue,
     ResolvedRowSelection, ResolvedTypeRef, RowMember, Selected,
 };
+use ess_domain::command::OutcomeName;
 use ess_domain::entity::StateName;
 use ess_domain::name::QualifiedName;
 use ess_domain::types::Primitive;
@@ -46,6 +47,7 @@ use ess_primitives::node::Node;
 use ess_primitives::predicate::{CompareOp, Operand, Predicate, Truth};
 
 use super::identity;
+use super::precedence;
 use super::set_effects::{input_value, misses, subject_value, written_in};
 use super::{
     absorb, arrange_toward_filter, candidates, flatten, instance_name, prepare_in, settled,
@@ -295,6 +297,32 @@ fn pins_identity(ir: &EssIr, entity: &EntityHandle, filter: &Predicate) -> bool 
     !members.is_empty() && members.iter().all(|member| pinned(member))
 }
 
+/// Whether `other`, read before a branch, answers whatever the input and the rows hold, so that
+/// no witness of that branch passes it over: the default. Neither search refutes it — the input
+/// search refutes `when:` guards ([`input_for`]) and [`consistent`] row sets — and under the
+/// precedence order it is read last, so this answers only for an order the plan's test seam
+/// exchanged. Every other condition is refuted by a search, answered by the arrangement
+/// (existence, held state, an absent input), or passes the request on (`external:`, whose
+/// provider is configured not to take it).
+fn unrefutable(other: &ResolvedOutcome) -> bool {
+    match &other.condition {
+        ResolvedCondition::Otherwise => true,
+        ResolvedCondition::SubjectField { .. }
+        | ResolvedCondition::SubjectPredicate { .. }
+        | ResolvedCondition::Related { .. }
+        | ResolvedCondition::RelatedSet { .. }
+        | ResolvedCondition::When { .. }
+        | ResolvedCondition::SubjectState { .. }
+        | ResolvedCondition::StateChange { .. }
+        | ResolvedCondition::ExternalWhen { .. }
+        | ResolvedCondition::External { .. }
+        | ResolvedCondition::WrongState
+        | ResolvedCondition::UnknownInstance
+        | ResolvedCondition::InputAbsent
+        | ResolvedCondition::ExistingInstance => false,
+    }
+}
+
 /// The `when:` of `other`, where its condition is one.
 fn when(other: &ResolvedOutcome) -> Option<&Predicate> {
     match &other.condition {
@@ -303,9 +331,11 @@ fn when(other: &ResolvedOutcome) -> Option<&Predicate> {
     }
 }
 
-/// An input reaching `outcome` as far as its input decides it: its own input guard true, every
-/// input-guarded refusal false, and — for an accepting branch — every accepting `when:` branch
-/// declared before it false; for the default, every other `when:` false.
+/// An input reaching `outcome` as far as its input decides it: its own input guard true, and the
+/// `when:` of every branch the precedence plan answers before it false
+/// ([`precedence::answers_before`]). Under the precedence order those are every input-guarded
+/// refusal and, for an accepting branch, every accepting `when:` branch declared before it; for
+/// the default, every other `when:`.
 pub(super) fn input_for(
     ir: &EssIr,
     command: &ResolvedCommand,
@@ -317,24 +347,8 @@ pub(super) fn input_for(
         ResolvedCondition::RelatedSet { input, .. } => input.as_ref(),
         _ => None,
     };
-    let default = matches!(outcome.condition, ResolvedCondition::Otherwise);
-    let refute: Vec<&Predicate> = command
-        .outcomes
-        .iter()
-        .filter(|other| other.name != outcome.name)
-        .filter(|other| {
-            other.error.is_some()
-                || default
-                || (outcome.error.is_none()
-                    && command
-                        .outcomes
-                        .iter()
-                        .position(|candidate| candidate.name == other.name)
-                        < command
-                            .outcomes
-                            .iter()
-                            .position(|candidate| candidate.name == outcome.name))
-        })
+    let refute: Vec<&Predicate> = precedence::answers_before(command, outcome)
+        .into_iter()
         .filter_map(when)
         .collect();
     let mut guards: Vec<&Predicate> = own.into_iter().collect();
@@ -679,29 +693,25 @@ fn consistent(
         }
     }
     let reading = Reading::new(ir, command, supplied, rows)?;
-    let position = |outcome: &ResolvedOutcome| {
-        command
-            .outcomes
-            .iter()
-            .position(|candidate| candidate.name == outcome.name)
-            .unwrap_or(usize::MAX)
-    };
-    let expected_at = position(expected);
-    let default = matches!(expected.condition, ResolvedCondition::Otherwise);
+    // Which row-set branches answer before `expected` is the precedence plan's: under the
+    // precedence order the row-set refusals in declaration order, then the accepting branches in
+    // declaration order, then the default. Every row set is still read, in declaration order, so
+    // a row set the rows cannot decide is the error it always was.
+    let before: BTreeSet<&OutcomeName> = precedence::answers_before(command, expected)
+        .into_iter()
+        .map(|other| &other.name)
+        .collect();
     for other in &command.outcomes {
+        if before.contains(&other.name) && unrefutable(other) {
+            return Err(format!(
+                "`{}` is not decidedly passed over: it answers every request it is read for",
+                other.name
+            ));
+        }
         let Some(taken) = reading.takes(other)? else {
             continue;
         };
-        let answers_first = if other.name == expected.name {
-            continue;
-        } else if other.error.is_some() {
-            // Row-set refusals answer before every accepting branch and the default, in
-            // declaration order.
-            default || expected.error.is_none() || position(other) < expected_at
-        } else {
-            default || (expected.error.is_none() && position(other) < expected_at)
-        };
-        if answers_first && taken != Truth::False {
+        if before.contains(&other.name) && taken != Truth::False {
             return Err(format!(
                 "`{}` is not decidedly passed over: its row set is {taken:?}",
                 other.name
