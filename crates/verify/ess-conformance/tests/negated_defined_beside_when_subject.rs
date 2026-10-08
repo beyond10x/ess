@@ -291,7 +291,7 @@ fn with_two_string_guards_every_branch_beside_the_related_row_is_witnessed() {
 }
 
 /// The three string guards together: every branch beside the row is witnessed once the walk
-/// starts `scope` at a value its invariant admits (https://github.com/beyond10x/ess/issues/511).
+/// starts `scope` at a value its invariant admits (<https://github.com/beyond10x/ess/issues/511>).
 #[test]
 fn with_three_string_guards_every_branch_beside_the_related_row_is_witnessed() {
     assert_every_branch_witnessed(SIGN_IN);
