@@ -41,3 +41,22 @@ Dispatch types: `aep:implementor`, then `aep:adversary`, at most two passes each
 The opening store commit (this page); one commit per unit; the merges into
 `integrate/selection-plan`; the closing store commit. Delivery to `main` is the PR that carries waves
 3 and 4, or its successor, merged through the App on a green `Gate`. No tag, no release.
+
+## 5. Close — 2026-10-08
+
+| unit | unit commit | merge | adversary passes | outcome |
+|---|---|---|---|---|
+| U2 the "before" query | `7c0e3221d0` | `3f0e8e1539` | 2 (1 blocker, 1 warning; then the coordinator ran the pass-2 cases under the disk floor) | one query in `synthesize/precedence.rs`; the synthesis helpers and `authored::not_taken` filter it; no synthesized byte moves; two authored acts the interpreter could never pass are now refused (CHANGELOG) |
+| U3 `subject_fact.rs` | `109682195b` | `32296a1e92` | 1 (two notes outside the file) | `selects`, `first_read` and `leaves_external` read the plan; no byte moves |
+| U5 `row_set.rs` | `2f30e603c1` | `e5c06df154` | 1, then a correction the coordinator verified | `input_for` and `consistent` read the plan; the three surviving `row_set` mutants are caught |
+| U4 `related_guard.rs` | `c5bde8ef59` | `13f688be95` | 1, then a correction the coordinator verified | `selects`, `orders_present_related_refusal`, `leaves_external` read the plan in the model's format; the two surviving mutants are caught; one external witness can change (CHANGELOG) |
+
+The open adversary cases are committed as `#[ignore]` tests naming their owner:
+`adversary_selection_plan_w5_u3_pass1_open.rs` (3, `story:existence-family-sends-read-selection-plan`) and
+`adversary_selection_plan_w5_u4_pass1_open.rs` (6: 4 pre-existing, `story:related-guard-wrong-state-beside-external`;
+2 test-seam only). The coordinator ran U4's six against the base `related_guard.rs`: all six fail there too.
+
+Not run under the disk rule (DEC-20261008-29, `/` under 40 G): the adversaries' mutant and base
+scratch builds for U3 and U5. The implementors' mutant runs in their own trees stand.
+
+`story:synthesis-reads-selection-plan`: every helper Acceptance bullet 2 names now reads the plan.

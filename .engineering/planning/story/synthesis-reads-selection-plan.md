@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:synthesis-reads-selection-plan
 kind: story
-status: active
+status: implemented
 title: Synthesis asks the selection plan which branches answer before a witness
 relations:
 - decomposes: epic:one-selection-plan
@@ -27,10 +27,11 @@ scope:
   path: crates/verify/ess-conformance/tests/external_beside_held_guard.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/fixtures/external-beside-held-guard-base.tsv
-revision: 9
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-07T23:43:18Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":3}}}
 - {from: "proposed", to: "active", at: "2026-10-07T23:43:19Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":3}}}
+- {from: "active", to: "implemented", at: "2026-10-08T06:14:18Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"test_result":2,"review_outcome":10}}}
 ---
 # Story: Synthesis asks the selection plan which branches answer before a witness
 
