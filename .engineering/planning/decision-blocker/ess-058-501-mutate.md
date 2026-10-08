@@ -2,11 +2,13 @@
 format: aep.planning-md/3
 id: decision-blocker:ess-058-501-mutate
 kind: decision-blocker
-status: open
+status: cleared
 title: 'Does #501 touch mutate.rs before the other session''s next synthesis wave?'
 relations:
 - blocks: story:witness-nested-connectives-and-decide-optional-presence-equivalence
-revision: 3
+revision: 4
+transitions:
+- {from: "open", to: "cleared", at: "2026-10-08T05:33:58Z", actor: "human:timo", revision: 4}
 ---
 ## Question
 
