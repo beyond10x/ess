@@ -1,0 +1,31 @@
+format: ess/23
+system: catalog
+version: v1
+domain: catalog.items
+
+components:
+  - component: items-server
+    owns:
+      domains: [catalog.items]
+    accepts:
+      commands: [catalog.items.Ship]
+    reached_by: network
+
+errors:
+  - name: catalog.items.NeedsFreight
+
+commands:
+  - name: catalog.items.Ship
+    input:
+      - {name: quantity, type: Integer}
+      - {name: express, type: Boolean}
+      - {name: fragile, type: Boolean}
+    outcomes:
+      - name: freight
+        when:
+          any:
+            - all: ["quantity > 10", "express == true"]
+            - all: ["quantity > 50", "fragile == true"]
+        error: catalog.items.NeedsFreight
+      - name: shipped
+        accepts: nothing

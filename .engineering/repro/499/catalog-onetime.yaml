@@ -1,0 +1,29 @@
+format: ess/23
+system: catalog
+version: v1
+domain: catalog.items
+
+components:
+  - component: catalog-service
+    owns:
+      domains: [catalog.items]
+    accepts:
+      commands: [catalog.items.Register]
+    reached_by: network
+
+types:
+  - name: catalog.items.Code
+    kind: newtype
+    of: String
+    alphabet: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-'
+
+commands:
+  - name: catalog.items.Register
+    input:
+      - {name: label, type: String}
+    response:
+      - {name: code, type: catalog.items.Code}
+    outcomes:
+      - name: registered
+        returns: true
+        one_time_response: [code]

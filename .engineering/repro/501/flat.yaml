@@ -1,0 +1,28 @@
+format: ess/23
+system: catalog
+version: v1
+domain: catalog.orders
+
+components:
+  - component: orders-server
+    owns:
+      domains: [catalog.orders]
+    accepts:
+      commands: [catalog.orders.Place]
+    reached_by: network
+
+errors:
+  - name: catalog.orders.Conflict
+
+commands:
+  - name: catalog.orders.Place
+    input:
+      - {name: item_code, type: Optional<String>}
+      - {name: item_sku, type: Optional<String>}
+    outcomes:
+      - name: conflict
+        when:
+          all: [{item_code: {defined: true}}, {item_sku: {defined: true}}]
+        error: catalog.orders.Conflict
+      - name: placed
+        accepts: nothing

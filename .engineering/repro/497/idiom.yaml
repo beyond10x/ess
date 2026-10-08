@@ -1,0 +1,90 @@
+format: ess/23
+system: demo
+version: v1
+domain: demo.orders
+types:
+  - {name: demo.orders.QuoteId, kind: newtype, of: Uuid}
+  - {name: demo.orders.OrderId, kind: newtype, of: Uuid}
+  - {name: demo.orders.Buyer, kind: newtype, of: String}
+entities:
+  - name: demo.orders.Quote
+    identity: {name: quote_id, type: demo.orders.QuoteId}
+    fields:
+      - {name: buyer, type: demo.orders.Buyer}
+    lifecycle:
+      initial: Open
+      states: [Open, Accepted]
+      terminal: [Accepted]
+      transitions:
+        - {name: accept, from: [Open], to: Accepted}
+  - name: demo.orders.Order
+    identity: {name: order_id, type: demo.orders.OrderId}
+    fields:
+      - {name: buyer, type: demo.orders.Buyer}
+    lifecycle:
+      initial: Placed
+      states: [Placed]
+      terminal: [Placed]
+events:
+  - name: demo.orders.QuoteOffered
+    fields:
+      - {name: quote_id, type: demo.orders.QuoteId}
+  - name: demo.orders.OrderPlaced
+    fields:
+      - {name: quote_id, type: demo.orders.QuoteId}
+      - {name: order_id, type: demo.orders.OrderId}
+      - {name: buyer, type: demo.orders.Buyer}
+  - name: demo.orders.OrderRecorded
+    fields:
+      - {name: order_id, type: demo.orders.OrderId}
+errors:
+  - name: demo.orders.QuoteNotOpen
+    summary: The quote was already accepted.
+    fields: []
+actors:
+  - name: demo.orders.Clerk
+    may: [demo.orders.OfferQuote, demo.orders.PlaceOrder]
+commands:
+  - name: demo.orders.OfferQuote
+    input:
+      - {name: buyer, type: demo.orders.Buyer}
+    outcomes:
+      - name: offered
+        creates: demo.orders.Quote
+        instance: quote_id
+        emits: [demo.orders.QuoteOffered]
+        payload:
+          demo.orders.QuoteOffered: {quote_id: {generated: true}}
+        sets: {buyer: input.buyer}
+  - name: demo.orders.PlaceOrder
+    input:
+      - {name: quote_id, type: demo.orders.QuoteId}
+    outcomes:
+      - name: placed
+        moves: demo.orders.Quote.accept
+        instance: quote_id
+        emits: [demo.orders.OrderPlaced]
+        payload:
+          demo.orders.OrderPlaced: {quote_id: input.quote_id, order_id: {generated: true}, buyer: {subject: buyer}}
+      - name: not-open
+        wrong_state: true
+        error: demo.orders.QuoteNotOpen
+  - name: demo.orders.RecordOrder
+    input:
+      - {name: order_id, type: demo.orders.OrderId}
+      - {name: buyer, type: demo.orders.Buyer}
+    outcomes:
+      - name: recorded
+        creates: demo.orders.Order
+        instance: order_id
+        emits: [demo.orders.OrderRecorded]
+        payload:
+          demo.orders.OrderRecorded: {order_id: input.order_id}
+        sets: {buyer: input.buyer}
+bindings:
+  - id: record-order-on-placed
+    when: {event: demo.orders.OrderPlaced}
+    invoke: {command: demo.orders.RecordOrder}
+    mapping: {order_id: event.order_id, buyer: event.buyer}
+    delivery: at_least_once
+    on_failure: retry
