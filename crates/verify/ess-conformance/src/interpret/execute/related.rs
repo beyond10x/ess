@@ -3,8 +3,8 @@
 use std::collections::BTreeMap;
 
 use super::{
-    subject::Held, EssIr, ResolvedCommand, ResolvedCondition, ResolvedOutcome, ResolvedRelatedTest,
-    ResolvedRelatedVia, ResolvedTypeRef, Row, State, Undetermined, Value,
+    subject::Held, EssIr, Phase, PrecedencePlan, ResolvedCommand, ResolvedCondition,
+    ResolvedOutcome, ResolvedRelatedVia, ResolvedTypeRef, Row, State, Undetermined, Value,
 };
 use ess_compiler::ir::EntityHandle;
 use ess_primitives::node::Node;
@@ -33,30 +33,28 @@ pub(super) fn stored(spec: &ResolvedCommand) -> Option<(&str, &EntityHandle)> {
 }
 
 /// One branch per related row the command reads, in the order its rows are read when looking for a
-/// missing one: each row's `exists: false` branch in declaration order, then the first branch of
-/// any row declaring none (beyond10x/ess#283). One branch on a command reading one row.
-pub(super) fn reads_in_order(spec: &ResolvedCommand) -> Vec<&ResolvedOutcome> {
-    fn related(outcome: &ResolvedOutcome) -> Option<(&str, &ResolvedRelatedTest)> {
+/// missing one: each row's `exists: false` branch in the order the plan's [`Phase::RelatedRow`]
+/// reads them, then the first declared branch of any row declaring none (beyond10x/ess#283). One
+/// branch on a command reading one row.
+pub(super) fn reads_in_order<'c>(
+    plan: &PrecedencePlan<'c>,
+    spec: &'c ResolvedCommand,
+) -> Vec<&'c ResolvedOutcome> {
+    fn row(outcome: &ResolvedOutcome) -> Option<&str> {
         match &outcome.condition {
-            ResolvedCondition::Related { via, test, .. } => Some((via.field(), test)),
+            ResolvedCondition::Related { via, .. } => Some(via.field()),
             _ => None,
         }
     }
     let mut ordered: Vec<&ResolvedOutcome> = Vec::new();
     let mut seen: Vec<&str> = Vec::new();
-    for outcome in spec
-        .outcomes
+    for outcome in plan
+        .branches(Phase::RelatedRow)
         .iter()
-        .filter(|outcome| matches!(related(outcome), Some((_, ResolvedRelatedTest::Absent))))
+        .copied()
+        .chain(&spec.outcomes)
     {
-        let (field, _) = related(outcome).expect("a related guard");
-        if !seen.contains(&field) {
-            seen.push(field);
-            ordered.push(outcome);
-        }
-    }
-    for outcome in &spec.outcomes {
-        if let Some((field, _)) = related(outcome) {
+        if let Some(field) = row(outcome) {
             if !seen.contains(&field) {
                 seen.push(field);
                 ordered.push(outcome);
@@ -64,24 +62,6 @@ pub(super) fn reads_in_order(spec: &ResolvedCommand) -> Vec<&ResolvedOutcome> {
         }
     }
     ordered
-}
-
-/// Whether the command reads more than one related row through its input (ess/22,
-/// beyond10x/ess#283): its present-related predicate refusals then answer in declaration order,
-/// after the addressed row's existence and held state and before every accepting branch.
-pub(super) fn several(spec: &ResolvedCommand) -> bool {
-    let mut fields: Vec<&str> = Vec::new();
-    for outcome in &spec.outcomes {
-        if let ResolvedCondition::Related { via, .. } = &outcome.condition {
-            if !matches!(via, ResolvedRelatedVia::Input { .. }) {
-                return false;
-            }
-            if !fields.contains(&via.field()) {
-                fields.push(via.field());
-            }
-        }
-    }
-    fields.len() > 1
 }
 
 /// What a stored reference names, read from the addressed subject as it was before the branch.
