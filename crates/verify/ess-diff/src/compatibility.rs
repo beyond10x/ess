@@ -45,6 +45,7 @@
 //! | a unit variant gains, or loses, an `Optional<…>` payload (ess/22) | decided as `expanded`, or `narrowed`: the tag alone is a value of both |
 //! | a type added or removed | compatible: every use of it is its own change |
 //! | an actor gains a grant, or any construct is added | compatible |
+//! | a domain is removed (`ess-diff/15`) | breaking for callers and readers; compatible for history, which each removed entity and event answers for |
 //! | an actor loses a grant, an actor or a command is removed | breaking for callers |
 //! | a refusal gains or loses its compensating change (`compensates: true`, ess/22) | breaking for callers and readers; compatible for history |
 //! | a view is removed | breaking for readers |
@@ -67,9 +68,9 @@ use ess_primitives::error::{ValidationCode, ValidationError, ValidationErrors};
 use ess_primitives::evidence::SpecDigest;
 
 use crate::change::{
-    ActorChange, BindingChange, ChangeId, CommandChange, ComponentChange, EntityChange,
-    ErrorChange, EventChange, SemanticChange, SemanticRelation, SystemChange, TypeChange,
-    ViewChange,
+    ActorChange, BindingChange, ChangeId, CommandChange, ComponentChange, DomainChange,
+    EntityChange, ErrorChange, EventChange, SemanticChange, SemanticRelation, SystemChange,
+    TypeChange, ViewChange,
 };
 use crate::delta::EssDelta;
 use crate::graph::{DependencyRelation, SemanticDependencyGraph};
@@ -355,6 +356,13 @@ fn dimensions(change: &SemanticChange, uses: &BTreeSet<TypeUse>) -> Dimensions {
     }
     match change {
         SemanticChange::System { .. } | SemanticChange::Binding { .. } => [U, U, U],
+        // A domain arriving adds a namespace and breaks nobody. One going away takes its wire name
+        // from every surface a caller or a reader addresses through it; what it stored is named by
+        // each removed entity and event, each breaking history on its own (beyond10x/ess#469).
+        SemanticChange::Domain { changed, .. } => match changed {
+            DomainChange::Added => [C, C, C],
+            DomainChange::Removed => [B, B, C],
+        },
         SemanticChange::Type { changed, .. } => type_dimensions(changed, change.relation(), uses),
         SemanticChange::Actor { changed, .. } => match changed {
             ActorChange::Added | ActorChange::GrantAdded { .. } => [C, C, C],
@@ -455,6 +463,7 @@ fn unit_variant_dimensions(changed: &TypeChange) -> Option<Dimensions> {
 /// depends on.
 fn documentation_only(change: &SemanticChange) -> bool {
     match change {
+        SemanticChange::Domain { .. } => false,
         SemanticChange::System { changed, .. } => {
             matches!(changed, SystemChange::SummaryChanged { .. })
         }

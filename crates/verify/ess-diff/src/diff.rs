@@ -1,4 +1,4 @@
-//! The comparison itself: ten walks over two IRs, and one refusal.
+//! The comparison itself: eleven walks over two IRs, and one refusal.
 //!
 //! # Identity, and why nothing here infers a rename
 //!
@@ -46,8 +46,8 @@ use ess_domain::name::{Naming, QualifiedName};
 use ess_domain::types::EnumVariant;
 
 use crate::change::{
-    ActorChange, BindingChange, CommandChange, ComponentChange, EntityChange, ErrorChange,
-    EventChange, SemanticChange, SystemChange, TypeChange, ViewChange,
+    ActorChange, BindingChange, CommandChange, ComponentChange, DomainChange, EntityChange,
+    ErrorChange, EventChange, SemanticChange, SystemChange, TypeChange, ViewChange,
 };
 use crate::delta::{EssDelta, EssRevisionRef};
 
@@ -110,6 +110,7 @@ pub fn diff(before: &EssIr, after: &EssIr) -> Result<EssDelta, DiffRefusal> {
 
     let mut changes = Vec::new();
     system_changes(before, after, &mut changes);
+    domain_changes(before, after, &mut changes);
     type_changes(before, after, &mut changes);
     entity_changes(before, after, &mut changes);
     command_changes(before, after, &mut changes);
@@ -132,10 +133,10 @@ pub fn diff(before: &EssIr, after: &EssIr) -> Result<EssDelta, DiffRefusal> {
         EssRevisionRef::of(after),
         changes,
     );
-    // A change only `ess-diff/14` can carry (a refusal-selected policy or a binding's payload
-    // condition, ess/22) makes the delta `/14`, and `/14` is classified by definition, so such a
-    // delta carries its classification even when nobody asked; every other delta keeps its format
-    // and bytes.
+    // A change only `ess-diff/14` or later can carry (a refusal-selected policy or a binding's
+    // payload condition, ess/22; a domain added or removed, `/15`) makes the delta `/14` or later,
+    // and those are classified by definition, so such a delta carries its classification even when
+    // nobody asked; every other delta keeps its format and bytes.
     if delta.format.major() >= crate::compatibility::CLASSIFIED_DELTA_FORMAT {
         return Ok(delta.classify(&crate::compatibility::UseIndex::new(before, after)));
     }
@@ -318,7 +319,7 @@ fn field_deltas(
     }
 }
 
-// ---- the ten families ------------------------------------------------------------------------
+// ---- the eleven families ---------------------------------------------------------------------
 
 /// The specification itself: version, naming, summary.
 fn system_changes(before: &EssIr, after: &EssIr, changes: &mut Vec<SemanticChange>) {
@@ -343,6 +344,26 @@ fn system_changes(before: &EssIr, after: &EssIr, changes: &mut Vec<SemanticChang
         push(SystemChange::SummaryChanged {
             before: before.summary().clone(),
             after: after.summary().clone(),
+        });
+    }
+}
+
+/// Every domain one revision declares and the other does not (beyond10x/ess#469).
+///
+/// Only presence is compared. A domain's member sets follow each construct's own `domain`, which
+/// that construct's family compares, and the naming of a domain both sides declare is still read
+/// by the residual. The `domains:` list's order is not in the IR, so reordering it is no change.
+fn domain_changes(before: &EssIr, after: &EssIr, changes: &mut Vec<SemanticChange>) {
+    for name in keys(before.domains(), after.domains()) {
+        let moved = match (before.domains().get(name), after.domains().get(name)) {
+            (None, Some(_)) => DomainChange::Added,
+            (Some(_), None) => DomainChange::Removed,
+            (Some(_), Some(_)) => continue,
+            (None, None) => unreachable!("a key came from one of the two maps"),
+        };
+        changes.push(SemanticChange::Domain {
+            subject: DomainRef::new(name.clone()),
+            changed: moved,
         });
     }
 }
@@ -2225,11 +2246,12 @@ const RESIDUAL_FAMILIES: [&str; 9] = [
 /// Only declarations both revisions carry are compared. A declaration in one revision only is
 /// already `<family>/<name>/added|removed`, and that change stands for all of its content; leaving
 /// it in the residual raised `unclassified-changed` for whatever the typed comparisons of a
-/// two-sided declaration would have named (beyond10x/ess#276).
+/// two-sided declaration would have named (beyond10x/ess#276). A domain in one revision only is
+/// `domain/<name>/added|removed` on the same terms (beyond10x/ess#469).
 fn residual_differs(before: &EssIr, after: &EssIr) -> bool {
     let mut was = serde_json::to_value(before).expect("the canonical IR serializes");
     let mut is = serde_json::to_value(after).expect("the canonical IR serializes");
-    for family in RESIDUAL_FAMILIES {
+    for family in RESIDUAL_FAMILIES.into_iter().chain(["domains"]) {
         let shared: BTreeSet<String> = match (declarations(&was, family), declarations(&is, family))
         {
             (Some(old), Some(new)) => old
