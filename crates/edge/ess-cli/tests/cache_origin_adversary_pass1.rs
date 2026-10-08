@@ -104,7 +104,12 @@ fn clients() -> &'static Path {
     static CLIENTS: OnceLock<PathBuf> = OnceLock::new();
     CLIENTS
         .get_or_init(|| {
-            let f = Fixture::new();
+            // Cached for the whole process, so no drop guard may own it: it lives under the
+            // target directory, which `cargo clean` removes.
+            let dir = Path::new(env!("CARGO_TARGET_TMPDIR"))
+                .join(format!("oci-attack-clients-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
             let program = compiled_fixture::compiled(
                 &Path::new(env!("CARGO_MANIFEST_DIR"))
                     .join("tests/support/cache_origin_attack_client.rs"),
@@ -112,13 +117,13 @@ fn clients() -> &'static Path {
                 &["--edition=2021", "-C", "debuginfo=0"],
             );
             std::fs::write(
-                f.0.join("client-build.program"),
+                dir.join("client-build.program"),
                 format!("{}\n", program.display()),
             )
             .unwrap();
-            executable::install_copy(&program, &f.0.join("oras")).unwrap();
-            executable::install_copy(&program, &f.0.join("helm")).unwrap();
-            f.0
+            executable::install_copy(&program, &dir.join("oras")).unwrap();
+            executable::install_copy(&program, &dir.join("helm")).unwrap();
+            dir
         })
         .as_path()
 }

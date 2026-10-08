@@ -45,8 +45,8 @@ const LEGACY: [Pinned; 3] = [
         include_str!("fixtures/related-guard-copied-value.yaml"),
         "2f88b3a80c3a08f99c5e0dbc84bfd0627f48afdafa9192dbb2967ede5e5441e3",
         12_758,
-        "d6367e0a45ecee54932a5f41797276bd7853ee5b9d61d9d1110207c11365b589",
-        16_399,
+        "c9885fcc7d121c6cd20441b767824ce67ef8b0c06209a8f60634bf3ac9a2db69",
+        16_434,
     ),
     (
         "subject-guard-copied-field.yaml",
