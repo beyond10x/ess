@@ -62,6 +62,11 @@
 
 ### Fixed
 
+- The doc comment on the generated Rust `Generated<P>` bundle names `TryContext` and its legacy
+  `Context` blanket adapter only where the same synthesis emits them. Where no generated behaviour
+  asks the context anything (for example when every command with an `external:` outcome is owed),
+  it named two traits the crate does not have. Modules that emit them keep their bytes; no type,
+  trait or signature changes.
 - The Go and TypeScript runners that `ess verify conform synthesize --target go|typescript`
   generates admit a suite whose shapes hold `json`. A model with a `Json` field synthesized such a
   suite, and both runners refused it at admission with `suite admission: <Command>/outcome/<name>:
