@@ -16,8 +16,23 @@
   passes `--fail-on breaking-or-unknown`, and `ess verify impact` reaches only the domain's own
   constructs. A delta carrying a domain change is written as `ess-diff/15`; earlier formats refuse
   it (https://github.com/beyond10x/ess/issues/469).
+- `ess-conformance/46` (`/47` with coverage): a command response that reaches a `String` newtype
+  with `alphabet:`, `prefix:` or value invariants keeps its success scenarios, where synthesis
+  refused them as `ESS-SYNTH-001`. The scenarios carry the type's rules as constraints, and the
+  native, Go and TypeScript runners fail a returned value that breaks one (`ESS-CF-PAYLOAD`). A
+  record invariant or a reading on a response type stays refused by name. Suites without a
+  constrained response keep their bytes and format
+  (https://github.com/beyond10x/ess/issues/499).
 
 ### Changed
+
+- `ess-diff/16`: `ess verify diff` rates a change that moves a command input's wire form between a
+  value, an object and an array as breaking for callers, where it rated it unknown and
+  `--fail-on breaking` passed it. That covers an input field retyped (`String` to a record, text to
+  `List` or `Map`, and back) and a same-name type redefined so a use in an input moves (a `String`
+  newtype redefined as a struct, a struct member retyped to a list). The delta records the shapes
+  before and after; earlier formats refuse it. A move within one wire form, `Json` on either side,
+  and a type with no input use keep their answer, format and bytes.
 
 - `ess specify validate` refuses a domain, command or view wire name that contains `/`, or is `.`
   or `..`, as `path_segment_wire_name` (`ESS-DOMAIN-012`, `ESS-COMMAND-012`, `ESS-VIEW-012`), naming

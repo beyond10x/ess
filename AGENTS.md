@@ -119,6 +119,20 @@ For a pull request, CI owns the full gate. Before pushing, run only the crates t
 changed — then push and read the lanes. Run the whole `task check` locally only for a release tag
 (below) or to reproduce a lane that failed in CI.
 
+**The package-gate subset.** The crates to gate are named by the change, not guessed:
+
+| the change touches | gate these crates (`clippy -p` and `test -p`) |
+|---|---|
+| a file under `crates/<area>/<crate>/` | that crate |
+| `ess-domain`, `ess-compiler` or `ess-primitives` | also `ess-cli`, whose integration tests pin validation and compile output |
+| synthesis, mutation or interpretation in `ess-conformance` | also `ess-cli`; run `ess-conformance` one `--test` at a time, its full test build is the largest in the workspace |
+| a `ValidationCode`, a diagnostic, a format version, `CHANGELOG.md`, `website/` or `docs/` | also `task test-xtask` (see the pins paragraph below) |
+| `RawSpecFile` | also `cargo xtask schema`, then `task projection-check` |
+| a workflow, `Taskfile.yml` or a public API | also `task ci-lint` |
+
+Every push also runs `task fmt-check`. A crate the change does not touch is not gated locally; CI
+covers it.
+
 The adopter-facing Docusaurus source lives under `website/`; repository-root `docs/` remains the
 engineering record and is never published directly. A documentation, release, or validation
 workflow change must additionally pass:
