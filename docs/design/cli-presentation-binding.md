@@ -1,4 +1,4 @@
-# CLI presentation binding (`ess-cli/1`)
+# CLI presentation binding (`ess-cli/1`, `ess-cli/2`)
 
 This additive document presents typed callable interfaces as a binary. It does not
 change `ess/1`, component ownership, legacy CLI synthesis, or composition bytes.
@@ -7,7 +7,9 @@ action is presentation metadata with an explicit owner and action, not an entity
 
 ## Closed input and complete example
 
-All objects reject unknown fields, and `format` must be exactly `ess-cli/1`.
+All objects reject unknown fields, and `format` must be exactly `ess-cli/1` or
+`ess-cli/2`. The two differ only in which globals a binding must declare
+([Optional globals](#optional-globals-ess-cli2)).
 The following two files form a complete model and binding. The model needs no
 component or invented lifecycle because it declares only value types.
 
@@ -65,13 +67,56 @@ commands:
 
 `globals` is required and declares the long flag names for process context. Config
 and state are optional paths; output accepts `human` (default) or `json`. They are
-global even after a subcommand and never enter the command payload. Long names,
+global even after a subcommand and never enter the command payload. A global's
+refusal names it (`globals.config: …`). Long names,
 binary names and command path tokens use lowercase ASCII words separated by `-`.
 `help`, `version`, and `completions` are reserved command names; `help` and `version`
 are reserved flags. Paths have one or two tokens. Aliases are complete explicit
 paths, not protocol aliases or automatically synthesized spelling variants.
 The binary name also refuses Cargo's reserved output-directory names: `build`,
 `deps`, `examples` and `incremental`, before any package is projected.
+
+### Optional globals (`ess-cli/2`)
+
+`ess-cli/1` requires all three globals, so a CLI with only a state-directory flag
+had to declare two flags it does not have (beyond10x/ess#481). `ess-cli/2` is
+`ess-cli/1` with `config` and `output` optional; `state` stays required. A key
+becoming optional changes the persisted envelope, so it is a new format pair rather
+than a relaxed `/1`: an `ess-cli/2` binding compiles to `ess-cli-plan/2`, and an
+`ess-cli/1` binding still compiles to exactly the `ess-cli-plan/1` bytes it did
+before `/2` existed.
+
+```yaml
+format: ess-cli/2
+binary: demo
+about: A CLI with one global flag
+globals:
+  state: state-dir
+callables:
+  show:
+    target: {kind: local, owner: demo.cli, action: show}
+    input: null
+    result: demo.Stored
+commands:
+  - path: [show]
+    callable: show
+    about: Show
+    arguments: []
+```
+
+Omitting a key is the one spelling of absence. In either version, `null`, `~`, a
+key with no value and `""` are refused naming the global, never read as a flag
+called `null`; a quoted `"null"` is a string and names the flag `--null`. A plan
+omits an undeclared global's key and never writes `null` for it, so a `/1` plan
+reader refuses an `ess-cli-plan/2` plan that omits one, naming the missing field.
+
+An omitted global is no flag at all. The generated parser does not define it, its
+help and completions do not list it, and a command may use its name for its own
+option. Without `config`, `Context::config` is always `None`. Without `output`,
+the CLI writes JSON only: successes, failures and parser refusals take the JSON
+shapes below, `Context::output` is always `OutputMode::Json`, and the generated
+`README.md` says so. Passing `--output` to such a CLI is an unknown argument
+(`cli_parse`, exit 2), answered in JSON.
 
 Each callable explicitly declares `input`: a reference to a declared struct, or
 `null` for an inputless call. Omission is refused. Inputless calls receive `{}` at

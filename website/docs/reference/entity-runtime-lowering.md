@@ -7,7 +7,7 @@ description: Which ESS constructs a component lowered to Entity Runtime may use,
 
 [ess-lowering-begin]: # (generated from ess_entity_runtime::subset; regenerate with ESS_LOWERING_REFERENCE=write cargo test -p ess-entity-runtime --test lowerable_subset)
 
-`ess-entity-runtime` lowers one component of a compiled specification to Entity Runtime definitions and the binding obligations its host fills. It targets entity-core revision `4746bd7cc37d27c7cc5815c44a62a96f3ddc1f44`. `lower_component` takes the compiled model, the component's name and the definition versions, and returns either the lowered component or every refusal at once: each diagnostic carries its code, the path of the refused construct in the model, the construct's name as the tables below write it, and a sentence. A refused construct does not hide the others: a command refused as a whole still has each of its branches checked, and an entity with no definition version still has its fields and rules checked. The exception is a command with no entity subject (`StatelessCommandUnsupported`): its branches have no entity to be lowered against, so only its input, its response and what its guards read are checked.
+`ess-entity-runtime` lowers one component of a compiled specification to Entity Runtime definitions and the binding obligations its host fills. It targets entity-core revision `a6dad5c075d4ab781034ed95bf220bd4d2911871`. `lower_component` takes the compiled model, the component's name and the definition versions, and returns either the lowered component or every refusal at once: each diagnostic carries its code, the path of the refused construct in the model, the construct's name as the tables below write it, and a sentence. A refused construct does not hide the others: a command refused as a whole still has each of its branches checked, and an entity with no definition version still has its fields and rules checked. The exception is a command with no entity subject (`StatelessCommandUnsupported`): its branches have no entity to be lowered against, so only its input, its response and what its guards read are checked.
 
 Nothing is lowered approximately. A construct that has no exact Entity Runtime form is refused under its own code, so a component that lowers means what its specification says.
 
@@ -19,6 +19,8 @@ Nothing is lowered approximately. A construct that has no exact Entity Runtime f
 | primitive, `List`, `Map`, struct, enum, union and `Json` types; `Optional` members | `FieldDefinition`s; an `Optional` member is not `required` |
 | entity and type `invariants:` | named entity rules, one per invariant and per layer of a newtype chain |
 | `prefix:` on a newtype | a `starts_with` rule |
+| `alphabet:` | `alphabet` on each string field, argument and member it reaches; a newtype chain's alphabets intersected, in the outer one's order |
+| `.count` of a text | `<path>.count` on a declared `string`, its length in Unicode scalar values |
 | `relations:` | `RelationDefinition`s, with existence, cardinality and ownership binding obligations |
 | `creates:` | the entity's `create` entrypoint, its identity observed in an emitted event |
 | `updates:` and `moves:` | a named operation; an unmapped field is a host fulfillment obligation |
@@ -46,8 +48,10 @@ The last column says what lowering the construct would need. *entity-core* means
 | a branch chosen by existence (`unknown_instance:` on a creation, `existing_instance:`) | `ExistenceSelectionUnsupported` | Host value: the host's own exists answer, selecting the declared branch |
 | `{increment: …}` | `ValueExpressionUnsupported` | entity-core: arithmetic over a stored value |
 | `{cleared: true}` outside a creation's `sets:` | `ClearedValueUnsupported` | entity-core: a removal a definition states; `Remove` is a host-selected action only |
-| `alphabet:` | `AlphabetUnsupported` | entity-core: a condition over the characters of a text |
-| `.count` of a text | `TextLengthUnsupported` | entity-core: the length of a text; `count` reads arrays and maps only |
+| `alphabet:` on a response field | `AlphabetUnsupported` | entity-core: a response checked against its declared schema; an alphabet there is admitted and not enforced |
+| a text literal written outside its field's `alphabet:` | `AlphabetUnsupported` | No form: ESS admits the literal and entity-core refuses the row it writes on every request; the specification has to hold the literal to the alphabet |
+| nested `alphabet:`s that share no character | `AlphabetUnsupported` | entity-core: an alphabet with no characters, which it refuses at registration; only the empty text is a value |
+| `.count` of a text through a quantifier element or a union payload | `TextLengthUnsupported` | entity-core: a text's length read through a quantifier element or a union payload, which its run-time walk reads without the field's declaration |
 | an `Optional` value written by an update | `OptionalBoundOutputUnsupported` | entity-core: `PresentArgument` on an operation write; it covers creation, event and response members only |
 | a command with no entity subject | `StatelessCommandUnsupported` | No form: entity-core decides over one entity instance and has no stateless decision |
 | one command over several entities | `CommandSpansEntities` | No form: an operation belongs to one entity definition |
@@ -107,8 +111,8 @@ A harness matches on the code. The construct is the one a diagnostic under that 
 | `SilentPreserveUnsupported` | `preserves:` with no response | An accepting outcome keeps its row and has nothing to show for it. |
 | `TargetDefinitionRefused` | Entity Runtime definition validation | Entity Runtime refused a lowered definition, or two lowerings of one input differ. |
 | `TextOrderingUnsupported` | `<`, `<=`, `>`, `>=` over text | A guard orders text. |
-| `AlphabetUnsupported` | `alphabet:` | A newtype a lowered field reaches declares an alphabet. |
-| `TextLengthUnsupported` | `.count` of a text | A predicate reads the length of a text. |
+| `AlphabetUnsupported` | `alphabet:` on a response field | A response field's type declares an alphabet, a literal written into a field holds a character outside its alphabet, or nested alphabets share no character. |
+| `TextLengthUnsupported` | `.count` of a text through a quantifier element or a union payload | A predicate reads the length of a text through a quantifier element or a union payload. |
 | `ValueExpressionUnsupported` | a value expression | A `sets:` or `payload:` source reads the subject or another row, increments, falls back, or nests. |
 | `CaseFoldUnsupported` | `equals_ignore_case`, `in_ignore_case` | A guard compares text without ASCII case. |
 | `OutcomeShapeUnsupported` | an ess/15 outcome shape | An outcome is an `unknown_instance:` refusal, deletes, creates `into:` a state, or accepts nothing. |

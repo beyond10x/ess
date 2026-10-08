@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-07T03:08:18Z",
+  "actor": "human:timo",
+  "artifact": "story:entity-runtime-lowers-alphabet-and-text-count",
+  "kind": "story",
+  "revision": 14,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-entity-runtime --locked --no-fail-fast: red 11 of 136 with the new cases on base code (before the fix), then passed 136; after adversary pass 1 red 3 of 143 at 1510faa858, then passed 145 failed 0 at fd4879a94d",
+    "reference": "unit/ess-wave-20261007b-u1-alphabet-count fd4879a94d"
+  }
+}

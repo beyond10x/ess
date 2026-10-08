@@ -1,8 +1,9 @@
 //! A committed output root regenerates in another checkout (beyond10x/ess#306).
 //!
 //! Each case generates into one directory, copies the whole tree, `.ess-output` included, to a
-//! second directory, and generates there: a settled (Idle) state is bound to its new location,
-//! while a state holding an interrupted transaction keeps refusing and names where it was recorded.
+//! second directory, and generates there: a settled (Idle) state records no location (ess#484)
+//! and is admitted wherever its owned files hold their recorded bytes, while a state holding an
+//! interrupted transaction keeps refusing and names where it was recorded.
 use super::{ownership, serial, snapshot, workspace, Fixture};
 use std::{
     fs,
@@ -62,6 +63,14 @@ fn recorded_root(root: &Path) -> PathBuf {
     path
 }
 
+/// A settled `ess-output-state/3` checkpoint records neither the root nor its directory identity.
+fn unbound(root: &Path) -> bool {
+    let payload = payload(root);
+    payload["format"] == "ess-output-state/3"
+        && payload.get("root").is_none()
+        && payload.get("directory").is_none()
+}
+
 fn phase(root: &Path) -> String {
     payload(root)["checkpoint"]["phase"]
         .as_str()
@@ -89,11 +98,7 @@ fn a_committed_settled_output_root_regenerates_in_a_second_checkout() {
     let original = snapshot(&a);
     copy_tree(&first, &second);
     let b = second.join("crate");
-    assert_eq!(
-        recorded_root(&b),
-        a,
-        "the copy carries the first checkout's binding"
-    );
+    assert!(unbound(&b), "the copy carries a binding: {}", payload(&b));
     let copied = snapshot(&b);
 
     // Unchanged output writes nothing, so a committed state stays byte-identical.
@@ -109,16 +114,16 @@ fn a_committed_settled_output_root_regenerates_in_a_second_checkout() {
         "an unchanged regeneration in the second checkout wrote"
     );
 
-    // A change that writes anyway records the new binding with the carried owners.
+    // A change that writes anyway keeps the carried owners and records no root.
     let lib = fs::read(b.join("src/lib.rs")).unwrap();
     fs::remove_file(b.join("src/lib.rs")).unwrap();
     let recreated = synthesize(&b);
     assert!(recreated.status.success(), "{recreated:?}");
     assert_eq!(fs::read(b.join("src/lib.rs")).unwrap(), lib);
-    assert_eq!(
-        recorded_root(&b),
-        b,
-        "a writing run did not record its root"
+    assert!(
+        unbound(&b),
+        "a writing run recorded a binding: {}",
+        payload(&b)
     );
     assert_eq!(phase(&b), "Idle");
     assert_eq!(
@@ -132,8 +137,28 @@ fn a_committed_settled_output_root_regenerates_in_a_second_checkout() {
     assert!(again.status.success(), "{again:?}");
     assert_eq!(snapshot(&b), settled, "a repeated run wrote");
 
-    // Bound here, the owner repairs its own edited file and keeps the authored one.
+    // An edited owned file refuses here as it would in any root, naming the file and the route,
+    // and writes nothing; moved aside, the owner recreates it and keeps the authored file.
     fs::write(b.join("src/lib.rs"), "edited owned output").unwrap();
+    let edited = snapshot(&b);
+    let refused = synthesize(&b);
+    assert!(
+        !refused.status.success(),
+        "an edited owned file was replaced: {refused:?}"
+    );
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    for named in [
+        "src/lib.rs".to_owned(),
+        format!("Remove {}", b.join(".ess-output").display()),
+        format!("ess generate output adopt --ownership-root {}", b.display()),
+    ] {
+        assert!(
+            stderr.contains(&named),
+            "the refusal names {named}: {stderr}"
+        );
+    }
+    assert_eq!(snapshot(&b), edited, "the refusal wrote");
+    fs::rename(b.join("src/lib.rs"), f.0.join("lib.rs.aside")).unwrap();
     let repaired = synthesize(&b);
     assert!(repaired.status.success(), "{repaired:?}");
     assert_eq!(fs::read(b.join("src/lib.rs")).unwrap(), lib);
@@ -163,18 +188,23 @@ fn a_copied_checkout_whose_owned_file_differs_refuses_naming_it_and_adoption() {
     let refused = synthesize(&b);
     assert!(!refused.status.success(), "{refused:?}");
     let stderr = String::from_utf8_lossy(&refused.stderr);
+    // The settled record names no root (ess#484), so the refusal names the route in this one.
     for expected in [
-        "src/lib.rs",
-        "ess generate output adopt",
-        &a.display().to_string(),
+        "src/lib.rs".to_owned(),
+        format!("Remove {}", b.join(".ess-output").display()),
+        format!("ess generate output adopt --ownership-root {}", b.display()),
     ] {
-        assert!(stderr.contains(expected), "missing {expected}: {stderr}");
+        assert!(stderr.contains(&expected), "missing {expected}: {stderr}");
     }
+    assert!(
+        !stderr.contains(&a.display().to_string()),
+        "a settled record named the root it was copied from: {stderr}"
+    );
     assert_eq!(snapshot(&b), before, "refusal wrote");
 }
 
 #[test]
-fn a_settled_copy_is_bound_in_memory_and_recorded_by_the_next_write() {
+fn a_settled_copy_is_admitted_and_its_next_write_records_no_root() {
     let _serial = serial();
     let f = Fixture::new();
     let a = f.0.join("a");
@@ -204,16 +234,17 @@ fn a_settled_copy_is_bound_in_memory_and_recorded_by_the_next_write() {
             .collect::<std::collections::BTreeMap<_, _>>(),
         copied
     );
-    assert_eq!(recorded_root(&b), a);
+    assert!(unbound(&b), "{}", payload(&b));
 
-    // The completed write runs one ordinary transaction from the copied ledger, bound here.
+    // The completed write runs one ordinary transaction from the copied ledger and leaves a
+    // settled record that names no root.
     ownership::probe::publish(&b, NEW, &mut |_| Ok(())).unwrap();
     assert!(
         !b.join("retired/old").exists(),
         "copied ledger lost retirement authority"
     );
     assert_eq!(fs::read(b.join("same")).unwrap(), b"replacement");
-    assert_eq!(recorded_root(&b), b);
+    assert!(unbound(&b), "{}", payload(&b));
     assert_eq!(phase(&b), "Idle");
 }
 

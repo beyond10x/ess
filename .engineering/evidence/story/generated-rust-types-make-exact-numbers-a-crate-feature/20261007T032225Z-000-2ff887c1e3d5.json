@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-07T03:22:25Z",
+  "actor": "human:timo",
+  "artifact": "story:generated-rust-types-make-exact-numbers-a-crate-feature",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p schema-contract --test types_manifest_features: 0 passed 6 failed before the change (no-default-features build printed {\"a\":1.50,\"b\":1e+2}), 6 passed after; cargo test -p schema-contract --no-fail-fast 200 passed; cargo test -p ess-publisher 7 passed 1 ignored after re-pinning the transport Cargo.toml hash",
+    "reference": "unit/ess-wave-20261007b-u2-json-numbers 00dcb91eff"
+  }
+}

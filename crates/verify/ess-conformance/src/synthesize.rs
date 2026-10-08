@@ -192,6 +192,7 @@ mod paging;
 mod refusal_policy;
 mod related;
 mod related_guard;
+mod repeated_identity;
 mod row_set;
 mod seeds;
 mod set_effects;
@@ -1100,6 +1101,13 @@ impl RefusalCause {
             Self::NoWitness(gap) if gap.reason.contains(" view") => {
                 "declare a view of the entity that projects its identity and its state; a \
                  wrong-state refusal is observed through any identity view, `eventual` included"
+            }
+            // Two rows of one scenario under one identity: the guards, not the type, left one value
+            // for every row (beyond10x/ess#480).
+            Self::NoWitness(gap) if gap.reason == repeated_identity::CREATED_TWICE => {
+                "the guards on the identity leave every row this scenario arranges one value; cover \
+                 the branch with an authored scenario (ess-scenario/1) that names each row by an \
+                 identity of its own"
             }
             Self::NoWitness(_) => {
                 "give the field a type that has a finite value, or drop it from the command's input"
@@ -2172,6 +2180,9 @@ fn synthesize_in(ir: &EssIr, seeds: &AdmittedSeeds) -> Synthesis {
     // Read off the finished suite: no scenario expects the one row of a singleton entity created
     // twice in a run, whichever family built it (beyond10x/ess#287).
     singleton::withdraw_second_creations(ir, &mut synthesis);
+    // Nor any other row created twice under one literal identity, which a target answers as
+    // existing (beyond10x/ess#480).
+    repeated_identity::withdraw_repeated_identities(ir, &mut synthesis);
     // A scenario requiring a branch for an input an input-guarded refusal answers first fails every
     // target that honours the specification, so it is withdrawn and refused (beyond10x/ess#280).
     for refusal in precedence_contradictions(ir, &synthesis.suite) {
@@ -2194,6 +2205,23 @@ fn synthesize_in(ir: &EssIr, seeds: &AdmittedSeeds) -> Synthesis {
     synthesis.notes.extend(overlaps);
     disclosure::augment(ir, &mut synthesis);
     synthesis
+}
+
+/// `id` taken out of the finished suite and refused with `cause`, with every note about it: a note
+/// naming a scenario the suite does not hold points at nothing.
+fn withdraw(synthesis: &mut Synthesis, id: &ScenarioId, cause: RefusalCause) {
+    synthesis.suite.scenarios.remove(id);
+    synthesis.notes.retain(|note| match note {
+        Note::PartialObservation { scenario, .. }
+        | Note::UnseparatedSources { scenario, .. }
+        | Note::UnwitnessedOverlap { scenario, .. }
+        | Note::UnswappedCallers { scenario, .. }
+        | Note::CrossCallerUnswapped { scenario, .. }
+        | Note::CrossCallerUnwitnessed { scenario, .. }
+        | Note::UnaccompaniedRelatedCopy { scenario, .. } => scenario != id,
+        _ => true,
+    });
+    synthesis.refusals.push(Refusal::about(id, cause));
 }
 
 /// Which scenarios a synthesis writes.
@@ -5516,10 +5544,44 @@ fn invoke(
         input
     };
     if matches!(driver.effect, ResolvedEffect::Creates) {
+        let input = own_identity(ir, driver, distinction, input);
         invoke_created_with(ir, driver, actors, distinction, bound, &input, arranging)
     } else {
         Ok(invoke_with(ir, driver, instance, actors, bound, &input))
     }
+}
+
+/// `input` with the identity an arranging creation names its new row by moved to `distinction`'s
+/// own far witness, where the search took another value and that witness keeps the branch
+/// (beyond10x/ess#480).
+///
+/// Each row a scenario arranges is created at a distinction of its own, and the far witness is
+/// what keeps their identities apart. A value a guard puts first is the same at every distinction:
+/// `item_id.utf8_bytes < 1` tries the wide text `é` first and a case-insensitive guard its literal
+/// changed in one character, so three items arranged for one scenario were all created as `é`, and
+/// a target with unique identities answered the second and third creation as existing. Where the
+/// far witness breaks a guard the input meets, the input is left as the search chose it.
+fn own_identity(
+    ir: &EssIr,
+    driver: &Driver<'_>,
+    distinction: Distinction,
+    mut input: BTreeMap<String, Node>,
+) -> BTreeMap<String, Node> {
+    let Some(field) = existence::identity_input(driver.outcome) else {
+        return input;
+    };
+    let far = candidates(ir, driver.command, &[], distinction)
+        .ok()
+        .and_then(|inputs| inputs.into_iter().next())
+        .and_then(|base| ess_compiler::ir::read_input(&base, field).cloned());
+    if let Some(far) = far {
+        if ess_compiler::ir::read_input(&input, field) != Some(&far)
+            && keeps_branch(ir, driver.command, &input, field, &far)
+        {
+            set_at(&mut input, field, Some(far));
+        }
+    }
+    input
 }
 
 /// The input an external `driver` is sent on a row resting in `held` (beyond10x/ess#464): `input`
@@ -6361,6 +6423,40 @@ fn reach(
         return Err(RefusalCause::NoWitness(gap));
     }
     Err(unsatisfied(&guards, predicate, tried))
+}
+
+/// `input` with `field` sent as `value`, where it still selects `outcome`; otherwise the first
+/// candidate [`reach`] tries that does with `field` sent as `value`; `None` where none does —
+/// `outcome`'s guard is decided by `field` alone, and `value` refutes it (beyond10x/ess#479). Only
+/// for a branch its input alone selects ([`plain_guards`]).
+pub(super) fn reach_pinned(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    mut input: BTreeMap<String, Node>,
+    field: &str,
+    value: &Node,
+) -> Result<Option<BTreeMap<String, Node>>, RefusalCause> {
+    let (guards, satisfy) = plain_guards(command, outcome)?;
+    let selects = |input: &mut BTreeMap<String, Node>| -> Result<bool, RefusalCause> {
+        if !set_at(input, field, Some(value.clone())) {
+            return Ok(false);
+        }
+        let facts = flatten(ir, command, input).map_err(RefusalCause::WitnessRejected)?;
+        admits_plain(command, outcome, &facts, &guards, satisfy)
+    };
+    if selects(&mut input)? {
+        return Ok(Some(input));
+    }
+    let searches = searched_guards(command, outcome, &guards, satisfy);
+    for inputs in searched_candidates(ir, command, searches, Distinction::PLAIN) {
+        for mut input in inputs? {
+            if selects(&mut input)? {
+                return Ok(Some(input));
+            }
+        }
+    }
+    Ok(None)
 }
 
 /// The witness of an input-guarded refusal outside every refusal declared after it, where some
@@ -13707,7 +13803,34 @@ fn boundaries(
     let command_ref = CommandRef::new(command.name.clone());
     let outcome_ref = OutcomeRef::new(command_ref.clone(), outcome.name.clone());
     let mut taken = bound_instances(steps);
-    for row in rows {
+    // A creation the input names is sent each further row under an identity of its own: the plain
+    // witness's names the instance the scenario has just created, and `creates:` never replaces it
+    // (beyond10x/ess#471).
+    let created_from = existence::identity_input(outcome);
+    let mut sent: BTreeSet<Node> = BTreeSet::new();
+    if let Some(field) = created_from {
+        sent.extend(ess_compiler::ir::read_input(&primary, field).cloned());
+        sent.extend(steps.iter().filter_map(|step| match step {
+            ScenarioStep::ExecuteCommand {
+                command: invoked,
+                input,
+                ..
+            } if invoked.name() == &command.name => match input.get(field) {
+                Some(ScenarioValue::Literal { value }) => Some(value.clone()),
+                _ => None,
+            },
+            _ => None,
+        }));
+    }
+    for mut row in rows {
+        if let Some(field) = created_from {
+            let Some(identity) = existence::boundary_identity(ir, command, field, &row, &sent)
+            else {
+                continue;
+            };
+            sent.insert(identity.clone());
+            set_at(&mut row, field, Some(identity));
+        }
         let mut supplied = run.input.clone();
         let mut settled = BTreeMap::new();
         for (field, value) in &row {

@@ -49,9 +49,13 @@ pub fn project(binding: &CompiledBinding) -> BTreeMap<String, String> {
 
 fn reference(plan: &wire::Plan) -> String {
     let mut text = format!(
-        "# `{}` CLI contract\n\n{}\n\nThis generated package installs an unavailable handler. Application behavior enters through the `Handler` seam; schema-selected calls also require `DynamicValidator`. See `help.txt` for process options and `binding.json` for resolved types and targets.\n\n## Commands\n\n",
+        "# `{}` CLI contract\n\n{}\n\nThis generated package installs an unavailable handler. Application behavior enters through the `Handler` seam; schema-selected calls also require `DynamicValidator`. See `help.txt` for process options and `binding.json` for resolved types and targets.\n\n",
         plan.binary, plan.about
     );
+    if plan.globals.output.is_none() {
+        text.push_str("This CLI has no output flag and writes JSON only: successes, failures and parser refusals all take their JSON shapes.\n\n");
+    }
+    text.push_str("## Commands\n\n");
     for command in &plan.commands {
         let callable = &plan.callables[&command.callable];
         writeln!(

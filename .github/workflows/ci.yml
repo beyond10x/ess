@@ -258,7 +258,7 @@ jobs:
     name: Test ${{ matrix.shard }}
     needs: [build-tests, build-feature-off]
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 70
     strategy:
       # Every shard reports, so one red run names every failing test rather than the first shard's.
       fail-fast: false

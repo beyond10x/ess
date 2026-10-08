@@ -744,7 +744,8 @@ beyond10x/ess#227 correction 1). Every other design note links here rather than 
 of its own:
 
 1. on a command with a `when_related:` branch reading an input, `existing_instance` then `exists: false` (#211 revision); an absent Optional reference (`ess/22`, #304) reads no row, so neither `exists: false` nor step 5 answers it; several rows read through the input (`ess/22`, #283) are read in the declaration order of their `exists: false` branches, and the first missing one answers;
-2. input-guarded refusals, the first declared whose guard holds (#209, #227);
+2. input-guarded refusals, the first declared whose guard holds (#209, #227); a refusal whose
+   `when:` always holds is refused by validation (beyond10x/ess#489), since it had no one step here;
 3. existence of the addressed row (`unknown_instance`, and `existing_instance` on commands without `when_related`);
 4. the held state: `when_subject_state` and `when_subject` select by it; `wrong_state` answers only
    where the branch step 6 selects moves from a state its move does not start from, so an accepting

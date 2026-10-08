@@ -247,10 +247,14 @@ fn transport_1_publisher_files_keep_the_released_0_52_0_bytes() {
         &rust_types.supporting["Cargo.toml"],
     )
     .expect("renders");
+    // Every file keeps its released 0.52.0 bytes except `Cargo.toml`, which moved once on purpose:
+    // the type library's manifest names `arbitrary_precision` through a default-on
+    // `exact-numbers` crate feature instead of on `serde_json` itself
+    // (https://github.com/beyond10x/ess/issues/483).
     let rust_expected = BTreeMap::from([
         (
             "Cargo.toml",
-            "2325520266d68aaf5339e092b86afcb13c776f1f778669d5a34b3f05ee884a76",
+            "2801f9e279df175b3b604a6356e42178b0113135560b21388199e9e36bbdf5a6",
         ),
         (
             "client-report.json",

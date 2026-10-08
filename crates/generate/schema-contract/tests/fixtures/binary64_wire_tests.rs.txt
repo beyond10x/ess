@@ -105,6 +105,14 @@ fn presence_union_alternatives_and_prior_value_boundary() {
     assert!(serde_json::to_string(&text).unwrap().contains("\"-0\""));
     let prior: serde_json::Value = serde_json::from_str("-0").unwrap();
     let converted: EssBinary64 = serde_json::from_value(prior).unwrap();
-    assert_eq!(converted.get().to_bits(), 0, "Value conversion has already lost lexical sign");
+    let arbitrary_precision = serde_json::from_str::<serde_json::Value>("1.50").unwrap().to_string() == "1.50";
+    assert_eq!(arbitrary_precision, std::env::var("ESS_EXPECT_ARBITRARY_PRECISION").as_deref() == Ok("1"));
+    if arbitrary_precision {
+        assert_eq!(converted.get().to_bits(), 0, "Value conversion has already lost lexical sign");
+    } else {
+        // Without the feature a Value holds the binary64 itself; the boundary stays outside the
+        // codec contract because a consumer's graph may unify the feature on.
+        assert_eq!(converted.get().to_bits(), (-0.0_f64).to_bits(), "a binary64 Value keeps its sign");
+    }
     assert!(EssBinary64::deserialize(serde::de::value::F64Deserializer::<serde::de::value::Error>::new(1.0)).is_err());
 }

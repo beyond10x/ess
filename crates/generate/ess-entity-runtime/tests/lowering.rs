@@ -1788,73 +1788,337 @@ fn string_operators_lower_to_conditions_the_runtime_decides_byte_for_byte() {
     }
 }
 
-/// Entity Runtime has no condition that iterates a text's characters, and entity-core resolves
-/// `count` on arrays and maps only, so an alphabet and a text length are each refused by name
-/// rather than lowered to a rule that is `Unknown` for every row
-/// (`docs/design/string-alphabet-and-length.md`, section 6).
-#[test]
-fn an_alphabet_and_a_text_length_are_refused_by_name_by_the_lowering() {
+/// The focused contract at `format`, with each `(file, before, after)` edit applied once, lowered
+/// for `local-service`.
+fn lower_contract_changes(
+    format: &str,
+    changes: &[(&str, &str, &str)],
+) -> Result<ess_entity_runtime::LoweredService, ess_entity_runtime::LoweringDiagnostics> {
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/contract");
-    let lowered = |shared: &str| {
-        let ir = compile_changes(
-            &fixture,
-            &[
-                ("system.yaml", "format: ess/4\n", "format: ess/11\n"),
-                (
-                    "domains/local.yaml",
-                    "  - name: contract.local.Shared\n    kind: newtype\n    of: String\n",
-                    shared,
-                ),
-            ],
-        );
-        let plan = SynthesisPlan::of(&ir);
-        lower(
-            &selected(&ir, &plan, "local-service"),
-            &options(&["contract.foreign.Owner", "contract.local.Child"]),
-        )
-        .map(|_| ())
-    };
-    let alphabet = lowered(
-        "  - name: contract.local.Shared\n    kind: newtype\n    of: String\n    alphabet: \"abc\"\n",
+    let mut all: Vec<(&str, &str, &str)> = vec![("system.yaml", "format: ess/4\n", format)];
+    all.extend(changes.iter().copied());
+    let ir = compile_changes(&fixture, &all);
+    let plan = SynthesisPlan::of(&ir);
+    lower(
+        &selected(&ir, &plan, "local-service"),
+        &options(&["contract.foreign.Owner", "contract.local.Child"]),
     )
-    .expect_err("an alphabet has no entity-core condition");
-    assert!(codes(alphabet).contains(&LoweringCode::AlphabetUnsupported));
-    let length = lowered(
-        "  - name: contract.local.Shared\n    kind: newtype\n    of: String\n    invariants: [value.count <= 8]\n",
-    )
-    .expect_err("a text length has no entity-core address");
-    assert!(codes(length).contains(&LoweringCode::TextLengthUnsupported));
+}
 
-    let guard = compile_changes(
-        &example("billing"),
+/// The focused contract at `ess/15` with `contract.local.Shared` declared as `shared`, lowered.
+fn lower_contract_shared(
+    shared: &str,
+) -> Result<ess_entity_runtime::LoweredService, ess_entity_runtime::LoweringDiagnostics> {
+    lower_contract_changes(
+        "format: ess/15\n",
+        &[(
+            "domains/local.yaml",
+            "  - name: contract.local.Shared\n    kind: newtype\n    of: String\n",
+            shared,
+        )],
+    )
+}
+
+/// What entity-core decides for `Run` creating a `Child` whose `note` is `note`.
+fn create_child_with_note(
+    lowered: &ess_entity_runtime::LoweredService,
+    note: &str,
+) -> Result<entity_core::Evaluation, entity_core::CoreError> {
+    let registry = registry(lowered);
+    let runtime = Runtime::new(&registry);
+    let binding = &lowered.bindings().commands()[&name("contract.local.Run")];
+    let logical_id = json!("278f4f3a-c8b8-4e86-9a16-2c385910fc68");
+    let storage_id = identity::address(FieldKind::String, &logical_id).expect("identity address");
+    let mut arguments = focused_create_arguments(binding, true);
+    arguments["input"]["note"] = json!(note);
+    runtime.decide_create("contract.local.Child", 1, storage_id, arguments)
+}
+
+/// Whether entity-core refused `outcome` as a value outside its alphabet.
+fn outside_the_alphabet(outcome: &Result<entity_core::Evaluation, entity_core::CoreError>) -> bool {
+    matches!(
+        outcome,
+        Err(entity_core::CoreError::Validation(errors))
+            if format!("{errors:?}").contains("is not in the alphabet")
+    )
+}
+
+/// entity-core 0.27.0 (<https://github.com/beyond10x/entity-runtime/pull/57>) takes `alphabet:`
+/// on a `service/1` string field, argument or nested property, so a String type's alphabet lowers
+/// onto every string it reaches: the stored field and the creation's argument both carry it, and the runtime refuses a
+/// value outside it per Unicode scalar value, with no case folding and no normalization.
+#[test]
+fn an_alphabet_lowers_onto_every_string_field_and_argument_it_reaches() {
+    let lowered = lower_contract_shared(
+        "  - name: contract.local.Shared\n    kind: newtype\n    of: String\n    alphabet: \"kep xactly\"\n",
+    )
+    .unwrap_or_else(|diagnostics| panic!("an alphabet lowers: {diagnostics:?}"));
+    let child = &lowered.definitions()[&name("contract.local.Child")];
+    assert_eq!(
+        child.schema.fields["note"].alphabet.as_deref(),
+        Some("kep xactly")
+    );
+    assert_eq!(
+        child.create.arguments.fields["input"].properties["note"]
+            .alphabet
+            .as_deref(),
+        Some("kep xactly")
+    );
+    assert_eq!(child.schema.fields["memo"].alphabet, None);
+
+    for admitted in ["keep exactly", "a cat"] {
+        create_child_with_note(&lowered, admitted)
+            .unwrap_or_else(|error| panic!("{admitted:?} is in the alphabet: {error:?}"))
+            .into_decision()
+            .unwrap_or_else(|refusal| panic!("{admitted:?} is accepted: {refusal:?}"));
+    }
+    for refused in ["keep exactly!", "Keep exactly", "k\u{e9}ep"] {
+        let outcome = create_child_with_note(&lowered, refused);
+        assert!(outside_the_alphabet(&outcome), "{refused:?}: {outcome:?}");
+    }
+}
+
+/// A newtype of a newtype that each declare an alphabet admits the outer one's characters that the
+/// inner one also holds, in the outer one's order (`docs/design/string-alphabet-and-length.md`,
+/// section 1): that intersection is the one alphabet the lowered field carries.
+#[test]
+fn nested_alphabets_lower_to_their_intersection_in_the_outer_order() {
+    let lowered = lower_contract_shared(
+        "  - name: contract.local.Base\n    kind: newtype\n    of: String\n    alphabet: \"ytlcaxpek \"\n\n  - name: contract.local.Shared\n    kind: newtype\n    of: contract.local.Base\n    alphabet: \"kep xactly!\"\n",
+    )
+    .unwrap_or_else(|diagnostics| panic!("nested alphabets lower: {diagnostics:?}"));
+    let child = &lowered.definitions()[&name("contract.local.Child")];
+    assert_eq!(
+        child.schema.fields["note"].alphabet.as_deref(),
+        Some("kep xactly")
+    );
+    assert_eq!(
+        child.create.arguments.fields["input"].properties["note"]
+            .alphabet
+            .as_deref(),
+        Some("kep xactly")
+    );
+    create_child_with_note(&lowered, "keep exactly")
+        .expect("both alphabets hold every character")
+        .into_decision()
+        .expect("accepted");
+    let outcome = create_child_with_note(&lowered, "keep exactly!");
+    assert!(
+        outside_the_alphabet(&outcome),
+        "`!` is in the outer alphabet only: {outcome:?}"
+    );
+}
+
+/// entity-core 0.27.0 (<https://github.com/beyond10x/entity-runtime/pull/56>) reads
+/// `<path>.count` on a declared `string` as its length in Unicode scalar values, so a String type's `value.count` invariant lowers to a
+/// rule over `$fields.note.count` that the runtime decides by scalar values, not bytes.
+#[test]
+fn a_text_length_invariant_lowers_to_count_on_the_stored_field() {
+    let lowered = lower_contract_shared(
+        "  - name: contract.local.Shared\n    kind: newtype\n    of: String\n    invariants: [value.count <= 12]\n",
+    )
+    .unwrap_or_else(|diagnostics| panic!("a text length lowers: {diagnostics:?}"));
+    let invariants = serde_json::to_value(
+        &lowered.definitions()[&name("contract.local.Child")]
+            .as_definition()
+            .invariants,
+    )
+    .expect("invariants serialise")
+    .to_string();
+    assert!(
+        invariants.contains("\"$fields.note.count\""),
+        "{invariants}"
+    );
+    // Twelve scalar values each; the second is fifteen bytes.
+    for admitted in ["keep exactly", "k\u{e9}\u{e9}p \u{e9}xactly"] {
+        create_child_with_note(&lowered, admitted)
+            .unwrap_or_else(|error| panic!("{admitted:?} is twelve long: {error:?}"))
+            .into_decision()
+            .unwrap_or_else(|refusal| panic!("{admitted:?} is accepted: {refusal:?}"));
+    }
+    let outcome = create_child_with_note(&lowered, "keep exactly.");
+    assert!(
+        matches!(
+            outcome,
+            Err(entity_core::CoreError::InvariantViolation { .. })
+        ),
+        "thirteen scalar values: {outcome:?}"
+    );
+}
+
+/// What the lowered `CancelInvoice` of [`ess15_cancel_ir`] takes for a Draft invoice storing
+/// `stored` as its `note`, called with `sent` as the input `note`.
+fn cancel_taken_with_notes(
+    lowered: &ess_entity_runtime::LoweredService,
+    sent: &str,
+    stored: &str,
+) -> String {
+    let registry = registry(lowered);
+    let runtime = Runtime::new(&registry);
+    let binding = &lowered.bindings().commands()[&name("billing.invoice.CancelInvoice")];
+    let arguments = json!({
+        "input": {"invoice_id": "b404a1e8-9360-4af5-a0ac-8a483adfa225", "note": sent},
+        "bound": bound_for(binding, |_| None)
+    });
+    let mut row = invoice_instance("Draft", "Email");
+    row.fields.insert("note".to_owned(), json!(stored));
+    match runtime.decide_before_load(
+        &row.entity,
+        row.version,
+        row.id.clone(),
+        "billing.invoice.CancelInvoice",
+        arguments,
+    ) {
+        Ok(PreloadDecision::Load(prepared)) => match prepared.select_with(&row) {
+            Ok(LoadedDecision::NeedsFulfillment(prepared)) => prepared.outcome().to_owned(),
+            Ok(LoadedDecision::Complete(evaluation)) => match evaluation.into_decision() {
+                Ok(_) => "accepted without fulfillment".to_owned(),
+                Err(refusal) => format!("refused: {refusal:?}"),
+            },
+            Err(error) => format!("error: {error:?}"),
+        },
+        Ok(_) => "decided before load".to_owned(),
+        Err(error) => format!("error before load: {error:?}"),
+    }
+}
+
+/// `<text>.count` in a guard lowers to entity-core's `<path>.count`, over the stored row and over
+/// the arguments alike, and the runtime counts Unicode scalar values: neither bytes nor graphemes.
+#[test]
+fn a_text_length_in_a_guard_lowers_to_count_in_unicode_scalar_values() {
+    let lowered = lower_billing_changes(&ess15_cancel_ir("note.count > input.note.count"))
+        .unwrap_or_else(|diagnostics| panic!("a text length in a guard lowers: {diagnostics:?}"));
+    let posted = lowered.definitions()[&name("billing.invoice.Invoice")].operations
+        ["billing.invoice.CancelInvoice"]
+        .outcomes
+        .iter()
+        .find(|outcome| outcome.name == "posted")
+        .expect("posted is lowered");
+    let when = serde_json::to_value(&posted.when)
+        .expect("condition serializes")
+        .to_string();
+    assert!(
+        when.contains("\"$fields.note.count\"") && when.contains("\"$args.input.note.count\""),
+        "{when}"
+    );
+    for (stored, sent, expected) in [
+        // 7 > 3.
+        ("routine", "\u{e9}\u{e8}\u{ea}", "refused"),
+        // 4 > 5 is false; the stored text is 8 bytes, which would be more than 5.
+        ("\u{e9}\u{e8}\u{ea}\u{eb}", "abcde", "cancelled"),
+        // 6 > 5: three graphemes, six scalar values.
+        ("e\u{301}e\u{301}e\u{301}", "abcde", "refused"),
+    ] {
+        let taken = cancel_taken_with_notes(&lowered, sent, stored);
+        assert!(
+            taken.starts_with(expected),
+            "{stored:?} against {sent:?}, lowered `when` {when}: {taken}"
+        );
+    }
+}
+
+/// entity-core refuses a text length read through a quantifier element at registration: its
+/// run-time walk does not type the element, so the length would resolve to nothing. The lowering
+/// refuses it by name first.
+#[test]
+fn a_text_length_inside_a_quantifier_element_is_refused_by_name() {
+    let diagnostics = lower_billing_changes(&ess15_cancel_ir(
+        "{forall: {in: lines, as: line, that: line.description.count > 0}}",
+    ))
+    .expect_err("a quantifier element's text length has no entity-core address")
+    .into_vec();
+    assert_eq!(
+        diagnostics
+            .iter()
+            .map(|diagnostic| (diagnostic.code, diagnostic.path.as_str()))
+            .collect::<Vec<_>>(),
+        [(
+            LoweringCode::TextLengthUnsupported,
+            "command.billing.invoice.CancelInvoice.outcomes.posted.when_subject"
+        )],
+        "{diagnostics:?}"
+    );
+    assert!(
+        diagnostics[0].message.contains("line.description.count")
+            && diagnostics[0].message.contains("element"),
+        "{diagnostics:?}"
+    );
+}
+
+/// A String type's `value.count` invariant reached as a list element, or as a union's payload, is
+/// read by entity-core's run-time walk without the declaration that makes it a text: an element
+/// is refused at registration, and a union payload resolves to nothing. Both are refused by name;
+/// the same type reached as a stored field (`note`) lowers.
+#[test]
+fn a_text_length_invariant_under_a_list_element_or_a_union_payload_is_refused_by_name() {
+    let diagnostics = lower_contract_changes(
+        "format: ess/22\n",
         &[
-            ("system.yaml", "format: ess/1\n", "format: ess/11\n"),
             (
-                "domains/email.yaml",
-                "            recipient: input.recipient\n",
-                "            recipient: input.recipient\n            message_id: {generated: true}\n",
+                "domains/local.yaml",
+                "types:\n",
+                "types:\n  - name: contract.local.Status\n    kind: union\n    tag: kind\n    variants:\n      open: String\n      closed: contract.local.Shared\n\n",
             ),
             (
-                "domains/invoice.yaml",
-                "          billing.invoice.InvoiceCreated:\n",
-                "          billing.invoice.InvoiceCreated:\n            invoice_id: {generated: true}\n",
+                "domains/local.yaml",
+                "  - name: contract.local.Shared\n    kind: newtype\n    of: String\n",
+                "  - name: contract.local.Shared\n    kind: newtype\n    of: String\n    invariants: [value.count <= 12]\n",
             ),
             (
-                "domains/invoice.yaml",
-                KEPT_INPUT,
-                "      - name: invoice_id\n        type: billing.invoice.InvoiceId\n\n    outcomes:\n      - name: posted\n        when_subject: {predicate: 'note.count > 3'}\n        error: billing.invoice.InvoiceStateConflict\n      - name: cancelled\n",
+                "domains/local.yaml",
+                "      - name: memo\n        type: Optional<String>\n",
+                "      - name: memo\n        type: Optional<String>\n      - name: tags\n        type: List<contract.local.Shared>\n      - name: status\n        type: Optional<contract.local.Status>\n",
             ),
         ],
+    )
+    .expect_err("an element's and a payload's text length have no entity-core address")
+    .into_vec();
+    let refused = diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == LoweringCode::TextLengthUnsupported)
+        .map(|diagnostic| (diagnostic.path.as_str(), diagnostic.message.as_str()))
+        .collect::<BTreeMap<_, _>>();
+    assert_eq!(
+        refused.keys().copied().collect::<Vec<_>>(),
+        [
+            "contract.local.Child.fields.status.closed",
+            "contract.local.Child.fields.tags"
+        ],
+        "{diagnostics:#?}"
     );
-    let diagnostics = lower_billing_changes(&guard)
-        .expect_err("a stored text length has no entity-core address")
-        .into_vec();
     assert!(
-        diagnostics.iter().any(
-            |diagnostic| diagnostic.code == LoweringCode::TextLengthUnsupported
-                && diagnostic.message.contains("note.count")
-        ),
-        "{diagnostics:?}"
+        refused["contract.local.Child.fields.tags"].contains("element"),
+        "{diagnostics:#?}"
+    );
+    assert!(
+        refused["contract.local.Child.fields.status.closed"].contains("union"),
+        "{diagnostics:#?}"
+    );
+}
+
+/// entity-core admits an alphabet on an operation's declared response field and does not enforce
+/// it, because a response is not checked against its declared schema. The lowering refuses it by
+/// name rather than lower a check that does not run.
+#[test]
+fn an_alphabet_on_a_declared_response_field_is_refused_by_name() {
+    let diagnostics = lower_contract_changes(
+        "format: ess/15\n",
+        &[(
+            "domains/local.yaml",
+            "  - name: contract.local.Receipt\n    kind: newtype\n    of: String\n",
+            "  - name: contract.local.Receipt\n    kind: newtype\n    of: String\n    alphabet: \"0123456789-ceiprt\"\n",
+        )],
+    )
+    .expect_err("a response alphabet is not enforced by entity-core")
+    .into_vec();
+    assert_eq!(
+        diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == LoweringCode::AlphabetUnsupported)
+            .map(|diagnostic| diagnostic.path.as_str())
+            .collect::<Vec<_>>(),
+        ["contract.local.Run.response.receipt"],
+        "{diagnostics:#?}"
     );
 }
 
@@ -1971,7 +2235,7 @@ fn a_case_insensitive_guard_is_refused_by_name_by_the_lowering() {
 }
 
 /// A declared prefix is `value starts_with <prefix>`, which entity-core has an operator for, so
-/// it lowers to a nominal rule rather than being refused as an alphabet is (beyond10x/ess#146).
+/// it lowers to a nominal rule (beyond10x/ess#146).
 #[test]
 fn a_prefix_lowers_to_a_starts_with_rule() {
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/contract");

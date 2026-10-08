@@ -24,7 +24,8 @@ a reviewer or a consumer reads. Rebuild the rest in CI, where they cannot drift 
 | planning store and evidence | see [AEP](https://beyond10x.github.io/docs/aep/concepts/planning-store/) | AEP | AEP |
 
 Commit `.ess-output` with the projections it records. It is what lets a clone, a second worktree or
-CI regenerate the same files in place; see
+CI regenerate the same files in place, and it records no absolute path, device or inode of the
+machine that wrote it; see
 [repeated generation and recovery](./generate-artifacts.md#repeated-generation-and-recovery).
 [Commit the generated runner](../concepts/test-pyramid.md#commit-the-generated-runner) explains why
 the synthesized runner is committed rather than imported. The pin is described in
