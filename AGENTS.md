@@ -259,6 +259,16 @@ cargo update --manifest-path fuzz/Cargo.toml --offline --workspace
 Same shape as the schema projection above: a bump leaves a derived artifact behind, nothing
 downstream complains, and one task in the gate is the only thing that knows.
 
+**A new `ValidationCode` or diagnostic moves pins outside the crate that declares it.** Run
+`task test-xtask` and `cargo test -p ess-compiler --test typed_diagnostics` before pushing such a
+change, even when no file under `ess-xtask` or `ess-compiler` changed.
+`crates/edge/ess-xtask/src/consumer_coverage/macro-guards.json` pins the digest of the
+`validation_codes!` invocation, and `docs/design/review-typed-diagnostics.md` counts every
+string-located `ValidationError` per file. Adding one refusal to `ess-domain/src/wire.rs` failed
+both on CI (PR 502), while every package-scoped run of the touched crates was green. A test module
+in `ess-cli/src/git_checkout.rs` is compiled into `ess-xtask` through `#[path]` too, so it cannot
+use `ess_cli::…`.
+
 ## Agent plugin
 
 The ESS agent plugin lives in `beyond10x/agentplugins` (`plugins/ess/`), with every other Beyond10x

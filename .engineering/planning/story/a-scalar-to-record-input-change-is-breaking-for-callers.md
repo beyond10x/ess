@@ -8,7 +8,7 @@ relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
 - informed_by: story:an-older-command-input-is-read-on-replay-through-a-declared-upcast
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-08T04:42:05Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-10-08T04:42:05Z", actor: "human:timo", revision: 4}
@@ -49,3 +49,7 @@ Assessed with the older-command-input fit review (`story:an-older-command-input-
 - The reverse direction (record → scalar), and scalar → list and scalar → map, are breaking for callers too.
 - A scalar → scalar change the diff already classifies keeps its verdict, and `after-additive.yaml` (the Optional-input idiom) stays compatible for callers.
 - Every existing `ess-diff` and `ess-cli` diff test passes unchanged, or the report names each re-pinned expectation and why.
+
+## Correction (2026-10-08)
+
+Acceptance line 3 misstated today's verdict: ess 0.56.0 rates the idiom's `input-added/receipt_revision` as `unknown` for callers and readers, not compatible. The unit keeps that verdict unchanged (`[U, U, C]`) and checks that `--fail-on breaking` passes it. The unit also applies the rule to every wire-form move (record ↔ list, list ↔ map); record ↔ map are both JSON objects and stay `unknown`.
