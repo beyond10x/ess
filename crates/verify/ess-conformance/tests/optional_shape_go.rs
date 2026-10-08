@@ -4,16 +4,18 @@
 //! The runtime is a checked-in Go file copied into every emitted package, so the only way to hold it
 //! to a claim is to compile it beside a Go test — the shape
 //! `tests/selection_primitive_go.rs` already established for the primitive grammar.
+mod support_scratch;
+
 #[test]
 fn go_shape_leaves_honour_optional_without_going_unchecked() {
-    let directory = std::env::temp_dir().join(format!(
+    let directory = support_scratch::Scratch::adopt(std::env::temp_dir().join(format!(
         "ess-optional-shape-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos()
-    ));
+    )));
     std::fs::create_dir(&directory).unwrap();
     std::fs::write(
         directory.join("go.mod"),

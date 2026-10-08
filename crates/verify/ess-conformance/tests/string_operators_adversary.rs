@@ -3,7 +3,8 @@
 //! Each case states what the binding design (`docs/design/string-predicate-operators.md`) or the
 //! Rust lane answers, and asks another lane or another path for the same answer.
 
-use std::path::PathBuf;
+mod support_scratch;
+
 use std::process::Command;
 
 use ess_compiler::ir::EssIr;
@@ -16,9 +17,10 @@ use ess_primitives::node::Node;
 use ess_primitives::predicate::Predicate;
 use serde_json::json;
 
-fn scratch(label: &str) -> PathBuf {
-    let path =
-        std::env::temp_dir().join(format!("ess-b1b-adversary-{label}-{}", std::process::id()));
+fn scratch(label: &str) -> support_scratch::Scratch {
+    let path = support_scratch::Scratch::adopt(
+        std::env::temp_dir().join(format!("ess-b1b-adversary-{label}-{}", std::process::id())),
+    );
     let _ = std::fs::remove_dir_all(&path);
     std::fs::create_dir_all(&path).expect("a working directory");
     path

@@ -7,6 +7,8 @@
 //! a different invariant. The Go vectors are `fixtures/binder-operand.go`, and
 //! `src/ts/predicate.test.ts` answers the same ones in TypeScript.
 
+mod support_scratch;
+
 use ess_conformance::AdmittedSuite;
 use ess_primitives::{
     facts::{FactStore, FactValue},
@@ -127,8 +129,9 @@ fn document(predicate: &Value) -> String {
 fn issue_289_the_generated_go_reader_answers_the_shared_vectors() {
     let predicate: Value = serde_json::from_str(DISJOINT).expect("json");
     let suite = AdmittedSuite::from_json(&document(&predicate)).expect("admitted");
-    let directory =
-        std::env::temp_dir().join(format!("ess-289-binder-operand-{}", std::process::id()));
+    let directory = support_scratch::Scratch::adopt(
+        std::env::temp_dir().join(format!("ess-289-binder-operand-{}", std::process::id())),
+    );
     std::fs::create_dir_all(directory.join("essconform")).expect("directory");
     for artifact in ess_conformance::go::emit(suite.suite()).expect("emitted") {
         std::fs::write(directory.join(artifact.path), artifact.contents).expect("written");

@@ -7,6 +7,8 @@
 //! pass all of them. The Go lane runs the same suite against a Go port of the target (correct, and
 //! one mutant); the TypeScript lane admits the current suite and constructs the target, whose
 //! deliberate error proves that execution crossed the admission boundary.
+mod support_scratch;
+
 mod support_versions;
 
 use std::cell::{Cell, RefCell};
@@ -419,7 +421,9 @@ fn every_mutant_the_page_names_fails_the_scenarios_the_page_says_catch_it() {
 #[test]
 fn the_go_lane_runs_the_suite_and_the_typescript_lane_admits_it() {
     let suite = suite();
-    let root = std::env::temp_dir().join(format!("ess-aggregate-views-{}", std::process::id()));
+    let root = support_scratch::Scratch::adopt(
+        std::env::temp_dir().join(format!("ess-aggregate-views-{}", std::process::id())),
+    );
     std::fs::create_dir_all(&root).unwrap();
     let docs = admission_documents(&suite, &root);
     run_go(&suite, &root, &docs);

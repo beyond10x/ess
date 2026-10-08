@@ -3,6 +3,8 @@
 //! Each case asserts what `docs/design/cross-record-and-stored-field-guards.md`, the story's
 //! acceptance, or the base behaviour of an ess/6 model says, and is expected to fail where the
 //! implementation disagrees.
+mod support_scratch;
+
 use ess_compiler::{
     ir::EssIr,
     refs::{CommandRef, OutcomeRef},
@@ -502,7 +504,9 @@ fn adv_a_stored_count_guard_past_the_cap_is_refused_as_a_count_not_as_a_missing_
 #[test]
 fn adv_go_and_typescript_lanes_agree_with_rust_on_the_parcels_suite() {
     let suite = synthesis(PARCELS).suite;
-    let root = std::env::temp_dir().join(format!("ess-adv-parcels-{}", std::process::id()));
+    let root = support_scratch::Scratch::adopt(
+        std::env::temp_dir().join(format!("ess-adv-parcels-{}", std::process::id())),
+    );
     std::fs::create_dir_all(&root).unwrap();
     for artifact in ess_conformance::go::emit(&suite).unwrap() {
         let path = root.join(artifact.path);
@@ -548,8 +552,12 @@ fn adv_go_and_typescript_lanes_agree_with_rust_on_the_parcels_suite() {
     let mut disagreements = Vec::new();
     for (mutant, passes) in [("", true), ("weight", false), ("fields", false)] {
         for (tool, args, directory) in [
-            ("go", vec!["test", "./essconform", "-count=1", "-v"], &root),
-            ("node", vec!["--test", "parcels.mjs"], &ts),
+            (
+                "go",
+                vec!["test", "./essconform", "-count=1", "-v"],
+                root.path(),
+            ),
+            ("node", vec!["--test", "parcels.mjs"], ts.as_path()),
         ] {
             let output = std::process::Command::new(tool)
                 .args(args)

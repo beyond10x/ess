@@ -1,4 +1,6 @@
 //! A successful answer and a backend bridge establish different session history.
+mod support_scratch;
+
 use ess_compiler::{resolve::compile, source::SourceMap};
 use ess_domain::{
     spec::{RawSpecFile, Specification},
@@ -120,7 +122,9 @@ fn runtime_suite() -> ess_conformance::ConformanceSuite {
 #[test]
 fn emitted_runtimes_observe_history_no_error_and_real_row_preservation() {
     let suite = runtime_suite();
-    let root = std::env::temp_dir().join(format!("ess-subject-history-{}", std::process::id()));
+    let root = support_scratch::Scratch::adopt(
+        std::env::temp_dir().join(format!("ess-subject-history-{}", std::process::id())),
+    );
     std::fs::create_dir_all(&root).unwrap();
     for artifact in ess_conformance::go::emit(&suite).unwrap() {
         let path = root.join(artifact.path);
@@ -174,8 +178,12 @@ fn emitted_runtimes_observe_history_no_error_and_real_row_preservation() {
         "missing",
     ] {
         for (tool, args, directory) in [
-            ("go", vec!["test", "./essconform", "-count=1", "-v"], &root),
-            ("node", vec!["--test", "history.mjs"], &ts),
+            (
+                "go",
+                vec!["test", "./essconform", "-count=1", "-v"],
+                root.path(),
+            ),
+            ("node", vec!["--test", "history.mjs"], ts.as_path()),
         ] {
             let output = std::process::Command::new(tool)
                 .args(args)

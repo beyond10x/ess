@@ -9,6 +9,8 @@
 //! The #176 invariant — metrics only while paused — is synthesized into a check after every
 //! state-changing branch, and a queue that resumes without clearing its metrics fails the check
 //! after `resumed` and nothing else.
+mod support_scratch;
+
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -372,8 +374,9 @@ fn command_input_reads_a_present_aggregate_as_defined_and_null_or_omitted_as_abs
 fn the_go_runtime_reads_a_present_aggregate_as_defined() {
     let suite = suite();
     let admitted = AdmittedSuite::from_suite(&suite).unwrap();
-    let directory =
-        std::env::temp_dir().join(format!("ess-defined-aggregates-{}", std::process::id()));
+    let directory = support_scratch::Scratch::adopt(
+        std::env::temp_dir().join(format!("ess-defined-aggregates-{}", std::process::id())),
+    );
     std::fs::create_dir_all(directory.join("essconform")).unwrap();
     for artifact in ess_conformance::go::emit(admitted.suite()).unwrap() {
         std::fs::write(directory.join(artifact.path), artifact.contents).unwrap();

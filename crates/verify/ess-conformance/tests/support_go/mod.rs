@@ -6,8 +6,11 @@
 //! `outcomes` name every scenario's verdict. The Rust side runs [`Runner`] against a Rust target.
 #![allow(dead_code)]
 
+#[path = "../support_scratch/mod.rs"]
+mod support_scratch;
+pub use support_scratch::Scratch;
+
 use std::collections::BTreeMap;
-use std::path::PathBuf;
 
 use ess_conformance::report::Status;
 use ess_conformance::target::ConformanceTarget;
@@ -33,22 +36,23 @@ pub struct GoRun {
     pub success: bool,
 }
 
-/// A directory of its own for one Go package, under the build's temporary directory.
-pub fn directory(label: &str) -> PathBuf {
-    let directory = std::env::temp_dir().join(format!(
+/// A directory of its own for one Go package, under the build's temporary directory, removed when
+/// the returned guard drops.
+pub fn directory(label: &str) -> Scratch {
+    let directory = Scratch::adopt(std::env::temp_dir().join(format!(
         "ess-go-parity-{label}-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos()
-    ));
+    )));
     std::fs::create_dir_all(directory.join("essconform")).unwrap();
     directory
 }
 
 /// Writes the emitted package for `suite` plus `extra` Go files into a fresh module.
-pub fn package(label: &str, suite: &ConformanceSuite, extra: &[(&str, &str)]) -> PathBuf {
+pub fn package(label: &str, suite: &ConformanceSuite, extra: &[(&str, &str)]) -> Scratch {
     let directory = directory(label);
     for artifact in ess_conformance::go::emit(suite).unwrap_or_else(|error| panic!("{error}")) {
         std::fs::write(directory.join(artifact.path), artifact.contents).unwrap();
@@ -69,7 +73,7 @@ pub fn package_input(
     label: &str,
     input: &ess_conformance::coverage::AdmittedInput,
     extra: &[(&str, &str)],
-) -> PathBuf {
+) -> Scratch {
     let directory = directory(label);
     for artifact in ess_conformance::go::emit_input(input).unwrap_or_else(|error| panic!("{error}"))
     {

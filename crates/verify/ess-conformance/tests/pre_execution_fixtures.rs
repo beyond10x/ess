@@ -1,4 +1,6 @@
 //! Fixture inputs are chosen before execution, independently of observed output.
+mod support_scratch;
+
 mod support_versions;
 
 use ess_compiler::{resolve::compile, source::SourceMap};
@@ -563,10 +565,10 @@ fn native_fixture_cases(
     go: Vec<ess_conformance::go::GoArtifact>,
     ts: Vec<ess_conformance::ts::TsArtifact>,
 ) {
-    let root = std::env::temp_dir().join(format!(
+    let root = support_scratch::Scratch::adopt(std::env::temp_dir().join(format!(
         "ess-pre-execution-fixtures-{label}-{}",
         std::process::id()
-    ));
+    )));
     let ts = fixture_packages(&root, go, ts);
     for mode in [
         "valid",
@@ -579,8 +581,12 @@ fn native_fixture_cases(
         "unsupported",
     ] {
         for (tool, args, directory) in [
-            ("go", vec!["test", "./essconform", "-count=1", "-v"], &root),
-            ("node", vec!["--test", "fixtures.mjs"], &ts),
+            (
+                "go",
+                vec!["test", "./essconform", "-count=1", "-v"],
+                root.path(),
+            ),
+            ("node", vec!["--test", "fixtures.mjs"], ts.as_path()),
         ] {
             let output = std::process::Command::new(tool)
                 .args(args)

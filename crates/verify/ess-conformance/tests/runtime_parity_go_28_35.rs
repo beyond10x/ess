@@ -25,7 +25,7 @@ impl Input {
             Self::Covered(i) => i.selected(),
         }
     }
-    fn package(&self, label: &str, extra: &[(&str, &str)]) -> std::path::PathBuf {
+    fn package(&self, label: &str, extra: &[(&str, &str)]) -> support_go::Scratch {
         match self {
             Self::Ordinary(s) => support_go::package(label, s.suite(), extra),
             Self::Covered(i) => support_go::package_input(label, i, extra),

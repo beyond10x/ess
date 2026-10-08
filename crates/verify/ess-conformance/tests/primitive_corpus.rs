@@ -6,7 +6,9 @@
 //! browser adapter's `primitiveAdmits`. Three languages, one table: a vector the three disagree
 //! about fails here rather than in a target's test suite months later.
 
-use std::path::{Path, PathBuf};
+mod support_scratch;
+
+use std::path::Path;
 use std::process::Command;
 
 use ess_conformance::{AdmittedSuite, Holds};
@@ -51,11 +53,11 @@ fn primitive_named(kind: &str) -> Primitive {
     }
 }
 
-fn directory(label: &str) -> PathBuf {
-    let path = std::env::temp_dir().join(format!(
+fn directory(label: &str) -> support_scratch::Scratch {
+    let path = support_scratch::Scratch::adopt(std::env::temp_dir().join(format!(
         "ess-primitive-corpus-{label}-{}",
         std::process::id()
-    ));
+    )));
     let _ = std::fs::remove_dir_all(&path);
     std::fs::create_dir_all(&path).expect("a working directory");
     path

@@ -6,7 +6,9 @@
 //! behaviour*: each package is emitted, compiled and run with and without `ESS_REPORT_FORMAT`, and
 //! what the README tells an adopter to type is held against what happened.
 
-use std::path::{Path, PathBuf};
+mod support_scratch;
+
+use std::path::Path;
 use std::process::{Command, Output};
 
 use ess_conformance::scenario::{SuiteFormat, SuiteProvenance};
@@ -63,11 +65,11 @@ fn console_blocks(text: &str) -> Vec<String> {
         .collect()
 }
 
-fn scratch(name: &str) -> PathBuf {
-    let directory = std::env::temp_dir().join(format!(
+fn scratch(name: &str) -> support_scratch::Scratch {
+    let directory = support_scratch::Scratch::adopt(std::env::temp_dir().join(format!(
         "ess-adversary-generated-docs-{name}-{}",
         std::process::id()
-    ));
+    )));
     let _ = std::fs::remove_dir_all(&directory);
     std::fs::create_dir_all(&directory).unwrap();
     directory
