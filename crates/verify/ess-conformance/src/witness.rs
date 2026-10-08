@@ -689,6 +689,9 @@ fn search_with(
     // The base witness records every leaf the ladders below are built from; `enumerate` builds it
     // again as its first candidate.
     builder.input(command, &BTreeMap::new())?;
+    // A leaf no guard reads holds a value its own type admits in every candidate, so the walk is
+    // not spent on a base that type refuses (https://github.com/beyond10x/ess/issues/511).
+    ground_invariants(&mut builder, command, &read_paths(&expanded))?;
     // The base satisfies the invariants over the input, of its structs and of the entities a
     // branch copies it into (beyond10x/ess#234), before any ladder is drawn from it.
     let constrained = outcome_constraints(ir, command);
@@ -3087,6 +3090,56 @@ fn invariant_ladders(builder: &Builder<'_>, ladders: &mut BTreeMap<FactPath, Vec
     }
 }
 
+/// Moves the base of each leaf no guard reads, whose own type refuses its base witness, onto the
+/// first value of its [`invariant_ladders`] ladder the type admits
+/// (<https://github.com/beyond10x/ess/issues/511>).
+///
+/// Such a leaf is varied only to reach a value its type admits, and its ladder sits wherever its
+/// path falls in name order. Where it falls late, the bounded walk varies it slowest: every
+/// candidate before the walk reaches an admitted value holds the refused base, and
+/// [`admitted_inputs`] drops them all, so the leaves guards read are tried only in the few
+/// combinations left over. Grounded first, the leaf holds an admitted value in every candidate
+/// and has no ladder, so the walk spends the whole bound on what the guards read.
+///
+/// The value is the one the walk reached first, so the admitted candidates begin with the same
+/// inputs they began with before. A leaf a guard reads, at, under or above its path, keeps its
+/// base and its ladder.
+fn ground_invariants(
+    builder: &mut Builder<'_>,
+    command: &ResolvedCommand,
+    read: &BTreeSet<FactPath>,
+) -> Result<(), WitnessGap> {
+    let related = |path: &FactPath| {
+        read.iter().any(|read| {
+            read.segments().starts_with(path.segments())
+                || path.segments().starts_with(read.segments())
+        })
+    };
+    let mut ladders = BTreeMap::new();
+    invariant_ladders(builder, &mut ladders);
+    let mut grounded = BTreeMap::new();
+    for (path, ladder) in ladders {
+        if related(&path) || builder.fixed.contains_key(&path) {
+            continue;
+        }
+        let invariants = builder.invariants.get(&path).map_or(&[][..], Vec::as_slice);
+        let alphabet = builder.alphabets.get(&path);
+        let admitted = ladder.into_iter().find_map(|choice| match choice {
+            Choice::Value(node) if admits_base(invariants, alphabet, &node) => Some(node),
+            _ => None,
+        });
+        if let Some(node) = admitted {
+            grounded.insert(path, Choice::Value(node));
+        }
+    }
+    if !grounded.is_empty() {
+        builder.fixed.extend(grounded);
+        // Recorded again, so every ladder is built from the grounded base.
+        builder.input(command, &BTreeMap::new())?;
+    }
+    Ok(())
+}
+
 /// `read` moved under `prefix`: `start` under `window` is `window.start`.
 fn joined(prefix: &FactPath, read: &FactPath) -> FactPath {
     let mut moved = prefix.clone();
@@ -3752,6 +3805,9 @@ fn widened_solve(
         expand,
         builder.positional.clone(),
     );
+    // What the base already holds in place of its own witness (`ground_invariants`) holds on
+    // the wider builder too.
+    wider.fixed = builder.fixed.clone();
     wider.input(command, &BTreeMap::new())?;
     let (found, more) = solve(&mut wider, command, &refs, &BTreeSet::new())?;
     if found.is_some() {
@@ -3795,7 +3851,7 @@ fn repair(
         }
         if let (Some(fixed), _) = widened_solve(builder, command, &constraints)? {
             if !fixed.is_empty() {
-                builder.fixed = fixed;
+                builder.fixed.extend(fixed);
                 // Recorded again, so every ladder is built from the repaired base.
                 builder.input(command, &BTreeMap::new())?;
             }
