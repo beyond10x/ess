@@ -28,6 +28,12 @@
 - In `ess-cli/1` and `ess-cli/2`, `null`, `~` and `""` as a global's flag are refused with an error
   naming the global; before, they were read as a flag called `null`
   (https://github.com/beyond10x/ess/issues/481).
+- An authored scenario is judged by the command's precedence plan, as the model interpreter
+  answers. Two acts accepted before are refused, as `ESS-AUTHOR-041` naming the branch that answers
+  first: one claiming an `exists: false` branch over a stored reference where an input refusal's
+  guard holds, and one claiming a `when_related:` or row-set branch read among the accepting
+  branches where an accepting `when:` declared before it holds. In both cases the interpreter
+  answered the other branch, so the act could not pass.
 
 ### Fixed
 
