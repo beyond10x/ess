@@ -167,6 +167,94 @@ fn generating_within_model_input_is_refused_without_mutation() {
     assert!(!temp.path().join("model/generated").exists());
 }
 
+/// beyond10x/ess#481: the issue's state-only binding, as `ess-cli/2`.
+const STATE_ONLY: &str = "format: ess-cli/2\nbinary: demo\nabout: The demo records\nglobals:\n  state: state-dir\ncallables:\n  show:\n    target: {kind: local, owner: demo.cli, action: show}\n    input: null\n    result: demo.Stored\ncommands:\n  - path: [show]\n    callable: show\n    about: Show\n    arguments: []\n";
+
+fn specify(root: &Path) -> Output {
+    ess(
+        root,
+        &[
+            "specify",
+            "cli",
+            "--path",
+            "model.yaml",
+            "--binding",
+            "cli.yaml",
+            "--format",
+            "json",
+        ],
+    )
+}
+
+#[test]
+fn a_state_only_ess_cli_2_binding_validates_and_generates_without_the_absent_flags() {
+    let temp = fixture();
+    fs::write(temp.path().join("cli.yaml"), STATE_ONLY).unwrap();
+    let valid = specify(temp.path());
+    assert!(
+        valid.status.success(),
+        "{}",
+        String::from_utf8_lossy(&valid.stderr)
+    );
+    let plan: serde_json::Value = serde_json::from_slice(&valid.stdout).unwrap();
+    assert_eq!(plan["format"], "ess-cli-plan/2");
+    assert_eq!(plan["globals"], serde_json::json!({"state": "state-dir"}));
+    let generated = generate(temp.path(), false);
+    assert!(
+        generated.status.success(),
+        "{}",
+        String::from_utf8_lossy(&generated.stderr)
+    );
+    let help = fs::read_to_string(temp.path().join("generated/help.txt")).unwrap();
+    assert!(help.contains("--state-dir"), "{help}");
+    for absent in ["--config", "--output"] {
+        assert!(!help.contains(absent), "help lists {absent}: {help}");
+    }
+    assert!(generate(temp.path(), true).status.success());
+}
+
+#[test]
+fn a_null_or_empty_global_is_refused_naming_it_and_ess_cli_1_names_the_version_that_omits_it() {
+    let temp = fixture();
+    for (format, spelling) in [
+        ("ess-cli/1", "null"),
+        ("ess-cli/1", "~"),
+        ("ess-cli/1", "\"\""),
+        ("ess-cli/2", "null"),
+        ("ess-cli/2", "~"),
+        ("ess-cli/2", "\"\""),
+    ] {
+        let text = BINDING
+            .replace("ess-cli/1", format)
+            .replace("{config: config,", &format!("{{config: {spelling},"));
+        fs::write(temp.path().join("cli.yaml"), text).unwrap();
+        let refused = specify(temp.path());
+        let stderr = String::from_utf8_lossy(&refused.stderr);
+        assert!(
+            !refused.status.success(),
+            "{format} admitted `config: {spelling}`"
+        );
+        assert!(
+            stderr.contains("globals.config"),
+            "{format} `config: {spelling}`: {stderr}"
+        );
+    }
+    fs::write(
+        temp.path().join("cli.yaml"),
+        STATE_ONLY.replace("ess-cli/2", "ess-cli/1"),
+    )
+    .unwrap();
+    let refused = specify(temp.path());
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    assert!(!refused.status.success(), "ess-cli/1 admitted state alone");
+    for named in ["`config`", "ess-cli/2"] {
+        assert!(
+            stderr.contains(named),
+            "the refusal names {named}: {stderr}"
+        );
+    }
+}
+
 #[cfg(unix)]
 #[test]
 fn drift_check_refuses_linked_generated_files() {
