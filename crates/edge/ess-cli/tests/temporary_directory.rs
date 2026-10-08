@@ -74,9 +74,14 @@ fn a_guard_removes_a_tree_whose_symlink_points_at_a_read_only_directory_outside_
 fn no_test_creates_tmpdir_scratch_without_a_guard() {
     let needles = [concat!("temp", "_dir"), concat!("into", "_path()")];
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    // The guard itself, and the std-only one `support/browser.rs` keeps because `ess-conformance`
-    // compiles that file too and cannot depend on `ess-cli`.
+    // The guard itself, and the std-only ones kept by files another crate compiles too and which
+    // therefore cannot depend on `ess-cli`: `support/browser.rs` (`ess-conformance`) and
+    // `src/git_checkout.rs` (`ess-xtask`, through `#[path]`).
     let guards = [
+        (
+            crate_root.join("src/git_checkout.rs"),
+            "impl Drop for Scratch",
+        ),
         (
             crate_root.join("src/lib.rs"),
             "impl Drop for TemporaryDirectory",
