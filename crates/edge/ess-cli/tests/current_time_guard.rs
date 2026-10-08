@@ -2,10 +2,11 @@
 //! `docs/design/current-time-guards.md`).
 //!
 //! The suite is synthesized from the #171 repro through the CLI's own path, admitted as
-//! `ess-conformance/26`, and run. No built-in target implements the jobs model, so what is
-//! observable here is the run itself: every `now_offset` resolves against the wall clock the CLI
-//! supplies before the command reaches the target — which then answers that it does not know the
-//! command — and nothing in the run is about the value.
+//! `ess-conformance/26`, and run. Against the billing target, which does not implement the jobs
+//! model, what is observable is the run itself: every `now_offset` resolves against the wall clock
+//! the CLI supplies before the command reaches the target — which then answers that it does not
+//! know the command — and nothing in the run is about the value. The interpreted target executes
+//! the model and passes every scenario.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -100,13 +101,17 @@ fn issue_171_a_now_offset_suite_runs_through_the_cli_with_every_value_resolved()
     );
 }
 
+/// The interpreter decides each `now` guard at the instant of the step the runner is executing,
+/// the one its `now_offset` values resolved against, so every scenario passes
+/// (<https://github.com/beyond10x/ess/issues/510>; it was `unsupported` while the CLI built the
+/// target without that clock).
 #[test]
 fn issue_171_a_now_offset_suite_is_admitted_against_the_interpreter() {
     let (code, report, stderr) = run("interpreted");
-    assert_eq!(code, Some(1), "{stderr}");
     let statuses: BTreeSet<&str> = scenarios(&report)
         .iter()
         .map(|scenario| scenario["status"].as_str().expect("a status"))
         .collect();
-    assert_eq!(statuses, BTreeSet::from(["unsupported"]), "{report:#}");
+    assert_eq!(statuses, BTreeSet::from(["passed"]), "{report:#}");
+    assert_eq!(code, Some(0), "{stderr}");
 }

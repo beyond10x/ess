@@ -14,8 +14,10 @@
 //! is the spelling, shared with the Go and TypeScript writers.
 //!
 //! [`CommandClock`] is the caller-owned provider a native target reads at its decision edge,
-//! exactly once per executed decision. This crate implements none: the default target holds no
-//! provider and reads no host clock.
+//! exactly once per executed decision. The one this crate implements is
+//! [`Runner::command_clock`](crate::Runner::command_clock): the instant of the step the runner is
+//! executing (<https://github.com/beyond10x/ess/issues/510>). The default target holds no provider
+//! and reads no host clock.
 
 use std::fmt;
 

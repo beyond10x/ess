@@ -4073,12 +4073,16 @@ fn conform_run(command: ConformCommand) -> Result<ExitCode> {
             .run_admitted(&admitted, &ess_conformance::reference::Billing::new()),
         ReferenceTarget::OracleFixture => wall_clock_runner(suite)
             .run_admitted(&admitted, &ess_conformance::reference::Oracle::new()),
-        ReferenceTarget::Interpreted => wall_clock_runner(suite).run_admitted(
-            &admitted,
-            interpreted
-                .as_ref()
-                .expect("the interpreted target was built from `--path` above"),
-        ),
+        ReferenceTarget::Interpreted => {
+            let mut runner = scenario_clock_runner(suite);
+            // The interpreter decides a `now` guard at the instant of the step being executed
+            // (https://github.com/beyond10x/ess/issues/510); without a clock it answers every
+            // such decision `unsupported`.
+            let clocked = interpreted
+                .expect("the interpreted target was built from `--path` above")
+                .with_command_clock(runner.command_clock());
+            runner.run_admitted(&admitted, &clocked)
+        }
     })?;
     let render = || {
         render_conformance_report(
@@ -4152,6 +4156,39 @@ fn wall_clock_runner(
         ess_conformance::now_offset::WithWall::new(
             ess_conformance::AdvancingClock::default(),
             machine_clock as fn() -> ess_primitives::time::Timestamp,
+        ),
+        ess_conformance::Ids::for_suite(suite),
+    )
+}
+
+/// The scenario clock's wall: `now_offset::earliest_run()`, the earliest moment a suite carrying
+/// `now_offset` values runs, so every fixed instant synthesis admits lies on the side of it that
+/// a run's does.
+fn scenario_wall() -> ess_primitives::time::Timestamp {
+    let seconds = ess_conformance::now_offset::earliest_run().epoch_seconds();
+    ess_primitives::time::Timestamp::from_epoch_millis(
+        u64::try_from(seconds).map_or(0, |seconds| seconds.saturating_mul(1000)),
+    )
+}
+
+/// The runner `--target interpreted` executes a suite with: [`wall_clock_runner`]'s budgets and
+/// durations, and [`scenario_wall`] as the wall. The interpreter decides `now` by the runner's
+/// step instant ([`ess_conformance::Runner::command_clock`]), so nothing in the run reads the
+/// machine's clock and two runs print the same report
+/// (<https://github.com/beyond10x/ess/issues/510>).
+fn scenario_clock_runner(
+    suite: &ess_conformance::ConformanceSuite,
+) -> ess_conformance::Runner<
+    ess_conformance::now_offset::WithWall<
+        ess_conformance::AdvancingClock,
+        fn() -> ess_primitives::time::Timestamp,
+    >,
+> {
+    ess_conformance::Runner::new(
+        ess_conformance::RunnerConfig::default(),
+        ess_conformance::now_offset::WithWall::new(
+            ess_conformance::AdvancingClock::default(),
+            scenario_wall as fn() -> ess_primitives::time::Timestamp,
         ),
         ess_conformance::Ids::for_suite(suite),
     )

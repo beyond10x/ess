@@ -62,6 +62,16 @@
 
 ### Fixed
 
+- `ess verify conform run --target interpreted` decides a command with a current-time (`now`)
+  guard, where it answered every scenario of that command `unsupported`, authored ones included.
+  The interpreter decides at the instant of the step being executed, which is also the instant
+  that step's `now_offset` values resolve against. It reads that instant once per decision.
+  The interpreted run reads no machine clock: its wall is the fixed
+  `now_offset::earliest_run()` instant, so two runs print the same report. The text report now
+  prints the diagnostic under an `unsupported` scenario, as it already did under an `error` one,
+  so a guard the target cannot decide is named. The library adds `Runner::command_clock`, a
+  command clock that reads the runner's step instant
+  (https://github.com/beyond10x/ess/issues/510).
 - `ess verify conform mutate` scores a `precedence-swap` of two branches that answer alike as
   `equivalent` (`ESS-MUTATE-005`), where it reported a survivor no implementation could kill:
   the same error, the same or no payload, and neither branch changing state, setting or emitting
