@@ -2289,13 +2289,13 @@ fn may_hold(
     }
 }
 
-/// [`satisfiable`], over values a caller of `ir` can send: an enum leaf ranges over its variants
+/// `satisfiable`, over values a caller of `ir` can send: an enum leaf ranges over its variants
 /// only, never over a guard literal that is not one of them, which the decoder refuses.
 ///
 /// For `ess-diff`, which asks whether a refusal changed between two revisions takes an input a
 /// caller of the earlier one could send (<https://github.com/beyond10x/ess/issues/514>): a second
 /// decision procedure beside this one would be two answers to one question. Every other leaf is
-/// read as [`satisfiable`] reads it, invariants included.
+/// read as `satisfiable` reads it, invariants included.
 pub fn satisfiable_by_declared_values(
     ir: &EssIr,
     command: &ess_compiler::ir::ResolvedCommand,
