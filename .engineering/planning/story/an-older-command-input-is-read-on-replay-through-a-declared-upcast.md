@@ -2,12 +2,14 @@
 format: aep.planning-md/3
 id: story:an-older-command-input-is-read-on-replay-through-a-declared-upcast
 kind: story
-status: draft
+status: archived
 title: Replay reads a recorded command input in an older shape through a declared upcast
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 3
+revision: 5
+transitions:
+- {from: "draft", to: "archived", at: "2026-10-08T03:51:50Z", actor: "human:timo", revision: 5}
 ---
 ## Need
 
@@ -178,3 +180,7 @@ taken yet.
   session's synthesis waves end. A story for it is not written.
 - Message to the requester (to send once decided): decline with the idiom; the reproducer path; C
   if accepted.
+
+## Closed (2026-10-08)
+
+Declined, with the idiom: keep the old input field's type and add the new information as an `Optional` input, guarding any refusal that reads it with `defined(<field>)` (`.engineering/repro/upcast/after-additive.yaml`). A declared upcast would add a source-format key for a case the idiom covers. The gap the request exposed, `ess verify diff` letting a scalar-to-record input change pass as `unknown`, is `story:a-scalar-to-record-input-change-is-breaking-for-callers`.
