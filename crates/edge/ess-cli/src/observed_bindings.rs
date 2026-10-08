@@ -945,12 +945,11 @@ fn write_new(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{fs, new_output, write_new};
+    use ess_cli::TemporaryDirectory;
 
     #[test]
     fn an_output_created_after_preflight_is_preserved() {
-        let root =
-            std::env::temp_dir().join(format!("ess-binding-output-race-{}", std::process::id()));
-        fs::create_dir(&root).unwrap();
+        let root = TemporaryDirectory::create("ess-binding-output-race").unwrap();
         let path = root.join("observation.json");
         new_output(&path, true).unwrap();
         // Another acquisition publishes while this acquisition is still collecting.

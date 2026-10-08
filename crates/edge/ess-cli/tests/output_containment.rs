@@ -1,21 +1,15 @@
 //! Output refusal is decided before any file in the destination set changes.
 
+use ess_cli::TemporaryDirectory;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
-use std::sync::atomic::{AtomicUsize, Ordering};
 
-struct Fixture(PathBuf);
+struct Fixture(TemporaryDirectory);
 
 impl Fixture {
     fn new() -> Self {
-        static NEXT: AtomicUsize = AtomicUsize::new(0);
-        let path = std::env::temp_dir().join(format!(
-            "ess-output-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir(&path).unwrap();
+        let path = TemporaryDirectory::create("ess-output").unwrap();
         fs::create_dir(path.join("out")).unwrap();
         fs::write(path.join("page.md"), "# Authored page\n\nKept verbatim.\n").unwrap();
         fs::write(path.join("out/index.html"), "inside sentinel").unwrap();

@@ -86,7 +86,12 @@ impl Drop for Host {
 pub fn typescript_package(suite: &AdmittedSuite) -> &'static PathBuf {
     static PACKAGE: OnceLock<PathBuf> = OnceLock::new();
     PACKAGE.get_or_init(|| {
-        let root = super::super::support_go::directory("nested-response-ts");
+        // Cached for the whole process, so it lives under the build's directory and not in
+        // $TMPDIR: a static is never dropped, so no scratch guard could remove it.
+        let root = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+            .join(format!("nested-response-ts-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("essconform")).unwrap();
         for artifact in ess_conformance::ts::emit(suite.suite()).unwrap() {
             let path = root.join(artifact.path);
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();

@@ -4,11 +4,10 @@
 //! `--all-types`; `--root` with either `--all-*` selector is refused, as `--root` with
 //! `--all-types` always was.
 
+use ess_cli::TemporaryDirectory;
 use std::{
     fs,
-    path::PathBuf,
     process::{Command, Output},
-    sync::atomic::{AtomicUsize, Ordering},
 };
 
 const MODEL: &str = "format: ess/20
@@ -29,15 +28,10 @@ events:
       - {name: created_at, type: Timestamp, wire: createdAt}
 ";
 
-struct Fixture(PathBuf);
+struct Fixture(TemporaryDirectory);
 impl Fixture {
     fn new() -> Self {
-        static NEXT: AtomicUsize = AtomicUsize::new(0);
-        let path = std::env::temp_dir().join(format!(
-            "ess-model-type-events-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
+        let path = TemporaryDirectory::create("ess-model-type-events").unwrap();
         fs::create_dir_all(path.join("model")).unwrap();
         fs::write(path.join("model/system.yaml"), MODEL).unwrap();
         Self(path)
@@ -54,12 +48,6 @@ impl Fixture {
         fs::read_to_string(self.0.join(path)).unwrap()
     }
 }
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        fs::remove_dir_all(&self.0).unwrap();
-    }
-}
-
 #[test]
 fn an_event_root_realizes_the_payload_struct() {
     let fixture = Fixture::new();

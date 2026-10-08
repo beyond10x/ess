@@ -1,5 +1,7 @@
 //! Adversary pass 1 for beyond10x/ess#389 slice 2: the receipt against design section 8, and the
 //! source-count bound shared by the Rust host and the JavaScript player against section 4.
+mod support_scratch;
+
 #[allow(dead_code, unused_imports, clippy::all, clippy::pedantic)]
 #[path = "../../../edge/ess-cli/tests/support/browser.rs"]
 mod browser;
@@ -14,7 +16,7 @@ use ess_conformance::{
     AdmittedSuite, AdvancingClock, ConformanceSuite, RunnerConfig, SuiteProvenance,
 };
 use ess_domain::{spec::RawSpecFile, system::Source, Specification};
-use std::{fs, path::PathBuf};
+use std::fs;
 
 const SOURCE: &str = "format: ess/1\nsystem: browser\nversion: v1\ndomain: browser.test\n";
 
@@ -83,8 +85,10 @@ fn adversary_completed_receipt_binds_every_original_source_digest() {
     }
 }
 
-fn scratch(name: &str) -> PathBuf {
-    let root = std::env::temp_dir().join(format!("adv389s2-{name}-{}", std::process::id()));
+fn scratch(name: &str) -> support_scratch::Scratch {
+    let root = support_scratch::Scratch::adopt(
+        std::env::temp_dir().join(format!("adv389s2-{name}-{}", std::process::id())),
+    );
     let _ = fs::remove_dir_all(&root);
     fs::create_dir_all(&root).unwrap();
     root

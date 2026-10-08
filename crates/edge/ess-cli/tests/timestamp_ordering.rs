@@ -6,20 +6,15 @@
 //! passed it and synthesize could not order it. Validate now refuses that spelling and names the
 //! one that works, and synthesize orders two RFC 3339 instants.
 
+use ess_cli::TemporaryDirectory;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 const FLAT: &str = include_str!("fixtures/room-booking/flat.yaml");
 const WINDOW: &str = include_str!("fixtures/room-booking/window.yaml");
 
-fn dir(name: &str) -> PathBuf {
-    let path = std::env::temp_dir().join(format!(
-        "ess-timestamp-ordering-{name}-{}",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_dir_all(&path);
-    std::fs::create_dir_all(&path).unwrap();
-    path
+fn dir(name: &str) -> TemporaryDirectory {
+    TemporaryDirectory::create(&format!("ess-timestamp-ordering-{name}")).unwrap()
 }
 
 fn ess(arguments: &[&str], model: &Path) -> (Option<i32>, String) {
@@ -39,15 +34,17 @@ fn ess(arguments: &[&str], model: &Path) -> (Option<i32>, String) {
     )
 }
 
-fn model(name: &str, text: &str) -> PathBuf {
-    let path = dir(name).join("system.yaml");
+/// The model file and the guard that removes its directory; the guard must outlive every use.
+fn model(name: &str, text: &str) -> (TemporaryDirectory, PathBuf) {
+    let root = dir(name);
+    let path = root.join("system.yaml");
     std::fs::write(&path, text).unwrap();
-    path
+    (root, path)
 }
 
 /// Both verbs accept the model, and synthesize witnesses both outcomes with no refusal.
 fn both_accept(name: &str, text: &str) {
-    let path = model(name, text);
+    let (_root, path) = model(name, text);
     let (code, output) = ess(&["specify", "validate"], &path);
     assert_eq!(code, Some(0), "validate refused {name}: {output}");
     let (code, output) = ess(&["verify", "conform", "synthesize"], &path);
@@ -60,7 +57,7 @@ fn both_accept(name: &str, text: &str) {
 
 /// Both verbs refuse the model, with the same explanation.
 fn both_refuse(name: &str, text: &str, needle: &str) {
-    let path = model(name, text);
+    let (_root, path) = model(name, text);
     let (code, validated) = ess(&["specify", "validate"], &path);
     assert_ne!(code, Some(0), "validate accepted {name}: {validated}");
     assert!(validated.contains(needle), "{name}: {validated}");

@@ -2,7 +2,8 @@
 //! that orders `Timestamp` values (beyond10x/ess#74). When validate accepts, synthesize must
 //! witness every outcome with no refusal; when validate refuses, synthesize must refuse too.
 
-use std::path::{Path, PathBuf};
+use ess_cli::TemporaryDirectory;
+use std::path::Path;
 use std::process::Command;
 
 const WINDOW: &str = include_str!("fixtures/room-booking/window.yaml");
@@ -25,20 +26,15 @@ fn ess(arguments: &[&str], model: &Path) -> (Option<i32>, String) {
     )
 }
 
-fn model(name: &str, text: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "ess-timestamp-adversary-{name}-{}",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join("system.yaml");
-    std::fs::write(&path, text).unwrap();
-    path
+fn model(name: &str, text: &str) -> TemporaryDirectory {
+    let dir = TemporaryDirectory::create(&format!("ess-timestamp-adversary-{name}")).unwrap();
+    std::fs::write(dir.join("system.yaml"), text).unwrap();
+    dir
 }
 
 fn agree(name: &str, text: &str) {
-    let path = model(name, text);
+    let dir = model(name, text);
+    let path = dir.join("system.yaml");
     let (validate_code, validated) = ess(&["specify", "validate"], &path);
     let (synthesize_code, synthesized) = ess(&["verify", "conform", "synthesize"], &path);
     if validate_code == Some(0) {

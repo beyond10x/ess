@@ -1,0 +1,57 @@
+format: ess/23
+system: catalog
+version: v1
+domain: catalog.item
+entities:
+  - name: catalog.item.Item
+    identity: {name: item_id, type: Uuid}
+    fields:
+      - {name: label, type: String}
+    lifecycle:
+      initial: Listed
+      states: [Listed, Claimed]
+      terminal: [Claimed]
+      transitions:
+        - {name: claim, from: [Listed], to: Claimed}
+events:
+  - name: catalog.item.ItemListed
+    fields:
+      - {name: item_id, type: Uuid}
+errors:
+  - name: catalog.item.NotListed
+    summary: The item is not in Listed.
+commands:
+  - name: catalog.item.List
+    input:
+      - {name: label, type: String}
+    outcomes:
+      - name: listed
+        creates: catalog.item.Item
+        instance: item_id
+        emits: [catalog.item.ItemListed]
+        payload:
+          catalog.item.ItemListed:
+            item_id: {generated: true}
+        sets:
+          label: input.label
+  - name: catalog.item.Claim
+    input:
+      - {name: item_id, type: Uuid}
+    response:
+      - {name: code, type: String}
+    outcomes:
+      - name: claimed
+        moves: catalog.item.Item.claim
+        instance: item_id
+        returns: true
+        one_time_response: [code]
+      - name: wrong-state
+        wrong_state: true
+        error: catalog.item.NotListed
+views:
+  - name: catalog.item.Items
+    source: catalog.item.Item
+    consistency: read_your_writes
+    fields:
+      - {name: item_id, type: Uuid}
+      - {name: label, type: String}

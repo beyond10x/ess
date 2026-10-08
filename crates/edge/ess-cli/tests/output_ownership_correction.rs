@@ -1,21 +1,14 @@
 //! Caller-class controls for output ownership correction 1.
+use ess_cli::TemporaryDirectory;
 use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
     process::{Command, Output},
-    sync::atomic::{AtomicUsize, Ordering},
 };
 
-fn fixture() -> PathBuf {
-    static NEXT: AtomicUsize = AtomicUsize::new(0);
-    let root = std::env::temp_dir().join(format!(
-        "e19-correction-{}-{}",
-        std::process::id(),
-        NEXT.fetch_add(1, Ordering::Relaxed)
-    ));
-    fs::create_dir(&root).unwrap();
-    root
+fn fixture() -> TemporaryDirectory {
+    TemporaryDirectory::create("e19-correction").unwrap()
 }
 fn workspace() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))

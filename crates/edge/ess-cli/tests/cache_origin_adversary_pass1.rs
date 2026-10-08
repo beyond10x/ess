@@ -1,4 +1,5 @@
 //! Source attack against the accepted original-byte OCI cache binding.
+use ess_cli::TemporaryDirectory;
 use ess_deployment::Digest;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -23,25 +24,20 @@ const BUNDLE_LAYER: &str = "application/vnd.beyond10x.ess.release-bundle.v1+json
 const EMPTY: &str = "application/vnd.oci.empty.v1+json";
 const REPO: &str = "registry.invalid/independent";
 /// A fixture directory, and the acquisition deadline its processes are told to use.
-struct Fixture(PathBuf, Option<std::time::Duration>);
+struct Fixture(PathBuf, Option<std::time::Duration>, TemporaryDirectory);
 /// The acquisition deadline the deadline case injects rather than waiting the product's 60
 /// seconds. A debug build of the product reads `ESS_OCI_DEADLINE_MS`; `oci_cache`'s own case
 /// holds the 60-second default.
 const DEADLINE: std::time::Duration = std::time::Duration::from_secs(6);
 impl Fixture {
     fn new() -> Self {
-        static NEXT: AtomicU64 = AtomicU64::new(0);
-        let path = std::env::temp_dir().join(format!(
-            "oci-attack-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        std::fs::create_dir(&path).unwrap();
-        Self(path, None)
+        let scratch = TemporaryDirectory::create("oci-attack").unwrap();
+        Self(scratch.to_path_buf(), None, scratch)
     }
     /// A fixture whose acquisitions run under `deadline` rather than the product's.
     fn with_deadline(deadline: std::time::Duration) -> Self {
-        Self(Self::new().0, Some(deadline))
+        let Self(path, _, scratch) = Self::new();
+        Self(path, Some(deadline), scratch)
     }
     fn deadline(&self, command: &mut Command) {
         if let Some(deadline) = self.1 {
@@ -108,7 +104,12 @@ fn clients() -> &'static Path {
     static CLIENTS: OnceLock<PathBuf> = OnceLock::new();
     CLIENTS
         .get_or_init(|| {
-            let f = Fixture::new();
+            // Cached for the whole process, so no drop guard may own it: it lives under the
+            // target directory, which `cargo clean` removes.
+            let dir = Path::new(env!("CARGO_TARGET_TMPDIR"))
+                .join(format!("oci-attack-clients-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
             let program = compiled_fixture::compiled(
                 &Path::new(env!("CARGO_MANIFEST_DIR"))
                     .join("tests/support/cache_origin_attack_client.rs"),
@@ -116,13 +117,13 @@ fn clients() -> &'static Path {
                 &["--edition=2021", "-C", "debuginfo=0"],
             );
             std::fs::write(
-                f.0.join("client-build.program"),
+                dir.join("client-build.program"),
                 format!("{}\n", program.display()),
             )
             .unwrap();
-            executable::install_copy(&program, &f.0.join("oras")).unwrap();
-            executable::install_copy(&program, &f.0.join("helm")).unwrap();
-            f.0
+            executable::install_copy(&program, &dir.join("oras")).unwrap();
+            executable::install_copy(&program, &dir.join("helm")).unwrap();
+            dir
         })
         .as_path()
 }

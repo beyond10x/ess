@@ -343,13 +343,25 @@ fn the_namespace_filter_scopes_sections_findings_and_directions_alike() {
     );
 }
 
+/// A directory under `TMPDIR` removed when dropped, so a failing assertion leaves nothing.
+struct Scratch(std::path::PathBuf);
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
 #[test]
 fn the_html_page_writes_out_as_one_self_contained_file() {
     // The artifact the orchestrator will wire behind `--format html`: written here so the
     // shape is proven end to end before the CLI flag exists.
     let page = example_html(None);
-    let directory = std::env::temp_dir().join("infra-analyze-html-test");
-    std::fs::create_dir_all(&directory).expect("a scratch directory");
+    let scratch = Scratch(
+        std::env::temp_dir().join(format!("infra-analyze-html-test-{}", std::process::id())),
+    );
+    let directory = &scratch.0;
+    std::fs::create_dir_all(directory).expect("a scratch directory");
     let path = directory.join("cluster.html");
     std::fs::write(&path, &page).expect("the page writes");
     let read_back = std::fs::read_to_string(&path).expect("and reads back");
@@ -367,5 +379,4 @@ fn the_html_page_writes_out_as_one_self_contained_file() {
         1,
         "exactly one external reference, the pinned renderer: {external:?}"
     );
-    std::fs::remove_dir_all(&directory).ok();
 }

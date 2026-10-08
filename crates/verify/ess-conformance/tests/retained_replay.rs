@@ -1,4 +1,6 @@
 //! Retained replies are observed before retry rather than supplied by the target.
+mod support_scratch;
+
 mod support_versions;
 use ess_compiler::{resolve::compile, source::SourceMap};
 use ess_conformance::{report::Status, target::*, AdmittedSuite, Runner, ScenarioStep};
@@ -540,7 +542,9 @@ fn emit_replay_runtime_artifacts_when_requested() {
 
 #[test]
 fn generated_go_replay_runtime_executes_actual_results_and_strict_admission() {
-    let root = std::env::temp_dir().join(format!("ess-retained-go-{}", std::process::id()));
+    let root = support_scratch::Scratch::adopt(
+        std::env::temp_dir().join(format!("ess-retained-go-{}", std::process::id())),
+    );
     emit_runtime(&root);
     let result = std::process::Command::new("go")
         .args(["test", "-json", "-count=1", "./essconform"])
@@ -1296,8 +1300,9 @@ fn adversary_source7_wrong_state_refusal_requires_actual_complete_subject_observ
 
 #[test]
 fn adversary_go_replay_requires_complete_actual_subject_rows() {
-    let root =
-        std::env::temp_dir().join(format!("ess-adversary-retained-go-{}", std::process::id()));
+    let root = support_scratch::Scratch::adopt(
+        std::env::temp_dir().join(format!("ess-adversary-retained-go-{}", std::process::id())),
+    );
     emit_runtime(&root);
     std::fs::write(
         root.join("essconform/adversary_projection_test.go"),

@@ -34,6 +34,15 @@ thread_local! {
 #[no_mangle] pub extern "C" fn ess_output_len()->u32 {OUTPUT.with(|held|held.borrow().len() as u32)}
 "#;
 
+/// A directory under `TMPDIR` removed when dropped, the build cache inside it included.
+struct Scratch(PathBuf);
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
 fn run(command: &mut Command) -> std::process::Output {
     let output = command.output().unwrap();
     assert!(
@@ -45,8 +54,10 @@ fn run(command: &mut Command) -> std::process::Output {
     output
 }
 
-fn build_host() -> (PathBuf, PathBuf) {
-    let root = std::env::temp_dir().join(format!("ess-nested-wasm-{}", std::process::id()));
+fn build_host() -> (Scratch, PathBuf) {
+    let scratch =
+        Scratch(std::env::temp_dir().join(format!("ess-nested-wasm-{}", std::process::id())));
+    let root = scratch.0.clone();
     std::fs::create_dir_all(root.join("src")).unwrap();
     let conformance = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../verify/ess-conformance")
@@ -119,12 +130,13 @@ fn build_host() -> (PathBuf, PathBuf) {
         json!({"faults":[0,1,2,3],"item_case":0}).to_string(),
     )
     .unwrap();
-    (root, cache)
+    (scratch, cache)
 }
 
 #[test]
 fn actual_wasm_observes_independent_response_event_and_generated_sibling() {
-    let (root, cache) = build_host();
+    let (scratch, cache) = build_host();
+    let root = &scratch.0;
     let fixture =
         include_str!("../../../verify/ess-conformance/tests/support_nested_response/mod.rs");
     let model = fixture
@@ -148,7 +160,7 @@ fn actual_wasm_observes_independent_response_event_and_generated_sibling() {
         run(Command::new("node")
             .arg("driver.mjs")
             .arg(cache.join("wasm32-unknown-unknown/debug/nested_response_host.wasm"))
-            .current_dir(&root))
+            .current_dir(root))
     };
     let answers: Value = serde_json::from_slice(&execute().stdout).unwrap();
     for (index, answer) in answers.as_array().unwrap().iter().enumerate() {

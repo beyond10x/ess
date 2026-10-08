@@ -312,6 +312,15 @@ fn parameter_locations_escape_every_wire_json_pointer_segment() {
     );
 }
 
+/// A directory under `TMPDIR` removed when dropped, so a refused document leaves nothing behind.
+struct Scratch(std::path::PathBuf);
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
 #[test]
 #[ignore = "requires the official AsyncAPI CLI; CI runs this test explicitly"]
 fn the_official_asyncapi_cli_accepts_the_parameterized_document() {
@@ -323,12 +332,13 @@ fn the_official_asyncapi_cli_accepts_the_parameterized_document() {
     let spec = TransportSpec::from_yaml(&text).expect("parses");
     let transport = ess_transport::compile(&spec, &ir).expect("compiles");
     let artifacts = run(&TransportedAsyncApi(transport), &ir).expect("generates");
-    let root = std::env::temp_dir().join(format!(
+    let scratch = Scratch(std::env::temp_dir().join(format!(
         "ess-asyncapi-parameter-validation-{}",
         std::process::id()
-    ));
-    let _ = std::fs::remove_dir_all(&root);
-    std::fs::create_dir_all(&root).unwrap();
+    )));
+    let root = &scratch.0;
+    let _ = std::fs::remove_dir_all(root);
+    std::fs::create_dir_all(root).unwrap();
     let document = root.join("producer.yaml");
     std::fs::write(&document, &artifacts["asyncapi/producer.yaml"].contents).unwrap();
     let cli = std::env::var_os("ESS_ASYNCAPI_CLI")

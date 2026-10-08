@@ -1,0 +1,79 @@
+format: ess/23
+system: catalog
+version: v1
+domain: catalog.orders
+
+components:
+  - component: orders-server
+    owns:
+      domains: [catalog.orders]
+    accepts:
+      commands: [catalog.orders.Place, catalog.orders.Collect]
+    publishes:
+      events: [catalog.orders.Placed, catalog.orders.Collected]
+    reached_by: network
+
+types:
+  - {name: catalog.orders.OrderId, kind: newtype, of: String}
+
+entities:
+  - name: catalog.orders.Order
+    identity: {name: order_id, type: catalog.orders.OrderId}
+    fields:
+      - {name: placed_by, type: String}
+    lifecycle:
+      initial: Placed
+      states: [Placed, Collected]
+      terminal: [Collected]
+      transitions:
+        - {name: collect, from: [Placed], to: Collected}
+
+actors:
+  - name: catalog.orders.Buyer
+    may: [catalog.orders.Place, catalog.orders.Collect]
+
+errors:
+  - name: catalog.orders.Refused
+
+events:
+  - name: catalog.orders.Placed
+    fields:
+      - {name: order_id, type: catalog.orders.OrderId}
+  - name: catalog.orders.Collected
+    fields:
+      - {name: order_id, type: catalog.orders.OrderId}
+
+commands:
+  - name: catalog.orders.Place
+    input:
+      - {name: placed_by, type: String}
+    outcomes:
+      - name: placed
+        creates: catalog.orders.Order
+        instance: order_id
+        sets: {placed_by: input.placed_by}
+        emits: [catalog.orders.Placed]
+        payload:
+          catalog.orders.Placed: {order_id: {generated: true}}
+
+  - name: catalog.orders.Collect
+    input:
+      - {name: order_id, type: catalog.orders.OrderId}
+      - {name: collector, type: String}
+    outcomes:
+      - name: unknown
+        unknown_instance: true
+        error: catalog.orders.Refused
+      - name: wrong-collector
+        when_subject:
+          predicate: placed_by != input.collector
+        error: catalog.orders.Refused
+      - name: already-collected
+        wrong_state: true
+        error: catalog.orders.Refused
+      - name: collected
+        moves: catalog.orders.Order.collect
+        instance: order_id
+        emits: [catalog.orders.Collected]
+        payload:
+          catalog.orders.Collected: {order_id: input.order_id}

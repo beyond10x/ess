@@ -1,4 +1,5 @@
 //! Explicit count-report dispatch preserves the legacy default and never claims coverage.
+use ess_cli::TemporaryDirectory;
 use std::{path::Path, process::Command};
 
 #[test]
@@ -34,10 +35,8 @@ fn count_report_opt_in_has_a_distinct_detailed_surface_and_unknown_coverage() {
     assert_eq!(strict.status.code(), Some(3));
 }
 
-fn suite_files(label: &str) -> std::path::PathBuf {
-    let directory =
-        std::env::temp_dir().join(format!("ess-count-cli-{label}-{}", std::process::id()));
-    std::fs::create_dir_all(&directory).unwrap();
+fn suite_files(label: &str) -> TemporaryDirectory {
+    let directory = TemporaryDirectory::create(&format!("ess-count-cli-{label}")).unwrap();
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
     let output = Command::new(env!("CARGO_BIN_EXE_ess"))
         .args(["conform", "synthesize", "--path"])

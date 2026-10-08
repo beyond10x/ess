@@ -1,4 +1,5 @@
 //! Actual opt-in CLI production and fail-before-output pairing.
+use ess_cli::TemporaryDirectory;
 use ess_conformance::{coverage::AdmittedInput, AdmittedSuite};
 use serde_json::{json, Value};
 use std::{
@@ -209,10 +210,8 @@ fn coverage_cli_refuses_binary64_model_before_each_new_production_surface() {
     assert!(!output.status.success(), "{output:?}");
     assert!(!destination.exists());
 }
-fn directory(name: &str) -> PathBuf {
-    let path = std::env::temp_dir().join(format!("ess-coverage-cli-{name}-{}", std::process::id()));
-    fs::create_dir_all(&path).unwrap();
-    path
+fn directory(name: &str) -> TemporaryDirectory {
+    TemporaryDirectory::create(&format!("ess-coverage-cli-{name}")).unwrap()
 }
 fn command(args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_ess"))

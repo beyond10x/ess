@@ -7,12 +7,12 @@
 #[path = "../src/output_ownership/mod.rs"]
 mod ownership;
 
+use ess_cli::TemporaryDirectory;
 use serde_json::{json, Value};
 use std::{
     fs,
     os::unix::{ffi::OsStrExt, fs::MetadataExt},
     path::{Component, Path, PathBuf},
-    sync::atomic::{AtomicUsize, Ordering},
 };
 
 const OLD: &[(&str, &str)] = &[("same", "original"), ("retired/old", "withdrawn")];
@@ -24,15 +24,8 @@ fn serial() -> std::sync::MutexGuard<'static, ()> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-fn fixture() -> PathBuf {
-    static NEXT: AtomicUsize = AtomicUsize::new(0);
-    let root = std::env::temp_dir().join(format!(
-        "ess-idle-adversary-{}-{}",
-        std::process::id(),
-        NEXT.fetch_add(1, Ordering::Relaxed)
-    ));
-    fs::create_dir(&root).unwrap();
-    root
+fn fixture() -> TemporaryDirectory {
+    TemporaryDirectory::create("ess-idle-adversary").unwrap()
 }
 
 fn hex(bytes: &[u8]) -> String {

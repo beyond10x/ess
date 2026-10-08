@@ -1,0 +1,75 @@
+format: ess/23
+system: orders
+version: v1
+domain: orders.order
+entities:
+  - name: orders.order.Order
+    identity: {name: order_id, type: Uuid}
+    fields:
+      - {name: holder, type: String}
+      - {name: pin, type: String}
+    lifecycle:
+      initial: Placed
+      states: [Placed, Confirmed]
+      terminal: [Confirmed]
+      transitions:
+        - {name: confirm, from: [Placed], to: Confirmed}
+events:
+  - name: orders.order.OrderConfirmed
+    fields:
+      - {name: order_id, type: Uuid}
+  - name: orders.order.OrderPlaced
+    fields:
+      - {name: order_id, type: Uuid}
+      - {name: pin, type: String}
+errors:
+  - name: orders.order.PinMismatch
+    summary: The pin is not the one the order was placed with.
+  - name: orders.order.NotPlaced
+    summary: The order is not in Placed.
+commands:
+  - name: orders.order.Place
+    input:
+      - {name: holder, type: String}
+    response:
+      - {name: order_id, type: Uuid}
+      - {name: pin, type: String}
+    outcomes:
+      - name: placed
+        creates: orders.order.Order
+        instance: order_id
+        returns: true
+        emits: [orders.order.OrderPlaced]
+        payload:
+          orders.order.OrderPlaced:
+            order_id: {response: order_id}
+            pin: {response: pin}
+        sets:
+          holder: input.holder
+          pin: {response: pin}
+  - name: orders.order.Confirm
+    input:
+      - {name: order_id, type: Uuid}
+      - {name: pin, type: String}
+    outcomes:
+      - name: confirmed
+        moves: orders.order.Order.confirm
+        instance: order_id
+        emits: [orders.order.OrderConfirmed]
+        payload:
+          orders.order.OrderConfirmed:
+            order_id: input.order_id
+      - name: mismatch
+        when_subject: {predicate: pin != input.pin}
+        error: orders.order.PinMismatch
+      - name: wrong-state
+        wrong_state: true
+        error: orders.order.NotPlaced
+views:
+  - name: orders.order.Orders
+    source: orders.order.Order
+    consistency: read_your_writes
+    fields:
+      - {name: order_id, type: Uuid}
+      - {name: holder, type: String}
+      - {name: pin, type: String}

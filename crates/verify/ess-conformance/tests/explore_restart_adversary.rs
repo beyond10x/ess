@@ -7,6 +7,8 @@
 //! `git show`) so that a run without `restartEvery` can be compared byte for byte with the explorer
 //! before restarts existed.
 
+mod support_scratch;
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -256,7 +258,9 @@ fn lanes() -> &'static Lanes {
     static LANES: OnceLock<Lanes> = OnceLock::new();
     LANES.get_or_init(|| {
         let ir = ir();
-        let root = std::env::temp_dir().join(format!("ess-adv-restart-{}", std::process::id()));
+        let root = support_scratch::Scratch::adopt(
+            std::env::temp_dir().join(format!("ess-adv-restart-{}", std::process::id())),
+        );
         let _ = std::fs::remove_dir_all(&root);
         let lanes = Lanes {
             typescript: typescript(&root.join("head"), &ir, &all_cases(), false),

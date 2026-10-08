@@ -12,6 +12,8 @@
 //!   (`tests/fixtures/history2/decision-time-vectors.json`). The TypeScript half is
 //!   `src/ts/explore.test.ts`, run by `tests/typescript_runtime.rs`.
 
+mod support_scratch;
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -424,10 +426,12 @@ func TestHistory2RecorderRefusesAnUnwritableInstant(t *testing.T) {
 
 /// A fresh module holding the emitted package with its explorer, under the build's temporary
 /// directory.
-fn go_package() -> PathBuf {
+fn go_package() -> support_scratch::Scratch {
     let ir = support_occurrence_clock::model(support_occurrence_clock::OFFERS);
     let suite = ess_conformance::synthesize::synthesize(&ir).suite;
-    let directory = std::env::temp_dir().join(format!("ess-history2-go-{}", std::process::id()));
+    let directory = support_scratch::Scratch::adopt(
+        std::env::temp_dir().join(format!("ess-history2-go-{}", std::process::id())),
+    );
     let _ = std::fs::remove_dir_all(&directory);
     std::fs::create_dir_all(directory.join("essconform")).unwrap();
     for artifact in ess_conformance::go::emit_with_model(&suite, &ir).expect("emitted") {

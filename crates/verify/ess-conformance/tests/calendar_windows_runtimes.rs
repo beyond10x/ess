@@ -111,7 +111,9 @@ fn window_the_generated_go_reader_answers_the_shared_vectors() {
     })
     .to_string();
     let suite = AdmittedSuite::from_json(&document).expect("admitted");
-    let directory = std::env::temp_dir().join(format!("ess-window-go-{}", std::process::id()));
+    let directory = support_go::Scratch::adopt(
+        std::env::temp_dir().join(format!("ess-window-go-{}", std::process::id())),
+    );
     std::fs::create_dir_all(directory.join("essconform")).expect("directory");
     for artifact in ess_conformance::go::emit(suite.suite()).expect("emitted") {
         std::fs::write(directory.join(artifact.path), artifact.contents).expect("written");

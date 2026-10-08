@@ -1,4 +1,6 @@
 //! Final independently compiled batch ownership and full D1 diagnostic preservation.
+mod support_scratch;
+
 use ess_compiler::{resolve::compile, source::SourceMap, EssIr};
 use ess_conformance::{
     authored,
@@ -138,8 +140,9 @@ fn final_merge_orders_sources_and_preserves_full_d1_diagnostics_through_empty_se
 }
 
 fn record_comparisons(observations: &[serde_json::Value]) {
-    let evidence =
-        std::env::temp_dir().join(format!("ess-review2-final-merge-{}", std::process::id()));
+    let evidence = support_scratch::Scratch::adopt(
+        std::env::temp_dir().join(format!("ess-review2-final-merge-{}", std::process::id())),
+    );
     fs::create_dir_all(&evidence).unwrap();
     fs::write(
         evidence.join("comparisons.json"),

@@ -1,0 +1,37 @@
+format: ess/23
+system: catalog
+version: v1
+domain: catalog.orders
+
+components:
+  - component: orders-server
+    owns:
+      domains: [catalog.orders]
+    accepts:
+      commands: [catalog.orders.Place]
+    reached_by: network
+
+errors:
+  - name: catalog.orders.TooManyReferences
+  - name: catalog.orders.NoReference
+
+commands:
+  - name: catalog.orders.Place
+    input:
+      - {name: item_code, type: Boolean}
+      - {name: item_sku, type: Boolean}
+      - {name: item_url, type: Boolean}
+    outcomes:
+      - name: too-many
+        when:
+          any:
+            - all: ["item_code == true", "item_sku == true"]
+            - all: ["item_code == true", "item_url == true"]
+            - all: ["item_sku == true", "item_url == true"]
+        error: catalog.orders.TooManyReferences
+      - name: none-given
+        when:
+          all: ["item_code == false", "item_sku == false", "item_url == false"]
+        error: catalog.orders.NoReference
+      - name: placed
+        accepts: nothing

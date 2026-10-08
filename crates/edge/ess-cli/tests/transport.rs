@@ -1,11 +1,10 @@
 //! `ess specify transport` and `ess generate --kind asyncapi --transport` (beyond10x/ess#390,
 //! beyond10x/ess#392).
 
+use ess_cli::TemporaryDirectory;
 use std::{
     fs,
-    path::PathBuf,
     process::{Command, Output},
-    sync::atomic::{AtomicUsize, Ordering},
 };
 
 const MODEL: &str = "format: ess/20
@@ -77,16 +76,11 @@ streams:
   - {name: USAGE, broker: events, subjects: ['usage.>'], storage: file, retention: limits, owner: external}
 ";
 
-struct Fixture(PathBuf);
+struct Fixture(TemporaryDirectory);
 
 impl Fixture {
     fn new() -> Self {
-        static NEXT: AtomicUsize = AtomicUsize::new(0);
-        let path = std::env::temp_dir().join(format!(
-            "ess-transport-cli-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
+        let path = TemporaryDirectory::create("ess-transport-cli").unwrap();
         fs::create_dir_all(path.join("model")).unwrap();
         fs::write(path.join("model/system.yaml"), MODEL).unwrap();
         Self(path)
@@ -123,12 +117,6 @@ impl Fixture {
             ),
         )
         .unwrap();
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
     }
 }
 
