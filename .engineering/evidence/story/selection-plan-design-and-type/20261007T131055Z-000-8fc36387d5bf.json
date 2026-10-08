@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-07T13:10:55Z",
+  "actor": "human:timo",
+  "artifact": "story:selection-plan-design-and-type",
+  "kind": "story",
+  "revision": 12,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "cargo test -p ess-domain -p ess-compiler --locked (208 result blocks ok); cargo test -p ess-conformance --locked --test adversary_selection_plan_u1_pass1 --test adversary_selection_plan_u1_pass2 --test precedence_plan_answers --test precedence_plan_override (11 passed); clippy -D warnings; task fmt-check",
+    "reference": "integrate/selection-plan 6cb4b1dd0"
+  }
+}

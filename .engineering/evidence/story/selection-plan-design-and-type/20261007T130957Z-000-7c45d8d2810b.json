@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-07T13:09:57Z",
+  "actor": "human:timo",
+  "artifact": "story:selection-plan-design-and-type",
+  "kind": "story",
+  "revision": 10,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-compiler --locked --test selection_precedence_table (IR canonical-JSON digest of all 196 models against the digests written at base b7be935f87); cargo test -p ess-conformance --locked --test precedence_plan_answers (plan answer equals interpreter answer, 5 requests): VERIFIED",
+    "reference": "u1-scratch/base-digests.tsv vs crates/specify/ess-compiler/tests/fixtures/selection-precedence-table.tsv"
+  }
+}
