@@ -6,11 +6,12 @@ status: draft
 title: An external branch is narrowed to the records a subject guard selects
 tags:
 - adopter-report
+- design-first
 - feature-request
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 1
+revision: 2
 ---
 ## Outcome
 

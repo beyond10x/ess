@@ -6,11 +6,12 @@ status: draft
 title: A response field's presence is conditioned on another field's value
 tags:
 - adopter-report
+- design-first
 - feature-request
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 1
+revision: 2
 ---
 ## Outcome
 
