@@ -116,6 +116,7 @@ Each bracketed validation name is reported under the class below. Its family is 
 | `unparsable_predicate` | `012` `OTHER` |
 | `null_comparison` | `017` `NULL_COMPARISON` |
 | `implied_relation` | `019` `IMPLIED_RELATION` |
+| `path_segment_wire_name` | `012` `OTHER` |
 
 ## Authored scenarios: `ESS-AUTHOR`
 

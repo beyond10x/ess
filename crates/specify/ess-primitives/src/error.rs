@@ -453,6 +453,11 @@ validation_codes! {
     /// The one code reported as a warning rather than a refusal: the specification is legal and
     /// compiles as it did, and the repair is to declare the `references` relation it implies.
     ImpliedRelation => "implied_relation",
+
+    /// A wire name that a generated path segment reads — a domain's, a command's or a view's —
+    /// contains `/`, or is exactly `.` or `..`, so the segment would address another route
+    /// (beyond10x/ess#493).
+    PathSegmentWireName => "path_segment_wire_name",
 }
 
 impl fmt::Display for ValidationCode {
