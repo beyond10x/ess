@@ -446,6 +446,17 @@ selected. Rust, Go and TypeScript execute both with report/2. Older readers refu
 by version, so none under-checks a regenerated suite. A suite labelled 43 or below keeps first-match
 semantics, and a suite with no repeated claim keeps its earlier format and bytes.
 
+`ess-conformance/46` and `ess-conformance/47`, unreleased, check String-newtype constraints on
+returned values (beyond10x/ess#499). A command response that reaches a newtype of `String` with
+`alphabet:`, `prefix:` or `value` invariants no longer costs its returning outcome every scenario:
+`expect_direct_response` and `expect_response_payload` carry the rules as `constraints`, and every
+runner holds each actual returned value to them, failing `ESS-CF-PAYLOAD` otherwise. A suite carrying
+one is written at 46 (ordinary) or 47 (declared coverage); each implies every major below it, the
+counted pair included. An invariant that reads anything but `value` or `value.count` is refused at
+synthesis by name, and so are a record invariant and a reading on a response type. Rust, Go and
+TypeScript execute both with report/2. Older readers refuse these envelopes by version, and a suite
+with no constrained response type keeps its earlier format and bytes.
+
 For `ess/7`, generated held-state refusals include ordinary `wrong_state` outcomes:
 they compare the complete subject before and after the call and refuse every
 direct event, including undeclared names. Incomplete subject views cause a named

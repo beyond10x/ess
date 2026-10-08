@@ -8,6 +8,10 @@ type responseObservation struct {
 	Mappings     map[string]string               `json:"mappings"`
 	Targets      []accessorField                 `json:"targets"`
 	Nested       *nestedResponseTargets          `json:"nested,omitempty"`
+	// RawConstraints are the String-newtype rules of suite/46 and /47 (beyond10x/ess#499), as
+	// written; constraints are the same rules admitted against the declarations.
+	RawConstraints json.RawMessage `json:"constraints,omitempty"`
+	constraints    map[string]oneTimeConstraints
 }
 
 func (r *responseObservation) UnmarshalJSON(raw []byte) error {
@@ -26,6 +30,19 @@ func (r *responseObservation) UnmarshalJSON(raw []byte) error {
 		return err
 	}
 	*r = responseObservation(value)
+	if len(r.RawConstraints) > 0 {
+		var raw any
+		decoder := json.NewDecoder(bytes.NewReader(r.RawConstraints))
+		decoder.UseNumber()
+		if err := decoder.Decode(&raw); err != nil {
+			return err
+		}
+		constraints, err := admitResponseConstraints(raw, r.Declarations)
+		if err != nil {
+			return err
+		}
+		r.constraints = constraints
+	}
 	if r.Nested != nil {
 		if err := normalizeNestedResponse(r); err != nil {
 			return err
@@ -337,6 +354,9 @@ func (r responseObservation) compare(response, payload map[string]Node) error {
 	if bytes > 1048576 {
 		return fmt.Errorf("response byte limit")
 	}
+	if err := checkResponseConstraints(r.Fields, r.Declarations, r.constraints, response); err != nil {
+		return err
+	}
 	for _, field := range r.Fields {
 		value, present := response[field.Name]
 		if field.Presence == "null_when_absent" && !present {
@@ -387,8 +407,11 @@ func (r *run) expectResponsePayload(index int, step Step) bool {
 }
 
 func admitResponse(value any, major int) error {
-	root, err := closed(value, "command outcome event fields declarations mappings targets", "nested")
+	root, err := closed(value, "command outcome event fields declarations mappings targets", "nested constraints")
 	if err != nil {
+		return err
+	}
+	if err := responseConstraintsMajor(root, major); err != nil {
 		return err
 	}
 	if nested, exists := root["nested"]; exists {

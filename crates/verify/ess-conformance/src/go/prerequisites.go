@@ -118,6 +118,9 @@ type directResponseObservation struct {
 	Fields       []accessorField                 `json:"fields"`
 	Declarations map[string]selectionDeclaration `json:"declarations"`
 	Expected     map[string]Node                 `json:"expected"`
+	// Constraints are the String-newtype rules of suite/46 and /47 (beyond10x/ess#499), admitted
+	// apart from the shape and checked on every actual value.
+	Constraints map[string]oneTimeConstraints `json:"-"`
 }
 
 func directPresence(field accessorField, value Node, present bool) error {
@@ -179,7 +182,7 @@ func directPlainField(value any) (any, error) {
 }
 
 func admitDirectResponse(value any) (*directResponseObservation, error) {
-	root, err := closed(value, "command fields declarations expected", "outcome")
+	root, err := closed(value, "command fields declarations expected", "outcome constraints")
 	if err != nil {
 		return nil, err
 	}
@@ -196,6 +199,8 @@ func admitDirectResponse(value any) (*directResponseObservation, error) {
 		return nil, err
 	}
 	root = copyObject(root)
+	rawConstraints, carried := root["constraints"]
+	delete(root, "constraints")
 	normalFields := []any{}
 	for _, field := range fields {
 		field, e := directField(field)
@@ -281,6 +286,11 @@ func admitDirectResponse(value any) (*directResponseObservation, error) {
 	if err = validateTypedFields([][]accessorField{result.Fields}, result.Declarations); err != nil {
 		return nil, err
 	}
+	if carried {
+		if result.Constraints, err = admitResponseConstraints(rawConstraints, result.Declarations); err != nil {
+			return nil, err
+		}
+	}
 	observer := selectionObservation{Declarations: result.Declarations, responseMode: true, directMode: true}
 	count := 0
 	for name, value := range result.Expected {
@@ -330,6 +340,9 @@ func (r directResponseObservation) compare(actual map[string]Node) error {
 	raw, err := directWire(actual)
 	if err != nil || accessorCompactBytes(raw) > 1048576 {
 		return fmt.Errorf("direct response resource byte limit")
+	}
+	if err := checkResponseConstraints(r.Fields, r.Declarations, r.Constraints, actual); err != nil {
+		return err
 	}
 	for name, value := range r.Expected {
 		actual, present := actual[name]
@@ -673,4 +686,42 @@ func snapshotDirectResult(result CommandResult) (CommandResult, error) {
 	decoder.UseNumber()
 	err = decoder.Decode(&copied)
 	return copied, err
+}
+
+// admitResponseConstraints admits the `constraints` member of a response observation (suite/46 and
+// /47, beyond10x/ess#499): present, it names at least one declared String newtype, with the rules
+// the one-time profile admits.
+func admitResponseConstraints(raw any, declarations map[string]selectionDeclaration) (map[string]oneTimeConstraints, error) {
+	constraints, ok := raw.(map[string]any)
+	if !ok || len(constraints) == 0 {
+		return nil, fmt.Errorf("response constraints, when present, name at least one type")
+	}
+	return admitStringConstraints(constraints, declarations)
+}
+
+// checkResponseConstraints holds every actual value of fields to the carried String-newtype rules,
+// with the check the one-time observer uses.
+func checkResponseConstraints(fields []accessorField, declarations map[string]selectionDeclaration, constraints map[string]oneTimeConstraints, actual map[string]Node) error {
+	if len(constraints) == 0 {
+		return nil
+	}
+	authority := oneTimeResponse{Declarations: declarations, Constraints: constraints}
+	for _, field := range fields {
+		if value, present := actual[field.Name]; present {
+			if code := oneTimeCheckConstraints(authority, field.Type, value); code != "" {
+				return fmt.Errorf("response field %s breaks a String rule its type declares", field.Name)
+			}
+		}
+	}
+	return nil
+}
+
+// responseConstraintsMajor refuses a response observation carrying constraints below suite/46.
+func responseConstraintsMajor(value any, major int) error {
+	if object, ok := value.(map[string]any); ok {
+		if _, carried := object["constraints"]; carried && major < 46 {
+			return fmt.Errorf("response constraints require suite/46 or /47")
+		}
+	}
+	return nil
 }

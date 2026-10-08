@@ -52,6 +52,8 @@ impl Captures {
                 outcome: Some(origin.outcome.clone()),
                 fields: origin.response.fields.clone(),
                 declarations: origin.response.declarations.clone(),
+                // The one-time trace checks these rules below, on the same value.
+                constraints: BTreeMap::new(),
                 expected: BTreeMap::new(),
             };
             shape
@@ -139,84 +141,11 @@ fn constraints(
     ty: &ess_domain::TypeRef,
     value: &Node,
 ) -> Result<(), Violation> {
-    use crate::selection::Declaration;
-    use ess_domain::TypeRef;
-    match (ty, value) {
-        (TypeRef::Named(name), _) => {
-            if let Some(rules) = authority.constraints.get(name) {
-                let Node::Text(text) = value else {
-                    return Err(Violation::Payload);
-                };
-                if rules.alphabet.as_ref().is_some_and(|alphabet| {
-                    text.chars().any(|character| !alphabet.contains(character))
-                }) || rules
-                    .prefix
-                    .as_ref()
-                    .is_some_and(|prefix| !text.starts_with(prefix))
-                {
-                    return Err(Violation::Payload);
-                }
-                let mut facts = ess_primitives::facts::FactStore::new();
-                facts.set(
-                    ess_primitives::facts::FactPath::new("value")
-                        .map_err(|_| Violation::Payload)?,
-                    ess_primitives::facts::FactValue::Text(text.clone()),
-                );
-                for predicate in &rules.invariants {
-                    match predicate.evaluate(&facts) {
-                        ess_primitives::predicate::Truth::True => {}
-                        ess_primitives::predicate::Truth::False => return Err(Violation::Payload),
-                        ess_primitives::predicate::Truth::Unknown => {
-                            return Err(Violation::Resource)
-                        }
-                    }
-                }
-            }
-            match authority.declarations.get(name).ok_or(Violation::Payload)? {
-                Declaration::Newtype { of } => constraints(authority, of, value)?,
-                Declaration::Struct { fields } => {
-                    let Node::Map(values) = value else {
-                        return Err(Violation::Payload);
-                    };
-                    for field in fields {
-                        if let Some(value) = values.get(&field.name) {
-                            constraints(authority, &field.type_ref, value)?;
-                        }
-                    }
-                }
-                Declaration::Union { tag, variants } => {
-                    let Node::Map(values) = value else {
-                        return Err(Violation::Payload);
-                    };
-                    let Some(Node::Text(label)) = values.get(tag) else {
-                        return Err(Violation::Payload);
-                    };
-                    let ty = variants.get(label).ok_or(Violation::Payload)?;
-                    match (ty, values.get(ess_gen::schema::union_content_key(tag))) {
-                        (Some(ty), Some(value)) => constraints(authority, ty, value)?,
-                        // A unit variant (ess/22) is the tag alone.
-                        (None, Some(_)) => return Err(Violation::Payload),
-                        (_, None) => {}
-                    }
-                }
-                Declaration::Enum { .. } => {}
-            }
-        }
-        (TypeRef::Optional(_), Node::Null) => {}
-        (TypeRef::Optional(of), _) => constraints(authority, of, value)?,
-        (TypeRef::List(of), Node::Seq(values)) => {
-            for value in values {
-                constraints(authority, of, value)?;
-            }
-        }
-        (TypeRef::Map(_, of), Node::Map(values)) => {
-            for value in values.values() {
-                constraints(authority, of, value)?;
-            }
-        }
-        _ => {}
-    }
-    Ok(())
+    crate::one_time_response::check(&authority.declarations, &authority.constraints, ty, value)
+        .map_err(|breach| match breach {
+            crate::one_time_response::Breach::Payload => Violation::Payload,
+            crate::one_time_response::Breach::Undecided => Violation::Resource,
+        })
 }
 
 impl<C: super::Clock> super::Runner<C> {

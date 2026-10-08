@@ -90,7 +90,7 @@ func suiteReference(value any) error {
 //
 // Keep this aligned with the emitter's capability boundary. New majors require admission,
 // execution and report parity; changing this number alone supplies none of those semantics.
-const newestSuiteMajor = 45
+const newestSuiteMajor = 47
 
 // suiteMajorsNotRead are the majors below newestSuiteMajor that other work has allocated and this
 // runtime has no reader for yet. A suite labelled with one is refused by version, never read as
@@ -1781,7 +1781,7 @@ func Run(t *testing.T, newTarget func() Target) {
 		t.Fatalf("suite admission: %v", err)
 	}
 	if suiteMajor(suite.Provenance.SuiteVersion) >= 8 && config.version != "2" {
-		t.Fatalf("suite/8 through /45 require explicit ESS_REPORT_FORMAT=2 before execution")
+		t.Fatalf("suite/8 through /47 require explicit ESS_REPORT_FORMAT=2 before execution")
 	}
 	if (suite.Provenance.SuiteVersion == "ess-conformance/5" || suite.Provenance.SuiteVersion == "ess-conformance/6" || suite.Provenance.SuiteVersion == "ess-conformance/7") && config.version != "2" {
 		t.Fatalf("suite/5, /6 and /7 require explicit ESS_REPORT_FORMAT=2 before execution")
@@ -5389,6 +5389,9 @@ func admitStep(value any, major int) error {
 		case "response":
 			if tag == "expect_direct_response" {
 				_, err = admitDirectResponse(v)
+				if err == nil {
+					err = responseConstraintsMajor(v, major)
+				}
 			} else {
 				err = admitResponse(v, major)
 			}

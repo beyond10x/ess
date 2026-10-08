@@ -96,12 +96,14 @@ pub(crate) fn seed_major(major: u32) -> bool {
 /// Whether a suite labelled `major` may carry seed provenance: the seed-bearing pair, which requires
 /// it, and the counted event-claim pair above it, which is cumulative over it (beyond10x/ess#427).
 pub(crate) fn admitted_in(major: u32) -> bool {
-    seed_major(major) || crate::event_multiplicity::ADMITTED.contains(&major)
+    seed_major(major)
+        || crate::event_multiplicity::ADMITTED.contains(&major)
+        || crate::direct_response::CONSTRAINED_ADMITTED.contains(&major)
 }
 
 /// What refuses seed provenance under any other major.
 pub(crate) const OUTSIDE: &str =
-    "synthesis seeds require suite/42 or /43, or the counted event-claim pair /44 or /45";
+    "synthesis seeds require suite/42 or /43, or a cumulative pair above them: /44 or /45, /46 or /47";
 
 fn refuse(path: &str, detail: impl Into<String>) -> AdmissionError {
     AdmissionError::new("InvalidSynthesisSeeds", path, detail)
@@ -171,7 +173,7 @@ fn addressed(steps: &[ScenarioStep], at: usize, instance: &InstanceName) -> Opti
     .then_some(position)
 }
 
-/// Refuse seed provenance outside suite/42 through /45, its absence in /42 and /43, and any record
+/// Refuse seed provenance outside suite/42 through /47, its absence in /42 and /43, and any record
 /// that is not bound to the suite's own steps. `coverage` is the admitted inventory, where there
 /// is one: a selected coverage suite may name an application whose scenario its selection filter
 /// moved outside, and its retained parent proves that use.

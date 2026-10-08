@@ -47,7 +47,12 @@
 //     their UTF-8 bytes and JavaScript orders them by UTF-16 code units, which disagree above the
 //     basic plane.
 
-import { admitDirectResponse, compareDirectResponse } from './direct_response.js';
+import {
+  admitDirectResponse,
+  admitResponseConstraints,
+  compareDirectResponse,
+  responseConstraintsMajor,
+} from './direct_response.js';
 import type { DirectResponse } from './direct_response.js';
 import {
   admitOneTimeTrace,
@@ -2730,7 +2735,7 @@ export async function runWith(
   }
   const version = suite.provenance.suite_version;
   if ((SUITE_MAJORS[version] ?? 0) >= 8 && config.version !== '2') {
-    throw new Error('suite/8 through /45 require explicit ESS_REPORT_FORMAT=2 before execution');
+    throw new Error('suite/8 through /47 require explicit ESS_REPORT_FORMAT=2 before execution');
   }
   if (
     (version === 'ess-conformance/5' ||
@@ -6494,14 +6499,19 @@ const SUITE_MAJORS: { [version: string]: number } = {
   // its own. Cumulative over every major below, the seed-bearing pair included.
   'ess-conformance/44': 44,
   'ess-conformance/45': 45,
+  // String-newtype constraints on response observations (beyond10x/ess#499): each actual returned
+  // value is held to its type's alphabet, prefix and value invariants. Cumulative over every major
+  // below, the counted pair included.
+  'ess-conformance/46': 46,
+  'ess-conformance/47': 47,
 };
 
 /** The suite majors that carry a coverage inventory, each beside the ordinary major below it. */
 const COVERAGE_MAJORS = new Set([
   5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 33, 35, 37,
   // The coverage majors of the conditional measure, expression, seed-bearing and counted-claim
-  // pairs.
-  39, 41, 43, 45,
+  // pairs, and of the constrained-response pair.
+  39, 41, 43, 45, 47,
 ]);
 
 /** coverageMajor reports whether a suite major carries a coverage inventory. */
@@ -7004,7 +7014,15 @@ function decodeStep(value: Node): Step {
   if (Object.prototype.hasOwnProperty.call(written, 'response')) {
     if (step.step === 'expect_direct_response')
       step.directResponse = admitDirectResponse(written.response);
-    else step.response = decodeResponseObservation(plainNumbers(written.response));
+    else {
+      step.response = decodeResponseObservation(plainNumbers(written.response));
+      // The rules keep their exact number tokens, as the one-time profile reads them.
+      if (Object.hasOwn(written.response, 'constraints'))
+        step.response.constraints = admitResponseConstraints(
+          written.response.constraints,
+          step.response.declarations,
+        );
+    }
   }
   if (Object.hasOwn(written, 'fixtures')) step.fixtures = admitFixtures(written.fixtures);
   if (step.step === 'deliver_event') {
@@ -7889,6 +7907,7 @@ export function admitStep(value: Node, major: number): void {
         admitFixtures(held);
         break;
       case 'response':
+        responseConstraintsMajor(held, major);
         if (tag === 'expect_direct_response') admitDirectResponse(held);
         else admitResponse(held, major);
         break;

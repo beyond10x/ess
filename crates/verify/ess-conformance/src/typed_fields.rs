@@ -11,11 +11,22 @@ pub(crate) fn declarations<'a>(
     declarations_with_presence(ir, fields, false, false)
 }
 
+/// [`declarations`] for a response-mapped event payload, admitting String-newtype constraints
+/// (beyond10x/ess#499); the caller carries them beside the declarations.
+pub(crate) fn response_payload_declarations<'a>(
+    ir: &EssIr,
+    fields: impl IntoIterator<Item = &'a Field>,
+) -> Result<BTreeMap<QualifiedName, Declaration>, String> {
+    declarations_with_presence(ir, fields, false, true)
+}
+
+/// The declarations of a direct return, admitting String-newtype constraints
+/// (beyond10x/ess#499); the caller carries them beside the declarations.
 pub(crate) fn direct_response_declarations<'a>(
     ir: &EssIr,
     fields: impl IntoIterator<Item = &'a Field>,
 ) -> Result<BTreeMap<QualifiedName, Declaration>, String> {
-    declarations_with_presence(ir, fields, true, false)
+    declarations_with_presence(ir, fields, true, true)
 }
 
 pub(crate) fn one_time_declarations<'a>(
@@ -44,13 +55,26 @@ fn declarations_with_presence<'a>(
             return Err("response declaration resource limit".into());
         }
         let ty = ir.types().get(&name).ok_or("response type is absent")?;
-        if ty.reading.is_some()
-            || (ty.body.is_constrained()
-                && !(carry_string_constraints && matches!(ty.body, ResolvedBody::Newtype { .. })))
-        {
-            return Err(
-                "response constrained type needs an executable invariant/reading observer".into(),
-            );
+        if ty.reading.is_some() {
+            return Err(format!(
+                "reading-attached response type `{name}` needs a reading observer, which a \
+                 response observation does not have"
+            ));
+        }
+        if ty.body.is_constrained() {
+            match ty.body {
+                ResolvedBody::Struct { .. } => {
+                    return Err(format!(
+                        "record invariant on a response type `{name}` has no executable observer"
+                    ))
+                }
+                ResolvedBody::Newtype { .. } if carry_string_constraints => {}
+                _ => {
+                    return Err(format!(
+                        "constrained type `{name}` has no executable observer here"
+                    ))
+                }
+            }
         }
         let body = match &ty.body {
             ResolvedBody::Newtype { of, .. } => Declaration::Newtype {

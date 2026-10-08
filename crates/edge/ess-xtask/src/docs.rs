@@ -206,6 +206,9 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     // Counted event claims (beyond10x/ess#427).
     ("ess-conformance", 44, Some("0.54.0")),
     ("ess-conformance", 45, Some("0.54.0")),
+    // String-newtype constraints on response observations (beyond10x/ess#499).
+    ("ess-conformance", 46, None),
+    ("ess-conformance", 47, None),
     ("ess-composition", 1, Some("0.4.0")),
     ("ess-composition", 2, Some("0.38.0")),
     ("ess-composition", 3, Some("0.40.0")),
