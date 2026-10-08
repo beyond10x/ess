@@ -50,6 +50,7 @@
 //! | a command input's type moves between a scalar and a record, list or map, or between a list and an object (`ess-diff/16`) | breaking for callers; unknown for readers; compatible for history |
 //! | a type with an input use keeps its name while its kind, its representation, a member's type or a variant's payload moves between those wire forms (`ess-diff/16`) | breaking for callers; readers and history as its uses answer them |
 //! | a refusal gains or loses its compensating change (`compensates: true`, ess/22) | breaking for callers and readers; compatible for history |
+//! | an input whose type is not `Optional` added, or a refusal added or its guard changed so that an input of the earlier revision another outcome answered is refused by it, where the guards decide that (`ess-diff/17`) | breaking for callers; unknown for readers; compatible for history |
 //! | a view is removed | breaking for readers |
 //! | an event or an entity is removed | breaking for history |
 //!
@@ -102,6 +103,65 @@ pub const CLASSIFIED_DELTA_FORMAT: u32 = 14;
 /// format and bytes. Below it, `input-type-changed` is `unknown` for callers whatever the types,
 /// and a document written that way still reads back as it was written.
 pub const SHAPED_DELTA_FORMAT: u32 = 16;
+
+/// The first delta format whose classification records a [`Narrowing`].
+///
+/// A classified delta that records one is written in it; every other delta keeps its earlier
+/// format and bytes. Below it, `outcome-added`, `input-added` and `outcome-condition-changed` are
+/// `unknown` for callers whatever they hold, and a document written that way still reads back as
+/// it was written.
+pub const NARROWED_DELTA_FORMAT: u32 = 17;
+
+/// How a command change narrows what a caller written against the earlier revision may send
+/// (`ess-diff/17`, beyond10x/ess#514).
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum Narrowing {
+    /// On `outcome-added`: the added outcome reports an error, and refuses some input the earlier
+    /// revision answered with another outcome.
+    RefusalAdded,
+    /// On `input-added`: the added input is not `Optional`, read through newtypes, so a caller that
+    /// leaves it out is refused.
+    RequiredInput,
+    /// On `outcome-condition-changed`: the outcome reports an error, and some input that reached
+    /// past it in the earlier revision is refused by it in the later one.
+    RefusalWidened,
+}
+
+impl Narrowing {
+    /// How it is written.
+    pub const fn written(self) -> &'static str {
+        match self {
+            Self::RefusalAdded => "refusal-added",
+            Self::RequiredInput => "required-input",
+            Self::RefusalWidened => "refusal-widened",
+        }
+    }
+
+    /// Whether `change` is the kind of change this narrowing is recorded on. A `required-input`
+    /// also needs the input's written type not to be `Optional<…>`.
+    pub fn fits(self, change: &SemanticChange) -> bool {
+        let SemanticChange::Command { changed, .. } = change else {
+            return false;
+        };
+        match (self, changed) {
+            (Self::RefusalAdded, CommandChange::OutcomeAdded { .. })
+            | (Self::RefusalWidened, CommandChange::OutcomeConditionChanged { .. }) => true,
+            (Self::RequiredInput, CommandChange::InputAdded { type_ref, .. }) => {
+                !type_ref.starts_with("Optional<")
+            }
+            _ => false,
+        }
+    }
+}
+
+impl fmt::Display for Narrowing {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.written())
+    }
+}
 
 /// The wire form of a command input's type, read through `Optional` and every newtype.
 #[derive(
@@ -279,6 +339,10 @@ pub struct ChangeCompatibility {
     /// change whose two shapes have different wire forms only.
     #[serde(skip_serializing_if = "Option::is_none")]
     shapes: Option<InputShapes>,
+    /// How the change narrows what a caller may send (`ess-diff/17`). Present on an added refusal,
+    /// an added required input or a widened refusal guard only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    narrows: Option<Narrowing>,
 }
 
 /// One classification as a document writes it, before anything has checked it.
@@ -299,6 +363,9 @@ pub struct RawChangeCompatibility {
     /// The shapes it claims for an input type change (`ess-diff/16`).
     #[serde(default)]
     pub shapes: Option<InputShapes>,
+    /// The narrowing it claims for a command change (`ess-diff/17`).
+    #[serde(default)]
+    pub narrows: Option<Narrowing>,
 }
 
 impl ChangeCompatibility {
@@ -323,8 +390,49 @@ impl ChangeCompatibility {
         uses: &BTreeSet<TypeUse>,
         shapes: Option<InputShapes>,
     ) -> Self {
+        Self::derive_narrowed(change, uses, shapes, None)
+    }
+
+    /// [`Self::derive_shaped`], given also how a command change narrows what a caller may send.
+    ///
+    /// The narrowing is read, and recorded, only where it [`fits`](Narrowing::fits) the change;
+    /// there the change is breaking for callers and keeps its other answers. Everywhere else it is
+    /// ignored, so the classification and its bytes are what [`Self::derive_shaped`] gives.
+    pub fn derive_narrowed(
+        change: &SemanticChange,
+        uses: &BTreeSet<TypeUse>,
+        shapes: Option<InputShapes>,
+        narrows: Option<Narrowing>,
+    ) -> Self {
         let shapes = shapes.filter(|shapes| shape_bearing(change, uses) && shapes.disjoint());
-        let [callers, readers, history] = match (shapes, change) {
+        let narrows = narrows.filter(|narrows| narrows.fits(change));
+        let [callers, readers, history] = match (shapes, narrows, change) {
+            // A caller written against `before` is refused where it was not: by the added refusal,
+            // for the input it leaves out, or by the widened guard. What a reader sees and what
+            // is stored keep the catch-all's answers.
+            (None, Some(_), _) => {
+                let [_, readers, history] = dimensions(change, uses);
+                [B, readers, history]
+            }
+            (shapes, _, change) => Self::shaped_dimensions(change, uses, shapes),
+        };
+        Self {
+            verdict: callers.max(readers).max(history),
+            callers,
+            readers,
+            history,
+            uses: matches!(change, SemanticChange::Type { .. }).then(|| uses.clone()),
+            shapes,
+            narrows,
+        }
+    }
+
+    fn shaped_dimensions(
+        change: &SemanticChange,
+        uses: &BTreeSet<TypeUse>,
+        shapes: Option<InputShapes>,
+    ) -> Dimensions {
+        match (shapes, change) {
             // Every caller still sending the old shape is refused by the decoder before anything
             // runs. A type change keeps the answers its uses give readers and history; a command
             // input's field flows into the catch-all's answer, and nothing stored is read
@@ -335,20 +443,17 @@ impl ChangeCompatibility {
             }
             (Some(_), _) => [B, U, C],
             (None, _) => dimensions(change, uses),
-        };
-        Self {
-            verdict: callers.max(readers).max(history),
-            callers,
-            readers,
-            history,
-            uses: matches!(change, SemanticChange::Type { .. }).then(|| uses.clone()),
-            shapes,
         }
     }
 
     /// The shapes an input type change moved between, when they decided its answer.
     pub fn shapes(&self) -> Option<InputShapes> {
         self.shapes
+    }
+
+    /// How a command change narrows what a caller may send, when that decided its answer.
+    pub fn narrows(&self) -> Option<Narrowing> {
+        self.narrows
     }
 
     /// The worst of the three answers.
@@ -465,10 +570,27 @@ impl RawChangeCompatibility {
                 return Err(errors);
             }
         }
-        let derived = ChangeCompatibility::derive_shaped(
+        if let Some(narrows) = self.narrows {
+            if !narrows.fits(change) {
+                errors.push(ValidationError::new(
+                    ValidationCode::ConflictingDeclaration,
+                    format!("{location}.narrows"),
+                    format!(
+                        "`{}` records the narrowing `{narrows}`, which only an added refusal \
+                         (`refusal-added`), an added input whose type is not `Optional<…>` \
+                         (`required-input`) or a changed outcome condition (`refusal-widened`) \
+                         records",
+                        change.id()
+                    ),
+                ));
+                return Err(errors);
+            }
+        }
+        let derived = ChangeCompatibility::derive_narrowed(
             change,
             &self.uses.clone().unwrap_or_default(),
             self.shapes,
+            self.narrows,
         );
         let written = [
             ("verdict", self.verdict, derived.verdict),
@@ -507,6 +629,7 @@ impl RawChangeCompatibility {
             history: self.history,
             uses: self.uses,
             shapes: self.shapes,
+            narrows: self.narrows,
         }
     }
 }
@@ -775,6 +898,45 @@ impl<'a> UseIndex<'a> {
         })
     }
 
+    /// How `changed`, a change to command `command`, narrows what a caller may send, or `None`
+    /// where it does not or where that is not decided here.
+    ///
+    /// - An added input whose type is not `Optional`, read through newtypes, is a required input.
+    /// - An added outcome is an added refusal, and a changed condition a widened refusal, where the
+    ///   outcome reports an error in the later revision, its condition and that of every outcome
+    ///   declared before it in either revision is a plain input guard (`when:`), and
+    ///   [`satisfiable`](ess_conformance::mutate::satisfiable) finds, among the earlier revision's
+    ///   inputs, one that its guard takes, its old guard (if any) did not, and no earlier outcome of
+    ///   either revision takes: that input reached another outcome before and is refused by this
+    ///   one now. Anything that check leaves undecided stays `None` — an added refusal guarded by an
+    ///   input the earlier revision does not declare, a `when_subject:` refusal, an earlier
+    ///   `unknown_instance:` — and so does a guard that only narrowed. The check tries combinations
+    ///   no admitted input may take — a literal an invariant refuses — so it can call a refusal
+    ///   narrowing where no admitted input moved.
+    pub(crate) fn narrowing(
+        &self,
+        command: &ess_domain::name::QualifiedName,
+        changed: &CommandChange,
+    ) -> Option<Narrowing> {
+        let [(before, _, _), (after, _, _)] = &self.revisions;
+        let is = after.commands().get(command)?;
+        match changed {
+            CommandChange::OutcomeAdded { outcome } => {
+                let was = before.commands().get(command)?;
+                refuses_more(before, was, is, outcome).then_some(Narrowing::RefusalAdded)
+            }
+            CommandChange::InputAdded { field, .. } => {
+                let input = is.input.iter().find(|input| &input.name == field)?;
+                (!optional_on_wire(after, &input.type_ref, 0)).then_some(Narrowing::RequiredInput)
+            }
+            CommandChange::OutcomeConditionChanged { outcome, .. } => {
+                let was = before.commands().get(command)?;
+                refuses_more(before, was, is, outcome).then_some(Narrowing::RefusalWidened)
+            }
+            _ => None,
+        }
+    }
+
     /// The shapes of what `changed` moved in type `subject` — the type itself for a kind or
     /// representation change, the member for a field type change, the payload for a variant type
     /// change — or `None` for any other change, or when either side has no single shape.
@@ -847,6 +1009,89 @@ fn shape_of(
             body_shape(ir, &ir.types().get(name.name())?.body, depth)
         }
     }
+}
+
+/// Whether a caller may leave a field of this type out: it is `Optional`, directly or through
+/// newtypes in `ir`.
+fn optional_on_wire(
+    ir: &EssIr,
+    type_ref: &ess_compiler::ir::ResolvedTypeRef,
+    depth: usize,
+) -> bool {
+    use ess_compiler::ir::{ResolvedBody, ResolvedTypeRef};
+
+    if depth > ess_domain::types::MAX_TYPE_DEPTH {
+        return true;
+    }
+    match type_ref {
+        ResolvedTypeRef::Optional { .. } => true,
+        // Through the name and this IR's own map, never a handle accessor.
+        ResolvedTypeRef::Declared { name } => {
+            match ir.types().get(name.name()).map(|it| &it.body) {
+                Some(ResolvedBody::Newtype { of, .. }) => optional_on_wire(ir, of, depth + 1),
+                Some(_) => false,
+                // Not found is not decided: read as optional, which keeps the earlier answer.
+                None => true,
+            }
+        }
+        ResolvedTypeRef::Primitive { .. }
+        | ResolvedTypeRef::List { .. }
+        | ResolvedTypeRef::Map { .. } => false,
+    }
+}
+
+/// Whether outcome `outcome` of command `is` refuses, in the later revision, an input of the
+/// earlier revision's `was` (in `before`) that reached past it there, or that reached some other
+/// outcome where `was` does not declare it; see [`UseIndex::narrowing`].
+fn refuses_more(
+    before: &EssIr,
+    was: &ess_compiler::ir::ResolvedCommand,
+    is: &ess_compiler::ir::ResolvedCommand,
+    outcome: &str,
+) -> bool {
+    use ess_compiler::ir::{ResolvedCondition, ResolvedOutcome};
+    use ess_primitives::predicate::Predicate;
+
+    /// The plain input guards of the outcomes before `outcome`, and its own; `None` where one of
+    /// them is not a plain input guard or the outcome is not declared.
+    fn guards<'a>(
+        outcomes: &'a [ResolvedOutcome],
+        outcome: &str,
+    ) -> Option<(Vec<&'a Predicate>, &'a Predicate)> {
+        let at = outcomes.iter().position(|it| it.name.as_str() == outcome)?;
+        let mut guards = outcomes[..=at]
+            .iter()
+            .map(|it| match &it.condition {
+                ResolvedCondition::When { predicate } => Some(predicate),
+                _ => None,
+            })
+            .collect::<Option<Vec<_>>>()?;
+        let own = guards.pop()?;
+        Some((guards, own))
+    }
+
+    let refuses = is
+        .outcomes
+        .iter()
+        .any(|it| it.name.as_str() == outcome && it.error.is_some());
+    let Some((later, guard)) = guards(&is.outcomes, outcome) else {
+        return false;
+    };
+    // An outcome the earlier revision does not declare took no input there, and nothing before it
+    // stopped one.
+    let (earlier, was_guard) = if was.outcomes.iter().any(|it| it.name.as_str() == outcome) {
+        let Some((earlier, own)) = guards(&was.outcomes, outcome) else {
+            return false;
+        };
+        (earlier, Some(own))
+    } else {
+        (Vec::new(), None)
+    };
+    let not = |guard: &Predicate| Predicate::Not(Box::new(guard.clone()));
+    let mut region = vec![guard.clone()];
+    region.extend(was_guard.into_iter().chain(earlier).chain(later).map(not));
+    refuses
+        && ess_conformance::mutate::satisfiable(before, was, &Predicate::All(region)) == Some(true)
 }
 
 /// The wire form of a declared type's body in `ir`, as [`shape_of`] reads it.

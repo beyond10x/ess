@@ -2112,7 +2112,11 @@ fn guard_of<'ir>(
 /// can only err towards satisfiable, which leaves a mutant scored as before; it never calls a
 /// satisfiable guard dead. An ordering, a text match, a quantifier or a comparison of two facts is
 /// not decided: its satisfying values may lie between any finite set of representatives.
-fn satisfiable(
+///
+/// Public because `ess-diff` asks the same question of a refusal guard that widened between two
+/// revisions (<https://github.com/beyond10x/ess/issues/514>), and a second decision procedure
+/// beside this one would be two answers to it.
+pub fn satisfiable(
     ir: &EssIr,
     command: &ess_compiler::ir::ResolvedCommand,
     guard: &Predicate,
