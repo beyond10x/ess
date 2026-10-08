@@ -7,11 +7,14 @@ use ess_domain::name::{QualifiedName, Version};
 use ess_primitives::error::ParseError;
 use ess_primitives::evidence::SpecDigest;
 
-use crate::change::{ChangeId, SemanticChange, SemanticRelation};
-use crate::compatibility::{ChangeCompatibility, Compatibility, UseIndex, CLASSIFIED_DELTA_FORMAT};
+use crate::change::{ChangeId, CommandChange, SemanticChange, SemanticRelation};
+use crate::compatibility::{
+    ChangeCompatibility, Compatibility, UseIndex, CLASSIFIED_DELTA_FORMAT, SHAPED_DELTA_FORMAT,
+};
 
 /// Delta format major versions this build implements.
-pub const SUPPORTED_DELTA_FORMATS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+pub const SUPPORTED_DELTA_FORMATS: &[u32] =
+    &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
 /// The version of a delta's document shape and admitted change vocabulary.
 ///
@@ -228,11 +231,24 @@ impl EssDelta {
                     SemanticChange::Type { subject, .. } => index.uses(subject),
                     _ => std::collections::BTreeSet::new(),
                 };
-                ChangeCompatibility::derive(change, &uses)
+                let shapes = match change {
+                    SemanticChange::Command {
+                        subject,
+                        changed: CommandChange::InputTypeChanged { field, .. },
+                    } => index.input_shapes(subject.name(), field),
+                    _ => None,
+                };
+                ChangeCompatibility::derive_shaped(change, &uses, shapes)
             })
-            .collect();
+            .collect::<Vec<_>>();
+        let shaped = compatibility.iter().any(|one| one.shapes().is_some());
         self.compatibility = Some(compatibility);
-        let major = self.format.major().max(CLASSIFIED_DELTA_FORMAT);
+        let floor = if shaped {
+            SHAPED_DELTA_FORMAT
+        } else {
+            CLASSIFIED_DELTA_FORMAT
+        };
+        let major = self.format.major().max(floor);
         self.format =
             DeltaFormat::parse(&format!("ess-diff/{major}")).expect("declared delta version");
         self
@@ -338,6 +354,19 @@ impl EssDelta {
                 format,
                 change: change.id(),
             });
+        }
+        if format.major() < SHAPED_DELTA_FORMAT {
+            if let Some(index) = self
+                .compatibility
+                .iter()
+                .flatten()
+                .position(|one| one.shapes().is_some())
+            {
+                return Err(DeltaWriteRefusal::UnrepresentableChange {
+                    format,
+                    change: self.changes[index].id(),
+                });
+            }
         }
         if self.compatibility.is_some() != (format.major() >= CLASSIFIED_DELTA_FORMAT) {
             return Err(DeltaWriteRefusal::Unclassifiable {
