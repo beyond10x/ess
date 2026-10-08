@@ -1,0 +1,26 @@
+type: ess-scenario/1
+domain: catalog.items
+scenario: a-receipt-for-another-revision-is-refused
+summary: Under the additive revision, a receipt naming a revision the item does not hold is refused.
+
+arrange:
+  - instance: first
+    entity: catalog.items.Item
+
+timeline:
+  - at: 2026-01-06T09:00:00Z
+    command: catalog.items.Add
+    actor: catalog.items.Clerk
+    input:
+      revision: 2
+    outcome: added
+    capture: {instance: first, event: catalog.items.Added, field: item_id}
+
+  - at: 2026-01-06T09:00:01Z
+    command: catalog.items.Accept
+    actor: catalog.items.Clerk
+    input:
+      item_id: {$instance: first}
+      receipt: "{\"kind\":\"acceptance\"}"
+      receipt_revision: 1
+    outcome: stale-revision
