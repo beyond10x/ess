@@ -54,7 +54,8 @@ fn resolves_value_types_without_inventing_a_component_or_entity() {
 #[test]
 fn closes_unknown_format_and_fields_at_every_reader_layer() {
     for invalid in [
-        BINDING.replace("ess-cli/1", "ess-cli/2"),
+        // `ess-cli/2` is admitted since beyond10x/ess#481; the next number is not.
+        BINDING.replace("ess-cli/1", "ess-cli/3"),
         format!("{BINDING}\nunknown: false\n"),
         BINDING.replace("kind: local", "kind: local, unknown: false"),
         BINDING.replace("kind: option", "kind: option, unknown: false"),

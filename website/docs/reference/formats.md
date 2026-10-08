@@ -502,13 +502,17 @@ for omitted content, comparison restrictions and projection refusal.
 
 ## CLI presentation bindings
 
-All four were introduced in 0.21.0. Each carries its version in a `format` key, and each reader
-admits only its own `/1`.
+The `/1` versions were introduced in 0.21.0. Each document carries its version in a `format` key.
+The binding reader admits `ess-cli/1` and `ess-cli/2`, and a binding compiles to the plan version
+of the same number, so an `ess-cli/1` binding compiles to the same `ess-cli-plan/1` bytes as before
+`/2` existed.
 
 | Document | Written or read by | What it holds |
 |---|---|---|
-| `format: ess-cli/1` | Authored; read by `ess specify cli` and `ess generate cli` | The binary, its command paths, aliases, argument sources and process context, bound to operations of an ESS model. A binding naming another format is refused. [Source][cli-contract] |
+| `format: ess-cli/1` | Authored; read by `ess specify cli` and `ess generate cli` | The binary, its command paths, aliases, argument sources and process context, bound to operations of an ESS model. All three globals, `config`, `state` and `output`, are required. A binding naming another format is refused. [Source][cli-contract] |
+| `format: ess-cli/2` | Authored; read by `ess specify cli` and `ess generate cli` | `ess-cli/1` with `config` and `output` optional; `state` stays required. An omitted global is no flag at all, and a CLI without `output` writes JSON only. In either version `null`, `~`, an empty value and `""` are refused naming the global: omitting the key is the one spelling of absence. [Source][cli-contract] |
 | `format: ess-cli-plan/1` | Printed by `ess specify cli` | The resolved binding: the binary, its about text and global arguments, the callables, every command sorted by path, and the obligations the generated package leaves to its handlers. [Source][cli-plan] |
+| `format: ess-cli-plan/2` | Printed by `ess specify cli` for an `ess-cli/2` binding | `ess-cli-plan/1` whose `globals` omits an undeclared `config` or `output` key; it never writes `null`. A `/1` reader refuses one that omits a global, naming the missing field. [Source][cli-plan] |
 | `format: ess-cli-artifacts/1` | `manifest.json` in the package `ess generate cli` writes | The binary and package names, every generated file, and the plan's obligations. Pretty JSON plus LF. [Source][cli-project] |
 | `format: ess-cli-generation/1` | Printed by `ess generate cli --format json` or `yaml` | The files written, or compared under `--check`, and whether it was a check. [Source][cli-generation] |
 

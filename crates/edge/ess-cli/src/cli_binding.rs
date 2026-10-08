@@ -8,7 +8,7 @@ use anyhow::{bail, Context, Result};
 pub(crate) struct Input {
     #[command(flatten)]
     model: crate::SpecPath,
-    /// An independently authored ess-cli/1 presentation document.
+    /// An independently authored ess-cli/1 or ess-cli/2 presentation document.
     #[arg(long)]
     binding: PathBuf,
 }
