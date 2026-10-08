@@ -12,7 +12,7 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 1
+revision: 2
 ---
 ## Outcome
 
@@ -41,3 +41,18 @@ guard as Unsupported (`crates/verify/ess-conformance/src/interpret.rs`, `with_co
 
 `crates/edge/ess-cli/src/main.rs`, `crates/verify/ess-conformance/src/interpret.rs`,
 `crates/verify/ess-conformance/src/runner*`; tests in `ess-cli`.
+
+## Design note (no build; read from the tree)
+
+- The runner keeps the timeline's instant in its own `Clock` (`runner.rs`, `trait Clock`,
+  `AdvancingClock`); the interpreted target reads a separate caller-owned `CommandClock`
+  (`interpret.rs`, `with_command_clock`; `occurrence_clock.rs`, "This crate implements none").
+- `SemanticCommandRequest` (`target.rs`) carries no instant, so the step's `at:` does not reach the
+  target today.
+- Smallest bridge: a `CommandClock` that reads a shared cell the runner writes with the step's
+  instant before it sends each command (one write per step, one read per decision), built by the
+  CLI next to `Interpreted::for_model`. The scripted clock in
+  `crates/verify/ess-conformance/tests/support_occurrence_clock/mod.rs` shows the read-once
+  contract the bridge must keep.
+- Decide in the unit whether the cell lives in the runner (public API) or in the CLI; a change
+  to `SemanticCommandRequest` is the alternative and touches every target.
