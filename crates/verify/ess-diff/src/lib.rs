@@ -78,8 +78,8 @@
 //!
 //! A relation says which way a set moved, not who is hurt by the move. [`classified()`] adds a
 //! [`ChangeCompatibility`] to every change — breaking, unknown or compatible for callers, readers
-//! and history, a type change read through where the type is used, an input type change through
-//! the shapes its two types have (`ess-diff/16`) — and writes `ess-diff/14` or
+//! and history, a type change read through where the type is used, a change that moves an input's
+//! wire form through the shapes on its two sides (`ess-diff/16`) — and writes `ess-diff/14` or
 //! later. [`Gate`] fails on it, minus the changes an acknowledgements document bound to the same
 //! pair names. [`diff()`] stays below `/14` unless a change only `/14` or later can carry is in it;
 //! [`mod@crate::compatibility`] has the rules.

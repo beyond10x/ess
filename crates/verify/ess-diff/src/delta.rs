@@ -236,6 +236,9 @@ impl EssDelta {
                         subject,
                         changed: CommandChange::InputTypeChanged { field, .. },
                     } => index.input_shapes(subject.name(), field),
+                    SemanticChange::Type { subject, changed } => {
+                        index.type_shapes(subject, changed)
+                    }
                     _ => None,
                 };
                 ChangeCompatibility::derive_shaped(change, &uses, shapes)

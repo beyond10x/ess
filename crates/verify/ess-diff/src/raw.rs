@@ -21,7 +21,7 @@
 //! | every change is named by the id its own content derives, and carries the relation its own content derives | `conflicting_declaration` |
 //! | the changes are in canonical order, with no id twice | `conflicting_declaration`, `duplicate_declaration` |
 //! | from `ess-diff/14`, every change carries the compatibility its content and recorded type uses derive; below it, none does | `missing_declaration`, `conflicting_declaration`, `unsupported_format_version` |
-//! | from `ess-diff/16`, an input type change may record the shapes that derive its answer, only when their wire forms differ; below it, none does | `conflicting_declaration`, `unsupported_format_version` |
+//! | from `ess-diff/16`, an input type change, or a kind, representation, member or payload change of a type with an input use, may record the shapes that derive its answer, only when their wire forms differ; below it, none does | `conflicting_declaration`, `unsupported_format_version` |
 //!
 //! The third is what makes a derived id worth writing down. The document carries `id` and `relation`
 //! so that a reviewer can quote one and a consumer in another language does not have to reimplement
