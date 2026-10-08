@@ -66,7 +66,7 @@ pub const REPORT_FORMAT: &str = "ess-mutation-report/3";
 /// The report [`collect`] writes for an emission scoped to one component: `/3` with the component
 /// named and the mutants it leaves out listed (beyond10x/ess#236); also the report under a
 /// known-failure declaration (beyond10x/ess#294), wherever a selected site is unavailable
-/// (beyond10x/ess#295), and wherever a mutant carries `identical_answer` (beyond10x/ess#517).
+/// (beyond10x/ess#295), and wherever a mutant carries `identical_answer` (<https://github.com/beyond10x/ess/issues/517>).
 pub const REPORT_FORMAT_4: &str = "ess-mutation-report/4";
 
 // ---- the classes --------------------------------------------------------------------------------
@@ -2089,7 +2089,7 @@ fn unsatisfiable_guard(baseline: &EssIr, mutant: &EssIr, mutation: &Mutation) ->
 
 /// For a `precedence-swap`, the answer both of its branches give in the baseline, where it is the
 /// same one: the same error and error payload (or neither refuses) and the same response, and
-/// neither changes state, sets or emits anything (beyond10x/ess#517). Where both guards hold,
+/// neither changes state, sets or emits anything (<https://github.com/beyond10x/ess/issues/517>). Where both guards hold,
 /// either order then answers alike, so nothing a caller observes tells the mutant apart.
 ///
 /// `None` for any other mutation, and wherever the two branches differ in anything but their name,
@@ -2497,7 +2497,7 @@ pub enum Verdict {
     /// satisfied by no input — beside a `when_subject:` guard, by no input on any row — and no
     /// scenario it changed went unscored.
     /// The rule it wrote is dead by construction, so no scenario of its suite can take it. Also
-    /// a `precedence-swap` whose two branches give an identical answer (beyond10x/ess#517), on
+    /// a `precedence-swap` whose two branches give an identical answer (<https://github.com/beyond10x/ess/issues/517>), on
     /// the same terms: either order answers alike wherever both guards hold.
     Equivalent,
     /// `assemble` or `compile` refused the mutant.
@@ -2724,7 +2724,7 @@ pub struct MutantEntry {
     pub id: String,
     /// The answer both branches of a `precedence-swap` give, where it is the same one: the same
     /// error, the same or no payload, and neither changes state, sets or emits anything
-    /// (beyond10x/ess#517). Apart from `unsatisfiable_guard`, which says their guards never
+    /// (<https://github.com/beyond10x/ess/issues/517>). Apart from `unsatisfiable_guard`, which says their guards never
     /// overlap. Only in `ess-mutation-report/4`, and absent where that is not so.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub identical_answer: Option<String>,
@@ -4019,7 +4019,7 @@ pub const MANIFEST_FORMAT: &str = "ess-mutation-manifest/3";
 /// this format's readers know ([`MutantClass::manifest_format`]): `/3` with the component, and each
 /// mutant it leaves out marked `out_of_scope` (beyond10x/ess#212, beyond10x/ess#236), and its
 /// `unavailable_sites` where it has any (beyond10x/ess#295). A `precedence-swap` mutant in it may
-/// carry `identical_answer` (beyond10x/ess#517).
+/// carry `identical_answer` (<https://github.com/beyond10x/ess/issues/517>).
 pub const MANIFEST_FORMAT_4: &str = "ess-mutation-manifest/4";
 /// The manifest 0.41.0 wrote, which [`collect`] still reads: it names each suite's refusals and no
 /// mutant's `unsatisfiable_guard`, so no mutant it names is scored `equivalent`.
@@ -4363,7 +4363,7 @@ impl Manifest {
         Ok(())
     }
 
-    /// Each `identical_answer` (beyond10x/ess#517): refused before `/4` by name, and on a mutant
+    /// Each `identical_answer` (<https://github.com/beyond10x/ess/issues/517>): refused before `/4` by name, and on a mutant
     /// that is not a `precedence-swap`, which has no two answers to compare.
     fn identical_answers(&self, version4: bool) -> Result<(), String> {
         let Some(mutant) = self
