@@ -2,6 +2,43 @@
 
 ## [Unreleased]
 
+### Added
+
+- `ess-cli/2`: a CLI presentation binding may leave out the `config` and `output` globals; `state`
+  is still required. `ess specify cli` compiles it to `ess-cli-plan/2`, which leaves out an
+  undeclared global's key and never writes `null`. `ess generate cli` defines no flag for an
+  omitted global, and a CLI without `output` writes JSON only. An `ess-cli/1` binding still
+  requires all three globals and compiles to the same `ess-cli-plan/1` bytes as before
+  (https://github.com/beyond10x/ess/issues/481).
+- `ess-diff/15`: `ess verify diff` names a domain added to or removed from `system.yaml` as
+  `domain/<name>/added` (compatible) or `domain/<name>/removed` (breaking for callers and
+  readers), where it reported `system/<name>/unclassified-changed`. A purely additive revision now
+  passes `--fail-on breaking-or-unknown`, and `ess verify impact` reaches only the domain's own
+  constructs. A delta carrying a domain change is written as `ess-diff/15`; earlier formats refuse
+  it (https://github.com/beyond10x/ess/issues/469).
+
+### Changed
+
+- In `ess-cli/1` and `ess-cli/2`, `null`, `~` and `""` as a global's flag are refused with an error
+  naming the global; before, they were read as a flag called `null`
+  (https://github.com/beyond10x/ess/issues/481).
+
+### Fixed
+
+- Synthesis no longer overflows the stack on a command with two identity guards over a
+  self-reference. A search for a row beside the arranged entity is cut only where it re-enters
+  itself, and the nearest Optional reference is left out before synthesis refuses; models that
+  synthesized before produce the same suites (https://github.com/beyond10x/ess/issues/474).
+- A refusal whose guard reads only the input id gets a witness again: the stored-row half of the
+  scenario is searched with that id fixed, and is dropped when no stored row meets the guard,
+  instead of failing `ESS-SYNTH-019` (https://github.com/beyond10x/ess/issues/479).
+- Arranged and steered creations take distinct identities per distinction, and boundary rows no
+  longer re-send the first identity. A scenario that would still create one literal id twice with
+  no delete between is withdrawn as `ESS-SYNTH-001` naming it
+  (https://github.com/beyond10x/ess/issues/480, https://github.com/beyond10x/ess/issues/471).
+- The text conformance report prints `<check code>: <cause>` under each scenario that ended in
+  error; the JSON report is unchanged (https://github.com/beyond10x/ess/issues/471).
+
 ## [0.56.0] — 2026-10-07
 
 ### Added

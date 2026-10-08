@@ -370,7 +370,7 @@ enum VerifyCommand {
         #[arg(long, value_enum, default_value_t = MachineFormat::Text)]
         format: MachineFormat,
         /// Classify each change as breaking, unknown or compatible for callers, readers and
-        /// history; JSON output is then `ess-diff/14`.
+        /// history; JSON output is then `ess-diff/14` or later.
         #[arg(long)]
         compatibility: bool,
         /// Exit 4 when an unacknowledged change is at or above this level, 0 otherwise; a
