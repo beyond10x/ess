@@ -6,7 +6,7 @@ status: open
 title: 'Does #501 touch mutate.rs before the other session''s next synthesis wave?'
 relations:
 - blocks: story:witness-nested-connectives-and-decide-optional-presence-equivalence
-revision: 2
+revision: 3
 ---
 ## Question
 
@@ -17,3 +17,7 @@ The second half of #501 (score a precedence swap of two guards no input satisfie
 | A | the whole story lands before that wave, touching `mutate.rs` | that wave merges over one changed file |
 | B | split: the witness half lands now; the equivalence half waits for that wave | #501 stays open after 0.58.0 until the second half ships |
 | C | the whole story waits for that wave | #501 and its three surviving mutants wait for that wave |
+
+## Decided
+
+A: all of #501 lands before the other session's next synthesis wave, editing `satisfiable` and `equality_tests` in `mutate.rs`. If that wave needs `mutate.rs` first, the equivalence half falls back to B and lands after it.
