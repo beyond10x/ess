@@ -312,7 +312,7 @@ impl ChangeCompatibility {
     }
 
     /// The classification `change` derives, given where its type is used and, for a change that
-    /// can move a wire form ([`shape_bearing`]), the shapes the moved type has in the two
+    /// can move a wire form (`shape_bearing`), the shapes the moved type has in the two
     /// revisions.
     ///
     /// The shapes are read, and recorded, only on a shape-bearing change whose two shapes have
