@@ -1812,15 +1812,16 @@ enum Order {
     /// witness never depends on the order a target reads its branches in. Every search runs this
     /// way first.
     Unique,
-    /// The first declared, as the precedence order states (`docs/design/cross-record-and-stored-
-    /// field-guards.md`, "The precedence order", steps 2 and 5; beyond10x/ess#217): only where no
-    /// row and input selects the branch alone — `held-for-promotion: result == Healthy` beside a
-    /// `when_subject:`, declared before `promoted: result == Healthy` (beyond10x/ess#278).
+    /// The first the precedence plan reads, as the precedence order states (`docs/design/cross-
+    /// record-and-stored-field-guards.md`, "The precedence order", steps 2 and 5; beyond10x/ess#217;
+    /// declaration order within a phase): only where no row and input selects the branch alone —
+    /// `held-for-promotion: result == Healthy` beside a `when_subject:`, declared before
+    /// `promoted: result == Healthy` (beyond10x/ess#278).
     FirstDeclared,
 }
 
 /// Which branch this command selects for the row `arrangement` holds and this input: the only one
-/// selected, or under [`Order::FirstDeclared`] the first declared of several.
+/// selected, or under [`Order::FirstDeclared`] the first the precedence plan reads of several.
 ///
 /// A row whose state no move of the command starts from is the wrong-state family's
 /// ([`refusal_witness`]) and is not answered here, although its stored fields do select a guarded
@@ -1872,19 +1873,27 @@ fn selects<'a>(
         }
         selected.push(branch);
     }
-    // An input-guarded refusal is taken before any accepting branch it overlaps (beyond10x/ess
-    // #178), so where one is selected the accepting branches beside it are not.
-    if selected
-        .iter()
-        .any(|branch| super::is_input_guarded_refusal(branch))
-    {
-        selected.retain(|branch| super::is_input_guarded_refusal(branch));
+    // A branch the precedence plan reads before both the held state and the accepting branches —
+    // an input-guarded refusal, taken before any accepting branch it overlaps (beyond10x/ess#178)
+    // — answers first, so where one is selected the branches beside it the plan reads in the
+    // held-state or accepting phase are not.
+    if selected.len() > 1 {
+        let first: Vec<&ResolvedOutcome> = selected
+            .iter()
+            .copied()
+            .filter(|branch| {
+                super::precedence::first_before_held_and_accepting(command, &[branch]).is_some()
+            })
+            .collect();
+        if !first.is_empty() {
+            selected = first;
+        }
     }
-    // `selected` is in declaration order; under [`Order::FirstDeclared`] the first answers.
+    // Under [`Order::FirstDeclared`] the one the precedence plan reads first answers.
     let pick = match (selected.as_slice(), order) {
         ([], _) => command.outcomes.iter().find(|branch| state_default(branch)),
         ([only], _) => Some(*only),
-        ([first, ..], Order::FirstDeclared) => Some(*first),
+        (several, Order::FirstDeclared) => first_read(ir, command, several),
         (_, Order::Unique) => None,
     };
     if wrong && !pick.is_some_and(reads_state) {
@@ -1897,6 +1906,21 @@ fn selects<'a>(
             .and_then(|subject| subject.effect.transition())
             .is_none_or(|transition| transition.from.contains(&arrangement.state))
     }))
+}
+
+/// Of `several` branches of `command`, the one the precedence plan, built in the IR's format, reads
+/// before every other ([`precedence::answers_before_in`](super::precedence::answers_before_in)).
+fn first_read<'a>(
+    ir: &EssIr,
+    command: &'a ResolvedCommand,
+    several: &[&'a ResolvedOutcome],
+) -> Option<&'a ResolvedOutcome> {
+    several.iter().copied().find(|branch| {
+        let before = super::precedence::answers_before_in(command, ir.format(), branch);
+        !several
+            .iter()
+            .any(|other| before.iter().any(|earlier| earlier.name == other.name))
+    })
 }
 
 /// Whether an input alone selects `outcome` of a command that reads no stored field.
@@ -2248,8 +2272,8 @@ fn external_claimed(
     entity: &EntityHandle,
     tried: usize,
 ) -> RefusalCause {
-    let claiming: Vec<String> = guarded(command)
-        .filter(|branch| branch.name != outcome.name)
+    let claiming: Vec<String> = answered_before(command, outcome)
+        .into_iter()
         .filter_map(|branch| {
             let held = stored(&branch.condition)?;
             Some(match input_guard(&branch.condition) {
@@ -2306,11 +2330,27 @@ fn external_inputs(
     ))
 }
 
+/// The branches of `command` competing for selection ([`guarded`]) that the precedence plan reads
+/// before `outcome` ([`precedence::answers_before`](super::precedence::answers_before)), in
+/// declaration order. For an external branch under the precedence order, every branch the stored
+/// row selects: those sit in the held-state phase, read before the accepting one.
+fn answered_before<'c>(
+    command: &'c ResolvedCommand,
+    outcome: &ResolvedOutcome,
+) -> Vec<&'c ResolvedOutcome> {
+    let competing: BTreeSet<&OutcomeName> = guarded(command).map(|branch| &branch.name).collect();
+    super::precedence::answers_before(command, outcome)
+        .into_iter()
+        .filter(|branch| competing.contains(&branch.name))
+        .collect()
+}
+
 /// Whether the external branch `outcome`, its provider forced, answers `command` sent `input` for
 /// the row `arrangement` holds ([`external_witness`]): its own guard holds; no input-guarded
-/// refusal and no accepting `when:` declared before it claims the input; no branch the stored row
-/// selects is selected, whatever its declaration order, a stored guard the row leaves undecided
-/// counting as selected; and the row rests in a state its move starts from.
+/// refusal and no accepting `when:` the precedence plan reads before it claims the input; no
+/// branch the stored row selects that the plan reads before it is selected, whatever its
+/// declaration order ([`answered_before`]), a stored guard the row leaves undecided counting as
+/// selected; and the row rests in a state its move starts from.
 fn leaves_external(
     ir: &EssIr,
     command: &ResolvedCommand,
@@ -2333,7 +2373,7 @@ fn leaves_external(
     {
         return Ok(false);
     }
-    for branch in guarded(command).filter(|branch| branch.name != outcome.name) {
+    for branch in answered_before(command, outcome) {
         let Some(predicate) = stored(&branch.condition) else {
             continue;
         };
