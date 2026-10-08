@@ -134,7 +134,24 @@ fn a_payload_variant_that_loses_its_payload_is_breaking_too() {
 #[test]
 fn a_payload_variant_whose_payload_changes_stays_unknown() {
     let before = edited("      Open:\n", "      Open: String\n");
-    let after = edited("      Open:\n", "      Open: demo.work.Completion\n");
+    let after = edited("      Open:\n", "      Open: Integer\n");
     let (_, compatibility) = one(&before, &after);
     assert_eq!(compatibility, [Compatibility::Unknown; 3]);
+}
+
+/// A payload moving from a value to an object is refused from every caller still sending the old
+/// one (`ess-diff/16`); readers and history keep the answer the union's uses give.
+#[test]
+fn a_payload_variant_whose_payload_moves_wire_form_is_breaking_for_callers() {
+    let before = edited("      Open:\n", "      Open: String\n");
+    let after = edited("      Open:\n", "      Open: demo.work.Completion\n");
+    let (_, compatibility) = one(&before, &after);
+    assert_eq!(
+        compatibility,
+        [
+            Compatibility::Breaking,
+            Compatibility::Unknown,
+            Compatibility::Unknown
+        ]
+    );
 }

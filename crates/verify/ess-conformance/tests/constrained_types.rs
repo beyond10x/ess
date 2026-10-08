@@ -1,6 +1,7 @@
-//! An alphabet-only newtype is refused wherever an invariant-carrying one is: the three
-//! conformance observers that cannot execute a declared constraint (selection, response, retained
-//! replay) ask `ResolvedBody::is_constrained`, not "has invariants".
+//! An alphabet-only newtype is treated wherever an invariant-carrying one is: the two conformance
+//! observers that cannot execute a declared constraint (selection, retained replay) ask
+//! `ResolvedBody::is_constrained`, not "has invariants", and refuse both; the response observer
+//! carries both as String-newtype `constraints` and checks them (beyond10x/ess#499).
 //!
 //! `docs/design/string-alphabet-and-length.md`, section 6, "constraint gates". One case per site,
 //! each run twice — with an invariant and with only an alphabet — asserting the same refusal.
@@ -70,7 +71,7 @@ fn a_selection_over_an_item_with_a_constrained_text_is_refused_either_way() {
 }
 
 #[test]
-fn a_response_carrying_a_constrained_text_is_refused_either_way() {
+fn a_response_carrying_a_constrained_text_carries_the_rule_either_way() {
     for (how, constraint) in CONSTRAINTS {
         let model = with(
             &with(
@@ -87,12 +88,14 @@ fn a_response_carrying_a_constrained_text_is_refused_either_way() {
         );
         let ir = ir(&model);
         let command = &ir.commands()[&"demo.api.Cancel".parse().unwrap()];
-        let refusal =
+        let observations =
             ess_conformance::response::Observation::of(&ir, command, &command.outcomes[0])
-                .expect_err(how);
+                .unwrap_or_else(|refusal| panic!("{how}: {refusal}"));
         assert!(
-            refusal.contains("response constrained type"),
-            "{how}: {refusal}"
+            observations.iter().any(|observation| observation
+                .constraints
+                .contains_key(&"demo.api.CallType".parse().unwrap())),
+            "{how}: {observations:?}"
         );
     }
 }

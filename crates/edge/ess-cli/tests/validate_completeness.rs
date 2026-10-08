@@ -309,6 +309,81 @@ fn validate_json_reports_outside_scenarios() {
     assert!(whole.get("completeness").is_none(), "{whole}");
 }
 
+/// An authored scenario that drives only `two.ping.Ping`.
+const PING_AUTHORED: &str = "type: ess-scenario/1
+domain: two.ping
+scenario: ping-is-answered
+summary: A ping is answered.
+timeline:
+  - at: 2026-01-05T09:00:00Z
+    command: two.ping.Ping
+    input: {note: hello}
+    outcome: pinged
+";
+
+/// `synthesize --component` keeps an authored scenario only where the component realises what it
+/// drives, as it does a generated one; another component's is listed outside
+/// (beyond10x/ess#513).
+#[test]
+fn component_suite_lists_another_components_authored_scenario_outside() {
+    let root = nothing_owed("authored-outside");
+    // Outside the model directory: `--path` reads every YAML file under it as specification.
+    let scenarios = scratch("authored-outside-scenarios");
+    fs::create_dir_all(&scenarios).unwrap();
+    fs::write(scenarios.join("ping.yaml"), PING_AUTHORED).unwrap();
+    let scenarios = scenarios.to_str().unwrap();
+
+    let printed = synthesized(
+        &root,
+        &["--component", "item-service", "--scenarios", scenarios],
+    );
+    let outside = lines_after(&printed, "outside: ");
+    assert!(
+        outside
+            .iter()
+            .any(|line| line.starts_with("`two.ping/authored/ping-is-answered` needs ")),
+        "{printed}"
+    );
+    assert!(
+        printed.lines().last().unwrap().contains("(0 authored)"),
+        "{printed}"
+    );
+
+    let out = root.join("item-service.json");
+    let written = synthesized(
+        &root,
+        &[
+            "--component",
+            "item-service",
+            "--scenarios",
+            scenarios,
+            "--out",
+            out.to_str().unwrap(),
+        ],
+    );
+    let suite = fs::read_to_string(&out).unwrap_or_else(|error| panic!("{error}: {written}"));
+    assert!(
+        !suite.contains("two.ping/authored/ping-is-answered"),
+        "{suite}"
+    );
+
+    // The component that realises the ping holds it.
+    let printed = synthesized(
+        &root,
+        &["--component", "ping-service", "--scenarios", scenarios],
+    );
+    assert!(
+        !lines_after(&printed, "outside: ")
+            .iter()
+            .any(|line| line.contains("ping-is-answered")),
+        "{printed}"
+    );
+    assert!(
+        printed.lines().last().unwrap().contains("(1 authored)"),
+        "{printed}"
+    );
+}
+
 #[test]
 fn completeness_absent_when_nothing_is_owed() {
     let root = nothing_owed("absent");

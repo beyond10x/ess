@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-killed-childs-outcome-says-which-signal-ended-it
 kind: story
-status: active
+status: implemented
 title: A killed child's outcome says which signal ended it
 relations:
 - serves: vision:O2
@@ -13,10 +13,11 @@ scope:
   path: crates/edge/ess-cli/tests/execution_recovery.rs
 - confidence: cited
   path: crates/edge/ess-cli/tests/support/fake_recovery.rs
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T07:30:24Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-10-03T07:30:24Z", actor: "human:timo", revision: 5}
+- {from: "active", to: "implemented", at: "2026-10-08T09:55:07Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1}}}
 ---
 # A killed child's outcome says which signal ended it
 

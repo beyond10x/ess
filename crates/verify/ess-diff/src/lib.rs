@@ -78,7 +78,8 @@
 //!
 //! A relation says which way a set moved, not who is hurt by the move. [`classified()`] adds a
 //! [`ChangeCompatibility`] to every change — breaking, unknown or compatible for callers, readers
-//! and history, a type change read through where the type is used — and writes `ess-diff/14` or
+//! and history, a type change read through where the type is used, a change that moves an input's
+//! wire form through the shapes on its two sides (`ess-diff/16`) — and writes `ess-diff/14` or
 //! later. [`Gate`] fails on it, minus the changes an acknowledgements document bound to the same
 //! pair names. [`diff()`] stays below `/14` unless a change only `/14` or later can carry is in it;
 //! [`mod@crate::compatibility`] has the rules.
@@ -143,7 +144,8 @@ pub use change::{
     SystemChange, TypeChange, ViewChange,
 };
 pub use compatibility::{
-    ChangeCompatibility, Compatibility, Dimension, FailOn, Gate, GateOutcome, TypeUse,
+    ChangeCompatibility, Compatibility, Dimension, FailOn, Gate, GateOutcome, InputShape,
+    InputShapes, TypeUse, WireForm,
 };
 pub use delta::{
     DeltaFormat, DeltaWriteRefusal, EssDelta, EssRevisionRef, SUPPORTED_DELTA_FORMATS,

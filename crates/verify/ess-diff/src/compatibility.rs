@@ -47,11 +47,29 @@
 //! | an actor gains a grant, or any construct is added | compatible |
 //! | a domain is removed (`ess-diff/15`) | breaking for callers and readers; compatible for history, which each removed entity and event answers for |
 //! | an actor loses a grant, an actor or a command is removed | breaking for callers |
+//! | a command input's type moves between a scalar and a record, list or map, or between a list and an object (`ess-diff/16`) | breaking for callers; unknown for readers; compatible for history |
+//! | a type with an input use keeps its name while its kind, its representation, a member's type or a variant's payload moves between those wire forms (`ess-diff/16`) | breaking for callers; readers and history as its uses answer them |
 //! | a refusal gains or loses its compensating change (`compensates: true`, ess/22) | breaking for callers and readers; compatible for history |
 //! | a view is removed | breaking for readers |
 //! | an event or an entity is removed | breaking for history |
 //!
 //! Everything else is `Unknown` in the dimensions its family touches and compatible in the rest.
+//!
+//! # Where an input's shape moves
+//!
+//! An input field's type names say nothing about its wire form: `catalog.items.Receipt` may be a
+//! newtype of `String` or a struct. So an input type change whose two types have different wire
+//! forms ([`InputShape::wire_form`]) records the [`InputShapes`] it was read from beside the answer,
+//! exactly as a type change records its uses, and a reader re-derives the answer from them. Every
+//! caller still sending the old shape is refused by the decoder before anything runs, so the change
+//! is breaking for callers. A change between two types of one wire form records nothing and keeps
+//! the catch-all answer; so does one where either side is `Json`, which accepts every form.
+//!
+//! The same move happens under one name: `Receipt` redefined from a newtype of `String` into a
+//! struct, a newtype rewrapped, a struct member or a union variant's payload retyped. Such a type
+//! change records the shapes of what moved beside its uses when the type has an input use and the
+//! wire forms differ, and is breaking for callers; readers and history keep the answers its uses
+//! give. A type no command takes records nothing and keeps its answer.
 //!
 //! # The gate
 //!
@@ -77,6 +95,85 @@ use crate::graph::{DependencyRelation, SemanticDependencyGraph};
 
 /// The first delta format whose changes carry a [`ChangeCompatibility`].
 pub const CLASSIFIED_DELTA_FORMAT: u32 = 14;
+
+/// The first delta format whose classification records an input's [`InputShapes`].
+///
+/// A classified delta that records one is written in it; every other delta keeps its earlier
+/// format and bytes. Below it, `input-type-changed` is `unknown` for callers whatever the types,
+/// and a document written that way still reads back as it was written.
+pub const SHAPED_DELTA_FORMAT: u32 = 16;
+
+/// The wire form of a command input's type, read through `Optional` and every newtype.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum InputShape {
+    /// One JSON value that is not an object or an array: a primitive other than `Json`, an enum.
+    Scalar,
+    /// A JSON object with declared members: a struct, or a tagged union.
+    Record,
+    /// A JSON array.
+    List,
+    /// A JSON object with any keys.
+    Map,
+}
+
+/// The JSON container a value of an [`InputShape`] is written as.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WireForm {
+    /// Neither an object nor an array.
+    Value,
+    /// An object.
+    Object,
+    /// An array.
+    Array,
+}
+
+impl InputShape {
+    /// How it is written.
+    pub const fn written(self) -> &'static str {
+        match self {
+            Self::Scalar => "scalar",
+            Self::Record => "record",
+            Self::List => "list",
+            Self::Map => "map",
+        }
+    }
+
+    /// The JSON container a value of this shape is: a record and a map are both objects, so a
+    /// change between them is not decided by its shapes.
+    pub const fn wire_form(self) -> WireForm {
+        match self {
+            Self::Scalar => WireForm::Value,
+            Self::Record | Self::Map => WireForm::Object,
+            Self::List => WireForm::Array,
+        }
+    }
+}
+
+impl fmt::Display for InputShape {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.written())
+    }
+}
+
+/// The shapes of one command input field's type in the two revisions (`ess-diff/16`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct InputShapes {
+    /// The field's shape in the earlier revision.
+    pub before: InputShape,
+    /// The field's shape in the later revision.
+    pub after: InputShape,
+}
+
+impl InputShapes {
+    /// Whether a value of one shape is never a value of the other.
+    pub fn disjoint(self) -> bool {
+        self.before.wire_form() != self.after.wire_form()
+    }
+}
 
 /// One answer to one compatibility question.
 ///
@@ -178,6 +275,10 @@ pub struct ChangeCompatibility {
     /// Where the changed type is used. Present on a type change only.
     #[serde(skip_serializing_if = "Option::is_none")]
     uses: Option<BTreeSet<TypeUse>>,
+    /// The shapes an input field's type moved between (`ess-diff/16`). Present on an input type
+    /// change whose two shapes have different wire forms only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    shapes: Option<InputShapes>,
 }
 
 /// One classification as a document writes it, before anything has checked it.
@@ -195,21 +296,59 @@ pub struct RawChangeCompatibility {
     /// The uses it claims for a type change.
     #[serde(default)]
     pub uses: Option<BTreeSet<TypeUse>>,
+    /// The shapes it claims for an input type change (`ess-diff/16`).
+    #[serde(default)]
+    pub shapes: Option<InputShapes>,
 }
 
 impl ChangeCompatibility {
     /// The classification `change` derives, given where its type is used.
     ///
-    /// `uses` is read for a type change and recorded with it; every other family ignores it.
+    /// `uses` is read for a type change and recorded with it; every other family ignores it. An
+    /// input type change is answered without its shapes, as below `ess-diff/16`; see
+    /// [`Self::derive_shaped`].
     pub fn derive(change: &SemanticChange, uses: &BTreeSet<TypeUse>) -> Self {
-        let [callers, readers, history] = dimensions(change, uses);
+        Self::derive_shaped(change, uses, None)
+    }
+
+    /// The classification `change` derives, given where its type is used and, for a change that
+    /// can move a wire form (`shape_bearing`), the shapes the moved type has in the two
+    /// revisions.
+    ///
+    /// The shapes are read, and recorded, only on a shape-bearing change whose two shapes have
+    /// different wire forms ([`InputShapes::disjoint`]); everywhere else they are ignored, so the
+    /// classification and its bytes are what [`Self::derive`] gives.
+    pub fn derive_shaped(
+        change: &SemanticChange,
+        uses: &BTreeSet<TypeUse>,
+        shapes: Option<InputShapes>,
+    ) -> Self {
+        let shapes = shapes.filter(|shapes| shape_bearing(change, uses) && shapes.disjoint());
+        let [callers, readers, history] = match (shapes, change) {
+            // Every caller still sending the old shape is refused by the decoder before anything
+            // runs. A type change keeps the answers its uses give readers and history; a command
+            // input's field flows into the catch-all's answer, and nothing stored is read
+            // differently.
+            (Some(_), SemanticChange::Type { .. }) => {
+                let [_, readers, history] = dimensions(change, uses);
+                [B, readers, history]
+            }
+            (Some(_), _) => [B, U, C],
+            (None, _) => dimensions(change, uses),
+        };
         Self {
             verdict: callers.max(readers).max(history),
             callers,
             readers,
             history,
             uses: matches!(change, SemanticChange::Type { .. }).then(|| uses.clone()),
+            shapes,
         }
+    }
+
+    /// The shapes an input type change moved between, when they decided its answer.
+    pub fn shapes(&self) -> Option<InputShapes> {
+        self.shapes
     }
 
     /// The worst of the three answers.
@@ -303,7 +442,34 @@ impl RawChangeCompatibility {
             ));
             return Err(errors);
         }
-        let derived = ChangeCompatibility::derive(change, &self.uses.clone().unwrap_or_default());
+        if let Some(shapes) = self.shapes {
+            let bearing = shape_bearing(change, self.uses.as_ref().unwrap_or(&BTreeSet::new()));
+            if !bearing || !shapes.disjoint() {
+                errors.push(ValidationError::new(
+                    ValidationCode::ConflictingDeclaration,
+                    format!("{location}.shapes"),
+                    if bearing {
+                        format!(
+                            "`{}` records the shapes {} and {}, which share a wire form; only \
+                             shapes that do not are recorded",
+                            change.id(),
+                            shapes.before,
+                            shapes.after
+                        )
+                    } else {
+                        "only an input type change, or a kind, representation, member or payload \
+                         change of a type with an input use, records the shapes it moved between"
+                            .to_owned()
+                    },
+                ));
+                return Err(errors);
+            }
+        }
+        let derived = ChangeCompatibility::derive_shaped(
+            change,
+            &self.uses.clone().unwrap_or_default(),
+            self.shapes,
+        );
         let written = [
             ("verdict", self.verdict, derived.verdict),
             ("callers", self.callers, derived.callers),
@@ -340,7 +506,31 @@ impl RawChangeCompatibility {
             readers: self.readers,
             history: self.history,
             uses: self.uses,
+            shapes: self.shapes,
         }
+    }
+}
+
+/// Whether `change` can move the wire form of something a caller sends: a command input field's
+/// type, or, where the type has an input use, a declared type's kind, a newtype's representation,
+/// a struct member's type or a union variant's payload.
+fn shape_bearing(change: &SemanticChange, uses: &BTreeSet<TypeUse>) -> bool {
+    match change {
+        SemanticChange::Command {
+            changed: CommandChange::InputTypeChanged { .. },
+            ..
+        } => true,
+        SemanticChange::Type { changed, .. } => {
+            uses.contains(&TypeUse::Input)
+                && matches!(
+                    changed,
+                    TypeChange::KindChanged { .. }
+                        | TypeChange::RepresentationChanged { .. }
+                        | TypeChange::FieldTypeChanged { .. }
+                        | TypeChange::VariantTypeChanged { .. }
+                )
+        }
+        _ => false,
     }
 }
 
@@ -565,6 +755,112 @@ impl<'a> UseIndex<'a> {
             uses.extend(uses_in(ir, graph, residual, subject));
         }
         uses
+    }
+
+    /// The shapes input `field` of `command` has in the two revisions, or `None` when either side
+    /// does not declare it or has no single shape (`Json`).
+    pub(crate) fn input_shapes(
+        &self,
+        command: &ess_domain::name::QualifiedName,
+        field: &str,
+    ) -> Option<InputShapes> {
+        let [before, after] = self.revisions.each_ref().map(|(ir, _, _)| {
+            let declared = ir.commands().get(command)?;
+            let input = declared.input.iter().find(|input| input.name == field)?;
+            shape_of(ir, &input.type_ref, 0)
+        });
+        Some(InputShapes {
+            before: before?,
+            after: after?,
+        })
+    }
+
+    /// The shapes of what `changed` moved in type `subject` — the type itself for a kind or
+    /// representation change, the member for a field type change, the payload for a variant type
+    /// change — or `None` for any other change, or when either side has no single shape.
+    pub(crate) fn type_shapes(
+        &self,
+        subject: &DeclaredTypeRef,
+        changed: &TypeChange,
+    ) -> Option<InputShapes> {
+        use ess_compiler::ir::{ResolvedBody, ResolvedTypeRef};
+
+        let [before, after] = self.revisions.each_ref().map(|(ir, _, _)| {
+            let body = &ir.types().get(subject.name())?.body;
+            match changed {
+                TypeChange::KindChanged { .. } | TypeChange::RepresentationChanged { .. } => {
+                    body_shape(ir, body, 0)
+                }
+                TypeChange::FieldTypeChanged { field, .. } => match body {
+                    ResolvedBody::Struct { fields, .. } => {
+                        let member = fields.iter().find(|member| &member.name == field)?;
+                        shape_of(ir, &member.type_ref, 0)
+                    }
+                    _ => None,
+                },
+                TypeChange::VariantTypeChanged { variant, .. } => match body {
+                    ResolvedBody::Union { variants, .. } => {
+                        let payload: &ResolvedTypeRef = variants.get(variant)?.as_ref()?;
+                        shape_of(ir, payload, 0)
+                    }
+                    _ => None,
+                },
+                _ => None,
+            }
+        });
+        Some(InputShapes {
+            before: before?,
+            after: after?,
+        })
+    }
+}
+
+/// The wire form of `type_ref` in `ir`: through `Optional`, which adds `null` to a form and keeps
+/// it, and through every newtype, which is written as what it wraps.
+///
+/// `None` for `Json`, which accepts every form, and past [`MAX_TYPE_DEPTH`] newtype layers, which a
+/// compiled model never reaches.
+///
+/// [`MAX_TYPE_DEPTH`]: ess_domain::types::MAX_TYPE_DEPTH
+fn shape_of(
+    ir: &EssIr,
+    type_ref: &ess_compiler::ir::ResolvedTypeRef,
+    depth: usize,
+) -> Option<InputShape> {
+    use ess_compiler::ir::ResolvedTypeRef;
+    use ess_domain::types::Primitive;
+
+    if depth > ess_domain::types::MAX_TYPE_DEPTH {
+        return None;
+    }
+    match type_ref {
+        ResolvedTypeRef::Primitive {
+            name: Primitive::Json,
+        } => None,
+        ResolvedTypeRef::Primitive { .. } => Some(InputShape::Scalar),
+        ResolvedTypeRef::Optional { of } => shape_of(ir, of, depth + 1),
+        ResolvedTypeRef::List { .. } => Some(InputShape::List),
+        ResolvedTypeRef::Map { .. } => Some(InputShape::Map),
+        // Through the name and this IR's own map, never a handle accessor: the handle is read in
+        // the revision that minted it here, but the map holds that true for any caller.
+        ResolvedTypeRef::Declared { name } => {
+            body_shape(ir, &ir.types().get(name.name())?.body, depth)
+        }
+    }
+}
+
+/// The wire form of a declared type's body in `ir`, as [`shape_of`] reads it.
+fn body_shape(
+    ir: &EssIr,
+    body: &ess_compiler::ir::ResolvedBody,
+    depth: usize,
+) -> Option<InputShape> {
+    use ess_compiler::ir::ResolvedBody;
+
+    match body {
+        ResolvedBody::Newtype { of, .. } => shape_of(ir, of, depth + 1),
+        ResolvedBody::Struct { .. } | ResolvedBody::Union { .. } => Some(InputShape::Record),
+        ResolvedBody::Enum { .. } => Some(InputShape::Scalar),
     }
 }
 

@@ -627,8 +627,9 @@ enum ConformCommand {
         /// (`--scenarios` does that, independently). Ordinary arrangement is tried first; a row is
         /// established only for a generated obligation no bounded arrangement reaches, and the
         /// real command and assertions follow it. Any seed selects suite/42 (or /43 with
-        /// `--suite-format 5`), or suite/44 (/45) where an act also claims one event more than
-        /// once, and records its source, row and uses.
+        /// `--suite-format 5`), suite/44 (/45) where an act also claims one event more than once, or
+        /// suite/46 (/47) where a response reaches a constrained String newtype, and records its
+        /// source, row and uses.
         #[arg(
             long = "synthesis-seed",
             num_args = 2,
@@ -845,7 +846,7 @@ enum ConformCommand {
     /// no scored scenario killed is inconclusive when a scenario it changed was not scored;
     /// otherwise equivalent (ESS-MUTATE-005) when it left its outcome's guard satisfied by no
     /// input, decided only for equality, membership and truth tests of input fields against
-    /// literals; otherwise unwitnessed (ESS-MUTATE-004) when its suite gained synthesis refusals
+    /// literals and presence tests of input fields; otherwise unwitnessed (ESS-MUTATE-004) when its suite gained synthesis refusals
     /// the baseline does not have, when it is on an outcome whose scenario the baseline refused,
     /// or when it is a from-drop or transition-to mutant on a transition only such outcomes
     /// perform. It survives when every scored scenario passed and each scenario it left unscored
@@ -4585,6 +4586,44 @@ fn write_suite(
     ))
 }
 
+/// Files the compiled authored scenarios in `synthesis`'s suite and returns how many it kept.
+///
+/// Scoped to a component, an authored scenario is held to the rule a generated one is: one that
+/// drives another component's commands, events or views is listed outside the suite, where it could
+/// only fail (beyond10x/ess#513).
+fn file_authored(
+    ir: &EssIr,
+    component: Option<&str>,
+    synthesis: &mut ess_conformance::synthesize::Synthesis,
+    scenarios: impl IntoIterator<
+        Item = (
+            ess_conformance::ScenarioId,
+            ess_conformance::ConformanceScenario,
+        ),
+    >,
+) -> Result<usize> {
+    let mut kept = 0;
+    for (id, scenario) in scenarios {
+        if let Some(name) = component {
+            let needs = ess_conformance::synthesize::needs_outside(ir, name, &scenario)?;
+            if !needs.is_empty() {
+                synthesis
+                    .outside
+                    .push(ess_conformance::synthesize::Outside {
+                        scenario: id,
+                        needs,
+                    });
+                continue;
+            }
+        }
+        kept += 1;
+        if let Err(id) = synthesis.suite.insert(id, scenario) {
+            bail!("`{id}` is already in the suite");
+        }
+    }
+    Ok(kept)
+}
+
 fn synthesize_suite(
     input: &SpecPath,
     target: SuiteTarget,
@@ -4630,13 +4669,8 @@ fn synthesize_suite(
     // rather than merged where a scenario names something the specification does not declare: a
     // suite carrying a check nobody can resolve is the artifact this whole verb exists to avoid.
     let authoring = ess_conformance::authored::compile(&ir, &authored_sources(scenarios)?);
-    let authored = authoring.scenarios.len();
     let complete = authoring.is_complete();
-    for (id, scenario) in authoring.scenarios {
-        if let Err(id) = synthesis.suite.insert(id, scenario) {
-            bail!("`{id}` is already in the suite");
-        }
-    }
+    let authored = file_authored(&ir, component, &mut synthesis, authoring.scenarios)?;
     if !complete {
         for refusal in &authoring.refusals {
             eprintln!("{refusal}");

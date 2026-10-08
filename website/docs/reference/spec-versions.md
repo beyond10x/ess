@@ -263,6 +263,7 @@ contract names the readers as `x-ess-may-read`.
 | `ess-diff/11` | [0.42.0][r42] | `PrefixAdded`, `PrefixRemoved` and `PrefixChanged` on `TypeChange`: a newtype's `prefix:` (beyond10x/ess#219) declared, dropped or replaced, which the residual reported as `unclassified-changed` before. | Refuses a delta carrying it. |
 | `ess-diff/12` | [0.46.1][r461] | `OutcomeErrorPayloadAdded`, `OutcomeErrorPayloadRemoved` and `OutcomeErrorPayloadChanged` on `CommandChange`: an outcome's error `payload:` sources (beyond10x/ess#253) declared, dropped or replaced, one change per outcome, and `OutcomeAcceptsNothingChanged`, `OutcomeReturnsChanged` and `OutcomeDecidedByCallerChanged` on `CommandChange`: an outcome's `accepts: nothing`, `returns:` or caller-decided refusal moved, each `{outcome, before, after}` booleans. The residual reported each as `unclassified-changed` before. | Refuses a delta carrying it. |
 | `ess-diff/15` | unreleased | `Added` and `Removed` on `DomainChange`, the `domain` category between `system` and `type`: a domain entered in, or dropped from, `system.yaml`'s `domains:` list (beyond10x/ess#469), which the residual reported as `unclassified-changed` before. Classified: `added` compatible, `removed` breaking for callers and readers. | Refuses a delta carrying it. |
+| `ess-diff/16` | unreleased | `shapes` `{before, after}` beside a command `input-type-changed` change's `compatibility`: the wire form of the input field's type in each revision, read through `Optional` and newtypes, one of `scalar`, `record` (a struct or a union), `list` or `map`. Recorded only when the two have different JSON containers (a value, an object, an array), and then the change is `breaking` for callers, `unknown` for readers and `compatible` for history, where it was `unknown` for callers. A `kind-changed`, `representation-changed`, `field-type-changed` or `variant-type-changed` change of a type with an `input` use records the same `shapes` for what moved under one name and is `breaking` for callers, its readers and history answered by its uses as before. A change between two types of one wire form, or with `Json` on either side, records nothing and keeps its earlier answer and format. | Refuses a delta carrying it. |
 
 `ess-diff/5` exists because a variant's own name does not move when its wire spelling does. Before
 it, the variant set and the variant order both said nothing, and the comparison returned an empty
@@ -445,6 +446,17 @@ major below it, the seed-bearing pair included, and carries `synthesis_seeds` wh
 selected. Rust, Go and TypeScript execute both with report/2. Older readers refuse these envelopes
 by version, so none under-checks a regenerated suite. A suite labelled 43 or below keeps first-match
 semantics, and a suite with no repeated claim keeps its earlier format and bytes.
+
+`ess-conformance/46` and `ess-conformance/47`, unreleased, check String-newtype constraints on
+returned values (beyond10x/ess#499). A command response that reaches a newtype of `String` with
+`alphabet:`, `prefix:` or `value` invariants no longer costs its returning outcome every scenario:
+`expect_direct_response` and `expect_response_payload` carry the rules as `constraints`, and every
+runner holds each actual returned value to them, failing `ESS-CF-PAYLOAD` otherwise. A suite carrying
+one is written at 46 (ordinary) or 47 (declared coverage); each implies every major below it, the
+counted pair included. An invariant that reads anything but `value` or `value.count` is refused at
+synthesis by name, and so are a record invariant and a reading on a response type. Rust, Go and
+TypeScript execute both with report/2. Older readers refuse these envelopes by version, and a suite
+with no constrained response type keeps its earlier format and bytes.
 
 For `ess/7`, generated held-state refusals include ordinary `wrong_state` outcomes:
 they compare the complete subject before and after the call and refuse every

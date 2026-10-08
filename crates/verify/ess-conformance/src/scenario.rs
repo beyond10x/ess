@@ -170,9 +170,13 @@ impl ConformanceSuite {
     }
 
     /// Raises the format to suite/44 when an act claims one event more than once
-    /// (beyond10x/ess#427): `/44` is cumulative over every major below it, so nothing may lower it.
+    /// (beyond10x/ess#427), and to suite/46 when a response observation carries String-newtype
+    /// constraints (beyond10x/ess#499). Each pair is cumulative over every major below it, so
+    /// nothing may lower it.
     fn raise_for_counted_claims(&mut self) {
-        if let Some(floor) = crate::event_multiplicity::ordinary_floor(self) {
+        let floor = crate::direct_response::constrained_ordinary_floor(self)
+            .or_else(|| crate::event_multiplicity::ordinary_floor(self));
+        if let Some(floor) = floor {
             if self.provenance.suite_version.major() < floor {
                 self.provenance.suite_version =
                     SuiteFormat::parse(&format!("ess-conformance/{floor}"))
@@ -464,7 +468,7 @@ impl SuiteProvenance {
 /// refuse a suite it understands perfectly.
 pub const SUPPORTED_SUITE_FORMATS: &[u32] = &[
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
-    27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+    27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47,
 ];
 
 /// The version of the *document shape* a suite is written in — `ess-conformance/1`.
@@ -3302,12 +3306,14 @@ mod tests {
             "ess-conformance/39",
             "ess-conformance/44",
             "ess-conformance/45",
+            "ess-conformance/46",
+            "ess-conformance/47",
         ] {
             let earlier = SuiteFormat::parse(earlier).expect("well formed");
             assert!(earlier.is_supported());
         }
 
-        let later = SuiteFormat::parse("ess-conformance/46").expect("well formed");
+        let later = SuiteFormat::parse("ess-conformance/48").expect("well formed");
         assert!(
             !later.is_supported(),
             "a later format may mean something different by the same words"

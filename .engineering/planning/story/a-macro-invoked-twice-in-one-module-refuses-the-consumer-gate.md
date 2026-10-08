@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-macro-invoked-twice-in-one-module-refuses-the-consumer-gate
 kind: story
-status: active
+status: implemented
 title: A macro invoked twice in one module refuses the consumer gate
 relations:
 - serves: vision:O2
@@ -13,10 +13,11 @@ scope:
   path: crates/edge/ess-xtask/src/consumer_coverage/entry-classifications.json
 - confidence: cited
   path: crates/edge/ess-xtask/src/consumer_coverage/tests.rs
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-12T10:24:23Z", actor: "human:timo", revision: 5, imported: true}
 - {from: "proposed", to: "active", at: "2026-09-12T10:24:25Z", actor: "human:timo", revision: 6, imported: true}
+- {from: "active", to: "implemented", at: "2026-10-08T09:55:10Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1}}}
 ---
 # A macro invoked twice in one module refuses the consumer gate
 

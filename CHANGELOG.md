@@ -16,8 +16,23 @@
   passes `--fail-on breaking-or-unknown`, and `ess verify impact` reaches only the domain's own
   constructs. A delta carrying a domain change is written as `ess-diff/15`; earlier formats refuse
   it (https://github.com/beyond10x/ess/issues/469).
+- `ess-conformance/46` (`/47` with coverage): a command response that reaches a `String` newtype
+  with `alphabet:`, `prefix:` or value invariants keeps its success scenarios, where synthesis
+  refused them as `ESS-SYNTH-001`. The scenarios carry the type's rules as constraints, and the
+  native, Go and TypeScript runners fail a returned value that breaks one (`ESS-CF-PAYLOAD`). A
+  record invariant or a reading on a response type stays refused by name. Suites without a
+  constrained response keep their bytes and format
+  (https://github.com/beyond10x/ess/issues/499).
 
 ### Changed
+
+- `ess-diff/16`: `ess verify diff` rates a change that moves a command input's wire form between a
+  value, an object and an array as breaking for callers, where it rated it unknown and
+  `--fail-on breaking` passed it. That covers an input field retyped (`String` to a record, text to
+  `List` or `Map`, and back) and a same-name type redefined so a use in an input moves (a `String`
+  newtype redefined as a struct, a struct member retyped to a list). The delta records the shapes
+  before and after; earlier formats refuse it. A move within one wire form, `Json` on either side,
+  and a type with no input use keep their answer, format and bytes.
 
 - `ess specify validate` refuses a domain, command or view wire name that contains `/`, or is `.`
   or `..`, as `path_segment_wire_name` (`ESS-DOMAIN-012`, `ESS-COMMAND-012`, `ESS-VIEW-012`), naming
@@ -51,8 +66,24 @@
   longer re-send the first identity. A scenario that would still create one literal id twice with
   no delete between is withdrawn as `ESS-SYNTH-001` naming it
   (https://github.com/beyond10x/ess/issues/480, https://github.com/beyond10x/ess/issues/471).
+- `ess verify conform synthesize --component <c> --scenarios <dir>` lists an authored scenario
+  that drives a command, event or view the component does not realise as `outside:`, as it does a
+  generated one, where it filed it in the component's suite and the scenario could only fail. The
+  summary counts only the authored scenarios the suite keeps
+  (https://github.com/beyond10x/ess/issues/513).
 - The text conformance report prints `<check code>: <cause>` under each scenario that ended in
   error; the JSON report is unchanged (https://github.com/beyond10x/ess/issues/471).
+- Synthesis witnesses every `any:` and `all:` of an input guard once per child at any depth, not
+  only at the top level, so the `guard-connective` mutant of an `all:` nested in an `any:` (or the
+  reverse, or one under `not:`) is killed. A per-child input none of the guard's own candidates
+  provides is solved for directly, so an `any:` of four three-way `all:`s is witnessed at every
+  child; one no search finds is an `ESS-SYNTH-022` refusal beside the scenario that names it,
+  rather than a child skipped silently. A child that cannot decide the connective alone is not
+  refused: its text literals contradict the input it would need (`starts_with "AB"` beside
+  `starts_with "A"`, which the longer prefix implies). `ess verify conform mutate` decides `defined` tests of
+  `Optional` input fields, so a `precedence-swap` of two branches no input selects together, such
+  as `defined(x)` and `not defined(x)`, is `equivalent` rather than `survived`. Suites for guards
+  with only top-level connectives are unchanged (https://github.com/beyond10x/ess/issues/501).
 
 ## [0.56.0] — 2026-10-07
 

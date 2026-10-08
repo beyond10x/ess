@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-08T09:55:11Z",
+  "actor": "human:timo",
+  "artifact": "story:generated-rust-types-make-exact-numbers-a-crate-feature",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "2386276e95 on origin/main, released 0.56.0",
+    "reference": "https://github.com/beyond10x/ess/releases/tag/0.56.0"
+  }
+}

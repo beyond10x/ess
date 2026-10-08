@@ -38,6 +38,8 @@ import type {
   SelectionDeclaration,
   Step,
 } from './runtime.js';
+import { checkResponseConstraints } from './direct_response.js';
+import type { StringConstraints } from './one_time_response.js';
 
 /** One command's declared response, and the event field each returned member must equal. */
 export interface ResponseObservation {
@@ -55,6 +57,8 @@ export interface ResponseObservation {
    */
   presence?: Record<string, string>;
   nested?: NestedResponseTargets;
+  /** String-newtype rules of suite/46 and /47 (beyond10x/ess#499), checked on every actual value. */
+  constraints?: Record<string, StringConstraints>;
 }
 
 const BYTE_LIMIT = 1048576;
@@ -121,7 +125,7 @@ export function decodeResponseObservation(value: unknown): ResponseObservation {
   const document = closed(
     value,
     '',
-    'command outcome event fields declarations mappings targets nested',
+    'command outcome event fields declarations mappings targets nested constraints',
   );
   const outcomeRaw =
     document.outcome === undefined ? {} : closed(document.outcome, '', 'command outcome');
@@ -899,6 +903,12 @@ export function compareResponse(
   if (counter.bytes > BYTE_LIMIT) {
     throw new Error('response byte limit');
   }
+  checkResponseConstraints(
+    observation.fields,
+    observation.declarations,
+    observation.constraints,
+    response,
+  );
   for (const field of observation.fields) {
     const policy = owned(observation.presence, field.name);
     if (policy === 'null_when_absent' && !present(response, field.name)) {
@@ -977,7 +987,7 @@ export function admitResponse(value: unknown, major = 21): void {
   const root = closed(
     value,
     'command outcome event fields declarations mappings targets',
-    'nested',
+    'nested constraints',
   );
   if (Object.hasOwn(root, 'nested') && major < 34) {
     throw new Error('nested response observations require suite/34 or /35');

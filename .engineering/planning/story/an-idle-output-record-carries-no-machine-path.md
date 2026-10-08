@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-idle-output-record-carries-no-machine-path
 kind: story
-status: active
+status: implemented
 title: An idle .ess-output record carries no absolute path, device or inode
 tags:
 - feature-request
@@ -20,10 +20,11 @@ scope:
   path: docs/design/review-output-ownership.md
 - confidence: cited
   path: models/output-ownership/domains/ownership.yaml
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-07T03:42:51Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-07T03:42:51Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-08T09:55:12Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":1,"review_outcome":4,"verification":2}}}
 ---
 ## Outcome
 

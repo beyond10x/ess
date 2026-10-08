@@ -2,11 +2,14 @@
 format: aep.planning-md/3
 id: story:response-string-newtype-constraints-checked-not-refused
 kind: story
-status: draft
+status: active
 title: Check String-newtype constraints on returned response values instead of refusing the outcome
 relations:
 - serves: vision:O2
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-08T02:12:49Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-10-08T02:12:50Z", actor: "human:timo", revision: 3}
 ---
 ## Outcome
 
@@ -195,3 +198,7 @@ evaluable, refuse the rest by name) is kept. Changes from the request:
     (inferred).
   - `crates/specify/ess-compiler/src/ir.rs`, `ir/**`: not needed. `is_constrained` and the
     `ResolvedBody` fields are read only (cited :373-384).
+
+## Remaining
+
+The model interpreter cannot choose a returned value for a response String newtype under an upper-bound count invariant, or under a lower bound combined with `starts_with`/`ends_with` (`review-result:adversary-wave-20261008e-e1-pass-1`). The acceptance line "the model interpreter passes its own synthesized suite" holds for the alphabet, prefix and lower-bound examples only. The fix is value choice in `crates/verify/ess-conformance/src/interpret/response.rs`, held by another wave; the two tests in `tests/adversary_e1_reachability.rs` are `#[ignore]` until then. The ESS-SYNTH-001 help line ("drop it from the command's input") is rendered in the held `synthesize.rs` and is unchanged.

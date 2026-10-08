@@ -2,13 +2,15 @@
 format: aep.planning-md/3
 id: story:a-skip-says-why-the-target-could-not-answer
 kind: story
-status: active
+status: implemented
 title: A skip says why the target could not answer
 relations:
 - decomposes: epic:specification-runs-as-a-fake-backend
 - serves: vision:O2
 - depends_on: story:a-report-says-why-a-scenario-was-skipped
-revision: 4
+revision: 5
+transitions:
+- {from: "active", to: "implemented", at: "2026-10-08T09:55:09Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1}}}
 ---
 
 # Story: a skip says why the target could not answer

@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-08T09:55:06Z",
+  "actor": "human:timo",
+  "artifact": "story:the-startup-lock-does-not-cover-the-first-round-trip",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "2220bce9b9 on origin/main, released 0.52.0",
+    "reference": "https://github.com/beyond10x/ess/releases/tag/0.52.0"
+  }
+}
