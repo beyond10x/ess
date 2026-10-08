@@ -1,14 +1,16 @@
 //! Canonical source type names must reach the Go observer's primitive grammar.
+mod support_scratch;
+
 #[test]
 fn go_selection_validates_primitives_and_every_list_member() {
-    let directory = std::env::temp_dir().join(format!(
+    let directory = support_scratch::Scratch::adopt(std::env::temp_dir().join(format!(
         "ess-selection-primitives-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos()
-    ));
+    )));
     std::fs::create_dir(&directory).unwrap();
     std::fs::write(
         directory.join("go.mod"),

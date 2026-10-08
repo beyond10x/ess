@@ -6,6 +6,8 @@
 //! no finite value and stays refused, naming the input it was refused for; a recursive response
 //! stays refused naming the response.
 
+mod support_scratch;
+
 use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
 use ess_conformance::{
     fixtures::Contract, interpret::Interpreted, report::Status, target::*, AdmittedSuite,
@@ -432,7 +434,9 @@ fn a_recursive_response_stays_refused_naming_the_response() {
 #[test]
 fn emitted_go_and_typescript_runtimes_resolve_the_recursive_fixture() {
     let suite = suite(LIST);
-    let root = std::env::temp_dir().join(format!("ess-recursive-fixtures-{}", std::process::id()));
+    let root = support_scratch::Scratch::adopt(
+        std::env::temp_dir().join(format!("ess-recursive-fixtures-{}", std::process::id())),
+    );
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).unwrap();
     for artifact in ess_conformance::go::emit(&suite).unwrap() {
@@ -478,8 +482,12 @@ fn emitted_go_and_typescript_runtimes_resolve_the_recursive_fixture() {
     );
     for mode in ["valid", "wrong-leaf", "too-deep"] {
         for (tool, args, directory) in [
-            ("go", vec!["test", "./essconform", "-count=1", "-v"], &root),
-            ("node", vec!["--test", "recursive.mjs"], &ts),
+            (
+                "go",
+                vec!["test", "./essconform", "-count=1", "-v"],
+                root.path(),
+            ),
+            ("node", vec!["--test", "recursive.mjs"], ts.as_path()),
         ] {
             let output = std::process::Command::new(tool)
                 .args(args)

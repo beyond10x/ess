@@ -14,6 +14,8 @@
 //!
 //! A missing `tsc`, `node` or `go` panics rather than skipping.
 
+mod support_scratch;
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -55,11 +57,11 @@ fn read_fixture(name: &str) -> String {
     std::fs::read_to_string(fixture(name)).expect("the fixture reads")
 }
 
-fn scratch(label: &str) -> PathBuf {
-    let root = std::env::temp_dir().join(format!(
+fn scratch(label: &str) -> support_scratch::Scratch {
+    let root = support_scratch::Scratch::adopt(std::env::temp_dir().join(format!(
         "ess-explore-guards-first-{}-{label}",
         std::process::id()
-    ));
+    )));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).expect("a scratch directory");
     root

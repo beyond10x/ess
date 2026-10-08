@@ -14,6 +14,8 @@
 //! command in this repository whose input holds an enum, and an enum is the only place a *variant*
 //! can be misspelt.
 
+mod support_scratch;
+
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
@@ -502,8 +504,9 @@ mod entity_setup_execution {
     fn entity_setup_generated_go_reads_established_backend_rows_and_rejects_faults() {
         let ir = fixture(CALL_HISTORY_SETUP_MODEL);
         let suite = suite(&ir);
-        let directory =
-            std::env::temp_dir().join(format!("ess-arrangement-go-{}", std::process::id()));
+        let directory = support_scratch::Scratch::adopt(
+            std::env::temp_dir().join(format!("ess-arrangement-go-{}", std::process::id())),
+        );
         std::fs::create_dir_all(&directory).unwrap();
         for artifact in ess_conformance::go::emit(&suite).unwrap() {
             let filename = Path::new(&artifact.path).file_name().unwrap();
@@ -647,10 +650,10 @@ mod entity_setup_execution {
         let Ok(artifacts) = ess_conformance::go::emit(&suite) else {
             return;
         };
-        let directory = std::env::temp_dir().join(format!(
+        let directory = support_scratch::Scratch::adopt(std::env::temp_dir().join(format!(
             "ess-arrangement-adversary-stale-{}",
             std::process::id()
-        ));
+        )));
         std::fs::create_dir_all(&directory).unwrap();
         for artifact in artifacts {
             let filename = Path::new(&artifact.path).file_name().unwrap();

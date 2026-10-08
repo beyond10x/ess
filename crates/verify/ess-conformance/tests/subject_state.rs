@@ -1,4 +1,6 @@
 //! Runtime witnesses distinguish equal input in different held states.
+mod support_scratch;
+
 use ess_compiler::refs::OutcomeRef;
 use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
 use ess_conformance::{
@@ -309,8 +311,9 @@ fn subject_state_without_an_observable_identity_state_pair_refuses_synthesis() {
 #[test]
 fn generated_go_runs_the_state_witness_and_rejects_the_guard_ignoring_mutation() {
     let suite = suite(&ir(MODEL));
-    let directory =
-        std::env::temp_dir().join(format!("ess-subject-state-go-{}", std::process::id()));
+    let directory = support_scratch::Scratch::adopt(
+        std::env::temp_dir().join(format!("ess-subject-state-go-{}", std::process::id())),
+    );
     std::fs::create_dir_all(directory.join("essconform")).unwrap();
     for artifact in ess_conformance::go::emit(&suite).unwrap() {
         std::fs::write(directory.join(artifact.path), artifact.contents).unwrap();

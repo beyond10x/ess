@@ -37,8 +37,11 @@ fn admitted() -> &'static AdmittedSuite {
 fn package() -> &'static PathBuf {
     static PACKAGE: OnceLock<PathBuf> = OnceLock::new();
     PACKAGE.get_or_init(|| {
-        let directory =
-            std::env::temp_dir().join(format!("ess-binding-arrangement-ts-{}", std::process::id()));
+        // Cached for the whole process, so it lives under the build's directory and not in
+        // $TMPDIR: a static is never dropped, so no scratch guard could remove it.
+        let directory = Path::new(env!("CARGO_TARGET_TMPDIR"))
+            .join(format!("binding-arrangement-ts-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
         for artifact in ess_conformance::ts::emit(admitted().suite()).unwrap() {
             let path = directory.join(artifact.path);
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();

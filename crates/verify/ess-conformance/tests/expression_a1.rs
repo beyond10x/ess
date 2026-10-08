@@ -7,6 +7,8 @@
 //! left side with itself, and one reading the word in the wrong place (a decoy input of the same
 //! type). `docs/design/expression-family-source22.md` is the design.
 
+mod support_scratch;
+
 use std::collections::BTreeMap;
 
 use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
@@ -434,7 +436,9 @@ fn the_generated_go_reader_answers_the_shared_fact_operand_vectors() {
     .to_string()
     .replace("\"DOTTED_NODE\"", DOTTED);
     let suite = AdmittedSuite::from_json(&document).expect("admitted");
-    let directory = std::env::temp_dir().join(format!("ess-a1-root-fact-{}", std::process::id()));
+    let directory = support_scratch::Scratch::adopt(
+        std::env::temp_dir().join(format!("ess-a1-root-fact-{}", std::process::id())),
+    );
     std::fs::create_dir_all(directory.join("essconform")).expect("directory");
     for artifact in ess_conformance::go::emit(suite.suite()).expect("emitted") {
         std::fs::write(directory.join(artifact.path), artifact.contents).expect("written");
@@ -493,7 +497,9 @@ fn go_vectors(label: &str, test: &str, fixture: &str, vectors: (&str, &str)) {
     })
     .to_string();
     let suite = AdmittedSuite::from_json(&document).expect("admitted");
-    let directory = std::env::temp_dir().join(format!("ess-a1-{label}-{}", std::process::id()));
+    let directory = support_scratch::Scratch::adopt(
+        std::env::temp_dir().join(format!("ess-a1-{label}-{}", std::process::id())),
+    );
     std::fs::create_dir_all(directory.join("essconform")).expect("directory");
     for artifact in ess_conformance::go::emit(suite.suite()).expect("emitted") {
         std::fs::write(directory.join(artifact.path), artifact.contents).expect("written");
