@@ -1,8 +1,8 @@
 //! Existence is read from actual typed rows, and creation follows its declared identity source.
 use super::{
-    input, refusal, select, value, Context, EssIr, Externals, Node, ResolvedCommand,
-    ResolvedCondition, ResolvedEffect, ResolvedInstance, ResolvedOutcome, ResolvedPayloadField,
-    ResolvedPayloadValue, State, Transition, Undetermined, Work,
+    input, refusal, select, value, Context, EssIr, Externals, Node, Phase, PrecedencePlan,
+    ResolvedCommand, ResolvedCondition, ResolvedEffect, ResolvedInstance, ResolvedOutcome,
+    ResolvedPayloadField, ResolvedPayloadValue, State, Transition, Undetermined, Work,
 };
 
 pub(super) fn identity_source(outcome: &ResolvedOutcome) -> Option<&ResolvedPayloadField> {
@@ -50,16 +50,22 @@ pub(super) fn identity(
     Ok(identity)
 }
 
+/// The `existing_instance:` answer where the plan places it in `phase` — step 1 on a command
+/// reading a related row or a row set, step 3 on any other — or `None` where `phase` holds none or
+/// no creation would take a held identity.
 pub(super) fn existing(
     ir: &EssIr,
     command: &ResolvedCommand,
+    plan: &PrecedencePlan<'_>,
+    phase: Phase,
     store: &State,
     input: &Context<'_>,
     externals: &Externals,
 ) -> Result<Option<Transition>, Undetermined> {
-    let Some(refused) = command
-        .outcomes
+    let Some(refused) = plan
+        .branches(phase)
         .iter()
+        .copied()
         .find(|outcome| outcome.condition == ResolvedCondition::ExistingInstance)
     else {
         return Ok(None);
@@ -105,6 +111,7 @@ pub(super) fn existing(
             .map_err(|why| Undetermined::Request(why.to_string()))?;
         let selected = select(
             command,
+            plan,
             &facts,
             &command.name,
             externals,
@@ -113,7 +120,6 @@ pub(super) fn existing(
             input.caller,
             input,
             true,
-            false,
         )?;
         if selected.len() > 1 {
             return Err(Undetermined::NotInterpreted {
