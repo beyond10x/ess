@@ -4,10 +4,11 @@ use std::collections::BTreeMap;
 
 use ess_primitives::error::{ValidationCode, ValidationError, ValidationErrors};
 
-use crate::{EntitySpec, Field, Specification, TypeBody};
+use crate::{EntitySpec, Field, QualifiedName, Specification, TypeBody};
 
 pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
+    path_segments(spec, &mut errors);
     for declared in spec.system().types.iter() {
         if let TypeBody::Struct { fields, .. } = &declared.body {
             check_fields(
@@ -61,6 +62,57 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
         );
     }
     errors
+}
+
+/// Wire names a generated path segment reads: `/{domain}/commands/{command}` and
+/// `/{domain}/views/{view}` (`ess_gen::http::routes`, which every HTTP target builds from).
+///
+/// A view is checked whether or not a network component serves it, so whether a specification
+/// validates never depends on how it is composed. A name that falls back to the declaration's own
+/// local name is an identifier and cannot hold either shape.
+fn path_segments(spec: &Specification, errors: &mut ValidationErrors) {
+    for domain in &spec.system().domains {
+        path_segment(
+            "domain",
+            &domain.name,
+            domain.naming.wire.as_deref(),
+            errors,
+        );
+    }
+    for command in spec.commands().values() {
+        path_segment(
+            "command",
+            &command.name,
+            command.naming.wire.as_deref(),
+            errors,
+        );
+    }
+    for view in spec.views().values() {
+        path_segment("view", &view.name, view.naming.wire.as_deref(), errors);
+    }
+}
+
+fn path_segment(
+    kind: &str,
+    name: &QualifiedName,
+    wire: Option<&str>,
+    errors: &mut ValidationErrors,
+) {
+    let Some(wire) = wire else { return };
+    if !(wire.contains('/') || wire == "." || wire == "..") {
+        return;
+    }
+    errors.push(
+        ValidationError::new(
+            ValidationCode::PathSegmentWireName,
+            format!("{kind}.{name}.naming.wire"),
+            format!(
+                "{kind} {name} has the wire name {wire:?}, which a generated path segment reads; \
+                 a `/` in it, or a name that is `.` or `..`, would address another route"
+            ),
+        )
+        .with_hint("spell the wire name without `/`, and not as `.` or `..`"),
+    );
 }
 
 fn check_fields(fields: &[Field], at: &str, errors: &mut ValidationErrors) {

@@ -74,6 +74,23 @@ Writing both spellings on one field is refused. The model keeps the declared nam
 mapping and a predicate still say `order_id`, and JSON Schema, OpenAPI and AsyncAPI key the property
 `orderId`. The field is written back flat, so the two spellings are one model with one digest.
 
+## A wire name in a path is one segment
+
+A generated HTTP route is `/{domain}/commands/{command}` or `/{domain}/views/{view}`, each part
+the declaration's `naming.wire` copied verbatim. So the wire name of a domain, a command or a view
+cannot contain `/`, and cannot be `.` or `..`: any of those would address another route.
+`ess specify validate` refuses one as `path_segment_wire_name`, naming the declaration and the wire
+name. A view is refused whether or not a network component serves it:
+
+```text
+error[ESS-VIEW-012]: view gatepass.visit.ExpectedVisits has the wire name "../.well-known/demo-configuration", which a generated path segment reads; a `/` in it, or a name that is `.` or `..`, would address another route
+  `ess-domain` refuses this as `path_segment_wire_name`
+  help: spell the wire name without `/`, and not as `.` or `..`
+```
+
+Dots inside a name (`orders.v1`, `.well-known`) are still one segment and are accepted. A field's
+wire name is a property key, not a path segment, and is not affected.
+
 ## An error can carry its own wire code
 
 A generated HTTP handler names a refusal in its response body. By default the name is the error's
