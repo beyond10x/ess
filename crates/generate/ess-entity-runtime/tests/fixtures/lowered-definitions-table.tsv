@@ -1,4 +1,4 @@
-#	models=239	lines=360
+#	models=251	lines=372
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	REFUSED	95eb461796949834a9d78ef0c04afcab1acfa13dbf2dfd6da3af2f3c93549630:687
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing/system.yaml	ASSEMBLE
@@ -98,6 +98,18 @@ crates/verify/ess-conformance/tests/fixtures/calendar-windows.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/caller-addressed-identity.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/caller-struct-identity.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/captured-identities.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/claim-search/door-gentle.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/claim-search/door-offline-gentle.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/claim-search/door-offline-rough.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/claim-search/door-relabel.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/claim-search/door-rough.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/claim-search/driver-when-subject.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/claim-search/pick-external-when.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/claim-search/pick-frozen.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/claim-search/pick-revision-gt.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/claim-search/related.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/claim-search/row-set-gt-0.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/claim-search/row-set-gt-1.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/conditional-aggregate-measures.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/current-time-guard.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/declared-behaviour.yaml	components=0
