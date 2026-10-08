@@ -12,6 +12,7 @@
 //! against equivalent targets — is the story's own acceptance and belongs to a check that may run
 //! a Node toolchain.
 
+use ess_cli::TemporaryDirectory;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -25,11 +26,8 @@ fn root() -> PathBuf {
 }
 
 /// A directory of this test's own, under the temporary root rather than the source tree.
-fn scratch(name: &str) -> PathBuf {
-    let directory = std::env::temp_dir().join(format!("ess-ts-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&directory);
-    std::fs::create_dir_all(&directory).expect("a scratch directory");
-    directory
+fn scratch(name: &str) -> TemporaryDirectory {
+    TemporaryDirectory::create(&format!("ess-ts-{name}")).unwrap()
 }
 
 /// Synthesizes the billing example into `out`, authored scenarios included.

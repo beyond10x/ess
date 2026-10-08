@@ -6,6 +6,7 @@
 #[path = "../src/output_ownership/mod.rs"]
 mod ownership;
 
+use ess_cli::TemporaryDirectory;
 use rustix::fs::{flock, FlockOperation};
 use std::{
     collections::BTreeMap,
@@ -14,7 +15,6 @@ use std::{
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     process::{Child, Command, Output, Stdio},
-    sync::atomic::{AtomicUsize, Ordering},
 };
 
 const FILES: &[(&str, &str)] = &[("index.html", "root page"), ("assets/style.css", "nested")];
@@ -25,16 +25,10 @@ fn serial() -> std::sync::MutexGuard<'static, ()> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-struct Fixture(PathBuf);
+struct Fixture(TemporaryDirectory);
 impl Fixture {
     fn new() -> Self {
-        static NEXT: AtomicUsize = AtomicUsize::new(0);
-        let root = std::env::temp_dir().join(format!(
-            "ess-root-lock-adv1-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir(&root).unwrap();
+        let root = TemporaryDirectory::create("ess-root-lock-adv1").unwrap();
         Self(root)
     }
 }

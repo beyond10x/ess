@@ -7,6 +7,7 @@ use std::process::{Command, Output};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
+use ess_cli::TemporaryDirectory;
 use serde_json::{json, Value};
 
 const INVOICE: &str = "urn:example:billing-create-invoice:1";
@@ -59,13 +60,21 @@ fn instance(kind: &str) -> Value {
 struct Fixture {
     root: PathBuf,
     next: Cell<usize>,
+    // Unset `ESS_SCHEMA_IDENTITY_EVIDENCE` keeps the evidence in TMPDIR scratch, removed on drop.
+    _scratch: Option<TemporaryDirectory>,
 }
 
 impl Fixture {
     fn new(label: &str) -> Self {
         static NEXT: AtomicUsize = AtomicUsize::new(0);
-        let base = std::env::var_os("ESS_SCHEMA_IDENTITY_EVIDENCE")
-            .map_or_else(std::env::temp_dir, PathBuf::from);
+        let (scratch, base) = std::env::var_os("ESS_SCHEMA_IDENTITY_EVIDENCE").map_or_else(
+            || {
+                let scratch = TemporaryDirectory::create("ess-schema-identity").unwrap();
+                let base = scratch.to_path_buf();
+                (Some(scratch), base)
+            },
+            |base| (None, PathBuf::from(base)),
+        );
         let root = base.join(format!(
             "schema-identity-{label}-{}-{}",
             std::process::id(),
@@ -75,6 +84,7 @@ impl Fixture {
         Self {
             root,
             next: Cell::new(0),
+            _scratch: scratch,
         }
     }
 

@@ -1,3 +1,4 @@
+use ess_cli::TemporaryDirectory;
 use ess_compiler::{resolve::compile, source::SourceMap, EssIr};
 use ess_conformance::{
     coverage::{AdmittedInput, Origins, Scope, SuiteReference},
@@ -85,10 +86,22 @@ fn command(directory: &Path, label: &str, command: &mut Command) -> Output {
     );
     output
 }
-fn setup(profile: &str) -> (PathBuf, Value, BTreeMap<String, AdmittedInput>) {
-    let base = std::env::var_os("ESS_COVERAGE_EXPORT_ROOT").map_or_else(
-        || std::env::temp_dir().join(format!("ess-coverage-producers-{}", std::process::id())),
-        PathBuf::from,
+/// Unset `ESS_COVERAGE_EXPORT_ROOT` keeps the exports in TMPDIR scratch, removed when the returned
+/// guard drops.
+type Setup = (
+    Option<TemporaryDirectory>,
+    PathBuf,
+    Value,
+    BTreeMap<String, AdmittedInput>,
+);
+fn setup(profile: &str) -> Setup {
+    let (scratch, base) = std::env::var_os("ESS_COVERAGE_EXPORT_ROOT").map_or_else(
+        || {
+            let scratch = TemporaryDirectory::create("ess-coverage-producers").unwrap();
+            let base = scratch.to_path_buf();
+            (Some(scratch), base)
+        },
+        |base| (None, PathBuf::from(base)),
     );
     let directory = base.join(profile);
     fs::create_dir_all(&directory).unwrap();
@@ -132,7 +145,7 @@ fn setup(profile: &str) -> (PathBuf, Value, BTreeMap<String, AdmittedInput>) {
     write_json(&directory.join("resolved-semantic-plan.json"), &plan);
     source_receipt(&directory);
     let structures = structures(&plan, &directory);
-    (directory, plan, structures)
+    (scratch, directory, plan, structures)
 }
 fn source_receipt(directory: &Path) {
     let repository = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -427,7 +440,7 @@ fn check_report(
     report
 }
 pub fn export_rust() {
-    let (directory, plan, structures) = setup("rust");
+    let (_scratch, directory, plan, structures) = setup("rust");
     let mut executed = 0;
     for instance in list(&plan["requested_report_instances"])
         .iter()
@@ -444,12 +457,12 @@ pub fn export_rust() {
     println!("actual Rust producer exports: {executed}");
 }
 pub fn export_go() {
-    let (directory, plan, structures) = setup("go");
+    let (_scratch, directory, plan, structures) = setup("go");
     go::export(&directory, &plan, &structures);
 }
 
 pub fn export_controls() {
-    let (directory, plan, structures) = setup("controls");
+    let (_scratch, directory, plan, structures) = setup("controls");
     for control in list(&plan["requested_refusal_controls"]) {
         let input = &structures[text(&control["structure"])];
         let out = directory.join(text(&control["id"]));

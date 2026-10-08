@@ -46,17 +46,17 @@ fn opens_as_repository(marker: &Path) -> io::Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::enclosing_checkout;
+    use ess_cli::TemporaryDirectory;
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
-    use std::path::PathBuf;
 
-    fn root(case: &str) -> PathBuf {
-        let root = std::env::temp_dir().join(format!(
-            "ess-git-checkout-{case}-{}-{}",
-            env!("CARGO_CRATE_NAME"),
-            std::process::id()
-        ));
-        fs::create_dir_all(root.join("below")).unwrap();
+    fn root(case: &str) -> TemporaryDirectory {
+        let root = TemporaryDirectory::create(&format!(
+            "ess-git-checkout-{case}-{}",
+            env!("CARGO_CRATE_NAME")
+        ))
+        .unwrap();
+        fs::create_dir(root.join("below")).unwrap();
         root
     }
 
@@ -86,7 +86,7 @@ mod tests {
             fs::write(root.join(".git").join(entry), "").unwrap();
             let found = enclosing_checkout(&root.join("below")).unwrap();
             fs::remove_dir_all(&root).unwrap();
-            assert_eq!(found.as_deref(), Some(root.as_path()), "{entry}");
+            assert_eq!(found.as_deref(), Some(root.path()), "{entry}");
         }
     }
 
@@ -99,7 +99,7 @@ mod tests {
         for root in [gitfile, symlink] {
             let found = enclosing_checkout(&root.join("below")).unwrap();
             fs::remove_dir_all(&root).unwrap();
-            assert_eq!(found.as_deref(), Some(root.as_path()));
+            assert_eq!(found.as_deref(), Some(root.path()));
         }
     }
 

@@ -7,6 +7,7 @@ use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
+use ess_cli::TemporaryDirectory;
 use serde_json::{json, Value};
 
 const DIALECT: &str = "https://json-schema.org/draft/2020-12/schema";
@@ -48,13 +49,22 @@ fn envelope(id: &str, reference: &str) -> Value {
 struct Case {
     root: PathBuf,
     next: Cell<usize>,
+    // Unset `ESS_SCHEMA_IDENTITY_ADVERSARY_EVIDENCE` keeps the evidence in TMPDIR scratch, removed on drop.
+    _scratch: Option<TemporaryDirectory>,
 }
 
 impl Case {
     fn new(label: &str) -> Self {
         static NEXT: AtomicUsize = AtomicUsize::new(0);
-        let base = std::env::var_os("ESS_SCHEMA_IDENTITY_ADVERSARY_EVIDENCE")
-            .map_or_else(std::env::temp_dir, PathBuf::from);
+        let (scratch, base) = std::env::var_os("ESS_SCHEMA_IDENTITY_ADVERSARY_EVIDENCE")
+            .map_or_else(
+                || {
+                    let scratch = TemporaryDirectory::create("ess-schema-id-attack").unwrap();
+                    let base = scratch.to_path_buf();
+                    (Some(scratch), base)
+                },
+                |base| (None, PathBuf::from(base)),
+            );
         let root = base.join(format!(
             "schema-id-attack-{label}-{}-{}",
             std::process::id(),
@@ -64,6 +74,7 @@ impl Case {
         Self {
             root,
             next: Cell::new(0),
+            _scratch: scratch,
         }
     }
 

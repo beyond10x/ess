@@ -7,15 +7,13 @@
 //! and an `infra-ir/2` from `ess infra import kubernetes --namespace --out`. 0.31.0 dropped
 //! `initContainers`, and both documents keep their format label in this build, so this build
 //! cannot tell "no native sidecar" from "never looked".
+use ess_cli::TemporaryDirectory;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
-use std::sync::atomic::{AtomicU64, Ordering};
 #[allow(dead_code)]
 #[path = "support/executable.rs"]
 mod executable;
-
-static NEXT: AtomicU64 = AtomicU64::new(0);
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..")
@@ -51,17 +49,12 @@ const KINDS: &[&str] = &[
 ];
 
 struct Case {
-    dir: PathBuf,
+    dir: TemporaryDirectory,
 }
 
 impl Case {
     fn new() -> Self {
-        let dir = std::env::temp_dir().join(format!(
-            "ess-m8-adv2-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        std::fs::create_dir(&dir).unwrap();
+        let dir = TemporaryDirectory::create("ess-m8-adv2").unwrap();
         let mut realization: Value = serde_yaml::from_str(
             &std::fs::read_to_string(root().join("examples/realizations/billing-local.yaml"))
                 .unwrap(),
@@ -171,12 +164,6 @@ impl Case {
             .output()
             .unwrap();
         Self::report(&output)
-    }
-}
-
-impl Drop for Case {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.dir);
     }
 }
 

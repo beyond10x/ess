@@ -1,20 +1,14 @@
 //! Authored site inputs retain source identity without implicitly publishing sibling files.
 
+use ess_cli::TemporaryDirectory;
 use std::fs;
-use std::path::PathBuf;
 use std::process::{Command, Output};
-use std::sync::atomic::{AtomicUsize, Ordering};
 
-struct Fixture(PathBuf);
+struct Fixture(TemporaryDirectory);
 
 impl Fixture {
     fn new() -> Self {
-        static NEXT: AtomicUsize = AtomicUsize::new(0);
-        let root = std::env::temp_dir().join(format!(
-            "ess-authored-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
+        let root = TemporaryDirectory::create("ess-authored").unwrap();
         fs::create_dir_all(root.join("docs")).unwrap();
         fs::create_dir_all(root.join("model")).unwrap();
         fs::write(
@@ -73,12 +67,6 @@ impl Fixture {
             !self.0.join("out").exists(),
             "refusal must precede output creation"
         );
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        fs::remove_dir_all(&self.0).unwrap();
     }
 }
 

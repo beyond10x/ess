@@ -1,4 +1,5 @@
 //! Fresh compact artifacts preserve meaning while acquiring their own exact-byte identity.
+use ess_cli::TemporaryDirectory;
 use ess_conformance::{coverage::AdmittedInput, AdmittedSuite, ConformanceSuite, CountReport};
 use serde_json::Value;
 use std::{
@@ -10,10 +11,8 @@ use std::{
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..")
 }
-fn directory(name: &str) -> PathBuf {
-    let path = std::env::temp_dir().join(format!("ess-compact-{name}-{}", std::process::id()));
-    fs::create_dir_all(&path).unwrap();
-    path
+fn directory(name: &str) -> TemporaryDirectory {
+    TemporaryDirectory::create(&format!("ess-compact-{name}")).unwrap()
 }
 fn command(args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_ess"))

@@ -2,6 +2,7 @@
 #[path = "support/browser.rs"]
 mod browser;
 
+use ess_cli::TemporaryDirectory;
 use ess_conformance::{
     coverage::{AdmittedInput, SuiteReference},
     web_replay::AdmittedReplay,
@@ -12,11 +13,7 @@ use std::{fs, path::Path, process::Command};
 
 #[test]
 fn browser_preserves_arbitrary_node_keys_and_checks_each_surviving_payload_owner() {
-    let evidence = std::env::temp_dir().join(format!(
-        "ess-coverage-review2-node-keys-{}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&evidence).unwrap();
+    let evidence = TemporaryDirectory::create("ess-coverage-review2-node-keys").unwrap();
     let generated = evidence.join("site");
     let original = emit_replay(&evidence, &generated);
     let mut replay: Value = serde_json::from_str(&original).unwrap();

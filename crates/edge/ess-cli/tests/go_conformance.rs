@@ -30,6 +30,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use ess_cli::TemporaryDirectory;
 use ess_conformance::scenario::{CommandRef, EventRef, InstantName, OutcomeRef};
 use ess_conformance::{
     ConformanceScenario, ConformanceSuite, Elapsed, InstanceName, Position, ScenarioId,
@@ -57,16 +58,13 @@ fn go() -> Option<PathBuf> {
     output.status.success().then(|| PathBuf::from("go"))
 }
 
-/// A directory of this test's own, under the cache rather than the source tree.
-fn scratch(name: &str) -> PathBuf {
-    let directory = std::env::temp_dir().join(format!("ess-go-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&directory);
-    std::fs::create_dir_all(&directory).expect("a scratch directory");
-    directory
+/// A directory of this test's own under TMPDIR, removed when the returned guard drops.
+fn scratch(name: &str) -> TemporaryDirectory {
+    TemporaryDirectory::create(&format!("ess-go-{name}")).expect("a scratch directory")
 }
 
 /// Emits the package, copies the fixture beside it, and returns the module directory.
-fn module(name: &str) -> PathBuf {
+fn module(name: &str) -> TemporaryDirectory {
     let directory = scratch(name);
 
     let emitted = Command::new(env!("CARGO_BIN_EXE_ess"))
@@ -938,7 +936,7 @@ func TestPredicateAdmission(t *testing.T) {
     );
 }
 
-fn count_module(label: &str) -> PathBuf {
+fn count_module(label: &str) -> TemporaryDirectory {
     let directory = scratch(label);
     let suite = serde_json::json!({
         "provenance": {"suite_version":"ess-conformance/4", "system":"example", "specification_version":"v1", "spec_digest":"a".repeat(64), "contract_digest":"a".repeat(64)},

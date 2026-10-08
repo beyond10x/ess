@@ -20,6 +20,7 @@ mod browser;
 #[path = "support/executable.rs"]
 mod executable;
 
+use ess_cli::TemporaryDirectory;
 use std::{
     fs,
     io::{Read, Write},
@@ -50,13 +51,8 @@ fn announcing_stand_in(dir: &Path, port: u16) -> PathBuf {
 }
 
 /// A private evidence directory, made the way the unit's own cases make theirs.
-fn evidence_dir(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "ess-browser-slow-serve-{name}-{}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&dir).unwrap();
-    dir
+fn evidence_dir(name: &str) -> TemporaryDirectory {
+    TemporaryDirectory::create(&format!("ess-browser-slow-serve-{name}")).unwrap()
 }
 
 /// Read one HTTP request off an accepted socket, under a timeout of its own so
@@ -135,7 +131,7 @@ fn a_browser_too_slow_to_serve_session_before_the_deadline_is_the_slow_start_the
     let accepted = Arc::new(AtomicUsize::new(0));
     let port = booting_then_starved(&accepted);
     let program = announcing_stand_in(&evidence, port);
-    match startup_outcome(evidence, program, Duration::from_secs(3)) {
+    match startup_outcome(evidence.to_path_buf(), program, Duration::from_secs(3)) {
         Err(panic) => panic!(
             "a Firefox that was listening, answered 404 while it was still registering \
              /session and was then too slow to serve it before the 3.000s deadline is a slow \
@@ -162,7 +158,7 @@ fn the_kept_panic_carries_the_log_it_tells_the_reader_to_decide_by() {
     let accepted = Arc::new(AtomicUsize::new(0));
     let port = booting_then_starved(&accepted);
     let program = announcing_stand_in(&evidence, port);
-    let outcome = startup_outcome(evidence.clone(), program, Duration::from_secs(2));
+    let outcome = startup_outcome(evidence.to_path_buf(), program, Duration::from_secs(2));
     let log = fs::read_to_string(evidence.join("firefox.stderr")).unwrap();
     assert!(!log.is_empty(), "the stand-in wrote nothing to stderr");
     match outcome {
@@ -207,7 +203,7 @@ fn a_socket_lost_while_the_child_is_alive_is_retried_like_every_other_state_on_t
     });
     let program = announcing_stand_in(&evidence, port);
     let deadline = Duration::from_secs(2);
-    let outcome = startup_outcome(evidence.clone(), program, deadline);
+    let outcome = startup_outcome(evidence.to_path_buf(), program, deadline);
     // Waiting for another test's startup lock is outside this start's deadline.
     let elapsed = accepted_at.recv().unwrap().elapsed();
     assert!(
@@ -287,7 +283,7 @@ fn a_browser_that_became_ready_late_does_not_inherit_the_leftover_deadline_as_it
         }
     });
     let program = announcing_stand_in(&evidence, port);
-    match startup_outcome(evidence, program, deadline) {
+    match startup_outcome(evidence.to_path_buf(), program, deadline) {
         Ok(Ok(())) => (),
         Ok(Err(refusal)) => assert!(
             refusal.starts_with("fixture environment refusal:"),
@@ -341,7 +337,7 @@ fn the_same_browser_answering_the_same_call_at_the_same_speed_succeeds_when_it_i
         }
     });
     let program = announcing_stand_in(&evidence, port);
-    match startup_outcome(evidence, program, Duration::from_secs(3)) {
+    match startup_outcome(evidence.to_path_buf(), program, Duration::from_secs(3)) {
         Ok(Ok(())) => (),
         Ok(Err(refusal)) => panic!("the control start was refused:\n{refusal}"),
         Err(panic) => panic!("the control start panicked: {panic}"),

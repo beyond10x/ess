@@ -3,6 +3,7 @@
 #[path = "../../../verify/ess-conformance/tests/support_explore_optional_unknown/subjects.rs"]
 mod subjects;
 
+use ess_cli::TemporaryDirectory;
 use ess_compiler::{resolve::compile, source::SourceMap};
 use ess_domain::{spec::RawSpecFile, system::Source, Specification};
 use serde_json::Value;
@@ -51,10 +52,8 @@ fn suite(ir: &ess_compiler::ir::EssIr, case: &str) -> ess_conformance::scenario:
 }
 
 fn lane(label: &str, source: &str, case: &str) -> (Value, Vec<Value>) {
-    let root = std::env::temp_dir().join(format!(
-        "ess-optional-concurrent-{}-{label}-{case}",
-        std::process::id()
-    ));
+    let root =
+        TemporaryDirectory::create(&format!("ess-optional-concurrent-{label}-{case}")).unwrap();
     write(&root.join("model.yaml"), source);
     let raw = RawSpecFile::parse(source).unwrap();
     let spec = Specification::assemble([(Source::new("model.yaml"), raw)]).unwrap();
