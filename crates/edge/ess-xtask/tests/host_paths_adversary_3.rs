@@ -11,30 +11,24 @@
 //! named complaint rather than a measurement of a fossil. Nothing here spells a home-directory
 //! marker as a literal; these bytes are tracked under `crates/` and the lane scans them.
 
+#[path = "../src/scratch.rs"]
+mod scratch;
+
 mod host_paths_lane;
 
 use host_paths_lane::{
     assert_current, ci_runner_labels, home_paths, runners_per_line, HOME_MARKERS, LANE,
     RUNNER_HOME_ROOTS,
 };
+use scratch::Scratch;
 use std::fs;
-use std::path::PathBuf;
 
-/// A throwaway directory outside the repository, named so two runs cannot collide.
+/// A throwaway directory outside the repository, removed when dropped, panics included.
 ///
 /// A workflow naming a platform CI does not run cannot be written into this repository: the lane's
 /// own parse reads `.github/workflows/ci.yml` and would turn the gate red on a clean tree.
-fn throwaway(label: &str) -> PathBuf {
-    let path = std::env::temp_dir().join(format!(
-        "ess-host-paths-adversary-3-{label}-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("the host clock is after the epoch")
-            .as_nanos()
-    ));
-    fs::create_dir_all(&path).expect("a throwaway directory can be created");
-    path
+fn throwaway(label: &str) -> Scratch {
+    Scratch::new(&format!("ess-host-paths-adversary-3-{label}"))
 }
 
 /// The labels `workflow` yields, read through the lane's own parse, leaving nothing behind.
@@ -42,7 +36,8 @@ fn throwaway(label: &str) -> PathBuf {
 /// The directory is removed before the caller asserts, so a red case does not retain a fixture
 /// outside the repository on every run.
 fn labels_of(label: &str, workflow: &str) -> std::collections::BTreeSet<String> {
-    let root = throwaway(label);
+    let root_scratch = throwaway(label);
+    let root = root_scratch.path().to_path_buf();
     fs::create_dir_all(root.join(".github/workflows")).expect("the workflow directory is created");
     fs::write(root.join(".github/workflows/ci.yml"), workflow).expect("the workflow is written");
     let labels = ci_runner_labels(&root);

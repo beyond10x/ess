@@ -2,36 +2,13 @@
 
 use serde_yaml::Value;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Output};
-use std::time::{SystemTime, UNIX_EPOCH};
 
-struct Scratch(PathBuf);
+#[path = "../src/scratch.rs"]
+mod scratch;
 
-impl Scratch {
-    fn new() -> Self {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock after epoch")
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "ess-publisher-adversary-{}-{nonce}",
-            std::process::id()
-        ));
-        fs::create_dir(&path).expect("scratch directory");
-        Self(path)
-    }
-
-    fn path(&self) -> &Path {
-        &self.0
-    }
-}
-
-impl Drop for Scratch {
-    fn drop(&mut self) {
-        fs::remove_dir_all(&self.0).expect("remove scratch directory");
-    }
-}
+use scratch::Scratch;
 
 fn git(cwd: &Path, args: &[&str]) -> Output {
     Command::new("git")
@@ -77,7 +54,7 @@ fn release_record_fetches_historical_tag_objects_before_checking_off_main() {
     // Reproduce the object visibility that actions/checkout's shallow, tagless defaults provide.
     // The remote advertises the historical tag, while the local checker cannot peel it to a
     // commit and therefore omits it from its off-main result.
-    let scratch = Scratch::new();
+    let scratch = Scratch::new("ess-publisher-adversary");
     let origin = scratch.path().join("origin.git");
     let source = scratch.path().join("source");
     let runner = scratch.path().join("runner");

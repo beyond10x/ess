@@ -12,27 +12,21 @@
 //! own functions without substitution and reads its constants out of its source at run time, so
 //! nothing here is a paraphrase and nothing here carries a home-directory marker as a literal.
 
+#[path = "../src/scratch.rs"]
+mod scratch;
+
 mod host_paths_lane;
 
 use host_paths_lane::{
     assert_current, ci_runner_labels, home_paths, home_paths_in, workspace_root, HOME_MARKERS,
     LANE, RUNNER_HOME_ROOTS,
 };
+use scratch::Scratch;
 use std::fs;
-use std::path::PathBuf;
 
-/// A throwaway directory outside the repository, named so two runs cannot collide.
-fn throwaway(label: &str) -> PathBuf {
-    let path = std::env::temp_dir().join(format!(
-        "ess-host-paths-adversary-2-{label}-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("the host clock is after the epoch")
-            .as_nanos()
-    ));
-    fs::create_dir_all(&path).expect("a throwaway directory can be created");
-    path
+/// A throwaway directory outside the repository, removed when dropped, panics included.
+fn throwaway(label: &str) -> Scratch {
+    Scratch::new(&format!("ess-host-paths-adversary-2-{label}"))
 }
 
 /// The labels `workflow` yields, read through the lane's own parse, leaving nothing behind.
@@ -41,7 +35,8 @@ fn throwaway(label: &str) -> PathBuf {
 /// passes leaves a fixture tree under `TMPDIR` on exactly the runs somebody is already debugging,
 /// and the shared temp root is where they accumulate unnoticed.
 fn labels_of(label: &str, workflow: &str) -> std::collections::BTreeSet<String> {
-    let root = throwaway(label);
+    let root_scratch = throwaway(label);
+    let root = root_scratch.path().to_path_buf();
     fs::create_dir_all(root.join(".github/workflows")).expect("the workflow directory is created");
     fs::write(root.join(".github/workflows/ci.yml"), workflow).expect("the workflow is written");
     let labels = ci_runner_labels(&root);
@@ -231,7 +226,8 @@ fn at_least_one_login_account_has_a_home_the_markers_do_not_describe() {
 #[test]
 fn one_selected_file_the_working_tree_lacks_does_not_abort_the_scan() {
     assert_current();
-    let directory = throwaway("absent");
+    let directory_scratch = throwaway("absent");
+    let directory = directory_scratch.path().to_path_buf();
     let leaked = format!(
         "{}someone/.cache/ess/report.json",
         HOME_MARKERS.resolve()[0]
