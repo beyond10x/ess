@@ -2526,6 +2526,38 @@ fn synthesize_for_in(
     })
 }
 
+/// What `scenario` asks of an implementation that `component` does not realise, in name order;
+/// empty when the component's suite can hold it.
+///
+/// [`synthesize_for`] applies this to every generated scenario. An authored scenario is compiled
+/// apart from synthesis, so a caller filing one in a component's suite applies it as well
+/// (beyond10x/ess#513).
+///
+/// # Errors
+///
+/// [`UnknownComponent`] when the specification declares no component of that name.
+pub fn needs_outside(
+    ir: &EssIr,
+    component: &str,
+    scenario: &ConformanceScenario,
+) -> Result<Vec<EssSemanticRef>, UnknownComponent> {
+    let Some(realised) = ir
+        .components()
+        .values()
+        .find(|declared| declared.name.as_str() == component)
+    else {
+        return Err(UnknownComponent {
+            component: component.to_owned(),
+            declared: ir
+                .components()
+                .keys()
+                .map(|name| name.as_str().to_owned())
+                .collect(),
+        });
+    };
+    Ok(needs_of(ir, realised, scenario))
+}
+
 /// A scenario a component's suite does not hold, and what it would need the component to realise.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Outside {

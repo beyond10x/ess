@@ -66,6 +66,11 @@
   longer re-send the first identity. A scenario that would still create one literal id twice with
   no delete between is withdrawn as `ESS-SYNTH-001` naming it
   (https://github.com/beyond10x/ess/issues/480, https://github.com/beyond10x/ess/issues/471).
+- `ess verify conform synthesize --component <c> --scenarios <dir>` lists an authored scenario
+  that drives a command, event or view the component does not realise as `outside:`, as it does a
+  generated one, where it filed it in the component's suite and the scenario could only fail. The
+  summary counts only the authored scenarios the suite keeps
+  (https://github.com/beyond10x/ess/issues/513).
 - The text conformance report prints `<check code>: <cause>` under each scenario that ended in
   error; the JSON report is unchanged (https://github.com/beyond10x/ess/issues/471).
 - Synthesis witnesses every `any:` and `all:` of an input guard once per child at any depth, not

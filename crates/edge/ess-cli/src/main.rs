@@ -4586,6 +4586,44 @@ fn write_suite(
     ))
 }
 
+/// Files the compiled authored scenarios in `synthesis`'s suite and returns how many it kept.
+///
+/// Scoped to a component, an authored scenario is held to the rule a generated one is: one that
+/// drives another component's commands, events or views is listed outside the suite, where it could
+/// only fail (beyond10x/ess#513).
+fn file_authored(
+    ir: &EssIr,
+    component: Option<&str>,
+    synthesis: &mut ess_conformance::synthesize::Synthesis,
+    scenarios: impl IntoIterator<
+        Item = (
+            ess_conformance::ScenarioId,
+            ess_conformance::ConformanceScenario,
+        ),
+    >,
+) -> Result<usize> {
+    let mut kept = 0;
+    for (id, scenario) in scenarios {
+        if let Some(name) = component {
+            let needs = ess_conformance::synthesize::needs_outside(ir, name, &scenario)?;
+            if !needs.is_empty() {
+                synthesis
+                    .outside
+                    .push(ess_conformance::synthesize::Outside {
+                        scenario: id,
+                        needs,
+                    });
+                continue;
+            }
+        }
+        kept += 1;
+        if let Err(id) = synthesis.suite.insert(id, scenario) {
+            bail!("`{id}` is already in the suite");
+        }
+    }
+    Ok(kept)
+}
+
 fn synthesize_suite(
     input: &SpecPath,
     target: SuiteTarget,
@@ -4631,13 +4669,8 @@ fn synthesize_suite(
     // rather than merged where a scenario names something the specification does not declare: a
     // suite carrying a check nobody can resolve is the artifact this whole verb exists to avoid.
     let authoring = ess_conformance::authored::compile(&ir, &authored_sources(scenarios)?);
-    let authored = authoring.scenarios.len();
     let complete = authoring.is_complete();
-    for (id, scenario) in authoring.scenarios {
-        if let Err(id) = synthesis.suite.insert(id, scenario) {
-            bail!("`{id}` is already in the suite");
-        }
-    }
+    let authored = file_authored(&ir, component, &mut synthesis, authoring.scenarios)?;
     if !complete {
         for refusal in &authoring.refusals {
             eprintln!("{refusal}");
