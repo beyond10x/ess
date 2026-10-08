@@ -109,7 +109,9 @@ One order answers every command, whichever branches it declares
 For a command acting on a record its input names:
 
 1. input refusals answer first: a `when:` with an `error:` and no subject is checked before the
-   record is looked up, and of two that one input selects, the first declared answers;
+   record is looked up, and of two that one input selects, the first declared answers; a refusal
+   whose `when:` always holds (`when: true`) is refused (`ESS-COMMAND-004`): give it the
+   condition it refuses on, or drop `when:` to make it the default refusal;
 2. then existence: an identity no record carries takes the unknown instance answer, an
    `unknown_instance:` branch or the declared not-found refusal;
 3. then the held state: `when_subject_state:` and `when_subject:` select by it, and `wrong_state`
