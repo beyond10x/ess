@@ -9,8 +9,9 @@
 //!
 //! The models are the committed `related-guard-stored-reference.yaml` and
 //! `filtered-related-reads.yaml` fixtures with one thing added: a refusal written `when: true`
-//! (`Predicate::Always`), which the plan places first in `HeldState` and the interpreter reads at the
-//! head of `select`.
+//! (`Predicate::Always`), which the plan placed first in `HeldState` and the interpreter read at the
+//! head of `select`. Validation refuses that shape since beyond10x/ess#489, so C1 and C2 now assert
+//! the refusal: no command that validates carries it.
 use std::collections::BTreeMap;
 
 use ess_compiler::ir::{EssIr, PrecedencePlan};
@@ -18,7 +19,6 @@ use ess_compiler::{resolve::compile, source::SourceMap};
 use ess_conformance::interpret::execute::{execute, Externals, Step, Store};
 use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
-use ess_primitives::facts::Number;
 use ess_primitives::node::Node;
 
 const STORED: &str = include_str!("fixtures/related-guard-stored-reference.yaml");
@@ -35,6 +35,19 @@ fn ir_of(text: &str) -> EssIr {
     let spec = Specification::assemble([(Source::new("adversary.yaml"), raw)])
         .unwrap_or_else(|errors| panic!("the model validates: {errors}\n{text}"));
     compile(&spec, &SourceMap::new()).unwrap_or_else(|error| panic!("{error:?}"))
+}
+
+/// Asserts validation refuses `text` because its `declined` refusal's `when:` always holds.
+fn refused_as_always_holding(text: &str) {
+    let raw = RawSpecFile::parse(text).unwrap_or_else(|error| panic!("{error}\n{text}"));
+    let errors = Specification::assemble([(Source::new("adversary.yaml"), raw)])
+        .err()
+        .unwrap_or_else(|| panic!("a `when: true` refusal is refused (#489)\n{text}"))
+        .to_string();
+    assert!(
+        errors.contains("`declined` is a refusal whose `when:` always holds"),
+        "{errors}"
+    );
 }
 
 fn step(ir: &EssIr, store: &Store, command: &str, input: &[(&str, Node)]) -> Step {
@@ -155,34 +168,11 @@ fn stored_with_when_true() -> String {
     )
 }
 
-/// An open task whose stored blocker names no row, completed with `force: true`: the stored row's
-/// `exists: false`, the `when: true` refusal and the guarded move all hold; the held state does
-/// not refuse (the task is `Open`, where `complete` starts).
+/// The stored reference beside a `when: true` refusal no longer validates (#489), so the plan and
+/// the interpreter are never asked to order it.
 #[test]
-fn adv_u1_c1_stored_reference_beside_a_when_true_refusal_plan_answers_as_the_interpreter() {
-    let ir = ir_of(&stored_with_when_true());
-    let added = step(
-        &ir,
-        &Store::default(),
-        "demo.tasks.AddTask",
-        &[("blocked_by", text(DANGLING))],
-    );
-    let task = minted(&added, "demo.tasks.TaskAdded");
-    let interpreter = answered(&step(
-        &ir,
-        &added.next,
-        "demo.tasks.CompleteTask",
-        &[("task_id", text(&task)), ("force", Node::Bool(true))],
-    ));
-    let plan = plan_answer(
-        &ir,
-        "demo.tasks.CompleteTask",
-        &["blocker-missing", "declined", "completed"],
-    );
-    assert_eq!(
-        plan, interpreter,
-        "the plan reads `{plan}` first where the interpreter answers `{interpreter}`"
-    );
+fn adv_u1_c1_stored_reference_beside_a_when_true_refusal_is_refused() {
+    refused_as_always_holding(&stored_with_when_true());
 }
 
 // ---- C2: a row set beside a `when: true` refusal and `wrong_state` ---------------------------
@@ -228,46 +218,8 @@ fn row_set_with_when_true() -> String {
     )
 }
 
-/// A closed attempt, the only one of its worker and batch, closed again with `confirm: true`:
-/// `wrong_state` holds (no branch acting on the row moves from `Closed`), the `when: true` refusal
-/// holds and the guarded move's guard holds; the row set `count: {gt: 1}` does not.
+/// The row set beside a `when: true` refusal and `wrong_state` no longer validates (#489).
 #[test]
-fn adv_u1_c2_row_set_beside_a_when_true_refusal_plan_answers_as_the_interpreter() {
-    let ir = ir_of(&row_set_with_when_true());
-    let recorded = step(
-        &ir,
-        &Store::default(),
-        "demo.jobs.Record",
-        &[
-            ("worker_id", text("w")),
-            ("batch_id", text("b")),
-            ("delay", Node::Number(Number::from(1_i64))),
-        ],
-    );
-    let attempt = minted(&recorded, "demo.jobs.AttemptRecorded");
-    let shut = step(
-        &ir,
-        &recorded.next,
-        "demo.jobs.Shut",
-        &[("attempt_id", text(&attempt))],
-    );
-    assert_eq!(answered(&shut), "shut");
-    let interpreter = answered(&step(
-        &ir,
-        &shut.next,
-        "demo.jobs.Close",
-        &[
-            ("attempt_id", text(&attempt)),
-            ("confirm", Node::Bool(true)),
-        ],
-    ));
-    let plan = plan_answer(
-        &ir,
-        "demo.jobs.Close",
-        &["already-closed", "declined", "closed"],
-    );
-    assert_eq!(
-        plan, interpreter,
-        "the plan reads `{plan}` first where the interpreter answers `{interpreter}`"
-    );
+fn adv_u1_c2_row_set_beside_a_when_true_refusal_is_refused() {
+    refused_as_always_holding(&row_set_with_when_true());
 }
