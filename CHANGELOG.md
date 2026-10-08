@@ -62,6 +62,15 @@
 
 ### Fixed
 
+- Synthesis writes the `wrong_state` scenario of a command whose `when_subject:` sibling
+  quantifies over an input list and compares its elements with the row, such as
+  `not (exists audience in input.aud: audience == {fact: client_id})`. The candidate search drew
+  that list from the input guards alone, so no candidate held the row's value and the scenario
+  was refused as `ESS-SYNTH-003`, whatever the row. Where no candidate is found, the search now
+  tries lists grounded on the row's values. Each sibling is still refuted through any one of its
+  conjuncts (`when:` or `when_subject:`). A scenario where every row and input leave some sibling
+  with all its conjuncts holding is still refused with `ESS-SYNTH-003`. Suites the first search
+  already served keep their bytes (https://github.com/beyond10x/ess/issues/516).
 - The Go and TypeScript runners that `ess verify conform synthesize --target go|typescript`
   generates admit a suite whose shapes hold `json`. A model with a `Json` field synthesized such a
   suite, and both runners refused it at admission with `suite admission: <Command>/outcome/<name>:
