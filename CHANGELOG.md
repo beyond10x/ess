@@ -62,6 +62,16 @@
 
 ### Fixed
 
+- `ess verify conform mutate` scores a `precedence-swap` of two branches that answer alike as
+  `equivalent` (`ESS-MUTATE-005`), where it reported a survivor no implementation could kill:
+  the same error, the same or no payload, and neither branch changing state, setting or emitting
+  anything. The entry names the shared answer as `identical_answer`, apart from
+  `unsatisfiable_guard`, which still means only that the two guards never overlap. A failed
+  scenario still kills such a mutant. Two refusals that differ in error, payload or effect keep
+  their scoring. A report or manifest carrying `identical_answer` is `ess-mutation-report/4` or
+  `ess-mutation-manifest/4`; an earlier manifest carrying it, or one carrying it on a mutant that
+  is not a `precedence-swap`, is refused
+  (https://github.com/beyond10x/ess/issues/517).
 - Synthesis writes the `wrong_state` scenario of a command whose `when_subject:` sibling
   quantifies over an input list and compares its elements with the row, such as
   `not (exists audience in input.aud: audience == {fact: client_id})`. The candidate search drew
