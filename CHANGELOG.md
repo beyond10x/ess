@@ -36,9 +36,11 @@
 - `ess-diff/17`: `ess verify diff` rates three changes that refuse an existing caller as breaking
   for callers, where it rated them unknown and `--fail-on breaking` passed them: an added input
   whose type is not `Optional`, an added refusal, and a refusal whose `when:` guard changed so it
-  now refuses an input another outcome answered. The two refusals are decided only where the
-  outcome and every outcome before it are plain `when:` guards the mutation audit's satisfiability
-  check decides, against the earlier revision's inputs; anything else stays unknown. The delta
+  now refuses an input the earlier revision accepted. An input the earlier revision already
+  refused, by any refusal under any name, does not count, and neither does an enum value it did
+  not declare. The two refusals are decided only where every outcome of the earlier revision, and
+  each up to the refusal in the later one, is a plain `when:` or `otherwise` branch the mutation
+  audit's satisfiability check decides; anything else stays unknown. The delta
   records `narrows` (`required-input`, `refusal-added`, `refusal-widened`) beside the answer;
   earlier formats refuse it. An added accepting outcome, an added `Optional` input and every other
   delta keep their answer, format and bytes (https://github.com/beyond10x/ess/issues/514).

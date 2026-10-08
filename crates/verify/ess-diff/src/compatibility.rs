@@ -50,7 +50,7 @@
 //! | a command input's type moves between a scalar and a record, list or map, or between a list and an object (`ess-diff/16`) | breaking for callers; unknown for readers; compatible for history |
 //! | a type with an input use keeps its name while its kind, its representation, a member's type or a variant's payload moves between those wire forms (`ess-diff/16`) | breaking for callers; readers and history as its uses answer them |
 //! | a refusal gains or loses its compensating change (`compensates: true`, ess/22) | breaking for callers and readers; compatible for history |
-//! | an input whose type is not `Optional` added, or a refusal added or its guard changed so that an input of the earlier revision another outcome answered is refused by it, where the guards decide that (`ess-diff/17`) | breaking for callers; unknown for readers; compatible for history |
+//! | an input whose type is not `Optional` added, or a refusal added or its guard changed so that an input the earlier revision accepted is refused by it, where the guards decide that (`ess-diff/17`) | breaking for callers; unknown for readers; compatible for history |
 //! | a view is removed | breaking for readers |
 //! | an event or an entity is removed | breaking for history |
 //!
@@ -119,14 +119,14 @@ pub const NARROWED_DELTA_FORMAT: u32 = 17;
 )]
 #[serde(rename_all = "kebab-case")]
 pub enum Narrowing {
-    /// On `outcome-added`: the added outcome reports an error, and refuses some input the earlier
-    /// revision answered with another outcome.
+    /// On `outcome-added`: the added outcome reports an error, and refuses some input a caller of
+    /// the earlier revision could send and had accepted.
     RefusalAdded,
     /// On `input-added`: the added input is not `Optional`, read through newtypes, so a caller that
     /// leaves it out is refused.
     RequiredInput,
-    /// On `outcome-condition-changed`: the outcome reports an error, and some input that reached
-    /// past it in the earlier revision is refused by it in the later one.
+    /// On `outcome-condition-changed`: the outcome reports an error, and some input the earlier
+    /// revision accepted is refused by it in the later one.
     RefusalWidened,
 }
 
@@ -903,16 +903,17 @@ impl<'a> UseIndex<'a> {
     ///
     /// - An added input whose type is not `Optional`, read through newtypes, is a required input.
     /// - An added outcome is an added refusal, and a changed condition a widened refusal, where the
-    ///   outcome reports an error in the later revision, its condition and that of every outcome
-    ///   declared before it in either revision is a plain input guard (`when:`), and
-    ///   [`satisfiable`](ess_conformance::mutate::satisfiable) finds, among the earlier revision's
-    ///   inputs, one that its guard takes, its old guard (if any) did not, and no earlier outcome of
-    ///   either revision takes: that input reached another outcome before and is refused by this
-    ///   one now. Anything that check leaves undecided stays `None` — an added refusal guarded by an
-    ///   input the earlier revision does not declare, a `when_subject:` refusal, an earlier
-    ///   `unknown_instance:` — and so does a guard that only narrowed. The check tries combinations
-    ///   no admitted input may take — a literal an invariant refuses — so it can call a refusal
-    ///   narrowing where no admitted input moved.
+    ///   outcome reports an error in the later revision and
+    ///   [`satisfiable_by_declared_values`](ess_conformance::mutate::satisfiable_by_declared_values)
+    ///   finds an input a caller of the earlier revision can send that the earlier revision
+    ///   accepted — no refusal of it takes the input, an accepting outcome does — and that the
+    ///   later revision answers with this refusal ([`refuses_more`]). An input the earlier
+    ///   revision already refused, by any refusal under any name, does not count. Anything that
+    ///   check leaves undecided stays `None` — a guard over an input the earlier revision does not
+    ///   declare, any outcome of the earlier revision or before this one that is not a plain
+    ///   `when:` or `otherwise` branch (`unknown_instance:`, `when_subject:` …) — and so does a
+    ///   guard that only narrowed. The check still tries a text or number literal a type
+    ///   invariant refuses, so it can call a refusal narrowing where no admitted input moved.
     pub(crate) fn narrowing(
         &self,
         command: &ess_domain::name::QualifiedName,
@@ -1040,9 +1041,15 @@ fn optional_on_wire(
     }
 }
 
-/// Whether outcome `outcome` of command `is` refuses, in the later revision, an input of the
-/// earlier revision's `was` (in `before`) that reached past it there, or that reached some other
-/// outcome where `was` does not declare it; see [`UseIndex::narrowing`].
+/// Whether outcome `outcome` of command `is` refuses, in the later revision, an input that a
+/// caller of the earlier revision's `was` (in `before`) could send and had accepted there; see
+/// [`UseIndex::narrowing`].
+///
+/// The witness is an input the later revision answers with `outcome` — its guard holds and no
+/// outcome declared before it does — that the earlier revision accepted: no refusal of `was`
+/// takes it, wherever declared, and some accepting outcome does (an `otherwise` one takes every
+/// input). `false` wherever one of those guards is not a plain input guard (`when:`), so nothing
+/// that depends on stored state is decided here.
 fn refuses_more(
     before: &EssIr,
     was: &ess_compiler::ir::ResolvedCommand,
@@ -1052,46 +1059,52 @@ fn refuses_more(
     use ess_compiler::ir::{ResolvedCondition, ResolvedOutcome};
     use ess_primitives::predicate::Predicate;
 
-    /// The plain input guards of the outcomes before `outcome`, and its own; `None` where one of
-    /// them is not a plain input guard or the outcome is not declared.
-    fn guards<'a>(
-        outcomes: &'a [ResolvedOutcome],
-        outcome: &str,
-    ) -> Option<(Vec<&'a Predicate>, &'a Predicate)> {
-        let at = outcomes.iter().position(|it| it.name.as_str() == outcome)?;
-        let mut guards = outcomes[..=at]
-            .iter()
-            .map(|it| match &it.condition {
-                ResolvedCondition::When { predicate } => Some(predicate),
-                _ => None,
-            })
-            .collect::<Option<Vec<_>>>()?;
-        let own = guards.pop()?;
-        Some((guards, own))
+    /// The plain input guard of `outcome`, or `None` where it has none.
+    fn when(outcome: &ResolvedOutcome) -> Option<&Predicate> {
+        match &outcome.condition {
+            ResolvedCondition::When { predicate } => Some(predicate),
+            _ => None,
+        }
     }
 
-    let refuses = is
+    let Some(at) = is
         .outcomes
         .iter()
-        .any(|it| it.name.as_str() == outcome && it.error.is_some());
-    let Some((later, guard)) = guards(&is.outcomes, outcome) else {
+        .position(|it| it.name.as_str() == outcome)
+    else {
         return false;
     };
-    // An outcome the earlier revision does not declare took no input there, and nothing before it
-    // stopped one.
-    let (earlier, was_guard) = if was.outcomes.iter().any(|it| it.name.as_str() == outcome) {
-        let Some((earlier, own)) = guards(&was.outcomes, outcome) else {
+    if is.outcomes[at].error.is_none() {
+        return false;
+    }
+    let not = |guard: &Predicate| Predicate::Not(Box::new(guard.clone()));
+    let mut region = Vec::new();
+    // Answered by `outcome` in the later revision.
+    for (index, later) in is.outcomes[..=at].iter().enumerate() {
+        let Some(guard) = when(later) else {
             return false;
         };
-        (earlier, Some(own))
-    } else {
-        (Vec::new(), None)
-    };
-    let not = |guard: &Predicate| Predicate::Not(Box::new(guard.clone()));
-    let mut region = vec![guard.clone()];
-    region.extend(was_guard.into_iter().chain(earlier).chain(later).map(not));
-    refuses
-        && ess_conformance::mutate::satisfiable(before, was, &Predicate::All(region)) == Some(true)
+        region.push(if index == at {
+            guard.clone()
+        } else {
+            not(guard)
+        });
+    }
+    // Accepted by the earlier revision: refused by none of its refusals, taken by an accepting
+    // outcome. An input every refusal lets through is answered by the first accepting outcome
+    // that takes it, whatever the declaration order.
+    let mut accepting = Vec::new();
+    for earlier in &was.outcomes {
+        match (&earlier.condition, earlier.error.is_some()) {
+            (ResolvedCondition::When { predicate }, true) => region.push(not(predicate)),
+            (ResolvedCondition::When { predicate }, false) => accepting.push(predicate.clone()),
+            (ResolvedCondition::Otherwise, false) => accepting.push(Predicate::Always),
+            _ => return false,
+        }
+    }
+    region.push(Predicate::Any(accepting));
+    ess_conformance::mutate::satisfiable_by_declared_values(before, was, &Predicate::All(region))
+        == Some(true)
 }
 
 /// The wire form of a declared type's body in `ir`, as [`shape_of`] reads it.
