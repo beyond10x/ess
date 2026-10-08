@@ -305,6 +305,7 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-inputs", 2, Some("0.34.0")),
     ("ess-output-state", 1, Some("0.21.0")),
     ("ess-output-state", 2, Some("0.34.0")),
+    ("ess-output-state", 3, Some("0.56.0")),
     ("ess-cli", 1, Some("0.21.0")),
     ("ess-cli-plan", 1, Some("0.21.0")),
     ("ess-cli-artifacts", 1, Some("0.21.0")),

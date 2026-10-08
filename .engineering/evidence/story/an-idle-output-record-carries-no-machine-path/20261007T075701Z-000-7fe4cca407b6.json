@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-07T07:57:01Z",
+  "actor": "human:timo",
+  "artifact": "story:an-idle-output-record-carries-no-machine-path",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "after adversary pass 1: red 5 (adversary_idle_record_pass1 3 of 7, ownership_idle_record 2 new), then 16 named ess-cli binaries green, 240 cases, clippy and fmt exit 0",
+    "reference": "unit/ess-wave-20261007b-u3-idle-record b16efe949e"
+  }
+}

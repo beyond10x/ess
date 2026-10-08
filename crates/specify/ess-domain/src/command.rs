@@ -2749,6 +2749,7 @@ impl CommandSpec {
             );
             errors.extend(self.validate_outcome(outcome, &inputs, paths));
             errors.extend(self.validate_replay(outcome));
+            errors.extend(self.validate_always_refusal(outcome));
             let location = self.site().key("outcomes").named(outcome.name.as_str());
             errors.extend(match types {
                 Some(types) => self.validate_typed_guard(outcome, types, &location),
@@ -3262,6 +3263,37 @@ impl CommandSpec {
                     ));
                 }
             }
+        }
+        errors
+    }
+
+    /// Refuses a refusal whose `when:` always holds (beyond10x/ess#489).
+    ///
+    /// `when: true` makes a branch unconditional (`Outcome::is_unconditional`), the default
+    /// written the long way, but a refusal written so has no one step in the precedence order: the
+    /// model interpreter does not read it among the input refusals, while the Entity Runtime
+    /// lowering and the Rust and Go targets read it first among them, so beside another refusal
+    /// that holds the same request was answered differently.
+    fn validate_always_refusal(&self, outcome: &Outcome) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
+        if outcome.error.is_some()
+            && matches!(&outcome.condition, OutcomeCondition::When(predicate) if predicate.is_trivially_true())
+        {
+            errors.push(
+                ValidationError::at(
+                    self.site().key("outcomes").named(outcome.name.as_str()),
+                    ValidationCode::ConflictingDeclaration,
+                    format!(
+                        "`{}` is a refusal whose `when:` always holds; where it answers beside \
+                         the command's other refusals is not stated",
+                        outcome.name
+                    ),
+                )
+                .with_hint(
+                    "give the refusal the condition it refuses on, or drop `when:` to declare \
+                     it as the command's default refusal",
+                ),
+            );
         }
         errors
     }

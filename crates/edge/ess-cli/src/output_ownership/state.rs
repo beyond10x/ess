@@ -9,8 +9,12 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-/// Written by every publication: `/1` plus the `producer` that last published into the tree.
-pub(super) const FORMAT: &str = "ess-output-state/2";
+/// Written by every publication: `/2` with the root binding recorded only while a transaction is
+/// pending, so a settled checkpoint names nothing about the machine that wrote it (ess#484).
+pub(super) const FORMAT: &str = "ess-output-state/3";
+/// `/1` plus the `producer` that last published into the tree; read and kept by recovery and
+/// adoption. Like `/1`, it records the root binding in every phase.
+pub(super) const FORMAT_V2: &str = "ess-output-state/2";
 /// Read and kept by recovery and adoption; it records no producer.
 pub(super) const FORMAT_V1: &str = "ess-output-state/1";
 /// This release, as a checkpoint records it.
@@ -596,11 +600,17 @@ pub(super) struct Payload {
     pub(super) format: String,
     pub(super) profile: Profile,
     pub(super) anchor_id: String,
-    pub(super) root: NativePath,
-    pub(super) directory: Identity,
+    /// The absolute root the checkpoint is bound to: in every phase of `/1` and `/2`, and in `/3`
+    /// exactly while a transaction is pending. A read binds the root it was read in, in memory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) root: Option<NativePath>,
+    /// The root directory's device and inode, recorded with `root`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) directory: Option<Identity>,
     pub(super) sequence: u64,
     pub(super) checkpoint: Checkpoint,
-    /// The `ess` release that last published into the tree: required in `/2`, absent in `/1`.
+    /// The `ess` release that last published into the tree: required in `/2` and `/3`, absent in
+    /// `/1`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) producer: Option<String>,
 }
@@ -612,6 +622,17 @@ impl Payload {
         let previous = self.producer.replace(PRODUCER.to_owned());
         FORMAT.clone_into(&mut self.format);
         previous.filter(|previous| previous != PRODUCER)
+    }
+    /// Whether the checkpoint was written in `/1` or `/2`, whose settled form still records the
+    /// root binding.
+    pub(super) fn legacy(&self) -> bool {
+        self.format != FORMAT
+    }
+    /// Move a `/1` or `/2` checkpoint to `/3` without publishing: a recorded producer is kept, and
+    /// this release is recorded where `/1` recorded none.
+    pub(super) fn upgrade(&mut self) {
+        FORMAT.clone_into(&mut self.format);
+        self.producer.get_or_insert_with(|| PRODUCER.to_owned());
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -642,11 +663,18 @@ fn canonical(value: &impl Serialize) -> Result<Vec<u8>> {
     bytes.push(b'\n');
     Ok(bytes)
 }
+/// Every checkpoint is written here, so a settled `/3` checkpoint never records the binding the
+/// in-memory payload carries.
 pub(super) fn encode(payload: &Payload) -> Result<Vec<u8>> {
-    validate(payload)?;
+    let mut stored = payload.clone();
+    if stored.format == FORMAT && matches!(stored.checkpoint, Checkpoint::Idle { .. }) {
+        stored.root = None;
+        stored.directory = None;
+    }
+    validate(&stored)?;
     canonical(&Envelope {
-        checksum: digest(&canonical(payload)?),
-        payload: payload.clone(),
+        checksum: digest(&canonical(&stored)?),
+        payload: stored,
     })
 }
 pub(super) fn decode(bytes: &[u8]) -> Result<Payload> {
@@ -664,12 +692,13 @@ pub(super) fn decode(bytes: &[u8]) -> Result<Payload> {
 }
 fn validate(payload: &Payload) -> Result<()> {
     match payload.format.as_str() {
-        FORMAT => ensure!(
+        FORMAT | FORMAT_V2 => ensure!(
             payload
                 .producer
                 .as_deref()
                 .is_some_and(|producer| !producer.is_empty()),
-            "output-state {FORMAT} requires a nonempty producer"
+            "output-state {} requires a nonempty producer",
+            payload.format
         ),
         FORMAT_V1 => ensure!(
             payload.producer.is_none(),
@@ -677,11 +706,14 @@ fn validate(payload: &Payload) -> Result<()> {
         ),
         _ => bail!("unsupported output-state version"),
     }
+    binding(payload)?;
     ensure!(
         payload.profile == Profile::current(),
         "output-state platform profile mismatch"
     );
-    payload.root.validate()?;
+    if let Some(root) = &payload.root {
+        root.validate()?;
+    }
     uuid(&payload.anchor_id)?;
     match &payload.checkpoint {
         Checkpoint::Idle { ledger } => ledger.validate(),
@@ -690,6 +722,29 @@ fn validate(payload: &Payload) -> Result<()> {
         | Checkpoint::Committed { transaction }
         | Checkpoint::Restored { transaction } => transaction.validate(&payload.anchor_id, true),
     }
+}
+/// Each version's binding shape: `/1` and `/2` record `root` and `directory` in every phase;
+/// `/3` records both exactly while a transaction is pending.
+fn binding(payload: &Payload) -> Result<()> {
+    let bound = payload.root.is_some() && payload.directory.is_some();
+    if payload.format != FORMAT {
+        ensure!(
+            bound,
+            "output-state {} requires its `root` and `directory` binding",
+            payload.format
+        );
+    } else if matches!(payload.checkpoint, Checkpoint::Idle { .. }) {
+        ensure!(
+            payload.root.is_none() && payload.directory.is_none(),
+            "a settled output-state {FORMAT} checkpoint records no `root` or `directory`"
+        );
+    } else {
+        ensure!(
+            bound,
+            "a pending output-state {FORMAT} checkpoint requires its `root` and `directory` binding"
+        );
+    }
+    Ok(())
 }
 fn uuid(value: &str) -> Result<()> {
     ensure!(

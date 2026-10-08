@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-07T08:48:13Z",
+  "actor": "human:timo",
+  "artifact": "story:creating-an-output-root-locks-only-what-it-creates",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-cli --locked --test output_ownership ownership_root_lock: 0 passed 7 failed before the change (15 of 16 concurrent runs refused busy at the shared directory), then 8 passed in 3 of 3 runs; 16-concurrent case ok 3 of 3; admission guard mutation red then green; 12 output-ownership binaries green; clippy and fmt exit 0",
+    "reference": "unit/ess-wave-20261007b-u4-root-lock 1630b291ac"
+  }
+}

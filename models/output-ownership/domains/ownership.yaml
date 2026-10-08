@@ -23,8 +23,6 @@ entities:
       name: anchor_id
       type: Uuid
     fields:
-      - name: native_root
-        type: output.ownership.NativePath
       - name: settled_ledger_digest
         type: output.ownership.Digest
     relations:
@@ -47,6 +45,8 @@ entities:
     fields:
       - name: anchor_id
         type: Uuid
+      - name: native_root
+        type: output.ownership.NativePath
       - name: old_inventory_digest
         type: output.ownership.Digest
       - name: new_inventory_digest

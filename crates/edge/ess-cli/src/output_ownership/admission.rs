@@ -2,7 +2,7 @@
 //! A process cut can leave only a reserved, unowned admission orphan. Its name never grants
 //! cleanup authority: successful cleanup uses this invocation's descriptors and identities.
 use super::{
-    filesystem::{self, Locks, Mount, Observer},
+    filesystem::{self, Fresh, Locks, Mount, Observer},
     state::{self, Identity},
 };
 use anyhow::{ensure, Context, Result};
@@ -68,8 +68,26 @@ pub(super) fn paths(
     }
     locks.revalidate()?;
     let mount = Mount::of(&parent)?;
-    inspect(&parent, &tree, &mount, &mut observer)?;
+    inspect(
+        &parent,
+        &tree,
+        &mount,
+        locks.fresh(anchor).as_ref(),
+        &mut observer,
+    )?;
     locks.revalidate()
+}
+
+/// [`filesystem::aliases`] of `name` in `parent`. When `name` is the anchor's first missing
+/// component, another run creating it between the listing and the lookup reads as an alias; that
+/// is the busy refusal instead.
+fn alias(parent: &File, name: &OsStr, mount: &Mount, fresh: Option<&Fresh>) -> Result<()> {
+    filesystem::aliases(parent, Path::new(name), mount).map_err(|error| {
+        match fresh.map(|fresh| fresh.absent(parent)) {
+            Some(Err(busy)) => busy,
+            _ => error,
+        }
+    })
 }
 
 struct Entry {
@@ -184,13 +202,28 @@ fn same(parent: &File, name: &OsStr, expected: &Identity, directory: bool) -> Re
     Ok(())
 }
 
-fn inspect(parent: &File, node: &Node, mount: &Mount, observer: &mut Observer<'_>) -> Result<()> {
+/// `fresh` is the anchor's first missing component when `parent` is the directory locked above
+/// it. Nothing below it exists for this run yet, so admission never enters it: a directory there
+/// was created by another run, which this run's locks do not cover.
+fn inspect(
+    parent: &File,
+    node: &Node,
+    mount: &Mount,
+    fresh: Option<&Fresh>,
+    observer: &mut Observer<'_>,
+) -> Result<()> {
     // Existing exact names already demonstrate native coexistence. Missing inventory
     // members are still inspected, but only a planned creation needs a private namespace.
     let mut needs_probe = false;
     let mut directories = BTreeMap::new();
     for (name, child) in &node.children {
-        filesystem::aliases(parent, Path::new(name), mount)?;
+        let fresh = fresh.filter(|fresh| fresh.name() == Some(name.as_os_str()));
+        alias(parent, name, mount, fresh)?;
+        if let Some(fresh) = fresh {
+            fresh.absent(parent)?;
+            needs_probe |= child.required;
+            continue;
+        }
         match fs::statat(parent, name, AtFlags::SYMLINK_NOFOLLOW) {
             Ok(_) if child.children.is_empty() => {}
             Ok(stat) if FileType::from_raw_mode(stat.st_mode) == FileType::Directory => {
@@ -202,14 +235,23 @@ fn inspect(parent: &File, node: &Node, mount: &Mount, observer: &mut Observer<'_
     }
     if !needs_probe {
         for (name, directory) in directories {
-            inspect(&directory, &node.children[name], mount, observer)?;
+            inspect(&directory, &node.children[name], mount, None, observer)?;
         }
         return Ok(());
     }
     let mut namespace = Namespace::create(parent, mount, observer)?;
     let root = namespace.root.try_clone()?;
-    let outcome = inherited(parent, &root)
-        .and_then(|()| populate(&mut namespace, &root, Some(parent), node, mount, observer));
+    let outcome = inherited(parent, &root).and_then(|()| {
+        populate(
+            &mut namespace,
+            &root,
+            Some(parent),
+            node,
+            mount,
+            fresh,
+            observer,
+        )
+    });
     let cleanup = namespace.cleanup(mount, observer);
     match (outcome, cleanup) {
         (Err(native), Err(cleanup)) => Err(native).context(format!(
@@ -226,11 +268,13 @@ fn populate(
     actual: Option<&File>,
     node: &Node,
     mount: &Mount,
+    fresh: Option<&Fresh>,
     observer: &mut Observer<'_>,
 ) -> Result<()> {
     for (name, child) in &node.children {
+        let fresh = fresh.filter(|fresh| fresh.name() == Some(name.as_os_str()));
         if let Some(actual) = actual {
-            filesystem::aliases(actual, Path::new(name), mount)?;
+            alias(actual, name, mount, fresh)?;
         }
         let fd = namespace
             .entry(probe, name, !child.children.is_empty(), mount, observer)
@@ -238,24 +282,34 @@ fn populate(
         if child.children.is_empty() {
             continue;
         }
-        let existing = actual
-            .map(
-                |actual| match fs::statat(actual, name, AtFlags::SYMLINK_NOFOLLOW) {
-                    Ok(stat) if FileType::from_raw_mode(stat.st_mode) == FileType::Directory => {
-                        filesystem::open_directory(actual, name, mount).map(Some)
-                    }
-                    Ok(_) | Err(Errno::NOENT) => Ok(None),
-                    Err(e) => Err(e.into()),
-                },
-            )
-            .transpose()?
-            .flatten();
+        let existing = match (fresh, actual) {
+            // Never entered (see `inspect`); one that appears after this is refused when the
+            // caller revalidates its locks.
+            (Some(fresh), Some(actual)) => {
+                fresh.absent(actual)?;
+                None
+            }
+            (_, actual) => actual
+                .map(
+                    |actual| match fs::statat(actual, name, AtFlags::SYMLINK_NOFOLLOW) {
+                        Ok(stat)
+                            if FileType::from_raw_mode(stat.st_mode) == FileType::Directory =>
+                        {
+                            filesystem::open_directory(actual, name, mount).map(Some)
+                        }
+                        Ok(_) | Err(Errno::NOENT) => Ok(None),
+                        Err(e) => Err(e.into()),
+                    },
+                )
+                .transpose()?
+                .flatten(),
+        };
         if let Some(existing) = existing {
             // An existing descendant may have a different casefold policy. Its own private
             // child, rather than this ancestor's emulation, supplies its native admission.
-            inspect(&existing, child, mount, observer)?;
+            inspect(&existing, child, mount, None, observer)?;
         } else if child.children.values().any(|node| node.required) {
-            populate(namespace, &fd, None, child, mount, observer)?;
+            populate(namespace, &fd, None, child, mount, None, observer)?;
         }
     }
     Ok(())
