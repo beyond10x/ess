@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-08T09:55:07Z",
+  "actor": "human:timo",
+  "artifact": "story:bot-release-publication",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "81002028a3 on origin/main, released 0.52.0",
+    "reference": "https://github.com/beyond10x/ess/releases/tag/0.52.0"
+  }
+}

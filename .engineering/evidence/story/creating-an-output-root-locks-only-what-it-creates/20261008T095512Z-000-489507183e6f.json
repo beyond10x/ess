@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-08T09:55:12Z",
+  "actor": "human:timo",
+  "artifact": "story:creating-an-output-root-locks-only-what-it-creates",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "d3dbd19b5a on origin/main, released 0.56.0",
+    "reference": "https://github.com/beyond10x/ess/releases/tag/0.56.0"
+  }
+}
