@@ -2117,6 +2117,31 @@ fn satisfiable(
     command: &ess_compiler::ir::ResolvedCommand,
     guard: &Predicate,
 ) -> Option<bool> {
+    decide(ir, command, guard, true)
+}
+
+/// [`satisfiable`], over values a caller of `ir` can send: an enum leaf ranges over its variants
+/// only, never over a guard literal that is not one of them, which the decoder refuses.
+///
+/// For `ess-diff`, which asks whether a refusal changed between two revisions takes an input a
+/// caller of the earlier one could send (<https://github.com/beyond10x/ess/issues/514>): a second
+/// decision procedure beside this one would be two answers to one question. Every other leaf is
+/// read as [`satisfiable`] reads it, invariants included.
+pub fn satisfiable_by_declared_values(
+    ir: &EssIr,
+    command: &ess_compiler::ir::ResolvedCommand,
+    guard: &Predicate,
+) -> Option<bool> {
+    decide(ir, command, guard, false)
+}
+
+/// [`satisfiable`], adding guard literals to an enum leaf's domain only where `outside_variants`.
+fn decide(
+    ir: &EssIr,
+    command: &ess_compiler::ir::ResolvedCommand,
+    guard: &Predicate,
+    outside_variants: bool,
+) -> Option<bool> {
     use ess_domain::expression::ScalarKind;
     use ess_primitives::facts::{FactPath, FactValue};
     let mut leaves: std::collections::BTreeMap<FactPath, Vec<FactValue>> =
@@ -2167,7 +2192,7 @@ fn satisfiable(
                 }
                 literals
                     .iter()
-                    .filter(|it| matches!(it, FactValue::Text(_)))
+                    .filter(|it| outside_variants && matches!(it, FactValue::Text(_)))
                     .for_each(|it| add(it.clone()));
             }
             (ScalarKind::Text | ScalarKind::Number, _) => {

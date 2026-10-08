@@ -33,6 +33,17 @@
   newtype redefined as a struct, a struct member retyped to a list). The delta records the shapes
   before and after; earlier formats refuse it. A move within one wire form, `Json` on either side,
   and a type with no input use keep their answer, format and bytes.
+- `ess-diff/17`: `ess verify diff` rates three changes that refuse an existing caller as breaking
+  for callers, where it rated them unknown and `--fail-on breaking` passed them: an added input
+  whose type is not `Optional`, an added refusal, and a refusal whose `when:` guard changed so it
+  now refuses an input the earlier revision accepted. An input the earlier revision already
+  refused, by any refusal under any name, does not count, and neither does an enum value it did
+  not declare. The two refusals are decided only where every outcome of the earlier revision, and
+  each up to the refusal in the later one, is a plain `when:` or `otherwise` branch the mutation
+  audit's satisfiability check decides; anything else stays unknown. The delta
+  records `narrows` (`required-input`, `refusal-added`, `refusal-widened`) beside the answer;
+  earlier formats refuse it. An added accepting outcome, an added `Optional` input and every other
+  delta keep their answer, format and bytes (https://github.com/beyond10x/ess/issues/514).
 
 - `ess specify validate` refuses a domain, command or view wire name that contains `/`, or is `.`
   or `..`, as `path_segment_wire_name` (`ESS-DOMAIN-012`, `ESS-COMMAND-012`, `ESS-VIEW-012`), naming
