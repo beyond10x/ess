@@ -4,9 +4,12 @@ id: story:negated-defined-optional-input-witnessed-beside-when-subject
 kind: story
 status: draft
 title: The guard-negate mutant of a defined(<optional input>) guard beside when_subject is witnessed or scored
+refs:
+- provider: github
+  reference: beyond10x/ess#511
 relations:
 - serves: vision:O2
-revision: 4
+revision: 6
 ---
 ## Outcome
 
@@ -69,6 +72,8 @@ witnessable or equivalent.
 
 - Accept. Starts after https://github.com/beyond10x/ess/issues/501 is on `main` (it shares
   `mutate.rs`); ships in the minor after 0.58.0's current order.
+
+- https://github.com/beyond10x/ess/issues/511 (three string guards on one `Optional` input exhaust the candidate search, `ESS-SYNTH-003`) may share this cause. When this story starts, trace first whether the absent value of an `Optional` input is tried as a candidate; if it is the cause, this story's acceptance includes #511's reproduction and closes it.
 
 ## Acceptance
 
