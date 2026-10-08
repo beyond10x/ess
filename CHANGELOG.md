@@ -34,6 +34,11 @@
   guard holds, and one claiming a `when_related:` or row-set branch read among the accepting
   branches where an accepting `when:` declared before it holds. In both cases the interpreter
   answered the other branch, so the act could not pass.
+- A synthesized external witness no longer refutes a `when_related:` refusal that the command's
+  precedence plan reads after the external branch: one declared after it among the accepting
+  branches, which the external branch answers before. A suite for such a command can change bytes:
+  the witness may now be one that refusal's predicate holds on. The model interpreter passes the
+  old witness and the new one.
 
 ### Fixed
 

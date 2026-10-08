@@ -34,9 +34,11 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 
 use ess_compiler::ir::{
-    EntityHandle, EssIr, ResolvedCommand, ResolvedCondition, ResolvedEffect, ResolvedInstance,
-    ResolvedOutcome, ResolvedPayloadValue, ResolvedRelatedTest, ResolvedRelatedVia,
+    EntityHandle, EssIr, PrecedencePlan, ResolvedCommand, ResolvedCondition, ResolvedEffect,
+    ResolvedInstance, ResolvedOutcome, ResolvedPayloadValue, ResolvedRelatedTest,
+    ResolvedRelatedVia,
 };
+use ess_domain::command::precedence::Phase;
 use ess_domain::command::TestStrategy;
 use ess_domain::name::QualifiedName;
 use ess_primitives::facts::FactPath;
@@ -304,9 +306,11 @@ pub(super) fn external_unwitnessed(
 
 /// Whether the forced external `outcome` answers `command` sent `input` for the present related
 /// row `row` (beyond10x/ess#464): its own guard holds; no input-guarded refusal and no accepting
-/// `when:` declared before it claims the input; and no `when_related` predicate branch holds on
-/// the row with its input guard, whatever its declaration order, one the row leaves undecided
-/// counting as holding.
+/// `when:` the precedence plan reads before it claims the input; and no `when_related` predicate
+/// branch the plan reads before it holds on the row with its input guard, one the row leaves
+/// undecided counting as holding. A predicate refusal's place depends on the format (`ess/22`
+/// reads it at step 5 beside `wrong_state:` or several rows), so that plan is built in the model's
+/// format ([`super::precedence::answers_before_in`]).
 fn leaves_external(
     ir: &EssIr,
     command: &ResolvedCommand,
@@ -329,7 +333,7 @@ fn leaves_external(
     {
         return Ok(false);
     }
-    for branch in &command.outcomes {
+    for branch in super::precedence::answers_before_in(command, ir.format(), outcome) {
         let ResolvedCondition::Related {
             test: ResolvedRelatedTest::Holds { predicate },
             ..
@@ -863,8 +867,9 @@ fn absent_branch(command: &ResolvedCommand) -> Option<&ResolvedOutcome> {
 ///
 /// A missing row is answered by the `exists: false` branch before any other (the #211 ruling). With
 /// the row present, a predicate it does not decide (a field the arrangement did not determine)
-/// selects nothing and is not guessed at, and an input-guarded refusal is taken before any branch it
-/// overlaps (beyond10x/ess#178), as everywhere else. `existing_instance:` is answered before either
+/// selects nothing and is not guessed at, and a refusal the precedence plan reads before the others
+/// selected is taken before them ([`answering_refusal`]): an input-guarded refusal before any branch
+/// it overlaps (beyond10x/ess#178), as everywhere else. `existing_instance:` is answered before either
 /// and is not asked here: the command's own identity is the existence family's to arrange.
 fn selects<'c>(
     ir: &EssIr,
@@ -914,32 +919,7 @@ fn selects<'c>(
         }
         selected.push(branch);
     }
-    // Of the input refusals these facts select, the first declared answers (the precedence order,
-    // `docs/design/cross-record-and-stored-field-guards.md`); `selected` keeps declaration order.
-    if let Some(first) = selected
-        .iter()
-        .copied()
-        .find(|branch| super::is_input_guarded_refusal(branch))
-    {
-        selected = vec![first];
-    } else if let Some(first) = orders_present_related_refusal(ir, command)
-        .then(|| {
-            selected.iter().copied().find(|branch| {
-                branch.error.is_some()
-                    && matches!(
-                        branch.condition,
-                        ResolvedCondition::Related {
-                            test: ResolvedRelatedTest::Holds { .. },
-                            ..
-                        }
-                    )
-            })
-        })
-        .flatten()
-    {
-        // From ess/22 the present-related predicate refusal answers before every accepting branch.
-        // Validation keeps two selected related refusals ambiguous, so this first match does not
-        // introduce a declaration-order tie-break between them.
+    if let Some(first) = answering_refusal(ir, command, &selected) {
         selected = vec![first];
     }
     Ok(match selected.as_slice() {
@@ -949,31 +929,61 @@ fn selects<'c>(
     })
 }
 
+/// Of the branches `selected` for one request, in declaration order, the refusal that answers it
+/// before the others: the first of them the precedence plan reads in a phase before the accepting
+/// branches. The plan is built in the model's format, since a `when_related:` predicate refusal's
+/// phase depends on it (`ess/22` reads it at step 5 beside `wrong_state:` or several rows,
+/// beyond10x/ess#282, #283; a stored reference's from #304).
+///
+/// The rule covers the refusals a request selects by its input or by the related row: the
+/// input-guarded refusals and the `when_related:` predicate refusals; of two of them the plan reads
+/// the first declared first (validation keeps two selected related refusals ambiguous, so that
+/// adds no tie-break between them). Which branches answer first is the plan's alone. Among the
+/// accepting branches synthesis takes no order and asks for exactly one.
+fn answering_refusal<'c>(
+    ir: &EssIr,
+    command: &'c ResolvedCommand,
+    selected: &[&'c ResolvedOutcome],
+) -> Option<&'c ResolvedOutcome> {
+    let accepting = Phase::Accepting.position();
+    PrecedencePlan::new(command, ir.format())
+        .iter()
+        .filter(|(phase, _)| phase.position() < accepting)
+        .map(|(_, branch)| branch)
+        .filter(|branch| super::is_input_guarded_refusal(branch) || is_related_refusal(branch))
+        .find(|branch| selected.iter().any(|chosen| chosen.name == branch.name))
+}
+
+/// Whether `outcome` is a `when_related:` predicate refusal.
+fn is_related_refusal(outcome: &ResolvedOutcome) -> bool {
+    outcome.error.is_some()
+        && matches!(
+            outcome.condition,
+            ResolvedCondition::Related {
+                test: ResolvedRelatedTest::Holds { .. },
+                ..
+            }
+        )
+}
+
+/// Whether the command's present-related predicate refusals answer after the addressed row's held
+/// state and before every accepting branch, so the wrong-state family sends the overlap that
+/// tells the two apart ([`wrong_state_overlap`]).
+///
+/// On a stored reference (beyond10x/ess#304) and over several rows (#283) the row is read after the
+/// addressed row's existence and held state, and the wrong-state family arranges it there whether
+/// or not a refusal is declared. Otherwise it is the precedence plan's answer, built in the model's
+/// format: whether it reads a `when_related:` predicate refusal in a phase after the held state and
+/// before the accepting branches.
 pub(super) fn orders_present_related_refusal(ir: &EssIr, command: &ResolvedCommand) -> bool {
-    // A stored reference is read after the addressed row's existence and held state, and its
-    // present-related refusal answers before every accepting branch (beyond10x/ess#304).
-    if stored::field(command).is_some() {
+    if stored::field(command).is_some() || several(command) {
         return true;
     }
-    // Several rows: the first declared present-related refusal whose predicate holds answers
-    // across them, after the addressed row's existence and held state (beyond10x/ess#283).
-    if several(command) {
-        return true;
-    }
-    ir.format().major() >= ess_domain::system::FormatVersion::V22.major()
-        && command
-            .outcomes
-            .iter()
-            .any(|branch| matches!(branch.condition, ResolvedCondition::WrongState))
-        && command.outcomes.iter().any(|branch| {
-            branch.error.is_some()
-                && matches!(
-                    branch.condition,
-                    ResolvedCondition::Related {
-                        test: ResolvedRelatedTest::Holds { .. },
-                        ..
-                    }
-                )
+    let (held, accepting) = (Phase::HeldState.position(), Phase::Accepting.position());
+    PrecedencePlan::new(command, ir.format())
+        .iter()
+        .any(|(phase, branch)| {
+            is_related_refusal(branch) && held < phase.position() && phase.position() < accepting
         })
 }
 
@@ -1917,11 +1927,7 @@ fn selects_absent<'c>(
         }
         selected.push(branch);
     }
-    if let Some(first) = selected
-        .iter()
-        .copied()
-        .find(|branch| super::is_input_guarded_refusal(branch))
-    {
+    if let Some(first) = answering_refusal(ir, command, &selected) {
         selected = vec![first];
     }
     Ok(match selected.as_slice() {
