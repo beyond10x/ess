@@ -3,17 +3,51 @@ format: aep.planning-md/3
 id: story:negated-defined-optional-input-witnessed-beside-when-subject
 kind: story
 status: draft
-title: 'Synthesis witnesses when: not defined(<optional input>) on a command whose when_subject reads that input'
+title: The guard-negate mutant of a defined(<optional input>) guard beside when_subject is witnessed or scored
 relations:
 - serves: vision:O2
-revision: 2
+revision: 4
 ---
 ## Outcome
 
-A branch guarded by `when: not (defined(<optional input>))` on a command whose `when_subject:`
-reads the same optional input gets a synthesized witness, so `ess verify conform mutate` can kill
-its mutants. Today synthesis refuses it as `ESS-SYNTH-003` (no witness). Reported by an adopter on
-2026-10-08: a goal-satisfaction command whose `stale-revision` branch is guarded that way.
+`ess verify conform mutate` reports the `guard-negate` mutant of a branch guarded by
+`when: defined(<optional input>)` beside a `when_subject:` predicate that compares a stored field
+with that same input as unwitnessed: synthesis finds no scenario for the negated guard
+`not defined(<optional input>)` (`ESS-SYNTH-003`), so the mutant is neither killed nor shown
+equivalent. After this story synthesis witnesses the negated guard (the input absent, the subject
+arranged for the predicate) or the audit scores the mutant by a stated rule. Reported by an adopter
+on 2026-10-08. Shape, renamed:
+
+```yaml
+- name: demo.order.Fulfil
+  input:
+  - {name: order_id, type: Uuid}
+  - {name: receipt, type: String}
+  - {name: expected_version, type: Optional<Integer>}
+  outcomes:
+  - name: stale-version
+    when: defined(expected_version)
+    when_subject:
+      predicate:
+        all:
+        - state == Open
+        - version != input.expected_version
+    error: demo.order.OrderStateConflict
+  - name: applied
+    moves: demo.order.Order.fulfil
+    instance: order_id
+    emits: [demo.order.Fulfilled]
+    payload:
+      demo.order.Fulfilled: {order_id: input.order_id, receipt: input.receipt}
+    sets: {receipt: input.receipt}
+  - {name: wrong-state, wrong_state: true, error: demo.order.OrderStateConflict}
+  - {name: not-found, unknown_instance: true, error: demo.order.OrderNotFound}
+```
+
+Unwitnessed: `guard-negate/demo.order.Fulfil/stale-version` (`defined` becomes `not defined`).
+An open question for the design: with the input absent, `version != input.expected_version`
+compares against an absent value; whether that predicate holds decides whether the mutant is
+witnessable or equivalent.
 
 ## Fit review
 
