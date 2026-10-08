@@ -46,16 +46,49 @@ fn opens_as_repository(marker: &Path) -> io::Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::enclosing_checkout;
-    use ess_cli::TemporaryDirectory;
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
+    use std::path::{Path, PathBuf};
 
-    fn root(case: &str) -> TemporaryDirectory {
-        let root = TemporaryDirectory::create(&format!(
-            "ess-git-checkout-{case}-{}",
-            env!("CARGO_CRATE_NAME")
-        ))
-        .unwrap();
+    // `ess-xtask` compiles this file through `#[path]` without depending on `ess-cli`, so the
+    // drop guard lives here rather than reusing `ess_cli::TemporaryDirectory`.
+    struct Scratch(PathBuf);
+
+    impl Scratch {
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl std::ops::Deref for Scratch {
+        type Target = Path;
+
+        fn deref(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl AsRef<Path> for Scratch {
+        fn as_ref(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn root(case: &str) -> Scratch {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let sequence = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let root = Scratch(std::env::temp_dir().join(format!(
+            "ess-git-checkout-{case}-{}-{}-{sequence}",
+            env!("CARGO_CRATE_NAME"),
+            std::process::id()
+        )));
+        fs::create_dir(&root.0).unwrap();
         fs::create_dir(root.join("below")).unwrap();
         root
     }
