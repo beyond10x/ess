@@ -1,0 +1,412 @@
+domain: oidc.provider
+
+summary: >-
+  The OpenID Provider's side of the authorization code flow (§3.1): the authentication request at
+  the authorization endpoint (§3.1.2) and the token request that returns the ID token (§3.1.3).
+
+naming:
+  wire: provider
+  display: OpenID Provider
+
+types:
+  - name: oidc.provider.ClientId
+    naming:
+      summary: "The OAuth 2.0 client identifier, valid at the Authorization Server (§3.1.2.1)."
+    kind: newtype
+    of: String
+
+  - name: oidc.provider.RedirectUri
+    naming:
+      summary: "A redirection URI to which the response is sent (§3.1.2.1)."
+    kind: newtype
+    of: String
+  - name: oidc.provider.OpenIdScope
+    naming:
+      summary: "The scope of an OpenID Connect request: space-delimited values, `openid` among them (§3.1.2.1)."
+    kind: newtype
+    of: String
+    invariants:
+      - any:
+          - value == "openid"
+          - {value: {starts_with: "openid "}}
+          - {value: {ends_with: " openid"}}
+          - {value: {contains: " openid "}}
+
+  - name: oidc.provider.State
+    naming:
+      summary: "Opaque value the RP uses to keep state between request and callback (§3.1.2.1)."
+    kind: newtype
+    of: String
+
+  - name: oidc.provider.Nonce
+    naming:
+      summary: "String value that associates a Client session with an ID token and mitigates replay (§3.1.2.1)."
+    kind: newtype
+    of: String
+  - name: oidc.provider.ResponseType
+    naming:
+      summary: "The response_type of the authorization code flow (§3.1.2.1)."
+    kind: enum
+    variants: [code]
+
+  - name: oidc.provider.Prompt
+    naming:
+      summary: "Space-delimited, case-sensitive list of `none`, `login`, `consent`, `select_account` (§3.1.2.1)."
+    kind: newtype
+    of: String
+
+  - name: oidc.provider.AuthorizationCodeValue
+    naming:
+      summary: "The authorization code (RFC 6749 §4.1.2)."
+    kind: newtype
+    of: String
+
+  - name: oidc.provider.AccessTokenValue
+    naming:
+      summary: "The access token (RFC 6749 §5.1)."
+    kind: newtype
+    of: String
+  - name: oidc.provider.IdToken
+    naming:
+      summary: "The ID token: a JWT carrying the claims of §2, signed by the OP (§2, §3.1.3.3)."
+    kind: newtype
+    of: String
+
+  - name: oidc.provider.TokenType
+    naming:
+      summary: "The OAuth 2.0 token_type; `Bearer` unless another type was negotiated (§3.1.3.3)."
+    kind: newtype
+    of: String
+
+entities:
+  - name: oidc.provider.Client
+    naming:
+      summary: "A Client registered at the OpenID Provider, with its pre-registered redirection URIs (§3.1.2.1)."
+    identity:
+      name: client_id
+      type: oidc.provider.ClientId
+    fields:
+      - name: redirect_uris
+        type: List<oidc.provider.RedirectUri>
+    relations:
+      - name: authorization_codes
+        kind: owns
+        target: oidc.provider.AuthorizationCode
+        cardinality: many
+        via: client_id
+    lifecycle:
+      initial: Registered
+      states: [Registered]
+      terminal: [Registered]
+
+  - name: oidc.provider.AuthorizationCode
+    naming:
+      summary: "An authorization code, bound to the Client, the redirection URI and the nonce of the authentication request (§3.1.2.5, §3.1.3.2)."
+    identity:
+      name: code
+      type: oidc.provider.AuthorizationCodeValue
+    fields:
+      - name: client_id
+        type: oidc.provider.ClientId
+      - name: redirect_uri
+        type: oidc.provider.RedirectUri
+      - name: nonce
+        type: Optional<oidc.provider.Nonce>
+    lifecycle:
+      initial: Issued
+      states: [Issued, Redeemed]
+      terminal: [Redeemed]
+      transitions:
+        - name: redeem
+          from: [Issued]
+          to: Redeemed
+
+actors:
+  - name: oidc.provider.RelyingParty
+    may:
+      - oidc.provider.RegisterClient
+      - oidc.provider.Authenticate
+      - oidc.provider.ExchangeAuthorizationCode
+    naming:
+      summary: "The Relying Party (OAuth 2.0 client): it registers, sends the End-User to the authorization endpoint and redeems the code (§1.2, §3.1)."
+      display: Relying Party
+
+errors:
+  - name: oidc.provider.NotRedirected
+    summary: The client or redirection URI is invalid; the End-User is informed and the User Agent is not redirected.
+  - name: oidc.provider.InvalidRequest
+    naming: {wire: invalid_request}
+    summary: The request is missing a required parameter, has an invalid value or is otherwise malformed (RFC 6749 §4.1.2.1).
+    fields:
+      - {name: state, type: Optional<oidc.provider.State>}
+  - name: oidc.provider.LoginRequired
+    naming: {wire: login_required}
+    summary: The Authorization Server requires End-User authentication (§3.1.2.6).
+    fields:
+      - {name: state, type: Optional<oidc.provider.State>}
+  - name: oidc.provider.ConsentRequired
+    naming: {wire: consent_required}
+    summary: The Authorization Server requires End-User consent (§3.1.2.6).
+    fields:
+      - {name: state, type: Optional<oidc.provider.State>}
+  - name: oidc.provider.InteractionRequired
+    naming: {wire: interaction_required}
+    summary: The Authorization Server requires End-User interaction of some form (§3.1.2.6).
+    fields:
+      - {name: state, type: Optional<oidc.provider.State>}
+  - name: oidc.provider.AccountSelectionRequired
+    naming: {wire: account_selection_required}
+    summary: The End-User is required to select a session at the Authorization Server (§3.1.2.6).
+    fields:
+      - {name: state, type: Optional<oidc.provider.State>}
+  - name: oidc.provider.AccessDenied
+    naming: {wire: access_denied}
+    summary: The End-User or the Authorization Server denied the request (RFC 6749 §4.1.2.1).
+    fields:
+      - {name: state, type: Optional<oidc.provider.State>}
+  - name: oidc.provider.UnauthorizedClient
+    naming: {wire: unauthorized_client}
+    summary: The client may not request an authorization code this way (RFC 6749 §4.1.2.1).
+    fields:
+      - {name: state, type: Optional<oidc.provider.State>}
+  - name: oidc.provider.InvalidScope
+    naming: {wire: invalid_scope}
+    summary: The requested scope is invalid, unknown or malformed (RFC 6749 §4.1.2.1).
+    fields:
+      - {name: state, type: Optional<oidc.provider.State>}
+  - name: oidc.provider.ServerError
+    naming: {wire: server_error}
+    summary: The Authorization Server met an unexpected condition (RFC 6749 §4.1.2.1).
+    fields:
+      - {name: state, type: Optional<oidc.provider.State>}
+  - name: oidc.provider.TemporarilyUnavailable
+    naming: {wire: temporarily_unavailable}
+    summary: The Authorization Server is overloaded or in maintenance (RFC 6749 §4.1.2.1).
+    fields:
+      - {name: state, type: Optional<oidc.provider.State>}
+  - name: oidc.provider.InvalidGrant
+    naming: {wire: invalid_grant}
+    summary: The code is invalid, expired, used, issued to another client or for another redirection URI (RFC 6749 §5.2).
+  - name: oidc.provider.InvalidClient
+    naming: {wire: invalid_client}
+    summary: Client authentication failed (RFC 6749 §5.2).
+  - name: oidc.provider.InvalidTokenRequest
+    naming: {wire: invalid_request}
+    summary: The token request is malformed (RFC 6749 §5.2).
+
+events:
+  - name: oidc.provider.ClientRegistered
+    fields:
+      - {name: client_id, type: oidc.provider.ClientId}
+      - {name: redirect_uris, type: List<oidc.provider.RedirectUri>}
+
+  - name: oidc.provider.AuthorizationCodeIssued
+    fields:
+      - {name: code, type: oidc.provider.AuthorizationCodeValue}
+      - {name: client_id, type: oidc.provider.ClientId}
+      - {name: state, type: Optional<oidc.provider.State>, presence: omitted_when_absent}
+
+commands:
+  - name: oidc.provider.RegisterClient
+    naming:
+      summary: "Register a Client and its redirection URIs; how is outside this specification (Dynamic Client Registration, or static)."
+      wire: register-client
+      display: Register a client
+    input:
+      - {name: redirect_uris, type: List<oidc.provider.RedirectUri>}
+    response:
+      - {name: client_id, type: oidc.provider.ClientId}
+    outcomes:
+      - name: registered
+        creates: oidc.provider.Client
+        instance: client_id
+        sets:
+          redirect_uris: input.redirect_uris
+        emits: [oidc.provider.ClientRegistered]
+        payload:
+          oidc.provider.ClientRegistered:
+            client_id: {response: client_id}
+            redirect_uris: input.redirect_uris
+        returns: true
+  - name: oidc.provider.Authenticate
+    naming:
+      summary: "An authentication request with response_type=code (§3.1.2.1); the OP authenticates the End-User and obtains an authorization decision (§3.1.2.3, §3.1.2.4)."
+      wire: authenticate
+      display: Authenticate the End-User
+    input:
+      - {name: scope, type: oidc.provider.OpenIdScope}
+      - {name: response_type, type: oidc.provider.ResponseType}
+      - {name: client_id, type: oidc.provider.ClientId}
+      - {name: redirect_uri, type: oidc.provider.RedirectUri}
+      - {name: state, type: Optional<oidc.provider.State>}
+      - {name: nonce, type: Optional<oidc.provider.Nonce>}
+      - {name: prompt, type: Optional<oidc.provider.Prompt>}
+      - {name: max_age, type: Optional<Integer>}
+    response:
+      - {name: code, type: oidc.provider.AuthorizationCodeValue}
+      - {name: state, type: Optional<oidc.provider.State>, presence: omitted_when_absent}
+    outcomes:
+      - name: unknown-client
+        when_related:
+          via: input.client_id
+          exists: false
+        error: oidc.provider.NotRedirected
+      - name: redirect-uri-not-registered
+        when_related:
+          via: input.client_id
+          predicate:
+            not:
+              exists:
+                in: redirect_uris
+                as: uri
+                that: uri == input.redirect_uri
+        error: oidc.provider.NotRedirected
+      - name: prompt-none-with-other-values
+        when:
+          all:
+            - {prompt: {defined: true}}
+            - {prompt: {starts_with: "none "}}
+        error: oidc.provider.InvalidRequest
+        payload:
+          oidc.provider.InvalidRequest: {state: input.state}
+
+      - name: prompt-none-between-other-values
+        when:
+          all:
+            - {prompt: {defined: true}}
+            - {prompt: {contains: " none "}}
+        error: oidc.provider.InvalidRequest
+        payload:
+          oidc.provider.InvalidRequest: {state: input.state}
+
+      - name: prompt-other-values-then-none
+        when:
+          all:
+            - {prompt: {defined: true}}
+            - {prompt: {ends_with: " none"}}
+        error: oidc.provider.InvalidRequest
+        payload:
+          oidc.provider.InvalidRequest: {state: input.state}
+
+      - name: invalid-request
+        external: the request is missing a required parameter, repeats one, has an invalid value or is otherwise malformed (§3.1.2.2, RFC 6749 §4.1.2.1)
+        error: oidc.provider.InvalidRequest
+        payload:
+          oidc.provider.InvalidRequest: {state: input.state}
+      - name: login-required
+        external: the End-User is not authenticated and cannot be, either because prompt=none forbids interaction or re-authentication failed (§3.1.2.1, §3.1.2.3)
+        error: oidc.provider.LoginRequired
+        payload:
+          oidc.provider.LoginRequired: {state: input.state}
+
+      - name: consent-required
+        external: consent is needed and cannot be obtained, prompt=none included (§3.1.2.1, §3.1.2.6)
+        error: oidc.provider.ConsentRequired
+        payload:
+          oidc.provider.ConsentRequired: {state: input.state}
+
+      - name: interaction-required
+        external: prompt=none and the request cannot complete without a user interface (§3.1.2.6)
+        error: oidc.provider.InteractionRequired
+        payload:
+          oidc.provider.InteractionRequired: {state: input.state}
+
+      - name: account-selection-required
+        external: the End-User must select a session and did not, or cannot with prompt=none (§3.1.2.1, §3.1.2.6)
+        error: oidc.provider.AccountSelectionRequired
+        payload:
+          oidc.provider.AccountSelectionRequired: {state: input.state}
+
+      - name: access-denied
+        external: the End-User or the Authorization Server denied the request (§3.1.2.4, RFC 6749 §4.1.2.1)
+        error: oidc.provider.AccessDenied
+        payload:
+          oidc.provider.AccessDenied: {state: input.state}
+
+      - name: unauthorized-client
+        external: the client may not use the code flow (RFC 6749 §4.1.2.1)
+        error: oidc.provider.UnauthorizedClient
+        payload:
+          oidc.provider.UnauthorizedClient: {state: input.state}
+
+      - name: invalid-scope
+        external: the requested scope is invalid, unknown or malformed (RFC 6749 §4.1.2.1)
+        error: oidc.provider.InvalidScope
+        payload:
+          oidc.provider.InvalidScope: {state: input.state}
+
+      - name: server-error
+        external: the Authorization Server met an unexpected condition (RFC 6749 §4.1.2.1)
+        error: oidc.provider.ServerError
+        payload:
+          oidc.provider.ServerError: {state: input.state}
+
+      - name: temporarily-unavailable
+        external: the Authorization Server is overloaded or in maintenance (RFC 6749 §4.1.2.1)
+        error: oidc.provider.TemporarilyUnavailable
+        payload:
+          oidc.provider.TemporarilyUnavailable: {state: input.state}
+      - name: issued
+        creates: oidc.provider.AuthorizationCode
+        instance: code
+        sets:
+          client_id: input.client_id
+          redirect_uri: input.redirect_uri
+          nonce: input.nonce
+        emits: [oidc.provider.AuthorizationCodeIssued]
+        payload:
+          oidc.provider.AuthorizationCodeIssued:
+            code: {response: code}
+            client_id: input.client_id
+            state: input.state
+        returns: true
+        summary: The End-User authenticated and consented; the code goes to the redirection URI (§3.1.2.5).
+  - name: oidc.provider.ExchangeAuthorizationCode
+    naming:
+      summary: "Exchange the authorization code for an access token and an ID token (§3.1.3)."
+      wire: exchange-code
+      display: Exchange the authorization code
+    input:
+      - {name: code, type: oidc.provider.AuthorizationCodeValue}
+      - {name: redirect_uri, type: oidc.provider.RedirectUri}
+      - {name: client_id, type: oidc.provider.ClientId}
+    response:
+      - {name: access_token, type: oidc.provider.AccessTokenValue}
+      - {name: token_type, type: oidc.provider.TokenType}
+      - {name: id_token, type: oidc.provider.IdToken}
+      - {name: expires_in, type: Optional<Integer>, presence: omitted_when_absent}
+    outcomes:
+      - name: unknown-code
+        unknown_instance: true
+        error: oidc.provider.InvalidGrant
+
+      - name: issued-to-another-client
+        when_subject:
+          predicate: client_id != input.client_id
+        error: oidc.provider.InvalidGrant
+      - name: redirect-uri-mismatch
+        when_subject:
+          predicate: redirect_uri != input.redirect_uri
+        error: oidc.provider.InvalidGrant
+
+      - name: invalid-client
+        external: client authentication failed or is missing where required (§3.1.3.2, §9)
+        error: oidc.provider.InvalidClient
+
+      - name: code-expired
+        external: the authorization code expired (RFC 6749 §4.1.2)
+        error: oidc.provider.InvalidGrant
+
+      - name: already-redeemed
+        wrong_state: true
+        error: oidc.provider.InvalidGrant
+
+      - name: invalid-request
+        external: the token request is malformed (RFC 6749 §5.2)
+        error: oidc.provider.InvalidTokenRequest
+
+      - name: issued
+        moves: oidc.provider.AuthorizationCode.redeem
+        instance: code
+        returns: true
+        summary: An access token and an ID token (§3.1.3.3).

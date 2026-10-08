@@ -1,0 +1,19 @@
+components:
+  - component: openid-provider
+    summary: >-
+      Authenticates the End-User at the authorization endpoint and issues an ID token with the
+      access token at the token endpoint (§3.1).
+    owns:
+      domains:
+        - oidc.provider
+    accepts:
+      commands:
+        - oidc.provider.RegisterClient
+        - oidc.provider.Authenticate
+        - oidc.provider.ExchangeAuthorizationCode
+    publishes:
+      events:
+        - oidc.provider.ClientRegistered
+        - oidc.provider.AuthorizationCodeIssued
+    reached_by: network
+
