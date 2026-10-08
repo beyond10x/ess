@@ -6,7 +6,7 @@ status: draft
 title: Synthesize subject-fact scenarios for an entity no view observes, noting the unobserved fields
 relations:
 - serves: vision:O2
-revision: 1
+revision: 2
 ---
 ## Outcome
 
@@ -134,6 +134,8 @@ observes. Requested in https://github.com/beyond10x/ess/issues/496.
   exists" holds because a covering view is still used whenever one exists.
 - Spec first: the change goes into `docs/design/cross-record-and-stored-field-guards.md` (Observation
   paragraphs, lines 120-126 and 261-272) before code. No `ess/N`, IR or suite-format change.
+
+- 2026-10-08: `synthesize/subject_fact.rs` changed on `integrate/selection-plan` (32296a1e92, stored-row synthesis reads the precedence plan) before this story starts. The unit branches from that commit, lands in its own wave after `integrate/selection-plan` reaches `main`, and does not touch `synthesize/related_guard.rs`, `related_guard/stored.rs` or `synthesize/row_set.rs`.
 
 ## Acceptance
 
