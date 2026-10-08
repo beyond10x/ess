@@ -627,8 +627,9 @@ enum ConformCommand {
         /// (`--scenarios` does that, independently). Ordinary arrangement is tried first; a row is
         /// established only for a generated obligation no bounded arrangement reaches, and the
         /// real command and assertions follow it. Any seed selects suite/42 (or /43 with
-        /// `--suite-format 5`), or suite/44 (/45) where an act also claims one event more than
-        /// once, and records its source, row and uses.
+        /// `--suite-format 5`), suite/44 (/45) where an act also claims one event more than once, or
+        /// suite/46 (/47) where a response reaches a constrained String newtype, and records its
+        /// source, row and uses.
         #[arg(
             long = "synthesis-seed",
             num_args = 2,
