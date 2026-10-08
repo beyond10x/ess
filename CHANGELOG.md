@@ -19,6 +19,11 @@
 
 ### Changed
 
+- `ess specify validate` refuses a domain, command or view wire name that contains `/`, or is `.`
+  or `..`, as `path_segment_wire_name` (`ESS-DOMAIN-012`, `ESS-COMMAND-012`, `ESS-VIEW-012`), naming
+  the declaration and the wire name. Such a name was copied into every generated HTTP path as it
+  was, so it could address another route. Views are refused whether or not a network component
+  serves them. Dots inside a name stay accepted.
 - Validation refuses a refusal whose `when:` always holds (`when: true` beside `error:`), as
   `ESS-COMMAND-004` naming the branch, with the hint to give it the condition it refuses on or to
   drop `when:` and declare it as the default refusal. Such a refusal had no one step in the
@@ -31,6 +36,10 @@
 
 ### Fixed
 
+- The test suites remove every scratch directory they create under `TMPDIR` when its guard
+  drops, panics and read-only fixtures included; directories a process-lifetime cache holds live
+  under `CARGO_TARGET_TMPDIR`. An `ess-xtask` check runs a set of suites with an empty `TMPDIR` and
+  names any prefix left behind.
 - Synthesis no longer overflows the stack on a command with two identity guards over a
   self-reference. A search for a row beside the arranged entity is cut only where it re-enters
   itself, and the nearest Optional reference is left out before synthesis refuses; models that
