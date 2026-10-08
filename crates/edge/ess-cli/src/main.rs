@@ -846,7 +846,7 @@ enum ConformCommand {
     /// no scored scenario killed is inconclusive when a scenario it changed was not scored;
     /// otherwise equivalent (ESS-MUTATE-005) when it left its outcome's guard satisfied by no
     /// input, decided only for equality, membership and truth tests of input fields against
-    /// literals and presence tests of input fields, and beside a when_subject: predicate when no
+    /// literals and presence tests of input fields, and beside a `when_subject:` predicate when no
     /// input it admits leaves that predicate able to hold on any row (a comparison with an absent
     /// input is unknown); otherwise unwitnessed (ESS-MUTATE-004) when its suite gained synthesis refusals
     /// the baseline does not have, when it is on an outcome whose scenario the baseline refused,
