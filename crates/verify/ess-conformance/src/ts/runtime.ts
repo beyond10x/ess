@@ -7262,6 +7262,7 @@ export function admitShape(value: Node, major = 21): void {
         case 'duration':
         case 'uuid':
         case 'bytes':
+        case 'json':
           break;
         default:
           throw new Error('unknown primitive');
@@ -9505,6 +9506,7 @@ export function admitAccessorShape(value: Node, depth: number): void {
       case 'duration':
       case 'uuid':
       case 'bytes':
+      case 'json':
         break;
       default:
         throw new Error('unsupported accessor primitive shape');

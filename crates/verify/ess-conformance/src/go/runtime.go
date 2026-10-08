@@ -4812,7 +4812,7 @@ func admitShape(value any, major int) error {
 		}
 		if kind == "primitive" {
 			switch f["kind"] {
-			case "string", "boolean", "integer", "decimal", "timestamp", "duration", "uuid", "bytes":
+			case "string", "boolean", "integer", "decimal", "timestamp", "duration", "uuid", "bytes", "json":
 			default:
 				return fmt.Errorf("unknown primitive")
 			}
@@ -6663,7 +6663,7 @@ func admitAccessorShape(value any, depth int) error {
 	}
 	if f["kind"] == "primitive" {
 		switch f["name"] {
-		case "string", "boolean", "integer", "decimal", "timestamp", "duration", "uuid", "bytes":
+		case "string", "boolean", "integer", "decimal", "timestamp", "duration", "uuid", "bytes", "json":
 		default:
 			return fmt.Errorf("unsupported accessor primitive shape")
 		}

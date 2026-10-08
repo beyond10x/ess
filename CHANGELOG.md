@@ -62,6 +62,10 @@
 
 ### Fixed
 
+- The Go and TypeScript runners that `ess verify conform synthesize --target go|typescript`
+  generates admit a suite whose shapes hold `json`. A model with a `Json` field synthesized such a
+  suite, and both runners refused it at admission with `suite admission: <Command>/outcome/<name>:
+  unknown primitive`. A `json` value is compared structurally, as the Rust runner compares it.
 - The test suites remove every scratch directory they create under `TMPDIR` when its guard
   drops, panics and read-only fixtures included; directories a process-lifetime cache holds live
   under `CARGO_TARGET_TMPDIR`. An `ess-xtask` check runs a set of suites with an empty `TMPDIR` and
