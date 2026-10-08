@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:browser-response-conformance
 kind: story
-status: active
+status: implemented
 title: Support response contracts in browser conformance products
 relations:
 - decomposes: epic:downstream-reported-gaps
@@ -70,10 +70,11 @@ scope:
   path: docs/design/review-replay-subset.md
 - confidence: cited
   path: docs/design/typed-response-outcome-payloads.md
-revision: 35
+revision: 36
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T16:17:34Z", actor: "human:timo", revision: 34, executor: "agent:codex-ess-bundle-resume-20261003"}
 - {from: "proposed", to: "active", at: "2026-10-03T16:17:35Z", actor: "human:timo", revision: 35, executor: "agent:codex-ess-bundle-resume-20261003"}
+- {from: "active", to: "implemented", at: "2026-10-08T09:55:08Z", actor: "human:timo", revision: 36, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

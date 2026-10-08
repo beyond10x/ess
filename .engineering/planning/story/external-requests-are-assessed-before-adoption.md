@@ -2,14 +2,15 @@
 format: aep.planning-md/3
 id: story:external-requests-are-assessed-before-adoption
 kind: story
-status: active
+status: archived
 title: An adopter request is assessed for fit before it is adopted
 relations:
 - serves: vision:O2
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T13:07:51Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-09-30T13:07:51Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "archived", at: "2026-10-08T09:55:13Z", actor: "human:timo", revision: 4}
 ---
 ## Outcome
 

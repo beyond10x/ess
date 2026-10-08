@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:go-normalization-pattern-semantics
 kind: story
-status: active
+status: archived
 title: Qualify bounded ECMA-262 patterns in Go normalization
 relations:
 - derived_from: story:source-pinned-data-normalization
@@ -34,10 +34,11 @@ scope:
   path: docs/design/source-pinned-data-normalization.md
 - confidence: cited
   path: website/docs/guides/generate-artifacts.md
-revision: 19
+revision: 20
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-06T07:58:25Z", actor: "agent:specification-planner", revision: 9, imported: true}
 - {from: "proposed", to: "active", at: "2026-09-06T07:58:25Z", actor: "agent:specification-planner", revision: 10, imported: true}
+- {from: "active", to: "archived", at: "2026-10-08T09:55:13Z", actor: "human:timo", revision: 20, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}}
 ---
 ## Evidence
 

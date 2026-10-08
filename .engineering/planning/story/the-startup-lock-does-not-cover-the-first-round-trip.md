@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-startup-lock-does-not-cover-the-first-round-trip
 kind: story
-status: active
+status: implemented
 title: The startup lock does not cover the first round trip
 relations:
 - serves: vision:O2
@@ -13,10 +13,11 @@ scope:
   path: crates/edge/ess-cli/tests/coverage_browser.rs
 - confidence: cited
   path: crates/edge/ess-cli/tests/support/browser.rs
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T11:44:59Z", actor: "human:timo", revision: 6, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T11:44:59Z", actor: "human:timo", revision: 7, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
+- {from: "active", to: "implemented", at: "2026-10-08T09:55:06Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":2}}}
 ---
 # The startup lock does not cover the first round trip
 

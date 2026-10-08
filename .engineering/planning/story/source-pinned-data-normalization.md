@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:source-pinned-data-normalization
 kind: story
-status: active
+status: archived
 title: Source-pinned checked data normalization across Go Rust and TypeScript
 relations:
 - serves: vision:O2
@@ -95,10 +95,11 @@ scope:
   path: website/docs/reference/cli.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 15
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-05T21:05:39Z", actor: "agent:specification-planner", revision: 3, imported: true}
 - {from: "proposed", to: "active", at: "2026-09-05T21:05:40Z", actor: "agent:specification-planner", revision: 4, imported: true}
+- {from: "active", to: "archived", at: "2026-10-08T09:55:13Z", actor: "human:timo", revision: 16, decided_on: {"recorded":{"test_result":4}}}
 ---
 ## Evidence
 
