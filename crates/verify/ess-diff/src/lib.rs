@@ -28,7 +28,7 @@
 //! model, so a change to the renderer looks like a change to the system, and a semantic change that
 //! this renderer happens not to project looks like nothing at all.
 //!
-//! # Ten construct families, and what predicate comparison is allowed to mean
+//! # Eleven construct families, and what predicate comparison is allowed to mean
 //!
 //! Wave 5's first slice compared **system, types, events, errors, actors and components** — the six
 //! whose comparison is a walk over values that are equal or are not — and excluded entities,
@@ -53,8 +53,10 @@
 //! type's invariants), the statement is part of the canonical form too: a documentation projection
 //! quotes it, so a reworded statement over an unchanged predicate is a model that moved.
 //!
-//! What still has no family — conversions, workloads, and each domain's naming — stays behind the
-//! fail-closed equality check in [`mod@crate::impact`] (mechanism 6), owed whole when it moves.
+//! A domain arriving or going away is the eleventh, `domain` (`ess-diff/15`, beyond10x/ess#469).
+//! What still has no family — conversions, workloads, and the naming of a domain both revisions
+//! declare — stays behind the fail-closed equality check in [`mod@crate::impact`] (mechanism 6),
+//! owed whole when it moves.
 //!
 //! # Four relations, and everything else is `Changed`
 //!
@@ -76,9 +78,10 @@
 //!
 //! A relation says which way a set moved, not who is hurt by the move. [`classified()`] adds a
 //! [`ChangeCompatibility`] to every change — breaking, unknown or compatible for callers, readers
-//! and history, a type change read through where the type is used — and writes `ess-diff/14`.
-//! [`Gate`] fails on it, minus the changes an acknowledgements document bound to the same pair
-//! names. [`diff()`] is unchanged and stays below `/14`; [`mod@crate::compatibility`] has the rules.
+//! and history, a type change read through where the type is used — and writes `ess-diff/14` or
+//! later. [`Gate`] fails on it, minus the changes an acknowledgements document bound to the same
+//! pair names. [`diff()`] stays below `/14` unless a change only `/14` or later can carry is in it;
+//! [`mod@crate::compatibility`] has the rules.
 //!
 //! # One refusal
 //!
@@ -136,8 +139,8 @@ pub mod render;
 
 pub use change::{
     ActorChange, BindingChange, ChangeCategory, ChangeId, CommandChange, ComponentChange,
-    EntityChange, ErrorChange, EventChange, SemanticChange, SemanticRelation, SystemChange,
-    TypeChange, ViewChange,
+    DomainChange, EntityChange, ErrorChange, EventChange, SemanticChange, SemanticRelation,
+    SystemChange, TypeChange, ViewChange,
 };
 pub use compatibility::{
     ChangeCompatibility, Compatibility, Dimension, FailOn, Gate, GateOutcome, TypeUse,

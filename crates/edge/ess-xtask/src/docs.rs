@@ -156,6 +156,7 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-diff", 12, Some("0.46.1")),
     ("ess-diff", 13, Some("0.53.0")),
     ("ess-diff", 14, Some("0.53.0")),
+    ("ess-diff", 15, None),
     ("ess-diff-acknowledgements", 1, Some("0.53.0")),
     ("ess-conformance", 1, Some("0.1.0")),
     ("ess-conformance", 2, Some("0.7.0")),
@@ -308,6 +309,9 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-output-state", 3, Some("0.56.0")),
     ("ess-cli", 1, Some("0.21.0")),
     ("ess-cli-plan", 1, Some("0.21.0")),
+    // A binding may omit the `config` and `output` globals (beyond10x/ess#481).
+    ("ess-cli", 2, None),
+    ("ess-cli-plan", 2, None),
     ("ess-cli-artifacts", 1, Some("0.21.0")),
     ("ess-cli-generation", 1, Some("0.21.0")),
     ("ess-execution-authority", 1, Some("0.21.0")),

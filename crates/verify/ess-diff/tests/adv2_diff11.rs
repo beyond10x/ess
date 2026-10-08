@@ -155,16 +155,19 @@ fn every_writer_below_11_refuses_a_prefix_change_and_13_is_unsupported() {
             other => panic!("ess-diff/{major}: {other:?}"),
         }
     }
-    let fifteen = DeltaFormat::parse("ess-diff/15").unwrap();
-    assert!(!fifteen.is_supported());
+    // The first format past the newest this build admits, read from the constant so a format added
+    // later does not turn this into a test of a supported one.
+    let newest = *ess_diff::SUPPORTED_DELTA_FORMATS.iter().max().unwrap();
+    let next = DeltaFormat::parse(&format!("ess-diff/{}", newest + 1)).unwrap();
+    assert!(!next.is_supported());
     assert!(matches!(
-        prefix.to_canonical_json_for(fifteen),
+        prefix.to_canonical_json_for(next),
         Err(DeltaWriteRefusal::UnsupportedFormat { .. })
     ));
     let json = prefix.to_canonical_json();
-    let refusal = read(&json.replace("\"ess-diff/11\"", "\"ess-diff/15\""))
-        .expect_err("a /15 document is refused");
-    assert!(refusal.contains("ess-diff/14"), "{refusal}");
+    let refusal = read(&json.replace("\"ess-diff/11\"", &format!("\"{next}\"")))
+        .expect_err("a document past the newest format is refused");
+    assert!(refusal.contains(&format!("ess-diff/{newest}")), "{refusal}");
 }
 
 /// The text rendering carries the prefix change beside the cause change, in the canonical order.

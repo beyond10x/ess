@@ -114,7 +114,7 @@ pages' `npm` steps in `tutorial_page.rs`, which need the npm registry; unset, th
 `go` steps need no network and run wherever `go` is on `PATH`.
 
 For a pull request, CI owns the full gate. Before pushing, run only the crates the change touches
-— `cargo fmt --all --check`, `cargo clippy -p <crate> --all-targets --locked -- -D warnings`,
+— `task fmt-check` (not `cargo fmt --all --check`, which also rewrites the byte-pinned generated crates), `cargo clippy -p <crate> --all-targets --locked -- -D warnings`,
 `cargo test -p <crate> --locked`, and `task ci-lint` when a workflow, Taskfile or public API
 changed — then push and read the lanes. Run the whole `task check` locally only for a release tag
 (below) or to reproduce a lane that failed in CI.
@@ -150,6 +150,17 @@ refusal saying the IR is not the compiled model means `ess-ui`'s pinned ESS rele
 workspace compile the example differently: move the `ess-ui` pin to a commit built on this release.
 
 Before pushing a release tag, run `task check`, `task web-check`, `task test-browser-product` and `task test-slow-probes` on the commit being tagged; those Firefox tests and slow probes are ignored in the CI test shards.
+`task test` alone builds about 45 GiB into the tree's `target/` (44.8 GiB measured on 2026-10-07 at
+0.56.0), so start the local release bar only with that much free disk beyond what other work on the
+machine needs, and watch free space during the step rather than only between steps.
+Set `ESS_TYPES_NODE` to a `node_modules` outside the checkout that holds `@types/node` at the version
+`ci.yml` installs (`npm install --prefix <dir> @types/node@26.3.0`): without it the TypeScript cases
+in `adversary_287_pass1` fail with `TS2688: Cannot find type definition file for 'node'` and
+`cargo test` stops at that target, so the binaries after it never run.
+Put the JavaScript tools `ci.yml` installs globally on `PATH` too (`typescript@6.0.3`,
+`prettier@3.8.1`, `esbuild@0.28.2`, for example `npm install --prefix <dir>` and `<dir>/node_modules/.bin`
+first on `PATH`): without `esbuild` the generated React app's `npm run dev` and `npm run preview`
+cases in `ess-ui-react` exit 127 and `cargo test` stops there.
 Consumer coverage is not part of that bar while it is parked (revision 3, above).
 The release workflow runs the reusable gate, the WebAssembly realization check and native
 packaging concurrently at that exact commit, then retains a read-only preparation artifact only

@@ -95,6 +95,9 @@ pub(super) enum Fresh {
     CreatedAgainIn(usize),
     /// The `nth` row a two-call segment stores before sending its identity again.
     Stored(usize),
+    /// The `nth` candidate for a further boundary row of a creation the input names
+    /// (beyond10x/ess#471). [`boundary_identity`] skips one the scenario already sent.
+    Boundary(usize),
 }
 
 impl Fresh {
@@ -103,7 +106,7 @@ impl Fresh {
             Self::Created => 0,
             Self::CreatedAgain => 1,
             Self::CreatedAgainIn(run) => FRESH_SLOTS - 16 + run.min(15),
-            Self::Stored(nth) => 2 + nth.min(FRESH_SLOTS - 3),
+            Self::Stored(nth) | Self::Boundary(nth) => 2 + nth.min(FRESH_SLOTS - 3),
         }
     }
 
@@ -170,7 +173,7 @@ fn identity_at(
     // creation in the same run has no identity of its own (beyond10x/ess#287).
     if super::singleton::names_the_one_row(ir, command, field) {
         return match fresh {
-            Fresh::CreatedAgain | Fresh::CreatedAgainIn(_) => {
+            Fresh::CreatedAgain | Fresh::CreatedAgainIn(_) | Fresh::Boundary(_) => {
                 Err(super::singleton::second_row(command, field))
             }
             Fresh::Created | Fresh::Stored(_) => Ok(mine),
@@ -186,6 +189,28 @@ fn identity_at(
         }
     }
     Ok(mine)
+}
+
+/// The identity a further boundary row of a creation the input names is sent with
+/// (beyond10x/ess#471): the first [`Fresh::Boundary`] value that keeps `input` on its branch and
+/// that this scenario has not `sent` yet. `creates:` never replaces the instance an identity
+/// already names, so a row sent the plain witness's identity again asks for a branch the model does
+/// not describe.
+///
+/// `None` where the type has no such value — a singleton's one row, a `Boolean` — and the row is
+/// then not sent.
+pub(super) fn boundary_identity(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    field: &str,
+    input: &BTreeMap<String, Node>,
+    sent: &BTreeSet<Node>,
+) -> Option<Node> {
+    (0..FRESH_SLOTS - 2).find_map(|nth| {
+        identity_at(ir, command, field, Fresh::Boundary(nth), input)
+            .ok()
+            .filter(|identity| !sent.contains(identity))
+    })
 }
 
 /// The input a creation selected by existence is sent with in its own scenario: the one that
@@ -852,6 +877,12 @@ struct Segment {
     source: BTreeSet<EssSemanticRef>,
 }
 
+/// The segment, or `None` where `declared` is an input-guarded refusal no input sent for the
+/// stored identity selects: its guard is decided by the identity alone, which every stored row
+/// refutes, so no target can answer existence before it and the plain send witnesses it alone
+/// (beyond10x/ess#479). Sent the stored identity over the refused input, `{item_id: ""}` became
+/// `{item_id: item_id-1048595}`, which `item_id == ""` refutes. Where another input keeps the guard
+/// with the stored identity — `item_id == "" or title == ""` sent `title: ""` — that one is sent.
 fn segment(
     models: &InvocationModels<'_>,
     command: &ResolvedCommand,
@@ -860,7 +891,7 @@ fn segment(
     declared: &ResolvedOutcome,
     fresh: Fresh,
     actors: &BTreeMap<QualifiedName, ActorRef>,
-) -> Result<Segment, RefusalCause> {
+) -> Result<Option<Segment>, RefusalCause> {
     let ir = models.arrangement;
     let (creating, field) = creating;
     let creator = &ir.commands()[&command.name];
@@ -878,8 +909,16 @@ fn segment(
     let mut first = creating_input(ir, creator, creating, at, actors)?;
     let identity = identity_at(ir, creator, field, fresh, &first)?;
     super::set_at(&mut first, field, Some(identity.clone()));
-    let mut second = second;
-    super::set_at(&mut second, field, Some(identity));
+    let second = if declared.condition == ResolvedCondition::ExistingInstance {
+        let mut second = second;
+        super::set_at(&mut second, field, Some(identity));
+        second
+    } else {
+        match super::reach_pinned(ir, command, declared, second, field, &identity)? {
+            Some(second) => second,
+            None => return Ok(None),
+        }
+    };
 
     let driver = Driver {
         command: creator,
@@ -954,7 +993,7 @@ fn segment(
         steps.extend(part.steps);
         source.extend(part.source);
     }
-    Ok(Segment { steps, source })
+    Ok(Some(Segment { steps, source }))
 }
 
 fn recreated(
@@ -1127,7 +1166,9 @@ fn existing_instance(
         if super::related_guard::uses(command) {
             super::related_guard::point_at_missing(ir, command, &mut second)?;
         }
-        let part = segment(
+        // The existence refusal is sent the stored identity whatever its input, so a segment is
+        // always built for it.
+        if let Some(part) = segment(
             models,
             command,
             (outcome, field),
@@ -1135,9 +1176,10 @@ fn existing_instance(
             declared,
             fresh,
             actors,
-        )?;
-        steps.extend(part.steps);
-        source.extend(part.source);
+        )? {
+            steps.extend(part.steps);
+            source.extend(part.source);
+        }
     }
     let text = format!(
         "`{}` sent twice for one identity takes `{}` the second time, on every creating path, and \
@@ -1153,7 +1195,9 @@ fn existing_instance(
 /// identity, the refused input sent for that identity, and the refusal required with no event and
 /// the row unchanged — so a target answering existence first is caught. Where the half cannot be
 /// built the scenario is withdrawn and refused, rather than filed claiming the precedence it does
-/// not witness.
+/// not witness. Where no input sent for a stored identity selects the refusal — a guard decided by
+/// the identity alone, which no stored row meets — there is no half to build, and the plain send
+/// stands alone (beyond10x/ess#479).
 fn refusals_on_a_stored_row(
     models: &InvocationModels<'_>,
     command: &ResolvedCommand,
@@ -1194,7 +1238,7 @@ fn refusals_on_a_stored_row(
             )
         });
         match built {
-            Ok(part) => {
+            Ok(Some(part)) => {
                 let scenario = suite
                     .scenarios
                     .get_mut(&id)
@@ -1202,6 +1246,8 @@ fn refusals_on_a_stored_row(
                 scenario.steps.extend(part.steps);
                 scenario.source.extend(part.source);
             }
+            // No stored identity selects the refusal: its plain send is its whole witness.
+            Ok(None) => {}
             Err(cause) => {
                 suite.scenarios.remove(&id);
                 refusals.push(Refusal::about(&id, cause));

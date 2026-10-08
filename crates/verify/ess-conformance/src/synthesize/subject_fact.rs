@@ -3049,7 +3049,7 @@ pub(super) fn toward_moves(
     if read.is_empty() {
         return Vec::new();
     }
-    hinted(ir, entity, creator, &read)
+    hinted(ir, entity, creator, &read, Distinction::PLAIN)
         .ok()
         .flatten()
         .unwrap_or_default()
@@ -3066,6 +3066,7 @@ fn hinted(
     entity: &EntityHandle,
     driver: &Driver<'_>,
     hints: &[Predicate],
+    at: Distinction,
 ) -> Result<Option<Vec<BTreeMap<String, Node>>>, RefusalCause> {
     let mapping = mapped(driver.outcome);
     // A comparison with the command's input (ess/15) is decided by the input the branch under
@@ -3107,7 +3108,7 @@ fn hinted(
         .filter_map(|branch| input_guard(&branch.condition))
         .collect();
     guards.extend(translated.iter());
-    candidates(ir, driver.command, &guards, Distinction::PLAIN)
+    candidates(ir, driver.command, &guards, at)
         .map(Some)
         .map_err(RefusalCause::NoWitness)
 }
@@ -3783,7 +3784,7 @@ fn creations(
     }
     // And the rows whose stored collections hold several entries, where a quantifier over one
     // compares its elements with the input (beyond10x/ess#240).
-    let mut inputs = hinted(ir, entity, creator, hints)?.unwrap_or_default();
+    let mut inputs = hinted(ir, entity, creator, hints, distinction)?.unwrap_or_default();
     inputs.extend(spread(ir, entity, creator, hints, distinction));
     for input in inputs {
         if input_selects(ir, creator.command, creator.outcome, &input)? {
@@ -4080,7 +4081,7 @@ fn successors(
             return out;
         };
         let mut inputs = inputs_for(ir, driver.command, entity, arrangement).unwrap_or_default();
-        if let Ok(Some(more)) = hinted(ir, entity, driver, hints) {
+        if let Ok(Some(more)) = hinted(ir, entity, driver, hints, Distinction::PLAIN) {
             inputs.extend(more);
         }
         for input in inputs {
@@ -4140,7 +4141,7 @@ fn successors(
     }
     // A move writing a stored collection a quantifier compares with the input is also offered
     // with several entries (beyond10x/ess#240), as a creation is.
-    let mut inputs = hinted(ir, entity, driver, hints)
+    let mut inputs = hinted(ir, entity, driver, hints, Distinction::PLAIN)
         .ok()
         .flatten()
         .unwrap_or_default();
