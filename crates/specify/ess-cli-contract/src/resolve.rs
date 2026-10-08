@@ -471,13 +471,19 @@ pub fn compile(model: &EssIr, binding: &Binding) -> Result<CompiledBinding, Erro
     if binding.commands.is_empty() || binding.callables.is_empty() {
         return Err(refuse("a CLI needs commands and callables"));
     }
+    let format = binding.plan_format()?;
+    let globals = binding.globals()?;
     let mut flags = BTreeSet::from(["help".to_owned(), "version".to_owned()]);
-    for flag in [
-        &binding.globals.config,
-        &binding.globals.state,
-        &binding.globals.output,
+    for (name, flag) in [
+        ("config", globals.config.as_deref()),
+        ("state", Some(globals.state.as_str())),
+        ("output", globals.output.as_deref()),
     ] {
-        reserve(&mut flags, flag)?;
+        // An omitted global is no flag at all, so its name stays free for a command's option.
+        if let Some(flag) = flag {
+            reserve(&mut flags, flag)
+                .map_err(|error| refuse(format!("globals.{name}: {error}")))?;
+        }
     }
     let mut callables = BTreeMap::new();
     let mut obligations = Vec::new();
@@ -545,10 +551,10 @@ pub fn compile(model: &EssIr, binding: &Binding) -> Result<CompiledBinding, Erro
     }
     commands.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(CompiledBinding(Plan {
-        format: "ess-cli-plan/1".to_owned(),
+        format: format.to_owned(),
         binary: binding.binary.clone(),
         about: binding.about.clone(),
-        globals: binding.globals.clone(),
+        globals,
         callables,
         commands,
         obligations,
