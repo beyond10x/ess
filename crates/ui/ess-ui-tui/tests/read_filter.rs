@@ -1,7 +1,24 @@
 //! Client row filtering over a shared raw adapter result.
 use ess_ui_tui::{App, DataAdapter, Lifecycle, Options, ReadRequest, ReadResult};
 use serde_yaml::Value;
-use std::{cell::Cell, collections::BTreeMap, rc::Rc, time::Duration};
+use std::{cell::Cell, collections::BTreeMap, path::PathBuf, rc::Rc, time::Duration};
+
+/// A state directory `<TMPDIR>/<name>-<pid>`, removed when dropped, panics included.
+struct Scratch(PathBuf);
+
+impl Scratch {
+    fn new(name: &str) -> Self {
+        let path = std::env::temp_dir().join(format!("{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&path);
+        Self(path)
+    }
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
 
 struct Rows(Rc<Cell<usize>>);
 impl DataAdapter for Rows {
@@ -55,11 +72,12 @@ pages:
 #[test]
 fn read_filters_keep_distinct_rows_share_one_request_and_decide_empty() {
     let calls = Rc::new(Cell::new(0));
+    let state = Scratch::new("ess-read-filter-distinct");
     let mut app = App::with_adapter(
         ess_ui::load_str(&document()).unwrap(),
         Box::new(Rows(calls.clone())),
         vec![],
-        Options::new(std::env::temp_dir().join("ess-read-filter-distinct")),
+        Options::new(state.0.clone()),
     )
     .unwrap();
     app.advance(Duration::from_secs(1));
@@ -93,11 +111,12 @@ fn unchecked_invalid_filter_fails_closed() {
         "actor.id == row.id",
     ] {
         let source = document().replace("row.group == one", filter);
+        let state = Scratch::new("ess-read-filter-invalid");
         let mut app = App::with_adapter(
             ess_ui::load_str(&source).unwrap(),
             Box::new(Rows(Rc::new(Cell::new(0)))),
             vec![],
-            Options::new(std::env::temp_dir().join("ess-read-filter-invalid")),
+            Options::new(state.0.clone()),
         )
         .unwrap();
         app.advance(Duration::from_secs(1));
@@ -108,7 +127,7 @@ fn unchecked_invalid_filter_fails_closed() {
     }
 }
 
-fn live_app(name: &str, filter: &str, events: &str) -> App {
+fn live_app(name: &str, filter: &str, events: &str) -> (Scratch, App) {
     let source = document()
         .replace("pages:\n  p:", "channels: {updates: {carries: {events: [t.Changed]}, direction: server_to_client, delivery: every_event, resume: refetch}}\npages:\n  p:")
         .replace("filter: row.group == one}, columns: [label]}", &format!("filter: '{filter}'}}, columns: [label], live: {{channel: updates, effect: insert_or_patch, only_if: row.label != blocked, when_paged_away: count_new}}}}"));
@@ -117,20 +136,22 @@ fn live_app(name: &str, filter: &str, events: &str) -> App {
         &serde_yaml::from_str(&format!("{{events: [{events}]}}")).unwrap(),
     )
     .unwrap();
-    let mut options = Options::new(std::env::temp_dir().join(name));
+    let state = Scratch::new(name);
+    let mut options = Options::new(state.0.clone());
     options.page_size = 1;
-    App::with_adapter(
+    let app = App::with_adapter(
         ess_ui::load_str(&source).unwrap(),
         Box::new(Rows(Rc::new(Cell::new(0)))),
         vec![script],
         options,
     )
-    .unwrap()
+    .unwrap();
+    (state, app)
 }
 
 #[test]
 fn read_filter_hides_patched_rows_and_a_later_partial_patch_restores_them() {
-    let mut app = live_app("ess-filter-patch", "row.group == one", "{at: 2s, event: t.Changed, payload: {id: a, group: two}}, {at: 3s, event: t.Changed, payload: {id: a, group: one}}, {at: 4s, event: t.Changed, payload: {id: c, group: two}}, {at: 5s, event: t.Changed, payload: {id: d, group: one, label: blocked}}");
+    let (_state, mut app) = live_app("ess-filter-patch", "row.group == one", "{at: 2s, event: t.Changed, payload: {id: a, group: two}}, {at: 3s, event: t.Changed, payload: {id: a, group: one}}, {at: 4s, event: t.Changed, payload: {id: c, group: two}}, {at: 5s, event: t.Changed, payload: {id: d, group: one, label: blocked}}");
     app.advance(Duration::from_secs(1));
     assert_eq!(app.rows("first").len(), 1);
     app.advance(Duration::from_secs(1));
@@ -151,7 +172,7 @@ fn read_filter_hides_patched_rows_and_a_later_partial_patch_restores_them() {
 
 #[test]
 fn read_filter_paged_away_counts_only_post_event_matching_rows() {
-    let mut app = live_app("ess-filter-paged", "row.group != bad", "{at: 2s, event: t.Changed, payload: {id: c, group: bad}}, {at: 3s, event: t.Changed, payload: {id: d, group: one}}, {at: 4s, event: t.Changed, payload: {id: d, group: bad}}, {at: 5s, event: t.Changed, payload: {id: d, group: one}}");
+    let (_state, mut app) = live_app("ess-filter-paged", "row.group != bad", "{at: 2s, event: t.Changed, payload: {id: c, group: bad}}, {at: 3s, event: t.Changed, payload: {id: d, group: one}}, {at: 4s, event: t.Changed, payload: {id: d, group: bad}}, {at: 5s, event: t.Changed, payload: {id: d, group: one}}");
     app.advance(Duration::from_secs(1));
     app.focus_section("first");
     app.keys("n");
@@ -174,11 +195,12 @@ fn read_filter_state_change_reuses_rows_and_prunes_bulk_selection() {
         .replace("header: {total: first}", "state: {pick: {type: string, class: component_state, default: one}, selected: {type: {list: string}, class: selection}}\n    header: {total: first, actions: [{name: flip, label: Flip, sets: {state.pick: two}}]}")
         .replace("filter: row.group == one}, columns: [label]}", "filter: row.group == state.pick}, columns: [label], selection: multiple, bulk_actions: [{name: apply, does: t.Bulk, bind: {ids: state.selected}}]}");
     let calls = Rc::new(Cell::new(0));
+    let state = Scratch::new("ess-filter-selection");
     let mut app = App::with_adapter(
         ess_ui::load_str(&source).unwrap(),
         Box::new(Rows(calls.clone())),
         vec![],
-        Options::new(std::env::temp_dir().join("ess-filter-selection")),
+        Options::new(state.0.clone()),
     )
     .unwrap();
     app.advance(Duration::from_secs(1));
@@ -220,11 +242,12 @@ fn read_filter_prunes_key_only_rows_without_collapsing_them_to_null_ids() {
     let source = document()
         .replace("header: {total: first}", "state: {pick: {type: string, class: component_state, default: one}, selected: {type: {list: string}, class: selection}}\n    header: {total: first, actions: [{name: flip, label: Flip, sets: {state.pick: two}}]}")
         .replace("filter: row.group == one}, columns: [label]}", "filter: row.group == state.pick, key: item_id}, columns: [label], selection: multiple, bulk_actions: [{name: apply, does: t.Bulk, bind: {ids: state.selected}}]}");
+    let state = Scratch::new("ess-filter-selection-key");
     let mut app = App::with_adapter(
         ess_ui::load_str(&source).unwrap(),
         Box::new(KeyRows(Rc::new(Cell::new(0)))),
         vec![],
-        Options::new(std::env::temp_dir().join("ess-filter-selection-key")),
+        Options::new(state.0.clone()),
     )
     .unwrap();
     app.advance(Duration::from_secs(1));
@@ -245,11 +268,12 @@ fn read_filter_page_params_narrow_rows_without_becoming_request_params() {
         "filter: row.group == params.id}, columns",
     );
     let calls = Rc::new(Cell::new(0));
+    let state = Scratch::new("ess-filter-page-param");
     let mut app = App::with_adapter(
         ess_ui::load_str(&source).unwrap(),
         Box::new(Rows(calls.clone())),
         vec![],
-        Options::new(std::env::temp_dir().join("ess-filter-page-param")),
+        Options::new(state.0.clone()),
     )
     .unwrap();
     app.open_page("p", &[("id", "one")]);
@@ -281,11 +305,12 @@ fn dynamic_menu_keeps_matching_rows_and_refuses_invalid_predicates() {
             "label: row.label, filter: row.group == one",
             &format!("label: row.label, filter: {filter}"),
         );
+        let state = Scratch::new("ess-filter-menu");
         let mut app = App::with_adapter(
             ess_ui::load_str(&source).unwrap(),
             Box::new(Rows(Rc::new(Cell::new(0)))),
             vec![],
-            Options::new(std::env::temp_dir().join("ess-filter-menu")),
+            Options::new(state.0.clone()),
         )
         .unwrap();
         app.advance(Duration::from_secs(1));
