@@ -73,7 +73,11 @@ input fields, by trying every combination of each field's values that could matt
 two, an enum's variants, and for any other field its literals and one value none of them equals,
 plus absence for an `Optional` field, up to 64 combinations. A `precedence-swap` of two branches
 no input selects together, such as `defined(x)` and `not defined(x)`, is equivalent on the same
-rule. An
+rule. So is a guard mutant whose `when:` sits beside a `when_subject:` predicate that can hold
+only by comparing a stored field with an input field the mutated `when:` leaves absent, as
+`not defined(expected_version)` beside `version != input.expected_version` does: a comparison with
+an absent input is unknown on every row, never true, and the entry names the `when:` and the
+stored predicate together. An
 ordering, a text match, a quantifier, or a guard with more combinations is not decided, and such a
 mutant is scored as before. A mutant with a changed scenario that was not scored stays
 *inconclusive*: that scenario might have killed it.

@@ -2033,9 +2033,11 @@ fn outcome_site(class: MutantClass, id: &str) -> Option<(&str, &str)> {
 /// The guard a guard mutant left its outcome, rendered, where no input satisfies it and the
 /// baseline's guard at the same outcome is satisfied by one: the mutant made the outcome dead.
 ///
-/// `None` for any other mutation, where either guard is not a plain input guard, where the
-/// baseline's guard is not satisfied either (the mutant did not make it dead), and wherever
-/// [`satisfiable`] cannot decide.
+/// `None` for any other mutation, where either guard is not a plain input guard or a `when:`
+/// beside a `when_subject:` predicate, where the baseline's guard is not satisfied either (the
+/// mutant did not make it dead), and wherever [`satisfiable`] or [`satisfiable_beside`] cannot
+/// decide. Beside `when_subject:`, the guard named is the mutant's `when:` and the stored guard
+/// together: no input it admits leaves the stored guard able to hold on any row.
 ///
 /// For a `precedence-swap`, the overlap of the two guards in the baseline, where no input satisfies
 /// it: the two branches never compete, so their order decides nothing.
@@ -2067,6 +2069,16 @@ fn unsatisfiable_guard(baseline: &EssIr, mutant: &EssIr, mutation: &Mutation) ->
     else {
         return None;
     };
+    // A `when:` beside `when_subject:`: dead where no input it admits leaves the stored guard able
+    // to hold on any row, rendered as the two together.
+    if let Some((before, was, stored)) = guards_beside_subject(baseline, command, outcome) {
+        if !satisfiable_beside(baseline, before, was, stored)? {
+            return None;
+        }
+        let (after, now, stored) = guards_beside_subject(mutant, command, outcome)?;
+        return (!satisfiable_beside(mutant, after, now, stored)?)
+            .then(|| Predicate::All(vec![now.clone(), stored.clone()]).to_string());
+    }
     let (before, was) = guard_of(baseline, command, outcome)?;
     if !satisfiable(baseline, before, was)? {
         return None;
@@ -2183,7 +2195,98 @@ fn satisfiable(
     command: &ess_compiler::ir::ResolvedCommand,
     guard: &Predicate,
 ) -> Option<bool> {
-    decide(ir, command, guard, true)
+    decide(ir, command, guard, true, &|_| true)
+}
+
+/// The command of `ir` named `command`, and the input guard and stored guard of its outcome
+/// `outcome`, where that branch is selected by both: a `when:` beside a `when_subject:` predicate.
+fn guards_beside_subject<'ir>(
+    ir: &'ir EssIr,
+    command: &str,
+    outcome: &str,
+) -> Option<(
+    &'ir ess_compiler::ir::ResolvedCommand,
+    &'ir Predicate,
+    &'ir Predicate,
+)> {
+    let found = ir
+        .commands()
+        .values()
+        .find(|it| it.name.to_string() == command)?;
+    let branch = found
+        .outcomes
+        .iter()
+        .find(|it| it.name.to_string() == outcome)?;
+    match &branch.condition {
+        ess_compiler::ir::ResolvedCondition::SubjectPredicate {
+            predicate,
+            input: Some(guard),
+        } => Some((found, guard, predicate)),
+        _ => None,
+    }
+}
+
+/// [`satisfiable`] for a branch selected by an input guard together with a stored guard over its
+/// subject, or `None` where that is not decided here.
+///
+/// The input guard is decided as [`satisfiable`] decides it, and a combination satisfying it
+/// counts only where the stored guard can still hold on some row with the input fields that
+/// combination leaves out absent ([`may_hold`]). A comparison reading such a field is `Unknown`
+/// whatever the row holds, never `True`: `when: not defined(expected_version)` beside
+/// `when_subject: version != input.expected_version` is satisfied on no row. Every stored leaf
+/// that reads no absent field is taken to hold or fail as a row needs, so the answer can only err
+/// towards satisfiable.
+fn satisfiable_beside(
+    ir: &EssIr,
+    command: &ess_compiler::ir::ResolvedCommand,
+    guard: &Predicate,
+    stored: &Predicate,
+) -> Option<bool> {
+    decide(ir, command, guard, true, &|absent| {
+        may_hold(stored, absent, true)
+    })
+}
+
+/// Whether `predicate` over a subject row and the command's input can come out `wanted` on some
+/// row, with every input field `absent` names left out. Kleene: a value comparison reading an
+/// absent input field is `Unknown`, which is neither, and `defined` of one is `False`. Any other
+/// leaf, and any leaf reading no absent field, may be either.
+fn may_hold(
+    predicate: &Predicate,
+    absent: &[ess_primitives::facts::FactPath],
+    wanted: bool,
+) -> bool {
+    use ess_primitives::predicate::Operand;
+    let reads_absent = |path: &ess_primitives::facts::FactPath| {
+        let segments = path.segments();
+        segments.len() > 1
+            && segments[0] == ess_domain::command::subject_fact::INPUT_NAMESPACE
+            && absent.iter().any(|left| left.segments() == &segments[1..])
+    };
+    match predicate {
+        Predicate::Always => wanted,
+        Predicate::Never => !wanted,
+        Predicate::All(children) if wanted => {
+            children.iter().all(|child| may_hold(child, absent, true))
+        }
+        Predicate::All(children) => children.iter().any(|child| may_hold(child, absent, false)),
+        Predicate::Any(children) if wanted => {
+            children.iter().any(|child| may_hold(child, absent, true))
+        }
+        Predicate::Any(children) => children.iter().all(|child| may_hold(child, absent, false)),
+        Predicate::Not(inner) => may_hold(inner, absent, !wanted),
+        Predicate::Defined(path) if reads_absent(path) => !wanted,
+        Predicate::Compare { left, right, .. }
+            if [left, right]
+                .iter()
+                .all(|operand| matches!(operand, Operand::Fact(_) | Operand::Literal(_))) =>
+        {
+            ![left, right]
+                .iter()
+                .any(|operand| matches!(operand, Operand::Fact(path) if reads_absent(path)))
+        }
+        _ => true,
+    }
 }
 
 /// [`satisfiable`], over values a caller of `ir` can send: an enum leaf ranges over its variants
@@ -2198,15 +2301,18 @@ pub fn satisfiable_by_declared_values(
     command: &ess_compiler::ir::ResolvedCommand,
     guard: &Predicate,
 ) -> Option<bool> {
-    decide(ir, command, guard, false)
+    decide(ir, command, guard, false, &|_| true)
 }
 
-/// [`satisfiable`], adding guard literals to an enum leaf's domain only where `outside_variants`.
+/// [`satisfiable`], adding guard literals to an enum leaf's domain only where `outside_variants`,
+/// and counting a combination that satisfies `guard` only where `admits` accepts the `Optional`
+/// leaves it leaves out.
 fn decide(
     ir: &EssIr,
     command: &ess_compiler::ir::ResolvedCommand,
     guard: &Predicate,
     outside_variants: bool,
+    admits: &dyn Fn(&[ess_primitives::facts::FactPath]) -> bool,
 ) -> Option<bool> {
     use ess_domain::expression::ScalarKind;
     use ess_primitives::facts::{FactPath, FactValue};
@@ -2294,17 +2400,21 @@ fn decide(
     let mut undecided = false;
     for index in 0..combinations {
         let mut rest = index;
+        let mut absent: Vec<FactPath> = Vec::new();
         let facts: ess_primitives::facts::FactStore = domains
             .iter()
             .filter_map(|(path, domain)| {
                 let value = domain[rest % domain.len()].clone();
                 rest /= domain.len();
+                if value.is_none() {
+                    absent.push(path.clone());
+                }
                 value.map(|value| (path.clone(), value))
             })
             .collect();
         match guard.evaluate(&facts) {
-            ess_primitives::predicate::Truth::True => return Some(true),
-            ess_primitives::predicate::Truth::False => {}
+            ess_primitives::predicate::Truth::True if admits(&absent) => return Some(true),
+            ess_primitives::predicate::Truth::True | ess_primitives::predicate::Truth::False => {}
             ess_primitives::predicate::Truth::Unknown => undecided = true,
         }
     }
@@ -2384,7 +2494,8 @@ pub enum Verdict {
     /// changed has no scenario, so what is left passing is not a finding that the suite misses it.
     Unwitnessed,
     /// `ESS-MUTATE-005`: no scored scenario failed, and the mutant left its outcome's guard
-    /// satisfied by no input, and no scenario it changed went unscored.
+    /// satisfied by no input — beside a `when_subject:` guard, by no input on any row — and no
+    /// scenario it changed went unscored.
     /// The rule it wrote is dead by construction, so no scenario of its suite can take it. Also
     /// a `precedence-swap` whose two branches give an identical answer (beyond10x/ess#517), on
     /// the same terms: either order answers alike wherever both guards hold.
