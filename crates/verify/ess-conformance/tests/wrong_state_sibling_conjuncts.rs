@@ -1,5 +1,5 @@
 //! A wrong-state scenario refutes each sibling branch through any one of its conjuncts
-//! (https://github.com/beyond10x/ess/issues/516).
+//! (<https://github.com/beyond10x/ess/issues/516>).
 //!
 //! `Receive` moves a `Request` from `Awaiting` and declares, beside that move and its
 //! `wrong_state` branch, three siblings that each combine an input guard with a subject guard:
