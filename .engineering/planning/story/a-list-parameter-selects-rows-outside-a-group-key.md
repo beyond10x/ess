@@ -11,7 +11,16 @@ refs:
   reference: beyond10x/ess#492
 relations:
 - serves: vision:O2
-revision: 2
+scope:
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/aggregate.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/aggregate_group_selection.rs
+- confidence: cited
+  path: docs/design/aggregate-group-selection.md
+revision: 6
 ---
 ## Outcome
 

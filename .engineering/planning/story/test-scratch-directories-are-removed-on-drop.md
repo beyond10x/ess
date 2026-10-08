@@ -6,7 +6,32 @@ status: draft
 title: Every test that creates a TMPDIR directory removes it on drop, panics included
 relations:
 - serves: vision:O2
-revision: 1
+scope:
+- confidence: cited
+  path: crates/edge/ess-cli/src/git_checkout.rs
+- confidence: cited
+  path: crates/edge/ess-cli/src/observed_bindings.rs
+- confidence: cited
+  path: crates/edge/ess-cli/tests
+- confidence: cited
+  path: crates/edge/ess-xtask/src
+- confidence: cited
+  path: crates/edge/ess-xtask/tests
+- confidence: cited
+  path: crates/generate/ess-gen/tests/asyncapi_transport.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/go/selection.rs
+- confidence: cited
+  path: crates/generate/ess-synth/tests/nested_response_wasm.rs
+- confidence: cited
+  path: crates/infra/infra-analyze/tests/analysis.rs
+- confidence: cited
+  path: crates/specify/ess-composition/tests/composition.rs
+- confidence: cited
+  path: crates/ui/ess-ui-tui/tests/read_filter.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests
+revision: 13
 ---
 ## Finding
 

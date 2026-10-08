@@ -6,7 +6,16 @@ status: draft
 title: A wire name that a generated path segment reads refuses '/', '.' and '..'
 relations:
 - serves: vision:O2
-revision: 1
+scope:
+- confidence: inferred
+  path: crates/generate/ess-gen/tests
+- confidence: inferred
+  path: crates/generate/ess-synth/tests
+- confidence: inferred
+  path: crates/specify/ess-domain/src/wire.rs
+- confidence: inferred
+  path: crates/specify/ess-primitives/src/error.rs
+revision: 5
 ---
 ## Finding
 
