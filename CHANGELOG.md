@@ -78,7 +78,9 @@
   reverse, or one under `not:`) is killed. A per-child input none of the guard's own candidates
   provides is solved for directly, so an `any:` of four three-way `all:`s is witnessed at every
   child; one no search finds is an `ESS-SYNTH-022` refusal beside the scenario that names it,
-  rather than a child skipped silently. `ess verify conform mutate` decides `defined` tests of
+  rather than a child skipped silently. A child that cannot decide the connective alone is not
+  refused: its text literals contradict the input it would need (`starts_with "AB"` beside
+  `starts_with "A"`, which the longer prefix implies). `ess verify conform mutate` decides `defined` tests of
   `Optional` input fields, so a `precedence-swap` of two branches no input selects together, such
   as `defined(x)` and `not defined(x)`, is `equivalent` rather than `survived`. Suites for guards
   with only top-level connectives are unchanged (https://github.com/beyond10x/ess/issues/501).

@@ -396,6 +396,102 @@ pub fn exhausts(ir: &EssIr, command: &ResolvedCommand, guards: &[&Predicate]) ->
     regions <= MAX_CANDIDATES
 }
 
+/// Whether `goal` is shown to hold for no input by the text literals it tests one leaf against:
+/// `true` only where that is certain, `false` wherever it is not shown.
+///
+/// The goal is read as a conjunction — `all` children, `not any` children negated, `not not`
+/// dropped — and every other conjunct (an `any`, a `not all`) is left out, which only widens what
+/// the rest admits. Per fact path, over its text literals:
+///
+/// 1. a negated `starts_with x` beside a positive `starts_with y` where `y` starts with `x`, and
+///    the same for `ends_with`: every text that begins (ends) with `y` begins (ends) with `x`;
+/// 2. a negated `contains x` beside a positive `starts_with`, `ends_with` or `contains y` where `y`
+///    contains `x`;
+/// 3. an equality with a text literal `v` beside a string operator on the same path that `v`
+///    decides the other way. Only where `v` names no instant, since a declared `Timestamp`
+///    compares by the instant and not by the spelling.
+///
+/// A goal [`exhausts`] cannot show empty, because a string operator is not on its ladder, is
+/// still empty when this holds: a connective's child that cannot decide it alone is no gap.
+pub fn unsatisfiable(goal: &Predicate) -> bool {
+    /// One string operator on a path, with its literal, and whether it is negated.
+    struct Matched<'p> {
+        path: &'p FactPath,
+        op: TextOp,
+        literal: &'p str,
+        positive: bool,
+    }
+    fn conjuncts<'p>(
+        predicate: &'p Predicate,
+        positive: bool,
+        matched: &mut Vec<Matched<'p>>,
+        equal: &mut Vec<(&'p FactPath, &'p str)>,
+    ) {
+        match predicate {
+            Predicate::All(children) if positive => {
+                for child in children {
+                    conjuncts(child, true, matched, equal);
+                }
+            }
+            Predicate::Any(children) if !positive => {
+                for child in children {
+                    conjuncts(child, false, matched, equal);
+                }
+            }
+            Predicate::Not(inner) => conjuncts(inner, !positive, matched, equal),
+            Predicate::TextMatch {
+                path,
+                op,
+                value: TextOperand::Literal(FactValue::Text(literal)),
+            } => matched.push(Matched {
+                path,
+                op: *op,
+                literal,
+                positive,
+            }),
+            Predicate::Compare {
+                left,
+                op: CompareOp::Eq,
+                right,
+                kind: ess_primitives::predicate::CompareKind::Value,
+            } if positive => {
+                if let (Operand::Fact(path), Operand::Literal(FactValue::Text(literal)))
+                | (Operand::Literal(FactValue::Text(literal)), Operand::Fact(path)) =
+                    (left, right)
+                {
+                    if Rfc3339Instant::parse_rfc3339(literal).is_none()
+                        && CurrentTime::parse(literal).is_none()
+                    {
+                        equal.push((path, literal));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    let (mut matched, mut equal) = (Vec::new(), Vec::new());
+    conjuncts(goal, true, &mut matched, &mut equal);
+    let implied = matched.iter().filter(|held| held.positive).any(|held| {
+        matched
+            .iter()
+            .filter(|refuted| !refuted.positive && refuted.path == held.path)
+            .any(|refuted| match refuted.op {
+                TextOp::StartsWith | TextOp::EndsWith if refuted.op == held.op => {
+                    refuted.op.holds(held.literal, refuted.literal)
+                }
+                TextOp::Contains => held.literal.contains(refuted.literal),
+                TextOp::StartsWith | TextOp::EndsWith => false,
+            })
+    });
+    implied
+        || equal.iter().any(|(path, value)| {
+            matched
+                .iter()
+                .filter(|tested| tested.path == *path)
+                .any(|tested| tested.op.holds(value, tested.literal) != tested.positive)
+        })
+}
+
 /// The exact midpoint of every two adjacent distinct numeric literals, lowest first.
 fn midpoints(literals: &[FactValue]) -> Vec<Node> {
     let mut numbers: Vec<Number> = literals.iter().filter_map(FactValue::as_number).collect();
@@ -5203,5 +5299,108 @@ mod tests {
             1,
             "one base witness and nothing else"
         );
+    }
+
+    /// The string operator `op` of `path` against `literal`.
+    fn matched(at: &str, op: TextOp, literal: &str) -> Predicate {
+        Predicate::TextMatch {
+            path: path(at),
+            op,
+            value: TextOperand::Literal(FactValue::Text(literal.to_owned())),
+        }
+    }
+
+    fn not(predicate: Predicate) -> Predicate {
+        Predicate::Not(Box::new(predicate))
+    }
+
+    fn equals(at: &str, literal: &str) -> Predicate {
+        Predicate::Compare {
+            left: Operand::Fact(path(at)),
+            op: CompareOp::Eq,
+            right: Operand::Literal(FactValue::Text(literal.to_owned())),
+            kind: ess_primitives::predicate::CompareKind::Value,
+        }
+    }
+
+    #[test]
+    fn a_goal_whose_text_literals_imply_a_refuted_one_is_unsatisfiable() {
+        use TextOp::{Contains, EndsWith, StartsWith};
+        let empty = [
+            // The adversary's goal: `starts_with "AB"` implies `starts_with "A"`.
+            vec![
+                not(matched("sku", StartsWith, "A")),
+                matched("sku", StartsWith, "AB"),
+                matched("sku", EndsWith, "0"),
+            ],
+            vec![
+                not(matched("sku", EndsWith, "0")),
+                matched("sku", EndsWith, "10"),
+            ],
+            vec![
+                not(matched("sku", Contains, "B")),
+                matched("sku", StartsWith, "AB"),
+            ],
+            vec![
+                not(matched("sku", Contains, "B")),
+                matched("sku", Contains, "ABC"),
+            ],
+            vec![equals("sku", "AB"), not(matched("sku", StartsWith, "A"))],
+            vec![equals("sku", "AB"), matched("sku", Contains, "Z")],
+            vec![
+                not(Predicate::Any(vec![matched("sku", StartsWith, "A")])),
+                matched("sku", StartsWith, "AB"),
+            ],
+        ];
+        for goal in empty {
+            let goal = Predicate::All(goal);
+            assert!(unsatisfiable(&goal), "{goal}");
+        }
+    }
+
+    /// Each of these is satisfiable, so it must never be read as empty: a refusal for an
+    /// unwitnessed child still fires where the bounded search misses it.
+    #[test]
+    fn a_satisfiable_goal_is_never_read_as_unsatisfiable() {
+        use TextOp::{Contains, EndsWith, StartsWith};
+        let satisfiable = [
+            // `A0` holds `starts_with "A"` and not `starts_with "AB"`.
+            vec![
+                not(matched("sku", StartsWith, "AB")),
+                matched("sku", StartsWith, "A"),
+            ],
+            // `XAB` ends with `AB` and does not start with `A`: different operators.
+            vec![
+                not(matched("sku", StartsWith, "A")),
+                matched("sku", EndsWith, "AB"),
+            ],
+            vec![
+                not(matched("sku", Contains, "B")),
+                matched("sku", StartsWith, "A"),
+            ],
+            // Different paths.
+            vec![
+                not(matched("code", StartsWith, "A")),
+                matched("sku", StartsWith, "AB"),
+            ],
+            // Under `any`, the refuted literal need not hold.
+            vec![
+                Predicate::Any(vec![
+                    not(matched("sku", StartsWith, "A")),
+                    matched("code", StartsWith, "C"),
+                ]),
+                matched("sku", StartsWith, "AB"),
+            ],
+            vec![equals("sku", "AB"), matched("sku", StartsWith, "A")],
+            // A declared `Timestamp` compares by the instant, so the spelling decides nothing.
+            vec![
+                equals("at", "2026-01-01T00:00:00Z"),
+                not(matched("at", StartsWith, "2026")),
+            ],
+        ];
+        for goal in satisfiable {
+            let goal = Predicate::All(goal);
+            assert!(!unsatisfiable(&goal), "{goal}");
+        }
     }
 }

@@ -584,3 +584,68 @@ fn a_per_child_row_no_search_finds_is_refused_beside_its_scenario() {
             .collect::<Vec<_>>()
     );
 }
+
+/// `all: [s > k, s > j]` beside `c == true` in an `any`, over three text inputs: the guarded row
+/// where `c == true` alone holds is `s = "a"`, `k = "b"`, `c = true`, so the child is satisfiable,
+/// but neither of the two candidates the bounded search tries is that row, and two facts compared
+/// is a goal neither the exhaustive search nor the text-literal implication decides.
+const SATISFIABLE_UNSOLVED_CHILD: &str = r#"format: ess/23
+system: text
+version: v1
+domain: text.word
+
+components:
+  - component: word-server
+    owns:
+      domains: [text.word]
+    accepts:
+      commands: [text.word.Sort]
+    reached_by: network
+
+errors:
+  - name: text.word.Late
+
+commands:
+  - name: text.word.Sort
+    input:
+      - {name: s, type: String}
+      - {name: k, type: String}
+      - {name: j, type: String}
+      - {name: c, type: Boolean}
+    outcomes:
+      - name: late
+        when:
+          any:
+            - all: ["s > k", "s > j"]
+            - "c == true"
+        error: text.word.Late
+      - name: sorted
+        accepts: nothing
+"#;
+
+/// A per-child row that exists but that the bounded search does not find is still refused with
+/// `ESS-SYNTH-022`: deciding a goal empty by its text literals leaves a satisfiable one alone.
+#[test]
+fn a_satisfiable_per_child_row_the_search_misses_is_still_refused() {
+    let (files, texts) = parsed(SATISFIABLE_UNSOLVED_CHILD);
+    let ir = mutate::compile(files, &texts).expect("the fixture compiles");
+    let synthesis = ess_conformance::synthesize::synthesize(&ir);
+    let refused: Vec<String> = synthesis
+        .refusals
+        .iter()
+        .filter(|refusal| refusal.code().to_string() == "ESS-SYNTH-022")
+        .map(ToString::to_string)
+        .collect();
+    assert!(
+        refused
+            .iter()
+            .any(|refusal| refusal
+                .contains("`(not ((s > {fact: k} and s > {fact: j})) and c == true)`")),
+        "every refusal: {:#?}",
+        synthesis
+            .refusals
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+    );
+}
