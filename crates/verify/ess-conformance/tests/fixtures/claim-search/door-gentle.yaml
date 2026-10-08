@@ -1,0 +1,74 @@
+format: ess/20
+system: demo
+version: v1
+domain: demo.doors
+summary: A door closed gently, or jammed when its motor stalls.
+types:
+  - {name: demo.doors.DoorId, kind: newtype, of: Uuid}
+  - {name: demo.doors.Push, kind: enum, variants: [Gentle, Rough]}
+entities:
+  - name: demo.doors.Door
+    identity: {name: door_id, type: demo.doors.DoorId}
+    fields:
+      - {name: label, type: String}
+    lifecycle:
+      initial: Open
+      states: [Open, Closed, Jammed]
+      terminal: [Closed, Jammed]
+      transitions:
+        - {name: close, from: [Open], to: Closed}
+        - {name: jam, from: [Open], to: Jammed}
+actors:
+  - name: demo.doors.Keeper
+    may: [demo.doors.Install, demo.doors.Operate]
+commands:
+  - name: demo.doors.Install
+    input:
+      - {name: label, type: String}
+    outcomes:
+      - name: installed
+        creates: demo.doors.Door
+        instance: door_id
+        sets: {label: input.label}
+        emits: [demo.doors.Installed]
+        payload:
+          demo.doors.Installed: {door_id: {generated: true}}
+  - name: demo.doors.Operate
+    input:
+      - {name: door_id, type: demo.doors.DoorId}
+      - {name: push, type: demo.doors.Push}
+    outcomes:
+      - name: shut
+        when_subject_state: Open
+        when: push == Gentle
+        moves: demo.doors.Door.close
+        instance: door_id
+        emits: [demo.doors.Shut]
+        payload:
+          demo.doors.Shut: {door_id: input.door_id}
+      - name: stalled
+        external: the motor stalls
+        moves: demo.doors.Door.jam
+        instance: door_id
+        emits: [demo.doors.Stalled]
+        payload:
+          demo.doors.Stalled: {door_id: input.door_id}
+      - name: refused
+        error: demo.doors.NotOpen
+events:
+  - name: demo.doors.Installed
+    fields: [{name: door_id, type: demo.doors.DoorId}]
+  - name: demo.doors.Shut
+    fields: [{name: door_id, type: demo.doors.DoorId}]
+  - name: demo.doors.Stalled
+    fields: [{name: door_id, type: demo.doors.DoorId}]
+errors:
+  - name: demo.doors.NotOpen
+views:
+  - name: demo.doors.Doors
+    source: demo.doors.Door
+    consistency: read_your_writes
+    fields:
+      - {name: door_id, type: demo.doors.DoorId}
+      - {name: label, type: String}
+      - {name: state, type: demo.doors.Door.State}
