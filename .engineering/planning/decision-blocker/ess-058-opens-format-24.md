@@ -2,12 +2,14 @@
 format: aep.planning-md/3
 id: decision-blocker:ess-058-opens-format-24
 kind: decision-blocker
-status: open
+status: cleared
 title: 'Which source format does 0.58.0 ship, now that #500 is first in it?'
 relations:
 - blocks: story:response-and-struct-admit-undeclared-fields-when-declared-ignored
 - serves: vision:O2
-revision: 1
+revision: 3
+transitions:
+- {from: "open", to: "cleared", at: "2026-10-08T23:41:13Z", actor: "human:timo", revision: 3}
 ---
 ## Question
 
@@ -27,3 +29,4 @@ Recommendation: B. Two adopter-requested keys share one bump, and the renames, w
 `ess specify upgrade`, become `ess/25` with that command.
 
 ## Decided
+B: 0.58.0 opens source format `ess/24` with https://github.com/beyond10x/ess/issues/500 and https://github.com/beyond10x/ess/issues/498; both issues close in 0.58.0. The renames that need `ess specify upgrade` and the rest of `release-plan:ess-24-one-language` move to `ess/25`.
