@@ -290,10 +290,9 @@ fn with_two_string_guards_every_branch_beside_the_related_row_is_witnessed() {
     assert_every_branch_witnessed(&edited(SIGN_IN, HINT_BETWEEN, ""));
 }
 
-/// The three string guards together leave the bounded walk on candidates whose `scope` breaks its
-/// invariant, so the grounded `return_uri` is never paired with a hint every guard refutes.
+/// The three string guards together: every branch beside the row is witnessed once the walk
+/// starts `scope` at a value its invariant admits (https://github.com/beyond10x/ess/issues/511).
 #[test]
-#[ignore = "https://github.com/beyond10x/ess/issues/511: candidate walk spent on inadmissible `scope` bases (witness.rs), not this story's cause"]
 fn with_three_string_guards_every_branch_beside_the_related_row_is_witnessed() {
     assert_every_branch_witnessed(SIGN_IN);
 }
