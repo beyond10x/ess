@@ -47,7 +47,10 @@
 //! that decision reading `now` reads that one instant. Without a clock such a guard is Unknown and
 //! the command is refused as unsupported; a decision that never reaches one is answered as before.
 //! [`execute_command_recorded`](ConformanceTarget::execute_command_recorded) answers the instant
-//! with the result, for a recorded history (`ess-history/2`).
+//! with the result, for a recorded history (`ess-history/2`). `ess verify conform run --target
+//! interpreted` hands it [`Runner::command_clock`](crate::Runner::command_clock): the instant of
+//! the step being executed, which that step's `now_offset` values resolve against
+//! (<https://github.com/beyond10x/ess/issues/510>).
 //!
 //! # Where the identifiers come from
 //!

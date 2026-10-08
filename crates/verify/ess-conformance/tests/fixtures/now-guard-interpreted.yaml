@@ -1,0 +1,40 @@
+format: ess/23
+system: demo
+version: v1
+domain: demo.tok
+types:
+  - {name: demo.tok.TokenId, kind: newtype, of: String}
+entities:
+  - name: demo.tok.Token
+    identity: {name: token_id, type: demo.tok.TokenId}
+    fields:
+      - {name: issued_at, type: Timestamp}
+    lifecycle:
+      initial: Active
+      states: [Active]
+      terminal: [Active]
+actors:
+  - name: demo.tok.Client
+    may: [demo.tok.Present]
+errors:
+  - name: demo.tok.Expired
+events:
+  - name: demo.tok.Presented
+    fields:
+      - {name: token_id, type: demo.tok.TokenId}
+commands:
+  - name: demo.tok.Present
+    input:
+      - {name: token_id, type: demo.tok.TokenId}
+      - {name: exp, type: Timestamp}
+    outcomes:
+      - name: expired
+        when: exp < now - 10m
+        error: demo.tok.Expired
+      - name: accepted
+        creates: demo.tok.Token
+        instance: token_id
+        sets: {issued_at: input.exp}
+        emits: [demo.tok.Presented]
+        payload:
+          demo.tok.Presented: {token_id: input.token_id}
