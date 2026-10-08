@@ -88,6 +88,8 @@ use ess_domain::view::{AggregateFunction, AssertionStyle, Consistency, Paging, R
 use ess_primitives::facts::FactPath;
 use ess_primitives::predicate::Predicate;
 
+mod precedence;
+pub use precedence::{PlannedPhase, PrecedencePlan};
 mod refusal;
 pub use refusal::{ResolvedRefusalAction, ResolvedRefusalPolicy, ResolvedRefusalRule};
 
