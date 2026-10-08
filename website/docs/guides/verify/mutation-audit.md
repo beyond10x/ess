@@ -78,6 +78,13 @@ ordering, a text match, a quantifier, or a guard with more combinations is not d
 mutant is scored as before. A mutant with a changed scenario that was not scored stays
 *inconclusive*: that scenario might have killed it.
 
+A `precedence-swap` of two branches that answer alike is equivalent too, unless a scenario still
+kills it: the same error, the same or no payload, and neither branch changing state, setting or
+emitting anything, so either order gives the caller the same answer where both guards hold. Its
+entry names that answer as `identical_answer`, apart from `unsatisfiable_guard`, so a reader
+tells "these guards never overlap" from "these answers are identical". Two refusals that differ in
+error or payload are scored as before.
+
 A mutant on an outcome whose scenario the baseline suite already refuses, such as a branch no
 arrangement reaches (`ESS-SYNTH-003`), cannot be killed by either suite. It is *unwitnessed* as
 well, and its entry names the baseline refusal as `baseline_refusals`. So is a `from-drop` or
