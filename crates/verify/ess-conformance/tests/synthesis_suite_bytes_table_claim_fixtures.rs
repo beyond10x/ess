@@ -49,7 +49,10 @@ fn builders() -> Vec<(&'static str, String)> {
     vec![
         ("door-gentle.yaml", door.replace("PUSH", "Gentle")),
         ("door-rough.yaml", door.replace("PUSH", "Rough")),
-        ("door-offline-gentle.yaml", offline.replace("PUSH", "Gentle")),
+        (
+            "door-offline-gentle.yaml",
+            offline.replace("PUSH", "Gentle"),
+        ),
         ("door-offline-rough.yaml", offline.replace("PUSH", "Rough")),
         ("door-relabel.yaml", constant(ADVERSARY, "DOOR_RELABEL")),
         (
@@ -87,5 +90,9 @@ fn every_claim_search_fixture_is_its_builders_model() {
     let mut named: Vec<String> = built.iter().map(|(name, _)| (*name).to_owned()).collect();
     named.sort();
     assert_eq!(on_disk, named, "every fixture has a builder");
-    assert_eq!(differ, Vec::<&str>::new(), "fixtures that are not their builder's model");
+    assert_eq!(
+        differ,
+        Vec::<&str>::new(),
+        "fixtures that are not their builder's model"
+    );
 }
