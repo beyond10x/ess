@@ -1,4 +1,5 @@
 //! Persisted plans must be checked before analysis and before either external executor.
+use ess_cli::TemporaryDirectory;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::OnceLock;
@@ -8,17 +9,11 @@ mod compiled_fixture;
 #[path = "support/executable.rs"]
 mod executable;
 
-struct Fixture(PathBuf);
+struct Fixture(PathBuf, #[allow(dead_code)] TemporaryDirectory);
 impl Fixture {
     fn new() -> Self {
-        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        let path = std::env::temp_dir().join(format!(
-            "ess-delivery-test-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-        ));
-        std::fs::create_dir(&path).unwrap();
-        Self(path)
+        let scratch = TemporaryDirectory::create("ess-delivery-test").unwrap();
+        Self(scratch.to_path_buf(), scratch)
     }
     fn write(&self, name: &str, value: &serde_json::Value) -> PathBuf {
         let path = self.0.join(name);
@@ -89,27 +84,31 @@ impl Fixture {
         );
     }
 }
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        std::fs::remove_dir_all(&self.0).unwrap();
-    }
-}
-
 fn executors() -> &'static Path {
     static EXECUTORS: OnceLock<PathBuf> = OnceLock::new();
     EXECUTORS
         .get_or_init(|| {
-            let root = Fixture::new();
             let program = compiled_fixture::compiled(
                 &Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/fake_delivery.rs"),
                 &"rustc".into(),
                 &["--edition=2021"],
             );
-            executable::install_copy(&program, &root.0.join("oras")).unwrap();
-            executable::install_copy(&program, &root.0.join("helm")).unwrap();
-            let path = root.0.clone();
-            // Shared process fixtures remain under TMPDIR for the duration of this test binary.
-            std::mem::forget(root);
+            // Shared by every case of this binary, so it outlives any one guard: it sits beside the
+            // compiled program in the build directory rather than in TMPDIR, keyed by that program,
+            // and a second process reuses it rather than adding another.
+            let path = program.with_extension("executors");
+            if path.join("oras").is_file() && path.join("helm").is_file() {
+                return path;
+            }
+            let partial =
+                program.with_extension(format!("executors-{}.partial", std::process::id()));
+            std::fs::create_dir(&partial).unwrap();
+            executable::install_copy(&program, &partial.join("oras")).unwrap();
+            executable::install_copy(&program, &partial.join("helm")).unwrap();
+            if std::fs::rename(&partial, &path).is_err() {
+                // Another process installed the same executors first.
+                std::fs::remove_dir_all(&partial).unwrap();
+            }
             path
         })
         .as_path()

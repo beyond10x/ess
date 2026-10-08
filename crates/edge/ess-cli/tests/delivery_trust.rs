@@ -1,5 +1,6 @@
 //! Local release qualification, original-byte ownership and the actual Bash action boundary.
 //! External fixtures simulate routing only; their output cannot authenticate an artifact.
+use ess_cli::TemporaryDirectory;
 use ess_conformance::{
     coverage::AdmittedInput, AdmittedSuite, CountReport, CountStatus, SuiteProvenance,
 };
@@ -169,19 +170,13 @@ fn report(input: &AdmittedInput) -> Vec<u8> {
     bytes
 }
 struct Fixture {
-    root: PathBuf,
+    root: TemporaryDirectory,
     bundle: ReleaseBundle,
     input: AdmittedInput,
 }
 impl Fixture {
     fn new() -> Self {
-        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        let root = std::env::temp_dir().join(format!(
-            "ess-delivery-trust-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-        ));
-        fs::create_dir(&root).unwrap();
+        let root = TemporaryDirectory::create("ess-delivery-trust").unwrap();
         fs::create_dir(root.join("calls")).unwrap();
         let input = direct(&suite_document());
         let bundle = bundle_fixture::persisted_bundle();
@@ -302,21 +297,34 @@ impl Fixture {
 fn tool_path() -> std::ffi::OsString {
     static EXECUTORS: OnceLock<PathBuf> = OnceLock::new();
     let root = EXECUTORS.get_or_init(|| {
-        let root = std::env::temp_dir().join(format!("ess-release-tools-{}", std::process::id()));
-        fs::create_dir(&root).unwrap();
         let compiler = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
         let program = compiled_fixture::compiled(
             &Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/fake_release_component.rs"),
             &compiler,
             &["--edition=2021"],
         );
+        // Shared by every case of this binary, so it outlives any one guard: it sits beside the
+        // compiled program in the build directory rather than in TMPDIR, keyed by that program,
+        // and a second process reuses it rather than adding another.
+        let root = program.with_extension("release-tools");
+        if root.join("compiler.program").is_file() {
+            return root;
+        }
+        let partial =
+            program.with_extension(format!("release-tools-{}.partial", std::process::id()));
+        fs::create_dir(&partial).unwrap();
+        for tool in ["oras", "docker", "helm", "cosign", "syft"] {
+            executable::install_copy(&program, &partial.join(tool)).unwrap();
+        }
+        // Written last: its presence says every tool above is installed.
         fs::write(
-            root.join("compiler.program"),
+            partial.join("compiler.program"),
             format!("{}\n", program.display()),
         )
         .unwrap();
-        for tool in ["oras", "docker", "helm", "cosign", "syft"] {
-            executable::install_copy(&program, &root.join(tool)).unwrap();
+        if fs::rename(&partial, &root).is_err() {
+            // Another process installed the same tools first.
+            fs::remove_dir_all(&partial).unwrap();
         }
         root
     });

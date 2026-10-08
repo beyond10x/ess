@@ -1,10 +1,9 @@
 //! Adopter-level outcomes for the native semantic-to-observation boundary.
+use ess_cli::TemporaryDirectory;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
-use std::sync::atomic::{AtomicU64, Ordering};
 
-static NEXT: AtomicU64 = AtomicU64::new(0);
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..")
 }
@@ -15,18 +14,13 @@ fn write(path: &Path, value: &Value) {
     std::fs::write(path, serde_json::to_vec_pretty(value).unwrap()).unwrap();
 }
 struct Fixture {
-    dir: PathBuf,
+    dir: TemporaryDirectory,
     bindings: Value,
     observation: Value,
 }
 impl Fixture {
     fn new() -> Self {
-        let dir = std::env::temp_dir().join(format!(
-            "ess-observed-bindings-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        std::fs::create_dir(&dir).unwrap();
+        let dir = TemporaryDirectory::create("ess-observed-bindings").unwrap();
         let mut realization: Value = serde_yaml::from_str(
             &std::fs::read_to_string(root().join("examples/realizations/billing-local.yaml"))
                 .unwrap(),
@@ -94,11 +88,6 @@ impl Fixture {
         let report = serde_json::from_slice(&output.stdout)
             .expect("exactly one JSON report even for refusal");
         (output, report)
-    }
-}
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        std::fs::remove_dir_all(&self.dir).unwrap();
     }
 }
 fn check(report: &Value, code: &str) -> Value {

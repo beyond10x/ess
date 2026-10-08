@@ -6,20 +6,15 @@
 //! passed it and synthesize could not order it. Validate now refuses that spelling and names the
 //! one that works, and synthesize orders two RFC 3339 instants.
 
+use ess_cli::TemporaryDirectory;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 const FLAT: &str = include_str!("fixtures/room-booking/flat.yaml");
 const WINDOW: &str = include_str!("fixtures/room-booking/window.yaml");
 
-fn dir(name: &str) -> PathBuf {
-    let path = std::env::temp_dir().join(format!(
-        "ess-timestamp-ordering-{name}-{}",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_dir_all(&path);
-    std::fs::create_dir_all(&path).unwrap();
-    path
+fn dir(name: &str) -> TemporaryDirectory {
+    TemporaryDirectory::create(&format!("ess-timestamp-ordering-{name}")).unwrap()
 }
 
 fn ess(arguments: &[&str], model: &Path) -> (Option<i32>, String) {

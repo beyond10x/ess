@@ -1,6 +1,7 @@
 //! F15's independent declaration vectors, through both real CLI emissions and Firefox/BiDi.
 #[path = "support/browser.rs"]
 mod browser;
+use ess_cli::TemporaryDirectory;
 use serde_json::{json, Value};
 use std::{fmt::Write as _, fs, path::PathBuf, process::Command};
 
@@ -177,7 +178,7 @@ assert:
 }
 
 struct Fixture {
-    evidence: PathBuf,
+    evidence: TemporaryDirectory,
     site: PathBuf,
     model: Value,
     suite: Value,
@@ -185,9 +186,7 @@ struct Fixture {
 }
 impl Fixture {
     fn emit(name: &str, route: u8, spec: &str, authored: &str) -> Self {
-        let evidence =
-            std::env::temp_dir().join(format!("ess-replay-{name}-{route}-{}", std::process::id()));
-        fs::create_dir(&evidence).unwrap();
+        let evidence = TemporaryDirectory::create(&format!("ess-replay-{name}-{route}")).unwrap();
         let source = evidence.join("system.yaml");
         let scenarios = evidence.join("scenario.yaml");
         fs::write(&source, spec).unwrap();
@@ -845,11 +844,8 @@ fn b01_conflicting_captures_outcomes_and_missing_assignment_input_are_diagnostic
 #[test]
 fn b08_missing_required_authored_parameter_still_refuses() {
     for route in [4, 5] {
-        let evidence = std::env::temp_dir().join(format!(
-            "ess-replay-b08-refused-{route}-{}",
-            std::process::id()
-        ));
-        fs::create_dir(&evidence).unwrap();
+        let evidence =
+            TemporaryDirectory::create(&format!("ess-replay-b08-refused-{route}")).unwrap();
         fs::write(evidence.join("system.yaml"), SPEC).unwrap();
         fs::write(
             evidence.join("scenario.yaml"),

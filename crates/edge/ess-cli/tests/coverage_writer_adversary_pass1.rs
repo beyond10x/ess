@@ -2,16 +2,13 @@
 #[path = "support/browser.rs"]
 mod browser;
 
+use ess_cli::TemporaryDirectory;
 use serde_json::{json, Value};
 use std::{fs, path::Path, process::Command};
 
 #[test]
 fn go_strict_diagnostic_does_not_label_known_suite5_inventory_as_legacy_unknown() {
-    let evidence = std::env::temp_dir().join(format!(
-        "ess-coverage-adversary-go-diagnostic-{}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&evidence).unwrap();
+    let evidence = TemporaryDirectory::create("ess-coverage-adversary-go-diagnostic").unwrap();
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
     let mut emit = Command::new(env!("CARGO_BIN_EXE_ess"));
     emit.args(["conform", "author", "--path"])
@@ -106,11 +103,7 @@ func TestStrictDiagnostic(t *testing.T) {
 #[test]
 fn browser_refuses_a_command_name_with_a_final_line_feed_before_replay_state() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
-    let evidence = std::env::temp_dir().join(format!(
-        "ess-coverage-adversary-final-lf-{}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&evidence).unwrap();
+    let evidence = TemporaryDirectory::create("ess-coverage-adversary-final-lf").unwrap();
     let site = evidence.join("site");
     let mut command = Command::new(env!("CARGO_BIN_EXE_ess"));
     command

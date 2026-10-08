@@ -16,6 +16,7 @@ mod browser;
 #[path = "support/executable.rs"]
 mod executable;
 
+use ess_cli::TemporaryDirectory;
 use std::{
     fs,
     io::{Read, Write},
@@ -42,12 +43,9 @@ fn announcing_stand_in(dir: &Path, port: u16) -> PathBuf {
 }
 
 /// A private evidence directory, made the way the unit's own cases make theirs.
-fn evidence_dir(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "ess-browser-startup-adversary1-{name}-{}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&dir).unwrap();
+fn evidence_dir(name: &str) -> TemporaryDirectory {
+    let dir =
+        TemporaryDirectory::create(&format!("ess-browser-startup-adversary1-{name}")).unwrap();
     dir
 }
 
@@ -91,7 +89,7 @@ fn a_browser_that_closes_the_socket_mid_handshake_refuses_like_every_other_lost_
         }
     });
     let program = announcing_stand_in(&evidence, port);
-    match startup_outcome(evidence, program, Duration::from_secs(1)) {
+    match startup_outcome(evidence.to_path_buf(), program, Duration::from_secs(1)) {
         Err(panic) => panic!(
             "a start lost at the WebSocket upgrade must be a fixture environment refusal \
              carrying a stage, the measured startup time and firefox.stderr; the fixture \
@@ -122,7 +120,7 @@ fn a_handshake_this_runner_never_answers_is_refused_at_the_deadline_it_was_given
     let program = announcing_stand_in(&evidence, port);
     let deadline = Duration::from_secs(1);
     let started = Instant::now();
-    let outcome = startup_outcome(evidence, program, deadline);
+    let outcome = startup_outcome(evidence.to_path_buf(), program, deadline);
     let elapsed = started.elapsed();
     match outcome {
         Err(panic) => panic!(
@@ -167,7 +165,7 @@ fn a_handshake_answered_404_forever_refuses_with_the_last_response_and_stderr() 
         }
     });
     let program = announcing_stand_in(&evidence, port);
-    match startup_outcome(evidence.clone(), program, Duration::from_secs(2)) {
+    match startup_outcome(evidence.to_path_buf(), program, Duration::from_secs(2)) {
         Err(panic) => panic!("a pre-upgrade 404 is not readiness: {panic}"),
         Ok(Ok(())) => panic!("a /session endpoint answering 404 admitted a session"),
         Ok(Err(refusal)) => {
@@ -211,7 +209,7 @@ fn malformed_upgrade_responses_remain_protocol_defects() {
             stream.write_all(response.as_bytes()).unwrap();
         });
         let program = announcing_stand_in(&evidence, port);
-        let outcome = startup_outcome(evidence, program, Duration::from_secs(2));
+        let outcome = startup_outcome(evidence.to_path_buf(), program, Duration::from_secs(2));
         server.join().unwrap();
         let Err(panic) = outcome else {
             panic!("a malformed upgrade was not a protocol defect: {outcome:?}")
@@ -249,7 +247,7 @@ fn a_trickling_upgrade_header_cannot_extend_the_startup_deadline() {
     });
     let program = announcing_stand_in(&evidence, port);
     let deadline = Duration::from_millis(500);
-    let outcome = startup_outcome(evidence, program, deadline);
+    let outcome = startup_outcome(evidence.to_path_buf(), program, deadline);
     // Waiting for another test's startup lock is outside this start's deadline.
     let elapsed = accepted_at.recv().unwrap().elapsed();
     server.join().unwrap();

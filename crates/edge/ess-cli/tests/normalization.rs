@@ -1,7 +1,7 @@
 //! Command-boundary checks protect authored inputs and never publish partial results.
 
+use ess_cli::TemporaryDirectory;
 use std::fs;
-use std::path::PathBuf;
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -352,17 +352,11 @@ fn model_sources_are_compiled_pinned_and_protected_by_the_cli() {
     assert!(String::from_utf8_lossy(&stale.stderr).contains("unknown_model"));
 }
 
-struct Fixture(PathBuf);
+struct Fixture(TemporaryDirectory);
 
 impl Fixture {
     fn new() -> Self {
-        static NEXT: AtomicUsize = AtomicUsize::new(0);
-        let root = std::env::temp_dir().join(format!(
-            "ess-normalization-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir_all(&root).unwrap();
+        let root = TemporaryDirectory::create("ess-normalization").unwrap();
         let input = Self::bundle(
             "Input",
             &json!({"type":"object", "additionalProperties":false,
@@ -413,12 +407,6 @@ impl Fixture {
 
     fn recipe(&self) -> Value {
         serde_json::from_slice(&fs::read(self.0.join("recipe.json")).unwrap()).unwrap()
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        fs::remove_dir_all(&self.0).unwrap();
     }
 }
 
