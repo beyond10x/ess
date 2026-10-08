@@ -13175,7 +13175,8 @@ type Row = BTreeMap<String, Node>;
 /// bytes. Where none of them isolates the child, the row is solved for directly, as
 /// [`isolating`] states it (<https://github.com/beyond10x/ess/issues/501>): a bounded candidate
 /// set of a wide guard holds no input where one conjunct alone fails and every other disjunct
-/// fails too. Where that finds none either and the search did not exhaust every input, the row is
+/// fails too. Where that finds none either, the search did not exhaust every input and the goal is
+/// not shown unsatisfiable by its text literals ([`crate::witness::unsatisfiable`]), the row is
 /// named in `missed` as the predicate no candidate satisfied, never skipped silently.
 #[allow(clippy::too_many_arguments)]
 fn one_per_child(
@@ -13240,9 +13241,14 @@ fn one_per_child(
             }
         }
         // An input that isolates the child but selects another branch is that branch's, and a
-        // search that tried every region of every leaf shows no input isolates it at all; only
-        // a search that stopped short leaves the row unwitnessed without saying why.
-        if !found && !crate::witness::exhausts(ir, command, &[&goal]) {
+        // search that tried every region of every leaf shows no input isolates it at all, and so
+        // does a goal whose text literals contradict each other (`not starts_with "A"` beside
+        // `starts_with "AB"`); only a search that stopped short leaves the row unwitnessed
+        // without saying why.
+        if !found
+            && !crate::witness::unsatisfiable(&goal)
+            && !crate::witness::exhausts(ir, command, &[&goal])
+        {
             missed.push(RefusalCause::ChildUnwitnessed {
                 predicate: goal.to_string(),
                 tried,

@@ -1,4 +1,4 @@
-#	models=196	commands=338
+#	models=199	commands=344
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -496,6 +496,15 @@ crates/verify/ess-conformance/tests/support_explore_optional_unknown/baseline.ya
 crates/verify/ess-conformance/tests/support_explore_optional_unknown/baseline.yaml	demo.items.Create	default: created
 crates/verify/ess-conformance/tests/support_explore_optional_unknown/baseline.yaml	demo.items.OptionalNote	default: noted
 crates/verify/ess-conformance/tests/support_explore_optional_unknown/baseline.yaml	demo.items.PlainNote	default: noted
+crates/verify/ess-diff/tests/fixtures/upcast/after-additive.yaml	ir=13b264e935f030928a88fb3e2d6fea9029709065931272aed014e710bdc1646b:10437
+crates/verify/ess-diff/tests/fixtures/upcast/after-additive.yaml	catalog.items.Accept	existence: unknown | held_state: stale-revision, already-accepted | default: accepted
+crates/verify/ess-diff/tests/fixtures/upcast/after-additive.yaml	catalog.items.Add	default: added
+crates/verify/ess-diff/tests/fixtures/upcast/after.yaml	ir=bc85b2b8e7884f0c66770f62df68dd6fd2998d470042ff1ab36f8b45d755e8fc:10781
+crates/verify/ess-diff/tests/fixtures/upcast/after.yaml	catalog.items.Accept	existence: unknown | held_state: stale-revision, already-accepted | default: accepted
+crates/verify/ess-diff/tests/fixtures/upcast/after.yaml	catalog.items.Add	default: added
+crates/verify/ess-diff/tests/fixtures/upcast/before.yaml	ir=e15f582571a27dbbdfd6a5cfb91758af9a37869809cbb7aa304f3be077c32cac:9680
+crates/verify/ess-diff/tests/fixtures/upcast/before.yaml	catalog.items.Accept	existence: unknown | held_state: already-accepted | default: accepted
+crates/verify/ess-diff/tests/fixtures/upcast/before.yaml	catalog.items.Add	default: added
 docs/design/models/authored-discovery/system.yaml	ASSEMBLE
 docs/design/models/entity-runtime-lowering/system.yaml	ASSEMBLE
 docs/design/models/service-contract/system.yaml	ASSEMBLE

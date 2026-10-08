@@ -46,9 +46,9 @@ fn author_codes_run_from_001_to_041() {
 }
 
 #[test]
-fn synth_codes_run_from_001_to_021() {
+fn synth_codes_run_from_001_to_022() {
     assert_eq!(RefusalCause::FAMILY, "SYNTH");
-    numbered(RefusalCause::CATALOGUE, 21);
+    numbered(RefusalCause::CATALOGUE, 22);
 }
 
 #[test]
