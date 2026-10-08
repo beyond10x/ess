@@ -29,6 +29,10 @@ pub struct Observation {
     /// Closed structural authority for nested destination relationships (held suite/34–35).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub nested: Option<path::NestedTargets>,
+    /// String-newtype rules of the constrained declarations, keyed by the nominal type they
+    /// constrain (suite/46 and /47, beyond10x/ess#499); absent from the bytes when empty.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub constraints: BTreeMap<QualifiedName, crate::one_time_response::StringConstraints>,
 }
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -42,6 +46,11 @@ struct RawObservation {
     targets: Vec<Field>,
     #[serde(default, deserialize_with = "nested_present")]
     nested: Option<path::NestedTargets>,
+    #[serde(
+        default,
+        deserialize_with = "crate::direct_response::constraints_present"
+    )]
+    constraints: Option<BTreeMap<QualifiedName, crate::one_time_response::StringConstraints>>,
 }
 fn nested_present<'de, D: serde::Deserializer<'de>>(
     d: D,
@@ -60,6 +69,7 @@ impl TryFrom<RawObservation> for Observation {
             mappings: r.mappings,
             targets: r.targets,
             nested: r.nested,
+            constraints: r.constraints.unwrap_or_default(),
         };
         result.validate()?;
         Ok(result)
@@ -104,8 +114,11 @@ impl Observation {
                     field
                 })
                 .collect();
-            let declarations =
-                crate::typed_fields::declarations(ir, fields.iter().chain(&targets))?;
+            let declarations = crate::typed_fields::response_payload_declarations(
+                ir,
+                fields.iter().chain(&targets),
+            )?;
+            let constraints = crate::direct_response::response_constraints(ir, &declarations)?;
             let observation = Self {
                 command: CommandRef::new(command.name.clone()),
                 outcome: OutcomeRef::new(
@@ -118,6 +131,7 @@ impl Observation {
                 mappings,
                 targets,
                 nested,
+                constraints,
             };
             observation.validate()?;
             result.push(observation);
@@ -142,6 +156,10 @@ impl Observation {
         crate::typed_fields::validate(
             [self.fields.as_slice(), self.targets.as_slice()],
             &self.declarations,
+        )?;
+        crate::direct_response::validate_response_constraints(
+            &self.declarations,
+            &self.constraints,
         )?;
         for target in &self.targets {
             let source = self
@@ -188,6 +206,12 @@ impl Observation {
         if bytes > 1_048_576 {
             return Err("response byte limit".into());
         }
+        crate::direct_response::check_constraints(
+            &self.fields,
+            &self.declarations,
+            &self.constraints,
+            response,
+        )?;
         for field in &self.fields {
             match (field.presence(), response.get(&field.name)) {
                 (Some(Presence::NullWhenAbsent), None) => {

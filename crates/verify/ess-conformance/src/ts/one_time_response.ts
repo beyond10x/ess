@@ -365,7 +365,7 @@ function canonicalField(raw: Node): Node {
   if (raw.presence != null) result.presence = raw.presence;
   return result;
 }
-function isString(type: string, shape: DirectResponse): boolean {
+function isString(type: string, shape: { declarations: Record<string, Node> }): boolean {
   const seen = new Set<string>();
   while (type !== 'String') {
     if (seen.has(type)) return false;
@@ -406,10 +406,40 @@ function response(raw: Node, command: string): OneTimeResponse {
     declarations: normalizedDeclarations,
     expected: {},
   });
-  if (!isObject(value.constraints)) return fail();
+  const { constraints, wire: constraintWire } = admitStringConstraints(
+    value.constraints,
+    shape.declarations,
+  );
+  const declarations: Node = Object.create(null);
+  for (const [label, rawBody] of Object.entries(normalizedDeclarations) as [string, Node][]) {
+    const body = { ...rawBody };
+    if (body.kind === 'struct') body.fields = body.fields.map(canonicalField);
+    declarations[label] = body;
+  }
+  return {
+    shape,
+    constraints,
+    authority: {
+      fields: value.fields.map(canonicalField),
+      declarations,
+      constraints: constraintWire,
+    },
+  };
+}
+
+/**
+ * Admit closed String-newtype rules against the declarations they travel with: the one-time
+ * profile, and the response observations of suite/46 and /47 (beyond10x/ess#499).
+ */
+export function admitStringConstraints(
+  raw: Node,
+  declarations: Record<string, Node>,
+): { constraints: Record<string, StringConstraints>; wire: Node } {
+  if (!isObject(raw)) return fail();
+  const shape = { declarations };
   const constraints: Record<string, StringConstraints> = Object.create(null);
   const constraintWire: Node = Object.create(null);
-  for (const [label, rawRules] of Object.entries(value.constraints)) {
+  for (const [label, rawRules] of Object.entries(raw)) {
     name(label, false);
     if (shape.declarations[label]?.kind !== 'newtype' || !isString(label, shape)) return fail();
     const rules = closed(rawRules, 'invariants', 'alphabet prefix');
@@ -447,21 +477,68 @@ function response(raw: Node, command: string): OneTimeResponse {
       for (const alphabet of alphabets)
         if ([...prefix].some((char) => !alphabet.includes(char))) return fail();
   }
-  const declarations: Node = Object.create(null);
-  for (const [label, rawBody] of Object.entries(normalizedDeclarations) as [string, Node][]) {
-    const body = { ...rawBody };
-    if (body.kind === 'struct') body.fields = body.fields.map(canonicalField);
-    declarations[label] = body;
+  return { constraints, wire: constraintWire };
+}
+
+/**
+ * Hold `value`, declared as `written`, to every String-newtype rule reachable from it: the value
+ * itself, record fields, union variants and `Optional`, `List` and `Map` elements. `null` when it
+ * keeps them, else how it broke one: `payload`, or `resource` for an invariant left undecided.
+ */
+export function checkStringConstraints(
+  declarations: Record<string, Node>,
+  constraints: Record<string, StringConstraints>,
+  written: string,
+  value: Node,
+): 'payload' | 'resource' | null {
+  const type = accessorType(written, 0)[0];
+  const recurse = (inner: string, child: Node): 'payload' | 'resource' | null =>
+    checkStringConstraints(declarations, constraints, inner, child);
+  if (type.startsWith('Optional<')) return value != null ? recurse(type.slice(9, -1), value) : null;
+  if (type.startsWith('List<')) {
+    for (const child of array(value)) {
+      const breach = recurse(type.slice(5, -1), child);
+      if (breach !== null) return breach;
+    }
+    return null;
   }
-  return {
-    shape,
-    constraints,
-    authority: {
-      fields: value.fields.map(canonicalField),
-      declarations,
-      constraints: constraintWire,
-    },
-  };
+  if (type.startsWith('Map<')) {
+    for (const child of Object.values(value)) {
+      const breach = recurse(type.slice(type.indexOf(',') + 1, -1).trim(), child);
+      if (breach !== null) return breach;
+    }
+    return null;
+  }
+  const rules = constraints[type];
+  if (rules !== undefined) {
+    if (
+      typeof value !== 'string' ||
+      (rules.alphabet !== null &&
+        [...value].some((character) => !rules.alphabet!.includes(character))) ||
+      (rules.prefix !== null && !value.startsWith(rules.prefix))
+    )
+      return 'payload';
+    for (const predicate of rules.invariants) {
+      const result = predicate.evaluate(facts({ value }));
+      if (result !== 'true') return result === 'unknown' ? 'resource' : 'payload';
+    }
+  }
+  const declaration = declarations[type];
+  if (declaration?.kind === 'newtype') return recurse(declaration.of, value);
+  if (declaration?.kind === 'struct') {
+    for (const field of declaration.fields)
+      if (Object.hasOwn(value, field.name)) {
+        const breach = recurse(field.type, value[field.name]);
+        if (breach !== null) return breach;
+      }
+  } else if (declaration?.kind === 'union') {
+    const key = declaration.tag === 'value' ? 'content' : 'value';
+    const carried = declaration.variants[value[declaration.tag]];
+    // A unit variant (ess/22) is the tag alone.
+    if (carried === null && Object.hasOwn(value, key)) return 'payload';
+    if (carried !== null && Object.hasOwn(value, key)) return recurse(carried, value[key]);
+  }
+  return null;
 }
 
 export function admitOneTimeTrace(raw: Node, scenario: Node): OneTimeTrace {
@@ -611,7 +688,9 @@ export function admitDisclosureId(
     !['ess-conformance/34', 'ess-conformance/35'].includes(version) &&
     !['ess-conformance/40', 'ess-conformance/41'].includes(version) &&
     // Counted event claims (beyond10x/ess#427) are cumulative over the one-time vocabulary.
-    !['ess-conformance/44', 'ess-conformance/45'].includes(version)
+    !['ess-conformance/44', 'ess-conformance/45'].includes(version) &&
+    // So are String-newtype constraints on response observations (beyond10x/ess#499).
+    !['ess-conformance/46', 'ess-conformance/47'].includes(version)
   ) {
     return fail();
   }
@@ -820,49 +899,13 @@ export class DisclosureCaptures {
     this.observe(rows);
   }
   private constraints(authority: OneTimeResponse, written: string, value: Node): void {
-    const type = accessorType(written, 0)[0];
-    if (type.startsWith('Optional<')) {
-      if (value != null) this.constraints(authority, type.slice(9, -1), value);
-      return;
-    }
-    if (type.startsWith('List<')) {
-      for (const child of array(value)) this.constraints(authority, type.slice(5, -1), child);
-      return;
-    }
-    if (type.startsWith('Map<')) {
-      for (const child of Object.values(value))
-        this.constraints(authority, type.slice(type.indexOf(',') + 1, -1).trim(), child);
-      return;
-    }
-    const rules = authority.constraints[type];
-    if (rules !== undefined) {
-      if (
-        typeof value !== 'string' ||
-        (rules.alphabet !== null &&
-          [...value].some((character) => !rules.alphabet!.includes(character))) ||
-        (rules.prefix !== null && !value.startsWith(rules.prefix))
-      )
-        throw new DisclosureViolation('payload');
-      for (const predicate of rules.invariants) {
-        const result = predicate.evaluate(facts({ value }));
-        if (result !== 'true')
-          throw new DisclosureViolation(result === 'unknown' ? 'resource' : 'payload');
-      }
-    }
-    const declaration = authority.shape.declarations[type];
-    if (declaration?.kind === 'newtype') this.constraints(authority, declaration.of, value);
-    else if (declaration?.kind === 'struct') {
-      for (const field of declaration.fields)
-        if (Object.hasOwn(value, field.name))
-          this.constraints(authority, field.type, value[field.name]);
-    } else if (declaration?.kind === 'union') {
-      const key = declaration.tag === 'value' ? 'content' : 'value';
-      const carried = declaration.variants[value[declaration.tag]];
-      // A unit variant (ess/22) is the tag alone.
-      if (carried === null && Object.hasOwn(value, key)) throw new DisclosureViolation('payload');
-      if (carried !== null && Object.hasOwn(value, key))
-        this.constraints(authority, carried, value[key]);
-    }
+    const breach = checkStringConstraints(
+      authority.shape.declarations,
+      authority.constraints,
+      written,
+      value,
+    );
+    if (breach !== null) throw new DisclosureViolation(breach);
   }
   command(command: string, result: Node): void {
     if (result.response != null) this.observe(result.response);

@@ -12,6 +12,8 @@ import {
 } from './runtime.js';
 import type { AccessorField, Node, OutcomeRef, SelectionDeclaration } from './runtime.js';
 import { decodeDeclaration, responsePrimitiveAdmits, validateTypedFields } from './response.js';
+import { admitStringConstraints, checkStringConstraints } from './one_time_response.js';
+import type { StringConstraints } from './one_time_response.js';
 
 interface Field extends AccessorField {
   presence?: string;
@@ -22,6 +24,8 @@ export interface DirectResponse {
   fields: Field[];
   declarations: Record<string, SelectionDeclaration>;
   expected: Record<string, Node>;
+  /** String-newtype rules of suite/46 and /47 (beyond10x/ess#499), checked on every actual value. */
+  constraints?: Record<string, StringConstraints>;
 }
 const encoder = new TextEncoder();
 // Native serde_json size, retaining number tokens and counting payload bytes only.
@@ -67,7 +71,7 @@ export function admitDirectResponseField(raw: Node): Field {
 }
 
 export function admitDirectResponse(raw: Node): DirectResponse {
-  const value = closed(raw, 'command fields declarations expected', 'outcome');
+  const value = closed(raw, 'command fields declarations expected', 'outcome constraints');
   name(value.command, false);
   if (value.outcome != null) {
     admitOutcome(value.outcome);
@@ -111,6 +115,8 @@ export function admitDirectResponse(raw: Node): DirectResponse {
     expected: value.expected,
   };
   if (value.outcome != null) contract.outcome = value.outcome;
+  if (own(value, 'constraints'))
+    contract.constraints = admitResponseConstraints(value.constraints, declarations);
   const counter = { bytes: 0 };
   for (const [key, expected] of Object.entries(contract.expected)) {
     const declaration = fields.find((f) => f.name === key);
@@ -240,7 +246,44 @@ export function compareDirectResponse(contract: DirectResponse, actual: Node): v
     checkPresence(f, own(actual, f.name), actual[f.name]);
   }
   if (bytes(actual) > 1048576) throw new Error('direct response byte limit');
+  checkResponseConstraints(contract.fields, contract.declarations, contract.constraints, actual);
   for (const [key, expected] of Object.entries(contract.expected))
     if (!own(actual, key) || !equal(actual[key], expected))
       throw new Error('response differs from literal');
+}
+
+/**
+ * Admit the `constraints` member of a response observation (suite/46 and /47, beyond10x/ess#499):
+ * present, it names at least one declared String newtype, with the rules the one-time profile
+ * admits.
+ */
+export function admitResponseConstraints(
+  raw: Node,
+  declarations: Record<string, Node>,
+): Record<string, StringConstraints> {
+  if (!isObject(raw) || Object.keys(raw).length === 0)
+    throw new Error('response constraints, when present, name at least one type');
+  return admitStringConstraints(raw, declarations).constraints;
+}
+
+/** Hold every actual value of `fields` to the carried String-newtype rules. */
+export function checkResponseConstraints(
+  fields: { name: string; type: string }[],
+  declarations: Record<string, Node>,
+  constraints: Record<string, StringConstraints> | undefined,
+  actual: Node,
+): void {
+  if (constraints === undefined) return;
+  for (const field of fields)
+    if (
+      own(actual, field.name) &&
+      checkStringConstraints(declarations, constraints, field.type, actual[field.name]) !== null
+    )
+      throw new Error(`response field ${field.name} breaks a String rule its type declares`);
+}
+
+/** Refuse a response observation carrying constraints below suite/46. */
+export function responseConstraintsMajor(value: Node, major: number): void {
+  if (isObject(value) && own(value, 'constraints') && major < 46)
+    throw new Error('response constraints require suite/46 or /47');
 }

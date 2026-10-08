@@ -592,28 +592,42 @@ func admitOneTimeResponse(raw any, command string) (oneTimeResponse, error) {
 	if !ok {
 		return fail(fmt.Errorf("one-time constraints must be an object"))
 	}
-	result := oneTimeResponse{Fields: shape.Fields, Declarations: shape.Declarations, Constraints: map[string]oneTimeConstraints{}}
+	result := oneTimeResponse{Fields: shape.Fields, Declarations: shape.Declarations}
+	if result.Constraints, err = admitStringConstraints(constraints, result.Declarations); err != nil {
+		return fail(err)
+	}
+	result.authority, err = directWire(map[string]any{"fields": oneTimeCanonicalFields(body["fields"]), "declarations": oneTimeCanonicalDeclarations(body["declarations"]), "constraints": result.Constraints})
+	if err != nil {
+		return fail(err)
+	}
+	return result, nil
+}
+
+// admitStringConstraints admits closed String-newtype rules against the declarations they travel
+// with: the one-time profile, and the response observations of suite/46 and /47 (beyond10x/ess#499).
+func admitStringConstraints(constraints map[string]any, declarations map[string]selectionDeclaration) (map[string]oneTimeConstraints, error) {
+	admitted := map[string]oneTimeConstraints{}
 	for name_, rawRules := range constraints {
-		declaration, ok := result.Declarations[name_]
-		if !ok || declaration.Kind != "newtype" || !oneTimeRequiredString(name_, result.Declarations) {
-			return fail(fmt.Errorf("one-time constraint requires a declared String newtype"))
+		declaration, ok := declarations[name_]
+		if !ok || declaration.Kind != "newtype" || !oneTimeRequiredString(name_, declarations) {
+			return nil, fmt.Errorf("one-time constraint requires a declared String newtype")
 		}
 		rules, err := closed(rawRules, "invariants", "alphabet prefix")
 		if err != nil {
-			return fail(err)
+			return nil, err
 		}
 		typed := oneTimeConstraints{}
 		for _, key := range []string{"alphabet", "prefix"} {
 			if raw := rules[key]; raw != nil {
 				text, err := text(raw)
 				if err != nil || text == "" {
-					return fail(fmt.Errorf("invalid String %s", key))
+					return nil, fmt.Errorf("invalid String %s", key)
 				}
 				if key == "alphabet" {
 					seen := map[rune]bool{}
 					for _, character := range text {
 						if seen[character] {
-							return fail(fmt.Errorf("duplicate alphabet character"))
+							return nil, fmt.Errorf("duplicate alphabet character")
 						}
 						seen[character] = true
 					}
@@ -625,39 +639,39 @@ func admitOneTimeResponse(raw any, command string) (oneTimeResponse, error) {
 		}
 		invariants, err := array(rules["invariants"])
 		if err != nil {
-			return fail(err)
+			return nil, err
 		}
 		typed.Invariants = []json.RawMessage{}
 		for _, rawPredicate := range invariants {
 			if err = admitPredicateEnvelope(rawPredicate, 0); err != nil {
-				return fail(err)
+				return nil, err
 			}
 			parsed, err := fromNode(oneTimePredicateNode(oneTimeSourceNumbers(rawPredicate)))
 			if err != nil {
-				return fail(err)
+				return nil, err
 			}
 			parsed = oneTimeSimplify(parsed)
 			if err = oneTimePredicate(parsed); err != nil {
-				return fail(err)
+				return nil, err
 			}
 			encoded, err := directWire(oneTimePredicateWire(parsed))
 			if err != nil {
-				return fail(err)
+				return nil, err
 			}
 			typed.Invariants = append(typed.Invariants, encoded)
 			typed.parsed = append(typed.parsed, parsed)
 		}
-		result.Constraints[name_] = typed
+		admitted[name_] = typed
 	}
-	for name_, rules := range result.Constraints {
+	for name_, rules := range admitted {
 		prefix := ""
 		alphabets := []string{}
 		ty := name_
 		for ty != "String" {
-			current := result.Constraints[ty]
+			current := admitted[ty]
 			if current.Prefix != nil {
 				if !strings.HasPrefix(prefix, *current.Prefix) && !strings.HasPrefix(*current.Prefix, prefix) {
-					return fail(fmt.Errorf("conflicting String prefixes"))
+					return nil, fmt.Errorf("conflicting String prefixes")
 				}
 				if len(*current.Prefix) > len(prefix) {
 					prefix = *current.Prefix
@@ -666,7 +680,7 @@ func admitOneTimeResponse(raw any, command string) (oneTimeResponse, error) {
 			if current.Alphabet != nil {
 				alphabets = append(alphabets, *current.Alphabet)
 			}
-			ty = strings.TrimSpace(result.Declarations[ty].Of)
+			ty = strings.TrimSpace(declarations[ty].Of)
 		}
 		if rules.Alphabet != nil {
 			for _, alphabet := range alphabets {
@@ -677,23 +691,19 @@ func admitOneTimeResponse(raw any, command string) (oneTimeResponse, error) {
 					}
 				}
 				if !shared {
-					return fail(fmt.Errorf("conflicting String alphabets"))
+					return nil, fmt.Errorf("conflicting String alphabets")
 				}
 			}
 		}
 		for _, alphabet := range alphabets {
 			for _, character := range prefix {
 				if !strings.ContainsRune(alphabet, character) {
-					return fail(fmt.Errorf("prefix outside String alphabet"))
+					return nil, fmt.Errorf("prefix outside String alphabet")
 				}
 			}
 		}
 	}
-	result.authority, err = directWire(map[string]any{"fields": oneTimeCanonicalFields(body["fields"]), "declarations": oneTimeCanonicalDeclarations(body["declarations"]), "constraints": result.Constraints})
-	if err != nil {
-		return fail(err)
-	}
-	return result, nil
+	return admitted, nil
 }
 
 func admitOneTimeTrace(scenario map[string]any, major int) (*oneTimeTrace, error) {

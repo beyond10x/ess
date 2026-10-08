@@ -367,24 +367,25 @@ ESS_REPORT_OUT=$PWD/report.json go test ./...
 
 /// The newest suite major the generated Go runtime admits and executes.
 /// Keep this with `newestSuiteMajor` in the embedded runtime; TypeScript owns its admission cap.
-pub(crate) const NEWEST_ADMITTED_SUITE_MAJOR: u32 = 45;
+pub(crate) const NEWEST_ADMITTED_SUITE_MAJOR: u32 = 47;
 
 /// Whether the generated runtimes admit `major`: `/1` through `/37`, the conditional aggregate
 /// measure pair `/38` and `/39` (beyond10x/ess#363), the expression pair `/40` and `/41`, the
-/// seed-bearing pair `/42` and `/43` (beyond10x/ess#413), and the counted event-claim pair `/44` and
-/// `/45` (beyond10x/ess#427).
+/// seed-bearing pair `/42` and `/43` (beyond10x/ess#413), the counted event-claim pair `/44` and
+/// `/45` (beyond10x/ess#427), and the constrained-response pair `/46` and `/47` (beyond10x/ess#499).
 pub(crate) fn admitted_major(major: u32) -> bool {
     (1..=37).contains(&major)
         || crate::conditional_measures::ADMITTED.contains(&major)
         || crate::expression_format::ADMITTED.contains(&major)
         || crate::synthesis_seeds::seed_major(major)
         || crate::event_multiplicity::ADMITTED.contains(&major)
+        || crate::direct_response::CONSTRAINED_ADMITTED.contains(&major)
 }
 
 /// The refusal both emitters write for a suite major their runtime does not admit.
 pub(crate) fn unadmitted_message(target: &str, version: crate::scenario::SuiteFormat) -> String {
     format!(
-        "the generated {target} runner admits suite versions up to `ess-conformance/45`, and \
+        "the generated {target} runner admits suite versions up to `ess-conformance/47`, and \
          would refuse `{version}`; regenerate using a supported suite version"
     )
 }

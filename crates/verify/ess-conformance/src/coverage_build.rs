@@ -552,8 +552,13 @@ fn coverage_version(
         || crate::grant::used_by(suite)
         || crate::bounded_retry::refused_in(inventory);
     // Counted event claims (beyond10x/ess#427) are cumulative over every pair below, seeds included.
+    // String-newtype constraints on response observations (beyond10x/ess#499) are cumulative over
+    // every pair below, the counted one included.
+    let constrained = crate::direct_response::constrained_coverage_floor(suite).is_some();
     let counted = crate::event_multiplicity::coverage_floor(suite).is_some();
-    crate::scenario::SuiteFormat::parse(if counted {
+    crate::scenario::SuiteFormat::parse(if constrained {
+        "ess-conformance/47"
+    } else if counted {
         "ess-conformance/45"
     } else if crate::synthesis_seeds::used_by(suite) {
         "ess-conformance/43"
