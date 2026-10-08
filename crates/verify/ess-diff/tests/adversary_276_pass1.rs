@@ -259,9 +259,10 @@ fn a_domain_naming_edit_stays_unclassified() {
     assert_eq!(ids, [UNCLASSIFIED], "{ids:?}");
 }
 
-/// A domain has no family of its own, so the residual is the only thing that says one arrived.
+/// A domain is its own family since beyond10x/ess#469: its arrival is `domain/<name>/added`, beside
+/// the declaration, and no longer leaves `unclassified-changed` in the residual.
 #[test]
-fn a_domain_added_with_a_declaration_still_reports_unclassified_beside_the_declaration() {
+fn a_domain_added_with_a_declaration_is_named_beside_the_declaration() {
     let system = replaced(SYSTEM, "  - gap.desk\n", "  - gap.desk\n  - gap.notes\n");
     let notes = "
 domain: gap.notes
@@ -280,7 +281,7 @@ types:
     let ids = sorted(ids(&base, &grown));
     assert_eq!(
         ids,
-        [UNCLASSIFIED, "type/gap.notes.NoteId/added"],
+        ["domain/gap.notes/added", "type/gap.notes.NoteId/added"],
         "{ids:?}"
     );
 }

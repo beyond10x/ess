@@ -11,7 +11,7 @@ use crate::change::{ChangeId, SemanticChange, SemanticRelation};
 use crate::compatibility::{ChangeCompatibility, Compatibility, UseIndex, CLASSIFIED_DELTA_FORMAT};
 
 /// Delta format major versions this build implements.
-pub const SUPPORTED_DELTA_FORMATS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
+pub const SUPPORTED_DELTA_FORMATS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
 /// The version of a delta's document shape and admitted change vocabulary.
 ///

@@ -22,6 +22,7 @@
 //! | family | fields covered |
 //! |---|---|
 //! | [`SystemChange`] | `EssIr::{version, summary}` — `system` is the refusal, and `naming` is a field no document can set |
+//! | [`DomainChange`] | which keys `EssIr::domains` holds — a domain's member sets are each construct's own `domain`, compared by that construct's family, and the naming of a domain both revisions declare stays residual |
 //! | [`TypeChange`] | `ResolvedType::{body, naming, reading}`, and `body` down to every arm of `ResolvedBody` |
 //! | [`EntityChange`] | `ResolvedEntity::{domain, identity, fields, lifecycle, invariants, naming}` — `state_type` is derived from the name, and the lifecycle's *state set* is the synthesised `<Entity>.State` enum, which the type family already reports variant by variant |
 //! | [`CommandChange`] | `ResolvedCommand::{domain, input, outcomes, naming}`, and each outcome down to `ResolvedOutcome::{condition, subject, replays, complete_refusal, emits, payload, error, error_payload, refuses, accepts_nothing, returns, summary, sets, decided_by_caller, instances, affects}` — `test_strategy` is a pure function of the condition (`OutcomeCondition::test_strategy`) and `retains_result` of every outcome's `replays`, so comparing either would report one edit twice; `refs` stays residual |
@@ -90,9 +91,10 @@ fn sets_clause(outcome: &str, before: &[String], after: &[String]) -> String {
 ///
 /// Design §60 makes the category order a **format contract** rather than an accident of iteration,
 /// and this enum is that contract: the declaration order below is the sort order, and it is design
-/// §60's own list restricted to the ten families this crate compares — wave 5's six, and the four
-/// W7.2 added in the positions §60 already reserved for them. Alphabetical order would put `actor`
-/// before `system`, which no reader of the document asked for.
+/// §60's own list restricted to the eleven families this crate compares — wave 5's six, the four
+/// W7.2 added, and `domain` (`ess-diff/15`, beyond10x/ess#469), each in the position §60 already
+/// reserved for it. Alphabetical order would put `actor` before `system`, which no reader of the
+/// document asked for.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
 )]
@@ -100,6 +102,8 @@ fn sets_clause(outcome: &str, before: &[String], after: &[String]) -> String {
 pub enum ChangeCategory {
     /// The specification itself: its version, its naming, its summary.
     System,
+    /// A domain entered in, or dropped from, the system's `domains:` list.
+    Domain,
     /// A declared type.
     Type,
     /// An entity.
@@ -128,6 +132,7 @@ impl ChangeCategory {
     pub const fn written(self) -> &'static str {
         match self {
             Self::System => "system",
+            Self::Domain => "domain",
             Self::Type => "type",
             Self::Entity => "entity",
             Self::Command => "command",
@@ -303,6 +308,13 @@ pub enum SemanticChange {
         /// What moved.
         changed: SystemChange,
     },
+    /// A domain arrived or went away (`ess-diff/15`).
+    Domain {
+        /// Which domain.
+        subject: DomainRef,
+        /// What moved.
+        changed: DomainChange,
+    },
     /// A declared type moved.
     Type {
         /// Which type.
@@ -418,6 +430,7 @@ impl SemanticChange {
     #[allow(clippy::too_many_lines)]
     pub fn minimum_format(&self) -> u32 {
         match self {
+            Self::Domain { .. } => DOMAIN_DELTA_FORMAT,
             Self::Command { changed, .. } if changed.is_compensation() => 14,
             Self::Binding { changed, .. } if changed.is_refusal_policy() => 14,
             Self::Binding {
@@ -527,6 +540,7 @@ impl SemanticChange {
     pub fn category(&self) -> ChangeCategory {
         match self {
             Self::System { .. } => ChangeCategory::System,
+            Self::Domain { .. } => ChangeCategory::Domain,
             Self::Type { .. } => ChangeCategory::Type,
             Self::Entity { .. } => ChangeCategory::Entity,
             Self::Command { .. } => ChangeCategory::Command,
@@ -548,6 +562,7 @@ impl SemanticChange {
     pub fn subject(&self) -> Option<EssSemanticRef> {
         match self {
             Self::System { .. } => None,
+            Self::Domain { subject, .. } => Some(subject.clone().into()),
             Self::Type { subject, .. } => Some(subject.clone().into()),
             Self::Entity { subject, .. } => Some(subject.clone().into()),
             Self::Command { subject, .. } => Some(subject.clone().into()),
@@ -564,6 +579,7 @@ impl SemanticChange {
     pub fn subject_name(&self) -> String {
         match self {
             Self::System { subject, .. } => subject.to_string(),
+            Self::Domain { subject, .. } => subject.to_string(),
             Self::Type { subject, .. } => subject.to_string(),
             Self::Entity { subject, .. } => subject.to_string(),
             Self::Command { subject, .. } => subject.to_string(),
@@ -580,6 +596,7 @@ impl SemanticChange {
     pub fn kind(&self) -> &'static str {
         match self {
             Self::System { changed, .. } => changed.kind(),
+            Self::Domain { changed, .. } => changed.kind(),
             Self::Type { changed, .. } => changed.kind(),
             Self::Entity { changed, .. } => changed.kind(),
             Self::Command { changed, .. } => changed.kind(),
@@ -596,6 +613,7 @@ impl SemanticChange {
     fn member(&self) -> Option<String> {
         match self {
             Self::System { changed, .. } => changed.member(),
+            Self::Domain { changed, .. } => changed.member(),
             Self::Type { changed, .. } => changed.member(),
             Self::Entity { changed, .. } => changed.member(),
             Self::Command { changed, .. } => changed.member(),
@@ -617,6 +635,7 @@ impl SemanticChange {
     pub fn relation(&self) -> SemanticRelation {
         match self {
             Self::System { changed, .. } => changed.relation(),
+            Self::Domain { changed, .. } => changed.relation(),
             Self::Type { changed, .. } => changed.relation(),
             Self::Entity { changed, .. } => changed.relation(),
             Self::Command { changed, .. } => changed.relation(),
@@ -646,6 +665,7 @@ impl SemanticChange {
     pub fn describe(&self) -> String {
         match self {
             Self::System { changed, .. } => changed.describe(),
+            Self::Domain { changed, .. } => changed.describe(),
             Self::Type { changed, .. } => changed.describe(),
             Self::Entity { changed, .. } => changed.describe(),
             Self::Command { changed, .. } => changed.describe(),
@@ -748,6 +768,58 @@ impl SystemChange {
                 optional(before.as_ref()),
                 optional(after.as_ref())
             ),
+        }
+    }
+}
+
+/// The first delta format whose vocabulary has the `domain` category (beyond10x/ess#469).
+///
+/// It is above [`CLASSIFIED_DELTA_FORMAT`](crate::compatibility::CLASSIFIED_DELTA_FORMAT), so a
+/// delta that carries a domain change is classified even when nobody asked.
+pub const DOMAIN_DELTA_FORMAT: u32 = 15;
+
+/// A domain entered in, or dropped from, the system's `domains:` list.
+///
+/// Only the arrival and the departure. A domain's member sets are derived from each construct's
+/// own `domain`, so every construct a new domain declares is already `<family>/<name>/added`; but a
+/// domain may declare nothing, and then nothing else says it arrived. Before `ess-diff/15` the
+/// entry fell to the residual as `system/<name>/unclassified-changed`, `unknown`, and a purely
+/// additive revision failed `--fail-on breaking-or-unknown`. The naming of a domain both revisions
+/// declare is not compared here and stays residual, as it was.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum DomainChange {
+    /// The domain is declared in the later revision and not in the earlier one.
+    Added,
+    /// The domain was declared in the earlier revision and is not in the later one.
+    Removed,
+}
+
+impl DomainChange {
+    /// The subtype word, which is also the document's `kind`.
+    pub const fn kind(&self) -> &'static str {
+        match self {
+            Self::Added => "added",
+            Self::Removed => "removed",
+        }
+    }
+
+    /// Nothing: the change is about the whole domain.
+    #[allow(clippy::unused_self)]
+    fn member(&self) -> Option<String> {
+        None
+    }
+
+    /// How it relates the revisions: neither is a widening or a narrowing of a set of values.
+    pub const fn relation(&self) -> SemanticRelation {
+        SemanticRelation::Changed
+    }
+
+    /// One clause saying what moved.
+    pub fn describe(&self) -> String {
+        match self {
+            Self::Added => "declared".to_owned(),
+            Self::Removed => "no longer declared".to_owned(),
         }
     }
 }
