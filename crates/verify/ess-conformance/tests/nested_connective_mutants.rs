@@ -448,3 +448,139 @@ fn a_mutant_guard_over_contradictory_presence_is_dead() {
     }
     assert_eq!(report.counts.survived, 0, "{:#?}", survivors(&report));
 }
+
+/// The reproduction committed with the issue, read from `.engineering/repro/501/system.yaml`.
+fn reproduction() -> String {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../.engineering/repro/501/system.yaml");
+    std::fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("{} cannot be read: {error}", path.display()))
+}
+
+/// The issue's own reproduction scores exactly one `equivalent` mutant, its precedence swap, and
+/// that verdict is decided rather than assumed: with `none-given` narrowed until the two guards
+/// share an input, the same swap names no unsatisfiable overlap and is not `equivalent`.
+#[test]
+fn the_committed_reproduction_scores_exactly_one_equivalent_precedence_swap() {
+    const SWAP: &str = "precedence-swap/catalog.orders.Place/too-many/none-given";
+    let text = reproduction();
+    let report = audit(&text);
+    let equivalent: Vec<&str> = report
+        .mutants
+        .iter()
+        .filter(|entry| entry.verdict == Verdict::Equivalent)
+        .map(|entry| entry.id.as_str())
+        .collect();
+    assert_eq!(equivalent, [SWAP], "{:#?}", verdicts(&report));
+    assert_eq!(report.counts.equivalent, 1, "{:#?}", verdicts(&report));
+    assert_eq!(
+        report.counts.survived,
+        0,
+        "survivors: {:#?}",
+        survivors(&report)
+    );
+
+    let none_given = "all: [{item_code: {defined: false}}, {item_sku: {defined: false}}, \
+                      {item_url: {defined: false}}]";
+    assert!(
+        text.contains(none_given),
+        "the reproduction changed: {text}"
+    );
+    let overlapping = text.replace(none_given, "{item_url: {defined: false}}");
+    let report = audit(&overlapping);
+    let swap = report
+        .mutants
+        .iter()
+        .find(|entry| entry.id == SWAP)
+        .unwrap_or_else(|| panic!("no precedence swap in {:#?}", verdicts(&report)));
+    assert_eq!(
+        swap.unsatisfiable_guard, None,
+        "an input with item_code and item_sku but no item_url selects both branches"
+    );
+    assert_ne!(
+        swap.verdict,
+        Verdict::Equivalent,
+        "{:#?}",
+        verdicts(&report)
+    );
+}
+
+/// `all: [s > "m", s > "k"]` nested in an `any`: no text is above `"m"` and not above `"k"`, so
+/// the default's row where `s > "k"` alone fails exists nowhere, and an ordered text is a leaf the
+/// search cannot show exhausted.
+const UNSOLVED_CHILD: &str = r#"format: ess/23
+system: text
+version: v1
+domain: text.word
+
+components:
+  - component: word-server
+    owns:
+      domains: [text.word]
+    accepts:
+      commands: [text.word.Sort]
+    reached_by: network
+
+errors:
+  - name: text.word.Late
+
+commands:
+  - name: text.word.Sort
+    input:
+      - {name: s, type: String}
+      - {name: c, type: Boolean}
+    outcomes:
+      - name: late
+        when:
+          any:
+            - all: ["s > \"m\"", "s > \"k\""]
+            - "c == true"
+        error: text.word.Late
+      - name: sorted
+        accepts: nothing
+"#;
+
+/// A per-child row no search finds is named by an `ESS-SYNTH-022` refusal beside the scenario
+/// that stands without it, never skipped silently.
+#[test]
+fn a_per_child_row_no_search_finds_is_refused_beside_its_scenario() {
+    let (files, texts) = parsed(UNSOLVED_CHILD);
+    let ir = mutate::compile(files, &texts).expect("the fixture compiles");
+    let synthesis = ess_conformance::synthesize::synthesize(&ir);
+    let scenario = "text.word.Sort/outcome/sorted";
+    assert!(
+        synthesis
+            .suite
+            .scenarios
+            .keys()
+            .any(|id| id.to_string() == scenario),
+        "the default's scenario stands"
+    );
+    let beside: Vec<String> = synthesis
+        .refusals
+        .iter()
+        .filter(|refusal| {
+            refusal.stands
+                && refusal.code().to_string() == "ESS-SYNTH-022"
+                && refusal
+                    .scenario
+                    .as_ref()
+                    .map(ToString::to_string)
+                    .as_deref()
+                    == Some(scenario)
+        })
+        .map(ToString::to_string)
+        .collect();
+    assert!(
+        beside.iter().any(
+            |refusal| refusal.contains("leaves a connective's child unwitnessed")
+                && refusal.contains("not (s > k)")
+        ),
+        "every refusal: {:#?}",
+        synthesis
+            .refusals
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+    );
+}

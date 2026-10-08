@@ -452,7 +452,8 @@ fn generated_effect(cause: &crate::RefusalCause) -> Effect {
         | RefusalCause::InvariantUnobservable { .. }
         | RefusalCause::RefusalUndeclared { .. }
         | RefusalCause::InstantComparisonUntagged { .. }
-        | RefusalCause::AbsenceUnwitnessed { .. } => Effect::CheckNotEmitted,
+        | RefusalCause::AbsenceUnwitnessed { .. }
+        | RefusalCause::ChildUnwitnessed { .. } => Effect::CheckNotEmitted,
         RefusalCause::NoWitness(_)
         | RefusalCause::GuardUnevaluable(_)
         | RefusalCause::GuardUnsatisfiable { .. }

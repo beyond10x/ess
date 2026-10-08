@@ -677,6 +677,15 @@ impl fmt::Display for Refusal {
                 self.code(),
                 self.subject
             ),
+            // The scenario exists; one child of a connective has no input of its own in it
+            // (https://github.com/beyond10x/ess/issues/501).
+            Some(id) if matches!(self.cause, RefusalCause::ChildUnwitnessed { .. }) => writeln!(
+                f,
+                "refusal[{}]: {} has a scenario `{id}` that leaves a connective's child \
+                 unwitnessed",
+                self.code(),
+                self.subject
+            ),
             // The scenario exists; a held state its refusal claims has no row in it (ess/23,
             // beyond10x/ess#461).
             Some(id) if self.stands => writeln!(
@@ -971,6 +980,17 @@ pub enum RefusalCause {
         /// Why it could not be left absent.
         reason: String,
     },
+    /// A connective's child has no input of its own in a scenario that stands: none of the guard's
+    /// candidates, and no input solved for it, lets that child alone decide the connective while
+    /// the connective decides the guard (<https://github.com/beyond10x/ess/issues/501>). Raised only
+    /// where the search did not try every value of every field the predicate reads, so the input may
+    /// exist; the connective's mutant may then go unkilled.
+    ChildUnwitnessed {
+        /// The input that was searched for, as it reads.
+        predicate: String,
+        /// How many solved candidates were decided against it.
+        tried: usize,
+    },
     /// A synthesized step requires a branch for an input the guards answer otherwise
     /// (beyond10x/ess#280): an input-guarded refusal, or an accepting `when:` branch declared
     /// before it, claims the input first, or the branch's own `when:` refutes it.
@@ -1005,6 +1025,10 @@ pub const ABSENCE_UNWITNESSED: u16 = 20;
 /// `RefusalCause::InstantComparisonUntagged`'s number in the `SYNTH` family, the next after
 /// [`ABSENCE_UNWITNESSED`] (`docs/design/expression-family-source22.md`, decision 2).
 pub const INSTANT_UNTAGGED: u16 = 21;
+
+/// `RefusalCause::ChildUnwitnessed`'s number in the `SYNTH` family, the next after
+/// [`INSTANT_UNTAGGED`] (<https://github.com/beyond10x/ess/issues/501>).
+pub const CHILD_UNWITNESSED: u16 = 22;
 
 /// The repair for a family asked to send a command guarded by a related row (ess/18, #211): only the
 /// command's own outcome scenarios and its drivers arrange that row, and any other family has none
@@ -1210,9 +1234,16 @@ impl RefusalCause {
                  the specification that produced it"
             }
             Self::AbsenceUnwitnessed { .. } => ABSENCE_REPAIR,
+            Self::ChildUnwitnessed { .. } => CHILD_REPAIR,
         }
     }
 }
+
+/// The repair for a connective's child no input was found for
+/// (<https://github.com/beyond10x/ess/issues/501>).
+const CHILD_REPAIR: &str = "cover the child with an authored scenario (ess-scenario/1) that sends \
+     an input where it alone decides the connective, or write the guard so that such an input \
+     exists";
 
 /// The repair for an absent reference no arrangement leaves absent (ess/22, beyond10x/ess#285).
 const ABSENCE_REPAIR: &str = "fill the reference from an Optional input that the branch, or the \
@@ -1348,6 +1379,10 @@ crate::authored::diagnostic_catalogue! {
              instants.",
             "write the comparison in an ess/22 source, which tags it, or write \
              `{compare: {left, op, right, as: timestamp}}`";
+        Self::ChildUnwitnessed { .. } => CHILD_UNWITNESSED,
+            "No input was found where one child of an `any`/`all` alone decides it and it decides \
+             the guard; the branch's scenario stands without that input.",
+            CHILD_REPAIR;
     }
 }
 
@@ -1493,6 +1528,10 @@ impl fmt::Display for RefusalCause {
             Self::AbsenceUnwitnessed { reference, reason } => {
                 write!(f, "no arrangement leaves `{reference}` absent: {reason}")
             }
+            Self::ChildUnwitnessed { predicate, tried } => write!(
+                f,
+                "no solved candidate of the {tried} tried satisfies `{predicate}`"
+            ),
             Self::InvariantUnobservable { .. } => invariant_unobservable(f, self),
             Self::ValueInvariantUnwitnessed {
                 value,
@@ -2715,7 +2754,9 @@ fn outcome_scenario_noting(
             ConformanceScenario::new(purpose(command, outcome), steps, source),
         ));
     }
-    let (further, depends) = boundaries(models, command, outcome, actors, &run, &steps);
+    let (further, depends) = boundaries(
+        models, command, outcome, actors, &run, &steps, &id, refusals,
+    );
     steps.extend(further);
     source.extend(depends);
     // ess/16 (#163): the branch again with every input it reads only through `else: <literal>`
@@ -13092,10 +13133,18 @@ type Row = BTreeMap<String, Node>;
 
 /// One further row per child of a connective with two or more children, where the child decides
 /// `alone` and every other child the opposite (beyond10x/ess#155) — skipping a child the plain
-/// witness or an earlier row already isolates, and one no candidate isolates.
+/// witness or an earlier row already isolates.
 ///
-/// `also` further restricts the rows that count: a nested connective's rows must also decide the
-/// guard otherwise than its connective mutant does ([`nested_connectives`]).
+/// `swapped`, for a connective below the top-level ones, is the guard as that connective's mutant
+/// writes it: a row must then also decide the guard otherwise than `swapped` does
+/// ([`nested_connectives`]).
+///
+/// A row is taken from the guard's own candidates first, so a suite that always had one keeps its
+/// bytes. Where none of them isolates the child, the row is solved for directly, as
+/// [`isolating`] states it (<https://github.com/beyond10x/ess/issues/501>): a bounded candidate
+/// set of a wide guard holds no input where one conjunct alone fails and every other disjunct
+/// fails too. Where that finds none either and the search did not exhaust every input, the row is
+/// named in `missed` as the predicate no candidate satisfied, never skipped silently.
 #[allow(clippy::too_many_arguments)]
 fn one_per_child(
     ir: &EssIr,
@@ -13103,17 +13152,27 @@ fn one_per_child(
     guard: &Predicate,
     children: &[Predicate],
     alone: bool,
-    also: &dyn Fn(&crate::InputFacts<'_>) -> bool,
+    swapped: Option<&Predicate>,
     primary: &Row,
     rows: &mut Vec<Row>,
     keep: &dyn Fn(Row, &mut Vec<Row>),
+    missed: &mut Vec<RefusalCause>,
 ) {
     if children.len() < 2 {
         return;
     }
+    let decisive = |facts: &crate::InputFacts<'_>| {
+        swapped.is_none_or(|swapped| {
+            matches!(
+                (facts.decide(guard), facts.decide(swapped)),
+                (Decision::Satisfied, Decision::Refuted(_))
+                    | (Decision::Refuted(_), Decision::Satisfied)
+            )
+        })
+    };
     for index in 0..children.len() {
         let isolates = |facts: &crate::InputFacts<'_>| {
-            exactly_one(facts, children, index, alone) && also(facts)
+            exactly_one(facts, children, index, alone) && decisive(facts)
         };
         if flatten(ir, command, primary).is_ok_and(|facts| isolates(&facts))
             || rows
@@ -13129,12 +13188,68 @@ fn one_per_child(
                 break;
             }
         }
+        if rows.len() > before {
+            continue;
+        }
+        let goal = isolating(guard, children, index, alone, swapped);
+        let mut found = false;
+        let mut tried = 0;
+        for candidate in
+            crate::witness::solving(ir, command, &goal, Distinction::PLAIN).unwrap_or_default()
+        {
+            tried += 1;
+            if !flatten(ir, command, &candidate).is_ok_and(|facts| isolates(&facts)) {
+                continue;
+            }
+            found = true;
+            keep(candidate, rows);
+            if rows.len() > before {
+                break;
+            }
+        }
+        // An input that isolates the child but selects another branch is that branch's, and a
+        // search that tried every region of every leaf shows no input isolates it at all; only
+        // a search that stopped short leaves the row unwitnessed without saying why.
+        if !found && !crate::witness::exhausts(ir, command, &[&goal]) {
+            missed.push(RefusalCause::ChildUnwitnessed {
+                predicate: goal.to_string(),
+                tried,
+            });
+        }
     }
 }
 
-/// No further restriction on the rows [`one_per_child`] keeps.
-fn always(_: &crate::InputFacts<'_>) -> bool {
-    true
+/// The input [`one_per_child`] asks for, as one predicate: the child at `index` decides `alone`,
+/// every other child the opposite, and — for a nested connective — `guard` is decided otherwise
+/// than its connective mutant `swapped` decides it.
+fn isolating(
+    guard: &Predicate,
+    children: &[Predicate],
+    index: usize,
+    alone: bool,
+    swapped: Option<&Predicate>,
+) -> Predicate {
+    let mut wanted: Vec<Predicate> = children
+        .iter()
+        .enumerate()
+        .map(|(other, child)| {
+            if (other == index) == alone {
+                child.clone()
+            } else {
+                Predicate::Not(Box::new(child.clone()))
+            }
+        })
+        .collect();
+    if let Some(swapped) = swapped {
+        let differs = |holds: &Predicate, fails: &Predicate| {
+            Predicate::All(vec![holds.clone(), Predicate::Not(Box::new(fails.clone()))])
+        };
+        wanted.push(Predicate::Any(vec![
+            differs(guard, swapped),
+            differs(swapped, guard),
+        ]));
+    }
+    Predicate::All(wanted)
 }
 
 /// One `any:` or `all:` node of a guard below its top-level connectives, with two or more
@@ -13234,7 +13349,8 @@ fn swapped_at(guard: &Predicate, at: &[usize]) -> Predicate {
 /// witnessed at (<https://github.com/beyond10x/ess/issues/501>): one per child, where that child
 /// holds and its siblings fail on the guarded side, or that child alone fails on the default's,
 /// and where the guard is decided otherwise than its connective mutant decides it — the enclosing
-/// connectives let this node decide the guard. A guard with no nested connective adds nothing.
+/// connectives let this node decide the guard. A guard with no nested connective adds nothing; a
+/// row no search found is named in `missed` ([`one_per_child`]).
 #[allow(clippy::too_many_arguments)]
 fn nested_rows(
     ir: &EssIr,
@@ -13244,29 +13360,23 @@ fn nested_rows(
     primary: &Row,
     rows: &mut Vec<Row>,
     keep: &dyn Fn(Row, &mut Vec<Row>),
+    missed: &mut Vec<RefusalCause>,
 ) {
     for nested in nested_connectives(guard) {
         if nested.guarded != guarded {
             continue;
         }
-        let swapped = &nested.swapped;
-        let decisive = |facts: &crate::InputFacts<'_>| {
-            matches!(
-                (facts.decide(guard), facts.decide(swapped)),
-                (Decision::Satisfied, Decision::Refuted(_))
-                    | (Decision::Refuted(_), Decision::Satisfied)
-            )
-        };
         one_per_child(
             ir,
             command,
             guard,
             nested.children,
             guarded,
-            &decisive,
+            Some(&nested.swapped),
             primary,
             rows,
             keep,
+            missed,
         );
     }
 }
@@ -13286,11 +13396,15 @@ fn nested_rows(
 /// Every row is decided again by [`selects_branch`] before it is kept, and a row equal to the plain
 /// witness is not sent twice. Numbers step by one, instants by a second; text and equality have no
 /// neighbour a boundary moves to.
+///
+/// A per-child row of a connective that no search found is named in `missed`, as the predicate no
+/// candidate satisfied (<https://github.com/beyond10x/ess/issues/501>).
 fn boundary_inputs(
     ir: &EssIr,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     primary: &BTreeMap<String, Node>,
+    missed: &mut Vec<RefusalCause>,
 ) -> Vec<BTreeMap<String, Node>> {
     let mut rows: Vec<BTreeMap<String, Node>> = Vec::new();
     let keep = |candidate: BTreeMap<String, Node>, rows: &mut Vec<_>| {
@@ -13328,12 +13442,12 @@ fn boundary_inputs(
                     continue;
                 };
                 one_per_child(
-                    ir, command, guard, children, true, &always, primary, &mut rows, &keep,
+                    ir, command, guard, children, true, None, primary, &mut rows, &keep, missed,
                 );
             }
             // Each child of every connective below the top-level ones that the guarded branch
             // witnesses (https://github.com/beyond10x/ess/issues/501).
-            nested_rows(ir, command, guard, true, primary, &mut rows, &keep);
+            nested_rows(ir, command, guard, true, primary, &mut rows, &keep, missed);
             for candidate in overlap_inputs(ir, command, outcome) {
                 keep(candidate, &mut rows);
             }
@@ -13390,11 +13504,11 @@ fn boundary_inputs(
                 // plain witness or an earlier row adds nothing.
                 let owned: Vec<Predicate> = conjuncts.iter().map(|it| (*it).clone()).collect();
                 one_per_child(
-                    ir, command, guard, &owned, false, &always, primary, &mut rows, &keep,
+                    ir, command, guard, &owned, false, None, primary, &mut rows, &keep, missed,
                 );
                 // Each child of every connective below the top-level ones that a default witnesses
                 // (https://github.com/beyond10x/ess/issues/501).
-                nested_rows(ir, command, guard, false, primary, &mut rows, &keep);
+                nested_rows(ir, command, guard, false, primary, &mut rows, &keep, missed);
                 // A case-insensitive guard's literal in a case only Unicode folding equates with it
                 // (beyond10x/ess#140): ASCII folding refutes it, so the default is sent it, and a target
                 // that folds Unicode takes the guarded branch and fails.
@@ -13893,7 +14007,8 @@ fn sent_requiring(
 /// branches whose input alone selects them: a guard over the held state or the stored row is
 /// arranged by searches of their own, and an externally decided or replayed branch has no boundary
 /// the input moves.
-#[allow(clippy::too_many_lines)] // Keep each boundary's arrangement beside its acting invocation.
+// Keep each boundary's arrangement beside its acting invocation.
+#[allow(clippy::too_many_lines, clippy::too_many_arguments)]
 fn boundaries(
     models: &caller::InvocationModels<'_>,
     command: &ResolvedCommand,
@@ -13901,6 +14016,8 @@ fn boundaries(
     actors: &BTreeMap<QualifiedName, ActorRef>,
     run: &Run,
     steps: &[ScenarioStep],
+    id: &ScenarioId,
+    refusals: &mut Vec<Refusal>,
 ) -> (Vec<ScenarioStep>, BTreeSet<EssSemanticRef>) {
     let ir = models.arrangement;
     let mut out = (Vec::new(), BTreeSet::new());
@@ -13943,13 +14060,17 @@ fn boundaries(
                 .map(|placeholder| (field.clone(), placeholder.clone())),
         })
         .collect();
+    // A per-child row no search found stands beside the scenario as a refusal naming it, so the
+    // suite says what it does not pin (https://github.com/beyond10x/ess/issues/501).
+    let mut missed = Vec::new();
     let rows = match &held {
         Some(held) => overlap_inputs_in_state(ir, command, outcome, held)
             .into_iter()
             .filter(|row| row != &primary && admitted(ir, command, row))
             .collect(),
-        None => boundary_inputs(ir, command, outcome, &primary),
+        None => boundary_inputs(ir, command, outcome, &primary, &mut missed),
     };
+    refusals.extend(missed.into_iter().map(|cause| Refusal::beside(id, cause)));
     if rows.is_empty() {
         return out;
     }
