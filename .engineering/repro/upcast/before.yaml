@@ -1,0 +1,78 @@
+format: ess/23
+system: catalog
+version: v1
+domain: catalog.items
+
+components:
+  - component: items-server
+    owns:
+      domains: [catalog.items]
+    accepts:
+      commands: [catalog.items.Add, catalog.items.Accept]
+    publishes:
+      events: [catalog.items.Added, catalog.items.Accepted]
+    reached_by: network
+
+types:
+  - {name: catalog.items.ItemId, kind: newtype, of: String}
+
+entities:
+  - name: catalog.items.Item
+    identity: {name: item_id, type: catalog.items.ItemId}
+    fields:
+      - {name: revision, type: Integer}
+      - {name: receipt, type: String}
+    lifecycle:
+      initial: Open
+      states: [Open, Accepted]
+      terminal: [Accepted]
+      transitions:
+        - {name: accept, from: [Open], to: Accepted}
+
+actors:
+  - name: catalog.items.Clerk
+    may: [catalog.items.Add, catalog.items.Accept]
+
+errors:
+  - name: catalog.items.Refused
+
+events:
+  - name: catalog.items.Added
+    fields:
+      - {name: item_id, type: catalog.items.ItemId}
+  - name: catalog.items.Accepted
+    fields:
+      - {name: item_id, type: catalog.items.ItemId}
+      - {name: receipt, type: String}
+
+commands:
+  - name: catalog.items.Add
+    input:
+      - {name: revision, type: Integer}
+    outcomes:
+      - name: added
+        creates: catalog.items.Item
+        instance: item_id
+        sets: {revision: input.revision, receipt: ""}
+        emits: [catalog.items.Added]
+        payload:
+          catalog.items.Added: {item_id: {generated: true}}
+
+  - name: catalog.items.Accept
+    input:
+      - {name: item_id, type: catalog.items.ItemId}
+      - {name: receipt, type: String}
+    outcomes:
+      - name: unknown
+        unknown_instance: true
+        error: catalog.items.Refused
+      - name: already-accepted
+        wrong_state: true
+        error: catalog.items.Refused
+      - name: accepted
+        moves: catalog.items.Item.accept
+        instance: item_id
+        sets: {receipt: input.receipt}
+        emits: [catalog.items.Accepted]
+        payload:
+          catalog.items.Accepted: {item_id: input.item_id, receipt: input.receipt}
