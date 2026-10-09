@@ -876,8 +876,8 @@ enum ConformCommand {
     /// `report.json` beside it. `--collect DIR` scores those reports with the exit statuses above;
     /// a missing report makes its mutant inconclusive. `--emit` writes an ess-mutation-manifest/3,
     /// or /4 where it holds a sets-drop, precedence-swap or emit-swap mutant or an unavailable
-    /// site, or names a component; `--collect` also reads the /2 and /1 manifests earlier releases
-    /// wrote.
+    /// site, or names a component, and /5 where a precedence-swap mutant's two branches give an
+    /// identical answer; `--collect` also reads the /2 and /1 manifests earlier releases wrote.
     ///
     /// For a repository that implements one component, `--emit --component NAME` writes the
     /// component's suites, as `synthesize --component` writes them, and marks out of scope every
@@ -910,7 +910,7 @@ enum ConformCommand {
         #[arg(long, conflicts_with = "target")]
         component: Option<String>,
         /// Where to write the `ess-mutation-report/3` document (`/4` for a component, a
-        /// declaration or unavailable sites).
+        /// declaration or unavailable sites, `/5` where a mutant's two branches answer alike).
         #[arg(long)]
         report_out: Option<PathBuf>,
         /// An `ess-known-failures/1` declaration of baseline scenarios the target is known to fail.
