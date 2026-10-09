@@ -10,7 +10,7 @@ tags:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 2
+revision: 3
 ---
 ## Outcome
 
@@ -44,3 +44,9 @@ Inferred cause: a served component named `server`. No commit since 0.56.0 touche
 The adopter's contract declares its only served component as `- component: server`, which is the
 inferred cause above: the component's surface file and the server package's helpers file both
 resolve to `server/server.go`. No reproducer follows; the test writes its own neutral contract.
+
+## Reproduced (ess 0.56.0)
+
+The adopter reran its contract: with the component named `server`, `--target go` panics on
+`server/server.go`; with the same component renamed (any other name), it synthesizes
+(48 capabilities, 45 generated, 3 obligations, 0 refused). The component name alone decides it.
