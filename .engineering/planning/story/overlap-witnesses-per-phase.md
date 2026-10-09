@@ -30,7 +30,7 @@ scope:
   path: crates/verify/ess-conformance/tests/refusal_pair_overlap.rs
 - confidence: cited
   path: docs/design/input-guard-overlap-precedence.md
-revision: 10
+revision: 11
 ---
 # Story: Two overlapping branches of one phase are witnessed where both hold
 
@@ -106,3 +106,26 @@ story or the tree) or **inferred** (a reading that could be wrong).
 4. Bring refusal pairs into `unwitnessed_overlaps`; notes are not in `model_line` digests (`external_beside_held_guard.rs:943-987`).
 5. `precedence_sites` reads the plan's same-phase pairs; the pins `("precedence-swap", 0)` at `mutation_audit.rs:336,525` and the 244b `mutants=` column move.
 6. Assert the first ladder candidate (`first_candidate`, `synthesize.rs:6663`), not a hard-coded `quantity: 0`.
+
+## Evidence (adopter report, ess 0.56.0)
+
+An adopter: no synthesized scenario sends a request where two input-guarded refusals with
+different errors both hold, so their declared precedence is never pinned and precedence-swap
+mutants survive (not https://github.com/beyond10x/ess/issues/517, which covers swaps with the same
+error and payload). On `main`, 32afe8ef40 (in 0.54.0) sends that overlap only for commands whose
+branches read the input alone (`refusal_pair_overlaps`,
+`crates/verify/ess-conformance/src/synthesize.rs:13736-13758`). On the held-state path
+`boundaries` returns early unless a refusal overlaps an accepting branch (`:14074-14079`;
+`overlaps`, `:13606`, pairs refusals with accepting branches only); on the stored-row path
+`subject_fact::routes` returns early (`:14062`) and `refusal_pair_inputs` (`:13712`) serves only
+the unknown-identity refusal. `unwitnessed_overlaps` (`:13948`) reads `overlaps` only, so an
+unsent refusal pair raises no note.
+
+## Acceptance (added)
+
+- A neutral fixture with two input-guarded refusals (different errors, guards that can hold
+  together) on a command that also has a held-state branch: synthesis writes one scenario at
+  their overlap expecting the declared-first refusal and its error; the precedence-swap mutant is
+  killed.
+- A refusal pair synthesis does not send is named in a note, as an unwitnessed refusal/accepting
+  overlap already is.
