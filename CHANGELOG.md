@@ -33,6 +33,17 @@
   newtype redefined as a struct, a struct member retyped to a list). The delta records the shapes
   before and after; earlier formats refuse it. A move within one wire form, `Json` on either side,
   and a type with no input use keep their answer, format and bytes.
+- `ess-diff/17`: `ess verify diff` rates three changes that refuse an existing caller as breaking
+  for callers, where it rated them unknown and `--fail-on breaking` passed them: an added input
+  whose type is not `Optional`, an added refusal, and a refusal whose `when:` guard changed so it
+  now refuses an input the earlier revision accepted. An input the earlier revision already
+  refused, by any refusal under any name, does not count, and neither does an enum value it did
+  not declare. The two refusals are decided only where every outcome of the earlier revision, and
+  each up to the refusal in the later one, is a plain `when:` or `otherwise` branch the mutation
+  audit's satisfiability check decides; anything else stays unknown. The delta
+  records `narrows` (`required-input`, `refusal-added`, `refusal-widened`) beside the answer;
+  earlier formats refuse it. An added accepting outcome, an added `Optional` input and every other
+  delta keep their answer, format and bytes (https://github.com/beyond10x/ess/issues/514).
 
 - `ess specify validate` refuses a domain, command or view wire name that contains `/`, or is `.`
   or `..`, as `path_segment_wire_name` (`ESS-DOMAIN-012`, `ESS-COMMAND-012`, `ESS-VIEW-012`), naming
@@ -51,6 +62,61 @@
 
 ### Fixed
 
+- `ess verify conform synthesize` keeps the `external:` and success scenarios of a command that
+  has an input no guard reads whose newtype invariant refuses the default witness, beside several
+  string guards on another input. They were refused with `ESS-SYNTH-003` ("no candidate of the 4
+  tried"). The candidate search now starts that input at the first value its invariant admits,
+  instead of varying it last and dropping every candidate before it. That value is the one the
+  search reached first before, so suites the search already served keep their scenarios
+  (https://github.com/beyond10x/ess/issues/511).
+- `ess verify conform run --target interpreted` decides a command with a current-time (`now`)
+  guard, where it answered every scenario of that command `unsupported`, authored ones included.
+  The interpreter decides at the instant of the step being executed, which is also the instant
+  that step's `now_offset` values resolve against. It reads that instant once per decision.
+  The interpreted run reads no machine clock: its wall is the fixed
+  `now_offset::earliest_run()` instant, so two runs print the same report. The text report now
+  prints the diagnostic under an `unsupported` scenario, as it already did under an `error` one,
+  so a guard the target cannot decide is named. The library adds `Runner::command_clock`, a
+  command clock that reads the runner's step instant
+  (https://github.com/beyond10x/ess/issues/510).
+- `ess verify conform mutate` scores a guard mutant on a branch carrying both `when:` and
+  `when_subject:` as `equivalent` (`ESS-MUTATE-005`) where its mutated `when:` can hold only with an
+  input field absent that the `when_subject:` predicate needs to compare: such a comparison is
+  `Unknown` on every row, never `True`, so the branch is selected on no row and no scenario can
+  take it. `when: defined(expected_version)` beside `when_subject: version != input.expected_version`,
+  negated to `not defined(expected_version)`, was reported `unwitnessed` (its suite refused the
+  branch with `ESS-SYNTH-003`). The entry's `unsatisfiable_guard` names the mutated `when:` and the
+  stored predicate together. A stored predicate that can still hold, through a test reading no
+  absent input or through another disjunct, keeps its scoring, and a failed scenario still kills
+  the mutant.
+- `ess verify conform mutate` scores a `precedence-swap` of two branches that answer alike as
+  `equivalent` (`ESS-MUTATE-005`), where it reported a survivor no implementation could kill:
+  the same error, the same or no payload, and neither branch changing state, setting or emitting
+  anything. The entry names the shared answer as `identical_answer`, apart from
+  `unsatisfiable_guard`, which still means only that the two guards never overlap. A failed
+  scenario still kills such a mutant. Two refusals that differ in error, payload or effect keep
+  their scoring. A report or manifest carrying `identical_answer` is `ess-mutation-report/4` or
+  `ess-mutation-manifest/4`; an earlier manifest carrying it, or one carrying it on a mutant that
+  is not a `precedence-swap`, is refused
+  (https://github.com/beyond10x/ess/issues/517).
+- Synthesis writes the `wrong_state` scenario of a command whose `when_subject:` sibling
+  quantifies over an input list and compares its elements with the row, such as
+  `not (exists audience in input.aud: audience == {fact: client_id})`. The candidate search drew
+  that list from the input guards alone, so no candidate held the row's value and the scenario
+  was refused as `ESS-SYNTH-003`, whatever the row. Where no candidate is found, the search now
+  tries lists grounded on the row's values. Each sibling is still refuted through any one of its
+  conjuncts (`when:` or `when_subject:`). A scenario where every row and input leave some sibling
+  with all its conjuncts holding is still refused with `ESS-SYNTH-003`. Suites the first search
+  already served keep their bytes (https://github.com/beyond10x/ess/issues/516).
+- The doc comment on the generated Rust `Generated<P>` bundle names `TryContext` and its legacy
+  `Context` blanket adapter only where the same synthesis emits them. Where no generated behaviour
+  asks the context anything (for example when every command with an `external:` outcome is owed),
+  it named two traits the crate does not have. Modules that emit them keep their bytes; no type,
+  trait or signature changes.
+- The Go and TypeScript runners that `ess verify conform synthesize --target go|typescript`
+  generates admit a suite whose shapes hold `json`. A model with a `Json` field synthesized such a
+  suite, and both runners refused it at admission with `suite admission: <Command>/outcome/<name>:
+  unknown primitive`. A `json` value is compared structurally, as the Rust runner compares it.
 - The test suites remove every scratch directory they create under `TMPDIR` when its guard
   drops, panics and read-only fixtures included; directories a process-lifetime cache holds live
   under `CARGO_TARGET_TMPDIR`. An `ess-xtask` check runs a set of suites with an empty `TMPDIR` and

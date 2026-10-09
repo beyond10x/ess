@@ -1,0 +1,99 @@
+format: ess/23
+system: demo
+version: v1
+domain: demo.access
+summary: A sign-in request refused for a malformed hint, an unregistered return address or by a provider.
+types:
+  - {name: demo.access.ClientId, kind: newtype, of: String}
+  - {name: demo.access.ReturnUri, kind: newtype, of: String}
+  - {name: demo.access.Hint, kind: newtype, of: String}
+  - {name: demo.access.State, kind: newtype, of: String}
+  - name: demo.access.Scope
+    kind: newtype
+    of: String
+    invariants:
+      - any:
+          - value == "basic"
+          - {value: {starts_with: "basic "}}
+          - {value: {ends_with: " basic"}}
+          - {value: {contains: " basic "}}
+entities:
+  - name: demo.access.Client
+    identity: {name: client_id, type: demo.access.ClientId}
+    fields:
+      - {name: return_uris, type: List<demo.access.ReturnUri>}
+    lifecycle:
+      initial: Registered
+      states: [Registered]
+      terminal: [Registered]
+actors:
+  - name: demo.access.Caller
+    may: [demo.access.Register, demo.access.SignIn]
+errors:
+  - {name: demo.access.NotRedirected, summary: The client or return address is unknown., fields: []}
+  - {name: demo.access.InvalidRequest, summary: The request is malformed., fields: []}
+  - {name: demo.access.LoginRequired, summary: The caller must sign in interactively., fields: []}
+  - {name: demo.access.AccessDenied, summary: The request was denied., fields: []}
+events:
+  - name: demo.access.Registered
+    fields:
+      - {name: client_id, type: demo.access.ClientId}
+  - name: demo.access.SignedIn
+    fields:
+      - {name: client_id, type: demo.access.ClientId}
+      - {name: state, type: Optional<demo.access.State>, presence: omitted_when_absent}
+commands:
+  - name: demo.access.Register
+    input:
+      - {name: return_uris, type: List<demo.access.ReturnUri>}
+    response:
+      - {name: client_id, type: demo.access.ClientId}
+    outcomes:
+      - name: registered
+        creates: demo.access.Client
+        instance: client_id
+        sets: {return_uris: input.return_uris}
+        emits: [demo.access.Registered]
+        payload: {demo.access.Registered: {client_id: {response: client_id}}}
+        returns: true
+  - name: demo.access.SignIn
+    input:
+      - {name: client_id, type: demo.access.ClientId}
+      - {name: scope, type: demo.access.Scope}
+      - {name: return_uri, type: demo.access.ReturnUri}
+      - {name: hint, type: Optional<demo.access.Hint>}
+      - {name: state, type: Optional<demo.access.State>}
+    outcomes:
+      - name: unknown-client
+        when_related: {via: input.client_id, exists: false}
+        error: demo.access.NotRedirected
+      - name: return-uri-not-registered
+        when_related:
+          via: input.client_id
+          predicate: {not: {exists: {in: return_uris, as: uri, that: uri == input.return_uri}}}
+        error: demo.access.NotRedirected
+      - name: hint-leads
+        when: {all: [{hint: {defined: true}}, {hint: {starts_with: "none "}}]}
+        error: demo.access.InvalidRequest
+      - name: hint-between
+        when: {all: [{hint: {defined: true}}, {hint: {contains: " none "}}]}
+        error: demo.access.InvalidRequest
+      - name: hint-trails
+        when: {all: [{hint: {defined: true}}, {hint: {ends_with: " none"}}]}
+        error: demo.access.InvalidRequest
+      - name: login-required
+        external: the caller is not signed in and may not be asked to
+        error: demo.access.LoginRequired
+      - name: access-denied
+        external: the caller or the provider denied the request
+        error: demo.access.AccessDenied
+      - name: signed-in
+        emits: [demo.access.SignedIn]
+        payload: {demo.access.SignedIn: {client_id: input.client_id, state: input.state}}
+views:
+  - name: demo.access.Clients
+    source: demo.access.Client
+    consistency: read_your_writes
+    fields:
+      - {name: client_id, type: demo.access.ClientId}
+      - {name: return_uris, type: List<demo.access.ReturnUri>}

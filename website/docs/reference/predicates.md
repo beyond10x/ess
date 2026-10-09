@@ -797,7 +797,10 @@ and the row read back is required to hold it. A stored instant no such input car
 implementation generates, a literal, a converted value, a member inside a structure — is refused
 by name rather than decided at the reference instant. A target supplies the decision's instant
 from its own clock: the interpreter reads a command clock it is handed once per decision, and a
-generated Rust or Go behaviour reads its context's command clock once per decision. With no clock,
+generated Rust or Go behaviour reads its context's command clock once per decision.
+`ess verify conform run --target interpreted` hands the interpreter the instant of the step being
+executed, the one that step's `now_offset` values resolve against, and reads no machine clock, so
+two runs print the same report. With no clock,
 a decision that needs one is refused naming the command clock, and every answer decided before it
 stands. See `docs/design/expression-family-source22.md`, A3.
 

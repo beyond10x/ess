@@ -1,0 +1,72 @@
+format: ess/23
+system: desk
+version: v1
+domain: desk.entry
+summary: Requests turned away by overlapping refusals, some answering alike and some not.
+
+components:
+  - component: desk-server
+    owns:
+      domains: [desk.entry]
+    accepts:
+      commands: [desk.entry.Open, desk.entry.Check, desk.entry.Grade]
+    reached_by: network
+
+errors:
+  - name: desk.entry.Invalid
+    summary: The request is not valid.
+  - name: desk.entry.Unclear
+    summary: The request is not clear.
+  - name: desk.entry.Detailed
+    summary: The request is not valid, and why.
+    fields:
+      - {name: text, type: String}
+
+commands:
+  # Two refusals with the same error and no payload, overlapping on `hold hold`: whichever answers,
+  # the caller sees the same refusal.
+  - name: desk.entry.Open
+    input:
+      - {name: prompt, type: Optional<String>}
+    outcomes:
+      - name: leading-hold
+        when: {all: [{prompt: {defined: true}}, {prompt: {starts_with: "hold "}}]}
+        error: desk.entry.Invalid
+      - name: trailing-hold
+        when: {all: [{prompt: {defined: true}}, {prompt: {ends_with: " hold"}}]}
+        error: desk.entry.Invalid
+      - name: opened
+        accepts: nothing
+  # The same error with a payload that differs: where both hold, the answer tells them apart.
+  - name: desk.entry.Check
+    input:
+      - {name: prompt, type: String}
+      - {name: other, type: String}
+    outcomes:
+      - name: leading-hold
+        when: {prompt: {starts_with: "hold "}}
+        error: desk.entry.Detailed
+        payload:
+          desk.entry.Detailed:
+            text: input.prompt
+      - name: trailing-hold
+        when: {prompt: {ends_with: " hold"}}
+        error: desk.entry.Detailed
+        payload:
+          desk.entry.Detailed:
+            text: input.other
+      - name: checked
+        accepts: nothing
+  # Two refusals with different errors (the shape of https://github.com/beyond10x/ess/issues/472).
+  - name: desk.entry.Grade
+    input:
+      - {name: amount, type: Integer}
+    outcomes:
+      - name: too-low
+        when: amount < 10
+        error: desk.entry.Invalid
+      - name: low
+        when: amount < 20
+        error: desk.entry.Unclear
+      - name: graded
+        accepts: nothing

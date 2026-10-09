@@ -57,6 +57,7 @@ mod delivery_context;
 mod disclosure;
 mod no_invocation;
 mod no_publication;
+mod step_instant;
 
 use ess_domain::view::{Direction, Ranking};
 use std::cmp::Ordering;
@@ -313,6 +314,9 @@ pub struct Runner<C: Clock = AdvancingClock> {
     config: RunnerConfig,
     clock: C,
     ids: Ids,
+    /// The instant of the step being executed, once a target's command clock reads it
+    /// ([`Self::command_clock`]).
+    step_instant: Option<step_instant::StepInstant>,
 }
 
 impl Runner<AdvancingClock> {
@@ -333,7 +337,31 @@ impl Runner<AdvancingClock> {
 impl<C: Clock> Runner<C> {
     /// A runner over an explicit configuration, clock and id source.
     pub fn new(config: RunnerConfig, clock: C, ids: Ids) -> Self {
-        Self { config, clock, ids }
+        Self {
+            config,
+            clock,
+            ids,
+            step_instant: None,
+        }
+    }
+
+    /// A command clock that reads the instant of the step this runner is executing, for a target
+    /// that decides `now` guards by the scenario's clock rather than its own
+    /// (<https://github.com/beyond10x/ess/issues/510>, [`crate::occurrence_clock`]).
+    ///
+    /// Taking one makes the runner read its [wall](Clock::wall) once at the start of every step:
+    /// that one reading, rounded up to a whole second, is what the step's `now_offset` values
+    /// resolve against and what every read of the returned clock answers until the next step. A
+    /// target reading it once per decision so decides at the instant the step's values were sent
+    /// relative to. A runner no clock is taken from reads its wall only when a step names a
+    /// `now_offset` no earlier step fixed, as before. Every clock taken from one runner reads the
+    /// same instant.
+    pub fn command_clock(
+        &mut self,
+    ) -> impl crate::occurrence_clock::CommandClock + Send + Sync + 'static {
+        self.step_instant
+            .get_or_insert_with(Default::default)
+            .clone()
     }
 
     /// Runs every scenario in `suite` against `target`, in id order.
@@ -543,7 +571,16 @@ impl<C: Clock> Runner<C> {
         target: &T,
     ) -> Flow {
         let wall = &mut self.clock;
-        run.now.fix(step, || wall.wall());
+        match &self.step_instant {
+            // One wall reading per step, shared by its `now_offset` values and every command
+            // decision the step causes (https://github.com/beyond10x/ess/issues/510).
+            Some(cell) => {
+                let reading = wall.wall();
+                cell.write(reading);
+                run.now.fix(step, || reading);
+            }
+            None => run.now.fix(step, || wall.wall()),
+        }
         match step {
             ScenarioStep::ResolveFixtures { .. } | ScenarioStep::ExpectEventValues { .. } => {
                 fixture_step(step, run)

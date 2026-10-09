@@ -9,12 +9,13 @@ use ess_primitives::evidence::SpecDigest;
 
 use crate::change::{ChangeId, CommandChange, SemanticChange, SemanticRelation};
 use crate::compatibility::{
-    ChangeCompatibility, Compatibility, UseIndex, CLASSIFIED_DELTA_FORMAT, SHAPED_DELTA_FORMAT,
+    ChangeCompatibility, Compatibility, UseIndex, CLASSIFIED_DELTA_FORMAT, NARROWED_DELTA_FORMAT,
+    SHAPED_DELTA_FORMAT,
 };
 
 /// Delta format major versions this build implements.
 pub const SUPPORTED_DELTA_FORMATS: &[u32] =
-    &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+    &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17];
 
 /// The version of a delta's document shape and admitted change vocabulary.
 ///
@@ -241,12 +242,21 @@ impl EssDelta {
                     }
                     _ => None,
                 };
-                ChangeCompatibility::derive_shaped(change, &uses, shapes)
+                let narrows = match change {
+                    SemanticChange::Command { subject, changed } => {
+                        index.narrowing(subject.name(), changed)
+                    }
+                    _ => None,
+                };
+                ChangeCompatibility::derive_narrowed(change, &uses, shapes, narrows)
             })
             .collect::<Vec<_>>();
         let shaped = compatibility.iter().any(|one| one.shapes().is_some());
+        let narrowed = compatibility.iter().any(|one| one.narrows().is_some());
         self.compatibility = Some(compatibility);
-        let floor = if shaped {
+        let floor = if narrowed {
+            NARROWED_DELTA_FORMAT
+        } else if shaped {
             SHAPED_DELTA_FORMAT
         } else {
             CLASSIFIED_DELTA_FORMAT
@@ -364,6 +374,19 @@ impl EssDelta {
                 .iter()
                 .flatten()
                 .position(|one| one.shapes().is_some())
+            {
+                return Err(DeltaWriteRefusal::UnrepresentableChange {
+                    format,
+                    change: self.changes[index].id(),
+                });
+            }
+        }
+        if format.major() < NARROWED_DELTA_FORMAT {
+            if let Some(index) = self
+                .compatibility
+                .iter()
+                .flatten()
+                .position(|one| one.narrows().is_some())
             {
                 return Err(DeltaWriteRefusal::UnrepresentableChange {
                     format,
