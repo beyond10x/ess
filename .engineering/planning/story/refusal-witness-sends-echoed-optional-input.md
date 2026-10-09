@@ -10,7 +10,7 @@ tags:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 2
+revision: 3
 ---
 ## Outcome
 
@@ -39,3 +39,25 @@ even with an `example:`, so no echo of it is checked. On `main`,
 `crates/verify/ess-conformance/src/witness.rs:4480-4492` fills an Optional in the base input and
 `:771-779` tries omissions last, so the path that leaves it out is still to be found from a
 reproducer (possibly `synthesize.rs:2799`).
+
+## Reproducer (ess 0.56.0)
+
+A minimal fixture to write for the test, in a neutral domain `demo.authorize`:
+
+- Command `Authorize` with four Optional inputs: `prompt: Optional<Prompt>` (`example: login`),
+  `nonce: Optional<String>`, `max_age: Optional<Int>` (no example), and
+  `state: Optional<State>` (`example: af0ifjsldkj`).
+- A success outcome `issued` whose event `CodeIssued` sets `state: input.state`, beside
+  refusals on the other inputs. `ess specify validate` accepts it.
+
+Observed on a model of this shape: `ess verify conform synthesize --target ir` wrote 34
+scenarios (16 authored, 24 refusals). In the synthesized, non-authored scenarios the `Authorize`
+steps sent `prompt` 15/15, `nonce` 15/15, `max_age` 15/15 and `state` 0/15, so no synthesized
+scenario checks the echo of `state` in `CodeIssued`; only authored ones do. The shape is the same
+for a success outcome's event as for a refusal's error payload.
+
+## Acceptance (added)
+
+- On the fixture above, at least the synthesized scenario that reaches `issued` sends `state`
+  and expects `CodeIssued.state` equal to it.
+- A mutant implementation that drops `state` from `CodeIssued` fails a synthesized scenario.
