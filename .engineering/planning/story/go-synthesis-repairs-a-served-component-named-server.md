@@ -10,7 +10,7 @@ tags:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 1
+revision: 2
 ---
 ## Outcome
 
@@ -38,3 +38,9 @@ Inferred cause: a served component named `server`. No commit since 0.56.0 touche
 - A Go synthesis test over a neutral two-role contract whose served component is named `server`:
   synthesis exits 0, both files are written under distinct names, and the generated module builds.
 - A collision between two emitted paths is a refusal naming both artifacts, not a panic.
+
+## Cause confirmed
+
+The adopter's contract declares its only served component as `- component: server`, which is the
+inferred cause above: the component's surface file and the server package's helpers file both
+resolve to `server/server.go`. No reproducer follows; the test writes its own neutral contract.
