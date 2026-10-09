@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.57.0] — 2026-10-09
+
 ### Added
 
 - `ess-cli/2`: a CLI presentation binding may leave out the `config` and `output` globals; `state`

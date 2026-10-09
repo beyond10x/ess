@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.57.0](#a-cli-binding-may-omit-globals-ess-verify-diff-names-changes-that-break-callers-and-runners-check-constrained-responses) | A CLI binding may omit globals, ess verify diff names changes that break callers, and runners check constrained responses | capability | notable |
 | [0.56.0](#a-held-state-branch-must-be-declared-before-an-overlapping-accepting-or-external-branch) | A held-state branch must be declared before an overlapping accepting or external branch | breaking | notable |
 | [0.56.0](#committed-output-records-carry-no-machine-path-and-generated-rust-types-stop-forcing-arbitrary-precision) | Committed output records carry no machine path, and generated Rust types stop forcing arbitrary precision | capability | notable |
 | [0.55.0](#cli-results-carry-json-and-an-optional-generated-value-reads-a-port) | CLI results carry Json, and an optional generated value reads a port | capability | notable |
@@ -60,6 +61,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.57.0 — 2026-10-09
+
+### A CLI binding may omit globals, ess verify diff names changes that break callers, and runners check constrained responses
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.57.0)
+
+`ess-cli/2` lets a CLI binding omit its config and output globals. `ess verify diff` classifies added and removed domains and rates changes that refuse an existing caller as breaking. Runners check responses of constrained `String` newtypes. Route-escaping wire names and always-true refusals are refused, and synthesis covers more guards.
 
 ## 0.56.0 — 2026-10-07
 
