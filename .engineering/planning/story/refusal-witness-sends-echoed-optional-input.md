@@ -10,7 +10,7 @@ tags:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 1
+revision: 2
 ---
 ## Outcome
 
@@ -31,3 +31,11 @@ on the input does not change it. Workaround in use: a hand-written
   `expect_error.fields.state` equal to it.
 - A mutant implementation that omits the echoed field fails that scenario on the interpreted
   target.
+
+## Evidence (second adopter report)
+
+A second adopter on ess 0.56.0: synthesis never sends the Optional input `Authenticate.state`,
+even with an `example:`, so no echo of it is checked. On `main`,
+`crates/verify/ess-conformance/src/witness.rs:4480-4492` fills an Optional in the base input and
+`:771-779` tries omissions last, so the path that leaves it out is still to be found from a
+reproducer (possibly `synthesize.rs:2799`).

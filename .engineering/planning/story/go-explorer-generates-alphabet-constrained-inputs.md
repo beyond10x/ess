@@ -10,7 +10,7 @@ tags:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 1
+revision: 2
 ---
 ## Outcome
 
@@ -31,3 +31,17 @@ endpoint gets no random sequences.
   alphabet and bounds.
 - An input constraint the explorer cannot generate for still excludes the command, naming the
   constraint.
+
+## Evidence (second adopter report)
+
+A second adopter hardening OAuth specifications on ess 0.56.0: four specifications had commands
+excluded for the same reason, including input types with `invariants:` (not only `alphabet:`) and
+inputs that carry an `example:`. On `main`,
+`crates/verify/ess-conformance/src/go/explore.go:399`
+(`if !concurrent && (invariants || alphabet)`) excludes them without consulting `example:`; the
+concurrent explorer is exempt.
+
+## Acceptance (added)
+
+- An input type with `invariants:` is generated for as well; an `example:` that satisfies the
+  constraints is drawn as one of the generated values. Sequential and concurrent explorers agree.
