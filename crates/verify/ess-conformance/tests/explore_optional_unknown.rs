@@ -1,5 +1,7 @@
 //! Optional inputs and missing subjects must be explored by both actual emitted runtimes.
 
+mod support_scratch;
+
 mod support_explore_optional_unknown;
 
 use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
@@ -42,10 +44,10 @@ fn lane(label: &str) -> Value {
 }
 
 fn run_lane(label: &str, case: &str, source: &str, go: &str, ts: &str) -> Value {
-    let root = std::env::temp_dir().join(format!(
+    let root = support_scratch::Scratch::adopt(std::env::temp_dir().join(format!(
         "ess-optional-unknown-{}-{label}-{case}",
         std::process::id()
-    ));
+    )));
     fs::create_dir_all(&root).unwrap();
     let ir = compiled(source);
     let synthesis = ess_conformance::synthesize(&ir);

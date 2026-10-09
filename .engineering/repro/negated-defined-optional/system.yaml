@@ -1,0 +1,75 @@
+format: ess/23
+system: demo
+version: v1
+domain: demo.order
+summary: An order fulfilled once, refused as stale when the caller names another version.
+types:
+  - {name: demo.order.OrderId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.order.Order
+    identity: {name: order_id, type: demo.order.OrderId}
+    fields:
+      - {name: version, type: Integer}
+      - {name: receipt, type: Optional<String>}
+    lifecycle:
+      initial: Open
+      states: [Open, Fulfilled]
+      terminal: [Fulfilled]
+      transitions:
+        - {name: fulfil, from: [Open], to: Fulfilled}
+actors:
+  - name: demo.order.Clerk
+    may: [demo.order.Place, demo.order.Fulfil]
+errors:
+  - {name: demo.order.OrderNotFound, summary: No such order., fields: []}
+  - {name: demo.order.OrderStateConflict, summary: The order cannot be fulfilled now., fields: []}
+events:
+  - name: demo.order.Placed
+    fields: [{name: order_id, type: demo.order.OrderId}]
+  - name: demo.order.Fulfilled
+    fields:
+      - {name: order_id, type: demo.order.OrderId}
+      - {name: receipt, type: String}
+commands:
+  - name: demo.order.Place
+    input:
+      - {name: version, type: Integer}
+    outcomes:
+      - name: placed
+        creates: demo.order.Order
+        instance: order_id
+        sets: {version: input.version}
+        emits: [demo.order.Placed]
+        payload: {demo.order.Placed: {order_id: {generated: true}}}
+  - name: demo.order.Fulfil
+    input:
+      - {name: order_id, type: demo.order.OrderId}
+      - {name: receipt, type: String}
+      - {name: expected_version, type: Optional<Integer>}
+    outcomes:
+      - name: stale-version
+        when: defined(expected_version)
+        when_subject:
+          predicate:
+            all:
+              - state == Open
+              - version != input.expected_version
+        error: demo.order.OrderStateConflict
+      - name: applied
+        moves: demo.order.Order.fulfil
+        instance: order_id
+        emits: [demo.order.Fulfilled]
+        payload:
+          demo.order.Fulfilled: {order_id: input.order_id, receipt: input.receipt}
+        sets: {receipt: input.receipt}
+      - {name: wrong-state, wrong_state: true, error: demo.order.OrderStateConflict}
+      - {name: not-found, unknown_instance: true, error: demo.order.OrderNotFound}
+views:
+  - name: demo.order.Orders
+    source: demo.order.Order
+    consistency: read_your_writes
+    fields:
+      - {name: order_id, type: demo.order.OrderId}
+      - {name: version, type: Integer}
+      - {name: receipt, type: Optional<String>}
+      - {name: state, type: demo.order.Order.State}

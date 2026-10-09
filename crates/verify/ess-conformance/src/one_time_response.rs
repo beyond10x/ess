@@ -125,31 +125,7 @@ impl Response {
             })
             .collect();
         let declarations = crate::typed_fields::one_time_declarations(ir, &fields)?;
-        let mut constraints = BTreeMap::new();
-        for name in declarations.keys() {
-            let declared = ir.types().get(name).ok_or("missing one-time declaration")?;
-            if let ess_compiler::ir::ResolvedBody::Newtype {
-                alphabet,
-                prefix,
-                invariants,
-                ..
-            } = &declared.body
-            {
-                if declared.body.is_constrained() {
-                    constraints.insert(
-                        name.clone(),
-                        StringConstraints {
-                            alphabet: alphabet.clone(),
-                            prefix: prefix.clone(),
-                            invariants: invariants
-                                .iter()
-                                .map(|invariant| invariant.predicate.clone())
-                                .collect(),
-                        },
-                    );
-                }
-            }
-        }
+        let constraints = string_constraints(ir, &declarations, "one-time")?;
         let result = Self {
             fields,
             declarations,
@@ -165,79 +141,264 @@ impl Response {
             return Err("one-time response schema bound".into());
         }
         crate::typed_fields::validate([self.fields.as_slice()], &self.declarations)?;
-        let mut registry = TypeRegistry::new();
-        for (name, body) in &self.declarations {
-            let mut raw = body.body();
-            if let Some(rules) = self.constraints.get(name) {
-                let RawTypeBody::Newtype {
-                    alphabet,
-                    prefix,
-                    invariants,
-                    ..
-                } = &mut raw
-                else {
-                    return Err("one-time constraint authority requires a String newtype".into());
-                };
-                if !self.is_string(&TypeRef::Named(name.clone())) {
-                    return Err("one-time constraint authority requires a String newtype".into());
-                }
-                alphabet.clone_from(&rules.alphabet);
-                prefix.clone_from(&rules.prefix);
-                *invariants = rules
-                    .invariants
-                    .iter()
-                    .map(|predicate| {
-                        serde_json::from_value(
-                            serde_json::to_value(predicate).map_err(|_| "invalid predicate")?,
-                        )
-                        .map_err(|_| "invalid predicate")
-                    })
-                    .collect::<Result<_, _>>()?;
-            }
-            let declared = ess_domain::NamedType::try_from(RawNamedType {
-                name: name.clone(),
-                body: raw,
-                naming: ess_domain::Naming::default(),
-                reading: None,
-            })
-            .map_err(|_| "invalid one-time declaration")?;
-            registry
-                .insert(declared)
-                .map_err(|_| "duplicate one-time declaration")?;
-        }
-        if self
-            .constraints
-            .keys()
-            .any(|name| !self.declarations.contains_key(name))
-        {
-            return Err("unrelated one-time constraint authority".into());
-        }
-        for declared in registry.iter() {
-            if !declared.validate_alphabet(&registry).is_empty()
-                || !declared.validate_prefix(&registry).is_empty()
-                || !declared.validate_invariants(&registry).is_empty()
-            {
-                return Err("invalid one-time String constraints".into());
-            }
-        }
-        Ok(())
+        validate_constraints(&self.declarations, &self.constraints, "one-time")
     }
 
-    fn is_string<'a>(&'a self, mut ty: &'a TypeRef) -> bool {
-        let mut seen = BTreeSet::new();
-        loop {
-            match ty {
-                TypeRef::Primitive(Primitive::String) => return true,
-                TypeRef::Named(name) if seen.insert(name) => {
-                    let Some(Declaration::Newtype { of }) = self.declarations.get(name) else {
-                        return false;
-                    };
-                    ty = of;
-                }
-                _ => return false,
+    fn is_string(&self, ty: &TypeRef) -> bool {
+        is_string(&self.declarations, ty)
+    }
+}
+
+/// Whether `ty` is `String` or reaches it through newtypes alone.
+pub(crate) fn is_string<'a>(
+    declarations: &'a BTreeMap<QualifiedName, Declaration>,
+    mut ty: &'a TypeRef,
+) -> bool {
+    let mut seen = BTreeSet::new();
+    loop {
+        match ty {
+            TypeRef::Primitive(Primitive::String) => return true,
+            TypeRef::Named(name) if seen.insert(name) => {
+                let Some(Declaration::Newtype { of }) = declarations.get(name) else {
+                    return false;
+                };
+                ty = of;
+            }
+            _ => return false,
+        }
+    }
+}
+
+/// The String-newtype rules of every constrained declaration among `declarations`, taken from the
+/// compiled source, keyed by the nominal type they constrain. `noun` names the profile in a refusal.
+pub(crate) fn string_constraints(
+    ir: &ess_compiler::EssIr,
+    declarations: &BTreeMap<QualifiedName, Declaration>,
+    noun: &str,
+) -> Result<BTreeMap<QualifiedName, StringConstraints>, String> {
+    let mut constraints = BTreeMap::new();
+    for name in declarations.keys() {
+        let declared = ir
+            .types()
+            .get(name)
+            .ok_or_else(|| format!("missing {noun} declaration"))?;
+        if let ess_compiler::ir::ResolvedBody::Newtype {
+            alphabet,
+            prefix,
+            invariants,
+            ..
+        } = &declared.body
+        {
+            if declared.body.is_constrained() {
+                constraints.insert(
+                    name.clone(),
+                    StringConstraints {
+                        alphabet: alphabet.clone(),
+                        prefix: prefix.clone(),
+                        invariants: invariants
+                            .iter()
+                            .map(|invariant| invariant.predicate.clone())
+                            .collect(),
+                    },
+                );
             }
         }
     }
+    Ok(constraints)
+}
+
+/// Admit String-newtype rules against the closed declarations they travel with: each names a
+/// declared String newtype, and the rules are the ones a declaration could carry.
+pub(crate) fn validate_constraints(
+    declarations: &BTreeMap<QualifiedName, Declaration>,
+    constraints: &BTreeMap<QualifiedName, StringConstraints>,
+    noun: &str,
+) -> Result<(), String> {
+    let mut registry = TypeRegistry::new();
+    for (name, body) in declarations {
+        let mut raw = body.body();
+        if let Some(rules) = constraints.get(name) {
+            let RawTypeBody::Newtype {
+                alphabet,
+                prefix,
+                invariants,
+                ..
+            } = &mut raw
+            else {
+                return Err(format!(
+                    "{noun} constraint authority requires a String newtype"
+                ));
+            };
+            if !is_string(declarations, &TypeRef::Named(name.clone())) {
+                return Err(format!(
+                    "{noun} constraint authority requires a String newtype"
+                ));
+            }
+            alphabet.clone_from(&rules.alphabet);
+            prefix.clone_from(&rules.prefix);
+            *invariants = rules
+                .invariants
+                .iter()
+                .map(|predicate| {
+                    serde_json::from_value(
+                        serde_json::to_value(predicate).map_err(|_| "invalid predicate")?,
+                    )
+                    .map_err(|_| "invalid predicate")
+                })
+                .collect::<Result<_, _>>()?;
+        }
+        let declared = ess_domain::NamedType::try_from(RawNamedType {
+            name: name.clone(),
+            body: raw,
+            naming: ess_domain::Naming::default(),
+            reading: None,
+        })
+        .map_err(|_| format!("invalid {noun} declaration"))?;
+        registry
+            .insert(declared)
+            .map_err(|_| format!("duplicate {noun} declaration"))?;
+    }
+    if constraints
+        .keys()
+        .any(|name| !declarations.contains_key(name))
+    {
+        return Err(format!("unrelated {noun} constraint authority"));
+    }
+    for declared in registry.iter() {
+        if !declared.validate_alphabet(&registry).is_empty()
+            || !declared.validate_prefix(&registry).is_empty()
+            || !declared.validate_invariants(&registry).is_empty()
+        {
+            return Err(format!("invalid {noun} String constraints"));
+        }
+    }
+    Ok(())
+}
+
+/// Whether `predicate` decides over a lone `value` text fact: it reads `value` or its `.count`
+/// and nothing else, through comparisons with literals, membership and text matches, and does
+/// not quantify, offset, derive or read a calendar window. The one-time evaluators in every
+/// runner hold the same profile; an invariant outside it is refused at synthesis by name.
+pub(crate) fn decides_over_value(predicate: &Predicate) -> bool {
+    use ess_primitives::predicate::{Operand, Predicate as P};
+    let path = |path: &ess_primitives::facts::FactPath| {
+        let text = path.to_string();
+        text == "value" || text == "value.count"
+    };
+    let operand = |operand: &Operand| match operand {
+        Operand::Fact(fact) => path(fact),
+        Operand::Literal(_) => true,
+        Operand::Offset(_) | Operand::Derived(_) => false,
+    };
+    match predicate {
+        P::Always | P::Never => true,
+        P::All(children) | P::Any(children) => children.iter().all(decides_over_value),
+        P::Not(inner) => decides_over_value(inner),
+        P::Compare { left, right, .. } => operand(left) && operand(right),
+        P::Truthy(fact)
+        | P::Defined(fact)
+        | P::AnyOf { path: fact, .. }
+        | P::NoneOf { path: fact, .. }
+        | P::FoldMatch { path: fact, .. } => path(fact),
+        P::TextMatch {
+            path: fact, value, ..
+        } => path(fact) && value.as_literal().is_some(),
+        P::Forall(_) | P::Exists(_) | P::Distinct(_) | P::Window(_) => false,
+    }
+}
+
+/// How a value broke a String-newtype rule.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Breach {
+    /// The value is not what its declaration admits, or breaks a declared rule.
+    Payload,
+    /// An invariant could not be decided over the value.
+    Undecided,
+}
+
+/// Check `value`, declared as `ty`, against every String-newtype rule reachable from it: the
+/// value itself, record fields, union variants and `Optional`, `List` and `Map` elements.
+pub(crate) fn check(
+    declarations: &BTreeMap<QualifiedName, Declaration>,
+    constraints: &BTreeMap<QualifiedName, StringConstraints>,
+    ty: &TypeRef,
+    value: &ess_primitives::node::Node,
+) -> Result<(), Breach> {
+    use ess_primitives::node::Node;
+    let recurse = |ty: &TypeRef, value: &Node| check(declarations, constraints, ty, value);
+    match (ty, value) {
+        (TypeRef::Named(name), _) => {
+            if let Some(rules) = constraints.get(name) {
+                let Node::Text(text) = value else {
+                    return Err(Breach::Payload);
+                };
+                if rules.alphabet.as_ref().is_some_and(|alphabet| {
+                    text.chars().any(|character| !alphabet.contains(character))
+                }) || rules
+                    .prefix
+                    .as_ref()
+                    .is_some_and(|prefix| !text.starts_with(prefix))
+                {
+                    return Err(Breach::Payload);
+                }
+                let mut facts = ess_primitives::facts::FactStore::new();
+                facts.set(
+                    ess_primitives::facts::FactPath::new("value").map_err(|_| Breach::Payload)?,
+                    ess_primitives::facts::FactValue::Text(text.clone()),
+                );
+                for predicate in &rules.invariants {
+                    match predicate.evaluate(&facts) {
+                        ess_primitives::predicate::Truth::True => {}
+                        ess_primitives::predicate::Truth::False => return Err(Breach::Payload),
+                        ess_primitives::predicate::Truth::Unknown => return Err(Breach::Undecided),
+                    }
+                }
+            }
+            match declarations.get(name).ok_or(Breach::Payload)? {
+                Declaration::Newtype { of } => recurse(of, value)?,
+                Declaration::Struct { fields } => {
+                    let Node::Map(values) = value else {
+                        return Err(Breach::Payload);
+                    };
+                    for field in fields {
+                        if let Some(value) = values.get(&field.name) {
+                            recurse(&field.type_ref, value)?;
+                        }
+                    }
+                }
+                Declaration::Union { tag, variants } => {
+                    let Node::Map(values) = value else {
+                        return Err(Breach::Payload);
+                    };
+                    let Some(Node::Text(label)) = values.get(tag) else {
+                        return Err(Breach::Payload);
+                    };
+                    let ty = variants.get(label).ok_or(Breach::Payload)?;
+                    match (ty, values.get(ess_gen::schema::union_content_key(tag))) {
+                        (Some(ty), Some(value)) => recurse(ty, value)?,
+                        // A unit variant (ess/22) is the tag alone.
+                        (None, Some(_)) => return Err(Breach::Payload),
+                        (_, None) => {}
+                    }
+                }
+                Declaration::Enum { .. } => {}
+            }
+        }
+        (TypeRef::Optional(_), Node::Null) => {}
+        (TypeRef::Optional(of), _) => recurse(of, value)?,
+        (TypeRef::List(of), Node::Seq(values)) => {
+            for value in values {
+                recurse(of, value)?;
+            }
+        }
+        (TypeRef::Map(_, of), Node::Map(values)) => {
+            for value in values.values() {
+                recurse(of, value)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 impl Trace {

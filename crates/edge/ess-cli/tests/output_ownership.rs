@@ -9,15 +9,15 @@ mod ownership_relocation;
 mod ownership_relocation_adversary;
 mod ownership_root_lock;
 mod ownership_routes;
+use ess_cli::TemporaryDirectory;
 use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
     process::{Command, Output},
-    sync::atomic::{AtomicUsize, Ordering},
 };
 
-struct Fixture(PathBuf);
+struct Fixture(TemporaryDirectory);
 // A subprocess spawn may briefly inherit another thread's open flock descriptors before
 // CLOEXEC closes them. Serialize this target's fixtures and child lifetimes so a recovery
 // assertion cannot race that unrelated inheritance. Explicit contention still happens
@@ -27,37 +27,9 @@ fn serial() -> std::sync::MutexGuard<'static, ()> {
     TEST.lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
-impl Drop for Fixture {
-    /// Some cases leave read-only directories behind; restore owner access, then remove the tree.
-    fn drop(&mut self) {
-        fn writable(path: &Path) {
-            use std::os::unix::fs::PermissionsExt;
-            let Ok(meta) = fs::symlink_metadata(path) else {
-                return;
-            };
-            if meta.is_dir() {
-                let _ = fs::set_permissions(
-                    path,
-                    fs::Permissions::from_mode(meta.permissions().mode() | 0o700),
-                );
-                for entry in fs::read_dir(path).into_iter().flatten().flatten() {
-                    writable(&entry.path());
-                }
-            }
-        }
-        writable(&self.0);
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
 impl Fixture {
     fn new() -> Self {
-        static NEXT: AtomicUsize = AtomicUsize::new(0);
-        let root = std::env::temp_dir().join(format!(
-            "ess-ownership-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir(&root).unwrap();
+        let root = TemporaryDirectory::create("ess-ownership").unwrap();
         fs::write(
             root.join("page.md"),
             "# Authored guide\n\nPreserve this source.\n",

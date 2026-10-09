@@ -1,0 +1,25 @@
+type: ess-scenario/1
+domain: catalog.items
+scenario: an-item-accepted-with-a-text-receipt
+summary: An invocation recorded against v1, where the receipt was text.
+
+arrange:
+  - instance: first
+    entity: catalog.items.Item
+
+timeline:
+  - at: 2026-01-06T09:00:00Z
+    command: catalog.items.Add
+    actor: catalog.items.Clerk
+    input:
+      revision: 1
+    outcome: added
+    capture: {instance: first, event: catalog.items.Added, field: item_id}
+
+  - at: 2026-01-06T09:00:01Z
+    command: catalog.items.Accept
+    actor: catalog.items.Clerk
+    input:
+      item_id: {$instance: first}
+      receipt: "{\"kind\":\"acceptance\"}"
+    outcome: accepted

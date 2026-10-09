@@ -641,14 +641,16 @@ impl fmt::Display for ConformanceReport {
             writeln!(f, "  {result}")?;
             // An `error` is the target's failure to carry a step out, and only its diagnostic says
             // which: without it the caller sees an id and nothing to act on
-            // (https://github.com/beyond10x/ess/issues/471).
-            if result.status != Status::Error {
+            // (https://github.com/beyond10x/ess/issues/471). An `unsupported` is a capability the
+            // target lacks, and its diagnostic says which, a guard it cannot decide included
+            // (https://github.com/beyond10x/ess/issues/510).
+            if !matches!(result.status, Status::Error | Status::Unsupported) {
                 continue;
             }
             for check in result
                 .checks
                 .iter()
-                .filter(|check| check.status == Status::Error)
+                .filter(|check| check.status == result.status)
             {
                 let Some(diagnostic) = &check.diagnostic else {
                     continue;

@@ -396,6 +396,102 @@ pub fn exhausts(ir: &EssIr, command: &ResolvedCommand, guards: &[&Predicate]) ->
     regions <= MAX_CANDIDATES
 }
 
+/// Whether `goal` is shown to hold for no input by the text literals it tests one leaf against:
+/// `true` only where that is certain, `false` wherever it is not shown.
+///
+/// The goal is read as a conjunction — `all` children, `not any` children negated, `not not`
+/// dropped — and every other conjunct (an `any`, a `not all`) is left out, which only widens what
+/// the rest admits. Per fact path, over its text literals:
+///
+/// 1. a negated `starts_with x` beside a positive `starts_with y` where `y` starts with `x`, and
+///    the same for `ends_with`: every text that begins (ends) with `y` begins (ends) with `x`;
+/// 2. a negated `contains x` beside a positive `starts_with`, `ends_with` or `contains y` where `y`
+///    contains `x`;
+/// 3. an equality with a text literal `v` beside a string operator on the same path that `v`
+///    decides the other way. Only where `v` names no instant, since a declared `Timestamp`
+///    compares by the instant and not by the spelling.
+///
+/// A goal [`exhausts`] cannot show empty, because a string operator is not on its ladder, is
+/// still empty when this holds: a connective's child that cannot decide it alone is no gap.
+pub fn unsatisfiable(goal: &Predicate) -> bool {
+    /// One string operator on a path, with its literal, and whether it is negated.
+    struct Matched<'p> {
+        path: &'p FactPath,
+        op: TextOp,
+        literal: &'p str,
+        positive: bool,
+    }
+    fn conjuncts<'p>(
+        predicate: &'p Predicate,
+        positive: bool,
+        matched: &mut Vec<Matched<'p>>,
+        equal: &mut Vec<(&'p FactPath, &'p str)>,
+    ) {
+        match predicate {
+            Predicate::All(children) if positive => {
+                for child in children {
+                    conjuncts(child, true, matched, equal);
+                }
+            }
+            Predicate::Any(children) if !positive => {
+                for child in children {
+                    conjuncts(child, false, matched, equal);
+                }
+            }
+            Predicate::Not(inner) => conjuncts(inner, !positive, matched, equal),
+            Predicate::TextMatch {
+                path,
+                op,
+                value: TextOperand::Literal(FactValue::Text(literal)),
+            } => matched.push(Matched {
+                path,
+                op: *op,
+                literal,
+                positive,
+            }),
+            Predicate::Compare {
+                left,
+                op: CompareOp::Eq,
+                right,
+                kind: ess_primitives::predicate::CompareKind::Value,
+            } if positive => {
+                if let (Operand::Fact(path), Operand::Literal(FactValue::Text(literal)))
+                | (Operand::Literal(FactValue::Text(literal)), Operand::Fact(path)) =
+                    (left, right)
+                {
+                    if Rfc3339Instant::parse_rfc3339(literal).is_none()
+                        && CurrentTime::parse(literal).is_none()
+                    {
+                        equal.push((path, literal));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    let (mut matched, mut equal) = (Vec::new(), Vec::new());
+    conjuncts(goal, true, &mut matched, &mut equal);
+    let implied = matched.iter().filter(|held| held.positive).any(|held| {
+        matched
+            .iter()
+            .filter(|refuted| !refuted.positive && refuted.path == held.path)
+            .any(|refuted| match refuted.op {
+                TextOp::StartsWith | TextOp::EndsWith if refuted.op == held.op => {
+                    refuted.op.holds(held.literal, refuted.literal)
+                }
+                TextOp::Contains => held.literal.contains(refuted.literal),
+                TextOp::StartsWith | TextOp::EndsWith => false,
+            })
+    });
+    implied
+        || equal.iter().any(|(path, value)| {
+            matched
+                .iter()
+                .filter(|tested| tested.path == *path)
+                .any(|tested| tested.op.holds(value, tested.literal) != tested.positive)
+        })
+}
+
 /// The exact midpoint of every two adjacent distinct numeric literals, lowest first.
 fn midpoints(literals: &[FactValue]) -> Vec<Node> {
     let mut numbers: Vec<Number> = literals.iter().filter_map(FactValue::as_number).collect();
@@ -521,13 +617,56 @@ fn search(
 pub(crate) type Searched = Result<(Vec<BTreeMap<String, Node>>, bool), WitnessGap>;
 
 /// [`search`], run.
-#[allow(clippy::too_many_lines)]
 fn search_uncached(
     ir: &EssIr,
     command: &ResolvedCommand,
     guards: &[&Predicate],
     distinction: Distinction,
     between: bool,
+) -> Searched {
+    search_with(ir, command, guards, distinction, between, Goals::Every)
+}
+
+/// The candidates for one goal: the walk [`candidates`] tries, then, where the walk was cut short,
+/// inputs solved for `goal` satisfied and for nothing else
+/// (<https://github.com/beyond10x/ess/issues/501>).
+///
+/// [`candidates`] solves every goal [`Directed`] lists, one per child of each connective, which
+/// over a goal that repeats a guard inside itself is hundreds of searches; a caller asking for one
+/// input that satisfies one predicate needs the first of them only. Not remembered, since no other
+/// search asks for the same predicate.
+///
+/// # Errors
+///
+/// [`WitnessGap`] when some field of the input has no safe value at all.
+pub(crate) fn solving(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    goal: &Predicate,
+    distinction: Distinction,
+) -> Result<Vec<BTreeMap<String, Node>>, WitnessGap> {
+    search_with(ir, command, &[goal], distinction, false, Goals::Satisfied)
+        .map(|(inputs, _)| inputs)
+}
+
+/// Which goals [`Directed`] solves for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Goals {
+    /// Every goal [`Directed::goals`] lists.
+    Every,
+    /// Each guard satisfied, and nothing else.
+    Satisfied,
+}
+
+/// [`search_uncached`], solving `goals` where the walk is cut short.
+#[allow(clippy::too_many_lines)]
+fn search_with(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    guards: &[&Predicate],
+    distinction: Distinction,
+    between: bool,
+    goals: Goals,
 ) -> Searched {
     let mut added = false;
     // A quantifier's body reads its element through a binder. Rebound onto the element a one-
@@ -550,6 +689,9 @@ fn search_uncached(
     // The base witness records every leaf the ladders below are built from; `enumerate` builds it
     // again as its first candidate.
     builder.input(command, &BTreeMap::new())?;
+    // A leaf no guard reads holds a value its own type admits in every candidate, so the walk is
+    // not spent on a base that type refuses (https://github.com/beyond10x/ess/issues/511).
+    ground_invariants(&mut builder, command, &read_paths(&expanded))?;
     // The base satisfies the invariants over the input, of its structs and of the entities a
     // branch copies it into (beyond10x/ess#234), before any ladder is drawn from it.
     let constrained = outcome_constraints(ir, command);
@@ -675,7 +817,7 @@ fn search_uncached(
     // a branch it witnessed is sent the input it was always sent; only a caller that found nothing
     // in it reaches the guard-directed candidates after it.
     if product(&ladders) > MAX_CANDIDATES {
-        let solved = Directed::new(&mut builder, command, guards, &ladders).solve()?;
+        let solved = Directed::new(&mut builder, command, guards, &ladders, goals).solve()?;
         extend_paired(&mut builder, command, &solved, &presence_omits, &mut inputs)?;
     }
     let inputs = admitted_inputs(ir, command, inputs);
@@ -1101,6 +1243,8 @@ struct Directed<'a, 'ir> {
     reads: Vec<Option<usize>>,
     /// Each atom's decision at a group's combination (`None`: undecided), filled on demand.
     truths: BTreeMap<(usize, usize), Vec<Option<bool>>>,
+    /// Which goals are solved for.
+    wanted: Goals,
 }
 
 impl<'a, 'ir> Directed<'a, 'ir> {
@@ -1109,6 +1253,7 @@ impl<'a, 'ir> Directed<'a, 'ir> {
         command: &'a ResolvedCommand,
         guards: &'a [&'a Predicate],
         ladders: &[(FactPath, Vec<Choice>)],
+        wanted: Goals,
     ) -> Self {
         let mut atoms: Vec<&Predicate> = Vec::new();
         for guard in guards {
@@ -1184,6 +1329,7 @@ impl<'a, 'ir> Directed<'a, 'ir> {
             groups,
             reads,
             truths: BTreeMap::new(),
+            wanted,
         }
     }
 
@@ -1206,6 +1352,9 @@ impl<'a, 'ir> Directed<'a, 'ir> {
 
     fn goals(&self) -> Vec<Vec<(&'a Predicate, bool)>> {
         let guards = self.guards;
+        if self.wanted == Goals::Satisfied {
+            return guards.iter().map(|guard| vec![(*guard, true)]).collect();
+        }
         let mut goals = Vec::new();
         for (at, guard) in guards.iter().enumerate() {
             let mut only = vec![(*guard, true)];
@@ -2941,6 +3090,56 @@ fn invariant_ladders(builder: &Builder<'_>, ladders: &mut BTreeMap<FactPath, Vec
     }
 }
 
+/// Moves the base of each leaf no guard reads, whose own type refuses its base witness, onto the
+/// first value of its [`invariant_ladders`] ladder the type admits
+/// (<https://github.com/beyond10x/ess/issues/511>).
+///
+/// Such a leaf is varied only to reach a value its type admits, and its ladder sits wherever its
+/// path falls in name order. Where it falls late, the bounded walk varies it slowest: every
+/// candidate before the walk reaches an admitted value holds the refused base, and
+/// [`admitted_inputs`] drops them all, so the leaves guards read are tried only in the few
+/// combinations left over. Grounded first, the leaf holds an admitted value in every candidate
+/// and has no ladder, so the walk spends the whole bound on what the guards read.
+///
+/// The value is the one the walk reached first, so the admitted candidates begin with the same
+/// inputs they began with before. A leaf a guard reads, at, under or above its path, keeps its
+/// base and its ladder.
+fn ground_invariants(
+    builder: &mut Builder<'_>,
+    command: &ResolvedCommand,
+    read: &BTreeSet<FactPath>,
+) -> Result<(), WitnessGap> {
+    let related = |path: &FactPath| {
+        read.iter().any(|read| {
+            read.segments().starts_with(path.segments())
+                || path.segments().starts_with(read.segments())
+        })
+    };
+    let mut ladders = BTreeMap::new();
+    invariant_ladders(builder, &mut ladders);
+    let mut grounded = BTreeMap::new();
+    for (path, ladder) in ladders {
+        if related(&path) || builder.fixed.contains_key(&path) {
+            continue;
+        }
+        let invariants = builder.invariants.get(&path).map_or(&[][..], Vec::as_slice);
+        let alphabet = builder.alphabets.get(&path);
+        let admitted = ladder.into_iter().find_map(|choice| match choice {
+            Choice::Value(node) if admits_base(invariants, alphabet, &node) => Some(node),
+            _ => None,
+        });
+        if let Some(node) = admitted {
+            grounded.insert(path, Choice::Value(node));
+        }
+    }
+    if !grounded.is_empty() {
+        builder.fixed.extend(grounded);
+        // Recorded again, so every ladder is built from the grounded base.
+        builder.input(command, &BTreeMap::new())?;
+    }
+    Ok(())
+}
+
 /// `read` moved under `prefix`: `start` under `window` is `window.start`.
 fn joined(prefix: &FactPath, read: &FactPath) -> FactPath {
     let mut moved = prefix.clone();
@@ -3606,6 +3805,9 @@ fn widened_solve(
         expand,
         builder.positional.clone(),
     );
+    // What the base already holds in place of its own witness (`ground_invariants`) holds on
+    // the wider builder too.
+    wider.fixed = builder.fixed.clone();
     wider.input(command, &BTreeMap::new())?;
     let (found, more) = solve(&mut wider, command, &refs, &BTreeSet::new())?;
     if found.is_some() {
@@ -3649,7 +3851,7 @@ fn repair(
         }
         if let (Some(fixed), _) = widened_solve(builder, command, &constraints)? {
             if !fixed.is_empty() {
-                builder.fixed = fixed;
+                builder.fixed.extend(fixed);
                 // Recorded again, so every ladder is built from the repaired base.
                 builder.input(command, &BTreeMap::new())?;
             }
@@ -5153,5 +5355,108 @@ mod tests {
             1,
             "one base witness and nothing else"
         );
+    }
+
+    /// The string operator `op` of `path` against `literal`.
+    fn matched(at: &str, op: TextOp, literal: &str) -> Predicate {
+        Predicate::TextMatch {
+            path: path(at),
+            op,
+            value: TextOperand::Literal(FactValue::Text(literal.to_owned())),
+        }
+    }
+
+    fn not(predicate: Predicate) -> Predicate {
+        Predicate::Not(Box::new(predicate))
+    }
+
+    fn equals(at: &str, literal: &str) -> Predicate {
+        Predicate::Compare {
+            left: Operand::Fact(path(at)),
+            op: CompareOp::Eq,
+            right: Operand::Literal(FactValue::Text(literal.to_owned())),
+            kind: ess_primitives::predicate::CompareKind::Value,
+        }
+    }
+
+    #[test]
+    fn a_goal_whose_text_literals_imply_a_refuted_one_is_unsatisfiable() {
+        use TextOp::{Contains, EndsWith, StartsWith};
+        let empty = [
+            // The adversary's goal: `starts_with "AB"` implies `starts_with "A"`.
+            vec![
+                not(matched("sku", StartsWith, "A")),
+                matched("sku", StartsWith, "AB"),
+                matched("sku", EndsWith, "0"),
+            ],
+            vec![
+                not(matched("sku", EndsWith, "0")),
+                matched("sku", EndsWith, "10"),
+            ],
+            vec![
+                not(matched("sku", Contains, "B")),
+                matched("sku", StartsWith, "AB"),
+            ],
+            vec![
+                not(matched("sku", Contains, "B")),
+                matched("sku", Contains, "ABC"),
+            ],
+            vec![equals("sku", "AB"), not(matched("sku", StartsWith, "A"))],
+            vec![equals("sku", "AB"), matched("sku", Contains, "Z")],
+            vec![
+                not(Predicate::Any(vec![matched("sku", StartsWith, "A")])),
+                matched("sku", StartsWith, "AB"),
+            ],
+        ];
+        for goal in empty {
+            let goal = Predicate::All(goal);
+            assert!(unsatisfiable(&goal), "{goal}");
+        }
+    }
+
+    /// Each of these is satisfiable, so it must never be read as empty: a refusal for an
+    /// unwitnessed child still fires where the bounded search misses it.
+    #[test]
+    fn a_satisfiable_goal_is_never_read_as_unsatisfiable() {
+        use TextOp::{Contains, EndsWith, StartsWith};
+        let satisfiable = [
+            // `A0` holds `starts_with "A"` and not `starts_with "AB"`.
+            vec![
+                not(matched("sku", StartsWith, "AB")),
+                matched("sku", StartsWith, "A"),
+            ],
+            // `XAB` ends with `AB` and does not start with `A`: different operators.
+            vec![
+                not(matched("sku", StartsWith, "A")),
+                matched("sku", EndsWith, "AB"),
+            ],
+            vec![
+                not(matched("sku", Contains, "B")),
+                matched("sku", StartsWith, "A"),
+            ],
+            // Different paths.
+            vec![
+                not(matched("code", StartsWith, "A")),
+                matched("sku", StartsWith, "AB"),
+            ],
+            // Under `any`, the refuted literal need not hold.
+            vec![
+                Predicate::Any(vec![
+                    not(matched("sku", StartsWith, "A")),
+                    matched("code", StartsWith, "C"),
+                ]),
+                matched("sku", StartsWith, "AB"),
+            ],
+            vec![equals("sku", "AB"), matched("sku", StartsWith, "A")],
+            // A declared `Timestamp` compares by the instant, so the spelling decides nothing.
+            vec![
+                equals("at", "2026-01-01T00:00:00Z"),
+                not(matched("at", StartsWith, "2026")),
+            ],
+        ];
+        for goal in satisfiable {
+            let goal = Predicate::All(goal);
+            assert!(!unsatisfiable(&goal), "{goal}");
+        }
     }
 }

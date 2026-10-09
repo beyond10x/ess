@@ -48,15 +48,48 @@ mod tests {
     use super::enclosing_checkout;
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
-    fn root(case: &str) -> PathBuf {
-        let root = std::env::temp_dir().join(format!(
-            "ess-git-checkout-{case}-{}-{}",
+    // `ess-xtask` compiles this file through `#[path]` without depending on `ess-cli`, so the
+    // drop guard lives here rather than reusing `ess_cli::TemporaryDirectory`.
+    struct Scratch(PathBuf);
+
+    impl Scratch {
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl std::ops::Deref for Scratch {
+        type Target = Path;
+
+        fn deref(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl AsRef<Path> for Scratch {
+        fn as_ref(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn root(case: &str) -> Scratch {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let sequence = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let root = Scratch(std::env::temp_dir().join(format!(
+            "ess-git-checkout-{case}-{}-{}-{sequence}",
             env!("CARGO_CRATE_NAME"),
             std::process::id()
-        ));
-        fs::create_dir_all(root.join("below")).unwrap();
+        )));
+        fs::create_dir(&root.0).unwrap();
+        fs::create_dir(root.join("below")).unwrap();
         root
     }
 
@@ -86,7 +119,7 @@ mod tests {
             fs::write(root.join(".git").join(entry), "").unwrap();
             let found = enclosing_checkout(&root.join("below")).unwrap();
             fs::remove_dir_all(&root).unwrap();
-            assert_eq!(found.as_deref(), Some(root.as_path()), "{entry}");
+            assert_eq!(found.as_deref(), Some(root.path()), "{entry}");
         }
     }
 
@@ -99,7 +132,7 @@ mod tests {
         for root in [gitfile, symlink] {
             let found = enclosing_checkout(&root.join("below")).unwrap();
             fs::remove_dir_all(&root).unwrap();
-            assert_eq!(found.as_deref(), Some(root.as_path()));
+            assert_eq!(found.as_deref(), Some(root.path()));
         }
     }
 

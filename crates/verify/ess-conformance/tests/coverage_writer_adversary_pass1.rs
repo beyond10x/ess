@@ -1,5 +1,7 @@
 //! D1 correspondence controls: full original typed diagnostics are a coordinator decision.
 //! The general suite/5 binding only requires nonempty text including the original cause.
+mod support_scratch;
+
 use ess_compiler::{resolve::compile, source::SourceMap, EssIr};
 use ess_conformance::{
     authored,
@@ -69,10 +71,10 @@ fn d1_generated_inventory_preserves_full_original_typed_refusal_rendering() {
         .map(|r| (r.scenario.clone(), r.code.clone(), r.message.clone()))
         .collect();
     actual.sort();
-    let evidence = std::env::temp_dir().join(format!(
+    let evidence = support_scratch::Scratch::adopt(std::env::temp_dir().join(format!(
         "ess-coverage-adversary-d1-generated-{}",
         std::process::id()
-    ));
+    )));
     fs::create_dir_all(&evidence).unwrap();
     fs::write(
         evidence.join("comparison.json"),
@@ -140,10 +142,10 @@ fn d1_authored_inventory_preserves_full_original_typed_refusal_rendering() {
         actual.sort();
         comparisons.push((name, expected, actual));
     }
-    let evidence = std::env::temp_dir().join(format!(
+    let evidence = support_scratch::Scratch::adopt(std::env::temp_dir().join(format!(
         "ess-coverage-adversary-d1-authored-{}",
         std::process::id()
-    ));
+    )));
     fs::create_dir_all(&evidence).unwrap();
     fs::write(
         evidence.join("comparison.json"),

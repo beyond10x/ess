@@ -20,6 +20,10 @@ relations:
 - delivers: story:change-fragment-upgrade-obligation
 - delivers: story:binding-conditions-compare-boolean-event-fields
 - delivers: story:an-outcome-that-only-stores-is-observed-through-a-view
+- delivers: story:stored-field-equals-returned-response-value
+- delivers: story:response-and-struct-admit-undeclared-fields-when-declared-ignored
+- delivers: story:requirement-completeness-without-prose-in-the-model
+- delivers: story:one-command-combines-identity-and-row-set-related-guards
 revision: 1
 ---
 Carried from `release-plan:ess-057` on 2026-10-07, when that version number went to the release that actually shipped under it. Not scheduled to a version; its original intent follows.

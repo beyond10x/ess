@@ -1,4 +1,6 @@
 //! Original suite bytes cannot disguise an infix disjunction as one quoted literal.
+mod support_scratch;
+
 use ess_conformance::AdmittedSuite;
 use serde_json::{json, Value};
 
@@ -51,8 +53,9 @@ fn source_command_guard_refuses_the_measured_disjunction() {
 #[test]
 fn generated_go_reader_and_evaluator_keep_quoted_operand_boundaries() {
     let suite = AdmittedSuite::from_json(&document(&json!(r#"to == """#))).unwrap();
-    let directory =
-        std::env::temp_dir().join(format!("ess-gap10-predicate-{}", std::process::id()));
+    let directory = support_scratch::Scratch::adopt(
+        std::env::temp_dir().join(format!("ess-gap10-predicate-{}", std::process::id())),
+    );
     std::fs::create_dir_all(directory.join("essconform")).unwrap();
     for artifact in ess_conformance::go::emit(suite.suite()).unwrap() {
         std::fs::write(directory.join(artifact.path), artifact.contents).unwrap();
@@ -176,10 +179,10 @@ fn generated_suite_literals_roundtrip_in_rust_go_and_browser() {
         };
         assert_eq!(right, &Operand::Literal(FactValue::Text((*text).into())));
     }
-    let directory = std::env::temp_dir().join(format!(
-        "ess-gap10-predicate-{}/roundtrip",
+    let directory = support_scratch::Scratch::adopt(std::env::temp_dir().join(format!(
+        "ess-gap10-predicate-roundtrip-{}",
         std::process::id()
-    ));
+    )));
     std::fs::create_dir_all(directory.join("essconform")).unwrap();
     let input = ess_conformance::coverage::SuiteInputDocument {
         format: "ess-conformance-input/1".into(),

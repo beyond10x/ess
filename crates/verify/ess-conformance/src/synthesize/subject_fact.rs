@@ -917,15 +917,60 @@ pub(super) fn grounded(
     settled: &BTreeMap<String, super::Determined>,
     predicates: &[Predicate],
 ) -> Vec<Predicate> {
+    grounded_in(ir, entity, settled, predicates, None)
+}
+
+/// What [`grounded`] leaves out and a quantifier over the command's input grounds: its body's
+/// comparisons with the row, the stored side replaced by the value the row holds and the element
+/// left the input element it reads (beyond10x/ess#516). `not (exists audience in input.aud:
+/// audience == {fact: client_id})` grounds `exists audience in aud: audience == <client_id held>`,
+/// and the candidate search, which reads a quantifier's body on a one-element list, tries the
+/// list holding the row's value. Empty where `predicates` have no such quantifier.
+fn grounded_over_input(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    settled: &BTreeMap<String, super::Determined>,
+    predicates: &[Predicate],
+) -> Vec<Predicate> {
+    let plain = grounded(ir, entity, settled, predicates);
+    grounded_in(ir, entity, settled, predicates, Some(&[]))
+        .into_iter()
+        .filter(|predicate| !plain.contains(predicate))
+        .collect()
+}
+
+/// [`grounded`], with a quantifier over the input grounded too where `free` is given
+/// ([`grounded_over_input`]).
+fn grounded_in(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    settled: &BTreeMap<String, super::Determined>,
+    predicates: &[Predicate],
+    free: Option<&[&str]>,
+) -> Vec<Predicate> {
     let mut found = Vec::new();
     for predicate in predicates {
         leaves(predicate, &mut found);
     }
     let mut out = Vec::new();
     for leaf in found.iter().filter(|leaf| reads_input(ir, entity, leaf)) {
-        ground_leaf(settled, &[], leaf, &mut out);
+        ground_leaf(settled, &[], free, leaf, &mut out);
     }
     out
+}
+
+/// The input path `path` reads, where it reads one: an element of a quantifier over the input
+/// (`free`) as itself, an `input.` path as the path under it. `None` for a stored read, including
+/// one rooted at a binder over a stored collection (`bound`), which the innermost binder decides.
+fn input_side(path: &FactPath, bound: &[(&str, &Node)], free: &[&str]) -> Option<FactPath> {
+    let root = path.namespace();
+    if bound.iter().any(|(name, _)| *name == root) {
+        return None;
+    }
+    if free.contains(&root) {
+        return Some(path.clone());
+    }
+    input_path(path)
 }
 
 /// The value the row holds at `path`, reading a quantifier's binder as the element it is bound to
@@ -955,14 +1000,13 @@ fn held_node(
 fn ground_derived(
     settled: &BTreeMap<String, super::Determined>,
     bound: &[(&str, &Node)],
+    free: &[&str],
     derived: &ess_primitives::predicate::Derived,
 ) -> Option<Operand> {
     let parent = derived.parent();
-    match input_path(parent) {
-        Some(rest) if !bound.iter().any(|(name, _)| *name == parent.namespace()) => {
-            Some(Operand::Derived(derived.with_parent(rest)))
-        }
-        _ => derived
+    match input_side(parent, bound, free) {
+        Some(rest) => Some(Operand::Derived(derived.with_parent(rest))),
+        None => derived
             .value_with(&|path| {
                 held_node(settled, bound, path)
                     .as_ref()
@@ -979,48 +1023,46 @@ fn ground_derived(
 /// redirect_uris: r == input.application` over a row holding `{k: v}` grounds `v == application`,
 /// and the input is tried at `v`, which satisfies it, and at its neighbours, which do not. An empty
 /// collection grounds nothing: the input cannot move a quantifier over it.
+///
+/// A quantifier over the input is grounded only where `free` is given ([`grounded_over_input`]):
+/// once, its body's leaves grounded with its binder in `free` — read as the input element it
+/// names — and each wrapped in the quantifier again, over the input path.
 #[allow(clippy::too_many_lines)]
 fn ground_leaf(
     settled: &BTreeMap<String, super::Determined>,
     bound: &[(&str, &Node)],
+    free: Option<&[&str]>,
     leaf: &Predicate,
     out: &mut Vec<Predicate>,
 ) {
+    let binders = free.unwrap_or_default();
     let side = |operand: &Operand| -> Option<Operand> {
         match operand {
-            Operand::Fact(path) if !bound.iter().any(|(name, _)| *name == path.namespace()) => {
-                match input_path(path) {
-                    Some(rest) => Some(Operand::Fact(rest)),
-                    None => held_node(settled, bound, path)
-                        .as_ref()
-                        .and_then(super::fact_value)
-                        .map(Operand::Literal),
-                }
-            }
-            Operand::Fact(path) => held_node(settled, bound, path)
-                .as_ref()
-                .and_then(super::fact_value)
-                .map(Operand::Literal),
+            Operand::Fact(path) => match input_side(path, bound, binders) {
+                Some(rest) => Some(Operand::Fact(rest)),
+                None => held_node(settled, bound, path)
+                    .as_ref()
+                    .and_then(super::fact_value)
+                    .map(Operand::Literal),
+            },
             // An offset of an input stays an offset of that input; one of a stored value is the
             // value it names (A2), or grounds nothing where the row holds no such value.
             Operand::Offset(offset) => {
                 let base = &offset.base;
-                match input_path(base) {
-                    Some(rest) if !bound.iter().any(|(name, _)| *name == base.namespace()) => {
-                        Some(Operand::Offset(ess_primitives::predicate::OffsetOperand {
-                            base: rest,
-                            direction: offset.direction,
-                            magnitude: offset.magnitude,
-                        }))
-                    }
-                    _ => held_node(settled, bound, base)
+                match input_side(base, bound, binders) {
+                    Some(rest) => Some(Operand::Offset(ess_primitives::predicate::OffsetOperand {
+                        base: rest,
+                        direction: offset.direction,
+                        magnitude: offset.magnitude,
+                    })),
+                    None => held_node(settled, bound, base)
                         .as_ref()
                         .and_then(super::fact_value)
                         .and_then(|value| offset.value_at(&value))
                         .map(Operand::Literal),
                 }
             }
-            Operand::Derived(derived) => ground_derived(settled, bound, derived),
+            Operand::Derived(derived) => ground_derived(settled, bound, binders, derived),
             Operand::Literal(value) => Some(Operand::Literal(value.clone())),
         }
     };
@@ -1069,7 +1111,7 @@ fn ground_leaf(
             op,
             value: ess_primitives::predicate::TextOperand::Fact { path: operand, .. },
         } if !bound.iter().any(|(name, _)| *name == operand.namespace()) => {
-            ground_text_operand(settled, bound, path, *op, operand, out);
+            ground_text_operand(settled, bound, binders, path, *op, operand, out);
         }
         // A calendar window over the command's input (`at: input.<path>`) steers the input as a
         // window over that input path: its boundaries are the values the input is tried at
@@ -1078,13 +1120,43 @@ fn ground_leaf(
             if let Some(rest) = window
                 .at
                 .fact_path()
-                .filter(|path| !bound.iter().any(|(name, _)| *name == path.namespace()))
-                .and_then(input_path)
+                .and_then(|path| input_side(path, bound, binders))
             {
                 out.push(Predicate::Window(Box::new(window.map_path(|_| rest))));
             }
         }
         Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
+            let bind = quantified.bind.as_str();
+            if let Some(over) = free.and_then(|free| input_side(&quantified.over, bound, free)) {
+                // The binder shadows any outer one of its name.
+                let inner: Vec<(&str, &Node)> = bound
+                    .iter()
+                    .copied()
+                    .filter(|(name, _)| *name != bind)
+                    .collect();
+                let mut elements: Vec<&str> = binders.to_vec();
+                elements.push(bind);
+                let mut body = Vec::new();
+                leaves(&quantified.body, &mut body);
+                let mut grounded = Vec::new();
+                for leaf in &body {
+                    ground_leaf(settled, &inner, Some(&elements), leaf, &mut grounded);
+                }
+                let universal = matches!(leaf, Predicate::Forall(_));
+                out.extend(grounded.into_iter().map(|body| {
+                    let quantified = Box::new(ess_primitives::predicate::Quantified {
+                        over: over.clone(),
+                        bind: bind.to_owned(),
+                        body,
+                    });
+                    if universal {
+                        Predicate::Forall(quantified)
+                    } else {
+                        Predicate::Exists(quantified)
+                    }
+                }));
+                return;
+            }
             let elements = match held_node(settled, bound, &quantified.over) {
                 Some(Node::Map(entries)) => entries.into_values().collect(),
                 Some(Node::Seq(items)) => items,
@@ -1092,11 +1164,14 @@ fn ground_leaf(
             };
             let mut body = Vec::new();
             leaves(&quantified.body, &mut body);
+            // The element binder shadows an input one of its name.
+            let unbound: Option<Vec<&str>> =
+                free.map(|free| free.iter().copied().filter(|name| *name != bind).collect());
             for element in &elements {
                 let mut inner = bound.to_vec();
-                inner.push((quantified.bind.as_str(), element));
+                inner.push((bind, element));
                 for leaf in &body {
-                    ground_leaf(settled, &inner, leaf, out);
+                    ground_leaf(settled, &inner, unbound.as_deref(), leaf, out);
                 }
             }
         }
@@ -1111,14 +1186,16 @@ fn ground_leaf(
 fn ground_text_operand(
     settled: &BTreeMap<String, super::Determined>,
     bound: &[(&str, &Node)],
+    free: &[&str],
     path: &FactPath,
     op: ess_primitives::predicate::TextOp,
     operand: &FactPath,
     out: &mut Vec<Predicate>,
 ) {
-    let (Some(input), Some(Node::Text(held))) =
-        (input_path(operand), held_node(settled, bound, path))
-    else {
+    let (Some(input), Some(Node::Text(held))) = (
+        input_side(operand, bound, free),
+        held_node(settled, bound, path),
+    ) else {
         return;
     };
     let values: Vec<ess_primitives::facts::FactValue> = [
@@ -2504,7 +2581,13 @@ pub(super) fn observe_relied(
 }
 
 /// [`refusal_input`], with every guard in `also` required to hold beside `outcome`'s own.
-#[allow(clippy::too_many_lines)]
+///
+/// Where no candidate serves, the search is run once more with candidates also drawn over every
+/// quantifier across the input that the row must refute, grounded on the row
+/// ([`grounded_over_input`], beyond10x/ess#516): `audience-mismatch: not (exists audience in
+/// input.aud: audience == {fact: client_id})` is refuted only by a list holding the row's
+/// `client_id`, which no candidate drawn from the input guards alone carries. Only then, so a
+/// witness the first search found stays the one it was.
 fn refusal_input_also(
     ir: &EssIr,
     entity: &EntityHandle,
@@ -2513,6 +2596,45 @@ fn refusal_input_also(
     outcome: &ResolvedOutcome,
     also: &[&Predicate],
     distinction: Distinction,
+) -> Result<(BTreeMap<String, Node>, Vec<Predicate>), RefusalCause> {
+    refusal_input_from(
+        ir,
+        entity,
+        arrangement,
+        command,
+        outcome,
+        also,
+        distinction,
+        None,
+    )
+    .or_else(|cause| {
+        refusal_input_from(
+            ir,
+            entity,
+            arrangement,
+            command,
+            outcome,
+            also,
+            distinction,
+            Some(cause),
+        )
+    })
+}
+
+/// The search behind [`refusal_input_also`]. `retried` is the first search's refusal: given, the
+/// candidates over the input quantifiers the row must refute are tried after the first search's,
+/// and where there are none `retried` is the answer.
+#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_lines)]
+fn refusal_input_from(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    arrangement: &Arrangement,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    also: &[&Predicate],
+    distinction: Distinction,
+    retried: Option<RefusalCause>,
 ) -> Result<(BTreeMap<String, Node>, Vec<Predicate>), RefusalCause> {
     let mut own: Vec<&Predicate> = input_guard(&outcome.condition).into_iter().collect();
     own.extend(also.iter().copied());
@@ -2591,8 +2713,36 @@ fn refusal_input_also(
     };
     let mut row_guards: Vec<Predicate> = if on_row { halves.clone() } else { Vec::new() };
     row_guards.extend(windowed.iter().cloned());
+    let over_input = match &retried {
+        Some(_) => grounded_over_input(ir, entity, &arrangement.settled, &row_guards),
+        None => Vec::new(),
+    };
+    if let (Some(cause), true) = (&retried, over_input.is_empty()) {
+        return Err(cause.clone());
+    }
     let mut inputs =
         refusal_candidates(ir, entity, arrangement, command, &row_guards, distinction)?;
+    if let Some(cause) = retried {
+        let grounded = grounded(ir, entity, &arrangement.settled, &row_guards);
+        let guards: Vec<&Predicate> = command
+            .outcomes
+            .iter()
+            .filter_map(|branch| input_guard(&branch.condition))
+            .chain(&grounded)
+            .chain(&over_input)
+            .collect();
+        let Ok(more) = candidates(ir, command, &guards, distinction) else {
+            return Err(cause);
+        };
+        let more: Vec<_> = more
+            .into_iter()
+            .filter(|input| !inputs.contains(input))
+            .collect();
+        if more.is_empty() {
+            return Err(cause);
+        }
+        inputs.extend(more);
+    }
     if !windowed.is_empty() {
         let inside = |input: &BTreeMap<String, Node>| {
             windowed.iter().all(|predicate| {

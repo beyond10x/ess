@@ -65,9 +65,14 @@ pub const FAMILY: &str = "MUTATE";
 pub const REPORT_FORMAT: &str = "ess-mutation-report/3";
 /// The report [`collect`] writes for an emission scoped to one component: `/3` with the component
 /// named and the mutants it leaves out listed (beyond10x/ess#236); also the report under a
-/// known-failure declaration (beyond10x/ess#294), and wherever a selected site is unavailable
+/// known-failure declaration (beyond10x/ess#294), wherever a selected site is unavailable
 /// (beyond10x/ess#295).
 pub const REPORT_FORMAT_4: &str = "ess-mutation-report/4";
+/// The report wherever a mutant carries `identical_answer`
+/// (<https://github.com/beyond10x/ess/issues/517>): [`REPORT_FORMAT_4`] with that member, which
+/// the `/4` that 0.53.0 to 0.56.0 wrote does not have. A report none of whose mutants carries it is
+/// `/4` or `/3` exactly as before.
+pub const REPORT_FORMAT_5: &str = "ess-mutation-report/5";
 
 // ---- the classes --------------------------------------------------------------------------------
 
@@ -2033,9 +2038,11 @@ fn outcome_site(class: MutantClass, id: &str) -> Option<(&str, &str)> {
 /// The guard a guard mutant left its outcome, rendered, where no input satisfies it and the
 /// baseline's guard at the same outcome is satisfied by one: the mutant made the outcome dead.
 ///
-/// `None` for any other mutation, where either guard is not a plain input guard, where the
-/// baseline's guard is not satisfied either (the mutant did not make it dead), and wherever
-/// [`satisfiable`] cannot decide.
+/// `None` for any other mutation, where either guard is not a plain input guard or a `when:`
+/// beside a `when_subject:` predicate, where the baseline's guard is not satisfied either (the
+/// mutant did not make it dead), and wherever [`satisfiable`] or [`satisfiable_beside`] cannot
+/// decide. Beside `when_subject:`, the guard named is the mutant's `when:` and the stored guard
+/// together: no input it admits leaves the stored guard able to hold on any row.
 ///
 /// For a `precedence-swap`, the overlap of the two guards in the baseline, where no input satisfies
 /// it: the two branches never compete, so their order decides nothing.
@@ -2067,12 +2074,88 @@ fn unsatisfiable_guard(baseline: &EssIr, mutant: &EssIr, mutation: &Mutation) ->
     else {
         return None;
     };
+    // A `when:` beside `when_subject:`: dead where no input it admits leaves the stored guard able
+    // to hold on any row, rendered as the two together.
+    if let Some((before, was, stored)) = guards_beside_subject(baseline, command, outcome) {
+        if !satisfiable_beside(baseline, before, was, stored)? {
+            return None;
+        }
+        let (after, now, stored) = guards_beside_subject(mutant, command, outcome)?;
+        return (!satisfiable_beside(mutant, after, now, stored)?)
+            .then(|| Predicate::All(vec![now.clone(), stored.clone()]).to_string());
+    }
     let (before, was) = guard_of(baseline, command, outcome)?;
     if !satisfiable(baseline, before, was)? {
         return None;
     }
     let (after, now) = guard_of(mutant, command, outcome)?;
     (!satisfiable(mutant, after, now)?).then(|| now.to_string())
+}
+
+/// For a `precedence-swap`, the answer both of its branches give in the baseline, where it is the
+/// same one: the same error and error payload (or neither refuses) and the same response, and
+/// neither changes state, sets or emits anything (<https://github.com/beyond10x/ess/issues/517>). Where both guards hold,
+/// either order then answers alike, so nothing a caller observes tells the mutant apart.
+///
+/// `None` for any other mutation, and wherever the two branches differ in anything but their name,
+/// guard, summary, references and test strategy — which only errs towards scoring as before.
+fn identical_answer(baseline: &EssIr, mutation: &Mutation) -> Option<String> {
+    let Mutation::PrecedenceSwap {
+        command,
+        first,
+        second,
+    } = mutation
+    else {
+        return None;
+    };
+    let found = baseline
+        .commands()
+        .values()
+        .find(|it| it.name.to_string() == *command)?;
+    let branch = |name: &str| found.outcomes.iter().find(|it| it.name.to_string() == name);
+    let (one, other) = (branch(first)?, branch(second)?);
+    let quiet = |it: &ess_compiler::ir::ResolvedOutcome| {
+        it.subject.is_none()
+            && it.replays.is_none()
+            && it.emits.is_empty()
+            && it.payload.is_empty()
+            && it.sets.is_empty()
+            && it.instances.is_none()
+            && it.affects.is_empty()
+    };
+    // Everything a caller could observe, with what only names or documents the branch made equal.
+    let answer = |it: &ess_compiler::ir::ResolvedOutcome| {
+        let mut it = it.clone();
+        it.name.clone_from(&one.name);
+        it.condition.clone_from(&one.condition);
+        it.test_strategy = one.test_strategy;
+        it.summary = None;
+        it.refs = Vec::new();
+        it
+    };
+    if !(quiet(one) && quiet(other) && answer(one) == answer(other)) {
+        return None;
+    }
+    let mut said = match &one.error {
+        Some(error) if one.error_payload.is_empty() => {
+            format!("refuse with `{error}` and no payload")
+        }
+        Some(error) => {
+            let fields: Vec<String> = one
+                .error_payload
+                .iter()
+                .map(|field| format!("`{}`", field.target))
+                .collect();
+            format!(
+                "refuse with `{error}` and the same payload ({})",
+                fields.join(", ")
+            )
+        }
+        None if one.returns => "accept and return the same response".to_owned(),
+        None => "accept".to_owned(),
+    };
+    said.push_str("; neither changes state, sets or emits anything");
+    Some(said)
 }
 
 /// The command of `ir` named `command`, and the input guard of its outcome `outcome`.
@@ -2095,11 +2178,15 @@ fn guard_of<'ir>(
 
 /// Whether some input satisfies `guard`, or `None` where that is not decided here.
 ///
-/// Decided only where every test in the guard compares one scalar input leaf, never optional,
-/// never a count and never a `Timestamp`, with literals by equality, membership or truth. Over such
-/// a guard, which literal each leaf equals — or none — is all that decides it, so each leaf's
-/// domain is finite: a boolean's two values, an enum's variants, and for any other text or number
-/// its literals and one value none of them equals. Every combination of those domains is
+/// Decided only where every test in the guard compares one scalar input leaf, never a count and
+/// never a `Timestamp`, with literals by equality, membership or truth, or asks whether it is
+/// `defined`. Over such a guard, which literal each leaf equals — or none — and whether an
+/// `Optional` leaf is present is all that decides it, so each leaf's domain is finite: a boolean's
+/// two values, an enum's variants, and for any other text or number its literals and one value
+/// none of them equals; an `Optional` leaf's domain adds its absence
+/// (<https://github.com/beyond10x/ess/issues/501>). A combination under which the guard is
+/// unknown — a comparison of an absent leaf — decides nothing, so the guard is called
+/// unsatisfiable only where every combination refutes it. Every combination of those domains is
 /// evaluated, and only where their product is at most
 /// [`MAX_CANDIDATES`](crate::witness::MAX_CANDIDATES): completeness is that product, counted before
 /// any type rule or invariant is applied, never how
@@ -2113,6 +2200,125 @@ fn satisfiable(
     command: &ess_compiler::ir::ResolvedCommand,
     guard: &Predicate,
 ) -> Option<bool> {
+    decide(ir, command, guard, true, &|_| true)
+}
+
+/// The command of `ir` named `command`, and the input guard and stored guard of its outcome
+/// `outcome`, where that branch is selected by both: a `when:` beside a `when_subject:` predicate.
+fn guards_beside_subject<'ir>(
+    ir: &'ir EssIr,
+    command: &str,
+    outcome: &str,
+) -> Option<(
+    &'ir ess_compiler::ir::ResolvedCommand,
+    &'ir Predicate,
+    &'ir Predicate,
+)> {
+    let found = ir
+        .commands()
+        .values()
+        .find(|it| it.name.to_string() == command)?;
+    let branch = found
+        .outcomes
+        .iter()
+        .find(|it| it.name.to_string() == outcome)?;
+    match &branch.condition {
+        ess_compiler::ir::ResolvedCondition::SubjectPredicate {
+            predicate,
+            input: Some(guard),
+        } => Some((found, guard, predicate)),
+        _ => None,
+    }
+}
+
+/// [`satisfiable`] for a branch selected by an input guard together with a stored guard over its
+/// subject, or `None` where that is not decided here.
+///
+/// The input guard is decided as [`satisfiable`] decides it, and a combination satisfying it
+/// counts only where the stored guard can still hold on some row with the input fields that
+/// combination leaves out absent ([`may_hold`]). A comparison reading such a field is `Unknown`
+/// whatever the row holds, never `True`: `when: not defined(expected_version)` beside
+/// `when_subject: version != input.expected_version` is satisfied on no row. Every stored leaf
+/// that reads no absent field is taken to hold or fail as a row needs, so the answer can only err
+/// towards satisfiable.
+fn satisfiable_beside(
+    ir: &EssIr,
+    command: &ess_compiler::ir::ResolvedCommand,
+    guard: &Predicate,
+    stored: &Predicate,
+) -> Option<bool> {
+    decide(ir, command, guard, true, &|absent| {
+        may_hold(stored, absent, true)
+    })
+}
+
+/// Whether `predicate` over a subject row and the command's input can come out `wanted` on some
+/// row, with every input field `absent` names left out. Kleene: a value comparison reading an
+/// absent input field is `Unknown`, which is neither, and `defined` of one is `False`. Any other
+/// leaf, and any leaf reading no absent field, may be either.
+fn may_hold(
+    predicate: &Predicate,
+    absent: &[ess_primitives::facts::FactPath],
+    wanted: bool,
+) -> bool {
+    use ess_primitives::predicate::Operand;
+    let reads_absent = |path: &ess_primitives::facts::FactPath| {
+        let segments = path.segments();
+        segments.len() > 1
+            && segments[0] == ess_domain::command::subject_fact::INPUT_NAMESPACE
+            && absent.iter().any(|left| left.segments() == &segments[1..])
+    };
+    match predicate {
+        Predicate::Always => wanted,
+        Predicate::Never => !wanted,
+        Predicate::All(children) if wanted => {
+            children.iter().all(|child| may_hold(child, absent, true))
+        }
+        Predicate::All(children) => children.iter().any(|child| may_hold(child, absent, false)),
+        Predicate::Any(children) if wanted => {
+            children.iter().any(|child| may_hold(child, absent, true))
+        }
+        Predicate::Any(children) => children.iter().all(|child| may_hold(child, absent, false)),
+        Predicate::Not(inner) => may_hold(inner, absent, !wanted),
+        Predicate::Defined(path) if reads_absent(path) => !wanted,
+        Predicate::Compare { left, right, .. }
+            if [left, right]
+                .iter()
+                .all(|operand| matches!(operand, Operand::Fact(_) | Operand::Literal(_))) =>
+        {
+            ![left, right]
+                .iter()
+                .any(|operand| matches!(operand, Operand::Fact(path) if reads_absent(path)))
+        }
+        _ => true,
+    }
+}
+
+/// `satisfiable`, over values a caller of `ir` can send: an enum leaf ranges over its variants
+/// only, never over a guard literal that is not one of them, which the decoder refuses.
+///
+/// For `ess-diff`, which asks whether a refusal changed between two revisions takes an input a
+/// caller of the earlier one could send (<https://github.com/beyond10x/ess/issues/514>): a second
+/// decision procedure beside this one would be two answers to one question. Every other leaf is
+/// read as `satisfiable` reads it, invariants included.
+pub fn satisfiable_by_declared_values(
+    ir: &EssIr,
+    command: &ess_compiler::ir::ResolvedCommand,
+    guard: &Predicate,
+) -> Option<bool> {
+    decide(ir, command, guard, false, &|_| true)
+}
+
+/// [`satisfiable`], adding guard literals to an enum leaf's domain only where `outside_variants`,
+/// and counting a combination that satisfies `guard` only where `admits` accepts the `Optional`
+/// leaves it leaves out.
+fn decide(
+    ir: &EssIr,
+    command: &ess_compiler::ir::ResolvedCommand,
+    guard: &Predicate,
+    outside_variants: bool,
+    admits: &dyn Fn(&[ess_primitives::facts::FactPath]) -> bool,
+) -> Option<bool> {
     use ess_domain::expression::ScalarKind;
     use ess_primitives::facts::{FactPath, FactValue};
     let mut leaves: std::collections::BTreeMap<FactPath, Vec<FactValue>> =
@@ -2121,12 +2327,12 @@ fn satisfiable(
         return None;
     }
     let environment = ess_compiler::expression::Environment::new(ir, &command.input);
-    let mut domains: Vec<(FactPath, Vec<FactValue>)> = Vec::new();
+    let mut domains: Vec<(FactPath, Vec<Option<FactValue>>)> = Vec::new();
     let mut combinations: usize = 1;
     for (path, literals) in &leaves {
         let resolved =
             ess_domain::expression::resolve_path(&environment, path, "mutation audit").ok()?;
-        if resolved.optional || resolved.access.collection || resolved.access.text_length {
+        if resolved.access.collection || resolved.access.text_length {
             return None;
         }
         let scalar = resolved.scalar?;
@@ -2145,8 +2351,9 @@ fn satisfiable(
         ) {
             return None;
         }
-        let mut domain: Vec<FactValue> = Vec::new();
+        let mut domain: Vec<Option<FactValue>> = Vec::new();
         let mut add = |value: FactValue| {
+            let value = Some(value);
             if !domain.contains(&value) {
                 domain.push(value);
             }
@@ -2162,7 +2369,7 @@ fn satisfiable(
                 }
                 literals
                     .iter()
-                    .filter(|it| matches!(it, FactValue::Text(_)))
+                    .filter(|it| outside_variants && matches!(it, FactValue::Text(_)))
                     .for_each(|it| add(it.clone()));
             }
             (ScalarKind::Text | ScalarKind::Number, _) => {
@@ -2185,33 +2392,43 @@ fn satisfiable(
                 add(other);
             }
         }
+        // Absence is one more value of an `Optional` leaf, the one `defined` refutes.
+        if resolved.optional {
+            domain.push(None);
+        }
         combinations = combinations.checked_mul(domain.len())?;
         if combinations > crate::witness::MAX_CANDIDATES {
             return None;
         }
         domains.push((path.clone(), domain));
     }
+    let mut undecided = false;
     for index in 0..combinations {
         let mut rest = index;
+        let mut absent: Vec<FactPath> = Vec::new();
         let facts: ess_primitives::facts::FactStore = domains
             .iter()
-            .map(|(path, domain)| {
+            .filter_map(|(path, domain)| {
                 let value = domain[rest % domain.len()].clone();
                 rest /= domain.len();
-                (path.clone(), value)
+                if value.is_none() {
+                    absent.push(path.clone());
+                }
+                value.map(|value| (path.clone(), value))
             })
             .collect();
         match guard.evaluate(&facts) {
-            ess_primitives::predicate::Truth::True => return Some(true),
-            ess_primitives::predicate::Truth::False => {}
-            ess_primitives::predicate::Truth::Unknown => return None,
+            ess_primitives::predicate::Truth::True if admits(&absent) => return Some(true),
+            ess_primitives::predicate::Truth::True | ess_primitives::predicate::Truth::False => {}
+            ess_primitives::predicate::Truth::Unknown => undecided = true,
         }
     }
-    Some(false)
+    (!undecided).then_some(false)
 }
 
 /// Whether `predicate` tests only input leaves against literals by `==`, `!=`, membership or
-/// truth, under `all`, `any` and `not`; each leaf read is recorded with the literals it meets.
+/// truth, or for presence, under `all`, `any` and `not`; each leaf read is recorded with the
+/// literals it meets.
 fn equality_tests(
     predicate: &Predicate,
     leaves: &mut std::collections::BTreeMap<
@@ -2253,6 +2470,11 @@ fn equality_tests(
                 .push(ess_primitives::facts::FactValue::Bool(true));
             true
         }
+        // Presence meets no literal; the leaf's domain is what `satisfiable` gives its type.
+        Predicate::Defined(path) => {
+            leaves.entry(path.clone()).or_default();
+            true
+        }
         _ => false,
     }
 }
@@ -2277,8 +2499,11 @@ pub enum Verdict {
     /// changed has no scenario, so what is left passing is not a finding that the suite misses it.
     Unwitnessed,
     /// `ESS-MUTATE-005`: no scored scenario failed, and the mutant left its outcome's guard
-    /// satisfied by no input, and no scenario it changed went unscored.
-    /// The rule it wrote is dead by construction, so no scenario of its suite can take it.
+    /// satisfied by no input — beside a `when_subject:` guard, by no input on any row — and no
+    /// scenario it changed went unscored.
+    /// The rule it wrote is dead by construction, so no scenario of its suite can take it. Also
+    /// a `precedence-swap` whose two branches give an identical answer (<https://github.com/beyond10x/ess/issues/517>), on
+    /// the same terms: either order answers alike wherever both guards hold.
     Equivalent,
     /// `assemble` or `compile` refused the mutant.
     Stillborn,
@@ -2502,6 +2727,12 @@ pub struct MutantEntry {
     pub exclusions: Option<Vec<Exclusion>>,
     /// `<class>/<site>`.
     pub id: String,
+    /// The answer both branches of a `precedence-swap` give, where it is the same one: the same
+    /// error, the same or no payload, and neither changes state, sets or emits anything
+    /// (<https://github.com/beyond10x/ess/issues/517>). Apart from `unsatisfiable_guard`, which says their guards never
+    /// overlap. Only in `ess-mutation-report/5`, and absent where that is not so.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub identical_answer: Option<String>,
     /// The scenarios that failed, sorted; only on `killed`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub killers: Option<Vec<String>>,
@@ -2583,7 +2814,8 @@ pub struct OutOfScope {
 }
 
 /// The `ess-mutation-report/3` document, or `/4` where it is scored for one component, under a
-/// known-failure declaration, or with unavailable sites: keys sorted, no timestamp, so its bytes are
+/// known-failure declaration, or with unavailable sites, or `/5` where a mutant carries
+/// `identical_answer`: keys sorted, no timestamp, so its bytes are
 /// a function of the tree and the target.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct MutationReport {
@@ -2595,7 +2827,7 @@ pub struct MutationReport {
     /// How many mutants came to each verdict. Out-of-scope mutants are not counted.
     pub counts: Counts,
     /// [`REPORT_FORMAT`], or [`REPORT_FORMAT_4`] where a component, a declaration or an unavailable
-    /// site is named.
+    /// site is named, or [`REPORT_FORMAT_5`] where a mutant carries `identical_answer`.
     pub format: String,
     /// The implementation that answered.
     pub implementation: String,
@@ -2680,6 +2912,14 @@ impl MutationReport {
                 tail.push(';');
             }
             let _ = write!(tail, " no input satisfies `{guard}`");
+        }
+        if let Some(answer) = &entry.identical_answer {
+            if entry.verdict == Verdict::Equivalent && entry.unsatisfiable_guard.is_none() {
+                let _ = write!(tail, " — {}:", MutateCode::Equivalent.code());
+            } else {
+                tail.push(';');
+            }
+            let _ = write!(tail, " both branches {answer}");
         }
         if let Some(refused) = &entry.baseline_refusals {
             let named: Vec<String> = refused.iter().map(ToString::to_string).collect();
@@ -3342,14 +3582,16 @@ impl Ruler {
     /// excluded scenario makes it `inconclusive` only where the mutant's copy differs from the
     /// baseline's: an unchanged one asks the target what the baseline asked, so it cannot kill it.
     /// A mutant on an outcome the baseline does not witness, or on a transition only such outcomes
-    /// perform, is `unwitnessed` as a gained refusal makes it; one that left its guard `dead` is
-    /// `equivalent` unless killed or hiding a changed scenario nothing scored.
+    /// perform, is `unwitnessed` as a gained refusal makes it; one that left its guard `dead`, or a
+    /// `precedence-swap` whose branches give an `identical` answer, is `equivalent` unless killed
+    /// or hiding a changed scenario nothing scored.
     fn judge(
         &self,
         entry: &mut MutantEntry,
         observed: &Observed,
         refused: &Refused,
         dead: Option<String>,
+        identical: Option<String>,
     ) {
         let statuses: Vec<Status> = observed
             .not_passed
@@ -3425,7 +3667,7 @@ impl Ruler {
         // could have killed it (a gained refusal outranks `inconclusive` in `Verdict::judge`, so
         // `hidden` is asked here too).
         entry.verdict = Verdict::judge(&statuses, gained || at_baseline.is_some(), hidden);
-        if dead.is_some() && !hidden {
+        if (dead.is_some() || identical.is_some()) && !hidden {
             entry.verdict = entry.verdict.with_dead_guard();
         }
         // Every possible witness excluded: nothing could have killed it, and nobody found out. A
@@ -3436,6 +3678,7 @@ impl Ruler {
         }
         entry.baseline_refusals = at_baseline;
         entry.unsatisfiable_guard = dead;
+        entry.identical_answer = identical;
         if entry.verdict == Verdict::Killed {
             let mut killers: Vec<String> = observed
                 .not_passed
@@ -3562,6 +3805,7 @@ fn blank_entry(mutant: &Mutant) -> MutantEntry {
         excluded: None,
         exclusions: None,
         id: mutant.id.clone(),
+        identical_answer: None,
         killers: None,
         refusals: None,
         scenarios: None,
@@ -3661,7 +3905,8 @@ fn measure<T: ConformanceTarget>(
     };
     let ran = run(&ir, dropped_write(documents, &mutant.mutation), new_target)?;
     let dead = unsatisfiable_guard(baseline_ir, &ir, &mutant.mutation);
-    ruler.judge(&mut entry, &ran.observed, &ran.refused, dead);
+    let identical = identical_answer(baseline_ir, &mutant.mutation);
+    ruler.judge(&mut entry, &ran.observed, &ran.refused, dead, identical);
     Ok(entry)
 }
 
@@ -3745,12 +3990,10 @@ pub fn audit_with<T: ConformanceTarget>(
         baseline: baseline.ruler.size(baseline.scenarios),
         component: None,
         counts,
-        format: if known_failures.is_some() || unavailable_sites.is_some() {
-            REPORT_FORMAT_4
-        } else {
-            REPORT_FORMAT
-        }
-        .to_owned(),
+        format: report_format(
+            &entries,
+            known_failures.is_some() || unavailable_sites.is_some(),
+        ),
         implementation: baseline.implementation,
         known_failures,
         mutants: entries,
@@ -3759,6 +4002,20 @@ pub fn audit_with<T: ConformanceTarget>(
         specification: format!("{} {}", baseline_ir.system(), baseline_ir.version()),
         unavailable_sites,
     })
+}
+
+/// [`REPORT_FORMAT_5`] where a mutant carries `identical_answer`, which `/4` does not have;
+/// else [`REPORT_FORMAT_4`] where `fourth` (a component, a declaration or an unavailable site)
+/// asks for it; else [`REPORT_FORMAT`].
+fn report_format(entries: &[MutantEntry], fourth: bool) -> String {
+    if entries.iter().any(|entry| entry.identical_answer.is_some()) {
+        REPORT_FORMAT_5
+    } else if fourth {
+        REPORT_FORMAT_4
+    } else {
+        REPORT_FORMAT
+    }
+    .to_owned()
 }
 
 // ---- an external target: emit, then collect -----------------------------------------------------
@@ -3771,6 +4028,11 @@ pub const MANIFEST_FORMAT: &str = "ess-mutation-manifest/3";
 /// mutant it leaves out marked `out_of_scope` (beyond10x/ess#212, beyond10x/ess#236), and its
 /// `unavailable_sites` where it has any (beyond10x/ess#295).
 pub const MANIFEST_FORMAT_4: &str = "ess-mutation-manifest/4";
+/// The manifest [`emit_for`] writes where a `precedence-swap` mutant carries `identical_answer`
+/// (<https://github.com/beyond10x/ess/issues/517>): [`MANIFEST_FORMAT_4`] with that member, which
+/// the `/4` that 0.53.0 to 0.56.0 wrote does not have. A manifest none of whose mutants carries it
+/// is `/4` or `/3` exactly as before.
+pub const MANIFEST_FORMAT_5: &str = "ess-mutation-manifest/5";
 /// The manifest 0.41.0 wrote, which [`collect`] still reads: it names each suite's refusals and no
 /// mutant's `unsatisfiable_guard`, so no mutant it names is scored `equivalent`.
 pub const MANIFEST_FORMAT_2: &str = "ess-mutation-manifest/2";
@@ -3834,6 +4096,11 @@ pub struct EmittedMutant {
     pub dir: Option<String>,
     /// `<class>/<site>`.
     pub id: String,
+    /// The answer both branches of a `precedence-swap` give, where it is the same one
+    /// ([`MutantEntry::identical_answer`]); never on a stillborn or out-of-scope mutant, and only
+    /// in `ess-mutation-manifest/5`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identical_answer: Option<String>,
     /// `true` where the emission is scoped to a component and the mutant's site belongs to another
     /// component: it then has no suite, and is listed rather than scored. Only in
     /// `ess-mutation-manifest/4`, and only beside its `component`.
@@ -3876,6 +4143,7 @@ impl EmittedMutant {
             class: mutant.class,
             dir: None,
             id: mutant.id.clone(),
+            identical_answer: None,
             out_of_scope,
             refusals: None,
             refused: None,
@@ -3899,6 +4167,8 @@ impl EmittedMutant {
             excluded: None,
             exclusions: None,
             id: self.id.clone(),
+            // Named whatever the report scores it, as `unsatisfiable_guard` is.
+            identical_answer: self.identical_answer.clone(),
             killers: None,
             refusals: None,
             scenarios: None,
@@ -3923,14 +4193,16 @@ impl EmittedMutant {
             (None, None, None, None, Some(_))
                 if !self.out_of_scope
                     && self.refused.is_none()
-                    && self.unsatisfiable_guard.is_none() =>
+                    && self.unsatisfiable_guard.is_none()
+                    && self.identical_answer.is_none() =>
             {
                 Ok(None)
             }
             (None, None, None, None, None)
                 if self.out_of_scope
                     && self.refused.is_none()
-                    && self.unsatisfiable_guard.is_none() =>
+                    && self.unsatisfiable_guard.is_none()
+                    && self.identical_answer.is_none() =>
             {
                 Ok(None)
             }
@@ -3983,7 +4255,7 @@ pub struct KnownFailing<'a> {
     pub build: &'a str,
 }
 
-/// The `ess-mutation-manifest/3` or `/4` document: what [`emit`] wrote, and what [`collect`]
+/// The `ess-mutation-manifest/3`, `/4` or `/5` document: what [`emit`] wrote, and what [`collect`]
 /// scores.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -3994,7 +4266,7 @@ pub struct Manifest {
     /// [`MANIFEST_FORMAT_4`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub component: Option<String>,
-    /// [`MANIFEST_FORMAT_4`] or [`MANIFEST_FORMAT`], or [`MANIFEST_FORMAT_2`] or
+    /// [`MANIFEST_FORMAT_5`], [`MANIFEST_FORMAT_4`] or [`MANIFEST_FORMAT`], or [`MANIFEST_FORMAT_2`] or
     /// [`MANIFEST_FORMAT_1`] for a manifest an earlier release wrote.
     pub format: String,
     /// The known-failure declaration the emission bound, copied byte for byte into the emission;
@@ -4103,6 +4375,38 @@ impl Manifest {
         Ok(())
     }
 
+    /// Each `identical_answer` (<https://github.com/beyond10x/ess/issues/517>): refused before
+    /// `/5` by name, and on a mutant that is not a `precedence-swap`, which has no two answers to
+    /// compare.
+    fn identical_answers(&self, version5: bool) -> Result<(), String> {
+        let Some(mutant) = self
+            .mutants
+            .iter()
+            .find(|mutant| mutant.identical_answer.is_some())
+        else {
+            return Ok(());
+        };
+        if !version5 {
+            return Err(format!(
+                "{MANIFEST_FILE}: `{}` carries `identical_answer`, which `{}` does not have; it is \
+                 `{MANIFEST_FORMAT_5}`",
+                mutant.id, self.format
+            ));
+        }
+        if let Some(mutant) = self.mutants.iter().find(|mutant| {
+            mutant.identical_answer.is_some() && mutant.class != MutantClass::PrecedenceSwap
+        }) {
+            return Err(format!(
+                "{MANIFEST_FILE}: `{}` is a `{}` mutant carrying `identical_answer`, which only a \
+                 `{}` mutant has",
+                mutant.id,
+                mutant.class,
+                MutantClass::PrecedenceSwap
+            ));
+        }
+        Ok(())
+    }
+
     /// The unavailable sites (beyond10x/ess#295): refused before `/4` by name, rather than
     /// ignored; in `/4` each must be one a writer produces, listed once, in byte order of id, and
     /// an empty list is not written.
@@ -4147,7 +4451,8 @@ impl Manifest {
     /// Reads a manifest, refusing another format, an incoherent mutant entry, a suite's refusals
     /// that `/2` and later omit, `/1` carries or disagree with its count, an `unsatisfiable_guard`
     /// before `/3`, a `component`, an `out_of_scope` mutant, a class only `/4` knows or
-    /// `unavailable_sites` before `/4`, an incoherent unavailable site, an `out_of_scope` mutant
+    /// `unavailable_sites` before `/4`, an `identical_answer` before `/5` or on a mutant that is
+    /// not a `precedence-swap`, an incoherent unavailable site, an `out_of_scope` mutant
     /// without a `component`, or a directory that leaves the emission.
     pub fn from_json(text: &str) -> Result<Self, String> {
         // The format first, so a manifest of a version this reader does not know is refused by
@@ -4157,30 +4462,32 @@ impl Manifest {
             .and_then(|value| value.get("format")?.as_str().map(str::to_owned));
         // Whether suites name their refusals (`/2` on), whether a mutant may name a dead guard
         // (`/3` on), and whether the emission may be scoped to a component or hold a class only
-        // `/4` knows.
+        // `/4` knows, and whether a mutant may name an identical answer (`/5`).
         let version_of = |format: &str| match format {
+            MANIFEST_FORMAT_5 => Some(5),
             MANIFEST_FORMAT_4 => Some(4),
             MANIFEST_FORMAT => Some(3),
             MANIFEST_FORMAT_2 => Some(2),
             MANIFEST_FORMAT_1 => Some(1),
             _ => None,
         };
+        let unknown = |other: &str| {
+            format!(
+                "{MANIFEST_FILE} is `{other}`, not `{MANIFEST_FORMAT_5}`, `{MANIFEST_FORMAT_4}`, \
+                 `{MANIFEST_FORMAT}`, `{MANIFEST_FORMAT_2}` or `{MANIFEST_FORMAT_1}`"
+            )
+        };
         if let Some(other) = declared.as_deref().filter(|it| version_of(it).is_none()) {
-            return Err(format!(
-                "{MANIFEST_FILE} is `{other}`, not `{MANIFEST_FORMAT_4}`, `{MANIFEST_FORMAT}`, \
-                 `{MANIFEST_FORMAT_2}` or `{MANIFEST_FORMAT_1}`"
-            ));
+            return Err(unknown(other));
         }
         let manifest: Self =
             serde_json::from_str(text).map_err(|error| format!("{MANIFEST_FILE}: {error}"))?;
         let Some(version) = version_of(&manifest.format) else {
-            return Err(format!(
-                "{MANIFEST_FILE} is `{}`, not `{MANIFEST_FORMAT_4}`, `{MANIFEST_FORMAT}`, \
-                 `{MANIFEST_FORMAT_2}` or `{MANIFEST_FORMAT_1}`",
-                manifest.format
-            ));
+            return Err(unknown(&manifest.format));
         };
         let (keyed, guarded, scoped) = (version >= 2, version >= 3, version >= 4);
+        // Before the class check, so an earlier manifest carrying it is refused by this name.
+        manifest.identical_answers(version >= 5)?;
         if !scoped {
             if manifest.component.is_some() {
                 return Err(format!(
@@ -4481,13 +4788,18 @@ pub fn emit_with(
                 entry.suite_digest = suite.suite_digest;
                 entry.unsatisfiable_guard =
                     unsatisfiable_guard(&baseline_ir, &ir, &mutant.mutation);
+                entry.identical_answer = identical_answer(&baseline_ir, &mutant.mutation);
             }
             Err(stillborn) => entry.stillborn = Some(stillborn),
         }
         files.insert(format!("{}/{MUTANT_FILE}", mutant.id), canonical(&entry));
         entries.push(entry);
     }
-    let format = if version4 {
+    // A `precedence-swap` mutant, the only one with an identical answer, already makes the
+    // emission version 4, so every suite of a `/5` one records its digest too.
+    let format = if entries.iter().any(|entry| entry.identical_answer.is_some()) {
+        MANIFEST_FORMAT_5
+    } else if version4 {
         MANIFEST_FORMAT_4
     } else {
         MANIFEST_FORMAT
@@ -4828,7 +5140,8 @@ fn score_mutant(
                 unscored(entry, why);
             } else {
                 let dead = entry.unsatisfiable_guard.clone();
-                ruler.judge(entry, &scored.observed, &suite.refused(), dead);
+                let identical = entry.identical_answer.clone();
+                ruler.judge(entry, &scored.observed, &suite.refused(), dead, identical);
             }
         }
         Err(why) => unscored(entry, why),
@@ -4941,7 +5254,7 @@ pub fn collect_with(
     let manifest = Manifest::from_json(&text).map_err(AuditRefusal::Uncollectable)?;
     emitted_for(&manifest, component)?;
     let declaration = bound_declaration(&read, &manifest, supplied)?;
-    let version4 = manifest.format == MANIFEST_FORMAT_4;
+    let version4 = [MANIFEST_FORMAT_4, MANIFEST_FORMAT_5].contains(&manifest.format.as_str());
     let baseline = score(&read, &manifest.baseline, version4)
         .map_err(|why| AuditRefusal::Uncollectable(format!("the baseline: {why}")))?;
     let build = manifest
@@ -5021,12 +5334,10 @@ pub fn collect_with(
         baseline: ruler.size(manifest.baseline.scenarios),
         component: manifest.component,
         counts,
-        format: if scoped || known_failures.is_some() || manifest.unavailable_sites.is_some() {
-            REPORT_FORMAT_4
-        } else {
-            REPORT_FORMAT
-        }
-        .to_owned(),
+        format: report_format(
+            &entries,
+            scoped || known_failures.is_some() || manifest.unavailable_sites.is_some(),
+        ),
         implementation: baseline.implementation,
         known_failures,
         mutants: entries,

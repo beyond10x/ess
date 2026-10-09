@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:nested-increment-previous-location
 kind: story
-status: active
+status: implemented
 title: Nested increments read their own previous stored location
 relations:
 - informed_by: story:feature-request-292
@@ -47,10 +47,11 @@ scope:
   path: crates/verify/ess-conformance/tests/value_expressions.rs
 - confidence: inferred
   path: docs/design/value-expressions.md
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-03T15:59:29Z", actor: "human:timo", revision: 8, executor: "agent:codex-ess-bundle-resume-20261003"}
 - {from: "proposed", to: "active", at: "2026-10-03T15:59:29Z", actor: "human:timo", revision: 9, executor: "agent:codex-ess-bundle-resume-20261003"}
+- {from: "active", to: "implemented", at: "2026-10-08T09:55:09Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}}
 ---
 ## Outcome
 

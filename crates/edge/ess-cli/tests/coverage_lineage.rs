@@ -2,8 +2,7 @@
 
 #[test]
 fn go_execution_adapts_only_selected_integer_fields_before_target_effects() {
-    let dir = std::env::temp_dir().join(format!("ess-coverage-adaptation-{}", std::process::id()));
-    fs::create_dir_all(&dir).unwrap();
+    let dir = TemporaryDirectory::create("ess-coverage-adaptation").unwrap();
     let input = AdmittedInput::from_suite(
         AdmittedSuite::from_json(&coverage_cases::document().to_string()).unwrap(),
     )
@@ -97,6 +96,7 @@ func TestAdaptation(t *testing.T) {
 }
 #[path = "support/coverage_cases.rs"]
 mod coverage_cases;
+use ess_cli::TemporaryDirectory;
 use ess_conformance::{coverage::AdmittedInput, AdmittedSuite};
 use std::{fs, process::Command};
 
@@ -112,8 +112,7 @@ fn generated_go_checks_original_lineage_and_typed_defaults() {
             case.name
         );
     }
-    let dir = std::env::temp_dir().join(format!("ess-coverage-lineage-{}", std::process::id()));
-    fs::create_dir_all(&dir).unwrap();
+    let dir = TemporaryDirectory::create("ess-coverage-lineage").unwrap();
     let input = AdmittedInput::from_suite(
         AdmittedSuite::from_json(&coverage_cases::document().to_string()).unwrap(),
     )

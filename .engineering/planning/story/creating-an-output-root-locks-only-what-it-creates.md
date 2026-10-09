@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:creating-an-output-root-locks-only-what-it-creates
 kind: story
-status: active
+status: implemented
 title: Creating a new output root takes no exclusive lock on a shared ancestor
 refs:
 - provider: github
@@ -12,10 +12,11 @@ relations:
 scope:
 - confidence: cited
   path: crates/edge/ess-cli/src/output_ownership/filesystem.rs
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-07T06:43:12Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-07T06:43:12Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-08T09:55:12Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1,"review_outcome":2,"verification":1}}}
 ---
 ## Outcome
 

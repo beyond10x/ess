@@ -119,6 +119,20 @@ For a pull request, CI owns the full gate. Before pushing, run only the crates t
 changed — then push and read the lanes. Run the whole `task check` locally only for a release tag
 (below) or to reproduce a lane that failed in CI.
 
+**The package-gate subset.** The crates to gate are named by the change, not guessed:
+
+| the change touches | gate these crates (`clippy -p` and `test -p`) |
+|---|---|
+| a file under `crates/<area>/<crate>/` | that crate |
+| `ess-domain`, `ess-compiler` or `ess-primitives` | also `ess-cli`, whose integration tests pin validation and compile output |
+| synthesis, mutation or interpretation in `ess-conformance` | also `ess-cli`; run `ess-conformance` one `--test` at a time, its full test build is the largest in the workspace |
+| a `ValidationCode`, a diagnostic, a format version, `CHANGELOG.md`, `website/` or `docs/` | also `task test-xtask` (see the pins paragraph below) |
+| `RawSpecFile` | also `cargo xtask schema`, then `task projection-check` |
+| a workflow, `Taskfile.yml` or a public API | also `task ci-lint` |
+
+Every push also runs `task fmt-check`. A crate the change does not touch is not gated locally; CI
+covers it.
+
 The adopter-facing Docusaurus source lives under `website/`; repository-root `docs/` remains the
 engineering record and is never published directly. A documentation, release, or validation
 workflow change must additionally pass:
@@ -258,6 +272,16 @@ cargo update --manifest-path fuzz/Cargo.toml --offline --workspace
 
 Same shape as the schema projection above: a bump leaves a derived artifact behind, nothing
 downstream complains, and one task in the gate is the only thing that knows.
+
+**A new `ValidationCode` or diagnostic moves pins outside the crate that declares it.** Run
+`task test-xtask` and `cargo test -p ess-compiler --test typed_diagnostics` before pushing such a
+change, even when no file under `ess-xtask` or `ess-compiler` changed.
+`crates/edge/ess-xtask/src/consumer_coverage/macro-guards.json` pins the digest of the
+`validation_codes!` invocation, and `docs/design/review-typed-diagnostics.md` counts every
+string-located `ValidationError` per file. Adding one refusal to `ess-domain/src/wire.rs` failed
+both on CI (PR 502), while every package-scoped run of the touched crates was green. A test module
+in `ess-cli/src/git_checkout.rs` is compiled into `ess-xtask` through `#[path]` too, so it cannot
+use `ess_cli::…`.
 
 ## Agent plugin
 

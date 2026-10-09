@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-08T09:55:05Z",
+  "actor": "human:timo",
+  "artifact": "story:a-browser-that-answered-http-once-is-still-a-slow-start",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "2220bce9b9 on origin/main, released 0.52.0",
+    "reference": "https://github.com/beyond10x/ess/releases/tag/0.52.0"
+  }
+}

@@ -1602,6 +1602,7 @@ fn guard_argv(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scratch::Scratch;
     use syn::visit::Visit;
 
     const SOURCE: &str = include_str!("infra_acceptance.rs");
@@ -2603,25 +2604,23 @@ mod tests {
         assert_eq!(base64(b"foo"), "Zm9v");
     }
 
-    /// A fresh directory under the test temp dir; `$TMPDIR` must itself be outside checkouts.
-    fn placement_root(case: &str) -> PathBuf {
-        let root = std::env::temp_dir().join(format!(
-            "ess-xtask-scratch-placement-{case}-{}",
-            std::process::id()
-        ));
-        fs::create_dir(&root).unwrap();
-        fs::create_dir(root.join("work")).unwrap();
-        root
+    /// A fresh directory under the test temp dir, removed on drop; `$TMPDIR` must itself be
+    /// outside checkouts.
+    fn placement_root(case: &str) -> Scratch {
+        let scratch = Scratch::new(&format!("ess-xtask-scratch-placement-{case}"));
+        fs::create_dir(scratch.path().join("work")).unwrap();
+        scratch
     }
 
     #[test]
     fn a_scratch_below_a_git_directory_holding_only_an_exclude_file_is_admitted() {
         // What a harness leaves behind when a session starts in a directory that is no repository.
-        let root = placement_root("exclude-only");
+        let scratch = placement_root("exclude-only");
+        let root = scratch.path();
         fs::create_dir_all(root.join(".git/info")).unwrap();
         fs::write(root.join(".git/info/exclude"), "# harness runtime\n").unwrap();
         let admitted = scratch_outside_checkouts(&root.join("work"));
-        fs::remove_dir_all(&root).unwrap();
+        drop(scratch);
         admitted.expect("a .git directory Git cannot open is not a checkout");
     }
 
@@ -2629,16 +2628,25 @@ mod tests {
     fn a_scratch_below_a_repository_a_gitfile_or_a_git_symlink_is_refused() {
         let repository = placement_root("repository");
         for dir in [".git/objects", ".git/refs"] {
-            fs::create_dir_all(repository.join(dir)).unwrap();
+            fs::create_dir_all(repository.path().join(dir)).unwrap();
         }
-        fs::write(repository.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
+        fs::write(
+            repository.path().join(".git/HEAD"),
+            "ref: refs/heads/main\n",
+        )
+        .unwrap();
         let gitfile = placement_root("gitfile");
-        fs::write(gitfile.join(".git"), "gitdir: /unavailable/linked-tree\n").unwrap();
+        fs::write(
+            gitfile.path().join(".git"),
+            "gitdir: /unavailable/linked-tree\n",
+        )
+        .unwrap();
         let symlink = placement_root("symlink");
-        std::os::unix::fs::symlink(symlink.join("work"), symlink.join(".git")).unwrap();
+        std::os::unix::fs::symlink(symlink.path().join("work"), symlink.path().join(".git"))
+            .unwrap();
         for root in [repository, gitfile, symlink] {
-            let refused = scratch_outside_checkouts(&root.join("work"));
-            fs::remove_dir_all(&root).unwrap();
+            let refused = scratch_outside_checkouts(&root.path().join("work"));
+            drop(root);
             let error = format!("{:#}", refused.expect_err("a checkout marker was admitted"));
             assert!(error.contains("outside Git checkouts"), "{error}");
         }
@@ -2647,14 +2655,15 @@ mod tests {
     #[test]
     fn a_scratch_below_an_unreadable_git_directory_is_refused() {
         use std::os::unix::fs::PermissionsExt;
-        let root = placement_root("unreadable");
+        let scratch = placement_root("unreadable");
+        let root = scratch.path();
         fs::create_dir(root.join(".git")).unwrap();
         fs::set_permissions(root.join(".git"), fs::Permissions::from_mode(0o000)).unwrap();
         // A privileged runner reads through the mode bits, so there is nothing to observe.
         let privileged = fs::read_dir(root.join(".git")).is_ok();
         let refused = scratch_outside_checkouts(&root.join("work"));
-        fs::set_permissions(root.join(".git"), fs::Permissions::from_mode(0o755)).unwrap();
-        fs::remove_dir_all(&root).unwrap();
+        // The guard gives the unreadable directory its bits back before removing it.
+        drop(scratch);
         if !privileged {
             assert!(
                 refused.is_err(),

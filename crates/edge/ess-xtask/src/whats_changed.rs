@@ -404,6 +404,7 @@ pub fn run(root: &Path, check: bool) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scratch::Scratch;
 
     #[test]
     fn a_version_sorts_by_number_and_not_by_text() {
@@ -448,12 +449,9 @@ mod tests {
     }
 
     /// A throwaway repository root holding two fragments and a release post for one of them.
-    fn fixture(name: &str) -> std::path::PathBuf {
-        let root = std::env::temp_dir().join(format!(
-            "ess-xtask-whats-changed-{name}-{}",
-            std::process::id()
-        ));
-        let _ = fs::remove_dir_all(&root);
+    fn fixture(name: &str) -> Scratch {
+        let scratch = Scratch::new(&format!("ess-xtask-whats-changed-{name}"));
+        let root = scratch.path();
         fs::create_dir_all(root.join(FRAGMENTS)).expect("fragments directory");
         fs::create_dir_all(root.join("website/blog")).expect("blog directory");
         for (stem, version, title, summary) in [
@@ -485,13 +483,14 @@ mod tests {
              release_tag: \"0.2.0\"\n---\n\nBody.\n",
         )
         .expect("post");
-        root
+        scratch
     }
 
     #[test]
     fn the_site_page_is_written_with_links_to_the_release_posts() {
-        let root = fixture("write");
-        run(&root, false).expect("renders");
+        let scratch = fixture("write");
+        let root = scratch.path();
+        run(root, false).expect("renders");
         let page = fs::read_to_string(root.join(SITE_PAGE)).expect("the site page is written");
         assert!(page.starts_with("---\ntitle: What changed\n"), "{page}");
         assert!(page.contains("generated"), "the page says it is generated");
@@ -515,22 +514,21 @@ mod tests {
             ),
             "{page}"
         );
-        run(&root, true).expect("fresh outputs pass the check");
-        let _ = fs::remove_dir_all(&root);
+        run(root, true).expect("fresh outputs pass the check");
     }
 
     #[test]
     fn the_check_fails_when_the_site_page_is_stale() {
-        let root = fixture("stale");
-        run(&root, false).expect("renders");
+        let scratch = fixture("stale");
+        let root = scratch.path();
+        run(root, false).expect("renders");
         let page = root.join(SITE_PAGE);
         fs::create_dir_all(page.parent().expect("parent")).expect("page directory");
         fs::write(&page, "---\ntitle: What changed\n---\n").expect("stale page");
-        let error = run(&root, true).expect_err("a stale site page fails the check");
+        let error = run(root, true).expect_err("a stale site page fails the check");
         assert!(format!("{error:#}").contains(SITE_PAGE), "{error:#}");
         fs::remove_file(&page).expect("remove page");
-        run(&root, true).expect_err("a missing site page fails the check");
-        let _ = fs::remove_dir_all(&root);
+        run(root, true).expect_err("a missing site page fails the check");
     }
 
     #[test]

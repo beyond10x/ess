@@ -3,6 +3,8 @@
 //! pair that carries one, and the two readers that refuse a suite carrying one.
 //! `docs/design/string-predicate-operators.md` is the binding design.
 
+mod support_scratch;
+
 use std::collections::BTreeSet;
 use std::process::Command;
 
@@ -373,11 +375,11 @@ fn a_suite_string_operand_that_is_not_a_json_string_is_refused_because_suites_ar
 
 const ADMISSION_JS: &str = include_str!("../assets/coverage-admission.js");
 
-fn scratch(label: &str) -> std::path::PathBuf {
-    let path = std::env::temp_dir().join(format!(
+fn scratch(label: &str) -> support_scratch::Scratch {
+    let path = support_scratch::Scratch::adopt(std::env::temp_dir().join(format!(
         "ess-string-operators-{label}-{}",
         std::process::id()
-    ));
+    )));
     let _ = std::fs::remove_dir_all(&path);
     std::fs::create_dir_all(&path).expect("a working directory");
     path

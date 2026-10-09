@@ -12,6 +12,8 @@
 //!
 //! A missing `go` panics rather than skipping.
 
+mod support_scratch;
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -62,10 +64,10 @@ fn printed(output: &std::process::Output) -> String {
 /// Runs the Go explorer over `explore-adv-order.yaml` with `Rate` not exposed, returning the
 /// driver's assertion line and its JSON result.
 fn go_lane() -> (String, Value) {
-    let root = std::env::temp_dir().join(format!(
+    let root = support_scratch::Scratch::adopt(std::env::temp_dir().join(format!(
         "ess-explore-arranged-stranded-{}",
         std::process::id()
-    ));
+    )));
     let _ = std::fs::remove_dir_all(&root);
     let module = root.join("go");
     let ir = ir();

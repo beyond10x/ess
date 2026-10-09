@@ -151,6 +151,30 @@ fn serve(mut stream: TcpStream, root: &Path) {
         .and_then(|()| stream.write_all(&bytes));
 }
 
+/// TMPDIR scratch for one browser's profile and Firefox's own TMPDIR, removed when it drops.
+///
+/// Standard library only, rather than `ess_cli::TemporaryDirectory`, because `ess-conformance`
+/// compiles this file too and does not depend on `ess-cli`.
+struct ProfileScratch(PathBuf);
+impl ProfileScratch {
+    fn create() -> Self {
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let path = std::env::temp_dir().join(format!(
+            "ess-bidi-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        // A directory this process already made is never reused: `create_dir` refuses it.
+        fs::create_dir(&path).unwrap();
+        Self(path)
+    }
+}
+impl Drop for ProfileScratch {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
 struct OwnedChild(Child);
 impl Drop for OwnedChild {
     fn drop(&mut self) {
@@ -164,6 +188,8 @@ pub struct Browser {
     next: u64,
     receipt: File,
     evidence: PathBuf,
+    // Declared after `_child`, so the profile is removed only once Firefox has been stopped.
+    _scratch: Option<ProfileScratch>,
 }
 /// The startup deadline every fixture in this process is judged against.
 ///
@@ -372,8 +398,16 @@ impl Browser {
         deadline: Duration,
     ) -> Result<Self, String> {
         static NEXT_PROFILE: AtomicU64 = AtomicU64::new(0);
-        let profile_root =
-            std::env::var_os("ESS_BROWSER_TMPDIR").map_or_else(std::env::temp_dir, PathBuf::from);
+        // Unset `ESS_BROWSER_TMPDIR` puts the profile, and Firefox's own TMPDIR, in TMPDIR scratch
+        // that is removed when the browser drops, after its process was stopped.
+        let (scratch, profile_root) = if let Some(root) = std::env::var_os("ESS_BROWSER_TMPDIR") {
+            (None, PathBuf::from(root))
+        } else {
+            // startup-path: harness
+            let scratch = ProfileScratch::create();
+            let root = scratch.0.clone();
+            (Some(scratch), root)
+        };
         let profile = profile_root.join(format!(
             "ess-bidi-{}-{}",
             std::process::id(),
@@ -439,6 +473,7 @@ impl Browser {
             // startup-path: harness
             receipt: File::create(evidence.join("bidi.jsonl")).unwrap(),
             evidence: evidence.to_path_buf(),
+            _scratch: scratch,
         };
         browser.call("session.new", &json!({"capabilities":{"alwaysMatch":{}}}));
         drop(in_startup);

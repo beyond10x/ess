@@ -627,8 +627,9 @@ enum ConformCommand {
         /// (`--scenarios` does that, independently). Ordinary arrangement is tried first; a row is
         /// established only for a generated obligation no bounded arrangement reaches, and the
         /// real command and assertions follow it. Any seed selects suite/42 (or /43 with
-        /// `--suite-format 5`), or suite/44 (/45) where an act also claims one event more than
-        /// once, and records its source, row and uses.
+        /// `--suite-format 5`), suite/44 (/45) where an act also claims one event more than once, or
+        /// suite/46 (/47) where a response reaches a constrained String newtype, and records its
+        /// source, row and uses.
         #[arg(
             long = "synthesis-seed",
             num_args = 2,
@@ -845,7 +846,9 @@ enum ConformCommand {
     /// no scored scenario killed is inconclusive when a scenario it changed was not scored;
     /// otherwise equivalent (ESS-MUTATE-005) when it left its outcome's guard satisfied by no
     /// input, decided only for equality, membership and truth tests of input fields against
-    /// literals; otherwise unwitnessed (ESS-MUTATE-004) when its suite gained synthesis refusals
+    /// literals and presence tests of input fields, and beside a `when_subject:` predicate when no
+    /// input it admits leaves that predicate able to hold on any row (a comparison with an absent
+    /// input is unknown); otherwise unwitnessed (ESS-MUTATE-004) when its suite gained synthesis refusals
     /// the baseline does not have, when it is on an outcome whose scenario the baseline refused,
     /// or when it is a from-drop or transition-to mutant on a transition only such outcomes
     /// perform. It survives when every scored scenario passed and each scenario it left unscored
@@ -873,8 +876,8 @@ enum ConformCommand {
     /// `report.json` beside it. `--collect DIR` scores those reports with the exit statuses above;
     /// a missing report makes its mutant inconclusive. `--emit` writes an ess-mutation-manifest/3,
     /// or /4 where it holds a sets-drop, precedence-swap or emit-swap mutant or an unavailable
-    /// site, or names a component; `--collect` also reads the /2 and /1 manifests earlier releases
-    /// wrote.
+    /// site, or names a component, and /5 where a precedence-swap mutant's two branches give an
+    /// identical answer; `--collect` also reads the /2 and /1 manifests earlier releases wrote.
     ///
     /// For a repository that implements one component, `--emit --component NAME` writes the
     /// component's suites, as `synthesize --component` writes them, and marks out of scope every
@@ -907,7 +910,7 @@ enum ConformCommand {
         #[arg(long, conflicts_with = "target")]
         component: Option<String>,
         /// Where to write the `ess-mutation-report/3` document (`/4` for a component, a
-        /// declaration or unavailable sites).
+        /// declaration or unavailable sites, `/5` where a mutant's two branches answer alike).
         #[arg(long)]
         report_out: Option<PathBuf>,
         /// An `ess-known-failures/1` declaration of baseline scenarios the target is known to fail.
@@ -4072,12 +4075,16 @@ fn conform_run(command: ConformCommand) -> Result<ExitCode> {
             .run_admitted(&admitted, &ess_conformance::reference::Billing::new()),
         ReferenceTarget::OracleFixture => wall_clock_runner(suite)
             .run_admitted(&admitted, &ess_conformance::reference::Oracle::new()),
-        ReferenceTarget::Interpreted => wall_clock_runner(suite).run_admitted(
-            &admitted,
-            interpreted
-                .as_ref()
-                .expect("the interpreted target was built from `--path` above"),
-        ),
+        ReferenceTarget::Interpreted => {
+            let mut runner = scenario_clock_runner(suite);
+            // The interpreter decides a `now` guard at the instant of the step being executed
+            // (https://github.com/beyond10x/ess/issues/510); without a clock it answers every
+            // such decision `unsupported`.
+            let clocked = interpreted
+                .expect("the interpreted target was built from `--path` above")
+                .with_command_clock(runner.command_clock());
+            runner.run_admitted(&admitted, &clocked)
+        }
     })?;
     let render = || {
         render_conformance_report(
@@ -4151,6 +4158,39 @@ fn wall_clock_runner(
         ess_conformance::now_offset::WithWall::new(
             ess_conformance::AdvancingClock::default(),
             machine_clock as fn() -> ess_primitives::time::Timestamp,
+        ),
+        ess_conformance::Ids::for_suite(suite),
+    )
+}
+
+/// The scenario clock's wall: `now_offset::earliest_run()`, the earliest moment a suite carrying
+/// `now_offset` values runs, so every fixed instant synthesis admits lies on the side of it that
+/// a run's does.
+fn scenario_wall() -> ess_primitives::time::Timestamp {
+    let seconds = ess_conformance::now_offset::earliest_run().epoch_seconds();
+    ess_primitives::time::Timestamp::from_epoch_millis(
+        u64::try_from(seconds).map_or(0, |seconds| seconds.saturating_mul(1000)),
+    )
+}
+
+/// The runner `--target interpreted` executes a suite with: [`wall_clock_runner`]'s budgets and
+/// durations, and [`scenario_wall`] as the wall. The interpreter decides `now` by the runner's
+/// step instant ([`ess_conformance::Runner::command_clock`]), so nothing in the run reads the
+/// machine's clock and two runs print the same report
+/// (<https://github.com/beyond10x/ess/issues/510>).
+fn scenario_clock_runner(
+    suite: &ess_conformance::ConformanceSuite,
+) -> ess_conformance::Runner<
+    ess_conformance::now_offset::WithWall<
+        ess_conformance::AdvancingClock,
+        fn() -> ess_primitives::time::Timestamp,
+    >,
+> {
+    ess_conformance::Runner::new(
+        ess_conformance::RunnerConfig::default(),
+        ess_conformance::now_offset::WithWall::new(
+            ess_conformance::AdvancingClock::default(),
+            scenario_wall as fn() -> ess_primitives::time::Timestamp,
         ),
         ess_conformance::Ids::for_suite(suite),
     )
@@ -4585,6 +4625,44 @@ fn write_suite(
     ))
 }
 
+/// Files the compiled authored scenarios in `synthesis`'s suite and returns how many it kept.
+///
+/// Scoped to a component, an authored scenario is held to the rule a generated one is: one that
+/// drives another component's commands, events or views is listed outside the suite, where it could
+/// only fail (beyond10x/ess#513).
+fn file_authored(
+    ir: &EssIr,
+    component: Option<&str>,
+    synthesis: &mut ess_conformance::synthesize::Synthesis,
+    scenarios: impl IntoIterator<
+        Item = (
+            ess_conformance::ScenarioId,
+            ess_conformance::ConformanceScenario,
+        ),
+    >,
+) -> Result<usize> {
+    let mut kept = 0;
+    for (id, scenario) in scenarios {
+        if let Some(name) = component {
+            let needs = ess_conformance::synthesize::needs_outside(ir, name, &scenario)?;
+            if !needs.is_empty() {
+                synthesis
+                    .outside
+                    .push(ess_conformance::synthesize::Outside {
+                        scenario: id,
+                        needs,
+                    });
+                continue;
+            }
+        }
+        kept += 1;
+        if let Err(id) = synthesis.suite.insert(id, scenario) {
+            bail!("`{id}` is already in the suite");
+        }
+    }
+    Ok(kept)
+}
+
 fn synthesize_suite(
     input: &SpecPath,
     target: SuiteTarget,
@@ -4630,13 +4708,8 @@ fn synthesize_suite(
     // rather than merged where a scenario names something the specification does not declare: a
     // suite carrying a check nobody can resolve is the artifact this whole verb exists to avoid.
     let authoring = ess_conformance::authored::compile(&ir, &authored_sources(scenarios)?);
-    let authored = authoring.scenarios.len();
     let complete = authoring.is_complete();
-    for (id, scenario) in authoring.scenarios {
-        if let Err(id) = synthesis.suite.insert(id, scenario) {
-            bail!("`{id}` is already in the suite");
-        }
-    }
+    let authored = file_authored(&ir, component, &mut synthesis, authoring.scenarios)?;
     if !complete {
         for refusal in &authoring.refusals {
             eprintln!("{refusal}");

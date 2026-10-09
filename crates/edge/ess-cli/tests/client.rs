@@ -1,10 +1,9 @@
 //! `ess generate client` (beyond10x/ess#395).
 
+use ess_cli::TemporaryDirectory;
 use std::{
     fs,
-    path::PathBuf,
     process::{Command, Output},
-    sync::atomic::{AtomicUsize, Ordering},
 };
 
 const MODEL: &str = "format: ess/20
@@ -78,16 +77,11 @@ streams:
   - {name: USAGE, broker: events, subjects: ['usage.>'], storage: file, retention: limits, owner: external}
 ";
 
-struct Fixture(PathBuf);
+struct Fixture(TemporaryDirectory);
 
 impl Fixture {
     fn new(body: &str) -> Self {
-        static NEXT: AtomicUsize = AtomicUsize::new(0);
-        let path = std::env::temp_dir().join(format!(
-            "ess-client-cli-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
+        let path = TemporaryDirectory::create("ess-client-cli").unwrap();
         fs::create_dir_all(path.join("model")).unwrap();
         fs::write(path.join("model/system.yaml"), MODEL).unwrap();
         let fixture = Self(path);
@@ -138,12 +132,6 @@ impl Fixture {
         ];
         args.extend_from_slice(extra);
         self.ess(&args)
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
     }
 }
 

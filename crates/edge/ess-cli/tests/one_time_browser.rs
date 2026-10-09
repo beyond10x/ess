@@ -2,6 +2,7 @@
 #[path = "support/browser.rs"]
 mod browser;
 
+use ess_cli::TemporaryDirectory;
 use ess_compiler::{resolve::compile, source::SourceMap, EssIr};
 use ess_conformance::{
     admission::AdmittedSuite,
@@ -27,11 +28,7 @@ fn model() -> EssIr {
 }
 
 fn browse(name: &str, artifacts: &BTreeMap<String, ess_gen::Artifact>) -> Value {
-    let evidence = std::env::temp_dir().join(format!(
-        "ess-one-time-browser-{name}-{}",
-        std::process::id()
-    ));
-    fs::create_dir(&evidence).unwrap();
+    let evidence = TemporaryDirectory::create(&format!("ess-one-time-browser-{name}")).unwrap();
     let output_directory = evidence.join("site");
     for artifact in artifacts.values() {
         let path = output_directory.join(&artifact.path);

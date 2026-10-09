@@ -1,23 +1,16 @@
 //! The schema-only CLI never converts an incomplete import into successful output.
 
+use ess_cli::TemporaryDirectory;
 use std::fs;
-use std::path::PathBuf;
 use std::process::{Command, Output};
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::{json, Value};
 
-struct Fixture(PathBuf);
+struct Fixture(TemporaryDirectory);
 
 impl Fixture {
     fn new() -> Self {
-        static NEXT: AtomicUsize = AtomicUsize::new(0);
-        let root = std::env::temp_dir().join(format!(
-            "ess-schema-bundle-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir_all(&root).unwrap();
+        let root = TemporaryDirectory::create("ess-schema-bundle").unwrap();
         let source = json!({"openapi": "3.0.0", "info": {"title": "", "version": ""}, "paths": {},
             "components": {"schemas": {"Root": {"type": "object", "required": ["n"],
                 "properties": {"n": {"type": "integer", "minimum": 1}}, "additionalProperties": false}}}});

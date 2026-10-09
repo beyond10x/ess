@@ -6,16 +6,18 @@
 //! have passed. `Held` now carries the key and `holds` decides by it as `LeafShape::admits` does,
 //! so the refusal is replaced by the check. The runtime is compiled beside a Go test, the shape
 //! `tests/optional_shape_go.rs` established.
+mod support_scratch;
+
 #[test]
 fn go_admits_presence_suites_and_decides_by_the_policy() {
-    let directory = std::env::temp_dir().join(format!(
+    let directory = support_scratch::Scratch::adopt(std::env::temp_dir().join(format!(
         "ess-presence-policy-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos()
-    ));
+    )));
     std::fs::create_dir(&directory).unwrap();
     std::fs::write(
         directory.join("go.mod"),

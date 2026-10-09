@@ -1,4 +1,6 @@
 //! Accessor observations preserve wire presence and refuse unavailable native information.
+mod support_scratch;
+
 mod support_versions;
 use ess_compiler::{ir::EssIr, resolve::compile_locating, source::SourceMap};
 use ess_conformance::accessor::{Expected, Observation};
@@ -263,7 +265,9 @@ fn coverage_refusals_select_seven_and_exact_filtered_lineage_cannot_downgrade() 
 #[test]
 fn generated_go_executes_accessor_admission_and_presence_faults() {
     use ess_conformance::coverage::{Origins, Scope};
-    let directory = std::env::temp_dir().join(format!("ess-accessor-go-{}", std::process::id()));
+    let directory = support_scratch::Scratch::adopt(
+        std::env::temp_dir().join(format!("ess-accessor-go-{}", std::process::id())),
+    );
     std::fs::create_dir_all(directory.join("essconform")).unwrap();
     let text = include_str!("../../../generate/ess-synth/tests/fixtures/bounded-accessor.yaml")
         .replace("Optional<Optional<String>>", "Optional<String>");
@@ -375,10 +379,10 @@ fn run_adversary_go(ir: &EssIr, case: &str, test: &str) {
     let suite = ess_conformance::synthesize::synthesize(ir).suite;
     assert!(ess_conformance::accessor::used_by(&suite));
     ess_conformance::AdmittedSuite::from_json(&suite.to_canonical_json().unwrap()).unwrap();
-    let directory = std::env::temp_dir().join(format!(
+    let directory = support_scratch::Scratch::adopt(std::env::temp_dir().join(format!(
         "ess-accessor-adversary-{case}-{}",
         std::process::id()
-    ));
+    )));
     for artifact in ess_conformance::go::emit(&suite).unwrap() {
         let path = directory.join(artifact.path);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();

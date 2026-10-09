@@ -18,14 +18,18 @@
 //!
 //! The attacking half of this pass is in `host_paths_adversary_2.rs`, which is red.
 
+#[path = "../src/scratch.rs"]
+mod scratch;
+
 mod host_paths_lane;
 
 use host_paths_lane::{
     assert_current, home_paths, home_paths_in, scanned_files, transcription_drift, workspace_root,
     HOME_MARKERS, SCANNED_PREFIXES, SEPARATOR_SPELLINGS, TRANSCRIBED,
 };
+use scratch::Scratch;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
 /// A path under a user's home directory, joined at run time from the lane's own marker.
@@ -37,18 +41,9 @@ fn control_path(marker: &str, tail: &str) -> String {
     format!("{marker}{tail}")
 }
 
-/// A throwaway directory outside the repository, named so two runs cannot collide.
-fn throwaway(label: &str) -> PathBuf {
-    let path = std::env::temp_dir().join(format!(
-        "ess-host-paths-adversary-{label}-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("the host clock is after the epoch")
-            .as_nanos()
-    ));
-    fs::create_dir_all(&path).expect("a throwaway directory can be created");
-    path
+/// A throwaway directory outside the repository, removed when dropped, panics included.
+fn throwaway(label: &str) -> Scratch {
+    Scratch::new(&format!("ess-host-paths-adversary-{label}"))
 }
 
 /// The home directory `/etc/passwd` records for `account`, if it records one.
@@ -136,7 +131,8 @@ fn every_tracked_file_the_lane_selects_is_examined_rather_than_silently_dropped(
         "every file the selection hands the scan must be examined"
     );
 
-    let directory = throwaway("undecodable");
+    let directory_scratch = throwaway("undecodable");
+    let directory = directory_scratch.path().to_path_buf();
     let leaked = control_path(&HOME_MARKERS.resolve()[0], "someone/.cache/ess/report.json");
     let mut bytes = vec![0xff, 0xfe, 0x00];
     bytes.extend_from_slice(format!("the run wrote {leaked} before exiting\n").as_bytes());
@@ -272,7 +268,8 @@ fn normalising_the_separator_invents_no_finding_in_the_tracked_tree() {
 #[test]
 fn the_selection_keeps_a_tracked_path_that_git_quotes() {
     assert_current();
-    let repository = throwaway("quoted");
+    let repository_scratch = throwaway("quoted");
+    let repository = repository_scratch.path().to_path_buf();
     let tree = SCANNED_PREFIXES.resolve()[0]
         .trim_end_matches('/')
         .to_owned();

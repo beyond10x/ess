@@ -17,6 +17,24 @@ use ess_domain::name::QualifiedName;
 use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
 
+/// A fresh directory `<TMPDIR>/<prefix>-<pid>`, removed when dropped, panics included.
+struct Scratch(PathBuf);
+
+impl Scratch {
+    fn new(prefix: &str) -> Self {
+        let path = std::env::temp_dir().join(format!("{prefix}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).expect("owned temporary directory is creatable");
+        Self(path)
+    }
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
 fn fixture() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/two-components")
 }
@@ -283,13 +301,8 @@ fn generated_rust_client_matches_the_committed_corpus_and_compiles() {
         );
     }
 
-    let temp = std::env::temp_dir().join(format!(
-        "ess-composition-client-compile-{}",
-        std::process::id()
-    ));
-    if temp.exists() {
-        std::fs::remove_dir_all(&temp).expect("owned temporary client directory is removable");
-    }
+    let scratch = Scratch::new("ess-composition-client-compile");
+    let temp = scratch.0.clone();
     for artifact in artifacts.values() {
         let path = temp.join(artifact.path());
         if let Some(parent) = path.parent() {
@@ -319,10 +332,8 @@ fn generated_rust_client_executes_the_byte_transport_boundary() {
     let artifacts = both_components(&compiled(), false)
         .client_plan()
         .rust_artifacts();
-    let temp = std::env::temp_dir().join(format!(
-        "ess-composition-client-runtime-{}",
-        std::process::id()
-    ));
+    let scratch = Scratch::new("ess-composition-client-runtime");
+    let temp = scratch.0.clone();
     for artifact in artifacts.values() {
         let path = temp.join(artifact.path());
         std::fs::create_dir_all(path.parent().expect("artifact has a parent"))
@@ -360,7 +371,6 @@ fn generated_rust_client_executes_the_byte_transport_boundary() {
     let mut execute_tests = std::process::Command::new(executable);
     execute_tests.args(["--nocapture", "--test-threads=1"]);
     run_client_boundary_step(&mut execute_tests, &temp.join("runtime-tests.log"));
-    println!("generated-client evidence retained in {}", temp.display());
 }
 
 fn run_client_boundary_step(command: &mut std::process::Command, log: &Path) {
@@ -480,7 +490,8 @@ fn downstream_operation_construction_requires_an_emitted_descriptor() {
     let artifacts = both_components(&compiled(), false)
         .client_plan()
         .rust_artifacts();
-    let (temp, library) = adversary_library("descriptor", artifacts["src/lib.rs"].contents());
+    let (scratch, library) = adversary_library("descriptor", artifacts["src/lib.rs"].contents());
+    let temp = scratch.0.clone();
     let probes = [
         (
             "selected",
@@ -539,7 +550,8 @@ fn recording_example_detects_a_payload_dropping_client_mutant() {
         ("forwarding-control", original, true),
         ("forwarding-mutant", mutant.as_str(), false),
     ] {
-        let (temp, library) = adversary_library(label, source);
+        let (scratch, library) = adversary_library(label, source);
+        let temp = scratch.0.clone();
         let executable = temp.join("client_boundary_tests");
         let mut compile_tests =
             std::process::Command::new(std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into()));
@@ -568,12 +580,9 @@ fn recording_example_detects_a_payload_dropping_client_mutant() {
     }
 }
 
-fn adversary_library(label: &str, source: &str) -> (PathBuf, PathBuf) {
-    let temp = std::env::temp_dir().join(format!(
-        "ess-composition-adversary-{label}-{}",
-        std::process::id()
-    ));
-    std::fs::create_dir_all(&temp).expect("assigned adversary directory is creatable");
+fn adversary_library(label: &str, source: &str) -> (Scratch, PathBuf) {
+    let scratch = Scratch::new(&format!("ess-composition-adversary-{label}"));
+    let temp = scratch.0.clone();
     let path = temp.join("lib.rs");
     std::fs::write(&path, source).expect("actual emitted client copy is writable");
     let library = temp.join("libcomposition_fixture.rlib");
@@ -591,7 +600,7 @@ fn adversary_library(label: &str, source: &str) -> (PathBuf, PathBuf) {
         .arg("-o")
         .arg(&library);
     run_client_boundary_step(&mut command, &temp.join("compile-library.log"));
-    (temp, library)
+    (scratch, library)
 }
 
 fn adversary_output(command: &mut std::process::Command, log: &Path) -> std::process::Output {

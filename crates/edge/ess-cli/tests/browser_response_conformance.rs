@@ -2,6 +2,7 @@
 #[path = "support/browser.rs"]
 mod browser;
 
+use ess_cli::TemporaryDirectory;
 use std::{fmt::Write as _, fs, path::PathBuf, process::Command, sync::Mutex};
 
 // Each consumer build intentionally shares the authorized compiler cache. Keep artifact copy and
@@ -69,15 +70,11 @@ timeline:
       - event: demo.api.Returned
 ";
 
-fn emit(route: &str, name: &str) -> PathBuf {
+fn emit(route: &str, name: &str) -> TemporaryDirectory {
     emit_sources(route, name, MODEL, AUTHORED)
 }
-fn emit_sources(route: &str, name: &str, model: &str, authored: &str) -> PathBuf {
-    let root = std::env::temp_dir().join(format!(
-        "ess-browser-product-{name}-{route}-{}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&root).unwrap();
+fn emit_sources(route: &str, name: &str, model: &str, authored: &str) -> TemporaryDirectory {
+    let root = TemporaryDirectory::create(&format!("ess-browser-product-{name}-{route}")).unwrap();
     fs::write(root.join("system.yaml"), model).unwrap();
     fs::write(root.join("scenario.yaml"), authored).unwrap();
     let mut command = Command::new(env!("CARGO_BIN_EXE_ess"));
@@ -529,7 +526,7 @@ fn protected_actual_values_never_enter_browser_reports_dom_or_messages() {
     }
 }
 
-fn order_bundle(route: &str) -> PathBuf {
+fn order_bundle(route: &str) -> TemporaryDirectory {
     let originals = [
         include_str!("../../../../examples/oracle-fixture/system.yaml"),
         include_str!("../../../../examples/oracle-fixture/components.yaml"),
@@ -633,7 +630,7 @@ fn pin_order_refusals(name: &str, refusals: &[ess_conformance::Refusal]) {
     }
 }
 
-fn generated_bundle(name: &str, route: &str, originals: &[&str]) -> PathBuf {
+fn generated_bundle(name: &str, route: &str, originals: &[&str]) -> TemporaryDirectory {
     use ess_conformance::web_execution::bundle::{Execution, SourceDocument};
     let source_docs: Vec<_> = originals
         .iter()
@@ -669,9 +666,7 @@ fn generated_bundle(name: &str, route: &str, originals: &[&str]) -> PathBuf {
         Execution::Ordinary(ess_conformance::AdmittedSuite::from_suite(&synthesis.suite).unwrap())
     };
     let files = ess_conformance::web::emit_product(&source_docs, &execution).unwrap();
-    let root =
-        std::env::temp_dir().join(format!("ess-browser-{name}-{route}-{}", std::process::id()));
-    fs::create_dir_all(&root).unwrap();
+    let root = TemporaryDirectory::create(&format!("ess-browser-{name}-{route}")).unwrap();
     fs::write(
         root.join("synthesis-refusals.txt"),
         format!("{:#?}\n", synthesis.refusals),
@@ -1649,10 +1644,7 @@ fn shared_one_time_observer_manifest_executes_through_the_emitted_browser_produc
     let manifest: Vec<serde_json::Value> =
         serde_json::from_str(&fs::read_to_string(vectors.join("manifest.json")).unwrap()).unwrap();
     assert_eq!(manifest.len(), 20, "the complete shared manifest");
-    let root = std::env::temp_dir().join(format!(
-        "ess-browser-one-time-manifest-{}",
-        std::process::id()
-    ));
+    let root = TemporaryDirectory::create("ess-browser-one-time-manifest").unwrap();
     for (index, case) in manifest.iter().enumerate() {
         let mode = u8::try_from(index).unwrap();
         let name = case["case"].as_str().unwrap();
@@ -2576,10 +2568,7 @@ timeline:
 #[test]
 fn coverage_route_reports_the_native_cli_inventory_exactly_in_firefox() {
     let _lease = BUILD_LEASE.lock().unwrap();
-    let root = std::env::temp_dir().join(format!(
-        "ess-browser-coverage-inventory-{}",
-        std::process::id()
-    ));
+    let root = TemporaryDirectory::create("ess-browser-coverage-inventory").unwrap();
     fs::create_dir_all(root.join("scenarios")).unwrap();
     fs::write(root.join("system.yaml"), MODEL).unwrap();
     fs::write(root.join("scenarios/observed.yaml"), AUTHORED).unwrap();

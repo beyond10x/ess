@@ -10,6 +10,10 @@ mod format_history;
 mod git_checkout;
 mod infra_acceptance;
 mod presentation;
+#[cfg(test)]
+mod scratch;
+#[cfg(test)]
+mod scratch_leaks;
 mod site_data;
 mod support;
 mod whats_changed;
@@ -1214,7 +1218,7 @@ fn files_of<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use crate::scratch::Scratch;
 
     fn format_entry(major: u32, release: Option<&'static str>) -> FormatHistoryEntry {
         FormatHistoryEntry {
@@ -1274,8 +1278,6 @@ mod tests {
         );
     }
 
-    static TEMP_DIRECTORY_SEQUENCE: AtomicUsize = AtomicUsize::new(0);
-
     #[test]
     fn workspace_version_comes_only_from_the_workspace_package_table() {
         let manifest = "[package]\nversion = \"9.9.9\"\n[workspace.package]\nlicense = \"Apache-2.0\"\nversion = \"0.1.0\"\n";
@@ -1328,9 +1330,8 @@ mod tests {
 
     #[test]
     fn sync_checks_and_reconciles_in_both_directions() {
-        let sequence = TEMP_DIRECTORY_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-        let root =
-            std::env::temp_dir().join(format!("ess-xtask-sync-{}-{sequence}", std::process::id()));
+        let scratch = Scratch::new("ess-xtask-sync");
+        let root = scratch.path().to_path_buf();
         fs::create_dir_all(root.join("docs")).expect("create docs fixture");
         fs::create_dir_all(root.join("go")).expect("create excluded fixture");
         fs::write(root.join("docs/index.md"), "old\n").expect("write changed fixture");
@@ -1363,8 +1364,6 @@ mod tests {
                 .expect("excluded output is preserved"),
             "package fixture\n"
         );
-
-        fs::remove_dir_all(root).expect("remove test fixture");
     }
 
     #[test]
@@ -1375,9 +1374,8 @@ mod tests {
             "nested/.ess-output-init-partial",
             "nested/.ESS-OUTPUT-INIT-partial",
         ] {
-            let sequence = TEMP_DIRECTORY_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-            let root = std::env::temp_dir()
-                .join(format!("ess-xtask-owned-{}-{sequence}", std::process::id()));
+            let scratch = Scratch::new("ess-xtask-owned");
+            let root = scratch.path().to_path_buf();
             fs::create_dir_all(root.join(state)).expect("create state fixture");
             fs::write(root.join(state).join("state.json"), "retained checkpoint")
                 .expect("write state");
@@ -1398,17 +1396,13 @@ mod tests {
                     b"retained checkpoint"
                 );
             }
-            fs::remove_dir_all(root).expect("remove fixture");
         }
     }
 
     #[test]
     fn sync_refuses_enrolled_ancestor_and_reserved_planned_paths() {
-        let sequence = TEMP_DIRECTORY_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-        let root = std::env::temp_dir().join(format!(
-            "ess-xtask-owner-ancestor-{}-{sequence}",
-            std::process::id()
-        ));
+        let scratch = Scratch::new("ess-xtask-owner-ancestor");
+        let root = scratch.path().to_path_buf();
         fs::create_dir_all(root.join(".ess-output")).expect("create enrolled ancestor");
         let out = root.join("missing/output");
         let expected = BTreeMap::from([("file.md".to_owned(), "generated".to_owned())]);
@@ -1423,16 +1417,12 @@ mod tests {
             assert!(sync(&out, &expected, false, &[]).is_err());
             assert!(!root.join("missing").exists());
         }
-        fs::remove_dir_all(root).expect("remove fixture");
     }
 
     #[test]
     fn sync_preserves_explicit_exclusions_without_excluding_all_hidden_files() {
-        let sequence = TEMP_DIRECTORY_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-        let root = std::env::temp_dir().join(format!(
-            "ess-xtask-owned-excluded-{}-{sequence}",
-            std::process::id()
-        ));
+        let scratch = Scratch::new("ess-xtask-owned-excluded");
+        let root = scratch.path().to_path_buf();
         fs::create_dir_all(root.join("go/.ess-output")).expect("create excluded state");
         fs::write(root.join("go/.ess-output/state.json"), "checkpoint").expect("write state");
         fs::write(root.join(".orphan"), "stale projection").expect("write hidden orphan");
@@ -1443,17 +1433,13 @@ mod tests {
             fs::read(root.join("go/.ess-output/state.json")).expect("excluded state remains"),
             b"checkpoint"
         );
-        fs::remove_dir_all(root).expect("remove fixture");
     }
 
     #[cfg(unix)]
     #[test]
     fn sync_refuses_destination_alias_into_an_enrolled_tree() {
-        let sequence = TEMP_DIRECTORY_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-        let root = std::env::temp_dir().join(format!(
-            "ess-xtask-owner-alias-{}-{sequence}",
-            std::process::id()
-        ));
+        let scratch = Scratch::new("ess-xtask-owner-alias");
+        let root = scratch.path().to_path_buf();
         fs::create_dir_all(root.join("owned/.ess-output")).expect("create ownership state");
         fs::create_dir_all(root.join("projection")).expect("create projection root");
         fs::write(root.join("owned/file.md"), "owned sentinel").expect("write owned output");
@@ -1465,16 +1451,12 @@ mod tests {
             fs::read(root.join("owned/file.md")).expect("owned bytes remain"),
             b"owned sentinel"
         );
-        fs::remove_dir_all(root).expect("remove fixture");
     }
 
     #[test]
     fn sync_locks_existing_missing_and_nested_roots_before_any_mutation() {
-        let sequence = TEMP_DIRECTORY_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-        let root = std::env::temp_dir().join(format!(
-            "ess-xtask-owner-lock-{}-{sequence}",
-            std::process::id()
-        ));
+        let scratch = Scratch::new("ess-xtask-owner-lock");
+        let root = scratch.path().to_path_buf();
         fs::create_dir_all(root.join("existing")).expect("create output root");
         let expected = BTreeMap::from([("file.md".to_owned(), "new".to_owned())]);
         for (out, locked_directory) in [
@@ -1499,7 +1481,6 @@ mod tests {
                 b"new"
             );
         }
-        fs::remove_dir_all(root).expect("remove fixture");
     }
 
     #[test]

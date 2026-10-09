@@ -797,7 +797,10 @@ and the row read back is required to hold it. A stored instant no such input car
 implementation generates, a literal, a converted value, a member inside a structure — is refused
 by name rather than decided at the reference instant. A target supplies the decision's instant
 from its own clock: the interpreter reads a command clock it is handed once per decision, and a
-generated Rust or Go behaviour reads its context's command clock once per decision. With no clock,
+generated Rust or Go behaviour reads its context's command clock once per decision.
+`ess verify conform run --target interpreted` hands the interpreter the instant of the step being
+executed, the one that step's `now_offset` values resolve against, and reads no machine clock, so
+two runs print the same report. With no clock,
 a decision that needs one is refused naming the command clock, and every answer decided before it
 stands. See `docs/design/expression-family-source22.md`, A3.
 
@@ -1332,6 +1335,17 @@ It reports a refusal naming the scenario it could not build, and `synthesize` st
 | `==` or `!=` between two input fields, at any depth (`owner == ticket.owner`) | yes. Each side is also tried at the other's value. |
 | `starts_with`, `ends_with`, `contains` | yes. The candidates are the literal, the guard's own literals composed around the field's text, and the literal with one character changed. |
 | `all`/`any` over many fields (`all: [any: [a > 10, b > 10], c > 10]`) | within two limits. Synthesis first tries up to 64 candidates in a fixed order. If none fits, it solves the guard from its own literals, one field at a time, or one group at a time for fields compared with each other, and tries up to 64 more. A guard past either limit is refused with `ESS-SYNTH-003`. First, each goal is broken down at most 64 times, and each `any` is tried first child first, so a guard that needs many disjunctions to take a later child can be refused. Second, a field compared only with other fields gets its base value, 0 and -1, so a strict chain over four such fields is refused. Where none of those fits either, a `Decimal` is also tried at the exact midpoint of every two adjacent literals it is compared with, so `amount > 0.1 and amount < 0.2` is met by `0.15`. |
+
+Every `all`/`any` with two or more children is witnessed once per child, at any depth. An `any`
+(or an `all` under `not`) sends its branch one more input per child, where that child alone holds;
+an `all` (or an `any` under `not`) sends the default branch one more input per child, where that
+child alone fails. Below the top level, the input must also be one where that connective decides
+the whole guard. So a target that writes `or` for a nested `and`, such as
+`any: [all: [a, b], all: [a, c]]`, fails a scenario. Where none of the guard's own candidates is
+such an input, synthesis solves for it directly, so a wide guard, such as an `any` of four
+three-way `all`s, is witnessed at every child too. Where that finds none either, and the search did
+not try every value of every field, the scenario stands and an `ESS-SYNTH-022` refusal beside it
+names the input it could not build.
 
 Every input also satisfies the invariants over it. That covers the invariants of each struct the
 input holds, and those of each entity a branch copies the input into. For

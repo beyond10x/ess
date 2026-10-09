@@ -3,6 +3,7 @@
 #[path = "support/browser.rs"]
 mod browser;
 
+use ess_cli::TemporaryDirectory;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -149,13 +150,8 @@ fn observe(root: &Path, site: &Path, mode: u8, abort: bool) -> (serde_json::Valu
     (observed, format!("{encoded}\n{receipt}"))
 }
 
-fn root(name: &str) -> PathBuf {
-    let root = std::env::temp_dir().join(format!(
-        "ess-browser-adversary-{name}-{}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&root).unwrap();
-    root
+fn root(name: &str) -> TemporaryDirectory {
+    TemporaryDirectory::create(&format!("ess-browser-adversary-{name}")).unwrap()
 }
 
 /// A trap in the target after the runner received an issued secret, and a factory panic carrying

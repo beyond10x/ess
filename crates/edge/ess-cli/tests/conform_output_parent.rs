@@ -2,29 +2,17 @@
 //! targets and `ess generate --out` do (beyond10x/ess#78). The existing-ancestor checks every
 //! output root gets still apply.
 
+use ess_cli::TemporaryDirectory;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
-use std::sync::atomic::{AtomicUsize, Ordering};
 
-struct Scratch(PathBuf);
+struct Scratch(TemporaryDirectory);
 
 impl Scratch {
     fn new() -> Self {
-        static NEXT: AtomicUsize = AtomicUsize::new(0);
-        let path = std::env::temp_dir().join(format!(
-            "ess-conform-parent-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir(&path).unwrap();
+        let path = TemporaryDirectory::create("ess-conform-parent").unwrap();
         Self(path)
-    }
-}
-
-impl Drop for Scratch {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
     }
 }
 

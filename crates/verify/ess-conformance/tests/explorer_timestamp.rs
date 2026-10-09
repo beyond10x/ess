@@ -1,4 +1,6 @@
 //! Seeded Timestamp inputs are real planner/draw behavior, shared by both emitted explorers.
+mod support_scratch;
+
 use std::{fs, path::Path, process::Command};
 
 use ess_compiler::{resolve::compile, source::SourceMap};
@@ -92,7 +94,9 @@ fn both_emitted_planners_draw_exact_seeded_timestamps_through_newtypes() {
     .unwrap();
     let ir = compile(&specification, &SourceMap::new()).unwrap();
     let suite = ess_conformance::synthesize(&ir).suite;
-    let root = std::env::temp_dir().join(format!("ess-explorer-timestamps-{}", std::process::id()));
+    let root = support_scratch::Scratch::adopt(
+        std::env::temp_dir().join(format!("ess-explorer-timestamps-{}", std::process::id())),
+    );
     let go = root.join("go");
     let ts = root.join("ts");
     for artifact in ess_conformance::go::emit_with_model(&suite, &ir).unwrap() {

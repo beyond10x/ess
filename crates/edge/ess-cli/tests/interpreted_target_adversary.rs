@@ -126,6 +126,7 @@ fn real_interpreted_execution_and_empty_suite_verdicts_are_distinct() {
 
     // The empty-suite control belongs at the runner, not at the target.
     suite["scenarios"] = serde_json::json!({});
+    fs::create_dir_all(env!("CARGO_TARGET_TMPDIR")).expect("the test target directory");
     let path =
         Path::new(env!("CARGO_TARGET_TMPDIR")).join("interpreted-adversary-empty-suite.json");
     let mut file = fs::File::create(&path).expect("a suite file under the test target directory");

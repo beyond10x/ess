@@ -22,7 +22,9 @@ fn snapshot(path: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
 
 #[test]
 fn binary64_publication_never_replaces_sources_or_partially_updates_a_library() {
-    // Cached target output can outlive a runner and its process IDs.
+    // Cached target output can outlive a runner and its process IDs. A CI shard that unpacks a
+    // test archive into `target/` has not created this directory; nothing else here would.
+    fs::create_dir_all(env!("CARGO_TARGET_TMPDIR")).unwrap();
     let fixture = tempfile::Builder::new()
         .prefix("binary64-structural-adversary-cli-")
         .tempdir_in(env!("CARGO_TARGET_TMPDIR"))

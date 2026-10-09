@@ -1,4 +1,6 @@
 //! Guarded faults remain external and construct only eligible inputs.
+mod support_scratch;
+
 use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
 use ess_conformance::ScenarioStep;
 use ess_domain::{
@@ -123,7 +125,9 @@ fn guarded_external_rejects_untyped_guards_and_empty_causes() {
 #[test]
 fn emitted_runtimes_fail_when_the_observed_outcome_ignores_the_fault() {
     let suite = ess_conformance::synthesize::synthesize(&ir(MODEL)).suite;
-    let root = std::env::temp_dir().join(format!("ess-guarded-external-{}", std::process::id()));
+    let root = support_scratch::Scratch::adopt(
+        std::env::temp_dir().join(format!("ess-guarded-external-{}", std::process::id())),
+    );
     std::fs::create_dir_all(&root).unwrap();
     for artifact in ess_conformance::go::emit(&suite).unwrap() {
         let path = root.join(artifact.path);
@@ -168,8 +172,12 @@ fn emitted_runtimes_fail_when_the_observed_outcome_ignores_the_fault() {
     );
     for ignore in [false, true] {
         for (tool, args, directory) in [
-            ("go", vec!["test", "./essconform", "-count=1", "-v"], &root),
-            ("node", vec!["--test", "guarded.mjs"], &ts),
+            (
+                "go",
+                vec!["test", "./essconform", "-count=1", "-v"],
+                root.path(),
+            ),
+            ("node", vec!["--test", "guarded.mjs"], ts.as_path()),
         ] {
             let output = std::process::Command::new(tool)
                 .args(args)

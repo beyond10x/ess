@@ -1,4 +1,6 @@
 //! The same Rust display represents complete exact declarations before and after runtime Load.
+mod support_scratch;
+
 use ess_compiler::{resolve::compile, source::SourceMap};
 use ess_conformance::{
     web_execution::bundle::{self, Execution, Loaded, SourceDocument},
@@ -166,8 +168,9 @@ console.log(JSON.stringify(rows));
 #[test]
 fn display_wrapper_depth_does_not_reduce_the_logical_value_budget() {
     use std::{fs, process::Command};
-    let root =
-        std::env::temp_dir().join(format!("ess-browser-display-depth-{}", std::process::id()));
+    let root = support_scratch::Scratch::adopt(
+        std::env::temp_dir().join(format!("ess-browser-display-depth-{}", std::process::id())),
+    );
     fs::create_dir_all(&root).unwrap();
     let module = root.join("player.mjs");
     let asset = include_str!("../assets/browser-player.js");

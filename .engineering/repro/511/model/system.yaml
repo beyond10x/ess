@@ -1,0 +1,6 @@
+format: ess/23
+system: oidc
+version: v1
+
+domains:
+  - oidc.provider

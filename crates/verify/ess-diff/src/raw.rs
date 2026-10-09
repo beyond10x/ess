@@ -21,6 +21,8 @@
 //! | every change is named by the id its own content derives, and carries the relation its own content derives | `conflicting_declaration` |
 //! | the changes are in canonical order, with no id twice | `conflicting_declaration`, `duplicate_declaration` |
 //! | from `ess-diff/14`, every change carries the compatibility its content and recorded type uses derive; below it, none does | `missing_declaration`, `conflicting_declaration`, `unsupported_format_version` |
+//! | from `ess-diff/16`, an input type change, or a kind, representation, member or payload change of a type with an input use, may record the shapes that derive its answer, only when their wire forms differ; below it, none does | `conflicting_declaration`, `unsupported_format_version` |
+//! | from `ess-diff/17`, an added outcome, an added input or a changed outcome condition may record the narrowing that derives its breaking answer for callers, only on the change kind it names and, for `required-input`, an input not written `Optional<…>`; below it, none does | `conflicting_declaration`, `unsupported_format_version` |
 //!
 //! The third is what makes a derived id worth writing down. The document carries `id` and `relation`
 //! so that a reviewer can quote one and a consumer in another language does not have to reimplement
@@ -35,7 +37,9 @@
 use ess_primitives::error::{ValidationCode, ValidationError, ValidationErrors};
 
 use crate::change::{ChangeId, SemanticChange, SemanticRelation};
-use crate::compatibility::{RawChangeCompatibility, CLASSIFIED_DELTA_FORMAT};
+use crate::compatibility::{
+    RawChangeCompatibility, CLASSIFIED_DELTA_FORMAT, NARROWED_DELTA_FORMAT, SHAPED_DELTA_FORMAT,
+};
 use crate::delta::{DeltaFormat, EssDelta, EssRevisionRef};
 
 /// A delta document as it is written, before anything has checked what it claims.
@@ -230,6 +234,34 @@ fn check_compatibility(
             ),
         )),
         (Some(compatibility), true) => {
+            if compatibility.shapes.is_some() && format.major() < SHAPED_DELTA_FORMAT {
+                errors.push(
+                    ValidationError::new(
+                        ValidationCode::UnsupportedFormatVersion,
+                        format!("{location}.shapes"),
+                        format!(
+                            "`{format}` records no input shapes; they are \
+                             `ess-diff/{SHAPED_DELTA_FORMAT}` vocabulary"
+                        ),
+                    )
+                    .with_hint("a later format may mean something different by the same words"),
+                );
+                return;
+            }
+            if compatibility.narrows.is_some() && format.major() < NARROWED_DELTA_FORMAT {
+                errors.push(
+                    ValidationError::new(
+                        ValidationCode::UnsupportedFormatVersion,
+                        format!("{location}.narrows"),
+                        format!(
+                            "`{format}` records no narrowing; it is \
+                             `ess-diff/{NARROWED_DELTA_FORMAT}` vocabulary"
+                        ),
+                    )
+                    .with_hint("a later format may mean something different by the same words"),
+                );
+                return;
+            }
             if let Err(found) = compatibility.check(&written.change, &location) {
                 errors.extend(found);
             }

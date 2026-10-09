@@ -1,8 +1,9 @@
 //! Complete typed return observations, independent of events, subjects and views.
+use crate::one_time_response::StringConstraints;
 use crate::scenario::{CommandRef, OutcomeRef};
 use crate::selection::Declaration;
 use ess_compiler::ir::{EssIr, ResolvedCommand};
-use ess_domain::{types::Presence, Field, QualifiedName};
+use ess_domain::{types::Presence, Field, QualifiedName, TypeRef};
 use ess_primitives::node::Node;
 use std::collections::BTreeMap;
 
@@ -10,6 +11,14 @@ use std::collections::BTreeMap;
 pub const ORDINARY: u32 = 28;
 /// The corresponding inventory-bearing suite.
 pub const COVERAGE: u32 = 29;
+
+/// First ordinary suite whose response observations carry String-newtype `constraints`
+/// (beyond10x/ess#499), cumulative over every major below it.
+pub const CONSTRAINED_ORDINARY: u32 = 46;
+/// The corresponding inventory-bearing suite.
+pub const CONSTRAINED_COVERAGE: u32 = 47;
+/// The suite majors the constrained-response pair introduces.
+pub const CONSTRAINED_ADMITTED: [u32; 2] = [CONSTRAINED_ORDINARY, CONSTRAINED_COVERAGE];
 
 /// Declaration authority and independently authored literals for one actual invocation.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -23,6 +32,11 @@ pub struct Observation {
     pub fields: Vec<Field>,
     /// Exactly the finite nominal declarations reachable from the response.
     pub declarations: BTreeMap<QualifiedName, Declaration>,
+    /// String-newtype rules of the constrained declarations, keyed by the nominal type they
+    /// constrain (suite/46 and /47, beyond10x/ess#499). Empty, and then absent from the bytes, when
+    /// no reachable type is constrained.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub constraints: BTreeMap<QualifiedName, StringConstraints>,
     /// Partial field-value assertions; every named value is compared completely.
     pub expected: BTreeMap<String, Node>,
 }
@@ -34,7 +48,23 @@ struct RawObservation {
     outcome: Option<OutcomeRef>,
     fields: Vec<Field>,
     declarations: BTreeMap<QualifiedName, Declaration>,
+    #[serde(default, deserialize_with = "constraints_present")]
+    constraints: Option<BTreeMap<QualifiedName, StringConstraints>>,
     expected: BTreeMap<String, Node>,
+}
+
+/// A `constraints` member that is present is never empty: an empty one would be a second spelling
+/// of the bytes an unconstrained observation already has.
+pub(crate) fn constraints_present<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<Option<BTreeMap<QualifiedName, StringConstraints>>, D::Error> {
+    let value = <BTreeMap<QualifiedName, StringConstraints> as serde::Deserialize>::deserialize(d)?;
+    if value.is_empty() {
+        return Err(serde::de::Error::custom(
+            "response constraints, when present, name at least one type",
+        ));
+    }
+    Ok(Some(value))
 }
 
 impl TryFrom<RawObservation> for Observation {
@@ -45,6 +75,7 @@ impl TryFrom<RawObservation> for Observation {
             outcome: raw.outcome,
             fields: raw.fields,
             declarations: raw.declarations,
+            constraints: raw.constraints.unwrap_or_default(),
             expected: raw.expected,
         };
         value.validate()?;
@@ -75,15 +106,23 @@ impl Observation {
                 branch.name == selected.outcome && !branch.one_time_response.is_empty()
             })
         });
-        let declarations = if protected {
-            crate::one_time_response::Response::of(ir, command)?.declarations
+        // A one-time outcome's trace checks the String rules on the same value, so its direct
+        // observation keeps the bytes it had.
+        let (declarations, constraints) = if protected {
+            (
+                crate::one_time_response::Response::of(ir, command)?.declarations,
+                BTreeMap::new(),
+            )
         } else {
-            crate::typed_fields::direct_response_declarations(ir, &fields)?
+            let declarations = crate::typed_fields::direct_response_declarations(ir, &fields)?;
+            let constraints = response_constraints(ir, &declarations)?;
+            (declarations, constraints)
         };
         let result = Self {
             command: CommandRef::new(command.name.clone()),
             outcome,
             declarations,
+            constraints,
             fields,
             expected,
         };
@@ -104,6 +143,7 @@ impl Observation {
             return Err("direct response outcome belongs to another command".into());
         }
         crate::typed_fields::validate([self.fields.as_slice()], &self.declarations)?;
+        validate_response_constraints(&self.declarations, &self.constraints)?;
         let mut bytes = 0;
         for (name, value) in &self.expected {
             let field = self
@@ -158,6 +198,7 @@ impl Observation {
         {
             return Err("direct response resource byte limit".into());
         }
+        check_constraints(&self.fields, &self.declarations, &self.constraints, actual)?;
         for (name, expected) in &self.expected {
             if actual.get(name) != Some(expected) {
                 return Err(format!(
@@ -194,6 +235,13 @@ pub fn used_by(suite: &crate::ConformanceSuite) -> bool {
 }
 
 pub(crate) fn admit(suite: &crate::ConformanceSuite) -> Result<(), crate::AdmissionError> {
+    if constrained_used_by(suite) && suite.provenance.suite_version.major() < CONSTRAINED_ORDINARY {
+        return Err(crate::AdmissionError::new(
+            "UnsupportedVocabulary",
+            "$suite",
+            "response constraints require suite/46 or /47",
+        ));
+    }
     for scenario in suite.scenarios.values() {
         let mut command = None;
         for step in &scenario.steps {
@@ -228,4 +276,149 @@ pub(crate) fn admit(suite: &crate::ConformanceSuite) -> Result<(), crate::Admiss
         }
     }
     Ok(())
+}
+
+/// The String-newtype rules a response observation carries for `declarations`: each constrained
+/// declaration must be a newtype of `String`, and each of its invariants must decide over a lone
+/// `value` text fact. Anything else is refused by name, before a scenario is written.
+pub(crate) fn response_constraints(
+    ir: &EssIr,
+    declarations: &BTreeMap<QualifiedName, Declaration>,
+) -> Result<BTreeMap<QualifiedName, StringConstraints>, String> {
+    let constraints = crate::one_time_response::string_constraints(ir, declarations, "response")?;
+    for (name, rules) in &constraints {
+        if !crate::one_time_response::is_string(declarations, &TypeRef::Named(name.clone())) {
+            return Err(format!(
+                "response type `{name}` constrains a newtype of something other than String; only \
+                 String-newtype constraints are checked on a returned value"
+            ));
+        }
+        refuse_undecided(name, rules)?;
+    }
+    Ok(constraints)
+}
+
+fn refuse_undecided(name: &QualifiedName, rules: &StringConstraints) -> Result<(), String> {
+    if let Some(predicate) = rules
+        .invariants
+        .iter()
+        .find(|predicate| !crate::one_time_response::decides_over_value(predicate))
+    {
+        return Err(format!(
+            "invariant `{predicate}` on response type `{name}` does not decide over its value alone"
+        ));
+    }
+    Ok(())
+}
+
+/// Admit carried String-newtype rules against the declarations they travel with.
+pub(crate) fn validate_response_constraints(
+    declarations: &BTreeMap<QualifiedName, Declaration>,
+    constraints: &BTreeMap<QualifiedName, StringConstraints>,
+) -> Result<(), String> {
+    if constraints.is_empty() {
+        return Ok(());
+    }
+    crate::one_time_response::validate_constraints(declarations, constraints, "response")?;
+    for (name, rules) in constraints {
+        refuse_undecided(name, rules)?;
+    }
+    Ok(())
+}
+
+/// Hold every actual value of `fields` in `actual` to the carried String-newtype rules.
+pub(crate) fn check_constraints(
+    fields: &[Field],
+    declarations: &BTreeMap<QualifiedName, Declaration>,
+    constraints: &BTreeMap<QualifiedName, StringConstraints>,
+    actual: &BTreeMap<String, Node>,
+) -> Result<(), String> {
+    if constraints.is_empty() {
+        return Ok(());
+    }
+    for field in fields {
+        if let Some(value) = actual.get(&field.name) {
+            crate::one_time_response::check(declarations, constraints, &field.type_ref, value)
+                .map_err(|breach| match breach {
+                    crate::one_time_response::Breach::Payload => format!(
+                        "response field {} breaks a String rule its type declares",
+                        field.name
+                    ),
+                    crate::one_time_response::Breach::Undecided => format!(
+                        "response field {} could not be decided against its type's invariants",
+                        field.name
+                    ),
+                })?;
+        }
+    }
+    Ok(())
+}
+
+/// Whether a suite carries String-newtype rules on a response observation (suite/46 and /47).
+pub fn constrained_used_by(suite: &crate::ConformanceSuite) -> bool {
+    suite.scenarios.values().any(|scenario| {
+        scenario.steps.iter().any(|step| match step {
+            crate::ScenarioStep::ExpectDirectResponse { response } => {
+                !response.constraints.is_empty()
+            }
+            crate::ScenarioStep::ExpectResponsePayload { response } => {
+                !response.constraints.is_empty()
+            }
+            _ => false,
+        })
+    })
+}
+
+/// The ordinary major a fresh suite needs at least: [`CONSTRAINED_ORDINARY`] when
+/// [`constrained_used_by`].
+pub fn constrained_ordinary_floor(suite: &crate::ConformanceSuite) -> Option<u32> {
+    constrained_used_by(suite).then_some(CONSTRAINED_ORDINARY)
+}
+
+/// The coverage major a fresh coverage suite needs at least: [`CONSTRAINED_COVERAGE`] when
+/// [`constrained_used_by`].
+pub fn constrained_coverage_floor(suite: &crate::ConformanceSuite) -> Option<u32> {
+    constrained_used_by(suite).then_some(CONSTRAINED_COVERAGE)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ess_primitives::predicate::Predicate;
+
+    fn rules(invariant: &str) -> StringConstraints {
+        StringConstraints {
+            alphabet: None,
+            prefix: None,
+            invariants: vec![Predicate::parse_expression(invariant).expect("parses")],
+        }
+    }
+
+    #[test]
+    fn an_invariant_over_the_value_alone_is_admitted() {
+        let name: QualifiedName = "catalog.items.Code".parse().unwrap();
+        for invariant in [
+            "value.count >= 4",
+            "value != 'none'",
+            "value.count < 9 and value != ''",
+        ] {
+            assert_eq!(
+                refuse_undecided(&name, &rules(invariant)),
+                Ok(()),
+                "{invariant}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_invariant_reading_anything_else_is_refused_by_name() {
+        let name: QualifiedName = "catalog.items.Code".parse().unwrap();
+        let refused = refuse_undecided(&name, &rules("label.count >= 4")).unwrap_err();
+        assert!(
+            refused.contains(
+                "on response type `catalog.items.Code` does not decide over its value alone"
+            ) && refused.contains("label.count"),
+            "{refused}"
+        );
+    }
 }

@@ -1,0 +1,87 @@
+format: ess/23
+system: catalog
+version: v1
+domain: catalog.items
+
+components:
+  - component: items-server
+    owns:
+      domains: [catalog.items]
+    accepts:
+      commands: [catalog.items.Add, catalog.items.Publish]
+    publishes:
+      events: [catalog.items.Added, catalog.items.Published]
+    reached_by: network
+
+types:
+  - {name: catalog.items.ItemId, kind: newtype, of: String}
+
+entities:
+  - name: catalog.items.Item
+    identity: {name: item_id, type: catalog.items.ItemId}
+    fields:
+      - {name: title, type: String}
+    lifecycle:
+      initial: Draft
+      states: [Draft, Live]
+      terminal: [Live]
+      transitions:
+        - {name: publish, from: [Draft], to: Live}
+
+actors:
+  - name: catalog.items.Editor
+    may: [catalog.items.Add, catalog.items.Publish]
+
+errors:
+  - name: catalog.items.Refused
+
+events:
+  - name: catalog.items.Added
+    fields:
+      - {name: item_id, type: catalog.items.ItemId}
+  - name: catalog.items.Published
+    fields:
+      - {name: item_id, type: catalog.items.ItemId}
+
+commands:
+  - name: catalog.items.Add
+    input:
+      - {name: title, type: String}
+    outcomes:
+      - name: added
+        creates: catalog.items.Item
+        instance: item_id
+        sets: {title: input.title}
+        emits: [catalog.items.Added]
+        payload:
+          catalog.items.Added: {item_id: {generated: true}}
+
+  - name: catalog.items.Publish
+    input:
+      - {name: item_id, type: catalog.items.ItemId}
+    response:
+      - {name: share_key, type: String}
+    outcomes:
+      - name: unknown
+        unknown_instance: true
+        error: catalog.items.Refused
+      - name: already-live
+        wrong_state: true
+        error: catalog.items.Refused
+      - name: published
+        moves: catalog.items.Item.publish
+        instance: item_id
+        returns: true
+        one_time_response: [share_key]
+        emits: [catalog.items.Published]
+        payload:
+          catalog.items.Published: {item_id: input.item_id}
+
+views:
+  - name: catalog.items.Items
+    source: catalog.items.Item
+    consistency: read_your_writes
+    fields:
+      - {name: item_id, type: catalog.items.ItemId}
+      - {name: state, type: catalog.items.Item.State}
+      - {name: title, type: String}

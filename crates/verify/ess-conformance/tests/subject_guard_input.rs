@@ -3,6 +3,8 @@
 //! the suite format pair `ess-conformance/20` and `/21` carries a fold, and the Go runtime reads the
 //! pair and refuses the construct below it. `docs/design/value-expressions.md` §§ E6, E7.
 
+mod support_scratch;
+
 use std::collections::BTreeMap;
 use std::process::Command;
 
@@ -471,16 +473,16 @@ fn the_new_majors_are_supported_and_the_next_is_not() {
             "{version}"
         );
     }
-    assert!(!SuiteFormat::parse("ess-conformance/46")
+    assert!(!SuiteFormat::parse("ess-conformance/48")
         .unwrap()
         .is_supported());
 }
 
-fn scratch(label: &str) -> std::path::PathBuf {
-    let path = std::env::temp_dir().join(format!(
+fn scratch(label: &str) -> support_scratch::Scratch {
+    let path = support_scratch::Scratch::adopt(std::env::temp_dir().join(format!(
         "ess-subject-guard-input-{label}-{}",
         std::process::id()
-    ));
+    )));
     let _ = std::fs::remove_dir_all(&path);
     std::fs::create_dir_all(&path).expect("a working directory");
     path

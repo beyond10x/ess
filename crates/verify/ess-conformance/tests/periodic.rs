@@ -1,4 +1,6 @@
 //! Controlled target time exercises actual timer dispatch, host reads and command calls.
+mod support_scratch;
+
 use ess_compiler::{resolve::compile_locating, source::SourceMap};
 use ess_conformance::{periodic::*, scenario::ScenarioStep, target::*};
 use ess_domain::{system::Source, RawSpecFile, Specification};
@@ -421,8 +423,9 @@ fn periodic_suites_require_new_vocabulary_and_unsupported_is_not_passing() {
 }
 
 fn run_go(case: &str, code: &str) {
-    let directory =
-        std::env::temp_dir().join(format!("ess-periodic-{case}-{}", std::process::id()));
+    let directory = support_scratch::Scratch::adopt(
+        std::env::temp_dir().join(format!("ess-periodic-{case}-{}", std::process::id())),
+    );
     for artifact in ess_conformance::go::emit(&suite()).unwrap() {
         let path = directory.join(artifact.path);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();

@@ -462,12 +462,23 @@ mod tests {
         assert_eq!(go_string("\u{7f}"), r#""\x7f""#);
     }
 
+    /// A directory under `TMPDIR` removed when dropped, so a failing assertion leaves nothing.
+    struct Scratch(std::path::PathBuf);
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
     /// Go itself reads each literal back to the bytes it was written from.
     #[test]
     fn go_reads_each_literal_back_to_its_own_bytes() {
-        let root = std::env::temp_dir().join(format!("ess-go-string-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).unwrap();
+        let scratch =
+            Scratch(std::env::temp_dir().join(format!("ess-go-string-{}", std::process::id())));
+        let root = &scratch.0;
+        let _ = std::fs::remove_dir_all(root);
+        std::fs::create_dir_all(root).unwrap();
         let literals: Vec<String> = TEXTS.iter().map(|text| go_string(text)).collect();
         let program = format!(
             "package main\n\nimport \"os\"\n\nfunc main() {{\n\tfor _, text := range []string{{{}}} {{\n\t\tos.Stdout.WriteString(text)\n\t\tos.Stdout.WriteString(\"\\x00\")\n\t}}\n}}\n",
@@ -476,7 +487,7 @@ mod tests {
         std::fs::write(root.join("main.go"), program).unwrap();
         let output = std::process::Command::new("go")
             .args(["run", "main.go"])
-            .current_dir(&root)
+            .current_dir(root)
             .env("GOWORK", "off")
             .env("GO111MODULE", "off")
             .output()
@@ -491,6 +502,5 @@ mod tests {
             .flat_map(|text| text.bytes().chain([0]))
             .collect();
         assert_eq!(output.stdout, expected);
-        let _ = std::fs::remove_dir_all(&root);
     }
 }

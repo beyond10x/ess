@@ -1,22 +1,16 @@
 //! Model and bundle identity are distinct; root failures never publish partial libraries.
 
+use ess_cli::TemporaryDirectory;
 use serde_json::Value;
 use std::{
     fs,
-    path::PathBuf,
     process::{Command, Output},
-    sync::atomic::{AtomicUsize, Ordering},
 };
 
-struct Fixture(PathBuf);
+struct Fixture(TemporaryDirectory);
 impl Fixture {
     fn new() -> Self {
-        static NEXT: AtomicUsize = AtomicUsize::new(0);
-        let path = std::env::temp_dir().join(format!(
-            "ess-model-types-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
+        let path = TemporaryDirectory::create("ess-model-types").unwrap();
         fs::create_dir_all(path.join("model")).unwrap();
         fs::write(
             path.join("model/system.yaml"),
@@ -34,12 +28,6 @@ impl Fixture {
             .unwrap()
     }
 }
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        fs::remove_dir_all(&self.0).unwrap();
-    }
-}
-
 #[test]
 fn short_names_reach_the_generate_types_cli_and_the_default_stays_qualified() {
     let fixture = Fixture::new();

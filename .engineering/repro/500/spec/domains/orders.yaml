@@ -1,0 +1,20 @@
+domain: catalog.orders
+summary: Placing an order for items.
+
+actors:
+  - name: catalog.orders.Buyer
+    may:
+      - catalog.orders.PlaceOrder
+
+commands:
+  - name: catalog.orders.PlaceOrder
+    input:
+      - name: item
+        type: String
+    response:
+      - name: order_ref
+        type: String
+    outcomes:
+      - name: placed
+        returns: true
+        summary: The order is accepted and its reference returned.

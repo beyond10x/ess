@@ -1,4 +1,5 @@
 //! Model-aware history import refuses disclosure policy before reading caller log bytes.
+use ess_cli::TemporaryDirectory;
 use std::{fs, process::Command};
 
 const MODEL: &str = "format: ess/21\nsystem: credentials\nversion: v1\ndomain: credentials.api\ncommands:\n  - name: credentials.api.Issue\n    response: [{name: secret, type: String}]\n    outcomes: [{name: issued, returns: true, one_time_response: [secret]}]\n";
@@ -6,11 +7,8 @@ const MODEL: &str = "format: ess/21\nsystem: credentials\nversion: v1\ndomain: c
 #[test]
 fn marked_history_import_refuses_before_input_io_and_preserves_output() {
     for existing in [false, true] {
-        let directory = std::env::temp_dir().join(format!(
-            "ess-one-time-history-{existing}-{}",
-            std::process::id()
-        ));
-        fs::create_dir(&directory).unwrap();
+        let directory =
+            TemporaryDirectory::create(&format!("ess-one-time-history-{existing}")).unwrap();
         let specification = directory.join("system.yaml");
         fs::write(&specification, MODEL).unwrap();
         let adapter = directory.join("PRIVATE-INPUT-SENTINEL.adapter");
@@ -55,9 +53,7 @@ fn marked_history_import_refuses_before_input_io_and_preserves_output() {
 
 #[test]
 fn unmarked_history_import_keeps_its_existing_input_refusal() {
-    let directory =
-        std::env::temp_dir().join(format!("ess-ordinary-history-{}", std::process::id()));
-    fs::create_dir(&directory).unwrap();
+    let directory = TemporaryDirectory::create("ess-ordinary-history").unwrap();
     let specification = directory.join("system.yaml");
     fs::write(
         &specification,

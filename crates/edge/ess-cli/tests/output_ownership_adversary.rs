@@ -3,13 +3,13 @@
 #[path = "../src/output_ownership/mod.rs"]
 mod ownership;
 
+use ess_cli::TemporaryDirectory;
 use std::{
     collections::BTreeMap,
     fs,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     process::{Command, Output},
-    sync::atomic::{AtomicUsize, Ordering},
 };
 
 // A subprocess spawn may briefly inherit another thread's open flock descriptors before
@@ -21,15 +21,9 @@ fn serial() -> std::sync::MutexGuard<'static, ()> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-fn fixture() -> PathBuf {
-    static NEXT: AtomicUsize = AtomicUsize::new(0);
-    let root = std::env::temp_dir().join(format!(
-        "e19-adversary-{}-{}",
-        std::process::id(),
-        NEXT.fetch_add(1, Ordering::Relaxed)
-    ));
-    fs::create_dir(&root).unwrap();
-    println!("retained fixture: {}", root.display());
+fn fixture() -> TemporaryDirectory {
+    let root = TemporaryDirectory::create("e19-adversary").unwrap();
+    println!("fixture, removed when its guard drops: {}", root.display());
     root
 }
 
@@ -244,15 +238,12 @@ fn rollback_preserves_an_unselected_owner_and_actual_readonly_file_modes() {
     );
 }
 
-fn pass2_fixture() -> PathBuf {
-    static NEXT: AtomicUsize = AtomicUsize::new(0);
-    let root = std::env::temp_dir().join(format!(
-        "e19-adversary-pass2-{}-{}",
-        std::process::id(),
-        NEXT.fetch_add(1, Ordering::Relaxed)
-    ));
-    fs::create_dir(&root).unwrap();
-    println!("retained pass2 fixture: {}", root.display());
+fn pass2_fixture() -> TemporaryDirectory {
+    let root = TemporaryDirectory::create("e19-adversary-pass2").unwrap();
+    println!(
+        "pass2 fixture, removed when its guard drops: {}",
+        root.display()
+    );
     root
 }
 

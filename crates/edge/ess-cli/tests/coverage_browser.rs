@@ -6,6 +6,7 @@ mod coverage_cases;
 #[allow(dead_code)]
 #[path = "support/executable.rs"]
 mod executable;
+use ess_cli::TemporaryDirectory;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -16,9 +17,7 @@ use std::{
 #[test]
 fn actual_browser_and_rust_refuse_every_closed_model_field_boundary() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
-    let evidence =
-        std::env::temp_dir().join(format!("ess-coverage-browser-model-{}", std::process::id()));
-    fs::create_dir_all(&evidence).unwrap();
+    let evidence = TemporaryDirectory::create("ess-coverage-browser-model").unwrap();
     let generated = evidence.join("site");
     let mut command = Command::new(env!("CARGO_BIN_EXE_ess"));
     command
@@ -134,8 +133,7 @@ fn model_cases(original: &serde_json::Value) -> Vec<(String, String)> {
 #[test]
 fn retained_legacy_player_bytes_still_replay_in_actual_firefox() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
-    let evidence = std::env::temp_dir().join(format!("ess-legacy-browser-{}", std::process::id()));
-    fs::create_dir_all(&evidence).unwrap();
+    let evidence = TemporaryDirectory::create("ess-legacy-browser").unwrap();
     let generated = evidence.join("site");
     let mut command = Command::new(env!("CARGO_BIN_EXE_ess"));
     command
@@ -227,9 +225,7 @@ fn retained_legacy_player_bytes_still_replay_in_actual_firefox() {
 #[test]
 fn actual_browser_admits_the_pair_before_creating_replay_state() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
-    let evidence =
-        std::env::temp_dir().join(format!("ess-coverage-browser-{}", std::process::id()));
-    fs::create_dir_all(&evidence).unwrap();
+    let evidence = TemporaryDirectory::create("ess-coverage-browser").unwrap();
     let generated = evidence.join("site");
     let mut command = Command::new(env!("CARGO_BIN_EXE_ess"));
     command
@@ -327,11 +323,7 @@ fn actual_browser_admits_the_pair_before_creating_replay_state() {
 
 #[test]
 fn actual_browser_checks_full_lineage_and_integer_metadata() {
-    let evidence = std::env::temp_dir().join(format!(
-        "ess-coverage-browser-lineage-{}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&evidence).unwrap();
+    let evidence = TemporaryDirectory::create("ess-coverage-browser-lineage").unwrap();
     fs::write(
         evidence.join("index.html"),
         "<!doctype html><title>Coverage admission vectors</title>",
@@ -415,11 +407,7 @@ fn actual_browser_checks_full_lineage_and_integer_metadata() {
 // get is reported, and that the fixture never asks for three starts at once.
 #[test]
 fn a_start_past_the_deadline_is_a_fixture_environment_refusal_not_a_bidi_defect() {
-    let evidence = std::env::temp_dir().join(format!(
-        "ess-browser-startup-deadline-{}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&evidence).unwrap();
+    let evidence = TemporaryDirectory::create("ess-browser-startup-deadline").unwrap();
     // No Firefox on any runner reaches BiDi readiness before an elapsed deadline.
     let Err(refusal) = browser::Browser::launch(&evidence, Duration::ZERO) else {
         panic!("an elapsed deadline admitted a browser")
@@ -495,11 +483,7 @@ fn declared_variants(source: &str, declaration: &str) -> Vec<String> {
 
 #[test]
 fn a_startup_refusal_attaches_the_stderr_firefox_actually_wrote() {
-    let evidence = std::env::temp_dir().join(format!(
-        "ess-browser-startup-evidence-{}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&evidence).unwrap();
+    let evidence = TemporaryDirectory::create("ess-browser-startup-evidence").unwrap();
     let written = "*** You are running in headless mode.\nthis runner was busy\n";
     fs::write(evidence.join("firefox.stderr"), written).unwrap();
     // Every way the fixture gives up on a start reports the same way, and the
@@ -629,9 +613,7 @@ fn no_unaccounted_panic_site_can_end_a_start() {
 
 #[test]
 fn a_browser_that_exits_during_startup_refuses_with_its_own_stderr_too() {
-    let evidence =
-        std::env::temp_dir().join(format!("ess-browser-startup-exit-{}", std::process::id()));
-    fs::create_dir_all(&evidence).unwrap();
+    let evidence = TemporaryDirectory::create("ess-browser-startup-exit").unwrap();
     // A program that is not Firefox exits at once and writes its own reason. The 30s budget is
     // explicit because this case holds how an unexpired deadline is printed, not its size.
     let Err(refusal) = browser::Browser::launch_program(
@@ -676,8 +658,7 @@ fn a_browser_that_exits_during_startup_refuses_with_its_own_stderr_too() {
 /// fixture's. This installs forty and runs each once while three threads spawn.
 #[test]
 fn a_freshly_installed_stand_in_script_runs_while_other_cases_spawn() {
-    let root = std::env::temp_dir().join(format!("ess-browser-installed-{}", std::process::id()));
-    fs::create_dir_all(&root).unwrap();
+    let root = TemporaryDirectory::create("ess-browser-installed").unwrap();
     let unlaunched = executable::unlaunched_rounds(40, |round| {
         let script = root.join(format!("stand-in-{round}.sh"));
         executable::install_bytes(&script, b"#!/bin/sh\nexit 0\n").unwrap();
@@ -705,9 +686,7 @@ fn stand_in_firefox(dir: &Path, window: Duration) -> PathBuf {
 
 #[test]
 fn fixtures_never_start_more_than_one_firefox_at_a_time() {
-    let root =
-        std::env::temp_dir().join(format!("ess-browser-startup-gate-{}", std::process::id()));
-    fs::create_dir_all(&root).unwrap();
+    let root = TemporaryDirectory::create("ess-browser-startup-gate").unwrap();
     // An elapsed deadline would hold the lock across the spawn and nothing else,
     // and a fixture that released it there would pass. These starts each occupy
     // the fixture for a real window, so overlapping them is observable twice
@@ -755,9 +734,7 @@ fn fixtures_never_start_more_than_one_firefox_at_a_time() {
 
 #[test]
 fn a_firefox_this_runner_does_not_have_refuses_rather_than_reading_as_a_defect() {
-    let evidence =
-        std::env::temp_dir().join(format!("ess-browser-startup-absent-{}", std::process::id()));
-    fs::create_dir_all(&evidence).unwrap();
+    let evidence = TemporaryDirectory::create("ess-browser-startup-absent").unwrap();
     let absent = evidence.join("no-such-firefox");
     let Err(refusal) =
         browser::Browser::launch_program(&evidence, absent.as_os_str(), browser::STARTUP_DEADLINE)
@@ -784,9 +761,7 @@ fn a_firefox_this_runner_does_not_have_refuses_rather_than_reading_as_a_defect()
 #[test]
 fn browser_displays_logical_namespace_requirement_without_claiming_backend_reset() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
-    let evidence =
-        std::env::temp_dir().join(format!("ess-initial-state-browser-{}", std::process::id()));
-    fs::create_dir_all(&evidence).unwrap();
+    let evidence = TemporaryDirectory::create("ess-initial-state-browser").unwrap();
     let generated = evidence.join("site");
     let output = Command::new(env!("CARGO_BIN_EXE_ess"))
         .args(["verify", "conform", "web", "--path"])

@@ -144,7 +144,11 @@ pub(super) fn module(
     external_command(&mut out, layout, &external_commands);
     context_trait(&mut out, &uses);
     fallible_context(&mut out, &uses);
-    out.push_str(GENERATED);
+    out.push_str(if uses.asks_context() {
+        GENERATED
+    } else {
+        GENERATED_WITHOUT_CONTEXT
+    });
     out.push_str(&impls);
     helpers(&mut out, &uses);
     Some(Artifact::new(
@@ -173,7 +177,8 @@ const HEADER: &str = "
 use crate::obligation::UnmetObligation;
 ";
 
-/// The bundle every generated behaviour is implemented on.
+/// The bundle every generated behaviour is implemented on, where the module emits `Context` and
+/// `TryContext`.
 const GENERATED: &str = "
 /// Every generated behaviour of this workspace, over the ports `P` supplies.
 ///
@@ -182,6 +187,26 @@ const GENERATED: &str = "
 /// owes; `Generated<P>` forwards those to it.
 pub struct Generated<P> {
     /// The storage and context ports, and every behaviour or query still owed.
+    pub ports: P,
+}
+
+impl<P> Generated<P> {
+    /// The generated behaviours, over `ports`.
+    pub fn new(ports: P) -> Self {
+        Self { ports }
+    }
+}
+";
+
+/// The same bundle where no generated behaviour asks the context anything, so the module emits
+/// neither `Context` nor `TryContext` and the doc names neither.
+const GENERATED_WITHOUT_CONTEXT: &str = "
+/// Every generated behaviour of this workspace, over the ports `P` supplies.
+///
+/// `P` implements the storage trait of each entity a generated behaviour reads or writes, and
+/// every `…Behavior` and `…Query` trait the plan still owes; `Generated<P>` forwards those to it.
+pub struct Generated<P> {
+    /// The storage ports, and every behaviour or query still owed.
     pub ports: P,
 }
 
@@ -213,6 +238,14 @@ pub(super) struct Uses {
     pub(super) clock: bool,
     /// Helper functions used, by name.
     helpers: BTreeSet<&'static str>,
+}
+
+impl Uses {
+    /// `true` where some generated behaviour asks the context anything: the module then emits
+    /// `Context` and `TryContext`, and the `Generated<P>` doc names them.
+    fn asks_context(&self) -> bool {
+        !self.callers.is_empty() || !self.generates.is_empty() || self.external || self.clock
+    }
 }
 
 /// Ask the very same renderers for the ports a selected set of methods reads.
@@ -385,7 +418,7 @@ fn storage_trait(
 
 /// The context port: only the methods some generated behaviour asks.
 fn context_trait(out: &mut String, uses: &Uses) {
-    if uses.callers.is_empty() && uses.generates.is_empty() && !uses.external && !uses.clock {
+    if !uses.asks_context() {
         return;
     }
     out.push_str(
@@ -1113,7 +1146,7 @@ struct Writer<'a> {
 
 /// A fallible companion preserves the existing context API and its implementations.
 fn fallible_context(out: &mut String, uses: &Uses) {
-    if uses.callers.is_empty() && uses.generates.is_empty() && !uses.external && !uses.clock {
+    if !uses.asks_context() {
         return;
     }
     out.push_str("\n/// Context answers that may be unavailable, without fabricated values.\n/// Existing `Context` implementations receive the blanket adapter.\npub trait TryContext {\n");

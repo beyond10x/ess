@@ -625,6 +625,7 @@ fn render(root: &Path) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scratch::Scratch;
     use clap::Parser as _;
 
     fn expected(version: &str) -> String {
@@ -791,29 +792,22 @@ mod tests {
         }
     }
 
-    fn adversary_fixture(label: &str) -> std::path::PathBuf {
-        let path = std::env::temp_dir().join(format!(
-            "ess-support-adversary-{label}-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        fs::create_dir(&path).unwrap();
+    fn adversary_fixture(label: &str) -> Scratch {
+        let scratch = Scratch::new(&format!("ess-support-adversary-{label}"));
+        let path = scratch.path();
         fs::write(
             path.join("system.yaml"),
             "format: ess/1\nsystem: publication\nversion: v1\ndomains: []\n",
         )
         .unwrap();
-        println!("retained fixture: {}", path.display());
-        path
+        scratch
     }
 
     #[test]
     fn adversary_adjacent_readme_is_selected_without_authored_flags() {
         let root = crate::workspace_root().unwrap();
-        let fixture = adversary_fixture("readme");
+        let scratch = adversary_fixture("readme");
+        let fixture = scratch.path().to_path_buf();
         fs::write(
             fixture.join("README.md"),
             "# Default authored front page\n\nADVERSARY_README_DEFAULT\n",
@@ -841,7 +835,8 @@ mod tests {
     #[test]
     fn adversary_actual_explicit_site_and_combined_maps_keep_distinct_roots() {
         let root = crate::workspace_root().unwrap();
-        let fixture = adversary_fixture("roots");
+        let scratch = adversary_fixture("roots");
+        let fixture = scratch.path().to_path_buf();
         let explicit = crate::projection_artifacts(&root, &fixture, Some("site")).unwrap();
         let combined = crate::projection_artifacts(&root, &fixture, None).unwrap();
         fs::write(
@@ -869,7 +864,8 @@ mod tests {
         let expected = render(&root).unwrap();
         let page = fs::read_to_string(root.join(STATUS)).unwrap();
         assert_eq!(compare(&page, &expected), Ok(()));
-        let fixture = adversary_fixture("rows");
+        let scratch = adversary_fixture("rows");
+        let fixture = scratch.path().to_path_buf();
         fs::write(fixture.join("actual-expected.md"), &expected).unwrap();
         let lines: Vec<_> = expected.lines().map(str::to_owned).collect();
         let rows: Vec<_> = lines
@@ -952,7 +948,8 @@ mod tests {
             "      --target <TARGET>\n          metadata removed",
         );
         assert!(choices(&missing, "--target").is_err(), "{missing}");
-        let fixture = adversary_fixture("metadata");
+        let scratch = adversary_fixture("metadata");
+        let fixture = scratch.path().to_path_buf();
         fs::write(fixture.join("actual-help.txt"), help).unwrap();
         fs::write(fixture.join("missing-metadata-help.txt"), missing).unwrap();
     }
@@ -960,7 +957,8 @@ mod tests {
     #[test]
     fn adversary_actual_cli_refusal_is_not_a_successful_support_observation() {
         let root = crate::workspace_root().unwrap();
-        let fixture = adversary_fixture("refusal");
+        let scratch = adversary_fixture("refusal");
+        let fixture = scratch.path().to_path_buf();
         let failure = crate::projection_artifacts(&root, &fixture, Some("unregistered-kind"))
             .expect_err("a refused CLI cannot supply projection facts");
         let diagnostic = format!("{failure:#}");
@@ -978,7 +976,8 @@ mod tests {
     #[test]
     fn adversary_real_docs_ir_marker_is_nested_json_not_visible_marker_text() {
         let root = crate::workspace_root().unwrap();
-        let fixture = adversary_fixture("docs-ir");
+        let scratch = adversary_fixture("docs-ir");
+        let fixture = scratch.path().to_path_buf();
         let artifacts = crate::projection_artifacts(&root, &fixture, Some("docs-ir")).unwrap();
         assert_eq!(artifacts.len(), 1);
         let contents = artifacts.get("docs-ir/document.json").unwrap();
@@ -995,7 +994,8 @@ mod tests {
     #[test]
     fn adversary_front_page_override_replaces_adjacent_readme_for_a_specification_file() {
         let root = crate::workspace_root().unwrap();
-        let fixture = adversary_fixture("front-page-override");
+        let scratch = adversary_fixture("front-page-override");
+        let fixture = scratch.path().to_path_buf();
         fs::write(
             fixture.join("README.md"),
             "# Read first\n\nADJACENT_README_DEFAULT\n",

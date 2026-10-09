@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:types-only-realizations
 kind: story
-status: active
+status: archived
 title: Consistent types-only realizations for Go Rust and TypeScript
 relations:
 - informed_by: specification:existing-struct-generation
@@ -42,10 +42,11 @@ scope:
   path: website/docs/guides/generate-artifacts.md
 - confidence: cited
   path: website/docs/reference/cli.md
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-05T21:05:42Z", actor: "agent:specification-planner", revision: 4, imported: true}
 - {from: "proposed", to: "active", at: "2026-09-05T21:05:43Z", actor: "agent:specification-planner", revision: 5, imported: true}
+- {from: "active", to: "archived", at: "2026-10-08T09:55:14Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":3}}}
 ---
 ## Evidence
 
