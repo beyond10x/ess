@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-09T01:14:09Z",
+  "actor": "human:timo",
+  "artifact": "story:interpreted-cli-target-decides-now-at-the-step-instant",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "https://github.com/beyond10x/ess/actions/runs/37864546887 (CI Gate green on 520926522c, merged as b3c28b5aa7 in https://github.com/beyond10x/ess/pull/519)"
+  }
+}
