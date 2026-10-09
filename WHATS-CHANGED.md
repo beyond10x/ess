@@ -6,7 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
-| [0.57.0](#a-cli-binding-may-omit-globals-ess-verify-diff-names-changes-that-break-callers-and-runners-check-constrained-responses) | A CLI binding may omit globals, ess verify diff names changes that break callers, and runners check constrained responses | capability | notable |
+| [0.57.0](#cli-bindings-may-omit-globals-verify-diff-flags-caller-breaking-changes-runners-check-constrained-responses) | CLI bindings may omit globals, verify diff flags caller-breaking changes, runners check constrained responses | capability | notable |
 | [0.56.0](#a-held-state-branch-must-be-declared-before-an-overlapping-accepting-or-external-branch) | A held-state branch must be declared before an overlapping accepting or external branch | breaking | notable |
 | [0.56.0](#committed-output-records-carry-no-machine-path-and-generated-rust-types-stop-forcing-arbitrary-precision) | Committed output records carry no machine path, and generated Rust types stop forcing arbitrary precision | capability | notable |
 | [0.55.0](#cli-results-carry-json-and-an-optional-generated-value-reads-a-port) | CLI results carry Json, and an optional generated value reads a port | capability | notable |
@@ -64,7 +64,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 ## 0.57.0 — 2026-10-09
 
-### A CLI binding may omit globals, ess verify diff names changes that break callers, and runners check constrained responses
+### CLI bindings may omit globals, verify diff flags caller-breaking changes, runners check constrained responses
 
 capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.57.0)
 

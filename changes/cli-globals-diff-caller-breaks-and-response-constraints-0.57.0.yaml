@@ -2,7 +2,7 @@ schema: b10x-change/v1
 id: ess/cli-globals-diff-caller-breaks-and-response-constraints-0.57.0
 repository: ess
 publishedAt: 2026-10-09T00:00:00Z
-title: A CLI binding may omit globals, ess verify diff names changes that break callers, and runners check constrained responses
+title: CLI bindings may omit globals, verify diff flags caller-breaking changes, runners check constrained responses
 summary: >-
   `ess-cli/2` lets a CLI binding omit its config and output globals. `ess verify diff` classifies
   added and removed domains and rates changes that refuse an existing caller as breaking. Runners
@@ -13,5 +13,5 @@ impact: notable
 source:
   url: https://github.com/beyond10x/ess/releases/tag/0.57.0
   version: 0.57.0
-journeys: [specify, verify]
+journeys: [specify]
 affectedSurfaces: [ess/docs]

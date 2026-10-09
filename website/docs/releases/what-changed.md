@@ -11,7 +11,7 @@ This page is generated from the change records kept in the repository. A release
 
 ## 0.57.0 — 2026-10-09
 
-### A CLI binding may omit globals, ess verify diff names changes that break callers, and runners check constrained responses
+### CLI bindings may omit globals, verify diff flags caller-breaking changes, runners check constrained responses
 
 capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.57.0)
 
