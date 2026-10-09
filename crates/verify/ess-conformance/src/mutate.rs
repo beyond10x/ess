@@ -66,8 +66,13 @@ pub const REPORT_FORMAT: &str = "ess-mutation-report/3";
 /// The report [`collect`] writes for an emission scoped to one component: `/3` with the component
 /// named and the mutants it leaves out listed (beyond10x/ess#236); also the report under a
 /// known-failure declaration (beyond10x/ess#294), wherever a selected site is unavailable
-/// (beyond10x/ess#295), and wherever a mutant carries `identical_answer` (<https://github.com/beyond10x/ess/issues/517>).
+/// (beyond10x/ess#295).
 pub const REPORT_FORMAT_4: &str = "ess-mutation-report/4";
+/// The report wherever a mutant carries `identical_answer`
+/// (<https://github.com/beyond10x/ess/issues/517>): [`REPORT_FORMAT_4`] with that member, which
+/// the `/4` that 0.53.0 to 0.56.0 wrote does not have. A report none of whose mutants carries it is
+/// `/4` or `/3` exactly as before.
+pub const REPORT_FORMAT_5: &str = "ess-mutation-report/5";
 
 // ---- the classes --------------------------------------------------------------------------------
 
@@ -2725,7 +2730,7 @@ pub struct MutantEntry {
     /// The answer both branches of a `precedence-swap` give, where it is the same one: the same
     /// error, the same or no payload, and neither changes state, sets or emits anything
     /// (<https://github.com/beyond10x/ess/issues/517>). Apart from `unsatisfiable_guard`, which says their guards never
-    /// overlap. Only in `ess-mutation-report/4`, and absent where that is not so.
+    /// overlap. Only in `ess-mutation-report/5`, and absent where that is not so.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub identical_answer: Option<String>,
     /// The scenarios that failed, sorted; only on `killed`.
@@ -2809,7 +2814,8 @@ pub struct OutOfScope {
 }
 
 /// The `ess-mutation-report/3` document, or `/4` where it is scored for one component, under a
-/// known-failure declaration, or with unavailable sites: keys sorted, no timestamp, so its bytes are
+/// known-failure declaration, or with unavailable sites, or `/5` where a mutant carries
+/// `identical_answer`: keys sorted, no timestamp, so its bytes are
 /// a function of the tree and the target.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct MutationReport {
@@ -2821,7 +2827,7 @@ pub struct MutationReport {
     /// How many mutants came to each verdict. Out-of-scope mutants are not counted.
     pub counts: Counts,
     /// [`REPORT_FORMAT`], or [`REPORT_FORMAT_4`] where a component, a declaration or an unavailable
-    /// site is named, or a mutant carries `identical_answer`.
+    /// site is named, or [`REPORT_FORMAT_5`] where a mutant carries `identical_answer`.
     pub format: String,
     /// The implementation that answered.
     pub implementation: String,
@@ -3998,11 +4004,13 @@ pub fn audit_with<T: ConformanceTarget>(
     })
 }
 
-/// [`REPORT_FORMAT_4`] where `fourth` (a component, a declaration or an unavailable site) or a
-/// mutant carrying `identical_answer`, which `/3` does not have, asks for it; else
-/// [`REPORT_FORMAT`].
+/// [`REPORT_FORMAT_5`] where a mutant carries `identical_answer`, which `/4` does not have;
+/// else [`REPORT_FORMAT_4`] where `fourth` (a component, a declaration or an unavailable site)
+/// asks for it; else [`REPORT_FORMAT`].
 fn report_format(entries: &[MutantEntry], fourth: bool) -> String {
-    if fourth || entries.iter().any(|entry| entry.identical_answer.is_some()) {
+    if entries.iter().any(|entry| entry.identical_answer.is_some()) {
+        REPORT_FORMAT_5
+    } else if fourth {
         REPORT_FORMAT_4
     } else {
         REPORT_FORMAT
@@ -4018,9 +4026,13 @@ pub const MANIFEST_FORMAT: &str = "ess-mutation-manifest/3";
 /// The manifest [`emit_for`] writes where it names a component, or holds a mutant of a class only
 /// this format's readers know ([`MutantClass::manifest_format`]): `/3` with the component, and each
 /// mutant it leaves out marked `out_of_scope` (beyond10x/ess#212, beyond10x/ess#236), and its
-/// `unavailable_sites` where it has any (beyond10x/ess#295). A `precedence-swap` mutant in it may
-/// carry `identical_answer` (<https://github.com/beyond10x/ess/issues/517>).
+/// `unavailable_sites` where it has any (beyond10x/ess#295).
 pub const MANIFEST_FORMAT_4: &str = "ess-mutation-manifest/4";
+/// The manifest [`emit_for`] writes where a `precedence-swap` mutant carries `identical_answer`
+/// (<https://github.com/beyond10x/ess/issues/517>): [`MANIFEST_FORMAT_4`] with that member, which
+/// the `/4` that 0.53.0 to 0.56.0 wrote does not have. A manifest none of whose mutants carries it
+/// is `/4` or `/3` exactly as before.
+pub const MANIFEST_FORMAT_5: &str = "ess-mutation-manifest/5";
 /// The manifest 0.41.0 wrote, which [`collect`] still reads: it names each suite's refusals and no
 /// mutant's `unsatisfiable_guard`, so no mutant it names is scored `equivalent`.
 pub const MANIFEST_FORMAT_2: &str = "ess-mutation-manifest/2";
@@ -4086,7 +4098,7 @@ pub struct EmittedMutant {
     pub id: String,
     /// The answer both branches of a `precedence-swap` give, where it is the same one
     /// ([`MutantEntry::identical_answer`]); never on a stillborn or out-of-scope mutant, and only
-    /// in `ess-mutation-manifest/4`.
+    /// in `ess-mutation-manifest/5`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub identical_answer: Option<String>,
     /// `true` where the emission is scoped to a component and the mutant's site belongs to another
@@ -4243,7 +4255,7 @@ pub struct KnownFailing<'a> {
     pub build: &'a str,
 }
 
-/// The `ess-mutation-manifest/3` or `/4` document: what [`emit`] wrote, and what [`collect`]
+/// The `ess-mutation-manifest/3`, `/4` or `/5` document: what [`emit`] wrote, and what [`collect`]
 /// scores.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -4254,7 +4266,7 @@ pub struct Manifest {
     /// [`MANIFEST_FORMAT_4`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub component: Option<String>,
-    /// [`MANIFEST_FORMAT_4`] or [`MANIFEST_FORMAT`], or [`MANIFEST_FORMAT_2`] or
+    /// [`MANIFEST_FORMAT_5`], [`MANIFEST_FORMAT_4`] or [`MANIFEST_FORMAT`], or [`MANIFEST_FORMAT_2`] or
     /// [`MANIFEST_FORMAT_1`] for a manifest an earlier release wrote.
     pub format: String,
     /// The known-failure declaration the emission bound, copied byte for byte into the emission;
@@ -4363,9 +4375,10 @@ impl Manifest {
         Ok(())
     }
 
-    /// Each `identical_answer` (<https://github.com/beyond10x/ess/issues/517>): refused before `/4` by name, and on a mutant
-    /// that is not a `precedence-swap`, which has no two answers to compare.
-    fn identical_answers(&self, version4: bool) -> Result<(), String> {
+    /// Each `identical_answer` (<https://github.com/beyond10x/ess/issues/517>): refused before
+    /// `/5` by name, and on a mutant that is not a `precedence-swap`, which has no two answers to
+    /// compare.
+    fn identical_answers(&self, version5: bool) -> Result<(), String> {
         let Some(mutant) = self
             .mutants
             .iter()
@@ -4373,10 +4386,10 @@ impl Manifest {
         else {
             return Ok(());
         };
-        if !version4 {
+        if !version5 {
             return Err(format!(
                 "{MANIFEST_FILE}: `{}` carries `identical_answer`, which `{}` does not have; it is \
-                 `{MANIFEST_FORMAT_4}`",
+                 `{MANIFEST_FORMAT_5}`",
                 mutant.id, self.format
             ));
         }
@@ -4438,7 +4451,7 @@ impl Manifest {
     /// Reads a manifest, refusing another format, an incoherent mutant entry, a suite's refusals
     /// that `/2` and later omit, `/1` carries or disagree with its count, an `unsatisfiable_guard`
     /// before `/3`, a `component`, an `out_of_scope` mutant, a class only `/4` knows or
-    /// `unavailable_sites` before `/4`, an `identical_answer` before `/4` or on a mutant that is
+    /// `unavailable_sites` before `/4`, an `identical_answer` before `/5` or on a mutant that is
     /// not a `precedence-swap`, an incoherent unavailable site, an `out_of_scope` mutant
     /// without a `component`, or a directory that leaves the emission.
     pub fn from_json(text: &str) -> Result<Self, String> {
@@ -4449,32 +4462,32 @@ impl Manifest {
             .and_then(|value| value.get("format")?.as_str().map(str::to_owned));
         // Whether suites name their refusals (`/2` on), whether a mutant may name a dead guard
         // (`/3` on), and whether the emission may be scoped to a component or hold a class only
-        // `/4` knows.
+        // `/4` knows, and whether a mutant may name an identical answer (`/5`).
         let version_of = |format: &str| match format {
+            MANIFEST_FORMAT_5 => Some(5),
             MANIFEST_FORMAT_4 => Some(4),
             MANIFEST_FORMAT => Some(3),
             MANIFEST_FORMAT_2 => Some(2),
             MANIFEST_FORMAT_1 => Some(1),
             _ => None,
         };
+        let unknown = |other: &str| {
+            format!(
+                "{MANIFEST_FILE} is `{other}`, not `{MANIFEST_FORMAT_5}`, `{MANIFEST_FORMAT_4}`, \
+                 `{MANIFEST_FORMAT}`, `{MANIFEST_FORMAT_2}` or `{MANIFEST_FORMAT_1}`"
+            )
+        };
         if let Some(other) = declared.as_deref().filter(|it| version_of(it).is_none()) {
-            return Err(format!(
-                "{MANIFEST_FILE} is `{other}`, not `{MANIFEST_FORMAT_4}`, `{MANIFEST_FORMAT}`, \
-                 `{MANIFEST_FORMAT_2}` or `{MANIFEST_FORMAT_1}`"
-            ));
+            return Err(unknown(other));
         }
         let manifest: Self =
             serde_json::from_str(text).map_err(|error| format!("{MANIFEST_FILE}: {error}"))?;
         let Some(version) = version_of(&manifest.format) else {
-            return Err(format!(
-                "{MANIFEST_FILE} is `{}`, not `{MANIFEST_FORMAT_4}`, `{MANIFEST_FORMAT}`, \
-                 `{MANIFEST_FORMAT_2}` or `{MANIFEST_FORMAT_1}`",
-                manifest.format
-            ));
+            return Err(unknown(&manifest.format));
         };
         let (keyed, guarded, scoped) = (version >= 2, version >= 3, version >= 4);
         // Before the class check, so an earlier manifest carrying it is refused by this name.
-        manifest.identical_answers(scoped)?;
+        manifest.identical_answers(version >= 5)?;
         if !scoped {
             if manifest.component.is_some() {
                 return Err(format!(
@@ -4782,7 +4795,11 @@ pub fn emit_with(
         files.insert(format!("{}/{MUTANT_FILE}", mutant.id), canonical(&entry));
         entries.push(entry);
     }
-    let format = if version4 {
+    // A `precedence-swap` mutant, the only one with an identical answer, already makes the
+    // emission version 4, so every suite of a `/5` one records its digest too.
+    let format = if entries.iter().any(|entry| entry.identical_answer.is_some()) {
+        MANIFEST_FORMAT_5
+    } else if version4 {
         MANIFEST_FORMAT_4
     } else {
         MANIFEST_FORMAT
@@ -5237,7 +5254,7 @@ pub fn collect_with(
     let manifest = Manifest::from_json(&text).map_err(AuditRefusal::Uncollectable)?;
     emitted_for(&manifest, component)?;
     let declaration = bound_declaration(&read, &manifest, supplied)?;
-    let version4 = manifest.format == MANIFEST_FORMAT_4;
+    let version4 = [MANIFEST_FORMAT_4, MANIFEST_FORMAT_5].contains(&manifest.format.as_str());
     let baseline = score(&read, &manifest.baseline, version4)
         .map_err(|why| AuditRefusal::Uncollectable(format!("the baseline: {why}")))?;
     let build = manifest

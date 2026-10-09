@@ -97,9 +97,10 @@
   anything. The entry names the shared answer as `identical_answer`, apart from
   `unsatisfiable_guard`, which still means only that the two guards never overlap. A failed
   scenario still kills such a mutant. Two refusals that differ in error, payload or effect keep
-  their scoring. A report or manifest carrying `identical_answer` is `ess-mutation-report/4` or
-  `ess-mutation-manifest/4`; an earlier manifest carrying it, or one carrying it on a mutant that
-  is not a `precedence-swap`, is refused
+  their scoring. A report or manifest carrying `identical_answer` is the new
+  `ess-mutation-report/5` or `ess-mutation-manifest/5`, and one carrying none keeps its earlier
+  version and bytes; an earlier manifest carrying it, `/4` included, or one carrying it on a mutant
+  that is not a `precedence-swap`, is refused
   (https://github.com/beyond10x/ess/issues/517).
 - Synthesis writes the `wrong_state` scenario of a command whose `when_subject:` sibling
   quantifies over an input list and compares its elements with the row, such as

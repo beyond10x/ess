@@ -578,6 +578,13 @@ component, under a known-failure declaration, or with an unavailable site; every
 `/3`. `--collect` still reads `/3`, `/2` and `/1`, and refuses any of them that carries a `/4`
 class, a `component`, an `out_of_scope` mutant or `unavailable_sites`, naming `/4`.
 
+`ess-mutation-manifest/5` and `ess-mutation-report/5` were introduced in [0.57.0][r57]. Each is
+`/4` with `identical_answer` on a `precedence-swap` mutant whose two branches answer alike
+(beyond10x/ess#517), which the `/4` that 0.53.0 to 0.56.0 wrote does not have. An emission or a
+report is `/5` only where some mutant carries it; every other one keeps `/4` or `/3` and its
+earlier bytes. `--collect` still reads `/4` and earlier, and refuses any of them that carries
+`identical_answer`, naming `/5`.
+
 ## Every other family
 
 Each family below is read by a build that admits only the versions listed, and refuses a document
