@@ -9,7 +9,7 @@ refs:
   reference: beyond10x/ess#493
 relations:
 - serves: vision:O2
-revision: 2
+revision: 3
 ---
 ## Request
 
@@ -304,3 +304,18 @@ routes:
 - **Whatever the answer:** the requester's `http:` key in `ess/N` is refused (question 7). The
   wire-name defect from question 2 is fixed separately, about 1 unit: refuse `/`, `.` and `..` in a
   wire name that a path segment reads.
+
+## Second consumer (2026-10-09)
+
+A second adopter retrofits two specifications of network-reached services (a user-provisioning
+API among them) and renders a documentation page of the contract from the compiled IR. The page
+already reads `naming.wire` and `response:`; the HTTP method and path of each command and the GET
+path of each view exist only as prose comments, which the page has to copy by hand. The need is
+the same as the requester's, plus one reader: a documentation renderer must be able to read the
+declared routes from compiled output, without parsing the specification source.
+
+## Acceptance (added)
+
+- The compiled `ess-http-ir/1` carries, per bound command and view, the method and the path
+  template with its parameters, in a form a documentation renderer reads without the
+  specification source; a test renders a route table from it.
