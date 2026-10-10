@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.58.0](#a-struct-or-a-command-response-may-ignore-undeclared-fields-and-generation-verify-diff-and-runners-follow) | A struct or a command response may ignore undeclared fields, and generation, verify diff and runners follow | capability | notable |
 | [0.57.0](#cli-bindings-may-omit-globals-verify-diff-flags-caller-breaking-changes-runners-check-constrained-responses) | CLI bindings may omit globals, verify diff flags caller-breaking changes, runners check constrained responses | capability | notable |
 | [0.56.0](#a-held-state-branch-must-be-declared-before-an-overlapping-accepting-or-external-branch) | A held-state branch must be declared before an overlapping accepting or external branch | breaking | notable |
 | [0.56.0](#committed-output-records-carry-no-machine-path-and-generated-rust-types-stop-forcing-arbitrary-precision) | Committed output records carry no machine path, and generated Rust types stop forcing arbitrary precision | capability | notable |
@@ -61,6 +62,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.58.0 — 2026-10-10
+
+### A struct or a command response may ignore undeclared fields, and generation, verify diff and runners follow
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.58.0)
+
+`ess/24` lets a `kind: struct` type or a command's response declare `undeclared_fields: ignored`, admitting fields it does not declare. `ess generate` writes open objects there, `ess verify diff` classifies opening and closing, and runners admit an undeclared key at exactly those objects. Authored scenarios are judged by the command's precedence plan.
 
 ## 0.57.0 — 2026-10-09
 

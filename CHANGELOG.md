@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.58.0] — 2026-10-10
+
 ### Added
 
 - `ess/24`: a `kind: struct` type, and a command with a non-empty `response:`, may declare

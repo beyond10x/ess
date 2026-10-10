@@ -240,7 +240,7 @@ pub const FORMAT_HISTORY: &[FormatHistoryEntry] = &[
     },
     FormatHistoryEntry {
         major: 24,
-        release: None,
+        release: Some("0.58.0"),
         added: &[
             "`undeclared_fields: ignored | refused` (default `refused`) on a `kind: struct` type and on a command with a non-empty `response:`, where it governs the response only: `ignored` admits fields the declaration does not declare, while every declared field stays required and typed; the key is refused by name on a command without `response:` (`missing_declaration`), on an event, an error and every other declaration, and below `ess/24` it is refused naming `ess/24` (beyond10x/ess#500).",
         ],

@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.58.0 — 2026-10-10
+
+### A struct or a command response may ignore undeclared fields, and generation, verify diff and runners follow
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.58.0)
+
+`ess/24` lets a `kind: struct` type or a command's response declare `undeclared_fields: ignored`, admitting fields it does not declare. `ess generate` writes open objects there, `ess verify diff` classifies opening and closing, and runners admit an undeclared key at exactly those objects. Authored scenarios are judged by the command's precedence plan.
+
 ## 0.57.0 — 2026-10-09
 
 ### CLI bindings may omit globals, verify diff flags caller-breaking changes, runners check constrained responses
