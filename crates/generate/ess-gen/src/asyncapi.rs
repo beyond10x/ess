@@ -112,7 +112,7 @@
 //! | it published | it publishes now |
 //! |---|---|
 //! | `Decimal`, `Duration` and `Bytes` as a bare `string` plus `x-ess-type` | `format: decimal` with the digit pattern, `format: duration`, and `contentEncoding: base64` with the base64 pattern |
-//! | a struct with no `additionalProperties` — "an evolution policy the model has not stated" | `additionalProperties: false`, because the same event cannot be closed in one published file and open in another |
+//! | a struct with no `additionalProperties` — "an evolution policy the model has not stated" | `additionalProperties: false`, because the same event cannot be closed in one published file and open in another; `true` only on a struct the author declares `undeclared_fields: ignored` (`ess/24`), in every file alike |
 //! | `anyOf` over a union's bare variants, so the tag appeared nowhere | `oneOf` of adjacently tagged branches, each pinning its tag with a `const` |
 //! | `x-ess-optional` on an `Optional` outside a field | `anyOf: [T, {type: null}]`, because a list element has no key to leave out |
 //!

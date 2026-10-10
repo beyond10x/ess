@@ -39,7 +39,7 @@
 //! | `List<T>` | `{"type": "array", "items": T}` | the same |
 //! | `Map<K, V>` | `{"type": "object", "propertyNames": K-as-text, "additionalProperties": V}` | the same |
 //! | `Newtype` | a definition of its own, `$ref`d, `x-ess-kind: newtype` | the representation's assertions |
-//! | `Struct` | `{"type": "object", "properties": …, "required": …, "additionalProperties": false}` | the same |
+//! | `Struct` | `{"type": "object", "properties": …, "required": …, "additionalProperties": false}`, or `true` when it declares `undeclared_fields: ignored` (`ess/24`) | the same |
 //! | `Enum` | `{"type": "string", "enum": […]}` | the same |
 //! | `Union` | `{"oneOf": [{…"kind": {"const": "person"}, "value": …}]}` | the tag, so the branch is decidable |
 //!
@@ -107,12 +107,19 @@
 //!
 //! # What every projection keeps
 //!
-//! * `additionalProperties: false` on every object, in both directions. A field the specification does
-//!   not declare is one the receiver has no meaning for, and accepting it silently is how two systems
-//!   drift into disagreeing about what they exchanged. The cost is that a publisher cannot add a field
-//!   without a specification change — which is the intended cost, and it is why the `AsyncAPI`
-//!   projection's event payloads are now closed too: the same event cannot be closed in one published
-//!   file and open in another.
+//! * `additionalProperties: false` on every object, in both directions, unless the specification
+//!   says otherwise. A field the specification does not declare is one the receiver has no meaning
+//!   for, and accepting it silently is how two systems drift into disagreeing about what they
+//!   exchanged. The cost is that a publisher cannot add a field without a specification change —
+//!   which is the intended cost, and it is why the `AsyncAPI` projection's event payloads are now
+//!   closed too: the same event cannot be closed in one published file and open in another.
+//!
+//!   An object is open in exactly two places, both written by the author as
+//!   `undeclared_fields: ignored` (`ess/24`, beyond10x/ess#500): a command's response object, and
+//!   every object of a `kind: struct` type that declares it, wherever that struct is reached. There
+//!   the keyword is written `additionalProperties: true` rather than left out — a keyword is an
+//!   assertion, and an absent one reads as an oversight. Declared fields stay required and typed;
+//!   a command's input, an event, an error, a view row and an entity are never opened.
 //! * A newtype never collapses into its representation. `billing.invoice.Email` and
 //!   `billing.email.EmailAddress` are both a `String` underneath and get a definition each, carrying
 //!   `title`, `x-ess-name` and `x-ess-kind: newtype`, referenced and never inlined. What that cannot
@@ -150,7 +157,7 @@ use ess_compiler::ir::{
 use ess_compiler::EssIr;
 use ess_domain::entity::{Invariant, RelationKind};
 use ess_domain::name::QualifiedName;
-use ess_domain::types::{Presence, Primitive};
+use ess_domain::types::{Presence, Primitive, UndeclaredFields};
 
 use crate::provenance::Provenance;
 
@@ -425,12 +432,28 @@ pub(crate) enum Additional {
     Refused,
     /// Every undeclared property matches this. How a `Map` says what its values are.
     Matching(Box<Node>),
+    /// Anything: the record declares `undeclared_fields: ignored` (`ess/24`, beyond10x/ess#500).
+    /// Written `true` rather than left out, so the openness is an assertion a reader sees.
+    Admitted,
+}
+
+impl Additional {
+    /// What an object permits beyond its declared fields, for a record whose undeclared fields are
+    /// `undeclared`.
+    pub(crate) fn of(undeclared: UndeclaredFields) -> Self {
+        if undeclared.is_ignored() {
+            Self::Admitted
+        } else {
+            Self::Refused
+        }
+    }
 }
 
 impl serde::Serialize for Additional {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self {
             Self::Refused => serializer.serialize_bool(false),
+            Self::Admitted => serializer.serialize_bool(true),
             Self::Matching(schema) => schema.serialize(serializer),
         }
     }
@@ -782,9 +805,12 @@ pub(crate) fn body(ir: &EssIr, declared: &ResolvedType) -> Node {
             newtype_integer_bounds(&mut node, of, invariants);
             node
         }
+        // Open where the struct declares `undeclared_fields: ignored` (`ess/24`), and so at every
+        // place it is reached, since each reaches this one definition.
         ResolvedBody::Struct { fields, invariants } => {
             let mut node = Node {
                 invariants: statements(invariants),
+                additional: Some(Additional::of(ir.undeclared_fields(&declared.name))),
                 ..object(fields)
             };
             integer_bounds(&mut node, fields, invariants);
@@ -1046,6 +1072,9 @@ pub(crate) struct Message<'a> {
     pub(crate) relations: BTreeMap<&'a str, Relation>,
     /// The authored examples of a command's input, by input name; `None` for every other message.
     pub(crate) examples: Option<&'a BTreeMap<String, ess_primitives::node::Node>>,
+    /// What a reader does with a field it does not declare: `ignored` only for a command response
+    /// whose command declares it (`ess/24`), `refused` for every other message.
+    pub(crate) undeclared_fields: UndeclaredFields,
 }
 
 impl<'a> Message<'a> {
@@ -1059,10 +1088,12 @@ impl<'a> Message<'a> {
             fields: &command.input,
             relations: BTreeMap::new(),
             examples: Some(&command.examples),
+            undeclared_fields: UndeclaredFields::Refused,
         }
     }
 
-    /// A command's closed actual response.
+    /// A command's actual response: closed, unless the command declares
+    /// `undeclared_fields: ignored` (`ess/24`).
     pub(crate) fn of_response(command: &'a ResolvedCommand) -> Self {
         Self {
             kind: COMMAND_RESPONSE,
@@ -1072,6 +1103,7 @@ impl<'a> Message<'a> {
             fields: &command.response,
             relations: BTreeMap::new(),
             examples: None,
+            undeclared_fields: command.undeclared_fields,
         }
     }
 
@@ -1085,6 +1117,7 @@ impl<'a> Message<'a> {
             fields: &event.fields,
             relations: BTreeMap::new(),
             examples: None,
+            undeclared_fields: UndeclaredFields::Refused,
         }
     }
 
@@ -1101,6 +1134,7 @@ impl<'a> Message<'a> {
             fields: &error.fields,
             relations: BTreeMap::new(),
             examples: None,
+            undeclared_fields: UndeclaredFields::Refused,
         }
     }
 
@@ -1118,6 +1152,7 @@ impl<'a> Message<'a> {
             fields: &view.fields,
             relations: BTreeMap::new(),
             examples: None,
+            undeclared_fields: UndeclaredFields::Refused,
         }
     }
 
@@ -1139,6 +1174,7 @@ impl<'a> Message<'a> {
             fields,
             relations,
             examples: None,
+            undeclared_fields: UndeclaredFields::Refused,
         }
     }
 
@@ -1164,6 +1200,7 @@ pub(crate) fn message(carried: &Message<'_>) -> Node {
         description: carried.description.clone(),
         ess_name: Some(carried.name.to_string()),
         ess_kind: Some(carried.kind),
+        additional: Some(Additional::of(carried.undeclared_fields)),
         ..object_annotated(carried.fields, &carried.relations, carried.examples)
     }
 }

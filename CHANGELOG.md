@@ -12,6 +12,16 @@
   (`missing_declaration`), on an event, an error and every other declaration, and under an
   earlier format, naming `ess/24`. The IR carries it on the command and lists the open structs
   beside `types` (https://github.com/beyond10x/ess/issues/500).
+- `ess generate` projects `undeclared_fields: ignored`: the JSON Schema tree, OpenAPI and
+  AsyncAPI write `"additionalProperties": true` at a command response declared `ignored` and at
+  every object of a struct declared `ignored`, wherever it is reached; every closed object keeps
+  `false` and its bytes. The generated documentation says so on the command and on the struct.
+  `ess verify diff` names the move as `type/<name>/undeclared-fields-changed` or
+  `command/<name>/response-undeclared-fields-changed` in the new `ess-diff/18`, never
+  `unclassified-changed`: opening is `expanded`, so an opened struct is `breaking` for readers of
+  an output use and an opened response `breaking` for readers; closing is `narrowed`, `breaking`
+  for callers of a struct's input use and for its stored use, and `compatible` for a response.
+  Earlier delta formats refuse it written or read (https://github.com/beyond10x/ess/issues/500).
 
 ## [0.57.0] — 2026-10-09
 

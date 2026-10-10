@@ -14,8 +14,9 @@ use crate::compatibility::{
 };
 
 /// Delta format major versions this build implements.
-pub const SUPPORTED_DELTA_FORMATS: &[u32] =
-    &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17];
+pub const SUPPORTED_DELTA_FORMATS: &[u32] = &[
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+];
 
 /// The version of a delta's document shape and admitted change vocabulary.
 ///

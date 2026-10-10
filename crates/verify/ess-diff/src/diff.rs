@@ -682,7 +682,20 @@ fn type_changes(before: &EssIr, after: &EssIr, changes: &mut Vec<SemanticChange>
         match (before.types().get(name), after.types().get(name)) {
             (None, Some(_)) => push(TypeChange::Added),
             (Some(_), None) => push(TypeChange::Removed),
-            (Some(was), Some(is)) => compare_types(was, is, name, &mut push),
+            (Some(was), Some(is)) => {
+                compare_types(was, is, name, &mut push);
+                // Beside the types in the IR rather than in the body (`ess/24`): read by name.
+                let (open, opens) = (
+                    before.undeclared_fields(name),
+                    after.undeclared_fields(name),
+                );
+                if open != opens {
+                    push(TypeChange::UndeclaredFieldsChanged {
+                        before: open,
+                        after: opens,
+                    });
+                }
+            }
             (None, None) => unreachable!("a key came from one of the two maps"),
         }
     }
@@ -1526,6 +1539,12 @@ fn compare_commands(
             after: parameter_contracts(&is.response),
         });
     }
+    if was.undeclared_fields != is.undeclared_fields {
+        push(CommandChange::ResponseUndeclaredFieldsChanged {
+            before: was.undeclared_fields,
+            after: is.undeclared_fields,
+        });
+    }
     let (owned, owns) = (DomainRef::from(&was.domain), DomainRef::from(&is.domain));
     if owned != owns {
         push(CommandChange::DomainChanged {
@@ -2284,7 +2303,12 @@ fn declarations<'a>(
 /// introduced serialized fields visible by default, even beside an already classified edit.
 /// This value is internal equality evidence; it is never persisted as a change/property bag.
 fn residual(mut value: serde_json::Value) -> serde_json::Value {
-    remove_keys(&mut value, &["system", "version", "summary"]);
+    // `undeclared_fields_ignored` (`ess/24`) is compared per type both revisions declare as
+    // `undeclared-fields-changed`; a type in one revision only is its own `added` or `removed`.
+    remove_keys(
+        &mut value,
+        &["system", "version", "summary", "undeclared_fields_ignored"],
+    );
     for family in RESIDUAL_FAMILIES {
         if let Some(declarations) = value
             .get_mut(family)
@@ -2646,6 +2670,8 @@ fn residual_entity(declaration: &mut serde_json::Value) {
 
 fn residual_command(declaration: &mut serde_json::Value) {
     residual_fields(declaration, "input");
+    // Compared as `ResponseUndeclaredFieldsChanged` (`ess/24`).
+    remove_keys(declaration, &["undeclared_fields"]);
     // Compared as `InputExampleChanged`, input by input.
     remove_keys(declaration, &["examples"]);
     if let Some(outcomes) = declaration

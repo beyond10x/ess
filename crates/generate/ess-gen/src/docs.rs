@@ -676,7 +676,7 @@ fn types_section(ir: &EssIr, domain: &ResolvedDomain) -> Vec<Block> {
             3,
             vec![Inline::code(relative(&named.name, &domain.name))],
             Some(DeclaredTypeRef::from(*handle).into()),
-            type_prose(named),
+            type_prose(ir, named),
         ));
     }
     let types: Vec<&ResolvedType> = declared.iter().map(|(_, named)| *named).collect();
@@ -1089,6 +1089,9 @@ fn commands_section(ir: &EssIr, domain: &ResolvedDomain) -> Vec<Block> {
             about.sentence("It takes:");
             about.push(bullets(command.input.iter().map(field_bullet).collect()));
         }
+        if command.undeclared_fields.is_ignored() {
+            about.sentence(IGNORED_RESPONSE);
+        }
         about.prose(outcome_count_sentence(
             command.outcomes.len(),
             &command.name,
@@ -1350,8 +1353,19 @@ fn binding_section(ir: &EssIr, binding: &ResolvedBinding) -> Block {
 
 // ---- prose ------------------------------------------------------------------------------------
 
+/// What a command declaring `undeclared_fields: ignored` (`ess/24`, beyond10x/ess#500) says of its
+/// response. Written only there, so a page about a closed command keeps its bytes.
+const IGNORED_RESPONSE: &str = "Its response ignores a field it does not declare: a reader admits \
+     one beside the declared fields, which stay required and typed.";
+
+/// What a struct declaring `undeclared_fields: ignored` (`ess/24`) says of itself, wherever it is
+/// reached.
+const IGNORED_STRUCT: &str =
+    "A field it does not declare is ignored rather than refused, wherever \
+     it is reached; the declared fields stay required and typed.";
+
 /// A named type as a sentence, because its shape is one fact and a table of one fact is furniture.
-fn type_prose(declared: &ResolvedType) -> Vec<Block> {
+fn type_prose(ir: &EssIr, declared: &ResolvedType) -> Vec<Block> {
     let name = Inline::code(declared.name.to_string());
     let mut out = Blocks::new();
     match &declared.body {
@@ -1396,6 +1410,9 @@ fn type_prose(declared: &ResolvedType) -> Vec<Block> {
                 )),
             ]);
             out.push(bullets(fields.iter().map(field_bullet).collect()));
+            if ir.undeclared_fields(&declared.name).is_ignored() {
+                out.sentence(IGNORED_STRUCT);
+            }
             let clause = invariants_clause(invariants);
             if !clause.is_empty() {
                 out.prose(clause);
