@@ -1982,6 +1982,7 @@ mod tests {
                         Field::new("currency", TypeRef::Primitive(Primitive::String)),
                     ],
                     invariants: Vec::new(),
+                    undeclared_fields: None,
                 },
             ),
             (
@@ -1995,6 +1996,7 @@ mod tests {
                         Field::new("total", TypeRef::Named(name("billing.invoice.Money"))),
                     ],
                     invariants: Vec::new(),
+                    undeclared_fields: None,
                 },
             ),
             (
@@ -2396,6 +2398,7 @@ fields:
                         TypeRef::Primitive(Primitive::String),
                     )],
                     invariants: Vec::new(),
+                    undeclared_fields: None,
                 },
                 naming: Naming::default(),
             })

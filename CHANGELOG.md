@@ -23,6 +23,14 @@
   record invariant or a reading on a response type stays refused by name. Suites without a
   constrained response keep their bytes and format
   (https://github.com/beyond10x/ess/issues/499).
+- `ess/24`: a `kind: struct` type, and a command with a non-empty `response:`, may declare
+  `undeclared_fields: ignored`, so the record admits fields it does not declare while every
+  declared field stays required and typed. On a command it governs the response only. `refused`
+  is the default, and a specification that does not write the key keeps its IR bytes and compiled
+  digest. `ess specify validate` refuses the key at its line on a command without `response:`
+  (`missing_declaration`), on an event, an error and every other declaration, and under an
+  earlier format, naming `ess/24`. The IR carries it on the command and lists the open structs
+  beside `types` (https://github.com/beyond10x/ess/issues/500).
 
 ### Changed
 

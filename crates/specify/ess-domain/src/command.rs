@@ -2528,9 +2528,15 @@ pub struct CommandSpec {
     pub examples: BTreeMap<String, Node>,
     /// Independently provisioned conformance inputs, keyed by declared input field (ess/13).
     pub fixture_inputs: BTreeMap<String, fixture_inputs::FixtureName>,
-    /// Closed fields of the response returned by this command.
+    /// Fields of the response returned by this command, closed unless
+    /// [`Self::undeclared_fields`] says otherwise.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub response: Vec<Field>,
+    /// What a reader does with a response field this command does not declare, as written
+    /// (`ess/24`, beyond10x/ess#500). Governs [`Self::response`] only, never the input; `None`
+    /// where the command does not say, which is `refused`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub undeclared_fields: Option<crate::types::UndeclaredFields>,
     /// Everything this command can result in. At least one, with a default or proven finite coverage.
     pub outcomes: Vec<Outcome>,
     /// What it is called on the wire and shown as.
@@ -3972,6 +3978,7 @@ pub(crate) fn validate_response_contracts(spec: &crate::Specification) -> Valida
                 "typed response declarations require specification format ess/4",
             ));
         }
+        errors.extend(crate::undeclared_fields::on_command(spec, command));
         for outcome in &command.outcomes {
             let at = command.site().key("outcomes").named(outcome.name.as_str());
             errors.extend(one_time_response::validate(spec, command, outcome, &at));
@@ -5083,9 +5090,9 @@ fn precondition_terminal_admitted(
             Ok(())
         }
         TypeRef::Named(name) => match types.get(name).map(|named| &named.body) {
-            Some(crate::types::TypeBody::Struct { fields, invariants }) => {
-                struct_literal_admitted(types, declared, fields, invariants, literal)
-            }
+            Some(crate::types::TypeBody::Struct {
+                fields, invariants, ..
+            }) => struct_literal_admitted(types, declared, fields, invariants, literal),
             Some(crate::types::TypeBody::Union { .. }) => mismatch(
                 format!(
                     "`{declared}` reaches the union `{name}`, which a precondition literal does \
@@ -5436,9 +5443,16 @@ pub struct RawCommandSpec {
     /// Independently provisioned conformance inputs, keyed by declared input field.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub fixture_inputs: BTreeMap<String, fixture_inputs::FixtureName>,
-    /// Closed fields of the response returned by this command.
+    /// Fields of the response returned by this command, closed unless `undeclared_fields:` says
+    /// otherwise.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub response: Vec<Field>,
+    /// What a reader does with a response field the command does not declare: `refused`, the
+    /// default, or `ignored`, which admits fields beyond the declared ones while every declared
+    /// field stays required and typed. Governs `response:` only, and requires a non-empty one
+    /// (`ess/24`, beyond10x/ess#500).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub undeclared_fields: Option<crate::types::UndeclaredFields>,
     /// Everything it can result in.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub outcomes: Vec<RawOutcome>,
@@ -6577,6 +6591,7 @@ impl TryFrom<RawCommandSpec> for CommandSpec {
             examples,
             fixture_inputs: raw.fixture_inputs,
             response: raw.response,
+            undeclared_fields: raw.undeclared_fields,
             outcomes,
             naming: raw.naming,
             refs: raw.refs,
@@ -6774,6 +6789,7 @@ impl From<CommandSpec> for RawCommandSpec {
             input,
             fixture_inputs: command.fixture_inputs,
             response: command.response,
+            undeclared_fields: command.undeclared_fields,
             outcomes: command.outcomes.into_iter().map(RawOutcome::from).collect(),
             naming: command.naming,
             refs: command.refs,
@@ -6842,6 +6858,7 @@ mod tests {
                         Field::new("currency", TypeRef::Primitive(Primitive::String)),
                     ],
                     invariants: Vec::new(),
+                    undeclared_fields: None,
                 },
                 naming: Naming::default(),
             })
@@ -6891,6 +6908,7 @@ outcomes:
                 TypeRef::Named(name("billing.invoice.Money")),
             )],
             response: Vec::new(),
+            undeclared_fields: None,
             fixture_inputs: BTreeMap::new(),
             outcomes,
             naming: Naming::default(),
@@ -8137,6 +8155,7 @@ outcomes:
                 Field::new("amount", TypeRef::Named(name("billing.invoice.Money"))),
             ],
             response: Vec::new(),
+            undeclared_fields: None,
             fixture_inputs: BTreeMap::new(),
             outcomes: vec![
                 Outcome::when(

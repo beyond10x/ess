@@ -1709,9 +1709,19 @@ pub struct ResolvedCommand {
     /// Skipped when empty, so the IR of a command without fixture inputs keeps its bytes.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub fixture_inputs: BTreeMap<String, ess_domain::command::fixture_inputs::FixtureName>,
-    /// Closed declared response fields, omitted for legacy commands.
+    /// Declared response fields, omitted for legacy commands. Closed unless
+    /// [`Self::undeclared_fields`] is `ignored`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub response: Vec<ResolvedField>,
+    /// What a reader does with a response field the command does not declare (`ess/24`,
+    /// beyond10x/ess#500). Governs [`Self::response`] only. Omitted when `refused`, the default,
+    /// so the IR of a command that does not ignore undeclared fields keeps its bytes and its
+    /// `spec_digest`.
+    #[serde(
+        default,
+        skip_serializing_if = "ess_domain::types::UndeclaredFields::is_refused"
+    )]
+    pub undeclared_fields: ess_domain::types::UndeclaredFields,
     /// Everything it can result in.
     pub outcomes: Vec<ResolvedOutcome>,
     /// What it is called on the wire, and shown as.
@@ -2795,6 +2805,16 @@ pub struct EssIr {
     domains: BTreeMap<QualifiedName, ResolvedDomain>,
     /// Every type, by name.
     types: BTreeMap<QualifiedName, ResolvedType>,
+    /// The struct types that ignore the fields they do not declare, `undeclared_fields: ignored`
+    /// (`ess/24`, beyond10x/ess#500), by name.
+    ///
+    /// Beside the types rather than in [`ResolvedBody::Struct`] or [`ResolvedType`]: every
+    /// exhaustive pattern over that variant and every literal of that type, in the generators and
+    /// the conformance crates, keeps its shape, and a reader asks [`EssIr::undeclared_fields`].
+    /// Left out of the document when empty, so a model with no such struct keeps its bytes and
+    /// its `spec_digest`.
+    #[serde(skip_serializing_if = "BTreeSet::is_empty")]
+    undeclared_fields_ignored: BTreeSet<QualifiedName>,
     /// Every crossing the specification permits.
     conversions: Vec<ResolvedConversion>,
     /// Every entity, by name.
@@ -2856,6 +2876,7 @@ pub(crate) struct EssIrParts {
     pub(crate) summary: Option<String>,
     pub(crate) domains: BTreeMap<QualifiedName, ResolvedDomain>,
     pub(crate) types: BTreeMap<QualifiedName, ResolvedType>,
+    pub(crate) undeclared_fields_ignored: BTreeSet<QualifiedName>,
     pub(crate) conversions: Vec<ResolvedConversion>,
     pub(crate) entities: BTreeMap<QualifiedName, ResolvedEntity>,
     pub(crate) commands: BTreeMap<QualifiedName, ResolvedCommand>,
@@ -2880,6 +2901,7 @@ impl EssIr {
             summary: parts.summary,
             domains: parts.domains,
             types: parts.types,
+            undeclared_fields_ignored: parts.undeclared_fields_ignored,
             conversions: parts.conversions,
             entities: parts.entities,
             commands: parts.commands,
@@ -2942,6 +2964,23 @@ impl EssIr {
     /// Every resolved type, by name.
     pub fn types(&self) -> &BTreeMap<QualifiedName, ResolvedType> {
         &self.types
+    }
+    /// What a reader does with a field the struct type `declared` does not declare (`ess/24`,
+    /// beyond10x/ess#500): `ignored` where the struct says so, `refused` for every other struct
+    /// and for any name that is no struct.
+    pub fn undeclared_fields(
+        &self,
+        declared: &QualifiedName,
+    ) -> ess_domain::types::UndeclaredFields {
+        if self.undeclared_fields_ignored.contains(declared) {
+            ess_domain::types::UndeclaredFields::Ignored
+        } else {
+            ess_domain::types::UndeclaredFields::Refused
+        }
+    }
+    /// Every struct type that ignores the fields it does not declare (`ess/24`), by name.
+    pub fn undeclared_fields_ignored(&self) -> &BTreeSet<QualifiedName> {
+        &self.undeclared_fields_ignored
     }
     /// Every permitted type crossing.
     pub fn conversions(&self) -> &[ResolvedConversion] {

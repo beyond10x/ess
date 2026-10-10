@@ -912,9 +912,9 @@ pub(crate) fn resolutions(
             Site::TypeInvariant { name, index } => registry.get(name).and_then(|declared| {
                 let value;
                 let (fields, invariants) = match &declared.body {
-                    crate::types::TypeBody::Struct { fields, invariants } => {
-                        (fields.as_slice(), invariants)
-                    }
+                    crate::types::TypeBody::Struct {
+                        fields, invariants, ..
+                    } => (fields.as_slice(), invariants),
                     crate::types::TypeBody::Newtype { of, invariants, .. } => {
                         value = [crate::types::Field::new(NamedType::VALUE, of.clone())];
                         (value.as_slice(), invariants)

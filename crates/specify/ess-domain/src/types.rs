@@ -1057,6 +1057,72 @@ pub(crate) fn deserialize_field_name<'de, D: serde::Deserializer<'de>>(
     field_name(&raw).map_err(serde::de::Error::custom)
 }
 
+/// What a reader does with a field a record does not declare (`ess/24`, beyond10x/ess#500).
+///
+/// Written `undeclared_fields:` on a `kind: struct` type and on a command, where it governs the
+/// command's `response:` only. A record is closed unless it says otherwise: `refused` is the
+/// default, and every declaration that does not write the key keeps the bytes it had. `ignored`
+/// admits members beyond the declared ones, as a protocol does that lets a producer add extension
+/// members its readers must ignore; every declared field stays required and typed either way.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+    schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum UndeclaredFields {
+    /// A field the record does not declare is refused. The default.
+    #[default]
+    Refused,
+    /// A field the record does not declare is ignored; the declared ones are still checked.
+    Ignored,
+}
+
+impl UndeclaredFields {
+    /// The key it is written under.
+    pub const KEY: &'static str = "undeclared_fields";
+
+    /// `true` for the default, closed record: what serialization skips, so a declaration that does
+    /// not ignore undeclared fields keeps its bytes.
+    #[allow(clippy::trivially_copy_pass_by_ref)] // Serde's skip_serializing_if passes a reference.
+    pub fn is_refused(&self) -> bool {
+        *self == Self::Refused
+    }
+
+    /// `true` when a field the record does not declare is admitted.
+    pub fn is_ignored(self) -> bool {
+        self == Self::Ignored
+    }
+
+    /// What `written` amounts to: [`Self::Refused`] where nothing was written.
+    pub fn of(written: Option<Self>) -> Self {
+        written.unwrap_or_default()
+    }
+
+    /// How it is written.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Refused => "refused",
+            Self::Ignored => "ignored",
+        }
+    }
+}
+
+impl fmt::Display for UndeclaredFields {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// What a named type is made of.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -1095,6 +1161,10 @@ pub enum TypeBody {
         /// Conditions every value must satisfy, as predicates over those fields.
         #[serde(skip_serializing_if = "Vec::is_empty")]
         invariants: Vec<Invariant>,
+        /// What a reader does with a field this struct does not declare, as written (`ess/24`,
+        /// beyond10x/ess#500). `None` where the declaration does not say, which is `refused`.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        undeclared_fields: Option<UndeclaredFields>,
     },
     /// One of a fixed set of names.
     Enum {
@@ -1580,7 +1650,9 @@ impl NamedType {
     pub fn validate_invariants(&self, registry: &TypeRegistry) -> ValidationErrors {
         let value;
         let (fields, invariants) = match &self.body {
-            TypeBody::Struct { fields, invariants } => (fields.as_slice(), invariants),
+            TypeBody::Struct {
+                fields, invariants, ..
+            } => (fields.as_slice(), invariants),
             TypeBody::Newtype { of, invariants, .. } => {
                 value = [Field::new(Self::VALUE, of.clone())];
                 (value.as_slice(), invariants)
@@ -1619,7 +1691,9 @@ impl NamedType {
                     Self::VALUE
                 ),
             ),
-            TypeBody::Struct { fields, invariants } => {
+            TypeBody::Struct {
+                fields, invariants, ..
+            } => {
                 let names: Vec<String> =
                     fields.iter().map(|field| field.name.clone()).collect();
                 let hint = format!("readable here: {}", names.join(", "));
@@ -1830,9 +1904,12 @@ impl RawTypeBody {
                 prefix,
                 invariants: RawInvariant::read_all(invariants, at, errors),
             },
+            // The struct's `undeclared_fields:` is read beside the body, not in it (`ess/24`,
+            // `crate::undeclared_fields`), and set once the type is converted.
             Self::Struct { fields, invariants } => TypeBody::Struct {
                 fields,
                 invariants: RawInvariant::read_all(invariants, at, errors),
+                undeclared_fields: None,
             },
             Self::Enum {
                 variants,
@@ -2159,6 +2236,12 @@ impl schemars::JsonSchema for RawNamedType {
             "What it is called on the wire and shown as.",
         );
         let reading = generator.subschema_for::<crate::reading::ReadingContract>();
+        let undeclared_fields = described(
+            generator.subschema_for::<UndeclaredFields>(),
+            "What a reader does with a field this struct does not declare: `refused`, the \
+             default, or `ignored`, which admits fields beyond the declared ones while every \
+             declared field stays required and typed (`ess/24`, beyond10x/ess#500).",
+        );
 
         let object = schema.object();
         object.properties.insert("name".to_owned(), name.clone());
@@ -2182,6 +2265,14 @@ impl schemars::JsonSchema for RawNamedType {
             object
                 .properties
                 .insert("reading".to_owned(), reading.clone());
+            // A struct, the one branch with `fields`, may say what a reader does with a field it
+            // does not declare (`ess/24`, beyond10x/ess#500). Read beside the body rather than in
+            // it (`crate::undeclared_fields`), so it is added here, to that branch only.
+            if object.properties.contains_key("fields") {
+                object
+                    .properties
+                    .insert(UndeclaredFields::KEY.to_owned(), undeclared_fields.clone());
+            }
         }
 
         schema.into()
@@ -2477,6 +2568,20 @@ impl TypeRegistry {
             errors.extend(declared.validate_prefix(self));
             errors.extend(declared.validate_attributes(self));
             errors.extend(declared.validate_invariants(self));
+            // A struct's `undeclared_fields:`, below `ess/24` (beyond10x/ess#500).
+            if let TypeBody::Struct {
+                undeclared_fields: Some(_),
+                ..
+            } = &declared.body
+            {
+                if let Some(refused) = crate::undeclared_fields::below_format(
+                    self.format(),
+                    ess_primitives::error::ConstructKind::Type,
+                    &declared.name.to_string(),
+                ) {
+                    errors.push(refused);
+                }
+            }
         }
         errors
     }
@@ -2664,6 +2769,7 @@ mod tests {
                         Field::new("currency", TypeRef::Primitive(Primitive::String)),
                     ],
                     invariants: vec![Invariant::parse("amount >= 0").expect("a predicate")],
+                    undeclared_fields: None,
                 },
                 naming: Naming::default(),
             })
@@ -2835,6 +2941,7 @@ mod tests {
                     ),
                 ],
                 invariants: Vec::new(),
+                undeclared_fields: None,
             },
             naming: Naming::default(),
         };
@@ -2853,7 +2960,10 @@ mod tests {
         )
         .expect("the flattened form parses");
         assert_eq!(money.name.to_string(), "billing.invoice.Money");
-        let TypeBody::Struct { fields, invariants } = &money.body else {
+        let TypeBody::Struct {
+            fields, invariants, ..
+        } = &money.body
+        else {
             panic!("expected a struct");
         };
         assert_eq!(fields.len(), 1);

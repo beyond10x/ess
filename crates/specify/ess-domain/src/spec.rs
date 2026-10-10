@@ -125,6 +125,12 @@ pub struct RawSpecFile {
     #[serde(skip)]
     #[schemars(skip)]
     pub(crate) spelled: crate::expression::lexical::Written,
+    /// The `undeclared_fields:` each type and each other non-command declaration of this file
+    /// wrote, taken out of it by [`Self::parse`] (`ess/24`, `crate::undeclared_fields`). Never
+    /// part of the document's typed fields, its schema or its bytes.
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub(crate) undeclared_fields: crate::undeclared_fields::Written,
 }
 
 /// Everything a specification declares, indexed by identity.
@@ -174,8 +180,11 @@ impl RawSpecFile {
     /// deserialised directly rather than through here keeps every bare word the text it is
     /// spelled as, which is what every earlier format means by it.
     pub fn parse(text: &str) -> Result<Self, serde_yaml::Error> {
-        let document: serde_yaml::Value = serde_yaml::from_str(text)?;
+        let mut document: serde_yaml::Value = serde_yaml::from_str(text)?;
         let spelled = crate::expression::lexical::Written::from_document(&document);
+        // A type's `undeclared_fields:` is read beside its body rather than in it (`ess/24`), and
+        // every other declaration's is read so it can be refused at its line.
+        let undeclared_fields = crate::undeclared_fields::Written::take(&mut document)?;
         // A file that names its format reads the operand grammar of that format; one that does
         // not reads what its caller set, `ess/22`'s when nobody did (see `parse_all`).
         let format = written_format(&document);
@@ -189,6 +198,7 @@ impl RawSpecFile {
             None => read(),
         }?;
         file.spelled = spelled;
+        file.undeclared_fields = undeclared_fields;
         Ok(file)
     }
 
@@ -1168,14 +1178,23 @@ impl Collected {
         // The owner every member of this file is claimed for, as `Assembly::claim` will claim it.
         let owner = file.domain.clone();
         let owner = owner.as_ref();
-        for mut raw in file.types {
+        // `undeclared_fields:` on a declaration other than a struct type or a command (`ess/24`):
+        // refused at its line, the declaration itself kept.
+        errors.extend(crate::undeclared_fields::refused_outside_types(&file));
+        let undeclared_fields = file.undeclared_fields;
+        for (index, mut raw) in file.types.into_iter().enumerate() {
             // An invariant that does not parse, or a boolean written as a variant, is refused and
             // withheld, not the type: a refused type would make every field declared with it a
             // second refusal (beyond10x/ess#448, beyond10x/ess#426).
             errors.extend(raw.withhold_unread());
             let name = raw.name.clone();
             let converted = match NamedType::try_from(raw) {
-                Ok(declared) => Some(declared),
+                Ok(mut declared) => {
+                    // A struct's `undeclared_fields:` (`ess/24`) is set beside its body; on any
+                    // other kind it is refused and the type kept.
+                    errors.extend(undeclared_fields.apply_to_type(index, &mut declared));
+                    Some(declared)
+                }
                 Err(type_errors) => {
                     errors.extend(type_errors);
                     None

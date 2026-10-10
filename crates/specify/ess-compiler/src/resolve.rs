@@ -53,7 +53,9 @@ use ess_domain::name::QualifiedName;
 use ess_domain::spec::Specification;
 use ess_domain::system::Source;
 use ess_domain::topology::Workload;
-use ess_domain::types::{is_assignable, Field, NamedType, TypeBody, TypeRef, TypeRegistry};
+use ess_domain::types::{
+    is_assignable, Field, NamedType, TypeBody, TypeRef, TypeRegistry, UndeclaredFields,
+};
 use ess_domain::view::ViewSpec;
 use ess_primitives::error::{
     ConstructKind, ConstructRef, Segment, Site, SyntaxSpan, ValidationCode, ValidationErrors,
@@ -1573,6 +1575,23 @@ impl<'a> Resolver<'a> {
         if self.diagnostics.has_errors() {
             return Err(self.diagnostics);
         }
+        // The structs declared `undeclared_fields: ignored` (`ess/24`), carried beside the types.
+        let undeclared_fields_ignored = self
+            .spec
+            .system()
+            .types
+            .iter()
+            .filter(|declared| {
+                matches!(
+                    declared.body,
+                    TypeBody::Struct {
+                        undeclared_fields: Some(UndeclaredFields::Ignored),
+                        ..
+                    }
+                ) && types.contains_key(&declared.name)
+            })
+            .map(|declared| declared.name.clone())
+            .collect();
         Ok(EssIr::from_parts(crate::ir::EssIrParts {
             system: self.spec.system().name.clone(),
             version: self.spec.system().version,
@@ -1580,6 +1599,7 @@ impl<'a> Resolver<'a> {
             summary: self.spec.system().summary.clone(),
             domains,
             types,
+            undeclared_fields_ignored,
             conversions,
             entities,
             commands,
@@ -1788,7 +1808,11 @@ impl<'a> Resolver<'a> {
                     invariants: invariants.clone(),
                 })
             }
-            TypeBody::Struct { fields, invariants } => {
+            // `undeclared_fields:` is carried beside the body, in `EssIr::undeclared_fields_ignored`
+            // (`ess/24`), so `ResolvedBody::Struct` and every pattern over it keep their shape.
+            TypeBody::Struct {
+                fields, invariants, ..
+            } => {
                 let fields = self.fields(code, fields, &declared.name, path, needles)?;
                 Some(ResolvedBody::Struct {
                     fields,
@@ -2161,6 +2185,7 @@ impl<'a> Resolver<'a> {
                         examples: command.examples,
                         fixture_inputs: command.fixture_inputs,
                         response,
+                        undeclared_fields: UndeclaredFields::of(command.undeclared_fields),
                         outcomes,
                         naming: command.naming,
                         refs: command.refs,
