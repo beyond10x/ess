@@ -1,4 +1,4 @@
-#	models=251	lines=372
+#	models=261	lines=386
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	REFUSED	95eb461796949834a9d78ef0c04afcab1acfa13dbf2dfd6da3af2f3c93549630:687
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing/system.yaml	ASSEMBLE
@@ -145,8 +145,12 @@ crates/verify/ess-conformance/tests/fixtures/keypad.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/latest-correlated-record.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/mutation-arms.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/mutation-gained-refusal.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/mutation-identical-answer.yaml	components=1
+crates/verify/ess-conformance/tests/fixtures/mutation-identical-answer.yaml	desk-server	REFUSED	ef850e1f7f2c9fccc274c86d6c9ab0b64e9f2a4f9520934a40d606454ea7380d:994
 crates/verify/ess-conformance/tests/fixtures/mutation-survivor.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/mutation-unwitnessed-outcome.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/negated-defined-beside-subject.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/now-guard-interpreted.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/now-stored-rows.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/occurrence-clock-claims.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/occurrence-clock-offers.yaml	components=0
@@ -202,6 +206,16 @@ crates/verify/ess-conformance/tests/fixtures/view-param-binding.yaml	components=
 crates/verify/ess-conformance/tests/fixtures/when-subject-eventual.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/when-subject-fallback-refusal.yaml	components=0
 crates/verify/ess-conformance/tests/support_explore_optional_unknown/baseline.yaml	components=0
+crates/verify/ess-diff/tests/fixtures/narrowed/added-refusal.yaml	components=0
+crates/verify/ess-diff/tests/fixtures/narrowed/required-input.yaml	components=0
+crates/verify/ess-diff/tests/fixtures/narrowed/v1.yaml	components=0
+crates/verify/ess-diff/tests/fixtures/narrowed/widened-guard.yaml	components=0
+crates/verify/ess-diff/tests/fixtures/upcast/after-additive.yaml	components=1
+crates/verify/ess-diff/tests/fixtures/upcast/after-additive.yaml	items-server	REFUSED	a9f499483ddf98aaf0ee7dbe912a839d9f184b42be635feb341335904e688ebd:202
+crates/verify/ess-diff/tests/fixtures/upcast/after.yaml	components=1
+crates/verify/ess-diff/tests/fixtures/upcast/after.yaml	items-server	REFUSED	dc946c9c9e514db5151a4dd6037ab5ed3cb19364ed8422457c98e23be708ba7b:534
+crates/verify/ess-diff/tests/fixtures/upcast/before.yaml	components=1
+crates/verify/ess-diff/tests/fixtures/upcast/before.yaml	items-server	REFUSED	a9f499483ddf98aaf0ee7dbe912a839d9f184b42be635feb341335904e688ebd:202
 docs/design/models/authored-discovery/system.yaml	ASSEMBLE
 docs/design/models/entity-runtime-lowering/system.yaml	ASSEMBLE
 docs/design/models/service-contract/system.yaml	ASSEMBLE
