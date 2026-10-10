@@ -12,6 +12,12 @@ type responseObservation struct {
 	// written; constraints are the same rules admitted against the declarations.
 	RawConstraints json.RawMessage `json:"constraints,omitempty"`
 	constraints    map[string]oneTimeConstraints
+	// UndeclaredFields is "ignored" where the response object admits keys it does not declare, and
+	// UndeclaredFieldsIgnored names the struct declarations that do (suite/48 and /49,
+	// beyond10x/ess#500). Both are absent when closed; opened is the admitted set of names.
+	UndeclaredFields        string   `json:"undeclared_fields,omitempty"`
+	UndeclaredFieldsIgnored []string `json:"undeclared_fields_ignored,omitempty"`
+	opened                  map[string]bool
 }
 
 func (r *responseObservation) UnmarshalJSON(raw []byte) error {
@@ -43,6 +49,15 @@ func (r *responseObservation) UnmarshalJSON(raw []byte) error {
 		}
 		r.constraints = constraints
 	}
+	var document map[string]any
+	if err := json.Unmarshal(raw, &document); err != nil {
+		return err
+	}
+	opened, err := admitUndeclaredFields(document, r.Declarations)
+	if err != nil {
+		return err
+	}
+	r.opened = opened
 	if r.Nested != nil {
 		if err := normalizeNestedResponse(r); err != nil {
 			return err
@@ -338,12 +353,14 @@ func (r responseObservation) compare(response, payload map[string]Node) error {
 	for _, field := range r.Fields {
 		names[field.Name] = true
 	}
+	// An opened response (`undeclared_fields: ignored`) admits keys it does not declare and reads
+	// nothing of them; every declared field is still checked below.
 	for name := range response {
-		if !names[name] {
+		if !names[name] && r.UndeclaredFields != "ignored" {
 			return fmt.Errorf("response has an undeclared field")
 		}
 	}
-	observer := selectionObservation{Declarations: r.Declarations, responseMode: true}
+	observer := selectionObservation{Declarations: r.Declarations, responseMode: true, openStructs: r.opened}
 	bytes := 0
 	for _, field := range r.Fields {
 		value, present := response[field.Name]
@@ -370,15 +387,19 @@ func (r responseObservation) compare(response, payload map[string]Node) error {
 		actual, exists := response[source]
 		emitted, present := payload[target]
 		optional := false
+		sourceType := ""
 		for _, field := range r.Fields {
 			if field.Name == source {
 				_, optional = accessorOptional(field.Type)
+				sourceType = field.Type
 			}
 		}
 		if optional && (!exists || actual == nil) && (!present || emitted == nil) {
 			continue
 		}
-		if !exists || !present || !responseEqual(actual, emitted) {
+		// At an opened struct only the declared fields must agree: an extension member of the
+		// returned value is never read, so the event need not repeat it (beyond10x/ess#500).
+		if !exists || !present || !declaredEqual(r.Declarations, r.opened, sourceType, actual, emitted) {
 			return fmt.Errorf("event field %s differs from actual response field %s", target, source)
 		}
 	}
@@ -407,11 +428,14 @@ func (r *run) expectResponsePayload(index int, step Step) bool {
 }
 
 func admitResponse(value any, major int) error {
-	root, err := closed(value, "command outcome event fields declarations mappings targets", "nested constraints")
+	root, err := closed(value, "command outcome event fields declarations mappings targets", "nested constraints undeclared_fields undeclared_fields_ignored")
 	if err != nil {
 		return err
 	}
 	if err := responseConstraintsMajor(root, major); err != nil {
+		return err
+	}
+	if err := undeclaredFieldsMajor(root, major); err != nil {
 		return err
 	}
 	if nested, exists := root["nested"]; exists {
@@ -627,6 +651,128 @@ func responseEqual(left, right Node) bool {
 	default:
 		return equal(left, right)
 	}
+}
+
+// declaredEqual is responseEqual over two values of type source, except that at a struct
+// declaration named in opened only its declared fields are compared: a key it does not declare is
+// admitted and never read, on either side (beyond10x/ess#500). Every other object is compared
+// completely, its declared members under their own types. With no opened struct it is exactly
+// responseEqual. Its Rust counterpart is `undeclared_fields::declared_equal`.
+func declaredEqual(declarations map[string]selectionDeclaration, opened map[string]bool, source string, left, right Node) bool {
+	if len(opened) == 0 {
+		return responseEqual(left, right)
+	}
+	return declaredEqualAt(declarations, opened, source, left, right, 0)
+}
+
+func declaredEqualAt(declarations map[string]selectionDeclaration, opened map[string]bool, source string, left, right Node, depth int) bool {
+	if depth > 128 || left == nil || right == nil {
+		return responseEqual(left, right)
+	}
+	if inner, ok := accessorOptional(source); ok {
+		return declaredEqualAt(declarations, opened, inner, left, right, depth+1)
+	}
+	if body, ok := declarations[source]; ok {
+		switch body.Kind {
+		case "newtype":
+			return declaredEqualAt(declarations, opened, body.Of, left, right, depth+1)
+		case "struct":
+			mine, ok := left.(map[string]any)
+			other, otherOK := right.(map[string]any)
+			if !ok || !otherOK {
+				return responseEqual(left, right)
+			}
+			declared := map[string]bool{}
+			for _, field := range body.Fields {
+				declared[field.Name] = true
+			}
+			if !opened[source] {
+				if len(mine) != len(other) {
+					return false
+				}
+				for key, value := range mine {
+					if declared[key] {
+						continue
+					}
+					actual, present := other[key]
+					if !present || !responseEqual(value, actual) {
+						return false
+					}
+				}
+			}
+			for _, field := range body.Fields {
+				value, present := mine[field.Name]
+				actual, otherPresent := other[field.Name]
+				if present != otherPresent {
+					return false
+				}
+				if present && !declaredEqualAt(declarations, opened, field.Type, value, actual, depth+1) {
+					return false
+				}
+			}
+			return true
+		case "union":
+			mine, ok := left.(map[string]any)
+			other, otherOK := right.(map[string]any)
+			if !ok || !otherOK || len(mine) != len(other) {
+				return responseEqual(left, right)
+			}
+			key := "value"
+			if body.Tag == "value" {
+				key = "content"
+			}
+			var target *string
+			if label, ok := mine[body.Tag].(string); ok {
+				if variants, err := unionVariants(body.Variants); err == nil {
+					target = variants[label]
+				}
+			}
+			for member, value := range mine {
+				actual, present := other[member]
+				if !present {
+					return false
+				}
+				if member == key && target != nil {
+					if !declaredEqualAt(declarations, opened, *target, value, actual, depth+1) {
+						return false
+					}
+				} else if !responseEqual(value, actual) {
+					return false
+				}
+			}
+			return true
+		default:
+			return responseEqual(left, right)
+		}
+	}
+	if strings.HasPrefix(source, "List<") && strings.HasSuffix(source, ">") {
+		mine, ok := left.([]any)
+		other, otherOK := right.([]any)
+		if !ok || !otherOK || len(mine) != len(other) {
+			return responseEqual(left, right)
+		}
+		for i, value := range mine {
+			if !declaredEqualAt(declarations, opened, source[5:len(source)-1], value, other[i], depth+1) {
+				return false
+			}
+		}
+		return true
+	}
+	if strings.HasPrefix(source, "Map<String, ") && strings.HasSuffix(source, ">") {
+		mine, ok := left.(map[string]any)
+		other, otherOK := right.(map[string]any)
+		if !ok || !otherOK || len(mine) != len(other) {
+			return responseEqual(left, right)
+		}
+		for key, value := range mine {
+			actual, present := other[key]
+			if !present || !declaredEqualAt(declarations, opened, source[12:len(source)-1], value, actual, depth+1) {
+				return false
+			}
+		}
+		return true
+	}
+	return responseEqual(left, right)
 }
 
 // responseFieldPresence admits a response field's presence policy (suite/24, beyond10x/ess#139) and
@@ -1132,15 +1278,18 @@ func (n nestedResponseTargets) compare(r responseObservation, response, payload 
 		emitted, present := object[mapping.Target[len(mapping.Target)-1]]
 		actual, exists := response[mapping.Source]
 		optional := false
+		sourceType := ""
 		for _, field := range r.Fields {
 			if field.Name == mapping.Source {
 				_, optional = accessorOptional(field.Type)
+				sourceType = field.Type
 			}
 		}
 		if optional && (!exists || actual == nil) && (!present || emitted == nil) {
 			continue
 		}
-		if !exists || !present || !responseEqual(actual, emitted) {
+		// At an opened struct only the declared fields must agree (beyond10x/ess#500).
+		if !exists || !present || !declaredEqual(r.Declarations, r.opened, sourceType, actual, emitted) {
 			return fmt.Errorf("event path %s differs from actual response field %s", strings.Join(mapping.Target, "."), mapping.Source)
 		}
 	}

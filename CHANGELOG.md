@@ -22,6 +22,20 @@
   an output use and an opened response `breaking` for readers; closing is `narrowed`, `breaking`
   for callers of a struct's input use and for its stored use, and `compatible` for a response.
   Earlier delta formats refuse it written or read (https://github.com/beyond10x/ess/issues/500).
+- `ess-conformance/48` (`/49` with coverage): `expect_direct_response` and
+  `expect_response_payload` carry `undeclared_fields: ignored` for an opened response object and
+  `undeclared_fields_ignored` for the opened struct declarations it reaches, each left out when
+  closed. The native, Go and TypeScript observers admit an undeclared key at exactly those objects
+  and keep every declared field's presence and type check; a closed response, a closed sibling
+  struct and a union still fail an undeclared key (`ESS-CF-PAYLOAD`). Readers through `/47` refuse
+  a `/48` suite by version, every reader refuses either member under a lower major, and a suite
+  without an opened object keeps its bytes and format. A one-time response that is opened is
+  refused at synthesis by name (https://github.com/beyond10x/ess/issues/500). An authored
+  `response:` literal and a response-mapped event field are compared with the returned value by
+  their declared fields at an opened struct, in all three runners, so an extension member is never
+  read; a literal that names an undeclared member is refused as before. A retained-result replay
+  or a complete-subject snapshot over an opened response or struct is refused at synthesis by
+  name, because both observers compare a closed record.
 
 ### Changed
 

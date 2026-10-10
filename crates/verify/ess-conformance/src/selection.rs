@@ -162,7 +162,9 @@ impl Observation {
                 .get(&name)
                 .ok_or("missing selection nominal declaration")?;
             if ty.reading.is_some() || ty.body.is_constrained() {
-                return Err(format!("selection-constraint: invariant or clock-reading validation is not executable observation authority for {name}"));
+                return Err(format!(
+                    "selection-constraint: invariant or clock-reading validation is not executable observation authority for {name}"
+                ));
             }
             let declaration = match &ty.body {
                 ResolvedBody::Newtype { of, .. } => Declaration::Newtype { of: unresolve(of) },
@@ -493,7 +495,7 @@ impl Observation {
                         Truth::True => true,
                         Truth::False => false,
                         Truth::Unknown => {
-                            return Err(failure("unknown", input, Some(index), Some(selector)))
+                            return Err(failure("unknown", input, Some(index), Some(selector)));
                         }
                     });
                 }
@@ -541,20 +543,47 @@ fn validate_value(
         ty,
         value,
         declarations,
+        CLOSED,
         bytes,
         depth,
         ValueProfile::Selection,
     )
     .map_err(|error| error.code)
 }
+
+/// No struct declaration ignores the fields it does not declare: every profile but the two
+/// response observations that carry `undeclared_fields_ignored` (suite/48 and /49).
+const CLOSED: &BTreeSet<QualifiedName> = &BTreeSet::new();
+
 pub(crate) fn validate_response_value(
     ty: &TypeRef,
     value: Option<&Node>,
     declarations: &BTreeMap<QualifiedName, Declaration>,
     bytes: &mut usize,
 ) -> Result<(), &'static str> {
-    validate_value_inner(ty, value, declarations, bytes, 0, ValueProfile::Response)
-        .map_err(|error| error.code)
+    validate_opened_response_value(ty, value, declarations, CLOSED, bytes)
+}
+
+/// [`validate_response_value`], where each struct declaration named in `opened` admits keys it
+/// does not declare (`undeclared_fields: ignored`, suite/48 and /49, beyond10x/ess#500). Its
+/// declared fields keep every check.
+pub(crate) fn validate_opened_response_value(
+    ty: &TypeRef,
+    value: Option<&Node>,
+    declarations: &BTreeMap<QualifiedName, Declaration>,
+    opened: &BTreeSet<QualifiedName>,
+    bytes: &mut usize,
+) -> Result<(), &'static str> {
+    validate_value_inner(
+        ty,
+        value,
+        declarations,
+        opened,
+        bytes,
+        0,
+        ValueProfile::Response,
+    )
+    .map_err(|error| error.code)
 }
 
 /// A response-profile check of an independently supplied fixture value, naming where it failed.
@@ -567,24 +596,35 @@ pub(crate) fn validate_fixture_value(
     declarations: &BTreeMap<QualifiedName, Declaration>,
     bytes: &mut usize,
 ) -> Result<(), String> {
-    validate_value_inner(ty, value, declarations, bytes, 0, ValueProfile::Response).map_err(
-        |error| match error.path() {
-            path if path.is_empty() => error.code.to_owned(),
-            path => format!("{} at `{path}`", error.code),
-        },
+    validate_value_inner(
+        ty,
+        value,
+        declarations,
+        CLOSED,
+        bytes,
+        0,
+        ValueProfile::Response,
     )
+    .map_err(|error| match error.path() {
+        path if path.is_empty() => error.code.to_owned(),
+        path => format!("{} at `{path}`", error.code),
+    })
 }
 
+/// A direct-return check, where each struct declaration named in `opened` admits keys it does not
+/// declare (`undeclared_fields: ignored`, suite/48 and /49, beyond10x/ess#500).
 pub(crate) fn validate_direct_response_value(
     ty: &TypeRef,
     value: Option<&Node>,
     declarations: &BTreeMap<QualifiedName, Declaration>,
+    opened: &BTreeSet<QualifiedName>,
     bytes: &mut usize,
 ) -> Result<(), &'static str> {
     validate_value_inner(
         ty,
         value,
         declarations,
+        opened,
         bytes,
         0,
         ValueProfile::DirectResponse,
@@ -676,10 +716,17 @@ impl ValueProfile {
 }
 
 /// [`validate_value_inner`]'s arm for a declared struct, whose members sit one level below it.
+///
+/// `ignored` is whether this struct declaration admits keys it does not declare
+/// (`undeclared_fields: ignored`, beyond10x/ess#500): it opens this object only, and its declared
+/// members, nested records included, are checked as they always are.
+#[allow(clippy::too_many_arguments)]
 fn validate_struct_value(
     fields: &[Field],
+    ignored: bool,
     value: &Node,
     declarations: &BTreeMap<QualifiedName, Declaration>,
+    opened: &BTreeSet<QualifiedName>,
     bytes: &mut usize,
     depth: usize,
     profile: ValueProfile,
@@ -687,7 +734,7 @@ fn validate_struct_value(
     let Node::Map(values) = value else {
         return Err("invalid_input".into());
     };
-    if profile.closed() {
+    if profile.closed() && !ignored {
         if let Some(unknown) = values
             .keys()
             .find(|key| !fields.iter().any(|f| &f.name == *key))
@@ -704,6 +751,7 @@ fn validate_struct_value(
             &field.type_ref,
             values.get(&field.name),
             declarations,
+            opened,
             bytes,
             depth + 1,
             profile,
@@ -717,6 +765,7 @@ fn validate_value_inner(
     ty: &TypeRef,
     value: Option<&Node>,
     declarations: &BTreeMap<QualifiedName, Declaration>,
+    opened: &BTreeSet<QualifiedName>,
     bytes: &mut usize,
     depth: usize,
     profile: ValueProfile,
@@ -728,15 +777,21 @@ fn validate_value_inner(
         return if value.is_none() || matches!(value, Some(Node::Null)) {
             Ok(())
         } else {
-            validate_value_inner(of, value, declarations, bytes, depth + 1, profile)
+            validate_value_inner(of, value, declarations, opened, bytes, depth + 1, profile)
         };
     }
     let value = value.ok_or("invalid_input")?;
     match ty {
         TypeRef::Named(name) => match declarations.get(name).ok_or("invalid_input")? {
-            Declaration::Newtype { of } => {
-                validate_value_inner(of, Some(value), declarations, bytes, depth + 1, profile)
-            }
+            Declaration::Newtype { of } => validate_value_inner(
+                of,
+                Some(value),
+                declarations,
+                opened,
+                bytes,
+                depth + 1,
+                profile,
+            ),
             Declaration::Enum { variants } => match value {
                 Node::Text(text) if variants.contains(text) => {
                     *bytes = bytes.saturating_add(text.len());
@@ -744,48 +799,26 @@ fn validate_value_inner(
                 }
                 _ => Err("invalid_input".into()),
             },
-            Declaration::Struct { fields } => {
-                validate_struct_value(fields, value, declarations, bytes, depth, profile)
-            }
-            Declaration::Union { tag, variants } => {
-                let Node::Map(values) = value else {
-                    return Err("invalid_input".into());
-                };
-                let Some(Node::Text(label)) = values.get(tag) else {
-                    return Err(
-                        ValueError::from("invalid_input").within(Segment::Member(tag.clone()))
-                    );
-                };
-                let content = ess_gen::schema::union_content_key(tag);
-                if profile.closed() {
-                    if let Some(unknown) = values.keys().find(|key| *key != tag && *key != content)
-                    {
-                        return Err(ValueError::from("invalid_input")
-                            .within(Segment::Member(unknown.clone())));
-                    }
-                }
-                let Some(ty) = variants.get(label).ok_or_else(|| {
-                    ValueError::from("invalid_input").within(Segment::Member(tag.clone()))
-                })?
-                else {
-                    // A unit variant (ess/22) is the tag alone.
-                    return if values.contains_key(content) {
-                        Err(ValueError::from("invalid_input")
-                            .within(Segment::Member(content.to_owned())))
-                    } else {
-                        Ok(())
-                    };
-                };
-                validate_value_inner(
-                    ty,
-                    values.get(content),
-                    declarations,
-                    bytes,
-                    depth + 1,
-                    profile,
-                )
-                .map_err(|error| error.within(Segment::Member(content.to_owned())))
-            }
+            Declaration::Struct { fields } => validate_struct_value(
+                fields,
+                opened.contains(name),
+                value,
+                declarations,
+                opened,
+                bytes,
+                depth,
+                profile,
+            ),
+            Declaration::Union { tag, variants } => validate_union_value(
+                tag,
+                variants,
+                value,
+                declarations,
+                opened,
+                bytes,
+                depth,
+                profile,
+            ),
         },
         TypeRef::Primitive(kind) => {
             validate_primitive(*kind, value, bytes, depth, profile).map_err(ValueError::from)
@@ -798,8 +831,16 @@ fn validate_value_inner(
                 return Err("resource".into());
             }
             for (index, value) in values.iter().enumerate() {
-                validate_value_inner(of, Some(value), declarations, bytes, depth + 1, profile)
-                    .map_err(|error| error.within(Segment::Item(index)))?;
+                validate_value_inner(
+                    of,
+                    Some(value),
+                    declarations,
+                    opened,
+                    bytes,
+                    depth + 1,
+                    profile,
+                )
+                .map_err(|error| error.within(Segment::Item(index)))?;
             }
             Ok(())
         }
@@ -812,14 +853,69 @@ fn validate_value_inner(
             }
             for (name, child) in values {
                 *bytes = bytes.saturating_add(name.len());
-                validate_value_inner(of, Some(child), declarations, bytes, depth + 1, profile)
-                    .map_err(|error| error.within(Segment::Key(name.clone())))?;
+                validate_value_inner(
+                    of,
+                    Some(child),
+                    declarations,
+                    opened,
+                    bytes,
+                    depth + 1,
+                    profile,
+                )
+                .map_err(|error| error.within(Segment::Key(name.clone())))?;
             }
             Ok(())
         }
         TypeRef::Map(_, _) => Err("unsupported".into()),
         TypeRef::Optional(_) => unreachable!(),
     }
+}
+
+/// A union value: its tag names one variant and its content key carries that variant's value.
+#[allow(clippy::too_many_arguments)]
+fn validate_union_value(
+    tag: &str,
+    variants: &BTreeMap<String, Option<TypeRef>>,
+    value: &Node,
+    declarations: &BTreeMap<QualifiedName, Declaration>,
+    opened: &BTreeSet<QualifiedName>,
+    bytes: &mut usize,
+    depth: usize,
+    profile: ValueProfile,
+) -> Result<(), ValueError> {
+    let Node::Map(values) = value else {
+        return Err("invalid_input".into());
+    };
+    let Some(Node::Text(label)) = values.get(tag) else {
+        return Err(ValueError::from("invalid_input").within(Segment::Member(tag.to_owned())));
+    };
+    let content = ess_gen::schema::union_content_key(tag);
+    if profile.closed() {
+        if let Some(unknown) = values.keys().find(|key| *key != tag && *key != content) {
+            return Err(ValueError::from("invalid_input").within(Segment::Member(unknown.clone())));
+        }
+    }
+    let Some(ty) = variants
+        .get(label)
+        .ok_or_else(|| ValueError::from("invalid_input").within(Segment::Member(tag.to_owned())))?
+    else {
+        // A unit variant (ess/22) is the tag alone.
+        return if values.contains_key(content) {
+            Err(ValueError::from("invalid_input").within(Segment::Member(content.to_owned())))
+        } else {
+            Ok(())
+        };
+    };
+    validate_value_inner(
+        ty,
+        values.get(content),
+        declarations,
+        opened,
+        bytes,
+        depth + 1,
+        profile,
+    )
+    .map_err(|error| error.within(Segment::Member(content.to_owned())))
 }
 
 fn project_value<'a>(
@@ -892,4 +988,90 @@ fn validate_direct_json(value: &Node, bytes: &mut usize, depth: usize) -> Result
         return Err("resource");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `catalog.orders.Order` holds a `Vendor` and a `Shipping`, each a struct of one String.
+    fn declarations() -> BTreeMap<QualifiedName, Declaration> {
+        let text = |name: &str| Field::new(name, TypeRef::Primitive(ess_domain::Primitive::String));
+        let named = |name: &str| TypeRef::Named(name.parse().unwrap());
+        BTreeMap::from([
+            (
+                "catalog.orders.Order".parse().unwrap(),
+                Declaration::Struct {
+                    fields: vec![
+                        Field::new("vendor", named("catalog.orders.Vendor")),
+                        Field::new("shipping", named("catalog.orders.Shipping")),
+                    ],
+                },
+            ),
+            (
+                "catalog.orders.Vendor".parse().unwrap(),
+                Declaration::Struct {
+                    fields: vec![text("vendor_id")],
+                },
+            ),
+            (
+                "catalog.orders.Shipping".parse().unwrap(),
+                Declaration::Struct {
+                    fields: vec![text("carrier")],
+                },
+            ),
+        ])
+    }
+
+    fn value(json: &str) -> Node {
+        serde_json::from_str(json).unwrap_or_else(|error| panic!("{error}: {json}"))
+    }
+
+    /// Each response profile's verdict on `json` as an `Order`, with `Vendor` opened.
+    fn checked(json: &str) -> [Result<(), &'static str>; 2] {
+        let declarations = declarations();
+        let opened = BTreeSet::from(["catalog.orders.Vendor".parse().unwrap()]);
+        let order = TypeRef::Named("catalog.orders.Order".parse().unwrap());
+        let value = value(json);
+        [
+            validate_opened_response_value(&order, Some(&value), &declarations, &opened, &mut 0),
+            validate_direct_response_value(&order, Some(&value), &declarations, &opened, &mut 0),
+        ]
+    }
+
+    #[test]
+    fn an_opened_struct_admits_extras_and_its_closed_sibling_refuses_them() {
+        assert_eq!(
+            checked(r#"{"vendor":{"vendor_id":"v-1","region":"eu"},"shipping":{"carrier":"c"}}"#),
+            [Ok(()), Ok(())]
+        );
+        for refused in [
+            // The closed sibling and the closed parent still refuse an undeclared member.
+            r#"{"vendor":{"vendor_id":"v-1"},"shipping":{"carrier":"c","tracking":"t"}}"#,
+            r#"{"vendor":{"vendor_id":"v-1"},"shipping":{"carrier":"c"},"note":"n"}"#,
+            // The opened struct still requires and types its declared member.
+            r#"{"vendor":{"region":"eu"},"shipping":{"carrier":"c"}}"#,
+            r#"{"vendor":{"vendor_id":7},"shipping":{"carrier":"c"}}"#,
+        ] {
+            assert_eq!(
+                checked(refused),
+                [Err("invalid_input"), Err("invalid_input")],
+                "{refused}"
+            );
+        }
+    }
+
+    #[test]
+    fn without_an_opened_set_every_struct_stays_closed() {
+        let declarations = declarations();
+        let order = TypeRef::Named("catalog.orders.Order".parse().unwrap());
+        let extra =
+            value(r#"{"vendor":{"vendor_id":"v-1","region":"eu"},"shipping":{"carrier":"c"}}"#);
+        assert_eq!(
+            validate_response_value(&order, Some(&extra), &declarations, &mut 0),
+            Err("invalid_input")
+        );
+        let mut bytes = 0;
+        assert!(validate_fixture_value(&order, Some(&extra), &declarations, &mut bytes).is_err());
+    }
 }

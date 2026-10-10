@@ -125,6 +125,26 @@ impl Response {
             })
             .collect();
         let declarations = crate::typed_fields::one_time_declarations(ir, &fields)?;
+        // The one-time trace compares the response as a closed record in every runner, so a
+        // response or struct that ignores undeclared fields (`ess/24`, beyond10x/ess#500) is
+        // refused by name rather than failing an honest target.
+        if command.undeclared_fields.is_ignored() {
+            return Err(format!(
+                "one-time response of `{}` declares `undeclared_fields: ignored`, which the \
+                 one-time observer does not carry",
+                command.name
+            ));
+        }
+        if let Some(opened) = crate::undeclared_fields::opened(ir, &declarations)
+            .into_iter()
+            .next()
+        {
+            return Err(format!(
+                "one-time response of `{}` reaches `{opened}`, which declares \
+                 `undeclared_fields: ignored`, and the one-time observer does not carry it",
+                command.name
+            ));
+        }
         let constraints = string_constraints(ir, &declarations, "one-time")?;
         let result = Self {
             fields,

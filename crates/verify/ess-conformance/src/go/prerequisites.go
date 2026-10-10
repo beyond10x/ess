@@ -121,6 +121,12 @@ type directResponseObservation struct {
 	// Constraints are the String-newtype rules of suite/46 and /47 (beyond10x/ess#499), admitted
 	// apart from the shape and checked on every actual value.
 	Constraints map[string]oneTimeConstraints `json:"-"`
+	// UndeclaredFields is "ignored" where the response object admits keys it does not declare, and
+	// UndeclaredFieldsIgnored names the struct declarations that do (suite/48 and /49,
+	// beyond10x/ess#500). Both are absent when closed; opened is the admitted set of names.
+	UndeclaredFields        string   `json:"undeclared_fields,omitempty"`
+	UndeclaredFieldsIgnored []string `json:"undeclared_fields_ignored,omitempty"`
+	opened                  map[string]bool
 }
 
 func directPresence(field accessorField, value Node, present bool) error {
@@ -182,7 +188,7 @@ func directPlainField(value any) (any, error) {
 }
 
 func admitDirectResponse(value any) (*directResponseObservation, error) {
-	root, err := closed(value, "command fields declarations expected", "outcome constraints")
+	root, err := closed(value, "command fields declarations expected", "outcome constraints undeclared_fields undeclared_fields_ignored")
 	if err != nil {
 		return nil, err
 	}
@@ -286,11 +292,17 @@ func admitDirectResponse(value any) (*directResponseObservation, error) {
 	if err = validateTypedFields([][]accessorField{result.Fields}, result.Declarations); err != nil {
 		return nil, err
 	}
+	if result.opened, err = admitUndeclaredFields(root, result.Declarations); err != nil {
+		return nil, err
+	}
 	if carried {
 		if result.Constraints, err = admitResponseConstraints(rawConstraints, result.Declarations); err != nil {
 			return nil, err
 		}
 	}
+	// A literal is authority: it names declared members only, even at a struct that ignores
+	// undeclared fields, because an observer never reads an undeclared member (beyond10x/ess#500).
+	// So it is admitted against the closed declarations.
 	observer := selectionObservation{Declarations: result.Declarations, responseMode: true, directMode: true}
 	count := 0
 	for name, value := range result.Expected {
@@ -321,12 +333,14 @@ func (r directResponseObservation) compare(actual map[string]Node) error {
 	for _, field := range r.Fields {
 		names[field.Name] = true
 	}
+	// An opened response (`undeclared_fields: ignored`) admits keys it does not declare and reads
+	// nothing of them; every declared field is still checked below.
 	for key := range actual {
-		if !names[key] {
+		if !names[key] && r.UndeclaredFields != "ignored" {
 			return fmt.Errorf("response has undeclared field")
 		}
 	}
-	observer := selectionObservation{Declarations: r.Declarations, responseMode: true, directMode: true}
+	observer := selectionObservation{Declarations: r.Declarations, responseMode: true, directMode: true, openStructs: r.opened}
 	count := 0
 	for _, field := range r.Fields {
 		value, present := actual[field.Name]
@@ -344,9 +358,17 @@ func (r directResponseObservation) compare(actual map[string]Node) error {
 	if err := checkResponseConstraints(r.Fields, r.Declarations, r.Constraints, actual); err != nil {
 		return err
 	}
+	// At an opened struct only the declared fields are compared; the target's extension members are
+	// never read (beyond10x/ess#500).
 	for name, value := range r.Expected {
 		actual, present := actual[name]
-		if !present || !responseEqual(value, actual) {
+		sourceType := ""
+		for _, field := range r.Fields {
+			if field.Name == name {
+				sourceType = field.Type
+			}
+		}
+		if !present || !declaredEqual(r.Declarations, r.opened, sourceType, value, actual) {
 			return fmt.Errorf("response differs from declared literal")
 		}
 	}
@@ -721,6 +743,48 @@ func responseConstraintsMajor(value any, major int) error {
 	if object, ok := value.(map[string]any); ok {
 		if _, carried := object["constraints"]; carried && major < 46 {
 			return fmt.Errorf("response constraints require suite/46 or /47")
+		}
+	}
+	return nil
+}
+
+// admitUndeclaredFields admits the opened-response members of a response observation (suite/48 and
+// /49, beyond10x/ess#500) and returns the struct declarations that admit keys they do not declare.
+// A root `undeclared_fields`, when present, is "ignored"; `undeclared_fields_ignored`, when present,
+// names at least one struct declaration of the same observation, each once.
+func admitUndeclaredFields(root map[string]any, declarations map[string]selectionDeclaration) (map[string]bool, error) {
+	if raw, present := root["undeclared_fields"]; present && raw != "ignored" {
+		return nil, fmt.Errorf("a response's undeclared_fields, when present, is ignored")
+	}
+	opened := map[string]bool{}
+	raw, present := root["undeclared_fields_ignored"]
+	if !present {
+		return opened, nil
+	}
+	names, ok := raw.([]any)
+	if !ok || len(names) == 0 {
+		return nil, fmt.Errorf("undeclared_fields_ignored, when present, names at least one type")
+	}
+	for _, item := range names {
+		name, ok := item.(string)
+		if !ok || opened[name] {
+			return nil, fmt.Errorf("undeclared_fields_ignored names a type more than once")
+		}
+		if body, declared := declarations[name]; !declared || body.Kind != "struct" {
+			return nil, fmt.Errorf("undeclared_fields_ignored names a type that is no struct declaration of the response")
+		}
+		opened[name] = true
+	}
+	return opened, nil
+}
+
+// undeclaredFieldsMajor refuses a response observation carrying an opened object below suite/48.
+func undeclaredFieldsMajor(value any, major int) error {
+	if object, ok := value.(map[string]any); ok && major < 48 {
+		_, root := object["undeclared_fields"]
+		_, types := object["undeclared_fields_ignored"]
+		if root || types {
+			return fmt.Errorf("ignored undeclared response fields require suite/48 or /49")
 		}
 	}
 	return nil

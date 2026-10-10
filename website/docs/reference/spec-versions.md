@@ -474,6 +474,22 @@ synthesis by name, and so are a record invariant and a reading on a response typ
 TypeScript execute both with report/2. Older readers refuse these envelopes by version, and a suite
 with no constrained response type keeps its earlier format and bytes.
 
+`ess-conformance/48` and `ess-conformance/49`, unreleased, admit undeclared fields where the
+specification declares `undeclared_fields: ignored` (beyond10x/ess#500). `expect_direct_response`
+and `expect_response_payload` carry `undeclared_fields: ignored` for an opened response object and
+`undeclared_fields_ignored`, the names of the opened struct declarations, each left out when
+closed. Every runner admits an undeclared key at exactly those objects and still checks every
+declared field's presence and type; a closed response, a closed sibling struct and a union still
+fail an undeclared key with `ESS-CF-PAYLOAD`. An authored `response:` literal and a
+response-mapped event field are compared with the returned value by their declared fields at an
+opened struct, so an extension member is never read; a literal names declared members only. A
+one-time response, a retained-result replay and a complete-subject snapshot compare a closed
+record, so synthesis refuses each by name where it reaches an opened object. A suite carrying
+either member is written at 48 (ordinary) or 49 (declared coverage); each implies every major
+below it, the constrained pair included. Rust, Go and TypeScript execute both with report/2. Older readers refuse these envelopes
+by version, every reader refuses either member under a lower major, and a suite with no opened
+object keeps its earlier format and bytes.
+
 For `ess/7`, generated held-state refusals include ordinary `wrong_state` outcomes:
 they compare the complete subject before and after the call and refuse every
 direct event, including undeclared names. Incomplete subject views cause a named

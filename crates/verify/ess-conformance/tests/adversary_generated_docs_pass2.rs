@@ -158,7 +158,7 @@ fn adversary2_direct_return_suite_emits_in_both_supported_runtimes() {
 /// Future majors still name the version, newest admitted major and target in their refusal.
 #[test]
 fn adversary2_unadmitted_version_refusal_names_the_version_and_the_limit() {
-    for major in [48, 49] {
+    for major in [50, 51] {
         for (target, error) in [
             ("Go", go(&empty_suite(major)).unwrap_err()),
             ("TypeScript", typescript(&empty_suite(major)).unwrap_err()),
@@ -171,7 +171,7 @@ fn adversary2_unadmitted_version_refusal_names_the_version_and_the_limit() {
             );
             for needle in [
                 format!("generated {target} runner"),
-                "`ess-conformance/47`".to_owned(),
+                "`ess-conformance/49`".to_owned(),
                 format!("`ess-conformance/{major}`"),
                 "regenerate using a supported suite version".to_owned(),
             ] {
