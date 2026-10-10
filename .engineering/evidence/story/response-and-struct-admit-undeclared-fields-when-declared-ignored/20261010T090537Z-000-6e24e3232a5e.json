@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-10T09:05:37Z",
+  "actor": "human:timo",
+  "artifact": "story:response-and-struct-admit-undeclared-fields-when-declared-ignored",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "https://github.com/beyond10x/ess/actions/runs/38037289363 (CI Gate green on 5372976ca7, merged as 7ac8f4ef93 in https://github.com/beyond10x/ess/pull/523)"
+  }
+}

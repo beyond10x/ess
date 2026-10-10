@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/undeclared-fields-ignored-0.58.0
+repository: ess
+publishedAt: 2026-10-10T00:00:00Z
+title: A struct or a command response may ignore undeclared fields, and generation, verify diff and runners follow
+summary: >-
+  `ess/24` lets a `kind: struct` type or a command's response declare `undeclared_fields: ignored`,
+  admitting fields it does not declare. `ess generate` writes open objects there, `ess verify diff`
+  classifies opening and closing, and runners admit an undeclared key at exactly those objects.
+  Authored scenarios are judged by the command's precedence plan.
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.58.0
+  version: 0.58.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]
