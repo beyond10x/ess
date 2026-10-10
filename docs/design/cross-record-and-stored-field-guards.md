@@ -275,7 +275,8 @@ publishes, and with no such view nothing is read. The fields left unread are nam
 `Note::PartialObservation`, for success, refusal, transition and wrong-state scenarios alike, and
 the scenario's outcome, error and events are its evidence about them; a refusal whose subject no
 view publishes keeps its outcome, error and no event, with no snapshot to compare. A suite whose
-model declares a covering view keeps its bytes. The absent-subject witness asserts absence only
+model declares an immediate covering view keeps its bytes; one whose only covering view is
+`eventual` gains the absent-subject send it used to refuse. The absent-subject witness asserts absence only
 through an immediate view: an `eventual` read that shows no row proves nothing about a row the
 projection has not caught up with. Without an immediate view the send keeps only what needs no
 view — no declared event is published — and claims no absence. The replay family's observation

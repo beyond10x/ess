@@ -5614,7 +5614,7 @@ impl Observed {
 /// reads the row back. So where a view observes the whole row it is required exactly as
 /// [`observe_fields`] requires it, and the scenario keeps its bytes. Where none does, the
 /// unfiltered, parameterless view of the entity projecting its identity and publishing the most
-/// of the fields named — an immediate one before an `eventual` one, then the first declared — is
+/// of the fields named — an immediate one before an `eventual` one, then the first by name — is
 /// required to hold what it publishes, and the rest are returned unobserved, for the scenario's
 /// [`Note::PartialObservation`](super::Note) to name. With no such view nothing is read and every
 /// field named is unobserved: the system the specification models may offer no read of the record

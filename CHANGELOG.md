@@ -27,8 +27,9 @@
   outcome, error and events are the evidence for the rest, and the note that a scenario observes
   only part of its subject now covers these scenarios too and names the fields no view publishes.
   The absent-subject send asserts that no row appeared only through an immediate view, and without
-  one keeps its no-event assertions. A model whose views cover the guarded fields keeps its suite
-  byte for byte (https://github.com/beyond10x/ess/issues/496).
+  one keeps its no-event assertions. A model with an immediate view covering the guarded fields keeps
+  its suite byte for byte; one whose only covering view is `eventual` gains that absent-subject
+  send, which it used to refuse (https://github.com/beyond10x/ess/issues/496).
 
 ### Fixed
 
