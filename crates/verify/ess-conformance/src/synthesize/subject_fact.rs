@@ -920,6 +920,66 @@ pub(super) fn grounded(
     grounded_in(ir, entity, settled, predicates, None)
 }
 
+/// [`grounded`] the other way round: every comparison between the row and an input field `fixed`
+/// already holds, the input side replaced by the value held there and the stored side left the
+/// field it reads. Handed to the stored-row search as hints, its literals are the values the row
+/// is tried at, so a row on either side of `team != input.key.team` is reached where the input's
+/// `key` is a captured instance whose value the arrangement fixed (beyond10x/ess#521).
+pub(super) fn grounded_on_input(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    fixed: &BTreeMap<String, Node>,
+    predicates: &[Predicate],
+) -> Vec<Predicate> {
+    let mut found = Vec::new();
+    for predicate in predicates {
+        leaves(predicate, &mut found);
+    }
+    let held = |path: &FactPath| -> Option<Operand> {
+        let path = input_path(path)?;
+        let (root, rest) = path.segments().split_first()?;
+        let mut node = fixed.get(root.as_str())?;
+        for segment in rest {
+            let Node::Map(entries) = node else {
+                return None;
+            };
+            node = entries.get(segment)?;
+        }
+        super::fact_value(node).map(Operand::Literal)
+    };
+    found
+        .iter()
+        .filter(|leaf| reads_input(ir, entity, leaf))
+        .filter_map(|leaf| {
+            let Predicate::Compare {
+                left,
+                op,
+                right,
+                kind,
+            } = leaf
+            else {
+                return None;
+            };
+            let side = |operand: &Operand| match operand {
+                Operand::Fact(path) if input_path(path).is_some() => held(path),
+                Operand::Fact(_) | Operand::Literal(_) => Some(operand.clone()),
+                _ => None,
+            };
+            let (left, right) = (side(left)?, side(right)?);
+            matches!(
+                (&left, &right),
+                (Operand::Fact(_), Operand::Literal(_)) | (Operand::Literal(_), Operand::Fact(_))
+            )
+            .then(|| Predicate::Compare {
+                left,
+                op: *op,
+                right,
+                kind: *kind,
+            })
+        })
+        .collect()
+}
+
 /// What [`grounded`] leaves out and a quantifier over the command's input grounds: its body's
 /// comparisons with the row, the stored side replaced by the value the row holds and the element
 /// left the input element it reads (beyond10x/ess#516). `not (exists audience in input.aud:

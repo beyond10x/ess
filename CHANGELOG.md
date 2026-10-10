@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `ess verify conform synthesize` honours a `when_related:` guard that reads a member of a struct
+  input (`team != input.key.team`) when that input names the command's subject and is sent as the
+  captured instance an earlier step created. The related row was chosen against a key the search
+  made up, so the scenario for the accepting branch sent a row in another team and expected
+  success, and the `interpreted` target failed it. The row is now chosen against the key the
+  subject was created under. A struct sent as a literal keeps its scenarios byte for byte
+  (https://github.com/beyond10x/ess/issues/521).
+
 ## [0.58.0] — 2026-10-10
 
 ### Added
