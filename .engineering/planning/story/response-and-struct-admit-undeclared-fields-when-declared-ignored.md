@@ -2,11 +2,15 @@
 format: aep.planning-md/3
 id: story:response-and-struct-admit-undeclared-fields-when-declared-ignored
 kind: story
-status: draft
+status: implemented
 title: 'A response or struct type can declare undeclared_fields: ignored for protocol extension members'
 relations:
 - serves: vision:O2
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-10T09:05:37Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-10-10T09:05:37Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-10T09:05:38Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 
