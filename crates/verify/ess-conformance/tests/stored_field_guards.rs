@@ -12,9 +12,10 @@ use ess_compiler::{
     source::SourceMap,
 };
 use ess_conformance::{
+    interpret::Interpreted,
     report::{ConformanceStatus, Status},
     scenario::ViewExpectation,
-    synthesize::Synthesis,
+    synthesize::{Note, Synthesis},
     target::*,
     AdmittedSuite, ConformanceScenario, ConformanceSuite, Runner, ScenarioStep, ScenarioValue,
 };
@@ -549,18 +550,189 @@ fn a_guarded_field_no_arranging_branch_can_set_is_refused_by_name() {
     );
 }
 
+/// A view publishing only some of the guarded fields observes those, and the scenario names the
+/// rest (beyond10x/ess#496): the arrangement is still written, never refused for the field no view
+/// publishes.
 #[test]
-fn without_a_view_observing_every_guarded_field_the_arrangement_is_refused() {
+fn without_a_view_of_every_guarded_field_the_published_ones_are_observed_and_the_rest_noted() {
     let unobserved = PARCELS
         .strip_suffix("      - {name: weight_kg, type: Integer}\n")
         .expect("the view projects the weight last");
-    let about = refusals_about(&synthesis(unobserved), REFUSAL);
-    assert!(
-        about
-            .iter()
-            .any(|refusal| refusal.contains("immediate unfiltered identity/state/fact view")),
-        "{about:?}"
+    let result = synthesis(unobserved);
+    assert_eq!(
+        refusals_about(&result, REFUSAL),
+        Vec::<String>::new(),
+        "the refusal's scenario is written"
     );
+    let refusal = scenario(&result.suite, REFUSAL);
+    let observed = rows(refusal);
+    assert!(
+        observed.iter().any(|row| {
+            row.get("service") == Some(&literal("Express"))
+                && row.get("state") == Some(&literal("Created"))
+        }),
+        "the arranged row is observed through what the view publishes: {observed:?}"
+    );
+    assert!(
+        observed.iter().all(|row| !row.contains_key("weight_kg")),
+        "and nothing is claimed about the weight no view publishes: {observed:?}"
+    );
+    assert_eq!(
+        unobserved_in(&result, REFUSAL),
+        Some(vec!["weight_kg".to_owned()]),
+        "{:?}",
+        result.notes
+    );
+}
+
+// ---- beyond10x/ess#496: an entity no view observes -------------------------------------------
+
+/// An order bound to the buyer who placed it, collected only by that buyer, and no read of the
+/// record: the specification declares no view (`.engineering/repro/496/orders.yaml`).
+const ORDERS: &str = include_str!("fixtures/orders-without-a-view.yaml");
+
+/// Every scenario of [`ORDERS`] whose row is selected by the stored `placed_by`.
+const ORDERS_SELECTED: [&str; 4] = [
+    "catalog.orders.Collect/outcome/wrong-collector",
+    "catalog.orders.Collect/outcome/collected",
+    "catalog.orders.Order/transition/collect/by/catalog.orders.Collect/collected",
+    "catalog.orders.Order/state/Collected/refuses/catalog.orders.Collect",
+];
+
+/// The fields the [`Note::PartialObservation`] about `id` names, where there is one.
+fn unobserved_in(result: &Synthesis, id: &str) -> Option<Vec<String>> {
+    result.notes.iter().find_map(|note| match note {
+        Note::PartialObservation {
+            scenario,
+            unobserved,
+        } if scenario.to_string() == id => Some(unobserved.clone()),
+        _ => None,
+    })
+}
+
+/// Whether `step` reads a view.
+fn reads_a_view(step: &ScenarioStep) -> bool {
+    matches!(
+        step,
+        ScenarioStep::QueryView { .. }
+            | ScenarioStep::ExpectView { .. }
+            | ScenarioStep::EventuallyView { .. }
+            | ScenarioStep::SnapshotSubject { .. }
+            | ScenarioStep::SnapshotCompleteSubject { .. }
+            | ScenarioStep::ExpectSubjectUnchanged { .. }
+            | ScenarioStep::ExpectCompleteSubjectUnchanged { .. }
+    )
+}
+
+#[test]
+fn without_any_view_every_subject_fact_branch_is_synthesized_and_noted() {
+    let result = synthesis(ORDERS);
+    assert_eq!(
+        result
+            .refusals
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>(),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        result.suite.scenarios.len(),
+        6,
+        "{:?}",
+        result.suite.scenarios.keys().collect::<Vec<_>>()
+    );
+    for id in ORDERS_SELECTED {
+        let selected = scenario(&result.suite, id);
+        assert!(
+            !selected.steps.iter().any(reads_a_view),
+            "{id} reads no view, for there is none: {:#?}",
+            selected.steps
+        );
+        assert!(
+            inputs(selected, "catalog.orders.Place")
+                .iter()
+                .all(|input| input.contains_key("placed_by")),
+            "{id} arranges the row through `Place` and its `sets:`"
+        );
+        assert_eq!(
+            unobserved_in(&result, id),
+            Some(vec!["placed_by".to_owned()]),
+            "{id}: {:?}",
+            result.notes
+        );
+    }
+    let wrong = scenario(&result.suite, ORDERS_SELECTED[0]);
+    let placed = inputs(wrong, "catalog.orders.Place")[0]["placed_by"].clone();
+    let collector = inputs(wrong, "catalog.orders.Collect")
+        .last()
+        .expect("the refused collection is sent")["collector"]
+        .clone();
+    assert_ne!(
+        placed, collector,
+        "the refusal is sent by another buyer than the one that placed the order"
+    );
+}
+
+#[test]
+fn the_view_less_suite_passes_against_the_model_it_was_synthesized_from() {
+    let suite = synthesis(ORDERS).suite;
+    let admitted = AdmittedSuite::from_suite(&suite).unwrap();
+    let report = Runner::for_suite(&suite)
+        .run_admitted(&admitted, &Interpreted::for_model(ir(ORDERS)))
+        .into_report();
+    let passed = report
+        .scenarios
+        .iter()
+        .filter(|scenario| scenario.status == Status::Passed)
+        .count();
+    assert_eq!((passed, report.scenarios.len()), (6, 6), "{report:#?}");
+}
+
+/// The absent-subject witness asserts absence only through an immediate view: an `eventual` read
+/// that shows no row proves nothing about a row its projection has not caught up with, and with
+/// no view there is nothing to read. Without one the send keeps only what needs no view — no
+/// declared event is published.
+#[test]
+fn the_absent_subject_is_asserted_absent_only_through_an_immediate_view() {
+    let eventual = PARCELS.replace(
+        "    consistency: read_your_writes\n",
+        "    consistency: eventual\n",
+    );
+    for (model, refusal) in [
+        (eventual.as_str(), REFUSAL),
+        (ORDERS, "catalog.orders.Collect/outcome/wrong-collector"),
+    ] {
+        let result = synthesis(model);
+        let steps = &scenario(&result.suite, refusal).steps;
+        assert!(
+            !steps.iter().any(|step| matches!(
+                step,
+                ScenarioStep::ExpectView {
+                    expectation: ViewExpectation::Excludes { .. },
+                    ..
+                } | ScenarioStep::EventuallyView {
+                    expectation: ViewExpectation::Excludes { .. },
+                    ..
+                }
+            )),
+            "{refusal}: no absence is asserted without an immediate view: {steps:#?}"
+        );
+        let first = steps
+            .iter()
+            .position(|step| matches!(step, ScenarioStep::ExecuteCommand { .. }))
+            .expect("a command is sent");
+        let ScenarioStep::ExecuteCommand { command, .. } = &steps[first] else {
+            unreachable!()
+        };
+        assert!(
+            refusal.starts_with(&command.to_string()),
+            "{refusal}: the absent-subject send opens the scenario: {steps:#?}"
+        );
+        assert!(
+            matches!(steps[first + 1], ScenarioStep::ExpectNoEvent { .. }),
+            "{refusal}: and requires that no declared event is published: {steps:#?}"
+        );
+    }
 }
 
 #[test]
