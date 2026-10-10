@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:entity-runtime-lowering-reads-selection-plan
 kind: story
-status: draft
+status: implemented
 title: The Entity Runtime lowering orders branches by the selection plan
 relations:
 - decomposes: epic:one-selection-plan
@@ -15,9 +15,15 @@ scope:
   path: crates/generate/ess-entity-runtime/src/subset.rs
 - confidence: inferred
   path: crates/generate/ess-entity-runtime/tests
+- confidence: cited
+  path: crates/specify/ess-compiler/tests/fixtures/selection-precedence-table.tsv
 - confidence: inferred
   path: website/docs/reference/entity-runtime-lowering.md
-revision: 7
+revision: 12
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-07T13:18:12Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":3}}}
+- {from: "proposed", to: "active", at: "2026-10-07T13:18:13Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":3}}}
+- {from: "active", to: "implemented", at: "2026-10-07T23:30:51Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"test_result":1,"review_outcome":5,"verification":1}}}
 ---
 # Story: The Entity Runtime lowering orders branches by the selection plan
 
@@ -80,3 +86,24 @@ story or the tree) or **inferred** (a reading that could be wrong).
 5. Digest table: per repository model and component, `lower_component` with empty options, read the closure from the `MissingDefinitionVersion` paths (`lib.rs:788-797`), lower again, digest `serde_json::to_vec(definition.as_definition())` per entity or the sorted refusal codes. Write the base before touching `lib.rs`.
 6. The exchanged-phase test drives `entity_core::Runtime` through a crate-private seam.
 7. A moved base table is a named change in the PR, never a silent re-pin.
+
+## Scope as landed
+
+Written 2026-10-07 at the merge (`7425b6ebf`, unit commit `ac263b14a`) from the implementor's
+confirmation table and the adversary passes; the scoper's Scope above stays as it was.
+
+| scoper's line | as landed |
+|---|---|
+| `src/lib.rs` `lower_command` sort (cited) | confirmed: sort key `(target rule, position in PrecedencePlan::iter())`, branches matched with `std::ptr::eq` |
+| `src/subset.rs:208-235` order wording (inferred) | present, no change needed: both rows stay true |
+| `website/docs/reference/entity-runtime-lowering.md` (inferred) | no change needed |
+| new test and fixture under `tests/` (inferred) | confirmed: `lowered_definitions_table.rs` + `fixtures/lowered-definitions-table.tsv` (239 models), `fixtures/held-state-after-disjoint-accepting.yaml`, additions to `selection_precedence.rs` |
+| byte-identity risk from the named exception (inferred) | **wrong for this tree**: no repository model reached it; the new fixture pins one, in the plan's order |
+| decision 5, the precedent walker | **wrong**: it reads `examples/<dir>` as single files, so four example systems stopped at `ASSEMBLE`; replaced by one model per `system.yaml` directory (46) |
+| decision 3, a match over phases | not taken: reading the plan's order directly needs no edit for a new phase |
+| — | also touched: `crates/specify/ess-compiler/tests/fixtures/selection-precedence-table.tsv` re-pinned for the new fixture (coordinator, adversary pass 2) |
+
+Open, outside this story: the design pages' sort wording (`input-guard-overlap-precedence.md:311-317`,
+`mutation-audit-and-model-runner.md:501-502`), a patch in the unit's scratch; and the
+`when: true` adversary case, which becomes a validation-refusal check once beyond10x/ess#489
+(PR #490) is in the branch.

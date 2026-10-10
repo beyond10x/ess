@@ -61,10 +61,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
 use ess_compiler::ir::{
-    EssIr, ResolvedBinding, ResolvedBody, ResolvedCommand, ResolvedComponent, ResolvedCondition,
-    ResolvedConversion, ResolvedEffect, ResolvedFailure, ResolvedField, ResolvedMappingValue,
-    ResolvedRelatedTest, ResolvedTypeRef, ResolvedView, TypeHandle,
+    EssIr, PrecedencePlan, ResolvedBinding, ResolvedBody, ResolvedCommand, ResolvedComponent,
+    ResolvedCondition, ResolvedConversion, ResolvedEffect, ResolvedFailure, ResolvedField,
+    ResolvedMappingValue, ResolvedRelatedTest, ResolvedTypeRef, ResolvedView, TypeHandle,
 };
+use ess_domain::command::precedence::Phase;
 use ess_domain::component::Reach;
 use ess_gen::Provenance;
 
@@ -721,13 +722,12 @@ fn related_precedence(ir: &EssIr, command: &ResolvedCommand) -> String {
     // order of their `exists: false` branches, and the present-related refusals before acceptance
     // whether or not `wrong_state:` is declared.
     let several = crate::determined::several_rows(command);
-    let orders_present_related_refusal = ir.format().major()
-        >= ess_domain::system::FormatVersion::V22.major()
-        && command
-            .outcomes
-            .iter()
-            .any(|outcome| matches!(outcome.condition, ResolvedCondition::WrongState))
-        && command.outcomes.iter().any(|outcome| {
+    // The present-related refusals the command's precedence plan answers at step 5, before every
+    // accepting branch (`docs/design/selection-plan.md`).
+    let refusals_first = PrecedencePlan::new(command, ir.format())
+        .branches(Phase::PresentRelated)
+        .iter()
+        .any(|outcome| {
             outcome.error.is_some()
                 && matches!(
                     outcome.condition,
@@ -766,7 +766,7 @@ fn related_precedence(ir: &EssIr, command: &ResolvedCommand) -> String {
         let present_related = if several {
             "then choose the first declared present `when_related:` predicate refusal whose \
              predicate and optional input guard hold, across rows; "
-        } else if orders_present_related_refusal {
+        } else if refusals_first {
             "then choose the present `when_related:` predicate refusal whose predicate and \
              optional input guard hold; "
         } else {

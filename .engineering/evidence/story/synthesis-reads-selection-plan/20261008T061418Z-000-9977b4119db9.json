@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-08T06:14:18Z",
+  "actor": "human:timo",
+  "artifact": "story:synthesis-reads-selection-plan",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "wave 5 on integrate/selection-plan 13f688be95: synthesis_suite_bytes_table (2), claim_search, claim_fixtures, cli_read, adversary_244b_window_free_bytes --ignored, --lib 145, clippy and fmt per unit; synthesis_selection_plan, synthesis_subject_fact_plan (4), synthesis_row_set_plan (4), synthesis_related_guard_plan (6) phase-exchange cases"
+  }
+}

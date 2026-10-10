@@ -31,21 +31,41 @@ Eight phases. Six are the six steps of the precedence order; two sit outside the
 Each phase is the interpreter's (`crates/verify/ess-conformance/src/interpret/execute.rs`) reading
 of its step:
 
-| phase | where the interpreter reads it today |
+| phase | where the interpreter reads it |
 |---|---|
 | `InputAbsent` | `without_input`, before any input field |
-| `RelatedRow` | `existence::existing` when any branch reads a related row or a row set, then `related_absent` in `related::reads_in_order` |
-| `InputRefusal` | `refused_by_input` |
-| `Existence` | `existence::existing`; `unknown_instance` from the held-subject loop, `addressed_row`, `selected_subject_refusal`, `stored_reference` and `take` |
-| `HeldState` | the head of `select` for the unguarded refusal; the held-state branches in `select`'s declaration-order pass; `wrong_state` from `addressed_row`, `selected_subject_refusal` and `take` |
-| `PresentRelated` | `stored_reference` for a stored `exists: false`; the head of `select` for the unguarded refusal; `select`'s prioritised pass when `orders_present_related_refusal` holds |
-| `Accepting` | `select`'s declaration-order pass |
-| `Default` | the tail of `select` |
+| `RelatedRow` | `existence::existing` for the phase's `existing_instance:`, then `related_absent` in `related::reads_in_order`, both from `responding_core`'s walk of the plan |
+| `InputRefusal` | `refused_by_input`, over the phase's branches, at the phase's position in `responding_core`'s walk; `select` (the look-aheads) reads the ones it leaves |
+| `Existence` | `existence::existing` for the phase's `existing_instance:`; `unknown_instance` from `held_rows`, gathered strictly at this phase after flattening the input; also from `addressed_row`, `selected_subject_refusal`, `stored_reference` and `take` |
+| `HeldState` | `select`'s `HeldState` phase, the unguarded refusal first; `wrong_state` from `addressed_row`, `selected_subject_refusal` and `take` |
+| `PresentRelated` | `stored_reference` for a stored `exists: false`; `select`'s `PresentRelated` phase for the unguarded refusal and the refusals; a look-ahead (`subject_refusals_before_present_related`, `stored_reference`) leaves the refusals out |
+| `Accepting` | `select`'s `Accepting` phase |
+| `Default` | `select`'s `Default` phase |
 
-The interpreter reads `HeldState` and `Accepting` in one declaration-order pass. Since
-beyond10x/ess#486, validation refuses a held-state branch declared after an accepting or external
-branch whose input guard may hold with its own, so on every command that validates the two phases
-read in turn give the pass's answer.
+`responding_core` builds the plan once per decision and `select` reads its phases in order
+(`story:interpreter-reads-selection-plan`). Until then the interpreter read `HeldState` and
+`Accepting` in one declaration-order pass. Since beyond10x/ess#486, validation refuses a held-state
+branch declared after an accepting or external branch whose input guard may hold with its own, so
+on every command that validates the two phases read in turn give that pass's answer; the one
+repository command declaring such a branch after a disjoint accepting one,
+`ess-entity-runtime/tests/fixtures/held-state-after-disjoint-accepting.yaml` `demo.ticket.Close`,
+answers alike either way.
+
+`responding_core` walks every phase in the plan's order and answers each at its position: the
+existence answers and `refused_by_input` where the plan places them, and each phase `select` reads
+in place (`select_phases`), with the rows gathered so far; the first branch that answers ends the
+walk. A phase order the `with_phase_order` seam exchanges moves each answer with its phase. The
+fixed points:
+
+- Input-named related rows are read only once `RelatedRow` has answered a missing one, and a
+  stored reference's row only at `Existence`.
+- `Existence` gathers the held rows strictly (`held_rows`): a row that cannot be read is the
+  error it always was, and a held-state subject no row holds is answered `unknown_instance:`. A
+  phase `select` reads before `Existence` sees only the rows that can be read, and a missing
+  subject is answered at `Existence`.
+- `addressed_row` on a row-set command answers at the end of `Existence`. The row-set tests and
+  the step-5 look-ahead (`subject_refusals_before_present_related`) run once, at the first phase
+  `select` reads.
 
 ### The markers answer; they are not read in order
 
@@ -91,8 +111,8 @@ the rest of the command declares. These compositions move a branch between phase
 |---|---|---|---|---|
 | `existing_instance:` | `RelatedRow` | declares any `when_related:`, through the input or a stored field, or any row set | `Existence` | `responding_core`, the first `existence::existing` |
 | `exists: false` | `PresentRelated`, first | reads the row through a stored field of the subject (`ess/22`, #304) | `RelatedRow` | `stored_reference` |
-| `when_related:` predicate refusal | `PresentRelated` | is `ess/22` and declares `wrong_state:` (#282); is `ess/22` and reads several rows through its input (#283); reads its row through a stored field (#304) | `Accepting`, in declaration order | `orders_present_related_refusal` |
-| row-set refusal | `PresentRelated` | always: a row-set refusal is the composition | — | `orders_present_related_refusal` |
+| `when_related:` predicate refusal | `PresentRelated` | is `ess/22` and declares `wrong_state:` (#282); is `ess/22` and reads several rows through its input (#283); reads its row through a stored field (#304) | `Accepting`, in declaration order | `select` reads the phase the plan places it in |
+| row-set refusal | `PresentRelated` | always: a row-set refusal is the composition | — | `select`'s `PresentRelated` phase |
 | `when:` + `error:` | the unguarded refusal: `HeldState`, first | gives the branch a trivially true guard, a subject or `replays:` (validation refuses the last two beside an `error:`) | `InputRefusal` | `refused_by_input` declines it; the head of `select` takes it |
 | unguarded refusal | `PresentRelated`, after a stored `exists: false` and before the refusals | reads a stored reference or a row set | `HeldState`, first | `stored_reference` and `addressed_row` run before `select` |
 | `unknown_instance:` | `PresentRelated`, last | guards on a row set and declares a creation that takes, from the input, the identity its acting branches address (an upsert, #462) | `Existence`, last | `addressed_row` and `selected_subject_refusal` leave the absent row to the row sets (`creation_takes_absent`); `take` answers it |

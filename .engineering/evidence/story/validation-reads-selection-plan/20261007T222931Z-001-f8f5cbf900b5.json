@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-07T22:29:31Z",
+  "actor": "human:timo",
+  "artifact": "story:validation-reads-selection-plan",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "probe over cargo test -p ess-domain -p ess-compiler on the unit and on base 1046621a8 sources: 18,530 (model, check) keys, 0 differing outputs (131 refused, identical text); the #486 check and the partition tie-breaks follow with_phase_order in validation_reads_selection_plan.rs and both adversary files: VERIFIED",
+    "reference": "~/.cache/ess-selection-plan/w3-u3-scratch/probe-base-r2.tsv vs probe-unit-r2.tsv"
+  }
+}

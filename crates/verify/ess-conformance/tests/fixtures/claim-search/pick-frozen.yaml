@@ -1,0 +1,82 @@
+format: ess/20
+system: demo
+version: v1
+domain: demo.desk
+summary: A pick checked against the current revision before it is accepted.
+types:
+  - {name: demo.desk.PickId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.desk.Pick
+    identity: {name: pick_id, type: demo.desk.PickId}
+    fields:
+      - {name: revision, type: Integer}
+    lifecycle:
+      initial: Picked
+      states: [Picked, Accepted, Refused]
+      terminal: [Accepted, Refused]
+      transitions:
+        - {name: accept, from: [Picked], to: Accepted}
+        - {name: refuse, from: [Picked], to: Refused}
+actors:
+  - name: demo.desk.Clerk
+    may: [demo.desk.MakePick, demo.desk.CheckPick]
+commands:
+  - name: demo.desk.MakePick
+    input:
+      - {name: revision, type: Integer}
+    outcomes:
+      - name: picked
+        creates: demo.desk.Pick
+        instance: pick_id
+        sets: {revision: input.revision}
+        emits: [demo.desk.Picked]
+        payload:
+          demo.desk.Picked: {pick_id: {generated: true}}
+  - name: demo.desk.CheckPick
+    input:
+      - {name: pick_id, type: demo.desk.PickId}
+      - {name: revision, type: Integer}
+    outcomes:
+      - name: stale
+        when_subject:
+          predicate: state == Picked
+        moves: demo.desk.Pick.refuse
+        instance: pick_id
+        emits: [demo.desk.PickStale]
+        payload:
+          demo.desk.PickStale: {pick_id: input.pick_id}
+      - name: unlisted
+        external: the current list does not name the pick
+        moves: demo.desk.Pick.refuse
+        instance: pick_id
+        emits: [demo.desk.PickUnlisted]
+        payload:
+          demo.desk.PickUnlisted: {pick_id: input.pick_id}
+      - name: accepted
+        moves: demo.desk.Pick.accept
+        instance: pick_id
+        emits: [demo.desk.PickAccepted]
+        payload:
+          demo.desk.PickAccepted: {pick_id: input.pick_id}
+      - name: wrong-state
+        wrong_state: true
+        error: demo.desk.NotPicked
+events:
+  - name: demo.desk.Picked
+    fields: [{name: pick_id, type: demo.desk.PickId}]
+  - name: demo.desk.PickStale
+    fields: [{name: pick_id, type: demo.desk.PickId}]
+  - name: demo.desk.PickUnlisted
+    fields: [{name: pick_id, type: demo.desk.PickId}]
+  - name: demo.desk.PickAccepted
+    fields: [{name: pick_id, type: demo.desk.PickId}]
+errors:
+  - name: demo.desk.NotPicked
+views:
+  - name: demo.desk.Picks
+    source: demo.desk.Pick
+    consistency: read_your_writes
+    fields:
+      - {name: pick_id, type: demo.desk.PickId}
+      - {name: revision, type: Integer}
+      - {name: state, type: demo.desk.Pick.State}

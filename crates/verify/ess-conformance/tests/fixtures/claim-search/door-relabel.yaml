@@ -1,0 +1,93 @@
+format: ess/20
+system: demo
+version: v1
+domain: demo.doors
+summary: A door shut when ajar, refused when open, relabelled by a printer.
+types:
+  - {name: demo.doors.DoorId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.doors.Door
+    identity: {name: door_id, type: demo.doors.DoorId}
+    fields:
+      - {name: label, type: String}
+    lifecycle:
+      initial: Open
+      states: [Open, Ajar, Closed]
+      terminal: [Closed]
+      transitions:
+        - {name: nudge, from: [Open], to: Ajar}
+        - {name: close, from: [Open, Ajar], to: Closed}
+actors:
+  - name: demo.doors.Keeper
+    may: [demo.doors.Install, demo.doors.Nudge, demo.doors.Operate]
+commands:
+  - name: demo.doors.Install
+    input:
+      - {name: label, type: String}
+    outcomes:
+      - name: installed
+        creates: demo.doors.Door
+        instance: door_id
+        sets: {label: input.label}
+        emits: [demo.doors.Installed]
+        payload:
+          demo.doors.Installed: {door_id: {generated: true}}
+  - name: demo.doors.Nudge
+    input:
+      - {name: door_id, type: demo.doors.DoorId}
+    outcomes:
+      - name: nudged
+        moves: demo.doors.Door.nudge
+        instance: door_id
+        emits: [demo.doors.Nudged]
+        payload:
+          demo.doors.Nudged: {door_id: input.door_id}
+      - name: not-open
+        wrong_state: true
+        error: demo.doors.NotOpen
+  - name: demo.doors.Operate
+    input:
+      - {name: door_id, type: demo.doors.DoorId}
+      - {name: label, type: String}
+    outcomes:
+      - name: locked
+        when_subject_state: Open
+        error: demo.doors.Locked
+      - name: shut
+        when_subject_state: Ajar
+        moves: demo.doors.Door.close
+        instance: door_id
+        emits: [demo.doors.Shut]
+        payload:
+          demo.doors.Shut: {door_id: input.door_id}
+      - name: relabelled
+        external: the label printer answers
+        updates: demo.doors.Door
+        instance: door_id
+        sets: {label: input.label}
+        emits: [demo.doors.Relabelled]
+        payload:
+          demo.doors.Relabelled: {door_id: input.door_id}
+      - name: refused
+        error: demo.doors.Refused
+events:
+  - name: demo.doors.Installed
+    fields: [{name: door_id, type: demo.doors.DoorId}]
+  - name: demo.doors.Nudged
+    fields: [{name: door_id, type: demo.doors.DoorId}]
+  - name: demo.doors.Shut
+    fields: [{name: door_id, type: demo.doors.DoorId}]
+  - name: demo.doors.Relabelled
+    fields: [{name: door_id, type: demo.doors.DoorId}]
+errors:
+  - name: demo.doors.NotOpen
+  - name: demo.doors.Locked
+  - name: demo.doors.Refused
+views:
+  - name: demo.doors.Doors
+    source: demo.doors.Door
+    consistency: read_your_writes
+    fields:
+      - {name: door_id, type: demo.doors.DoorId}
+      - {name: label, type: String}
+      - {name: state, type: demo.doors.Door.State}

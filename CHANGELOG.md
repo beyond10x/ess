@@ -23,6 +23,20 @@
   for callers of a struct's input use and for its stored use, and `compatible` for a response.
   Earlier delta formats refuse it written or read (https://github.com/beyond10x/ess/issues/500).
 
+### Changed
+
+- An authored scenario is judged by the command's precedence plan, as the model interpreter
+  answers. Two acts accepted before are refused, as `ESS-AUTHOR-041` naming the branch that answers
+  first: one claiming an `exists: false` branch over a stored reference where an input refusal's
+  guard holds, and one claiming a `when_related:` or row-set branch read among the accepting
+  branches where an accepting `when:` declared before it holds. In both cases the interpreter
+  answered the other branch, so the act could not pass.
+- A synthesized external witness no longer refutes a `when_related:` refusal that the command's
+  precedence plan reads after the external branch: one declared after it among the accepting
+  branches, which the external branch answers before. A suite for such a command can change bytes:
+  the witness may now be one that refusal's predicate holds on. The model interpreter passes the
+  old witness and the new one.
+
 ## [0.57.0] — 2026-10-09
 
 ### Added

@@ -55,6 +55,7 @@
 //! `when_subject_state`, `when_state_changes`) or whether it exists (`unknown_instance`), nor with
 //! `input_absent`. `existing_instance:` sits beside it in one command (never on one branch), with
 //! the precedence above.
+use super::precedence::{self, BranchShape, Composition, ConditionShape, Phase, Rank};
 use super::{related_value, CommandSpec, OutcomeCondition, RelatedVia};
 use crate::{
     entity::EntitySpec, expression::DomainEnvironment, spec::Specification, types::TypeRef,
@@ -1088,6 +1089,7 @@ pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors 
                 entity,
                 types,
                 orders_wrong_state,
+                Composition::of(command, spec.system().format),
             ));
             if via_is_optional(spec, command, via) {
                 checked.extend(validate_absent(command, via, types));
@@ -1522,6 +1524,7 @@ fn validate_partition(
     entity: &EntitySpec,
     types: &TypeRegistry,
     orders_present_refusals: bool,
+    composition: Composition,
 ) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
     let guarded: Vec<&super::Outcome> = command
@@ -1530,9 +1533,11 @@ fn validate_partition(
         .filter(|outcome| {
             !outcome.is_unconditional()
                 && outcome.condition.cause().is_none()
-                // Answered before every row-reading branch: by the command's own identity.
+                // A marker with no guard over the row or the input: it answers whether the
+                // command's own identity is held, which this partition does not prove.
                 && outcome.condition != OutcomeCondition::ExistingInstance
-                // From ess/22 this is selected later, against the addressed row's held state.
+                // A marker with no guard over the row or the input: it answers the addressed
+                // row's held state, which this partition does not prove.
                 && outcome.condition != OutcomeCondition::WrongState
                 && !matches!(
                     outcome.condition,
@@ -1586,7 +1591,7 @@ fn validate_partition(
             &case.selected,
             &guarded,
             default.is_some(),
-            orders_present_refusals,
+            orders_present_refusals.then_some(composition),
         );
         if selected == 1 {
             continue;
@@ -1792,6 +1797,7 @@ fn validate_joint_partition(
 ) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
     let guarded = partitioned(command);
+    let composition = Composition::of(command, spec.system().format);
     let default = command.default_outcome();
     let input_guards: Vec<_> = guarded
         .iter()
@@ -1852,7 +1858,7 @@ fn validate_joint_partition(
                     Some(at) => sides[at][combination[at]].selected.contains(index),
                 })
                 .collect();
-            let answering = several_selected(&selected, &guarded);
+            let answering = several_selected(&selected, &guarded, composition);
             let count = if selected.is_empty() {
                 usize::from(default.is_some())
             } else {
@@ -1875,9 +1881,11 @@ fn validate_joint_partition(
     errors
 }
 
-/// The branches the joint partition decides between: every guarded one but those answered before any
-/// row is read or by the addressed row's held state, and the `exists: false` branches, which answer
-/// missing rows.
+/// The branches the joint partition decides between: every branch with a guard over the present
+/// rows' fields or the input. Left out are the defaults, the externally decided branches, the
+/// `existing_instance:` and `wrong_state:` markers, which answer the command's own identity and the
+/// addressed row's held state, and the `exists: false` branches, which answer missing rows: none of
+/// those is a question this partition proves. The order branches answer in is not read here.
 fn partitioned(command: &CommandSpec) -> Vec<&super::Outcome> {
     command
         .outcomes
@@ -2093,61 +2101,96 @@ fn unanswered_case(
     )
 }
 
+/// Whether `outcome`, on a command composed as `composition`, is a present-related predicate
+/// refusal step 5 holds: a branch over the related row that [`Phase::PresentRelated`] reads in
+/// declaration order ([`precedence::place`]).
+fn answers_at_step_5(outcome: &super::Outcome, composition: Composition) -> bool {
+    let branch = BranchShape::of(outcome);
+    let place = precedence::place(&branch, &composition);
+    place.phase == Phase::PresentRelated
+        && place.rank == Rank::Declared
+        && matches!(branch.condition, ConditionShape::Related { .. })
+}
+
+/// Whether `outcome`, on a command composed as `composition`, accepts and is read in a phase the
+/// current phase order reads before [`Phase::PresentRelated`] ([`precedence::place`],
+/// [`precedence::phase_order`]): a present-related refusal selected beside it does not answer
+/// first.
+///
+/// Only an accepting branch is asked. An input refusal selected beside a present-related refusal is
+/// counted with it as one answer, as validation counted it before the classification existed: these
+/// partitions order no input refusal of their own (two selected without a present-related refusal
+/// conflict), so they read no phase for one.
+fn accepts_before_step_5(outcome: &super::Outcome, composition: Composition) -> bool {
+    !outcome.is_refusal()
+        && precedence::place(&BranchShape::of(outcome), &composition)
+            .phase
+            .position()
+            < Phase::PresentRelated.position()
+}
+
 /// The branches answering among `selected` (indices into `guarded`, in declaration order) on a
-/// command reading several related rows: the first declared present-related predicate refusal,
-/// together with every other selected refusal over the row it reads — which leave it ambiguous —
-/// where one is selected; otherwise every selected branch.
-fn several_selected(selected: &[usize], guarded: &[&super::Outcome]) -> Vec<usize> {
+/// command reading several related rows, composed as `composition`: where a present-related
+/// predicate refusal is selected, the first declared, together with every other selected refusal
+/// over the row it reads — which leave it ambiguous — and every selected accepting branch the phase
+/// order reads before it ([`accepts_before_step_5`]); otherwise every selected branch.
+fn several_selected(
+    selected: &[usize],
+    guarded: &[&super::Outcome],
+    composition: Composition,
+) -> Vec<usize> {
     let refusal_via = |index: usize| {
         let outcome = guarded[index];
         match &outcome.condition {
-            OutcomeCondition::Related {
-                via,
-                test: RelatedTest::Holds(_),
-                ..
-            } if outcome.is_refusal() => Some(via),
+            OutcomeCondition::Related { via, .. } if answers_at_step_5(outcome, composition) => {
+                Some(via)
+            }
             _ => None,
         }
     };
-    let Some(first) = selected.iter().find_map(|index| refusal_via(*index)) else {
+    let Some(via) = selected.iter().find_map(|index| refusal_via(*index)) else {
         return selected.to_vec();
     };
     selected
         .iter()
         .copied()
-        .filter(|index| refusal_via(*index) == Some(first))
+        .filter(|index| {
+            refusal_via(*index) == Some(via) || accepts_before_step_5(guarded[*index], composition)
+        })
         .collect()
 }
 
+/// How many branches answer `selected` (indices into `guarded`) on a command reading one related
+/// row, beside a default where `has_default`. `ordered` is the command's composition where
+/// validation admits its present-related refusals at step 5 ([`orders_present_refusals`]).
 fn selected_count(
     selected: &[usize],
     guarded: &[&super::Outcome],
     has_default: bool,
-    orders_present_refusals: bool,
+    ordered: Option<Composition>,
 ) -> usize {
     if selected.is_empty() {
         return usize::from(has_default);
     }
-    let related_refusals = selected
+    let Some(composition) = ordered else {
+        return selected.len();
+    };
+    let related_refusals: Vec<usize> = selected
         .iter()
-        .filter(|index| {
-            let outcome = guarded[**index];
-            outcome.is_refusal()
-                && matches!(
-                    outcome.condition,
-                    OutcomeCondition::Related {
-                        test: RelatedTest::Holds(_),
-                        ..
-                    }
-                )
-        })
-        .count();
+        .copied()
+        .filter(|index| answers_at_step_5(guarded[*index], composition))
+        .collect();
     // From ess/22 one selected present-related predicate refusal answers before every accepting
-    // branch. Two such refusals remain ambiguous, as in earlier formats: the new order introduces
-    // no author-declared tie-break between them.
-    if orders_present_refusals && related_refusals == 1 {
-        1
-    } else {
-        selected.len()
+    // branch the phase order reads after it; one read before it leaves the case to more than one
+    // branch ([`accepts_before_step_5`]). Two such refusals remain ambiguous, as in earlier
+    // formats: the new order introduces no author-declared tie-break between them.
+    match related_refusals.as_slice() {
+        [_] if !selected
+            .iter()
+            .any(|other| accepts_before_step_5(guarded[*other], composition)) =>
+        {
+            1
+        }
+        _ => selected.len(),
     }
 }

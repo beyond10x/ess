@@ -1,0 +1,76 @@
+format: ess/20
+system: demo
+version: v1
+domain: demo.ticket
+summary: >-
+  A ticket closed through an input refusal, an accepting branch and a held-state branch declared
+  after it with a disjoint input guard, which the precedence plan lowers before it.
+types:
+  - {name: demo.ticket.TicketId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.ticket.Ticket
+    identity: {name: ticket_id, type: demo.ticket.TicketId}
+    fields:
+      - {name: note, type: String}
+      - {name: reopened, type: Integer}
+    lifecycle:
+      initial: Open
+      states: [Open, Closed]
+      terminal: [Closed]
+      transitions:
+        - {name: close, from: [Open], to: Closed}
+actors:
+  - name: demo.ticket.Agent
+    may: [demo.ticket.File, demo.ticket.Close]
+errors:
+  - {name: demo.ticket.InvalidNote, fields: []}
+  - {name: demo.ticket.NotOpen, fields: []}
+events:
+  - name: demo.ticket.Filed
+    fields: [{name: ticket_id, type: demo.ticket.TicketId}]
+  - name: demo.ticket.Closed
+    fields: [{name: ticket_id, type: demo.ticket.TicketId}]
+commands:
+  - name: demo.ticket.File
+    input: []
+    outcomes:
+      - name: filed
+        creates: demo.ticket.Ticket
+        instance: ticket_id
+        sets: {note: "", reopened: 0}
+        emits: [demo.ticket.Filed]
+        payload: {demo.ticket.Filed: {ticket_id: {generated: true}}}
+  - name: demo.ticket.Close
+    input:
+      - {name: ticket_id, type: demo.ticket.TicketId}
+      - {name: note, type: String}
+      - {name: rush, type: Boolean}
+    outcomes:
+      - {name: invalid-note, when: note == "", error: demo.ticket.InvalidNote}
+      - name: rushed
+        when: rush == true
+        moves: demo.ticket.Ticket.close
+        instance: ticket_id
+        sets: {note: input.note}
+        emits: [demo.ticket.Closed]
+        payload: {demo.ticket.Closed: {ticket_id: input.ticket_id}}
+      - name: first-close
+        when_subject: {predicate: reopened == 0}
+        when: rush == false
+        moves: demo.ticket.Ticket.close
+        instance: ticket_id
+        sets: {note: input.note}
+        emits: [demo.ticket.Closed]
+        payload: {demo.ticket.Closed: {ticket_id: input.ticket_id}}
+      - name: closed
+        moves: demo.ticket.Ticket.close
+        instance: ticket_id
+        sets: {note: input.note}
+        emits: [demo.ticket.Closed]
+        payload: {demo.ticket.Closed: {ticket_id: input.ticket_id}}
+      - {name: not-open, wrong_state: true, error: demo.ticket.NotOpen}
+components:
+  - component: tickets
+    owns: {domains: [demo.ticket]}
+    accepts: {commands: [demo.ticket.File, demo.ticket.Close]}
+    reached_by: network

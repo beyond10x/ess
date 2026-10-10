@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-08T02:58:49Z",
+  "actor": "human:timo",
+  "artifact": "story:synthesis-reads-selection-plan",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "unit 1: cargo test -p ess-conformance --locked --test synthesis_suite_bytes_table (2 passed) plus the claim_search, claim_fixtures and cli_read tests (green), walkers in 8 packages green; on unit commit e53c49a678"
+  }
+}

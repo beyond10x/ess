@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-08T02:58:48Z",
+  "actor": "human:timo",
+  "artifact": "story:interpreter-reads-selection-plan",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "coordinator check of the correction round on 0465e5a0fa's tree: synthesized suites 186 models / 450 commands and mutation audits 148 models equal the base (0 diff lines each); 28 phase pairs x 5 requests: 136 agree with a first-holding-phase oracle, the 4 others are the fixed points in docs/design/selection-plan.md: VERIFIED",
+    "reference": "~/.cache/ess-selection-plan/w4-u1-scratch/adversary-1/pass3/"
+  }
+}

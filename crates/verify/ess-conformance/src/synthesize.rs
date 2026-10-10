@@ -189,6 +189,7 @@ mod existence;
 mod grant;
 mod identity;
 mod paging;
+pub(crate) mod precedence;
 mod refusal_policy;
 mod related;
 mod related_guard;
@@ -4013,24 +4014,17 @@ fn reaches_external(
 }
 
 /// The siblings selected by the held state `held` that claim an external branch's input, as
-/// `facts` decide them: a `when_subject_state:` or `when_state_changes:` branch admitting `held`
-/// whose input guard, where it declares one, holds or is not decided.
+/// `facts` decide them: a `when_subject_state:` or `when_state_changes:` branch admitting `held`,
+/// which the precedence plan answers before `outcome` ([`held_state_before`]), whose input guard,
+/// where it declares one, holds or is not decided.
 fn held_state_claims<'c>(
     command: &'c ResolvedCommand,
     outcome: &ResolvedOutcome,
     held: &StateName,
     facts: &crate::InputFacts<'_>,
 ) -> Vec<&'c ResolvedOutcome> {
-    command
-        .outcomes
-        .iter()
-        .filter(|branch| branch.name != outcome.name)
-        .filter(|branch| {
-            matches!(
-                branch.condition,
-                ResolvedCondition::SubjectState { .. } | ResolvedCondition::StateChange { .. }
-            ) && admits_held_state(&branch.condition, held)
-        })
+    held_state_before(command, outcome, held)
+        .into_iter()
         .filter(|branch| {
             held_state_guard(branch)
                 .is_none_or(|guard| !matches!(facts.decide(guard), Decision::Refuted(_)))
@@ -4055,17 +4049,29 @@ fn held_state_refuted<'c>(
     outcome: &ResolvedOutcome,
     held: &StateName,
 ) -> Option<Vec<&'c Predicate>> {
-    command
-        .outcomes
-        .iter()
-        .filter(|branch| branch.name != outcome.name)
+    held_state_before(command, outcome, held)
+        .into_iter()
+        .map(held_state_guard)
+        .collect()
+}
+
+/// The `when_subject_state:` and `when_state_changes:` branches admitting `held` that the
+/// precedence plan answers before `outcome` ([`precedence::answers_before`]), in declaration order:
+/// on a row resting in `held`, the siblings an external branch's witness steps out of
+/// (beyond10x/ess#464).
+fn held_state_before<'c>(
+    command: &'c ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    held: &StateName,
+) -> Vec<&'c ResolvedOutcome> {
+    precedence::answers_before(command, outcome)
+        .into_iter()
         .filter(|branch| {
             matches!(
                 branch.condition,
                 ResolvedCondition::SubjectState { .. } | ResolvedCondition::StateChange { .. }
             ) && admits_held_state(&branch.condition, held)
         })
-        .map(held_state_guard)
         .collect()
 }
 
@@ -6197,14 +6203,11 @@ fn selected_in_state(
         }
         selected.push(branch);
     }
-    // An input refusal these facts select answers before any held-state branch (beyond10x/ess#227),
-    // as the partition in `ess_domain::command::subject_state` counts it; of two, the first
-    // declared answers (`selected` keeps declaration order), as Entity Runtime takes it.
-    if let Some(first) = selected
-        .iter()
-        .copied()
-        .find(|branch| is_state_input_refusal(command, branch))
-    {
+    // A branch the precedence plan reads before both the held state and the accepting branches —
+    // an input refusal (beyond10x/ess#227), as the partition in `ess_domain::command::subject_state`
+    // counts it — answers first; of two, the first the plan reads, which is the first declared, as
+    // Entity Runtime takes it. Among the rest the witness is the one branch selected.
+    if let Some(first) = precedence::first_before_held_and_accepting(command, &selected) {
         selected = vec![first];
     }
     if selected.is_empty() {
@@ -6755,45 +6758,29 @@ pub(crate) fn accepting_input_half(outcome: &ResolvedOutcome) -> Option<&Predica
     }
 }
 
-/// Every input-guarded refusal of `command` answered before `outcome`: all of them for any other
-/// branch, and for an input-guarded refusal the ones declared before it — of two refusals an input
-/// selects, the first declared answers, as Entity Runtime takes it (beyond10x/ess#227 adversary
-/// pass 1). A refusal's witness refutes these and needs to refute nothing declared after it.
+/// Every input-guarded refusal of `command` the precedence plan answers before `outcome`
+/// ([`precedence::answers_before`]), in declaration order. Of two input refusals an input selects
+/// the first declared answers, as Entity Runtime takes it (beyond10x/ess#227 adversary pass 1), and
+/// every one answers before the held state and the accepting branches. A witness refutes these and
+/// needs to refute nothing the plan reads after it.
 pub(crate) fn sibling_refusals<'c>(
     command: &'c ResolvedCommand,
     outcome: &'c ResolvedOutcome,
 ) -> impl Iterator<Item = &'c ResolvedOutcome> {
-    let before = if is_input_guarded_refusal(outcome) {
-        command
-            .outcomes
-            .iter()
-            .position(|other| other.name == outcome.name)
-            .unwrap_or(command.outcomes.len())
-    } else {
-        command.outcomes.len()
-    };
-    command.outcomes[..before]
-        .iter()
-        .filter(move |other| other.name != outcome.name && is_input_guarded_refusal(other))
+    precedence::answers_before(command, outcome)
+        .into_iter()
+        .filter(|other| is_input_guarded_refusal(other))
 }
 
-/// Every input-guarded refusal of `command` declared after `outcome`, where `outcome` is one: the
-/// refusals it answers before wherever both guards hold (beyond10x/ess#455).
+/// Every input-guarded refusal of `command` the precedence plan answers after `outcome`
+/// ([`precedence::answers_after`]), in declaration order: the refusals an input refusal answers
+/// before wherever both guards hold (beyond10x/ess#455).
 fn later_refusals<'c>(
     command: &'c ResolvedCommand,
     outcome: &'c ResolvedOutcome,
 ) -> impl Iterator<Item = &'c ResolvedOutcome> {
-    let after = if is_input_guarded_refusal(outcome) {
-        command
-            .outcomes
-            .iter()
-            .position(|other| other.name == outcome.name)
-            .map_or(command.outcomes.len(), |at| at + 1)
-    } else {
-        command.outcomes.len()
-    };
-    command.outcomes[after..]
-        .iter()
+    precedence::answers_after(command, outcome)
+        .into_iter()
         .filter(|other| is_input_guarded_refusal(other))
 }
 
@@ -6869,26 +6856,24 @@ fn is_external(outcome: &ResolvedOutcome) -> bool {
     )
 }
 
-/// Every accepting `when:` branch declared before `outcome`, where `outcome` is one or is an
-/// external branch.
+/// Every accepting `when:` branch the precedence plan answers before `outcome`
+/// ([`precedence::answers_before`]), in declaration order.
 ///
 /// Among the accepting guarded branches and external branches of one command the first declared
 /// whose guard holds answers (`docs/design/input-guard-overlap-precedence.md`) — for an external
 /// branch, whatever the provider says, which is Entity Runtime's source order
 /// (`ess-entity-runtime` `lower`). So an input one of these claims is not an input that reaches
-/// `outcome`. An external branch declared earlier is not one of them: a provider that does not
-/// take it passes the input on.
+/// `outcome` (beyond10x/ess#217). The rule covers the accepting `when:` branches as the claimers;
+/// an external branch read earlier is not one of them, since a provider that does not take it
+/// passes the input on. Which branches they answer before is the plan's alone: under the
+/// precedence order, the accepting branches declared after them and the default, and never a
+/// refusal or a held-state branch, whose phases are read first.
 fn earlier_accepting_branches<'c>(
     command: &'c ResolvedCommand,
     outcome: &'c ResolvedOutcome,
 ) -> Vec<&'c ResolvedOutcome> {
-    if !is_input_guarded_accepting(outcome) && !is_external(outcome) {
-        return Vec::new();
-    }
-    command
-        .outcomes
-        .iter()
-        .take_while(|other| other.name != outcome.name)
+    precedence::answers_before(command, outcome)
+        .into_iter()
         .filter(|other| is_input_guarded_accepting(other))
         .collect()
 }
@@ -7035,13 +7020,12 @@ fn admits_plain(
         .iter()
         .all(|other| other.test_strategy != TestStrategy::DefaultBranch)
     {
-        // A refusal declared after an input-guarded refusal never answers before it, so it is not
-        // refuted (beyond10x/ess#227 adversary pass 1).
-        let later = |other: &ResolvedOutcome| {
-            is_input_guarded_refusal(outcome)
-                && is_input_guarded_refusal(other)
-                && !sibling_refusals(command, outcome).any(|before| before.name == other.name)
-        };
+        // A refusal the plan reads after an input-guarded refusal never answers before it, so it
+        // is not refuted (beyond10x/ess#227 adversary pass 1).
+        let after: Vec<&OutcomeName> = later_refusals(command, outcome)
+            .map(|after| &after.name)
+            .collect();
+        let later = |other: &ResolvedOutcome| after.contains(&&other.name);
         command
             .outcomes
             .iter()
@@ -7050,9 +7034,9 @@ fn admits_plain(
             .collect()
     } else if outcome.error.is_none() || is_input_guarded_refusal(outcome) {
         // An input-guarded refusal refutes the refusals declared before it: of two an input
-        // selects, the first declared answers ([`sibling_refusals`]). An accepting `when:` branch
-        // is not reached by an input an accepting branch declared before it claims
-        // (beyond10x/ess#217).
+        // selects, the first declared answers ([`sibling_refusals`]). A branch is not reached by an
+        // input an accepting `when:` branch the plan reads before it claims (beyond10x/ess#217).
+        // Under the precedence order that is none for a refusal.
         if claimed_by(facts, &earlier_accepting(command, outcome)) {
             return Ok(false);
         }
