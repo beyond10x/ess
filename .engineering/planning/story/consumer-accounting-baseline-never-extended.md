@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:consumer-accounting-baseline-never-extended
 kind: story
-status: active
+status: archived
 title: Reconcile changed consumer obligations without extending initial eligibility
 owner: ESS model and consumer package maintainers
 relations:
@@ -185,10 +185,11 @@ scope:
   path: ess/consumer-outside-boundary
 - confidence: cited
   path: schemas/generated/ess.schema.json
-revision: 50
+revision: 52
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-15T02:25:30Z", actor: "human:timo", revision: 18, decided_on: {"recorded":{"review_outcome":1}}, imported: true}
 - {from: "proposed", to: "active", at: "2026-09-15T02:25:32Z", actor: "human:timo", revision: 19, decided_on: {"recorded":{"review_outcome":1}}, imported: true}
+- {from: "active", to: "archived", at: "2026-10-10T18:31:28Z", actor: "human:timo", revision: 52, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Outcome
 
@@ -421,3 +422,7 @@ The candidate is deliberately outside the repository authority path and marked I
 Original S9 has resumed after its nested-execution prerequisite passed, owner active5; all127 saved drafts remain intact and48 accepted source paths were refreshed. Its author owns all three original Go/browser/release profiles and one final handoff, while root retains adoption and final qualification. M7 retains its existing whole acceptance contract. Two independent bounded build lanes, root no Cargo; no S10–18 fan-out, new authority engine, new review budget or additional prerequisite is opened by this composition.
 
 Local evidence: local-evidence:ess-evolution/waves/0010-opus-accounting/reviewed-reconciliation.composed.candidate.json, SHA256 c22beb25db4e2fb6608f793a2efb486b3e9777fc5f482ee276de4b9ffe8b7ee7. Final frozen baseline remains3dd8dff59335c8a77c93c2734118566fd1b2d5165c0590d0aa9be397374a47de. Root next action is to adopt only complete accepted source/claim groups, finish exact historical replacement/aggregate bindings, then run genuine current-vector guards and the full consumer-enabled gate. Existing unresolved policy and behavioral gaps remain explicit.
+
+## Parked
+
+Archived while consumer coverage is parked (`decision-blocker:consumer-accounting-parked`): no CI lane runs `consumer-check`, and it is outside the release bar. The code, baseline and reviewed cases stay in the tree. Re-open this as a new story when a named external adopter pins a released `ess/N` and a change reaches it undetected, as `AGENTS.md` says.
