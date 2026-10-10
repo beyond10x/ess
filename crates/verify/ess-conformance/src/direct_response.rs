@@ -47,7 +47,9 @@ pub struct Observation {
     /// them (suite/48 and /49). Empty, and then absent from the bytes, when every one is closed.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub undeclared_fields_ignored: BTreeSet<QualifiedName>,
-    /// Partial field-value assertions; every named value is compared completely.
+    /// Partial field-value assertions; every named value is compared completely, except that at a
+    /// struct in `undeclared_fields_ignored` only its declared fields are compared. A literal
+    /// names declared members only, opened struct or not.
     pub expected: BTreeMap<String, Node>,
 }
 
@@ -173,11 +175,14 @@ impl Observation {
                 .iter()
                 .find(|field| &field.name == name)
                 .ok_or_else(|| format!("undeclared response field {name}"))?;
+            // A literal is authority: it names declared members only, even at a struct that ignores
+            // undeclared fields, because an observer never reads an undeclared member
+            // (beyond10x/ess#500). So it is admitted against the closed declarations.
             crate::selection::validate_direct_response_value(
                 &field.type_ref,
                 Some(value),
                 &self.declarations,
-                &self.undeclared_fields_ignored,
+                &BTreeSet::new(),
                 &mut bytes,
             )
             .map_err(|reason| format!("response literal {name}: {reason}"))?;
@@ -227,7 +232,19 @@ impl Observation {
         }
         check_constraints(&self.fields, &self.declarations, &self.constraints, actual)?;
         for (name, expected) in &self.expected {
-            if actual.get(name) != Some(expected) {
+            // `validate` found every literal's field. At an opened struct only its declared fields
+            // are compared; the target's extension members are never read.
+            let declared = self.fields.iter().find(|field| &field.name == name);
+            let equal = declared.is_some_and(|field| {
+                crate::undeclared_fields::declared_equal(
+                    &field.type_ref,
+                    Some(expected),
+                    actual.get(name),
+                    &self.declarations,
+                    &self.undeclared_fields_ignored,
+                )
+            });
+            if !equal {
                 return Err(format!(
                     "response field {name} differs from its declared literal"
                 ));

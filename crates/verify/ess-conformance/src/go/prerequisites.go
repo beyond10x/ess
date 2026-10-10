@@ -300,7 +300,10 @@ func admitDirectResponse(value any) (*directResponseObservation, error) {
 			return nil, err
 		}
 	}
-	observer := selectionObservation{Declarations: result.Declarations, responseMode: true, directMode: true, openStructs: result.opened}
+	// A literal is authority: it names declared members only, even at a struct that ignores
+	// undeclared fields, because an observer never reads an undeclared member (beyond10x/ess#500).
+	// So it is admitted against the closed declarations.
+	observer := selectionObservation{Declarations: result.Declarations, responseMode: true, directMode: true}
 	count := 0
 	for name, value := range result.Expected {
 		found := false
@@ -355,9 +358,17 @@ func (r directResponseObservation) compare(actual map[string]Node) error {
 	if err := checkResponseConstraints(r.Fields, r.Declarations, r.Constraints, actual); err != nil {
 		return err
 	}
+	// At an opened struct only the declared fields are compared; the target's extension members are
+	// never read (beyond10x/ess#500).
 	for name, value := range r.Expected {
 		actual, present := actual[name]
-		if !present || !responseEqual(value, actual) {
+		sourceType := ""
+		for _, field := range r.Fields {
+			if field.Name == name {
+				sourceType = field.Type
+			}
+		}
+		if !present || !declaredEqual(r.Declarations, r.opened, sourceType, value, actual) {
 			return fmt.Errorf("response differs from declared literal")
 		}
 	}

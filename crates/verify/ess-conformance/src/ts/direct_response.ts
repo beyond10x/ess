@@ -11,7 +11,12 @@ import {
   text,
 } from './runtime.js';
 import type { AccessorField, Node, OutcomeRef, SelectionDeclaration } from './runtime.js';
-import { decodeDeclaration, responsePrimitiveAdmits, validateTypedFields } from './response.js';
+import {
+  declaredEqual,
+  decodeDeclaration,
+  responsePrimitiveAdmits,
+  validateTypedFields,
+} from './response.js';
 import { admitStringConstraints, checkStringConstraints } from './one_time_response.js';
 import type { StringConstraints } from './one_time_response.js';
 
@@ -132,10 +137,14 @@ export function admitDirectResponse(raw: Node): DirectResponse {
   if (own(value, 'constraints'))
     contract.constraints = admitResponseConstraints(value.constraints, declarations);
   const counter = { bytes: 0 };
+  // A literal is authority: it names declared members only, even at a struct that ignores
+  // undeclared fields, because an observer never reads an undeclared member (beyond10x/ess#500).
+  // So it is admitted against the closed declarations.
+  const closedContract: DirectResponse = { ...contract, openStructs: new Set() };
   for (const [key, expected] of Object.entries(contract.expected)) {
     const declaration = fields.find((f) => f.name === key);
     if (declaration === undefined) throw new Error('undeclared response literal');
-    validateValue(declaration.type, expected, true, contract, counter, 0);
+    validateValue(declaration.type, expected, true, closedContract, counter, 0);
     checkPresence(declaration, true, expected);
   }
   if (bytes(raw) > 1048576) throw new Error('direct response contract byte limit');
@@ -271,9 +280,23 @@ export function compareDirectResponse(contract: DirectResponse, actual: Node): v
   }
   if (bytes(actual) > 1048576) throw new Error('direct response byte limit');
   checkResponseConstraints(contract.fields, contract.declarations, contract.constraints, actual);
-  for (const [key, expected] of Object.entries(contract.expected))
-    if (!own(actual, key) || !equal(actual[key], expected))
+  // At an opened struct only the declared fields are compared; the target's extension members are
+  // never read (beyond10x/ess#500).
+  for (const [key, expected] of Object.entries(contract.expected)) {
+    const field = contract.fields.find((f) => f.name === key);
+    if (
+      !own(actual, key) ||
+      !declaredEqual(
+        field?.type ?? '',
+        actual[key],
+        expected,
+        contract.declarations,
+        contract.openStructs,
+        equal,
+      )
+    )
       throw new Error('response differs from literal');
+  }
 }
 
 /**

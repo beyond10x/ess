@@ -391,7 +391,23 @@ impl NestedTargets {
             {
                 continue;
             }
-            if actual.is_none() || actual != emitted {
+            // At an opened struct only the declared fields must agree; an extension member of the
+            // returned value is never read (beyond10x/ess#500).
+            let declared = observation
+                .fields
+                .iter()
+                .find(|f| f.name == mapping.source.0);
+            let equal = emitted.is_some()
+                && declared.map_or(actual == emitted, |field| {
+                    crate::undeclared_fields::declared_equal(
+                        &field.type_ref,
+                        actual,
+                        emitted,
+                        &observation.declarations,
+                        &observation.undeclared_fields_ignored,
+                    )
+                });
+            if actual.is_none() || !equal {
                 return Err(format!(
                     "event path {} differs from actual response field {}",
                     path.iter()

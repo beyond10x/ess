@@ -356,7 +356,10 @@ impl ConformanceTarget for Orders {
     }
 }
 
-fn run(suite: &ConformanceSuite, target: &Orders) -> BTreeMap<String, ScenarioResult> {
+fn run<T: ConformanceTarget>(
+    suite: &ConformanceSuite,
+    target: &T,
+) -> BTreeMap<String, ScenarioResult> {
     let admitted = AdmittedSuite::from_suite(suite).unwrap_or_else(|error| panic!("{error}"));
     Runner::for_suite(suite)
         .run_admitted(&admitted, target)
@@ -827,10 +830,21 @@ fn typescript_package(label: &str, suite: &ConformanceSuite) -> PathBuf {
 }
 
 /// Runs the compiled package against `target`'s recorded answers: the log and the report, if any.
-fn typescript_run(
+fn typescript_run<T: ConformanceTarget>(
     package: &Path,
     suite: &ConformanceSuite,
-    target: Orders,
+    target: T,
+) -> (String, Option<serde_json::Value>) {
+    typescript_run_edited(package, suite, target, None)
+}
+
+/// [`typescript_run`], with the suite document the TypeScript runner reads edited first when
+/// `edit` is given; without one it reads the admitted bytes unchanged.
+fn typescript_run_edited<T: ConformanceTarget>(
+    package: &Path,
+    suite: &ConformanceSuite,
+    target: T,
+    edit: Option<&dyn Fn(&mut serde_json::Value)>,
 ) -> (String, Option<serde_json::Value>) {
     let admitted = AdmittedSuite::from_suite(suite).unwrap_or_else(|error| panic!("{error}"));
     let recorder = support_go::Recorder::new(target);
@@ -841,7 +855,15 @@ fn typescript_run(
     )
     .run_admitted(&admitted, &recorder);
     let suite_file = package.join("suite.json");
-    std::fs::write(&suite_file, admitted.original_json()).unwrap();
+    match edit {
+        None => std::fs::write(&suite_file, admitted.original_json()).unwrap(),
+        Some(edit) => {
+            let mut document: serde_json::Value =
+                serde_json::from_str(admitted.original_json()).unwrap();
+            edit(&mut document);
+            std::fs::write(&suite_file, serde_json::to_string(&document).unwrap()).unwrap();
+        }
+    }
     let transcript = package.join("transcript.json");
     std::fs::write(&transcript, recorder.transcript().to_string()).unwrap();
     let divergence = package.join("divergence.txt");
@@ -870,10 +892,10 @@ fn typescript_run(
 
 /// The TypeScript verdicts against `target`'s recorded answers, asserted equal to the Rust
 /// reference's, which are returned.
-fn typescript_parity(
+fn typescript_parity<T: ConformanceTarget>(
     label: &str,
     suite: &ConformanceSuite,
-    target: Orders,
+    target: T,
 ) -> BTreeMap<String, String> {
     let rust: BTreeMap<String, String> = run(suite, &target)
         .into_iter()
@@ -894,4 +916,297 @@ fn typescript_parity(
         "{label}: per-scenario verdicts, TypeScript (left) and Rust (right)\n{log}"
     );
     rust
+}
+
+// ---- comparisons at an opened struct (adversary pass 1) --------------------------------------
+//
+// An opened struct's extension members are never read, so a comparison of two values of it — an
+// authored `response:` literal against the returned value, or a response-mapped event field
+// against the returned one — compares its declared fields only, in every runner. A literal is
+// authority and names declared members only, so one naming an extension member is refused.
+
+/// A target that takes `outcome`, returns `response` and publishes `event` with its payload.
+#[derive(Clone, Copy)]
+struct Echo {
+    outcome: &'static str,
+    response: &'static str,
+    event: Option<(&'static str, &'static str)>,
+}
+
+impl ConformanceTarget for Echo {
+    fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
+        Ok(ImplementationIdentity::new("echo-500", "1"))
+    }
+    fn begin_scenario(&self, _: &ScenarioContext) -> Result<(), TargetError> {
+        Ok(())
+    }
+    fn end_scenario(&self, _: &ScenarioContext) -> Result<(), TargetError> {
+        Ok(())
+    }
+    fn execute_command(
+        &self,
+        request: SemanticCommandRequest,
+    ) -> Result<SemanticCommandResult, TargetError> {
+        let mut result = SemanticCommandResult::took(OutcomeRef::new(
+            request.command,
+            OutcomeName::new(self.outcome).unwrap(),
+        ));
+        if let Some((event, payload)) = self.event {
+            let mut observed = ObservedEvent::new(event.parse().unwrap());
+            observed.payload = object(payload);
+            result = result.emitting(observed);
+        }
+        result.response = Some(object(self.response));
+        Ok(result)
+    }
+    fn query_view(&self, _: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
+        Err(TargetError::unsupported(
+            "view",
+            "the catalog declares none",
+        ))
+    }
+    fn observe_events(
+        &self,
+        _: EventObservationRequest,
+    ) -> Result<Vec<ObservedEvent>, TargetError> {
+        Ok(Vec::new())
+    }
+    fn configure_external_outcome(&self, _: ExternalOutcomeControl) -> Result<(), TargetError> {
+        Err(TargetError::unsupported("external", "none"))
+    }
+    fn redeliver_event(&self, _: RedeliveryRequest) -> Result<(), TargetError> {
+        Err(TargetError::unsupported("binding", "none"))
+    }
+}
+
+/// The verdict the Rust runner gives `target` on scenario `id`, asserted equal in Go and
+/// TypeScript.
+fn every_runner(label: &str, suite: &ConformanceSuite, id: &str, target: Echo) -> String {
+    let native = run(suite, &target)[id].status.to_string();
+    let go = support_go::assert_parity(&format!("go-{label}"), suite, target);
+    assert_eq!(go[id], native, "{label}: Go");
+    let typescript = typescript_parity(&format!("ts-{label}"), suite, target);
+    assert_eq!(typescript[id], native, "{label}: TypeScript");
+    native
+}
+
+/// `catalog.orders.Vendor`, opened when `opened`, returned and mapped whole into the event.
+fn vendor_mapped(opened: bool) -> String {
+    let key = if opened {
+        "    undeclared_fields: ignored\n"
+    } else {
+        ""
+    };
+    format!(
+        "format: ess/24
+system: catalog
+version: v1
+domain: catalog.orders
+types:
+  - name: catalog.orders.Vendor
+    kind: struct
+{key}    fields:
+      - {{name: vendor_id, type: String}}
+events:
+  - name: catalog.orders.OrderPlaced
+    fields:
+      - {{name: vendor, type: catalog.orders.Vendor}}
+actors:
+  - name: catalog.orders.Buyer
+    may:
+      - catalog.orders.PlaceOrder
+commands:
+  - name: catalog.orders.PlaceOrder
+    input:
+      - {{name: item, type: String}}
+    response:
+      - {{name: vendor, type: catalog.orders.Vendor}}
+    outcomes:
+      - name: placed
+        returns: true
+        emits: [catalog.orders.OrderPlaced]
+        payload:
+          catalog.orders.OrderPlaced:
+            vendor: {{response: vendor}}
+"
+    )
+}
+
+#[test]
+fn a_mapped_event_field_compares_the_declared_fields_of_an_opened_struct_in_every_runner() {
+    let vendor = r#"{"vendor":{"vendor_id":"v-1","region":"eu"}}"#;
+    for (index, (opened, response, event, verdict)) in [
+        // The event leaves the returned extension member out: its declared field agrees.
+        (true, vendor, r#"{"vendor":{"vendor_id":"v-1"}}"#, "passed"),
+        // The declared field differs: the opened struct still compares it.
+        (true, vendor, r#"{"vendor":{"vendor_id":"v-2"}}"#, "failed"),
+        // Closed, the event's extra member is a difference, as before ess/24.
+        (
+            false,
+            r#"{"vendor":{"vendor_id":"v-1"}}"#,
+            r#"{"vendor":{"vendor_id":"v-1","region":"eu"}}"#,
+            "failed",
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let synthesis = synthesize(&ir(&vendor_mapped(opened)));
+        assert!(
+            synthesis
+                .suite
+                .scenarios
+                .keys()
+                .any(|id| id.to_string() == OUTCOME),
+            "{:#?}",
+            refusals(&synthesis)
+        );
+        let target = Echo {
+            outcome: "placed",
+            response,
+            event: Some(("catalog.orders.OrderPlaced", event)),
+        };
+        let label = format!("mapped-vendor-{index}");
+        assert_eq!(
+            every_runner(&label, &synthesis.suite, OUTCOME, target),
+            verdict,
+            "{label}: {opened} {response} {event}"
+        );
+    }
+}
+
+/// `library.api.Item` ignores undeclared fields and is returned as `item`.
+const OPENED_ITEM: &str = "format: ess/24
+system: library
+version: v1
+domain: library.api
+types:
+  - name: library.api.Item
+    kind: struct
+    undeclared_fields: ignored
+    fields:
+      - {name: label, type: String}
+commands:
+  - name: library.api.Read
+    response:
+      - {name: item, type: library.api.Item}
+    outcomes:
+      - name: returned
+        returns: true
+";
+
+/// The synthesized `library.api` suite with its scenarios replaced by one authored scenario that
+/// asserts `response: {item: <item>}`, or the authored refusals.
+fn literal_suite(item: &str) -> Result<ConformanceSuite, String> {
+    let model = ir(OPENED_ITEM);
+    let scenario = format!(
+        "type: ess-scenario/4
+domain: library.api
+scenario: read-item
+summary: The returned item carries the declared label.
+timeline:
+  - at: 2026-09-28T00:00:00Z
+    command: library.api.Read
+    outcome: returned
+    response: {{item: {item}}}
+"
+    );
+    let authored = ess_conformance::authored::compile(
+        &model,
+        &[ess_conformance::authored::Source::new(
+            "read.yaml",
+            scenario,
+        )],
+    );
+    if !authored.refusals.is_empty() {
+        return Err(format!("{:?}", authored.refusals));
+    }
+    let mut suite = synthesize(&model).suite;
+    suite.scenarios = authored.scenarios;
+    suite.select_fresh_format();
+    Ok(suite)
+}
+
+#[test]
+fn an_authored_literal_compares_the_declared_fields_of_an_opened_struct_in_every_runner() {
+    let suite = literal_suite("{label: nested}").expect("authored");
+    let id = suite
+        .scenarios
+        .keys()
+        .next()
+        .expect("one scenario")
+        .to_string();
+    for (index, (response, verdict)) in [
+        (r#"{"item":{"label":"nested","extension":"x"}}"#, "passed"),
+        (r#"{"item":{"label":"nested"}}"#, "passed"),
+        (r#"{"item":{"label":"other","extension":"x"}}"#, "failed"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let target = Echo {
+            outcome: "returned",
+            response,
+            event: None,
+        };
+        let label = format!("literal-item-{index}");
+        assert_eq!(
+            every_runner(&label, &suite, &id, target),
+            verdict,
+            "{label}: {response}"
+        );
+    }
+}
+
+/// The authored literal's `item` in a suite document, with an extension member added.
+fn literal_with_extension(document: &mut serde_json::Value) {
+    let scenarios = document["scenarios"].as_object_mut().unwrap();
+    let scenario = scenarios.values_mut().next().unwrap();
+    let step = scenario["steps"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|step| step["step"] == "expect_direct_response")
+        .unwrap();
+    step["response"]["expected"]["item"]["extension"] = "x".into();
+}
+
+#[test]
+fn a_literal_naming_an_undeclared_member_is_refused_by_every_reader() {
+    // The authored compiler refuses it.
+    assert!(literal_suite("{label: nested, extension: x}").is_err());
+    // A suite document carrying one is refused by each reader before any callback.
+    let suite = literal_suite("{label: nested}").expect("authored");
+    let forged = {
+        let mut document: serde_json::Value =
+            serde_json::from_str(&suite.to_canonical_json().unwrap()).unwrap();
+        literal_with_extension(&mut document);
+        serde_json::to_string(&document).unwrap()
+    };
+    assert!(
+        AdmittedSuite::from_json(&forged).is_err(),
+        "Rust admitted it"
+    );
+    let target = || Echo {
+        outcome: "returned",
+        response: r#"{"item":{"label":"nested","extension":"x"}}"#,
+        event: None,
+    };
+    let directory = support_go::package(
+        "literal-extension",
+        &suite,
+        &[support_go::TRANSCRIPT_TARGET],
+    );
+    support_go::rewrite_suite(&directory, literal_with_extension);
+    let recorder = support_go::Recorder::new(target());
+    let _ = run(&suite, &recorder);
+    let replayed = support_go::replay(&directory, &recorder, &[]);
+    std::fs::remove_dir_all(&directory).unwrap();
+    assert!(!replayed.go.success, "Go admitted it: {}", replayed.go.log);
+    assert_eq!(replayed.go.outcomes.len(), 0, "{}", replayed.go.log);
+    let package = typescript_package("literal-extension", &suite);
+    let (log, report) =
+        typescript_run_edited(&package, &suite, target(), Some(&literal_with_extension));
+    let _ = std::fs::remove_dir_all(package.parent().unwrap());
+    assert!(report.is_none(), "TypeScript admitted it: {log}");
 }

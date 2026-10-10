@@ -269,7 +269,20 @@ impl Observation {
                 continue;
             }
             let actual = actual.ok_or_else(|| format!("response source {source} is absent"))?;
-            if payload.get(target) != Some(actual) {
+            // At an opened struct only the declared fields must agree: an extension member of the
+            // returned value is never read, so the event need not repeat it (beyond10x/ess#500).
+            let declared = self.fields.iter().find(|f| &f.name == source);
+            let equal = payload.get(target).is_some()
+                && declared.map_or(payload.get(target) == Some(actual), |field| {
+                    crate::undeclared_fields::declared_equal(
+                        &field.type_ref,
+                        Some(actual),
+                        payload.get(target),
+                        &self.declarations,
+                        &self.undeclared_fields_ignored,
+                    )
+                });
+            if !equal {
                 return Err(format!(
                     "event field {target} differs from actual response field {source}"
                 ));

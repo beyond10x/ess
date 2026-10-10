@@ -958,9 +958,11 @@ export function compareResponse(
     const emitted = owned(payload, target);
     const emittedPresent = present(payload, target);
     let optional = false;
+    let sourceType = '';
     for (const field of observation.fields) {
       if (field.name === source) {
         optional = accessorOptional(field.type)[1];
+        sourceType = field.type;
       }
     }
     if (
@@ -970,7 +972,20 @@ export function compareResponse(
     ) {
       continue;
     }
-    if (!exists || !emittedPresent || !responseEqual(actual, emitted)) {
+    // At an opened struct only the declared fields must agree: an extension member of the
+    // returned value is never read, so the event need not repeat it (beyond10x/ess#500).
+    if (
+      !exists ||
+      !emittedPresent ||
+      !declaredEqual(
+        sourceType,
+        actual,
+        emitted,
+        observation.declarations,
+        observation.openStructs,
+        responseEqual,
+      )
+    ) {
       throw new Error(`event field ${target} differs from actual response field ${source}`);
     }
   }
@@ -1266,6 +1281,106 @@ export function responseEqual(left: Node, right: Node): boolean {
     );
   }
   return equal(left, right);
+}
+
+/**
+ * `leaf` over two values of `type`, except that at a struct declaration named in `openStructs`
+ * only its declared fields are compared: a key it does not declare is admitted and never read, on
+ * either side (beyond10x/ess#500). Every other object is compared completely, its declared members
+ * under their own types. With no opened struct it is exactly `leaf`. The Rust counterpart is
+ * `undeclared_fields::declared_equal`, the Go one `declaredEqual`.
+ */
+export function declaredEqual(
+  type: string,
+  left: Node | undefined,
+  right: Node | undefined,
+  declarations: Record<string, SelectionDeclaration>,
+  openStructs: Set<string> | undefined,
+  leaf: (left: Node, right: Node) => boolean,
+): boolean {
+  if (openStructs === undefined || openStructs.size === 0)
+    return left !== undefined && right !== undefined ? leaf(left, right) : left === right;
+  return declaredEqualAt(type, left, right, declarations, openStructs, leaf, 0);
+}
+
+function plainObject(value: Node | undefined): value is Record<string, Node> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    !(value instanceof JsonNumber)
+  );
+}
+
+function declaredEqualAt(
+  type: string,
+  left: Node | undefined,
+  right: Node | undefined,
+  declarations: Record<string, SelectionDeclaration>,
+  openStructs: Set<string>,
+  leaf: (left: Node, right: Node) => boolean,
+  depth: number,
+): boolean {
+  if (left === undefined || right === undefined) return left === right;
+  if (depth > DEPTH_LIMIT || left === null || right === null) return leaf(left, right);
+  const next = (t: string, l: Node | undefined, r: Node | undefined): boolean =>
+    declaredEqualAt(t, l, r, declarations, openStructs, leaf, depth + 1);
+  const [inner, optional] = accessorOptional(type);
+  if (optional) return next(inner, left, right);
+  const declaration = owned(declarations, type);
+  if (declaration !== undefined) {
+    if (declaration.kind === 'newtype') return next(declaration.of, left, right);
+    if (declaration.kind === 'struct') {
+      if (!plainObject(left) || !plainObject(right)) return leaf(left, right);
+      const declared = new Set(declaration.fields.map((field) => field.name));
+      if (!openStructs.has(type)) {
+        const keys = Object.keys(left);
+        if (keys.length !== Object.keys(right).length) return false;
+        for (const key of keys)
+          if (!declared.has(key) && (!Object.hasOwn(right, key) || !leaf(left[key], right[key])))
+            return false;
+      }
+      return declaration.fields.every((field) =>
+        next(field.type, owned(left, field.name), owned(right, field.name)),
+      );
+    }
+    if (declaration.kind === 'union') {
+      if (
+        !plainObject(left) ||
+        !plainObject(right) ||
+        Object.keys(left).length !== Object.keys(right).length
+      )
+        return leaf(left, right);
+      const content = declaration.tag === 'value' ? 'content' : 'value';
+      const label = owned(left, declaration.tag);
+      const variants = plainObject(declaration.variants) ? declaration.variants : {};
+      const variant = typeof label === 'string' ? owned(variants, label) : undefined;
+      return Object.keys(left).every((key) => {
+        if (!Object.hasOwn(right, key)) return false;
+        if (key === content && typeof variant === 'string')
+          return next(variant, left[key], right[key]);
+        return leaf(left[key], right[key]);
+      });
+    }
+    return leaf(left, right);
+  }
+  if (type.startsWith('List<') && type.endsWith('>')) {
+    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length)
+      return leaf(left, right);
+    return left.every((child, index) => next(type.slice(5, -1), child, right[index]));
+  }
+  if (type.startsWith('Map<String, ') && type.endsWith('>')) {
+    if (
+      !plainObject(left) ||
+      !plainObject(right) ||
+      Object.keys(left).length !== Object.keys(right).length
+    )
+      return leaf(left, right);
+    return Object.keys(left).every(
+      (key) => Object.hasOwn(right, key) && next(type.slice(12, -1), left[key], right[key]),
+    );
+  }
+  return leaf(left, right);
 }
 
 interface NestedResponseMapping {
@@ -1568,7 +1683,19 @@ function compareNestedResponse(
       (emitted === undefined || emitted === null)
     )
       continue;
-    if (actual === undefined || emitted === undefined || !responseEqual(actual, emitted)) {
+    // At an opened struct only the declared fields must agree (beyond10x/ess#500).
+    if (
+      actual === undefined ||
+      emitted === undefined ||
+      !declaredEqual(
+        field.type,
+        actual,
+        emitted,
+        observation.declarations,
+        observation.openStructs,
+        responseEqual,
+      )
+    ) {
       throw new Error(
         `event path ${mapping.target.join('.')} differs from actual response field ${mapping.source}`,
       );

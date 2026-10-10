@@ -20,7 +20,12 @@
   struct and a union still fail an undeclared key (`ESS-CF-PAYLOAD`). Readers through `/47` refuse
   a `/48` suite by version, every reader refuses either member under a lower major, and a suite
   without an opened object keeps its bytes and format. A one-time response that is opened is
-  refused at synthesis by name (https://github.com/beyond10x/ess/issues/500).
+  refused at synthesis by name (https://github.com/beyond10x/ess/issues/500). An authored
+  `response:` literal and a response-mapped event field are compared with the returned value by
+  their declared fields at an opened struct, in all three runners, so an extension member is never
+  read; a literal that names an undeclared member is refused as before. A retained-result replay
+  or a complete-subject snapshot over an opened response or struct is refused at synthesis by
+  name, because both observers compare a closed record.
 
 ## [0.57.0] — 2026-10-09
 

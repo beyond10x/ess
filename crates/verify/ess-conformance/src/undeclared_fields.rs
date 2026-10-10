@@ -38,7 +38,8 @@ use std::collections::BTreeSet;
 
 use ess_compiler::ir::EssIr;
 use ess_domain::types::UndeclaredFields;
-use ess_domain::QualifiedName;
+use ess_domain::{QualifiedName, TypeRef};
+use ess_primitives::node::Node;
 
 use crate::selection::Declaration;
 use crate::{ConformanceSuite, ScenarioStep};
@@ -83,6 +84,118 @@ pub(crate) fn validate(
         }
     }
     Ok(())
+}
+
+/// Whether `left` and `right`, two values of `ty`, agree on everything an observer may read.
+///
+/// At a struct declaration named in `opened` only its declared fields are compared: a key it does
+/// not declare is admitted and never read, on either side (beyond10x/ess#500). Every other object
+/// — a closed struct, a union, a map — is compared completely, its declared members under their
+/// own types so that an opened struct nested in a closed one is still compared by its declared
+/// fields. With no opened struct this is exact equality, the comparison every suite through `/47`
+/// makes.
+pub(crate) fn declared_equal(
+    ty: &TypeRef,
+    left: Option<&Node>,
+    right: Option<&Node>,
+    declarations: &BTreeMap<QualifiedName, Declaration>,
+    opened: &BTreeSet<QualifiedName>,
+) -> bool {
+    if opened.is_empty() {
+        return left == right;
+    }
+    walk_equal(ty, left, right, declarations, opened, 0)
+}
+
+fn walk_equal(
+    ty: &TypeRef,
+    left: Option<&Node>,
+    right: Option<&Node>,
+    declarations: &BTreeMap<QualifiedName, Declaration>,
+    opened: &BTreeSet<QualifiedName>,
+    depth: usize,
+) -> bool {
+    let (Some(left), Some(right)) = (left, right) else {
+        return left == right;
+    };
+    if depth > 128 {
+        return left == right;
+    }
+    let next = depth + 1;
+    match (ty, left, right) {
+        (TypeRef::Optional(of), _, _) => {
+            if matches!(left, Node::Null) || matches!(right, Node::Null) {
+                left == right
+            } else {
+                walk_equal(of, Some(left), Some(right), declarations, opened, next)
+            }
+        }
+        (TypeRef::List(of), Node::Seq(mine), Node::Seq(other)) => {
+            mine.len() == other.len()
+                && mine.iter().zip(other).all(|(mine, other)| {
+                    walk_equal(of, Some(mine), Some(other), declarations, opened, next)
+                })
+        }
+        (TypeRef::Map(_, of), Node::Map(mine), Node::Map(other)) => {
+            mine.len() == other.len()
+                && mine.iter().all(|(key, mine)| {
+                    walk_equal(of, Some(mine), other.get(key), declarations, opened, next)
+                })
+        }
+        (TypeRef::Named(name), _, _) => match declarations.get(name) {
+            Some(Declaration::Newtype { of }) => {
+                walk_equal(of, Some(left), Some(right), declarations, opened, next)
+            }
+            Some(Declaration::Struct { fields }) => {
+                let (Node::Map(mine), Node::Map(other)) = (left, right) else {
+                    return left == right;
+                };
+                let declared = |key: &String| {
+                    fields
+                        .iter()
+                        .find(|field| &field.name == key)
+                        .map(|f| &f.type_ref)
+                };
+                if !opened.contains(name)
+                    && (mine.len() != other.len()
+                        || mine.iter().any(|(key, mine)| {
+                            declared(key).is_none() && other.get(key) != Some(mine)
+                        }))
+                {
+                    return false;
+                }
+                fields.iter().all(|field| {
+                    walk_equal(
+                        &field.type_ref,
+                        mine.get(&field.name),
+                        other.get(&field.name),
+                        declarations,
+                        opened,
+                        next,
+                    )
+                })
+            }
+            Some(Declaration::Union { tag, variants }) => {
+                let (Node::Map(mine), Node::Map(other)) = (left, right) else {
+                    return left == right;
+                };
+                let content = ess_gen::schema::union_content_key(tag);
+                let variant = match mine.get(tag) {
+                    Some(Node::Text(label)) => variants.get(label).cloned().flatten(),
+                    _ => None,
+                };
+                mine.len() == other.len()
+                    && mine.iter().all(|(key, value)| match &variant {
+                        Some(of) if key.as_str() == content => {
+                            walk_equal(of, Some(value), other.get(key), declarations, opened, next)
+                        }
+                        _ => other.get(key) == Some(value),
+                    })
+            }
+            Some(Declaration::Enum { .. }) | None => left == right,
+        },
+        _ => left == right,
+    }
 }
 
 /// A root `undeclared_fields` member that is present says `ignored`: `refused` is the closed
