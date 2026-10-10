@@ -286,12 +286,15 @@ pub enum Note {
         /// The candidate outcomes, in declaration order.
         outcomes: Vec<OutcomeName>,
     },
-    /// A wrong-state refusal — or, from ess/23, a refusal selected by `when_subject:`
-    /// (beyond10x/ess#461) — whose subject the declared views publish only in part, so its scenario
-    /// observes what they publish and nothing more (beyond10x/ess#132). No view says how the rest
-    /// of the row reads, so a refusal that changed it is not checked.
+    /// A scenario whose subject the declared views publish only in part, or not at all, so it
+    /// observes what they publish and nothing more: a wrong-state refusal or, from ess/23, a
+    /// refusal selected by `when_subject:` (beyond10x/ess#132, #461), and every scenario whose row
+    /// a stored field selects — success, refusal, transition or wrong state — where no view
+    /// publishes that field (beyond10x/ess#496). No view says how the rest of the row reads, so
+    /// the scenario's outcome, error and events are its evidence about it, and a refusal that
+    /// changed it is not checked.
     PartialObservation {
-        /// The refusal scenario.
+        /// The scenario.
         scenario: ScenarioId,
         /// The subject fields no view lets it observe, in name order.
         unobserved: Vec<String>,
@@ -441,15 +444,16 @@ impl fmt::Display for Note {
             } => {
                 let names: Vec<String> =
                     unobserved.iter().map(|name| format!("`{name}`")).collect();
+                let them = if names.len() == 1 { "it" } else { "them" };
                 write!(
                     f,
-                    "`{scenario}` observes the refused subject through what its views publish; no \
-                     view publishes {}, so a refusal that changed {} is not checked, and a field \
-                     published only by an `eventual` view is checked against an eventually \
-                     consistent read, which a projection that has not yet caught up with a wrong \
-                     change still passes",
+                    "`{scenario}` observes its subject only through what the declared views \
+                     publish; no view publishes {}, so the scenario's outcome, error and events \
+                     are its evidence about {them}, and a refusal that changed {them} is not \
+                     checked; a field published only by an `eventual` view is checked against an \
+                     eventually consistent read, which a projection that has not yet caught up \
+                     with a wrong change still passes",
                     names.join(", "),
-                    if names.len() == 1 { "it" } else { "them" }
                 )
             }
             Self::UnseparatedSources {
@@ -1112,7 +1116,10 @@ impl RefusalCause {
             // A gap in what a view lets a scenario observe is repaired by declaring a view, not by
             // changing a value type (beyond10x/ess#132). Every such reason names the view it needs,
             // and says `immediate` where only a `read_your_writes` one will do, or names the
-            // `eventual` alternative where one would do as well (beyond10x/ess#172).
+            // `eventual` alternative where one would do as well (beyond10x/ess#172). Subject-fact
+            // selection no longer refuses for want of a view: it observes what the views publish
+            // and notes the rest (beyond10x/ess#496), so these remain for the observations that
+            // still need one, such as the replay family's.
             Self::NoWitness(gap) if gap.reason.contains("or an `eventual` one") => {
                 "declare a view of the entity, `read_your_writes` or `eventual`, with no filter and \
                  no parameters, that projects its identity, its state and the fields named at the \
@@ -3693,7 +3700,7 @@ fn run_as(
     if (subject_fact::uses(command) || related || rows) && outcome.error.is_none() {
         invoke.push(ScenarioStep::ExpectNoError);
     }
-    let (mut after_steps, refused, unclaimed, unobserved) = if routed {
+    let (mut after_steps, refused, unclaimed, mut unobserved) = if routed {
         let around = subject_fact::around(models, command, outcome, actors, &mut setup, &supplied)?;
         (
             around.steps,
@@ -3751,6 +3758,8 @@ fn run_as(
         outcome,
         super::synthesize::settled(ir, outcome, &supplied, &held),
     );
+    // The stored fields the arrangement selected the row on and no view observes (#496).
+    unobserved.extend(setup.unobserved);
     let mut run = Run {
         after_steps,
         setup: setup.steps,
@@ -4564,6 +4573,7 @@ fn replay_eligibility(
         source: BTreeSet::new(),
         settled: origin.settled.clone(),
         unwritten: BTreeSet::new(),
+        unobserved: BTreeSet::new(),
     };
     for field in observed {
         let (observation, view) = subject_fact::observe(ir, &subject.entity, &field, &arrangement)?;
@@ -4692,6 +4702,9 @@ struct Setup {
     before: Option<StateName>,
     /// What the arrangement left in the subject's fields, where the branches it ran said.
     settled: BTreeMap<String, Determined>,
+    /// The stored fields the arrangement selected the row on and no declared view lets it observe
+    /// (beyond10x/ess#496): the scenario's [`Note::PartialObservation`] names them.
+    unobserved: BTreeSet<String>,
 }
 
 impl Setup {
@@ -4705,6 +4718,7 @@ impl Setup {
             after: None,
             before: None,
             settled: BTreeMap::new(),
+            unobserved: BTreeSet::new(),
         }
     }
 }
@@ -4783,6 +4797,7 @@ fn prepare_subject(
                     // the owner's fields are another row's.
                     settled: BTreeMap::new(),
                     instance: None,
+                    unobserved: arrangement.unobserved,
                     before: None,
                 },
             });
@@ -4825,6 +4840,7 @@ fn prepare_subject(
         after,
         before: Some(arrangement.state),
         settled: arrangement.settled,
+        unobserved: arrangement.unobserved,
     })
 }
 
@@ -4854,6 +4870,9 @@ struct Arrangement {
     /// (beyond10x/ess#239). Empty wherever the arrangement's history is not known from its
     /// creation, which leaves such a predicate `Unknown`, as before.
     unwritten: BTreeSet<String>,
+    /// The stored fields a step of the arrangement was selected on and no declared view let it
+    /// observe (beyond10x/ess#496), carried into the [`Setup`] made from it.
+    unobserved: BTreeSet<String>,
 }
 
 /// A wrong-state arrangement, the input sent to it, and identities arranged for that input.
@@ -5283,6 +5302,7 @@ fn filed_under(
             source: BTreeSet::new(),
             settled: BTreeMap::new(),
             unwritten: BTreeSet::new(),
+            unobserved: BTreeSet::new(),
         },
     ))
 }
@@ -5454,6 +5474,7 @@ fn created_by<E>(
         source,
         settled,
         unwritten: unwritten_by(ir, entity, creator.outcome),
+        unobserved: BTreeSet::new(),
     };
     // Where the bindings the creation sets off on the new row leave it, observed (beyond10x/ess#266).
     binding_effects::settle_created(ir, entity, creator.outcome, &mut arrangement);
@@ -11127,6 +11148,12 @@ fn lifecycle(
                 ) else {
                     continue;
                 };
+                if !run.unobserved.is_empty() {
+                    notes.push(Note::PartialObservation {
+                        scenario: id.clone(),
+                        unobserved: run.unobserved.iter().cloned().collect(),
+                    });
+                }
                 let (further, depends) = other_sources(
                     models, driver, transition, actors, &run, &steps, &id, refusals,
                 );
@@ -11221,28 +11248,32 @@ fn wrong_state_scenario(
     notes: &mut Vec<Note>,
 ) -> Option<ConformanceScenario> {
     let answered = models.acting.commands().get(command).map_or_else(
-        || Ok((Vec::new(), BTreeSet::new())),
+        || Ok((Vec::new(), BTreeSet::new(), BTreeSet::new())),
         |declared| subject_fact::state_answered_rows(models, declared, handle, state, actors),
     );
-    let (rows, depends) = match answered {
+    let (rows, depends, mut unobserved) = match answered {
         Ok(found) => found,
         Err(cause) => {
             refusals.push(Refusal::about(id, cause));
             return None;
         }
     };
+    let mut note = |unobserved: BTreeSet<String>| {
+        if !unobserved.is_empty() {
+            notes.push(Note::PartialObservation {
+                scenario: id.clone(),
+                unobserved: unobserved.into_iter().collect(),
+            });
+        }
+    };
     let mut plain = Vec::new();
     match refused_here(
         models, handle, drivers, command, state, actors, id, &mut plain,
     ) {
-        Some((mut scenario, unobserved)) => {
+        Some((mut scenario, plain_unobserved)) => {
             refusals.extend(plain);
-            if !unobserved.is_empty() {
-                notes.push(Note::PartialObservation {
-                    scenario: id.clone(),
-                    unobserved,
-                });
-            }
+            unobserved.extend(plain_unobserved);
+            note(unobserved);
             let mut steps = rows;
             steps.append(&mut scenario.steps);
             scenario.steps = steps;
@@ -11256,6 +11287,7 @@ fn wrong_state_scenario(
                 matches!(refused.cause, RefusalCause::GuardUnsatisfiable { .. })
             }) =>
         {
+            note(unobserved);
             Some(ConformanceScenario::new(
                 ScenarioPurpose::new(format!(
                     "`{command}` in held state `{state}` is answered by the guarded branches \
@@ -11328,6 +11360,8 @@ fn refused_here(
     let (arrangement, input, bound) = refusal_arrangement(ir, handle, state, actors, attempt)
         .map_err(|cause| refusals.push(Refusal::about(id, cause)))
         .ok()?;
+    // The stored fields the row was selected on and no view observes (beyond10x/ess#496).
+    let mut unobserved = arrangement.unobserved.clone();
     // A held-state input refusal answers after `wrong_state` on a row its stored guard rules out
     // (beyond10x/ess#454): the same row is also sent an input that refusal claims.
     let overlaps = if subject_fact::uses(attempt.command)
@@ -11344,7 +11378,7 @@ fn refused_here(
         )
         .into_iter()
         .filter_map(|(overlap, relied)| {
-            subject_fact::observe_relied(ir, handle, &relied, &arrangement)
+            subject_fact::observe_relied(ir, handle, &relied, &arrangement, &mut unobserved)
                 .ok()
                 .map(|(observed, viewed)| (overlap, observed, viewed))
         })
@@ -11440,13 +11474,12 @@ fn refused_here(
         });
     }
 
-    let mut unobserved = Vec::new();
     let mut compared = None;
     if let Some(preservation) = preservation {
         steps.push(ScenarioStep::ExpectNoEvents);
         steps.extend(preservation.after.iter().cloned());
         source.extend(preservation.source);
-        unobserved = preservation.unobserved;
+        unobserved.extend(preservation.unobserved);
         compared = Some((preservation.before, preservation.after));
     }
     // Each overlap send answers as the plain one did: the row has not moved, so the declared
@@ -11510,7 +11543,7 @@ fn refused_here(
     models.mark(caller::InvocationPhase::Act, &mut steps);
     Some((
         ConformanceScenario::new(clipped(&text), steps, source),
-        unobserved,
+        unobserved.into_iter().collect(),
     ))
 }
 
@@ -12554,6 +12587,10 @@ fn complete_wrong_state(
         settled: arrangement.settled.clone(),
         ..Setup::none()
     };
+    // A command the stored row selects may have no view of that row at all (beyond10x/ess#496).
+    if subject_fact::uses(attempt.command) {
+        return subject_fact::preserve_selected_subject(ir, subject(attempt), &setup).map(Some);
+    }
     subject_fact::preserve_refused_subject(ir, subject(attempt), &setup).map(Some)
 }
 

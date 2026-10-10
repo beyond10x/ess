@@ -261,6 +261,14 @@ pub(super) fn reads_held_state(ir: &EssIr, entity: &EntityHandle, predicate: &Pr
         && ess_domain::command::subject_fact::reads_state(predicate)
 }
 
+/// What [`state_answered_rows`] gives: the steps, what they depend on, and the stored fields the
+/// rows were selected on that no view observes (beyond10x/ess#496).
+pub(super) type StateAnswered = (
+    Vec<ScenarioStep>,
+    BTreeSet<EssSemanticRef>,
+    BTreeSet<String>,
+);
+
 /// The rows a wrong state `held` of `command` is answered on by guarded branches reading `state`
 /// (ess/18, beyond10x/ess#204): for each such branch whose stored predicate is not false with
 /// `state` bound to `held` alone, in declaration order, a row of `entity` arranged in `held` under a
@@ -273,19 +281,21 @@ pub(super) fn reads_held_state(ir: &EssIr, entity: &EntityHandle, predicate: &Pr
 ///
 /// `Ok` with no steps where no guarded branch reads `state`. A branch that may be selected in `held`
 /// and that no bounded arrangement reaches refuses the whole with that cause: the state is never
-/// left silently unwitnessed.
+/// left silently unwitnessed. The third part is the stored fields those rows were selected on and
+/// no view observes (beyond10x/ess#496).
 pub(super) fn state_answered_rows(
     models: &super::caller::InvocationModels<'_>,
     command: &ResolvedCommand,
     entity: &EntityHandle,
     held: &super::StateName,
     actors: &BTreeMap<QualifiedName, ActorRef>,
-) -> Result<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>), RefusalCause> {
+) -> Result<StateAnswered, RefusalCause> {
     let ir = models.arrangement;
     let mut steps = Vec::new();
     let mut source = BTreeSet::new();
+    let mut unobserved = BTreeSet::new();
     let Ok(path) = FactPath::new(EntitySpec::STATE) else {
-        return Ok((steps, source));
+        return Ok((steps, source, unobserved));
     };
     let mut facts = ess_primitives::facts::FactStore::new();
     facts.set_if_absent(
@@ -320,8 +330,9 @@ pub(super) fn state_answered_rows(
                 reach_at(ir, command, branch, entity, node)
             },
         )?;
-        let (observed, view) =
-            observe_fields(ir, entity, &read_by(ir, entity, &predicate), &arrangement)?;
+        let observed =
+            observe_published(ir, entity, &read_by(ir, entity, &predicate), &arrangement)?
+                .into_steps(&mut source, &mut unobserved);
         models.mark(
             super::caller::InvocationPhase::Arrange,
             &mut arrangement.steps,
@@ -329,7 +340,7 @@ pub(super) fn state_answered_rows(
         steps.extend(arrangement.steps);
         steps.extend(observed);
         source.extend(arrangement.source);
-        source.insert(view.into());
+        unobserved.extend(arrangement.unobserved);
         let outcome_ref = OutcomeRef::new(command_ref.clone(), branch.name.clone());
         let supplied = supply(
             ir,
@@ -360,7 +371,7 @@ pub(super) fn state_answered_rows(
         source.insert(outcome_ref.into());
     }
     models.mark(super::caller::InvocationPhase::Act, &mut steps);
-    Ok((steps, source))
+    Ok((steps, source, unobserved))
 }
 
 /// [`row_truth`], with the command's input bound under `input.` for a predicate that compares the
@@ -1926,6 +1937,7 @@ fn row_under(
                     source: BTreeSet::new(),
                     settled: BTreeMap::new(),
                     unwritten: BTreeSet::new(),
+                    unobserved: BTreeSet::new(),
                 },
             );
             super::created_owned(
@@ -2156,9 +2168,7 @@ pub(super) fn refusal_witness(
         };
     if !relied.is_empty() {
         let fields = read_fields(ir, entity, &relied);
-        let (steps, view) = observe_fields(ir, entity, &fields, &arrangement)?;
-        arrangement.steps.extend(steps);
-        arrangement.source.insert(view.into());
+        observe_published(ir, entity, &fields, &arrangement)?.onto(&mut arrangement);
     }
     Ok((arrangement, input))
 }
@@ -2200,6 +2210,7 @@ pub(super) fn external_witness(
             source: BTreeSet::new(),
             settled: setup.settled.clone(),
             unwritten: BTreeSet::new(),
+            unobserved: BTreeSet::new(),
         };
         if leaves_external(ir, command, outcome, entity, &plain, &input)? {
             return Ok((setup, input));
@@ -2290,6 +2301,7 @@ fn external_setup(
             steps: arrangement.steps,
             bound,
             source: arrangement.source,
+            unobserved: arrangement.unobserved,
             ..Setup::none()
         };
     }
@@ -2308,6 +2320,7 @@ fn external_setup(
         after,
         before: Some(arrangement.state),
         settled: arrangement.settled,
+        unobserved: arrangement.unobserved,
     }
 }
 
@@ -2626,18 +2639,22 @@ pub(super) fn held_state_overlaps(
 
 /// The stored fields a held-state overlap send relies on the row for, observed before it where
 /// some field is read: the row is a fact the send is about, as [`refusal_witness`] observes it.
+/// What no view observes is added to `unobserved` (beyond10x/ess#496).
 pub(super) fn observe_relied(
     ir: &EssIr,
     entity: &EntityHandle,
     relied: &[Predicate],
     arrangement: &Arrangement,
+    unobserved: &mut BTreeSet<String>,
 ) -> Result<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>), RefusalCause> {
     let fields = read_fields(ir, entity, relied);
     if fields.is_empty() {
         return Ok((Vec::new(), BTreeSet::new()));
     }
-    let (steps, view) = observe_fields(ir, entity, &fields, arrangement)?;
-    Ok((steps, BTreeSet::from([view.into()])))
+    let mut source = BTreeSet::new();
+    let steps =
+        observe_published(ir, entity, &fields, arrangement)?.into_steps(&mut source, unobserved);
+    Ok((steps, source))
 }
 
 /// [`refusal_input`], with every guard in `also` required to hold beside `outcome`'s own.
@@ -4290,12 +4307,66 @@ fn advanced(
     next
 }
 
+/// The rows a branch of a command that itself reads stored fields can leave from `arrangement`:
+/// one per input the row selects it for, the facts it reads observed first as far as a view
+/// publishes them, and the rest carried on the row as unobserved, for the scenario's note to name
+/// (beyond10x/ess#496).
+fn selected_successors(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    driver: &Driver<'_>,
+    arrangement: &Arrangement,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    hints: &[Predicate],
+    follow: &Follow,
+) -> Vec<Arrangement> {
+    let mut out = Vec::new();
+    let fields = read_fields(ir, entity, &self::hints(driver.command));
+    let Ok(observation) = observe_published(ir, entity, &fields, arrangement) else {
+        return out;
+    };
+    let mut inputs = inputs_for(ir, driver.command, entity, arrangement).unwrap_or_default();
+    if let Ok(Some(more)) = hinted(ir, entity, driver, hints, Distinction::PLAIN) {
+        inputs.extend(more);
+    }
+    for input in inputs {
+        if selects(
+            ir,
+            driver.command,
+            entity,
+            arrangement,
+            &input,
+            Order::Unique,
+        )
+        .ok()
+        .flatten()
+        .is_some_and(|branch| branch.name == driver.outcome.name)
+        {
+            let mut next = advanced(
+                ir,
+                driver,
+                arrangement,
+                actors,
+                &input,
+                observation.steps.clone(),
+                true,
+                follow,
+            );
+            next.unobserved
+                .extend(observation.unobserved.iter().cloned());
+            out.push(next);
+        }
+    }
+    out
+}
+
 /// Every row one arranging branch can leave from `arrangement`, toward the hints.
 ///
 /// A branch of a command that itself reads stored fields is taken only with an input the row
-/// selects it for, and the facts it reads are observed first. Any other branch is run with its
-/// plain witness, and — where its `sets:` maps a field the hints read — with each input chosen
-/// toward them that its own guards still select it for.
+/// selects it for, and the facts it reads are observed first, as far as a view publishes them: the
+/// rest the row carries as unobserved, for the scenario's note to name (beyond10x/ess#496). Any
+/// other branch is run with its plain witness, and — where its `sets:` maps a field the hints
+/// read — with each input chosen toward them that its own guards still select it for.
 #[allow(clippy::too_many_arguments)]
 fn successors(
     ir: &EssIr,
@@ -4325,41 +4396,7 @@ fn successors(
         return out;
     }
     if uses(driver.command) {
-        let own = self::hints(driver.command);
-        let fields = read_fields(ir, entity, &own);
-        let Ok((observed, _)) = observe_fields(ir, entity, &fields, arrangement) else {
-            return out;
-        };
-        let mut inputs = inputs_for(ir, driver.command, entity, arrangement).unwrap_or_default();
-        if let Ok(Some(more)) = hinted(ir, entity, driver, hints, Distinction::PLAIN) {
-            inputs.extend(more);
-        }
-        for input in inputs {
-            if selects(
-                ir,
-                driver.command,
-                entity,
-                arrangement,
-                &input,
-                Order::Unique,
-            )
-            .ok()
-            .flatten()
-            .is_some_and(|branch| branch.name == driver.outcome.name)
-            {
-                out.push(advanced(
-                    ir,
-                    driver,
-                    arrangement,
-                    actors,
-                    &input,
-                    observed.clone(),
-                    true,
-                    follow,
-                ));
-            }
-        }
-        return out;
+        return selected_successors(ir, entity, driver, arrangement, actors, hints, follow);
     }
     let chain: Vec<&EntityHandle> = arranging.iter().copied().chain([entity]).collect();
     if let Ok(invoked) = invoke(
@@ -5160,9 +5197,7 @@ fn observe_prepared(
         fields
     };
     if !before_row || !observed.is_empty() {
-        let (steps, view) = observe_fields(ir, entity, &observed, arrangement)?;
-        arrangement.steps.extend(steps);
-        arrangement.source.insert(view.into());
+        observe_published(ir, entity, &observed, arrangement)?.onto(arrangement);
     }
     Ok(())
 }
@@ -5354,6 +5389,7 @@ pub(super) fn prepare(
             after,
             before: Some(arrangement.state),
             settled: arrangement.settled,
+            unobserved: arrangement.unobserved,
         },
         input,
     ))
@@ -5517,6 +5553,10 @@ pub(super) fn observe(
 /// Also the row a moving or updating branch leaves: it arrives at a state or values it did not
 /// hold, so an `eventually` block waiting for them does not pass on a projection that has not
 /// caught up.
+///
+/// Refuses where no view observes the whole row. Subject-fact selection uses
+/// [`observe_published`], which does not (beyond10x/ess#496); this strict form is kept for the
+/// related-row guards, which take the observation only where there is one.
 pub(super) fn observe_fields(
     ir: &EssIr,
     entity: &EntityHandle,
@@ -5534,6 +5574,137 @@ pub(super) fn observe_fields(
         )
     })?;
     Ok(required(view, row))
+}
+
+/// What [`observe_published`] observed of an arranged row.
+pub(super) struct Observed {
+    /// The steps requiring the row, or none where no view publishes it.
+    steps: Vec<ScenarioStep>,
+    /// The view they read, where they read one.
+    view: Option<ViewRef>,
+    /// The fields named that the view read does not publish, or every one where none is read.
+    unobserved: BTreeSet<String>,
+}
+
+impl Observed {
+    /// The steps, with the view they read added to `source` and the fields they leave out to
+    /// `unobserved`.
+    pub(super) fn into_steps(
+        self,
+        source: &mut BTreeSet<EssSemanticRef>,
+        unobserved: &mut BTreeSet<String>,
+    ) -> Vec<ScenarioStep> {
+        source.extend(self.view.map(Into::into));
+        unobserved.extend(self.unobserved);
+        self.steps
+    }
+
+    /// [`Self::into_steps`] onto an arrangement: its steps, its source and its unobserved fields.
+    fn onto(self, arrangement: &mut Arrangement) {
+        let steps = self.into_steps(&mut arrangement.source, &mut arrangement.unobserved);
+        arrangement.steps.extend(steps);
+    }
+}
+
+/// [`observe_fields`] for subject-fact selection, which does not need a view to run
+/// (beyond10x/ess#496).
+///
+/// The row is arranged through its creating command and the `sets:` mappings the search chose,
+/// and the command's outcome, error and events are the scenario's evidence whether or not anything
+/// reads the row back. So where a view observes the whole row it is required exactly as
+/// [`observe_fields`] requires it, and the scenario keeps its bytes. Where none does, the
+/// unfiltered, parameterless view of the entity projecting its identity and publishing the most
+/// of the fields named — an immediate one before an `eventual` one, then the first by name — is
+/// required to hold what it publishes, and the rest are returned unobserved, for the scenario's
+/// [`Note::PartialObservation`](super::Note) to name. With no such view nothing is read and every
+/// field named is unobserved: the system the specification models may offer no read of the record
+/// at all, and declaring one to satisfy synthesis would make the specification false.
+pub(super) fn observe_published(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    fields: &BTreeSet<String>,
+    arrangement: &Arrangement,
+) -> Result<Observed, RefusalCause> {
+    let mut row = expected_row(ir, entity, fields, arrangement)?;
+    if let Some(view) = observer(ir, entity, fields, Reading::Settling) {
+        let (steps, name) = required(view, row);
+        return Ok(Observed {
+            steps,
+            view: Some(name),
+            unobserved: BTreeSet::new(),
+        });
+    }
+    let declared = ir.entity(entity);
+    let identity = &declared.identity.name;
+    let published = |view: &ess_compiler::ir::ResolvedView| -> BTreeSet<String> {
+        row.keys()
+            .filter(|name| *name != identity)
+            .filter(|name| {
+                let declared_type = if name.as_str() == EntitySpec::STATE {
+                    Some(&declared.state_field().type_ref)
+                } else {
+                    declared
+                        .fields
+                        .iter()
+                        .find(|field| &field.name == *name)
+                        .map(|field| &field.type_ref)
+                };
+                declared_type.is_some_and(|type_ref| {
+                    view.field(name)
+                        .is_some_and(|shown| &shown.type_ref == type_ref)
+                })
+            })
+            .cloned()
+            .collect()
+    };
+    let mut best: Option<(&ess_compiler::ir::ResolvedView, BTreeSet<String>)> = None;
+    for view in ir.views().values().filter(|view| {
+        !view.is_aggregate()
+            && view.source == *entity
+            && super::paging::read_whole(view)
+            && view.filter.is_none()
+            && view
+                .field(identity)
+                .is_some_and(|field| field.type_ref == declared.identity.type_ref)
+    }) {
+        let shown = published(view);
+        let rank = |view: &ess_compiler::ir::ResolvedView, shown: &BTreeSet<String>| {
+            (
+                shown.iter().filter(|name| fields.contains(*name)).count(),
+                view.assertion_style == AssertionStyle::Expect,
+            )
+        };
+        if best
+            .as_ref()
+            .is_none_or(|(held, kept)| rank(view, &shown) > rank(held, kept))
+        {
+            best = Some((view, shown));
+        }
+    }
+    let named = |row: &BTreeMap<String, ScenarioValue>| -> BTreeSet<String> {
+        row.keys()
+            .filter(|name| fields.contains(*name))
+            .cloned()
+            .collect()
+    };
+    let Some((view, shown)) = best else {
+        return Ok(Observed {
+            steps: Vec::new(),
+            view: None,
+            unobserved: named(&row),
+        });
+    };
+    let unobserved = named(&row)
+        .into_iter()
+        .filter(|name| !shown.contains(name))
+        .collect();
+    row.retain(|name, _| name == identity || shown.contains(name));
+    let (steps, name) = required(view, row);
+    Ok(Observed {
+        steps,
+        view: Some(name),
+        unobserved,
+    })
 }
 
 /// Require the row a refusal left where it was, through an immediate view only — or `None`.
@@ -5614,6 +5785,11 @@ fn required(
 /// The specification declares no outcome for it, so nothing is asserted about the error. What it
 /// does say is that a subject-fact branch reads a row that exists: so no declared event is
 /// published and no row appears under that identity.
+///
+/// That no row appears is asserted only through an immediate view: an `eventual` read showing no
+/// row proves nothing about one its projection has not caught up with. Where no immediate view
+/// projects the identity, the send keeps the assertions that need no view, and no absence is
+/// claimed (beyond10x/ess#496).
 pub(super) fn absent(
     ir: &EssIr,
     command: &ResolvedCommand,
@@ -5643,14 +5819,7 @@ pub(super) fn absent(
             "the witness names no identity",
         )
     })?;
-    let view =
-        observer(ir, &subject.entity, &BTreeSet::new(), Reading::Immediate).ok_or_else(|| {
-            missing(
-                &subject.entity,
-                &field.name,
-                "subject fact selection requires an immediate unfiltered identity/state/fact view",
-            )
-        })?;
+    let view = observer(ir, &subject.entity, &BTreeSet::new(), Reading::Immediate);
     let command_ref = CommandRef::new(command.name.clone());
     let mut steps = vec![ScenarioStep::ExecuteCommand {
         caller: std::collections::BTreeMap::new(),
@@ -5664,22 +5833,24 @@ pub(super) fn absent(
             event: event.clone(),
         });
     }
-    let name = ViewRef::new(view.name.clone());
-    require(
-        view,
-        &name,
-        BTreeMap::new(),
-        ViewExpectation::Excludes {
-            fields: BTreeMap::from([(
-                ir.entity(&subject.entity).identity.name.clone(),
-                ScenarioValue::literal(identity),
-            )]),
-        },
-        &mut steps,
-    );
     let mut source: BTreeSet<EssSemanticRef> = forbidden.into_iter().map(Into::into).collect();
     source.insert(command_ref.into());
-    source.insert(name.into());
+    if let Some(view) = view {
+        let name = ViewRef::new(view.name.clone());
+        require(
+            view,
+            &name,
+            BTreeMap::new(),
+            ViewExpectation::Excludes {
+                fields: BTreeMap::from([(
+                    ir.entity(&subject.entity).identity.name.clone(),
+                    ScenarioValue::literal(identity),
+                )]),
+            },
+            &mut steps,
+        );
+        source.insert(name.into());
+    }
     Ok((steps, source))
 }
 
@@ -5969,9 +6140,11 @@ fn claimed_row(
     );
     taken.extend(super::bound_instances(&arrangement.steps));
     taken.insert(arrangement.instance.clone());
-    let (observed, view) =
-        observe_fields(ir, entity, &read_by(ir, entity, &predicate), &arrangement)?;
-    let preservation = preserve_refused_subject(
+    let mut source = BTreeSet::new();
+    let mut unobserved = BTreeSet::new();
+    let observed = observe_published(ir, entity, &read_by(ir, entity, &predicate), &arrangement)?
+        .into_steps(&mut source, &mut unobserved);
+    let preservation = preserve_selected_subject(
         ir,
         subject,
         &Setup {
@@ -5985,9 +6158,10 @@ fn claimed_row(
         super::caller::InvocationPhase::Arrange,
         &mut arrangement.steps,
     );
-    let mut source = arrangement.source;
-    source.insert(view.into());
+    source.extend(arrangement.source);
     source.extend(preservation.source);
+    unobserved.extend(arrangement.unobserved);
+    unobserved.extend(preservation.unobserved);
     let mut steps = arrangement.steps;
     steps.extend(observed);
     steps.extend(preservation.before);
@@ -6028,7 +6202,7 @@ fn claimed_row(
         steps,
         source,
         refused: Vec::new(),
-        unobserved: preservation.unobserved.into_iter().collect(),
+        unobserved,
     })
 }
 
@@ -6095,7 +6269,7 @@ fn around_row(
     // it, or what the views publish where they cover only part of it (#132), as a wrong-state
     // refusal's is. Below ess/23 the guarded fields alone are required again, as they always were.
     if outcome.complete_refusal && !changes {
-        let preservation = preserve_refused_subject(
+        let preservation = preserve_selected_subject(
             ir,
             subject,
             &Setup {
@@ -6130,16 +6304,17 @@ fn around_row(
         source: BTreeSet::new(),
         settled: left,
         unwritten: BTreeSet::new(),
+        unobserved: BTreeSet::new(),
     };
     // A refusal left the row where it was, and only an immediate read can say so.
-    let observation = if changes
-        && leaves_changed(setup.before.as_ref(), &setup.settled, &arrangement, &fields)
-    {
-        Some(observe_fields(ir, &subject.entity, &fields, &arrangement)?)
-    } else {
-        observe_unchanged(ir, &subject.entity, &fields, &arrangement)?
-    };
-    let Some((observed, view)) = observation else {
+    if changes && leaves_changed(setup.before.as_ref(), &setup.settled, &arrangement, &fields) {
+        let mut unobserved = BTreeSet::new();
+        let observed = observe_published(ir, &subject.entity, &fields, &arrangement)?
+            .into_steps(&mut setup.source, &mut unobserved);
+        return Ok((observed, unobserved));
+    }
+    let Some((observed, view)) = observe_unchanged(ir, &subject.entity, &fields, &arrangement)?
+    else {
         return Ok((Vec::new(), BTreeSet::new()));
     };
     setup.source.insert(view.into());
@@ -7065,15 +7240,16 @@ fn send_for_row(
     taken.extend(super::bound_instances(&arrangement.steps));
     let command_ref = CommandRef::new(command.name.clone());
     let outcome_ref = OutcomeRef::new(command_ref.clone(), outcome.name.clone());
-    let (observed, view) = observe_fields(ir, entity, fields, &arrangement)?;
-    arrangement.steps.extend(observed);
+    // A further row is observed through the views the branch's own row is (beyond10x/ess#496),
+    // over the guarded fields that row's observation already reads, so what no view publishes here
+    // the branch's note names already.
+    observe_published(ir, entity, fields, &arrangement)?.onto(&mut arrangement);
     models.mark(
         super::caller::InvocationPhase::Arrange,
         &mut arrangement.steps,
     );
     steps.append(&mut arrangement.steps);
     source.append(&mut arrangement.source);
-    source.insert(view.into());
     let supplied = supply(
         ir,
         command,
@@ -7131,8 +7307,7 @@ fn send_for_row(
         .cloned()
         .collect();
     if leaves_changed(Some(&held.0), &held.1, &arrangement, &kept) {
-        let (after, _) = observe_fields(ir, entity, &kept, &arrangement)?;
-        steps.extend(after);
+        steps.extend(observe_published(ir, entity, &kept, &arrangement)?.steps);
     } else if let Some((after, _)) = observe_unchanged(ir, entity, &kept, &arrangement)? {
         steps.extend(after);
     }
@@ -7312,6 +7487,18 @@ pub(super) fn preserve_refused_subject(
     preserve(ir, subject, setup, Observation::CompleteOrPublished)
 }
 
+/// [`preserve_refused_subject`] for a refusal of a command whose branches the stored row selects
+/// (beyond10x/ess#496): where no view observes the row at all, nothing is read and every subject
+/// field is unobserved, instead of the refusal. The row was arranged through its creating command,
+/// so the scenario's outcome, error and events stand as its evidence without a view.
+pub(super) fn preserve_selected_subject(
+    ir: &EssIr,
+    subject: &ResolvedSubject,
+    setup: &Setup,
+) -> Result<Preservation, RefusalCause> {
+    preserve(ir, subject, setup, Observation::Published)
+}
+
 /// How much of the subject a preservation has to observe.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Observation {
@@ -7321,6 +7508,8 @@ enum Observation {
     Complete,
     /// [`Self::Complete`], or else whatever the declared views publish.
     CompleteOrPublished,
+    /// [`Self::CompleteOrPublished`], or nothing where no view publishes the row.
+    Published,
 }
 
 fn preserve(
@@ -7425,7 +7614,9 @@ fn preserve(
 
 /// The observation, where the immediate views covered every subject field. Where they fall short,
 /// a refusal's observation keeps what they and the `eventual` views observe, with the rest named as
-/// unobserved (beyond10x/ess#132); anything else — or nothing observing the row at all — refuses.
+/// unobserved (beyond10x/ess#132); anything else — or nothing observing the row at all — refuses,
+/// except a refusal the stored row selects, whose observation may be empty, with every subject
+/// field named as unobserved (beyond10x/ess#496).
 fn covered(
     ir: &EssIr,
     subject: &ResolvedSubject,
@@ -7437,7 +7628,10 @@ fn covered(
     if required.is_empty() {
         return Ok(observed);
     }
-    if observation != Observation::CompleteOrPublished {
+    if !matches!(
+        observation,
+        Observation::CompleteOrPublished | Observation::Published
+    ) {
         return Err(missing(
             &subject.entity,
             &required.into_iter().collect::<Vec<_>>().join(","),
@@ -7450,6 +7644,14 @@ fn covered(
         .expect("preservation arranged an existing subject");
     let partial = eventual_observation(ir, subject, setup, instance, &mut required);
     if observed.before.is_empty() && partial.after.is_empty() {
+        if observation == Observation::Published {
+            // No view reads the row: its identity and state are not fields the note names.
+            let entity = ir.entity(&subject.entity);
+            required.remove(&entity.identity.name);
+            required.remove(EntitySpec::STATE);
+            observed.unobserved = required.into_iter().collect();
+            return Ok(observed);
+        }
         return Err(missing(
             &subject.entity,
             &required.into_iter().collect::<Vec<_>>().join(","),
@@ -7643,6 +7845,7 @@ pub(super) fn prepare_seeded(
             after,
             before: Some(arrangement.state),
             settled: arrangement.settled,
+            unobserved: arrangement.unobserved,
         },
         input,
     )))
@@ -7810,6 +8013,7 @@ fn seed_arrangement(
             .filter(|field| field.type_ref.is_optional() && !seed.fields.contains_key(&field.name))
             .map(|field| field.name.clone())
             .collect(),
+        unobserved: BTreeSet::new(),
     }
 }
 

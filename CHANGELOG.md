@@ -16,6 +16,21 @@
   with a reason naming the attribute and `caller:` in the text and JSON reports, where it said the
   model left the value to the implementation.
 
+### Changed
+
+- `ess verify conform synthesize` writes the scenarios of a command whose branches a stored field
+  of its subject selects (`when_subject:`) even when no view observes that field, as for a record
+  the modelled system never lets anyone read back. It refused each such success, refusal,
+  transition and wrong-state scenario with `ESS-SYNTH-001` ("requires an immediate unfiltered
+  identity/state/fact view"), although it already arranges the row through the creating command
+  and its `sets:` mapping. The scenario now observes what the declared views publish, its
+  outcome, error and events are the evidence for the rest, and the note that a scenario observes
+  only part of its subject now covers these scenarios too and names the fields no view publishes.
+  The absent-subject send asserts that no row appeared only through an immediate view, and without
+  one keeps its no-event assertions. A model with an immediate view covering the guarded fields keeps
+  its suite byte for byte; one whose only covering view is `eventual` gains that absent-subject
+  send, which it used to refuse (https://github.com/beyond10x/ess/issues/496).
+
 ### Fixed
 
 - `ess verify conform synthesize` honours a `when_related:` guard that reads a member of a struct
