@@ -430,6 +430,14 @@ impl SemanticChange {
     #[allow(clippy::too_many_lines)]
     pub fn minimum_format(&self) -> u32 {
         match self {
+            Self::Type {
+                changed: TypeChange::UndeclaredFieldsChanged { .. },
+                ..
+            }
+            | Self::Command {
+                changed: CommandChange::ResponseUndeclaredFieldsChanged { .. },
+                ..
+            } => UNDECLARED_FIELDS_DELTA_FORMAT,
             Self::Domain { .. } => DOMAIN_DELTA_FORMAT,
             Self::Command { changed, .. } if changed.is_compensation() => 14,
             Self::Binding { changed, .. } if changed.is_refusal_policy() => 14,
@@ -778,6 +786,13 @@ impl SystemChange {
 /// delta that carries a domain change is classified even when nobody asked.
 pub const DOMAIN_DELTA_FORMAT: u32 = 15;
 
+/// The first delta format whose vocabulary has `undeclared-fields-changed` on a type and
+/// `response-undeclared-fields-changed` on a command (`ess/24`, beyond10x/ess#500).
+///
+/// Above [`CLASSIFIED_DELTA_FORMAT`](crate::compatibility::CLASSIFIED_DELTA_FORMAT) too, so a delta
+/// that carries one is classified even when nobody asked.
+pub const UNDECLARED_FIELDS_DELTA_FORMAT: u32 = 18;
+
 /// A domain entered in, or dropped from, the system's `domains:` list.
 ///
 /// Only the arrival and the departure. A domain's member sets are derived from each construct's
@@ -1059,6 +1074,28 @@ pub enum TypeChange {
         /// The prefix it declares.
         after: String,
     },
+    /// A struct's `undeclared_fields:` moved between `refused` and `ignored` (`ess/24`,
+    /// beyond10x/ess#500). Only an `ess-diff/18` delta carries it.
+    ///
+    /// Related by set membership, as a variant is: a record that ignores the fields it does not
+    /// declare admits every value the closed record admitted and more, so opening it widens and
+    /// closing it narrows.
+    UndeclaredFieldsChanged {
+        /// What it did with a field it does not declare.
+        before: ess_domain::types::UndeclaredFields,
+        /// What it does.
+        after: ess_domain::types::UndeclaredFields,
+    },
+}
+
+/// How a record's `undeclared_fields:` moving relates the revisions: opening it widens what it
+/// admits, closing it narrows it.
+fn undeclared_fields_relation(after: ess_domain::types::UndeclaredFields) -> SemanticRelation {
+    if after.is_ignored() {
+        SemanticRelation::Expanded
+    } else {
+        SemanticRelation::Narrowed
+    }
 }
 
 impl TypeChange {
@@ -1093,6 +1130,7 @@ impl TypeChange {
             Self::PrefixAdded { .. } => "prefix-added",
             Self::PrefixRemoved { .. } => "prefix-removed",
             Self::PrefixChanged { .. } => "prefix-changed",
+            Self::UndeclaredFieldsChanged { .. } => "undeclared-fields-changed",
         }
     }
 
@@ -1141,6 +1179,7 @@ impl TypeChange {
             Self::PrefixAdded { after } => prefix_relation(None, Some(after)),
             Self::PrefixRemoved { before } => prefix_relation(Some(before), None),
             Self::PrefixChanged { before, after } => prefix_relation(Some(before), Some(after)),
+            Self::UndeclaredFieldsChanged { after, .. } => undeclared_fields_relation(*after),
             _ => SemanticRelation::Changed,
         }
     }
@@ -1220,6 +1259,9 @@ impl TypeChange {
             Self::PrefixAdded { after } => format!("prefix (none) → `{after}`"),
             Self::PrefixRemoved { before } => format!("prefix `{before}` → (none)"),
             Self::PrefixChanged { before, after } => format!("prefix `{before}` → `{after}`"),
+            Self::UndeclaredFieldsChanged { before, after } => {
+                format!("undeclared fields {before} → {after}")
+            }
             Self::InvariantsChanged { before, after } => format!(
                 "invariants [{}] → [{}]",
                 before.join("; "),
@@ -2263,6 +2305,15 @@ pub enum CommandChange {
         /// New closed fields.
         after: Vec<ParameterContract>,
     },
+    /// The command's `undeclared_fields:`, which governs its response only, moved between
+    /// `refused` and `ignored` (`ess/24`, beyond10x/ess#500). Only an `ess-diff/18` delta carries
+    /// it. Opening the response widens what it may carry; closing it narrows it.
+    ResponseUndeclaredFieldsChanged {
+        /// What the response did with a field the command does not declare.
+        before: ess_domain::types::UndeclaredFields,
+        /// What it does.
+        after: ess_domain::types::UndeclaredFields,
+    },
     /// The command is declared in the later revision and not in the earlier one.
     Added,
     /// The command was declared in the earlier revision and is not in the later one.
@@ -2553,6 +2604,7 @@ impl CommandChange {
     pub const fn kind(&self) -> &'static str {
         match self {
             Self::ResponseChanged { .. } => "response-changed",
+            Self::ResponseUndeclaredFieldsChanged { .. } => "response-undeclared-fields-changed",
             Self::OutcomeReplayChanged { .. } => "outcome-replay-changed",
             Self::OutcomeObservationChanged { .. } => "outcome-observation-changed",
             Self::OutcomeResponsePayloadChanged { .. } => "outcome-response-payload-changed",
@@ -2629,8 +2681,12 @@ impl CommandChange {
         }
     }
 
-    /// Disclosure restrictions have a set direction; other command edits remain changed.
+    /// Disclosure restrictions and a response opened or closed (`ess/24`) have a set direction;
+    /// other command edits remain changed.
     pub fn relation(&self) -> SemanticRelation {
+        if let Self::ResponseUndeclaredFieldsChanged { after, .. } = self {
+            return undeclared_fields_relation(*after);
+        }
         if let Self::OutcomeOneTimeResponseChanged { before, after, .. } = self {
             if before.iter().all(|field| after.contains(field)) {
                 return SemanticRelation::Narrowed;
@@ -2748,6 +2804,15 @@ impl CommandChange {
     }
 
     /// The clause for [`Self::InputExampleChanged`], and empty for every other change.
+    fn undeclared_fields_clause(&self) -> String {
+        match self {
+            Self::ResponseUndeclaredFieldsChanged { before, after } => {
+                format!("response undeclared fields {before} → {after}")
+            }
+            _ => String::new(),
+        }
+    }
+
     fn example_clause(&self) -> String {
         match self {
             Self::InputExampleChanged {
@@ -2783,6 +2848,7 @@ impl CommandChange {
             } => format!("outcome `{outcome}` refusal {before} → {after}"),
             Self::OutcomeSetEffectChanged { .. } => self.set_effect_clause(),
             Self::ResponseChanged { .. } => "typed command response changed".to_owned(),
+            Self::ResponseUndeclaredFieldsChanged { .. } => self.undeclared_fields_clause(),
             Self::Added => "declared".to_owned(),
             Self::Removed => "no longer declared".to_owned(),
             Self::DomainChanged { before, after } => format!("owned by {after}, was {before}"),

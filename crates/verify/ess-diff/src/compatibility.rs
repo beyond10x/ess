@@ -51,6 +51,9 @@
 //! | a type with an input use keeps its name while its kind, its representation, a member's type or a variant's payload moves between those wire forms (`ess-diff/16`) | breaking for callers; readers and history as its uses answer them |
 //! | a refusal gains or loses its compensating change (`compensates: true`, ess/22) | breaking for callers and readers; compatible for history |
 //! | an input whose type is not `Optional` added, or a refusal added or its guard changed so that an input the earlier revision accepted is refused by it, where the guards decide that (`ess-diff/17`) | breaking for callers; unknown for readers; compatible for history |
+//! | a struct opened or closed, `undeclared_fields: ignored` ↔ `refused` (`ess-diff/18`, ess/24) | decided as `expanded`, or `narrowed`: an open record admits every value the closed one did and more |
+//! | a command response opened (`ess-diff/18`) | breaking for readers: one written against the closed response may be sent a field it refuses; compatible for callers and history |
+//! | a command response closed (`ess-diff/18`) | compatible: it carries only what every reader of the open one admitted |
 //! | a view is removed | breaking for readers |
 //! | an event or an entity is removed | breaking for history |
 //!
@@ -689,6 +692,16 @@ fn dimensions(change: &SemanticChange, uses: &BTreeSet<TypeUse>) -> Dimensions {
             // a caller retrying after it and a reader of the row meet a different state; nothing
             // stored changes shape.
             CommandChange::OutcomeCompensatesChanged { .. } => [B, B, C],
+            // A response opened (`ess/24`) may now carry a field a reader written against the
+            // closed one refuses; closed again, it carries only what every such reader admitted.
+            // A caller sends nothing to it, and nothing stored reads it.
+            CommandChange::ResponseUndeclaredFieldsChanged { after, .. } => {
+                if after.is_ignored() {
+                    [C, B, C]
+                } else {
+                    [C, C, C]
+                }
+            }
             _ => [U, U, C],
         },
         SemanticChange::Event { changed, .. } => match changed {
@@ -1289,6 +1302,10 @@ impl Residual {
                     domain.remove("types");
                 }
             }
+        }
+        // Which structs ignore undeclared fields (`ess/24`) is a property of each, not a use.
+        if let Some(model) = rest.as_object_mut() {
+            model.remove("undeclared_fields_ignored");
         }
         // A payload or mapping target type restates the event, error or command-input field it
         // fills, each of which is read above.
