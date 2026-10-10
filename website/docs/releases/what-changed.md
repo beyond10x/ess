@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.57.0 — 2026-10-09
+
+### CLI bindings may omit globals, verify diff flags caller-breaking changes, runners check constrained responses
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.57.0)
+
+`ess-cli/2` lets a CLI binding omit its config and output globals. `ess verify diff` classifies added and removed domains and rates changes that refuse an existing caller as breaking. Runners check responses of constrained `String` newtypes. Route-escaping wire names and always-true refusals are refused, and synthesis covers more guards.
+
 ## 0.56.0 — 2026-10-07
 
 ### A held-state branch must be declared before an overlapping accepting or external branch

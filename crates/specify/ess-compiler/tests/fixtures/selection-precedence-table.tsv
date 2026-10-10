@@ -1,4 +1,4 @@
-#	models=199	commands=344
+#	models=206	commands=354
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -324,6 +324,10 @@ crates/verify/ess-conformance/tests/fixtures/mutation-arms.yaml	notes.core.Sort	
 crates/verify/ess-conformance/tests/fixtures/mutation-arms.yaml	notes.core.Write	default: written
 crates/verify/ess-conformance/tests/fixtures/mutation-gained-refusal.yaml	ir=0f73968f58bc18fae3fc667940afe9eae0698000f19347e328d8c8c853a38e2a:8865
 crates/verify/ess-conformance/tests/fixtures/mutation-gained-refusal.yaml	shop.order.ReportStatus	accepting: settled, pending | default: noted
+crates/verify/ess-conformance/tests/fixtures/mutation-identical-answer.yaml	ir=b7835b0d5fdee67ccedab693b5fa9e4a341ce156b6bdee17fcad5b2aa15b8af9:6862
+crates/verify/ess-conformance/tests/fixtures/mutation-identical-answer.yaml	desk.entry.Check	input_refusal: leading-hold, trailing-hold | default: checked
+crates/verify/ess-conformance/tests/fixtures/mutation-identical-answer.yaml	desk.entry.Grade	input_refusal: too-low, low | default: graded
+crates/verify/ess-conformance/tests/fixtures/mutation-identical-answer.yaml	desk.entry.Open	input_refusal: leading-hold, trailing-hold | default: opened
 crates/verify/ess-conformance/tests/fixtures/mutation-survivor.yaml	ir=b14305bb513764b3c344b2c3c3f5a70851ca6e882b54101697a539df2cff9b25:30315
 crates/verify/ess-conformance/tests/fixtures/mutation-survivor.yaml	billing.invoice.CancelInvoice	held_state: wrong-state | default: cancelled
 crates/verify/ess-conformance/tests/fixtures/mutation-survivor.yaml	billing.invoice.CreateInvoice	accepting: accepted | default: rejected
@@ -331,6 +335,11 @@ crates/verify/ess-conformance/tests/fixtures/mutation-survivor.yaml	billing.invo
 crates/verify/ess-conformance/tests/fixtures/mutation-survivor.yaml	billing.invoice.PayInvoice	held_state: wrong-state | accepting: settled | default: rejected
 crates/verify/ess-conformance/tests/fixtures/mutation-unwitnessed-outcome.yaml	ir=b5578cde0ecd97b1fa0974fd383e76495693931a17b5628b38ffe80eaba9bbaa:6169
 crates/verify/ess-conformance/tests/fixtures/mutation-unwitnessed-outcome.yaml	desk.ticket.FileTicket	input_refusal: contradictory, refused | default: filed
+crates/verify/ess-conformance/tests/fixtures/negated-defined-beside-subject.yaml	ir=e1ffbf5b823d456089f75da6d9ba2a2e6b66e873e556792eb4d80aa22ae95fa8:11429
+crates/verify/ess-conformance/tests/fixtures/negated-defined-beside-subject.yaml	demo.order.Fulfil	existence: not-found | held_state: stale-version, wrong-state | default: applied
+crates/verify/ess-conformance/tests/fixtures/negated-defined-beside-subject.yaml	demo.order.Place	default: placed
+crates/verify/ess-conformance/tests/fixtures/now-guard-interpreted.yaml	ir=42abb887d45674d5789eac323db114f48c312913dd2b4c0fc05823f4ebffd6f5:5079
+crates/verify/ess-conformance/tests/fixtures/now-guard-interpreted.yaml	demo.tok.Present	input_refusal: expired | default: accepted
 crates/verify/ess-conformance/tests/fixtures/now-stored-rows.yaml	ir=fad93168fa11c42db418cd986c510a7310ef87e10eb1077242b76f215de58da8:30720
 crates/verify/ess-conformance/tests/fixtures/now-stored-rows.yaml	demo.leases.AddBook	default: added
 crates/verify/ess-conformance/tests/fixtures/now-stored-rows.yaml	demo.leases.Join	related_row: no-member-to-join | accepting: banned-from-joining | default: joined
@@ -496,6 +505,14 @@ crates/verify/ess-conformance/tests/support_explore_optional_unknown/baseline.ya
 crates/verify/ess-conformance/tests/support_explore_optional_unknown/baseline.yaml	demo.items.Create	default: created
 crates/verify/ess-conformance/tests/support_explore_optional_unknown/baseline.yaml	demo.items.OptionalNote	default: noted
 crates/verify/ess-conformance/tests/support_explore_optional_unknown/baseline.yaml	demo.items.PlainNote	default: noted
+crates/verify/ess-diff/tests/fixtures/narrowed/added-refusal.yaml	ir=13346373551027bda9042d017e3da7728d1b9dbbcacc2b126cc75ab01f3ee134:5339
+crates/verify/ess-diff/tests/fixtures/narrowed/added-refusal.yaml	demo.tok.Present	input_refusal: empty-scope, admin-scope | default: accepted
+crates/verify/ess-diff/tests/fixtures/narrowed/required-input.yaml	ir=82c7a99bc376c4cc919553ddbe4b4f227c62baef5e1af73da7fffcc871ce40d5:5242
+crates/verify/ess-diff/tests/fixtures/narrowed/required-input.yaml	demo.tok.Present	input_refusal: empty-scope | default: accepted
+crates/verify/ess-diff/tests/fixtures/narrowed/v1.yaml	ir=55ed2f3d5869c1647efa46f395ea94c9c47d5c477ab00c681c8fbaaefbe1e59e:5069
+crates/verify/ess-diff/tests/fixtures/narrowed/v1.yaml	demo.tok.Present	input_refusal: empty-scope | default: accepted
+crates/verify/ess-diff/tests/fixtures/narrowed/widened-guard.yaml	ir=1bbaea2ab12de267df52adb5045fabe4f0c6f73c2bc1679b9484689cacdb585c:5173
+crates/verify/ess-diff/tests/fixtures/narrowed/widened-guard.yaml	demo.tok.Present	input_refusal: empty-scope | default: accepted
 crates/verify/ess-diff/tests/fixtures/upcast/after-additive.yaml	ir=13b264e935f030928a88fb3e2d6fea9029709065931272aed014e710bdc1646b:10437
 crates/verify/ess-diff/tests/fixtures/upcast/after-additive.yaml	catalog.items.Accept	existence: unknown | held_state: stale-revision, already-accepted | default: accepted
 crates/verify/ess-diff/tests/fixtures/upcast/after-additive.yaml	catalog.items.Add	default: added

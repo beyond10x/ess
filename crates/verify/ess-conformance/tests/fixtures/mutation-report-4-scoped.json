@@ -1,0 +1,105 @@
+{
+  "baseline": {
+    "not_scored": [],
+    "refusals": 2,
+    "scenarios": 9
+  },
+  "component": "desk-server",
+  "counts": {
+    "equivalent": 0,
+    "inconclusive": 0,
+    "killed": 0,
+    "mutants": 6,
+    "stillborn": 0,
+    "survived": 2,
+    "unwitnessed": 4
+  },
+  "format": "ess-mutation-report/4",
+  "implementation": "interpreted VERSION",
+  "mutants": [
+    {
+      "added_refusals": [
+        {
+          "code": "ESS-SYNTH-003",
+          "scenario": "desk.entry.Check/outcome/trailing-hold",
+          "subject": "outcome desk.entry.Check/trailing-hold"
+        }
+      ],
+      "change": "`when: prompt starts_with \"hold \"` becomes `when: not (prompt starts_with \"hold \")`",
+      "class": "guard-negate",
+      "id": "guard-negate/desk.entry.Check/leading-hold",
+      "refusals": 3,
+      "scenarios": 8,
+      "verdict": "unwitnessed"
+    },
+    {
+      "change": "`when: prompt ends_with \" hold\"` becomes `when: not (prompt ends_with \" hold\")`",
+      "class": "guard-negate",
+      "id": "guard-negate/desk.entry.Check/trailing-hold",
+      "refusals": 2,
+      "scenarios": 9,
+      "verdict": "survived"
+    },
+    {
+      "change": "`when: amount < 20` becomes `when: not (amount < 20)`",
+      "class": "guard-negate",
+      "id": "guard-negate/desk.entry.Grade/low",
+      "refusals": 2,
+      "scenarios": 9,
+      "verdict": "survived"
+    },
+    {
+      "added_refusals": [
+        {
+          "code": "ESS-SYNTH-003",
+          "scenario": "desk.entry.Grade/outcome/graded",
+          "subject": "outcome desk.entry.Grade/graded"
+        }
+      ],
+      "change": "`when: amount < 10` becomes `when: not (amount < 10)`",
+      "class": "guard-negate",
+      "id": "guard-negate/desk.entry.Grade/too-low",
+      "refusals": 3,
+      "scenarios": 8,
+      "verdict": "unwitnessed"
+    },
+    {
+      "added_refusals": [
+        {
+          "code": "ESS-SYNTH-003",
+          "scenario": "desk.entry.Open/outcome/trailing-hold",
+          "subject": "outcome desk.entry.Open/trailing-hold"
+        },
+        {
+          "code": "ESS-SYNTH-022",
+          "scenario": "desk.entry.Open/outcome/leading-hold",
+          "subject": "outcome desk.entry.Open/leading-hold"
+        }
+      ],
+      "change": "`when: (defined(prompt) and prompt starts_with \"hold \")` becomes `when: not ((defined(prompt) and prompt starts_with \"hold \"))`",
+      "class": "guard-negate",
+      "id": "guard-negate/desk.entry.Open/leading-hold",
+      "refusals": 3,
+      "scenarios": 8,
+      "verdict": "unwitnessed"
+    },
+    {
+      "added_refusals": [
+        {
+          "code": "ESS-SYNTH-022",
+          "scenario": "desk.entry.Open/outcome/trailing-hold",
+          "subject": "outcome desk.entry.Open/trailing-hold"
+        }
+      ],
+      "change": "`when: (defined(prompt) and prompt ends_with \" hold\")` becomes `when: not ((defined(prompt) and prompt ends_with \" hold\"))`",
+      "class": "guard-negate",
+      "id": "guard-negate/desk.entry.Open/trailing-hold",
+      "refusals": 2,
+      "scenarios": 9,
+      "verdict": "unwitnessed"
+    }
+  ],
+  "out_of_scope": [],
+  "spec_digest": "1cb94331a7eb88f0edb36938ac2d497952603e04d331bbc448a75d05b44aeca3",
+  "specification": "desk v1"
+}
