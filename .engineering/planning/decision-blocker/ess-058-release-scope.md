@@ -2,11 +2,13 @@
 format: aep.planning-md/3
 id: decision-blocker:ess-058-release-scope
 kind: decision-blocker
-status: open
+status: cleared
 title: 'Release 0.58.0 from main now, or after the #521 and caller-attributes wave'
 relations:
 - blocks: release-plan:ess-058
-revision: 1
+revision: 3
+transitions:
+- {from: "open", to: "cleared", at: "2026-10-10T09:09:19Z", actor: "human:timo", revision: 3}
 ---
 ## Question
 
@@ -20,3 +22,7 @@ revision: 1
 ## Recommendation
 
 A: the fixes on `main` ship on the daily cadence, and the wave's builds cannot overlap the suite anyway.
+
+## Decided
+
+A: 0.58.0 is released from main at 7ac8f4ef93 after the full pre-release suite, run step by step within the disk limit. https://github.com/beyond10x/ess/issues/521 (`story:related-guard-on-a-captured-struct-input-member`) and `story:authored-act-states-caller-attributes` are the next wave and ship in 0.59.0.
