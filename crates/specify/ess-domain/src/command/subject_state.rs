@@ -1,4 +1,5 @@
 //! Explicit held-state authority and the shared bounded state/input partition proof.
+use super::precedence::{self, BranchShape, Composition, Phase};
 use super::{finite, CommandSpec, Effect, InstanceSurface, Outcome, OutcomeCondition};
 use crate::{
     entity::{EntitySpec, StateName},
@@ -117,23 +118,36 @@ pub fn is_subjectless_refusal(outcome: &Outcome) -> bool {
 
 /// Whether this branch is an input-guarded refusal naming no subject: a `when:` over the input
 /// and an `error:`, which a held-state command admits beside its state-selected branches
-/// (beyond10x/ess#227).
+/// (beyond10x/ess#227). It is a branch of [`Phase::InputRefusal`] on a command composed as
+/// `command` ([`precedence::place`]).
 ///
 /// It is answered before existence and before the held state
 /// (`docs/design/cross-record-and-stored-field-guards.md` "The precedence order",
 /// beyond10x/ess#209): a request it claims is refused whatever the record holds, and whether or
 /// not a record carries the identity. So it reads no subject, and the joint partition counts an
 /// input it claims as its own in every held state.
-pub fn is_input_refusal(outcome: &Outcome) -> bool {
-    outcome.subject.is_none()
-        && outcome.replays.is_none()
-        && outcome.error.is_some()
-        && matches!(outcome.condition, OutcomeCondition::When(_))
-        && !outcome.is_unconditional()
+pub fn is_input_refusal(outcome: &Outcome, command: &Composition) -> bool {
+    precedence::place(&BranchShape::of(outcome), command).phase == Phase::InputRefusal
 }
 
-/// Local declaration checks, also used before a registry or entity map exists.
-pub fn validate_shape(command: &CommandSpec) -> ValidationErrors {
+/// Whether the phase the current phase order reads first among `branches`, on a command composed
+/// as `composition`, is [`Phase::InputRefusal`] ([`precedence::place`],
+/// [`precedence::phase_order`]): where it is, the input refusals among them answer before every
+/// other one; where another phase is read first, its branches answer before them.
+fn input_refusals_read_first<'o>(
+    branches: impl IntoIterator<Item = &'o Outcome>,
+    composition: Composition,
+) -> bool {
+    branches
+        .into_iter()
+        .map(|outcome| precedence::place(&BranchShape::of(outcome), &composition).phase)
+        .min_by_key(|phase| phase.position())
+        == Some(Phase::InputRefusal)
+}
+
+/// Local declaration checks, also used before a registry or entity map exists, on a command
+/// composed as `composition`.
+pub fn validate_shape(command: &CommandSpec, composition: &Composition) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
     let mut identity = None;
     let mut defaults = 0;
@@ -162,7 +176,7 @@ pub fn validate_shape(command: &CommandSpec) -> ValidationErrors {
         if outcome.is_unconditional() && outcome.error.is_some() && outcome.subject.is_none() {
             continue;
         }
-        if is_input_refusal(outcome) {
+        if is_input_refusal(outcome, composition) {
             continue;
         }
         let Some(subject) = selection(command, outcome)
@@ -194,7 +208,8 @@ pub fn validate_shape(command: &CommandSpec) -> ValidationErrors {
 pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
     for command in spec.commands().values().filter(|command| uses(command)) {
-        errors.extend(validate_shape(command));
+        let composition = Composition::of(command, spec.system().format);
+        errors.extend(validate_shape(command, &composition));
         let Some(subject) = command
             .outcomes
             .iter()
@@ -252,7 +267,7 @@ pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors 
                 | OutcomeCondition::ExistingInstance => {}
             }
         }
-        errors.extend(validate_partition(command, entity, types));
+        errors.extend(validate_partition(command, entity, types, composition));
     }
     errors
 }
@@ -263,12 +278,15 @@ pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors 
 /// guard. Where it cannot — `secret.count < 12` — that refusal alone leaves the proof, and the
 /// rest of the command, every decidable refusal included, is proved over every input: a request
 /// the dropped refusal claims never reaches it, so that proof is sufficient, only stronger than
-/// needed. A decidable refusal is never dropped with it, so the inputs it claims stay its own.
+/// needed. A decidable refusal is never dropped with it, so the inputs it claims stay its own. No
+/// refusal leaves the proof where the phase order reads another guarded branch's phase before the
+/// input refusals' ([`input_refusals_read_first`]): that branch is reached first.
 fn analyze_partition<'a>(
     command: &CommandSpec,
     entity: &EntitySpec,
     types: &TypeRegistry,
     guarded: Vec<&'a Outcome>,
+    composition: Composition,
 ) -> Option<(Vec<finite::StateCase>, Vec<&'a Outcome>)> {
     let environment = DomainEnvironment::new(types, &command.input);
     let analyze = |guarded: &[&Outcome]| {
@@ -288,12 +306,14 @@ fn analyze_partition<'a>(
     if let Some(cases) = analyze(&guarded) {
         return Some((cases, guarded));
     }
-    if !guarded.iter().any(|outcome| is_input_refusal(outcome)) {
+    if !input_refusals_read_first(guarded.iter().copied(), composition) {
         return None;
     }
     let rest: Vec<&Outcome> = guarded
         .into_iter()
-        .filter(|outcome| !is_input_refusal(outcome) || analyze(&[*outcome]).is_some())
+        .filter(|outcome| {
+            !is_input_refusal(outcome, &composition) || analyze(&[*outcome]).is_some()
+        })
         .collect();
     analyze(&rest).map(|cases| (cases, rest))
 }
@@ -302,6 +322,7 @@ fn validate_partition(
     command: &CommandSpec,
     entity: &EntitySpec,
     types: &TypeRegistry,
+    composition: Composition,
 ) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
     let guarded: Vec<_> = command
@@ -321,7 +342,8 @@ fn validate_partition(
         })
         .collect();
     let default = command.default_outcome();
-    let Some((cases, guarded)) = analyze_partition(command, entity, types, guarded) else {
+    let Some((cases, guarded)) = analyze_partition(command, entity, types, guarded, composition)
+    else {
         if default.is_none() || command.has_state_refusal() {
             errors.push(ValidationError::at(command.site().key("outcomes"), ValidationCode::NonExhaustiveBranches,
                     "subject-state/input coverage is open, unsupported, or exceeds 64 joint assignments; declare a genuine default"));
@@ -358,13 +380,20 @@ fn validate_partition(
         };
         // The input refusals an assignment selects answer it before any state-selected branch,
         // and of two that select it the first declared answers, as Entity Runtime takes it
-        // (beyond10x/ess#227 adversary pass 1). `guarded` keeps declaration order.
+        // (beyond10x/ess#227 adversary pass 1): where the phase order reads theirs first among
+        // the selected branches. Where it reads another phase first, every selected branch is
+        // counted, as on an assignment no input refusal selects. `guarded` keeps declaration
+        // order.
+        let refusals_first = input_refusals_read_first(
+            case.input.selected.iter().map(|index| guarded[*index]),
+            composition,
+        );
         if let Some(first) = case
             .input
             .selected
             .iter()
             .copied()
-            .filter(|index| is_input_refusal(guarded[*index]))
+            .filter(|index| refusals_first && is_input_refusal(guarded[*index], &composition))
             .min()
         {
             selected = vec![guarded[first]];

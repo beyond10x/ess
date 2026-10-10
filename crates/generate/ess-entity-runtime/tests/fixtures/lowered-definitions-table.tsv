@@ -1,0 +1,387 @@
+#	models=261	lines=386
+crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	components=1
+crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	REFUSED	95eb461796949834a9d78ef0c04afcab1acfa13dbf2dfd6da3af2f3c93549630:687
+crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing/system.yaml	ASSEMBLE
+crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing-repeated-gap/system.yaml	ASSEMBLE
+crates/edge/ess-cli/tests/fixtures/entity-setup-model.yaml	components=0
+crates/edge/ess-cli/tests/fixtures/implied-relation.yaml	components=0
+crates/edge/ess-cli/tests/fixtures/parse-refusals/every-position.yaml	components=0
+crates/edge/ess-cli/tests/fixtures/parse-refusals/parse-plus-semantic.yaml	ASSEMBLE
+crates/edge/ess-cli/tests/fixtures/parse-refusals/two-unparsable-compact.yaml	ASSEMBLE
+crates/edge/ess-cli/tests/fixtures/parse-refusals/two-unparsable-filters.yaml	ASSEMBLE
+crates/edge/ess-cli/tests/fixtures/room-booking/flat.yaml	ASSEMBLE
+crates/edge/ess-cli/tests/fixtures/room-booking/window.yaml	components=0
+crates/edge/ess-cli/tests/fixtures/stored-rules/fold.yaml	components=1
+crates/edge/ess-cli/tests/fixtures/stored-rules/fold.yaml	rules	REFUSED	a8dbf3c6afa424532375ffa8949c0265393fa2ee1fcfcc4b43f1a0dc865fa6af:843
+crates/edge/ess-cli/tests/fixtures/stored-rules/model.yaml	components=1
+crates/edge/ess-cli/tests/fixtures/stored-rules/model.yaml	rules	REFUSED	4d69430ae363d2442112bed442e147606ab7591abf820acc0b54727ccdfb297b:334
+crates/edge/ess-cli/tests/fixtures/synthesis-seeds/model/system.yaml	ASSEMBLE
+crates/generate/ess-cli-project/tests/fixtures/model.yaml	components=0
+crates/generate/ess-entity-runtime/tests/fixtures/contract/system.yaml	ASSEMBLE
+crates/generate/ess-entity-runtime/tests/fixtures/held-state-after-disjoint-accepting.yaml	components=1
+crates/generate/ess-entity-runtime/tests/fixtures/held-state-after-disjoint-accepting.yaml	tickets	demo.ticket.Ticket	definition=7abc85582cc790d186d6bd5cb1939bf6564e8cafb81ee1c786bc1215aa7b79ca:4195
+crates/generate/ess-entity-runtime/tests/fixtures/held-state-after-disjoint-accepting.yaml	tickets	demo.ticket.Ticket	create	filed
+crates/generate/ess-entity-runtime/tests/fixtures/held-state-after-disjoint-accepting.yaml	tickets	demo.ticket.Ticket	demo.ticket.Close	invalid-note, first-close, rushed, closed, not-open
+crates/generate/ess-gen/tests/fixtures/model-types.yaml	components=0
+crates/generate/ess-synth/tests/fixtures/binding-selection.yaml	components=0
+crates/generate/ess-synth/tests/fixtures/bounded-accessor.yaml	components=1
+crates/generate/ess-synth/tests/fixtures/bounded-accessor.yaml	projection-service	REFUSED	3a3c03ad213b7d7fffc460e7a14bff66db28cb161ccf9ab3a6513bff0ecddc30:695
+crates/generate/ess-synth/tests/fixtures/clock-reading.yaml	components=1
+crates/generate/ess-synth/tests/fixtures/conditional-measures-generated.yaml	components=1
+crates/generate/ess-synth/tests/fixtures/conditional-measures-generated.yaml	ledger-service	REFUSED	6a2dc4fbcc57c8074b8b144efac23bf07dd73169ffee34f9727925b8c701ca27:209
+crates/generate/ess-synth/tests/fixtures/declared-behaviour/system.yaml	ASSEMBLE
+crates/generate/ess-synth/tests/fixtures/declared-behaviour-kept/head.yaml	components=0
+crates/generate/ess-synth/tests/fixtures/generated-views.yaml	components=1
+crates/generate/ess-synth/tests/fixtures/generated-views.yaml	ledger-service	REFUSED	6a2dc4fbcc57c8074b8b144efac23bf07dd73169ffee34f9727925b8c701ca27:209
+crates/generate/ess-synth/tests/fixtures/served-notes/system.yaml	components=1
+crates/generate/ess-synth/tests/fixtures/served-notes/system.yaml	notes	REFUSED	bf692e9bd0826837c5430ddea88b5bddddfd2814a257ae97fc44afb0ef957853:208
+crates/specify/ess-cli-contract/tests/fixtures/json-model.yaml	components=0
+crates/specify/ess-cli-contract/tests/fixtures/model.yaml	components=0
+crates/specify/ess-cli-contract/tests/fixtures/service-model.yaml	ASSEMBLE
+crates/specify/ess-compiler/tests/fixtures/absent-input.yaml	components=1
+crates/specify/ess-compiler/tests/fixtures/absent-input.yaml	notes-service	REFUSED	e8abf90d33526c6694a8f7becd278efb8afbfe33f709720b10854b6014e842f1:196
+crates/specify/ess-compiler/tests/fixtures/adversary_expression.yaml	components=0
+crates/specify/ess-compiler/tests/fixtures/bounded-retry.yaml	components=0
+crates/specify/ess-compiler/tests/fixtures/input-value-paths.yaml	components=0
+crates/specify/ess-compiler/tests/fixtures/outcome-shapes.yaml	components=0
+crates/specify/ess-compiler/tests/fixtures/precedence-row-set-updating-branch.yaml	components=0
+crates/specify/ess-compiler/tests/fixtures/precedence-upsert-unknown-instance.yaml	components=0
+crates/specify/ess-compiler/tests/fixtures/refusal-with-effect.yaml	components=1
+crates/specify/ess-compiler/tests/fixtures/refusal-with-effect.yaml	order-service	REFUSED	0e4be638ee9669bd27fc9d771863be5c0dccfe94e4ed1c58e77b9a41bdeba727:280
+crates/specify/ess-compiler/tests/fixtures/set-deletes.yaml	components=0
+crates/specify/ess-compiler/tests/fixtures/set-each.yaml	components=0
+crates/specify/ess-compiler/tests/fixtures/set-effects.yaml	components=0
+crates/specify/ess-compiler/tests/fixtures/typed_diagnostics/cross_file_a.yaml	ASSEMBLE
+crates/specify/ess-compiler/tests/fixtures/typed_diagnostics/nested.yaml	ASSEMBLE
+crates/specify/ess-compiler/tests/fixtures/typed_diagnostics/repeated_names.yaml	ASSEMBLE
+crates/specify/ess-compiler/tests/fixtures/union-unit-variants.yaml	components=1
+crates/specify/ess-compiler/tests/fixtures/union-unit-variants.yaml	work-service	REFUSED	300c29ac68b53352749ceafb9345cd6f9f6a5a88cfef425ddf00624808343bac:558
+crates/specify/ess-compiler/tests/fixtures/upsert-by-existence.yaml	components=0
+crates/specify/ess-composition/tests/fixtures/owner-consumer/consumer/system.yaml	ASSEMBLE
+crates/specify/ess-composition/tests/fixtures/owner-consumer/owner/system.yaml	ASSEMBLE
+crates/specify/ess-composition/tests/fixtures/two-components/system.yaml	ASSEMBLE
+crates/specify/ess-domain/tests/fixtures/binding-selection.yaml	components=0
+crates/specify/ess-domain/tests/fixtures/lending/system.yaml	ASSEMBLE
+crates/specify/ess-domain/tests/fixtures/outcome-groups/system.yaml	ASSEMBLE
+crates/specify/ess-domain/tests/fixtures/outcome-groups-twin/system.yaml	ASSEMBLE
+crates/specify/ess-domain/tests/fixtures/periodic.yaml	components=1
+crates/specify/ess-domain/tests/fixtures/periodic.yaml	poll-service	REFUSED	245e40cdfd45267bd813f15d4e7faa455b46fd172988d1303f2ad9d0f9bb80eb:342
+crates/specify/ess-domain/tests/fixtures/text-length-positions.yaml	components=0
+crates/specify/ess-service-contract/tests/fixtures/system.yaml	ASSEMBLE
+crates/specify/ess-service-contract/tests/selection-conversion-control-fixtures/system.yaml	ASSEMBLE
+crates/specify/ess-service-contract/tests/selection-conversion-fixtures/system.yaml	ASSEMBLE
+crates/ui/ess-ui-check/tests/fixtures/model/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/adversary-273-tree.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/adversary-explore-preconditions.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/adversary-w1-1-identity-selector-ess22.yaml	components=1
+crates/verify/ess-conformance/tests/fixtures/adversary-w1-1-identity-selector-ess22.yaml	team-service	REFUSED	287af9c87dde4d272812f363281646a0e75ce1115d68a8f9ee48a6c5221d50f6:1020
+crates/verify/ess-conformance/tests/fixtures/aggregate-copied-group-parameter.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/aggregate-group-parameter.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/aggregate-group-selection-copied.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/aggregate-group-selection-guarded.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/aggregate-group-selection-owner.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/aggregate-group-selection.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/aggregate-list-parameter.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/aggregate-optional-fields.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/aggregate-state-groups.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/aggregate-stored-guarded-move.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/aggregate-timestamp-range.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/aggregate-views.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/arrangement-input-refusal.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/arrangement-paid-route.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/arrangement-two-creators.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/binding-arrangement.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/binding-condition-selected.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/binding-condition.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/binding-selection.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/calendar-windows.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/caller-addressed-identity.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/caller-struct-identity.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/captured-identities.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/claim-search/door-gentle.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/claim-search/door-offline-gentle.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/claim-search/door-offline-rough.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/claim-search/door-relabel.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/claim-search/door-rough.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/claim-search/driver-when-subject.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/claim-search/pick-external-when.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/claim-search/pick-frozen.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/claim-search/pick-revision-gt.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/claim-search/related.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/claim-search/row-set-gt-0.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/claim-search/row-set-gt-1.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/conditional-aggregate-measures.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/current-time-guard.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/declared-behaviour.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/defined-over-optional-aggregates.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/delivery-context.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/emit-swap-served.yaml	components=1
+crates/verify/ess-conformance/tests/fixtures/emit-swap-served.yaml	items-service	REFUSED	9fb6aaffab540c3a9df4baa73b13ccf3adf7210fd0a24a7ae08daf7774395783:662
+crates/verify/ess-conformance/tests/fixtures/emit-swap.yaml	components=2
+crates/verify/ess-conformance/tests/fixtures/emit-swap.yaml	alpha	REFUSED	c0adebcbe55aa778240e7ba7b86abc31bafb48e4d04dbb67f35e3934f9475996:672
+crates/verify/ess-conformance/tests/fixtures/emit-swap.yaml	beta	REFUSED	99c247fd0fac9ab1068d03a0e8ba55aa8f9e43222cf8f2d4db2b632b79662da9:333
+crates/verify/ess-conformance/tests/fixtures/error-payload-sources.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/event-multiplicity.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/explore-adv-order.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/explore-adv-overlap.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/explore-external-adversary.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/explore-external-exits.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/explore-external.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/explore-guards-first.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/explore-pair/pair.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/explore-preconditions-list.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/explore-preconditions.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/explore-retry/retry.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/explore-stored-rows.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/explore.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/external-beside-held-guard.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/filtered-related-reads.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/held-state-input-refusal.yaml	components=1
+crates/verify/ess-conformance/tests/fixtures/held-state-input-refusal.yaml	sessions	REFUSED	13fcdcca57513343da4b2bdb43ad89d164afb6236a7a44db529535afd02c25a1:203
+crates/verify/ess-conformance/tests/fixtures/identity-changing-updates.yaml	components=1
+crates/verify/ess-conformance/tests/fixtures/identity-changing-updates.yaml	vault-service	REFUSED	d3be463002c26108d6d2bca57753f666074da8eb732bf485821f51a9dd34b62a:1536
+crates/verify/ess-conformance/tests/fixtures/input-guard-overlap.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/keypad.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/latest-correlated-record.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/mutation-arms.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/mutation-gained-refusal.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/mutation-identical-answer.yaml	components=1
+crates/verify/ess-conformance/tests/fixtures/mutation-identical-answer.yaml	desk-server	REFUSED	ef850e1f7f2c9fccc274c86d6c9ab0b64e9f2a4f9520934a40d606454ea7380d:994
+crates/verify/ess-conformance/tests/fixtures/mutation-survivor.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/mutation-unwitnessed-outcome.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/negated-defined-beside-subject.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/now-guard-interpreted.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/now-stored-rows.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/occurrence-clock-claims.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/occurrence-clock-offers.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/one-time-coverage/model.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/optional-input-narrowed.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/owned-subject.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/pre-execution-fixtures.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/recursive-fixtures/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/refusal-beside-state.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/refusal-pair-overlap.yaml	components=1
+crates/verify/ess-conformance/tests/fixtures/refusal-pair-overlap.yaml	hold	demo.hold.Hold	definition=c2c277358726cc95f7eb1a2b39c784af8d21bbb313638407f2514702686c533a:2301
+crates/verify/ess-conformance/tests/fixtures/refusal-pair-overlap.yaml	hold	demo.hold.Hold	create	invalid-code, pause-refused, placed
+crates/verify/ess-conformance/tests/fixtures/refusal-policy.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/register/register.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/related-copied-view-parameter.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/related-guard-copied-value.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/related-guard-multiple.yaml	components=1
+crates/verify/ess-conformance/tests/fixtures/related-guard-multiple.yaml	run-service	REFUSED	62523c0cea8c2c53e4df0b863b91ad0917927d791ccfbbd7411b36e2069ed114:1098
+crates/verify/ess-conformance/tests/fixtures/related-guard-optional.yaml	components=1
+crates/verify/ess-conformance/tests/fixtures/related-guard-optional.yaml	release-service	REFUSED	3052283119d83fe4ff54920d04524eefaf3760d28a1ba7d87f845f8463030de1:561
+crates/verify/ess-conformance/tests/fixtures/related-guard-owner-link.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/related-guard-release.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/related-guard-sign-in.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/related-guard-stored-reference.yaml	components=1
+crates/verify/ess-conformance/tests/fixtures/related-guard-stored-reference.yaml	task-service	REFUSED	91818f08cd9944820c6db75dc65f53656cdf5d010a6c399654d52405a8bb5828:551
+crates/verify/ess-conformance/tests/fixtures/related-values-chained.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/relation-via-identity/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/response-payload.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/response-union.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/restart.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/retained-commit.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/retained-replay.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/row-set-struct-identity.yaml	components=1
+crates/verify/ess-conformance/tests/fixtures/row-set-struct-identity.yaml	vault-lib	REFUSED	58d8ae288e03800715d215c2ca2a653287aec95cef99c363f233a7ae5236c551:422
+crates/verify/ess-conformance/tests/fixtures/row-set-upsert.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/state-in-subject-predicate.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/state-scoped-refusals.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/stored-field-guards.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/structured-instances.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/subject-fact-complete-refusal.yaml	components=1
+crates/verify/ess-conformance/tests/fixtures/subject-fact-complete-refusal.yaml	instances	REFUSED	221f6bff572ea0aa17fa8cd2ec9f91fc8eb299fba2e5062ee07373393bcd08fe:215
+crates/verify/ess-conformance/tests/fixtures/subject-guard-copied-field.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/subject-guard-input.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/subject-history.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/subject-state-source.yaml	components=1
+crates/verify/ess-conformance/tests/fixtures/subject-state-source.yaml	docs-service	REFUSED	3a47e494bbe0dc6de6360fca89a26008758a6f567e5c1a2b1074310b7ec8b5e0:1072
+crates/verify/ess-conformance/tests/fixtures/subject-state.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/typed-text-operands.yaml	components=1
+crates/verify/ess-conformance/tests/fixtures/typed-text-operands.yaml	directory-service	REFUSED	b5d5a4905a4d3b17db9d0adfe1d75c5c52b6df167f36f0ca7f1e4de30c5edfa0:1108
+crates/verify/ess-conformance/tests/fixtures/unique-within-scope.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/view-paging.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/view-param-binding.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/when-subject-eventual.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/when-subject-fallback-refusal.yaml	components=0
+crates/verify/ess-conformance/tests/support_explore_optional_unknown/baseline.yaml	components=0
+crates/verify/ess-diff/tests/fixtures/narrowed/added-refusal.yaml	components=0
+crates/verify/ess-diff/tests/fixtures/narrowed/required-input.yaml	components=0
+crates/verify/ess-diff/tests/fixtures/narrowed/v1.yaml	components=0
+crates/verify/ess-diff/tests/fixtures/narrowed/widened-guard.yaml	components=0
+crates/verify/ess-diff/tests/fixtures/upcast/after-additive.yaml	components=1
+crates/verify/ess-diff/tests/fixtures/upcast/after-additive.yaml	items-server	REFUSED	a9f499483ddf98aaf0ee7dbe912a839d9f184b42be635feb341335904e688ebd:202
+crates/verify/ess-diff/tests/fixtures/upcast/after.yaml	components=1
+crates/verify/ess-diff/tests/fixtures/upcast/after.yaml	items-server	REFUSED	dc946c9c9e514db5151a4dd6037ab5ed3cb19364ed8422457c98e23be708ba7b:534
+crates/verify/ess-diff/tests/fixtures/upcast/before.yaml	components=1
+crates/verify/ess-diff/tests/fixtures/upcast/before.yaml	items-server	REFUSED	a9f499483ddf98aaf0ee7dbe912a839d9f184b42be635feb341335904e688ebd:202
+docs/design/models/authored-discovery/system.yaml	ASSEMBLE
+docs/design/models/entity-runtime-lowering/system.yaml	ASSEMBLE
+docs/design/models/service-contract/system.yaml	ASSEMBLE
+docs/design/one-time-response-values.example.yaml	components=0
+docs/design/read-api-view-idioms.example/system.yaml	components=0
+docs/design/timestamp-clock-model.yaml	components=0
+docs/design/view-grants.example.yaml	components=1
+docs/design/view-grants.example.yaml	desk-service	desk.tickets.Ticket	definition=666b0693ae3ce190203c3d9abd8b920abc572ebfa5d020775f694098a21313c0:1780
+docs/design/view-grants.example.yaml	desk-service	desk.tickets.Ticket	create	opened
+examples/billing/system.yaml	ASSEMBLE
+examples/gatepass/system.yaml	ASSEMBLE
+examples/oracle-fixture/system.yaml	ASSEMBLE
+examples/revision-pair/after/system.yaml	ASSEMBLE
+examples/revision-pair/before/system.yaml	ASSEMBLE
+fuzz/readiness/expected/empty-domain/source/system.yaml	ASSEMBLE
+fuzz/readiness/expected/enum-referenced/source/system.yaml	ASSEMBLE
+fuzz/readiness/expected/enum-unreferenced/source/system.yaml	ASSEMBLE
+fuzz/readiness/expected/newtype-referenced/source/system.yaml	ASSEMBLE
+fuzz/readiness/expected/newtype-unreferenced/source/system.yaml	ASSEMBLE
+fuzz/readiness/expected/struct-referenced/source/system.yaml	ASSEMBLE
+fuzz/readiness/expected/struct-unreferenced/source/system.yaml	ASSEMBLE
+fuzz/readiness/expected/union-referenced/source/system.yaml	ASSEMBLE
+fuzz/readiness/expected/union-unreferenced/source/system.yaml	ASSEMBLE
+fuzz/readiness/positive/system.yaml	ASSEMBLE
+fuzz/regressions/source/no-retry/system.yaml	ASSEMBLE
+fuzz/regressions/source/optional-binding/system.yaml	ASSEMBLE
+fuzz/regressions/source/system-types/system.yaml	ASSEMBLE
+models/concurrent-history/system.yaml	ASSEMBLE
+models/execution-recovery/system.yaml	ASSEMBLE
+models/output-ownership/system.yaml	ASSEMBLE
+models/protospec/system.yaml	ASSEMBLE
+models/recorded-log-adapter/system.yaml	ASSEMBLE
+models/toolchain/system.yaml	ASSEMBLE
+system-dir:crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing	components=2
+system-dir:crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing	email-service	REFUSED	e0087bf09f2697c20854f14bf142e27ebaaca4c2af3967e3b9e0a8744395b1fd:343
+system-dir:crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing	invoice-service	billing.invoice.Account	definition=824e314e02746508cf256c1256edeae9aeb36bfaaae6ffe4d93768829ca4efd0:837
+system-dir:crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing	invoice-service	billing.invoice.Invoice	definition=916fe1da2fa0ba0dee8ebf87ef419fed2299d61259a4962c18e1c119df0fc5a5:18595
+system-dir:crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing	invoice-service	billing.invoice.Invoice	create	accepted, rejected
+system-dir:crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing	invoice-service	billing.invoice.Invoice	billing.invoice.CancelInvoice	cancelled, wrong-state
+system-dir:crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing	invoice-service	billing.invoice.Invoice	billing.invoice.IssueInvoice	issued, wrong-state
+system-dir:crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing	invoice-service	billing.invoice.Invoice	billing.invoice.PayInvoice	settled, rejected, wrong-state
+system-dir:crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing-repeated-gap	components=2
+system-dir:crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing-repeated-gap	email-service	REFUSED	e0087bf09f2697c20854f14bf142e27ebaaca4c2af3967e3b9e0a8744395b1fd:343
+system-dir:crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing-repeated-gap	invoice-service	billing.invoice.Account	definition=824e314e02746508cf256c1256edeae9aeb36bfaaae6ffe4d93768829ca4efd0:837
+system-dir:crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing-repeated-gap	invoice-service	billing.invoice.Invoice	definition=138ad3c92bb7743eac5cd8edcd303809f09811f679e655919ebb7e3e7d441b74:18728
+system-dir:crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing-repeated-gap	invoice-service	billing.invoice.Invoice	create	accepted, rejected
+system-dir:crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing-repeated-gap	invoice-service	billing.invoice.Invoice	billing.invoice.CancelInvoice	cancelled, wrong-state
+system-dir:crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing-repeated-gap	invoice-service	billing.invoice.Invoice	billing.invoice.IssueInvoice	issued, wrong-state
+system-dir:crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing-repeated-gap	invoice-service	billing.invoice.Invoice	billing.invoice.PayInvoice	settled, rejected, wrong-state
+system-dir:crates/edge/ess-cli/tests/fixtures/synthesis-seeds/model	components=0
+system-dir:crates/generate/ess-entity-runtime/tests/fixtures/contract	components=2
+system-dir:crates/generate/ess-entity-runtime/tests/fixtures/contract	foreign-service	REFUSED	b7f2b6847ef51030e923aeeb1020fdb4d907d114180b4a485ee30c82802d2fad:723
+system-dir:crates/generate/ess-entity-runtime/tests/fixtures/contract	local-service	contract.foreign.Owner	definition=207bdf589c3a677a85feb29044c55d9572ba3e688f4d353b2972292dce033f55:605
+system-dir:crates/generate/ess-entity-runtime/tests/fixtures/contract	local-service	contract.local.Child	definition=63a109854c84e24781556ac4f49bac30753d157c829b36ed0f0a70b97e959013:5053
+system-dir:crates/generate/ess-entity-runtime/tests/fixtures/contract	local-service	contract.local.Child	create	rejected, completed
+system-dir:crates/generate/ess-synth/tests/fixtures/declared-behaviour	components=1
+system-dir:crates/generate/ess-synth/tests/fixtures/declared-behaviour	desk-service	REFUSED	6378545d939fc958ca2be2322b4e154b12fdf7cdc6948a9b842fdc2770e60ee1:4312
+system-dir:crates/generate/ess-synth/tests/fixtures/served-notes	components=1
+system-dir:crates/generate/ess-synth/tests/fixtures/served-notes	notes	REFUSED	bf692e9bd0826837c5430ddea88b5bddddfd2814a257ae97fc44afb0ef957853:208
+system-dir:crates/specify/ess-composition/tests/fixtures/owner-consumer/consumer	components=1
+system-dir:crates/specify/ess-composition/tests/fixtures/owner-consumer/owner	components=1
+system-dir:crates/specify/ess-composition/tests/fixtures/owner-consumer/owner	status-component	demo.owner.agentstatus.AgentStatus	definition=26cc8e5aa29e31d3b86416f1c8e87795cc9fa49e9d675fd7fa499f852859c058:2190
+system-dir:crates/specify/ess-composition/tests/fixtures/owner-consumer/owner	status-component	demo.owner.agentstatus.AgentStatus	create	updated
+system-dir:crates/specify/ess-composition/tests/fixtures/two-components	components=2
+system-dir:crates/specify/ess-composition/tests/fixtures/two-components	todo-component	workbench.todo.TodoList	definition=53db7051ac8735886c8ff9d51975ecf14e16b8e3e90d5ae0fb249fb6d0562ce9:2739
+system-dir:crates/specify/ess-composition/tests/fixtures/two-components	todo-component	workbench.todo.TodoList	create	created
+system-dir:crates/specify/ess-composition/tests/fixtures/two-components	usage-component	workbench.usage.Usage	definition=fe3905de1f05a5313712c74de444e58e7873d7bbe15b6a1fa0b906e3e351a816:2752
+system-dir:crates/specify/ess-composition/tests/fixtures/two-components	usage-component	workbench.usage.Usage	create	recorded
+system-dir:crates/specify/ess-domain/tests/fixtures/lending	components=1
+system-dir:crates/specify/ess-domain/tests/fixtures/lending	lending-service	library.lending.Branch	definition=9a65fe834d3515d5f13341b14f2bc36ba861917aa35662b77fc722eddbb35844:2196
+system-dir:crates/specify/ess-domain/tests/fixtures/lending	lending-service	library.lending.Branch	create	opened
+system-dir:crates/specify/ess-domain/tests/fixtures/lending	lending-service	library.lending.Copy	definition=ae9ddb778cc6974616dc85368e253f5e892a4a551b00c0e760611f949258380a:6901
+system-dir:crates/specify/ess-domain/tests/fixtures/lending	lending-service	library.lending.Copy	create	added, refused
+system-dir:crates/specify/ess-domain/tests/fixtures/lending	lending-service	library.lending.Copy	library.lending.LendCopy	lent, wrong-state
+system-dir:crates/specify/ess-domain/tests/fixtures/lending	lending-service	library.lending.Copy	library.lending.ReturnCopy	returned, wrong-state
+system-dir:crates/specify/ess-domain/tests/fixtures/outcome-groups	components=0
+system-dir:crates/specify/ess-domain/tests/fixtures/outcome-groups-twin	components=0
+system-dir:crates/specify/ess-service-contract/tests/fixtures	components=2
+system-dir:crates/specify/ess-service-contract/tests/fixtures	foreign-service	REFUSED	b7f2b6847ef51030e923aeeb1020fdb4d907d114180b4a485ee30c82802d2fad:723
+system-dir:crates/specify/ess-service-contract/tests/fixtures	local-service	contract.foreign.Owner	definition=207bdf589c3a677a85feb29044c55d9572ba3e688f4d353b2972292dce033f55:605
+system-dir:crates/specify/ess-service-contract/tests/fixtures	local-service	contract.local.Child	definition=c673e907b3806a783846d6d9fcb8ee98174656a7bc1daa8e1e458ceba22cce69:3416
+system-dir:crates/specify/ess-service-contract/tests/fixtures	local-service	contract.local.Child	create	rejected, completed
+system-dir:crates/specify/ess-service-contract/tests/selection-conversion-control-fixtures	components=1
+system-dir:crates/specify/ess-service-contract/tests/selection-conversion-control-fixtures	selection-control-service	REFUSED	1565298f706b4157c4d5ab5f02885d3254de084783eb9b51dfb7cb8eeca15402:351
+system-dir:crates/specify/ess-service-contract/tests/selection-conversion-fixtures	components=1
+system-dir:crates/specify/ess-service-contract/tests/selection-conversion-fixtures	selection-service	REFUSED	fd41a606dcb0ae4fc097c49ab849cf863043c67ea35b3d26fc451609eb0c6788:345
+system-dir:crates/ui/ess-ui-check/tests/fixtures/model	components=1
+system-dir:crates/ui/ess-ui-check/tests/fixtures/model	shop-service	shop.audit.Entry	definition=a4dfd19c74ad352718ccb7cdabcf75c2d6acd13f1e9935c1965fd76f28ac651f:2082
+system-dir:crates/ui/ess-ui-check/tests/fixtures/model	shop-service	shop.audit.Entry	create	recorded
+system-dir:crates/ui/ess-ui-check/tests/fixtures/model	shop-service	shop.stock.Item	definition=725e4586268c9587e1311f7c3323d207fa1528309e4d7e18ea68d927330e6dbe:2073
+system-dir:crates/ui/ess-ui-check/tests/fixtures/model	shop-service	shop.stock.Item	create	added
+system-dir:crates/verify/ess-conformance/tests/fixtures/recursive-fixtures	components=0
+system-dir:crates/verify/ess-conformance/tests/fixtures/relation-via-identity	components=0
+system-dir:docs/design/models/authored-discovery	components=0
+system-dir:docs/design/models/entity-runtime-lowering	components=0
+system-dir:docs/design/models/service-contract	components=0
+system-dir:docs/design/read-api-view-idioms.example	components=0
+system-dir:examples/billing	components=2
+system-dir:examples/billing	email-service	REFUSED	e0087bf09f2697c20854f14bf142e27ebaaca4c2af3967e3b9e0a8744395b1fd:343
+system-dir:examples/billing	invoice-service	billing.invoice.Account	definition=824e314e02746508cf256c1256edeae9aeb36bfaaae6ffe4d93768829ca4efd0:837
+system-dir:examples/billing	invoice-service	billing.invoice.Invoice	definition=224c3b2dd2645e14d33ccfbb7d230a11b94860c2b65c0852d898f9444e57c8fd:18823
+system-dir:examples/billing	invoice-service	billing.invoice.Invoice	create	accepted, rejected
+system-dir:examples/billing	invoice-service	billing.invoice.Invoice	billing.invoice.CancelInvoice	cancelled, wrong-state
+system-dir:examples/billing	invoice-service	billing.invoice.Invoice	billing.invoice.IssueInvoice	issued, wrong-state
+system-dir:examples/billing	invoice-service	billing.invoice.Invoice	billing.invoice.PayInvoice	settled, rejected, wrong-state
+system-dir:examples/gatepass	components=1
+system-dir:examples/gatepass	pass-service	gatepass.visit.Visit	definition=a328cb81b3f34b3bf676d24664602d803820f2f6809562352940124f61b75491:17189
+system-dir:examples/gatepass	pass-service	gatepass.visit.Visit	create	registered, refused
+system-dir:examples/gatepass	pass-service	gatepass.visit.Visit	gatepass.visit.AdmitVisitor	admitted, wrong-state
+system-dir:examples/gatepass	pass-service	gatepass.visit.Visit	gatepass.visit.SignOutVisitor	signed-out, wrong-state
+system-dir:examples/oracle-fixture	components=2
+system-dir:examples/oracle-fixture	dispatch-service	REFUSED	067a68f8cbfcd7e0cc8c3f268706fbe50feb6b58868aae4baf1f063121aeca63:347
+system-dir:examples/oracle-fixture	order-service	oracle.order.Order	definition=56eae52ab7cefe81e84413c9f54f09b47528da6d6bf0683866baa8eb66ca337d:10818
+system-dir:examples/oracle-fixture	order-service	oracle.order.Order	create	accepted, rejected
+system-dir:examples/oracle-fixture	order-service	oracle.order.Order	oracle.order.AmendOrder	amended, rejected
+system-dir:examples/oracle-fixture	order-service	oracle.order.Order	oracle.order.CancelOrder	cancelled, wrong-state
+system-dir:examples/oracle-fixture	order-service	oracle.order.Order	oracle.order.HoldOrder	held, wrong-state
+system-dir:examples/oracle-fixture	order-service	oracle.order.Order	oracle.order.ShipOrder	shipped, wrong-state
+system-dir:examples/revision-pair/after	components=1
+system-dir:examples/revision-pair/after	pricing-service	catalog.pricing.PriceList	definition=b454b7727b720590f4af6a87e61da61fdefa4d84d06e4b4ce85b58b393fbd23e:8409
+system-dir:examples/revision-pair/after	pricing-service	catalog.pricing.PriceList	create	created, rejected
+system-dir:examples/revision-pair/after	pricing-service	catalog.pricing.PriceList	catalog.pricing.PublishPriceList	published, wrong-state
+system-dir:examples/revision-pair/after	pricing-service	catalog.pricing.PriceList	catalog.pricing.RetirePriceList	retired, wrong-state
+system-dir:examples/revision-pair/before	components=1
+system-dir:examples/revision-pair/before	pricing-service	catalog.pricing.PriceList	definition=d34dce7264dfab0ef7962e4c8e281581f41fa3022463d2b5f0f2690f47578b04:8410
+system-dir:examples/revision-pair/before	pricing-service	catalog.pricing.PriceList	create	created, rejected
+system-dir:examples/revision-pair/before	pricing-service	catalog.pricing.PriceList	catalog.pricing.PublishPriceList	published, wrong-state
+system-dir:examples/revision-pair/before	pricing-service	catalog.pricing.PriceList	catalog.pricing.RetirePriceList	retired, wrong-state
+system-dir:fuzz/readiness/expected/empty-domain/source	components=0
+system-dir:fuzz/readiness/expected/enum-referenced/source	components=0
+system-dir:fuzz/readiness/expected/enum-unreferenced/source	components=0
+system-dir:fuzz/readiness/expected/newtype-referenced/source	components=0
+system-dir:fuzz/readiness/expected/newtype-unreferenced/source	components=0
+system-dir:fuzz/readiness/expected/struct-referenced/source	components=0
+system-dir:fuzz/readiness/expected/struct-unreferenced/source	components=0
+system-dir:fuzz/readiness/expected/union-referenced/source	components=0
+system-dir:fuzz/readiness/expected/union-unreferenced/source	components=0
+system-dir:fuzz/readiness/positive	ASSEMBLE
+system-dir:fuzz/regressions/source/no-retry	components=1
+system-dir:fuzz/regressions/source/no-retry	worker	REFUSED	475237c7f6ba3f0b89f4b4a87485465a761f999b97fc35fe24f00abe25690e85:325
+system-dir:fuzz/regressions/source/optional-binding	components=1
+system-dir:fuzz/regressions/source/optional-binding	worker	REFUSED	f0a7566a66ef736302d5722abdcad24c4a07b09306a923a0c37c670734dd269f:329
+system-dir:fuzz/regressions/source/system-types	components=0
+system-dir:models/concurrent-history	components=0
+system-dir:models/execution-recovery	components=0
+system-dir:models/output-ownership	components=0
+system-dir:models/protospec	components=0
+system-dir:models/recorded-log-adapter	components=0
+system-dir:models/toolchain	components=5
+system-dir:models/toolchain	generate	REFUSED	e12ccdd9115ad355c1e2069600898df4e2ee545eaf06bc54cf8f894aa53e67d8:368
+system-dir:models/toolchain	infra	toolchain.infra.BindingCheck	definition=959532c2366d15a81eaf3b084134d03d93a3352a53e19d6d35eafecd8afd60de:4672
+system-dir:models/toolchain	infra	toolchain.infra.BindingCheck	create	started
+system-dir:models/toolchain	infra	toolchain.infra.BindingCheck	toolchain.infra.ConcludeBindingCheck	violated, unknown, satisfied, wrong-state
+system-dir:models/toolchain	infra	toolchain.infra.Observation	definition=be2ce4a1f91d293f415bda608d9de6bc7ab046e9b2a5c8d6d44a5c22424c116f:7495
+system-dir:models/toolchain	infra	toolchain.infra.Observation	create	refused, collected
+system-dir:models/toolchain	infra	toolchain.infra.Observation	toolchain.infra.ImportObservation	refused, imported, wrong-state
+system-dir:models/toolchain	release-automation	REFUSED	fca88a6cb61e25f86e28e8a69b4bf8ee5aadc05cb16ff6e4a728fb0ef5f0e657:375
+system-dir:models/toolchain	specify	toolchain.specify.Declaration	definition=f008c7ec58b6b8996de589cd7e5ce17e0cc8ba0610e93e9ac4e1f24d786ff2aa:1384
+system-dir:models/toolchain	specify	toolchain.specify.Model	definition=4ba2a580b3654977c57f98c9ee6e1ec59f813b7504639d9bee111dc64e645e08:7012
+system-dir:models/toolchain	specify	toolchain.specify.Model	create	refused, selected
+system-dir:models/toolchain	specify	toolchain.specify.Model	toolchain.specify.CompileModel	refused, compiled, wrong-state
+system-dir:models/toolchain	specify	toolchain.specify.Model	toolchain.specify.ResolveModel	refused, resolved, wrong-state
+system-dir:models/toolchain	verify	toolchain.verify.Comparison	definition=42e634d2278370ff555a992f05b8182154dd7421651292c6a532d940f2c8cdc1:3429
+system-dir:models/toolchain	verify	toolchain.verify.Comparison	create	compared
+system-dir:models/toolchain	verify	toolchain.verify.Run	definition=acd7594b0c5f6a1d03771044dc6472a622ca061091562e89427ca24bc72c2f2e:10392
+system-dir:models/toolchain	verify	toolchain.verify.Run	create	started
+system-dir:models/toolchain	verify	toolchain.verify.Run	toolchain.verify.ConcludeRun	failed, errored, passed, wrong-state
+system-dir:models/toolchain	verify	toolchain.verify.Suite	definition=fc50927abfd36cb570b0d7b80f94606b00cec4c782621d025c6b8012b550d40e:3959
+system-dir:models/toolchain	verify	toolchain.verify.Suite	create	refused, synthesized

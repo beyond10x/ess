@@ -24,9 +24,9 @@ use entity_core::{
     RuleDefinition, Semantics, ValidatedDefinition,
 };
 use ess_compiler::ir::{
-    EssIr, ResolvedBody, ResolvedCommand, ResolvedCondition, ResolvedEffect, ResolvedEntity,
-    ResolvedField, ResolvedInstance, ResolvedOutcome, ResolvedPayloadField, ResolvedPayloadValue,
-    ResolvedTypeRef,
+    EssIr, PrecedencePlan, ResolvedBody, ResolvedCommand, ResolvedCondition, ResolvedEffect,
+    ResolvedEntity, ResolvedField, ResolvedInstance, ResolvedOutcome, ResolvedPayloadField,
+    ResolvedPayloadValue, ResolvedTypeRef,
 };
 use ess_domain::command::OutcomeName;
 use ess_domain::component::ComponentName;
@@ -1935,25 +1935,29 @@ impl Projector<'_> {
         for (_, outcome) in &mut compiled {
             remap_outcome_slots(outcome, &remap, &slots.references);
         }
-        // Entity Runtime takes the first branch whose guard holds. An input-guarded refusal is
-        // taken before any accepting branch whose guard it overlaps
-        // (`docs/design/input-guard-overlap-precedence.md`), so every one of them comes first,
-        // then the other guarded branches, the default, and the wrong-state branch. The sort is
-        // stable on the source index, so among accepting guarded branches the first declared whose
-        // guard holds answers (beyond10x/ess#217), and an external branch, a guard over the provider's
-        // verdict in the same category, takes its place in that order.
+        // Entity Runtime takes the first branch whose guard holds, so the branches are lowered in
+        // the order the command's precedence plan reads them (`docs/design/selection-plan.md`):
+        // its phases in order, each phase in its own order. Two rules of the target stay here:
+        // - entity-core requires the default (`OutcomeDefinition::is_default_branch`: no `when`,
+        //   no `in_state`, not `wrong_state`) last among the branches that are not `wrong_state`,
+        //   wherever the phase order reads it;
+        // - entity-core drops the `wrong_state` branch from selection and answers it itself where
+        //   no move of the operation starts from the held state, so its place moves bytes only; it
+        //   stays last.
+        let plan = PrecedencePlan::new(command, self.service.source().format());
+        let read = plan.iter().map(|(_, branch)| branch).collect::<Vec<_>>();
         compiled.sort_by_key(|(index, outcome)| {
-            let source = &command.outcomes[*index];
-            let category = if outcome.wrong_state {
-                3
-            } else if source.error.is_some()
-                && matches!(source.condition, ResolvedCondition::When { .. })
-            {
-                0
+            let target = if outcome.wrong_state {
+                2
             } else {
-                1 + usize::from(outcome.is_default_branch())
+                usize::from(outcome.is_default_branch())
             };
-            (category, *index)
+            let source = &command.outcomes[*index];
+            let position = read
+                .iter()
+                .position(|branch| std::ptr::eq(*branch, source))
+                .expect("a precedence plan reads every branch of its command");
+            (target, position)
         });
         let outcomes = compiled
             .into_iter()

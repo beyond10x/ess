@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-07T23:30:52Z",
+  "actor": "human:timo",
+  "artifact": "story:validation-reads-selection-plan",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "integrated package gate on integrate/selection-plan 4d923b0e8: cargo test -p ess-domain (147 result blocks ok), -p ess-compiler (64), -p ess-entity-runtime (43), -p ess-synth (104), all 0 failed; clippy -D warnings and task fmt-check exit 0",
+    "reference": "integrate/selection-plan 4d923b0e8"
+  }
+}

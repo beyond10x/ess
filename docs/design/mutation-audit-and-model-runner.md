@@ -498,8 +498,9 @@ over the IR predicate node, and facts bound with `bindFact` from the input, whic
 fields. This replaces the draft's regex, which could not read `amount.amount > 0`, the first guard
 of the normative example. Then:
 
-The order is Entity Runtime's (`ess-entity-runtime` sorts a command's branches into input-guarded
-refusals, the other guarded branches, the default and `wrong_state`; entity-core takes the first
+The order is Entity Runtime's (`ess-entity-runtime` orders a command's branches by its precedence
+plan, input-guarded refusals, then the branches the held state selects, then the accepting
+branches, then the default and `wrong_state`; entity-core takes the first
 whose guard holds, then answers `wrong_state` where that branch moves from a state no move starts
 from), and it is the precedence [cross-record and stored-field guards](cross-record-and-stored-field-guards.md)
 states. Until beyond10x/ess#235 step 1 below came last: the model answered `wrong_state` before any

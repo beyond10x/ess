@@ -1,4 +1,4 @@
-#	models=206	commands=354
+#	models=219	commands=383
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -27,6 +27,9 @@ crates/edge/ess-cli/tests/fixtures/stored-rules/model.yaml	demo.rules.TestRule	a
 crates/edge/ess-cli/tests/fixtures/synthesis-seeds/model/system.yaml	ASSEMBLE
 crates/generate/ess-cli-project/tests/fixtures/model.yaml	ir=681bdd12b53cad171c642078ffc01b84ab40f7235c9521627a8e13c78536fae8:4209
 crates/generate/ess-entity-runtime/tests/fixtures/contract/system.yaml	ASSEMBLE
+crates/generate/ess-entity-runtime/tests/fixtures/held-state-after-disjoint-accepting.yaml	ir=a6284c23792559df2983605b19dbf42486a9385e8a773635c3ddb0e72e8f42aa:13284
+crates/generate/ess-entity-runtime/tests/fixtures/held-state-after-disjoint-accepting.yaml	demo.ticket.Close	input_refusal: invalid-note | held_state: first-close, not-open | accepting: rushed | default: closed
+crates/generate/ess-entity-runtime/tests/fixtures/held-state-after-disjoint-accepting.yaml	demo.ticket.File	default: filed
 crates/generate/ess-gen/tests/fixtures/model-types.yaml	ir=91f0042ec0ca486d80956e85ed6a896e6811c6240ec1b1062b209b752ea1fa57:4855
 crates/generate/ess-synth/tests/fixtures/binding-selection.yaml	ir=e40145284e7b85a5f309ab433ddc336fd87a70ca4c1259c4e752244be7993b77:19800
 crates/generate/ess-synth/tests/fixtures/binding-selection.yaml	selection.core.Receive	default: received
@@ -212,6 +215,45 @@ crates/verify/ess-conformance/tests/fixtures/captured-identities.yaml	ir=07dc899
 crates/verify/ess-conformance/tests/fixtures/captured-identities.yaml	desk.tickets.CloseTicket	held_state: wrong-state | default: closed
 crates/verify/ess-conformance/tests/fixtures/captured-identities.yaml	desk.tickets.FileTicket	default: filed
 crates/verify/ess-conformance/tests/fixtures/captured-identities.yaml	desk.tickets.OpenQueue	default: opened
+crates/verify/ess-conformance/tests/fixtures/claim-search/door-gentle.yaml	ir=b6605ab421e70ab9723c906cb7fc922f49724e1a9320f299a71d82347263c4bd:10670
+crates/verify/ess-conformance/tests/fixtures/claim-search/door-gentle.yaml	demo.doors.Install	default: installed
+crates/verify/ess-conformance/tests/fixtures/claim-search/door-gentle.yaml	demo.doors.Operate	held_state: shut | accepting: stalled | default: refused
+crates/verify/ess-conformance/tests/fixtures/claim-search/door-offline-gentle.yaml	ir=00ca05ef0532415e2c0f3fe0748d6504784ce0724cada68b1d52cc2bc5bd7229:9057
+crates/verify/ess-conformance/tests/fixtures/claim-search/door-offline-gentle.yaml	demo.doors.Install	default: installed
+crates/verify/ess-conformance/tests/fixtures/claim-search/door-offline-gentle.yaml	demo.doors.Operate	held_state: shut | accepting: offline | default: refused
+crates/verify/ess-conformance/tests/fixtures/claim-search/door-offline-rough.yaml	ir=f38e87a4c04f25ce9ffc2ce6d04363b1f1dc7d8c5caa1d6a14001963a304fb7a:9056
+crates/verify/ess-conformance/tests/fixtures/claim-search/door-offline-rough.yaml	demo.doors.Install	default: installed
+crates/verify/ess-conformance/tests/fixtures/claim-search/door-offline-rough.yaml	demo.doors.Operate	held_state: shut | accepting: offline | default: refused
+crates/verify/ess-conformance/tests/fixtures/claim-search/door-relabel.yaml	ir=f28d620c5e62c5bf3968c55f563ef612973f1f6390c1e4508d8c991b548c6ea6:13867
+crates/verify/ess-conformance/tests/fixtures/claim-search/door-relabel.yaml	demo.doors.Install	default: installed
+crates/verify/ess-conformance/tests/fixtures/claim-search/door-relabel.yaml	demo.doors.Nudge	held_state: not-open | default: nudged
+crates/verify/ess-conformance/tests/fixtures/claim-search/door-relabel.yaml	demo.doors.Operate	held_state: locked, shut | accepting: relabelled | default: refused
+crates/verify/ess-conformance/tests/fixtures/claim-search/door-rough.yaml	ir=a7cfe9d063df23928bad62e798d8838bb3a8af8a7264aac28c333dc337366505:10669
+crates/verify/ess-conformance/tests/fixtures/claim-search/door-rough.yaml	demo.doors.Install	default: installed
+crates/verify/ess-conformance/tests/fixtures/claim-search/door-rough.yaml	demo.doors.Operate	held_state: shut | accepting: stalled | default: refused
+crates/verify/ess-conformance/tests/fixtures/claim-search/driver-when-subject.yaml	ir=3907d5ff453a2423271d0d765ed02ba8ac253cbcd36398b64fb39696d4357d38:15524
+crates/verify/ess-conformance/tests/fixtures/claim-search/driver-when-subject.yaml	demo.desk.Archive	held_state: not-archivable | default: archived
+crates/verify/ess-conformance/tests/fixtures/claim-search/driver-when-subject.yaml	demo.desk.CheckPick	held_state: stale, wrong-state | accepting: unlisted | default: accepted
+crates/verify/ess-conformance/tests/fixtures/claim-search/driver-when-subject.yaml	demo.desk.MakePick	default: picked
+crates/verify/ess-conformance/tests/fixtures/claim-search/pick-external-when.yaml	ir=040e9340acec2d333f22b43f1eb6d1d92b60f94ec192e717cae49f633b100ab6:12604
+crates/verify/ess-conformance/tests/fixtures/claim-search/pick-external-when.yaml	demo.desk.CheckPick	held_state: stale, wrong-state | accepting: unlisted | default: accepted
+crates/verify/ess-conformance/tests/fixtures/claim-search/pick-external-when.yaml	demo.desk.MakePick	default: picked
+crates/verify/ess-conformance/tests/fixtures/claim-search/pick-frozen.yaml	ir=fce643342f79e1de259f0329fdf2aa6fde0248fc038af6884fc4692953f98f1d:12373
+crates/verify/ess-conformance/tests/fixtures/claim-search/pick-frozen.yaml	demo.desk.CheckPick	held_state: stale, wrong-state | accepting: unlisted | default: accepted
+crates/verify/ess-conformance/tests/fixtures/claim-search/pick-frozen.yaml	demo.desk.MakePick	default: picked
+crates/verify/ess-conformance/tests/fixtures/claim-search/pick-revision-gt.yaml	ir=933dfc543e024609dbbf8e987ba458c17c91bafb633cf9eba9060c05dde23868:12383
+crates/verify/ess-conformance/tests/fixtures/claim-search/pick-revision-gt.yaml	demo.desk.CheckPick	held_state: stale, wrong-state | accepting: unlisted | default: accepted
+crates/verify/ess-conformance/tests/fixtures/claim-search/pick-revision-gt.yaml	demo.desk.MakePick	default: picked
+crates/verify/ess-conformance/tests/fixtures/claim-search/related.yaml	ir=e6236fa26fe110d34be533cdc21dc35a6ecd73fcefd726aa2a5e099463103089:16052
+crates/verify/ess-conformance/tests/fixtures/claim-search/related.yaml	demo.desk.CheckPick	related_row: no-list | accepting: stale, unlisted | default: accepted
+crates/verify/ess-conformance/tests/fixtures/claim-search/related.yaml	demo.desk.MakePick	default: picked
+crates/verify/ess-conformance/tests/fixtures/claim-search/related.yaml	demo.desk.OpenList	default: opened
+crates/verify/ess-conformance/tests/fixtures/claim-search/row-set-gt-0.yaml	ir=7e23f9836040b6c346c1064ac75b605391fb041912c2d929e708606f23589cef:12303
+crates/verify/ess-conformance/tests/fixtures/claim-search/row-set-gt-0.yaml	demo.jobs.Close	existence: unknown-attempt | held_state: already-closed | present_related: crowded | accepting: stuck | default: closed
+crates/verify/ess-conformance/tests/fixtures/claim-search/row-set-gt-0.yaml	demo.jobs.Record	default: recorded
+crates/verify/ess-conformance/tests/fixtures/claim-search/row-set-gt-1.yaml	ir=d5e380ef7ccf8634f041ee28197aa5556f38adfc34d93fd7a37153fdff726e97:12303
+crates/verify/ess-conformance/tests/fixtures/claim-search/row-set-gt-1.yaml	demo.jobs.Close	existence: unknown-attempt | held_state: already-closed | present_related: crowded | accepting: stuck | default: closed
+crates/verify/ess-conformance/tests/fixtures/claim-search/row-set-gt-1.yaml	demo.jobs.Record	default: recorded
 crates/verify/ess-conformance/tests/fixtures/conditional-aggregate-measures.yaml	ir=8dd5d71711712bd413e241f86738084c0536bdf60722e70c37d703543faf7a65:19229
 crates/verify/ess-conformance/tests/fixtures/conditional-aggregate-measures.yaml	demo.cases.Complete	held_state: unavailable | default: completed
 crates/verify/ess-conformance/tests/fixtures/conditional-aggregate-measures.yaml	demo.cases.Open	default: opened

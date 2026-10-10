@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-07T23:08:34Z",
+  "actor": "human:timo",
+  "artifact": "story:generated-behaviour-reads-selection-plan",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "adversary base-against-unit comparison (export of 1046621a8 vs the unit): 18 families x every declaration order, 9,720 Rust and 9,600 Go generated models, behaviour.rs, behaviour.go, PLAN.md and plan.json identical; E-U2 and E-U6 probes 309 of 309 identical; generated/ byte pins pass: VERIFIED",
+    "reference": "~/.cache/ess-selection-plan/w3-u2-scratch/adv1-diff-base.txt vs adv1-diff-unit.txt"
+  }
+}

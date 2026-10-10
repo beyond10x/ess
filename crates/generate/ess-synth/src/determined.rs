@@ -1492,49 +1492,6 @@ pub(crate) fn several_rows(command: &ResolvedCommand) -> bool {
         .is_some_and(|first| fields.any(|other| other != first))
 }
 
-/// The command's `exists: false` branch, which answers a missing related row.
-pub(crate) fn related_absent(command: &ResolvedCommand) -> Option<&ResolvedOutcome> {
-    command.outcomes.iter().find(|outcome| {
-        matches!(
-            outcome.condition,
-            ResolvedCondition::Related {
-                test: ResolvedRelatedTest::Absent,
-                ..
-            }
-        )
-    })
-}
-
-/// A present-related predicate refusal: a `when_related:` predicate branch carrying an error.
-pub(crate) fn is_present_related_refusal(outcome: &ResolvedOutcome) -> bool {
-    outcome.error.is_some()
-        && matches!(
-            outcome.condition,
-            ResolvedCondition::Related {
-                test: ResolvedRelatedTest::Holds { .. },
-                ..
-            }
-        )
-}
-
-/// Whether the present-related predicate refusals answer before every accepting branch, once the
-/// addressed row's existence and held state have answered, as the interpreter orders them: for
-/// every stored reference, and from ess/22 beside a `wrong_state:` branch (beyond10x/ess#282,
-/// #304).
-pub(crate) fn orders_present_related_refusal(ir: &EssIr, command: &ResolvedCommand) -> bool {
-    let stored = matches!(
-        related(command),
-        Some((ResolvedRelatedVia::Subject { .. }, _))
-    );
-    stored
-        || (ir.format().major() >= ess_domain::system::FormatVersion::V22.major()
-            && command.outcomes.iter().any(is_present_related_refusal)
-            && command
-                .outcomes
-                .iter()
-                .any(|outcome| outcome.condition == ResolvedCondition::WrongState))
-}
-
 /// The subject a stored reference is read from: the first branch addressing an existing row.
 pub(crate) fn addressed_subject(command: &ResolvedCommand) -> Option<&ResolvedSubject> {
     command

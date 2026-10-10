@@ -1347,60 +1347,33 @@ fn in_order<'a>(names: impl Iterator<Item = &'a String>) -> Vec<String> {
 /// that way; `None` where the input leaves it open (beyond10x/ess#222). `decided` answers whether a
 /// guard holds at every run ([`at_every_run`]), and `None` where it is not one answer.
 ///
-/// The precedence order (`docs/design/cross-record-and-stored-field-guards.md#the-precedence-order`):
-/// every input-guarded refusal answers before any other branch, and of two the first declared
-/// (`synthesize::sibling_refusals`); an accepting `when:` branch declared before an accepting
-/// `when:` or external one answers first; the default is what no `when:` claims. The branch's own
-/// input guard — its `when:`, or the one beside its `when_subject_state:` — must hold. On a command
-/// guarded by a related row, `existing_instance:` and the `exists: false` branch answer before any
-/// input refusal, and an `input_absent:` branch is answered before any input is read, so neither is
-/// read here. Whatever else a branch reads — the held state, a stored or related row, a provider —
-/// is not decided, and a `when:` the literals leave undecided claims nothing.
+/// The precedence order (`docs/design/cross-record-and-stored-field-guards.md#the-precedence-order`),
+/// read from the command's precedence plan (`synthesize::precedence::answers_before`): an
+/// input-guarded refusal the plan reads before the branch answers first, and of two the first
+/// declared (`synthesize::sibling_refusals`); then an accepting `when:` branch the plan reads
+/// before it, which under the precedence order is one declared before an accepting branch, and
+/// every one before the default. The branch's own input guard — its `when:`, or the one beside its
+/// `when_subject_state:` — must hold. `input_absent:` is answered before any input is read, and on a
+/// command guarded by a related row `existing_instance:` and an `exists: false` over a row the
+/// input names come before every input refusal, so nothing claims them; an `exists: false` over a
+/// stored reference comes after the input refusals, which claim it where their guard holds, as the
+/// model interpreter answers. Whatever else a branch reads — the held state, a stored or related
+/// row, a provider — is not decided, and a `when:` the literals leave undecided claims nothing.
 fn not_taken(
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     decided: &impl Fn(&Predicate) -> Option<bool>,
 ) -> Option<String> {
     use crate::decision::when;
-    use ess_compiler::ir::{ResolvedCondition, ResolvedRelatedTest};
+    use ess_compiler::ir::ResolvedCondition;
 
-    let related = command.outcomes.iter().any(|it| {
-        // A row set (ess/22) is read after `existing_instance:` as a related row is.
-        matches!(
-            it.condition,
-            ResolvedCondition::Related { .. } | ResolvedCondition::RelatedSet { .. }
-        )
-    });
-    match &outcome.condition {
-        ResolvedCondition::InputAbsent => return None,
-        ResolvedCondition::ExistingInstance
-        | ResolvedCondition::Related {
-            test: ResolvedRelatedTest::Absent,
-            ..
-        } if related => return None,
-        _ => {}
-    }
-    let accepting_when = |other: &ResolvedOutcome| {
-        other.error.is_none() && matches!(other.condition, ResolvedCondition::When { .. })
-    };
-    let external = matches!(
-        outcome.condition,
-        ResolvedCondition::External { .. } | ResolvedCondition::ExternalWhen { .. }
-    );
-    let earlier_accepting: Vec<&ResolvedOutcome> = command
-        .outcomes
-        .iter()
-        .take_while(|other| {
-            // The default yields to every accepting `when:` that holds, wherever it is declared.
-            matches!(outcome.condition, ResolvedCondition::Otherwise) || other.name != outcome.name
-        })
-        .filter(|other| other.name != outcome.name && accepting_when(other))
-        .filter(|_| {
-            accepting_when(outcome)
-                || external
-                || matches!(outcome.condition, ResolvedCondition::Otherwise)
-        })
-        .collect();
+    // The accepting `when:` branches the precedence plan answers before this one: the claimers of
+    // beyond10x/ess#217. Which branches they answer before is the plan's.
+    let earlier_accepting = crate::synthesize::precedence::answers_before(command, outcome)
+        .into_iter()
+        .filter(|other| {
+            other.error.is_none() && matches!(other.condition, ResolvedCondition::When { .. })
+        });
     let before = crate::synthesize::sibling_refusals(command, outcome).chain(earlier_accepting);
     for first in before {
         let Some(guard) = when(first) else {
