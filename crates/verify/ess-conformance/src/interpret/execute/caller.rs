@@ -78,11 +78,13 @@ impl Invocation<'_> {
         attribute: &str,
         source: &ResolvedTypeRef,
     ) -> Result<Option<Node>, Undetermined> {
-        self.caller
-            .ok_or_else(|| Undetermined::NoCaller {
+        match self.caller {
+            Some(caller) => caller.value(ir, attribute, source),
+            None if source.is_optional() => Ok(None),
+            None => Err(Undetermined::NoCaller {
                 attribute: attribute.to_owned(),
-            })?
-            .value(ir, attribute, source)
+            }),
+        }
     }
 }
 
