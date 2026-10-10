@@ -38,7 +38,11 @@ import type {
   SelectionDeclaration,
   Step,
 } from './runtime.js';
-import { checkResponseConstraints } from './direct_response.js';
+import {
+  admitUndeclaredFields,
+  checkResponseConstraints,
+  undeclaredFieldsMajor,
+} from './direct_response.js';
 import type { StringConstraints } from './one_time_response.js';
 
 /** One command's declared response, and the event field each returned member must equal. */
@@ -59,6 +63,13 @@ export interface ResponseObservation {
   nested?: NestedResponseTargets;
   /** String-newtype rules of suite/46 and /47 (beyond10x/ess#499), checked on every actual value. */
   constraints?: Record<string, StringConstraints>;
+  /**
+   * `ignored` where the response object admits keys it does not declare (suite/48 and /49,
+   * beyond10x/ess#500); absent when closed.
+   */
+  undeclaredFields?: 'ignored';
+  /** The struct declarations that admit keys they do not declare (suite/48 and /49). */
+  openStructs?: Set<string>;
 }
 
 const BYTE_LIMIT = 1048576;
@@ -125,7 +136,8 @@ export function decodeResponseObservation(value: unknown): ResponseObservation {
   const document = closed(
     value,
     '',
-    'command outcome event fields declarations mappings targets nested constraints',
+    'command outcome event fields declarations mappings targets nested constraints ' +
+      'undeclared_fields undeclared_fields_ignored',
   );
   const outcomeRaw =
     document.outcome === undefined ? {} : closed(document.outcome, '', 'command outcome');
@@ -194,6 +206,9 @@ export function decodeResponseObservation(value: unknown): ResponseObservation {
   if (Object.keys(presence).length > 0) {
     observation.presence = presence;
   }
+  const opened = admitUndeclaredFields(document, declarations);
+  if (opened.undeclaredFields !== undefined) observation.undeclaredFields = opened.undeclaredFields;
+  if (opened.openStructs.size > 0) observation.openStructs = opened.openStructs;
   if (Object.hasOwn(document, 'nested')) {
     observation.nested = decodeNestedResponse(document.nested);
     normalizeNestedResponse(observation);
@@ -224,6 +239,13 @@ function marshalShape(observation: ResponseObservation): Node {
     declarations,
     mappings: observation.mappings,
     targets: fields(observation.targets),
+    // Go marshals the opened-response members only where they are carried (`omitempty`).
+    ...(observation.undeclaredFields === undefined
+      ? {}
+      : { undeclared_fields: observation.undeclaredFields }),
+    ...(observation.openStructs === undefined
+      ? {}
+      : { undeclared_fields_ignored: [...observation.openStructs] }),
   };
 }
 
@@ -856,10 +878,12 @@ function checkType(
 /** The response-mode value check, which is unit A's and reaches back into this file's grammar. */
 function responseObserver(
   declarations: Record<string, SelectionDeclaration>,
+  openStructs?: Set<string>,
 ): SelectionObservation {
   const observer = new SelectionObservation();
   observer.declarations = declarations;
   observer.responseMode = true;
+  if (openStructs !== undefined) observer.openStructs = openStructs;
   return observer;
 }
 
@@ -880,12 +904,14 @@ export function compareResponse(
     throw new Error('command returned no response');
   }
   const names = new Set(observation.fields.map((field) => field.name));
+  // An opened response (`undeclared_fields: ignored`) admits keys it does not declare and reads
+  // nothing of them; every declared field is still checked below.
   for (const field of Object.keys(response)) {
-    if (!names.has(field)) {
+    if (!names.has(field) && observation.undeclaredFields !== 'ignored') {
       throw new Error('response has an undeclared field');
     }
   }
-  const observer = responseObserver(observation.declarations);
+  const observer = responseObserver(observation.declarations, observation.openStructs);
   const counter: ByteCounter = { bytes: 0 };
   for (const field of observation.fields) {
     try {
@@ -932,9 +958,11 @@ export function compareResponse(
     const emitted = owned(payload, target);
     const emittedPresent = present(payload, target);
     let optional = false;
+    let sourceType = '';
     for (const field of observation.fields) {
       if (field.name === source) {
         optional = accessorOptional(field.type)[1];
+        sourceType = field.type;
       }
     }
     if (
@@ -944,7 +972,20 @@ export function compareResponse(
     ) {
       continue;
     }
-    if (!exists || !emittedPresent || !responseEqual(actual, emitted)) {
+    // At an opened struct only the declared fields must agree: an extension member of the
+    // returned value is never read, so the event need not repeat it (beyond10x/ess#500).
+    if (
+      !exists ||
+      !emittedPresent ||
+      !declaredEqual(
+        sourceType,
+        actual,
+        emitted,
+        observation.declarations,
+        observation.openStructs,
+        responseEqual,
+      )
+    ) {
       throw new Error(`event field ${target} differs from actual response field ${source}`);
     }
   }
@@ -987,8 +1028,9 @@ export function admitResponse(value: unknown, major = 21): void {
   const root = closed(
     value,
     'command outcome event fields declarations mappings targets',
-    'nested constraints',
+    'nested constraints undeclared_fields undeclared_fields_ignored',
   );
+  undeclaredFieldsMajor(root, major);
   if (Object.hasOwn(root, 'nested') && major < 34) {
     throw new Error('nested response observations require suite/34 or /35');
   }
@@ -1239,6 +1281,106 @@ export function responseEqual(left: Node, right: Node): boolean {
     );
   }
   return equal(left, right);
+}
+
+/**
+ * `leaf` over two values of `type`, except that at a struct declaration named in `openStructs`
+ * only its declared fields are compared: a key it does not declare is admitted and never read, on
+ * either side (beyond10x/ess#500). Every other object is compared completely, its declared members
+ * under their own types. With no opened struct it is exactly `leaf`. The Rust counterpart is
+ * `undeclared_fields::declared_equal`, the Go one `declaredEqual`.
+ */
+export function declaredEqual(
+  type: string,
+  left: Node | undefined,
+  right: Node | undefined,
+  declarations: Record<string, SelectionDeclaration>,
+  openStructs: Set<string> | undefined,
+  leaf: (left: Node, right: Node) => boolean,
+): boolean {
+  if (openStructs === undefined || openStructs.size === 0)
+    return left !== undefined && right !== undefined ? leaf(left, right) : left === right;
+  return declaredEqualAt(type, left, right, declarations, openStructs, leaf, 0);
+}
+
+function plainObject(value: Node | undefined): value is Record<string, Node> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    !(value instanceof JsonNumber)
+  );
+}
+
+function declaredEqualAt(
+  type: string,
+  left: Node | undefined,
+  right: Node | undefined,
+  declarations: Record<string, SelectionDeclaration>,
+  openStructs: Set<string>,
+  leaf: (left: Node, right: Node) => boolean,
+  depth: number,
+): boolean {
+  if (left === undefined || right === undefined) return left === right;
+  if (depth > DEPTH_LIMIT || left === null || right === null) return leaf(left, right);
+  const next = (t: string, l: Node | undefined, r: Node | undefined): boolean =>
+    declaredEqualAt(t, l, r, declarations, openStructs, leaf, depth + 1);
+  const [inner, optional] = accessorOptional(type);
+  if (optional) return next(inner, left, right);
+  const declaration = owned(declarations, type);
+  if (declaration !== undefined) {
+    if (declaration.kind === 'newtype') return next(declaration.of, left, right);
+    if (declaration.kind === 'struct') {
+      if (!plainObject(left) || !plainObject(right)) return leaf(left, right);
+      const declared = new Set(declaration.fields.map((field) => field.name));
+      if (!openStructs.has(type)) {
+        const keys = Object.keys(left);
+        if (keys.length !== Object.keys(right).length) return false;
+        for (const key of keys)
+          if (!declared.has(key) && (!Object.hasOwn(right, key) || !leaf(left[key], right[key])))
+            return false;
+      }
+      return declaration.fields.every((field) =>
+        next(field.type, owned(left, field.name), owned(right, field.name)),
+      );
+    }
+    if (declaration.kind === 'union') {
+      if (
+        !plainObject(left) ||
+        !plainObject(right) ||
+        Object.keys(left).length !== Object.keys(right).length
+      )
+        return leaf(left, right);
+      const content = declaration.tag === 'value' ? 'content' : 'value';
+      const label = owned(left, declaration.tag);
+      const variants = plainObject(declaration.variants) ? declaration.variants : {};
+      const variant = typeof label === 'string' ? owned(variants, label) : undefined;
+      return Object.keys(left).every((key) => {
+        if (!Object.hasOwn(right, key)) return false;
+        if (key === content && typeof variant === 'string')
+          return next(variant, left[key], right[key]);
+        return leaf(left[key], right[key]);
+      });
+    }
+    return leaf(left, right);
+  }
+  if (type.startsWith('List<') && type.endsWith('>')) {
+    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length)
+      return leaf(left, right);
+    return left.every((child, index) => next(type.slice(5, -1), child, right[index]));
+  }
+  if (type.startsWith('Map<String, ') && type.endsWith('>')) {
+    if (
+      !plainObject(left) ||
+      !plainObject(right) ||
+      Object.keys(left).length !== Object.keys(right).length
+    )
+      return leaf(left, right);
+    return Object.keys(left).every(
+      (key) => Object.hasOwn(right, key) && next(type.slice(12, -1), left[key], right[key]),
+    );
+  }
+  return leaf(left, right);
 }
 
 interface NestedResponseMapping {
@@ -1541,7 +1683,19 @@ function compareNestedResponse(
       (emitted === undefined || emitted === null)
     )
       continue;
-    if (actual === undefined || emitted === undefined || !responseEqual(actual, emitted)) {
+    // At an opened struct only the declared fields must agree (beyond10x/ess#500).
+    if (
+      actual === undefined ||
+      emitted === undefined ||
+      !declaredEqual(
+        field.type,
+        actual,
+        emitted,
+        observation.declarations,
+        observation.openStructs,
+        responseEqual,
+      )
+    ) {
       throw new Error(
         `event path ${mapping.target.join('.')} differs from actual response field ${mapping.source}`,
       );

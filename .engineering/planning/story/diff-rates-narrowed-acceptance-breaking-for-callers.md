@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:diff-rates-narrowed-acceptance-breaking-for-callers
 kind: story
-status: draft
+status: implemented
 title: verify diff rates an added refusal, a required input and a widened refusal guard breaking for callers
 tags:
 - defect
@@ -12,7 +12,11 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-09T01:14:06Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-10-09T01:14:06Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-09T01:14:07Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

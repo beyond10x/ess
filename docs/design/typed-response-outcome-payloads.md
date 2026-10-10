@@ -30,7 +30,7 @@ Native Rust and Go emit a command-specific typed response record. Only outcomes 
 
 JSON Schema emits the response under `schema/responses/<command>.schema.json`, with the same path validation, referenced-type closure and provenance rules as other schema artifacts. Legacy commands add no response artifact.
 
-Rust targets expose `SemanticCommandResult.response`; Go targets expose `CommandResult.Response`. These contain actual returned values, admitted against the closed declared response fields before comparison. The suite's `ExpectResponsePayload` step names the exact command, outcome and emitted event. It reads only the immediately preceding invocation result; a previous invocation or separately observed event cannot supply authority. Missing required response data, malformed values, undeclared fields and unequal mapped payloads fail. Optional source absence or null is observable and requires absence or null on the optional event target.
+Rust targets expose `SemanticCommandResult.response`; Go targets expose `CommandResult.Response`. These contain actual returned values, admitted against the closed declared response fields before comparison. The suite's `ExpectResponsePayload` step names the exact command, outcome and emitted event. It reads only the immediately preceding invocation result; a previous invocation or separately observed event cannot supply authority. Missing required response data, malformed values, undeclared fields and unequal mapped payloads fail; an undeclared field passes only in a record that declares `undeclared_fields: ignored` (below). Optional source absence or null is observable and requires absence or null on the optional event target.
 
 Go snapshots response-bearing command results before subsequent target callbacks. Returned response and event maps do not share mutable assertion authority. Integer admission and comparison retain exact signed 64-bit values; they do not round an Integer through binary64. Other admitted primitive representations use the existing conformance value contract, including its existing Timestamp text validation boundary.
 
@@ -46,10 +46,37 @@ Each runner checks the actual returned value at every reachable position of a co
 
 Which invariants are admitted is decided once, at synthesis: an invariant that reads anything but `value` or `value.count`, or that quantifies, is refused by name ("invariant `<predicate>` on response type `<name>` does not decide over its value alone"), and the outcome keeps its `ESS-SYNTH-001` refusal. No observer-side list of predicate operators exists.
 
+### Records that ignore undeclared fields
+
+A response is closed by default, and so is every struct it reaches. Some protocols require a reader to ignore members it does not recognise so that a producer can add extension members; a server following one fails a closed suite the first time it adds a member. From `ess/24` the author states the opening once, with `undeclared_fields: ignored` (beyond10x/ess#500), in exactly two places:
+
+```yaml
+format: ess/24
+types:
+  - name: catalog.keys.PublicKey
+    kind: struct
+    undeclared_fields: ignored     # this record, wherever it is reached
+    fields:
+      - {name: kid, type: String}
+commands:
+  - name: catalog.orders.PlaceOrder
+    undeclared_fields: ignored     # the response object only, never the input
+    response:
+      - {name: order_ref, type: String}
+```
+
+The opening is opt-in and local. `refused` is the default; a document that does not write the key keeps its meaning, its IR bytes and its compiled digest. On a command the key governs the response root only: a struct the response reaches is open only where that struct says so, and its closed siblings still refuse undeclared keys. Declared fields keep their presence and type checks in every case, so a response that omits `order_ref`, or sends it as a number, still fails. Undeclared fields are never readable: guards, bindings, views and `{response: field}` payload sources still name declared fields only. Input stays closed, because the suite never sends undeclared input.
+
+The key is refused by name, at its line, everywhere else: on a command without `response:` as `missing_declaration` (there is nothing for it to govern), and on a newtype, an enum, a union, an entity, an event, an error, a view or an actor as `unsupported_construct`. Event payloads are closed in their schema projections and not in the observers; that inconsistency is recorded and left out of this construct. Under `ess/23` and earlier the key is refused with `unsupported_format_version` naming `ess/24`.
+
+The IR carries a command's key as `undeclared_fields: ignored` on the resolved command and the open structs as `undeclared_fields_ignored`, a set of type names beside `types`; both are left out when nothing is open, which is what keeps closed models' bytes. The set sits beside the types rather than inside the resolved struct body so that every exhaustive pattern over that body, in the generators and the conformance crates, keeps its shape; a reader asks `EssIr::undeclared_fields(<type>)`. Projections write `additionalProperties: true` explicitly at an open object rather than omitting the keyword, because a keyword is an assertion and an absent one reads as an oversight; the observers carry the flag per object, at the response root and per struct declaration.
+
 ## Persisted meaning
 
 Response assertions require `ess-conformance/8`, or `/9` with coverage inventory. A response assertion pinned to an older envelope is refused before callbacks. Existing report/2 count semantics remain unchanged. A response-only command declaration change produces `ResponseChanged`; response/generated mapping changes produce `OutcomeResponsePayloadChanged`. These require `ess-diff/4`; ordinary legacy payload deltas retain their existing vocabulary/version.
 
 A response observation carrying `constraints` requires `ess-conformance/46`, or `/47` with coverage inventory. The pair is selected only when some observation carries the member, and it is cumulative over every major below it, the counted event-claim pair `/44` and `/45` included. Every reader refuses the member under a lower major, and a reader that admits only through `/45` refuses a `/46` or `/47` suite by version, so no runner passes a constrained value it did not check.
+
+A response observation that ignores undeclared fields requires `ess-conformance/48`, or `/49` with coverage inventory (beyond10x/ess#500). `expect_direct_response` and `expect_response_payload` carry it as two members beside `declarations`, each left out when closed: `undeclared_fields: ignored` opens the response object, and `undeclared_fields_ignored`, a set of names, opens each struct declaration of the observation the specification declares `ignored`. A present `undeclared_fields` is always `ignored` and a present set is never empty, so closed has one spelling. The pair is selected only when some observation carries either member, and it is cumulative over every major below it, the constrained pair `/46` and `/47` included. Every reader refuses either member under a lower major, and a reader that admits only through `/47` refuses a `/48` or `/49` suite by version, so no runner enforces a closure the specification no longer states. A one-time response outcome stays closed: its trace compares the response as a closed record, so an opened command or struct reached by one is refused at synthesis by name. The retained-result replay and the complete-subject snapshot are refused the same way, for the same reason. Where an observation compares two values — an authored `response:` literal with the returned value, or a response-mapped event field with the returned one — an opened struct is compared by its declared fields only, on both sides, so an extension member is never read; and a literal, being authority, is admitted against the closed declarations, so one naming an undeclared member is refused.
 
 The browser replay adapter currently refuses these newer suite envelopes. It must not silently execute a suite while ignoring response assertions. Consumer source migration and truthful adapter extraction of returned responses are separate adoption steps; native API generation is not evidence that an external adapter has migrated.

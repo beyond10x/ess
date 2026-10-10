@@ -54,6 +54,9 @@ impl Captures {
                 declarations: origin.response.declarations.clone(),
                 // The one-time trace checks these rules below, on the same value.
                 constraints: BTreeMap::new(),
+                // A one-time response is closed: its trace refuses an opened one at synthesis.
+                undeclared_fields: ess_domain::types::UndeclaredFields::Refused,
+                undeclared_fields_ignored: std::collections::BTreeSet::new(),
                 expected: BTreeMap::new(),
             };
             shape

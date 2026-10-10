@@ -1161,6 +1161,14 @@
             },
             "reading": {
               "$ref": "#/definitions/ReadingContract"
+            },
+            "undeclared_fields": {
+              "description": "What a reader does with a field this struct does not declare: `refused`, the default, or `ignored`, which admits fields beyond the declared ones while every declared field stays required and typed (`ess/24`, beyond10x/ess#500).",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/UndeclaredFields"
+                }
+              ]
             }
           },
           "additionalProperties": false
@@ -2109,11 +2117,22 @@
           }
         },
         "response": {
-          "description": "Closed fields of the response returned by this command.",
+          "description": "Fields of the response returned by this command, closed unless `undeclared_fields:` says otherwise.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/Field"
           }
+        },
+        "undeclared_fields": {
+          "description": "What a reader does with a response field the command does not declare: `refused`, the default, or `ignored`, which admits fields beyond the declared ones while every declared field stays required and typed. Governs `response:` only, and requires a non-empty one (`ess/24`, beyond10x/ess#500).",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/UndeclaredFields"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false
@@ -3932,6 +3951,25 @@
         "List<Money>"
       ],
       "type": "string"
+    },
+    "UndeclaredFields": {
+      "description": "What a reader does with a field a record does not declare (`ess/24`, beyond10x/ess#500).\n\nWritten `undeclared_fields:` on a `kind: struct` type and on a command, where it governs the command's `response:` only. A record is closed unless it says otherwise: `refused` is the default, and every declaration that does not write the key keeps the bytes it had. `ignored` admits members beyond the declared ones, as a protocol does that lets a producer add extension members its readers must ignore; every declared field stays required and typed either way.",
+      "oneOf": [
+        {
+          "description": "A field the record does not declare is refused. The default.",
+          "type": "string",
+          "enum": [
+            "refused"
+          ]
+        },
+        {
+          "description": "A field the record does not declare is ignored; the declared ones are still checked.",
+          "type": "string",
+          "enum": [
+            "ignored"
+          ]
+        }
+      ]
     },
     "Version": {
       "description": "A major version, written `v1`. A bare `1` is accepted too.",

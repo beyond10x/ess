@@ -3,7 +3,7 @@ format: aep.planning-md/3
 id: release-plan:ess-24-one-language
 kind: release-plan
 status: draft
-title: 'Unscheduled: ess/24, one language after adoption'
+title: 'Unscheduled: ess/25, one language after adoption'
 relations:
 - serves: vision:O2
 - delivers: epic:language-consistency-after-adoption
@@ -20,11 +20,9 @@ relations:
 - delivers: story:change-fragment-upgrade-obligation
 - delivers: story:binding-conditions-compare-boolean-event-fields
 - delivers: story:an-outcome-that-only-stores-is-observed-through-a-view
-- delivers: story:stored-field-equals-returned-response-value
-- delivers: story:response-and-struct-admit-undeclared-fields-when-declared-ignored
 - delivers: story:requirement-completeness-without-prose-in-the-model
 - delivers: story:one-command-combines-identity-and-row-set-related-guards
-revision: 1
+revision: 3
 ---
 Carried from `release-plan:ess-057` on 2026-10-07, when that version number went to the release that actually shipped under it. Not scheduled to a version; its original intent follows.
 
@@ -55,3 +53,7 @@ meaning and `ess specify upgrade` writes the `ess/24` spelling.
 
 As `release-plan:ess-054`, plus an upgrade guide page and `ess specify upgrade` run over every
 `ess/23` fixture in the repository.
+
+## Moved to ess/25 (2026-10-08)
+
+0.58.0 opens `ess/24` with the two adopter keys only (`decision-blocker:ess-058-opens-format-24`). Every construct still listed here, `ess specify upgrade` with them, ships as source format `ess/25`; read `ess/24` above as `ess/25`.

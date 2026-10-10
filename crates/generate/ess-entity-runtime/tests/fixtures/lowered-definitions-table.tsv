@@ -374,7 +374,7 @@ system-dir:models/toolchain	infra	toolchain.infra.Observation	create	refused, co
 system-dir:models/toolchain	infra	toolchain.infra.Observation	toolchain.infra.ImportObservation	refused, imported, wrong-state
 system-dir:models/toolchain	release-automation	REFUSED	fca88a6cb61e25f86e28e8a69b4bf8ee5aadc05cb16ff6e4a728fb0ef5f0e657:375
 system-dir:models/toolchain	specify	toolchain.specify.Declaration	definition=f008c7ec58b6b8996de589cd7e5ce17e0cc8ba0610e93e9ac4e1f24d786ff2aa:1384
-system-dir:models/toolchain	specify	toolchain.specify.Model	definition=4ba2a580b3654977c57f98c9ee6e1ec59f813b7504639d9bee111dc64e645e08:7012
+system-dir:models/toolchain	specify	toolchain.specify.Model	definition=f3bc87478f47a34bb242bdb3aabc49c18adade9f2ca3aff9de14d07a60ae615d:7030
 system-dir:models/toolchain	specify	toolchain.specify.Model	create	refused, selected
 system-dir:models/toolchain	specify	toolchain.specify.Model	toolchain.specify.CompileModel	refused, compiled, wrong-state
 system-dir:models/toolchain	specify	toolchain.specify.Model	toolchain.specify.ResolveModel	refused, resolved, wrong-state

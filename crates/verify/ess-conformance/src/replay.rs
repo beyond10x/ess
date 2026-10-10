@@ -109,6 +109,17 @@ impl Observation {
             .replays
             .as_ref()
             .ok_or("outcome has no replay origin")?;
+        // The retained-result observer compares the response as a closed record in every runner,
+        // so a response that ignores undeclared fields (`ess/24`, beyond10x/ess#500) is refused
+        // by name rather than failing an honest target; an opened struct it reaches is refused by
+        // `declarations_for`.
+        if command.undeclared_fields.is_ignored() {
+            return Err(format!(
+                "retained result of `{}` declares `undeclared_fields: ignored`, which the exact \
+                 retained-result observer does not carry",
+                command.name
+            ));
+        }
         let fields: Vec<_> = command
             .response
             .iter()
@@ -165,6 +176,15 @@ pub(crate) enum DeclarationProfile {
     CompleteSubject,
 }
 
+impl DeclarationProfile {
+    fn label(self) -> &'static str {
+        match self {
+            Self::RetainedResult => "retained-result",
+            Self::CompleteSubject => "complete-subject",
+        }
+    }
+}
+
 pub(crate) fn declarations_for(
     ir: &EssIr,
     fields: &[Field],
@@ -183,6 +203,19 @@ pub(crate) fn declarations_for(
             return Err("replay declaration limit".into());
         }
         let ty = ir.types().get(&name).ok_or("missing response type")?;
+        // Both exact observers — the retained result and the complete subject — compare a value
+        // as a closed record in every runner and carry no opened set, so a struct that ignores
+        // undeclared fields (`ess/24`, beyond10x/ess#500) is refused by name rather than failing
+        // an honest target that sends an extension member.
+        if matches!(ty.body, ResolvedBody::Struct { .. })
+            && ir.undeclared_fields(&name).is_ignored()
+        {
+            return Err(format!(
+                "`{name}` declares `undeclared_fields: ignored`, which the exact {} observer does \
+                 not carry",
+                profile.label()
+            ));
+        }
         let structural_newtype = profile == DeclarationProfile::CompleteSubject
             && matches!(ty.body, ResolvedBody::Newtype { .. });
         if ty.reading.is_some() || (ty.body.is_constrained() && !structural_newtype) {

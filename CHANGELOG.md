@@ -2,6 +2,41 @@
 
 ## [Unreleased]
 
+### Added
+
+- `ess/24`: a `kind: struct` type, and a command with a non-empty `response:`, may declare
+  `undeclared_fields: ignored`, so the record admits fields it does not declare while every
+  declared field stays required and typed. On a command it governs the response only. `refused`
+  is the default, and a specification that does not write the key keeps its IR bytes and compiled
+  digest. `ess specify validate` refuses the key at its line on a command without `response:`
+  (`missing_declaration`), on an event, an error and every other declaration, and under an
+  earlier format, naming `ess/24`. The IR carries it on the command and lists the open structs
+  beside `types` (https://github.com/beyond10x/ess/issues/500).
+- `ess generate` projects `undeclared_fields: ignored`: the JSON Schema tree, OpenAPI and
+  AsyncAPI write `"additionalProperties": true` at a command response declared `ignored` and at
+  every object of a struct declared `ignored`, wherever it is reached; every closed object keeps
+  `false` and its bytes. The generated documentation says so on the command and on the struct.
+  `ess verify diff` names the move as `type/<name>/undeclared-fields-changed` or
+  `command/<name>/response-undeclared-fields-changed` in the new `ess-diff/18`, never
+  `unclassified-changed`: opening is `expanded`, so an opened struct is `breaking` for readers of
+  an output use and an opened response `breaking` for readers; closing is `narrowed`, `breaking`
+  for callers of a struct's input use and for its stored use, and `compatible` for a response.
+  Earlier delta formats refuse it written or read (https://github.com/beyond10x/ess/issues/500).
+- `ess-conformance/48` (`/49` with coverage): `expect_direct_response` and
+  `expect_response_payload` carry `undeclared_fields: ignored` for an opened response object and
+  `undeclared_fields_ignored` for the opened struct declarations it reaches, each left out when
+  closed. The native, Go and TypeScript observers admit an undeclared key at exactly those objects
+  and keep every declared field's presence and type check; a closed response, a closed sibling
+  struct and a union still fail an undeclared key (`ESS-CF-PAYLOAD`). Readers through `/47` refuse
+  a `/48` suite by version, every reader refuses either member under a lower major, and a suite
+  without an opened object keeps its bytes and format. A one-time response that is opened is
+  refused at synthesis by name (https://github.com/beyond10x/ess/issues/500). An authored
+  `response:` literal and a response-mapped event field are compared with the returned value by
+  their declared fields at an opened struct, in all three runners, so an extension member is never
+  read; a literal that names an undeclared member is refused as before. A retained-result replay
+  or a complete-subject snapshot over an opened response or struct is refused at synthesis by
+  name, because both observers compare a closed record.
+
 ### Changed
 
 - An authored scenario is judged by the command's precedence plan, as the model interpreter

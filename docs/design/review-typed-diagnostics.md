@@ -280,6 +280,11 @@ from 9 to 13, with beyond10x/ess#450: an enum's typed variant attributes are ref
 a name declared twice, a type no literal spells, a value of the wrong type, a required value left
 out and a value for an undeclared attribute — for the reason the #426 and #448 sites above are.
 
+`undeclared_fields.rs` is new with beyond10x/ess#500, four typed sites and no string-located one:
+the `ess/24` key `undeclared_fields:` is refused at `<kind> <name>.undeclared_fields` on a type that
+is no struct, on any other declaration, on a command without `response:` and below `ess/24`, each
+from one `ConstructRef` helper, so it adds no head literal below.
+
 <!-- inventory:begin -->
 ```text
 accessor.rs 1 0
@@ -297,6 +302,7 @@ spec.rs 7 0
 system.rs 10 0
 topology.rs 10 0
 types.rs 23 1
+undeclared_fields.rs 0 4
 view.rs 29 0
 wire.rs 2 0
 ```

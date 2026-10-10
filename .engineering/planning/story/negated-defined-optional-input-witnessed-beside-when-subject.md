@@ -2,14 +2,18 @@
 format: aep.planning-md/3
 id: story:negated-defined-optional-input-witnessed-beside-when-subject
 kind: story
-status: draft
+status: implemented
 title: The guard-negate mutant of a defined(<optional input>) guard beside when_subject is witnessed or scored
 refs:
 - provider: github
   reference: beyond10x/ess#511
 relations:
 - serves: vision:O2
-revision: 6
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-09T01:14:10Z", actor: "human:timo", revision: 7}
+- {from: "proposed", to: "active", at: "2026-10-09T01:14:10Z", actor: "human:timo", revision: 8}
+- {from: "active", to: "implemented", at: "2026-10-09T01:14:11Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

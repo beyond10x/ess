@@ -3,9 +3,10 @@ use crate::one_time_response::StringConstraints;
 use crate::scenario::{CommandRef, OutcomeRef};
 use crate::selection::Declaration;
 use ess_compiler::ir::{EssIr, ResolvedCommand};
+use ess_domain::types::UndeclaredFields;
 use ess_domain::{types::Presence, Field, QualifiedName, TypeRef};
 use ess_primitives::node::Node;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// First ordinary suite with direct return observations.
 pub const ORDINARY: u32 = 28;
@@ -37,7 +38,18 @@ pub struct Observation {
     /// no reachable type is constrained.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub constraints: BTreeMap<QualifiedName, StringConstraints>,
-    /// Partial field-value assertions; every named value is compared completely.
+    /// `ignored` where the command declares `undeclared_fields: ignored` (suite/48 and /49,
+    /// beyond10x/ess#500): the response object admits keys it does not declare. Absent from the
+    /// bytes when `refused`, the closed default.
+    #[serde(default, skip_serializing_if = "UndeclaredFields::is_refused")]
+    pub undeclared_fields: UndeclaredFields,
+    /// The struct declarations that admit keys they do not declare, wherever the response reaches
+    /// them (suite/48 and /49). Empty, and then absent from the bytes, when every one is closed.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub undeclared_fields_ignored: BTreeSet<QualifiedName>,
+    /// Partial field-value assertions; every named value is compared completely, except that at a
+    /// struct in `undeclared_fields_ignored` only its declared fields are compared. A literal
+    /// names declared members only, opened struct or not.
     pub expected: BTreeMap<String, Node>,
 }
 
@@ -50,6 +62,10 @@ struct RawObservation {
     declarations: BTreeMap<QualifiedName, Declaration>,
     #[serde(default, deserialize_with = "constraints_present")]
     constraints: Option<BTreeMap<QualifiedName, StringConstraints>>,
+    #[serde(default, deserialize_with = "crate::undeclared_fields::root_present")]
+    undeclared_fields: UndeclaredFields,
+    #[serde(default, deserialize_with = "crate::undeclared_fields::opened_present")]
+    undeclared_fields_ignored: BTreeSet<QualifiedName>,
     expected: BTreeMap<String, Node>,
 }
 
@@ -76,6 +92,8 @@ impl TryFrom<RawObservation> for Observation {
             fields: raw.fields,
             declarations: raw.declarations,
             constraints: raw.constraints.unwrap_or_default(),
+            undeclared_fields: raw.undeclared_fields,
+            undeclared_fields_ignored: raw.undeclared_fields_ignored,
             expected: raw.expected,
         };
         value.validate()?;
@@ -118,11 +136,16 @@ impl Observation {
             let constraints = response_constraints(ir, &declarations)?;
             (declarations, constraints)
         };
+        // `undeclared_fields: ignored` (ess/24) opens the response object and each struct that says
+        // so; a one-time outcome never reaches here opened, because its trace refuses it.
+        let undeclared_fields_ignored = crate::undeclared_fields::opened(ir, &declarations);
         let result = Self {
             command: CommandRef::new(command.name.clone()),
             outcome,
             declarations,
             constraints,
+            undeclared_fields: command.undeclared_fields,
+            undeclared_fields_ignored,
             fields,
             expected,
         };
@@ -144,6 +167,7 @@ impl Observation {
         }
         crate::typed_fields::validate([self.fields.as_slice()], &self.declarations)?;
         validate_response_constraints(&self.declarations, &self.constraints)?;
+        crate::undeclared_fields::validate(&self.declarations, &self.undeclared_fields_ignored)?;
         let mut bytes = 0;
         for (name, value) in &self.expected {
             let field = self
@@ -151,10 +175,14 @@ impl Observation {
                 .iter()
                 .find(|field| &field.name == name)
                 .ok_or_else(|| format!("undeclared response field {name}"))?;
+            // A literal is authority: it names declared members only, even at a struct that ignores
+            // undeclared fields, because an observer never reads an undeclared member
+            // (beyond10x/ess#500). So it is admitted against the closed declarations.
             crate::selection::validate_direct_response_value(
                 &field.type_ref,
                 Some(value),
                 &self.declarations,
+                &BTreeSet::new(),
                 &mut bytes,
             )
             .map_err(|reason| format!("response literal {name}: {reason}"))?;
@@ -174,9 +202,12 @@ impl Observation {
     pub fn compare(&self, actual: Option<&BTreeMap<String, Node>>) -> Result<(), String> {
         self.validate()?;
         let actual = actual.ok_or("command returned no response")?;
-        if actual
-            .keys()
-            .any(|name| !self.fields.iter().any(|field| &field.name == name))
+        // An opened response (`undeclared_fields: ignored`) admits keys it does not declare and reads
+        // nothing of them; every declared field is still checked below.
+        if !self.undeclared_fields.is_ignored()
+            && actual
+                .keys()
+                .any(|name| !self.fields.iter().any(|field| &field.name == name))
         {
             return Err("response has an undeclared field".into());
         }
@@ -186,6 +217,7 @@ impl Observation {
                 &field.type_ref,
                 actual.get(&field.name),
                 &self.declarations,
+                &self.undeclared_fields_ignored,
                 &mut bytes,
             )
             .map_err(|reason| format!("response field {}: {reason}", field.name))?;
@@ -200,7 +232,19 @@ impl Observation {
         }
         check_constraints(&self.fields, &self.declarations, &self.constraints, actual)?;
         for (name, expected) in &self.expected {
-            if actual.get(name) != Some(expected) {
+            // `validate` found every literal's field. At an opened struct only its declared fields
+            // are compared; the target's extension members are never read.
+            let declared = self.fields.iter().find(|field| &field.name == name);
+            let equal = declared.is_some_and(|field| {
+                crate::undeclared_fields::declared_equal(
+                    &field.type_ref,
+                    Some(expected),
+                    actual.get(name),
+                    &self.declarations,
+                    &self.undeclared_fields_ignored,
+                )
+            });
+            if !equal {
                 return Err(format!(
                     "response field {name} differs from its declared literal"
                 ));

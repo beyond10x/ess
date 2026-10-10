@@ -73,6 +73,7 @@ pub mod spec;
 pub mod system;
 pub mod topology;
 pub mod types;
+mod undeclared_fields;
 pub mod view;
 mod wire;
 

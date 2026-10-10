@@ -2,14 +2,18 @@
 format: aep.planning-md/3
 id: story:go-and-ts-runners-admit-json-shapes
 kind: story
-status: draft
+status: implemented
 title: Generated Go and TypeScript runners admit json shapes
 tags:
 - defect
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-09T01:13:59Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-10-09T01:13:59Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-09T01:14:08Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

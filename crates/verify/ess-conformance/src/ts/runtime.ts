@@ -52,6 +52,7 @@ import {
   admitResponseConstraints,
   compareDirectResponse,
   responseConstraintsMajor,
+  undeclaredFieldsMajor,
 } from './direct_response.js';
 import type { DirectResponse } from './direct_response.js';
 import {
@@ -2735,7 +2736,7 @@ export async function runWith(
   }
   const version = suite.provenance.suite_version;
   if ((SUITE_MAJORS[version] ?? 0) >= 8 && config.version !== '2') {
-    throw new Error('suite/8 through /47 require explicit ESS_REPORT_FORMAT=2 before execution');
+    throw new Error('suite/8 through /49 require explicit ESS_REPORT_FORMAT=2 before execution');
   }
   if (
     (version === 'ess-conformance/5' ||
@@ -6504,14 +6505,19 @@ const SUITE_MAJORS: { [version: string]: number } = {
   // below, the counted pair included.
   'ess-conformance/46': 46,
   'ess-conformance/47': 47,
+  // Ignored undeclared response fields (beyond10x/ess#500): an opened response object or struct
+  // declaration admits keys it does not declare. Cumulative over every major below, the
+  // constrained-response pair included.
+  'ess-conformance/48': 48,
+  'ess-conformance/49': 49,
 };
 
 /** The suite majors that carry a coverage inventory, each beside the ordinary major below it. */
 const COVERAGE_MAJORS = new Set([
   5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 33, 35, 37,
   // The coverage majors of the conditional measure, expression, seed-bearing and counted-claim
-  // pairs, and of the constrained-response pair.
-  39, 41, 43, 45, 47,
+  // pairs, and of the constrained-response and opened-response pairs.
+  39, 41, 43, 45, 47, 49,
 ]);
 
 /** coverageMajor reports whether a suite major carries a coverage inventory. */
@@ -7909,6 +7915,7 @@ export function admitStep(value: Node, major: number): void {
         break;
       case 'response':
         responseConstraintsMajor(held, major);
+        undeclaredFieldsMajor(held, major);
         if (tag === 'expect_direct_response') admitDirectResponse(held);
         else admitResponse(held, major);
         break;
@@ -10503,6 +10510,12 @@ export function selectionFailure(
 /** SelectionObservation is a declared selection over an observed list, and its projection. */
 export class SelectionObservation {
   responseMode = false;
+  /**
+   * The struct declarations that admit keys they do not declare (`undeclared_fields: ignored`,
+   * suite/48 and /49, beyond10x/ess#500). Only a response observation sets it; every other
+   * observer leaves it empty, so every struct stays closed.
+   */
+  openStructs: Set<string> = new Set();
   rawNode: Node = null;
   event_type = '';
   plan: { inputs: SelectionInput[]; selectors: SelectionSelector[] } = {
@@ -10919,7 +10932,9 @@ export class SelectionObservation {
             throw new Error('invalid_input');
           }
           const fields = value as { [key: string]: Node };
-          if (this.responseMode) {
+          // A struct declared `undeclared_fields: ignored` admits keys it does not declare and reads
+          // nothing of them; its declared fields are checked below as always.
+          if (this.responseMode && !this.openStructs.has(source)) {
             const names = new Set(body.fields.map((field) => field.name));
             for (const key of Object.keys(fields)) {
               if (!names.has(key)) {

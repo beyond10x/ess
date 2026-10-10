@@ -21,6 +21,7 @@ fn registry() -> TypeRegistry {
                     field("state", "sample.State"),
                 ],
                 invariants: vec![],
+                undeclared_fields: None,
             },
         ),
         (
@@ -70,6 +71,7 @@ fn registry() -> TypeRegistry {
                     field("amount", "Decimal"),
                 ],
                 invariants: vec![],
+                undeclared_fields: None,
             },
         ),
         (

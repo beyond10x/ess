@@ -690,7 +690,9 @@ export function admitDisclosureId(
     // Counted event claims (beyond10x/ess#427) are cumulative over the one-time vocabulary.
     !['ess-conformance/44', 'ess-conformance/45'].includes(version) &&
     // So are String-newtype constraints on response observations (beyond10x/ess#499).
-    !['ess-conformance/46', 'ess-conformance/47'].includes(version)
+    !['ess-conformance/46', 'ess-conformance/47'].includes(version) &&
+    // And ignored undeclared response fields (beyond10x/ess#500).
+    !['ess-conformance/48', 'ess-conformance/49'].includes(version)
   ) {
     return fail();
   }

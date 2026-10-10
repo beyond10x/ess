@@ -66,6 +66,8 @@
 //! | an actor loses one | [`Narrowed`](SemanticRelation::Narrowed) | [`ActorChange::relation`] |
 //! | an enum or union gains a variant | [`Expanded`](SemanticRelation::Expanded) | [`TypeChange::relation`] |
 //! | one loses a variant | [`Narrowed`](SemanticRelation::Narrowed) | [`TypeChange::relation`] |
+//! | a struct, or a command's response, comes to ignore the fields it does not declare (`ess-diff/18`) | [`Expanded`](SemanticRelation::Expanded) | [`TypeChange::relation`], [`CommandChange::relation`] |
+//! | one comes to refuse them again | [`Narrowed`](SemanticRelation::Narrowed) | the same |
 //! | anything else | [`Changed`](SemanticRelation::Changed) | the family's `relation` |
 //!
 //! Design §21 lists seven relations. Four of them — `Equivalent`, `Strengthened`, `Weakened`,

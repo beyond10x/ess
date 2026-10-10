@@ -2,14 +2,18 @@
 format: aep.planning-md/3
 id: story:generated-bundle-doc-names-only-emitted-traits
 kind: story
-status: draft
+status: implemented
 title: The Generated<P> doc names only the context traits the synthesis emits
 tags:
 - defect
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-09T01:14:13Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-10-09T01:14:14Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-09T01:14:15Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

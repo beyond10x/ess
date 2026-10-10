@@ -90,7 +90,7 @@ func suiteReference(value any) error {
 //
 // Keep this aligned with the emitter's capability boundary. New majors require admission,
 // execution and report parity; changing this number alone supplies none of those semantics.
-const newestSuiteMajor = 47
+const newestSuiteMajor = 49
 
 // suiteMajorsNotRead are the majors below newestSuiteMajor that other work has allocated and this
 // runtime has no reader for yet. A suite labelled with one is refused by version, never read as
@@ -1781,7 +1781,7 @@ func Run(t *testing.T, newTarget func() Target) {
 		t.Fatalf("suite admission: %v", err)
 	}
 	if suiteMajor(suite.Provenance.SuiteVersion) >= 8 && config.version != "2" {
-		t.Fatalf("suite/8 through /47 require explicit ESS_REPORT_FORMAT=2 before execution")
+		t.Fatalf("suite/8 through /49 require explicit ESS_REPORT_FORMAT=2 before execution")
 	}
 	if (suite.Provenance.SuiteVersion == "ess-conformance/5" || suite.Provenance.SuiteVersion == "ess-conformance/6" || suite.Provenance.SuiteVersion == "ess-conformance/7") && config.version != "2" {
 		t.Fatalf("suite/5, /6 and /7 require explicit ESS_REPORT_FORMAT=2 before execution")
@@ -5392,6 +5392,9 @@ func admitStep(value any, major int) error {
 				if err == nil {
 					err = responseConstraintsMajor(v, major)
 				}
+				if err == nil {
+					err = undeclaredFieldsMajor(v, major)
+				}
 			} else {
 				err = admitResponse(v, major)
 			}
@@ -7344,6 +7347,11 @@ type selectionObservation struct {
 		Target     string            `json:"target"`
 		Types      accessorTypeFacts `json:"types"`
 	} `json:"projection"`
+
+	// openStructs names the struct declarations that admit keys they do not declare
+	// (`undeclared_fields: ignored`, suite/48 and /49, beyond10x/ess#500). Only a response
+	// observation sets it; every other observer leaves it empty, so every struct stays closed.
+	openStructs map[string]bool
 }
 
 func (s *selectionObservation) UnmarshalJSON(raw []byte) error {
@@ -8251,7 +8259,9 @@ func (s selectionObservation) validateValue(source string, value Node, present b
 			if !ok {
 				return fmt.Errorf("invalid_input")
 			}
-			if s.responseMode {
+			// A struct declared `undeclared_fields: ignored` admits keys it does not declare and reads
+			// nothing of them; its declared fields are checked below as always.
+			if s.responseMode && !s.openStructs[source] {
 				names := map[string]bool{}
 				for _, field := range body.Fields {
 					names[field.Name] = true
