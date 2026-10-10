@@ -210,8 +210,10 @@ fn an_eventual_view_observes_the_arranged_fact_in_its_own_block_before_the_comma
     }
 }
 
+/// Since beyond10x/ess#496 a view that does not project the flag no longer refuses the branch:
+/// the row is arranged through the creating command, and the note names the flag no view reads.
 #[test]
-fn without_a_view_projecting_the_flag_the_refusal_names_either_consistency() {
+fn without_a_view_projecting_the_flag_the_branch_is_written_and_the_flag_named_unobserved() {
     let unprojected = EVENTUAL
         .strip_suffix("      - {name: fast, type: Boolean}\n      - {name: state, type: demo.jobs.Job.State}\n")
         .map(|head| format!("{head}      - {{name: state, type: demo.jobs.Job.State}}\n"))
@@ -221,13 +223,25 @@ fn without_a_view_projecting_the_flag_the_refusal_names_either_consistency() {
         .into_iter()
         .filter(|(code, _)| code == &format!("ESS-SYNTH-001 {STARTED}"))
         .collect();
-    assert_eq!(about.len(), 1, "{:#?}", refusals(&result));
-    let (_, text) = &about[0];
-    assert!(text.contains("`demo.jobs.Job.fast`"), "{text}");
-    assert!(
-        text.contains("`read_your_writes` or `eventual`"),
-        "the help names the view the author can declare, of either consistency: {text}"
+    assert!(about.is_empty(), "{about:#?}");
+    assert!(result.suite.scenarios.keys().any(|id| id.to_string() == STARTED));
+    assert_eq!(
+        unobserved_in(&result, STARTED),
+        Some(vec!["fast".to_owned()]),
+        "{:?}",
+        result.notes
     );
+}
+
+/// The fields the [`Note::PartialObservation`] about `id` names, where there is one.
+fn unobserved_in(result: &Synthesis, id: &str) -> Option<Vec<String>> {
+    result.notes.iter().find_map(|note| match note {
+        ess_conformance::synthesize::Note::PartialObservation {
+            scenario,
+            unobserved,
+        } if scenario.to_string() == id => Some(unobserved.clone()),
+        _ => None,
+    })
 }
 
 #[test]

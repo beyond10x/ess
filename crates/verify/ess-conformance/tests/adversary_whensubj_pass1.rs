@@ -322,21 +322,31 @@ fn several_guarded_branches_through_an_eventual_view_are_all_witnessed() {
     );
 }
 
-/// Only a filtered eventual view: the refusal names the change, and says the filter is the reason.
+/// Only a filtered eventual view: a filtered view cannot observe every arranged row, so since
+/// beyond10x/ess#496 it reads nothing, the branch is written without it, and the note names the
+/// flag as unobserved instead of refusing the branch.
 #[test]
-fn a_filtered_eventual_view_is_refused_with_a_hint_naming_the_filter() {
+fn a_filtered_eventual_view_reads_nothing_and_the_flag_is_named_unobserved() {
     let text = advance("", &[STARTED, DIRECT_FALLBACK, WRONG_STATE]).replace(
         "consistency: read_your_writes",
         "consistency: eventual\n    filter: fast == true",
     );
     let result = synthesis(&text);
+    let started = "demo.jobs.AdvanceJob/outcome/started";
     let about: Vec<_> = refusals(&result)
         .into_iter()
-        .filter(|line| line.starts_with("ESS-SYNTH-001 demo.jobs.AdvanceJob/outcome/started"))
+        .filter(|line| line.starts_with(&format!("ESS-SYNTH-001 {started}")))
         .collect();
-    assert_eq!(about.len(), 1, "{:#?}", refusals(&result));
-    assert!(about[0].contains("no filter"), "{}", about[0]);
-    assert!(!about[0].contains("drifted apart"), "{}", about[0]);
+    assert!(about.is_empty(), "{about:#?}");
+    assert!(ids(&result.suite).iter().any(|id| id == started));
+    let unobserved = result.notes.iter().find_map(|note| match note {
+        ess_conformance::synthesize::Note::PartialObservation {
+            scenario,
+            unobserved,
+        } if scenario.to_string() == started => Some(unobserved.clone()),
+        _ => None,
+    });
+    assert_eq!(unobserved, Some(vec!["fast".to_owned()]), "{:?}", result.notes);
 }
 
 /// #173 says the refusal fires "with and without a `wrong_state` outcome"; the unit's suite
