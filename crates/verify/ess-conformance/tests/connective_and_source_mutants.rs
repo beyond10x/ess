@@ -1154,3 +1154,50 @@ fn a_literal_write_is_arranged_over_a_row_that_held_another_value() {
         "the call is created not recording, so `recorded` visibly writes `true`"
     );
 }
+
+// ---- #496: a stored guard no view observes ----------------------------------------------------------
+
+/// An order collected only by the buyer who placed it, with no view of the order at all
+/// (`.engineering/repro/496/orders.yaml`).
+const VIEW_LESS_ORDERS: &str = include_str!("fixtures/orders-without-a-view.yaml");
+
+/// The refusal the stored `placed_by` selects.
+const WRONG_COLLECTOR: &str = "      - name: wrong-collector
+        when_subject:
+          predicate: placed_by != input.collector
+        error: catalog.orders.Refused
+";
+
+/// An implementation that ignores the stored guard, which no view can show the scenario, still
+/// fails the view-less `wrong-collector` scenario: the outcome, the error and the events are its
+/// evidence, and they need no view. The mutant drops the `when_subject:` refusal, so the model it
+/// interprets collects for any buyer.
+#[test]
+fn a_stored_guard_no_view_observes_is_killed_through_the_outcome() {
+    use ess_conformance::{interpret::Interpreted, report::Status, AdmittedSuite, Runner};
+
+    assert!(VIEW_LESS_ORDERS.contains(WRONG_COLLECTOR));
+    let synthesis = synthesize(&compiled(&documents(VIEW_LESS_ORDERS)));
+    let suite = &synthesis.suite;
+    let admitted = AdmittedSuite::from_suite(suite).unwrap();
+    let failing = |model: &str| -> Vec<String> {
+        Runner::for_suite(suite)
+            .run_admitted(
+                &admitted,
+                &Interpreted::for_model(compiled(&documents(model))),
+            )
+            .into_report()
+            .scenarios
+            .iter()
+            .filter(|scenario| scenario.status != Status::Passed)
+            .map(|scenario| scenario.scenario.to_string())
+            .collect()
+    };
+    assert_eq!(failing(VIEW_LESS_ORDERS), Vec::<String>::new());
+    let ignored = VIEW_LESS_ORDERS.replace(WRONG_COLLECTOR, "");
+    assert!(
+        failing(&ignored).contains(&"catalog.orders.Collect/outcome/wrong-collector".to_owned()),
+        "the mutant ignoring the stored guard is killed by the view-less refusal: {:?}",
+        failing(&ignored)
+    );
+}
