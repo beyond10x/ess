@@ -398,9 +398,10 @@ fn a_manifest_version_this_reader_does_not_know_is_refused_naming_the_ones_it_re
     let (files, texts) = arms();
     let emission = mutate::emit(&files, &texts, &[MutantClass::SetsDrop]).expect("emits");
     let manifest =
-        emission.files[MANIFEST_FILE].replace(MANIFEST_FORMAT_4, "ess-mutation-manifest/5");
-    let refusal = mutate::Manifest::from_json(&manifest).expect_err("/5 is not read");
+        emission.files[MANIFEST_FILE].replace(MANIFEST_FORMAT_4, "ess-mutation-manifest/6");
+    let refusal = mutate::Manifest::from_json(&manifest).expect_err("/6 is not read");
     for known in [
+        mutate::MANIFEST_FORMAT_5,
         MANIFEST_FORMAT_4,
         MANIFEST_FORMAT,
         mutate::MANIFEST_FORMAT_2,

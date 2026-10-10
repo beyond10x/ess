@@ -2083,6 +2083,7 @@ invariants:
                         Field::new("currency", TypeRef::Primitive(Primitive::String)),
                     ],
                     invariants: Vec::new(),
+                    undeclared_fields: None,
                 },
                 naming: Naming::default(),
             })
@@ -2709,6 +2710,7 @@ lifecycle:
                 TypeRef::Named(name("billing.invoice.InvoiceId")),
             )],
             response: Vec::new(),
+            undeclared_fields: None,
             outcomes: vec![crate::command::Outcome {
                 replays: None,
                 name: crate::command::OutcomeName::new(outcome).expect("a valid outcome name"),

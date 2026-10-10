@@ -2739,6 +2739,7 @@ on_failure: {escalate: {emits: billing.email.DeliveryEscalated}}
                         Field::new("currency", type_ref("String")),
                     ],
                     invariants: Vec::new(),
+                    undeclared_fields: None,
                 },
             ),
             (
@@ -2794,6 +2795,7 @@ on_failure: {escalate: {emits: billing.email.DeliveryEscalated}}
                 .map(|(field, kind)| Field::new(*field, type_ref(kind)))
                 .collect(),
             response: Vec::new(),
+            undeclared_fields: None,
             fixture_inputs: BTreeMap::new(),
             outcomes: Vec::new(),
             naming: Naming::default(),

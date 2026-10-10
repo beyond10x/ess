@@ -51,7 +51,7 @@ use crate::types::{NamedType, TypeBody, TypeRef, TypeRegistry};
 
 /// Specification format major versions this build implements.
 pub const SUPPORTED_FORMATS: &[u32] = &[
-    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
 ];
 
 /// What one specification format admits that the format before it did not.
@@ -238,6 +238,14 @@ pub const FORMAT_HISTORY: &[FormatHistoryEntry] = &[
         ],
         stricter: &[],
     },
+    FormatHistoryEntry {
+        major: 24,
+        release: None,
+        added: &[
+            "`undeclared_fields: ignored | refused` (default `refused`) on a `kind: struct` type and on a command with a non-empty `response:`, where it governs the response only: `ignored` admits fields the declaration does not declare, while every declared field stays required and typed; the key is refused by name on a command without `response:` (`missing_declaration`), on an event, an error and every other declaration, and below `ess/24` it is refused naming `ess/24` (beyond10x/ess#500).",
+        ],
+        stricter: &[],
+    },
 ];
 
 // `FORMAT_HISTORY` and `SUPPORTED_FORMATS` name the same majors in the same order, and every row
@@ -330,6 +338,9 @@ impl FormatVersion {
     /// An `updates:` whose `sets:` writes the identity re-keys the record (beyond10x/ess#429); the
     /// held lifecycle state as a value source, `{subject: state}` (beyond10x/ess#458).
     pub const V23: Self = Self(23);
+    /// A struct type or a command's response that ignores the fields it does not declare,
+    /// `undeclared_fields: ignored` (beyond10x/ess#500).
+    pub const V24: Self = Self(24);
 
     /// How a format version is written.
     pub const PREFIX: &'static str = "ess/";

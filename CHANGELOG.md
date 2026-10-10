@@ -4,6 +4,19 @@
 
 ### Added
 
+- `ess/24`: a `kind: struct` type, and a command with a non-empty `response:`, may declare
+  `undeclared_fields: ignored`, so the record admits fields it does not declare while every
+  declared field stays required and typed. On a command it governs the response only. `refused`
+  is the default, and a specification that does not write the key keeps its IR bytes and compiled
+  digest. `ess specify validate` refuses the key at its line on a command without `response:`
+  (`missing_declaration`), on an event, an error and every other declaration, and under an
+  earlier format, naming `ess/24`. The IR carries it on the command and lists the open structs
+  beside `types` (https://github.com/beyond10x/ess/issues/500).
+
+## [0.57.0] — 2026-10-09
+
+### Added
+
 - `ess-cli/2`: a CLI presentation binding may leave out the `config` and `output` globals; `state`
   is still required. `ess specify cli` compiles it to `ess-cli-plan/2`, which leaves out an
   undeclared global's key and never writes `null`. `ess generate cli` defines no flag for an
@@ -95,9 +108,10 @@
   anything. The entry names the shared answer as `identical_answer`, apart from
   `unsatisfiable_guard`, which still means only that the two guards never overlap. A failed
   scenario still kills such a mutant. Two refusals that differ in error, payload or effect keep
-  their scoring. A report or manifest carrying `identical_answer` is `ess-mutation-report/4` or
-  `ess-mutation-manifest/4`; an earlier manifest carrying it, or one carrying it on a mutant that
-  is not a `precedence-swap`, is refused
+  their scoring. A report or manifest carrying `identical_answer` is the new
+  `ess-mutation-report/5` or `ess-mutation-manifest/5`, and one carrying none keeps its earlier
+  version and bytes; an earlier manifest carrying it, `/4` included, or one carrying it on a mutant
+  that is not a `precedence-swap`, is refused
   (https://github.com/beyond10x/ess/issues/517).
 - Synthesis writes the `wrong_state` scenario of a command whose `when_subject:` sibling
   quantifies over an input list and compares its elements with the row, such as

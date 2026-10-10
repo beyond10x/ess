@@ -30,7 +30,7 @@ Native Rust and Go emit a command-specific typed response record. Only outcomes 
 
 JSON Schema emits the response under `schema/responses/<command>.schema.json`, with the same path validation, referenced-type closure and provenance rules as other schema artifacts. Legacy commands add no response artifact.
 
-Rust targets expose `SemanticCommandResult.response`; Go targets expose `CommandResult.Response`. These contain actual returned values, admitted against the closed declared response fields before comparison. The suite's `ExpectResponsePayload` step names the exact command, outcome and emitted event. It reads only the immediately preceding invocation result; a previous invocation or separately observed event cannot supply authority. Missing required response data, malformed values, undeclared fields and unequal mapped payloads fail. Optional source absence or null is observable and requires absence or null on the optional event target.
+Rust targets expose `SemanticCommandResult.response`; Go targets expose `CommandResult.Response`. These contain actual returned values, admitted against the closed declared response fields before comparison. The suite's `ExpectResponsePayload` step names the exact command, outcome and emitted event. It reads only the immediately preceding invocation result; a previous invocation or separately observed event cannot supply authority. Missing required response data, malformed values, undeclared fields and unequal mapped payloads fail; an undeclared field passes only in a record that declares `undeclared_fields: ignored` (below). Optional source absence or null is observable and requires absence or null on the optional event target.
 
 Go snapshots response-bearing command results before subsequent target callbacks. Returned response and event maps do not share mutable assertion authority. Integer admission and comparison retain exact signed 64-bit values; they do not round an Integer through binary64. Other admitted primitive representations use the existing conformance value contract, including its existing Timestamp text validation boundary.
 
@@ -45,6 +45,31 @@ A response type may be, or reach, a newtype of `String` that declares `alphabet:
 Each runner checks the actual returned value at every reachable position of a constrained type — the field itself, a record field, a union variant, and an `Optional`, `List` or `Map` element — after the shape check: every character is in the alphabet, the text starts with the prefix, and every invariant is true over a lone `value` text fact (`value.count` is its Unicode scalar count). A value that breaks a rule fails the step `ESS-CF-PAYLOAD`. The native, Go and TypeScript runners use the check the one-time observer uses, so the three agree on every vector.
 
 Which invariants are admitted is decided once, at synthesis: an invariant that reads anything but `value` or `value.count`, or that quantifies, is refused by name ("invariant `<predicate>` on response type `<name>` does not decide over its value alone"), and the outcome keeps its `ESS-SYNTH-001` refusal. No observer-side list of predicate operators exists.
+
+### Records that ignore undeclared fields
+
+A response is closed by default, and so is every struct it reaches. Some protocols require a reader to ignore members it does not recognise so that a producer can add extension members; a server following one fails a closed suite the first time it adds a member. From `ess/24` the author states the opening once, with `undeclared_fields: ignored` (beyond10x/ess#500), in exactly two places:
+
+```yaml
+format: ess/24
+types:
+  - name: catalog.keys.PublicKey
+    kind: struct
+    undeclared_fields: ignored     # this record, wherever it is reached
+    fields:
+      - {name: kid, type: String}
+commands:
+  - name: catalog.orders.PlaceOrder
+    undeclared_fields: ignored     # the response object only, never the input
+    response:
+      - {name: order_ref, type: String}
+```
+
+The opening is opt-in and local. `refused` is the default; a document that does not write the key keeps its meaning, its IR bytes and its compiled digest. On a command the key governs the response root only: a struct the response reaches is open only where that struct says so, and its closed siblings still refuse undeclared keys. Declared fields keep their presence and type checks in every case, so a response that omits `order_ref`, or sends it as a number, still fails. Undeclared fields are never readable: guards, bindings, views and `{response: field}` payload sources still name declared fields only. Input stays closed, because the suite never sends undeclared input.
+
+The key is refused by name, at its line, everywhere else: on a command without `response:` as `missing_declaration` (there is nothing for it to govern), and on a newtype, an enum, a union, an entity, an event, an error, a view or an actor as `unsupported_construct`. Event payloads are closed in their schema projections and not in the observers; that inconsistency is recorded and left out of this construct. Under `ess/23` and earlier the key is refused with `unsupported_format_version` naming `ess/24`.
+
+The IR carries a command's key as `undeclared_fields: ignored` on the resolved command and the open structs as `undeclared_fields_ignored`, a set of type names beside `types`; both are left out when nothing is open, which is what keeps closed models' bytes. The set sits beside the types rather than inside the resolved struct body so that every exhaustive pattern over that body, in the generators and the conformance crates, keeps its shape; a reader asks `EssIr::undeclared_fields(<type>)`. Projections write `additionalProperties: true` explicitly at an open object rather than omitting the keyword, because a keyword is an assertion and an absent one reads as an oversight; the observers carry the flag per object, at the response root and per struct declaration.
 
 ## Persisted meaning
 
