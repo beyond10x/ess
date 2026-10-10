@@ -203,6 +203,8 @@ mod view_grant;
 
 pub use seeds::{AdmittedSeeds, SeedAdmissionError, SeedSelection};
 
+pub(crate) use caller::reads as caller_reads;
+
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fmt;
 

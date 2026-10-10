@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added
+
+- `ess-scenario/5`: an authored act states the caller its command is sent as, under `caller:`,
+  each attribute value a literal of its declared type or `{$instance: name}` for an instance
+  arranged with `setup:`. A command that records `{caller: account_id}` now runs from an authored
+  scenario on the `interpreted` target and the generated Go and TypeScript runners. `ess verify
+  conform author` refuses an attribute the act's `actor:` does not declare (`ESS-AUTHOR-013`), a
+  required attribute the command reads that the act leaves unstated (`ESS-AUTHOR-014`), and an
+  instance captured at run time (`ESS-AUTHOR-015`), naming the attribute and the command. An act
+  with no `caller:` sends none and its suite keeps its bytes; `ess-scenario/1` to `/4` refuse the
+  key. A suite step that reaches a caller attribute nothing supplied is still `unsupported`, now
+  with a reason naming the attribute and `caller:` in the text and JSON reports, where it said the
+  model left the value to the implementation.
+
 ### Fixed
 
 - `ess verify conform synthesize` honours a `when_related:` guard that reads a member of a struct

@@ -52,8 +52,8 @@ impl<'ir> Caller<'ir> {
                 Ok(Some(value.clone()))
             }
             None if source.is_optional() => Ok(None),
-            None => Err(Undetermined::NoValue {
-                what: format!("caller attribute `{attribute}`"),
+            None => Err(Undetermined::NoCaller {
+                attribute: attribute.to_owned(),
             }),
         }
     }
@@ -79,8 +79,8 @@ impl Invocation<'_> {
         source: &ResolvedTypeRef,
     ) -> Result<Option<Node>, Undetermined> {
         self.caller
-            .ok_or_else(|| Undetermined::NoValue {
-                what: format!("authenticated caller attribute `{attribute}`"),
+            .ok_or_else(|| Undetermined::NoCaller {
+                attribute: attribute.to_owned(),
             })?
             .value(ir, attribute, source)
     }
