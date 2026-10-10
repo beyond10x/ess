@@ -1081,7 +1081,7 @@ pub(super) fn wrong_state_overlap(
         None,
         None,
         None,
-        (&BTreeMap::new(), &addressed.steps),
+        (&BTreeMap::new(), &addressed.steps, &BTreeMap::new()),
     )?;
     addressed.steps.extend(row.steps);
     addressed.source.extend(row.source);
@@ -1415,7 +1415,7 @@ fn searched(
         input,
         None,
         None,
-        (&pins, known),
+        (&pins, known, &BTreeMap::new()),
     )?;
     let owners = subject_fact::bind_pinned(
         ir,
@@ -2190,6 +2190,7 @@ fn arranged_at(
             setup.instance.as_ref(),
             &setup.bound,
         );
+        let fixed = subject_identity(ir, outcome, &setup);
         let (mut row, first, input) = with_row(
             ir,
             command,
@@ -2200,7 +2201,7 @@ fn arranged_at(
             None,
             goal,
             around,
-            (&pinned, &setup.steps),
+            (&pinned, &setup.steps, &fixed),
         )?;
         let owners = subject_fact::bind_pinned(
             ir, command, outcome, entity, actors, &mut row, &input, &pinned,
@@ -2231,6 +2232,27 @@ fn arranged_at(
     setup.source.insert(entity_ref(entity));
     prepend_beside(&mut setup, others);
     Ok((setup, input, lonely))
+}
+
+/// The input field naming `outcome`'s subject, with the struct identity the arrangement created
+/// that subject under, where the branch is sent the captured instance and the arrangement sent a
+/// literal (beyond10x/ess#521): a guard reading a member of it (`input.key.team`) is decided on
+/// that value. Empty for a scalar identity, a subject the branch creates, and one the arrangement
+/// holds only as an observed value.
+fn subject_identity(
+    ir: &EssIr,
+    outcome: &ResolvedOutcome,
+    setup: &Setup,
+) -> BTreeMap<String, Node> {
+    let (Some(subject), Some(instance)) = (&outcome.subject, &setup.instance) else {
+        return BTreeMap::new();
+    };
+    let ResolvedInstance::Supplied { field } = &subject.instance else {
+        return BTreeMap::new();
+    };
+    super::arranged_identity(ir, &setup.steps, instance)
+        .map(|identity| BTreeMap::from([(field.name.clone(), identity)]))
+        .unwrap_or_default()
 }
 
 /// The branch's own arrangement, ahead of the related row [`prepare_at_in`] arranges for its guard.
@@ -2949,6 +2971,11 @@ fn without_row_each(
 /// place in the block and the distinction its input is searched at — and the entities being
 /// arranged around it. A `goal` further requires every predicate it names to read as it says on
 /// the row, crossed with the input.
+///
+/// `fixed` are the input fields whose value the arrangement already decided — a struct identity
+/// the subject was created under, sent as the captured instance (beyond10x/ess#521): every input
+/// tried holds that value there, and the row is steered toward it instead, so a guard reading a
+/// member of it is decided on the value the command is sent.
 // One argument per thing the search is told (the goal joined the seven, beyond10x/ess#211).
 #[allow(clippy::too_many_arguments)]
 fn with_row(
@@ -2961,9 +2988,10 @@ fn with_row(
     chosen: Option<&BTreeMap<String, Node>>,
     goal: Option<&Goal>,
     around: Option<Around<'_>>,
-    (pins, known): (
+    (pins, known, fixed): (
         &BTreeMap<String, crate::scenario::InstanceName>,
         &[super::ScenarioStep],
+        &BTreeMap<String, Node>,
     ),
 ) -> Result<(Arrangement, usize, BTreeMap<String, Node>), RefusalCause> {
     let mut guards: Vec<&Predicate> = command.outcomes.iter().filter_map(input_guard).collect();
@@ -3022,7 +3050,13 @@ fn with_row(
             // decided only on an input naming an arranged owner: the row's own, or a second one
             // (beyond10x/ess#271). The caller sends the owner named through `Setup::bound`, and a
             // link input already bound (`pins`) names that owner whatever is chosen here.
-            subject_fact::naming_owners(ir, command, entity, node, inputs, pins)
+            let mut inputs = subject_fact::naming_owners(ir, command, entity, node, inputs, pins);
+            // An input field the arrangement decided is sent holding that value, whatever was
+            // searched here (beyond10x/ess#521).
+            for input in &mut inputs {
+                input.extend(fixed.clone());
+            }
+            inputs
         };
         Ok(inputs.into_iter().find(|input| {
             meets(node, input)
@@ -3039,12 +3073,19 @@ fn with_row(
                     ))
         }))
     };
+    // The row is steered toward the values the decided input fields hold, beside the command's own
+    // predicates (beyond10x/ess#521); with none decided, the hints are those predicates alone.
+    let hints = [
+        predicates.clone(),
+        subject_fact::grounded_on_input(ir, entity, fixed, &predicates),
+    ]
+    .concat();
     let search = |strict: bool, under: subject_fact::Under<'_>| {
         subject_fact::search_under(
             ir,
             entity,
             actors,
-            &predicates,
+            &hints,
             (Distinction::further(first), "related row"),
             arranging,
             under,

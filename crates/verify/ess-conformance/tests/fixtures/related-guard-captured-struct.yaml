@@ -1,0 +1,148 @@
+format: ess/23
+system: demo
+version: v1
+domain: demo.desk
+
+types:
+  - name: demo.desk.SeatKey
+    kind: struct
+    fields:
+      - name: team
+        type: String
+      - name: seat
+        type: String
+
+entities:
+  - name: demo.desk.Person
+    identity:
+      name: person_id
+      type: String
+    fields:
+      - name: team
+        type: String
+    lifecycle:
+      initial: Active
+      states: [Active]
+      terminal: [Active]
+
+  - name: demo.desk.Seat
+    identity:
+      name: key
+      type: demo.desk.SeatKey
+    fields:
+      - name: person_id
+        type: String
+    relations:
+      - name: person
+        kind: references
+        target: demo.desk.Person
+        cardinality: one
+        via: person_id
+    lifecycle:
+      initial: Taken
+      states: [Taken, Moved]
+      terminal: [Moved]
+      transitions:
+        - name: reassign
+          from: [Taken]
+          to: Moved
+
+errors:
+  - name: demo.desk.PersonElsewhere
+    summary: The person is in another team.
+    fields:
+      - name: person_id
+        type: String
+
+commands:
+  - name: demo.desk.Join
+    input:
+      - name: person_id
+        type: String
+      - name: team
+        type: String
+    outcomes:
+      - name: joined
+        creates: demo.desk.Person
+        instance: person_id
+        emits: [demo.desk.Joined]
+        payload:
+          demo.desk.Joined: {person_id: input.person_id}
+        sets: {team: input.team}
+
+  - name: demo.desk.Assign
+    input:
+      - name: key
+        type: demo.desk.SeatKey
+      - name: person_id
+        type: String
+    outcomes:
+      - name: nobody
+        when_related: {via: input.person_id, exists: false}
+        error: demo.desk.PersonElsewhere
+      # The person must be in the seat's team: the guard reads a member of the struct input.
+      - name: elsewhere
+        when_related: {via: input.person_id, predicate: team != input.key.team}
+        error: demo.desk.PersonElsewhere
+      - name: assigned
+        creates: demo.desk.Seat
+        instance: key
+        emits: [demo.desk.Assigned]
+        payload:
+          demo.desk.Assigned: {key: input.key, person_id: input.person_id}
+        sets: {person_id: input.person_id}
+
+  - name: demo.desk.Reassign
+    input:
+      - name: key
+        type: demo.desk.SeatKey
+      - name: person_id
+        type: String
+    outcomes:
+      - name: nobody
+        when_related: {via: input.person_id, exists: false}
+        error: demo.desk.PersonElsewhere
+      - name: elsewhere
+        when_related: {via: input.person_id, predicate: team != input.key.team}
+        error: demo.desk.PersonElsewhere
+      - name: reassigned
+        moves: demo.desk.Seat.reassign
+        instance: key
+        emits: [demo.desk.Assigned]
+        payload:
+          demo.desk.Assigned: {key: input.key, person_id: input.person_id}
+        sets: {person_id: input.person_id}
+
+events:
+  - name: demo.desk.Joined
+    fields:
+      - name: person_id
+        type: String
+  - name: demo.desk.Assigned
+    fields:
+      - name: key
+        type: demo.desk.SeatKey
+      - name: person_id
+        type: String
+
+views:
+  - name: demo.desk.People
+    source: demo.desk.Person
+    consistency: read_your_writes
+    fields:
+      - name: person_id
+        type: String
+      - name: team
+        type: String
+      - name: state
+        type: demo.desk.Person.State
+  - name: demo.desk.Seats
+    source: demo.desk.Seat
+    consistency: read_your_writes
+    fields:
+      - name: key
+        type: demo.desk.SeatKey
+      - name: person_id
+        type: String
+      - name: state
+        type: demo.desk.Seat.State
