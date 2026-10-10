@@ -1,0 +1,37 @@
+type: ess-scenario/5
+domain: ledger.notes
+scenario: a-note-carries-the-callers-account
+summary: A note opened by a member carries the member's account.
+arrange:
+  - instance: account
+    entity: ledger.notes.Account
+    setup:
+      identity: 3f1d5b7e-0000-4000-8000-000000000001
+      fields: {label: main}
+      state: Active
+  - instance: note
+    entity: ledger.notes.Note
+timeline:
+  - at: 2026-01-05T09:00:00Z
+    command: ledger.notes.OpenNote
+    actor: ledger.notes.Member
+    caller: {account_id: {$instance: account}}
+    input: {title: first}
+    outcome: opened
+    events:
+      - event: ledger.notes.NoteOpened
+        payload: {account_id: 3f1d5b7e-0000-4000-8000-000000000001}
+    capture: {instance: note, event: ledger.notes.NoteOpened, field: note_id}
+  - at: 2026-01-05T09:01:00Z
+    command: ledger.notes.OpenNote
+    actor: ledger.notes.Member
+    caller: {account_id: 3f1d5b7e-0000-4000-8000-000000000002}
+    input: {title: second}
+    outcome: opened
+assert:
+  - view: ledger.notes.Notes
+    contains:
+      {note_id: {$instance: note}, account_id: 3f1d5b7e-0000-4000-8000-000000000001, title: first}
+  - view: ledger.notes.Notes
+    contains:
+      {account_id: 3f1d5b7e-0000-4000-8000-000000000002, title: second}

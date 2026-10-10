@@ -520,6 +520,12 @@ requests only the complete response shape check. Every selected `returns: true` 
 that shape check even without authored literals. No event, stored subject or view is invented.
 Earlier scenario readers refuse the header; earlier versions refuse the new key.
 
+`ess-scenario/5`, unreleased, lets an act state the caller its command is sent as, under
+`caller: {attribute: value}`: a literal of the attribute's declared type, or `{$instance: name}` for an
+instance arranged with `setup:`. The values compile into the step's suite/26 `caller`, so no suite
+format moves, and an act with no `caller:` keeps its suite's bytes. Earlier versions refuse the
+key, and an older `ess` refuses the header.
+
 ## `ess-normalization/` — normalization recipes
 
 | Version | Released in | What changed |
@@ -542,7 +548,7 @@ Generated maps for the earlier formats stay byte-identical at the same generator
 | `ess-impact/` | [0.19.0][r19] | `ess-impact/2` is the version [0.1.0][r1] shipped. `/3` versions the corrected dependency vocabulary and the embedded delta. |
 | `ess-conformance-run/` | [0.20.0][r20] | `/2` is the checked detailed run output. |
 | `ess-target-failure/` | [0.20.0][r20], [0.23.0][r23] | `/2`, then `/3` with the `accessor-resource` cause. |
-| `ess-scenario/` | [0.23.0][r23], [0.35.0][r35], [0.39.0][r39] | `/2` authored setup establishes typed, isolated backend entity rows. `/3`, added in [0.35.0][r35], adds typed `fixtures:` and `{$fixture: name}` references resolved before the scenario starts. `/4`, added in [0.39.0][r39], adds literal `response:` assertions on an act. |
+| `ess-scenario/` | [0.23.0][r23], [0.35.0][r35], [0.39.0][r39] | `/2` authored setup establishes typed, isolated backend entity rows. `/3`, added in [0.35.0][r35], adds typed `fixtures:` and `{$fixture: name}` references resolved before the scenario starts. `/4`, added in [0.39.0][r39], adds literal `response:` assertions on an act. `/5`, unreleased, adds an act's `caller:` values. |
 | `infra-observation/` | [0.1.0][r1], [0.33.0][r33] | `/2` is a reduced, deliberately partial recovery profile, not a superset of `/1`. `/3` is the full scan with each Secret value recorded as `{"present": true}`: the key name, no digest, no length. `/1` wrote each value's unsalted SHA-256 and byte length, which confirm a guessed low-entropy secret to anyone holding the file. Same fields, new meaning, so a `/1` reader must reject `/3`; this build still reads `/1` and discards its digests. |
 | `infra-ir/` | [0.33.0][r33] | `/3` records each Secret key as present and nothing derived from its value, and is what every full observation with a Secret key compiles to, `/1` included. An IR without a Secret key keeps `/1` and its bytes. A persisted `/1` still reads, returned as `/3` with its Secret digests dropped and a different model digest, so nothing derived from it chains to the `/1` file's own digest; so drift reports a Secret's added and removed keys and never a changed value. An older reader refuses `/3`. |
 | `infra-drift/` | [0.33.0][r33] | `/2` is the namespace topology profile. `/3` is the full-scan comparison with one meaning changed: a Secret's `changed_keys` is always empty, so an empty list means the value is unknown, where under `/1` it meant not rotated. Serialize-only; `/1` documents already written keep their meaning. |

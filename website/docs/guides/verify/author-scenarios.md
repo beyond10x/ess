@@ -198,6 +198,47 @@ A served command no declared actor is granted is refused to every caller, so an 
 with no `actor:` and expects it to run is refused with `ESS-AUTHOR-040`. Grant the command to an
 actor and send the act as that actor, or expect the refusal as above.
 
+## State the caller an act is sent as
+
+A command may read an attribute of its caller: `{caller: account_id}` in `sets:` or `payload:`,
+`caller.agent_id` in a guard. A generated scenario picks those values itself. An authored act
+states them under `caller:`, in `type: ess-scenario/5`:
+
+```yaml
+type: ess-scenario/5
+arrange:
+  - instance: account
+    entity: ledger.notes.Account
+    setup:
+      identity: 3f1d5b7e-0000-4000-8000-000000000001
+      fields: {label: main}
+      state: Active
+timeline:
+  - at: 2026-01-05T09:00:00Z
+    command: ledger.notes.OpenNote
+    actor: ledger.notes.Member
+    caller: {account_id: {$instance: account}}
+    input: {title: first}
+    outcome: opened
+```
+
+Each value is a literal of the attribute's declared type, or `{$instance: name}` for an instance
+arranged with `setup:`, whose identity the file states. The act's `execute_command` carries the
+values as its `caller`, and the target sends the command authenticated as that caller, exactly as
+it does for a generated suite. An act with no `caller:` sends none, and its suite keeps its bytes.
+
+| When | Refusal |
+|---|---|
+| `caller:` names an attribute the act's `actor:` does not declare, or the act names no `actor:` | `ESS-AUTHOR-013`, naming the attribute, the actor and the command |
+| the command reads a required attribute the act does not state, or the act states a caller and leaves one of the actor's required attributes out | `ESS-AUTHOR-014`, naming the attribute and the command |
+| a value is not of the attribute's type, or `{$instance: name}` names an instance captured at run time | `ESS-AUTHOR-015`, naming the attribute |
+| the document is `ess-scenario/1` to `/4` | `ESS-AUTHOR-001`, naming `type: ess-scenario/5` |
+
+A captured identity is chosen by the target while the scenario runs, and a caller's values are
+fixed when the suite is written, so an instance named under `caller:` has to be arranged with
+`setup:`. A suite that reaches a caller attribute nothing supplied, such as one written by an
+older `ess`, reports the scenario `unsupported` with a reason naming the attribute.
+
 ## Establish backend state in an authored scenario
 
 `ess-scenario/2`, introduced in 0.23.0, supports typed setup for entities whose rows arrive

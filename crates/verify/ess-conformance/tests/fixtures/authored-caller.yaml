@@ -1,0 +1,58 @@
+format: ess/19
+system: ledger
+version: v1
+domain: ledger.notes
+types:
+  - {name: ledger.notes.NoteId, kind: newtype, of: Uuid}
+  - {name: ledger.notes.AccountId, kind: newtype, of: Uuid}
+entities:
+  - name: ledger.notes.Account
+    identity: {name: account_id, type: ledger.notes.AccountId}
+    fields: [{name: label, type: String}]
+    lifecycle: {initial: Active, states: [Active], terminal: [Active], transitions: []}
+  - name: ledger.notes.Note
+    identity: {name: note_id, type: ledger.notes.NoteId}
+    fields:
+      - {name: account_id, type: ledger.notes.AccountId}
+      - {name: title, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open], transitions: []}
+actors:
+  - name: ledger.notes.Member
+    attributes: [{name: account_id, type: ledger.notes.AccountId}]
+    may: [ledger.notes.OpenNote, ledger.notes.OpenAccount]
+commands:
+  - name: ledger.notes.OpenAccount
+    input: [{name: label, type: String}]
+    outcomes:
+      - name: opened
+        creates: ledger.notes.Account
+        instance: account_id
+        sets: {label: input.label}
+        emits: [ledger.notes.AccountOpened]
+        payload:
+          ledger.notes.AccountOpened: {account_id: {generated: true}}
+  - name: ledger.notes.OpenNote
+    input: [{name: title, type: String}]
+    outcomes:
+      - name: opened
+        creates: ledger.notes.Note
+        instance: note_id
+        sets: {account_id: {caller: account_id}, title: input.title}
+        emits: [ledger.notes.NoteOpened]
+        payload:
+          ledger.notes.NoteOpened: {note_id: {generated: true}, account_id: {caller: account_id}}
+events:
+  - name: ledger.notes.AccountOpened
+    fields: [{name: account_id, type: ledger.notes.AccountId}]
+  - name: ledger.notes.NoteOpened
+    fields:
+      - {name: note_id, type: ledger.notes.NoteId}
+      - {name: account_id, type: ledger.notes.AccountId}
+views:
+  - name: ledger.notes.Notes
+    source: ledger.notes.Note
+    consistency: read_your_writes
+    fields:
+      - {name: note_id, type: ledger.notes.NoteId}
+      - {name: account_id, type: ledger.notes.AccountId}
+      - {name: title, type: String}

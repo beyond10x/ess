@@ -131,7 +131,7 @@ refusal[ESS-AUTHOR-012]: `billing.invoice/authored/a-scenario` in a.yaml
 | Code | Meaning | Repair |
 |---|---|---|
 | `ESS-AUTHOR-001` | The file is not a document this format can read. | The document is YAML with the keys `type`, `domain`, `scenario` and `summary`; a key it does not know is refused rather than ignored. |
-| `ESS-AUTHOR-002` | The document claims a format this build does not implement. | Write `type: ess-scenario/1`, `ess-scenario/2` for entity setup, `ess-scenario/3` for fixture values, or `ess-scenario/4` for direct responses. |
+| `ESS-AUTHOR-002` | The document claims a format this build does not implement. | Write `type: ess-scenario/1`, `ess-scenario/2` for entity setup, `ess-scenario/3` for fixture values, `ess-scenario/4` for direct responses, or `ess-scenario/5` for caller values. |
 | `ESS-AUTHOR-003` | Two files produce the same scenario id. | Two files name one scenario in one domain; rename one of them. |
 | `ESS-AUTHOR-004` | The model declares no such bounded context. | Name a bounded context the specification declares, or add it to the model. |
 | `ESS-AUTHOR-005` | The model declares no such entity. | Name an entity the specification declares; an authored scenario acts on the model's own instances and invents none. |
