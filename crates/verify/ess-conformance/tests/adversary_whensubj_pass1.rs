@@ -346,7 +346,12 @@ fn a_filtered_eventual_view_reads_nothing_and_the_flag_is_named_unobserved() {
         } if scenario.to_string() == started => Some(unobserved.clone()),
         _ => None,
     });
-    assert_eq!(unobserved, Some(vec!["fast".to_owned()]), "{:?}", result.notes);
+    assert_eq!(
+        unobserved,
+        Some(vec!["fast".to_owned()]),
+        "{:?}",
+        result.notes
+    );
 }
 
 /// #173 says the refusal fires "with and without a `wrong_state` outcome"; the unit's suite

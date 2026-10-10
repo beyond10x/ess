@@ -224,7 +224,11 @@ fn without_a_view_projecting_the_flag_the_branch_is_written_and_the_flag_named_u
         .filter(|(code, _)| code == &format!("ESS-SYNTH-001 {STARTED}"))
         .collect();
     assert!(about.is_empty(), "{about:#?}");
-    assert!(result.suite.scenarios.keys().any(|id| id.to_string() == STARTED));
+    assert!(result
+        .suite
+        .scenarios
+        .keys()
+        .any(|id| id.to_string() == STARTED));
     assert_eq!(
         unobserved_in(&result, STARTED),
         Some(vec!["fast".to_owned()]),
