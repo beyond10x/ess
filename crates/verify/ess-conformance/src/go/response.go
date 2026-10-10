@@ -12,6 +12,12 @@ type responseObservation struct {
 	// written; constraints are the same rules admitted against the declarations.
 	RawConstraints json.RawMessage `json:"constraints,omitempty"`
 	constraints    map[string]oneTimeConstraints
+	// UndeclaredFields is "ignored" where the response object admits keys it does not declare, and
+	// UndeclaredFieldsIgnored names the struct declarations that do (suite/48 and /49,
+	// beyond10x/ess#500). Both are absent when closed; opened is the admitted set of names.
+	UndeclaredFields        string   `json:"undeclared_fields,omitempty"`
+	UndeclaredFieldsIgnored []string `json:"undeclared_fields_ignored,omitempty"`
+	opened                  map[string]bool
 }
 
 func (r *responseObservation) UnmarshalJSON(raw []byte) error {
@@ -43,6 +49,15 @@ func (r *responseObservation) UnmarshalJSON(raw []byte) error {
 		}
 		r.constraints = constraints
 	}
+	var document map[string]any
+	if err := json.Unmarshal(raw, &document); err != nil {
+		return err
+	}
+	opened, err := admitUndeclaredFields(document, r.Declarations)
+	if err != nil {
+		return err
+	}
+	r.opened = opened
 	if r.Nested != nil {
 		if err := normalizeNestedResponse(r); err != nil {
 			return err
@@ -338,12 +353,14 @@ func (r responseObservation) compare(response, payload map[string]Node) error {
 	for _, field := range r.Fields {
 		names[field.Name] = true
 	}
+	// An opened response (`undeclared_fields: ignored`) admits keys it does not declare and reads
+	// nothing of them; every declared field is still checked below.
 	for name := range response {
-		if !names[name] {
+		if !names[name] && r.UndeclaredFields != "ignored" {
 			return fmt.Errorf("response has an undeclared field")
 		}
 	}
-	observer := selectionObservation{Declarations: r.Declarations, responseMode: true}
+	observer := selectionObservation{Declarations: r.Declarations, responseMode: true, openStructs: r.opened}
 	bytes := 0
 	for _, field := range r.Fields {
 		value, present := response[field.Name]
@@ -407,11 +424,14 @@ func (r *run) expectResponsePayload(index int, step Step) bool {
 }
 
 func admitResponse(value any, major int) error {
-	root, err := closed(value, "command outcome event fields declarations mappings targets", "nested constraints")
+	root, err := closed(value, "command outcome event fields declarations mappings targets", "nested constraints undeclared_fields undeclared_fields_ignored")
 	if err != nil {
 		return err
 	}
 	if err := responseConstraintsMajor(root, major); err != nil {
+		return err
+	}
+	if err := undeclaredFieldsMajor(root, major); err != nil {
 		return err
 	}
 	if nested, exists := root["nested"]; exists {

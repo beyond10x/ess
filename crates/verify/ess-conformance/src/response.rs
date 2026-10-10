@@ -3,10 +3,10 @@ pub mod path;
 use crate::scenario::{CommandRef, EventRef, OutcomeRef};
 use crate::selection::Declaration;
 use ess_compiler::ir::{EssIr, ResolvedCommand, ResolvedOutcome, ResolvedPayloadValue};
-use ess_domain::types::Presence;
+use ess_domain::types::{Presence, UndeclaredFields};
 use ess_domain::{Field, QualifiedName, TypeRef};
 use ess_primitives::node::Node;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Standalone declaration authority for a response-derived event payload.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -33,6 +33,15 @@ pub struct Observation {
     /// constrain (suite/46 and /47, beyond10x/ess#499); absent from the bytes when empty.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub constraints: BTreeMap<QualifiedName, crate::one_time_response::StringConstraints>,
+    /// `ignored` where the command declares `undeclared_fields: ignored` (suite/48 and /49,
+    /// beyond10x/ess#500): the response object admits keys it does not declare. Absent from the
+    /// bytes when `refused`, the closed default.
+    #[serde(default, skip_serializing_if = "UndeclaredFields::is_refused")]
+    pub undeclared_fields: UndeclaredFields,
+    /// The struct declarations that admit keys they do not declare, wherever the response reaches
+    /// them (suite/48 and /49). Empty, and then absent from the bytes, when every one is closed.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub undeclared_fields_ignored: BTreeSet<QualifiedName>,
 }
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -51,6 +60,10 @@ struct RawObservation {
         deserialize_with = "crate::direct_response::constraints_present"
     )]
     constraints: Option<BTreeMap<QualifiedName, crate::one_time_response::StringConstraints>>,
+    #[serde(default, deserialize_with = "crate::undeclared_fields::root_present")]
+    undeclared_fields: UndeclaredFields,
+    #[serde(default, deserialize_with = "crate::undeclared_fields::opened_present")]
+    undeclared_fields_ignored: BTreeSet<QualifiedName>,
 }
 fn nested_present<'de, D: serde::Deserializer<'de>>(
     d: D,
@@ -70,6 +83,8 @@ impl TryFrom<RawObservation> for Observation {
             targets: r.targets,
             nested: r.nested,
             constraints: r.constraints.unwrap_or_default(),
+            undeclared_fields: r.undeclared_fields,
+            undeclared_fields_ignored: r.undeclared_fields_ignored,
         };
         result.validate()?;
         Ok(result)
@@ -119,6 +134,10 @@ impl Observation {
                 fields.iter().chain(&targets),
             )?;
             let constraints = crate::direct_response::response_constraints(ir, &declarations)?;
+            // `undeclared_fields: ignored` (ess/24) opens the response object and each struct that
+            // says so. A struct reached only from a mapped event target is never walked as a
+            // response value, so naming it changes nothing.
+            let undeclared_fields_ignored = crate::undeclared_fields::opened(ir, &declarations);
             let observation = Self {
                 command: CommandRef::new(command.name.clone()),
                 outcome: OutcomeRef::new(
@@ -132,6 +151,8 @@ impl Observation {
                 targets,
                 nested,
                 constraints,
+                undeclared_fields: command.undeclared_fields,
+                undeclared_fields_ignored,
             };
             observation.validate()?;
             result.push(observation);
@@ -161,6 +182,7 @@ impl Observation {
             &self.declarations,
             &self.constraints,
         )?;
+        crate::undeclared_fields::validate(&self.declarations, &self.undeclared_fields_ignored)?;
         for target in &self.targets {
             let source = self
                 .mappings
@@ -187,18 +209,22 @@ impl Observation {
     ) -> Result<(), String> {
         self.validate()?;
         let response = response.ok_or("command returned no response")?;
-        if response
-            .keys()
-            .any(|name| !self.fields.iter().any(|f| &f.name == name))
+        // An opened response (`undeclared_fields: ignored`) admits keys it does not declare and reads
+        // nothing of them; every declared field is still checked below.
+        if !self.undeclared_fields.is_ignored()
+            && response
+                .keys()
+                .any(|name| !self.fields.iter().any(|f| &f.name == name))
         {
             return Err("response has an undeclared field".into());
         }
         let mut bytes = 0;
         for field in &self.fields {
-            crate::selection::validate_response_value(
+            crate::selection::validate_opened_response_value(
                 &field.type_ref,
                 response.get(&field.name),
                 &self.declarations,
+                &self.undeclared_fields_ignored,
                 &mut bytes,
             )
             .map_err(|e| format!("response field {}: {e}", field.name))?;

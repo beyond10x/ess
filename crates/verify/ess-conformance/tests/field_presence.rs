@@ -95,7 +95,7 @@ fn suite_formats_24_and_25_remain_supported_and_future_versions_refuse() {
             .expect("well formed")
             .is_supported());
     }
-    assert!(!SuiteFormat::parse("ess-conformance/48")
+    assert!(!SuiteFormat::parse("ess-conformance/50")
         .expect("well formed")
         .is_supported());
 }

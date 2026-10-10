@@ -1680,7 +1680,7 @@ fn typescript_one_time_malformed_and_old_authority_refuses_before_callbacks() {
     assert!(checked >= 20, "the malformed vector inventory actually ran");
     let original =
         std::fs::read_to_string(fixture_root.join("one-time-response/valid-string.json")).unwrap();
-    for version in ["ess-conformance/32", "ess-conformance/48"] {
+    for version in ["ess-conformance/32", "ess-conformance/50"] {
         let raw = original.replace("ess-conformance/34", version);
         refused_depth_document(
             &raw,

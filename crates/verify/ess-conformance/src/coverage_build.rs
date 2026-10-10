@@ -555,9 +555,14 @@ fn coverage_version(
     // Counted event claims (beyond10x/ess#427) are cumulative over every pair below, seeds included.
     // String-newtype constraints on response observations (beyond10x/ess#499) are cumulative over
     // every pair below, the counted one included.
+    // Ignored undeclared response fields (beyond10x/ess#500) are cumulative over every pair below,
+    // the constrained one included.
+    let opened = crate::undeclared_fields::coverage_floor(suite).is_some();
     let constrained = crate::direct_response::constrained_coverage_floor(suite).is_some();
     let counted = crate::event_multiplicity::coverage_floor(suite).is_some();
-    crate::scenario::SuiteFormat::parse(if constrained {
+    crate::scenario::SuiteFormat::parse(if opened {
+        "ess-conformance/49"
+    } else if constrained {
         "ess-conformance/47"
     } else if counted {
         "ess-conformance/45"

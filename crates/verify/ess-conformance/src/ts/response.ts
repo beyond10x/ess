@@ -38,7 +38,11 @@ import type {
   SelectionDeclaration,
   Step,
 } from './runtime.js';
-import { checkResponseConstraints } from './direct_response.js';
+import {
+  admitUndeclaredFields,
+  checkResponseConstraints,
+  undeclaredFieldsMajor,
+} from './direct_response.js';
 import type { StringConstraints } from './one_time_response.js';
 
 /** One command's declared response, and the event field each returned member must equal. */
@@ -59,6 +63,13 @@ export interface ResponseObservation {
   nested?: NestedResponseTargets;
   /** String-newtype rules of suite/46 and /47 (beyond10x/ess#499), checked on every actual value. */
   constraints?: Record<string, StringConstraints>;
+  /**
+   * `ignored` where the response object admits keys it does not declare (suite/48 and /49,
+   * beyond10x/ess#500); absent when closed.
+   */
+  undeclaredFields?: 'ignored';
+  /** The struct declarations that admit keys they do not declare (suite/48 and /49). */
+  openStructs?: Set<string>;
 }
 
 const BYTE_LIMIT = 1048576;
@@ -125,7 +136,8 @@ export function decodeResponseObservation(value: unknown): ResponseObservation {
   const document = closed(
     value,
     '',
-    'command outcome event fields declarations mappings targets nested constraints',
+    'command outcome event fields declarations mappings targets nested constraints ' +
+      'undeclared_fields undeclared_fields_ignored',
   );
   const outcomeRaw =
     document.outcome === undefined ? {} : closed(document.outcome, '', 'command outcome');
@@ -194,6 +206,9 @@ export function decodeResponseObservation(value: unknown): ResponseObservation {
   if (Object.keys(presence).length > 0) {
     observation.presence = presence;
   }
+  const opened = admitUndeclaredFields(document, declarations);
+  if (opened.undeclaredFields !== undefined) observation.undeclaredFields = opened.undeclaredFields;
+  if (opened.openStructs.size > 0) observation.openStructs = opened.openStructs;
   if (Object.hasOwn(document, 'nested')) {
     observation.nested = decodeNestedResponse(document.nested);
     normalizeNestedResponse(observation);
@@ -224,6 +239,13 @@ function marshalShape(observation: ResponseObservation): Node {
     declarations,
     mappings: observation.mappings,
     targets: fields(observation.targets),
+    // Go marshals the opened-response members only where they are carried (`omitempty`).
+    ...(observation.undeclaredFields === undefined
+      ? {}
+      : { undeclared_fields: observation.undeclaredFields }),
+    ...(observation.openStructs === undefined
+      ? {}
+      : { undeclared_fields_ignored: [...observation.openStructs] }),
   };
 }
 
@@ -856,10 +878,12 @@ function checkType(
 /** The response-mode value check, which is unit A's and reaches back into this file's grammar. */
 function responseObserver(
   declarations: Record<string, SelectionDeclaration>,
+  openStructs?: Set<string>,
 ): SelectionObservation {
   const observer = new SelectionObservation();
   observer.declarations = declarations;
   observer.responseMode = true;
+  if (openStructs !== undefined) observer.openStructs = openStructs;
   return observer;
 }
 
@@ -880,12 +904,14 @@ export function compareResponse(
     throw new Error('command returned no response');
   }
   const names = new Set(observation.fields.map((field) => field.name));
+  // An opened response (`undeclared_fields: ignored`) admits keys it does not declare and reads
+  // nothing of them; every declared field is still checked below.
   for (const field of Object.keys(response)) {
-    if (!names.has(field)) {
+    if (!names.has(field) && observation.undeclaredFields !== 'ignored') {
       throw new Error('response has an undeclared field');
     }
   }
-  const observer = responseObserver(observation.declarations);
+  const observer = responseObserver(observation.declarations, observation.openStructs);
   const counter: ByteCounter = { bytes: 0 };
   for (const field of observation.fields) {
     try {
@@ -987,8 +1013,9 @@ export function admitResponse(value: unknown, major = 21): void {
   const root = closed(
     value,
     'command outcome event fields declarations mappings targets',
-    'nested constraints',
+    'nested constraints undeclared_fields undeclared_fields_ignored',
   );
+  undeclaredFieldsMajor(root, major);
   if (Object.hasOwn(root, 'nested') && major < 34) {
     throw new Error('nested response observations require suite/34 or /35');
   }

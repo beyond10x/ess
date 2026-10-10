@@ -12,6 +12,15 @@
   (`missing_declaration`), on an event, an error and every other declaration, and under an
   earlier format, naming `ess/24`. The IR carries it on the command and lists the open structs
   beside `types` (https://github.com/beyond10x/ess/issues/500).
+- `ess-conformance/48` (`/49` with coverage): `expect_direct_response` and
+  `expect_response_payload` carry `undeclared_fields: ignored` for an opened response object and
+  `undeclared_fields_ignored` for the opened struct declarations it reaches, each left out when
+  closed. The native, Go and TypeScript observers admit an undeclared key at exactly those objects
+  and keep every declared field's presence and type check; a closed response, a closed sibling
+  struct and a union still fail an undeclared key (`ESS-CF-PAYLOAD`). Readers through `/47` refuse
+  a `/48` suite by version, every reader refuses either member under a lower major, and a suite
+  without an opened object keeps its bytes and format. A one-time response that is opened is
+  refused at synthesis by name (https://github.com/beyond10x/ess/issues/500).
 
 ## [0.57.0] — 2026-10-09
 

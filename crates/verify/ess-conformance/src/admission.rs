@@ -206,7 +206,7 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
     if !crate::go::admitted_major(version.major()) {
         return Err(p["suite_version"].error(
             "UnsupportedSuiteVersion",
-            "execution readers admit suite majors 1–47",
+            "execution readers admit suite majors 1–49",
         ));
     }
     match p.get("synthesis_seeds") {
@@ -264,11 +264,12 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
             | 43
             | 45
             | 47
+            | 49
     ) != root.contains_key("coverage")
     {
         return Err(value.error(
             "InvalidCoverage",
-            "coverage is required exactly for odd suite majors from /5 through /47",
+            "coverage is required exactly for odd suite majors from /5 through /49",
         ));
     }
     for scenario in root["scenarios"].object()?.values() {
@@ -757,6 +758,7 @@ fn construct_formats(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
     crate::synthesis_seeds::admit(suite, None)?;
     crate::one_time_response::admit(suite)?;
     crate::direct_response::admit(suite)?;
+    crate::undeclared_fields::admit(suite)?;
     crate::delivery_context::admit(suite)?;
     crate::no_invocation::admit(suite)?;
     crate::refusal_policy::admit(suite)?;

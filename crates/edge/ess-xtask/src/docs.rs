@@ -211,6 +211,9 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     // String-newtype constraints on response observations (beyond10x/ess#499).
     ("ess-conformance", 46, Some("0.57.0")),
     ("ess-conformance", 47, Some("0.57.0")),
+    // Ignored undeclared fields on response observations (beyond10x/ess#500).
+    ("ess-conformance", 48, None),
+    ("ess-conformance", 49, None),
     ("ess-composition", 1, Some("0.4.0")),
     ("ess-composition", 2, Some("0.38.0")),
     ("ess-composition", 3, Some("0.40.0")),

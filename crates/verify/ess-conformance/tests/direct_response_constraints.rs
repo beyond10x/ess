@@ -552,13 +552,13 @@ fn an_older_go_reader_refuses_a_suite_46_by_version() {
     let runtime = directory.join("essconform/runtime.go");
     let text = std::fs::read_to_string(&runtime).unwrap();
     assert!(
-        text.contains("const newestSuiteMajor = 47\n"),
-        "the runtime reads /47"
+        text.contains("const newestSuiteMajor = 49\n"),
+        "the runtime reads /49"
     );
     std::fs::write(
         &runtime,
         text.replace(
-            "const newestSuiteMajor = 47\n",
+            "const newestSuiteMajor = 49\n",
             "const newestSuiteMajor = 45\n",
         ),
     )

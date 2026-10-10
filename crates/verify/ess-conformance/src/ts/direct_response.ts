@@ -26,6 +26,13 @@ export interface DirectResponse {
   expected: Record<string, Node>;
   /** String-newtype rules of suite/46 and /47 (beyond10x/ess#499), checked on every actual value. */
   constraints?: Record<string, StringConstraints>;
+  /**
+   * `ignored` where the response object admits keys it does not declare (suite/48 and /49,
+   * beyond10x/ess#500); absent when closed.
+   */
+  undeclaredFields?: 'ignored';
+  /** The struct declarations that admit keys they do not declare (suite/48 and /49). */
+  openStructs: Set<string>;
 }
 const encoder = new TextEncoder();
 // Native serde_json size, retaining number tokens and counting payload bytes only.
@@ -71,7 +78,11 @@ export function admitDirectResponseField(raw: Node): Field {
 }
 
 export function admitDirectResponse(raw: Node): DirectResponse {
-  const value = closed(raw, 'command fields declarations expected', 'outcome constraints');
+  const value = closed(
+    raw,
+    'command fields declarations expected',
+    'outcome constraints undeclared_fields undeclared_fields_ignored',
+  );
   name(value.command, false);
   if (value.outcome != null) {
     admitOutcome(value.outcome);
@@ -108,12 +119,15 @@ export function admitDirectResponse(raw: Node): DirectResponse {
   if (fields.length === 0 || fields.length > 256 || Object.keys(declarations).length > 4096)
     throw new Error('direct response declaration bound');
   validateTypedFields([fields], declarations, true);
+  const opened = admitUndeclaredFields(value, declarations);
   const contract: DirectResponse = {
     command: value.command,
     fields,
     declarations,
     expected: value.expected,
+    openStructs: opened.openStructs,
   };
+  if (opened.undeclaredFields !== undefined) contract.undeclaredFields = opened.undeclaredFields;
   if (value.outcome != null) contract.outcome = value.outcome;
   if (own(value, 'constraints'))
     contract.constraints = admitResponseConstraints(value.constraints, declarations);
@@ -186,7 +200,12 @@ function validateValue(
     }
     if (!isObject(value)) throw new Error('response object required');
     if (declaration.kind === 'struct') {
-      if (Object.keys(value).some((key) => !declaration.fields.some((f) => f.name === key)))
+      // A struct declared `undeclared_fields: ignored` admits keys it does not declare and reads
+      // nothing of them; its declared fields are checked below as always.
+      if (
+        !contract.openStructs.has(type) &&
+        Object.keys(value).some((key) => !declaration.fields.some((f) => f.name === key))
+      )
         throw new Error('extra response member');
       for (const f of declaration.fields) {
         counter.bytes += encoder.encode(f.name).length;
@@ -238,7 +257,12 @@ function validateValue(
 
 export function compareDirectResponse(contract: DirectResponse, actual: Node): void {
   if (!isObject(actual)) throw new Error('command returned no response');
-  if (Object.keys(actual).some((key) => !contract.fields.some((f) => f.name === key)))
+  // An opened response (`undeclared_fields: ignored`) admits keys it does not declare and reads
+  // nothing of them; every declared field is still checked below.
+  if (
+    contract.undeclaredFields !== 'ignored' &&
+    Object.keys(actual).some((key) => !contract.fields.some((f) => f.name === key))
+  )
     throw new Error('extra response field');
   const counter = { bytes: 0 };
   for (const f of contract.fields) {
@@ -286,4 +310,48 @@ export function checkResponseConstraints(
 export function responseConstraintsMajor(value: Node, major: number): void {
   if (isObject(value) && own(value, 'constraints') && major < 46)
     throw new Error('response constraints require suite/46 or /47');
+}
+
+/**
+ * Admit the opened-response members of a response observation (suite/48 and /49,
+ * beyond10x/ess#500). A root `undeclared_fields`, when present, is `ignored`;
+ * `undeclared_fields_ignored`, when present, names at least one struct declaration of the same
+ * observation, each once.
+ */
+export function admitUndeclaredFields(
+  value: Record<string, Node>,
+  declarations: Record<string, SelectionDeclaration>,
+): { undeclaredFields?: 'ignored'; openStructs: Set<string> } {
+  const result: { undeclaredFields?: 'ignored'; openStructs: Set<string> } = {
+    openStructs: new Set(),
+  };
+  if (own(value, 'undeclared_fields')) {
+    if (value.undeclared_fields !== 'ignored')
+      throw new Error("a response's undeclared_fields, when present, is ignored");
+    result.undeclaredFields = 'ignored';
+  }
+  if (!own(value, 'undeclared_fields_ignored')) return result;
+  const names = value.undeclared_fields_ignored;
+  if (!Array.isArray(names) || names.length === 0)
+    throw new Error('undeclared_fields_ignored, when present, names at least one type');
+  for (const item of names) {
+    if (typeof item !== 'string' || result.openStructs.has(item))
+      throw new Error('undeclared_fields_ignored names a type more than once');
+    if (!own(declarations, item) || declarations[item]?.kind !== 'struct')
+      throw new Error(
+        'undeclared_fields_ignored names a type that is no struct declaration of the response',
+      );
+    result.openStructs.add(item);
+  }
+  return result;
+}
+
+/** Refuse a response observation carrying an opened object below suite/48. */
+export function undeclaredFieldsMajor(value: Node, major: number): void {
+  if (
+    isObject(value) &&
+    (own(value, 'undeclared_fields') || own(value, 'undeclared_fields_ignored')) &&
+    major < 48
+  )
+    throw new Error('ignored undeclared response fields require suite/48 or /49');
 }
