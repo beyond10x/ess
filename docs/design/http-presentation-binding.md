@@ -1,10 +1,11 @@
 # HTTP presentation binding (`ess-http/1`)
 
-Status: draft for beyond10x/ess#493, 2026-10-08. The scope is the operator's decision on
+Status: binding for https://github.com/beyond10x/ess/issues/493; stage 1 is built in wave
+2026-10-11j (2026-10-11). The scope is the operator's decision on
 `decision-blocker:http-surface-scope` (option (b), the staged presentation binding). This page
 covers the whole format before any stage is built, so stage 1 fixes no key that stage 2 would have
-to bump. Stages 1 and 2 are planned for 0.59.0 and stage 3 for 0.60.0 (the decision comment on
-#493). Each section below says which stage it belongs to.
+to bump. Stage 1 is planned for 0.60.0, stage 2 for the release after it, and stage 3 after that
+(`decision-blocker:ess-060-wave-scope`). Each section below says which stage it belongs to.
 
 ## Problem
 
@@ -48,9 +49,9 @@ AsyncAPI (`event-transport-binding.md:100-102`).
 
 | stage | adds | release |
 |---|---|---|
-| 1 | the document, its envelope, the method and path of a command or view, path parameters, refinement | 0.59.0 |
-| 2 | request encoding, response body per outcome, status per outcome, response headers including `WWW-Authenticate`, redirects, overrides for the standard refusals | 0.59.0 |
-| 3 | an HTTP conformance target that reaches an implementation through the binding | 0.60.0 |
+| 1 | the document, its envelope, the method and path of a command or view, path parameters, refinement, the OpenAPI projection | 0.60.0 |
+| 2 | request encoding, response body per outcome, status per outcome, response headers including `WWW-Authenticate`, redirects, overrides for the standard refusals, the Rust and Go servers' template dispatch | the release after 0.60.0 |
+| 3 | an HTTP conformance target that reaches an implementation through the binding | after stage 2 |
 
 ## Stage 1: the document and the route
 
@@ -191,7 +192,9 @@ ess generate --path MODEL --kind openapi --http catalog-http.yaml [--refines …
 ```
 
 `--http` is refused with any other `--kind`, as `--transport` is refused without `--kind asyncapi`
-(`main.rs:1626-1627`). `ess generate synthesize` accepts `--http` for the Rust and Go targets only.
+(`main.rs:1626-1627`). `ess generate synthesize` accepts `--http` for the Rust and Go targets only,
+from stage 2: 0.60.0 ships stage 1 without it, so the servers' template dispatch below lands with
+stage 2 and `ess generate synthesize` has no `--http` flag until then.
 
 ### What generated artifacts change (stage 1)
 
@@ -441,22 +444,22 @@ Formats: the `ess-conformance/*` documents do not change. `--target` gains one v
   and any `--kind` other than `openapi`. Each refuses it by name rather than ignoring it.
 - Authentication: the binding states a status and a challenge, not how a caller proves who it is.
 
+## Decided for stage 1 (2026-10-11, `decision-blocker:ess-060-wave-scope`)
+
+1. The OpenAPI projection refuses a binding with an open route, naming the operation. Emitting a
+   marked server-chosen path stays possible later as an addition.
+2. A binding cannot require that it routes every operation in stage 1; an unnamed operation keeps
+   its derived route.
+3. A literal segment does not take precedence over a variable: `ESS-HTTP-011` refuses the overlap.
+4. `refines:` is the digest of the refined file's bytes, as the specification's source pin is.
+   Reformatting a refined file is a deliberate re-pin.
+5. `ess verify diff` does not compare two bindings in stage 1; that is one unit of stage 2.
+6. A view is bound to `get` only in stage 1.
+
 ## Open questions
 
 These could not be settled from the sources. Each needs a decision before the stage it names.
 
-1. **Stage 1.** Should the OpenAPI projection refuse a binding with an open route, or emit the
-   protocol's document with a marked server-chosen path? A protocol publisher may want the second.
-2. **Stage 1.** Should a binding be able to require that it routes every operation, instead of
-   leaving unnamed operations at their derived routes?
-3. **Stage 1.** Should a literal segment take precedence over a variable (`/items/search` beside
-   `/items/{item_id}`), instead of `ESS-HTTP-011` refusing the overlap?
-4. **Stage 1.** Is `refines:` the digest of the refined file's bytes, or of its compiled
-   `ess-http-ir/1`? The bytes break on reformatting; the IR ties the digest to a compiler version.
-5. **Stage 1.** Should `ess verify diff` compare two bindings? A moved route in a separate document is
-   invisible to it, as a moved transport subject is today. The fit review sizes this at one unit and
-   leaves it optional.
-6. **Stage 1.** May a view be bound to `post`, as some search endpoints are?
 7. **Stage 2.** What does a `single` view answer when it holds more than one row?
 8. **Stage 2.** Should a binding be able to declare `securitySchemes` once a challenge is declared,
    or does that wait for an authentication construct in the model?
