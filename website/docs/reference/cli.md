@@ -444,6 +444,35 @@ ess specify protocol compile [OPTIONS] --path <PATH>
 | `--path` | `<PATH>` | yes |  |  |
 | `--out` | `<OUT>` | no |  |  |
 
+#### `ess specify http validate`
+
+Validate and resolve an `ess-http/1` document
+
+```text
+ess specify http validate [OPTIONS] --binding <BINDING>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | no | `.` | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
+| `--binding` | `<BINDING>` | yes |  | An `ess-http/1` JSON or YAML document |
+| `--format` | `<FORMAT>` | no | `text` | Output and diagnostic rendering. One of `text`, `yaml`, `json`. |
+
+#### `ess specify http compile`
+
+Compile a document into its canonical `ess-http-ir/1` form
+
+```text
+ess specify http compile [OPTIONS] --binding <BINDING>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | no | `.` | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
+| `--binding` | `<BINDING>` | yes |  | An `ess-http/1` JSON or YAML document |
+| `--format` | `<FORMAT>` | no | `text` | Output and diagnostic rendering. One of `text`, `yaml`, `json`. |
+| `--out` | `<OUT>` | no |  | Where to write canonical JSON IR |
+
 #### `ess specify cli`
 
 Validate a typed CLI presentation binding against its selected ESS model

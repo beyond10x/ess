@@ -10,6 +10,7 @@ mod client;
 mod coverage;
 mod formats;
 mod git_checkout;
+mod http;
 mod input_discovery;
 mod known_failures;
 mod load;
@@ -115,6 +116,11 @@ enum SpecifyAreaCommand {
     Protocol {
         #[command(subcommand)]
         command: protocol::Specify,
+    },
+    /// Validate or compile the HTTP method and path of the commands and views of one exact ESS.
+    Http {
+        #[command(subcommand)]
+        command: http::Command,
     },
     /// Validate a typed CLI presentation binding against its selected ESS model.
     Cli(cli_binding::Input),
@@ -1547,6 +1553,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
     match cli.command {
         Command::Specify { command } => match command {
             SpecifyAreaCommand::Protocol { command } => protocol::specify(&command),
+            SpecifyAreaCommand::Http { command } => http::run(&command),
             SpecifyAreaCommand::Cli(input) => cli_binding::validate(&input),
             SpecifyAreaCommand::Formats(args) => formats::run(&args),
             SpecifyAreaCommand::Other(command) => specify_area(command),
@@ -5981,10 +5988,12 @@ mod tests {
     ///
     /// Written down on purpose. A verb added to the tree and to no area would otherwise be
     /// counted by the enumeration it is missing from and pass every case below.
-    const AREA_LEAVES: usize = 81;
-    const AREA_ONLY_LEAVES: [&[&str]; 11] = [
+    const AREA_LEAVES: usize = 83;
+    const AREA_ONLY_LEAVES: [&[&str]; 13] = [
         &["specify", "protocol", "validate"],
         &["specify", "protocol", "compile"],
+        &["specify", "http", "validate"],
+        &["specify", "http", "compile"],
         &["specify", "cli"],
         &["specify", "formats"],
         &["generate", "cli"],

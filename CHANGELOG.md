@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### Added
+
+- `ess-http/1`, a document beside the specification that binds its commands and views to HTTP
+  routes, pinned to the specification's source digest as `ess-transport/1` is: each route names
+  one command or view, a method, and optionally a path template and the input field or view
+  parameter each path variable reads. A route without a path is open, for a protocol that leaves
+  the path to each server. `ess specify http validate --path MODEL --binding FILE` checks one
+  against the specification, and `ess specify http compile … --out FILE` writes its canonical
+  `ess-http-ir/1`, routes ordered by path, then method. Every refusal is reported at once with a
+  code and the path of the key: `ESS-HTTP-001` another `type`, `-002` a `specification` key that
+  disagrees, `-004` a route naming no operation, both a command and a view, or one the
+  specification does not declare, `-005` one operation routed twice, `-006` a method outside
+  `get`, `put`, `post`, `delete`, `options`, `head`, `patch`, `trace` or not admitted for the
+  operation (a view on `get` only; a command on `post`, `put`, `patch`, `delete` or `get`), `-013`
+  a command no component accepts or a view no `reached_by: network` component serves, and `-014`
+  a command on `get` with an input field the path does not map. Every object refuses an unknown
+  key by name, so a key of a later stage of the format (`request`, `outcomes`, `headers`,
+  `redirect`) is refused, not ignored. Path templates, parameter sources, route collisions,
+  `refines:` and the OpenAPI projection are not checked or read yet
+  (https://github.com/beyond10x/ess/issues/493, `docs/design/http-presentation-binding.md`).
+
 ## [0.59.0] — 2026-10-11
 
 ### Added
