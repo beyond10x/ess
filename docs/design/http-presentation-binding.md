@@ -166,10 +166,10 @@ Every refusal is returned at once, with a stable code and the path of the offend
 | `ESS-HTTP-005` | one operation routed twice in one document | both `routes[i]` paths and the operation |
 | `ESS-HTTP-006` | a method outside the closed set, or not admitted for that kind of operation | `routes[i].method`, the value, the kind |
 | `ESS-HTTP-007` | a path that breaks the template grammar | `routes[i].path` and the offending segment |
-| `ESS-HTTP-008` | a variable not mapped, mapped twice, or a mapping for no variable | `routes[i].parameters.<name>` |
+| `ESS-HTTP-008` | a variable not mapped, mapped twice, reading a source another variable of the route already reads (a request path would give it two values), or a mapping for no variable | `routes[i].parameters.<name>`; for a source read twice, the second variable of the path that reads it |
 | `ESS-HTTP-009` | a source in the wrong namespace, naming no field, or of a type a segment cannot carry | `routes[i].parameters.<name>`, the source, its type |
 | `ESS-HTTP-010` | two operations of one component on one method and template (variable names ignored), declared or derived | both operations; the message reuses the import's wording, "two operations claim the same method and path" (`ess-openapi/src/lib.rs:76-80`) |
-| `ESS-HTTP-011` | two templates of one component and one method that overlap: a literal and a variable at the same position after an equal prefix (`/items/current` beside `/items/{item_id}`) | both operations and the segment |
+| `ESS-HTTP-011` | two templates of one component and one method that overlap: of equal length, equal up to variable names before the first position they differ, a literal beside a variable at that position, and no later position holding two different literals (`/items/current` beside `/items/{item_id}`; `/items/{item_id}/a` beside `/items/current/b` does not overlap) | both operations and the segment |
 | `ESS-HTTP-012` | a refinement that changes a fixed method or path, or drops a route of the refined binding | `routes[i]`, the refined value and the new one |
 | `ESS-HTTP-013` | an operation that has no HTTP surface: a command no component accepts, a view no network component serves | the operation |
 | `ESS-HTTP-014` | a command on `get` with an input field that is neither mapped to the path nor (stage 2) query-encoded | the command and the field |

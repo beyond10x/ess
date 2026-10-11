@@ -22,6 +22,28 @@
   `redirect`) is refused, not ignored. Path templates, parameter sources, route collisions,
   `refines:` and the OpenAPI projection are not checked or read yet
   (https://github.com/beyond10x/ess/issues/493, `docs/design/http-presentation-binding.md`).
+- `ess-http/1` path templates, parameters and route collisions are checked. A path starts with
+  `/`, has no empty, `.` or `..` segment, no `?`, `#` or `%`, literal segments of RFC 3986 path
+  text, and variables only as whole segments `{name}`; `ESS-HTTP-007` refuses each segment that
+  breaks this, naming it. `ESS-HTTP-008` refuses a path variable not mapped, mapped twice, or a
+  mapping for no variable of the path, and one source read by two variables of a route, at the
+  second; `ESS-HTTP-009` a source outside `input.<field>` (command)
+  or `param.<name>` (view), naming no field, or of a type a segment cannot carry (anything but
+  `String`, `Integer`, an enum, or an unconstrained newtype of one of them). A command on `get`
+  now counts an input field as mapped only when a variable of its path maps it (`ESS-HTTP-014`).
+  Each component's surface, declared routes together with the routes ESS derives for every
+  operation the binding does not name, is checked for two operations on one method and template
+  whatever the variables are called (`ESS-HTTP-010`, "two operations claim the same method and
+  path") and for a literal beside a variable where one request path matches both
+  (`ESS-HTTP-011`; neither takes precedence), each naming both operations; a route refused for
+  anything else still replaces its operation's derived route, and is checked whenever its method
+  is admitted and its path parsed. In `ess-http-ir/1` parameters are typed sources, and
+  `derived_routes` records the derived routes the binding was checked against, ordered by
+  component, path, method and operation. IR that breaks what compiling guarantees without the
+  specification does not read back, naming the key: `routes`, `derived_routes` or `parameters`
+  out of canonical order, an operation routed twice, a derived route for a routed operation, a
+  derived path with a variable or outside the grammar, or parameters that disagree with their
+  path (https://github.com/beyond10x/ess/issues/493).
 
 - `ess verify conform mutate` mutates the predicate of a `when_subject:` guard and of a
   `when_related:` guard: `guard-negate`, `guard-connective` and `guard-boundary` (strictness swap,
