@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-11T00:37:13Z",
+  "actor": "human:timo",
+  "artifact": "story:synthesize-stored-field-guards-without-a-view",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "https://github.com/beyond10x/ess/actions/runs/38095788541"
+  }
+}

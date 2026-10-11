@@ -222,6 +222,7 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-scenario", 2, Some("0.23.0")),
     ("ess-scenario", 3, Some("0.35.0")),
     ("ess-scenario", 4, Some("0.39.0")),
+    ("ess-scenario", 5, Some("0.59.0")),
     ("ess-normalization", 1, Some("0.19.0")),
     ("ess-normalization", 2, Some("0.20.0")),
     ("ess-normalization", 3, Some("0.20.0")),

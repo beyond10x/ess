@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.59.0] — 2026-10-11
+
 ### Added
 
 - `ess-scenario/5`: an authored act states the caller its command is sent as, under `caller:`,
