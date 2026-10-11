@@ -163,6 +163,11 @@ impl<'a> Emit<'a> {
         self.blank.borrow_mut().insert(path.to_owned());
     }
 
+    /// Every import collected so far.
+    pub fn imported(&self) -> BTreeSet<String> {
+        self.imports.borrow().clone()
+    }
+
     /// One variant type of an enum or a tagged union, spelled from inside this package.
     pub fn reference_variant(&self, declared: &QualifiedName, variant: &str) -> String {
         self.qualify(
@@ -303,10 +308,7 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::Ta
     crate::failure::binding_policies(ir, plan, crate::Target::Go)?;
     type_owners(ir, plan)?;
     let refusals = TargetRefusals::of(ir, plan);
-    let layout = Layout::admitted(ir, plan, &refusals)?;
-    accessor::preflight(ir, plan, &layout)?;
-    let seams = behaviour::Seams::of(ir, plan, &layout, &refusals);
-    invariant::preflight(ir, plan, &layout)?;
+    let (layout, seams) = admitted_layout(ir, plan, &refusals)?;
     let provenance = &plan.provenance;
 
     let mut covered: BTreeSet<Capability> = BTreeSet::new();
@@ -331,21 +333,14 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::Ta
         provenance,
         &mut stubbed,
     ));
-    let domains: Vec<QualifiedName> = layout
-        .packages()
-        .map(|(domain, _)| domain.clone())
-        .collect();
-    for domain in &domains {
-        artifacts.push(domain_package(
-            ir,
-            plan,
-            &layout,
-            (&refusals, &seams),
-            domain,
-            &mut covered,
-            &mut stubbed,
-        ));
-    }
+    artifacts.extend(domain_packages(
+        ir,
+        plan,
+        &layout,
+        (&refusals, &seams),
+        &mut covered,
+        &mut stubbed,
+    ));
     artifacts.extend(behaviour::package(
         ir,
         &layout,
@@ -735,8 +730,203 @@ const PRIMITIVES: &[(&str, &str, &str)] = &[
     ),
 ];
 
+/// The admitted layout and its seams: one package per bounded context, or, where their references
+/// form loops under that layout, the layout with each loop sharing one package.
+///
+/// # Errors
+///
+/// When either layout is not admitted, or fails the accessor or invariant preflight.
+fn admitted_layout(
+    ir: &EssIr,
+    plan: &SynthesisPlan,
+    refusals: &TargetRefusals,
+) -> Result<(Layout, behaviour::Seams), crate::TargetFailure> {
+    let admit = |loops: &[BTreeSet<QualifiedName>]| {
+        let layout = Layout::admitted(ir, plan, refusals, loops)?;
+        accessor::preflight(ir, plan, &layout)?;
+        let seams = behaviour::Seams::of(ir, plan, &layout, refusals);
+        invariant::preflight(ir, plan, &layout)?;
+        Ok::<_, crate::TargetFailure>((layout, seams))
+    };
+    let (layout, seams) = admit(&[])?;
+    let loops = domain_loops(ir, plan, &layout, (refusals, &seams));
+    if loops.is_empty() {
+        Ok((layout, seams))
+    } else {
+        admit(&loops)
+    }
+}
+
+/// Every bounded context's file, in name order, then the own file of each package a loop shares.
+fn domain_packages(
+    ir: &EssIr,
+    plan: &SynthesisPlan,
+    layout: &Layout,
+    with: (&TargetRefusals, &behaviour::Seams),
+    covered: &mut BTreeSet<Capability>,
+    stubbed: &mut BTreeSet<Capability>,
+) -> Vec<Artifact> {
+    let mut artifacts = Vec::new();
+    let mut owing: BTreeSet<String> = BTreeSet::new();
+    for (domain, package) in layout.packages() {
+        let (artifact, _, owes) = domain_package(ir, plan, layout, with, domain, covered, stubbed);
+        artifacts.push(artifact);
+        if owes {
+            owing.insert(package.dir.clone());
+        }
+    }
+    for (package, members) in layout.shared() {
+        artifacts.push(shared_package(
+            ir,
+            layout,
+            &plan.provenance,
+            (package, members),
+            owing.contains(&package.dir),
+        ));
+    }
+    artifacts
+}
+
+/// The sets of bounded contexts whose packages would import each other in a loop, each of two or
+/// more, in name order.
+///
+/// Read off the imports the bounded contexts' files actually collect under the one-package-each
+/// `layout` rather than re-derived from the model, so that every reference a renderer spells —
+/// a field, a variant, an outcome's error, a mechanical crossing — is an edge, and no edge exists
+/// that Go would not see. A loop is a strongly connected set of that graph; sharing one package per
+/// set leaves the graph between packages acyclic, because the condensation of a graph is.
+fn domain_loops(
+    ir: &EssIr,
+    plan: &SynthesisPlan,
+    layout: &Layout,
+    with: (&TargetRefusals, &behaviour::Seams),
+) -> Vec<BTreeSet<QualifiedName>> {
+    let by_import: BTreeMap<&str, &QualifiedName> = layout
+        .packages()
+        .map(|(domain, package)| (package.import.as_str(), domain))
+        .collect();
+    let mut edges: BTreeMap<QualifiedName, BTreeSet<QualifiedName>> = BTreeMap::new();
+    for (domain, _) in layout.packages() {
+        let (_, imports, _) = domain_package(
+            ir,
+            plan,
+            layout,
+            with,
+            domain,
+            &mut BTreeSet::new(),
+            &mut BTreeSet::new(),
+        );
+        edges.insert(
+            domain.clone(),
+            imports
+                .iter()
+                .filter_map(|import| by_import.get(import.as_str()).map(|it| (*it).clone()))
+                .filter(|referenced| referenced != domain)
+                .collect(),
+        );
+    }
+    strongly_connected(&edges)
+        .into_iter()
+        .filter(|members| members.len() > 1)
+        .collect()
+}
+
+/// The strongly connected sets of a graph (Tarjan's algorithm), each in name order, ordered by
+/// their least member.
+fn strongly_connected(
+    edges: &BTreeMap<QualifiedName, BTreeSet<QualifiedName>>,
+) -> Vec<BTreeSet<QualifiedName>> {
+    struct Walk<'a> {
+        edges: &'a BTreeMap<QualifiedName, BTreeSet<QualifiedName>>,
+        index: BTreeMap<&'a QualifiedName, usize>,
+        low: BTreeMap<&'a QualifiedName, usize>,
+        stack: Vec<&'a QualifiedName>,
+        on_stack: BTreeSet<&'a QualifiedName>,
+        found: Vec<BTreeSet<QualifiedName>>,
+    }
+    impl<'a> Walk<'a> {
+        fn visit(&mut self, node: &'a QualifiedName) {
+            let at = self.index.len();
+            self.index.insert(node, at);
+            self.low.insert(node, at);
+            self.stack.push(node);
+            self.on_stack.insert(node);
+            for next in self.edges.get(node).into_iter().flatten() {
+                if !self.index.contains_key(next) {
+                    self.visit(next);
+                    let reached = self.low[next];
+                    let low = self.low.get_mut(node).expect("visited");
+                    *low = (*low).min(reached);
+                } else if self.on_stack.contains(next) {
+                    let reached = self.index[next];
+                    let low = self.low.get_mut(node).expect("visited");
+                    *low = (*low).min(reached);
+                }
+            }
+            if self.low[node] == self.index[node] {
+                let mut members = BTreeSet::new();
+                while let Some(member) = self.stack.pop() {
+                    self.on_stack.remove(member);
+                    members.insert(member.clone());
+                    if member == node {
+                        break;
+                    }
+                }
+                self.found.push(members);
+            }
+        }
+    }
+    let mut walk = Walk {
+        edges,
+        index: BTreeMap::new(),
+        low: BTreeMap::new(),
+        stack: Vec::new(),
+        on_stack: BTreeSet::new(),
+        found: Vec::new(),
+    };
+    for node in edges.keys() {
+        if !walk.index.contains_key(node) {
+            walk.visit(node);
+        }
+    }
+    let mut found = walk.found;
+    found.sort();
+    found
+}
+
+/// The file every package shared by a loop of bounded contexts carries beside one file per
+/// bounded context: the package's documentation, naming the loop, and the one stub type its
+/// bounded contexts' owed seams are methods of.
+fn shared_package(
+    ir: &EssIr,
+    layout: &Layout,
+    provenance: &Provenance,
+    (package, members): (&Package, &[QualifiedName]),
+    owes: bool,
+) -> Artifact {
+    let emit = Emit::new(ir, layout, package, None);
+    let named: Vec<String> = members.iter().map(|domain| format!("`{domain}`")).collect();
+    let mut doc = format!(
+        "// Package {} holds the bounded contexts {}, one file each.\n//\n// Their references \
+         form a loop, and Go refuses an import cycle where the specification\n// admits one, so \
+         they share this package rather than having one each.\n",
+        package.name,
+        named.join(", ")
+    );
+    doc.push_str(
+        "//\n// Everything these bounded contexts declare that the synthesis plan marks generated \
+         and this\n// target can represent. What it cannot is in the TARGET.md beside this \
+         module, never absent.\n",
+    );
+    let mut body = String::new();
+    if owes {
+        obligation::shared_stub(&mut body, &emit);
+    }
+    emit.file(provenance, &doc, &body)
+}
+
 /// One bounded context's package: every declaration the plan marks generated and this target does
-/// not refuse, in a fixed order.
+/// not refuse, in a fixed order — with the packages it imports, and whether it owes anything.
 fn domain_package(
     ir: &EssIr,
     plan: &SynthesisPlan,
@@ -746,7 +936,7 @@ fn domain_package(
     domain: &QualifiedName,
     covered: &mut BTreeSet<Capability>,
     stubbed: &mut BTreeSet<Capability>,
-) -> Artifact {
+) -> (Artifact, BTreeSet<String>, bool) {
     let package = layout.package(domain);
     let emit = Emit::new(ir, layout, package, Some(domain));
     let resolved = ir
@@ -754,11 +944,22 @@ fn domain_package(
         .get(domain)
         .expect("the layout only knows domains the IR declares");
 
-    let mut doc = format!(
-        "// Package {} is {} — `{domain}`.\n",
-        package.name,
-        resolved.naming.display_or(domain)
-    );
+    // In a package a loop shares, the package's documentation is its own file's; this file's
+    // comment is detached from the package clause, so it documents the file and not the package.
+    let shared = layout.sharing(package).is_some();
+    let mut doc = if shared {
+        format!(
+            "// This file of package {} is {} — `{domain}`.\n",
+            package.name,
+            resolved.naming.display_or(domain)
+        )
+    } else {
+        format!(
+            "// Package {} is {} — `{domain}`.\n",
+            package.name,
+            resolved.naming.display_or(domain)
+        )
+    };
     if let Some(summary) = &resolved.naming.summary {
         let _ = write!(doc, "//\n// {}\n", summary.trim());
     }
@@ -768,11 +969,16 @@ fn domain_package(
          module, never absent.\n",
     );
 
+    if shared {
+        doc.push('\n');
+    }
+
     let mut body = String::new();
     items::declarations(&mut body, &emit, plan, refusals, covered);
     items::conversions(&mut body, &emit, plan, refusals, covered);
-    obligation::domain_obligations(&mut body, &emit, plan, refusals, seams, stubbed);
-    emit.file(&plan.provenance, &doc, &body)
+    let owes = obligation::domain_obligations(&mut body, &emit, plan, refusals, seams, stubbed);
+    let artifact = emit.file_at(layout.domain_file(domain), &plan.provenance, &doc, &body);
+    (artifact, emit.imported(), owes)
 }
 
 /// The plan's gate: emit only what it marks generated *and* this target can represent, and record

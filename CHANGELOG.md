@@ -23,6 +23,20 @@
   `refines:` and the OpenAPI projection are not checked or read yet
   (https://github.com/beyond10x/ess/issues/493, `docs/design/http-presentation-binding.md`).
 
+### Fixed
+
+- `ess generate synthesize --target go` emits a module that builds when bounded contexts reference
+  each other in a loop, for example a command outcome in `publish` refusing with an error declared
+  in `session`, `session` referencing `subscription`, and `subscription` referencing a type of
+  `publish`. Each bounded context had its own package under `types/`, so those packages imported
+  each other and `go build` failed with `import cycle not allowed`. The bounded contexts of one loop
+  now share one package, named by their package names joined (`types/publishsessionsubscription/`),
+  with one file per bounded context and a file of its own carrying the package's documentation
+  and the one `Unimplemented` stub their owed seams are methods of. A declared name two of them
+  share is repaired with `_`, as within one bounded context. Every bounded context outside a loop
+  keeps its own package, and a model whose references form no loop keeps its Go output byte for
+  byte.
+
 ## [0.59.0] — 2026-10-11
 
 ### Added
