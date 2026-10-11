@@ -28,7 +28,7 @@ rest of this file does not apply to you.
 never changed to follow a move.
 
 - **`crates/specify/`** — `ess-primitives`, `ess-domain`, `ess-compiler`, `ess-composition`,
-  `ess-realization`: an authored system becomes a validated, resolved IR.
+  `ess-realization`, `ess-http`: an authored system becomes a validated, resolved IR.
 - **`crates/generate/`** — `ess-gen`, `ess-synth`, `ess-openapi`, `schema-contract`,
   `ess-deployment`: that IR becomes artifacts, and nothing here applies one to a running system.
 - **`crates/verify/`** — `ess-conformance`, `ess-diff`: an implementation held to the
