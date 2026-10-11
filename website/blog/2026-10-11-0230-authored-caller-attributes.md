@@ -36,7 +36,7 @@ scenario on the `interpreted` target and the generated Go and TypeScript runners
 - A command whose branches a stored field of its subject selects (`when_subject:`) gets its
   scenarios even when no view observes that field; synthesis used to refuse each with
   `ESS-SYNTH-001`. A model with an immediate view covering the guarded fields keeps its suite byte
-  for byte (beyond10x/ess#496).
+  for byte ([#496](https://github.com/beyond10x/ess/issues/496)).
 - A `when_related:` guard that reads a member of a struct input is decided against the key the
   subject was created under, where it used to choose a row against a key the search made up. A
-  struct sent as a literal keeps its scenarios byte for byte (beyond10x/ess#521).
+  struct sent as a literal keeps its scenarios byte for byte ([#521](https://github.com/beyond10x/ess/issues/521)).
