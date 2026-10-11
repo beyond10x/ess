@@ -15,6 +15,15 @@
   neither guard keeps its report and manifest byte for byte; the report and manifest formats are
   unchanged. The `{field, equals}` form of `when_subject:` and a row set's `where` and `forall`
   are not mutated.
+- `ess verify conform mutate` says why of every `sets:` entry that has no `sets-drop` mutant.
+  Where `sets-drop` is selected, `--target` and `--emit` print, after their own output and on
+  stderr in every format, one `note: sets-drop/<command>/<outcome>/<field> has no mutant
+  (<reason>): …` per such entry, the reason one of `creates_row`, `source_not_input` and
+  `optional_field`. A model whose every write is on a creating branch got no `sets-drop` mutant and
+  no word about why (https://github.com/beyond10x/ess/issues/515); the entries are left out as
+  before, because there a dropped write only leaves the value to the implementation, and are now
+  listed. Which entries have a site is unchanged, and so are the report and manifest bytes and
+  formats: the list is not persisted.
 
 ## [0.59.0] — 2026-10-11
 

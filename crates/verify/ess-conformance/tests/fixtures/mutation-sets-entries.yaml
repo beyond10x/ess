@@ -1,0 +1,81 @@
+format: ess/23
+system: demo
+version: v1
+domain: demo.keys
+summary: >-
+  A key issued to an owner, renamed, and checked by its owner only: one `sets:` entry of each kind
+  the mutation audit's `sets-drop` decides, so every entry either has a site or is listed with the
+  reason it has none.
+types:
+  - {name: demo.keys.KeyId, kind: newtype, of: Uuid}
+  - {name: demo.keys.Tier, kind: enum, variants: [Basic, Gold]}
+entities:
+  - name: demo.keys.Key
+    identity: {name: key_id, type: demo.keys.KeyId}
+    fields:
+      - {name: owner, type: String}
+      - {name: label, type: String}
+      - {name: note, type: Optional<String>}
+      - {name: tier, type: demo.keys.Tier}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+actors:
+  - name: demo.keys.Holder
+    may: [demo.keys.Issue, demo.keys.Rename, demo.keys.Check]
+errors:
+  - {name: demo.keys.NotOwner, summary: Only the key's owner checks it., fields: []}
+events:
+  - name: demo.keys.Issued
+    fields: [{name: key_id, type: demo.keys.KeyId}]
+  - name: demo.keys.Renamed
+    fields: [{name: key_id, type: demo.keys.KeyId}]
+  - name: demo.keys.Checked
+    fields: [{name: key_id, type: demo.keys.KeyId}]
+commands:
+  # Every entry of a creating branch is listed; `owner` is also the field `Check`'s guard reads,
+  # which synthesis arranges through this write.
+  - name: demo.keys.Issue
+    input:
+      - {name: owner, type: String}
+      - {name: label, type: String}
+    outcomes:
+      - name: issued
+        creates: demo.keys.Key
+        instance: key_id
+        sets: {owner: input.owner, label: input.label, tier: Basic}
+        emits: [demo.keys.Issued]
+        payload: {demo.keys.Issued: {key_id: {generated: true}}}
+  # `label` has the one site; `note` is `Optional` and `tier` is a literal, so each is listed.
+  - name: demo.keys.Rename
+    input:
+      - {name: key_id, type: demo.keys.KeyId}
+      - {name: label, type: String}
+      - {name: note, type: Optional<String>}
+    outcomes:
+      - name: renamed
+        updates: demo.keys.Key
+        instance: key_id
+        sets: {label: input.label, note: input.note, tier: Gold}
+        emits: [demo.keys.Renamed]
+        payload: {demo.keys.Renamed: {key_id: input.key_id}}
+  - name: demo.keys.Check
+    input:
+      - {name: key_id, type: demo.keys.KeyId}
+      - {name: owner, type: String}
+    outcomes:
+      - name: not-owner
+        when_subject:
+          predicate: owner != input.owner
+        error: demo.keys.NotOwner
+      - name: checked
+        updates: demo.keys.Key
+        instance: key_id
+        emits: [demo.keys.Checked]
+        payload: {demo.keys.Checked: {key_id: input.key_id}}
+views:
+  - name: demo.keys.Keys
+    source: demo.keys.Key
+    consistency: read_your_writes
+    fields:
+      - {name: key_id, type: demo.keys.KeyId}
+      - {name: owner, type: String}
+      - {name: label, type: String}

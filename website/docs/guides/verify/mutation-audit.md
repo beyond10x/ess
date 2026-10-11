@@ -43,9 +43,18 @@ weakening it: a mutant that only says less could never be killed by a correct ta
   the input. Synthesis sends an input no `sets:` entry reads apart from what the row holds in the
   field of the same name and type, so a view reading the field tells the two apart. Where the
   dropped input feeds a field of another name that already holds the same value, the mutant can
-  survive: that survivor is a weak witness, not a correct implementation. A creating branch is
-  left out, because there a dropped write only leaves the value to the implementation, and so is
-  an `Optional` field, which a row nothing wrote holds absent and no scenario asserts.
+  survive: that survivor is a weak witness, not a correct implementation. Every other `sets:`
+  entry has no site, and the audit says why of each one: after its own output, on stderr and in
+  every format, `--target` and `--emit` print one note per entry, such as
+  `note: sets-drop/<command>/<outcome>/<field> has no mutant (creates_row): …`. The reasons are
+  `creates_row` (a creating branch: a dropped write only leaves the value to the implementation, a
+  weaker rule no correct target fails, and an outcome whose guard synthesis arranges through the
+  field loses its scenario), `source_not_input` (a literal or any other source than `input.<f>`,
+  which synthesis cannot send apart from what the row held), and `optional_field` (a row nothing
+  wrote holds an `Optional` field absent, and no scenario asserts an absence). A model whose every
+  write is on a creating branch therefore has no `sets-drop` mutant, and `--class sets-drop`
+  refuses with `ESS-MUTATE-003` and then names each entry. The report and the manifest carry no
+  such list, so their formats are unchanged.
 - `precedence-swap` swaps two adjacent branches guarded by their input alone, both accepting or
   both refusing, so the second answers where both guards hold. Where no input satisfies both
   guards, the swap decides nothing and is *equivalent* (below). A branch the held state, a stored
