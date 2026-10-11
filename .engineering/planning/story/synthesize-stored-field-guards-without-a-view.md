@@ -2,14 +2,15 @@
 format: aep.planning-md/3
 id: story:synthesize-stored-field-guards-without-a-view
 kind: story
-status: active
+status: implemented
 title: Synthesize subject-fact scenarios for an entity no view observes, noting the unobserved fields
 relations:
 - serves: vision:O2
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-10T18:36:42Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-10-10T18:36:43Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-10-11T00:37:00Z", actor: "human:timo", revision: 5, decided_on: {"asserted":{"test_result":1}}}
 ---
 ## Outcome
 
