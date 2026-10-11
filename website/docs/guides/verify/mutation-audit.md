@@ -149,13 +149,19 @@ $ ess verify conform mutate \
 `DIR` is read, and its documents refused, exactly as `ess verify conform run --scenarios` reads
 them; a refused document exits 1 before anything runs. Each authored scenario runs against the
 interpreter of your specification as part of the baseline, and against the interpreter of each
-mutant beside that mutant's synthesized suite. The interpreter of a mutant is an implementation of
-the mutant, so an authored scenario that fails there kills it, and the report names it among the
-killers as it names a synthesized scenario (`killed … — by <domain>/authored/<scenario>`). An
-authored scenario the baseline fails refuses the audit with `ESS-MUTATE-001`, as a synthesized one
-does. An authored scenario that requires an outcome makes that outcome witnessed, so a mutant on it
-is scored on what the scenarios observed rather than being unwitnessed for the baseline's refusal
-alone; one that passes against the mutant leaves it surviving.
+mutant beside that mutant's synthesized suite, on the clock `run --target interpreted` uses: a
+`now` guard is decided at the instant of the step, so a scenario `run` passes executes here too.
+The interpreter of a mutant is an implementation of the mutant, so an authored scenario that fails
+there kills it, and the report names it among the killers as it names a synthesized scenario
+(`killed … — by <domain>/authored/<scenario>`). An authored scenario the baseline fails refuses the
+audit with `ESS-MUTATE-001`, as a synthesized one does. An authored scenario the baseline executed that requires an outcome makes that
+outcome witnessed, so a mutant on it is scored on what the scenarios observed rather than being unwitnessed
+for the baseline's refusal alone; one that passes against the mutant leaves it surviving. One the
+baseline did not execute (`unsupported` or `skipped`) witnesses nothing, and since it would have run
+against the mutant's interpreter, it leaves a mutant nothing killed `inconclusive` rather than
+surviving. A `precedence-swap` reported `equivalent` because both branches give the same answer stays
+equivalent: an authored scenario that fails against it differs only in the outcome's name, which
+names the branch and is no part of the answer.
 
 `--scenarios` is refused with `--target billing` and `--target oracle-fixture`, which implement no
 mutant, and with `--emit`, `--collect` and `--known-failing`: a runner of your own implements the

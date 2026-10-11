@@ -77,6 +77,21 @@ direction can and cannot show.
   suite could never kill, and a declaration binds the synthesized baseline suite alone. Without
   `--scenarios` nothing runs that did not run before, and every report and manifest keeps its
   bytes; no persisted field is added and no format moves.
+- **What an authored scenario counts for (https://github.com/beyond10x/ess/issues/515, adversary
+  pass 1).** It runs on the interpreter built as `run --target interpreted` builds it: on the
+  scenario-clock runner (`now_offset::scenario_clock_runner`, shared with `run`), the interpreter
+  handed that runner's command clock, so a `now` guard is decided at the instant of the step and a
+  scenario `run` passes executes in the baseline and against every mutant. Only a scenario the
+  baseline executed witnesses an outcome: one it answered `unsupported` or `skipped` requires that
+  outcome of nothing that ran. Such an excluded authored scenario hides a kill whatever its body,
+  because the mutant's copy runs against the mutant's interpreter rather than the target the
+  baseline asked: a mutant nothing killed is `inconclusive`, or keeps the reading it has without
+  that scenario (`unwitnessed` for the baseline's synthesis refusal), never `survived`. **The
+  outcome's name only names the branch**, the rule the identical-answer equivalence
+  (https://github.com/beyond10x/ess/issues/517) already states: a `precedence-swap` recorded with
+  `identical_answer` answers every input as *S* does but for that name, so an authored scenario that
+  fails against its interpreter differs from it only in the outcome label. Such a failure does not
+  kill it, its exclusion hides nothing, and the mutant stays `equivalent`.
 - **So a survivor is a finding about what synthesis asks of the model.** Either the mutant is
   equivalent (no input the witnesses can produce tells *S* from *S′*), or synthesis derives no
   scenario that observes the rule. The fix is to declare what makes the rule observable, or to file
