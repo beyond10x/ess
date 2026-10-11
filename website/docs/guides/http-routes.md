@@ -46,7 +46,7 @@ routes:
 
 Check a binding against the specification, or write its compiled form:
 
-```console
+```bash
 ess specify http validate --path MODEL --binding catalog-http.yaml
 ess specify http compile  --path MODEL --binding catalog-http.yaml --out catalog-http.json
 ```
@@ -81,7 +81,7 @@ routes:
   - {command: catalog.items.ListItem, method: post, path: /api/items}
 ```
 
-```console
+```bash
 ess specify http validate --path MODEL --binding server-http.yaml --refines protocol-http.yaml
 ```
 
@@ -90,7 +90,7 @@ routes. It may route operations the protocol binding does not name.
 
 ## In the OpenAPI projection
 
-```console
+```bash
 ess generate --path MODEL --kind openapi --http server-http.yaml --refines protocol-http.yaml --out generated
 ```
 
