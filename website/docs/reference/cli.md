@@ -456,6 +456,7 @@ ess specify http validate [OPTIONS] --binding <BINDING>
 |---|---|---|---|---|
 | `--path` | `<PATH>` | no | `.` | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
 | `--binding` | `<BINDING>` | yes |  | An `ess-http/1` JSON or YAML document |
+| `--refines` | `<REFINES>` | no |  | The `ess-http/1` binding the document refines, whose bytes its `refines:` digest pins |
 | `--format` | `<FORMAT>` | no | `text` | Output and diagnostic rendering. One of `text`, `yaml`, `json`. |
 
 #### `ess specify http compile`
@@ -470,6 +471,7 @@ ess specify http compile [OPTIONS] --binding <BINDING>
 |---|---|---|---|---|
 | `--path` | `<PATH>` | no | `.` | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
 | `--binding` | `<BINDING>` | yes |  | An `ess-http/1` JSON or YAML document |
+| `--refines` | `<REFINES>` | no |  | The `ess-http/1` binding the document refines, whose bytes its `refines:` digest pins |
 | `--format` | `<FORMAT>` | no | `text` | Output and diagnostic rendering. One of `text`, `yaml`, `json`. |
 | `--out` | `<OUT>` | no |  | Where to write canonical JSON IR |
 

@@ -275,3 +275,104 @@ fn a_route_on_another_operations_derived_path_is_refused_as_a_collision() {
     assert!(!shown.contains("ESS-HTTP-011"), "{shown}");
     assert_eq!(shown.matches("error[").count(), 1, "{shown}");
 }
+
+#[test]
+fn a_server_binding_refines_a_protocol_binding_given_with_refines() {
+    let fixture = Fixture::new();
+    // The protocol binding: the view's path is fixed, the command's is left to each server.
+    fixture.binding(ROUTES);
+    fs::rename(fixture.0.join("http.yaml"), fixture.0.join("protocol.yaml")).unwrap();
+    let protocol = fs::read(fixture.0.join("protocol.yaml")).unwrap();
+    let pin = ess_http::digest(&protocol);
+    let server = |routes: &str, refines: &str| {
+        fixture.binding(&format!("{refines}{routes}"));
+    };
+    let filled = ROUTES.replace(
+        "    method: post\n",
+        "    method: post\n    path: /api/items\n",
+    );
+    assert_ne!(filled, ROUTES);
+    server(&filled, &format!("refines: {pin}\n"));
+    let validate = |extra: &[&str]| {
+        let mut args = vec![
+            "specify",
+            "http",
+            "validate",
+            "--path",
+            "model",
+            "--binding",
+            "http.yaml",
+        ];
+        args.extend_from_slice(extra);
+        fixture.ess(&args)
+    };
+    let valid = validate(&["--refines", "protocol.yaml"]);
+    assert!(valid.status.success(), "{}", text(&valid));
+    assert_eq!(
+        String::from_utf8_lossy(&valid.stdout),
+        "http.yaml — 2 route(s), 0 open, valid\n"
+    );
+
+    let compile = fixture.ess(&[
+        "specify",
+        "http",
+        "compile",
+        "--path",
+        "model",
+        "--binding",
+        "http.yaml",
+        "--refines",
+        "protocol.yaml",
+        "--format",
+        "json",
+    ]);
+    assert!(compile.status.success(), "{}", text(&compile));
+    let ir: serde_json::Value = serde_json::from_slice(&compile.stdout).unwrap();
+    assert_eq!(ir["refines"], serde_json::json!(pin));
+
+    // `refines:` with no refined file supplied.
+    let missing = validate(&[]);
+    assert_eq!(missing.status.code(), Some(1), "{}", text(&missing));
+    assert!(
+        text(&missing).contains("error[ESS-HTTP-003]: refines:"),
+        "{}",
+        text(&missing)
+    );
+
+    // The refined file reformatted: its bytes, and so its digest, differ from the pin.
+    let reformatted = String::from_utf8(protocol.clone())
+        .unwrap()
+        .replace("version: v1", "version: 'v1'");
+    fs::write(fixture.0.join("protocol.yaml"), reformatted).unwrap();
+    let moved = validate(&["--refines", "protocol.yaml"]);
+    assert_eq!(moved.status.code(), Some(1), "{}", text(&moved));
+    assert!(
+        text(&moved).contains("error[ESS-HTTP-003]: refines:") && text(&moved).contains(&pin),
+        "{}",
+        text(&moved)
+    );
+    fs::write(fixture.0.join("protocol.yaml"), &protocol).unwrap();
+
+    // A refinement that moves the fixed view path.
+    server(
+        &filled.replace("path: /items/{item_id}", "path: /things/{item_id}"),
+        &format!("refines: {pin}\n"),
+    );
+    let changed = validate(&["--refines", "protocol.yaml", "--format", "json"]);
+    assert_eq!(changed.status.code(), Some(1), "{}", text(&changed));
+    let diagnostics: serde_json::Value = serde_json::from_slice(&changed.stdout)
+        .unwrap_or_else(|error| panic!("{error}: {}", text(&changed)));
+    assert_eq!(diagnostics[0]["code"], "ESS-HTTP-012", "{diagnostics}");
+    assert_eq!(diagnostics[0]["path"], "routes[0].path", "{diagnostics}");
+
+    // `--refines` given to a document that refines nothing.
+    server(&filled, "");
+    let unpinned = validate(&["--refines", "protocol.yaml"]);
+    assert_eq!(unpinned.status.code(), Some(1), "{}", text(&unpinned));
+    assert!(
+        text(&unpinned).contains("error[ESS-HTTP-003]: refines:")
+            && text(&unpinned).contains("refines nothing"),
+        "{}",
+        text(&unpinned)
+    );
+}

@@ -32,27 +32,51 @@ pub struct Input {
     /// An `ess-http/1` JSON or YAML document.
     #[arg(long)]
     binding: PathBuf,
+    /// The `ess-http/1` binding the document refines, whose bytes its `refines:` digest pins.
+    #[arg(long)]
+    refines: Option<PathBuf>,
     /// Output and diagnostic rendering.
     #[arg(long, value_enum, default_value_t = Format::Text)]
     format: Format,
 }
 
-/// Reads an HTTP binding and compiles it against `ir`, printing every refusal.
+fn is_json(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|extension| extension == "json")
+}
+
+/// Reads the binding at `path` refines, by its file's exact bytes, whose digest `refines:` pins.
+fn read_refined(path: &Path) -> Result<ess_http::Refined> {
+    let bytes = fs::read(path).with_context(|| format!("reading {}", path.display()))?;
+    if is_json(path) {
+        ess_http::Refined::from_json(&bytes)
+            .with_context(|| format!("reading {} as refined HTTP binding JSON", path.display()))
+    } else {
+        ess_http::Refined::from_yaml(&bytes)
+            .with_context(|| format!("reading {} as refined HTTP binding YAML", path.display()))
+    }
+}
+
+/// Reads an HTTP binding, and the binding it refines when `refines` names one, and compiles it
+/// against `ir`, printing every refusal.
 ///
 /// `Ok(None)` is a refusal already reported; the caller exits 1.
-pub fn load(path: &Path, ir: &EssIr, format: Format) -> Result<Option<ess_http::HttpIr>> {
+pub fn load(
+    path: &Path,
+    refines: Option<&Path>,
+    ir: &EssIr,
+    format: Format,
+) -> Result<Option<ess_http::HttpIr>> {
     let text = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-    let spec = if path
-        .extension()
-        .is_some_and(|extension| extension == "json")
-    {
+    let spec = if is_json(path) {
         ess_http::HttpSpec::from_json(&text)
             .with_context(|| format!("reading {} as HTTP binding JSON", path.display()))?
     } else {
         ess_http::HttpSpec::from_yaml(&text)
             .with_context(|| format!("reading {} as HTTP binding YAML", path.display()))?
     };
-    match ess_http::compile(&spec, ir, &derived_routes(ir)) {
+    let protocol = refines.map(read_refined).transpose()?;
+    match ess_http::compile_refining(&spec, protocol.as_ref(), ir, &derived_routes(ir)) {
         Ok(http) => Ok(Some(http)),
         Err(diagnostics) => {
             if matches!(format, Format::Text) {
@@ -101,7 +125,7 @@ pub fn run(command: &Command) -> Result<ExitCode> {
     let Ok((ir, _)) = resolved(&input.path, input.format)? else {
         return Ok(ExitCode::from(1));
     };
-    let Some(http) = load(&input.binding, &ir, input.format)? else {
+    let Some(http) = load(&input.binding, input.refines.as_deref(), &ir, input.format)? else {
         return Ok(ExitCode::from(1));
     };
     let open = http
