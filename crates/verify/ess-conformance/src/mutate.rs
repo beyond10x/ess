@@ -1042,6 +1042,160 @@ fn path_terminal(
     Some(current)
 }
 
+/// Why a `sets:` entry has no `sets-drop` site (<https://github.com/beyond10x/ess/issues/515>).
+///
+/// A closed set, decided in declaration order: the first that holds is the entry's reason. Every
+/// entry either has a site or exactly one of these, so none is left out in silence. Listed, never
+/// persisted: no report or manifest field carries it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum SetsDropReason {
+    /// The branch creates, updates and moves no row, which the model refuses
+    /// (`ESS-COMMAND-003`); only a model that does not compile has one.
+    NoRow,
+    /// The branch creates its row. Without the write the value is the implementation's to choose:
+    /// a weaker rule a correct target satisfies, so the mutant could never be killed, and an
+    /// outcome whose guard synthesis arranges through the field loses its scenario instead.
+    CreatesRow,
+    /// The source is not `input.<field>`. Synthesis sends only an input apart from what the row
+    /// held, so no scenario would tell the dropped write from the value the row kept.
+    SourceNotInput,
+    /// The field is `Optional<…>`. A row nothing wrote holds it absent, and no synthesized row
+    /// expectation states an absence.
+    OptionalField,
+}
+
+impl SetsDropReason {
+    /// How it is written.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::NoRow => "no_row",
+            Self::CreatesRow => "creates_row",
+            Self::SourceNotInput => "source_not_input",
+            Self::OptionalField => "optional_field",
+        }
+    }
+}
+
+impl fmt::Display for SetsDropReason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// A `sets:` entry with no `sets-drop` site, and why ([`unmutated_sets`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnmutatedSetsEntry {
+    /// The id its site would have: `sets-drop/<command>/<outcome>/<target>`.
+    pub id: String,
+    /// The command.
+    pub command: String,
+    /// The outcome.
+    pub outcome: String,
+    /// The entity field the entry writes.
+    pub target: String,
+    /// The entry's source, as written.
+    pub source: String,
+    /// Why there is no site.
+    pub reason: SetsDropReason,
+}
+
+impl fmt::Display for UnmutatedSetsEntry {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            id,
+            target,
+            source,
+            reason,
+            ..
+        } = self;
+        write!(f, "{id} has no mutant ({reason}): ")?;
+        match reason {
+            SetsDropReason::NoRow => write!(
+                f,
+                "`{target}: {source}` is on a branch that names no row, which the model refuses"
+            ),
+            SetsDropReason::CreatesRow => write!(
+                f,
+                "`{target}: {source}` is written by a branch that creates its row, so without it \
+                 the value is the implementation's to choose, a weaker rule no correct target \
+                 fails, and an outcome whose guard is arranged through the field loses its \
+                 scenario"
+            ),
+            SetsDropReason::SourceNotInput => write!(
+                f,
+                "`{target}: {source}` is not read from an input, and only an input is sent apart \
+                 from what the row held, so no scenario tells the dropped write from the kept value"
+            ),
+            SetsDropReason::OptionalField => write!(
+                f,
+                "`{target}` is `Optional`, and a row nothing wrote holds it absent, which no \
+                 synthesized row expectation states"
+            ),
+        }
+    }
+}
+
+/// Whether the `sets:` entry writing `target` from `source` on `outcome` has a `sets-drop` site,
+/// or the one reason it has none. The only place that decides it: [`outcome_sites`] offers a site
+/// exactly where this is `Ok`, and [`unmutated_sets`] lists every other entry with its reason.
+fn sets_drop_site(
+    documents: &[Document],
+    outcome: &RawOutcome,
+    target: &str,
+    source: &PayloadSource,
+) -> Result<(), SetsDropReason> {
+    if outcome.creates.is_some() {
+        Err(SetsDropReason::CreatesRow)
+    } else if !acts_on_existing_row(outcome) {
+        Err(SetsDropReason::NoRow)
+    } else if !matches!(source, PayloadSource::InputField { .. }) {
+        Err(SetsDropReason::SourceNotInput)
+    } else if optional_field(documents, outcome, target) {
+        Err(SetsDropReason::OptionalField)
+    } else {
+        Ok(())
+    }
+}
+
+/// Every `sets:` entry with no `sets-drop` site, with its reason, in byte order of id; none unless
+/// `classes` selects `sets-drop` (<https://github.com/beyond10x/ess/issues/515>).
+///
+/// Beside [`selection`]'s sites these account for every entry the documents declare, so an audit
+/// that finds no `sets-drop` mutant can say why of each entry. It is not persisted: the report and
+/// manifest formats are unchanged, and the command line prints each as a note.
+pub fn unmutated_sets(documents: &[Document], classes: &[MutantClass]) -> Vec<UnmutatedSetsEntry> {
+    if !classes.contains(&MutantClass::SetsDrop) {
+        return Vec::new();
+    }
+    let documents = &resolved(documents);
+    let mut listed: Vec<UnmutatedSetsEntry> = commands(documents)
+        .flat_map(|command| {
+            command.outcomes.iter().flat_map(move |outcome| {
+                outcome.sets.0.iter().filter_map(move |set| {
+                    let reason =
+                        sets_drop_site(documents, outcome, &set.target, &set.source).err()?;
+                    let (command, outcome) = (command.name.to_string(), outcome.name.to_string());
+                    Some(UnmutatedSetsEntry {
+                        id: format!(
+                            "{}/{command}/{outcome}/{}",
+                            MutantClass::SetsDrop,
+                            set.target
+                        ),
+                        command,
+                        outcome,
+                        target: set.target.clone(),
+                        source: set.source.to_string(),
+                        reason,
+                    })
+                })
+            })
+        })
+        .collect();
+    listed.sort_by(|left, right| left.id.cmp(&right.id));
+    listed.dedup_by(|left, right| left.id == right.id);
+    listed
+}
+
 /// Whether `target`, a field of the row `outcome` updates or moves, is declared `Optional<…>`.
 ///
 /// Such a field nothing wrote is held absent, and no synthesized row expectation states an
@@ -1508,16 +1662,18 @@ fn outcome_sites(documents: &[Document], command: &RawCommandSpec, found: &mut V
             }));
         }
         for set in &outcome.sets.0 {
-            let PayloadSource::InputField { field } = &set.source else {
-                continue;
-            };
-            if acts_on_existing_row(outcome) && !optional_field(documents, outcome, &set.target) {
+            // Every entry is decided once: a site here, or listed with its reason by
+            // `unmutated_sets` (https://github.com/beyond10x/ess/issues/515).
+            if sets_drop_site(documents, outcome, &set.target, &set.source).is_ok() {
                 found.push(Mutation::SetsDrop {
                     command: command_name.clone(),
                     outcome: outcome_name.clone(),
                     target: set.target.clone(),
                 });
             }
+            let PayloadSource::InputField { field } = &set.source else {
+                continue;
+            };
             // ess/22 (A4): a path retargeted to the same-named top-level input of the type its
             // last member holds, the decoy an implementation reads where it means the member, held
             // to the rule a top-level retarget is.

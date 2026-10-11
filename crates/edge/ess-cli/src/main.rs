@@ -4357,7 +4357,23 @@ fn conform_mutate(
             known,
         ),
     };
-    finish_mutation_audit(audited, report_out, format)
+    let exit = finish_mutation_audit(audited, report_out, format);
+    note_unmutated_sets(&raw.parsed, &classes);
+    exit
+}
+
+/// Each `sets:` entry with no `sets-drop` site, with its reason, as a note after the audit's own
+/// output, where `sets-drop` is selected (<https://github.com/beyond10x/ess/issues/515>).
+///
+/// On stderr and in every format, as `synthesize` notes what it owes no scenario: the report and
+/// manifest formats carry no such field, so their bytes are unchanged.
+fn note_unmutated_sets(
+    documents: &[ess_conformance::mutate::Document],
+    classes: &[ess_conformance::mutate::MutantClass],
+) {
+    for entry in ess_conformance::mutate::unmutated_sets(documents, classes) {
+        eprintln!("note: {entry}");
+    }
 }
 
 /// The classes `--class` names, or every class when it names none.
@@ -4380,8 +4396,6 @@ fn conform_mutate_emit(
     format: Format,
     declaration: Option<&str>,
 ) -> Result<ExitCode> {
-    use ess_conformance::mutate;
-
     let Ok(_) = resolved(path, format)? else {
         return Ok(ExitCode::from(1));
     };
@@ -4393,13 +4407,26 @@ fn conform_mutate_emit(
             dir.display()
         );
     }
-    let emission = match mutate::emit_with(
-        &raw.parsed,
-        &raw.texts,
-        &mutant_classes(classes),
-        component,
-        declaration,
-    ) {
+    let classes = mutant_classes(classes);
+    let exit = write_emission(&raw, &classes, dir, component, format, declaration);
+    note_unmutated_sets(&raw.parsed, &classes);
+    exit
+}
+
+/// `mutate --emit` once the directory is known to be new or empty: the emission written, and
+/// what it wrote printed.
+fn write_emission(
+    raw: &load::RawLoaded,
+    classes: &[ess_conformance::mutate::MutantClass],
+    dir: &Path,
+    component: Option<&str>,
+    format: Format,
+    declaration: Option<&str>,
+) -> Result<ExitCode> {
+    use ess_conformance::mutate;
+
+    let emission = match mutate::emit_with(&raw.parsed, &raw.texts, classes, component, declaration)
+    {
         Ok(emission) => emission,
         Err(refusal) if refusal.is_inconclusive() => {
             eprintln!("{refusal}");
