@@ -1,0 +1,34 @@
+type: ess-scenario/1
+domain: work.tasks
+scenario: retries-reach-the-limit
+summary: A task is retried eighteen times and the nineteenth retry is refused as exhausted.
+
+arrange:
+  - instance: task
+    entity: work.tasks.Task
+
+timeline:
+  - at: 2026-01-05T09:00:00Z
+    command: work.tasks.CreateTask
+    input: {}
+    outcome: created
+    capture: {instance: task, event: work.tasks.TaskCreated, field: task_id}
+  - {at: 2026-01-05T09:00:01Z, command: work.tasks.RetryTask, input: {task_id: {$instance: task}}, outcome: retried}
+  - {at: 2026-01-05T09:00:02Z, command: work.tasks.RetryTask, input: {task_id: {$instance: task}}, outcome: retried}
+  - {at: 2026-01-05T09:00:03Z, command: work.tasks.RetryTask, input: {task_id: {$instance: task}}, outcome: retried}
+  - {at: 2026-01-05T09:00:04Z, command: work.tasks.RetryTask, input: {task_id: {$instance: task}}, outcome: retried}
+  - {at: 2026-01-05T09:00:05Z, command: work.tasks.RetryTask, input: {task_id: {$instance: task}}, outcome: retried}
+  - {at: 2026-01-05T09:00:06Z, command: work.tasks.RetryTask, input: {task_id: {$instance: task}}, outcome: retried}
+  - {at: 2026-01-05T09:00:07Z, command: work.tasks.RetryTask, input: {task_id: {$instance: task}}, outcome: retried}
+  - {at: 2026-01-05T09:00:08Z, command: work.tasks.RetryTask, input: {task_id: {$instance: task}}, outcome: retried}
+  - {at: 2026-01-05T09:00:09Z, command: work.tasks.RetryTask, input: {task_id: {$instance: task}}, outcome: retried}
+  - {at: 2026-01-05T09:00:10Z, command: work.tasks.RetryTask, input: {task_id: {$instance: task}}, outcome: retried}
+  - {at: 2026-01-05T09:00:11Z, command: work.tasks.RetryTask, input: {task_id: {$instance: task}}, outcome: retried}
+  - {at: 2026-01-05T09:00:12Z, command: work.tasks.RetryTask, input: {task_id: {$instance: task}}, outcome: retried}
+  - {at: 2026-01-05T09:00:13Z, command: work.tasks.RetryTask, input: {task_id: {$instance: task}}, outcome: retried}
+  - {at: 2026-01-05T09:00:14Z, command: work.tasks.RetryTask, input: {task_id: {$instance: task}}, outcome: retried}
+  - {at: 2026-01-05T09:00:15Z, command: work.tasks.RetryTask, input: {task_id: {$instance: task}}, outcome: retried}
+  - {at: 2026-01-05T09:00:16Z, command: work.tasks.RetryTask, input: {task_id: {$instance: task}}, outcome: retried}
+  - {at: 2026-01-05T09:00:17Z, command: work.tasks.RetryTask, input: {task_id: {$instance: task}}, outcome: retried}
+  - {at: 2026-01-05T09:00:18Z, command: work.tasks.RetryTask, input: {task_id: {$instance: task}}, outcome: retried}
+  - {at: 2026-01-05T09:00:19Z, command: work.tasks.RetryTask, input: {task_id: {$instance: task}}, outcome: at-limit, error: {name: work.tasks.Exhausted}}

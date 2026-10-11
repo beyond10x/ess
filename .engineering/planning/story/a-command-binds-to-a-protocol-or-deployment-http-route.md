@@ -2,14 +2,17 @@
 format: aep.planning-md/3
 id: story:a-command-binds-to-a-protocol-or-deployment-http-route
 kind: story
-status: draft
+status: active
 title: A command or view binds to the HTTP method and path a protocol fixes or a deployment chooses
 refs:
 - provider: github
   reference: beyond10x/ess#493
 relations:
 - serves: vision:O2
-revision: 3
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-11T11:03:11Z", actor: "human:timo", revision: 5}
+- {from: "proposed", to: "active", at: "2026-10-11T11:03:11Z", actor: "human:timo", revision: 6}
 ---
 ## Request
 
@@ -319,3 +322,31 @@ declared routes from compiled output, without parsing the specification source.
 - The compiled `ess-http-ir/1` carries, per bound command and view, the method and the path
   template with its parameters, in a form a documentation renderer reads without the
   specification source; a test renders a route table from it.
+
+## Stage 1 in wave 2026-10-11j
+
+Built against `docs/design/http-presentation-binding.md` (its "Decided for stage 1" section answers its stage-1 questions). Stage 1 ships in 0.60.0 without the Rust and Go servers' template dispatch and without `ess generate synthesize --http`; both move to stage 2. The issue stays open until stage 2 ships.
+
+Acceptance for stage 1:
+
+- `ess specify http validate` accepts an `ess-http/1` document pinned to the specification's source digest and refuses each case in the page's stage-1 table with its `ESS-HTTP-001` to `-014` code and the path of the offending key; a stage-2 key is refused as an unknown field naming it.
+- `ess specify http compile` writes a canonical `ess-http-ir/1`: routes ordered by path then method, every map ordered, the refined digest and the derived routes recorded; compiling twice gives equal bytes; a test renders a route table from it.
+- `refines:` pins the refined file's bytes; a refinement that changes a fixed method or path or drops a route is refused (`ESS-HTTP-012`).
+- `ess generate --kind openapi --http <binding>` emits the declared methods and paths with path parameters and `x-ess-route-source: binding`, refuses an open route naming the operation, and without `--http` keeps every byte; `--http` with another `--kind` is refused.
+
+## Scope (stage 1 delivered in wave 2026-10-11j)
+
+| unit | commits | files |
+|---|---|---|
+| design answers | 8954ec7719 | `docs/design/http-presentation-binding.md` |
+| crate, reader, compile | 1aa82caf99 | `crates/specify/ess-http/`, `crates/edge/ess-cli/src/http.rs`, `ess-cli/tests/http.rs` |
+| templates, parameters, collisions | d03c9a56c6, 4dac19b7b6, a636c56a95 | `ess-http/src/lib.rs`, `ess-http/tests/compile.rs`, `adversary_j5.rs`, `adversary_j5_pass2.rs` |
+| `refines:` | 82d4a3d7da | `ess-http/src/lib.rs`, `ess-http/tests/compile.rs`, `ess-cli/src/http.rs`, `ess-cli/tests/http.rs`, `website/docs/reference/formats.md` |
+| OpenAPI `--http` | 491000f9f9, 0b75278305 | `crates/generate/ess-gen/src/http.rs` (`bound_routes` beside `routes`), `openapi.rs`, `ess-gen/tests/openapi_http.rs`, `ess-cli/src/main.rs`, `website/docs/guides/http-routes.md` |
+| toolchain model | 3bbe038de0, bb1ed692db | `models/toolchain/domains/generate.yaml`, the four repository-wide tables |
+
+Two adversary passes on templates and collisions, both fixed. Open for stage 2 or a design call:
+a refinement may change what a variable under a fixed path reads (only method, path and dropped
+routes are refused); an open route may stay open in a refinement; paths are compared as text, so a
+renamed variable is refused; the toolchain model's `BindingPath` invariant adds one synthesis
+refusal (ESS-SYNTH-013). https://github.com/beyond10x/ess/issues/493 stays open for stage 2.

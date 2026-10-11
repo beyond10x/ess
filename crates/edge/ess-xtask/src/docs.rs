@@ -290,6 +290,9 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-transport", 2, Some("0.53.0")),
     ("ess-transport-ir", 2, Some("0.53.0")),
     ("ess-client-report", 2, Some("0.53.0")),
+    // The HTTP presentation binding, stage 1 (https://github.com/beyond10x/ess/issues/493).
+    ("ess-http", 1, None),
+    ("ess-http-ir", 1, None),
     ("ess-protospec", 1, Some("0.53.0")),
     ("ess-prototrace", 1, Some("0.53.0")),
     ("ess-build", 1, Some("0.9.0")),

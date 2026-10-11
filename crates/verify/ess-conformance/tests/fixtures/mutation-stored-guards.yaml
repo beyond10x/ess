@@ -1,0 +1,107 @@
+format: ess/23
+system: demo
+version: v1
+domain: demo.store
+summary: >-
+  A shelf restocked only while it is not over capacity, and a pick refused where the shelf named
+  holds too little: one `when_subject:` guard and one `when_related:` guard, for the mutation audit.
+types:
+  - {name: demo.store.ShelfId, kind: newtype, of: Uuid}
+  - {name: demo.store.PickId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.store.Shelf
+    identity: {name: shelf_id, type: demo.store.ShelfId}
+    fields:
+      - {name: stock, type: Integer}
+      - {name: capacity, type: Integer}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: demo.store.Pick
+    identity: {name: pick_id, type: demo.store.PickId}
+    fields:
+      - {name: shelf, type: demo.store.ShelfId}
+      - {name: quantity, type: Integer}
+    relations:
+      - {name: shelf, kind: references, target: demo.store.Shelf, cardinality: one, via: shelf}
+    lifecycle: {initial: Picked, states: [Picked], terminal: [Picked]}
+actors:
+  - name: demo.store.Clerk
+    may: [demo.store.Stock, demo.store.Restock, demo.store.Take]
+errors:
+  - {name: demo.store.ShelfNotFound, summary: No such shelf., fields: []}
+  - {name: demo.store.ShelfFull, summary: The shelf takes no more stock., fields: []}
+  - {name: demo.store.TooLittle, summary: The shelf holds too little for the pick., fields: []}
+events:
+  - name: demo.store.Stocked
+    fields: [{name: shelf_id, type: demo.store.ShelfId}]
+  - name: demo.store.Restocked
+    fields: [{name: shelf_id, type: demo.store.ShelfId}]
+  - name: demo.store.Picked
+    fields: [{name: pick_id, type: demo.store.PickId}]
+commands:
+  - name: demo.store.Stock
+    input:
+      - {name: stock, type: Integer}
+      - {name: capacity, type: Integer}
+    outcomes:
+      - name: stocked
+        creates: demo.store.Shelf
+        instance: shelf_id
+        sets: {stock: input.stock, capacity: input.capacity}
+        emits: [demo.store.Stocked]
+        payload: {demo.store.Stocked: {shelf_id: {generated: true}}}
+  - name: demo.store.Restock
+    input:
+      - {name: shelf_id, type: demo.store.ShelfId}
+      - {name: stock, type: Integer}
+    outcomes:
+      - name: full
+        when_subject:
+          predicate:
+            any:
+              - stock >= capacity
+              - capacity <= 0
+        error: demo.store.ShelfFull
+      - name: restocked
+        updates: demo.store.Shelf
+        instance: shelf_id
+        sets: {stock: input.stock}
+        emits: [demo.store.Restocked]
+        payload: {demo.store.Restocked: {shelf_id: input.shelf_id}}
+      - {name: not-found, unknown_instance: true, error: demo.store.ShelfNotFound}
+  - name: demo.store.Take
+    input:
+      - {name: shelf, type: demo.store.ShelfId}
+      - {name: quantity, type: Integer}
+    outcomes:
+      - name: no-shelf
+        when_related: {via: input.shelf, exists: false}
+        error: demo.store.ShelfNotFound
+      - name: too-little
+        when_related:
+          via: input.shelf
+          predicate:
+            any:
+              - stock < input.quantity
+              - stock <= 0
+        error: demo.store.TooLittle
+      - name: picked
+        creates: demo.store.Pick
+        instance: pick_id
+        sets: {shelf: input.shelf, quantity: input.quantity}
+        emits: [demo.store.Picked]
+        payload: {demo.store.Picked: {pick_id: {generated: true}}}
+views:
+  - name: demo.store.Shelves
+    source: demo.store.Shelf
+    consistency: read_your_writes
+    fields:
+      - {name: shelf_id, type: demo.store.ShelfId}
+      - {name: stock, type: Integer}
+      - {name: capacity, type: Integer}
+  - name: demo.store.Picks
+    source: demo.store.Pick
+    consistency: read_your_writes
+    fields:
+      - {name: pick_id, type: demo.store.PickId}
+      - {name: shelf, type: demo.store.ShelfId}
+      - {name: quantity, type: Integer}

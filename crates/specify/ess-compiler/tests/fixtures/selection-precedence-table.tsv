@@ -1,4 +1,4 @@
-#	models=222	commands=390
+#	models=226	commands=401
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -124,6 +124,10 @@ crates/specify/ess-domain/tests/fixtures/text-length-positions.yaml	ir=64397198c
 crates/specify/ess-domain/tests/fixtures/text-length-positions.yaml	keypad.dial.Close	held_state: unnamed | default: closed
 crates/specify/ess-domain/tests/fixtures/text-length-positions.yaml	keypad.dial.Open	default: opened
 crates/specify/ess-domain/tests/fixtures/text-length-positions.yaml	keypad.dial.SendKeys	input_refusal: too-long | default: sent
+crates/specify/ess-http/tests/fixtures/catalog.yaml	ir=11e75f985e5228749c7c2764f0725a3dc006d2be4a52d1921c9156c75f842fa1:8248
+crates/specify/ess-http/tests/fixtures/catalog.yaml	catalog.items.ListItem	default: listed
+crates/specify/ess-http/tests/fixtures/catalog.yaml	catalog.items.PurgeItems	default: purged
+crates/specify/ess-http/tests/fixtures/catalog.yaml	catalog.items.TouchItem	default: touched
 crates/specify/ess-service-contract/tests/fixtures/system.yaml	ASSEMBLE
 crates/specify/ess-service-contract/tests/selection-conversion-control-fixtures/system.yaml	ASSEMBLE
 crates/specify/ess-service-contract/tests/selection-conversion-fixtures/system.yaml	ASSEMBLE
@@ -367,12 +371,23 @@ crates/verify/ess-conformance/tests/fixtures/mutation-arms.yaml	notes.core.Grade
 crates/verify/ess-conformance/tests/fixtures/mutation-arms.yaml	notes.core.Measure	input_refusal: too-low, low | default: measured
 crates/verify/ess-conformance/tests/fixtures/mutation-arms.yaml	notes.core.Sort	accepting: first, second | default: rest
 crates/verify/ess-conformance/tests/fixtures/mutation-arms.yaml	notes.core.Write	default: written
+crates/verify/ess-conformance/tests/fixtures/mutation-authored.yaml	ir=e71fef920ccb06ffa5f6872d7a5e306030c8a7a7751a5f4085adf8bd9748e40d:7644
+crates/verify/ess-conformance/tests/fixtures/mutation-authored.yaml	work.tasks.CreateTask	default: created
+crates/verify/ess-conformance/tests/fixtures/mutation-authored.yaml	work.tasks.RetryTask	held_state: at-limit | default: retried
 crates/verify/ess-conformance/tests/fixtures/mutation-gained-refusal.yaml	ir=0f73968f58bc18fae3fc667940afe9eae0698000f19347e328d8c8c853a38e2a:8865
 crates/verify/ess-conformance/tests/fixtures/mutation-gained-refusal.yaml	shop.order.ReportStatus	accepting: settled, pending | default: noted
 crates/verify/ess-conformance/tests/fixtures/mutation-identical-answer.yaml	ir=b7835b0d5fdee67ccedab693b5fa9e4a341ce156b6bdee17fcad5b2aa15b8af9:6862
 crates/verify/ess-conformance/tests/fixtures/mutation-identical-answer.yaml	desk.entry.Check	input_refusal: leading-hold, trailing-hold | default: checked
 crates/verify/ess-conformance/tests/fixtures/mutation-identical-answer.yaml	desk.entry.Grade	input_refusal: too-low, low | default: graded
 crates/verify/ess-conformance/tests/fixtures/mutation-identical-answer.yaml	desk.entry.Open	input_refusal: leading-hold, trailing-hold | default: opened
+crates/verify/ess-conformance/tests/fixtures/mutation-sets-entries.yaml	ir=d0047957730176789ee2ce6e2950593a23502c65d675f9fe5e96bf02d4517f58:13729
+crates/verify/ess-conformance/tests/fixtures/mutation-sets-entries.yaml	demo.keys.Check	held_state: not-owner | default: checked
+crates/verify/ess-conformance/tests/fixtures/mutation-sets-entries.yaml	demo.keys.Issue	default: issued
+crates/verify/ess-conformance/tests/fixtures/mutation-sets-entries.yaml	demo.keys.Rename	default: renamed
+crates/verify/ess-conformance/tests/fixtures/mutation-stored-guards.yaml	ir=fd21f26a9a288a26c88cddb99fc387d17675e58f37ba25df941a7b3a58f9b392:17240
+crates/verify/ess-conformance/tests/fixtures/mutation-stored-guards.yaml	demo.store.Restock	existence: not-found | held_state: full | default: restocked
+crates/verify/ess-conformance/tests/fixtures/mutation-stored-guards.yaml	demo.store.Stock	default: stocked
+crates/verify/ess-conformance/tests/fixtures/mutation-stored-guards.yaml	demo.store.Take	related_row: no-shelf | accepting: too-little | default: picked
 crates/verify/ess-conformance/tests/fixtures/mutation-survivor.yaml	ir=b14305bb513764b3c344b2c3c3f5a70851ca6e882b54101697a539df2cff9b25:30315
 crates/verify/ess-conformance/tests/fixtures/mutation-survivor.yaml	billing.invoice.CancelInvoice	held_state: wrong-state | default: cancelled
 crates/verify/ess-conformance/tests/fixtures/mutation-survivor.yaml	billing.invoice.CreateInvoice	accepting: accepted | default: rejected

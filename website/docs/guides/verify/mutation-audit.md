@@ -31,14 +31,30 @@ weakening it: a mutant that only says less could never be killed by a correct ta
   it moves the integer literal of a `>=` or `<=` one step outward (`amount >= 10` becomes
   `amount >= 9`), the direction the swap does not take; and it flips `==`↔`!=` on a comparison that
   is not the whole guard, which `guard-negate` already covers.
+- `guard-boundary`, `guard-negate` and `guard-connective` edit the predicate of a `when_subject:`
+  over the stored subject, and the predicate of a `when_related:` over the row an input identity
+  names, as they edit a `when:`. Such a mutant's id names the key after the outcome:
+  `guard-negate/<command>/<outcome>/when_subject`,
+  `guard-boundary/<command>/<outcome>/when_related/0`. A `when:` mutant keeps the id it had. The
+  `{field, equals}` form of `when_subject:` and a row set's `where`, `count` and `forall` are not
+  edited this way; a row set's `count:` bound has its own `guard-boundary` mutant.
 - `sets-drop` removes one `sets: field: input.x` entry from a branch that updates or moves an
   existing row. There the drop is not weaker: the field keeps what the row held instead of taking
   the input. Synthesis sends an input no `sets:` entry reads apart from what the row holds in the
   field of the same name and type, so a view reading the field tells the two apart. Where the
   dropped input feeds a field of another name that already holds the same value, the mutant can
-  survive: that survivor is a weak witness, not a correct implementation. A creating branch is
-  left out, because there a dropped write only leaves the value to the implementation, and so is
-  an `Optional` field, which a row nothing wrote holds absent and no scenario asserts.
+  survive: that survivor is a weak witness, not a correct implementation. Every other `sets:`
+  entry has no site, and the audit says why of each one: after its own output, on stderr and in
+  every format, `--target` and `--emit` print one note per entry, such as
+  `note: sets-drop/<command>/<outcome>/<field> has no mutant (creates_row): …`. The reasons are
+  `creates_row` (a creating branch: a dropped write only leaves the value to the implementation, a
+  weaker rule no correct target fails, and an outcome whose guard synthesis arranges through the
+  field loses its scenario), `source_not_input` (a literal or any other source than `input.<f>`,
+  which synthesis cannot send apart from what the row held), and `optional_field` (a row nothing
+  wrote holds an `Optional` field absent, and no scenario asserts an absence). A model whose every
+  write is on a creating branch therefore has no `sets-drop` mutant, and `--class sets-drop`
+  refuses with `ESS-MUTATE-003` and then names each entry. The report and the manifest carry no
+  such list, so their formats are unchanged.
 - `precedence-swap` swaps two adjacent branches guarded by their input alone, both accepting or
   both refusing, so the second answers where both guards hold. Where no input satisfies both
   guards, the swap decides nothing and is *equivalent* (below). A branch the held state, a stored
@@ -77,7 +93,9 @@ rule. So is a guard mutant whose `when:` sits beside a `when_subject:` predicate
 only by comparing a stored field with an input field the mutated `when:` leaves absent, as
 `not defined(expected_version)` beside `version != input.expected_version` does: a comparison with
 an absent input is unknown on every row, never true, and the entry names the `when:` and the
-stored predicate together. An
+stored predicate together. A mutant of the `when_subject:` predicate itself is decided the same
+way where a `when:` sits beside it; one with no `when:` beside it, and every mutant of a
+`when_related:` predicate, is not decided and is scored as before. An
 ordering, a text match, a quantifier, or a guard with more combinations is not decided, and such a
 mutant is scored as before. A mutant with a changed scenario that was not scored stays
 *inconclusive*: that scenario might have killed it.
@@ -87,7 +105,10 @@ kills it: the same error, the same or no payload, and neither branch changing st
 emitting anything, so either order gives the caller the same answer where both guards hold. Its
 entry names that answer as `identical_answer`, apart from `unsatisfiable_guard`, so a reader
 tells "these guards never overlap" from "these answers are identical". Two refusals that differ in
-error or payload are scored as before.
+error or payload are scored as before, and so are two that a binding invoking the command answers
+differently: a failure policy that drops one and escalates the other, or a bounded retry that
+names only one of them `final`, since the binding then publishes or retries differently whichever
+branch answers.
 
 A mutant on an outcome whose scenario the baseline suite already refuses, such as a branch no
 arrangement reaches (`ESS-SYNTH-003`), cannot be killed by either suite. It is *unwitnessed* as
@@ -103,16 +124,52 @@ scenario might have killed it. An excluded scenario the mutant holds exactly as 
 asks the target what the baseline asked, so it cannot, and the mutant can still survive. A
 scenario new to a mutant's suite is scored. A baseline that executed nothing scores nothing.
 
-**A survivor is not answered by authoring a scenario.** An authored scenario's expectations are its
-author's, not the model's, so it runs identically in every mutant's suite and can never kill one;
-`mutate` runs none. Answer a survivor by declaring what makes the rule observable, such as a view
-projecting the field a `sets` entry writes, or by filing a synthesis gap.
+**A survivor is first answered in the specification.** Declare what makes the rule observable,
+such as a view projecting the field a `sets` entry writes, or file a synthesis gap. An authored
+scenario put in a mutant's suite could not answer it: its expectations are its author's, not the
+model's, so against the unchanged target it runs identically in every mutant's suite.
 
 | Exit | When |
 |---|---|
 | 0 | No baseline scenario failed or ended `error`, at least one mutant that is not equivalent ran, every scored mutant was killed or equivalent, none is inconclusive or unwitnessed, and no selected site is unavailable. Baseline scenarios that were not executed are listed, not scored. |
 | 1 | The specification did not load, or at least one mutant survived. |
 | 3 | `ESS-MUTATE-001` (a baseline scenario failed or ended `error`), nothing scored (the baseline executed no scenario), `ESS-MUTATE-003` (no site), or no survivor and at least one mutant unwitnessed or inconclusive or a selected site unavailable, or every mutant stillborn or equivalent. |
+
+### Run your authored scenarios against each mutant
+
+Some rules no synthesized scenario reaches: a counter limit farther than synthesis follows a
+counter, for example, makes the baseline refuse the outcome's scenario, and every mutant on that
+outcome is unwitnessed. An `ess-scenario/1` scenario you wrote can reach it. `--scenarios DIR`
+runs those scenarios with `--target interpreted`:
+
+```shell-session
+$ ess verify conform mutate \
+    --path model \
+    --target interpreted \
+    --scenarios scenarios
+```
+
+`DIR` is read, and its documents refused, exactly as `ess verify conform run --scenarios` reads
+them; a refused document exits 1 before anything runs. Each authored scenario runs against the
+interpreter of your specification as part of the baseline, and against the interpreter of each
+mutant beside that mutant's synthesized suite, on the clock `run --target interpreted` uses: a
+`now` guard is decided at the instant of the step, so a scenario `run` passes executes here too.
+The interpreter of a mutant is an implementation of the mutant, so an authored scenario that fails
+there kills it, and the report names it among the killers as it names a synthesized scenario
+(`killed … — by <domain>/authored/<scenario>`). An authored scenario the baseline fails refuses the
+audit with `ESS-MUTATE-001`, as a synthesized one does. An authored scenario the baseline executed that requires an outcome makes that
+outcome witnessed, so a mutant on it is scored on what the scenarios observed rather than being unwitnessed
+for the baseline's refusal alone; one that passes against the mutant leaves it surviving. One the
+baseline did not execute (`unsupported` or `skipped`) witnesses nothing, and since it would have run
+against the mutant's interpreter, it leaves a mutant nothing killed `inconclusive` rather than
+surviving. A `precedence-swap` reported `equivalent` because both branches give the same answer stays
+equivalent: an authored scenario that fails against it differs only in the outcome's name, which
+names the branch and is no part of the answer.
+
+`--scenarios` is refused with `--target billing` and `--target oracle-fixture`, which implement no
+mutant, and with `--emit`, `--collect` and `--known-failing`: a runner of your own implements the
+unchanged specification, where an authored scenario could never fail. Without `--scenarios` no
+authored scenario runs, and the report is what it was.
 
 ## Audit your own implementation
 

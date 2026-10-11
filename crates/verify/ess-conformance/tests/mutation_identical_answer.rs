@@ -296,3 +296,127 @@ fn an_emission_whose_mutants_carry_no_identical_answer_keeps_version_4_bytes() {
     );
     assert_fixture_bytes("mutation-report-4-scoped.json", &text);
 }
+
+/// `Record` refuses a prompt starting with `hold ` and one ending with ` hold` with the same error
+/// and no payload; the binding recording each placed order answers its refusals with `POLICY`.
+const LEDGER: &str = r#"format: ess/23
+system: demo
+version: v1
+domain: demo.ledger
+errors:
+  - name: demo.ledger.Invalid
+    fields: []
+events:
+  - name: demo.ledger.OrderPlaced
+    fields:
+      - {name: prompt, type: String}
+  - name: demo.ledger.RecordEscalated
+    fields:
+      - {name: prompt, type: String}
+commands:
+  - name: demo.ledger.Place
+    input:
+      - {name: prompt, type: String}
+    outcomes:
+      - name: placed
+        emits: [demo.ledger.OrderPlaced]
+        payload:
+          demo.ledger.OrderPlaced: {prompt: input.prompt}
+  - name: demo.ledger.Record
+    input:
+      - {name: prompt, type: String}
+    outcomes:
+      - name: leading-hold
+        when: {prompt: {starts_with: "hold "}}
+        error: demo.ledger.Invalid
+      - name: trailing-hold
+        when: {prompt: {ends_with: " hold"}}
+        error: demo.ledger.Invalid
+      - name: recorded
+        accepts: nothing
+bindings:
+  - id: notify-ledger
+    when:
+      event: demo.ledger.OrderPlaced
+    invoke:
+      command: demo.ledger.Record
+    mapping:
+      prompt: event.prompt
+    delivery: at_least_once
+POLICY"#;
+
+const RECORD: &str = "precedence-swap/demo.ledger.Record/leading-hold/trailing-hold";
+
+/// The `identical_answer` of the `Record` swap where the binding answers refusals with `policy`.
+fn ledger_answer(policy: &str) -> Option<String> {
+    let text = LEDGER.replace("POLICY", policy);
+    let label = "ledger.yaml".to_owned();
+    let raw = RawSpecFile::parse(&text).unwrap_or_else(|error| panic!("{error}"));
+    let mut texts = SourceMap::new();
+    texts.insert(label.clone(), text);
+    let files = vec![(Source::new(label), raw)];
+    let ir = mutate::compile(files.clone(), &texts).unwrap_or_else(|error| panic!("{error:?}"));
+    let report = mutate::audit(&files, &texts, &[MutantClass::PrecedenceSwap], || {
+        Interpreted::for_model(ir.clone())
+    })
+    .unwrap_or_else(|refusal| panic!("{refusal}"));
+    report
+        .mutants
+        .iter()
+        .find(|entry| entry.id == RECORD)
+        .unwrap_or_else(|| panic!("{RECORD}: {}", report.render_text()))
+        .identical_answer
+        .clone()
+}
+
+/// A binding's failure policy is selected by the refusal's name, so the two refusals answer alike
+/// only where every binding invoking the command answers both alike: the same selected policy and
+/// the same membership of a bounded retry's `final` outcomes
+/// (<https://github.com/beyond10x/ess/issues/515>).
+#[test]
+fn a_swap_of_refusals_a_binding_answers_differently_carries_no_identical_answer() {
+    let carried: Vec<&str> = [
+        (
+            "drop one, escalate the other",
+            "    on_failure:\n      drop: [leading-hold]\n      escalate:\n        emits: demo.ledger.RecordEscalated\n        except: [leading-hold]\n",
+        ),
+        (
+            "one universal policy, a bounded retry final on one",
+            "    on_failure:\n      retry: {attempts: 3, final: [leading-hold]}\n",
+        ),
+        (
+            "one selected retry, final on one",
+            "    on_failure:\n      retry: {outcomes: [leading-hold, trailing-hold], attempts: 3, final: [leading-hold]}\n      drop: {except: [leading-hold, trailing-hold]}\n",
+        ),
+    ]
+    .into_iter()
+    .filter(|(_, policy)| ledger_answer(policy).is_some())
+    .map(|(case, _)| case)
+    .collect();
+    assert!(
+        carried.is_empty(),
+        "carried `identical_answer`: {carried:?}"
+    );
+}
+
+/// The control: where the binding answers both refusals alike, the swap keeps its identical
+/// answer, under one universal policy or a refusal-selected one.
+#[test]
+fn a_swap_of_refusals_every_binding_answers_alike_keeps_its_identical_answer() {
+    let shared =
+        "refuse with `demo.ledger.Invalid` and no payload; neither changes state, sets or \
+                  emits anything";
+    for (case, policy) in [
+        ("one universal policy", "    on_failure: drop\n"),
+        (
+            "a universal bounded retry final on both",
+            "    on_failure:\n      retry: {attempts: 3, final: [demo.ledger.Invalid]}\n",
+        ),
+        (
+            "a selected policy answering both alike",
+            "    on_failure:\n      drop: [leading-hold, trailing-hold]\n      escalate:\n        emits: demo.ledger.RecordEscalated\n        except: [leading-hold, trailing-hold]\n",
+        ),
+    ] {
+        assert_eq!(ledger_answer(policy).as_deref(), Some(shared), "{case}");
+    }
+}

@@ -1,0 +1,61 @@
+# The mutation audit's authored-scenario fixture (https://github.com/beyond10x/ess/issues/515).
+# `RetryTask` refuses once `retries` reaches 18, past the 16 steps synthesis follows a counter, so
+# the baseline refuses the `at-limit` scenario (ESS-SYNTH-003) and a mutant its synthesized suite
+# cannot see on that branch is unwitnessed. The authored scenario beside it,
+# `mutation-authored/retries-reach-the-limit.yaml`, raises the counter eighteen times and requires
+# `Exhausted` on the nineteenth raise: run against the interpreter of a mutant, it kills the
+# mutants on `at-limit`.
+
+format: ess/18
+system: work
+version: v1
+domain: work.tasks
+types:
+  - {name: work.tasks.TaskId, kind: newtype, of: Uuid}
+entities:
+  - name: work.tasks.Task
+    identity: {name: task_id, type: work.tasks.TaskId}
+    fields:
+      - {name: retries, type: Integer}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+errors:
+  - {name: work.tasks.Exhausted, fields: []}
+  - {name: work.tasks.Blocked, fields: []}
+events:
+  - name: work.tasks.TaskCreated
+    fields: [{name: task_id, type: work.tasks.TaskId}]
+  - name: work.tasks.TaskRetried
+    fields: [{name: task_id, type: work.tasks.TaskId}]
+commands:
+  - name: work.tasks.CreateTask
+    input: []
+    outcomes:
+      - name: created
+        creates: work.tasks.Task
+        instance: task_id
+        emits: [work.tasks.TaskCreated]
+        payload:
+          work.tasks.TaskCreated: {task_id: {generated: true}}
+        sets: {retries: 0}
+  - name: work.tasks.RetryTask
+    input:
+      - {name: task_id, type: work.tasks.TaskId}
+    outcomes:
+      - name: at-limit
+        when_subject: {predicate: retries >= 18}
+        error: work.tasks.Exhausted
+      - name: retried
+        updates: work.tasks.Task
+        instance: task_id
+        emits: [work.tasks.TaskRetried]
+        payload:
+          work.tasks.TaskRetried: {task_id: input.task_id}
+        sets: {retries: {increment: 1}}
+views:
+  - name: work.tasks.Tasks
+    source: work.tasks.Task
+    consistency: read_your_writes
+    fields:
+      - {name: task_id, type: work.tasks.TaskId}
+      - {name: state, type: work.tasks.Task.State}
+      - {name: retries, type: Integer}

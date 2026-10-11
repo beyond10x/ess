@@ -155,9 +155,19 @@ pub const UNFINISHED: &str = "501";
 /// `input_absent:` branch (ess/16) declares the answer for a request with no body, so the body is
 /// not required even where its fields are.
 pub fn body_required(command: &ess_compiler::ir::ResolvedCommand) -> bool {
+    body_required_without(command, &std::collections::BTreeSet::new())
+}
+
+/// [`body_required`], for a body that does not carry the input fields an `ess-http/1` route
+/// `carried` in its path: whether some other input field is not optional.
+pub fn body_required_without(
+    command: &ess_compiler::ir::ResolvedCommand,
+    carried: &std::collections::BTreeSet<&str>,
+) -> bool {
     command
         .input
         .iter()
+        .filter(|field| !carried.contains(field.name.as_str()))
         .any(|field| !field.type_ref.is_optional())
         && !command
             .outcomes
@@ -317,34 +327,74 @@ pub fn caller_attributes(ir: &EssIr, command: &ess_compiler::ir::ResolvedCommand
     read.into_iter().collect()
 }
 
-/// The two methods this surface uses, and no others.
+/// The methods a route is served on.
 ///
-/// A command changes state, so it is a `POST`; a view is a projection a caller reads, so it is a
-/// `GET`. Nothing here is a resource, so there is no `PUT` and no `DELETE` — the model describes no
-/// addressable thing to replace or remove, and inventing one is exactly what the command-endpoint
-/// convention exists to avoid.
+/// Without a binding there are two. A command changes state, so it is a `POST`; a view is a
+/// projection a caller reads, so it is a `GET`. Nothing derived is a resource, so no derived route
+/// is a `PUT`, a `PATCH` or a `DELETE` — the model describes no addressable thing to replace or
+/// remove, and inventing one is exactly what the command-endpoint convention exists to avoid.
+///
+/// An `ess-http/1` binding ([`Binding`]) is where a protocol says otherwise, and the other three are
+/// the methods it may bind a command to. Declared in name order, the order `ess-http-ir/1` orders
+/// routes on one path in; `Get` before `Post` either way.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Method {
-    /// Reads a projection.
+    /// Removes what a bound command names; only from a binding.
+    Delete,
+    /// Reads a projection, or a bound command whose every input field is in its path.
     Get,
+    /// Changes part of what a bound command names; only from a binding.
+    Patch,
     /// Issues a command.
     Post,
+    /// Replaces what a bound command names; only from a binding.
+    Put,
 }
 
 impl Method {
     /// The verb as it appears on the wire and in the document.
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::Delete => "DELETE",
             Self::Get => "GET",
+            Self::Patch => "PATCH",
             Self::Post => "POST",
+            Self::Put => "PUT",
         }
     }
 
     /// The `OpenAPI` path-item key, which is the verb in lower case.
     pub fn keyword(self) -> &'static str {
         match self {
+            Self::Delete => "delete",
             Self::Get => "get",
+            Self::Patch => "patch",
             Self::Post => "post",
+            Self::Put => "put",
+        }
+    }
+
+    /// The same method as an `ess-http/1` binding spells it.
+    pub fn binding(self) -> ess_http::Method {
+        match self {
+            Self::Delete => ess_http::Method::Delete,
+            Self::Get => ess_http::Method::Get,
+            Self::Patch => ess_http::Method::Patch,
+            Self::Post => ess_http::Method::Post,
+            Self::Put => ess_http::Method::Put,
+        }
+    }
+
+    /// The method a binding's `method` serves on, if a route may be served on it: `head`, `options`
+    /// and `trace` are refused for every operation in `ess-http/1` (`ESS-HTTP-006`).
+    pub fn of(method: ess_http::Method) -> Option<Self> {
+        match method {
+            ess_http::Method::Delete => Some(Self::Delete),
+            ess_http::Method::Get => Some(Self::Get),
+            ess_http::Method::Patch => Some(Self::Patch),
+            ess_http::Method::Post => Some(Self::Post),
+            ess_http::Method::Put => Some(Self::Put),
+            ess_http::Method::Head | ess_http::Method::Options | ess_http::Method::Trace => None,
         }
     }
 }
@@ -367,6 +417,162 @@ pub struct Route<'a> {
     pub path: String,
     /// The construct it serves.
     pub serves: Served<'a>,
+    /// The binding's route, where an `ess-http/1` binding declares this one: its method and path
+    /// are then [`Route::method`] and [`Route::path`], and its `parameters` say which input field
+    /// or view parameter each path variable carries. `None` for a derived route.
+    pub declared: Option<&'a ess_http::Route>,
+}
+
+impl Served<'_> {
+    /// The operation an `ess-http/1` binding names this construct by.
+    pub fn operation(self) -> ess_http::Operation {
+        match self {
+            Self::Command(handle) => ess_http::Operation::Command(handle.name().to_string()),
+            Self::View(handle) => ess_http::Operation::View(handle.name().to_string()),
+        }
+    }
+}
+
+/// An `ess-http/1` binding compiled against this IR ([`ess_http::compile`]), held to what a
+/// projection that publishes routes needs: a path on every route, and a method a route is served
+/// on (`docs/design/http-presentation-binding.md`, "What generated artifacts change (stage 1)").
+///
+/// [`bound_routes`] reads it; nothing else here does, so every artifact generated without one keeps
+/// its bytes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Binding(ess_http::HttpIr);
+
+impl Binding {
+    /// Holds `http` to a path on every route, refusing every route without one by its operation.
+    ///
+    /// An open route is valid `ess-http/1`: a protocol binding leaves a path to each server. It is
+    /// not a route anything can be sent to, so a document publishing it would have to invent a
+    /// path; the server binding that refines it fills the path in (decided for stage 1, answer 1).
+    /// A method a route is never served on (`head`, `options`, `trace`) is refused the same way,
+    /// though compiled IR cannot hold one (`ESS-HTTP-006`).
+    pub fn new(http: ess_http::HttpIr) -> Result<Self, Unprojectable> {
+        let refused: Vec<(ess_http::Operation, Reason)> = http
+            .routes()
+            .iter()
+            .filter_map(|route| {
+                if route.path.is_none() {
+                    Some((route.operation.clone(), Reason::Open))
+                } else if Method::of(route.method).is_none() {
+                    Some((route.operation.clone(), Reason::Method(route.method)))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        if refused.is_empty() {
+            Ok(Self(http))
+        } else {
+            Err(Unprojectable(refused))
+        }
+    }
+
+    /// The compiled binding.
+    pub fn ir(&self) -> &ess_http::HttpIr {
+        &self.0
+    }
+
+    /// The binding's route of `served`, if it declares one.
+    pub fn route(&self, served: Served<'_>) -> Option<&ess_http::Route> {
+        self.0.route(&served.operation())
+    }
+}
+
+/// Why a binding's route cannot be projected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reason {
+    /// It has no path.
+    Open,
+    /// It names a method no route is served on.
+    Method(ess_http::Method),
+}
+
+/// The routes of a binding [`Binding::new`] refuses, each with its operation, in route order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Unprojectable(pub Vec<(ess_http::Operation, Reason)>);
+
+impl std::fmt::Display for Unprojectable {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (index, (operation, reason)) in self.0.iter().enumerate() {
+            if index > 0 {
+                formatter.write_str("\n")?;
+            }
+            match reason {
+                Reason::Open => write!(
+                    formatter,
+                    "{operation} has an open route: the binding leaves its path to each server, \
+                     and a published document needs one; fill it in with a binding that refines \
+                     this one"
+                )?,
+                Reason::Method(method) => write!(
+                    formatter,
+                    "{operation} is bound to `{method}`, which no route is served on"
+                )?,
+            }
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for Unprojectable {}
+
+/// Every route one component's surface has, with `binding`'s routes in place of the derived ones
+/// of the operations it names, in path order, then method.
+///
+/// Without a binding it is [`routes`], exactly. With one, an operation the binding names is served
+/// at the method and path it declares, and [`Route::declared`] holds the binding's route; every
+/// other operation keeps the route [`routes`] derives for it. Compiling the binding already checked
+/// that the declared and derived routes of each component do not collide (`ESS-HTTP-010`,
+/// `ESS-HTTP-011`).
+pub fn bound_routes<'a>(
+    ir: &'a EssIr,
+    component: &'a ResolvedComponent,
+    binding: Option<&'a Binding>,
+) -> Vec<Route<'a>> {
+    let mut out = routes(ir, component);
+    let Some(binding) = binding else {
+        return out;
+    };
+    for route in &mut out {
+        let Some(declared) = binding.route(route.serves) else {
+            continue;
+        };
+        // `Binding::new` admits only routes with a path on a method a route is served on.
+        if let (Some(path), Some(method)) = (&declared.path, Method::of(declared.method)) {
+            route.method = method;
+            route.path.clone_from(path);
+            route.declared = Some(declared);
+        }
+    }
+    out.sort_by(|left, right| {
+        left.path
+            .cmp(&right.path)
+            .then(left.method.cmp(&right.method))
+    });
+    out
+}
+
+/// The routes ESS derives for every component of `ir` without a binding, as `ess-http` reads them:
+/// one entry per route of each component's [`routes`]. A binding is compiled against these
+/// ([`ess_http::compile`]), which takes them as an input so that `ess-http` never depends on this
+/// crate.
+pub fn derived(ir: &EssIr) -> Vec<ess_http::DerivedRoute> {
+    let mut table = Vec::new();
+    for component in ir.components().values() {
+        for route in routes(ir, component) {
+            table.push(ess_http::DerivedRoute {
+                component: component.name.to_string(),
+                operation: route.serves.operation(),
+                method: route.method.binding(),
+                path: route.path,
+            });
+        }
+    }
+    table
 }
 
 /// Every route one component's surface has, in path order.
@@ -406,6 +612,7 @@ pub fn routes<'a>(ir: &'a EssIr, component: &'a ResolvedComponent) -> Vec<Route<
                     path.clone()
                 },
                 serves: Served::Command(handle),
+                declared: None,
             });
         }
     }
@@ -432,6 +639,7 @@ pub fn routes<'a>(ir: &'a EssIr, component: &'a ResolvedComponent) -> Vec<Route<
                         path.clone()
                     },
                     serves: Served::View(handle),
+                    declared: None,
                 });
             }
         }

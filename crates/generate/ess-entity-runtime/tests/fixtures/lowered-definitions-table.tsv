@@ -1,4 +1,4 @@
-#	models=264	lines=390
+#	models=268	lines=395
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	REFUSED	95eb461796949834a9d78ef0c04afcab1acfa13dbf2dfd6da3af2f3c93549630:687
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing/system.yaml	ASSEMBLE
@@ -67,6 +67,8 @@ crates/specify/ess-domain/tests/fixtures/outcome-groups-twin/system.yaml	ASSEMBL
 crates/specify/ess-domain/tests/fixtures/periodic.yaml	components=1
 crates/specify/ess-domain/tests/fixtures/periodic.yaml	poll-service	REFUSED	245e40cdfd45267bd813f15d4e7faa455b46fd172988d1303f2ad9d0f9bb80eb:342
 crates/specify/ess-domain/tests/fixtures/text-length-positions.yaml	components=0
+crates/specify/ess-http/tests/fixtures/catalog.yaml	components=1
+crates/specify/ess-http/tests/fixtures/catalog.yaml	items-service	REFUSED	734b68eeaf4515a0f0d77fded5286b8ae5996506adfce054b60302b66ce2a3f2:346
 crates/specify/ess-service-contract/tests/fixtures/system.yaml	ASSEMBLE
 crates/specify/ess-service-contract/tests/selection-conversion-control-fixtures/system.yaml	ASSEMBLE
 crates/specify/ess-service-contract/tests/selection-conversion-fixtures/system.yaml	ASSEMBLE
@@ -145,9 +147,12 @@ crates/verify/ess-conformance/tests/fixtures/input-guard-overlap.yaml	components
 crates/verify/ess-conformance/tests/fixtures/keypad.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/latest-correlated-record.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/mutation-arms.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/mutation-authored.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/mutation-gained-refusal.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/mutation-identical-answer.yaml	components=1
 crates/verify/ess-conformance/tests/fixtures/mutation-identical-answer.yaml	desk-server	REFUSED	ef850e1f7f2c9fccc274c86d6c9ab0b64e9f2a4f9520934a40d606454ea7380d:994
+crates/verify/ess-conformance/tests/fixtures/mutation-sets-entries.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/mutation-stored-guards.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/mutation-survivor.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/mutation-unwitnessed-outcome.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/negated-defined-beside-subject.yaml	components=0

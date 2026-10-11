@@ -477,6 +477,7 @@ dependencies = [
  "ess-diff",
  "ess-domain",
  "ess-gen",
+ "ess-http",
  "ess-kubernetes",
  "ess-openapi",
  "ess-primitives",
@@ -639,10 +640,23 @@ version = "0.59.0"
 dependencies = [
  "ess-compiler",
  "ess-domain",
+ "ess-http",
  "ess-primitives",
  "ess-transport",
  "jsonschema",
  "pulldown-cmark",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2",
+]
+
+[[package]]
+name = "ess-http"
+version = "0.59.0"
+dependencies = [
+ "ess-compiler",
+ "ess-domain",
  "serde",
  "serde_json",
  "serde_yaml",

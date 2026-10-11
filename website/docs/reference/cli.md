@@ -444,6 +444,37 @@ ess specify protocol compile [OPTIONS] --path <PATH>
 | `--path` | `<PATH>` | yes |  |  |
 | `--out` | `<OUT>` | no |  |  |
 
+#### `ess specify http validate`
+
+Validate and resolve an `ess-http/1` document
+
+```text
+ess specify http validate [OPTIONS] --binding <BINDING>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | no | `.` | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
+| `--binding` | `<BINDING>` | yes |  | An `ess-http/1` JSON or YAML document |
+| `--refines` | `<REFINES>` | no |  | The `ess-http/1` binding the document refines, whose bytes its `refines:` digest pins |
+| `--format` | `<FORMAT>` | no | `text` | Output and diagnostic rendering. One of `text`, `yaml`, `json`. |
+
+#### `ess specify http compile`
+
+Compile a document into its canonical `ess-http-ir/1` form
+
+```text
+ess specify http compile [OPTIONS] --binding <BINDING>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | no | `.` | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
+| `--binding` | `<BINDING>` | yes |  | An `ess-http/1` JSON or YAML document |
+| `--refines` | `<REFINES>` | no |  | The `ess-http/1` binding the document refines, whose bytes its `refines:` digest pins |
+| `--format` | `<FORMAT>` | no | `text` | Output and diagnostic rendering. One of `text`, `yaml`, `json`. |
+| `--out` | `<OUT>` | no |  | Where to write canonical JSON IR |
+
 #### `ess specify cli`
 
 Validate a typed CLI presentation binding against its selected ESS model
@@ -700,6 +731,8 @@ ess generate <COMMAND>
 | `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
 | `--strict` |  | no |  | Refuse, writing nothing, where `openapi` or `asyncapi` has a domain no component owns.<br /><br />Without it the same condition is a note on stderr and the exit stays 0: an empty projection is legal, and the note is what tells it apart from a clean one. |
 | `--transport` | `<TRANSPORT>` | no |  | An `ess-transport/1` or `ess-transport/2` document binding events to brokers, subjects and streams; only with `--kind asyncapi` |
+| `--http` | `<HTTP>` | no |  | An `ess-http/1` document binding commands and views to methods and paths; only with `--kind openapi`. Compiled as `ess specify http compile` compiles it, and refused when a route it projects has no path |
+| `--refines` | `<REFINES>` | no |  | The `ess-http/1` binding the `--http` document refines, whose bytes its `refines:` digest pins |
 
 #### `ess generate generate`
 
@@ -724,6 +757,8 @@ ess generate generate [OPTIONS]
 | `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
 | `--strict` |  | no |  | Refuse, writing nothing, where `openapi` or `asyncapi` has a domain no component owns.<br /><br />Without it the same condition is a note on stderr and the exit stays 0: an empty projection is legal, and the note is what tells it apart from a clean one. |
 | `--transport` | `<TRANSPORT>` | no |  | An `ess-transport/1` or `ess-transport/2` document binding events to brokers, subjects and streams; only with `--kind asyncapi` |
+| `--http` | `<HTTP>` | no |  | An `ess-http/1` document binding commands and views to methods and paths; only with `--kind openapi`. Compiled as `ess specify http compile` compiles it, and refused when a route it projects has no path |
+| `--refines` | `<REFINES>` | no |  | The `ess-http/1` binding the `--http` document refines, whose bytes its `refines:` digest pins |
 
 #### `ess generate cli`
 
@@ -1507,7 +1542,9 @@ ess verify conform report [OPTIONS] --suite <SUITE>
 
 Audit the suite with specification mutants, each replayed against a reference target.
 
-Derives mutants from the specification — one altering edit each — synthesizes a fresh ordinary suite for the specification and for every mutant, and runs each on a fresh target that implements the unchanged specification. A mutant is killed when its suite fails there; a survivor is a declared rule no synthesized scenario pins down. It is answered by declaring what makes the rule observable, or by filing a synthesis gap — not by authoring a scenario, which runs identically in every mutant's suite and so can never kill one. No authored scenario is run.
+Derives mutants from the specification — one altering edit each — synthesizes a fresh ordinary suite for the specification and for every mutant, and runs each on a fresh target that implements the unchanged specification. A mutant is killed when its suite fails there; a survivor is a declared rule no synthesized scenario pins down. It is answered by declaring what makes the rule observable, or by filing a synthesis gap — not by putting an authored scenario in a mutant's suite, where it runs identically against the unchanged target and so can never kill one.
+
+`--scenarios DIR --target interpreted` runs authored scenarios the other way: each runs against the interpreter of the specification as part of the baseline, and against the interpreter of each mutant beside that mutant's synthesized suite. One that fails against a mutant's interpreter kills it and is named among its killers; one the baseline fails refuses the audit with ESS-MUTATE-001. Without `--scenarios` no authored scenario is run.
 
 A baseline scenario the target reports unsupported or skipped did not execute: it is listed, not scored, and each mutant is scored on the scenarios the baseline executed. A mutant that no scored scenario killed is inconclusive when a scenario it changed was not scored; otherwise equivalent (ESS-MUTATE-005) when it left its outcome's guard satisfied by no input, decided only for equality, membership and truth tests of input fields against literals and presence tests of input fields, and beside a `when_subject:` predicate when no input it admits leaves that predicate able to hold on any row (a comparison with an absent input is unknown); otherwise unwitnessed (ESS-MUTATE-004) when its suite gained synthesis refusals the baseline does not have, when it is on an outcome whose scenario the baseline refused, or when it is a from-drop or transition-to mutant on a transition only such outcomes perform. It survives when every scored scenario passed and each scenario it left unscored is the baseline's own, unchanged.
 
@@ -1533,6 +1570,7 @@ ess verify conform mutate [OPTIONS] <--target <TARGET>|--emit <EMIT>|--collect <
 | `--component` | `<COMPONENT>` | no |  | With `--emit`, scope every suite to this declared component; with `--collect`, require the emission to have been scoped to it |
 | `--report-out` | `<REPORT_OUT>` | no |  | Where to write the `ess-mutation-report/3` document (`/4` for a component, a declaration or unavailable sites, `/5` where a mutant's two branches answer alike) |
 | `--known-failing` | `<KNOWN_FAILING>` | no |  | An `ess-known-failures/1` declaration of baseline scenarios the target is known to fail. They are excluded from scoring rather than refused, and each mutant is scored on the scenarios the baseline passed: a declared scenario, or one the baseline's suite does not hold, never kills. Every failure it does not name still refuses with ESS-MUTATE-001. With `--target` it binds the running `ess` executable's SHA-256 as the build; `--emit` copies it into the emission and binds it there (ess-mutation-manifest/4); `--collect` uses only the declaration the emission bound, and refuses any other. A refused declaration exits 2 |
+| `--scenarios` | `<SCENARIOS>` | no |  | The `ess-scenario/1` documents to run beside the synthesized scenarios, read and refused as `run --scenarios` reads them. Requires `--target interpreted`: each runs against the interpreter of the specification for the baseline and against the interpreter of each mutant, which it kills by failing there |
 | `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
 
 #### `ess verify conform check-history`

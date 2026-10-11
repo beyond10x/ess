@@ -2,6 +2,142 @@
 
 ## [Unreleased]
 
+### Added
+
+- `ess-http/1`, a document beside the specification that binds its commands and views to HTTP
+  routes, pinned to the specification's source digest as `ess-transport/1` is: each route names
+  one command or view, a method, and optionally a path template and the input field or view
+  parameter each path variable reads. A route without a path is open, for a protocol that leaves
+  the path to each server. `ess specify http validate --path MODEL --binding FILE` checks one
+  against the specification, and `ess specify http compile … --out FILE` writes its canonical
+  `ess-http-ir/1`, routes ordered by path, then method. Every refusal is reported at once with a
+  code and the path of the key: `ESS-HTTP-001` another `type`, `-002` a `specification` key that
+  disagrees, `-004` a route naming no operation, both a command and a view, or one the
+  specification does not declare, `-005` one operation routed twice, `-006` a method outside
+  `get`, `put`, `post`, `delete`, `options`, `head`, `patch`, `trace` or not admitted for the
+  operation (a view on `get` only; a command on `post`, `put`, `patch`, `delete` or `get`), `-013`
+  a command no component accepts or a view no `reached_by: network` component serves, and `-014`
+  a command on `get` with an input field the path does not map. Every object refuses an unknown
+  key by name, so a key of a later stage of the format (`request`, `outcomes`, `headers`,
+  `redirect`) is refused, not ignored. Path templates, parameter sources, route collisions,
+  `refines:` and the OpenAPI projection are the entries below
+  (https://github.com/beyond10x/ess/issues/493, `docs/design/http-presentation-binding.md`).
+- `ess-http/1` path templates, parameters and route collisions are checked. A path starts with
+  `/`, has no empty, `.` or `..` segment, no `?`, `#` or `%`, literal segments of RFC 3986 path
+  text, and variables only as whole segments `{name}`; `ESS-HTTP-007` refuses each segment that
+  breaks this, naming it. `ESS-HTTP-008` refuses a path variable not mapped, mapped twice, or a
+  mapping for no variable of the path, and one source read by two variables of a route, at the
+  second; `ESS-HTTP-009` a source outside `input.<field>` (command)
+  or `param.<name>` (view), naming no field, or of a type a segment cannot carry (anything but
+  `String`, `Integer`, an enum, or an unconstrained newtype of one of them). A command on `get`
+  now counts an input field as mapped only when a variable of its path maps it (`ESS-HTTP-014`).
+  Each component's surface, declared routes together with the routes ESS derives for every
+  operation the binding does not name, is checked for two operations on one method and template
+  whatever the variables are called (`ESS-HTTP-010`, "two operations claim the same method and
+  path") and for a literal beside a variable where one request path matches both
+  (`ESS-HTTP-011`; neither takes precedence), each naming both operations; a route refused for
+  anything else still replaces its operation's derived route, and is checked whenever its method
+  is admitted and its path parsed. In `ess-http-ir/1` parameters are typed sources, and
+  `derived_routes` records the derived routes the binding was checked against, ordered by
+  component, path, method and operation. IR that breaks what compiling guarantees without the
+  specification does not read back, naming the key: `routes`, `derived_routes` or `parameters`
+  out of canonical order, an operation routed twice, a derived route for a routed operation, a
+  derived path with a variable or outside the grammar, or parameters that disagree with their
+  path (https://github.com/beyond10x/ess/issues/493).
+- `ess-http/1` refinement: a server binding names the protocol binding it fills in with
+  `refines: sha256:<hex>`, the digest of that file's bytes, and `ess specify http validate` and
+  `compile` take the file with `--refines FILE`. `ESS-HTTP-003` refuses, at `refines`, a value
+  that is no such digest, `refines:` without `--refines`, a refined file whose bytes have another
+  digest (reformatting it is a deliberate re-pin), a refined binding that itself refines, and
+  `--refines` for a document without `refines:`. `ESS-HTTP-012` refuses a route that changes a
+  method or a path the refined binding fixed, or leaves a fixed path open, naming `routes[i]`,
+  the refined value and the new one, and a refinement that drops a route of the refined binding.
+  Filling in an open path and routing an operation the refined binding does not name are
+  admitted. The refined binding is checked against the same specification, its refusals keyed
+  under `refined.` (`refined.routes[0].method`). `ess-http-ir/1` records the digest as `refines`,
+  absent when the binding refines nothing, so existing IR keeps its bytes, and a reader refuses a
+  `refines` that is not a `sha256:` digest of 64 lower-case hex digits
+  (https://github.com/beyond10x/ess/issues/493).
+- `ess generate --kind openapi --http FILE [--refines FILE]` projects an `ess-http/1` binding:
+  the binding is compiled as `ess specify http compile` compiles it, with the same refusals, and
+  each operation it routes is served at the declared method and path, so one path may carry
+  `get`, `put`, `post`, `delete` and `patch`. Each path variable is a required `in: path`
+  parameter with the input field's or view parameter's schema; a command's field carried in the
+  path leaves the request body (`{command}.Input` is the body, and is absent with no body when
+  the path carries every field), and a view's parameter carried in the path leaves the query. A
+  bound operation carries `x-ess-route-source: binding`, as a bound channel carries
+  `x-ess-address-source: transport`. An operation the binding does not name keeps its derived
+  route and bytes, and every projection generated without `--http` keeps its bytes. A binding
+  with an open route is refused, naming each such operation, and writes nothing; `--http` with
+  any `--kind` but `openapi` is refused by name, as `--transport` is without `--kind asyncapi`,
+  and `--refines` requires `--http`. `ess_gen::http::bound_routes` is the route table with a
+  binding (`ess_gen::http::Binding`), `ess_gen::http::Method` gains `Delete`, `Patch` and `Put`,
+  and `ess_gen::http::routes` is unchanged
+  (https://github.com/beyond10x/ess/issues/493).
+
+- `ess verify conform mutate` mutates the predicate of a `when_subject:` guard and of a
+  `when_related:` guard: `guard-negate`, `guard-connective` and `guard-boundary` (strictness swap,
+  outward literal and equality flip) edit it as they edit a `when:`, and each mutant is compiled,
+  synthesized and scored like the `when:` ones. Its id names the key after the outcome, such as
+  `guard-negate/<command>/<outcome>/when_subject` or
+  `guard-boundary/<command>/<outcome>/when_related/0`. A model had no mutant on either predicate,
+  so a target that ignored such a guard went unnoticed by the audit
+  (https://github.com/beyond10x/ess/issues/515). A `when:` mutant keeps its id, and a model with
+  neither guard keeps its report and manifest byte for byte; the report and manifest formats are
+  unchanged. The `{field, equals}` form of `when_subject:` and a row set's `where` and `forall`
+  are not mutated.
+- `ess verify conform mutate` says why of every `sets:` entry that has no `sets-drop` mutant.
+  Where `sets-drop` is selected, `--target` and `--emit` print, after their own output and on
+  stderr in every format, one `note: sets-drop/<command>/<outcome>/<field> has no mutant
+  (<reason>): …` per such entry, the reason one of `creates_row`, `source_not_input` and
+  `optional_field`. A model whose every write is on a creating branch got no `sets-drop` mutant and
+  no word about why (https://github.com/beyond10x/ess/issues/515); the entries are left out as
+  before, because there a dropped write only leaves the value to the implementation, and are now
+  listed. Which entries have a site is unchanged, and so are the report and manifest bytes and
+  formats: the list is not persisted.
+- `ess verify conform mutate --scenarios DIR --target interpreted` runs authored `ess-scenario/1`
+  scenarios in the audit. `DIR` is read and refused as `ess verify conform run --scenarios` reads
+  it. Each scenario runs against the interpreter of the specification as part of the baseline, and
+  against the interpreter of each mutant beside that mutant's synthesized suite. One that fails
+  against a mutant's interpreter kills the mutant and is listed among its killers
+  (`<domain>/authored/<scenario>`). The interpreters run on the scenario clock `run --target
+  interpreted` uses, so a `now` guard is decided at the step's instant and a scenario `run` passes
+  executes here too. One the baseline fails refuses the audit with `ESS-MUTATE-001`, and one the
+  baseline executed that requires an outcome makes that outcome witnessed. One the baseline did not
+  execute witnesses nothing and leaves a mutant nothing killed `inconclusive` (or `unwitnessed`),
+  never `survived`. A `precedence-swap` whose branches answer alike stays `equivalent`: an authored
+  scenario that fails against it differs only in the outcome's name. A mutant only an authored
+  scenario pins, such as one on an outcome whose scenario synthesis refuses, was unwitnessed or
+  survived because `mutate` ran no authored scenario (https://github.com/beyond10x/ess/issues/515).
+  The scenario-clock runner is public as `ess_conformance::now_offset::scenario_clock_runner`.
+  `--scenarios` is refused with `--target billing` and `--target oracle-fixture`, which implement no
+  mutant, and with `--emit`, `--collect` and `--known-failing`. Without `--scenarios` every report
+  and manifest keeps its bytes; no persisted field is added and no format moves. The library entry
+  point is `ess_conformance::mutate::audit_with_authored`.
+
+### Fixed
+
+- `ess generate synthesize --target go` emits a module that builds when bounded contexts reference
+  each other in a loop, for example a command outcome in `publish` refusing with an error declared
+  in `session`, `session` referencing `subscription`, and `subscription` referencing a type of
+  `publish`. Each bounded context had its own package under `types/`, so those packages imported
+  each other and `go build` failed with `import cycle not allowed`. The bounded contexts of one loop
+  now share one package, named by their package names joined (`types/publishsessionsubscription/`),
+  with one file per bounded context and a file of its own carrying the package's documentation
+  and the one `Unimplemented` stub their owed seams are methods of. A declared name two of them
+  share is repaired with `_`, as within one bounded context. Every bounded context outside a loop
+  keeps its own package, and a model whose references form no loop keeps its Go output byte for
+  byte.
+- `ess verify conform mutate` no longer reports a `precedence-swap` equivalent when a binding's
+  failure policy treats its two refusals differently. Two branches refusing with the same error
+  and no payload were called an identical answer (`identical_answer`, `ESS-MUTATE-005`) even
+  where a binding invoking the command dropped one and escalated the other, or ended a bounded
+  retry on one alone (`final`), so the swap changed what the binding published and still scored
+  `equivalent`, and with `--scenarios` an authored scenario that saw the escalation killed
+  nothing. Such a swap now carries no `identical_answer` and is scored as any other
+  (https://github.com/beyond10x/ess/issues/515). A model whose bindings answer both refusals
+  alike, or that has no binding on the command, keeps its report byte for byte.
+
 ## [0.59.0] — 2026-10-11
 
 ### Added

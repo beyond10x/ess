@@ -10,6 +10,7 @@ mod client;
 mod coverage;
 mod formats;
 mod git_checkout;
+mod http;
 mod input_discovery;
 mod known_failures;
 mod load;
@@ -115,6 +116,11 @@ enum SpecifyAreaCommand {
     Protocol {
         #[command(subcommand)]
         command: protocol::Specify,
+    },
+    /// Validate or compile the HTTP method and path of the commands and views of one exact ESS.
+    Http {
+        #[command(subcommand)]
+        command: http::Command,
     },
     /// Validate a typed CLI presentation binding against its selected ESS model.
     Cli(cli_binding::Input),
@@ -279,6 +285,15 @@ struct GenerateArgs {
     /// and streams; only with `--kind asyncapi`.
     #[arg(long)]
     transport: Option<PathBuf>,
+    /// An `ess-http/1` document binding commands and views to methods and paths; only with
+    /// `--kind openapi`. Compiled as `ess specify http compile` compiles it, and refused when a
+    /// route it projects has no path.
+    #[arg(long)]
+    http: Option<PathBuf>,
+    /// The `ess-http/1` binding the `--http` document refines, whose bytes its `refines:` digest
+    /// pins.
+    #[arg(long, requires = "http")]
+    refines: Option<PathBuf>,
 }
 
 /// `ess generate`: IR becomes artifacts; explicit executor verbs deliver them — `crates/generate/`.
@@ -839,8 +854,14 @@ enum ConformCommand {
     /// target that implements the unchanged specification. A mutant is killed when its suite
     /// fails there; a survivor is a declared rule no synthesized scenario pins down. It is
     /// answered by declaring what makes the rule observable, or by filing a synthesis gap — not
-    /// by authoring a scenario, which runs identically in every mutant's suite and so can never
-    /// kill one. No authored scenario is run.
+    /// by putting an authored scenario in a mutant's suite, where it runs identically against the
+    /// unchanged target and so can never kill one.
+    ///
+    /// `--scenarios DIR --target interpreted` runs authored scenarios the other way: each runs
+    /// against the interpreter of the specification as part of the baseline, and against the
+    /// interpreter of each mutant beside that mutant's synthesized suite. One that fails against a
+    /// mutant's interpreter kills it and is named among its killers; one the baseline fails
+    /// refuses the audit with ESS-MUTATE-001. Without `--scenarios` no authored scenario is run.
     ///
     /// A baseline scenario the target reports unsupported or skipped did not execute: it is listed,
     /// not scored, and each mutant is scored on the scenarios the baseline executed. A mutant that
@@ -924,6 +945,12 @@ enum ConformCommand {
         /// declaration exits 2.
         #[arg(long)]
         known_failing: Option<PathBuf>,
+        /// The `ess-scenario/1` documents to run beside the synthesized scenarios, read and
+        /// refused as `run --scenarios` reads them. Requires `--target interpreted`: each runs
+        /// against the interpreter of the specification for the baseline and against the
+        /// interpreter of each mutant, which it kills by failing there.
+        #[arg(long, conflicts_with_all = ["emit", "collect", "known_failing"])]
+        scenarios: Option<PathBuf>,
         #[arg(long, value_enum, default_value_t = Format::Text)]
         format: Format,
     },
@@ -1547,6 +1574,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
     match cli.command {
         Command::Specify { command } => match command {
             SpecifyAreaCommand::Protocol { command } => protocol::specify(&command),
+            SpecifyAreaCommand::Http { command } => http::run(&command),
             SpecifyAreaCommand::Cli(input) => cli_binding::validate(&input),
             SpecifyAreaCommand::Formats(args) => formats::run(&args),
             SpecifyAreaCommand::Other(command) => specify_area(command),
@@ -1630,6 +1658,9 @@ fn generate_projections(arguments: &GenerateArgs) -> Result<ExitCode> {
     if arguments.transport.is_some() && !matches!(arguments.kind, Some(Projection::AsyncApi)) {
         bail!("--transport binds events for the AsyncAPI projection; it requires --kind asyncapi");
     }
+    if arguments.http.is_some() && !matches!(arguments.kind, Some(Projection::OpenApi)) {
+        bail!("--http binds routes for the OpenAPI projection; it requires --kind openapi");
+    }
     generate(
         &arguments.input.path,
         arguments.kind,
@@ -1641,7 +1672,14 @@ fn generate_projections(arguments: &GenerateArgs) -> Result<ExitCode> {
         },
         arguments.format,
         arguments.strict,
-        arguments.transport.as_deref(),
+        match (arguments.transport.as_deref(), arguments.http.as_deref()) {
+            (Some(transport), _) => Beside::Transport(transport),
+            (None, Some(binding)) => Beside::Http {
+                binding,
+                refines: arguments.refines.as_deref(),
+            },
+            (None, None) => Beside::Nothing,
+        },
     )
 }
 
@@ -3325,6 +3363,21 @@ enum Delivery<'a> {
     Check(&'a Path),
 }
 
+/// The document beside the model that a projection binds to, if any: the `ess-transport` of
+/// `--transport` (`AsyncAPI`) or the `ess-http/1` of `--http` and `--refines` (`OpenAPI`).
+#[derive(Debug, Clone, Copy)]
+enum Beside<'a> {
+    /// None: every projection keeps its bytes.
+    Nothing,
+    /// An `ess-transport` document, for `--kind asyncapi`.
+    Transport(&'a Path),
+    /// An `ess-http/1` binding and the binding it refines, for `--kind openapi`.
+    Http {
+        binding: &'a Path,
+        refines: Option<&'a Path>,
+    },
+}
+
 /// Resolve once, then render the selected projection and preflight its complete output set.
 fn generate(
     path: &Path,
@@ -3333,7 +3386,7 @@ fn generate(
     delivery: Delivery<'_>,
     format: Format,
     strict: bool,
-    transport: Option<&Path>,
+    beside: Beside<'_>,
 ) -> Result<ExitCode> {
     if !matches!(kind, Some(Projection::Site))
         && (site_options.strict_links
@@ -3365,10 +3418,10 @@ fn generate(
         }
     }
     let mut publications = Vec::new();
-    let artifacts = match kind {
+    let artifacts = match (kind, beside) {
         // Not a `Generator`: it writes the document the generators read, so it has no rendering of
         // its own and nothing to stamp per page beyond what the document already carries.
-        Some(Projection::DocsIr) => {
+        (Some(Projection::DocsIr), _) => {
             let mint = ess_gen::provenance::ProvenanceMint::new(&ir);
             let document = ess_gen::docs::document(&ir, &mint);
             let json = serde_json::to_string_pretty(&document)
@@ -3382,20 +3435,26 @@ fn generate(
         }
         // The site is the one projection an adopter contributes to, so it is built here rather
         // than fetched by name: a `Generator` is handed the model and nothing else.
-        Some(Projection::Site) => site::render(path, site_options, &ir)?,
-        Some(Projection::AsyncApi) if transport.is_some() => {
-            match transport::asyncapi(transport.expect("guarded by the arm"), &ir, format)? {
+        (Some(Projection::Site), _) => site::render(path, site_options, &ir)?,
+        (Some(Projection::AsyncApi), Beside::Transport(transport)) => {
+            match transport::asyncapi(transport, &ir, format)? {
                 Some(artifacts) => artifacts,
                 None => return Ok(ExitCode::from(1)),
             }
         }
-        Some(kind) => {
+        (Some(Projection::OpenApi), Beside::Http { binding, refines }) => {
+            match http::openapi(binding, refines, &ir, format)? {
+                Some(artifacts) => artifacts,
+                None => return Ok(ExitCode::from(1)),
+            }
+        }
+        (Some(kind), _) => {
             let generator = ess_gen::generator(kind.name()).context("projection unavailable")?;
             ess_gen::artifact::run(generator.as_ref(), &ir)?
                 .into_iter()
                 .collect()
         }
-        None => {
+        (None, _) => {
             let mut all = std::collections::BTreeMap::new();
             for generator in ess_gen::generators() {
                 let files = ess_gen::artifact::run(generator.as_ref(), &ir)?;
@@ -4077,7 +4136,7 @@ fn conform_run(command: ConformCommand) -> Result<ExitCode> {
         ReferenceTarget::OracleFixture => wall_clock_runner(suite)
             .run_admitted(&admitted, &ess_conformance::reference::Oracle::new()),
         ReferenceTarget::Interpreted => {
-            let mut runner = scenario_clock_runner(suite);
+            let mut runner = ess_conformance::now_offset::scenario_clock_runner(suite);
             // The interpreter decides a `now` guard at the instant of the step being executed
             // (https://github.com/beyond10x/ess/issues/510); without a clock it answers every
             // such decision `unsupported`.
@@ -4164,39 +4223,6 @@ fn wall_clock_runner(
     )
 }
 
-/// The scenario clock's wall: `now_offset::earliest_run()`, the earliest moment a suite carrying
-/// `now_offset` values runs, so every fixed instant synthesis admits lies on the side of it that
-/// a run's does.
-fn scenario_wall() -> ess_primitives::time::Timestamp {
-    let seconds = ess_conformance::now_offset::earliest_run().epoch_seconds();
-    ess_primitives::time::Timestamp::from_epoch_millis(
-        u64::try_from(seconds).map_or(0, |seconds| seconds.saturating_mul(1000)),
-    )
-}
-
-/// The runner `--target interpreted` executes a suite with: [`wall_clock_runner`]'s budgets and
-/// durations, and [`scenario_wall`] as the wall. The interpreter decides `now` by the runner's
-/// step instant ([`ess_conformance::Runner::command_clock`]), so nothing in the run reads the
-/// machine's clock and two runs print the same report
-/// (<https://github.com/beyond10x/ess/issues/510>).
-fn scenario_clock_runner(
-    suite: &ess_conformance::ConformanceSuite,
-) -> ess_conformance::Runner<
-    ess_conformance::now_offset::WithWall<
-        ess_conformance::AdvancingClock,
-        fn() -> ess_primitives::time::Timestamp,
-    >,
-> {
-    ess_conformance::Runner::new(
-        ess_conformance::RunnerConfig::default(),
-        ess_conformance::now_offset::WithWall::new(
-            ess_conformance::AdvancingClock::default(),
-            scenario_wall as fn() -> ess_primitives::time::Timestamp,
-        ),
-        ess_conformance::Ids::for_suite(suite),
-    )
-}
-
 /// `ess verify conform mutate`, by the one of `--target`, `--emit` and `--collect` clap admitted.
 fn conform_mutate_mode(command: ConformCommand) -> Result<ExitCode> {
     let ConformCommand::Mutate {
@@ -4208,6 +4234,7 @@ fn conform_mutate_mode(command: ConformCommand) -> Result<ExitCode> {
         component,
         report_out,
         known_failing,
+        scenarios,
         format,
     } = command
     else {
@@ -4230,6 +4257,15 @@ fn conform_mutate_mode(command: ConformCommand) -> Result<ExitCode> {
         }
     };
     let declaration = declaration.as_deref();
+    // Only the interpreter implements a mutant; clap refuses `--scenarios` beside `--emit`,
+    // `--collect` and `--known-failing` (https://github.com/beyond10x/ess/issues/515).
+    if scenarios.is_some() && !matches!(target, Some(ReferenceTarget::Interpreted)) {
+        bail!(
+            "`--scenarios` requires `--target interpreted`: an authored scenario kills a mutant \
+             only by failing against an implementation of that mutant, and the interpreter is the \
+             only target that implements one"
+        );
+    }
     match (target, emit, collect) {
         (Some(target), None, None) => conform_mutate(
             &path,
@@ -4238,6 +4274,7 @@ fn conform_mutate_mode(command: ConformCommand) -> Result<ExitCode> {
             report_out.as_deref(),
             format,
             declaration,
+            scenarios.as_deref(),
         ),
         (None, Some(emit), None) => {
             conform_mutate_emit(&path, &class, &emit, component, format, declaration)
@@ -4261,6 +4298,7 @@ fn conform_mutate(
     report_out: Option<&Path>,
     format: Format,
     declaration: Option<&str>,
+    scenarios: Option<&Path>,
 ) -> Result<ExitCode> {
     use ess_conformance::mutate::{self, KnownFailing};
 
@@ -4268,6 +4306,15 @@ fn conform_mutate(
     // exactly as `run` reports it, and exits 1.
     let Ok((ir, _)) = resolved(path, format)? else {
         return Ok(ExitCode::from(1));
+    };
+    // The authored scenarios, compiled against the specification as `run --scenarios` compiles
+    // them, and refused as it refuses them, before anything runs.
+    let authored = match scenarios {
+        None => std::collections::BTreeMap::new(),
+        Some(scenarios) => match compiled_authored(&ir, Some(scenarios))? {
+            Some(authored) => authored,
+            None => return Ok(ExitCode::from(1)),
+        },
     };
     let raw = load::raw_specification(path)?;
     let classes = mutant_classes(classes);
@@ -4301,16 +4348,34 @@ fn conform_mutate(
             ess_conformance::reference::Oracle::new,
             known,
         ),
-        ReferenceTarget::Interpreted => mutate::audit_with(
+        ReferenceTarget::Interpreted => mutate::audit_with_authored(
             &raw.parsed,
             &raw.texts,
             &classes,
-            // The unchanged specification, as every mutant's target implements it.
+            // The unchanged specification, as every mutant's target implements it; the authored
+            // scenarios run on the interpreter of each mutant as well.
             || ess_conformance::interpret::Interpreted::for_model((*ir).clone()),
             known,
+            &authored,
         ),
     };
-    finish_mutation_audit(audited, report_out, format)
+    let exit = finish_mutation_audit(audited, report_out, format);
+    note_unmutated_sets(&raw.parsed, &classes);
+    exit
+}
+
+/// Each `sets:` entry with no `sets-drop` site, with its reason, as a note after the audit's own
+/// output, where `sets-drop` is selected (<https://github.com/beyond10x/ess/issues/515>).
+///
+/// On stderr and in every format, as `synthesize` notes what it owes no scenario: the report and
+/// manifest formats carry no such field, so their bytes are unchanged.
+fn note_unmutated_sets(
+    documents: &[ess_conformance::mutate::Document],
+    classes: &[ess_conformance::mutate::MutantClass],
+) {
+    for entry in ess_conformance::mutate::unmutated_sets(documents, classes) {
+        eprintln!("note: {entry}");
+    }
 }
 
 /// The classes `--class` names, or every class when it names none.
@@ -4333,8 +4398,6 @@ fn conform_mutate_emit(
     format: Format,
     declaration: Option<&str>,
 ) -> Result<ExitCode> {
-    use ess_conformance::mutate;
-
     let Ok(_) = resolved(path, format)? else {
         return Ok(ExitCode::from(1));
     };
@@ -4346,13 +4409,26 @@ fn conform_mutate_emit(
             dir.display()
         );
     }
-    let emission = match mutate::emit_with(
-        &raw.parsed,
-        &raw.texts,
-        &mutant_classes(classes),
-        component,
-        declaration,
-    ) {
+    let classes = mutant_classes(classes);
+    let exit = write_emission(&raw, &classes, dir, component, format, declaration);
+    note_unmutated_sets(&raw.parsed, &classes);
+    exit
+}
+
+/// `mutate --emit` once the directory is known to be new or empty: the emission written, and
+/// what it wrote printed.
+fn write_emission(
+    raw: &load::RawLoaded,
+    classes: &[ess_conformance::mutate::MutantClass],
+    dir: &Path,
+    component: Option<&str>,
+    format: Format,
+    declaration: Option<&str>,
+) -> Result<ExitCode> {
+    use ess_conformance::mutate;
+
+    let emission = match mutate::emit_with(&raw.parsed, &raw.texts, classes, component, declaration)
+    {
         Ok(emission) => emission,
         Err(refusal) if refusal.is_inconclusive() => {
             eprintln!("{refusal}");
@@ -4511,19 +4587,36 @@ fn finish_mutation_audit(
     })
 }
 
+/// The authored scenarios `scenarios` selects, compiled against `ir` as `run --scenarios` and
+/// `mutate --scenarios` compile them: each refusal printed on standard error, and `None` when any
+/// file was refused.
+fn compiled_authored(
+    ir: &ess_compiler::EssIr,
+    scenarios: Option<&Path>,
+) -> Result<
+    Option<
+        std::collections::BTreeMap<
+            ess_conformance::ScenarioId,
+            ess_conformance::ConformanceScenario,
+        >,
+    >,
+> {
+    let authoring = ess_conformance::authored::compile(ir, &authored_sources(scenarios)?);
+    for refusal in &authoring.refusals {
+        eprintln!("{refusal}");
+    }
+    Ok(authoring.is_complete().then_some(authoring.scenarios))
+}
+
 fn fresh_legacy_run_suite(
     ir: &ess_compiler::EssIr,
     scenarios: Option<&Path>,
 ) -> Result<Option<ess_conformance::AdmittedSuite>> {
     let mut suite = ess_conformance::synthesize(ir).suite;
-    let authoring = ess_conformance::authored::compile(ir, &authored_sources(scenarios)?);
-    for refusal in &authoring.refusals {
-        eprintln!("{refusal}");
-    }
-    if !authoring.is_complete() {
+    let Some(authored) = compiled_authored(ir, scenarios)? else {
         return Ok(None);
-    }
-    for (id, scenario) in authoring.scenarios {
+    };
+    for (id, scenario) in authored {
         if let Err(id) = suite.insert(id, scenario) {
             bail!("`{id}` is already in the suite");
         }
@@ -5443,7 +5536,7 @@ fn project(adapter: ProjectAdapter) -> Result<ExitCode> {
                 out.as_deref().map_or(Delivery::Print, Delivery::Write),
                 format,
                 strict,
-                None,
+                Beside::Nothing,
             ),
             (None, Some(ir)) => project_openapi_interface(&ir, out.as_deref(), format),
             _ => bail!("exactly one of --path or --ir is required"),
@@ -5981,10 +6074,12 @@ mod tests {
     ///
     /// Written down on purpose. A verb added to the tree and to no area would otherwise be
     /// counted by the enumeration it is missing from and pass every case below.
-    const AREA_LEAVES: usize = 81;
-    const AREA_ONLY_LEAVES: [&[&str]; 11] = [
+    const AREA_LEAVES: usize = 83;
+    const AREA_ONLY_LEAVES: [&[&str]; 13] = [
         &["specify", "protocol", "validate"],
         &["specify", "protocol", "compile"],
+        &["specify", "http", "validate"],
+        &["specify", "http", "compile"],
         &["specify", "cli"],
         &["specify", "formats"],
         &["generate", "cli"],

@@ -1,0 +1,62 @@
+# The fixture the `ess-http/1` tests bind: two accepted commands, one command no component
+# accepts, and one view served by a `reached_by: network` component.
+format: ess/20
+system: catalog
+version: v1
+domain: catalog.items
+types:
+  - {name: catalog.items.ItemId, kind: newtype, of: String}
+entities:
+  - name: catalog.items.Item
+    identity: {name: item_id, type: catalog.items.ItemId}
+    fields:
+      - {name: title, type: String}
+    lifecycle: {initial: Listed, states: [Listed], terminal: [Listed], transitions: []}
+commands:
+  - name: catalog.items.ListItem
+    input:
+      - {name: item_id, type: catalog.items.ItemId}
+      - {name: title, type: String}
+    outcomes:
+      - name: listed
+        creates: catalog.items.Item
+        instance: item_id
+        sets: {title: input.title}
+        emits: [catalog.items.ItemTouched]
+        payload:
+          catalog.items.ItemTouched: {item_id: input.item_id}
+  - name: catalog.items.TouchItem
+    input:
+      - {name: item_id, type: catalog.items.ItemId}
+    outcomes:
+      - name: touched
+        emits: [catalog.items.ItemTouched]
+        payload:
+          catalog.items.ItemTouched: {item_id: input.item_id}
+  - name: catalog.items.PurgeItems
+    input:
+      - {name: reason, type: String}
+    outcomes:
+      - name: purged
+        emits: [catalog.items.ItemTouched]
+        payload:
+          catalog.items.ItemTouched: {item_id: {generated: true}}
+events:
+  - name: catalog.items.ItemTouched
+    fields:
+      - {name: item_id, type: catalog.items.ItemId}
+views:
+  - name: catalog.items.ItemById
+    source: catalog.items.Item
+    params:
+      - {name: item_id, type: catalog.items.ItemId}
+    filter: item_id == param.item_id
+    fields:
+      - {name: item_id, type: catalog.items.ItemId}
+      - {name: title, type: String}
+components:
+  - component: items-service
+    reached_by: network
+    owns: {domains: [catalog.items]}
+    accepts: {commands: [catalog.items.ListItem, catalog.items.TouchItem]}
+    publishes: {events: [catalog.items.ItemTouched]}

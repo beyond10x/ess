@@ -11,10 +11,17 @@
 //! A mutant is *killed* when its suite fails against that target: synthesis asked a question whose
 //! answer differs between the two specifications, and the target gave the original answer. A
 //! *survivor* is a finding about what synthesis asks of the model — either the mutant is
-//! equivalent, or no generated scenario observes the rule. It is **not** answered by authoring a
-//! scenario: an authored scenario's expectations are its author's, not the model's, so it runs
-//! identically in every mutant's suite and could never kill one. That is why no authored scenario
-//! is run here at all.
+//! equivalent, or no generated scenario observes the rule. It is **not** answered by putting an
+//! authored scenario in the mutant's suite: an authored scenario's expectations are its author's,
+//! not the model's, so against the unchanged target it runs identically in every mutant's suite
+//! and could never kill one.
+//!
+//! An authored scenario counts in the dual direction instead
+//! (<https://github.com/beyond10x/ess/issues/515>, [`audit_with_authored`]): compiled once against
+//! the unchanged specification, it runs against the [interpreter](crate::interpret::Interpreted)
+//! of that specification for the baseline and against the interpreter of each mutant, which is an
+//! implementation of the mutant. One that fails there kills the mutant and is named among its
+//! killers; one the baseline fails refuses the audit as a synthesized one does.
 //!
 //! No class *weakens* the specification. On a branch that creates its row, dropping a `sets` entry
 //! says the value is the implementation's to choose, and a correct target satisfies a weaker
@@ -43,7 +50,7 @@ use std::fmt::Write as _;
 use ess_compiler::diagnostic::{Code, Diagnostic, Diagnostics, Severity};
 use ess_compiler::source::SourceMap;
 use ess_compiler::EssIr;
-use ess_domain::command::{PayloadSource, RawCommandSpec, RawOutcome};
+use ess_domain::command::{PayloadSource, RawCommandSpec, RawOutcome, RawSubjectFact};
 use ess_domain::entity::{RawEntitySpec, StateName, Transition};
 use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
@@ -87,7 +94,8 @@ pub enum MutantClass {
     FromDrop,
     /// Send a transition to the first other state, in an entity with at least two states.
     TransitionTo,
-    /// Move a guard boundary in an outcome's `when`: swap the strictness of an ordering comparison
+    /// Move a guard boundary in an outcome's `when`, or in the predicate of its `when_subject:` or
+    /// `when_related:` ([`GuardKey`]): swap the strictness of an ordering comparison
     /// (`>=`↔`>`, `<=`↔`<`); move the integral literal of a `>=` or `<=` one step outward, the
     /// direction the swap does not take; or flip `==`↔`!=` on a leaf that is not the whole guard.
     ///
@@ -98,9 +106,11 @@ pub enum MutantClass {
     GuardBoundary,
     /// Take a `sets` value from the first other input field of the identical written type.
     SetsRetarget,
-    /// Negate an outcome's `when`.
+    /// Negate an outcome's `when`, or the predicate of its `when_subject:` or `when_related:`
+    /// ([`GuardKey`]).
     GuardNegate,
-    /// Swap `all` and `any` in an outcome's `when`.
+    /// Swap `all` and `any` in an outcome's `when`, or in the predicate of its `when_subject:` or
+    /// `when_related:`.
     GuardConnective,
     /// Refuse with the first other error declared in the command's domain.
     ErrorSwap,
@@ -245,6 +255,97 @@ crate::authored::diagnostic_catalogue! {
 
 // ---- mutations ----------------------------------------------------------------------------------
 
+/// Which predicate of an outcome a guard mutation edits
+/// (<https://github.com/beyond10x/ess/issues/515>): its `when:` over the input, the
+/// `predicate` of its `when_subject:` over the stored subject, or the `predicate` of its
+/// `when_related:` over the row an input identity names.
+///
+/// A `when:` site keeps the id it always had; a site on either other key names the key after the
+/// outcome, so `guard-negate/<command>/<outcome>/when_subject`. The ess/6 `{field, equals}` form of
+/// `when_subject:`, and a row set's `where`, `count` and `forall`, are not such predicates: a
+/// row set's `count:` bound is [`Mutation::RowSetCount`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub enum GuardKey {
+    /// `when:`.
+    #[default]
+    When,
+    /// `when_subject: {predicate}`.
+    WhenSubject,
+    /// `when_related: {via, predicate}`.
+    WhenRelated,
+}
+
+impl GuardKey {
+    /// Every key, in the order an outcome's sites are enumerated.
+    pub const ALL: &'static [Self] = &[Self::When, Self::WhenSubject, Self::WhenRelated];
+
+    /// The document key, as a site and a change name it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::When => "when",
+            Self::WhenSubject => "when_subject",
+            Self::WhenRelated => "when_related",
+        }
+    }
+
+    /// What the site carries after `<command>/<outcome>`: nothing for `when:`, whose ids are
+    /// unchanged, and `/<key>` for the others.
+    fn segment(self) -> &'static str {
+        match self {
+            Self::When => "",
+            Self::WhenSubject => "/when_subject",
+            Self::WhenRelated => "/when_related",
+        }
+    }
+
+    /// The predicate this key holds in `outcome`, where it holds one.
+    fn of(self, outcome: &RawOutcome) -> Option<&Predicate> {
+        match self {
+            Self::When => outcome.when.as_ref().and_then(WrittenPredicate::predicate),
+            Self::WhenSubject => match outcome.when_subject.as_ref()? {
+                RawSubjectFact::Predicate(written) => written.predicate.predicate(),
+                RawSubjectFact::Field(_) => None,
+            },
+            Self::WhenRelated => {
+                let guard = outcome.when_related.as_ref()?;
+                guard
+                    .via
+                    .as_ref()
+                    .and(guard.predicate.as_ref())
+                    .and_then(WrittenPredicate::predicate)
+            }
+        }
+    }
+
+    /// [`Self::of`], to edit in place.
+    fn of_mut(self, outcome: &mut RawOutcome) -> Option<&mut Predicate> {
+        match self {
+            Self::When => outcome
+                .when
+                .as_mut()
+                .and_then(WrittenPredicate::predicate_mut),
+            Self::WhenSubject => match outcome.when_subject.as_mut()? {
+                RawSubjectFact::Predicate(written) => written.predicate.predicate_mut(),
+                RawSubjectFact::Field(_) => None,
+            },
+            Self::WhenRelated => {
+                let guard = outcome.when_related.as_mut()?;
+                guard.via.as_ref()?;
+                guard
+                    .predicate
+                    .as_mut()
+                    .and_then(WrittenPredicate::predicate_mut)
+            }
+        }
+    }
+}
+
+impl fmt::Display for GuardKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// One altering edit to the parsed documents, addressed by the names it changes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Mutation {
@@ -266,13 +367,15 @@ pub enum Mutation {
         /// The new arrival state.
         to: String,
     },
-    /// Swap the strictness of the `leaf`-th ordering comparison of `outcome`'s `when`, in
+    /// Swap the strictness of the `leaf`-th ordering comparison of `outcome`'s `guard`, in
     /// pre-order.
     GuardBoundary {
         /// The command.
         command: String,
         /// The outcome.
         outcome: String,
+        /// Which of the outcome's predicates.
+        guard: GuardKey,
         /// Which ordering comparison, counted in pre-order from zero.
         leaf: usize,
     },
@@ -287,19 +390,23 @@ pub enum Mutation {
         /// The sibling input field it is now read from.
         field: String,
     },
-    /// Negate `outcome`'s `when`.
+    /// Negate `outcome`'s `guard`.
     GuardNegate {
         /// The command.
         command: String,
         /// The outcome.
         outcome: String,
+        /// Which of the outcome's predicates.
+        guard: GuardKey,
     },
-    /// Swap `all` and `any` at the `node`-th connective of `outcome`'s `when`, in pre-order.
+    /// Swap `all` and `any` at the `node`-th connective of `outcome`'s `guard`, in pre-order.
     GuardConnective {
         /// The command.
         command: String,
         /// The outcome.
         outcome: String,
+        /// Which of the outcome's predicates.
+        guard: GuardKey,
         /// Which connective with at least two children, counted in pre-order from zero.
         node: usize,
     },
@@ -328,24 +435,28 @@ pub enum Mutation {
         /// The ranked field.
         field: String,
     },
-    /// Move the integral literal of the `leaf`-th ordering comparison of `outcome`'s `when`, a
+    /// Move the integral literal of the `leaf`-th ordering comparison of `outcome`'s `guard`, a
     /// `>=` or `<=`, one step outward: `x >= 10` becomes `x >= 9`. A class `guard-boundary` site.
     GuardOutward {
         /// The command.
         command: String,
         /// The outcome.
         outcome: String,
+        /// Which of the outcome's predicates.
+        guard: GuardKey,
         /// Which ordering comparison, counted in pre-order from zero as [`Self::GuardBoundary`]
         /// counts it.
         leaf: usize,
     },
-    /// Flip the `leaf`-th `==` or `!=` comparison of `outcome`'s `when`, in pre-order, where it is
+    /// Flip the `leaf`-th `==` or `!=` comparison of `outcome`'s `guard`, in pre-order, where it is
     /// not the whole guard. A class `guard-boundary` site.
     GuardEquality {
         /// The command.
         command: String,
         /// The outcome.
         outcome: String,
+        /// Which of the outcome's predicates.
+        guard: GuardKey,
         /// Which equality comparison, counted in pre-order from zero.
         leaf: usize,
     },
@@ -425,18 +536,21 @@ impl Mutation {
             Self::GuardBoundary {
                 command,
                 outcome,
+                guard,
                 leaf,
-            } => format!("{command}/{outcome}/{leaf}"),
+            } => format!("{command}/{outcome}{}/{leaf}", guard.segment()),
             Self::GuardOutward {
                 command,
                 outcome,
+                guard,
                 leaf,
-            } => format!("{command}/{outcome}/{leaf}-outward"),
+            } => format!("{command}/{outcome}{}/{leaf}-outward", guard.segment()),
             Self::GuardEquality {
                 command,
                 outcome,
+                guard,
                 leaf,
-            } => format!("{command}/{outcome}/equality-{leaf}"),
+            } => format!("{command}/{outcome}{}/equality-{leaf}", guard.segment()),
             Self::RowSetCount { command, outcome } => format!("{command}/{outcome}/row-set-count"),
             Self::SetsRetarget {
                 command,
@@ -454,8 +568,12 @@ impl Mutation {
                 first,
                 second,
             } => format!("{command}/{first}/{second}"),
-            Self::GuardNegate { command, outcome }
-            | Self::ErrorSwap {
+            Self::GuardNegate {
+                command,
+                outcome,
+                guard,
+            } => format!("{command}/{outcome}{}", guard.segment()),
+            Self::ErrorSwap {
                 command, outcome, ..
             } => {
                 format!("{command}/{outcome}")
@@ -463,8 +581,9 @@ impl Mutation {
             Self::GuardConnective {
                 command,
                 outcome,
+                guard,
                 node,
-            } => format!("{command}/{outcome}/{node}"),
+            } => format!("{command}/{outcome}{}/{node}", guard.segment()),
             Self::EmitDrop {
                 command,
                 outcome,
@@ -930,6 +1049,160 @@ fn path_terminal(
     Some(current)
 }
 
+/// Why a `sets:` entry has no `sets-drop` site (<https://github.com/beyond10x/ess/issues/515>).
+///
+/// A closed set, decided in declaration order: the first that holds is the entry's reason. Every
+/// entry either has a site or exactly one of these, so none is left out in silence. Listed, never
+/// persisted: no report or manifest field carries it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum SetsDropReason {
+    /// The branch creates, updates and moves no row, which the model refuses
+    /// (`ESS-COMMAND-003`); only a model that does not compile has one.
+    NoRow,
+    /// The branch creates its row. Without the write the value is the implementation's to choose:
+    /// a weaker rule a correct target satisfies, so the mutant could never be killed, and an
+    /// outcome whose guard synthesis arranges through the field loses its scenario instead.
+    CreatesRow,
+    /// The source is not `input.<field>`. Synthesis sends only an input apart from what the row
+    /// held, so no scenario would tell the dropped write from the value the row kept.
+    SourceNotInput,
+    /// The field is `Optional<…>`. A row nothing wrote holds it absent, and no synthesized row
+    /// expectation states an absence.
+    OptionalField,
+}
+
+impl SetsDropReason {
+    /// How it is written.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::NoRow => "no_row",
+            Self::CreatesRow => "creates_row",
+            Self::SourceNotInput => "source_not_input",
+            Self::OptionalField => "optional_field",
+        }
+    }
+}
+
+impl fmt::Display for SetsDropReason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// A `sets:` entry with no `sets-drop` site, and why ([`unmutated_sets`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnmutatedSetsEntry {
+    /// The id its site would have: `sets-drop/<command>/<outcome>/<target>`.
+    pub id: String,
+    /// The command.
+    pub command: String,
+    /// The outcome.
+    pub outcome: String,
+    /// The entity field the entry writes.
+    pub target: String,
+    /// The entry's source, as written.
+    pub source: String,
+    /// Why there is no site.
+    pub reason: SetsDropReason,
+}
+
+impl fmt::Display for UnmutatedSetsEntry {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            id,
+            target,
+            source,
+            reason,
+            ..
+        } = self;
+        write!(f, "{id} has no mutant ({reason}): ")?;
+        match reason {
+            SetsDropReason::NoRow => write!(
+                f,
+                "`{target}: {source}` is on a branch that names no row, which the model refuses"
+            ),
+            SetsDropReason::CreatesRow => write!(
+                f,
+                "`{target}: {source}` is written by a branch that creates its row, so without it \
+                 the value is the implementation's to choose, a weaker rule no correct target \
+                 fails, and an outcome whose guard is arranged through the field loses its \
+                 scenario"
+            ),
+            SetsDropReason::SourceNotInput => write!(
+                f,
+                "`{target}: {source}` is not read from an input, and only an input is sent apart \
+                 from what the row held, so no scenario tells the dropped write from the kept value"
+            ),
+            SetsDropReason::OptionalField => write!(
+                f,
+                "`{target}` is `Optional`, and a row nothing wrote holds it absent, which no \
+                 synthesized row expectation states"
+            ),
+        }
+    }
+}
+
+/// Whether the `sets:` entry writing `target` from `source` on `outcome` has a `sets-drop` site,
+/// or the one reason it has none. The only place that decides it: [`outcome_sites`] offers a site
+/// exactly where this is `Ok`, and [`unmutated_sets`] lists every other entry with its reason.
+fn sets_drop_site(
+    documents: &[Document],
+    outcome: &RawOutcome,
+    target: &str,
+    source: &PayloadSource,
+) -> Result<(), SetsDropReason> {
+    if outcome.creates.is_some() {
+        Err(SetsDropReason::CreatesRow)
+    } else if !acts_on_existing_row(outcome) {
+        Err(SetsDropReason::NoRow)
+    } else if !matches!(source, PayloadSource::InputField { .. }) {
+        Err(SetsDropReason::SourceNotInput)
+    } else if optional_field(documents, outcome, target) {
+        Err(SetsDropReason::OptionalField)
+    } else {
+        Ok(())
+    }
+}
+
+/// Every `sets:` entry with no `sets-drop` site, with its reason, in byte order of id; none unless
+/// `classes` selects `sets-drop` (<https://github.com/beyond10x/ess/issues/515>).
+///
+/// Beside [`selection`]'s sites these account for every entry the documents declare, so an audit
+/// that finds no `sets-drop` mutant can say why of each entry. It is not persisted: the report and
+/// manifest formats are unchanged, and the command line prints each as a note.
+pub fn unmutated_sets(documents: &[Document], classes: &[MutantClass]) -> Vec<UnmutatedSetsEntry> {
+    if !classes.contains(&MutantClass::SetsDrop) {
+        return Vec::new();
+    }
+    let documents = &resolved(documents);
+    let mut listed: Vec<UnmutatedSetsEntry> = commands(documents)
+        .flat_map(|command| {
+            command.outcomes.iter().flat_map(move |outcome| {
+                outcome.sets.0.iter().filter_map(move |set| {
+                    let reason =
+                        sets_drop_site(documents, outcome, &set.target, &set.source).err()?;
+                    let (command, outcome) = (command.name.to_string(), outcome.name.to_string());
+                    Some(UnmutatedSetsEntry {
+                        id: format!(
+                            "{}/{command}/{outcome}/{}",
+                            MutantClass::SetsDrop,
+                            set.target
+                        ),
+                        command,
+                        outcome,
+                        target: set.target.clone(),
+                        source: set.source.to_string(),
+                        reason,
+                    })
+                })
+            })
+        })
+        .collect();
+    listed.sort_by(|left, right| left.id.cmp(&right.id));
+    listed.dedup_by(|left, right| left.id == right.id);
+    listed
+}
+
 /// Whether `target`, a field of the row `outcome` updates or moves, is declared `Optional<…>`.
 ///
 /// Such a field nothing wrote is held absent, and no synthesized row expectation states an
@@ -964,8 +1237,9 @@ fn flipped(direction: Direction) -> Direction {
 
 // ---- enumeration --------------------------------------------------------------------------------
 
-/// `documents` with every outcome's `when:` written as the predicate its source format resolved it
-/// to, where that is not what the document spelled (`docs/design/expression-family-source22.md`,
+/// `documents` with every outcome's `when:`, and the predicate of its `when_subject:` and
+/// `when_related:` ([`GuardKey`]), written as the predicate its source format resolved it to, where
+/// that is not what the document spelled (`docs/design/expression-family-source22.md`,
 /// final review decision 16).
 ///
 /// From `ess/22` a bare word may name a field and `lower + 5` may be one constant offset of one, and
@@ -988,29 +1262,48 @@ fn resolved(documents: &[Document]) -> Vec<Document> {
                 continue;
             };
             for outcome in &mut command.outcomes {
-                let Some(when) = outcome
-                    .when
-                    .as_mut()
-                    .and_then(WrittenPredicate::predicate_mut)
-                else {
-                    continue;
-                };
-                let guard = assembled
+                let Some(candidate) = assembled
                     .outcomes
                     .iter()
                     .find(|candidate| candidate.name == outcome.name)
-                    .and_then(|candidate| {
-                        ess_domain::expression::lexical::input_guard(&candidate.condition)
-                    });
-                if let Some(guard) = guard {
-                    if guard != when {
-                        *when = guard.clone();
+                else {
+                    continue;
+                };
+                for &key in GuardKey::ALL {
+                    let Some(written) = key.of_mut(outcome) else {
+                        continue;
+                    };
+                    if let Some(guard) = assembled_guard(&candidate.condition, key) {
+                        if guard != written {
+                            *written = guard.clone();
+                        }
                     }
                 }
             }
         }
     }
     resolved
+}
+
+/// The predicate an assembled outcome's `condition` holds for `key`: what the source format
+/// resolved the written one to.
+fn assembled_guard(
+    condition: &ess_domain::command::OutcomeCondition,
+    key: GuardKey,
+) -> Option<&Predicate> {
+    use ess_domain::command::{OutcomeCondition, RelatedTest};
+    match (key, condition) {
+        (GuardKey::When, _) => ess_domain::expression::lexical::input_guard(condition),
+        (GuardKey::WhenSubject, OutcomeCondition::SubjectPredicate { predicate, .. })
+        | (
+            GuardKey::WhenRelated,
+            OutcomeCondition::Related {
+                test: RelatedTest::Holds(predicate),
+                ..
+            },
+        ) => Some(predicate),
+        _ => None,
+    }
 }
 
 /// Every mutant of the selected classes, in byte order of id.
@@ -1339,18 +1632,25 @@ fn outcome_sites(documents: &[Document], command: &RawCommandSpec, found: &mut V
         let at = |mutation: fn(String, String) -> Mutation| {
             mutation(command_name.clone(), outcome_name.clone())
         };
-        if let Some(when) = outcome.when.as_ref().and_then(WrittenPredicate::predicate) {
-            boundary_sites(&command_name, &outcome_name, when, found);
-            if *when != Predicate::Always {
-                found.push(at(|command, outcome| Mutation::GuardNegate {
-                    command,
-                    outcome,
-                }));
+        // The input guard, and the predicates over the stored subject and the related row, each
+        // edited by the same operators (https://github.com/beyond10x/ess/issues/515).
+        for &guard in GuardKey::ALL {
+            let Some(predicate) = guard.of(outcome) else {
+                continue;
+            };
+            boundary_sites(&command_name, &outcome_name, guard, predicate, found);
+            if *predicate != Predicate::Always {
+                found.push(Mutation::GuardNegate {
+                    command: command_name.clone(),
+                    outcome: outcome_name.clone(),
+                    guard,
+                });
             }
-            for node in 0..connectives(when).len() {
+            for node in 0..connectives(predicate).len() {
                 found.push(Mutation::GuardConnective {
                     command: command_name.clone(),
                     outcome: outcome_name.clone(),
+                    guard,
                     node,
                 });
             }
@@ -1369,16 +1669,18 @@ fn outcome_sites(documents: &[Document], command: &RawCommandSpec, found: &mut V
             }));
         }
         for set in &outcome.sets.0 {
-            let PayloadSource::InputField { field } = &set.source else {
-                continue;
-            };
-            if acts_on_existing_row(outcome) && !optional_field(documents, outcome, &set.target) {
+            // Every entry is decided once: a site here, or listed with its reason by
+            // `unmutated_sets` (https://github.com/beyond10x/ess/issues/515).
+            if sets_drop_site(documents, outcome, &set.target, &set.source).is_ok() {
                 found.push(Mutation::SetsDrop {
                     command: command_name.clone(),
                     outcome: outcome_name.clone(),
                     target: set.target.clone(),
                 });
             }
+            let PayloadSource::InputField { field } = &set.source else {
+                continue;
+            };
             // ess/22 (A4): a path retargeted to the same-named top-level input of the type its
             // last member holds, the decoy an implementation reads where it means the member, held
             // to the rule a top-level retarget is.
@@ -1449,9 +1751,16 @@ fn moved_count(op: &str, bound: i64) -> Option<(&'static str, i64)> {
     })
 }
 
-/// The `guard-boundary` sites of one outcome's `when`: each ordering comparison's strictness swap
-/// and, where it has one, its outward literal; then each equality that is not the whole guard.
-fn boundary_sites(command: &str, outcome: &str, when: &Predicate, found: &mut Vec<Mutation>) {
+/// The `guard-boundary` sites of one outcome's predicate `guard`: each ordering comparison's
+/// strictness swap and, where it has one, its outward literal; then each equality that is not the
+/// whole guard.
+fn boundary_sites(
+    command: &str,
+    outcome: &str,
+    guard: GuardKey,
+    when: &Predicate,
+    found: &mut Vec<Mutation>,
+) {
     for (leaf, node) in ordering_leaves(when).into_iter().enumerate() {
         // A window whose `from` cannot move a minute later (23:59, or onto `to`) has no
         // strictness mutant: one would be the unchanged window, scored as a survivor.
@@ -1461,6 +1770,7 @@ fn boundary_sites(command: &str, outcome: &str, when: &Predicate, found: &mut Ve
             found.push(Mutation::GuardBoundary {
                 command: command.to_owned(),
                 outcome: outcome.to_owned(),
+                guard,
                 leaf,
             });
         }
@@ -1468,6 +1778,7 @@ fn boundary_sites(command: &str, outcome: &str, when: &Predicate, found: &mut Ve
             found.push(Mutation::GuardOutward {
                 command: command.to_owned(),
                 outcome: outcome.to_owned(),
+                guard,
                 leaf,
             });
         }
@@ -1476,6 +1787,7 @@ fn boundary_sites(command: &str, outcome: &str, when: &Predicate, found: &mut Ve
         found.push(Mutation::GuardEquality {
             command: command.to_owned(),
             outcome: outcome.to_owned(),
+            guard,
             leaf,
         });
     }
@@ -1657,12 +1969,10 @@ fn describe_guard(documents: &[Document], mutation: &Mutation) -> Option<String>
         Mutation::GuardBoundary {
             command,
             outcome,
+            guard,
             leaf,
         } => {
-            let when = self::outcome(documents, command, outcome)?
-                .when
-                .as_ref()
-                .and_then(WrittenPredicate::predicate)?;
+            let when = guard.of(self::outcome(documents, command, outcome)?)?;
             let mut changed = when.clone();
             let before = ordering_leaves(when).get(*leaf)?.to_string();
             let mut after = String::new();
@@ -1675,48 +1985,43 @@ fn describe_guard(documents: &[Document], mutation: &Mutation) -> Option<String>
         Mutation::GuardOutward {
             command,
             outcome,
+            guard,
             leaf,
         } => {
-            let when = self::outcome(documents, command, outcome)?
-                .when
-                .as_ref()
-                .and_then(WrittenPredicate::predicate)?;
+            let when = guard.of(self::outcome(documents, command, outcome)?)?;
             let before = ordering_leaves(when).get(*leaf).copied()?;
             format!("`{before}` becomes `{}`", outward(before)?)
         }
         Mutation::GuardEquality {
             command,
             outcome,
+            guard,
             leaf,
         } => {
-            let when = self::outcome(documents, command, outcome)?
-                .when
-                .as_ref()
-                .and_then(WrittenPredicate::predicate)?;
+            let when = guard.of(self::outcome(documents, command, outcome)?)?;
             let before = equality_leaves(when).get(*leaf).copied()?;
             let mut after = before.clone();
             flip_equality(&mut after);
             format!("`{before}` becomes `{after}`")
         }
-        Mutation::GuardNegate { command, outcome } => {
-            let when = self::outcome(documents, command, outcome)?
-                .when
-                .as_ref()
-                .and_then(WrittenPredicate::predicate)?;
+        Mutation::GuardNegate {
+            command,
+            outcome,
+            guard,
+        } => {
+            let when = guard.of(self::outcome(documents, command, outcome)?)?;
             format!(
-                "`when: {when}` becomes `when: {}`",
+                "`{guard}: {when}` becomes `{guard}: {}`",
                 Predicate::not(when.clone())
             )
         }
         Mutation::GuardConnective {
             command,
             outcome,
+            guard,
             node,
         } => {
-            let when = self::outcome(documents, command, outcome)?
-                .when
-                .as_ref()
-                .and_then(WrittenPredicate::predicate)?;
+            let when = guard.of(self::outcome(documents, command, outcome)?)?;
             let before = connectives(when).get(*node)?.to_string();
             let mut changed = when.clone();
             edit_nth(&mut changed, &is_connective, *node, &swap_connective);
@@ -1904,10 +2209,11 @@ fn apply_guard(mutated: &mut [Document], mutation: &Mutation) -> Result<(), Stri
         Mutation::GuardBoundary {
             command,
             outcome,
+            guard,
             leaf,
         } => {
             let when = outcome_mut(mutated, command, outcome)
-                .and_then(|it| it.when.as_mut().and_then(WrittenPredicate::predicate_mut))
+                .and_then(|it| guard.of_mut(it))
                 .ok_or_else(absent)?;
             if !edit_nth(when, &is_ordering, *leaf, &swap_strictness) {
                 return Err(absent());
@@ -1916,10 +2222,11 @@ fn apply_guard(mutated: &mut [Document], mutation: &Mutation) -> Result<(), Stri
         Mutation::GuardOutward {
             command,
             outcome,
+            guard,
             leaf,
         } => {
             let when = outcome_mut(mutated, command, outcome)
-                .and_then(|it| it.when.as_mut().and_then(WrittenPredicate::predicate_mut))
+                .and_then(|it| guard.of_mut(it))
                 .ok_or_else(absent)?;
             if ordering_leaves(when)
                 .get(*leaf)
@@ -1932,29 +2239,35 @@ fn apply_guard(mutated: &mut [Document], mutation: &Mutation) -> Result<(), Stri
         Mutation::GuardEquality {
             command,
             outcome,
+            guard,
             leaf,
         } => {
             let when = outcome_mut(mutated, command, outcome)
-                .and_then(|it| it.when.as_mut().and_then(WrittenPredicate::predicate_mut))
+                .and_then(|it| guard.of_mut(it))
                 .ok_or_else(absent)?;
             if *leaf >= equality_leaves(when).len() {
                 return Err(absent());
             }
             edit_nth(when, &is_equality, *leaf, &flip_equality);
         }
-        Mutation::GuardNegate { command, outcome } => {
+        Mutation::GuardNegate {
+            command,
+            outcome,
+            guard,
+        } => {
             let when = outcome_mut(mutated, command, outcome)
-                .and_then(|it| it.when.as_mut().and_then(WrittenPredicate::predicate_mut))
+                .and_then(|it| guard.of_mut(it))
                 .ok_or_else(absent)?;
             *when = Predicate::not(std::mem::take(when));
         }
         Mutation::GuardConnective {
             command,
             outcome,
+            guard,
             node,
         } => {
             let when = outcome_mut(mutated, command, outcome)
-                .and_then(|it| it.when.as_mut().and_then(WrittenPredicate::predicate_mut))
+                .and_then(|it| guard.of_mut(it))
                 .ok_or_else(absent)?;
             if !edit_nth(when, &is_connective, *node, &swap_connective) {
                 return Err(absent());
@@ -2059,24 +2372,50 @@ fn unsatisfiable_guard(baseline: &EssIr, mutant: &EssIr, mutation: &Mutation) ->
         return (!satisfiable(baseline, found, &overlap)?).then(|| overlap.to_string());
     }
     let (Mutation::GuardBoundary {
-        command, outcome, ..
+        command,
+        outcome,
+        guard,
+        ..
     }
     | Mutation::GuardOutward {
-        command, outcome, ..
+        command,
+        outcome,
+        guard,
+        ..
     }
     | Mutation::GuardEquality {
-        command, outcome, ..
+        command,
+        outcome,
+        guard,
+        ..
     }
-    | Mutation::GuardNegate { command, outcome }
+    | Mutation::GuardNegate {
+        command,
+        outcome,
+        guard,
+    }
     | Mutation::GuardConnective {
-        command, outcome, ..
+        command,
+        outcome,
+        guard,
+        ..
     }) = mutation
     else {
         return None;
     };
-    // A `when:` beside `when_subject:`: dead where no input it admits leaves the stored guard able
-    // to hold on any row, rendered as the two together.
-    if let Some((before, was, stored)) = guards_beside_subject(baseline, command, outcome) {
+    // A mutant of a `when_related:` predicate is not decided here: nothing below reads a related
+    // row (https://github.com/beyond10x/ess/issues/515), so it keeps the verdict its run gives.
+    if *guard == GuardKey::WhenRelated {
+        return None;
+    }
+    // A `when:` beside `when_subject:`, or the `when_subject:` predicate itself: dead where no
+    // input the `when:` admits leaves the stored guard able to hold on any row, rendered as the
+    // two together. A `when_subject:` predicate with no `when:` beside it is not decided.
+    let beside = guards_beside_subject(baseline, command, outcome);
+    if *guard == GuardKey::WhenSubject && beside.is_none() {
+        return None;
+    }
+    if let Some((before, was, stored)) = beside {
         if !satisfiable_beside(baseline, before, was, stored)? {
             return None;
         }
@@ -2094,8 +2433,11 @@ fn unsatisfiable_guard(baseline: &EssIr, mutant: &EssIr, mutation: &Mutation) ->
 
 /// For a `precedence-swap`, the answer both of its branches give in the baseline, where it is the
 /// same one: the same error and error payload (or neither refuses) and the same response, and
-/// neither changes state, sets or emits anything (<https://github.com/beyond10x/ess/issues/517>). Where both guards hold,
-/// either order then answers alike, so nothing a caller observes tells the mutant apart.
+/// neither changes state, sets or emits anything (<https://github.com/beyond10x/ess/issues/517>),
+/// and every binding that invokes the command answers the two alike: the same refusal-selected
+/// failure policy, and the same membership of a bounded retry's `final` outcomes
+/// (<https://github.com/beyond10x/ess/issues/515>). Where both guards hold, either order then
+/// answers alike, so nothing a caller observes tells the mutant apart.
 ///
 /// `None` for any other mutation, and wherever the two branches differ in anything but their name,
 /// guard, summary, references and test strategy — which only errs towards scoring as before.
@@ -2134,6 +2476,21 @@ fn identical_answer(baseline: &EssIr, mutation: &Mutation) -> Option<String> {
         it
     };
     if !(quiet(one) && quiet(other) && answer(one) == answer(other)) {
+        return None;
+    }
+    // A binding's failure policy is selected by the refusal's name, so a binding that invokes the
+    // command and answers the two refusals differently — drops one and escalates the other, or
+    // ends a bounded retry on one of them alone — publishes or retries differently whichever
+    // branch answers (https://github.com/beyond10x/ess/issues/515). Asked as the dispatcher asks it.
+    if baseline
+        .bindings()
+        .values()
+        .filter(|binding| binding.command.name() == &found.name)
+        .any(|binding| {
+            crate::interpret::binding_refusal(binding, Some(&one.name))
+                != crate::interpret::binding_refusal(binding, Some(&other.name))
+        })
+    {
         return None;
     }
     let mut said = match &one.error {
@@ -3270,6 +3627,90 @@ struct Observed {
     not_passed: Vec<(String, Seen)>,
     /// Each scenario as the suite holds it, by id.
     bodies: Bodies,
+    /// The ids of the authored scenarios among `scenarios` ([`AuthoredSuite`]), which run on the
+    /// interpreter of the model they are asked about rather than on the unchanged target.
+    authored: BTreeSet<String>,
+}
+
+impl Observed {
+    /// One suite's run, read from what the runner executed of `suite`.
+    fn of(executed: &crate::ExecutedRun, suite: &crate::ConformanceSuite) -> Self {
+        Self {
+            scenarios: executed
+                .scenarios
+                .iter()
+                .map(|result| result.scenario.to_string())
+                .collect(),
+            not_passed: executed
+                .scenarios
+                .iter()
+                .filter_map(|result| {
+                    Seen::from_status(result.status).map(|seen| (result.scenario.to_string(), seen))
+                })
+                .collect(),
+            bodies: bodies_of(suite),
+            authored: BTreeSet::new(),
+        }
+    }
+
+    /// This run and `other`, a run of a suite holding none of its scenarios, read as one.
+    fn absorb(&mut self, other: Self) {
+        self.scenarios.extend(other.scenarios);
+        self.not_passed.extend(other.not_passed);
+        self.bodies.extend(other.bodies);
+        self.authored.extend(other.authored);
+    }
+}
+
+/// The authored scenarios an audit runs beside the synthesized ones
+/// (<https://github.com/beyond10x/ess/issues/515>): one suite, compiled once against the unchanged
+/// specification, run on the interpreter of whichever model it is asked about.
+struct AuthoredSuite {
+    suite: crate::ConformanceSuite,
+    admitted: AdmittedSuite,
+}
+
+impl AuthoredSuite {
+    /// `scenarios` filed in a suite of `ir`'s provenance; `None` where there are none, so an audit
+    /// without them runs nothing it did not run before.
+    fn of(
+        ir: &EssIr,
+        scenarios: &BTreeMap<crate::ScenarioId, crate::ConformanceScenario>,
+    ) -> Result<Option<Self>, AuditRefusal> {
+        if scenarios.is_empty() {
+            return Ok(None);
+        }
+        let mut suite = crate::ConformanceSuite::new(crate::SuiteProvenance::of(ir));
+        for (id, scenario) in scenarios {
+            // A map holds each id once, and an authored id never has a synthesized one's shape.
+            if let Err(id) = suite.insert(id.clone(), scenario.clone()) {
+                return Err(AuditRefusal::Admission(format!(
+                    "`{id}` is already in the suite"
+                )));
+            }
+        }
+        suite.select_fresh_format_for(ir);
+        let admitted = AdmittedSuite::from_suite(&suite)
+            .map_err(|error| AuditRefusal::Admission(error.to_string()))?;
+        Ok(Some(Self { suite, admitted }))
+    }
+
+    /// The suite run once on a fresh interpreter of `model`: the specification's own for the
+    /// baseline, a mutant's for that mutant.
+    ///
+    /// Run as `ess verify conform run --target interpreted --scenarios` runs it: on the scenario
+    /// clock, the interpreter deciding a `now` guard at the instant of the step being executed
+    /// (<https://github.com/beyond10x/ess/issues/510>). Without that clock every such decision is
+    /// `unsupported`, so a scenario `run` passes would execute nowhere here.
+    fn on(&self, model: &EssIr) -> Observed {
+        let mut runner = crate::now_offset::scenario_clock_runner(&self.suite);
+        let interpreter = crate::interpret::Interpreted::for_model(model.clone())
+            .with_command_clock(runner.command_clock());
+        let executed = runner.run_admitted(&self.admitted, &interpreter);
+        let mut observed = Observed::of(&executed, &self.suite);
+        observed.authored = observed.scenarios.iter().cloned().collect();
+        observed
+    }
 }
 
 /// A suite's scenarios by id.
@@ -3490,10 +3931,14 @@ impl Ruler {
             .filter(|(id, _)| unexecuted.contains(*id))
             .map(|(id, scenario)| (id.clone(), scenario.clone()))
             .collect();
+        // Only a scenario the baseline executed observed an outcome: one the target answered
+        // `unsupported` or `skipped` requires it of nothing that ran
+        // (https://github.com/beyond10x/ess/issues/515).
         let witnessed = observed
             .bodies
-            .values()
-            .flat_map(|scenario| &scenario.steps)
+            .iter()
+            .filter(|(id, _)| !unexecuted.contains(*id))
+            .flat_map(|(_, scenario)| &scenario.steps)
             .filter_map(|step| match step {
                 crate::scenario::ScenarioStep::ExpectOutcome { outcome } => {
                     Some(outcome.to_string())
@@ -3585,6 +4030,10 @@ impl Ruler {
     /// perform, is `unwitnessed` as a gained refusal makes it; one that left its guard `dead`, or a
     /// `precedence-swap` whose branches give an `identical` answer, is `equivalent` unless killed
     /// or hiding a changed scenario nothing scored.
+    ///
+    /// An authored scenario runs on the interpreter of the mutant, so one the baseline did not
+    /// execute hides a kill even unchanged; on an `identical` answer it can fail only on the
+    /// outcome's label, so its failure kills nothing and its exclusion hides nothing.
     fn judge(
         &self,
         entry: &mut MutantEntry,
@@ -3593,10 +4042,19 @@ impl Ruler {
         dead: Option<String>,
         identical: Option<String>,
     ) {
+        // On a `precedence-swap` whose branches give an identical answer, the interpreter of the
+        // mutant answers every input as the specification's does but for the outcome's name, which
+        // only names the branch (`identical_answer`). An authored scenario that fails there fails
+        // on that label alone, so it does not kill the mutant
+        // (https://github.com/beyond10x/ess/issues/515).
+        let answers_alike = identical.is_some();
+        let label_only = |id: &str, seen: Seen| {
+            answers_alike && seen == Seen::Failed && observed.authored.contains(id)
+        };
         let statuses: Vec<Status> = observed
             .not_passed
             .iter()
-            .filter(|(id, _)| self.eligible(id))
+            .filter(|(id, seen)| self.eligible(id) && !label_only(id, *seen))
             .map(|(_, seen)| seen.status())
             .collect();
         let mut excluded: Vec<String> = observed
@@ -3657,10 +4115,15 @@ impl Ruler {
         });
         let witnessless =
             self.known.is_some() && !observed.scenarios.iter().any(|id| self.eligible(id));
+        // An excluded authored scenario hides a kill whatever its body: it is held unchanged by
+        // construction, but it runs on the interpreter of the mutant, not on the target the
+        // baseline asked (https://github.com/beyond10x/ess/issues/515). On an identical answer it
+        // could fail on the outcome's label alone, which kills nothing, so it hides nothing.
         let hidden = hidden_by_declaration
-            || excluded
-                .iter()
-                .any(|id| observed.bodies.get(id) != self.unexecuted_bodies.get(id));
+            || excluded.iter().any(|id| {
+                (!answers_alike && observed.authored.contains(id))
+                    || observed.bodies.get(id) != self.unexecuted_bodies.get(id)
+            });
         let at_baseline = self.unwitnessed_outcome(entry.class, &entry.id);
         // A mutant on an outcome the baseline does not witness is unwitnessed as a gained refusal
         // makes it; a dead guard outranks both, but not a changed scenario nothing scored, which
@@ -3683,7 +4146,9 @@ impl Ruler {
             let mut killers: Vec<String> = observed
                 .not_passed
                 .iter()
-                .filter(|(id, seen)| *seen == Seen::Failed && self.eligible(id))
+                .filter(|(id, seen)| {
+                    *seen == Seen::Failed && self.eligible(id) && !label_only(id, *seen)
+                })
                 .map(|(id, _)| id.clone())
                 .collect();
             killers.sort();
@@ -3771,21 +4236,7 @@ fn run_checked<T: ConformanceTarget>(
     check(&admitted)?;
     let executed = Runner::for_suite(&suite).run_admitted(&admitted, &new_target());
     Ok(Ran {
-        observed: Observed {
-            scenarios: executed
-                .scenarios
-                .iter()
-                .map(|result| result.scenario.to_string())
-                .collect(),
-            not_passed: executed
-                .scenarios
-                .iter()
-                .filter_map(|result| {
-                    Seen::from_status(result.status).map(|seen| (result.scenario.to_string(), seen))
-                })
-                .collect(),
-            bodies: bodies_of(&suite),
-        },
+        observed: Observed::of(&executed, &suite),
         refused: Refused {
             count: refused.len(),
             keys: Some(refused),
@@ -3828,18 +4279,22 @@ fn baseline<T: ConformanceTarget>(
     ir: &EssIr,
     new_target: &impl Fn() -> T,
 ) -> Result<BaselineRun, AuditRefusal> {
-    baseline_with(ir, new_target, None)
+    baseline_with(ir, new_target, None, None)
 }
 
 /// [`baseline`], under `known`: the declaration's suite, specification and scenarios are checked
 /// against the admitted baseline suite before any target is made, and its implementation label
 /// against the run's own once the target named itself.
+///
+/// `authored`, where given, runs on the interpreter of `ir` and is read as part of the baseline:
+/// an authored scenario that fails there refuses the audit as a synthesized one does.
 fn baseline_with<T: ConformanceTarget>(
     ir: &EssIr,
     new_target: &impl Fn() -> T,
     known: Option<&crate::known_failures::Declaration>,
+    authored: Option<&AuthoredSuite>,
 ) -> Result<BaselineRun, AuditRefusal> {
-    let ran = run_checked(ir, None, new_target, |admitted| match known {
+    let mut ran = run_checked(ir, None, new_target, |admitted| match known {
         Some(declaration) => declaration
             .admit(admitted)
             .map_err(AuditRefusal::KnownFailures),
@@ -3850,6 +4305,9 @@ fn baseline_with<T: ConformanceTarget>(
         declaration
             .bind(&ran.label, declaration.implementation_build())
             .map_err(AuditRefusal::KnownFailures)?;
+    }
+    if let Some(authored) = authored {
+        ran.observed.absorb(authored.on(ir));
     }
     let scenarios = ran.observed.scenarios.len();
     Ok(BaselineRun {
@@ -3884,15 +4342,19 @@ pub fn evaluate<T: ConformanceTarget>(
         mutant,
         (&baseline_ir, &ruler),
         &new_target,
+        None,
     )
 }
 
+/// One mutant measured against `ruler`: its synthesized suite on a fresh `new_target`, and
+/// `authored`, where given, on the interpreter of the mutant, the two read as one run.
 fn measure<T: ConformanceTarget>(
     documents: &[Document],
     texts: &SourceMap,
     mutant: &Mutant,
     (baseline_ir, ruler): (&EssIr, &Ruler),
     new_target: &impl Fn() -> T,
+    authored: Option<&AuthoredSuite>,
 ) -> Result<MutantEntry, AuditRefusal> {
     let mutated = apply(documents, &mutant.mutation).map_err(AuditRefusal::NoSuchSite)?;
     let mut entry = blank_entry(mutant);
@@ -3903,7 +4365,10 @@ fn measure<T: ConformanceTarget>(
             return Ok(entry);
         }
     };
-    let ran = run(&ir, dropped_write(documents, &mutant.mutation), new_target)?;
+    let mut ran = run(&ir, dropped_write(documents, &mutant.mutation), new_target)?;
+    if let Some(authored) = authored {
+        ran.observed.absorb(authored.on(&ir));
+    }
     let dead = unsatisfiable_guard(baseline_ir, &ir, &mutant.mutation);
     let identical = identical_answer(baseline_ir, &mutant.mutation);
     ruler.judge(&mut entry, &ran.observed, &ran.refused, dead, identical);
@@ -3939,6 +4404,36 @@ pub fn audit_with<T: ConformanceTarget>(
     new_target: impl Fn() -> T,
     known: Option<KnownFailing<'_>>,
 ) -> Result<MutationReport, AuditRefusal> {
+    audit_with_authored(
+        documents,
+        texts,
+        classes,
+        new_target,
+        known,
+        &BTreeMap::new(),
+    )
+}
+
+/// [`audit_with`], with the authored scenarios `authored` run beside the synthesized ones
+/// (<https://github.com/beyond10x/ess/issues/515>).
+///
+/// `authored` is compiled against the unchanged specification, as `ess verify conform run
+/// --scenarios` compiles it ([`authored::compile`](crate::authored::compile)). It runs on the
+/// [interpreter](crate::interpret::Interpreted) of the specification as part of the baseline, and
+/// on the interpreter of each mutant as part of that mutant's run, whatever `new_target` is: the
+/// synthesized suites run on `new_target` exactly as [`audit_with`] runs them. An authored scenario
+/// that fails on the baseline refuses the audit with `ESS-MUTATE-001`; one that fails on a
+/// mutant's interpreter kills the mutant and is listed among its killers; one that requires an
+/// outcome makes it witnessed. With `authored` empty nothing more runs and the report is
+/// [`audit_with`]'s, byte for byte.
+pub fn audit_with_authored<T: ConformanceTarget>(
+    documents: &[Document],
+    texts: &SourceMap,
+    classes: &[MutantClass],
+    new_target: impl Fn() -> T,
+    known: Option<KnownFailing<'_>>,
+    authored: &BTreeMap<crate::ScenarioId, crate::ConformanceScenario>,
+) -> Result<MutationReport, AuditRefusal> {
     let baseline_ir = compile(documents.to_vec(), texts).map_err(AuditRefusal::Unloadable)?;
     crate::admission::model(&baseline_ir)
         .map_err(|error| AuditRefusal::Admission(error.to_string()))?;
@@ -3963,7 +4458,13 @@ pub fn audit_with<T: ConformanceTarget>(
         classes.dedup();
         return Err(AuditRefusal::NoSite { classes });
     }
-    let baseline = baseline_with(&baseline_ir, &new_target, declaration.as_ref())?;
+    let authored = AuthoredSuite::of(&baseline_ir, authored)?;
+    let baseline = baseline_with(
+        &baseline_ir,
+        &new_target,
+        declaration.as_ref(),
+        authored.as_ref(),
+    )?;
 
     let mut entries = Vec::with_capacity(selected.len());
     let mut counts = Counts {
@@ -3977,6 +4478,7 @@ pub fn audit_with<T: ConformanceTarget>(
             mutant,
             (&baseline_ir, &baseline.ruler),
             &new_target,
+            authored.as_ref(),
         )?;
         counts.count(entry.verdict);
         entries.push(entry);
@@ -5061,6 +5563,9 @@ fn score(
                 .collect(),
             scenarios: order,
             bodies,
+            // A collected suite is the synthesized one alone: `--scenarios` is refused beside
+            // `--emit` and `--collect`.
+            authored: BTreeSet::new(),
         },
         report: report_text,
         admitted,
@@ -5443,5 +5948,139 @@ commands:
         )];
         assert_eq!(found.get("demo.users.Session.end"), Some(&deactivated));
         assert_eq!(found.get("demo.users.User.deactivate"), Some(&deactivated));
+    }
+
+    // ---- an authored scenario the baseline did not execute ----------------------------------
+    //
+    // https://github.com/beyond10x/ess/issues/515. The interpreter answers `unsupported` whatever
+    // it cannot derive; here the j3 fixture's own authored scenario is recorded so on the baseline
+    // and on the mutant, with the synthesized suites run for real, so the rule is held apart from
+    // why the interpreter did not execute it.
+
+    const AUTHORED_MODEL: &str = include_str!("../tests/fixtures/mutation-authored.yaml");
+    const AUTHORED_SCENARIO: &str =
+        include_str!("../tests/fixtures/mutation-authored/retries-reach-the-limit.yaml");
+
+    fn authored_documents() -> (Vec<Document>, SourceMap) {
+        let label = "mutation-authored.yaml".to_owned();
+        let raw = RawSpecFile::parse(AUTHORED_MODEL).expect("the fixture parses");
+        let mut texts = SourceMap::new();
+        texts.insert(label.clone(), AUTHORED_MODEL.to_owned());
+        (vec![(Source::new(label), raw)], texts)
+    }
+
+    /// The fixture's authored suite, as a run that executed none of it.
+    fn unexecuted(ir: &EssIr) -> Observed {
+        let authoring = crate::authored::compile(
+            ir,
+            &[crate::authored::Source::new(
+                "retries-reach-the-limit.yaml",
+                AUTHORED_SCENARIO,
+            )],
+        );
+        assert!(authoring.is_complete(), "{:#?}", authoring.refusals);
+        let suite = AuthoredSuite::of(ir, &authoring.scenarios)
+            .expect("admitted")
+            .expect("one scenario")
+            .suite;
+        let scenarios: Vec<String> = suite.scenarios.keys().map(ToString::to_string).collect();
+        Observed {
+            not_passed: scenarios
+                .iter()
+                .map(|id| (id.clone(), Seen::Unsupported))
+                .collect(),
+            authored: scenarios.iter().cloned().collect(),
+            bodies: bodies_of(&suite),
+            scenarios,
+        }
+    }
+
+    /// The baseline's synthesized run with the authored suite unexecuted beside it, and its ruler.
+    fn ruler_with_unexecuted(ir: &EssIr) -> (Ran, Ruler) {
+        let target = || crate::interpret::Interpreted::for_model(ir.clone());
+        let mut ran = run(ir, None, &target).expect("the baseline runs");
+        ran.observed.absorb(unexecuted(ir));
+        let refused = Refused {
+            count: ran.refused.count,
+            keys: ran.refused.keys.clone(),
+        };
+        let ruler = Ruler::new(
+            &ran.implementation,
+            &ran.observed,
+            refused,
+            performers(&ir.to_compact_json()),
+            None,
+        )
+        .expect("the synthesized baseline is scored");
+        (ran, ruler)
+    }
+
+    /// Only an executed scenario witnesses an outcome: the unexecuted authored scenario that
+    /// requires `at-limit` leaves it unwitnessed, so the error-swap mutant on it keeps the reading
+    /// it has without `--scenarios`, `unwitnessed`, rather than becoming a survivor nothing ran.
+    #[test]
+    fn an_unexecuted_authored_scenario_witnesses_nothing() {
+        let (documents, texts) = authored_documents();
+        let ir = compile(documents.clone(), &texts).expect("the fixture compiles");
+        let (_, ruler) = ruler_with_unexecuted(&ir);
+        assert!(
+            !ruler.witnessed.contains("work.tasks.RetryTask/at-limit"),
+            "{:?}",
+            ruler.witnessed
+        );
+        let mutant = selection(&documents, &[MutantClass::ErrorSwap])
+            .mutants
+            .into_iter()
+            .find(|it| it.id == "error-swap/work.tasks.RetryTask/at-limit")
+            .expect("the site is selected");
+        let mutated = compile(
+            apply(&documents, &mutant.mutation).expect("applies"),
+            &texts,
+        )
+        .expect("the mutant compiles");
+        let target = || crate::interpret::Interpreted::for_model(ir.clone());
+        let mut ran = run(&mutated, None, &target).expect("the mutant runs");
+        ran.observed.absorb(unexecuted(&ir));
+        let mut entry = blank_entry(&mutant);
+        ruler.judge(&mut entry, &ran.observed, &ran.refused, None, None);
+        assert_eq!(entry.verdict, Verdict::Unwitnessed, "{entry:#?}");
+        assert_eq!(
+            entry.excluded.as_deref(),
+            Some(["work.tasks/authored/retries-reach-the-limit".to_owned()].as_slice())
+        );
+    }
+
+    /// An unexecuted authored scenario hides a kill though its body is unchanged: it would have
+    /// run on the mutant's interpreter. Judged on an entry of the witnessed `retried` outcome, with
+    /// the baseline's own synthesized run, which kills nothing: `inconclusive`, not `survived`. On an
+    /// identical answer it could fail on the label alone, so it hides nothing there.
+    #[test]
+    fn an_unexecuted_authored_scenario_hides_a_kill_unless_the_answer_is_identical() {
+        let (documents, texts) = authored_documents();
+        let ir = compile(documents.clone(), &texts).expect("the fixture compiles");
+        let (ran, ruler) = ruler_with_unexecuted(&ir);
+        let mutant = selection(&documents, &[MutantClass::ErrorSwap])
+            .mutants
+            .into_iter()
+            .next()
+            .expect("a site");
+        let blank = || {
+            let mut entry = blank_entry(&mutant);
+            entry.class = MutantClass::EmitSwap;
+            entry.id = "emit-swap/work.tasks.RetryTask/retried/work.tasks.TaskRetried".to_owned();
+            entry
+        };
+        let mut entry = blank();
+        ruler.judge(&mut entry, &ran.observed, &ran.refused, None, None);
+        assert_eq!(entry.verdict, Verdict::Inconclusive, "{entry:#?}");
+        let mut entry = blank();
+        ruler.judge(
+            &mut entry,
+            &ran.observed,
+            &ran.refused,
+            None,
+            Some("both refuse alike".to_owned()),
+        );
+        assert_eq!(entry.verdict, Verdict::Equivalent, "{entry:#?}");
     }
 }

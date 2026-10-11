@@ -32,6 +32,7 @@ tasks:
         --package ess-domain
         --package ess-entity-runtime
         --package ess-gen
+        --package ess-http
         --package ess-kubernetes
         --package ess-openapi
         --package ess-primitives
