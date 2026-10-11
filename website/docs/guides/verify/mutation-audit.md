@@ -105,7 +105,10 @@ kills it: the same error, the same or no payload, and neither branch changing st
 emitting anything, so either order gives the caller the same answer where both guards hold. Its
 entry names that answer as `identical_answer`, apart from `unsatisfiable_guard`, so a reader
 tells "these guards never overlap" from "these answers are identical". Two refusals that differ in
-error or payload are scored as before.
+error or payload are scored as before, and so are two that a binding invoking the command answers
+differently: a failure policy that drops one and escalates the other, or a bounded retry that
+names only one of them `final`, since the binding then publishes or retries differently whichever
+branch answers.
 
 A mutant on an outcome whose scenario the baseline suite already refuses, such as a branch no
 arrangement reaches (`ESS-SYNTH-003`), cannot be killed by either suite. It is *unwitnessed* as

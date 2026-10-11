@@ -91,7 +91,14 @@ direction can and cannot show.
   (https://github.com/beyond10x/ess/issues/517) already states: a `precedence-swap` recorded with
   `identical_answer` answers every input as *S* does but for that name, so an authored scenario that
   fails against its interpreter differs from it only in the outcome label. Such a failure does not
-  kill it, its exclusion hides nothing, and the mutant stays `equivalent`.
+  kill it, its exclusion hides nothing, and the mutant stays `equivalent`. That holds only where
+  nothing selects by that name either (adversary pass 2): a binding's refusal-selected failure
+  policy (`drop`, `retry`, `escalate` with `except`) and a bounded retry's `final` outcomes are
+  chosen by the outcome the attempt answered, so the two branches give an identical answer only
+  where every binding invoking the command selects the same policy, and the same `final`
+  membership, for both. `identical_answer` asks this through the selection the interpreter's
+  dispatcher makes (`interpret::binding_refusal`); where any binding differs it is absent, and the
+  swap is scored as any other, so an authored scenario that observes the escalation kills it.
 - **So a survivor is a finding about what synthesis asks of the model.** Either the mutant is
   equivalent (no input the witnesses can produce tells *S* from *S′*), or synthesis derives no
   scenario that observes the rule. The fix is to declare what makes the rule observable, or to file

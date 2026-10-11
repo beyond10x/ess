@@ -2433,8 +2433,11 @@ fn unsatisfiable_guard(baseline: &EssIr, mutant: &EssIr, mutation: &Mutation) ->
 
 /// For a `precedence-swap`, the answer both of its branches give in the baseline, where it is the
 /// same one: the same error and error payload (or neither refuses) and the same response, and
-/// neither changes state, sets or emits anything (<https://github.com/beyond10x/ess/issues/517>). Where both guards hold,
-/// either order then answers alike, so nothing a caller observes tells the mutant apart.
+/// neither changes state, sets or emits anything (<https://github.com/beyond10x/ess/issues/517>),
+/// and every binding that invokes the command answers the two alike: the same refusal-selected
+/// failure policy, and the same membership of a bounded retry's `final` outcomes
+/// (<https://github.com/beyond10x/ess/issues/515>). Where both guards hold, either order then
+/// answers alike, so nothing a caller observes tells the mutant apart.
 ///
 /// `None` for any other mutation, and wherever the two branches differ in anything but their name,
 /// guard, summary, references and test strategy — which only errs towards scoring as before.
@@ -2473,6 +2476,21 @@ fn identical_answer(baseline: &EssIr, mutation: &Mutation) -> Option<String> {
         it
     };
     if !(quiet(one) && quiet(other) && answer(one) == answer(other)) {
+        return None;
+    }
+    // A binding's failure policy is selected by the refusal's name, so a binding that invokes the
+    // command and answers the two refusals differently — drops one and escalates the other, or
+    // ends a bounded retry on one of them alone — publishes or retries differently whichever
+    // branch answers (https://github.com/beyond10x/ess/issues/515). Asked as the dispatcher asks it.
+    if baseline
+        .bindings()
+        .values()
+        .filter(|binding| binding.command.name() == &found.name)
+        .any(|binding| {
+            crate::interpret::binding_refusal(binding, Some(&one.name))
+                != crate::interpret::binding_refusal(binding, Some(&other.name))
+        })
+    {
         return None;
     }
     let mut said = match &one.error {

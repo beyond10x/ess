@@ -128,6 +128,15 @@
   share is repaired with `_`, as within one bounded context. Every bounded context outside a loop
   keeps its own package, and a model whose references form no loop keeps its Go output byte for
   byte.
+- `ess verify conform mutate` no longer reports a `precedence-swap` equivalent when a binding's
+  failure policy treats its two refusals differently. Two branches refusing with the same error
+  and no payload were called an identical answer (`identical_answer`, `ESS-MUTATE-005`) even
+  where a binding invoking the command dropped one and escalated the other, or ended a bounded
+  retry on one alone (`final`), so the swap changed what the binding published and still scored
+  `equivalent`, and with `--scenarios` an authored scenario that saw the escalation killed
+  nothing. Such a swap now carries no `identical_answer` and is scored as any other
+  (https://github.com/beyond10x/ess/issues/515). A model whose bindings answer both refusals
+  alike, or that has no binding on the command, keeps its report byte for byte.
 
 ## [0.59.0] — 2026-10-11
 
