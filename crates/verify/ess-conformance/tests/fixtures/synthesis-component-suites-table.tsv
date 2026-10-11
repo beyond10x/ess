@@ -1,4 +1,4 @@
-#	models=52	lines=64
+#	models=53	lines=65
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	suite=5 83258f8aee44f1c66a730f7d9a9245cd6fc1a51718a2f25a53a4e819e7975520:10202	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 crates/edge/ess-cli/tests/fixtures/stored-rules/fold.yaml	rules	suite=5 370232c7ced707b90b7bffff39cf370202474cf971319bcc314bdb945b5abf5c:22834	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 crates/edge/ess-cli/tests/fixtures/stored-rules/model.yaml	rules	suite=3 d6f554bab5f2e6d2e21ae3d24a390942b72cebaf6d753007ba763d2894d9a569:6257	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
@@ -11,6 +11,7 @@ crates/specify/ess-compiler/tests/fixtures/absent-input.yaml	notes-service	suite
 crates/specify/ess-compiler/tests/fixtures/refusal-with-effect.yaml	order-service	suite=7 8fb4c2c5fd5481d7de4cb63fd508d21c8f88da0b527ca243cd9a83cfda8b2a41:26248	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 crates/specify/ess-compiler/tests/fixtures/union-unit-variants.yaml	work-service	suite=1 7bcaeddf9744ade10f914187fbb9f9558b8716fdc4cf9dfa40dedd8d101faac1:3014	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 crates/specify/ess-domain/tests/fixtures/periodic.yaml	poll-service	suite=5 a6d8c5c7176ee67a6c7e945a95a08ef8181efa4aacdbd8132c052a3b08253622:8968	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
+crates/specify/ess-http/tests/fixtures/catalog.yaml	items-service	suite=3 c916b109464ca12a98eddc4a48cfd9026d505aee60dd85159361aa11a4c0d1b5:6694	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 crates/verify/ess-conformance/tests/fixtures/adversary-w1-1-identity-selector-ess22.yaml	team-service	suite=3 c59141b298ab412f3df622347c2f776f6f24fd509c45d4994b00070b84cf2a78:8219	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 crates/verify/ess-conformance/tests/fixtures/emit-swap-served.yaml	items-service	suite=8 d0d230368ecebbf08a525d9ae78c238cc0b0904512b2fcb17a8a6b670fb48a04:33655	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 crates/verify/ess-conformance/tests/fixtures/emit-swap.yaml	alpha	suite=2 c5a6672ea0f47bb4870e69c34fec917499d7b00c9416e73faac95678a9ebd800:5174	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0

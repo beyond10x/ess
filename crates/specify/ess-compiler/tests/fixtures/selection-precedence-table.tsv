@@ -1,4 +1,4 @@
-#	models=222	commands=390
+#	models=223	commands=393
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -124,6 +124,10 @@ crates/specify/ess-domain/tests/fixtures/text-length-positions.yaml	ir=64397198c
 crates/specify/ess-domain/tests/fixtures/text-length-positions.yaml	keypad.dial.Close	held_state: unnamed | default: closed
 crates/specify/ess-domain/tests/fixtures/text-length-positions.yaml	keypad.dial.Open	default: opened
 crates/specify/ess-domain/tests/fixtures/text-length-positions.yaml	keypad.dial.SendKeys	input_refusal: too-long | default: sent
+crates/specify/ess-http/tests/fixtures/catalog.yaml	ir=11e75f985e5228749c7c2764f0725a3dc006d2be4a52d1921c9156c75f842fa1:8248
+crates/specify/ess-http/tests/fixtures/catalog.yaml	catalog.items.ListItem	default: listed
+crates/specify/ess-http/tests/fixtures/catalog.yaml	catalog.items.PurgeItems	default: purged
+crates/specify/ess-http/tests/fixtures/catalog.yaml	catalog.items.TouchItem	default: touched
 crates/specify/ess-service-contract/tests/fixtures/system.yaml	ASSEMBLE
 crates/specify/ess-service-contract/tests/selection-conversion-control-fixtures/system.yaml	ASSEMBLE
 crates/specify/ess-service-contract/tests/selection-conversion-fixtures/system.yaml	ASSEMBLE
