@@ -640,6 +640,7 @@ version = "0.59.0"
 dependencies = [
  "ess-compiler",
  "ess-domain",
+ "ess-http",
  "ess-primitives",
  "ess-transport",
  "jsonschema",

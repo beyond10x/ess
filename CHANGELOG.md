@@ -20,7 +20,7 @@
   a command on `get` with an input field the path does not map. Every object refuses an unknown
   key by name, so a key of a later stage of the format (`request`, `outcomes`, `headers`,
   `redirect`) is refused, not ignored. Path templates, parameter sources, route collisions,
-  `refines:` (below) and the OpenAPI projection are not checked or read yet
+  `refines:` and the OpenAPI projection are the entries below
   (https://github.com/beyond10x/ess/issues/493, `docs/design/http-presentation-binding.md`).
 - `ess-http/1` path templates, parameters and route collisions are checked. A path starts with
   `/`, has no empty, `.` or `..` segment, no `?`, `#` or `%`, literal segments of RFC 3986 path
@@ -57,6 +57,22 @@
   under `refined.` (`refined.routes[0].method`). `ess-http-ir/1` records the digest as `refines`,
   absent when the binding refines nothing, so existing IR keeps its bytes, and a reader refuses a
   `refines` that is not a `sha256:` digest of 64 lower-case hex digits
+  (https://github.com/beyond10x/ess/issues/493).
+- `ess generate --kind openapi --http FILE [--refines FILE]` projects an `ess-http/1` binding:
+  the binding is compiled as `ess specify http compile` compiles it, with the same refusals, and
+  each operation it routes is served at the declared method and path, so one path may carry
+  `get`, `put`, `post`, `delete` and `patch`. Each path variable is a required `in: path`
+  parameter with the input field's or view parameter's schema; a command's field carried in the
+  path leaves the request body (`{command}.Input` is the body, and is absent with no body when
+  the path carries every field), and a view's parameter carried in the path leaves the query. A
+  bound operation carries `x-ess-route-source: binding`, as a bound channel carries
+  `x-ess-address-source: transport`. An operation the binding does not name keeps its derived
+  route and bytes, and every projection generated without `--http` keeps its bytes. A binding
+  with an open route is refused, naming each such operation, and writes nothing; `--http` with
+  any `--kind` but `openapi` is refused by name, as `--transport` is without `--kind asyncapi`,
+  and `--refines` requires `--http`. `ess_gen::http::bound_routes` is the route table with a
+  binding (`ess_gen::http::Binding`), `ess_gen::http::Method` gains `Delete`, `Patch` and `Put`,
+  and `ess_gen::http::routes` is unchanged
   (https://github.com/beyond10x/ess/issues/493).
 
 - `ess verify conform mutate` mutates the predicate of a `when_subject:` guard and of a

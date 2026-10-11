@@ -285,6 +285,15 @@ struct GenerateArgs {
     /// and streams; only with `--kind asyncapi`.
     #[arg(long)]
     transport: Option<PathBuf>,
+    /// An `ess-http/1` document binding commands and views to methods and paths; only with
+    /// `--kind openapi`. Compiled as `ess specify http compile` compiles it, and refused when a
+    /// route it projects has no path.
+    #[arg(long)]
+    http: Option<PathBuf>,
+    /// The `ess-http/1` binding the `--http` document refines, whose bytes its `refines:` digest
+    /// pins.
+    #[arg(long, requires = "http")]
+    refines: Option<PathBuf>,
 }
 
 /// `ess generate`: IR becomes artifacts; explicit executor verbs deliver them — `crates/generate/`.
@@ -1637,6 +1646,9 @@ fn generate_projections(arguments: &GenerateArgs) -> Result<ExitCode> {
     if arguments.transport.is_some() && !matches!(arguments.kind, Some(Projection::AsyncApi)) {
         bail!("--transport binds events for the AsyncAPI projection; it requires --kind asyncapi");
     }
+    if arguments.http.is_some() && !matches!(arguments.kind, Some(Projection::OpenApi)) {
+        bail!("--http binds routes for the OpenAPI projection; it requires --kind openapi");
+    }
     generate(
         &arguments.input.path,
         arguments.kind,
@@ -1648,7 +1660,14 @@ fn generate_projections(arguments: &GenerateArgs) -> Result<ExitCode> {
         },
         arguments.format,
         arguments.strict,
-        arguments.transport.as_deref(),
+        match (arguments.transport.as_deref(), arguments.http.as_deref()) {
+            (Some(transport), _) => Beside::Transport(transport),
+            (None, Some(binding)) => Beside::Http {
+                binding,
+                refines: arguments.refines.as_deref(),
+            },
+            (None, None) => Beside::Nothing,
+        },
     )
 }
 
@@ -3332,6 +3351,21 @@ enum Delivery<'a> {
     Check(&'a Path),
 }
 
+/// The document beside the model that a projection binds to, if any: the `ess-transport` of
+/// `--transport` (`AsyncAPI`) or the `ess-http/1` of `--http` and `--refines` (`OpenAPI`).
+#[derive(Debug, Clone, Copy)]
+enum Beside<'a> {
+    /// None: every projection keeps its bytes.
+    Nothing,
+    /// An `ess-transport` document, for `--kind asyncapi`.
+    Transport(&'a Path),
+    /// An `ess-http/1` binding and the binding it refines, for `--kind openapi`.
+    Http {
+        binding: &'a Path,
+        refines: Option<&'a Path>,
+    },
+}
+
 /// Resolve once, then render the selected projection and preflight its complete output set.
 fn generate(
     path: &Path,
@@ -3340,7 +3374,7 @@ fn generate(
     delivery: Delivery<'_>,
     format: Format,
     strict: bool,
-    transport: Option<&Path>,
+    beside: Beside<'_>,
 ) -> Result<ExitCode> {
     if !matches!(kind, Some(Projection::Site))
         && (site_options.strict_links
@@ -3372,10 +3406,10 @@ fn generate(
         }
     }
     let mut publications = Vec::new();
-    let artifacts = match kind {
+    let artifacts = match (kind, beside) {
         // Not a `Generator`: it writes the document the generators read, so it has no rendering of
         // its own and nothing to stamp per page beyond what the document already carries.
-        Some(Projection::DocsIr) => {
+        (Some(Projection::DocsIr), _) => {
             let mint = ess_gen::provenance::ProvenanceMint::new(&ir);
             let document = ess_gen::docs::document(&ir, &mint);
             let json = serde_json::to_string_pretty(&document)
@@ -3389,20 +3423,26 @@ fn generate(
         }
         // The site is the one projection an adopter contributes to, so it is built here rather
         // than fetched by name: a `Generator` is handed the model and nothing else.
-        Some(Projection::Site) => site::render(path, site_options, &ir)?,
-        Some(Projection::AsyncApi) if transport.is_some() => {
-            match transport::asyncapi(transport.expect("guarded by the arm"), &ir, format)? {
+        (Some(Projection::Site), _) => site::render(path, site_options, &ir)?,
+        (Some(Projection::AsyncApi), Beside::Transport(transport)) => {
+            match transport::asyncapi(transport, &ir, format)? {
                 Some(artifacts) => artifacts,
                 None => return Ok(ExitCode::from(1)),
             }
         }
-        Some(kind) => {
+        (Some(Projection::OpenApi), Beside::Http { binding, refines }) => {
+            match http::openapi(binding, refines, &ir, format)? {
+                Some(artifacts) => artifacts,
+                None => return Ok(ExitCode::from(1)),
+            }
+        }
+        (Some(kind), _) => {
             let generator = ess_gen::generator(kind.name()).context("projection unavailable")?;
             ess_gen::artifact::run(generator.as_ref(), &ir)?
                 .into_iter()
                 .collect()
         }
-        None => {
+        (None, _) => {
             let mut all = std::collections::BTreeMap::new();
             for generator in ess_gen::generators() {
                 let files = ess_gen::artifact::run(generator.as_ref(), &ir)?;
@@ -5450,7 +5490,7 @@ fn project(adapter: ProjectAdapter) -> Result<ExitCode> {
                 out.as_deref().map_or(Delivery::Print, Delivery::Write),
                 format,
                 strict,
-                None,
+                Beside::Nothing,
             ),
             (None, Some(ir)) => project_openapi_interface(&ir, out.as_deref(), format),
             _ => bail!("exactly one of --path or --ir is required"),
