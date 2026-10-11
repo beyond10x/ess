@@ -666,6 +666,29 @@ fn ess_http_008_each_variable_is_mapped_exactly_once() {
         message.contains("`/items`") && message.contains("`item_id`"),
         "{message}"
     );
+    // One source read by two variables, refused at the second variable of the path, whatever
+    // order the mappings are written in.
+    for parameters in [
+        "{a: input.item_id, b: input.item_id}",
+        "{b: input.item_id, a: input.item_id}",
+    ] {
+        let routes = format!(
+            "routes:\n  - {{command: catalog.items.TouchItem, method: post, path: '/touch/{{a}}/{{b}}', parameters: {parameters}}}\n"
+        );
+        assert_eq!(
+            routes_refusals(&ir, &routes),
+            [refused("ESS-HTTP-008", "routes[0].parameters.b")],
+            "{parameters}"
+        );
+    }
+    let message = &messages(
+        &ir,
+        "routes:\n  - {command: catalog.items.TouchItem, method: post, path: '/touch/{a}/{b}', parameters: {a: input.item_id, b: input.item_id}}\n",
+    )[0];
+    assert!(
+        message.contains("`input.item_id`") && message.contains("`a`"),
+        "{message}"
+    );
 }
 
 #[test]
@@ -767,6 +790,54 @@ fn route_parameters_resolve_to_typed_sources() {
         .expect_err("a source outside both namespaces reads back")
         .to_string();
     assert!(error.contains("query.item_id"), "{error}");
+}
+
+#[test]
+fn compiled_ir_out_of_canonical_order_is_refused_naming_the_key() {
+    let ir = model();
+    let spec = HttpSpec::from_yaml(&(header(&ir) + ROUTES)).expect("parses");
+    let json = compile(&spec, &ir, &derived(&ir))
+        .expect("compiles")
+        .to_canonical_json();
+    let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
+    value["routes"].as_array_mut().expect("routes").reverse();
+    let reversed = serde_json::to_string_pretty(&value).unwrap() + "\n";
+    let error = HttpIr::from_json(&reversed)
+        .expect_err("routes out of canonical order read back")
+        .to_string();
+    assert!(error.contains("`routes[1]`"), "{error}");
+    let route = "\"item_id\": \"param.item_id\"";
+    assert!(json.contains(route), "{json}");
+    for (written, follows) in [
+        (
+            format!("\"zz\": \"param.item_id\",\n        {route}"),
+            "`zz`",
+        ),
+        (format!("{route},\n        {route}"), "`item_id`"),
+    ] {
+        let shuffled = json.replacen(route, &written, 1);
+        let error = HttpIr::from_json(&shuffled)
+            .expect_err("parameters out of canonical order read back")
+            .to_string();
+        assert!(
+            error.contains("`parameters`") && error.contains(follows),
+            "{error}"
+        );
+    }
+    let spec = HttpSpec::from_yaml(&(header(&ir) + "routes: []\n")).expect("parses");
+    let json = compile(&spec, &ir, &derived(&ir))
+        .expect("compiles")
+        .to_canonical_json();
+    let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
+    value["derived_routes"]
+        .as_array_mut()
+        .expect("derived routes")
+        .swap(0, 1);
+    let swapped = serde_json::to_string_pretty(&value).unwrap() + "\n";
+    let error = HttpIr::from_json(&swapped)
+        .expect_err("derived routes out of canonical order read back")
+        .to_string();
+    assert!(error.contains("`derived_routes[1]`"), "{error}");
 }
 
 #[test]

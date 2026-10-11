@@ -455,7 +455,11 @@ pub struct Route {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
     /// Path template variable to the typed source it reads, ordered by variable. Absent when empty.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(
+        default,
+        skip_serializing_if = "BTreeMap::is_empty",
+        deserialize_with = "canonical_parameters"
+    )]
     pub parameters: BTreeMap<String, Source>,
 }
 
@@ -534,7 +538,9 @@ impl HttpIr {
         json
     }
 
-    /// Reads compiled IR back, refusing any format but [`HTTP_IR_FORMAT`] and any unknown key.
+    /// Reads compiled IR back, refusing any format but [`HTTP_IR_FORMAT`], any unknown key, a path
+    /// that breaks the template grammar, and `routes`, `derived_routes` or a route's `parameters`
+    /// out of canonical order, naming the key: what reads back writes back the bytes it was given.
     ///
     /// The routes are taken as compiled; a reader that needs them checked against a specification
     /// compiles the authored binding instead.
@@ -551,8 +557,71 @@ impl HttpIr {
                 return Err(serde::de::Error::custom(reasons.join("; ")));
             }
         }
+        let route_key = |route: &Route| (route.path.clone(), route.method, route.operation.clone());
+        if let Some(at) = out_of_order(&ir.routes, |left, right| {
+            route_key(left).cmp(&route_key(right))
+        }) {
+            return Err(serde::de::Error::custom(format!(
+                "`routes[{at}]` is out of canonical order: compiled IR orders `routes` by path, \
+                 then method, then operation, each once"
+            )));
+        }
+        if let Some(at) = out_of_order(&ir.derived_routes, derived_order) {
+            return Err(serde::de::Error::custom(format!(
+                "`derived_routes[{at}]` is out of canonical order: compiled IR orders \
+                 `derived_routes` by component, then path, then method, then operation, each once"
+            )));
+        }
         Ok(ir)
     }
+}
+
+/// The index of the first item that does not sort strictly after the one before it.
+fn out_of_order<T>(items: &[T], order: impl Fn(&T, &T) -> std::cmp::Ordering) -> Option<usize> {
+    items
+        .windows(2)
+        .position(|pair| order(&pair[0], &pair[1]) != std::cmp::Ordering::Less)
+        .map(|position| position + 1)
+}
+
+/// Reads a compiled route's `parameters`, refusing a key that does not sort strictly after the one
+/// before it: compiled IR orders them by variable, each once, and a reader that sorted them
+/// silently would write back bytes it was not given.
+fn canonical_parameters<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<BTreeMap<String, Source>, D::Error> {
+    struct Entries;
+
+    impl<'de> serde::de::Visitor<'de> for Entries {
+        type Value = BTreeMap<String, Source>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            formatter.write_str("a map from path variable to source, ordered by variable")
+        }
+
+        fn visit_map<A: serde::de::MapAccess<'de>>(
+            self,
+            mut map: A,
+        ) -> Result<Self::Value, A::Error> {
+            let mut entries = BTreeMap::new();
+            let mut last: Option<String> = None;
+            while let Some((variable, source)) = map.next_entry::<String, Source>()? {
+                if let Some(before) = &last {
+                    if *before >= variable {
+                        return Err(serde::de::Error::custom(format!(
+                            "`parameters` is out of canonical order: `{variable}` follows \
+                             `{before}`; compiled IR orders `parameters` by variable, each once"
+                        )));
+                    }
+                }
+                last = Some(variable.clone());
+                entries.insert(variable, source);
+            }
+            Ok(entries)
+        }
+    }
+
+    deserializer.deserialize_map(Entries)
 }
 
 /// One refusal, located at the key that caused it.
@@ -624,7 +693,7 @@ impl Refusals {
 /// | `ESS-HTTP-005` | one operation is routed twice |
 /// | `ESS-HTTP-006` | a method outside the closed set, or one not admitted for the operation: a view is bound to `get` only, a command to `post`, `put`, `patch`, `delete` or `get` |
 /// | `ESS-HTTP-007` | a path that breaks the template grammar ([`template`]), naming the segment |
-/// | `ESS-HTTP-008` | a path variable not mapped, mapped twice (two segments or two keys), or a mapping for no variable of the path |
+/// | `ESS-HTTP-008` | a path variable not mapped, mapped twice (two segments or two keys), reading a source another variable of the route already reads, or a mapping for no variable of the path |
 /// | `ESS-HTTP-009` | a source in the wrong namespace (`input.` for a command, `param.` for a view), naming no field, or of a type a segment cannot carry: `String`, `Integer`, an enum or an unconstrained newtype of one of them |
 /// | `ESS-HTTP-010` | two operations of one component on one method and template, variable names ignored, declared or derived |
 /// | `ESS-HTTP-011` | two templates of one component and method that a request path can both match, with a literal beside a variable at the first position they differ: a literal takes no precedence |
@@ -649,7 +718,10 @@ pub fn compile(
     specification(&spec.specification, ir, &mut refusals);
     let resolved = routes(&spec.routes, ir, &mut refusals);
     let derived_routes = surface(&resolved, derived, &mut refusals);
-    let mut routes: Vec<Route> = resolved.into_iter().map(|bound| bound.route).collect();
+    let mut routes: Vec<Route> = resolved
+        .into_iter()
+        .filter_map(|bound| bound.route)
+        .collect();
     routes.sort_by(|left, right| {
         (&left.path, left.method, &left.operation).cmp(&(
             &right.path,
@@ -690,12 +762,17 @@ fn specification(identity: &SpecificationIdentity, ir: &EssIr, refusals: &mut Re
     }
 }
 
-/// A route that resolved, with where it was written and the segments of its path.
+/// A route that names an operation, whatever else it was refused for: it names that operation, so
+/// the operation's derived route leaves the surface.
 struct Bound {
     index: usize,
-    route: Route,
-    /// `None` for an open route.
-    segments: Option<Vec<Segment>>,
+    operation: Operation,
+    /// The method, path and segments it claims on the surface, when its method is admitted and its
+    /// path parsed, whatever else it was refused for; `None` for an open route or either refusal.
+    claim: Option<(Method, String, Vec<Segment>)>,
+    /// The resolved route, when its operation, method, path, sources and `get` input resolved; it
+    /// reaches the IR only when the binding earned no refusal at all.
+    route: Option<Route>,
 }
 
 /// The fields a route's sources are read from: a command's input or a view's parameters.
@@ -705,8 +782,9 @@ struct Target<'a> {
     command: bool,
 }
 
-/// Every route that resolved, in document order. A route that earned a refusal is still checked
-/// in full, so its other refusals are reported too.
+/// Every route that names an operation, in document order. A route that earned a refusal is still
+/// checked in full, so its other refusals are reported too, and it still takes part in the
+/// collision checks whenever its method is admitted and its path parsed.
 ///
 /// Within one route the refusals come in this order: the operation's shape (`004`), the method
 /// (`006`), the path's grammar (`007`), the operation's existence and surface (`004`, `013`), the
@@ -778,20 +856,27 @@ fn routes(specs: &[RouteSpec], ir: &EssIr, refusals: &mut Refusals) -> Vec<Bound
         } else {
             first_route.insert(operation.clone(), index);
         }
-        if let (Some(_), Some(method), Some(segments), Some(sources), false) =
-            (target, method, segments, sources, unmapped)
-        {
-            routes.push(Bound {
-                index,
-                route: Route {
-                    operation,
-                    method,
-                    path: spec.path.clone(),
-                    parameters: sources,
-                },
-                segments,
-            });
-        }
+        let claim = match (method, &segments, &spec.path) {
+            (Some(method), Some(Some(segments)), Some(path)) => {
+                Some((method, path.clone(), segments.clone()))
+            }
+            _ => None,
+        };
+        let route = match (target, method, segments, sources, unmapped) {
+            (Some(_), Some(method), Some(_), Some(sources), false) => Some(Route {
+                operation: operation.clone(),
+                method,
+                path: spec.path.clone(),
+                parameters: sources,
+            }),
+            _ => None,
+        };
+        routes.push(Bound {
+            index,
+            operation,
+            claim,
+            route,
+        });
     }
     routes
 }
@@ -924,8 +1009,9 @@ fn view<'a>(name: &str, ir: &'a EssIr, path: &str, refusals: &mut Refusals) -> O
     })
 }
 
-/// Holds each variable of the path to exactly one mapping (`ESS-HTTP-008`) and returns the source
-/// text of every mapping that maps a variable of the path. When the path breaks the grammar, its
+/// Holds each variable of the path to exactly one mapping, and each source to one variable
+/// (`ESS-HTTP-008`), and returns the source text of every mapping that maps a variable of the
+/// path. When the path breaks the grammar, its
 /// variables are unknown: nothing here is refused, and every mapping is taken as mapped, so that
 /// the one mistake is reported once, as `ESS-HTTP-007`.
 fn variables(
@@ -952,6 +1038,8 @@ fn variables(
         .collect();
     let written = spec.path.as_deref().unwrap_or_default();
     let mut reported = std::collections::BTreeSet::new();
+    // Each source read so far, normalised, with the variable that reads it.
+    let mut read: Vec<(String, &str)> = Vec::new();
     for (position, name) in names.iter().enumerate() {
         if names[..position].contains(name) {
             if reported.insert(*name) {
@@ -964,7 +1052,22 @@ fn variables(
                     ),
                 );
             }
-        } else if spec.parameters.get(name).is_none() {
+        } else if let Some(text) = spec.parameters.get(name) {
+            let source = Source::parse(text).map_or_else(|| text.to_owned(), |s| s.to_string());
+            if let Some((_, earlier)) = read.iter().find(|(seen, _)| *seen == source) {
+                refusals.refuse(
+                    "ESS-HTTP-008",
+                    format!("{path}.parameters.{name}"),
+                    format!(
+                        "variable `{name}` of `{written}` reads `{text}`, which variable \
+                         `{earlier}` already reads; a source is read by one variable, so that a \
+                         request path gives it one value"
+                    ),
+                );
+            } else {
+                read.push((source, name));
+            }
+        } else {
             refusals.refuse(
                 "ESS-HTTP-008",
                 format!("{path}.parameters.{name}"),
@@ -1196,7 +1299,10 @@ fn literal_segments(path: &str) -> Vec<Segment> {
 /// in IR order.
 ///
 /// A declared route is on the surface of every component the table derives a route for its
-/// operation on, and replaces that route there. An open route claims no path. Two derived routes
+/// operation on, and replaces that route there. An operation is named by every route that names
+/// it, whatever else that route was refused for, so a refused route still replaces the derived
+/// one; and every route whose method is admitted and whose path parsed is checked, so that its
+/// collisions are reported beside its other refusals. An open route claims no path. Two derived routes
 /// never collide with each other here: ESS derives them apart, and a refusal of the binding names
 /// a route of the binding.
 fn surface(
@@ -1204,9 +1310,9 @@ fn surface(
     derived: &[DerivedRoute],
     refusals: &mut Refusals,
 ) -> Vec<DerivedRoute> {
-    let mut declared: BTreeMap<&Operation, &Bound> = BTreeMap::new();
+    let mut named: BTreeMap<&Operation, Vec<&Bound>> = BTreeMap::new();
     for route in bound {
-        declared.entry(&route.route.operation).or_insert(route);
+        named.entry(&route.operation).or_default().push(route);
     }
     let mut table: Vec<&DerivedRoute> = derived.iter().collect();
     table.sort_by(|left, right| derived_order(left, right));
@@ -1214,31 +1320,29 @@ fn surface(
     let mut kept = Vec::new();
     let mut components: BTreeMap<&str, Vec<Claim<'_>>> = BTreeMap::new();
     for route in table {
-        let claim = if let Some(bound) = declared.get(&route.operation) {
-            let (Some(segments), Some(path)) = (&bound.segments, &bound.route.path) else {
-                continue;
-            };
-            Claim {
-                operation: &bound.route.operation,
-                method: bound.route.method,
-                path,
-                segments: segments.clone(),
-                declared: Some(bound.index),
+        let claims = components.entry(route.component.as_str()).or_default();
+        if let Some(routes) = named.get(&route.operation) {
+            for bound in routes {
+                if let Some((method, path, segments)) = &bound.claim {
+                    claims.push(Claim {
+                        operation: &bound.operation,
+                        method: *method,
+                        path,
+                        segments: segments.clone(),
+                        declared: Some(bound.index),
+                    });
+                }
             }
         } else {
             kept.push(route.clone());
-            Claim {
+            claims.push(Claim {
                 operation: &route.operation,
                 method: route.method,
                 path: &route.path,
                 segments: literal_segments(&route.path),
                 declared: None,
-            }
-        };
-        components
-            .entry(route.component.as_str())
-            .or_default()
-            .push(claim);
+            });
+        }
     }
     for (component, claims) in &components {
         for (later, right) in claims.iter().enumerate() {

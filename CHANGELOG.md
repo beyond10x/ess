@@ -26,7 +26,8 @@
   `/`, has no empty, `.` or `..` segment, no `?`, `#` or `%`, literal segments of RFC 3986 path
   text, and variables only as whole segments `{name}`; `ESS-HTTP-007` refuses each segment that
   breaks this, naming it. `ESS-HTTP-008` refuses a path variable not mapped, mapped twice, or a
-  mapping for no variable of the path; `ESS-HTTP-009` a source outside `input.<field>` (command)
+  mapping for no variable of the path, and one source read by two variables of a route, at the
+  second; `ESS-HTTP-009` a source outside `input.<field>` (command)
   or `param.<name>` (view), naming no field, or of a type a segment cannot carry (anything but
   `String`, `Integer`, an enum, or an unconstrained newtype of one of them). A command on `get`
   now counts an input field as mapped only when a variable of its path maps it (`ESS-HTTP-014`).
@@ -34,10 +35,12 @@
   operation the binding does not name, is checked for two operations on one method and template
   whatever the variables are called (`ESS-HTTP-010`, "two operations claim the same method and
   path") and for a literal beside a variable where one request path matches both
-  (`ESS-HTTP-011`; neither takes precedence), each naming both operations. In `ess-http-ir/1`
-  parameters are typed sources, and `derived_routes` records the derived routes the binding was
-  checked against, ordered by component, path, method and operation
-  (https://github.com/beyond10x/ess/issues/493).
+  (`ESS-HTTP-011`; neither takes precedence), each naming both operations; a route refused for
+  anything else still replaces its operation's derived route, and is checked whenever its method
+  is admitted and its path parsed. In `ess-http-ir/1` parameters are typed sources, and
+  `derived_routes` records the derived routes the binding was checked against, ordered by
+  component, path, method and operation; IR whose `routes`, `derived_routes` or `parameters` are
+  out of canonical order does not read back (https://github.com/beyond10x/ess/issues/493).
 
 ## [0.59.0] — 2026-10-11
 
