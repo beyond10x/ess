@@ -538,11 +538,20 @@ impl HttpIr {
         json
     }
 
-    /// Reads compiled IR back, refusing any format but [`HTTP_IR_FORMAT`], any unknown key, a path
-    /// that breaks the template grammar, and `routes`, `derived_routes` or a route's `parameters`
-    /// out of canonical order, naming the key: what reads back writes back the bytes it was given.
+    /// Reads compiled IR back: canonical or compact JSON, in canonical order, which writes back
+    /// canonical bytes ([`HttpIr::to_canonical_json`]).
     ///
-    /// The routes are taken as compiled; a reader that needs them checked against a specification
+    /// It refuses, naming the key, any format but [`HTTP_IR_FORMAT`], any unknown key, and IR that
+    /// breaks an invariant [`compile`] guarantees and that needs no specification to check:
+    /// `routes`, `derived_routes` or a route's `parameters` out of canonical order; one operation
+    /// routed twice; a method not admitted for the kind of operation; a route path that breaks the
+    /// template grammar, or whose `parameters` leave a variable unmapped, map one the path does
+    /// not have, or read one source from two variables; a source outside the operation's
+    /// namespace; a derived route for an operation the IR routes; and a derived path that is not a
+    /// grammar-valid path without variables.
+    ///
+    /// What needs the specification is not checked: that each operation and field exists, its
+    /// type, the `get` input, and collisions on each component's surface. A reader that needs those
     /// compiles the authored binding instead.
     pub fn from_json(text: &str) -> Result<Self, serde_json::Error> {
         let ir: Self = serde_json::from_str(text)?;
@@ -552,28 +561,137 @@ impl HttpIr {
                 ir.format
             )));
         }
-        for path in ir.routes.iter().filter_map(|route| route.path.as_deref()) {
-            if let Err(reasons) = template(path) {
-                return Err(serde::de::Error::custom(reasons.join("; ")));
-            }
-        }
-        let route_key = |route: &Route| (route.path.clone(), route.method, route.operation.clone());
-        if let Some(at) = out_of_order(&ir.routes, |left, right| {
-            route_key(left).cmp(&route_key(right))
-        }) {
-            return Err(serde::de::Error::custom(format!(
-                "`routes[{at}]` is out of canonical order: compiled IR orders `routes` by path, \
-                 then method, then operation, each once"
-            )));
-        }
-        if let Some(at) = out_of_order(&ir.derived_routes, derived_order) {
-            return Err(serde::de::Error::custom(format!(
-                "`derived_routes[{at}]` is out of canonical order: compiled IR orders \
-                 `derived_routes` by component, then path, then method, then operation, each once"
-            )));
-        }
+        ir.invariants().map_err(serde::de::Error::custom)?;
         Ok(ir)
     }
+
+    /// The invariants of compiled IR that need no specification, each refusal naming its key.
+    fn invariants(&self) -> Result<(), String> {
+        let route_key = |route: &Route| (route.path.clone(), route.method, route.operation.clone());
+        if let Some(at) = out_of_order(&self.routes, |left, right| {
+            route_key(left).cmp(&route_key(right))
+        }) {
+            return Err(format!(
+                "`routes[{at}]` is out of canonical order: compiled IR orders `routes` by path, \
+                 then method, then operation, each once"
+            ));
+        }
+        if let Some(at) = out_of_order(&self.derived_routes, derived_order) {
+            return Err(format!(
+                "`derived_routes[{at}]` is out of canonical order: compiled IR orders \
+                 `derived_routes` by component, then path, then method, then operation, each once"
+            ));
+        }
+        let mut routed: BTreeMap<&Operation, usize> = BTreeMap::new();
+        for (index, route) in self.routes.iter().enumerate() {
+            let at = format!("routes[{index}]");
+            if let Some(first) = routed.insert(&route.operation, index) {
+                return Err(format!(
+                    "`{at}` routes {}, which `routes[{first}]` already routes; compiled IR routes \
+                     an operation once",
+                    route.operation
+                ));
+            }
+            route_invariants(route, &at)?;
+        }
+        for (index, derived) in self.derived_routes.iter().enumerate() {
+            let at = format!("derived_routes[{index}]");
+            if let Some(routed) = routed.get(&derived.operation) {
+                return Err(format!(
+                    "`{at}` is a derived route of {}, which `routes[{routed}]` routes; \
+                     `derived_routes` holds only operations the binding does not name",
+                    derived.operation
+                ));
+            }
+            match template(&derived.path) {
+                Err(reasons) => {
+                    return Err(format!("`{at}.path`: {}", reasons.join("; ")));
+                }
+                Ok(segments) => {
+                    if segments
+                        .iter()
+                        .any(|segment| matches!(segment, Segment::Variable(_)))
+                    {
+                        return Err(format!(
+                            "`{at}.path` `{}` holds a variable; a derived path holds none",
+                            derived.path
+                        ));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+/// The invariants of one compiled route that need no specification (see [`HttpIr::from_json`]).
+fn route_invariants(route: &Route, at: &str) -> Result<(), String> {
+    let admitted = match route.operation {
+        Operation::View(_) => route.method == Method::Get,
+        Operation::Command(_) => {
+            !matches!(route.method, Method::Head | Method::Options | Method::Trace)
+        }
+    };
+    if !admitted {
+        return Err(format!(
+            "`{at}.method` `{}` is not admitted for a {}",
+            route.method,
+            route.operation.kind()
+        ));
+    }
+    let namespace = match route.operation {
+        Operation::Command(_) => "input",
+        Operation::View(_) => "param",
+    };
+    let mut variables: Vec<String> = Vec::new();
+    if let Some(path) = &route.path {
+        let segments =
+            template(path).map_err(|reasons| format!("`{at}.path`: {}", reasons.join("; ")))?;
+        for segment in &segments {
+            if let Segment::Variable(name) = segment {
+                if variables.contains(name) {
+                    return Err(format!(
+                        "`{at}.path` `{path}` names variable `{name}` twice; a variable names one \
+                         segment"
+                    ));
+                }
+                variables.push(name.clone());
+            }
+        }
+    }
+    let written = route.path.as_deref().unwrap_or("(open)");
+    for name in &variables {
+        if !route.parameters.contains_key(name) {
+            return Err(format!(
+                "`{at}.parameters.{name}` is missing: variable `{name}` of `{written}` is not \
+                 mapped, and compiled IR maps each variable of the path"
+            ));
+        }
+    }
+    let mut read: Vec<(&Source, &str)> = Vec::new();
+    for (name, source) in &route.parameters {
+        let key = format!("{at}.parameters.{name}");
+        if !variables.contains(name) {
+            return Err(format!(
+                "`{key}` maps no variable of `{written}`; compiled IR maps only variables of the \
+                 path"
+            ));
+        }
+        if source.namespace() != namespace {
+            return Err(format!(
+                "`{key}` reads `{source}`, outside `{namespace}.`, the namespace of a {}",
+                route.operation.kind()
+            ));
+        }
+        if let Some((_, earlier)) = read.iter().find(|(seen, _)| *seen == source) {
+            return Err(format!(
+                "`{key}` reads `{source}`, which `{earlier}` already reads; compiled IR reads a \
+                 source from one variable"
+            ));
+        }
+        read.push((source, name));
+    }
+    Ok(())
 }
 
 /// The index of the first item that does not sort strictly after the one before it.

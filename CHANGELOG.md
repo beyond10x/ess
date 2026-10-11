@@ -39,8 +39,11 @@
   anything else still replaces its operation's derived route, and is checked whenever its method
   is admitted and its path parsed. In `ess-http-ir/1` parameters are typed sources, and
   `derived_routes` records the derived routes the binding was checked against, ordered by
-  component, path, method and operation; IR whose `routes`, `derived_routes` or `parameters` are
-  out of canonical order does not read back (https://github.com/beyond10x/ess/issues/493).
+  component, path, method and operation. IR that breaks what compiling guarantees without the
+  specification does not read back, naming the key: `routes`, `derived_routes` or `parameters`
+  out of canonical order, an operation routed twice, a derived route for a routed operation, a
+  derived path with a variable or outside the grammar, or parameters that disagree with their
+  path (https://github.com/beyond10x/ess/issues/493).
 
 ## [0.59.0] — 2026-10-11
 

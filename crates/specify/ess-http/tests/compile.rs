@@ -840,6 +840,68 @@ fn compiled_ir_out_of_canonical_order_is_refused_naming_the_key() {
     assert!(error.contains("`derived_routes[1]`"), "{error}");
 }
 
+/// Every invariant `compile` guarantees of a route that needs no specification to check is held by
+/// `HttpIr::from_json`, and each refusal names its key. Routes in the compiled IR of `ROUTES`:
+/// `[0]` `ListItem` (open), `[1]` `ItemById` on `/items/{item_id}`, `[2]` `TouchItem` on
+/// `/items/{item_id}/touch`.
+#[test]
+fn compiled_ir_breaking_a_route_invariant_is_refused_naming_the_key() {
+    type Edit = fn(&mut serde_json::Value);
+    let ir = model();
+    let spec = HttpSpec::from_yaml(&(header(&ir) + ROUTES)).expect("parses");
+    let json = compile(&spec, &ir, &derived(&ir))
+        .expect("compiles")
+        .to_canonical_json();
+    let cases: [(&str, Edit, &str); 6] = [
+        (
+            "a view on a method other than get",
+            |value| value["routes"][1]["method"] = serde_json::json!("post"),
+            "`routes[1].method`",
+        ),
+        (
+            "a source outside the operation's namespace",
+            |value| {
+                value["routes"][1]["parameters"]["item_id"] = serde_json::json!("input.item_id");
+            },
+            "`routes[1].parameters.item_id`",
+        ),
+        (
+            "a path that breaks the grammar",
+            |value| value["routes"][2]["path"] = serde_json::json!("/items/{item_id}/touch/"),
+            "`routes[2].path`",
+        ),
+        (
+            "a variable named by two segments",
+            |value| {
+                value["routes"][2]["path"] = serde_json::json!("/items/{item_id}/touch/{item_id}");
+            },
+            "`routes[2].path`",
+        ),
+        (
+            "one source read by two variables",
+            |value| {
+                value["routes"][2]["path"] = serde_json::json!("/items/{item_id}/{b}");
+                value["routes"][2]["parameters"] =
+                    serde_json::json!({"b": "input.item_id", "item_id": "input.item_id"});
+            },
+            "`routes[2].parameters.item_id`",
+        ),
+        (
+            "a mapping on an open route",
+            |value| value["routes"][0]["parameters"] = serde_json::json!({"x": "input.item_id"}),
+            "`routes[0].parameters.x`",
+        ),
+    ];
+    for (what, edit, key) in cases {
+        let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        edit(&mut value);
+        let text = serde_json::to_string_pretty(&value).unwrap() + "\n";
+        assert_ne!(text, json, "{what}: the edit changed nothing");
+        let error = HttpIr::from_json(&text).expect_err(what).to_string();
+        assert!(error.contains(key), "{what}: {error}");
+    }
+}
+
 #[test]
 fn ess_http_010_a_declared_route_on_another_operations_derived_route_is_refused() {
     let ir = model();

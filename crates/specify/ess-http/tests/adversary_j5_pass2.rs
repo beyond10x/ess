@@ -214,19 +214,25 @@ fn ir_whose_parameters_disagree_with_its_path_does_not_read_back() {
     );
 }
 
-/// The correction's doc comment on `HttpIr::from_json`: "what reads back writes back the bytes it
-/// was given". Compact JSON of the same IR reads back and writes back other bytes.
+/// The decided contract of `HttpIr::from_json`: it reads canonical or compact JSON in canonical
+/// order and writes canonical bytes. Compact JSON of the same IR reads back, writes back the
+/// canonical pretty bytes, and writing those bytes again is a fixed point.
 #[test]
-fn ir_that_reads_back_writes_back_the_bytes_it_was_given() {
+fn compact_ir_reads_back_and_writes_back_canonical_bytes() {
     let ir = model();
     let json = compiled(&ir);
     let value: serde_json::Value = serde_json::from_str(&json).unwrap();
     let compact = serde_json::to_string(&value).unwrap();
-    if let Ok(read) = HttpIr::from_json(&compact) {
-        assert_eq!(
-            read.to_canonical_json(),
-            compact,
-            "compact IR reads back and writes back pretty bytes"
-        );
-    }
+    assert_ne!(compact, json, "the compact form is other bytes");
+    let written = HttpIr::from_json(&compact)
+        .expect("compact IR in canonical order reads back")
+        .to_canonical_json();
+    assert_eq!(written, json, "compact IR writes back the canonical bytes");
+    assert_eq!(
+        HttpIr::from_json(&written)
+            .expect("canonical IR reads back")
+            .to_canonical_json(),
+        written,
+        "canonical bytes are a fixed point"
+    );
 }
