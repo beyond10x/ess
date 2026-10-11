@@ -1090,6 +1090,71 @@ fn caller_values_fresh_coverage_suite_35_run_in_typescript_with_the_rust_verdict
     .coverage(&ir(CALLER));
 }
 
+/// Two acts of an authored scenario, each stating its own caller (`caller:`, ess-scenario/5),
+/// each requiring the note it opens to carry that caller's account.
+const AUTHORED_CALLER: &str = "type: ess-scenario/5
+domain: demo.notes
+scenario: each-note-carries-its-callers-account
+summary: Two notes opened by two callers each carry their own caller's account.
+arrange:
+  - {instance: first, entity: demo.notes.Note}
+  - {instance: second, entity: demo.notes.Note}
+timeline:
+  - at: 2026-01-05T09:00:00Z
+    command: demo.notes.CreateNote
+    actor: demo.notes.AccountUser
+    caller:
+      account_id: 3f1d5b7e-0000-4000-8000-00000000000a
+      agent_id: 3f1d5b7e-0000-4000-8000-00000000000b
+    input: {text: one}
+    outcome: created
+    events:
+      - event: demo.notes.NoteCreated
+        payload: {account_id: 3f1d5b7e-0000-4000-8000-00000000000a}
+    capture: {instance: first, event: demo.notes.NoteCreated, field: note_id}
+  - at: 2026-01-05T09:01:00Z
+    command: demo.notes.CreateNote
+    actor: demo.notes.AccountUser
+    caller:
+      account_id: 3f1d5b7e-0000-4000-8000-00000000000c
+      agent_id: 3f1d5b7e-0000-4000-8000-00000000000d
+    input: {text: two}
+    outcome: created
+    events:
+      - event: demo.notes.NoteCreated
+        payload: {account_id: 3f1d5b7e-0000-4000-8000-00000000000c}
+    capture: {instance: second, event: demo.notes.NoteCreated, field: note_id}
+assert:
+  - view: demo.notes.NoteDetails
+    contains: {note_id: {$instance: second}, account_id: 3f1d5b7e-0000-4000-8000-00000000000c}
+";
+
+#[test]
+fn an_authored_caller_suite_runs_in_typescript_with_the_rust_verdicts() {
+    let model = ir(CALLER);
+    let authoring = ess_conformance::authored::compile(
+        &model,
+        &[ess_conformance::authored::Source::new(
+            "notes.yaml",
+            AUTHORED_CALLER,
+        )],
+    );
+    assert!(authoring.is_complete(), "{:#?}", authoring.refusals);
+    let mut suite =
+        ess_conformance::ConformanceSuite::new(ess_conformance::SuiteProvenance::of(&model));
+    for (id, scenario) in authoring.scenarios {
+        suite.insert(id, scenario).expect("one id");
+    }
+    suite.select_fresh_format_for(&model);
+    Case {
+        name: "authored-caller",
+        version: "ess-conformance/34",
+        modes: &["correct", "first-account-ever", "cannot-authenticate"],
+        ..CALLER_CASE
+    }
+    .authored(&suite.to_canonical_json().expect("serializes"));
+}
+
 // ---- suite/26: an instant relative to the moment of sending (beyond10x/ess#171) -----------------
 
 const CURRENT_TIME: &str = include_str!("fixtures/current-time-guard.yaml");

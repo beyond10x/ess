@@ -201,6 +201,28 @@
 //! [`List`](ScenarioValue::List) or [`Members`](ScenarioValue::Members) the runner resolves element
 //! by element, and at a position of any other type it is refused, naming the position.
 //!
+//! # The caller
+//!
+//! A command may read an attribute of its caller (`{caller: account_id}`, `caller.agent_id`,
+//! source format `ess/16`). An act states the values under `caller:`, in `ess-scenario/5`:
+//!
+//! ```yaml
+//! - at: 2026-01-05T09:00:00Z
+//!   command: ledger.notes.OpenNote
+//!   actor: ledger.notes.Member
+//!   caller: {account_id: {$instance: account}}
+//!   input: {title: first}
+//! ```
+//!
+//! Each value is a literal of the type the act's actor declares the attribute at, or
+//! `{$instance: name}` for an instance arranged with `setup:`; they compile into the step's
+//! suite/26 [`caller`](ScenarioStep::ExecuteCommand) ([`crate::caller_values`]). An attribute the
+//! actor does not declare is refused, and so is an act that leaves out a required attribute its
+//! command reads, naming the attribute and the command. A captured identity is refused: the
+//! target chooses it while the scenario runs, and a step carries a caller's values as the suite
+//! writes them. An act with no `caller:` sends none, so its suite keeps its bytes; an earlier
+//! version refuses the key, and an older `ess` refuses the `ess-scenario/5` header.
+//!
 //! # What is deliberately not here
 //!
 //! * **An implementation-specific assertion.** The step vocabulary is closed (see
@@ -411,6 +433,12 @@ pub struct Act {
     /// As whom, where the specification grants commands to actors.
     #[serde(default)]
     pub actor: Option<String>,
+    /// The attribute values of the caller the command is sent as, by the name `actor:` declares
+    /// each under: a literal of the attribute's type, or `{$instance: name}` for an instance
+    /// arranged with `setup:`. Available in ess-scenario/5. Empty sends no caller, which keeps
+    /// the suite's bytes.
+    #[serde(default)]
+    pub caller: BTreeMap<String, Written>,
     /// The input, by declared field name.
     #[serde(default)]
     pub input: BTreeMap<String, Written>,
@@ -943,6 +971,13 @@ pub enum Surface {
     Row(ViewRef),
     /// A view's declared parameters.
     Params(ViewRef),
+    /// The attributes of the caller a command is sent as (`caller:`, ess-scenario/5).
+    Caller {
+        /// The actor the act names, whose attributes they are; `None` where it names none.
+        actor: Option<ActorRef>,
+        /// The command the act sends.
+        command: CommandRef,
+    },
 }
 
 impl fmt::Display for Surface {
@@ -954,6 +989,17 @@ impl fmt::Display for Surface {
             Self::Error(error) => write!(f, "the fields of `{error}`"),
             Self::Row(view) => write!(f, "a row of `{view}`"),
             Self::Params(view) => write!(f, "the parameters of `{view}`"),
+            Self::Caller {
+                actor: Some(actor),
+                command,
+            } => write!(f, "the caller `{actor}` that sends `{command}`"),
+            Self::Caller {
+                actor: None,
+                command,
+            } => write!(
+                f,
+                "the caller that sends `{command}` (the act names no `actor:`)"
+            ),
         }
     }
 }
@@ -1563,7 +1609,8 @@ diagnostic_catalogue! {
         Self::UnsupportedFormat { .. } => 2,
             "The document claims a format this build does not implement.",
             "write `type: ess-scenario/1`, `ess-scenario/2` for entity setup, `ess-scenario/3` for \
-             fixture values, or `ess-scenario/4` for direct responses";
+             fixture values, `ess-scenario/4` for direct responses, or `ess-scenario/5` for \
+             caller values";
         Self::Duplicate { .. } => 3,
             "Two files produce the same scenario id.",
             "two files name one scenario in one domain; rename one of them";
@@ -2100,7 +2147,7 @@ pub(crate) fn compile_one(
         used_fixtures: BTreeSet::new(),
         fixture_format: matches!(
             document.format.as_str(),
-            "ess-scenario/3" | "ess-scenario/4"
+            "ess-scenario/3" | "ess-scenario/4" | "ess-scenario/5"
         ),
         ir,
         origin: &source.origin,
@@ -2108,6 +2155,7 @@ pub(crate) fn compile_one(
         refusals: Vec::new(),
         arranged: BTreeMap::new(),
         bound: BTreeSet::new(),
+        identities: BTreeMap::new(),
         observed: BTreeSet::new(),
         marked: BTreeMap::new(),
         steps: Vec::new(),
@@ -2153,7 +2201,7 @@ pub(crate) fn compile_one(
 fn document_format_refusal(document: &Document) -> Option<Cause> {
     if !matches!(
         document.format.as_str(),
-        FORMAT | "ess-scenario/2" | "ess-scenario/3" | "ess-scenario/4"
+        FORMAT | "ess-scenario/2" | "ess-scenario/3" | "ess-scenario/4" | "ess-scenario/5"
     ) {
         return Some(Cause::UnsupportedFormat {
             found: document.format.clone(),
@@ -2166,25 +2214,38 @@ fn document_format_refusal(document: &Document) -> Option<Cause> {
     }
     if !matches!(
         document.format.as_str(),
-        "ess-scenario/3" | "ess-scenario/4"
+        "ess-scenario/3" | "ess-scenario/4" | "ess-scenario/5"
     ) && !document.fixtures.is_empty()
     {
         return Some(Cause::Unreadable {
             detail: "fixture declarations require type: ess-scenario/3".into(),
         });
     }
-    if document.format != "ess-scenario/4"
-        && document.timeline.iter().any(|act| act.response.is_some())
+    if !matches!(
+        document.format.as_str(),
+        "ess-scenario/4" | "ess-scenario/5"
+    ) && document.timeline.iter().any(|act| act.response.is_some())
     {
         return Some(Cause::Unreadable {
             detail: "direct response assertions require type: ess-scenario/4".into(),
         });
     }
-    if document.format != "ess-scenario/4"
-        && document.timeline.iter().any(|act| act.refused.is_some())
+    if !matches!(
+        document.format.as_str(),
+        "ess-scenario/4" | "ess-scenario/5"
+    ) && document.timeline.iter().any(|act| act.refused.is_some())
     {
         return Some(Cause::Unreadable {
             detail: "`refused: not_granted` requires type: ess-scenario/4".into(),
+        });
+    }
+    // An older `ess` refuses `caller:` as an unknown key: a document that states one is a
+    // document only this format can read, so its header says so and every earlier one refuses it.
+    if document.format != "ess-scenario/5"
+        && document.timeline.iter().any(|act| !act.caller.is_empty())
+    {
+        return Some(Cause::Unreadable {
+            detail: "caller attribute values require type: ess-scenario/5".into(),
         });
     }
     None
@@ -2211,6 +2272,8 @@ struct Compiler<'a> {
     arranged: BTreeMap<InstanceName, EntityRef>,
     /// The instances an earlier act has captured.
     bound: BTreeSet<InstanceName>,
+    /// The identity each instance arranged with `setup:` has, which the file states.
+    identities: BTreeMap<InstanceName, Node>,
     /// The events an earlier act has required.
     observed: BTreeSet<EventRef>,
     /// The instant each earlier act marked, and where the file puts it.
@@ -2302,6 +2365,8 @@ impl Compiler<'_> {
                 self.reach(&fields);
                 established.push((entity.clone(), setup.identity.clone()));
                 self.bound.insert(arrangement.instance.clone());
+                self.identities
+                    .insert(arrangement.instance.clone(), setup.identity.clone());
                 self.steps.push(ScenarioStep::EstablishEntity {
                     instance: arrangement.instance.clone(),
                     entity,
@@ -2357,7 +2422,7 @@ impl Compiler<'_> {
             self.refused_act(act, &command_ref, &input_fields);
             return;
         }
-        let actor = self.sender(act, &command_ref);
+        let (actor, caller) = self.sender(act, &command_ref);
         let refused_before = self.refusals.len();
         let input = self.values(
             &act.input,
@@ -2368,7 +2433,7 @@ impl Compiler<'_> {
         let sent = (self.refusals.len() == refused_before).then(|| input.clone());
         self.external_answer(&command_ref, command, act);
         self.steps.push(ScenarioStep::ExecuteCommand {
-            caller: std::collections::BTreeMap::new(),
+            caller,
             command: command_ref.clone(),
             actor,
             input,
@@ -2943,8 +3008,11 @@ impl Compiler<'_> {
             &Surface::Input(command_ref.clone()),
             Completeness::Total,
         );
+        // Refused before it runs, so nothing the command reads of its caller is reached: a caller
+        // is sent where the act states one, and none is required.
+        let caller = self.caller(act, actor.as_ref(), command_ref, false);
         self.steps.push(ScenarioStep::ExecuteCommand {
-            caller: std::collections::BTreeMap::new(),
+            caller,
             command: command_ref.clone(),
             actor: actor.clone(),
             input,
@@ -2971,21 +3039,110 @@ impl Compiler<'_> {
     }
 
     /// The actor an act that expects its command to run is sent as, where the specification grants
-    /// it the command.
+    /// it the command, and the [`caller`](Self::caller) it states.
     ///
     /// An act sent as no actor whose served command no actor is granted is refused: every caller is
     /// refused that command (beyond10x/ess#265), so the act requires what no conforming surface
     /// does.
-    fn sender(&mut self, act: &Act, command: &CommandRef) -> Option<ActorRef> {
-        let Some(written) = act.actor.as_ref() else {
+    fn sender(
+        &mut self,
+        act: &Act,
+        command: &CommandRef,
+    ) -> (Option<ActorRef>, BTreeMap<String, Node>) {
+        let actor = if let Some(written) = act.actor.as_ref() {
+            self.actor(written, command)
+        } else {
             if ungranted_on_served_surface(self.ir, command.name()) {
                 self.refuse(Cause::UngrantedOnServedSurface {
                     command: command.clone(),
                 });
             }
-            return None;
+            None
         };
-        self.actor(written, command)
+        let caller = self.caller(act, actor.as_ref(), command, true);
+        (actor, caller)
+    }
+
+    /// The caller an act's command is sent as (`caller:`, ess-scenario/5): the attribute values
+    /// the step carries, checked against the attributes `actor` declares.
+    ///
+    /// Each value is a literal of the attribute's type, or the identity of an instance arranged
+    /// with `setup:`, which the file states. A captured identity is the target's to choose while
+    /// the scenario runs, and the step carries a caller's values as the suite writes them, so
+    /// naming one is refused rather than sent as the mapping it is written as.
+    ///
+    /// Where `required`, an act that states no caller is refused for each attribute the command
+    /// reads that is not `Optional` for its actor: the command would read a value nobody supplied,
+    /// and the scenario could only come out `unsupported`. An act that states none for a command
+    /// that reads none sends none, so its suite keeps its bytes.
+    fn caller(
+        &mut self,
+        act: &Act,
+        actor: Option<&ActorRef>,
+        command: &CommandRef,
+        required: bool,
+    ) -> BTreeMap<String, Node> {
+        let mut caller = BTreeMap::new();
+        // An actor the act names and the model refused is reported already; what it declares is
+        // unknown, so nothing more is said about its attributes.
+        if act.actor.is_some() && actor.is_none() {
+            return caller;
+        }
+        let attributes: Vec<ResolvedField> = actor
+            .and_then(|actor| self.ir.actors().get(actor.name()))
+            .map(|declared| declared.attributes.clone())
+            .unwrap_or_default();
+        let surface = Surface::Caller {
+            actor: actor.cloned(),
+            command: command.clone(),
+        };
+        if act.caller.is_empty() {
+            if required {
+                for attribute in crate::synthesize::caller_reads(self.ir, command.name()) {
+                    let optional = attributes.iter().any(|declared| {
+                        declared.name == attribute && declared.type_ref.is_optional()
+                    });
+                    if !optional {
+                        self.refuse(Cause::MissingField {
+                            surface: surface.clone(),
+                            at: String::new(),
+                            field: attribute,
+                        });
+                    }
+                }
+            }
+            return caller;
+        }
+        self.reach(&attributes);
+        let values = self.values(&act.caller, &attributes, &surface, Completeness::Total);
+        for (attribute, value) in values {
+            let refused = match value {
+                ScenarioValue::Literal { value } => {
+                    caller.insert(attribute, value);
+                    continue;
+                }
+                ScenarioValue::Instance { instance } => match self.identities.get(&instance) {
+                    Some(identity) => {
+                        caller.insert(attribute, identity.clone());
+                        continue;
+                    }
+                    None => format!(
+                        "`{attribute}` names `{instance}`, an instance captured while the scenario \
+                         runs; a caller's values are fixed when the suite is written, so name an \
+                         instance arranged with `setup:` or write the value"
+                    ),
+                },
+                _ => format!(
+                    "`{attribute}` is written as a reference a caller cannot carry; write a \
+                     literal, or name an instance arranged with `setup:`"
+                ),
+            };
+            self.refuse(Cause::ValueRejected {
+                surface: surface.clone(),
+                detail: refused,
+            });
+        }
+        caller
     }
 
     /// The actor an act expecting the refusal is sent as, where the specification declares it and

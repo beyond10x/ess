@@ -331,7 +331,7 @@ pub(super) fn arranged_at(
             None,
             goal,
             None,
-            (&BTreeMap::new(), &setup.steps),
+            (&BTreeMap::new(), &setup.steps, &BTreeMap::new()),
         )?;
         surround(
             ir,
@@ -574,7 +574,7 @@ fn pointed(
         None,
         None,
         None,
-        (&BTreeMap::new(), &[]),
+        (&BTreeMap::new(), &[], &BTreeMap::new()),
     )?;
     let mut next = arrangement.clone();
     let instance = next.instance.clone();

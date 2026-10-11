@@ -949,6 +949,7 @@ fn segment(
         after: Some(arrangement.state),
         before: None,
         settled: arrangement.settled,
+        unobserved: arrangement.unobserved,
     };
     let preservation = subject_fact::preserve_refused_subject(ir, subject, &setup)?;
 

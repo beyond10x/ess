@@ -117,8 +117,15 @@ views:
       - {name: weight_kg, type: Integer}
 ```
 
-The view is part of the rule: it is the unfiltered view through which the guarded fields are
-observed, and without one the witness is refused. An immediate view is read once; where every such
+The view is how the arranged row is observed: it is the unfiltered view through which the guarded
+fields are read back before the command runs. It is not required for the witness. A system may
+offer no read of the record at all, an order bound to the buyer who placed it and collected only
+by that buyer, say, and declaring a view to satisfy synthesis would make the specification
+describe a read surface the system does not have. So where no view publishes a guarded field, the
+row is still arranged through its creating command and the `sets:` mappings the search chose, the
+observation keeps what the declared views do publish, and the scenario's outcome, error and events
+are its evidence about the rest. `Note::PartialObservation` names the fields no view observes
+(beyond10x/ess#496). An immediate view is read once; where every such
 view is `eventual`, the observation waits in an `eventually` block until the view shows the arranged
 row (beyond10x/ess#172). That proves the implementation applied the values the arrangement's last
 step left, and no step writes the row between that observation and the command. It proves nothing
@@ -258,13 +265,22 @@ parts, and the `{field, equals}` form runs on it as a one-leaf predicate:
    sitting on the most literals, is taken — which is what makes the default's witness `Express`
    at `20` rather than the plain `Standard` at `1`.
 
-**Observation.** `observe` in `subject_fact.rs` already requires an immediate, unfiltered,
-parameterless view exposing the identity, `state` and the one guarded field, and asserts them
-before the command runs. That requirement widens to every guarded field; a specification without
-such a view gets the existing typed refusal. Since beyond10x/ess#172 an `eventual` view with the
-same projection stands in where no immediate one qualifies, asserted in an `eventually` block. The
-absent-subject witness still needs an immediate view: an `eventual` read that shows no row proves
-nothing about a row the projection has not caught up with. For the same reason the row after a
+**Observation.** The arranged row is asserted before the command runs through an immediate,
+unfiltered, parameterless view exposing the identity, `state` and every guarded field. Since
+beyond10x/ess#172 an `eventual` view with the same projection stands in where no immediate one
+qualifies, asserted in an `eventually` block. Where no view projects them all, the observation is
+not a refusal (beyond10x/ess#496): the unfiltered view of the entity projecting its identity and
+publishing the most guarded fields — an immediate one first — is required to hold what it
+publishes, and with no such view nothing is read. The fields left unread are named in
+`Note::PartialObservation`, for success, refusal, transition and wrong-state scenarios alike, and
+the scenario's outcome, error and events are its evidence about them; a refusal whose subject no
+view publishes keeps its outcome, error and no event, with no snapshot to compare. A suite whose
+model declares an immediate covering view keeps its bytes; one whose only covering view is
+`eventual` gains the absent-subject send it used to refuse. The absent-subject witness asserts absence only
+through an immediate view: an `eventual` read that shows no row proves nothing about a row the
+projection has not caught up with. Without an immediate view the send keeps only what needs no
+view — no declared event is published — and claims no absence. The replay family's observation
+of a stored fact still requires its immediate view. For the same reason the row after a
 command is awaited through an `eventual` view only where the command changed its state or a field
 the observation asserts, both in the stored-field observation and in the generic view assertion
 such a command's changing branches get (`view_expectations`; other commands keep theirs). A

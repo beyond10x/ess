@@ -2,6 +2,45 @@
 
 ## [Unreleased]
 
+### Added
+
+- `ess-scenario/5`: an authored act states the caller its command is sent as, under `caller:`,
+  each attribute value a literal of its declared type or `{$instance: name}` for an instance
+  arranged with `setup:`. A command that records `{caller: account_id}` now runs from an authored
+  scenario on the `interpreted` target and the generated Go and TypeScript runners. `ess verify
+  conform author` refuses an attribute the act's `actor:` does not declare (`ESS-AUTHOR-013`), a
+  required attribute the command reads that the act leaves unstated (`ESS-AUTHOR-014`), and an
+  instance captured at run time (`ESS-AUTHOR-015`), naming the attribute and the command. An act
+  with no `caller:` sends none and its suite keeps its bytes; `ess-scenario/1` to `/4` refuse the
+  key. A suite step that reaches a caller attribute nothing supplied is still `unsupported`, now
+  with a reason naming the attribute and `caller:` in the text and JSON reports, where it said the
+  model left the value to the implementation.
+
+### Changed
+
+- `ess verify conform synthesize` writes the scenarios of a command whose branches a stored field
+  of its subject selects (`when_subject:`) even when no view observes that field, as for a record
+  the modelled system never lets anyone read back. It refused each such success, refusal,
+  transition and wrong-state scenario with `ESS-SYNTH-001` ("requires an immediate unfiltered
+  identity/state/fact view"), although it already arranges the row through the creating command
+  and its `sets:` mapping. The scenario now observes what the declared views publish, its
+  outcome, error and events are the evidence for the rest, and the note that a scenario observes
+  only part of its subject now covers these scenarios too and names the fields no view publishes.
+  The absent-subject send asserts that no row appeared only through an immediate view, and without
+  one keeps its no-event assertions. A model with an immediate view covering the guarded fields keeps
+  its suite byte for byte; one whose only covering view is `eventual` gains that absent-subject
+  send, which it used to refuse (https://github.com/beyond10x/ess/issues/496).
+
+### Fixed
+
+- `ess verify conform synthesize` honours a `when_related:` guard that reads a member of a struct
+  input (`team != input.key.team`) when that input names the command's subject and is sent as the
+  captured instance an earlier step created. The related row was chosen against a key the search
+  made up, so the scenario for the accepting branch sent a row in another team and expected
+  success, and the `interpreted` target failed it. The row is now chosen against the key the
+  subject was created under. A struct sent as a literal keeps its scenarios byte for byte
+  (https://github.com/beyond10x/ess/issues/521).
+
 ## [0.58.0] — 2026-10-10
 
 ### Added

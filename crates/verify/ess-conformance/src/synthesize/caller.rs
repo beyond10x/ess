@@ -556,6 +556,28 @@ fn reading(ir: &EssIr, callers: &Callers) -> BTreeSet<QualifiedName> {
         .collect()
 }
 
+/// The attributes of its caller `command` reads, in a value or in a guard, by name: each one
+/// [`written`] replaces when it is given a value for it alone. An authored act states these
+/// (`caller:`, ess-scenario/5).
+pub(crate) fn reads(ir: &EssIr, command: &QualifiedName) -> BTreeSet<String> {
+    let Some(resolved) = ir.commands().get(command) else {
+        return BTreeSet::new();
+    };
+    let declared: BTreeSet<&String> = ir
+        .actors()
+        .values()
+        .flat_map(|actor| actor.attributes.iter().map(|attribute| &attribute.name))
+        .collect();
+    declared
+        .into_iter()
+        .filter(|attribute| {
+            let probe = BTreeMap::from([((*attribute).clone(), Node::Text(String::new()))]);
+            written(ir, resolved, &probe) != *resolved
+        })
+        .cloned()
+        .collect()
+}
+
 /// `command` with every caller read replaced by `values`: a value source by the literal it holds,
 /// and a guard operand by the literal fact. A read `values` has nothing for is left as it is.
 fn written(

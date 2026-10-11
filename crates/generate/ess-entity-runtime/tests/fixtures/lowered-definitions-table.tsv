@@ -1,4 +1,4 @@
-#	models=261	lines=386
+#	models=264	lines=390
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	REFUSED	95eb461796949834a9d78ef0c04afcab1acfa13dbf2dfd6da3af2f3c93549630:687
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing/system.yaml	ASSEMBLE
@@ -90,6 +90,7 @@ crates/verify/ess-conformance/tests/fixtures/aggregate-views.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/arrangement-input-refusal.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/arrangement-paid-route.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/arrangement-two-creators.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/authored-caller.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/binding-arrangement.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/binding-condition-selected.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/binding-condition.yaml	components=0
@@ -156,6 +157,8 @@ crates/verify/ess-conformance/tests/fixtures/occurrence-clock-claims.yaml	compon
 crates/verify/ess-conformance/tests/fixtures/occurrence-clock-offers.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/one-time-coverage/model.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/optional-input-narrowed.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/orders-without-a-view.yaml	components=1
+crates/verify/ess-conformance/tests/fixtures/orders-without-a-view.yaml	orders-server	REFUSED	61a2a96c940475ba9db78e903eade6f2ec6c9e62f644201717a7bb5db4d1b7b9:204
 crates/verify/ess-conformance/tests/fixtures/owned-subject.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/pre-execution-fixtures.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/recursive-fixtures/system.yaml	ASSEMBLE
@@ -166,6 +169,7 @@ crates/verify/ess-conformance/tests/fixtures/refusal-pair-overlap.yaml	hold	demo
 crates/verify/ess-conformance/tests/fixtures/refusal-policy.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/register/register.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/related-copied-view-parameter.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/related-guard-captured-struct.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/related-guard-copied-value.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/related-guard-multiple.yaml	components=1
 crates/verify/ess-conformance/tests/fixtures/related-guard-multiple.yaml	run-service	REFUSED	62523c0cea8c2c53e4df0b863b91ad0917927d791ccfbbd7411b36e2069ed114:1098

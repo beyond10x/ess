@@ -153,6 +153,22 @@ appended, it would be read over both runs' rows. Such a scenario loses the swapp
 asserts `first`'s values where they are read, but no longer shows they are the sender's rather
 than fixed.
 
+### Authored scenarios
+
+An authored act states the caller it is sent as under `caller:`, in `ess-scenario/5`. Each value is
+a literal of the attribute's declared type, or `{$instance: name}` for an instance arranged with
+`setup:`, whose identity the file states; both compile into the step's suite/26 `caller`, so no
+suite format moves. A captured identity is refused: the target mints it while the scenario runs,
+and the step carries a caller's values as the suite writes them. Resolving one at run time would
+need a reference in `caller`, which is a new suite major and a change to every runner, so it waits
+for a scenario that needs it. Authoring refuses an attribute the actor does not declare and a
+required attribute the command reads that the act leaves unstated, naming the attribute and the
+command; an act with no `caller:` sends none and keeps its suite's bytes. Earlier scenario versions
+refuse the key, so a document only `/5` can read says so in its header.
+
+A command sent as no caller that reads one is `unsupported` on the interpreted target, with a reason
+naming the attribute and `caller:`.
+
 ### Stated limits
 
 - A caller attribute of a struct or collection type is readable and compiles, but synthesis leaves

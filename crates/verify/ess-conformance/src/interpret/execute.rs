@@ -288,6 +288,13 @@ pub enum Undetermined {
         /// Which value.
         what: String,
     },
+    /// The command reads an attribute of its caller, and the request supplies none: it is sent as no
+    /// caller, or as one whose values leave a required attribute out. A suite step states the
+    /// caller it is sent as; an authored act does so under `caller:` (ess-scenario/5).
+    NoCaller {
+        /// The attribute read.
+        attribute: String,
+    },
     /// The model's own outcome leaves an instance violating one of its declared invariants.
     BrokenInvariant {
         /// Which instance.
@@ -303,7 +310,10 @@ impl Undetermined {
     pub fn is_capability_gap(&self) -> bool {
         matches!(
             self,
-            Self::Undecidable { .. } | Self::NotInterpreted { .. } | Self::NoValue { .. }
+            Self::Undecidable { .. }
+                | Self::NotInterpreted { .. }
+                | Self::NoValue { .. }
+                | Self::NoCaller { .. }
         )
     }
 }
@@ -324,6 +334,12 @@ impl fmt::Display for Undetermined {
                 f,
                 "the model leaves {what} to the implementation, and its type has no shape the \
                  interpreter can mint"
+            ),
+            Self::NoCaller { attribute } => write!(
+                f,
+                "the command reads caller attribute `{attribute}`, and the request is sent as no \
+                 caller that states it; state it in the scenario, under the act's `caller:` in an \
+                 authored one"
             ),
             Self::BrokenInvariant {
                 instance,

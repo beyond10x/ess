@@ -1,4 +1,4 @@
-#	models=219	commands=383
+#	models=222	commands=390
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -183,6 +183,9 @@ crates/verify/ess-conformance/tests/fixtures/arrangement-two-creators.yaml	shop.
 crates/verify/ess-conformance/tests/fixtures/arrangement-two-creators.yaml	shop.order.PlaceOrderA	default: placed
 crates/verify/ess-conformance/tests/fixtures/arrangement-two-creators.yaml	shop.order.PlaceOrderB	default: placed
 crates/verify/ess-conformance/tests/fixtures/arrangement-two-creators.yaml	shop.order.ShipOrder	held_state: not-paid, wrong-state | default: shipped
+crates/verify/ess-conformance/tests/fixtures/authored-caller.yaml	ir=6c7c6c3f3f69c99b8c8548b97c580daa4e7bd058114aff69df762b0b4f042f2e:10604
+crates/verify/ess-conformance/tests/fixtures/authored-caller.yaml	ledger.notes.OpenAccount	default: opened
+crates/verify/ess-conformance/tests/fixtures/authored-caller.yaml	ledger.notes.OpenNote	default: opened
 crates/verify/ess-conformance/tests/fixtures/binding-arrangement.yaml	ir=89aef022ceb3ea9752913f3c943d6aa0d09ed227514849f64490c2bf3bda3d91:18163
 crates/verify/ess-conformance/tests/fixtures/binding-arrangement.yaml	jobs.job.Create	default: created
 crates/verify/ess-conformance/tests/fixtures/binding-arrangement.yaml	jobs.job.Kick	default: kicked
@@ -400,6 +403,9 @@ crates/verify/ess-conformance/tests/fixtures/one-time-coverage/model.yaml	ir=e1a
 crates/verify/ess-conformance/tests/fixtures/one-time-coverage/model.yaml	credentials.api.Issue	default: issued
 crates/verify/ess-conformance/tests/fixtures/optional-input-narrowed.yaml	ir=e0025ea080b66f2bd4c475cef54f63ee37d555bc2081aa084acc61482d1332ea:8455
 crates/verify/ess-conformance/tests/fixtures/optional-input-narrowed.yaml	demo.notes.SubmitNote	input_refusal: account-missing | default: submitted
+crates/verify/ess-conformance/tests/fixtures/orders-without-a-view.yaml	ir=084b1edd33300649c91aa2dcf022cbed42eedf0ce2f99e25a663554399f9464f:8609
+crates/verify/ess-conformance/tests/fixtures/orders-without-a-view.yaml	catalog.orders.Collect	existence: unknown | held_state: wrong-collector, already-collected | default: collected
+crates/verify/ess-conformance/tests/fixtures/orders-without-a-view.yaml	catalog.orders.Place	default: placed
 crates/verify/ess-conformance/tests/fixtures/owned-subject.yaml	ir=20e2c40b8b612f0a6cad7482da7e4db1ca21c182e93131d98daa5476738a4a52:9612
 crates/verify/ess-conformance/tests/fixtures/owned-subject.yaml	ledger.book.OpenAccount	default: opened
 crates/verify/ess-conformance/tests/fixtures/owned-subject.yaml	ledger.book.PostEntry	default: posted
@@ -426,6 +432,10 @@ crates/verify/ess-conformance/tests/fixtures/related-copied-view-parameter.yaml	
 crates/verify/ess-conformance/tests/fixtures/related-copied-view-parameter.yaml	shipping.m.Deliver	held_state: conflict | default: delivered
 crates/verify/ess-conformance/tests/fixtures/related-copied-view-parameter.yaml	shipping.m.OpenOrder	default: opened
 crates/verify/ess-conformance/tests/fixtures/related-copied-view-parameter.yaml	shipping.m.Pack	default: packed
+crates/verify/ess-conformance/tests/fixtures/related-guard-captured-struct.yaml	ir=19109eef280aaef43029ec4a351c91d094312a5ade0ddb72666d062f8f8cc62c:16759
+crates/verify/ess-conformance/tests/fixtures/related-guard-captured-struct.yaml	demo.desk.Assign	related_row: nobody | accepting: elsewhere | default: assigned
+crates/verify/ess-conformance/tests/fixtures/related-guard-captured-struct.yaml	demo.desk.Join	default: joined
+crates/verify/ess-conformance/tests/fixtures/related-guard-captured-struct.yaml	demo.desk.Reassign	related_row: nobody | accepting: elsewhere | default: reassigned
 crates/verify/ess-conformance/tests/fixtures/related-guard-copied-value.yaml	ir=2f88b3a80c3a08f99c5e0dbc84bfd0627f48afdafa9192dbb2967ede5e5441e3:12758
 crates/verify/ess-conformance/tests/fixtures/related-guard-copied-value.yaml	mini.m.AddItem	default: added
 crates/verify/ess-conformance/tests/fixtures/related-guard-copied-value.yaml	mini.m.Start	related_row: no-item | accepting: archived | default: started
