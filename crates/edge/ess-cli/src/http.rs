@@ -52,7 +52,7 @@ pub fn load(path: &Path, ir: &EssIr, format: Format) -> Result<Option<ess_http::
         ess_http::HttpSpec::from_yaml(&text)
             .with_context(|| format!("reading {} as HTTP binding YAML", path.display()))?
     };
-    match ess_http::compile(&spec, ir) {
+    match ess_http::compile(&spec, ir, &derived_routes(ir)) {
         Ok(http) => Ok(Some(http)),
         Err(diagnostics) => {
             if matches!(format, Format::Text) {
@@ -63,6 +63,34 @@ pub fn load(path: &Path, ir: &EssIr, format: Format) -> Result<Option<ess_http::
             Ok(None)
         }
     }
+}
+
+/// The routes ESS derives for every component of `ir` without a binding, read from the one route
+/// table every HTTP artifact reads (`ess_gen::http::routes`). A binding is checked against these:
+/// `ess-http` takes them as an input rather than depending on the generator.
+pub fn derived_routes(ir: &EssIr) -> Vec<ess_http::DerivedRoute> {
+    use ess_gen::http::{Method, Served};
+
+    let mut table = Vec::new();
+    for component in ir.components().values() {
+        for route in ess_gen::http::routes(ir, component) {
+            table.push(ess_http::DerivedRoute {
+                component: component.name.to_string(),
+                operation: match route.serves {
+                    Served::Command(handle) => {
+                        ess_http::Operation::Command(handle.name().to_string())
+                    }
+                    Served::View(handle) => ess_http::Operation::View(handle.name().to_string()),
+                },
+                method: match route.method {
+                    Method::Get => ess_http::Method::Get,
+                    Method::Post => ess_http::Method::Post,
+                },
+                path: route.path,
+            });
+        }
+    }
+    table
 }
 
 pub fn run(command: &Command) -> Result<ExitCode> {

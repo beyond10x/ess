@@ -125,6 +125,15 @@ fn validate_and_compile_an_http_binding() {
              "parameters": {"item_id": "param.item_id"}},
         ])
     );
+    // The one operation the binding does not name keeps the route ESS derives for it, and the IR
+    // records it as the surface the binding was checked against.
+    assert_eq!(
+        ir["derived_routes"],
+        serde_json::json!([
+            {"component": "items-service", "command": "catalog.items.TouchItem", "method": "post",
+             "path": "/items/commands/TouchItem"},
+        ])
+    );
 
     let json = fixture.ess(&[
         "specify",
@@ -227,4 +236,42 @@ fn a_stage_2_key_is_refused_by_name() {
         "{}",
         text(&validate)
     );
+}
+
+#[test]
+fn a_route_on_another_operations_derived_path_is_refused_as_a_collision() {
+    let fixture = Fixture::new();
+    // The binding does not name `ListItem`, so it keeps the route `ess_gen::http::routes` derives
+    // for it, `post /items/commands/ListItem`, which the binding gives to `TouchItem` as well. The
+    // view's `get /items/{item_id}` is another method and shape, and claims nothing twice.
+    fixture.binding(
+        "routes:
+  - {command: catalog.items.TouchItem, method: post, path: /items/commands/ListItem}
+  - {view: catalog.items.ItemById, method: get, path: '/items/{item_id}', parameters: {item_id: param.item_id}}
+",
+    );
+    let validate = fixture.ess(&[
+        "specify",
+        "http",
+        "validate",
+        "--path",
+        "model",
+        "--binding",
+        "http.yaml",
+    ]);
+    assert_eq!(validate.status.code(), Some(1), "{}", text(&validate));
+    let shown = text(&validate);
+    assert!(
+        shown.contains(
+            "error[ESS-HTTP-010]: routes[0]: two operations claim the same method and path:"
+        ),
+        "{shown}"
+    );
+    assert!(
+        shown.contains("command `catalog.items.TouchItem`")
+            && shown.contains("command `catalog.items.ListItem`"),
+        "{shown}"
+    );
+    assert!(!shown.contains("ESS-HTTP-011"), "{shown}");
+    assert_eq!(shown.matches("error[").count(), 1, "{shown}");
 }
