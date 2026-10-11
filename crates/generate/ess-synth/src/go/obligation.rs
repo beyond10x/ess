@@ -171,6 +171,10 @@ fn convert_method(conversion: &ess_compiler::ir::ResolvedConversion) -> String {
 
 /// One bounded context's seams: an interface per behaviour and query — generated or owed — and
 /// the shared stub refusing every owed one.
+///
+/// `true` when the bounded context owes something, so its package needs the stub type. In a
+/// package shared by a loop the type is declared once, by [`shared_stub`], and each bounded
+/// context's file carries only its methods.
 pub(super) fn domain_obligations(
     out: &mut String,
     emit: &Emit<'_>,
@@ -178,10 +182,10 @@ pub(super) fn domain_obligations(
     refusals: &TargetRefusals,
     seams: &super::behaviour::Seams,
     stubbed: &mut std::collections::BTreeSet<Capability>,
-) {
+) -> bool {
     let seams = seams_of_domain(emit, plan, refusals, &seams.weakened);
     if seams.is_empty() {
-        return;
+        return false;
     }
     for seam in &seams {
         let parameter = super::port::signature(&seam.parameters);
@@ -223,16 +227,18 @@ pub(super) fn domain_obligations(
         .filter(|seam| seam.obligation.is_some())
         .collect();
     if owed.is_empty() {
-        return;
+        return false;
     }
     let unimplemented = emit.layout.unimplemented(emit.package);
-    let _ = writeln!(
-        out,
-        "\n// {unimplemented} satisfies every obligation of this bounded context by refusing in \
-         the type\n// system.\n//\n// Each method returns the typed refusal naming what is owed — \
-         never a panic, never a\n// guessed value — so a module built on this stub compiles and \
-         reports its own gaps.\ntype {unimplemented} struct{{}}"
-    );
+    if emit.layout.sharing(emit.package).is_none() {
+        let _ = writeln!(
+            out,
+            "\n// {unimplemented} satisfies every obligation of this bounded context by refusing \
+             in the type\n// system.\n//\n// Each method returns the typed refusal naming what is \
+             owed — never a panic, never a\n// guessed value — so a module built on this stub \
+             compiles and reports its own gaps.\ntype {unimplemented} struct{{}}"
+        );
+    }
     for seam in owed {
         record(stubbed, seam.kind, &seam.source);
         let parameter = super::port::signature(&seam.parameters);
@@ -249,6 +255,20 @@ pub(super) fn domain_obligations(
             emit.unmet_literal(seam.kind, &seam.source),
         );
     }
+    true
+}
+
+/// The stub type of a package shared by a loop of bounded contexts, declared once for all of them;
+/// each bounded context's file declares its own methods on it.
+pub(super) fn shared_stub(out: &mut String, emit: &Emit<'_>) {
+    let unimplemented = emit.layout.unimplemented(emit.package);
+    let _ = writeln!(
+        out,
+        "\n// {unimplemented} satisfies every obligation of these bounded contexts by refusing in \
+         the type\n// system.\n//\n// Each method returns the typed refusal naming what is owed — \
+         never a panic, never a\n// guessed value — so a module built on this stub compiles and \
+         reports its own gaps.\ntype {unimplemented} struct{{}}"
+    );
 }
 
 /// What one seam is in this target: owed by the plan, kept owed here, or generated.
