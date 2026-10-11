@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:mutate-covers-subject-related-guards-sets-and-authored
 kind: story
-status: draft
+status: active
 title: mutate covers when_subject/when_related guards and every sets entry, and runs authored scenarios
 tags:
 - defect
@@ -12,7 +12,10 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-11T11:03:11Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-10-11T11:03:11Z", actor: "human:timo", revision: 3}
 ---
 ## Outcome
 

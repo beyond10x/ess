@@ -2,14 +2,17 @@
 format: aep.planning-md/3
 id: story:a-command-binds-to-a-protocol-or-deployment-http-route
 kind: story
-status: draft
+status: active
 title: A command or view binds to the HTTP method and path a protocol fixes or a deployment chooses
 refs:
 - provider: github
   reference: beyond10x/ess#493
 relations:
 - serves: vision:O2
-revision: 3
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-11T11:03:11Z", actor: "human:timo", revision: 5}
+- {from: "proposed", to: "active", at: "2026-10-11T11:03:11Z", actor: "human:timo", revision: 6}
 ---
 ## Request
 
@@ -319,3 +322,14 @@ declared routes from compiled output, without parsing the specification source.
 - The compiled `ess-http-ir/1` carries, per bound command and view, the method and the path
   template with its parameters, in a form a documentation renderer reads without the
   specification source; a test renders a route table from it.
+
+## Stage 1 in wave 2026-10-11j
+
+Built against `docs/design/http-presentation-binding.md` (its "Decided for stage 1" section answers its stage-1 questions). Stage 1 ships in 0.60.0 without the Rust and Go servers' template dispatch and without `ess generate synthesize --http`; both move to stage 2. The issue stays open until stage 2 ships.
+
+Acceptance for stage 1:
+
+- `ess specify http validate` accepts an `ess-http/1` document pinned to the specification's source digest and refuses each case in the page's stage-1 table with its `ESS-HTTP-001` to `-014` code and the path of the offending key; a stage-2 key is refused as an unknown field naming it.
+- `ess specify http compile` writes a canonical `ess-http-ir/1`: routes ordered by path then method, every map ordered, the refined digest and the derived routes recorded; compiling twice gives equal bytes; a test renders a route table from it.
+- `refines:` pins the refined file's bytes; a refinement that changes a fixed method or path or drops a route is refused (`ESS-HTTP-012`).
+- `ess generate --kind openapi --http <binding>` emits the declared methods and paths with path parameters and `x-ess-route-source: binding`, refuses an open route naming the operation, and without `--http` keeps every byte; `--http` with another `--kind` is refused.
