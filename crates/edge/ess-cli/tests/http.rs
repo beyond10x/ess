@@ -376,3 +376,162 @@ fn a_server_binding_refines_a_protocol_binding_given_with_refines() {
         text(&unpinned)
     );
 }
+
+/// `ess generate --kind openapi --http FILE`, and `--refines`, with `args` after them.
+fn generate(fixture: &Fixture, args: &[&str]) -> Output {
+    let mut all = vec!["generate", "--path", "model"];
+    all.extend_from_slice(args);
+    fixture.ess(&all)
+}
+
+fn document(fixture: &Fixture, root: &str) -> serde_json::Value {
+    let text = fs::read_to_string(fixture.0.join(root).join("openapi/items-service.yaml")).unwrap();
+    let yaml: serde_yaml::Value = serde_yaml::from_str(&text).unwrap();
+    serde_json::to_value(yaml).unwrap()
+}
+
+#[test]
+fn generate_openapi_serves_each_bound_operation_at_its_declared_route() {
+    let fixture = Fixture::new();
+    fixture.binding(
+        "routes:
+  - {view: catalog.items.ItemById, method: get, path: '/items/{item_id}', parameters: {item_id: param.item_id}}
+  - {command: catalog.items.ListItem, method: put, path: '/items/{item_id}', parameters: {item_id: input.item_id}}
+",
+    );
+    let bound = generate(
+        &fixture,
+        &["--kind", "openapi", "--http", "http.yaml", "--out", "bound"],
+    );
+    assert!(bound.status.success(), "{}", text(&bound));
+    let document = document(&fixture, "bound");
+    let item = &document["paths"]["/items/{item_id}"];
+    assert_eq!(item["get"]["operationId"], "catalog.items.ItemById");
+    assert_eq!(item["put"]["operationId"], "catalog.items.ListItem");
+    assert_eq!(item["put"]["x-ess-route-source"], "binding");
+    assert_eq!(item["put"]["parameters"][0]["in"], "path");
+    assert_eq!(item["put"]["parameters"][0]["required"], true);
+    assert_eq!(
+        document["components"]["schemas"]["catalog.items.ListItem.Input"]["required"],
+        serde_json::json!(["title"])
+    );
+    // The operation the binding does not name keeps its derived route.
+    assert_eq!(
+        document["paths"]["/items/commands/TouchItem"]["post"]["operationId"],
+        "catalog.items.TouchItem"
+    );
+    assert!(document["paths"]["/items/commands/TouchItem"]["post"]
+        .get("x-ess-route-source")
+        .is_none());
+
+    // Without `--http`, the projection keeps its bytes.
+    let plain = generate(&fixture, &["--kind", "openapi", "--out", "plain"]);
+    assert!(plain.status.success(), "{}", text(&plain));
+    assert!(document["paths"].get("/items/commands/ListItem").is_none());
+    assert!(crate::document(&fixture, "plain")["paths"]
+        .get("/items/commands/ListItem")
+        .is_some());
+}
+
+#[test]
+fn generate_openapi_with_a_server_binding_given_its_protocol_binding() {
+    let fixture = Fixture::new();
+    fixture.binding(ROUTES);
+    fs::rename(fixture.0.join("http.yaml"), fixture.0.join("protocol.yaml")).unwrap();
+    let pin = ess_http::digest(&fs::read(fixture.0.join("protocol.yaml")).unwrap());
+
+    // The protocol binding leaves `ListItem`'s path open, so it cannot be projected.
+    let open = generate(
+        &fixture,
+        &[
+            "--kind",
+            "openapi",
+            "--http",
+            "protocol.yaml",
+            "--out",
+            "open",
+        ],
+    );
+    assert_eq!(open.status.code(), Some(1), "{}", text(&open));
+    assert!(
+        text(&open).contains("command `catalog.items.ListItem` has an open route"),
+        "{}",
+        text(&open)
+    );
+    assert!(!fixture.0.join("open").exists(), "a refusal wrote files");
+
+    // The server binding fills it in.
+    fixture.binding(&format!(
+        "refines: {pin}\n{}",
+        ROUTES.replace(
+            "    method: post\n",
+            "    method: post\n    path: /api/items\n"
+        )
+    ));
+    let served = generate(
+        &fixture,
+        &[
+            "--kind",
+            "openapi",
+            "--http",
+            "http.yaml",
+            "--refines",
+            "protocol.yaml",
+            "--out",
+            "served",
+        ],
+    );
+    assert!(served.status.success(), "{}", text(&served));
+    assert_eq!(
+        document(&fixture, "served")["paths"]["/api/items"]["post"]["x-ess-route-source"],
+        "binding"
+    );
+
+    // The same refusals `ess specify http compile` reports: the pin without its file.
+    let unrefined = generate(
+        &fixture,
+        &[
+            "--kind",
+            "openapi",
+            "--http",
+            "http.yaml",
+            "--out",
+            "unrefined",
+        ],
+    );
+    assert_eq!(unrefined.status.code(), Some(1), "{}", text(&unrefined));
+    assert!(
+        text(&unrefined).contains("error[ESS-HTTP-003]: refines:"),
+        "{}",
+        text(&unrefined)
+    );
+    assert!(
+        !fixture.0.join("unrefined").exists(),
+        "a refusal wrote files"
+    );
+}
+
+#[test]
+fn generate_refuses_http_with_any_kind_but_openapi() {
+    let fixture = Fixture::new();
+    fixture.binding(ROUTES);
+    for kind in [
+        &["--kind", "schema"][..],
+        &["--kind", "asyncapi"][..],
+        &["--kind", "docs"][..],
+        &[][..],
+    ] {
+        let mut args = kind.to_vec();
+        args.extend_from_slice(&["--http", "http.yaml"]);
+        let refused = generate(&fixture, &args);
+        assert!(!refused.status.success(), "{kind:?}: {}", text(&refused));
+        assert!(
+            text(&refused).contains("--http") && text(&refused).contains("--kind openapi"),
+            "{kind:?}: {}",
+            text(&refused)
+        );
+    }
+    let refines = generate(&fixture, &["--kind", "openapi", "--refines", "http.yaml"]);
+    assert!(!refines.status.success(), "{}", text(&refines));
+    assert!(text(&refines).contains("--http"), "{}", text(&refines));
+}

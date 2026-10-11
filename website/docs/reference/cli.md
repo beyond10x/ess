@@ -731,6 +731,8 @@ ess generate <COMMAND>
 | `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
 | `--strict` |  | no |  | Refuse, writing nothing, where `openapi` or `asyncapi` has a domain no component owns.<br /><br />Without it the same condition is a note on stderr and the exit stays 0: an empty projection is legal, and the note is what tells it apart from a clean one. |
 | `--transport` | `<TRANSPORT>` | no |  | An `ess-transport/1` or `ess-transport/2` document binding events to brokers, subjects and streams; only with `--kind asyncapi` |
+| `--http` | `<HTTP>` | no |  | An `ess-http/1` document binding commands and views to methods and paths; only with `--kind openapi`. Compiled as `ess specify http compile` compiles it, and refused when a route it projects has no path |
+| `--refines` | `<REFINES>` | no |  | The `ess-http/1` binding the `--http` document refines, whose bytes its `refines:` digest pins |
 
 #### `ess generate generate`
 
@@ -755,6 +757,8 @@ ess generate generate [OPTIONS]
 | `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
 | `--strict` |  | no |  | Refuse, writing nothing, where `openapi` or `asyncapi` has a domain no component owns.<br /><br />Without it the same condition is a note on stderr and the exit stays 0: an empty projection is legal, and the note is what tells it apart from a clean one. |
 | `--transport` | `<TRANSPORT>` | no |  | An `ess-transport/1` or `ess-transport/2` document binding events to brokers, subjects and streams; only with `--kind asyncapi` |
+| `--http` | `<HTTP>` | no |  | An `ess-http/1` document binding commands and views to methods and paths; only with `--kind openapi`. Compiled as `ess specify http compile` compiles it, and refused when a route it projects has no path |
+| `--refines` | `<REFINES>` | no |  | The `ess-http/1` binding the `--http` document refines, whose bytes its `refines:` digest pins |
 
 #### `ess generate cli`
 

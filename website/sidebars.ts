@@ -72,6 +72,7 @@ const sidebars: SidebarsConfig = {
         },
         'guides/track-change',
         'guides/generate-artifacts',
+        'guides/http-routes',
         'guides/commit-generated-files',
         'guides/synthesize',
         'guides/check-infrastructure',

@@ -199,8 +199,9 @@ stage 2 and `ess generate synthesize` has no `--http` flag until then.
 ### What generated artifacts change (stage 1)
 
 `ess_gen::http::routes` is the one route table every HTTP artifact reads (`http.rs:1-12`,
-`http.rs:387`). Stage 1 gives it an optional compiled binding. Without one it returns what it returns
-today, so every reader below keeps its bytes.
+`http.rs:387`). Stage 1 gives it an optional compiled binding as `ess_gen::http::bound_routes`, which
+takes `Option<&ess_gen::http::Binding>`. Without one it returns exactly what `routes` returns, and
+`routes` keeps its signature, so every reader below keeps its bytes and its call.
 
 | artifact | today | with a binding |
 |---|---|---|

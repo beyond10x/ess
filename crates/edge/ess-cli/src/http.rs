@@ -1,5 +1,6 @@
 //! `ess specify http`: an `ess-http/1` binding of commands and views to HTTP routes.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -93,28 +94,38 @@ pub fn load(
 /// table every HTTP artifact reads (`ess_gen::http::routes`). A binding is checked against these:
 /// `ess-http` takes them as an input rather than depending on the generator.
 pub fn derived_routes(ir: &EssIr) -> Vec<ess_http::DerivedRoute> {
-    use ess_gen::http::{Method, Served};
+    ess_gen::http::derived(ir)
+}
 
-    let mut table = Vec::new();
-    for component in ir.components().values() {
-        for route in ess_gen::http::routes(ir, component) {
-            table.push(ess_http::DerivedRoute {
-                component: component.name.to_string(),
-                operation: match route.serves {
-                    Served::Command(handle) => {
-                        ess_http::Operation::Command(handle.name().to_string())
-                    }
-                    Served::View(handle) => ess_http::Operation::View(handle.name().to_string()),
-                },
-                method: match route.method {
-                    Method::Get => ess_http::Method::Get,
-                    Method::Post => ess_http::Method::Post,
-                },
-                path: route.path,
-            });
+/// `ess generate --kind openapi --http FILE [--refines FILE]`: the `OpenAPI` documents with the
+/// methods and paths the binding declares.
+///
+/// The binding is compiled exactly as `ess specify http compile` compiles it, with the same
+/// refusals, and then refused when a route it declares has no path: a published document cannot
+/// carry an open route (`docs/design/http-presentation-binding.md`, decided for stage 1, answer 1).
+/// `Ok(None)` is a refusal already reported; the caller exits 1 and writes nothing.
+pub fn openapi(
+    binding: &Path,
+    refines: Option<&Path>,
+    ir: &EssIr,
+    format: Format,
+) -> Result<Option<BTreeMap<String, ess_gen::Artifact>>> {
+    let Some(http) = load(binding, refines, ir, format)? else {
+        return Ok(None);
+    };
+    match ess_gen::http::Binding::new(http) {
+        Ok(bound) => Ok(Some(ess_gen::artifact::run(
+            &ess_gen::openapi::BoundOpenApi(bound),
+            ir,
+        )?)),
+        Err(unprojectable) => {
+            eprintln!(
+                "{} cannot be projected to OpenAPI:\n{unprojectable}",
+                binding.display()
+            );
+            Ok(None)
         }
     }
-    table
 }
 
 pub fn run(command: &Command) -> Result<ExitCode> {

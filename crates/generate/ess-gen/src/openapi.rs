@@ -190,18 +190,30 @@
 //! model grows an authentication construct, `security` is what this row changes to, and
 //! `x-ess-may-invoke` is what tells whoever writes it which operations need one.
 //!
+//! # With an HTTP binding
+//!
+//! [`BoundOpenApi`] is the same projection with an `ess-http/1` binding beside the model
+//! (beyond10x/ess#493, `docs/design/http-presentation-binding.md`). It is what the table's
+//! `method` and `path` rows become where a protocol fixes them: an operation the binding routes is
+//! at its declared method and path ([`http::bound_routes`]), marked `x-ess-route-source: binding`;
+//! each path variable is a required `in: path` parameter; a command's input field carried in the
+//! path is not in `{command}.Input`, the request body, which is absent when the path carries every
+//! field; and a view's parameter carried in the path is not a query parameter. An operation the
+//! binding does not name keeps exactly the projection above, and without a binding every byte is
+//! unchanged.
+//!
 //! # Determinism
 //!
 //! No clock, no RNG, and every collection a [`BTreeMap`], a [`BTreeSet`](std::collections::BTreeSet) or a [`Vec`] built from
 //! one. `tests/openapi.rs` generates twice and compares bytes, because that is the only form of this
 //! claim that is worth anything (review F8).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use ess_compiler::ir::{
     CommandHandle, EssIr, ResolvedActor, ResolvedCommand, ResolvedComponent, ResolvedCondition,
-    ResolvedEffect, ResolvedError, ResolvedEvent, ResolvedOutcome, ResolvedTypeRef, ResolvedView,
-    TypeHandle, ViewHandle,
+    ResolvedEffect, ResolvedError, ResolvedEvent, ResolvedField, ResolvedOutcome, ResolvedTypeRef,
+    ResolvedView, TypeHandle, ViewHandle,
 };
 use ess_domain::binding::Delivery;
 use ess_domain::component::Reach;
@@ -226,6 +238,11 @@ const MEDIA_TYPE: &str = "application/json";
 
 /// The header that carries a caller's invocation identity, spelt as the ecosystem spells it.
 const IDEMPOTENCY_KEY: &str = "Idempotency-Key";
+
+/// What `x-ess-route-source` says on an operation an `ess-http/1` binding routes: its method and
+/// path are the binding's, not derived. The `AsyncAPI` projection says `x-ess-address-source:
+/// transport` of a channel the same way.
+const ROUTE_SOURCE: &str = "binding";
 
 /// The response property naming which declared branch was taken.
 const OUTCOME: &str = "outcome";
@@ -264,24 +281,61 @@ impl Generator for OpenApi {
     }
 
     fn generate(&self, ir: &EssIr, mint: &ProvenanceMint) -> Vec<Artifact> {
-        // `ir.components()` is a `BTreeMap`, so this order is the same on every machine. The file name
-        // comes from the component's own name rather than its wire name: a wire name is free text
-        // and a file name is not, and this path is not something a consumer reads off the wire.
-        ir.components()
-            .values()
-            .map(|component| {
-                let sliced = component_slice(ir, component, mint);
-                Artifact::sliced(
-                    format!("{}.yaml", component.name),
-                    render(
-                        &document(ir, component, &sliced.provenance),
-                        &sliced.provenance,
-                    ),
-                    sliced.slice,
-                )
-            })
-            .collect()
+        documents(ir, mint, None)
     }
+}
+
+/// The same documents, with the methods and paths an `ess-http/1` binding declares
+/// (`docs/design/http-presentation-binding.md`, stage 1).
+///
+/// A bound operation is served at the binding's method and path and says so with
+/// `x-ess-route-source: binding`, as a bound channel says `x-ess-address-source: transport` in
+/// `AsyncAPI`. Each path variable is a required `in: path` parameter whose schema is the input
+/// field's or view parameter's, a command's mapped input field leaves the request body (and a
+/// command whose every field is mapped has none), and a view's mapped parameter leaves the query.
+/// An operation the binding does not name keeps its derived route and its bytes, so a binding that
+/// routes nothing changes no byte. [`Binding::new`](http::Binding::new) refuses a binding with an
+/// open route before anything is generated.
+pub struct BoundOpenApi(pub http::Binding);
+
+impl Generator for BoundOpenApi {
+    fn name(&self) -> &'static str {
+        "openapi"
+    }
+
+    fn describes(&self) -> &'static str {
+        "an OpenAPI document for every command a component accepts, at the methods and paths its \
+         HTTP binding declares"
+    }
+
+    fn directory(&self) -> &'static str {
+        "openapi"
+    }
+
+    fn generate(&self, ir: &EssIr, mint: &ProvenanceMint) -> Vec<Artifact> {
+        documents(ir, mint, Some(&self.0))
+    }
+}
+
+/// One document per component.
+fn documents(ir: &EssIr, mint: &ProvenanceMint, binding: Option<&http::Binding>) -> Vec<Artifact> {
+    // `ir.components()` is a `BTreeMap`, so this order is the same on every machine. The file name
+    // comes from the component's own name rather than its wire name: a wire name is free text
+    // and a file name is not, and this path is not something a consumer reads off the wire.
+    ir.components()
+        .values()
+        .map(|component| {
+            let sliced = component_slice(ir, component, mint);
+            Artifact::sliced(
+                format!("{}.yaml", component.name),
+                render(
+                    &document(ir, component, &sliced.provenance, binding),
+                    &sliced.provenance,
+                ),
+                sliced.slice,
+            )
+        })
+        .collect()
 }
 
 /// One component's document as JSON, which is what a server that answers it serves.
@@ -298,7 +352,7 @@ impl Generator for OpenApi {
 pub fn json(ir: &EssIr, component: &ResolvedComponent) -> String {
     let mint = ProvenanceMint::new(ir);
     let sliced = component_slice(ir, component, &mint);
-    let mut out = serde_json::to_string_pretty(&document(ir, component, &sliced.provenance))
+    let mut out = serde_json::to_string_pretty(&document(ir, component, &sliced.provenance, None))
         .unwrap_or_else(|error| panic!("an OpenAPI document serialises as JSON: {error}"));
     out.push('\n');
     out
@@ -360,7 +414,12 @@ fn render(document: &Document, provenance: &Provenance) -> String {
 }
 
 /// One component's whole surface.
-fn document(ir: &EssIr, component: &ResolvedComponent, provenance: &Provenance) -> Document {
+fn document(
+    ir: &EssIr,
+    component: &ResolvedComponent,
+    provenance: &Provenance,
+    binding: Option<&http::Binding>,
+) -> Document {
     Document {
         openapi: VERSION,
         one_time_response: crate::one_time_response::all(ir),
@@ -371,16 +430,16 @@ fn document(ir: &EssIr, component: &ResolvedComponent, provenance: &Provenance) 
                 .clone()
                 .unwrap_or_else(|| component.name.to_string()),
             summary: component.naming.summary.clone(),
-            description: description(ir, component),
+            description: description(ir, component, binding),
             version: ir.version().to_string(),
             provenance: provenance.clone(),
             reached_by: (component.reached_by == Reach::Network)
                 .then(|| component.reached_by.as_str()),
         },
         tags: tags(ir, component),
-        paths: paths(ir, component),
+        paths: paths(ir, component, binding),
         components: Components {
-            schemas: schemas(ir, component),
+            schemas: schemas(ir, component, binding),
         },
         entities: entity_model(ir, component),
     }
@@ -408,7 +467,11 @@ fn direct_answers(ir: &EssIr, component: &ResolvedComponent) -> &'static str {
 ///
 /// The convention is restated in the artifact and not only in this module's documentation, because
 /// the person who has to argue with the mapping is holding the generated file, not the generator.
-fn description(ir: &EssIr, component: &ResolvedComponent) -> String {
+fn description(
+    ir: &EssIr,
+    component: &ResolvedComponent,
+    binding: Option<&http::Binding>,
+) -> String {
     let mut text = format!(
         "The HTTP surface of `{}`, one of the components of `{}` {}.\n\n",
         component.name,
@@ -466,6 +529,19 @@ fn description(ir: &EssIr, component: &ResolvedComponent) -> String {
             );
         }
     }
+    if http::bound_routes(ir, component, binding)
+        .iter()
+        .any(|route| route.declared.is_some())
+    {
+        text.push_str(
+            "\n\nAn `ess-http/1` binding declares the method and path of every operation marked \
+             `x-ess-route-source: binding`, so those are the protocol's and not derived from wire \
+             names. Each variable of such a path is a required path parameter carrying the input \
+             field or view parameter the binding maps to it, and a field carried in the path is \
+             not in the request body. Every other operation keeps the method and path described \
+             above.",
+        );
+    }
     text
 }
 
@@ -494,7 +570,14 @@ fn tags(ir: &EssIr, component: &ResolvedComponent) -> Vec<Tag> {
 /// free text with no charset the model enforces. When that happens *both* move to their qualified
 /// names, rather than one keeping the short path: a path whose meaning depends on which other
 /// commands exist is a path that changes when an unrelated command is added.
-fn paths(ir: &EssIr, component: &ResolvedComponent) -> BTreeMap<String, PathItem> {
+///
+/// With a binding, an operation it names is at the binding's method and path instead, and one path
+/// may then carry several methods ([`http::bound_routes`]).
+fn paths(
+    ir: &EssIr,
+    component: &ResolvedComponent,
+    binding: Option<&http::Binding>,
+) -> BTreeMap<String, PathItem> {
     // Once for the document rather than once per operation: the IR holds `may` on the actor, so the
     // question a path asks — who may invoke *this* command — is an inversion, and inverting it per
     // operation would make the cost quadratic in a specification with many actors.
@@ -502,16 +585,71 @@ fn paths(ir: &EssIr, component: &ResolvedComponent) -> BTreeMap<String, PathItem
     let checked = http::grants_checked_on(ir, component);
 
     let mut out: BTreeMap<String, PathItem> = BTreeMap::new();
-    for route in http::routes(ir, component) {
-        let item = out.entry(route.path).or_default();
-        match route.serves {
+    for route in http::bound_routes(ir, component, binding) {
+        let served = match route.serves {
             http::Served::Command(handle) => {
-                item.post = Some(operation(ir, handle, &grants, checked));
+                operation(ir, handle, &grants, checked, route.declared)
             }
-            http::Served::View(handle) => item.get = Some(query(ir, handle, checked)),
-        }
+            http::Served::View(handle) => query(ir, handle, checked, route.declared),
+        };
+        *out.entry(route.path).or_default().slot(route.method) = Some(served);
     }
     out
+}
+
+/// The input fields or view parameters a bound route carries in its path, by declared name. Empty
+/// for a derived route.
+fn carried(declared: Option<&ess_http::Route>) -> BTreeSet<&str> {
+    declared
+        .map(|route| {
+            route
+                .parameters
+                .values()
+                .map(ess_http::Source::field)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// A bound route's path parameters, in the order their variables appear in its path: each required
+/// and named after its variable, its schema the field's or parameter's own. Empty for a derived
+/// route, whose path holds no variable.
+///
+/// `fields` are the command's input or the view's parameters, and `described` says what one of them
+/// is where its declaration carries no summary.
+fn path_parameters(
+    fields: &[ResolvedField],
+    declared: Option<&ess_http::Route>,
+    described: impl Fn(&ResolvedField) -> String,
+) -> Vec<Parameter> {
+    let Some(declared) = declared else {
+        return Vec::new();
+    };
+    declared
+        .segments()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|segment| {
+            let ess_http::Segment::Variable(variable) = segment else {
+                return None;
+            };
+            let source = declared.parameters.get(&variable)?;
+            let field = fields.iter().find(|field| field.name == source.field())?;
+            Some(Parameter {
+                name: variable,
+                location: "path",
+                description: field
+                    .naming
+                    .summary
+                    .clone()
+                    .unwrap_or_else(|| described(field)),
+                required: true,
+                style: None,
+                explode: None,
+                schema: embedded(&types::field(field)),
+            })
+        })
+        .collect()
 }
 
 /// One command, as an operation.
@@ -520,11 +658,20 @@ fn operation(
     handle: &CommandHandle,
     grants: &Grants<'_>,
     checks_grants: bool,
+    declared: Option<&ess_http::Route>,
 ) -> Operation {
     let command = ir.command(handle);
     let domain = ir.domain(&command.domain);
+    let mut parameters = path_parameters(&command.input, declared, |field| {
+        format!(
+            "The input field `{}`, carried in the path rather than the request body.",
+            field.name
+        )
+    });
+    parameters.extend(idempotency(ir, command));
     Operation {
         id: command.name.to_string(),
+        route_source: declared.map(|_| ROUTE_SOURCE),
         periodic: ir
             .bindings()
             .values()
@@ -560,8 +707,8 @@ fn operation(
             })
             .collect(),
         consistency: None,
-        parameters: idempotency(ir, command).into_iter().collect(),
-        request_body: request_body(command),
+        parameters,
+        request_body: request_body(command, &carried(declared)),
         responses: responses(ir, command, checks_grants),
     }
 }
@@ -616,8 +763,20 @@ fn not_granted_schema() -> Value {
 /// cursor, no ordering and no filter parameter, because the model states none of them. The view's
 /// filter is declared in the specification and is a property of the projection, not of the
 /// request: a caller supplies the values it reads as `param.<name>`, never the predicate.
-fn query(ir: &EssIr, handle: &ViewHandle, checks_grants: bool) -> Operation {
+fn query(
+    ir: &EssIr,
+    handle: &ViewHandle,
+    checks_grants: bool,
+    declared: Option<&ess_http::Route>,
+) -> Operation {
     let view = ir.view(handle);
+    let mut parameters = path_parameters(&view.params, declared, |param| {
+        format!(
+            "Read by the view's filter as `param.{}`; carried in the path rather than the query.",
+            param.name
+        )
+    });
+    parameters.extend(view_parameters(view, &carried(declared)));
     let domain = ir.domain(&view.domain);
     // A read-granted view on a surface that checks grants answers the standard refusal too
     // (beyond10x/ess#286); an open view, and every view of a model naming none, keeps its bytes.
@@ -642,6 +801,7 @@ fn query(ir: &EssIr, handle: &ViewHandle, checks_grants: bool) -> Operation {
     }
     Operation {
         id: view.name.to_string(),
+        route_source: declared.map(|_| ROUTE_SOURCE),
         periodic: Vec::new(),
         summary: Some(view.naming.display_or(&view.name).to_owned()),
         description: view.naming.summary.clone(),
@@ -657,7 +817,7 @@ fn query(ir: &EssIr, handle: &ViewHandle, checks_grants: bool) -> Operation {
         caller: Vec::new(),
         accessors: Vec::new(),
         consistency: Some(view.consistency.as_str()),
-        parameters: view_parameters(view),
+        parameters,
         request_body: None,
         responses,
     }
@@ -767,15 +927,20 @@ fn idempotency(ir: &EssIr, command: &ResolvedCommand) -> Option<Parameter> {
 /// The command's input, as a body.
 ///
 /// A command with no input gets no body at all rather than an empty object: `{}` in a request would
-/// be a shape a client has to construct for no reason.
-fn request_body(command: &ResolvedCommand) -> Option<RequestBody> {
-    if command.input.is_empty() {
+/// be a shape a client has to construct for no reason. Neither does one whose every input field a
+/// bound route `carried` in its path, and a field carried there is not in the body.
+fn request_body(command: &ResolvedCommand, carried: &BTreeSet<&str>) -> Option<RequestBody> {
+    if command
+        .input
+        .iter()
+        .all(|field| carried.contains(field.name.as_str()))
+    {
         return None;
     }
     Some(RequestBody {
         description: format!("The input `{}` declares.", command.name),
         // One answer for this document and every server that reads the body.
-        required: http::body_required(command),
+        required: http::body_required_without(command, carried),
         content: content(json!({"$ref": reference(&format!("{}.Input", command.name))})),
     })
 }
@@ -949,16 +1114,35 @@ fn meaning(status: &str) -> &'static str {
 /// Every shape here comes from [`types`]; what this function decides is which of them the document
 /// needs. The one schema shaped by this file is an outcome's response body, because an outcome is
 /// not a message the model declares — it is this projection's rendering of a branch.
-fn schemas(ir: &EssIr, component: &ResolvedComponent) -> BTreeMap<String, Fragment> {
+///
+/// A command's `{command}.Input` is its request body: under a binding, the input less the fields
+/// its route carries in the path, and absent when the path carries every one. Their types stay,
+/// because the path parameters point at them.
+fn schemas(
+    ir: &EssIr,
+    component: &ResolvedComponent,
+    binding: Option<&http::Binding>,
+) -> BTreeMap<String, Fragment> {
     let mut out: BTreeMap<String, Fragment> = BTreeMap::new();
     let mut roots: Vec<&TypeHandle> = Vec::new();
 
     for handle in &component.accepts {
         let command = ir.command(handle);
-        if !command.input.is_empty() {
+        let carried =
+            carried(binding.and_then(|binding| binding.route(http::Served::Command(handle))));
+        let body: Vec<ResolvedField> = command
+            .input
+            .iter()
+            .filter(|field| !carried.contains(field.name.as_str()))
+            .cloned()
+            .collect();
+        if !body.is_empty() {
             out.insert(
                 format!("{}.Input", command.name),
-                embedded(&types::message(&Message::of_command(command))),
+                embedded(&types::message(&Message {
+                    fields: &body,
+                    ..Message::of_command(command)
+                })),
             );
         }
         roots.extend(types::field_leaves(&command.input));
@@ -1642,19 +1826,39 @@ struct Tag {
     description: Option<String>,
 }
 
-/// One path, and the one method it answers.
+/// One path, and the methods it answers.
 ///
-/// Both fields are optional and exactly one is ever set, because a path is one construct: a
+/// Without a binding exactly one field is ever set, because a derived path is one construct: a
 /// command's path is a `POST` and a view's is a `GET`, and the two cannot collide — the segment
-/// between the domain and the name is `commands` for one and `views` for the other. Two fields
-/// rather than an enum so that the emitted YAML keeps `OpenAPI`'s own spelling, where the method is
-/// the key.
+/// between the domain and the name is `commands` for one and `views` for the other. An `ess-http/1`
+/// binding may put several operations on one path, each on its own method. Fields rather than an
+/// enum so that the emitted YAML keeps `OpenAPI`'s own spelling, where the method is the key, in
+/// `OpenAPI`'s own order.
 #[derive(Debug, Default, serde::Serialize)]
 struct PathItem {
     #[serde(skip_serializing_if = "Option::is_none")]
     get: Option<Operation>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    put: Option<Operation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     post: Option<Operation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    delete: Option<Operation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    patch: Option<Operation>,
+}
+
+impl PathItem {
+    /// The operation this path answers on `method`.
+    fn slot(&mut self, method: http::Method) -> &mut Option<Operation> {
+        match method {
+            http::Method::Get => &mut self.get,
+            http::Method::Put => &mut self.put,
+            http::Method::Post => &mut self.post,
+            http::Method::Delete => &mut self.delete,
+            http::Method::Patch => &mut self.patch,
+        }
+    }
 }
 
 /// One command, exposed.
@@ -1667,6 +1871,10 @@ struct Operation {
     periodic: Vec<ess_compiler::ir::ResolvedBinding>,
     #[serde(rename = "operationId")]
     id: String,
+    /// `binding` where an `ess-http/1` binding declares this operation's method and path; absent
+    /// where they are derived, so a document generated without a binding keeps its bytes.
+    #[serde(rename = "x-ess-route-source", skip_serializing_if = "Option::is_none")]
+    route_source: Option<&'static str>,
     #[serde(
         rename = "x-ess-binding-accessors",
         skip_serializing_if = "Vec::is_empty"
@@ -1769,7 +1977,8 @@ struct BindingAccessor {
 }
 
 /// Every parameter a view declares, as a query parameter under its wire name, in declaration order.
-/// Empty for a view with no `params:`, whose operation keeps its bytes.
+/// Empty for a view with no `params:`, whose operation keeps its bytes. A parameter a bound route
+/// `carried` in its path is not one of them.
 ///
 /// A filter parameter is required unless it is declared `Optional`, and its schema is its declared
 /// type. A paging parameter (`paging:`, ess/16, beyond10x/ess#174) is an optional integer whatever
@@ -1777,9 +1986,10 @@ struct BindingAccessor {
 /// A `List<T>` parameter repeats its key once per element, `queues=1&queues=2` (beyond10x/ess#438):
 /// `style: form` and `explode: true` are `OpenAPI`'s default for a query parameter, stated so that no
 /// reader settles on `queues=1,2`, which is ambiguous for an element holding a comma.
-fn view_parameters(view: &ResolvedView) -> Vec<Parameter> {
+fn view_parameters(view: &ResolvedView, carried: &BTreeSet<&str>) -> Vec<Parameter> {
     view.params
         .iter()
+        .filter(|param| !carried.contains(param.name.as_str()))
         .map(|param| {
             let name = types::wire_name(param).to_owned();
             match &view.paging {
