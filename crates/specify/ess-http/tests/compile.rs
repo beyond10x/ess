@@ -8,7 +8,10 @@ use ess_compiler::source::SourceMap;
 use ess_compiler::EssIr;
 use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
-use ess_http::{compile, DerivedRoute, HttpIr, HttpSpec, Method, Operation};
+use ess_http::{
+    compile, compile_refining, DerivedRoute, HttpDiagnostics, HttpIr, HttpSpec, Method, Operation,
+    Refined,
+};
 
 const MODEL: &str = include_str!("fixtures/catalog.yaml");
 
@@ -1170,6 +1173,7 @@ fn every_code_this_crate_can_emit_is_one_of_the_stage_1_codes() {
                 *code,
                 "ESS-HTTP-001"
                     | "ESS-HTTP-002"
+                    | "ESS-HTTP-003"
                     | "ESS-HTTP-004"
                     | "ESS-HTTP-005"
                     | "ESS-HTTP-006"
@@ -1178,6 +1182,7 @@ fn every_code_this_crate_can_emit_is_one_of_the_stage_1_codes() {
                     | "ESS-HTTP-009"
                     | "ESS-HTTP-010"
                     | "ESS-HTTP-011"
+                    | "ESS-HTTP-012"
                     | "ESS-HTTP-013"
                     | "ESS-HTTP-014"
             ),
@@ -1196,4 +1201,364 @@ fn every_code_this_crate_can_emit_is_one_of_the_stage_1_codes() {
         ess_http::CODES,
         "a code in the source is not in CODES"
     );
+}
+
+/// A protocol binding: the view's path is fixed, and the command's path is left to each server.
+const PROTOCOL: &str = "routes:
+  - view: catalog.items.ItemById
+    method: get
+    path: /items/{item_id}
+    parameters:
+      item_id: param.item_id
+  - command: catalog.items.ListItem
+    method: post
+";
+
+/// A server binding of `PROTOCOL`: it restates the fixed view route and fills in the open path.
+const SERVER: &str = "routes:
+  - view: catalog.items.ItemById
+    method: get
+    path: /items/{item_id}
+    parameters:
+      item_id: param.item_id
+  - command: catalog.items.ListItem
+    method: post
+    path: /api/items
+";
+
+fn refined_from(ir: &EssIr, routes: &str) -> Refined {
+    Refined::from_yaml((header(ir) + routes).as_bytes()).expect("the refined binding parses")
+}
+
+/// A document refining `refined`, pinned to its digest, with `routes`.
+fn refining_text(ir: &EssIr, refined: &Refined, routes: &str) -> String {
+    header(ir) + &format!("refines: {}\n", refined.digest()) + routes
+}
+
+fn compile_against(
+    ir: &EssIr,
+    text: &str,
+    refined: Option<&Refined>,
+) -> Result<HttpIr, HttpDiagnostics> {
+    let spec = HttpSpec::from_yaml(text).expect("parses");
+    compile_refining(&spec, refined, ir, &derived(ir))
+}
+
+fn located(result: Result<HttpIr, HttpDiagnostics>) -> Vec<(&'static str, String)> {
+    match result {
+        Ok(_) => Vec::new(),
+        Err(diagnostics) => diagnostics
+            .0
+            .into_iter()
+            .map(|diagnostic| (diagnostic.code, diagnostic.path))
+            .collect(),
+    }
+}
+
+fn worded(result: Result<HttpIr, HttpDiagnostics>) -> Vec<String> {
+    result
+        .expect_err("refused")
+        .0
+        .into_iter()
+        .map(|diagnostic| diagnostic.to_string())
+        .collect()
+}
+
+#[test]
+fn the_refined_digest_is_the_sha256_of_the_refined_files_bytes() {
+    // The digest of the three bytes `abc`, FIPS 180-2 appendix B.1.
+    assert_eq!(
+        ess_http::digest(b"abc"),
+        "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    );
+    let ir = model();
+    let text = header(&ir) + PROTOCOL;
+    let refined = Refined::from_yaml(text.as_bytes()).expect("parses");
+    assert_eq!(refined.digest(), ess_http::digest(text.as_bytes()));
+    assert_eq!(refined.spec(), &HttpSpec::from_yaml(&text).unwrap());
+    let json =
+        serde_json::to_string(&serde_yaml::from_str::<serde_json::Value>(&text).unwrap()).unwrap();
+    let from_json = Refined::from_json(json.as_bytes()).expect("parses as JSON");
+    assert_eq!(from_json.spec(), refined.spec());
+    assert_eq!(from_json.digest(), ess_http::digest(json.as_bytes()));
+    assert!(ess_http::CODES.contains(&"ESS-HTTP-003"));
+    assert!(ess_http::CODES.contains(&"ESS-HTTP-012"));
+}
+
+#[test]
+fn a_server_binding_fills_in_an_open_path_and_records_the_refined_digest() {
+    let ir = model();
+    let refined = refined_from(&ir, PROTOCOL);
+    let http = compile_against(&ir, &refining_text(&ir, &refined, SERVER), Some(&refined))
+        .expect("a fill-in compiles");
+    assert_eq!(http.refines(), Some(refined.digest()));
+    let json = http.to_canonical_json();
+    assert!(
+        json.contains(&format!(
+            "\n  }},\n  \"refines\": \"{}\",\n  \"routes\": [\n",
+            refined.digest()
+        )),
+        "the digest sits between `specification` and `routes`: {json}"
+    );
+    let read = HttpIr::from_json(&json).expect("reads back");
+    assert_eq!(read.refines(), Some(refined.digest()));
+    assert_eq!(read.to_canonical_json(), json, "round trip changed bytes");
+    // Without `refines`, the IR holds no key for it, so every existing IR keeps its bytes.
+    let plain = compile(
+        &HttpSpec::from_yaml(&(header(&ir) + ROUTES)).unwrap(),
+        &ir,
+        &derived(&ir),
+    )
+    .expect("compiles");
+    assert_eq!(plain.refines(), None);
+    assert!(!plain.to_canonical_json().contains("refines"));
+}
+
+#[test]
+fn a_server_binding_may_route_an_operation_the_refined_binding_does_not_name() {
+    let ir = model();
+    let refined = refined_from(&ir, PROTOCOL);
+    let routes = SERVER.to_owned()
+        + "  - command: catalog.items.TouchItem
+    method: post
+    path: /items/{item_id}/touch
+    parameters:
+      item_id: input.item_id
+";
+    let http = compile_against(&ir, &refining_text(&ir, &refined, &routes), Some(&refined))
+        .expect("an added route compiles");
+    assert!(http
+        .route(&Operation::Command("catalog.items.TouchItem".into()))
+        .is_some());
+    // An open route of the refined binding the server binding leaves open is not a change.
+    let still_open = SERVER.replace("    path: /api/items\n", "");
+    assert_eq!(
+        located(compile_against(
+            &ir,
+            &refining_text(&ir, &refined, &still_open),
+            Some(&refined)
+        )),
+        []
+    );
+}
+
+#[test]
+fn ess_http_003_refines_without_the_refined_file_is_refused() {
+    let ir = model();
+    let refined = refined_from(&ir, PROTOCOL);
+    let text = refining_text(&ir, &refined, SERVER);
+    assert_eq!(
+        located(compile_against(&ir, &text, None)),
+        [refused("ESS-HTTP-003", "refines")]
+    );
+    // `compile` supplies no refined file.
+    let spec = HttpSpec::from_yaml(&text).unwrap();
+    assert_eq!(
+        located(compile(&spec, &ir, &derived(&ir))),
+        [refused("ESS-HTTP-003", "refines")]
+    );
+    let shown = worded(compile_against(&ir, &text, None));
+    assert!(
+        shown[0].contains(refined.digest()) && shown[0].contains("no refined binding"),
+        "{shown:?}"
+    );
+}
+
+#[test]
+fn ess_http_003_a_refined_file_whose_bytes_differ_is_refused_naming_both_digests() {
+    let ir = model();
+    let refined = refined_from(&ir, PROTOCOL);
+    let text = refining_text(&ir, &refined, SERVER);
+    // The same binding, reformatted: equal once read, other bytes, so another digest.
+    let reformatted = Refined::from_yaml(
+        (header(&ir).replace("version: v1", "version: 'v1'") + PROTOCOL).as_bytes(),
+    )
+    .unwrap();
+    assert_eq!(reformatted.spec(), refined.spec(), "only the bytes differ");
+    assert_ne!(reformatted.digest(), refined.digest());
+    assert_eq!(
+        located(compile_against(&ir, &text, Some(&reformatted))),
+        [refused("ESS-HTTP-003", "refines")]
+    );
+    let shown = worded(compile_against(&ir, &text, Some(&reformatted)));
+    assert!(
+        shown[0].contains(refined.digest()) && shown[0].contains(reformatted.digest()),
+        "{shown:?}"
+    );
+    // A value that is no digest at all is refused as one, whatever is supplied.
+    let malformed = header(&ir) + "refines: sha256:ABC\n" + SERVER;
+    assert_eq!(
+        located(compile_against(&ir, &malformed, Some(&refined))),
+        [refused("ESS-HTTP-003", "refines")]
+    );
+    let shown = worded(compile_against(&ir, &malformed, None));
+    assert!(shown[0].contains("sha256:ABC"), "{shown:?}");
+}
+
+#[test]
+fn ess_http_003_a_refinement_of_a_refinement_is_refused() {
+    let ir = model();
+    let protocol = refined_from(&ir, PROTOCOL);
+    let server = Refined::from_yaml(refining_text(&ir, &protocol, SERVER).as_bytes()).unwrap();
+    let text = refining_text(&ir, &server, SERVER);
+    assert_eq!(
+        located(compile_against(&ir, &text, Some(&server))),
+        [refused("ESS-HTTP-003", "refines")]
+    );
+    let shown = worded(compile_against(&ir, &text, Some(&server)));
+    assert!(
+        shown[0].contains("itself refines") && shown[0].contains(protocol.digest()),
+        "{shown:?}"
+    );
+}
+
+#[test]
+fn ess_http_003_a_refined_file_supplied_to_a_document_that_refines_nothing_is_refused() {
+    let ir = model();
+    let refined = refined_from(&ir, PROTOCOL);
+    let text = header(&ir) + SERVER;
+    assert_eq!(
+        located(compile_against(&ir, &text, Some(&refined))),
+        [refused("ESS-HTTP-003", "refines")]
+    );
+    let shown = worded(compile_against(&ir, &text, Some(&refined)));
+    assert!(
+        shown[0].contains("refines nothing") && shown[0].contains(refined.digest()),
+        "{shown:?}"
+    );
+}
+
+#[test]
+fn ess_http_012_a_refinement_changing_a_fixed_method_is_refused() {
+    let ir = model();
+    let refined = refined_from(&ir, PROTOCOL);
+    // The protocol fixes `post` for `ListItem`; the server binding moves it to `put`.
+    let routes = SERVER.replace(
+        "    method: post\n    path: /api/items\n",
+        "    method: put\n    path: /api/items\n",
+    );
+    assert_ne!(routes, SERVER);
+    let result = compile_against(&ir, &refining_text(&ir, &refined, &routes), Some(&refined));
+    let shown = worded(result.clone());
+    assert_eq!(
+        located(result),
+        [refused("ESS-HTTP-012", "routes[1].method")]
+    );
+    assert!(
+        shown[0].contains("`post`") && shown[0].contains("`put`") && shown[0].contains("routes[1]"),
+        "{shown:?}"
+    );
+}
+
+#[test]
+fn ess_http_012_a_refinement_changing_or_reopening_a_fixed_path_is_refused() {
+    let ir = model();
+    let refined = refined_from(&ir, PROTOCOL);
+    let changed = SERVER.replacen(
+        "    path: /items/{item_id}\n",
+        "    path: /things/{item_id}\n",
+        1,
+    );
+    assert_ne!(changed, SERVER);
+    let result = compile_against(&ir, &refining_text(&ir, &refined, &changed), Some(&refined));
+    let shown = worded(result.clone());
+    assert_eq!(located(result), [refused("ESS-HTTP-012", "routes[0].path")]);
+    assert!(
+        shown[0].contains("`/items/{item_id}`") && shown[0].contains("`/things/{item_id}`"),
+        "{shown:?}"
+    );
+    let reopened = "routes:
+  - view: catalog.items.ItemById
+    method: get
+  - command: catalog.items.ListItem
+    method: post
+    path: /api/items
+";
+    let result = compile_against(&ir, &refining_text(&ir, &refined, reopened), Some(&refined));
+    let shown = worded(result.clone());
+    assert_eq!(located(result), [refused("ESS-HTTP-012", "routes[0].path")]);
+    assert!(
+        shown[0].contains("`/items/{item_id}`") && shown[0].contains("open"),
+        "{shown:?}"
+    );
+}
+
+#[test]
+fn ess_http_012_a_refinement_dropping_a_route_is_refused() {
+    let ir = model();
+    let refined = refined_from(&ir, PROTOCOL);
+    let dropped = "routes:
+  - command: catalog.items.ListItem
+    method: post
+    path: /api/items
+";
+    let result = compile_against(&ir, &refining_text(&ir, &refined, dropped), Some(&refined));
+    let shown = worded(result.clone());
+    assert_eq!(located(result), [refused("ESS-HTTP-012", "routes")]);
+    assert!(
+        shown[0].contains("view `catalog.items.ItemById`")
+            && shown[0].contains("routes[0]")
+            && shown[0].contains("`get /items/{item_id}`"),
+        "{shown:?}"
+    );
+}
+
+#[test]
+fn the_refined_bindings_own_refusals_are_reported_keyed_to_it() {
+    let ir = model();
+    // The refined binding names a view on `post` and a command no component accepts.
+    let broken = "routes:
+  - {view: catalog.items.ItemById, method: post, path: '/items/{item_id}', parameters: {item_id: param.item_id}}
+  - {command: catalog.items.PurgeItems, method: post}
+";
+    let refined = refined_from(&ir, broken);
+    let routes = "routes:
+  - {view: catalog.items.ItemById, method: post, path: '/items/{item_id}', parameters: {item_id: param.item_id}}
+  - {command: catalog.items.PurgeItems, method: post}
+";
+    let found = located(compile_against(
+        &ir,
+        &refining_text(&ir, &refined, routes),
+        Some(&refined),
+    ));
+    for expected in [
+        refused("ESS-HTTP-006", "refined.routes[0].method"),
+        refused("ESS-HTTP-013", "refined.routes[1].command"),
+        refused("ESS-HTTP-006", "routes[0].method"),
+        refused("ESS-HTTP-013", "routes[1].command"),
+    ] {
+        assert!(found.contains(&expected), "{expected:?} in {found:?}");
+    }
+    // Another specification pin in the refined file is the refined file's refusal.
+    let other = Refined::from_yaml(
+        (header(&ir).replace("version: v1", "version: v2") + PROTOCOL).as_bytes(),
+    )
+    .unwrap();
+    assert_eq!(
+        located(compile_against(
+            &ir,
+            &refining_text(&ir, &other, SERVER),
+            Some(&other)
+        )),
+        [refused("ESS-HTTP-002", "refined.specification.version")]
+    );
+}
+
+#[test]
+fn compiled_ir_with_a_malformed_refined_digest_is_refused_naming_the_key() {
+    let ir = model();
+    let refined = refined_from(&ir, PROTOCOL);
+    let json = compile_against(&ir, &refining_text(&ir, &refined, SERVER), Some(&refined))
+        .expect("compiles")
+        .to_canonical_json();
+    for bad in [
+        "sha256:abc",
+        "md5:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+        "sha256:BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD",
+    ] {
+        let text = json.replace(refined.digest(), bad);
+        assert_ne!(text, json);
+        let error = HttpIr::from_json(&text).expect_err(bad).to_string();
+        assert!(error.contains("`refines`"), "{bad}: {error}");
+    }
 }

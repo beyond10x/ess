@@ -25,10 +25,11 @@ pub const HTTP_FORMAT: &str = "ess-http/1";
 /// The compiled HTTP binding format.
 pub const HTTP_IR_FORMAT: &str = "ess-http-ir/1";
 
-/// Every code [`compile`] can refuse with, in code order.
+/// Every code [`compile`] and [`compile_refining`] can refuse with, in code order.
 pub const CODES: &[&str] = &[
     "ESS-HTTP-001",
     "ESS-HTTP-002",
+    "ESS-HTTP-003",
     "ESS-HTTP-004",
     "ESS-HTTP-005",
     "ESS-HTTP-006",
@@ -37,6 +38,7 @@ pub const CODES: &[&str] = &[
     "ESS-HTTP-009",
     "ESS-HTTP-010",
     "ESS-HTTP-011",
+    "ESS-HTTP-012",
     "ESS-HTTP-013",
     "ESS-HTTP-014",
 ];
@@ -390,8 +392,68 @@ pub struct HttpSpec {
     pub format: String,
     /// The exact ESS the routes belong to.
     pub specification: SpecificationIdentity,
+    /// `sha256:<hex>` of the bytes of the binding this one refines; absent, it refines nothing.
+    #[serde(default)]
+    pub refines: Option<String>,
     /// One route per bound command or view, in document order.
     pub routes: Vec<RouteSpec>,
+}
+
+/// `sha256:<hex>` of `bytes`: what `refines:` pins a refined binding by.
+pub fn digest(bytes: &[u8]) -> String {
+    use sha2::{Digest as _, Sha256};
+    use std::fmt::Write as _;
+
+    let mut out = String::with_capacity(71);
+    out.push_str("sha256:");
+    for byte in Sha256::digest(bytes) {
+        let _ = write!(out, "{byte:02x}");
+    }
+    out
+}
+
+/// Whether `text` is a digest as [`digest`] writes one: `sha256:` and 64 lower-case hex digits.
+fn is_digest(text: &str) -> bool {
+    text.strip_prefix("sha256:").is_some_and(|hex| {
+        hex.len() == 64 && hex.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+    })
+}
+
+/// A binding another one refines: the document as read, and the digest of the exact bytes it was
+/// read from, which is what the refining document's `refines:` pins. Reformatting the file changes
+/// the digest, so it is a deliberate re-pin.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Refined {
+    digest: String,
+    spec: HttpSpec,
+}
+
+impl Refined {
+    /// Reads a refined binding's file bytes as strict YAML.
+    pub fn from_yaml(bytes: &[u8]) -> Result<Self, serde_yaml::Error> {
+        Ok(Self {
+            digest: digest(bytes),
+            spec: serde_yaml::from_slice(bytes)?,
+        })
+    }
+
+    /// Reads a refined binding's file bytes as strict JSON.
+    pub fn from_json(bytes: &[u8]) -> Result<Self, serde_json::Error> {
+        Ok(Self {
+            digest: digest(bytes),
+            spec: serde_json::from_slice(bytes)?,
+        })
+    }
+
+    /// `sha256:<hex>` of the bytes it was read from.
+    pub fn digest(&self) -> &str {
+        &self.digest
+    }
+
+    /// The document.
+    pub fn spec(&self) -> &HttpSpec {
+        &self.spec
+    }
 }
 
 impl HttpSpec {
@@ -500,6 +562,9 @@ pub struct DerivedRoute {
 pub struct HttpIr {
     format: String,
     specification: SpecificationIdentity,
+    /// The digest of the refined binding's bytes. Absent when the binding refines nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    refines: Option<String>,
     routes: Vec<Route>,
     /// Ordered by component, then path, then method, then operation. Absent when empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -510,6 +575,11 @@ impl HttpIr {
     /// The specification this binding binds.
     pub fn specification(&self) -> &SpecificationIdentity {
         &self.specification
+    }
+
+    /// `sha256:<hex>` of the bytes of the binding this one refines, if it refines one.
+    pub fn refines(&self) -> Option<&str> {
+        self.refines.as_deref()
     }
 
     /// Every route, ordered by path (an open route first), then method, then operation.
@@ -542,8 +612,8 @@ impl HttpIr {
     /// canonical bytes ([`HttpIr::to_canonical_json`]).
     ///
     /// It refuses, naming the key, any format but [`HTTP_IR_FORMAT`], any unknown key, and IR that
-    /// breaks an invariant [`compile`] guarantees and that needs no specification to check:
-    /// `routes`, `derived_routes` or a route's `parameters` out of canonical order; one operation
+    /// breaks an invariant [`compile`] guarantees and that needs no specification to check: a
+    /// `refines` that is not a `sha256:` digest of 64 lower-case hex digits; `routes`, `derived_routes` or a route's `parameters` out of canonical order; one operation
     /// routed twice; a method not admitted for the kind of operation; a route path that breaks the
     /// template grammar, or whose `parameters` leave a variable unmapped, map one the path does
     /// not have, or read one source from two variables; a source outside the operation's
@@ -567,6 +637,14 @@ impl HttpIr {
 
     /// The invariants of compiled IR that need no specification, each refusal naming its key.
     fn invariants(&self) -> Result<(), String> {
+        if let Some(refines) = &self.refines {
+            if !is_digest(refines) {
+                return Err(format!(
+                    "`refines` `{refines}` is not `sha256:` and 64 lower-case hex digits, the \
+                     digest compiled IR records of the refined binding's bytes"
+                ));
+            }
+        }
         let route_key = |route: &Route| (route.path.clone(), route.method, route.operation.clone());
         if let Some(at) = out_of_order(&self.routes, |left, right| {
             route_key(left).cmp(&route_key(right))
@@ -820,12 +898,62 @@ impl Refusals {
 ///
 /// A route without a path is open, and valid: the artifacts that need a path refuse it. It takes
 /// no part in collision checks, because no path is claimed.
+///
+/// `compile` supplies no refined binding, so a document with `refines:` is refused
+/// (`ESS-HTTP-003`); [`compile_refining`] takes the refined binding and adds `ESS-HTTP-003` and
+/// `ESS-HTTP-012`.
 pub fn compile(
     spec: &HttpSpec,
     ir: &EssIr,
     derived: &[DerivedRoute],
 ) -> Result<HttpIr, HttpDiagnostics> {
+    compile_refining(spec, None, ir, derived)
+}
+
+/// [`compile`], with the binding `spec` refines, read from its file's bytes ([`Refined`]).
+///
+/// A **server binding** names a **protocol binding** in `refines:` and fills in its open paths
+/// (`docs/design/http-presentation-binding.md`, "Two levels in one format"). Beside every check
+/// [`compile`] runs on `spec`:
+///
+/// | code | refused |
+/// |---|---|
+/// | `ESS-HTTP-003` | at `refines`: a value that is not `sha256:` and 64 lower-case hex digits; `refines` given and no refined binding supplied; the supplied binding's byte digest differs; the refined binding itself refines (a refinement of a refinement is refused in `/1`); or a refined binding supplied to a document that refines nothing |
+/// | `ESS-HTTP-012` | at `routes[i].method` or `routes[i].path`: a method or path the refined binding fixed is changed, or a fixed path left open; at `routes`: a route of the refined binding is dropped |
+///
+/// The refined binding is checked against the same specification and derived routes, and its own
+/// refusals are reported with their path under `refined.` (`refined.routes[0].method`). It is
+/// compared route by route only when its digest is the one pinned. Adding a route for an
+/// operation the refined binding does not name is admitted, and so is filling in, or leaving, an
+/// open path. The compiled IR records the pinned digest.
+pub fn compile_refining(
+    spec: &HttpSpec,
+    refined: Option<&Refined>,
+    ir: &EssIr,
+    derived: &[DerivedRoute],
+) -> Result<HttpIr, HttpDiagnostics> {
     let mut refusals = Refusals(Vec::new());
+    envelope(spec, ir, &mut refusals);
+    let compared = refinement(spec, refined, ir, derived, &mut refusals);
+    let (routes, derived_routes) = body(spec, ir, derived, &mut refusals);
+    if let Some(refined) = compared {
+        changes(spec, refined, &mut refusals);
+    }
+    if refusals.0.is_empty() {
+        Ok(HttpIr {
+            format: HTTP_IR_FORMAT.to_owned(),
+            specification: spec.specification.clone(),
+            refines: spec.refines.clone(),
+            routes,
+            derived_routes,
+        })
+    } else {
+        Err(HttpDiagnostics(refusals.0))
+    }
+}
+
+/// `type` (`ESS-HTTP-001`) and `specification` (`ESS-HTTP-002`).
+fn envelope(spec: &HttpSpec, ir: &EssIr, refusals: &mut Refusals) {
     if spec.format != HTTP_FORMAT {
         refusals.refuse(
             "ESS-HTTP-001",
@@ -833,9 +961,19 @@ pub fn compile(
             format!("expected `{HTTP_FORMAT}`, found `{}`", spec.format),
         );
     }
-    specification(&spec.specification, ir, &mut refusals);
-    let resolved = routes(&spec.routes, ir, &mut refusals);
-    let derived_routes = surface(&resolved, derived, &mut refusals);
+    specification(&spec.specification, ir, refusals);
+}
+
+/// Every route checked and resolved, ordered by path, then method, then operation, with the
+/// derived routes that stay.
+fn body(
+    spec: &HttpSpec,
+    ir: &EssIr,
+    derived: &[DerivedRoute],
+    refusals: &mut Refusals,
+) -> (Vec<Route>, Vec<DerivedRoute>) {
+    let resolved = routes(&spec.routes, ir, refusals);
+    let derived_routes = surface(&resolved, derived, refusals);
     let mut routes: Vec<Route> = resolved
         .into_iter()
         .filter_map(|bound| bound.route)
@@ -847,15 +985,160 @@ pub fn compile(
             &right.operation,
         ))
     });
-    if refusals.0.is_empty() {
-        Ok(HttpIr {
-            format: HTTP_IR_FORMAT.to_owned(),
-            specification: spec.specification.clone(),
-            routes,
-            derived_routes,
-        })
-    } else {
-        Err(HttpDiagnostics(refusals.0))
+    (routes, derived_routes)
+}
+
+/// Holds `refines` to the refined binding supplied (`ESS-HTTP-003`), and checks that binding
+/// against the same specification, reporting its refusals under `refined.`. Returns the refined
+/// document to compare route by route when its digest is the one pinned.
+fn refinement<'a>(
+    spec: &HttpSpec,
+    refined: Option<&'a Refined>,
+    ir: &EssIr,
+    derived: &[DerivedRoute],
+    refusals: &mut Refusals,
+) -> Option<&'a HttpSpec> {
+    let pin = match (spec.refines.as_deref(), refined) {
+        (None, None) => return None,
+        (None, Some(refined)) => {
+            refusals.refuse(
+                "ESS-HTTP-003",
+                "refines",
+                format!(
+                    "a refined binding (`{}`) was supplied, and this document refines nothing; a \
+                     document names the binding it refines in `refines:`",
+                    refined.digest
+                ),
+            );
+            return None;
+        }
+        (Some(pin), _) if !is_digest(pin) => {
+            refusals.refuse(
+                "ESS-HTTP-003",
+                "refines",
+                format!(
+                    "`{pin}` is not a digest: `refines` is `sha256:` and 64 lower-case hex digits \
+                     of the refined binding's bytes"
+                ),
+            );
+            return None;
+        }
+        (Some(pin), None) => {
+            refusals.refuse(
+                "ESS-HTTP-003",
+                "refines",
+                format!("refines `{pin}`, and no refined binding was supplied to check it against"),
+            );
+            return None;
+        }
+        (Some(pin), Some(_)) => pin,
+    };
+    let refined = refined?;
+    if refined.digest != pin {
+        refusals.refuse(
+            "ESS-HTTP-003",
+            "refines",
+            format!(
+                "refines `{pin}`, and the refined binding supplied is `{}`: `refines` pins the \
+                 bytes of the refined file, so a file edited or reformatted since is another \
+                 binding",
+                refined.digest
+            ),
+        );
+        return None;
+    }
+    if let Some(further) = &refined.spec.refines {
+        refusals.refuse(
+            "ESS-HTTP-003",
+            "refines",
+            format!(
+                "the refined binding `{pin}` itself refines `{further}`; in `{HTTP_FORMAT}` a \
+                 binding refines one that refines nothing"
+            ),
+        );
+    }
+    let mut own = Refusals(Vec::new());
+    envelope(&refined.spec, ir, &mut own);
+    body(&refined.spec, ir, derived, &mut own);
+    for diagnostic in own.0 {
+        refusals.refuse(
+            diagnostic.code,
+            format!("refined.{}", diagnostic.path),
+            diagnostic.message,
+        );
+    }
+    Some(&refined.spec)
+}
+
+/// The operation a route names, when it names exactly one.
+fn named(route: &RouteSpec) -> Option<Operation> {
+    match (&route.command, &route.view) {
+        (Some(name), None) => Some(Operation::Command(name.clone())),
+        (None, Some(name)) => Some(Operation::View(name.clone())),
+        _ => None,
+    }
+}
+
+/// Refuses a refinement that changes a method or path the refined binding fixed, leaves a fixed
+/// path open, or drops a route of the refined binding (`ESS-HTTP-012`). Each operation is compared
+/// at the first route that names it in each document; a second one is `ESS-HTTP-005` already.
+fn changes(spec: &HttpSpec, refined: &HttpSpec, refusals: &mut Refusals) {
+    let mut routed: BTreeMap<Operation, usize> = BTreeMap::new();
+    for (index, route) in spec.routes.iter().enumerate() {
+        if let Some(operation) = named(route) {
+            routed.entry(operation).or_insert(index);
+        }
+    }
+    let mut compared = std::collections::BTreeSet::new();
+    for (at, fixed) in refined.routes.iter().enumerate() {
+        let Some(operation) = named(fixed) else {
+            continue;
+        };
+        if !compared.insert(operation.clone()) {
+            continue;
+        }
+        let fixed_path = fixed.path.as_deref();
+        let Some(&index) = routed.get(&operation) else {
+            refusals.refuse(
+                "ESS-HTTP-012",
+                "routes",
+                format!(
+                    "drops {operation}, which the refined binding routes at `routes[{at}]` \
+                     (`{} {}`); a refinement restates every route of the binding it refines",
+                    fixed.method,
+                    fixed_path.unwrap_or("(open)")
+                ),
+            );
+            continue;
+        };
+        let route = &spec.routes[index];
+        if route.method != fixed.method {
+            refusals.refuse(
+                "ESS-HTTP-012",
+                format!("routes[{index}].method"),
+                format!(
+                    "{operation} is on `{}` here, and the refined binding fixes `{}` at \
+                     `routes[{at}]`; a refinement keeps the method of every route it restates",
+                    route.method, fixed.method
+                ),
+            );
+        }
+        if let Some(fixed_path) = fixed_path {
+            let found = match route.path.as_deref() {
+                Some(path) if path == fixed_path => continue,
+                Some(path) => format!("is on `{path}` here"),
+                None => "is left open here".to_owned(),
+            };
+            refusals.refuse(
+                "ESS-HTTP-012",
+                format!("routes[{index}].path"),
+                format!(
+                    "{operation} {found}, and the refined binding fixes `{fixed_path}` at \
+                     `routes[{at}]`; a refinement fills in only a path the refined binding left \
+                     open"
+                ),
+            );
+        }
     }
 }
 

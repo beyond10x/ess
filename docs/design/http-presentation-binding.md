@@ -161,7 +161,7 @@ Every refusal is returned at once, with a stable code and the path of the offend
 |---|---|---|
 | `ESS-HTTP-001` | `type` is not `ess-http/1` | `type` and the value found |
 | `ESS-HTTP-002` | `specification` disagrees with the IR | `specification.<key>`, the value found and the IR's |
-| `ESS-HTTP-003` | `refines` given and the refined file not supplied, its digest differs, or the refined file itself refines | `refines`, both digests |
+| `ESS-HTTP-003` | `refines` is not `sha256:` and 64 lower-case hex digits, `refines` given and the refined file not supplied, its digest differs, or the refined file itself refines; or a refined file supplied to a document without `refines` | `refines`, both digests. The refined file is checked against the same specification, and its own refusals are keyed under `refined.` |
 | `ESS-HTTP-004` | a route names no command or view, names both, or names one that does not exist | `routes[i]` and the name |
 | `ESS-HTTP-005` | one operation routed twice in one document | both `routes[i]` paths and the operation |
 | `ESS-HTTP-006` | a method outside the closed set, or not admitted for that kind of operation | `routes[i].method`, the value, the kind |
@@ -170,7 +170,7 @@ Every refusal is returned at once, with a stable code and the path of the offend
 | `ESS-HTTP-009` | a source in the wrong namespace, naming no field, or of a type a segment cannot carry | `routes[i].parameters.<name>`, the source, its type |
 | `ESS-HTTP-010` | two operations of one component on one method and template (variable names ignored), declared or derived | both operations; the message reuses the import's wording, "two operations claim the same method and path" (`ess-openapi/src/lib.rs:76-80`) |
 | `ESS-HTTP-011` | two templates of one component and one method that overlap: of equal length, equal up to variable names before the first position they differ, a literal beside a variable at that position, and no later position holding two different literals (`/items/current` beside `/items/{item_id}`; `/items/{item_id}/a` beside `/items/current/b` does not overlap) | both operations and the segment |
-| `ESS-HTTP-012` | a refinement that changes a fixed method or path, or drops a route of the refined binding | `routes[i]`, the refined value and the new one |
+| `ESS-HTTP-012` | a refinement that changes a fixed method or path, leaves a fixed path open, or drops a route of the refined binding | `routes[i].method` or `routes[i].path`, the refined value and the new one; `routes` and the refined `routes[j]` for a dropped route |
 | `ESS-HTTP-013` | an operation that has no HTTP surface: a command no component accepts, a view no network component serves | the operation |
 | `ESS-HTTP-014` | a command on `get` with an input field that is neither mapped to the path nor (stage 2) query-encoded | the command and the field |
 
