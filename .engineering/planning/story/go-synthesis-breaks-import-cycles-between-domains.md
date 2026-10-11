@@ -7,7 +7,7 @@ title: Go synthesis emits a module that compiles when domain references form a l
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-11T11:03:12Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-11T11:03:12Z", actor: "human:timo", revision: 3}
@@ -47,3 +47,9 @@ rule. Rust modules may reference each other, so the Rust target is not affected.
 - The same test without the loop (the error declared in `publish`) synthesizes one package per
   domain, as today, and builds.
 - A model whose domain references contain no loop keeps byte-identical Go output.
+
+## Scope (delivered in wave 2026-10-11j)
+
+Merged as 4f84daf31c (unit head 67c3179edb): `crates/generate/ess-synth/src/go/layout.rs`,
+`go/mod.rs`, `go/obligation.rs`, the new `crates/generate/ess-synth/tests/go_domain_loops.rs`, and
+the CHANGELOG. The acceptance cases are in `go_domain_loops.rs`.
