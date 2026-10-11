@@ -124,7 +124,7 @@ fn model(error: &str) -> EssIr {
     model_with(error, SUBSCRIPTION)
 }
 
-/// The model, with `subscription` declared by `subscription`.
+/// The model, with the bounded context `relay.subscription` given by the document `subscription`.
 fn model_with(error: &str, subscription: &str) -> EssIr {
     let publish = publish(error);
     let documents = [
@@ -205,7 +205,10 @@ fn go_files_under<'a>(synthesis: &'a Synthesis, dir: &str) -> Vec<&'a str> {
         .filter(|path| {
             path.strip_prefix(dir)
                 .and_then(|rest| rest.strip_prefix('/'))
-                .is_some_and(|rest| !rest.contains('/') && rest.ends_with(".go"))
+                .is_some_and(|rest| {
+                    !rest.contains('/')
+                        && Path::new(rest).extension().is_some_and(|ext| ext == "go")
+                })
         })
         .collect()
 }
@@ -306,5 +309,44 @@ fn the_same_model_without_the_loop_keeps_one_package_per_domain_and_builds() {
     let _ = std::fs::remove_dir_all(&directory);
     if let Err(log) = built {
         panic!("the generated Go module of a loop-free model does not build:\n{log}");
+    }
+}
+
+/// Two bounded contexts of one loop declaring the same local name share a package, so one of the
+/// two Go names is repaired, exactly as two names within one bounded context are.
+const SUBSCRIPTION_WITH_CHANNEL: &str = "domain: relay.subscription
+types:
+  - name: relay.subscription.Channel
+    kind: newtype
+    of: String
+  - name: relay.subscription.Subscription
+    kind: struct
+    fields:
+      - {name: channel, type: relay.publish.Channel}
+      - {name: feed, type: relay.subscription.Channel}
+";
+
+#[test]
+fn a_name_two_bounded_contexts_of_one_loop_declare_is_repaired_and_the_module_builds() {
+    let synthesis = synthesize_for(
+        &model_with("relay.session.StoreUnavailable", SUBSCRIPTION_WITH_CHANNEL),
+        Target::Go,
+    )
+    .expect("the looping model has a realizable Go target");
+    let shared = "types/publishsessionsubscription";
+    let publish = &synthesis.artifacts[&format!("{shared}/publish.go")].contents;
+    let subscription = &synthesis.artifacts[&format!("{shared}/subscription.go")].contents;
+    assert!(
+        publish.contains("\ntype Channel struct {") && subscription.contains("\ntype Channel_ struct {"),
+        "the first in name order keeps the name, the second is repaired:\n{publish}\n{subscription}"
+    );
+    if !go_found() {
+        return;
+    }
+    let directory = written("repaired", &synthesis);
+    let built = builds(&directory);
+    let _ = std::fs::remove_dir_all(&directory);
+    if let Err(log) = built {
+        panic!("the generated Go module with a repaired name does not build:\n{log}");
     }
 }

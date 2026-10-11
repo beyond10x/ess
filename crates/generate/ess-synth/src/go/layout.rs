@@ -59,14 +59,15 @@ impl Package {
     }
 }
 
-/// The shape of the generated Go module: one package per bounded context, one per component, one
-/// for the system, and three the target itself needs.
+/// The shape of the generated Go module: one package per bounded context (one per loop of them,
+/// where their references form one), one per component, one for the system, and three the target
+/// itself needs.
 pub(crate) struct Layout {
     /// The module path — `example.invalid/billing`.
     module: String,
     /// The identifier an author wrote for a declaration under `naming: { code: … }`.
     code_aliases: BTreeMap<QualifiedName, String>,
-    /// Package per bounded context.
+    /// The package of each bounded context.
     ///
     /// One package each, except where the bounded contexts' references form a loop: Go refuses an
     /// import cycle where Rust admits a module cycle, so every bounded context of one loop (one
@@ -247,44 +248,11 @@ impl Layout {
         // And every standard-library package a generated file may import beside a domain or a
         // component: a domain called `sort` would otherwise be a second `sort` in that file.
         taken.extend(STANDARD_IMPORTS.iter().map(|name| (*name).to_owned()));
-        let idents = domain_idents(ir);
-        let mut domains = BTreeMap::new();
-        let mut shared = BTreeMap::new();
-        let mut files = BTreeMap::new();
-        for (domain, ident) in &idents {
-            if domains.contains_key(domain) {
-                continue;
-            }
-            let Some(members) = loops.iter().find(|members| members.contains(domain)) else {
-                let name = repair(&mut taken, ident.clone(), "domain");
-                let dir = format!("types/{name}");
-                domains.insert(domain.clone(), package(&name.clone(), &dir));
-                continue;
-            };
-            let member_idents: Vec<(&QualifiedName, &String)> = idents
-                .iter()
-                .filter(|(member, _)| members.contains(member))
-                .map(|(member, ident)| (member, ident))
-                .collect();
-            let joined: String = member_idents
-                .iter()
-                .map(|(_, ident)| ident.as_str())
-                .collect();
-            let name = repair(&mut taken, joined, "domain");
-            let dir = format!("types/{name}");
-            let together = package(&name.clone(), &dir);
-            for (member, ident) in &member_idents {
-                domains.insert((*member).clone(), together.clone());
-                files.insert((*member).clone(), format!("{dir}/{ident}.go"));
-            }
-            shared.insert(
-                dir,
-                member_idents
-                    .iter()
-                    .map(|(member, _)| (*member).clone())
-                    .collect(),
-            );
-        }
+        let DomainPackages {
+            domains,
+            shared,
+            files,
+        } = domain_packages(ir, loops, &mut taken, &package);
         let mut components = BTreeMap::new();
         for component in ir.components().keys() {
             let name = repair(
@@ -1227,6 +1195,69 @@ impl Layout {
             Primitive::Uuid => "Uuid",
         };
         qualify(&self.primitives, wrapper, from, imports)
+    }
+}
+
+/// The packages of the bounded contexts, as [`Layout::grouped`] places them.
+struct DomainPackages {
+    /// The package of each bounded context.
+    domains: BTreeMap<QualifiedName, Package>,
+    /// The bounded contexts of each shared package, in name order, keyed by its directory.
+    shared: BTreeMap<String, Vec<QualifiedName>>,
+    /// The file of each bounded context in a shared package.
+    files: BTreeMap<QualifiedName, String>,
+}
+
+/// Allocates every bounded context's package name from `taken`, in name order: its own, or, for
+/// the first member of one of `loops` reached, the one its whole loop shares.
+fn domain_packages(
+    ir: &EssIr,
+    loops: &[BTreeSet<QualifiedName>],
+    taken: &mut BTreeSet<String>,
+    package: &impl Fn(&str, &str) -> Package,
+) -> DomainPackages {
+    let idents = domain_idents(ir);
+    let mut domains = BTreeMap::new();
+    let mut shared = BTreeMap::new();
+    let mut files = BTreeMap::new();
+    for (domain, ident) in &idents {
+        if domains.contains_key(domain) {
+            continue;
+        }
+        let Some(members) = loops.iter().find(|members| members.contains(domain)) else {
+            let name = repair(taken, ident.clone(), "domain");
+            let dir = format!("types/{name}");
+            domains.insert(domain.clone(), package(&name, &dir));
+            continue;
+        };
+        let member_idents: Vec<(&QualifiedName, &String)> = idents
+            .iter()
+            .filter(|(member, _)| members.contains(member))
+            .map(|(member, ident)| (member, ident))
+            .collect();
+        let joined: String = member_idents
+            .iter()
+            .map(|(_, ident)| ident.as_str())
+            .collect();
+        let name = repair(taken, joined, "domain");
+        let dir = format!("types/{name}");
+        let together = package(&name, &dir);
+        for (member, ident) in &member_idents {
+            domains.insert((*member).clone(), together.clone());
+            files.insert((*member).clone(), format!("{dir}/{ident}.go"));
+        }
+        shared.insert(
+            dir,
+            member_idents
+                .iter()
+                .map(|(member, _)| (*member).clone())
+                .collect(),
+        );
+    }
+    DomainPackages {
+        domains,
+        shared,
+        files,
     }
 }
 

@@ -308,18 +308,7 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::Ta
     crate::failure::binding_policies(ir, plan, crate::Target::Go)?;
     type_owners(ir, plan)?;
     let refusals = TargetRefusals::of(ir, plan);
-    let admit = |loops: &[BTreeSet<QualifiedName>]| {
-        let layout = Layout::admitted(ir, plan, &refusals, loops)?;
-        accessor::preflight(ir, plan, &layout)?;
-        let seams = behaviour::Seams::of(ir, plan, &layout, &refusals);
-        invariant::preflight(ir, plan, &layout)?;
-        Ok::<_, crate::TargetFailure>((layout, seams))
-    };
-    let (mut layout, mut seams) = admit(&[])?;
-    let loops = domain_loops(ir, plan, &layout, (&refusals, &seams));
-    if !loops.is_empty() {
-        (layout, seams) = admit(&loops)?;
-    }
+    let (layout, seams) = admitted_layout(ir, plan, &refusals)?;
     let provenance = &plan.provenance;
 
     let mut covered: BTreeSet<Capability> = BTreeSet::new();
@@ -344,35 +333,14 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::Ta
         provenance,
         &mut stubbed,
     ));
-    let domains: Vec<QualifiedName> = layout
-        .packages()
-        .map(|(domain, _)| domain.clone())
-        .collect();
-    let mut owing: BTreeSet<String> = BTreeSet::new();
-    for domain in &domains {
-        let (artifact, _, owes) = domain_package(
-            ir,
-            plan,
-            &layout,
-            (&refusals, &seams),
-            domain,
-            &mut covered,
-            &mut stubbed,
-        );
-        artifacts.push(artifact);
-        if owes {
-            owing.insert(layout.package(domain).dir.clone());
-        }
-    }
-    for (package, members) in layout.shared() {
-        artifacts.push(shared_package(
-            ir,
-            &layout,
-            provenance,
-            (package, members),
-            owing.contains(&package.dir),
-        ));
-    }
+    artifacts.extend(domain_packages(
+        ir,
+        plan,
+        &layout,
+        (&refusals, &seams),
+        &mut covered,
+        &mut stubbed,
+    ));
     artifacts.extend(behaviour::package(
         ir,
         &layout,
@@ -761,6 +729,63 @@ const PRIMITIVES: &[(&str, &str, &str)] = &[
         "a canonical UUID rendering",
     ),
 ];
+
+/// The admitted layout and its seams: one package per bounded context, or, where their references
+/// form loops under that layout, the layout with each loop sharing one package.
+///
+/// # Errors
+///
+/// When either layout is not admitted, or fails the accessor or invariant preflight.
+fn admitted_layout(
+    ir: &EssIr,
+    plan: &SynthesisPlan,
+    refusals: &TargetRefusals,
+) -> Result<(Layout, behaviour::Seams), crate::TargetFailure> {
+    let admit = |loops: &[BTreeSet<QualifiedName>]| {
+        let layout = Layout::admitted(ir, plan, refusals, loops)?;
+        accessor::preflight(ir, plan, &layout)?;
+        let seams = behaviour::Seams::of(ir, plan, &layout, refusals);
+        invariant::preflight(ir, plan, &layout)?;
+        Ok::<_, crate::TargetFailure>((layout, seams))
+    };
+    let (layout, seams) = admit(&[])?;
+    let loops = domain_loops(ir, plan, &layout, (refusals, &seams));
+    if loops.is_empty() {
+        Ok((layout, seams))
+    } else {
+        admit(&loops)
+    }
+}
+
+/// Every bounded context's file, in name order, then the own file of each package a loop shares.
+fn domain_packages(
+    ir: &EssIr,
+    plan: &SynthesisPlan,
+    layout: &Layout,
+    with: (&TargetRefusals, &behaviour::Seams),
+    covered: &mut BTreeSet<Capability>,
+    stubbed: &mut BTreeSet<Capability>,
+) -> Vec<Artifact> {
+    let mut artifacts = Vec::new();
+    let mut owing: BTreeSet<String> = BTreeSet::new();
+    for (domain, package) in layout.packages() {
+        let (artifact, _, owes) = domain_package(ir, plan, layout, with, domain, covered, stubbed);
+        artifacts.push(artifact);
+        if owes {
+            owing.insert(package.dir.clone());
+        }
+    }
+    for (package, members) in layout.shared() {
+        artifacts.push(shared_package(
+            ir,
+            layout,
+            &plan.provenance,
+            (package, members),
+            owing.contains(&package.dir),
+        ));
+    }
+    artifacts
+}
 
 /// The sets of bounded contexts whose packages would import each other in a loop, each of two or
 /// more, in name order.
