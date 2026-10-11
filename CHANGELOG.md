@@ -95,6 +95,19 @@
   before, because there a dropped write only leaves the value to the implementation, and are now
   listed. Which entries have a site is unchanged, and so are the report and manifest bytes and
   formats: the list is not persisted.
+- `ess verify conform mutate --scenarios DIR --target interpreted` runs authored `ess-scenario/1`
+  scenarios in the audit. `DIR` is read and refused as `ess verify conform run --scenarios` reads
+  it. Each scenario runs against the interpreter of the specification as part of the baseline, and
+  against the interpreter of each mutant beside that mutant's synthesized suite. One that fails
+  against a mutant's interpreter kills the mutant and is listed among its killers
+  (`<domain>/authored/<scenario>`). One the baseline fails refuses the audit with `ESS-MUTATE-001`,
+  and one that requires an outcome makes that outcome witnessed. A mutant only an authored scenario
+  pins, such as one on an outcome whose scenario synthesis refuses, was unwitnessed or survived
+  because `mutate` ran no authored scenario (https://github.com/beyond10x/ess/issues/515).
+  `--scenarios` is refused with `--target billing` and `--target oracle-fixture`, which implement no
+  mutant, and with `--emit`, `--collect` and `--known-failing`. Without `--scenarios` every report
+  and manifest keeps its bytes; no persisted field is added and no format moves. The library entry
+  point is `ess_conformance::mutate::audit_with_authored`.
 
 ### Fixed
 

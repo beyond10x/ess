@@ -854,8 +854,14 @@ enum ConformCommand {
     /// target that implements the unchanged specification. A mutant is killed when its suite
     /// fails there; a survivor is a declared rule no synthesized scenario pins down. It is
     /// answered by declaring what makes the rule observable, or by filing a synthesis gap — not
-    /// by authoring a scenario, which runs identically in every mutant's suite and so can never
-    /// kill one. No authored scenario is run.
+    /// by putting an authored scenario in a mutant's suite, where it runs identically against the
+    /// unchanged target and so can never kill one.
+    ///
+    /// `--scenarios DIR --target interpreted` runs authored scenarios the other way: each runs
+    /// against the interpreter of the specification as part of the baseline, and against the
+    /// interpreter of each mutant beside that mutant's synthesized suite. One that fails against a
+    /// mutant's interpreter kills it and is named among its killers; one the baseline fails
+    /// refuses the audit with ESS-MUTATE-001. Without `--scenarios` no authored scenario is run.
     ///
     /// A baseline scenario the target reports unsupported or skipped did not execute: it is listed,
     /// not scored, and each mutant is scored on the scenarios the baseline executed. A mutant that
@@ -939,6 +945,12 @@ enum ConformCommand {
         /// declaration exits 2.
         #[arg(long)]
         known_failing: Option<PathBuf>,
+        /// The `ess-scenario/1` documents to run beside the synthesized scenarios, read and
+        /// refused as `run --scenarios` reads them. Requires `--target interpreted`: each runs
+        /// against the interpreter of the specification for the baseline and against the
+        /// interpreter of each mutant, which it kills by failing there.
+        #[arg(long, conflicts_with_all = ["emit", "collect", "known_failing"])]
+        scenarios: Option<PathBuf>,
         #[arg(long, value_enum, default_value_t = Format::Text)]
         format: Format,
     },
@@ -4255,6 +4267,7 @@ fn conform_mutate_mode(command: ConformCommand) -> Result<ExitCode> {
         component,
         report_out,
         known_failing,
+        scenarios,
         format,
     } = command
     else {
@@ -4277,6 +4290,15 @@ fn conform_mutate_mode(command: ConformCommand) -> Result<ExitCode> {
         }
     };
     let declaration = declaration.as_deref();
+    // Only the interpreter implements a mutant; clap refuses `--scenarios` beside `--emit`,
+    // `--collect` and `--known-failing` (https://github.com/beyond10x/ess/issues/515).
+    if scenarios.is_some() && !matches!(target, Some(ReferenceTarget::Interpreted)) {
+        bail!(
+            "`--scenarios` requires `--target interpreted`: an authored scenario kills a mutant \
+             only by failing against an implementation of that mutant, and the interpreter is the \
+             only target that implements one"
+        );
+    }
     match (target, emit, collect) {
         (Some(target), None, None) => conform_mutate(
             &path,
@@ -4285,6 +4307,7 @@ fn conform_mutate_mode(command: ConformCommand) -> Result<ExitCode> {
             report_out.as_deref(),
             format,
             declaration,
+            scenarios.as_deref(),
         ),
         (None, Some(emit), None) => {
             conform_mutate_emit(&path, &class, &emit, component, format, declaration)
@@ -4308,6 +4331,7 @@ fn conform_mutate(
     report_out: Option<&Path>,
     format: Format,
     declaration: Option<&str>,
+    scenarios: Option<&Path>,
 ) -> Result<ExitCode> {
     use ess_conformance::mutate::{self, KnownFailing};
 
@@ -4315,6 +4339,15 @@ fn conform_mutate(
     // exactly as `run` reports it, and exits 1.
     let Ok((ir, _)) = resolved(path, format)? else {
         return Ok(ExitCode::from(1));
+    };
+    // The authored scenarios, compiled against the specification as `run --scenarios` compiles
+    // them, and refused as it refuses them, before anything runs.
+    let authored = match scenarios {
+        None => std::collections::BTreeMap::new(),
+        Some(scenarios) => match compiled_authored(&ir, Some(scenarios))? {
+            Some(authored) => authored,
+            None => return Ok(ExitCode::from(1)),
+        },
     };
     let raw = load::raw_specification(path)?;
     let classes = mutant_classes(classes);
@@ -4348,13 +4381,15 @@ fn conform_mutate(
             ess_conformance::reference::Oracle::new,
             known,
         ),
-        ReferenceTarget::Interpreted => mutate::audit_with(
+        ReferenceTarget::Interpreted => mutate::audit_with_authored(
             &raw.parsed,
             &raw.texts,
             &classes,
-            // The unchanged specification, as every mutant's target implements it.
+            // The unchanged specification, as every mutant's target implements it; the authored
+            // scenarios run on the interpreter of each mutant as well.
             || ess_conformance::interpret::Interpreted::for_model((*ir).clone()),
             known,
+            &authored,
         ),
     };
     let exit = finish_mutation_audit(audited, report_out, format);
@@ -4585,19 +4620,36 @@ fn finish_mutation_audit(
     })
 }
 
+/// The authored scenarios `scenarios` selects, compiled against `ir` as `run --scenarios` and
+/// `mutate --scenarios` compile them: each refusal printed on standard error, and `None` when any
+/// file was refused.
+fn compiled_authored(
+    ir: &ess_compiler::EssIr,
+    scenarios: Option<&Path>,
+) -> Result<
+    Option<
+        std::collections::BTreeMap<
+            ess_conformance::ScenarioId,
+            ess_conformance::ConformanceScenario,
+        >,
+    >,
+> {
+    let authoring = ess_conformance::authored::compile(ir, &authored_sources(scenarios)?);
+    for refusal in &authoring.refusals {
+        eprintln!("{refusal}");
+    }
+    Ok(authoring.is_complete().then_some(authoring.scenarios))
+}
+
 fn fresh_legacy_run_suite(
     ir: &ess_compiler::EssIr,
     scenarios: Option<&Path>,
 ) -> Result<Option<ess_conformance::AdmittedSuite>> {
     let mut suite = ess_conformance::synthesize(ir).suite;
-    let authoring = ess_conformance::authored::compile(ir, &authored_sources(scenarios)?);
-    for refusal in &authoring.refusals {
-        eprintln!("{refusal}");
-    }
-    if !authoring.is_complete() {
+    let Some(authored) = compiled_authored(ir, scenarios)? else {
         return Ok(None);
-    }
-    for (id, scenario) in authoring.scenarios {
+    };
+    for (id, scenario) in authored {
         if let Err(id) = suite.insert(id, scenario) {
             bail!("`{id}` is already in the suite");
         }

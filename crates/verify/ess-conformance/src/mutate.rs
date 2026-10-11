@@ -11,10 +11,17 @@
 //! A mutant is *killed* when its suite fails against that target: synthesis asked a question whose
 //! answer differs between the two specifications, and the target gave the original answer. A
 //! *survivor* is a finding about what synthesis asks of the model — either the mutant is
-//! equivalent, or no generated scenario observes the rule. It is **not** answered by authoring a
-//! scenario: an authored scenario's expectations are its author's, not the model's, so it runs
-//! identically in every mutant's suite and could never kill one. That is why no authored scenario
-//! is run here at all.
+//! equivalent, or no generated scenario observes the rule. It is **not** answered by putting an
+//! authored scenario in the mutant's suite: an authored scenario's expectations are its author's,
+//! not the model's, so against the unchanged target it runs identically in every mutant's suite
+//! and could never kill one.
+//!
+//! An authored scenario counts in the dual direction instead
+//! (<https://github.com/beyond10x/ess/issues/515>, [`audit_with_authored`]): compiled once against
+//! the unchanged specification, it runs against the [interpreter](crate::interpret::Interpreted)
+//! of that specification for the baseline and against the interpreter of each mutant, which is an
+//! implementation of the mutant. One that fails there kills the mutant and is named among its
+//! killers; one the baseline fails refuses the audit as a synthesized one does.
 //!
 //! No class *weakens* the specification. On a branch that creates its row, dropping a `sets` entry
 //! says the value is the implementation's to choose, and a correct target satisfies a weaker
@@ -3604,6 +3611,78 @@ struct Observed {
     bodies: Bodies,
 }
 
+impl Observed {
+    /// One suite's run, read from what the runner executed of `suite`.
+    fn of(executed: &crate::ExecutedRun, suite: &crate::ConformanceSuite) -> Self {
+        Self {
+            scenarios: executed
+                .scenarios
+                .iter()
+                .map(|result| result.scenario.to_string())
+                .collect(),
+            not_passed: executed
+                .scenarios
+                .iter()
+                .filter_map(|result| {
+                    Seen::from_status(result.status).map(|seen| (result.scenario.to_string(), seen))
+                })
+                .collect(),
+            bodies: bodies_of(suite),
+        }
+    }
+
+    /// This run and `other`, a run of a suite holding none of its scenarios, read as one.
+    fn absorb(&mut self, other: Self) {
+        self.scenarios.extend(other.scenarios);
+        self.not_passed.extend(other.not_passed);
+        self.bodies.extend(other.bodies);
+    }
+}
+
+/// The authored scenarios an audit runs beside the synthesized ones
+/// (<https://github.com/beyond10x/ess/issues/515>): one suite, compiled once against the unchanged
+/// specification, run on the interpreter of whichever model it is asked about.
+struct AuthoredSuite {
+    suite: crate::ConformanceSuite,
+    admitted: AdmittedSuite,
+}
+
+impl AuthoredSuite {
+    /// `scenarios` filed in a suite of `ir`'s provenance; `None` where there are none, so an audit
+    /// without them runs nothing it did not run before.
+    fn of(
+        ir: &EssIr,
+        scenarios: &BTreeMap<crate::ScenarioId, crate::ConformanceScenario>,
+    ) -> Result<Option<Self>, AuditRefusal> {
+        if scenarios.is_empty() {
+            return Ok(None);
+        }
+        let mut suite = crate::ConformanceSuite::new(crate::SuiteProvenance::of(ir));
+        for (id, scenario) in scenarios {
+            // A map holds each id once, and an authored id never has a synthesized one's shape.
+            if let Err(id) = suite.insert(id.clone(), scenario.clone()) {
+                return Err(AuditRefusal::Admission(format!(
+                    "`{id}` is already in the suite"
+                )));
+            }
+        }
+        suite.select_fresh_format_for(ir);
+        let admitted = AdmittedSuite::from_suite(&suite)
+            .map_err(|error| AuditRefusal::Admission(error.to_string()))?;
+        Ok(Some(Self { suite, admitted }))
+    }
+
+    /// The suite run once on a fresh interpreter of `model`: the specification's own for the
+    /// baseline, a mutant's for that mutant.
+    fn on(&self, model: &EssIr) -> Observed {
+        let executed = Runner::for_suite(&self.suite).run_admitted(
+            &self.admitted,
+            &crate::interpret::Interpreted::for_model(model.clone()),
+        );
+        Observed::of(&executed, &self.suite)
+    }
+}
+
 /// A suite's scenarios by id.
 type Bodies = std::collections::BTreeMap<String, crate::scenario::ConformanceScenario>;
 
@@ -4103,21 +4182,7 @@ fn run_checked<T: ConformanceTarget>(
     check(&admitted)?;
     let executed = Runner::for_suite(&suite).run_admitted(&admitted, &new_target());
     Ok(Ran {
-        observed: Observed {
-            scenarios: executed
-                .scenarios
-                .iter()
-                .map(|result| result.scenario.to_string())
-                .collect(),
-            not_passed: executed
-                .scenarios
-                .iter()
-                .filter_map(|result| {
-                    Seen::from_status(result.status).map(|seen| (result.scenario.to_string(), seen))
-                })
-                .collect(),
-            bodies: bodies_of(&suite),
-        },
+        observed: Observed::of(&executed, &suite),
         refused: Refused {
             count: refused.len(),
             keys: Some(refused),
@@ -4160,18 +4225,22 @@ fn baseline<T: ConformanceTarget>(
     ir: &EssIr,
     new_target: &impl Fn() -> T,
 ) -> Result<BaselineRun, AuditRefusal> {
-    baseline_with(ir, new_target, None)
+    baseline_with(ir, new_target, None, None)
 }
 
 /// [`baseline`], under `known`: the declaration's suite, specification and scenarios are checked
 /// against the admitted baseline suite before any target is made, and its implementation label
 /// against the run's own once the target named itself.
+///
+/// `authored`, where given, runs on the interpreter of `ir` and is read as part of the baseline:
+/// an authored scenario that fails there refuses the audit as a synthesized one does.
 fn baseline_with<T: ConformanceTarget>(
     ir: &EssIr,
     new_target: &impl Fn() -> T,
     known: Option<&crate::known_failures::Declaration>,
+    authored: Option<&AuthoredSuite>,
 ) -> Result<BaselineRun, AuditRefusal> {
-    let ran = run_checked(ir, None, new_target, |admitted| match known {
+    let mut ran = run_checked(ir, None, new_target, |admitted| match known {
         Some(declaration) => declaration
             .admit(admitted)
             .map_err(AuditRefusal::KnownFailures),
@@ -4182,6 +4251,9 @@ fn baseline_with<T: ConformanceTarget>(
         declaration
             .bind(&ran.label, declaration.implementation_build())
             .map_err(AuditRefusal::KnownFailures)?;
+    }
+    if let Some(authored) = authored {
+        ran.observed.absorb(authored.on(ir));
     }
     let scenarios = ran.observed.scenarios.len();
     Ok(BaselineRun {
@@ -4216,15 +4288,19 @@ pub fn evaluate<T: ConformanceTarget>(
         mutant,
         (&baseline_ir, &ruler),
         &new_target,
+        None,
     )
 }
 
+/// One mutant measured against `ruler`: its synthesized suite on a fresh `new_target`, and
+/// `authored`, where given, on the interpreter of the mutant, the two read as one run.
 fn measure<T: ConformanceTarget>(
     documents: &[Document],
     texts: &SourceMap,
     mutant: &Mutant,
     (baseline_ir, ruler): (&EssIr, &Ruler),
     new_target: &impl Fn() -> T,
+    authored: Option<&AuthoredSuite>,
 ) -> Result<MutantEntry, AuditRefusal> {
     let mutated = apply(documents, &mutant.mutation).map_err(AuditRefusal::NoSuchSite)?;
     let mut entry = blank_entry(mutant);
@@ -4235,7 +4311,10 @@ fn measure<T: ConformanceTarget>(
             return Ok(entry);
         }
     };
-    let ran = run(&ir, dropped_write(documents, &mutant.mutation), new_target)?;
+    let mut ran = run(&ir, dropped_write(documents, &mutant.mutation), new_target)?;
+    if let Some(authored) = authored {
+        ran.observed.absorb(authored.on(&ir));
+    }
     let dead = unsatisfiable_guard(baseline_ir, &ir, &mutant.mutation);
     let identical = identical_answer(baseline_ir, &mutant.mutation);
     ruler.judge(&mut entry, &ran.observed, &ran.refused, dead, identical);
@@ -4271,6 +4350,36 @@ pub fn audit_with<T: ConformanceTarget>(
     new_target: impl Fn() -> T,
     known: Option<KnownFailing<'_>>,
 ) -> Result<MutationReport, AuditRefusal> {
+    audit_with_authored(
+        documents,
+        texts,
+        classes,
+        new_target,
+        known,
+        &BTreeMap::new(),
+    )
+}
+
+/// [`audit_with`], with the authored scenarios `authored` run beside the synthesized ones
+/// (<https://github.com/beyond10x/ess/issues/515>).
+///
+/// `authored` is compiled against the unchanged specification, as `ess verify conform run
+/// --scenarios` compiles it ([`authored::compile`](crate::authored::compile)). It runs on the
+/// [interpreter](crate::interpret::Interpreted) of the specification as part of the baseline, and
+/// on the interpreter of each mutant as part of that mutant's run, whatever `new_target` is: the
+/// synthesized suites run on `new_target` exactly as [`audit_with`] runs them. An authored scenario
+/// that fails on the baseline refuses the audit with `ESS-MUTATE-001`; one that fails on a
+/// mutant's interpreter kills the mutant and is listed among its killers; one that requires an
+/// outcome makes it witnessed. With `authored` empty nothing more runs and the report is
+/// [`audit_with`]'s, byte for byte.
+pub fn audit_with_authored<T: ConformanceTarget>(
+    documents: &[Document],
+    texts: &SourceMap,
+    classes: &[MutantClass],
+    new_target: impl Fn() -> T,
+    known: Option<KnownFailing<'_>>,
+    authored: &BTreeMap<crate::ScenarioId, crate::ConformanceScenario>,
+) -> Result<MutationReport, AuditRefusal> {
     let baseline_ir = compile(documents.to_vec(), texts).map_err(AuditRefusal::Unloadable)?;
     crate::admission::model(&baseline_ir)
         .map_err(|error| AuditRefusal::Admission(error.to_string()))?;
@@ -4295,7 +4404,13 @@ pub fn audit_with<T: ConformanceTarget>(
         classes.dedup();
         return Err(AuditRefusal::NoSite { classes });
     }
-    let baseline = baseline_with(&baseline_ir, &new_target, declaration.as_ref())?;
+    let authored = AuthoredSuite::of(&baseline_ir, authored)?;
+    let baseline = baseline_with(
+        &baseline_ir,
+        &new_target,
+        declaration.as_ref(),
+        authored.as_ref(),
+    )?;
 
     let mut entries = Vec::with_capacity(selected.len());
     let mut counts = Counts {
@@ -4309,6 +4424,7 @@ pub fn audit_with<T: ConformanceTarget>(
             mutant,
             (&baseline_ir, &baseline.ruler),
             &new_target,
+            authored.as_ref(),
         )?;
         counts.count(entry.verdict);
         entries.push(entry);

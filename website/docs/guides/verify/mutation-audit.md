@@ -121,16 +121,46 @@ scenario might have killed it. An excluded scenario the mutant holds exactly as 
 asks the target what the baseline asked, so it cannot, and the mutant can still survive. A
 scenario new to a mutant's suite is scored. A baseline that executed nothing scores nothing.
 
-**A survivor is not answered by authoring a scenario.** An authored scenario's expectations are its
-author's, not the model's, so it runs identically in every mutant's suite and can never kill one;
-`mutate` runs none. Answer a survivor by declaring what makes the rule observable, such as a view
-projecting the field a `sets` entry writes, or by filing a synthesis gap.
+**A survivor is first answered in the specification.** Declare what makes the rule observable,
+such as a view projecting the field a `sets` entry writes, or file a synthesis gap. An authored
+scenario put in a mutant's suite could not answer it: its expectations are its author's, not the
+model's, so against the unchanged target it runs identically in every mutant's suite.
 
 | Exit | When |
 |---|---|
 | 0 | No baseline scenario failed or ended `error`, at least one mutant that is not equivalent ran, every scored mutant was killed or equivalent, none is inconclusive or unwitnessed, and no selected site is unavailable. Baseline scenarios that were not executed are listed, not scored. |
 | 1 | The specification did not load, or at least one mutant survived. |
 | 3 | `ESS-MUTATE-001` (a baseline scenario failed or ended `error`), nothing scored (the baseline executed no scenario), `ESS-MUTATE-003` (no site), or no survivor and at least one mutant unwitnessed or inconclusive or a selected site unavailable, or every mutant stillborn or equivalent. |
+
+### Run your authored scenarios against each mutant
+
+Some rules no synthesized scenario reaches: a counter limit farther than synthesis follows a
+counter, for example, makes the baseline refuse the outcome's scenario, and every mutant on that
+outcome is unwitnessed. An `ess-scenario/1` scenario you wrote can reach it. `--scenarios DIR`
+runs those scenarios with `--target interpreted`:
+
+```shell-session
+$ ess verify conform mutate \
+    --path model \
+    --target interpreted \
+    --scenarios scenarios
+```
+
+`DIR` is read, and its documents refused, exactly as `ess verify conform run --scenarios` reads
+them; a refused document exits 1 before anything runs. Each authored scenario runs against the
+interpreter of your specification as part of the baseline, and against the interpreter of each
+mutant beside that mutant's synthesized suite. The interpreter of a mutant is an implementation of
+the mutant, so an authored scenario that fails there kills it, and the report names it among the
+killers as it names a synthesized scenario (`killed … — by <domain>/authored/<scenario>`). An
+authored scenario the baseline fails refuses the audit with `ESS-MUTATE-001`, as a synthesized one
+does. An authored scenario that requires an outcome makes that outcome witnessed, so a mutant on it
+is scored on what the scenarios observed rather than being unwitnessed for the baseline's refusal
+alone; one that passes against the mutant leaves it surviving.
+
+`--scenarios` is refused with `--target billing` and `--target oracle-fixture`, which implement no
+mutant, and with `--emit`, `--collect` and `--known-failing`: a runner of your own implements the
+unchanged specification, where an authored scenario could never fail. Without `--scenarios` no
+authored scenario runs, and the report is what it was.
 
 ## Audit your own implementation
 
