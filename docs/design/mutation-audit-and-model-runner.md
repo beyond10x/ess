@@ -59,6 +59,46 @@ direction can and cannot show.
   scenario therefore runs identically in the baseline suite and in every mutant's suite, and it
   passes in both. **Decision:** `mutate` takes no `--scenarios` option. Running authored scenarios
   once per mutant would cost time and could never change a verdict.
+- **Correction (https://github.com/beyond10x/ess/issues/515): authored scenarios run in the dual
+  direction.** The decision above holds for the direction it names, a mutant's suite against the
+  unchanged target. It stopped holding for the other direction once `--target interpreted`
+  executed a model: the interpreter of *S′* is an implementation of the mutant. So `mutate
+  --scenarios <dir> --target interpreted` reads the authored scenarios with the loader and
+  refusals of `run --scenarios`, compiles them once against *S*, and runs them against the
+  interpreter of *S* for the baseline and against the interpreter of *S′* for each mutant, beside
+  the synthesized suite, which still runs against the unchanged target. An authored scenario that
+  fails against the interpreter of *S′* kills the mutant and is named among its killers as a
+  synthesized one is. One that fails against the interpreter of *S* is a failed baseline scenario
+  and refuses the audit with `ESS-MUTATE-001`, as a synthesized one does. An authored scenario
+  that requires an outcome makes that outcome witnessed, so a mutant on it is no longer
+  unwitnessed for the baseline's synthesis refusal alone. `--scenarios` is refused with
+  `billing` and `oracle-fixture`, which implement no mutant, and with `--emit`, `--collect` and
+  `--known-failing`: an adopter's runner implements *S*, so an authored scenario in an emitted
+  suite could never kill, and a declaration binds the synthesized baseline suite alone. Without
+  `--scenarios` nothing runs that did not run before, and every report and manifest keeps its
+  bytes; no persisted field is added and no format moves.
+- **What an authored scenario counts for (https://github.com/beyond10x/ess/issues/515, adversary
+  pass 1).** It runs on the interpreter built as `run --target interpreted` builds it: on the
+  scenario-clock runner (`now_offset::scenario_clock_runner`, shared with `run`), the interpreter
+  handed that runner's command clock, so a `now` guard is decided at the instant of the step and a
+  scenario `run` passes executes in the baseline and against every mutant. Only a scenario the
+  baseline executed witnesses an outcome: one it answered `unsupported` or `skipped` requires that
+  outcome of nothing that ran. Such an excluded authored scenario hides a kill whatever its body,
+  because the mutant's copy runs against the mutant's interpreter rather than the target the
+  baseline asked: a mutant nothing killed is `inconclusive`, or keeps the reading it has without
+  that scenario (`unwitnessed` for the baseline's synthesis refusal), never `survived`. **The
+  outcome's name only names the branch**, the rule the identical-answer equivalence
+  (https://github.com/beyond10x/ess/issues/517) already states: a `precedence-swap` recorded with
+  `identical_answer` answers every input as *S* does but for that name, so an authored scenario that
+  fails against its interpreter differs from it only in the outcome label. Such a failure does not
+  kill it, its exclusion hides nothing, and the mutant stays `equivalent`. That holds only where
+  nothing selects by that name either (adversary pass 2): a binding's refusal-selected failure
+  policy (`drop`, `retry`, `escalate` with `except`) and a bounded retry's `final` outcomes are
+  chosen by the outcome the attempt answered, so the two branches give an identical answer only
+  where every binding invoking the command selects the same policy, and the same `final`
+  membership, for both. `identical_answer` asks this through the selection the interpreter's
+  dispatcher makes (`interpret::binding_refusal`); where any binding differs it is absent, and the
+  swap is scored as any other, so an authored scenario that observes the escalation kills it.
 - **So a survivor is a finding about what synthesis asks of the model.** Either the mutant is
   equivalent (no input the witnesses can produce tells *S* from *S′*), or synthesis derives no
   scenario that observes the rule. The fix is to declare what makes the rule observable, or to file
@@ -69,7 +109,8 @@ direction can and cannot show.
   executing interpreter. `crates/verify/ess-conformance/src/interpret.rs:1-50` is a seam that
   derives no behaviour, and its `begin_scenario` refuses (`interpret.rs:95`). That direction is
   deferred (see "Deferred"). Part 2's reference model is the interpreter it would need, written in
-  TypeScript and Go rather than Rust.
+  TypeScript and Go rather than Rust. Its authored half has since landed against the Rust
+  interpreter (the correction above, https://github.com/beyond10x/ess/issues/515).
 
 ## What exists today
 
@@ -793,7 +834,7 @@ Each of these is **inferred** and is confirmed with one measurement before it is
 | Item | Why not now | What it needs |
 |---|---|---|
 | Replaying mutant suites inside the adopter's runtime (`runMutants`/`RunMutants` over one generated package). Emitting every mutant suite and a manifest, and scoring the reports, is `--emit`/`--collect` above | Go has no `RunWith` (`runtime.go:1556`); two runtimes make a unit of their own | Go `RunWith` over a supplied document; the verdict table above, ported |
-| The dual direction: the unchanged suite, authored scenarios included, against a mutant implementation | needs an executing interpreter; `interpret.rs` derives nothing | a Rust reference model (Part 2's, ported), selected as a target |
+| The dual direction for the synthesized suite: the unchanged generated scenarios against a mutant implementation. The authored half runs with `--scenarios --target interpreted` (https://github.com/beyond10x/ess/issues/515) | a generated scenario already runs in the opposite direction, and running it twice is a scoring change of its own | a decision on how the two directions combine into one verdict |
 | Mutating subject guards, view filters, invariants, binding mappings, payload values and literal `sets`; "add a `from` state"; an empty `from` | each has its own synthesis family; the first cut is the issue's classes | one class each, with its killer family named |
 | An accepted-survivors file for equivalent mutants | needs an identity story for a mutant across edits of the specification | a stable site id that survives renumbering |
 | Coverage suites (`/5` and above) for `mutate` | parent chains and scope would have to be re-derived per mutant | `coverage_build` per mutant |
@@ -809,8 +850,9 @@ Each of these is **inferred** and is confirmed with one measurement before it is
   up validation. See "Where a mutant is applied".
 - **Generating weakening mutants and marking them "expected survivors".** A survivor known in
   advance adds noise that looks like signal.
-- **Running authored scenarios once per mutant.** They cannot change a verdict (see "What a
-  surviving specification mutant means").
+- **Running authored scenarios once per mutant against the unchanged target.** They cannot change
+  a verdict (see "What a surviving specification mutant means"); they run against the interpreter
+  of each mutant instead.
 - **The draft's first-match outcome choice, regex guard reader, first-key-only order check,
   unfiltered view comparison, and exclusion of every command with a response or a
   non-input `sets` value.** Each is replaced above, and each replacement gives its reason where it

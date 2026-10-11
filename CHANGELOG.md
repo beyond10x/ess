@@ -95,6 +95,25 @@
   before, because there a dropped write only leaves the value to the implementation, and are now
   listed. Which entries have a site is unchanged, and so are the report and manifest bytes and
   formats: the list is not persisted.
+- `ess verify conform mutate --scenarios DIR --target interpreted` runs authored `ess-scenario/1`
+  scenarios in the audit. `DIR` is read and refused as `ess verify conform run --scenarios` reads
+  it. Each scenario runs against the interpreter of the specification as part of the baseline, and
+  against the interpreter of each mutant beside that mutant's synthesized suite. One that fails
+  against a mutant's interpreter kills the mutant and is listed among its killers
+  (`<domain>/authored/<scenario>`). The interpreters run on the scenario clock `run --target
+  interpreted` uses, so a `now` guard is decided at the step's instant and a scenario `run` passes
+  executes here too. One the baseline fails refuses the audit with `ESS-MUTATE-001`, and one the
+  baseline executed that requires an outcome makes that outcome witnessed. One the baseline did not
+  execute witnesses nothing and leaves a mutant nothing killed `inconclusive` (or `unwitnessed`),
+  never `survived`. A `precedence-swap` whose branches answer alike stays `equivalent`: an authored
+  scenario that fails against it differs only in the outcome's name. A mutant only an authored
+  scenario pins, such as one on an outcome whose scenario synthesis refuses, was unwitnessed or
+  survived because `mutate` ran no authored scenario (https://github.com/beyond10x/ess/issues/515).
+  The scenario-clock runner is public as `ess_conformance::now_offset::scenario_clock_runner`.
+  `--scenarios` is refused with `--target billing` and `--target oracle-fixture`, which implement no
+  mutant, and with `--emit`, `--collect` and `--known-failing`. Without `--scenarios` every report
+  and manifest keeps its bytes; no persisted field is added and no format moves. The library entry
+  point is `ess_conformance::mutate::audit_with_authored`.
 
 ### Fixed
 
@@ -109,6 +128,15 @@
   share is repaired with `_`, as within one bounded context. Every bounded context outside a loop
   keeps its own package, and a model whose references form no loop keeps its Go output byte for
   byte.
+- `ess verify conform mutate` no longer reports a `precedence-swap` equivalent when a binding's
+  failure policy treats its two refusals differently. Two branches refusing with the same error
+  and no payload were called an identical answer (`identical_answer`, `ESS-MUTATE-005`) even
+  where a binding invoking the command dropped one and escalated the other, or ended a bounded
+  retry on one alone (`final`), so the swap changed what the binding published and still scored
+  `equivalent`, and with `--scenarios` an authored scenario that saw the escalation killed
+  nothing. Such a swap now carries no `identical_answer` and is scored as any other
+  (https://github.com/beyond10x/ess/issues/515). A model whose bindings answer both refusals
+  alike, or that has no binding on the command, keeps its report byte for byte.
 
 ## [0.59.0] — 2026-10-11
 

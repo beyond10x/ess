@@ -37,6 +37,53 @@ enum Attempt {
     /// A refusal, with its declared outcome, or a failure that carries none.
     Refused(Option<OutcomeName>),
 }
+/// How a binding answers one refused attempt of its command, as the dispatcher answers it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Refusal<'a> {
+    /// The policy a refusal-selected table selects; `None` for a binding whose one policy answers
+    /// every refusal.
+    pub(crate) selected: Option<&'a ResolvedRefusalAction>,
+    /// Whether the refusal ends the occurrence at once, as one of a bounded retry's `final`
+    /// outcomes.
+    pub(crate) last: bool,
+}
+/// How `binding` answers a refused attempt whose declared outcome is `outcome` (`None` for a
+/// failure that carries none): the one selection the dispatcher makes after every attempt, which
+/// the mutation audit also asks of two branches it calls identical.
+pub(crate) fn refusal<'a>(
+    binding: &'a ResolvedBinding,
+    outcome: Option<&OutcomeName>,
+) -> Refusal<'a> {
+    match &binding.refusal_policy {
+        Some(policy) => {
+            let (action, last) = selection(policy, outcome);
+            Refusal {
+                selected: Some(action),
+                last,
+            }
+        }
+        None => Refusal {
+            selected: None,
+            last: binding
+                .retry
+                .as_ref()
+                .is_some_and(|bound| outcome.is_some_and(|outcome| bound.is_final(outcome))),
+        },
+    }
+}
+/// The policy `policy` answers `outcome` with, and whether that policy's bound makes it final.
+fn selection<'p>(
+    policy: &'p ResolvedRefusalPolicy,
+    outcome: Option<&OutcomeName>,
+) -> (&'p ResolvedRefusalAction, bool) {
+    let action = policy.select(outcome);
+    let last = matches!(
+        action,
+        ResolvedRefusalAction::Retry { bound: Some(bound) }
+            if outcome.is_some_and(|outcome| bound.is_final(outcome))
+    );
+    (action, last)
+}
 #[derive(Debug)]
 pub(super) struct Delivery {
     event: ObservedEvent,
@@ -164,11 +211,7 @@ impl Interpreted {
                     }
                     Attempt::Refused(outcome) => outcome,
                 };
-                if binding.retry.as_ref().is_some_and(|bound| {
-                    outcome
-                        .as_ref()
-                        .is_some_and(|outcome| bound.is_final(outcome))
-                }) {
+                if refusal(binding, outcome.as_ref()).last {
                     completed = true;
                     break;
                 }
@@ -224,7 +267,8 @@ impl Interpreted {
                 Attempt::Accepted => return Ok(()),
                 Attempt::Refused(outcome) => outcome,
             };
-            match policy.select(outcome.as_ref()) {
+            let (action, last) = selection(policy, outcome.as_ref());
+            match action {
                 ResolvedRefusalAction::Drop => return Ok(()),
                 ResolvedRefusalAction::Escalate { emits } => {
                     // The typed builder from the attempt's actual complete input. A builder that
@@ -237,9 +281,6 @@ impl Interpreted {
                 }
                 ResolvedRefusalAction::Retry { bound: None } => {}
                 ResolvedRefusalAction::Retry { bound: Some(bound) } => {
-                    let last = outcome
-                        .as_ref()
-                        .is_some_and(|outcome| bound.is_final(outcome));
                     if last || attempts >= bound.attempts {
                         return Ok(());
                     }

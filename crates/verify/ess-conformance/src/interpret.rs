@@ -60,6 +60,7 @@
 //! same ones, and the runner never compares one against an expected value.
 
 mod bindings;
+pub(crate) use bindings::refusal as binding_refusal;
 mod command;
 pub mod execute;
 mod facts;

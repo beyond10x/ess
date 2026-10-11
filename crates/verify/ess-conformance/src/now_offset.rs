@@ -715,6 +715,34 @@ impl<C: crate::Clock, F: FnMut() -> Timestamp> crate::Clock for WithWall<C, F> {
     }
 }
 
+/// The scenario clock's wall: [`earliest_run`], the earliest moment a suite carrying `now_offset`
+/// values runs, so every fixed instant synthesis admits lies on the side of it that a run's does.
+pub fn scenario_wall() -> Timestamp {
+    let seconds = earliest_run().epoch_seconds();
+    Timestamp::from_epoch_millis(
+        u64::try_from(seconds).map_or(0, |seconds| seconds.saturating_mul(1000)),
+    )
+}
+
+/// A runner on the scenario clock, the one a target that decides `now` by the step being executed
+/// (`ess verify conform run --target interpreted`, and the interpreters `mutate --scenarios` runs
+/// authored scenarios on) is run with: the default budgets and an [`crate::AdvancingClock`] for
+/// durations, with [`scenario_wall`] as the wall. Hand that target the runner's
+/// [command clock](crate::Runner::command_clock) and nothing in the run reads the machine's clock,
+/// so two runs give the same report (<https://github.com/beyond10x/ess/issues/510>).
+pub fn scenario_clock_runner(
+    suite: &crate::ConformanceSuite,
+) -> crate::Runner<WithWall<crate::AdvancingClock, fn() -> Timestamp>> {
+    crate::Runner::new(
+        crate::RunnerConfig::default(),
+        WithWall::new(
+            crate::AdvancingClock::default(),
+            scenario_wall as fn() -> Timestamp,
+        ),
+        crate::Ids::for_suite(suite),
+    )
+}
+
 /// The instant each `now_offset` of one scenario resolved to, by its number of seconds.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Resolved {

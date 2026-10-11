@@ -11,10 +11,17 @@
 //! A mutant is *killed* when its suite fails against that target: synthesis asked a question whose
 //! answer differs between the two specifications, and the target gave the original answer. A
 //! *survivor* is a finding about what synthesis asks of the model — either the mutant is
-//! equivalent, or no generated scenario observes the rule. It is **not** answered by authoring a
-//! scenario: an authored scenario's expectations are its author's, not the model's, so it runs
-//! identically in every mutant's suite and could never kill one. That is why no authored scenario
-//! is run here at all.
+//! equivalent, or no generated scenario observes the rule. It is **not** answered by putting an
+//! authored scenario in the mutant's suite: an authored scenario's expectations are its author's,
+//! not the model's, so against the unchanged target it runs identically in every mutant's suite
+//! and could never kill one.
+//!
+//! An authored scenario counts in the dual direction instead
+//! (<https://github.com/beyond10x/ess/issues/515>, [`audit_with_authored`]): compiled once against
+//! the unchanged specification, it runs against the [interpreter](crate::interpret::Interpreted)
+//! of that specification for the baseline and against the interpreter of each mutant, which is an
+//! implementation of the mutant. One that fails there kills the mutant and is named among its
+//! killers; one the baseline fails refuses the audit as a synthesized one does.
 //!
 //! No class *weakens* the specification. On a branch that creates its row, dropping a `sets` entry
 //! says the value is the implementation's to choose, and a correct target satisfies a weaker
@@ -2426,8 +2433,11 @@ fn unsatisfiable_guard(baseline: &EssIr, mutant: &EssIr, mutation: &Mutation) ->
 
 /// For a `precedence-swap`, the answer both of its branches give in the baseline, where it is the
 /// same one: the same error and error payload (or neither refuses) and the same response, and
-/// neither changes state, sets or emits anything (<https://github.com/beyond10x/ess/issues/517>). Where both guards hold,
-/// either order then answers alike, so nothing a caller observes tells the mutant apart.
+/// neither changes state, sets or emits anything (<https://github.com/beyond10x/ess/issues/517>),
+/// and every binding that invokes the command answers the two alike: the same refusal-selected
+/// failure policy, and the same membership of a bounded retry's `final` outcomes
+/// (<https://github.com/beyond10x/ess/issues/515>). Where both guards hold, either order then
+/// answers alike, so nothing a caller observes tells the mutant apart.
 ///
 /// `None` for any other mutation, and wherever the two branches differ in anything but their name,
 /// guard, summary, references and test strategy — which only errs towards scoring as before.
@@ -2466,6 +2476,21 @@ fn identical_answer(baseline: &EssIr, mutation: &Mutation) -> Option<String> {
         it
     };
     if !(quiet(one) && quiet(other) && answer(one) == answer(other)) {
+        return None;
+    }
+    // A binding's failure policy is selected by the refusal's name, so a binding that invokes the
+    // command and answers the two refusals differently — drops one and escalates the other, or
+    // ends a bounded retry on one of them alone — publishes or retries differently whichever
+    // branch answers (https://github.com/beyond10x/ess/issues/515). Asked as the dispatcher asks it.
+    if baseline
+        .bindings()
+        .values()
+        .filter(|binding| binding.command.name() == &found.name)
+        .any(|binding| {
+            crate::interpret::binding_refusal(binding, Some(&one.name))
+                != crate::interpret::binding_refusal(binding, Some(&other.name))
+        })
+    {
         return None;
     }
     let mut said = match &one.error {
@@ -3602,6 +3627,90 @@ struct Observed {
     not_passed: Vec<(String, Seen)>,
     /// Each scenario as the suite holds it, by id.
     bodies: Bodies,
+    /// The ids of the authored scenarios among `scenarios` ([`AuthoredSuite`]), which run on the
+    /// interpreter of the model they are asked about rather than on the unchanged target.
+    authored: BTreeSet<String>,
+}
+
+impl Observed {
+    /// One suite's run, read from what the runner executed of `suite`.
+    fn of(executed: &crate::ExecutedRun, suite: &crate::ConformanceSuite) -> Self {
+        Self {
+            scenarios: executed
+                .scenarios
+                .iter()
+                .map(|result| result.scenario.to_string())
+                .collect(),
+            not_passed: executed
+                .scenarios
+                .iter()
+                .filter_map(|result| {
+                    Seen::from_status(result.status).map(|seen| (result.scenario.to_string(), seen))
+                })
+                .collect(),
+            bodies: bodies_of(suite),
+            authored: BTreeSet::new(),
+        }
+    }
+
+    /// This run and `other`, a run of a suite holding none of its scenarios, read as one.
+    fn absorb(&mut self, other: Self) {
+        self.scenarios.extend(other.scenarios);
+        self.not_passed.extend(other.not_passed);
+        self.bodies.extend(other.bodies);
+        self.authored.extend(other.authored);
+    }
+}
+
+/// The authored scenarios an audit runs beside the synthesized ones
+/// (<https://github.com/beyond10x/ess/issues/515>): one suite, compiled once against the unchanged
+/// specification, run on the interpreter of whichever model it is asked about.
+struct AuthoredSuite {
+    suite: crate::ConformanceSuite,
+    admitted: AdmittedSuite,
+}
+
+impl AuthoredSuite {
+    /// `scenarios` filed in a suite of `ir`'s provenance; `None` where there are none, so an audit
+    /// without them runs nothing it did not run before.
+    fn of(
+        ir: &EssIr,
+        scenarios: &BTreeMap<crate::ScenarioId, crate::ConformanceScenario>,
+    ) -> Result<Option<Self>, AuditRefusal> {
+        if scenarios.is_empty() {
+            return Ok(None);
+        }
+        let mut suite = crate::ConformanceSuite::new(crate::SuiteProvenance::of(ir));
+        for (id, scenario) in scenarios {
+            // A map holds each id once, and an authored id never has a synthesized one's shape.
+            if let Err(id) = suite.insert(id.clone(), scenario.clone()) {
+                return Err(AuditRefusal::Admission(format!(
+                    "`{id}` is already in the suite"
+                )));
+            }
+        }
+        suite.select_fresh_format_for(ir);
+        let admitted = AdmittedSuite::from_suite(&suite)
+            .map_err(|error| AuditRefusal::Admission(error.to_string()))?;
+        Ok(Some(Self { suite, admitted }))
+    }
+
+    /// The suite run once on a fresh interpreter of `model`: the specification's own for the
+    /// baseline, a mutant's for that mutant.
+    ///
+    /// Run as `ess verify conform run --target interpreted --scenarios` runs it: on the scenario
+    /// clock, the interpreter deciding a `now` guard at the instant of the step being executed
+    /// (<https://github.com/beyond10x/ess/issues/510>). Without that clock every such decision is
+    /// `unsupported`, so a scenario `run` passes would execute nowhere here.
+    fn on(&self, model: &EssIr) -> Observed {
+        let mut runner = crate::now_offset::scenario_clock_runner(&self.suite);
+        let interpreter = crate::interpret::Interpreted::for_model(model.clone())
+            .with_command_clock(runner.command_clock());
+        let executed = runner.run_admitted(&self.admitted, &interpreter);
+        let mut observed = Observed::of(&executed, &self.suite);
+        observed.authored = observed.scenarios.iter().cloned().collect();
+        observed
+    }
 }
 
 /// A suite's scenarios by id.
@@ -3822,10 +3931,14 @@ impl Ruler {
             .filter(|(id, _)| unexecuted.contains(*id))
             .map(|(id, scenario)| (id.clone(), scenario.clone()))
             .collect();
+        // Only a scenario the baseline executed observed an outcome: one the target answered
+        // `unsupported` or `skipped` requires it of nothing that ran
+        // (https://github.com/beyond10x/ess/issues/515).
         let witnessed = observed
             .bodies
-            .values()
-            .flat_map(|scenario| &scenario.steps)
+            .iter()
+            .filter(|(id, _)| !unexecuted.contains(*id))
+            .flat_map(|(_, scenario)| &scenario.steps)
             .filter_map(|step| match step {
                 crate::scenario::ScenarioStep::ExpectOutcome { outcome } => {
                     Some(outcome.to_string())
@@ -3917,6 +4030,10 @@ impl Ruler {
     /// perform, is `unwitnessed` as a gained refusal makes it; one that left its guard `dead`, or a
     /// `precedence-swap` whose branches give an `identical` answer, is `equivalent` unless killed
     /// or hiding a changed scenario nothing scored.
+    ///
+    /// An authored scenario runs on the interpreter of the mutant, so one the baseline did not
+    /// execute hides a kill even unchanged; on an `identical` answer it can fail only on the
+    /// outcome's label, so its failure kills nothing and its exclusion hides nothing.
     fn judge(
         &self,
         entry: &mut MutantEntry,
@@ -3925,10 +4042,19 @@ impl Ruler {
         dead: Option<String>,
         identical: Option<String>,
     ) {
+        // On a `precedence-swap` whose branches give an identical answer, the interpreter of the
+        // mutant answers every input as the specification's does but for the outcome's name, which
+        // only names the branch (`identical_answer`). An authored scenario that fails there fails
+        // on that label alone, so it does not kill the mutant
+        // (https://github.com/beyond10x/ess/issues/515).
+        let answers_alike = identical.is_some();
+        let label_only = |id: &str, seen: Seen| {
+            answers_alike && seen == Seen::Failed && observed.authored.contains(id)
+        };
         let statuses: Vec<Status> = observed
             .not_passed
             .iter()
-            .filter(|(id, _)| self.eligible(id))
+            .filter(|(id, seen)| self.eligible(id) && !label_only(id, *seen))
             .map(|(_, seen)| seen.status())
             .collect();
         let mut excluded: Vec<String> = observed
@@ -3989,10 +4115,15 @@ impl Ruler {
         });
         let witnessless =
             self.known.is_some() && !observed.scenarios.iter().any(|id| self.eligible(id));
+        // An excluded authored scenario hides a kill whatever its body: it is held unchanged by
+        // construction, but it runs on the interpreter of the mutant, not on the target the
+        // baseline asked (https://github.com/beyond10x/ess/issues/515). On an identical answer it
+        // could fail on the outcome's label alone, which kills nothing, so it hides nothing.
         let hidden = hidden_by_declaration
-            || excluded
-                .iter()
-                .any(|id| observed.bodies.get(id) != self.unexecuted_bodies.get(id));
+            || excluded.iter().any(|id| {
+                (!answers_alike && observed.authored.contains(id))
+                    || observed.bodies.get(id) != self.unexecuted_bodies.get(id)
+            });
         let at_baseline = self.unwitnessed_outcome(entry.class, &entry.id);
         // A mutant on an outcome the baseline does not witness is unwitnessed as a gained refusal
         // makes it; a dead guard outranks both, but not a changed scenario nothing scored, which
@@ -4015,7 +4146,9 @@ impl Ruler {
             let mut killers: Vec<String> = observed
                 .not_passed
                 .iter()
-                .filter(|(id, seen)| *seen == Seen::Failed && self.eligible(id))
+                .filter(|(id, seen)| {
+                    *seen == Seen::Failed && self.eligible(id) && !label_only(id, *seen)
+                })
                 .map(|(id, _)| id.clone())
                 .collect();
             killers.sort();
@@ -4103,21 +4236,7 @@ fn run_checked<T: ConformanceTarget>(
     check(&admitted)?;
     let executed = Runner::for_suite(&suite).run_admitted(&admitted, &new_target());
     Ok(Ran {
-        observed: Observed {
-            scenarios: executed
-                .scenarios
-                .iter()
-                .map(|result| result.scenario.to_string())
-                .collect(),
-            not_passed: executed
-                .scenarios
-                .iter()
-                .filter_map(|result| {
-                    Seen::from_status(result.status).map(|seen| (result.scenario.to_string(), seen))
-                })
-                .collect(),
-            bodies: bodies_of(&suite),
-        },
+        observed: Observed::of(&executed, &suite),
         refused: Refused {
             count: refused.len(),
             keys: Some(refused),
@@ -4160,18 +4279,22 @@ fn baseline<T: ConformanceTarget>(
     ir: &EssIr,
     new_target: &impl Fn() -> T,
 ) -> Result<BaselineRun, AuditRefusal> {
-    baseline_with(ir, new_target, None)
+    baseline_with(ir, new_target, None, None)
 }
 
 /// [`baseline`], under `known`: the declaration's suite, specification and scenarios are checked
 /// against the admitted baseline suite before any target is made, and its implementation label
 /// against the run's own once the target named itself.
+///
+/// `authored`, where given, runs on the interpreter of `ir` and is read as part of the baseline:
+/// an authored scenario that fails there refuses the audit as a synthesized one does.
 fn baseline_with<T: ConformanceTarget>(
     ir: &EssIr,
     new_target: &impl Fn() -> T,
     known: Option<&crate::known_failures::Declaration>,
+    authored: Option<&AuthoredSuite>,
 ) -> Result<BaselineRun, AuditRefusal> {
-    let ran = run_checked(ir, None, new_target, |admitted| match known {
+    let mut ran = run_checked(ir, None, new_target, |admitted| match known {
         Some(declaration) => declaration
             .admit(admitted)
             .map_err(AuditRefusal::KnownFailures),
@@ -4182,6 +4305,9 @@ fn baseline_with<T: ConformanceTarget>(
         declaration
             .bind(&ran.label, declaration.implementation_build())
             .map_err(AuditRefusal::KnownFailures)?;
+    }
+    if let Some(authored) = authored {
+        ran.observed.absorb(authored.on(ir));
     }
     let scenarios = ran.observed.scenarios.len();
     Ok(BaselineRun {
@@ -4216,15 +4342,19 @@ pub fn evaluate<T: ConformanceTarget>(
         mutant,
         (&baseline_ir, &ruler),
         &new_target,
+        None,
     )
 }
 
+/// One mutant measured against `ruler`: its synthesized suite on a fresh `new_target`, and
+/// `authored`, where given, on the interpreter of the mutant, the two read as one run.
 fn measure<T: ConformanceTarget>(
     documents: &[Document],
     texts: &SourceMap,
     mutant: &Mutant,
     (baseline_ir, ruler): (&EssIr, &Ruler),
     new_target: &impl Fn() -> T,
+    authored: Option<&AuthoredSuite>,
 ) -> Result<MutantEntry, AuditRefusal> {
     let mutated = apply(documents, &mutant.mutation).map_err(AuditRefusal::NoSuchSite)?;
     let mut entry = blank_entry(mutant);
@@ -4235,7 +4365,10 @@ fn measure<T: ConformanceTarget>(
             return Ok(entry);
         }
     };
-    let ran = run(&ir, dropped_write(documents, &mutant.mutation), new_target)?;
+    let mut ran = run(&ir, dropped_write(documents, &mutant.mutation), new_target)?;
+    if let Some(authored) = authored {
+        ran.observed.absorb(authored.on(&ir));
+    }
     let dead = unsatisfiable_guard(baseline_ir, &ir, &mutant.mutation);
     let identical = identical_answer(baseline_ir, &mutant.mutation);
     ruler.judge(&mut entry, &ran.observed, &ran.refused, dead, identical);
@@ -4271,6 +4404,36 @@ pub fn audit_with<T: ConformanceTarget>(
     new_target: impl Fn() -> T,
     known: Option<KnownFailing<'_>>,
 ) -> Result<MutationReport, AuditRefusal> {
+    audit_with_authored(
+        documents,
+        texts,
+        classes,
+        new_target,
+        known,
+        &BTreeMap::new(),
+    )
+}
+
+/// [`audit_with`], with the authored scenarios `authored` run beside the synthesized ones
+/// (<https://github.com/beyond10x/ess/issues/515>).
+///
+/// `authored` is compiled against the unchanged specification, as `ess verify conform run
+/// --scenarios` compiles it ([`authored::compile`](crate::authored::compile)). It runs on the
+/// [interpreter](crate::interpret::Interpreted) of the specification as part of the baseline, and
+/// on the interpreter of each mutant as part of that mutant's run, whatever `new_target` is: the
+/// synthesized suites run on `new_target` exactly as [`audit_with`] runs them. An authored scenario
+/// that fails on the baseline refuses the audit with `ESS-MUTATE-001`; one that fails on a
+/// mutant's interpreter kills the mutant and is listed among its killers; one that requires an
+/// outcome makes it witnessed. With `authored` empty nothing more runs and the report is
+/// [`audit_with`]'s, byte for byte.
+pub fn audit_with_authored<T: ConformanceTarget>(
+    documents: &[Document],
+    texts: &SourceMap,
+    classes: &[MutantClass],
+    new_target: impl Fn() -> T,
+    known: Option<KnownFailing<'_>>,
+    authored: &BTreeMap<crate::ScenarioId, crate::ConformanceScenario>,
+) -> Result<MutationReport, AuditRefusal> {
     let baseline_ir = compile(documents.to_vec(), texts).map_err(AuditRefusal::Unloadable)?;
     crate::admission::model(&baseline_ir)
         .map_err(|error| AuditRefusal::Admission(error.to_string()))?;
@@ -4295,7 +4458,13 @@ pub fn audit_with<T: ConformanceTarget>(
         classes.dedup();
         return Err(AuditRefusal::NoSite { classes });
     }
-    let baseline = baseline_with(&baseline_ir, &new_target, declaration.as_ref())?;
+    let authored = AuthoredSuite::of(&baseline_ir, authored)?;
+    let baseline = baseline_with(
+        &baseline_ir,
+        &new_target,
+        declaration.as_ref(),
+        authored.as_ref(),
+    )?;
 
     let mut entries = Vec::with_capacity(selected.len());
     let mut counts = Counts {
@@ -4309,6 +4478,7 @@ pub fn audit_with<T: ConformanceTarget>(
             mutant,
             (&baseline_ir, &baseline.ruler),
             &new_target,
+            authored.as_ref(),
         )?;
         counts.count(entry.verdict);
         entries.push(entry);
@@ -5393,6 +5563,9 @@ fn score(
                 .collect(),
             scenarios: order,
             bodies,
+            // A collected suite is the synthesized one alone: `--scenarios` is refused beside
+            // `--emit` and `--collect`.
+            authored: BTreeSet::new(),
         },
         report: report_text,
         admitted,
@@ -5775,5 +5948,139 @@ commands:
         )];
         assert_eq!(found.get("demo.users.Session.end"), Some(&deactivated));
         assert_eq!(found.get("demo.users.User.deactivate"), Some(&deactivated));
+    }
+
+    // ---- an authored scenario the baseline did not execute ----------------------------------
+    //
+    // https://github.com/beyond10x/ess/issues/515. The interpreter answers `unsupported` whatever
+    // it cannot derive; here the j3 fixture's own authored scenario is recorded so on the baseline
+    // and on the mutant, with the synthesized suites run for real, so the rule is held apart from
+    // why the interpreter did not execute it.
+
+    const AUTHORED_MODEL: &str = include_str!("../tests/fixtures/mutation-authored.yaml");
+    const AUTHORED_SCENARIO: &str =
+        include_str!("../tests/fixtures/mutation-authored/retries-reach-the-limit.yaml");
+
+    fn authored_documents() -> (Vec<Document>, SourceMap) {
+        let label = "mutation-authored.yaml".to_owned();
+        let raw = RawSpecFile::parse(AUTHORED_MODEL).expect("the fixture parses");
+        let mut texts = SourceMap::new();
+        texts.insert(label.clone(), AUTHORED_MODEL.to_owned());
+        (vec![(Source::new(label), raw)], texts)
+    }
+
+    /// The fixture's authored suite, as a run that executed none of it.
+    fn unexecuted(ir: &EssIr) -> Observed {
+        let authoring = crate::authored::compile(
+            ir,
+            &[crate::authored::Source::new(
+                "retries-reach-the-limit.yaml",
+                AUTHORED_SCENARIO,
+            )],
+        );
+        assert!(authoring.is_complete(), "{:#?}", authoring.refusals);
+        let suite = AuthoredSuite::of(ir, &authoring.scenarios)
+            .expect("admitted")
+            .expect("one scenario")
+            .suite;
+        let scenarios: Vec<String> = suite.scenarios.keys().map(ToString::to_string).collect();
+        Observed {
+            not_passed: scenarios
+                .iter()
+                .map(|id| (id.clone(), Seen::Unsupported))
+                .collect(),
+            authored: scenarios.iter().cloned().collect(),
+            bodies: bodies_of(&suite),
+            scenarios,
+        }
+    }
+
+    /// The baseline's synthesized run with the authored suite unexecuted beside it, and its ruler.
+    fn ruler_with_unexecuted(ir: &EssIr) -> (Ran, Ruler) {
+        let target = || crate::interpret::Interpreted::for_model(ir.clone());
+        let mut ran = run(ir, None, &target).expect("the baseline runs");
+        ran.observed.absorb(unexecuted(ir));
+        let refused = Refused {
+            count: ran.refused.count,
+            keys: ran.refused.keys.clone(),
+        };
+        let ruler = Ruler::new(
+            &ran.implementation,
+            &ran.observed,
+            refused,
+            performers(&ir.to_compact_json()),
+            None,
+        )
+        .expect("the synthesized baseline is scored");
+        (ran, ruler)
+    }
+
+    /// Only an executed scenario witnesses an outcome: the unexecuted authored scenario that
+    /// requires `at-limit` leaves it unwitnessed, so the error-swap mutant on it keeps the reading
+    /// it has without `--scenarios`, `unwitnessed`, rather than becoming a survivor nothing ran.
+    #[test]
+    fn an_unexecuted_authored_scenario_witnesses_nothing() {
+        let (documents, texts) = authored_documents();
+        let ir = compile(documents.clone(), &texts).expect("the fixture compiles");
+        let (_, ruler) = ruler_with_unexecuted(&ir);
+        assert!(
+            !ruler.witnessed.contains("work.tasks.RetryTask/at-limit"),
+            "{:?}",
+            ruler.witnessed
+        );
+        let mutant = selection(&documents, &[MutantClass::ErrorSwap])
+            .mutants
+            .into_iter()
+            .find(|it| it.id == "error-swap/work.tasks.RetryTask/at-limit")
+            .expect("the site is selected");
+        let mutated = compile(
+            apply(&documents, &mutant.mutation).expect("applies"),
+            &texts,
+        )
+        .expect("the mutant compiles");
+        let target = || crate::interpret::Interpreted::for_model(ir.clone());
+        let mut ran = run(&mutated, None, &target).expect("the mutant runs");
+        ran.observed.absorb(unexecuted(&ir));
+        let mut entry = blank_entry(&mutant);
+        ruler.judge(&mut entry, &ran.observed, &ran.refused, None, None);
+        assert_eq!(entry.verdict, Verdict::Unwitnessed, "{entry:#?}");
+        assert_eq!(
+            entry.excluded.as_deref(),
+            Some(["work.tasks/authored/retries-reach-the-limit".to_owned()].as_slice())
+        );
+    }
+
+    /// An unexecuted authored scenario hides a kill though its body is unchanged: it would have
+    /// run on the mutant's interpreter. Judged on an entry of the witnessed `retried` outcome, with
+    /// the baseline's own synthesized run, which kills nothing: `inconclusive`, not `survived`. On an
+    /// identical answer it could fail on the label alone, so it hides nothing there.
+    #[test]
+    fn an_unexecuted_authored_scenario_hides_a_kill_unless_the_answer_is_identical() {
+        let (documents, texts) = authored_documents();
+        let ir = compile(documents.clone(), &texts).expect("the fixture compiles");
+        let (ran, ruler) = ruler_with_unexecuted(&ir);
+        let mutant = selection(&documents, &[MutantClass::ErrorSwap])
+            .mutants
+            .into_iter()
+            .next()
+            .expect("a site");
+        let blank = || {
+            let mut entry = blank_entry(&mutant);
+            entry.class = MutantClass::EmitSwap;
+            entry.id = "emit-swap/work.tasks.RetryTask/retried/work.tasks.TaskRetried".to_owned();
+            entry
+        };
+        let mut entry = blank();
+        ruler.judge(&mut entry, &ran.observed, &ran.refused, None, None);
+        assert_eq!(entry.verdict, Verdict::Inconclusive, "{entry:#?}");
+        let mut entry = blank();
+        ruler.judge(
+            &mut entry,
+            &ran.observed,
+            &ran.refused,
+            None,
+            Some("both refuse alike".to_owned()),
+        );
+        assert_eq!(entry.verdict, Verdict::Equivalent, "{entry:#?}");
     }
 }
