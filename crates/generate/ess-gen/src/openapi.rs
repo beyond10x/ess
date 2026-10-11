@@ -204,7 +204,7 @@
 //!
 //! # Determinism
 //!
-//! No clock, no RNG, and every collection a [`BTreeMap`], a [`BTreeSet`](std::collections::BTreeSet) or a [`Vec`] built from
+//! No clock, no RNG, and every collection a [`BTreeMap`], a [`BTreeSet`] or a [`Vec`] built from
 //! one. `tests/openapi.rs` generates twice and compares bytes, because that is the only form of this
 //! claim that is worth anything (review F8).
 
