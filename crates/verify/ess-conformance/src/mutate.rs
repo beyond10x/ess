@@ -43,7 +43,7 @@ use std::fmt::Write as _;
 use ess_compiler::diagnostic::{Code, Diagnostic, Diagnostics, Severity};
 use ess_compiler::source::SourceMap;
 use ess_compiler::EssIr;
-use ess_domain::command::{PayloadSource, RawCommandSpec, RawOutcome};
+use ess_domain::command::{PayloadSource, RawCommandSpec, RawOutcome, RawSubjectFact};
 use ess_domain::entity::{RawEntitySpec, StateName, Transition};
 use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
@@ -87,7 +87,8 @@ pub enum MutantClass {
     FromDrop,
     /// Send a transition to the first other state, in an entity with at least two states.
     TransitionTo,
-    /// Move a guard boundary in an outcome's `when`: swap the strictness of an ordering comparison
+    /// Move a guard boundary in an outcome's `when`, or in the predicate of its `when_subject:` or
+    /// `when_related:` ([`GuardKey`]): swap the strictness of an ordering comparison
     /// (`>=`↔`>`, `<=`↔`<`); move the integral literal of a `>=` or `<=` one step outward, the
     /// direction the swap does not take; or flip `==`↔`!=` on a leaf that is not the whole guard.
     ///
@@ -98,9 +99,11 @@ pub enum MutantClass {
     GuardBoundary,
     /// Take a `sets` value from the first other input field of the identical written type.
     SetsRetarget,
-    /// Negate an outcome's `when`.
+    /// Negate an outcome's `when`, or the predicate of its `when_subject:` or `when_related:`
+    /// ([`GuardKey`]).
     GuardNegate,
-    /// Swap `all` and `any` in an outcome's `when`.
+    /// Swap `all` and `any` in an outcome's `when`, or in the predicate of its `when_subject:` or
+    /// `when_related:`.
     GuardConnective,
     /// Refuse with the first other error declared in the command's domain.
     ErrorSwap,
@@ -245,6 +248,97 @@ crate::authored::diagnostic_catalogue! {
 
 // ---- mutations ----------------------------------------------------------------------------------
 
+/// Which predicate of an outcome a guard mutation edits
+/// (<https://github.com/beyond10x/ess/issues/515>): its `when:` over the input, the
+/// `predicate` of its `when_subject:` over the stored subject, or the `predicate` of its
+/// `when_related:` over the row an input identity names.
+///
+/// A `when:` site keeps the id it always had; a site on either other key names the key after the
+/// outcome, so `guard-negate/<command>/<outcome>/when_subject`. The ess/6 `{field, equals}` form of
+/// `when_subject:`, and a row set's `where`, `count` and `forall`, are not such predicates: a
+/// row set's `count:` bound is [`Mutation::RowSetCount`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub enum GuardKey {
+    /// `when:`.
+    #[default]
+    When,
+    /// `when_subject: {predicate}`.
+    WhenSubject,
+    /// `when_related: {via, predicate}`.
+    WhenRelated,
+}
+
+impl GuardKey {
+    /// Every key, in the order an outcome's sites are enumerated.
+    pub const ALL: &'static [Self] = &[Self::When, Self::WhenSubject, Self::WhenRelated];
+
+    /// The document key, as a site and a change name it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::When => "when",
+            Self::WhenSubject => "when_subject",
+            Self::WhenRelated => "when_related",
+        }
+    }
+
+    /// What the site carries after `<command>/<outcome>`: nothing for `when:`, whose ids are
+    /// unchanged, and `/<key>` for the others.
+    fn segment(self) -> &'static str {
+        match self {
+            Self::When => "",
+            Self::WhenSubject => "/when_subject",
+            Self::WhenRelated => "/when_related",
+        }
+    }
+
+    /// The predicate this key holds in `outcome`, where it holds one.
+    fn of(self, outcome: &RawOutcome) -> Option<&Predicate> {
+        match self {
+            Self::When => outcome.when.as_ref().and_then(WrittenPredicate::predicate),
+            Self::WhenSubject => match outcome.when_subject.as_ref()? {
+                RawSubjectFact::Predicate(written) => written.predicate.predicate(),
+                RawSubjectFact::Field(_) => None,
+            },
+            Self::WhenRelated => {
+                let guard = outcome.when_related.as_ref()?;
+                guard
+                    .via
+                    .as_ref()
+                    .and(guard.predicate.as_ref())
+                    .and_then(WrittenPredicate::predicate)
+            }
+        }
+    }
+
+    /// [`Self::of`], to edit in place.
+    fn of_mut(self, outcome: &mut RawOutcome) -> Option<&mut Predicate> {
+        match self {
+            Self::When => outcome
+                .when
+                .as_mut()
+                .and_then(WrittenPredicate::predicate_mut),
+            Self::WhenSubject => match outcome.when_subject.as_mut()? {
+                RawSubjectFact::Predicate(written) => written.predicate.predicate_mut(),
+                RawSubjectFact::Field(_) => None,
+            },
+            Self::WhenRelated => {
+                let guard = outcome.when_related.as_mut()?;
+                guard.via.as_ref()?;
+                guard
+                    .predicate
+                    .as_mut()
+                    .and_then(WrittenPredicate::predicate_mut)
+            }
+        }
+    }
+}
+
+impl fmt::Display for GuardKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// One altering edit to the parsed documents, addressed by the names it changes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Mutation {
@@ -266,13 +360,15 @@ pub enum Mutation {
         /// The new arrival state.
         to: String,
     },
-    /// Swap the strictness of the `leaf`-th ordering comparison of `outcome`'s `when`, in
+    /// Swap the strictness of the `leaf`-th ordering comparison of `outcome`'s `guard`, in
     /// pre-order.
     GuardBoundary {
         /// The command.
         command: String,
         /// The outcome.
         outcome: String,
+        /// Which of the outcome's predicates.
+        guard: GuardKey,
         /// Which ordering comparison, counted in pre-order from zero.
         leaf: usize,
     },
@@ -287,19 +383,23 @@ pub enum Mutation {
         /// The sibling input field it is now read from.
         field: String,
     },
-    /// Negate `outcome`'s `when`.
+    /// Negate `outcome`'s `guard`.
     GuardNegate {
         /// The command.
         command: String,
         /// The outcome.
         outcome: String,
+        /// Which of the outcome's predicates.
+        guard: GuardKey,
     },
-    /// Swap `all` and `any` at the `node`-th connective of `outcome`'s `when`, in pre-order.
+    /// Swap `all` and `any` at the `node`-th connective of `outcome`'s `guard`, in pre-order.
     GuardConnective {
         /// The command.
         command: String,
         /// The outcome.
         outcome: String,
+        /// Which of the outcome's predicates.
+        guard: GuardKey,
         /// Which connective with at least two children, counted in pre-order from zero.
         node: usize,
     },
@@ -328,24 +428,28 @@ pub enum Mutation {
         /// The ranked field.
         field: String,
     },
-    /// Move the integral literal of the `leaf`-th ordering comparison of `outcome`'s `when`, a
+    /// Move the integral literal of the `leaf`-th ordering comparison of `outcome`'s `guard`, a
     /// `>=` or `<=`, one step outward: `x >= 10` becomes `x >= 9`. A class `guard-boundary` site.
     GuardOutward {
         /// The command.
         command: String,
         /// The outcome.
         outcome: String,
+        /// Which of the outcome's predicates.
+        guard: GuardKey,
         /// Which ordering comparison, counted in pre-order from zero as [`Self::GuardBoundary`]
         /// counts it.
         leaf: usize,
     },
-    /// Flip the `leaf`-th `==` or `!=` comparison of `outcome`'s `when`, in pre-order, where it is
+    /// Flip the `leaf`-th `==` or `!=` comparison of `outcome`'s `guard`, in pre-order, where it is
     /// not the whole guard. A class `guard-boundary` site.
     GuardEquality {
         /// The command.
         command: String,
         /// The outcome.
         outcome: String,
+        /// Which of the outcome's predicates.
+        guard: GuardKey,
         /// Which equality comparison, counted in pre-order from zero.
         leaf: usize,
     },
@@ -425,18 +529,21 @@ impl Mutation {
             Self::GuardBoundary {
                 command,
                 outcome,
+                guard,
                 leaf,
-            } => format!("{command}/{outcome}/{leaf}"),
+            } => format!("{command}/{outcome}{}/{leaf}", guard.segment()),
             Self::GuardOutward {
                 command,
                 outcome,
+                guard,
                 leaf,
-            } => format!("{command}/{outcome}/{leaf}-outward"),
+            } => format!("{command}/{outcome}{}/{leaf}-outward", guard.segment()),
             Self::GuardEquality {
                 command,
                 outcome,
+                guard,
                 leaf,
-            } => format!("{command}/{outcome}/equality-{leaf}"),
+            } => format!("{command}/{outcome}{}/equality-{leaf}", guard.segment()),
             Self::RowSetCount { command, outcome } => format!("{command}/{outcome}/row-set-count"),
             Self::SetsRetarget {
                 command,
@@ -454,8 +561,12 @@ impl Mutation {
                 first,
                 second,
             } => format!("{command}/{first}/{second}"),
-            Self::GuardNegate { command, outcome }
-            | Self::ErrorSwap {
+            Self::GuardNegate {
+                command,
+                outcome,
+                guard,
+            } => format!("{command}/{outcome}{}", guard.segment()),
+            Self::ErrorSwap {
                 command, outcome, ..
             } => {
                 format!("{command}/{outcome}")
@@ -463,8 +574,9 @@ impl Mutation {
             Self::GuardConnective {
                 command,
                 outcome,
+                guard,
                 node,
-            } => format!("{command}/{outcome}/{node}"),
+            } => format!("{command}/{outcome}{}/{node}", guard.segment()),
             Self::EmitDrop {
                 command,
                 outcome,
@@ -964,8 +1076,9 @@ fn flipped(direction: Direction) -> Direction {
 
 // ---- enumeration --------------------------------------------------------------------------------
 
-/// `documents` with every outcome's `when:` written as the predicate its source format resolved it
-/// to, where that is not what the document spelled (`docs/design/expression-family-source22.md`,
+/// `documents` with every outcome's `when:`, and the predicate of its `when_subject:` and
+/// `when_related:` ([`GuardKey`]), written as the predicate its source format resolved it to, where
+/// that is not what the document spelled (`docs/design/expression-family-source22.md`,
 /// final review decision 16).
 ///
 /// From `ess/22` a bare word may name a field and `lower + 5` may be one constant offset of one, and
@@ -988,29 +1101,48 @@ fn resolved(documents: &[Document]) -> Vec<Document> {
                 continue;
             };
             for outcome in &mut command.outcomes {
-                let Some(when) = outcome
-                    .when
-                    .as_mut()
-                    .and_then(WrittenPredicate::predicate_mut)
-                else {
-                    continue;
-                };
-                let guard = assembled
+                let Some(candidate) = assembled
                     .outcomes
                     .iter()
                     .find(|candidate| candidate.name == outcome.name)
-                    .and_then(|candidate| {
-                        ess_domain::expression::lexical::input_guard(&candidate.condition)
-                    });
-                if let Some(guard) = guard {
-                    if guard != when {
-                        *when = guard.clone();
+                else {
+                    continue;
+                };
+                for &key in GuardKey::ALL {
+                    let Some(written) = key.of_mut(outcome) else {
+                        continue;
+                    };
+                    if let Some(guard) = assembled_guard(&candidate.condition, key) {
+                        if guard != written {
+                            *written = guard.clone();
+                        }
                     }
                 }
             }
         }
     }
     resolved
+}
+
+/// The predicate an assembled outcome's `condition` holds for `key`: what the source format
+/// resolved the written one to.
+fn assembled_guard(
+    condition: &ess_domain::command::OutcomeCondition,
+    key: GuardKey,
+) -> Option<&Predicate> {
+    use ess_domain::command::{OutcomeCondition, RelatedTest};
+    match (key, condition) {
+        (GuardKey::When, _) => ess_domain::expression::lexical::input_guard(condition),
+        (GuardKey::WhenSubject, OutcomeCondition::SubjectPredicate { predicate, .. })
+        | (
+            GuardKey::WhenRelated,
+            OutcomeCondition::Related {
+                test: RelatedTest::Holds(predicate),
+                ..
+            },
+        ) => Some(predicate),
+        _ => None,
+    }
 }
 
 /// Every mutant of the selected classes, in byte order of id.
@@ -1339,18 +1471,25 @@ fn outcome_sites(documents: &[Document], command: &RawCommandSpec, found: &mut V
         let at = |mutation: fn(String, String) -> Mutation| {
             mutation(command_name.clone(), outcome_name.clone())
         };
-        if let Some(when) = outcome.when.as_ref().and_then(WrittenPredicate::predicate) {
-            boundary_sites(&command_name, &outcome_name, when, found);
-            if *when != Predicate::Always {
-                found.push(at(|command, outcome| Mutation::GuardNegate {
-                    command,
-                    outcome,
-                }));
+        // The input guard, and the predicates over the stored subject and the related row, each
+        // edited by the same operators (https://github.com/beyond10x/ess/issues/515).
+        for &guard in GuardKey::ALL {
+            let Some(predicate) = guard.of(outcome) else {
+                continue;
+            };
+            boundary_sites(&command_name, &outcome_name, guard, predicate, found);
+            if *predicate != Predicate::Always {
+                found.push(Mutation::GuardNegate {
+                    command: command_name.clone(),
+                    outcome: outcome_name.clone(),
+                    guard,
+                });
             }
-            for node in 0..connectives(when).len() {
+            for node in 0..connectives(predicate).len() {
                 found.push(Mutation::GuardConnective {
                     command: command_name.clone(),
                     outcome: outcome_name.clone(),
+                    guard,
                     node,
                 });
             }
@@ -1449,9 +1588,16 @@ fn moved_count(op: &str, bound: i64) -> Option<(&'static str, i64)> {
     })
 }
 
-/// The `guard-boundary` sites of one outcome's `when`: each ordering comparison's strictness swap
-/// and, where it has one, its outward literal; then each equality that is not the whole guard.
-fn boundary_sites(command: &str, outcome: &str, when: &Predicate, found: &mut Vec<Mutation>) {
+/// The `guard-boundary` sites of one outcome's predicate `guard`: each ordering comparison's
+/// strictness swap and, where it has one, its outward literal; then each equality that is not the
+/// whole guard.
+fn boundary_sites(
+    command: &str,
+    outcome: &str,
+    guard: GuardKey,
+    when: &Predicate,
+    found: &mut Vec<Mutation>,
+) {
     for (leaf, node) in ordering_leaves(when).into_iter().enumerate() {
         // A window whose `from` cannot move a minute later (23:59, or onto `to`) has no
         // strictness mutant: one would be the unchanged window, scored as a survivor.
@@ -1461,6 +1607,7 @@ fn boundary_sites(command: &str, outcome: &str, when: &Predicate, found: &mut Ve
             found.push(Mutation::GuardBoundary {
                 command: command.to_owned(),
                 outcome: outcome.to_owned(),
+                guard,
                 leaf,
             });
         }
@@ -1468,6 +1615,7 @@ fn boundary_sites(command: &str, outcome: &str, when: &Predicate, found: &mut Ve
             found.push(Mutation::GuardOutward {
                 command: command.to_owned(),
                 outcome: outcome.to_owned(),
+                guard,
                 leaf,
             });
         }
@@ -1476,6 +1624,7 @@ fn boundary_sites(command: &str, outcome: &str, when: &Predicate, found: &mut Ve
         found.push(Mutation::GuardEquality {
             command: command.to_owned(),
             outcome: outcome.to_owned(),
+            guard,
             leaf,
         });
     }
@@ -1657,12 +1806,10 @@ fn describe_guard(documents: &[Document], mutation: &Mutation) -> Option<String>
         Mutation::GuardBoundary {
             command,
             outcome,
+            guard,
             leaf,
         } => {
-            let when = self::outcome(documents, command, outcome)?
-                .when
-                .as_ref()
-                .and_then(WrittenPredicate::predicate)?;
+            let when = guard.of(self::outcome(documents, command, outcome)?)?;
             let mut changed = when.clone();
             let before = ordering_leaves(when).get(*leaf)?.to_string();
             let mut after = String::new();
@@ -1675,48 +1822,43 @@ fn describe_guard(documents: &[Document], mutation: &Mutation) -> Option<String>
         Mutation::GuardOutward {
             command,
             outcome,
+            guard,
             leaf,
         } => {
-            let when = self::outcome(documents, command, outcome)?
-                .when
-                .as_ref()
-                .and_then(WrittenPredicate::predicate)?;
+            let when = guard.of(self::outcome(documents, command, outcome)?)?;
             let before = ordering_leaves(when).get(*leaf).copied()?;
             format!("`{before}` becomes `{}`", outward(before)?)
         }
         Mutation::GuardEquality {
             command,
             outcome,
+            guard,
             leaf,
         } => {
-            let when = self::outcome(documents, command, outcome)?
-                .when
-                .as_ref()
-                .and_then(WrittenPredicate::predicate)?;
+            let when = guard.of(self::outcome(documents, command, outcome)?)?;
             let before = equality_leaves(when).get(*leaf).copied()?;
             let mut after = before.clone();
             flip_equality(&mut after);
             format!("`{before}` becomes `{after}`")
         }
-        Mutation::GuardNegate { command, outcome } => {
-            let when = self::outcome(documents, command, outcome)?
-                .when
-                .as_ref()
-                .and_then(WrittenPredicate::predicate)?;
+        Mutation::GuardNegate {
+            command,
+            outcome,
+            guard,
+        } => {
+            let when = guard.of(self::outcome(documents, command, outcome)?)?;
             format!(
-                "`when: {when}` becomes `when: {}`",
+                "`{guard}: {when}` becomes `{guard}: {}`",
                 Predicate::not(when.clone())
             )
         }
         Mutation::GuardConnective {
             command,
             outcome,
+            guard,
             node,
         } => {
-            let when = self::outcome(documents, command, outcome)?
-                .when
-                .as_ref()
-                .and_then(WrittenPredicate::predicate)?;
+            let when = guard.of(self::outcome(documents, command, outcome)?)?;
             let before = connectives(when).get(*node)?.to_string();
             let mut changed = when.clone();
             edit_nth(&mut changed, &is_connective, *node, &swap_connective);
@@ -1904,10 +2046,11 @@ fn apply_guard(mutated: &mut [Document], mutation: &Mutation) -> Result<(), Stri
         Mutation::GuardBoundary {
             command,
             outcome,
+            guard,
             leaf,
         } => {
             let when = outcome_mut(mutated, command, outcome)
-                .and_then(|it| it.when.as_mut().and_then(WrittenPredicate::predicate_mut))
+                .and_then(|it| guard.of_mut(it))
                 .ok_or_else(absent)?;
             if !edit_nth(when, &is_ordering, *leaf, &swap_strictness) {
                 return Err(absent());
@@ -1916,10 +2059,11 @@ fn apply_guard(mutated: &mut [Document], mutation: &Mutation) -> Result<(), Stri
         Mutation::GuardOutward {
             command,
             outcome,
+            guard,
             leaf,
         } => {
             let when = outcome_mut(mutated, command, outcome)
-                .and_then(|it| it.when.as_mut().and_then(WrittenPredicate::predicate_mut))
+                .and_then(|it| guard.of_mut(it))
                 .ok_or_else(absent)?;
             if ordering_leaves(when)
                 .get(*leaf)
@@ -1932,29 +2076,35 @@ fn apply_guard(mutated: &mut [Document], mutation: &Mutation) -> Result<(), Stri
         Mutation::GuardEquality {
             command,
             outcome,
+            guard,
             leaf,
         } => {
             let when = outcome_mut(mutated, command, outcome)
-                .and_then(|it| it.when.as_mut().and_then(WrittenPredicate::predicate_mut))
+                .and_then(|it| guard.of_mut(it))
                 .ok_or_else(absent)?;
             if *leaf >= equality_leaves(when).len() {
                 return Err(absent());
             }
             edit_nth(when, &is_equality, *leaf, &flip_equality);
         }
-        Mutation::GuardNegate { command, outcome } => {
+        Mutation::GuardNegate {
+            command,
+            outcome,
+            guard,
+        } => {
             let when = outcome_mut(mutated, command, outcome)
-                .and_then(|it| it.when.as_mut().and_then(WrittenPredicate::predicate_mut))
+                .and_then(|it| guard.of_mut(it))
                 .ok_or_else(absent)?;
             *when = Predicate::not(std::mem::take(when));
         }
         Mutation::GuardConnective {
             command,
             outcome,
+            guard,
             node,
         } => {
             let when = outcome_mut(mutated, command, outcome)
-                .and_then(|it| it.when.as_mut().and_then(WrittenPredicate::predicate_mut))
+                .and_then(|it| guard.of_mut(it))
                 .ok_or_else(absent)?;
             if !edit_nth(when, &is_connective, *node, &swap_connective) {
                 return Err(absent());
@@ -2059,24 +2209,50 @@ fn unsatisfiable_guard(baseline: &EssIr, mutant: &EssIr, mutation: &Mutation) ->
         return (!satisfiable(baseline, found, &overlap)?).then(|| overlap.to_string());
     }
     let (Mutation::GuardBoundary {
-        command, outcome, ..
+        command,
+        outcome,
+        guard,
+        ..
     }
     | Mutation::GuardOutward {
-        command, outcome, ..
+        command,
+        outcome,
+        guard,
+        ..
     }
     | Mutation::GuardEquality {
-        command, outcome, ..
+        command,
+        outcome,
+        guard,
+        ..
     }
-    | Mutation::GuardNegate { command, outcome }
+    | Mutation::GuardNegate {
+        command,
+        outcome,
+        guard,
+    }
     | Mutation::GuardConnective {
-        command, outcome, ..
+        command,
+        outcome,
+        guard,
+        ..
     }) = mutation
     else {
         return None;
     };
-    // A `when:` beside `when_subject:`: dead where no input it admits leaves the stored guard able
-    // to hold on any row, rendered as the two together.
-    if let Some((before, was, stored)) = guards_beside_subject(baseline, command, outcome) {
+    // A mutant of a `when_related:` predicate is not decided here: nothing below reads a related
+    // row (https://github.com/beyond10x/ess/issues/515), so it keeps the verdict its run gives.
+    if *guard == GuardKey::WhenRelated {
+        return None;
+    }
+    // A `when:` beside `when_subject:`, or the `when_subject:` predicate itself: dead where no
+    // input the `when:` admits leaves the stored guard able to hold on any row, rendered as the
+    // two together. A `when_subject:` predicate with no `when:` beside it is not decided.
+    let beside = guards_beside_subject(baseline, command, outcome);
+    if *guard == GuardKey::WhenSubject && beside.is_none() {
+        return None;
+    }
+    if let Some((before, was, stored)) = beside {
         if !satisfiable_beside(baseline, before, was, stored)? {
             return None;
         }
