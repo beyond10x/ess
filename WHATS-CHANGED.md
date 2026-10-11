@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.59.0](#an-authored-act-states-the-caller-its-command-is-sent-as-and-synthesis-fixes-two-guard-cases) | An authored act states the caller its command is sent as, and synthesis fixes two guard cases | capability | notable |
 | [0.58.0](#a-struct-or-a-command-response-may-ignore-undeclared-fields-and-generation-verify-diff-and-runners-follow) | A struct or a command response may ignore undeclared fields, and generation, verify diff and runners follow | capability | notable |
 | [0.57.0](#cli-bindings-may-omit-globals-verify-diff-flags-caller-breaking-changes-runners-check-constrained-responses) | CLI bindings may omit globals, verify diff flags caller-breaking changes, runners check constrained responses | capability | notable |
 | [0.56.0](#a-held-state-branch-must-be-declared-before-an-overlapping-accepting-or-external-branch) | A held-state branch must be declared before an overlapping accepting or external branch | breaking | notable |
@@ -62,6 +63,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.59.0 — 2026-10-11
+
+### An authored act states the caller its command is sent as, and synthesis fixes two guard cases
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.59.0)
+
+`ess-scenario/5` lets an act state its caller under `caller:`, so a command that records `{caller: …}` runs from an authored scenario. Synthesis decides a related guard on a captured struct key ([#521](https://github.com/beyond10x/ess/issues/521)) and writes stored-field guard scenarios no view observes ([#496](https://github.com/beyond10x/ess/issues/496)).
 
 ## 0.58.0 — 2026-10-10
 

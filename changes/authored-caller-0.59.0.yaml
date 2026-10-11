@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/authored-caller-0.59.0
+repository: ess
+publishedAt: 2026-10-11T00:00:00Z
+title: An authored act states the caller its command is sent as, and synthesis fixes two guard cases
+summary: >-
+  `ess-scenario/5` lets an act state its caller under `caller:`, so a command that
+  records `{caller: …}` runs from an authored scenario. Synthesis decides a related guard on a
+  captured struct key ([#521](https://github.com/beyond10x/ess/issues/521)) and writes stored-field
+  guard scenarios no view observes ([#496](https://github.com/beyond10x/ess/issues/496)).
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.59.0
+  version: 0.59.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

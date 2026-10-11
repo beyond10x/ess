@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.59.0 — 2026-10-11
+
+### An authored act states the caller its command is sent as, and synthesis fixes two guard cases
+
+capability · notable impact · [release post](https://beyond10x.github.io/ess/releases/authored-caller-attributes) · [release notes](https://github.com/beyond10x/ess/releases/tag/0.59.0)
+
+`ess-scenario/5` lets an act state its caller under `caller:`, so a command that records `{caller: …}` runs from an authored scenario. Synthesis decides a related guard on a captured struct key ([#521](https://github.com/beyond10x/ess/issues/521)) and writes stored-field guard scenarios no view observes ([#496](https://github.com/beyond10x/ess/issues/496)).
+
 ## 0.58.0 — 2026-10-10
 
 ### A struct or a command response may ignore undeclared fields, and generation, verify diff and runners follow
