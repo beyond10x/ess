@@ -23,6 +23,18 @@
   `refines:` and the OpenAPI projection are not checked or read yet
   (https://github.com/beyond10x/ess/issues/493, `docs/design/http-presentation-binding.md`).
 
+- `ess verify conform mutate` mutates the predicate of a `when_subject:` guard and of a
+  `when_related:` guard: `guard-negate`, `guard-connective` and `guard-boundary` (strictness swap,
+  outward literal and equality flip) edit it as they edit a `when:`, and each mutant is compiled,
+  synthesized and scored like the `when:` ones. Its id names the key after the outcome, such as
+  `guard-negate/<command>/<outcome>/when_subject` or
+  `guard-boundary/<command>/<outcome>/when_related/0`. A model had no mutant on either predicate,
+  so a target that ignored such a guard went unnoticed by the audit
+  (https://github.com/beyond10x/ess/issues/515). A `when:` mutant keeps its id, and a model with
+  neither guard keeps its report and manifest byte for byte; the report and manifest formats are
+  unchanged. The `{field, equals}` form of `when_subject:` and a row set's `where` and `forall`
+  are not mutated.
+
 ### Fixed
 
 - `ess generate synthesize --target go` emits a module that builds when bounded contexts reference

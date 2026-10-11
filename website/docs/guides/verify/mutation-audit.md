@@ -31,6 +31,13 @@ weakening it: a mutant that only says less could never be killed by a correct ta
   it moves the integer literal of a `>=` or `<=` one step outward (`amount >= 10` becomes
   `amount >= 9`), the direction the swap does not take; and it flips `==`↔`!=` on a comparison that
   is not the whole guard, which `guard-negate` already covers.
+- `guard-boundary`, `guard-negate` and `guard-connective` edit the predicate of a `when_subject:`
+  over the stored subject, and the predicate of a `when_related:` over the row an input identity
+  names, as they edit a `when:`. Such a mutant's id names the key after the outcome:
+  `guard-negate/<command>/<outcome>/when_subject`,
+  `guard-boundary/<command>/<outcome>/when_related/0`. A `when:` mutant keeps the id it had. The
+  `{field, equals}` form of `when_subject:` and a row set's `where`, `count` and `forall` are not
+  edited this way; a row set's `count:` bound has its own `guard-boundary` mutant.
 - `sets-drop` removes one `sets: field: input.x` entry from a branch that updates or moves an
   existing row. There the drop is not weaker: the field keeps what the row held instead of taking
   the input. Synthesis sends an input no `sets:` entry reads apart from what the row holds in the
@@ -77,7 +84,9 @@ rule. So is a guard mutant whose `when:` sits beside a `when_subject:` predicate
 only by comparing a stored field with an input field the mutated `when:` leaves absent, as
 `not defined(expected_version)` beside `version != input.expected_version` does: a comparison with
 an absent input is unknown on every row, never true, and the entry names the `when:` and the
-stored predicate together. An
+stored predicate together. A mutant of the `when_subject:` predicate itself is decided the same
+way where a `when:` sits beside it; one with no `when:` beside it, and every mutant of a
+`when_related:` predicate, is not decided and is scored as before. An
 ordering, a text match, a quantifier, or a guard with more combinations is not decided, and such a
 mutant is scored as before. A mutant with a changed scenario that was not scored stays
 *inconclusive*: that scenario might have killed it.
