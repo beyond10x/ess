@@ -2559,6 +2559,47 @@
       },
       "additionalProperties": false
     },
+    "RawHead": {
+      "description": "What `related:` holds in a head read.",
+      "type": "object",
+      "required": [
+        "entity",
+        "first",
+        "order_by",
+        "where"
+      ],
+      "properties": {
+        "entity": {
+          "description": "The entity whose rows are candidates.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/QualifiedName"
+            }
+          ]
+        },
+        "first": {
+          "description": "The field of the head row read.",
+          "type": "string"
+        },
+        "order_by": {
+          "description": "The ranking keys, most significant first: `<field>` or `<field> asc|desc`, ending in the entity's identity.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "where": {
+          "description": "What a candidate must satisfy: its fields bare, the input under `input.`, the addressed subject under `subject.`.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Predicate"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
     "RawIncrement": {
       "description": "The amount of an `{increment: …}`: a whole number, an unquoted decimal, or quoted decimal text.",
       "anyOf": [
@@ -2963,6 +3004,20 @@
       },
       "additionalProperties": false
     },
+    "RawPayloadRead": {
+      "description": "`{payload: <Event>.<field>}`: the value this outcome publishes in `<field>` of `<Event>`.",
+      "type": "object",
+      "required": [
+        "payload"
+      ],
+      "properties": {
+        "payload": {
+          "description": "The qualified event name, a dot, and the field: `demo.routing.EntryAgentSelected.seq`.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
     "RawPayloadSource": {
       "description": "Closed authored payload source; strings retain their original interpretation.",
       "anyOf": [
@@ -2998,6 +3053,22 @@
           "$ref": "#/definitions/RawCountSource"
         },
         {
+          "description": "`{generated: true, present: true}` (ess/25, beyond10x/ess#545).",
+          "allOf": [
+            {
+              "$ref": "#/definitions/RawPresentMint"
+            }
+          ]
+        },
+        {
+          "description": "`{payload: <Event>.<field>}` (ess/25, beyond10x/ess#545).",
+          "allOf": [
+            {
+              "$ref": "#/definitions/RawPayloadRead"
+            }
+          ]
+        },
+        {
           "$ref": "#/definitions/RawNestedSources"
         },
         {
@@ -3007,8 +3078,35 @@
               "$ref": "#/definitions/RawRelatedSelection"
             }
           ]
+        },
+        {
+          "description": "`{related: {entity, where, order_by, first}}` (ess/25, beyond10x/ess#543).",
+          "allOf": [
+            {
+              "$ref": "#/definitions/RawRelatedHead"
+            }
+          ]
         }
       ]
+    },
+    "RawPresentMint": {
+      "description": "`{generated: true, present: true}`, written as exactly these two keys.",
+      "type": "object",
+      "required": [
+        "generated",
+        "present"
+      ],
+      "properties": {
+        "generated": {
+          "description": "`true`: the implementation mints the value.",
+          "type": "boolean"
+        },
+        "present": {
+          "description": "`true`: the minted value is present.",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
     },
     "RawRelated": {
       "description": "What `related:` holds: the field holding the other row's identity, and the field read there.",
@@ -3105,6 +3203,19 @@
               "type": "null"
             }
           ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "RawRelatedHead": {
+      "description": "`{related: {entity, where, order_by, first}}` as the document writes it.",
+      "type": "object",
+      "required": [
+        "related"
+      ],
+      "properties": {
+        "related": {
+          "$ref": "#/definitions/RawHead"
         }
       },
       "additionalProperties": false

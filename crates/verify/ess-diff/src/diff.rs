@@ -1206,6 +1206,7 @@ fn written_fields(owner: &str, fields: &[ess_compiler::ir::ResolvedPayloadField]
                 | ess_compiler::ir::ResolvedPayloadValue::Struct { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::RelatedField { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::RelatedSelection { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::RelatedHead { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::CallerAttribute { .. }
                 // `implementation-generated`, and `…, present` for an ess/25 present mint.
                 | ess_compiler::ir::ResolvedPayloadValue::Generated { .. }
@@ -2226,6 +2227,7 @@ fn written_sets(
                 | ess_compiler::ir::ResolvedPayloadValue::Struct { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::RelatedField { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::RelatedSelection { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::RelatedHead { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::CallerAttribute { .. }
                 // `implementation-generated`, and `…, present` for an ess/25 present mint.
                 | ess_compiler::ir::ResolvedPayloadValue::Generated { .. }

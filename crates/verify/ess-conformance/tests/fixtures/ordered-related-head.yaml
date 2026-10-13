@@ -1,0 +1,133 @@
+format: ess/25
+system: demo
+version: v1
+domain: demo.ranked
+types:
+  - {name: demo.ranked.MembershipId, kind: newtype, of: Uuid}
+  - {name: demo.ranked.PairId, kind: newtype, of: Uuid}
+  - {name: demo.ranked.Score, kind: newtype, of: Integer}
+entities:
+  - name: demo.ranked.Membership
+    identity: {name: membership_id, type: demo.ranked.MembershipId}
+    fields:
+      - {name: slot_id, type: String}
+      - {name: element_key, type: String}
+      - {name: element_score, type: demo.ranked.Score}
+    lifecycle:
+      initial: Present
+      states: [Present, Removed]
+      terminal: [Removed]
+      transitions:
+        - {name: remove, from: [Present], to: Removed}
+  - name: demo.ranked.Pair
+    identity: {name: pair_id, type: demo.ranked.PairId}
+    fields:
+      - {name: slot_id, type: String}
+      - {name: element_key, type: String}
+    lifecycle:
+      initial: Open
+      states: [Open, Done]
+      terminal: [Done]
+      transitions:
+        - {name: finish, from: [Open], to: Done}
+errors:
+  - {name: demo.ranked.Empty, summary: No element is waiting in the slot., fields: []}
+events:
+  - name: demo.ranked.Joined
+    fields:
+      - {name: membership_id, type: demo.ranked.MembershipId}
+  - name: demo.ranked.Paired
+    fields:
+      - {name: pair_id, type: demo.ranked.PairId}
+      - {name: element_key, type: String}
+      - {name: membership_id, type: demo.ranked.MembershipId}
+  - name: demo.ranked.Left
+    fields:
+      - {name: membership_id, type: demo.ranked.MembershipId}
+  - name: demo.ranked.Finished
+    fields:
+      - {name: pair_id, type: demo.ranked.PairId}
+views:
+  - name: demo.ranked.Pairs
+    source: demo.ranked.Pair
+    consistency: read_your_writes
+    fields:
+      - {name: pair_id, type: demo.ranked.PairId}
+      - {name: slot_id, type: String}
+      - {name: element_key, type: String}
+commands:
+  - name: demo.ranked.Join
+    input:
+      - {name: membership_id, type: demo.ranked.MembershipId}
+      - {name: slot_id, type: String}
+      - {name: element_key, type: String}
+      - {name: element_score, type: demo.ranked.Score}
+    outcomes:
+      - name: joined
+        creates: demo.ranked.Membership
+        instance: membership_id
+        sets:
+          slot_id: input.slot_id
+          element_key: input.element_key
+          element_score: input.element_score
+        emits: [demo.ranked.Joined]
+        payload:
+          demo.ranked.Joined: {membership_id: input.membership_id}
+  - name: demo.ranked.Pick
+    input:
+      - {name: pair_id, type: demo.ranked.PairId}
+      - {name: slot_id, type: String}
+    outcomes:
+      - name: empty
+        when_related:
+          entity: demo.ranked.Membership
+          where: {all: [slot_id == input.slot_id, state == Present]}
+          exists: false
+        error: demo.ranked.Empty
+      - name: picked
+        creates: demo.ranked.Pair
+        instance: pair_id
+        sets:
+          slot_id: input.slot_id
+          element_key:
+            related:
+              entity: demo.ranked.Membership
+              where: {all: [slot_id == input.slot_id, state == Present]}
+              order_by: [element_score desc, membership_id]
+              first: element_key
+        emits: [demo.ranked.Paired]
+        payload:
+          demo.ranked.Paired:
+            pair_id: input.pair_id
+            element_key:
+              related:
+                entity: demo.ranked.Membership
+                where: {all: [slot_id == input.slot_id, state == Present]}
+                order_by: [element_score desc, membership_id]
+                first: element_key
+            membership_id:
+              related:
+                entity: demo.ranked.Membership
+                where: {all: [slot_id == input.slot_id, state == Present]}
+                order_by: [element_score desc, membership_id]
+                first: membership_id
+  - name: demo.ranked.Leave
+    input:
+      - {name: membership_id, type: demo.ranked.MembershipId}
+    outcomes:
+      - name: left
+        moves: demo.ranked.Membership.remove
+        instance: membership_id
+        emits: [demo.ranked.Left]
+        payload:
+          demo.ranked.Left: {membership_id: input.membership_id}
+  - name: demo.ranked.Finish
+    input:
+      - {name: pair_id, type: demo.ranked.PairId}
+    outcomes:
+      - name: finished
+        moves: demo.ranked.Pair.finish
+        instance: pair_id
+        emits: [demo.ranked.Finished]
+        payload:
+          demo.ranked.Finished: {pair_id: input.pair_id}

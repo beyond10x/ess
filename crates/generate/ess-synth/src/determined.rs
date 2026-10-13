@@ -512,6 +512,15 @@ fn value(
                 field.target
             ));
         }
+        // Nor does it rank them (ess/25, beyond10x/ess#543): the head is owed, as the filtered
+        // read is, until generated storage enumerates a selector's rows.
+        ResolvedPayloadValue::RelatedHead { .. } => {
+            return Err(format!(
+                "a read of the first row of an ordered selection (`{{related: {{entity, where, \
+                 order_by, first}}}}`) for `{}`",
+                field.target
+            ));
+        }
         ResolvedPayloadValue::ResponseField { .. } => {
             return Err(format!("a response field for `{}`", field.target));
         }

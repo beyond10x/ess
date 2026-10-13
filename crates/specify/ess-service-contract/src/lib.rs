@@ -465,7 +465,8 @@ fn include_payload_field(
         | ResolvedPayloadValue::InputOrGenerated { type_ref, .. }
         | ResolvedPayloadValue::CallerAttribute { type_ref, .. }
         | ResolvedPayloadValue::PayloadRead { type_ref, .. }
-        | ResolvedPayloadValue::RelatedSelection { type_ref, .. } => Some(type_ref),
+        | ResolvedPayloadValue::RelatedSelection { type_ref, .. }
+        | ResolvedPayloadValue::RelatedHead { type_ref, .. } => Some(type_ref),
         ResolvedPayloadValue::RelatedField { via, type_ref, .. } => {
             include_type_ref(types, via.type_ref());
             Some(type_ref)
