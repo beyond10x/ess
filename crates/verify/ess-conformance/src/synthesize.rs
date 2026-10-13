@@ -188,6 +188,7 @@ mod disclosure;
 mod existence;
 mod grant;
 mod identity;
+mod ordered_head;
 mod paging;
 pub(crate) mod precedence;
 mod refusal_policy;
@@ -3478,26 +3479,6 @@ fn run(
     )
 }
 
-/// Whether `outcome` reads the head of an ordered selection (ess/25, beyond10x/ess#543) in
-/// `sets:`, a payload or an error payload, at any depth.
-fn reads_ranked_head(outcome: &ResolvedOutcome) -> bool {
-    fn head(value: &ResolvedPayloadValue) -> bool {
-        match value {
-            ResolvedPayloadValue::RelatedHead { .. } => true,
-            ResolvedPayloadValue::Struct { fields } => {
-                fields.iter().any(|field| head(&field.value))
-            }
-            _ => false,
-        }
-    }
-    outcome
-        .sets
-        .iter()
-        .chain(&outcome.error_payload)
-        .chain(outcome.payload.iter().flat_map(|payload| &payload.fields))
-        .any(|field| head(&field.value))
-}
-
 /// [`run`], for the invocation `witness` names.
 #[allow(clippy::too_many_lines)]
 fn run_as(
@@ -3510,17 +3491,6 @@ fn run_as(
     let ir = models.arrangement;
     if let Some(replay) = &outcome.replays {
         return run_replay_in(models, command, outcome, replay, actors);
-    }
-    // ess/25 (beyond10x/ess#543): no scenario arranges rows whose ranked head differs from the
-    // first inserted yet, so a branch reading a head is refused by name rather than witnessed on
-    // rows that cannot tell a correct head from a wrong one.
-    if reads_ranked_head(outcome) {
-        return Err(RefusalCause::NoWitness(crate::witness::WitnessGap {
-            path: format!("{}/{}", command.name, outcome.name),
-            type_ref: "ordered selection".into(),
-            reason: "the ranked head is not arranged: no scenario yet creates rows whose head by \
-                     the order differs from the first and the last inserted",
-        }));
     }
     if is_state_refusal(command, outcome) {
         let subject = command
@@ -3558,12 +3528,17 @@ fn run_as(
     // is arranged with the rows its selector selects, for every branch they decide.
     let rows = row_set::routes(command, outcome);
     let mut related_at = Distinction::PLAIN;
+    // ess/25 (beyond10x/ess#543): the ties of a ranked head no creating input steers, each a gap
+    // the scenario stands with.
+    let mut row_gaps: Vec<RefusalCause> = Vec::new();
     let (setup, input) =
         if rows {
             if witness != Witness::Full {
                 return Err(row_set::unarranged());
             }
-            row_set::prepare(models, command, outcome, actors)?
+            let (setup, input, gaps) = row_set::prepare(models, command, outcome, actors)?;
+            row_gaps = gaps;
+            (setup, input)
         } else if related {
             match witness {
                 Witness::Full => related_guard::prepare_at_in(
@@ -3740,7 +3715,7 @@ fn run_as(
     if (subject_fact::uses(command) || related || rows) && outcome.error.is_none() {
         invoke.push(ScenarioStep::ExpectNoError);
     }
-    let (mut after_steps, refused, unclaimed, mut unobserved) = if routed {
+    let (mut after_steps, mut refused, unclaimed, mut unobserved) = if routed {
         let around = subject_fact::around(models, command, outcome, actors, &mut setup, &supplied)?;
         (
             around.steps,
@@ -3751,6 +3726,7 @@ fn run_as(
     } else {
         (Vec::new(), Vec::new(), Vec::new(), BTreeSet::new())
     };
+    refused.extend(row_gaps);
     accepts_nothing(ir, outcome, &mut setup, &mut invoke, &mut after_steps);
     collision_witness(
         ir,
@@ -8402,6 +8378,16 @@ fn expression_value_at(
         } => before
             .get(&row_set::key(selection, read))
             .map(|held| held.value.clone()),
+        // ess/25 (#543): the head's value, which `row_set` settled where the rows it arranged rank
+        // one row first.
+        ResolvedPayloadValue::RelatedHead {
+            selection,
+            order_by,
+            field: read,
+            ..
+        } => before
+            .get(&ordered_head::key(selection, order_by, read))
+            .map(|held| held.value.clone()),
         ResolvedPayloadValue::Increment { by } => {
             let Node::Number(held) = before_literal_at(before, target_location)? else {
                 return None;
@@ -8457,9 +8443,6 @@ fn expression_value_at(
         | ResolvedPayloadValue::PayloadRead { .. }
         // ess/16 (#168): read only through `caller::synthesize`, which writes the caller's value in.
         | ResolvedPayloadValue::CallerAttribute { .. }
-        // ess/25 (#543): no arrangement settles a ranked head yet; a branch reading one is refused
-        // by name before it is arranged (`reads_ranked_head`).
-        | ResolvedPayloadValue::RelatedHead { .. }
         | ResolvedPayloadValue::ChangedCount => None,
     }
 }
