@@ -780,6 +780,16 @@ pub(crate) fn resolutions(
             )
         }
     };
+    // What a set effect's filter reads of a candidate row: its stored fields, and from ess/25 its
+    // identity (beyond10x/ess#547), so a bare identity on the right of a comparison is the row's
+    // and not text. Below ess/25 the word keeps the meaning it had.
+    let set_effect_fields = |entity: &EntitySpec| {
+        if spec.system().format.major() >= FormatVersion::V25.major() {
+            crate::command::set_effects::with_identity(entity)
+        } else {
+            entity.fields.clone()
+        }
+    };
     let mut resolved = Vec::new();
     for (site, lexical) in &written.sites {
         let found = match site {
@@ -882,7 +892,7 @@ pub(crate) fn resolutions(
                 let entity = spec.entities().get(&instances.entity)?;
                 Some((
                     instances.filter.clone(),
-                    over_row(&entity.fields, entity, command, lexical),
+                    over_row(&set_effect_fields(entity), entity, command, lexical),
                 ))
             }),
             Site::Affect {
@@ -894,7 +904,7 @@ pub(crate) fn resolutions(
                 let entity = spec.entities().get(&affect.entity)?;
                 Some((
                     affect.filter.clone()?,
-                    over_row(&entity.fields, entity, command, lexical),
+                    over_row(&set_effect_fields(entity), entity, command, lexical),
                 ))
             }),
             Site::Invariant { entity, index } => spec.entities().get(entity).and_then(|entity| {
