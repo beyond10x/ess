@@ -498,6 +498,9 @@ fn unchosen(
         ResolvedPayloadValue::RelatedSelection { .. } => {
             "a value read from the row a selector selects"
         }
+        ResolvedPayloadValue::RelatedHead { .. } => {
+            "a value read from the first row an ordered selection ranks"
+        }
     };
     format!(
         "the creating command sets {role} from {source}, whose value no arrangement here chooses"

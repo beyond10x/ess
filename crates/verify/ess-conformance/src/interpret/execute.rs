@@ -2314,6 +2314,17 @@ fn value_at(
             let (key, row) = reader.one(selection)?;
             values::selected(ir, field, ir.entity(&selection.entity), key, row)
         }
+        // The first row the selector selects by the order, in the same store (ess/25,
+        // beyond10x/ess#543); none supplies no value.
+        ResolvedPayloadValue::RelatedHead {
+            selection,
+            order_by,
+            ..
+        } => {
+            let reader = row_set::Reader::new(ir, work.command, work.original, input)?;
+            let (key, row) = reader.head(selection, order_by)?;
+            values::selected(ir, field, ir.entity(&selection.entity), key, row)
+        }
         ResolvedPayloadValue::SubjectState { .. } => values::held_state(work.before.as_ref()),
         ResolvedPayloadValue::SubjectField {
             field: read,

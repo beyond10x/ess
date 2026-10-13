@@ -3090,6 +3090,9 @@ impl<'a> Resolver<'a> {
             PayloadSource::RelatedSelection { .. } => {
                 self.selection_field(command, outcome, block, (target, source))?
             }
+            PayloadSource::RelatedHead { .. } => {
+                self.head_field(command, outcome, block, (target, source))?
+            }
             _ => unreachable!("every other source is resolved by `payload_field`"),
         };
         let conversion = self.crossing(command, outcome, block, target, source, &from)?;
@@ -3146,6 +3149,62 @@ impl<'a> Resolver<'a> {
                     entity: EntityHandle::new(entity.name.clone()),
                     filter: selection.filter.clone(),
                 },
+                field: read.name.clone(),
+                type_ref: read.type_ref.clone(),
+            },
+            read.type_ref,
+        ))
+    }
+
+    /// `{related: {entity, where, order_by, first}}` (ess/25, beyond10x/ess#543): the selector
+    /// resolved as a filtered read's, the order as written, and `first` read from the head row at
+    /// its declared type. `ess-domain` refused an order that is not total and a field the entity
+    /// does not hold; the refusal here is the backstop for a specification built field by field.
+    fn head_field(
+        &mut self,
+        command: &CommandSpec,
+        outcome: &ess_domain::command::Outcome,
+        block: SourceBlock<'_>,
+        (target, source): (&ResolvedField, &PayloadSource),
+    ) -> Option<(ResolvedPayloadValue, ResolvedTypeRef)> {
+        let PayloadSource::RelatedHead {
+            selection,
+            order_by,
+            first,
+            ..
+        } = source
+        else {
+            return None;
+        };
+        let read = self
+            .spec
+            .entities()
+            .get(&selection.entity)
+            .and_then(|entity| entity_field(entity, first).map(|held| (entity, held)));
+        let Some((entity, held)) = read else {
+            self.refuse_payload(
+                command,
+                outcome,
+                block,
+                Some((&target.name, source)),
+                codes::COMMAND_UNDECLARED_REFERENCE,
+                format!(
+                    "outcome `{}` of `{}` reads `{first}` of the first `{}` its selector ranks, \
+                     and that is no field of a declared entity",
+                    outcome.name, command.name, selection.entity
+                ),
+                Vec::new(),
+            );
+            return None;
+        };
+        let read = self.entity_field_resolved(entity, held)?;
+        Some((
+            ResolvedPayloadValue::RelatedHead {
+                selection: ResolvedRowSelection {
+                    entity: EntityHandle::new(entity.name.clone()),
+                    filter: selection.filter.clone(),
+                },
+                order_by: order_by.clone(),
                 field: read.name.clone(),
                 type_ref: read.type_ref.clone(),
             },
@@ -5501,6 +5560,7 @@ fn payload_constant_source(
         | PayloadSource::Struct { .. }
         | PayloadSource::RelatedField { .. }
         | PayloadSource::RelatedSelection { .. }
+        | PayloadSource::RelatedHead { .. }
         | PayloadSource::CallerAttribute { .. }
         | PayloadSource::PayloadRead { .. } => return None,
         PayloadSource::ChangedCount => ResolvedPayloadValue::ChangedCount,

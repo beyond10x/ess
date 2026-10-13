@@ -3474,6 +3474,26 @@ fn run(
     )
 }
 
+/// Whether `outcome` reads the head of an ordered selection (ess/25, beyond10x/ess#543) in
+/// `sets:`, a payload or an error payload, at any depth.
+fn reads_ranked_head(outcome: &ResolvedOutcome) -> bool {
+    fn head(value: &ResolvedPayloadValue) -> bool {
+        match value {
+            ResolvedPayloadValue::RelatedHead { .. } => true,
+            ResolvedPayloadValue::Struct { fields } => {
+                fields.iter().any(|field| head(&field.value))
+            }
+            _ => false,
+        }
+    }
+    outcome
+        .sets
+        .iter()
+        .chain(&outcome.error_payload)
+        .chain(outcome.payload.iter().flat_map(|payload| &payload.fields))
+        .any(|field| head(&field.value))
+}
+
 /// [`run`], for the invocation `witness` names.
 #[allow(clippy::too_many_lines)]
 fn run_as(
@@ -3486,6 +3506,17 @@ fn run_as(
     let ir = models.arrangement;
     if let Some(replay) = &outcome.replays {
         return run_replay_in(models, command, outcome, replay, actors);
+    }
+    // ess/25 (beyond10x/ess#543): no scenario arranges rows whose ranked head differs from the
+    // first inserted yet, so a branch reading a head is refused by name rather than witnessed on
+    // rows that cannot tell a correct head from a wrong one.
+    if reads_ranked_head(outcome) {
+        return Err(RefusalCause::NoWitness(crate::witness::WitnessGap {
+            path: format!("{}/{}", command.name, outcome.name),
+            type_ref: "ordered selection".into(),
+            reason: "the ranked head is not arranged: no scenario yet creates rows whose head by \
+                     the order differs from the first and the last inserted",
+        }));
     }
     if is_state_refusal(command, outcome) {
         let subject = command
@@ -7320,6 +7351,7 @@ fn determined_fields(
             | ResolvedPayloadValue::Struct { .. }
             | ResolvedPayloadValue::RelatedField { .. }
             | ResolvedPayloadValue::RelatedSelection { .. }
+            | ResolvedPayloadValue::RelatedHead { .. }
             | ResolvedPayloadValue::CallerAttribute { .. } => {
                 if let Some(ScenarioValue::Literal { value }) =
                     expression_value(ir, field, supplied, before)
@@ -8421,6 +8453,9 @@ fn expression_value_at(
         | ResolvedPayloadValue::PayloadRead { .. }
         // ess/16 (#168): read only through `caller::synthesize`, which writes the caller's value in.
         | ResolvedPayloadValue::CallerAttribute { .. }
+        // ess/25 (#543): no arrangement settles a ranked head yet; a branch reading one is refused
+        // by name before it is arranged (`reads_ranked_head`).
+        | ResolvedPayloadValue::RelatedHead { .. }
         | ResolvedPayloadValue::ChangedCount => None,
     }
 }
@@ -8972,8 +9007,9 @@ fn reads<'a>(target: &'a ess_compiler::ir::ResolvedPayloadField, out: &mut Vec<(
                 reads(leaf, out);
             }
         }
-        // A selector reads its inputs to select the row, not as the value.
-        ResolvedPayloadValue::RelatedSelection { selection, .. } => {
+        // A selector reads its inputs to select the row, not as the value; a ranked one too.
+        ResolvedPayloadValue::RelatedSelection { selection, .. }
+        | ResolvedPayloadValue::RelatedHead { selection, .. } => {
             out.extend(row_set::input_reads(&selection.filter).map(|field| (field, Read::Needed)));
         }
         ResolvedPayloadValue::Literal { .. }
@@ -9514,6 +9550,7 @@ fn settled(
             | ResolvedPayloadValue::Struct { .. }
             | ResolvedPayloadValue::RelatedField { .. }
             | ResolvedPayloadValue::RelatedSelection { .. }
+            | ResolvedPayloadValue::RelatedHead { .. }
             | ResolvedPayloadValue::CallerAttribute { .. } => {
                 match expression_value(ir, field, supplied, before) {
                     Some(value) => value,
