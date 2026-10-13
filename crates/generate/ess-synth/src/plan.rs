@@ -61,9 +61,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
 use ess_compiler::ir::{
-    EssIr, PrecedencePlan, ResolvedBinding, ResolvedBody, ResolvedCommand, ResolvedComponent,
-    ResolvedCondition, ResolvedConversion, ResolvedEffect, ResolvedFailure, ResolvedField,
-    ResolvedMappingValue, ResolvedRelatedTest, ResolvedTypeRef, ResolvedView, TypeHandle,
+    EssIr, PrecedencePlan, ResolvedAffect, ResolvedBinding, ResolvedBody, ResolvedCommand,
+    ResolvedComponent, ResolvedCondition, ResolvedConversion, ResolvedEffect, ResolvedFailure,
+    ResolvedField, ResolvedMappingValue, ResolvedPayloadField, ResolvedRelatedTest,
+    ResolvedSetSubject, ResolvedTypeRef, ResolvedView, TypeHandle,
 };
 use ess_domain::command::precedence::Phase;
 use ess_domain::component::Reach;
@@ -685,6 +686,12 @@ pub(crate) fn behavior_contract(ir: &EssIr, command: &ResolvedCommand) -> String
                 subject.entity
             );
         }
+        if let Some(set) = &outcome.instances {
+            branch.push_str(&set_subject_clause(ir, set, &outcome.sets));
+        }
+        for affect in &outcome.affects {
+            branch.push_str(&affect_clause(ir, affect));
+        }
         if let Some(replay) = &outcome.replays {
             let _ = write!(branch, ", returns the exact retained result of `{}` without errors, events, or subject changes", replay.origin);
         }
@@ -890,6 +897,82 @@ pub(crate) fn condition_phrase(condition: &ResolvedCondition) -> String {
 }
 
 /// An effect as a contract verb.
+/// The rows an `instances:` changes (ess/16), as a contract clause: the entity, the filter, the move
+/// or removal, and the fields every changed row comes to hold
+/// (`docs/design/set-effect-identity-filters.md`, D4).
+fn set_subject_clause(
+    ir: &EssIr,
+    set: &ResolvedSetSubject,
+    sets: &[ResolvedPayloadField],
+) -> String {
+    let entity = &ir.entity(&set.entity).name;
+    let filter = &set.filter;
+    match &set.effect {
+        ResolvedEffect::Deletes => format!(", removes every `{entity}` where `{filter}`"),
+        ResolvedEffect::Moves { transition } => format!(
+            ", changes every `{entity}` where `{filter}`{}{}",
+            moving_phrase(&transition.name),
+            setting_phrase(sets)
+        ),
+        _ => format!(
+            ", changes every `{entity}` where `{filter}`{}",
+            setting_phrase(sets)
+        ),
+    }
+}
+
+/// The rows one `affects:` entry changes beside the subject (ess/16, ess/22, ess/23), as a contract
+/// clause (`docs/design/set-effect-identity-filters.md`, D4).
+fn affect_clause(ir: &EssIr, affect: &ResolvedAffect) -> String {
+    let entity = &ir.entity(&affect.entity).name;
+    if let Some(each) = &affect.each {
+        let mut written: Vec<&str> = affect.sets.iter().map(|set| set.target.as_str()).collect();
+        written.extend(each.reads.iter().map(|read| read.target.as_str()));
+        let setting = if written.is_empty() {
+            String::new()
+        } else {
+            format!(", setting `{}`", written.join("`, `"))
+        };
+        return format!(
+            ", writes, beside its subject, one `{entity}` per element of `input.{}`: the row `{}.{}` \
+             names, updated if held and created if not{setting}",
+            each.list, each.binder, each.member
+        );
+    }
+    let filter = affect
+        .filter
+        .as_ref()
+        .map_or_else(String::new, ToString::to_string);
+    if affect.deletes {
+        return format!(", removes, beside its subject, every `{entity}` where `{filter}`");
+    }
+    let moving = affect
+        .moves
+        .as_ref()
+        .map_or_else(String::new, |transition| moving_phrase(&transition.name));
+    format!(
+        ", changes, beside its subject, every `{entity}` where `{filter}`{moving}{}",
+        setting_phrase(&affect.sets)
+    )
+}
+
+/// A selected row's move, and that a row outside the move's `from` states is skipped.
+fn moving_phrase(transition: &str) -> String {
+    format!(
+        ", moving it along `{transition}` (a row resting outside its `from` states is left as it \
+         is)"
+    )
+}
+
+/// The fields a set effect writes on every row it changes; empty for none.
+fn setting_phrase(sets: &[ResolvedPayloadField]) -> String {
+    if sets.is_empty() {
+        return String::new();
+    }
+    let fields: Vec<&str> = sets.iter().map(|set| set.target.as_str()).collect();
+    format!(", setting `{}`", fields.join("`, `"))
+}
+
 fn effect_phrase(effect: &ResolvedEffect) -> String {
     match effect {
         ResolvedEffect::Creates => "creates".to_owned(),
