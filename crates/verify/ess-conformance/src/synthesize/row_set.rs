@@ -14,6 +14,12 @@
 //!   neither the oldest nor the newest record of any value they share with a decoy, and a target
 //!   keeping one record per such value fails.
 //!
+//! A command may read several selectors — the two sides of one slot, differing by one conjunct
+//! (`docs/design/ordered-related-head.md`, "Several selectors in one command", beyond10x/ess#543).
+//! Each is arranged in the order it first appears in the command, its count drawn from
+//! [`COUNTS`] for every selector in turn; a decoy of one is never a row another selects, and a
+//! selected row's copied value differs from every row arranged for the selectors before it.
+//!
 //! The rows are arranged before the branch is decided, and the branch the specification takes on
 //! them is decided again over the rows the steps actually leave ([`walk`], [`consistent`]): the
 //! arrangement is a search, and what it found is checked, never assumed. A value read from the
@@ -137,34 +143,42 @@ fn gap(path: String, reason: &'static str) -> RefusalCause {
     })
 }
 
-/// The one selector the command reads, by its guards and its values; or a refusal naming the
-/// command where it reads more than one.
-fn selection_of(command: &ResolvedCommand) -> Result<&ResolvedRowSelection, RefusalCause> {
+/// The selector a filtered read reads, where `value` is one.
+fn read_selection(value: &ResolvedPayloadValue) -> Option<&ResolvedRowSelection> {
+    match value {
+        ResolvedPayloadValue::RelatedSelection { selection, .. } => Some(selection),
+        _ => None,
+    }
+}
+
+/// Every selector the command reads, by its guards and its values, each once, in the order they
+/// first appear in it (`docs/design/ordered-related-head.md`, "Several selectors in one command",
+/// beyond10x/ess#543); or a refusal naming the command where it reads none.
+fn selections_of(command: &ResolvedCommand) -> Result<Vec<&ResolvedRowSelection>, RefusalCause> {
     let mut found: Vec<&ResolvedRowSelection> = Vec::new();
     for outcome in &command.outcomes {
         if let ResolvedCondition::RelatedSet { selection, .. } = &outcome.condition {
             found.push(selection);
         }
         for read in reads(outcome) {
-            if let ResolvedPayloadValue::RelatedSelection { selection, .. } = &read.value {
+            if let Some(selection) = read_selection(&read.value) {
                 found.push(selection);
             }
         }
     }
-    let Some(first) = found.first() else {
+    let mut out: Vec<&ResolvedRowSelection> = Vec::new();
+    for selection in found {
+        if !out.contains(&selection) {
+            out.push(selection);
+        }
+    }
+    if out.is_empty() {
         return Err(gap(
             command.name.to_string(),
             "reads no row set, so no row-set arrangement applies",
         ));
-    };
-    if found.iter().any(|other| *other != *first) {
-        return Err(gap(
-            command.name.to_string(),
-            "reads more than one row set: a scenario arranges the rows of one selector per \
-             command in this cut",
-        ));
     }
-    Ok(first)
+    Ok(out)
 }
 
 /// Whether `type_ref` is a `String` or a `Uuid`, through `Optional` and newtypes.
@@ -476,16 +490,15 @@ fn addressed<'a>(
     })
 }
 
-/// What the rows decide for one send of `command`: the members of its selector, read with the
-/// input and subject the send names.
+/// What the rows decide for one send of `command`: the members of each of its selectors, read
+/// with the input and subject the send names.
 struct Reading<'a> {
     ir: &'a EssIr,
     command: &'a ResolvedCommand,
-    selection: &'a ResolvedRowSelection,
     supplied: BTreeMap<String, ScenarioValue>,
     input: BTreeMap<String, Node>,
     subject: Option<BTreeMap<String, Determined>>,
-    rows: Vec<&'a Row>,
+    rows: &'a Rows,
 }
 
 impl<'a> Reading<'a> {
@@ -495,8 +508,10 @@ impl<'a> Reading<'a> {
         supplied: &BTreeMap<String, ScenarioValue>,
         rows: &'a Rows,
     ) -> Result<Self, String> {
-        let selection = selection_of(command).map_err(|cause| cause.to_string())?;
-        let candidates = rows.of(&selection.entity)?;
+        // Every selector's rows are followed, or the send is not decided: checked once, here.
+        for selection in selections_of(command).map_err(|cause| cause.to_string())? {
+            rows.of(&selection.entity)?;
+        }
         let subject = addressed(command, supplied).and_then(|(entity, named)| {
             rows.held
                 .iter()
@@ -514,7 +529,6 @@ impl<'a> Reading<'a> {
         Ok(Self {
             ir,
             command,
-            selection,
             supplied: supplied.clone(),
             input: if subject_fact::identity_selectors(ir) {
                 resolved_literals(supplied, rows)
@@ -522,8 +536,13 @@ impl<'a> Reading<'a> {
                 literals(supplied)
             },
             subject,
-            rows: candidates,
+            rows,
         })
+    }
+
+    /// The rows of `selection`'s entity the steps left, each a candidate member.
+    fn candidates(&self, selection: &ResolvedRowSelection) -> Result<Vec<&'a Row>, String> {
+        self.rows.of(&selection.entity).map_err(str::to_owned)
     }
 
     /// `predicate` with the subject's values written in, where it reads any.
@@ -586,13 +605,17 @@ impl<'a> Reading<'a> {
         )
     }
 
-    fn members(&self, satisfies: Option<&Predicate>) -> Result<Vec<RowMember>, String> {
-        let filter = self.closed(&self.selection.filter)?;
+    fn members(
+        &self,
+        selection: &ResolvedRowSelection,
+        satisfies: Option<&Predicate>,
+    ) -> Result<Vec<RowMember>, String> {
+        let filter = self.closed(&selection.filter)?;
         let satisfies = satisfies
             .map(|predicate| self.closed(predicate))
             .transpose()?;
         Ok(self
-            .rows
+            .candidates(selection)?
             .iter()
             .map(|row| {
                 let selected = self.truth(row, &filter);
@@ -611,10 +634,15 @@ impl<'a> Reading<'a> {
 
     /// Whether `outcome`'s row-set guard and input guard select it, where it has one.
     fn takes(&self, outcome: &ResolvedOutcome) -> Result<Option<Truth>, String> {
-        let ResolvedCondition::RelatedSet { test, input, .. } = &outcome.condition else {
+        let ResolvedCondition::RelatedSet {
+            selection,
+            test,
+            input,
+        } = &outcome.condition
+        else {
             return Ok(None);
         };
-        let tested = test.decide(&self.members(test.predicate())?);
+        let tested = test.decide(&self.members(selection, test.predicate())?);
         let guarded = match input {
             None => Truth::True,
             Some(guard) => {
@@ -630,11 +658,11 @@ impl<'a> Reading<'a> {
         Ok(Some(tested.and(guarded)))
     }
 
-    /// The one row the selector selects, or why there is none to read.
-    fn one(&self) -> Result<&'a Row, String> {
-        let members = self.members(None)?;
+    /// The one row `selection` selects, or why there is none to read.
+    fn one(&self, selection: &ResolvedRowSelection) -> Result<&'a Row, String> {
+        let members = self.members(selection, None)?;
         match Selected::of(&members) {
-            Selected::One(index) => Ok(self.rows[index]),
+            Selected::One(index) => Ok(self.candidates(selection)?[index]),
             Selected::None => Err("no row is selected, and a read needs one".into()),
             Selected::Several => Err("several rows are selected, and a read needs one".into()),
             Selected::Unknown => Err("which row is selected is not decided".into()),
@@ -723,8 +751,10 @@ fn consistent(
             return Err(format!("its own row set is {taken:?}"));
         }
     }
-    if !reads(expected).is_empty() {
-        reading.one()?;
+    for read in reads(expected) {
+        if let Some(selection) = read_selection(&read.value) {
+            reading.one(selection)?;
+        }
     }
     Ok(())
 }
@@ -755,7 +785,8 @@ fn recreates(
         .commands()
         .values()
         .filter(|command| uses(command))
-        .filter_map(|command| selection_of(command).ok())
+        .filter_map(|command| selections_of(command).ok())
+        .flatten()
         .any(|selection| {
             selection.entity == subject.entity
                 && subject_fact::reads_key(&selection.filter, identity)
@@ -809,9 +840,6 @@ fn selected_values(
     let Ok(reading) = Reading::new(ir, command, supplied, rows) else {
         return out;
     };
-    let Ok(row) = reading.one() else {
-        return out;
-    };
     for read in reads(outcome) {
         let ResolvedPayloadValue::RelatedSelection {
             selection,
@@ -819,6 +847,9 @@ fn selected_values(
             type_ref,
         } = &read.value
         else {
+            continue;
+        };
+        let Ok(row) = reading.one(selection) else {
             continue;
         };
         let identity = &ir.entity(&row.entity).identity.name;
@@ -1056,10 +1087,20 @@ fn zero(value: &Node) -> bool {
     }
 }
 
+/// The other selectors of the command, and the rows the scenario already arranged for them: a
+/// decoy of this selector is a row none of `filters` selects, and a selected row's copied value
+/// differs from every row of `arranged` (beyond10x/ess#543).
+#[derive(Clone, Copy, Default)]
+struct Siblings<'s> {
+    filters: &'s [Predicate],
+    arranged: &'s [Arrangement],
+}
+
 /// The rows one attempt arranges: a decoy per conjunct of `filter`, then `count` rows it selects,
 /// the first of them refuting `foralls[violate]` where `violate` names one, then — where `count`
 /// is not zero — a decoy per conjunct again. Each selected row's value of every field in `copied`
-/// differs from zero and from every decoy's.
+/// differs from zero, from every decoy's and from every row `siblings` arranged; no decoy is a row
+/// a sibling selector selects.
 #[allow(clippy::too_many_arguments)]
 fn arrange_rows(
     ir: &EssIr,
@@ -1068,6 +1109,7 @@ fn arrange_rows(
     foralls: &[Predicate],
     (count, violate): (usize, Option<usize>),
     copied: &[&str],
+    siblings: Siblings<'_>,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     taken: &mut BTreeSet<InstanceName>,
     before: &[ScenarioStep],
@@ -1116,11 +1158,17 @@ fn arrange_rows(
             // Decidedly not selected, by this conjunct: it is false, and no other is. A conjunct
             // that reads what the missed one says is absent stays unknown, and is no other's
             // refutation.
+            // Nor is it a row another selector of the command selects: there it would be that
+            // selector's row, not a decoy (two sides of one slot differ by one conjunct).
             let accept = |row: &Arrangement| {
                 truth(row, filter) == Truth::False
                     && conjuncts.iter().enumerate().all(|(at, conjunct)| {
                         (truth(row, conjunct) == Truth::False) == (at == missed)
                     })
+                    && siblings
+                        .filters
+                        .iter()
+                        .all(|other| truth(row, other) == Truth::False)
                     && copied.iter().all(|field| {
                         selected
                             .iter()
@@ -1154,7 +1202,11 @@ fn arrange_rows(
             truth(row, &goal) == Truth::True
                 && copied.iter().all(|field| {
                     held(row, field).is_some_and(|value| {
-                        !zero(value) && decoys.iter().all(|decoy| held(decoy, field) != Some(value))
+                        !zero(value)
+                            && decoys
+                                .iter()
+                                .chain(siblings.arranged)
+                                .all(|decoy| held(decoy, field) != Some(value))
                     })
                 })
         };
@@ -1216,6 +1268,117 @@ fn arrange_row(
         .find_map(|steer| arrange_toward_filter(ir, entity, steer, actors, distinction, accept))
 }
 
+/// What one branch's arrangement reads per selector of its command, in the order the selectors
+/// first appear: the filter with the input and subject written in, the `forall` predicates of the
+/// row-set guards over it, and the fields the branch copies from the rows it selects.
+struct Plan<'p> {
+    selections: &'p [&'p ResolvedRowSelection],
+    filters: Vec<Predicate>,
+    foralls: Vec<Vec<Predicate>>,
+    copied: Vec<Vec<&'p str>>,
+}
+
+impl<'p> Plan<'p> {
+    /// The plan for `outcome` of `command` over `selections`, each predicate `closed`.
+    fn new(
+        command: &ResolvedCommand,
+        outcome: &'p ResolvedOutcome,
+        selections: &'p [&'p ResolvedRowSelection],
+        closed: &dyn Fn(&Predicate) -> Predicate,
+    ) -> Self {
+        let foralls = selections
+            .iter()
+            .map(|selection| {
+                command
+                    .outcomes
+                    .iter()
+                    .filter_map(|other| match &other.condition {
+                        ResolvedCondition::RelatedSet {
+                            selection: guarded,
+                            test,
+                            ..
+                        } if guarded == *selection => test.predicate().map(closed),
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .collect();
+        Self {
+            selections,
+            filters: selections
+                .iter()
+                .map(|selection| closed(&selection.filter))
+                .collect(),
+            foralls,
+            copied: selections
+                .iter()
+                .map(|selection| copied(outcome, selection))
+                .collect(),
+        }
+    }
+
+    /// No refuting row, then one refuting each `forall`, named `(selector, index)`.
+    fn variants(&self) -> Vec<Option<(usize, usize)>> {
+        std::iter::once(None)
+            .chain(
+                self.foralls
+                    .iter()
+                    .enumerate()
+                    .flat_map(|(at, tests)| (0..tests.len()).map(move |index| Some((at, index)))),
+            )
+            .collect()
+    }
+
+    /// The steps after `before` that arrange `counts[i]` rows of selector `i`, each selector's
+    /// after the one before it, the `forall` `violate` names refuted; and the rows arranged. `None`
+    /// where some selector's rows cannot be arranged.
+    fn arrange(
+        &self,
+        ir: &EssIr,
+        counts: &[usize],
+        violate: Option<(usize, usize)>,
+        actors: &BTreeMap<QualifiedName, ActorRef>,
+        before: &[ScenarioStep],
+    ) -> Option<(Vec<ScenarioStep>, Vec<Arrangement>)> {
+        let mut taken = captured(before);
+        let mut steps = before.to_vec();
+        let mut arranged: Vec<Arrangement> = Vec::new();
+        for (at, selection) in self.selections.iter().enumerate() {
+            let others: Vec<Predicate> = self
+                .selections
+                .iter()
+                .zip(&self.filters)
+                .enumerate()
+                .filter(|(other, (sibling, _))| *other != at && sibling.entity == selection.entity)
+                .map(|(_, (_, filter))| filter.clone())
+                .collect();
+            let rows = arrange_rows(
+                ir,
+                &selection.entity,
+                &self.filters[at],
+                &self.foralls[at],
+                (
+                    counts[at],
+                    violate.filter(|(of, _)| *of == at).map(|(_, index)| index),
+                ),
+                &self.copied[at],
+                Siblings {
+                    filters: &others,
+                    arranged: &arranged,
+                },
+                actors,
+                &mut taken,
+                &steps,
+            )?;
+            for row in &rows {
+                steps.extend(row.steps.iter().cloned());
+            }
+            arranged.extend(rows);
+        }
+        Some((steps, arranged))
+    }
+}
+
 /// Why no scenario can decide the rows `selection` selects, where none can: it is unscoped, or it
 /// reads a member of a struct identity no row holds as a literal.
 fn decidable(ir: &EssIr, selection: &ResolvedRowSelection) -> Result<(), &'static str> {
@@ -1246,9 +1409,11 @@ pub(super) fn prepare(
     actors: &BTreeMap<QualifiedName, ActorRef>,
 ) -> Result<(Setup, BTreeMap<String, Node>), RefusalCause> {
     let ir = models.arrangement;
-    let selection = selection_of(command)?;
+    let selections = selections_of(command)?;
     let at = || format!("{}/{}", command.name, outcome.name);
-    decidable(ir, selection).map_err(|reason| gap(at(), reason))?;
+    for selection in &selections {
+        decidable(ir, selection).map_err(|reason| gap(at(), reason))?;
+    }
     let input = input_for(ir, command, outcome, Distinction::PLAIN)?;
     let setup = subject_setup(ir, command, outcome, actors)?;
     let subject_ref = reading(command, outcome);
@@ -1265,43 +1430,17 @@ pub(super) fn prepare(
             input_value(path, &input).or_else(|| subject_value(path, &setup.settled))
         })
     };
-    let filter = closed(&selection.filter);
-    let foralls: Vec<Predicate> = command
-        .outcomes
-        .iter()
-        .filter_map(|other| match &other.condition {
-            ResolvedCondition::RelatedSet { test, .. } => test.predicate().map(closed),
-            _ => None,
-        })
-        .collect();
-    let copied = copied(outcome);
-    let variants: Vec<Option<usize>> = std::iter::once(None)
-        .chain((0..foralls.len()).map(Some))
-        .collect();
+    let plan = Plan::new(command, outcome, &selections, &closed);
     let mut first_failure: Option<String> = None;
-    for count in COUNTS {
-        for violate in &variants {
-            if violate.is_some() && count == 0 {
+    for counts in count_tuples(selections.len()) {
+        for violate in &plan.variants() {
+            if violate.is_some_and(|(at, _)| counts[at] == 0) {
                 continue;
             }
-            let mut taken = captured(&setup.steps);
-            let Some(arranged) = arrange_rows(
-                ir,
-                &selection.entity,
-                &filter,
-                &foralls,
-                (count, *violate),
-                &copied,
-                actors,
-                &mut taken,
-                &setup.steps,
-            ) else {
+            let Some((steps, arranged)) = plan.arrange(ir, &counts, *violate, actors, &setup.steps)
+            else {
                 continue;
             };
-            let mut steps = setup.steps.clone();
-            for row in &arranged {
-                steps.extend(row.steps.iter().cloned());
-            }
             let rows = match walk(ir, &steps, true) {
                 Ok(rows) => rows,
                 Err(why) => {
@@ -1318,9 +1457,11 @@ pub(super) fn prepare(
             for row in &arranged {
                 found.source.extend(row.source.iter().cloned());
             }
-            found
-                .source
-                .insert(EntityRef::from(&selection.entity).into());
+            for selection in &selections {
+                found
+                    .source
+                    .insert(EntityRef::from(&selection.entity).into());
+            }
             found
                 .settled
                 .extend(selected_values(ir, command, outcome, &supplied, &rows));
@@ -1444,15 +1585,38 @@ pub(super) fn input_reads(predicate: &Predicate) -> impl Iterator<Item = &str> {
     })
 }
 
-/// Every field `outcome` copies from a selected row, once each, in name order.
-fn copied(outcome: &ResolvedOutcome) -> Vec<&str> {
+/// Every field `outcome` copies from a row `selection` selects, once each, in name order.
+fn copied<'o>(outcome: &'o ResolvedOutcome, selection: &ResolvedRowSelection) -> Vec<&'o str> {
     reads(outcome)
         .into_iter()
         .filter_map(|read| match &read.value {
-            ResolvedPayloadValue::RelatedSelection { field, .. } => Some(field.as_str()),
+            ResolvedPayloadValue::RelatedSelection {
+                selection: read,
+                field,
+                ..
+            } if read == selection => Some(field.as_str()),
             _ => None,
         })
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect()
+}
+
+/// Every combination of row counts for `selectors` selectors, each drawn from [`COUNTS`] in its
+/// order, the first selector's count varying slowest: for one selector, [`COUNTS`] itself.
+fn count_tuples(selectors: usize) -> Vec<Vec<usize>> {
+    let mut out: Vec<Vec<usize>> = vec![Vec::new()];
+    for _ in 0..selectors {
+        out = out
+            .into_iter()
+            .flat_map(|prefix| {
+                COUNTS.iter().map(move |count| {
+                    let mut next = prefix.clone();
+                    next.push(*count);
+                    next
+                })
+            })
+            .collect();
+    }
+    out
 }
