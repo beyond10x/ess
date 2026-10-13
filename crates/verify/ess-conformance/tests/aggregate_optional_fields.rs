@@ -859,7 +859,7 @@ fn every_way_of_getting_absence_wrong_fails_the_scenarios_that_witness_it() {
         (Mutant::DropsAbsentKeyRows, set(&[PER_GROUP, PER_CHANNEL])),
         (
             Mutant::DropsAbsentValueRows,
-            set(&[BY_CUSTOMER, FOR_CUSTOMER, PER_CHANNEL]),
+            set(&[BY_CUSTOMER, FOR_CUSTOMER, PER_CHANNEL, PER_GROUP]),
         ),
     ];
     let mut wrong = Vec::new();

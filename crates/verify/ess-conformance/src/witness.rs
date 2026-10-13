@@ -24,7 +24,14 @@
 //!    is missing from its mapping, never present as `null`; the flattener binds nothing for either,
 //!    and absence is the one a runner can send without choosing an encoding for `null`. Omissions
 //!    vary slowest, after every candidate that fills them, and each is reserved inside rule 4's
-//!    bound so a guard with many varied leaves cannot crowd it out.
+//!    bound so a guard with many varied leaves cannot crowd it out. **An optional member the
+//!    command cannot read is sent absent** (beyond10x/ess#546): one no guard, invariant or
+//!    non-copying effect reads — a plain copy is not a read — is left out of every candidate
+//!    first, and filled only in the candidate paired behind it, as a presence-policy member is
+//!    ([`unread_optionals`], `docs/design/unread-optional-inputs.md`). A filled optional
+//!    `Timestamp`, number, `Duration` or `Bytes` leaf takes a value [`apart`] from every required
+//!    leaf's and every other optional leaf's, so an optional deadline is never sent at the queue
+//!    instant's literal unless a guard relating the two asks for it.
 //! 2. **A text witness is its own fact path.** `contact` carries `"contact"` and
 //!    `alternate_contact` carries `"alternate_contact"`, so two same-typed fields are never
 //!    interchangeable — which is the only way a swapped binding mapping is a detectable fault rather
@@ -705,7 +712,14 @@ fn search_with(
     // selects, the first one it takes publishes the policy fields absent, and an implementation
     // that spells the absence the other way fails. No guard reads such a member, so this never
     // changes the branch.
-    let presence_omits = presence_inputs(ir, command, &read_paths(&expanded), &builder.optionals);
+    let mut presence_omits =
+        presence_inputs(ir, command, &read_paths(&expanded), &builder.optionals);
+    // An optional member the command cannot read is sent absent first in the same way
+    // (beyond10x/ess#546): filling it claims a value no branch, invariant or later step asked
+    // for, and an implementation that acts on it answers a scenario that never mentioned it.
+    for path in unread_optionals(ir, command, &builder, &expanded, &constrained) {
+        presence_omits.entry(path).or_insert(Choice::Omit);
+    }
 
     if !between {
         if let Some(inputs) = finite_partition(ir, command, guards, &mut builder, &presence_omits)?
@@ -1091,6 +1105,240 @@ fn policy_members(
                 ResolvedBody::Enum { .. } | ResolvedBody::Union { .. } => return,
             },
             _ => return,
+        }
+    }
+}
+
+/// The `Optional` members of the input — top-level or inside a struct of it — that nothing the
+/// command does can read (beyond10x/ess#546, `docs/design/unread-optional-inputs.md`).
+///
+/// Read, so kept filled, is a member on the path of anything read: by `guards` (the search's
+/// own), by any input guard of the command, by an invariant over the input or over a stored field
+/// a branch copies it into ([`invariant_reads`]), or by an effect that is not a plain copy —
+/// `{input: x, else: …}`, a supplied instance, an input `via`, a converted copy, `each:`, and the
+/// filters of `instances:`, `affects:` and row selections. A member the author gave an `example:`
+/// is kept as well. A plain copy into a stored, payload or error field is not a read: an absent
+/// input copied is an absent field. A later step that reads the stored copy reaches this search as
+/// a guard, translated onto the input by the arrangement that needs it.
+fn unread_optionals(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    builder: &Builder<'_>,
+    guards: &[&Predicate],
+    constrained: &[Vec<Held>],
+) -> Vec<FactPath> {
+    let mut read = read_paths(guards);
+    for guard in guards {
+        read.extend(guard.quantified_collections().into_iter().cloned());
+    }
+    for predicate in builder
+        .struct_invariants
+        .iter()
+        .chain(&entity_constraints(constrained))
+    {
+        read.extend(predicate.fact_paths().into_iter().cloned());
+    }
+    for outcome in &command.outcomes {
+        command_reads(outcome, &mut read);
+    }
+    invariant_reads(ir, command, &mut read);
+    read.extend(
+        command
+            .examples
+            .keys()
+            .filter_map(|name| FactPath::new(name).ok()),
+    );
+    builder
+        .optionals
+        .iter()
+        .filter(|optional| {
+            !read.iter().any(|path| {
+                path.segments().starts_with(optional.segments())
+                    || optional.segments().starts_with(path.segments())
+            })
+        })
+        .cloned()
+        .collect()
+}
+
+/// Every input path a branch of `command` copies into a stored field some invariant of that entity
+/// reads, into `read`.
+///
+/// The invariant is checked after every later step, so the copy is what a later step's scenario
+/// reads: `any: [state == Paused, not defined(tags)]` beside `sets: {tags: input.tags}` needs `tags`
+/// sent, or a resume that keeps them breaks nothing a scenario can see. Unlike
+/// [`outcome_constraints`], an invariant that also reads a field the branch does not copy counts.
+fn invariant_reads(ir: &EssIr, command: &ResolvedCommand, read: &mut BTreeSet<FactPath>) {
+    use ess_compiler::ir::{ResolvedPayloadField, ResolvedPayloadValue};
+    fn copies(
+        fields: &[ResolvedPayloadField],
+        at: Option<&FactPath>,
+        found: &mut Vec<(FactPath, FactPath)>,
+    ) {
+        for field in fields {
+            let Ok(target) = FactPath::new(&field.target) else {
+                continue;
+            };
+            let stored = at.map_or_else(|| target.clone(), |at| joined(at, &target));
+            match &field.value {
+                ResolvedPayloadValue::InputField { field, .. }
+                | ResolvedPayloadValue::InputOrGenerated { field, .. } => {
+                    if let Ok(input) = FactPath::new(field) {
+                        found.push((stored, input));
+                    }
+                }
+                ResolvedPayloadValue::Struct { fields } => copies(fields, Some(&stored), found),
+                _ => {}
+            }
+        }
+    }
+    for outcome in &command.outcomes {
+        let written = outcome
+            .subject
+            .iter()
+            .map(|subject| (&subject.entity, &outcome.sets))
+            .chain(
+                outcome
+                    .affects
+                    .iter()
+                    .map(|affect| (&affect.entity, &affect.sets)),
+            );
+        for (entity, sets) in written {
+            let mut copied = Vec::new();
+            copies(sets, None, &mut copied);
+            for invariant in &ir.entity(entity).invariants {
+                for path in invariant.predicate.fact_paths() {
+                    for (stored, input) in &copied {
+                        if path.segments().starts_with(stored.segments())
+                            || stored.segments().starts_with(path.segments())
+                        {
+                            read.insert(input.clone());
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Every input path `outcome` reads other than by a plain copy, into `read`.
+///
+/// A predicate that may mix stored fields with input reads — a filter, a stored-field or related
+/// guard — contributes each path both as written and with a leading `input` segment removed. That
+/// over-approximates: a stored field spelled like an input keeps the input filled, which is what
+/// it always was.
+#[allow(clippy::too_many_lines)]
+fn command_reads(outcome: &ess_compiler::ir::ResolvedOutcome, read: &mut BTreeSet<FactPath>) {
+    use ess_compiler::ir::{
+        ResolvedCondition, ResolvedInstance, ResolvedPayloadField, ResolvedPayloadValue,
+        ResolvedRelatedTest, ResolvedRelatedVia, ResolvedRowSetTest,
+    };
+    fn mixed(predicate: &Predicate, read: &mut BTreeSet<FactPath>) {
+        for path in predicate.fact_paths() {
+            read.insert(path.clone());
+            if let Some(("input", rest)) = path
+                .segments()
+                .split_first()
+                .map(|(head, rest)| (head.as_str(), rest))
+            {
+                if !rest.is_empty() {
+                    read.insert(FactPath::from_segments(rest));
+                }
+            }
+        }
+        for over in predicate.quantified_collections() {
+            read.insert(over.clone());
+        }
+    }
+    fn named(field: &str, read: &mut BTreeSet<FactPath>) {
+        if let Ok(path) = FactPath::new(field) {
+            read.insert(path);
+        }
+    }
+    fn via(via: &ResolvedRelatedVia, read: &mut BTreeSet<FactPath>) {
+        if let ResolvedRelatedVia::Input { field, .. } = via {
+            named(field, read);
+        }
+    }
+    fn values(fields: &[ResolvedPayloadField], read: &mut BTreeSet<FactPath>) {
+        for field in fields {
+            match &field.value {
+                ResolvedPayloadValue::InputField { field: source, .. } => {
+                    if field.conversion.is_some() {
+                        named(source, read);
+                    }
+                }
+                ResolvedPayloadValue::InputOrGenerated {
+                    field: source,
+                    otherwise,
+                    ..
+                } => {
+                    named(source, read);
+                    if let Some(input) = otherwise.as_ref().and_then(|o| o.input()) {
+                        named(&input.field, read);
+                    }
+                }
+                ResolvedPayloadValue::RelatedField { via: from, .. } => via(from, read),
+                ResolvedPayloadValue::RelatedSelection { selection, .. } => {
+                    mixed(&selection.filter, read);
+                }
+                ResolvedPayloadValue::Struct { fields } => values(fields, read),
+                _ => {}
+            }
+        }
+    }
+    if let Some(predicate) = input_guard(outcome) {
+        mixed(predicate, read);
+    }
+    match &outcome.condition {
+        ResolvedCondition::SubjectPredicate { predicate, .. } => mixed(predicate, read),
+        ResolvedCondition::Related {
+            via: from, test, ..
+        } => {
+            via(from, read);
+            if let ResolvedRelatedTest::Holds { predicate } = test {
+                mixed(predicate, read);
+            }
+        }
+        ResolvedCondition::RelatedSet {
+            selection,
+            test,
+            input,
+        } => {
+            mixed(&selection.filter, read);
+            if let ResolvedRowSetTest::Forall(predicate) = test {
+                mixed(predicate, read);
+            }
+            if let Some(predicate) = input {
+                mixed(predicate, read);
+            }
+        }
+        _ => {}
+    }
+    for subject in outcome
+        .subject
+        .iter()
+        .chain(outcome.replays.as_ref().map(|replay| &replay.subject))
+    {
+        if let ResolvedInstance::Supplied { field } = &subject.instance {
+            named(&field.name, read);
+        }
+    }
+    values(&outcome.sets, read);
+    values(&outcome.error_payload, read);
+    for payload in &outcome.payload {
+        values(&payload.fields, read);
+    }
+    if let Some(instances) = &outcome.instances {
+        mixed(&instances.filter, read);
+    }
+    for affect in &outcome.affects {
+        values(&affect.sets, read);
+        if let Some(filter) = &affect.filter {
+            mixed(filter, read);
+        }
+        if let Some(each) = &affect.each {
+            named(&each.list, read);
         }
     }
 }
@@ -4380,6 +4628,13 @@ struct Builder<'ir> {
     /// leaf's ladder as well, so a guard whose literal the repair moved the base onto is still
     /// refuted by some candidate.
     unrepaired: BTreeMap<FactPath, Node>,
+    /// How many `Optional` layers the value being built is inside: above zero, a primitive whose
+    /// witness comes from the instance alone takes one [`apart`] from the required leaves'
+    /// (beyond10x/ess#546).
+    optional_depth: usize,
+    /// Each such leaf inside an `Optional`, numbered in the order the base witness first reaches
+    /// it, so two of them are kept apart as well.
+    apart_ordinals: BTreeMap<FactPath, usize>,
 }
 
 impl<'ir> Builder<'ir> {
@@ -4410,6 +4665,8 @@ impl<'ir> Builder<'ir> {
             struct_invariants: Vec::new(),
             fixed: BTreeMap::new(),
             unrepaired: BTreeMap::new(),
+            optional_depth: 0,
+            apart_ordinals: BTreeMap::new(),
         }
     }
 
@@ -4501,6 +4758,11 @@ impl<'ir> Builder<'ir> {
     /// the input's example at the plain instance.
     fn primitive(&mut self, name: Primitive, path: &FactPath, record: bool) -> Node {
         let mut base = primitive_value(name, path, self.distinction);
+        if self.optional_depth > 0 && has_apart(name) {
+            let next = self.apart_ordinals.len();
+            let ordinal = *self.apart_ordinals.entry(path.clone()).or_insert(next);
+            base = apart(name, self.distinction, ordinal);
+        }
         // The prefix goes in front first, and the alphabet then maps the whole text: every
         // character of the prefix is in the alphabet, which validation holds, so mapping keeps it.
         if let (Node::Text(text), Some(prefix)) = (&base, self.prefixes.get(path)) {
@@ -4731,7 +4993,12 @@ impl<'ir> Builder<'ir> {
             // Transparent, exactly as the flattener reads them: neither an optional nor a newtype
             // has a segment of its own, so the path does not grow. The base fills an optional;
             // leaving one out is a candidate's choice, made by `member`.
-            ResolvedTypeRef::Optional { of } => self.value(of, path, overrides, depth + 1, record),
+            ResolvedTypeRef::Optional { of } => {
+                self.optional_depth += 1;
+                let built = self.value(of, path, overrides, depth + 1, record);
+                self.optional_depth -= 1;
+                built
+            }
             ResolvedTypeRef::List { of } => self.list(of, path, overrides, depth, record),
             ResolvedTypeRef::Map { .. } => Ok(self.map(type_ref, path, overrides, depth, record)),
             ResolvedTypeRef::Primitive { name } => {
@@ -4980,6 +5247,73 @@ fn primitive_value(primitive: Primitive, path: &FactPath, distinction: Distincti
                 format!("{path}-{nth}")
             }),
         )])),
+    }
+}
+
+/// Whether [`primitive_value`] takes `primitive`'s witness from the instance alone, with enough
+/// values that a leaf inside an `Optional` can be kept [`apart`] from the required ones.
+///
+/// `String`, `Uuid` and `Json` are built from the path already (rule 2); a `Boolean` has two
+/// values, too few to keep anything apart.
+fn has_apart(primitive: Primitive) -> bool {
+    matches!(
+        primitive,
+        Primitive::Timestamp
+            | Primitive::Integer
+            | Primitive::Decimal
+            | Primitive::Duration
+            | Primitive::Bytes
+    )
+}
+
+/// The minutes past midnight the `ordinal`th optional `Timestamp` leaf of an input lands on.
+///
+/// `(1 + ordinal) × 61` modulo a day: 61 is coprime with the 1440 minutes of a day, so the first
+/// 1439 such leaves take distinct times, none of them the midnight every required leaf takes.
+const APART_MINUTES: usize = 61;
+
+/// The distance between the required leaves' number and the `ordinal`th optional one's.
+const APART_NUMBER: f64 = 100.0;
+
+/// The base of a primitive leaf inside an `Optional`, the `ordinal`th such leaf of its input
+/// (beyond10x/ess#546, `docs/design/unread-optional-inputs.md`).
+///
+/// [`primitive_value`] gives every `Timestamp`, number, `Duration` and `Bytes` leaf of one
+/// instance one value, so an optional deadline beside a required queue instant was sent equal to
+/// it — a relation no specification stated. Here the leaf takes the same instance's value moved
+/// by its ordinal, never onto a required leaf's and never onto another optional leaf's: a
+/// `Timestamp` to a time past midnight on the same day, a number up by a hundred per ordinal, a
+/// `Duration` up by 61 seconds per ordinal and a `Bytes` up by one byte.
+fn apart(primitive: Primitive, distinction: Distinction, ordinal: usize) -> Node {
+    let nth = distinction.get();
+    let step = ordinal.saturating_add(1);
+    match primitive {
+        Primitive::Timestamp => {
+            let minutes = step.wrapping_mul(APART_MINUTES) % (24 * 60);
+            Node::Text(format!(
+                "{BASE_TIMESTAMP_MONTH}-{:02}T{:02}:{:02}:00Z",
+                1 + nth % DISTINGUISHABLE_DAYS,
+                minutes / 60,
+                minutes % 60
+            ))
+        }
+        Primitive::Integer | Primitive::Decimal => {
+            let ordinal = f64::from(u32::try_from(nth).unwrap_or(u32::MAX));
+            let step = f64::from(u32::try_from(step).unwrap_or(u32::MAX));
+            Node::Number(number(BASE_NUMBER + ordinal + APART_NUMBER * step))
+        }
+        Primitive::Duration => Node::Text(format!(
+            "PT{}S",
+            BASE_DURATION_SECONDS
+                .saturating_add(nth)
+                .saturating_add(step.saturating_mul(APART_MINUTES))
+        )),
+        Primitive::Bytes => Node::Text(base64_byte(
+            BASE_BYTE
+                .wrapping_add(nth.to_le_bytes()[0])
+                .wrapping_add(step.to_le_bytes()[0]),
+        )),
+        _ => unreachable!("called only where `has_apart` holds"),
     }
 }
 
