@@ -37,6 +37,16 @@ impl Facts {
         };
     }
 
+    /// Lets `millis` pass on the scenario's logical clock: a window held open for its whole bound
+    /// (an await of a system-issued command that reached nothing, beyond10x/ess#542).
+    pub(super) fn hold(&mut self, millis: u64) -> Result<(), TargetError> {
+        self.now_ms = self
+            .now_ms
+            .checked_add(millis)
+            .ok_or_else(|| missing("the relative elapsed range is exhausted"))?;
+        Ok(())
+    }
+
     pub(super) fn check(&self, correlation: &CorrelationId) -> Result<(), TargetError> {
         if self.correlation.as_ref() == Some(correlation) {
             Ok(())

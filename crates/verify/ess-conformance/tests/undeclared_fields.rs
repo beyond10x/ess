@@ -536,7 +536,7 @@ fn an_opened_response_under_an_older_major_is_refused_by_name() {
 fn a_reader_of_48_refuses_a_later_major_by_version() {
     let suite = synthesized(Opened::Response, false, false);
     assert!(AdmittedSuite::from_json(&relabelled(&suite, 48)).is_ok());
-    assert!(AdmittedSuite::from_json(&relabelled(&suite, 50)).is_err());
+    assert!(AdmittedSuite::from_json(&relabelled(&suite, 52)).is_err());
 }
 
 /// One forgery of a direct response observation.

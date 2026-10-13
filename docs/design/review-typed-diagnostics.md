@@ -285,10 +285,17 @@ the `ess/24` key `undeclared_fields:` is refused at `<kind> <name>.undeclared_fi
 is no struct, on any other declaration, on a command without `response:` and below `ess/24`, each
 from one `ConstructRef` helper, so it adds no head literal below.
 
+`system_issued.rs` is new with beyond10x/ess#542, three typed sites and no string-located one:
+`await_within:` below `ess/25` and on a command that is not system-issued, at
+`command.<name>.await_within`, and a binding invoking a system-issued command, at
+`binding.<id>.invoke`. `actor.rs` gains two typed sites with it, `system: true` below `ess/25`
+at `actor.<name>.system` and beside `attributes:` at `actor.<name>.attributes`. None adds a head
+literal below.
+
 <!-- inventory:begin -->
 ```text
 accessor.rs 1 0
-actor.rs 3 2
+actor.rs 3 4
 binding.rs 36 0
 command.rs 13 57
 component.rs 15 9
@@ -300,6 +307,7 @@ primitive_admission.rs 16 8
 selection.rs 2 0
 spec.rs 7 0
 system.rs 10 0
+system_issued.rs 0 3
 topology.rs 10 0
 types.rs 23 1
 undeclared_fields.rs 0 4

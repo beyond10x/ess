@@ -334,6 +334,10 @@ pub(super) fn validate_affect(
 
 /// One source against the field it fills. `depth` counts nested mappings; a top-level source that
 /// existed before `ess/14` is checked elsewhere and only its `subject.` spelling is read here.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one arm per source kind, each delegating to its own check"
+)]
 fn check(
     context: &Context<'_>,
     at: &ConstructRef,
@@ -406,6 +410,7 @@ fn check(
         PayloadSource::RelatedField { .. } | PayloadSource::RelatedSelection { .. } => {
             check_related(context, at, target, source, errors);
         }
+        PayloadSource::RelatedHead { .. } => check_head(context, at, target, source, errors),
         PayloadSource::CallerAttribute { attribute } => {
             super::caller_value::check_source(
                 context.spec,
@@ -436,12 +441,32 @@ fn check(
         PayloadSource::ChangedCount if depth > 0 || place == Place::Sets => {
             errors.push(super::set_effects::count_elsewhere(at));
         }
+        // ess/25 (beyond10x/ess#545): below it both are read back as nested mappings.
+        PayloadSource::Generated { present: true } => {
+            if let Some(refusal) = super::minted_value::check_present(at, target) {
+                errors.push(refusal);
+            }
+        }
+        PayloadSource::PayloadRead { event, field } => {
+            if place == Place::Sets {
+                super::minted_value::check_read(
+                    context.spec,
+                    context.outcome,
+                    at,
+                    target,
+                    (event, field),
+                    errors,
+                );
+            } else {
+                errors.push(super::minted_value::read_elsewhere(at));
+            }
+        }
         PayloadSource::ChangedCount
         | PayloadSource::Scalar { .. }
         | PayloadSource::InputField { .. }
         | PayloadSource::ResponseField { .. }
         | PayloadSource::Cleared
-        | PayloadSource::Generated => {}
+        | PayloadSource::Generated { present: false } => {}
     }
 }
 
@@ -453,6 +478,7 @@ fn kind(source: &PayloadSource) -> &'static str {
         PayloadSource::Struct { .. } => "nested mapping",
         PayloadSource::RelatedField { .. } => "`{related: …}`",
         PayloadSource::RelatedSelection { .. } => "`{related: {entity, where, field}}`",
+        PayloadSource::RelatedHead { .. } => "`{related: {entity, where, order_by, first}}`",
         PayloadSource::CallerAttribute { .. } => "`{caller: …}`",
         PayloadSource::ChangedCount => "`{count: changed}`",
         _ => "payload",
@@ -1485,7 +1511,19 @@ fn check_struct(
         return;
     }
     let Some(declared) = context.resolved.types.struct_fields(&target.type_ref) else {
+        // `{related: {entity, where, first}}` with no list: a head read missing its order
+        // (ess/25, beyond10x/ess#543), where a nested mapping cannot fill the target anyway.
+        if let Some(refusal) = super::ordered_head::misread_mapping(at, fields) {
+            errors.push(refusal);
+            return;
+        }
         if let Some(refusal) = related_mapping(context, at, fields) {
+            errors.push(refusal);
+            return;
+        }
+        if let Some(refusal) =
+            super::minted_value::misread_mapping(context.spec.system().format, at, target, fields)
+        {
             errors.push(refusal);
             return;
         }
@@ -1768,6 +1806,118 @@ fn check_selection(
         errors.push(mismatch(
             at,
             &format!("`{}.{field}`", entity.name),
+            &read.type_ref,
+            target,
+        ));
+    }
+}
+
+/// `{related: {entity, where, order_by, first}}` (ess/25, beyond10x/ess#543): the selector exactly
+/// as a filtered read's ([`check_selection`]), a total order over its rows
+/// ([`super::ordered_head::check_order`]), and `first` read as `field:` is.
+fn check_head(
+    context: &Context<'_>,
+    at: &ConstructRef,
+    target: &Field,
+    source: &PayloadSource,
+    errors: &mut ValidationErrors,
+) {
+    use super::ordered_head;
+    let PayloadSource::RelatedHead {
+        selection,
+        order_by,
+        first,
+        written,
+    } = source
+    else {
+        return;
+    };
+    let spec = context.spec;
+    if spec.system().format.major() < FormatVersion::V25.major() {
+        errors.push(ordered_head::below_ess_25(at));
+        return;
+    }
+    if let Some(conflict) = &written.conflict {
+        errors.push(ordered_head::conflict(at, conflict));
+        return;
+    }
+    if let Some(why) = &written.predicate {
+        errors.push(ValidationError::at(
+            at.clone(),
+            ValidationCode::TypeMismatch,
+            format!(
+                "the `where:` of `{{related: {{entity, where, order_by, first}}}}` is no \
+                 predicate: {why}"
+            ),
+        ));
+        return;
+    }
+    if !written.keys.is_empty() {
+        for (index, why) in &written.keys {
+            errors.push(
+                ValidationError::at(
+                    at.clone()
+                        .key("related")
+                        .key(ordered_head::ORDER_BY)
+                        .index(*index),
+                    ValidationCode::TypeMismatch,
+                    why.clone(),
+                )
+                .with_hint("write a ranking key as `<field>` or `<field> asc|desc`"),
+            );
+        }
+        return;
+    }
+    let Some(entity) = spec.entities().get(&selection.entity) else {
+        errors.push(super::row_set::undeclared(spec, at, &selection.entity));
+        return;
+    };
+    if selection.filter == ess_primitives::predicate::Predicate::Always {
+        errors.push(
+            ValidationError::at(
+                at.clone(),
+                ValidationCode::EmptyDeclaration,
+                format!(
+                    "the ordered read selects every row of `{}`: its `where` selects every row",
+                    entity.name
+                ),
+            )
+            .with_hint(
+                "select by a field the input scopes, as `where: tenant_id == input.tenant_id`",
+            ),
+        );
+        return;
+    }
+    let registry = spec.types_with_lifecycles(&mut ValidationErrors::new());
+    let checked = super::row_set::check(
+        spec,
+        context.command,
+        entity,
+        &registry,
+        &selection.filter,
+        at,
+    );
+    if !checked.is_empty() {
+        errors.extend(checked);
+        return;
+    }
+    let ordered = ordered_head::check_order(entity, &registry, order_by, at);
+    if !ordered.is_empty() {
+        errors.extend(ordered);
+        return;
+    }
+    let Some(read) = entity_field(entity, first) else {
+        errors.push(not_a_field(at, entity, first));
+        return;
+    };
+    if !context
+        .resolved
+        .conversions
+        .permits(&read.type_ref, &target.type_ref)
+    {
+        errors.push(mismatch(
+            at,
+            &format!("`{}.{first}`", entity.name),
             &read.type_ref,
             target,
         ));

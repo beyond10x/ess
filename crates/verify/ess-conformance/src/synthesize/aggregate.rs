@@ -484,7 +484,7 @@ fn unchosen(
         ResolvedPayloadValue::Literal { .. } => "a literal it cannot read as its type",
         ResolvedPayloadValue::InputField { .. } => "its input",
         ResolvedPayloadValue::InputOrGenerated { .. } => "an input with a fallback",
-        ResolvedPayloadValue::Generated => "`{generated: true}`",
+        ResolvedPayloadValue::Generated { .. } => "`{generated: true}`",
         ResolvedPayloadValue::Cleared => "`{cleared: true}`",
         ResolvedPayloadValue::SubjectField { .. } | ResolvedPayloadValue::SubjectState { .. } => {
             "a `{subject: …}` source"
@@ -494,8 +494,12 @@ fn unchosen(
         ResolvedPayloadValue::ResponseField { .. } => "an external response",
         ResolvedPayloadValue::CallerAttribute { .. } => "a `{caller: …}` source",
         ResolvedPayloadValue::ChangedCount => "`{count: changed}`",
+        ResolvedPayloadValue::PayloadRead { .. } => "a value the outcome's payload publishes",
         ResolvedPayloadValue::RelatedSelection { .. } => {
             "a value read from the row a selector selects"
+        }
+        ResolvedPayloadValue::RelatedHead { .. } => {
+            "a value read from the first row an ordered selection ranks"
         }
     };
     format!(

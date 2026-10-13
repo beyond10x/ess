@@ -1551,7 +1551,7 @@ fn minted_leaves(
     found: &mut BTreeMap<String, String>,
 ) {
     match value {
-        ResolvedPayloadValue::Generated => {
+        ResolvedPayloadValue::Generated { .. } => {
             found.insert(path.to_owned(), "`{generated: true}`".to_owned());
         }
         ResolvedPayloadValue::InputOrGenerated {

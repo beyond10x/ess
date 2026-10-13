@@ -54,6 +54,8 @@
 //! | a struct opened or closed, `undeclared_fields: ignored` ↔ `refused` (`ess-diff/18`, ess/24) | decided as `expanded`, or `narrowed`: an open record admits every value the closed one did and more |
 //! | a command response opened (`ess-diff/18`) | breaking for readers: one written against the closed response may be sent a field it refuses; compatible for callers and history |
 //! | a command response closed (`ess-diff/18`) | compatible: it carries only what every reader of the open one admitted |
+//! | an actor becomes the system itself (`ess-diff/19`, ess/25) | breaking for callers: it stops being a caller, as a grant removed does |
+//! | an actor stops being the system, or a system-issued command's `await_within:` moves (`ess-diff/19`) | compatible |
 //! | a view is removed | breaking for readers |
 //! | an event or an entity is removed | breaking for history |
 //!
@@ -681,12 +683,21 @@ fn dimensions(change: &SemanticChange, uses: &BTreeSet<TypeUse>) -> Dimensions {
         },
         SemanticChange::Type { changed, .. } => type_dimensions(changed, change.relation(), uses),
         SemanticChange::Actor { changed, .. } => match changed {
-            ActorChange::Added | ActorChange::GrantAdded { .. } => [C, C, C],
-            ActorChange::Removed | ActorChange::GrantRemoved { .. } => [B, C, C],
+            // An actor that becomes the system (ess/25, beyond10x/ess#542) can no longer be sent
+            // as a caller of what it is granted, as a grant removed; one that stops being the
+            // system can again, as a grant added.
+            ActorChange::Added
+            | ActorChange::GrantAdded { .. }
+            | ActorChange::SystemChanged { after: false, .. } => [C, C, C],
+            ActorChange::Removed
+            | ActorChange::GrantRemoved { .. }
+            | ActorChange::SystemChanged { after: true, .. } => [B, C, C],
             _ => [U, C, C],
         },
         SemanticChange::Command { changed, .. } => match changed {
-            CommandChange::Added => [C, C, C],
+            // How soon the system claims to take its own step (ess/25, beyond10x/ess#542): no
+            // caller sends it, no reader's shape moves, and nothing stored reads it.
+            CommandChange::Added | CommandChange::AwaitWithinChanged { .. } => [C, C, C],
             CommandChange::Removed => [B, C, C],
             // A refusal that now changes its row, or no longer does (ess/22, beyond10x/ess#197):
             // a caller retrying after it and a reader of the row meet a different state; nothing

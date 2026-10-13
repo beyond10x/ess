@@ -1468,7 +1468,7 @@ pub(crate) fn refuse_below_ess_16(
                                     format!("{at}.payload.{event}.{}", field.target),
                                     "{count: changed}",
                                 ));
-                                field.source = PayloadSource::Generated;
+                                field.source = PayloadSource::Generated { present: false };
                             }
                         }
                     }
@@ -1834,7 +1834,7 @@ pub(crate) fn refuse_deletions(
                         for (_, table) in &mut outcome.payload.0 {
                             for field in &mut table.0 {
                                 if field.source == PayloadSource::ChangedCount {
-                                    field.source = PayloadSource::Generated;
+                                    field.source = PayloadSource::Generated { present: false };
                                 }
                             }
                         }

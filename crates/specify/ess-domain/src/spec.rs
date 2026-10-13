@@ -278,6 +278,12 @@ impl Specification {
         &self.actors
     }
 
+    /// Whether `command` is system-issued: granted by at least one actor, every one of which is
+    /// declared `system: true` (ess/25, beyond10x/ess#542, [`crate::system_issued`]).
+    pub fn is_system_issued(&self, command: &QualifiedName) -> bool {
+        crate::system_issued::is_system_issued(self.actors.values(), command)
+    }
+
     /// Every component, indexed by identity.
     pub fn components(
         &self,
@@ -375,6 +381,9 @@ impl Specification {
             return Err(errors);
         };
 
+        // A present mint and a payload read are `ess/25` sources (beyond10x/ess#545); below it each
+        // mapping is the nested one it was.
+        crate::command::minted_value::read_below_ess_25(system.format, &mut collected.commands);
         // A filtered read is an `ess/22` source; below it the same mapping is the nested one it was.
         crate::command::row_set::read_below_ess_22(
             system.format,
@@ -538,6 +547,9 @@ impl Specification {
         for actor in self.actors.values() {
             errors.extend(actor.validate_grants(&command_names, &view_names, self.system.format));
         }
+        // An actor that is the system itself, and what it makes of the commands it alone is
+        // granted (ess/25, beyond10x/ess#542).
+        errors.extend(crate::system_issued::validate_specification(self));
 
         errors.extend(self.validate_components(&command_names, &event_names, refused));
 

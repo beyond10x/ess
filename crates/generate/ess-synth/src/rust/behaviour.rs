@@ -2529,7 +2529,12 @@ impl<'a> Writer<'a> {
             ResolvedPayloadValue::Literal { value } => literal(self.ir, self.layout, target, value),
             // The implementation supplies the value, an optional one included: its port answers
             // `Option<T>`, `None` where there is nothing to report (beyond10x/ess#467).
-            ResolvedPayloadValue::Generated => self.generate(target),
+            // A present mint (ess/25, beyond10x/ess#545) asks the required port and wraps its
+            // answer present.
+            ResolvedPayloadValue::Generated { present: true } if target.is_optional() => {
+                format!("Some({})", self.generate(target.required()))
+            }
+            ResolvedPayloadValue::Generated { .. } => self.generate(target),
             ResolvedPayloadValue::Cleared => "None".to_owned(),
             ResolvedPayloadValue::Increment { by } => increment(
                 self.ir,
@@ -2620,7 +2625,9 @@ impl<'a> Writer<'a> {
             }
             ResolvedPayloadValue::RelatedField { .. }
             | ResolvedPayloadValue::RelatedSelection { .. }
+            | ResolvedPayloadValue::RelatedHead { .. }
             | ResolvedPayloadValue::ChangedCount
+            | ResolvedPayloadValue::PayloadRead { .. }
             | ResolvedPayloadValue::ResponseField { .. } => {
                 unreachable!("the plan keeps this source's command an obligation")
             }

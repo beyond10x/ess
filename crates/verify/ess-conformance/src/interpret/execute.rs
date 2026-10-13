@@ -1730,7 +1730,7 @@ fn error_value(
     let mut path = location.to_vec();
     path.push(field.target.clone());
     Ok(match &field.value {
-        ResolvedPayloadValue::Generated => match input.operation {
+        ResolvedPayloadValue::Generated { .. } => match input.operation {
             None => None,
             Some(operation) => Some(history::generated(
                 ir,
@@ -1835,6 +1835,10 @@ struct Work<'g> {
     location: Vec<String>,
     /// The field location being written, independent of history-generation provenance.
     target_location: Vec<String>,
+    /// The values this outcome's payload publishes that a `sets:` entry stores, `{payload:
+    /// <Event>.<field>}` (ess/25, beyond10x/ess#545): resolved once by [`publish_reads`] and read
+    /// again by [`emit`], so the row and the event hold one value.
+    published: BTreeMap<(QualifiedName, String), Option<Value>>,
 }
 
 impl Work<'_> {
@@ -1973,7 +1977,9 @@ fn take(
         operation: input.operation,
         location: Vec::new(),
         target_location: Vec::new(),
+        published: BTreeMap::new(),
     };
+    or_no_step!(publish_reads(ir, outcome, input, &mut work));
     let mut created: Option<(String, Node)> = None;
     let mut touched: Option<(QualifiedName, Node)> = None;
 
@@ -2308,6 +2314,17 @@ fn value_at(
             let (key, row) = reader.one(selection)?;
             values::selected(ir, field, ir.entity(&selection.entity), key, row)
         }
+        // The first row the selector selects by the order, in the same store (ess/25,
+        // beyond10x/ess#543); none supplies no value.
+        ResolvedPayloadValue::RelatedHead {
+            selection,
+            order_by,
+            ..
+        } => {
+            let reader = row_set::Reader::new(ir, work.command, work.original, input)?;
+            let (key, row) = reader.head(selection, order_by)?;
+            values::selected(ir, field, ir.entity(&selection.entity), key, row)
+        }
         ResolvedPayloadValue::SubjectState { .. } => values::held_state(work.before.as_ref()),
         ResolvedPayloadValue::SubjectField {
             field: read,
@@ -2343,7 +2360,20 @@ fn value_at(
         ResolvedPayloadValue::Literal { value } => {
             literal(ir, &field.target_type, value).map(|value| Some(Value::Known(value)))
         }
-        ResolvedPayloadValue::Generated => mint(ir, &field.target_type, work),
+        // A present mint (ess/25, beyond10x/ess#545): a value of the required type, never absent.
+        ResolvedPayloadValue::Generated { present } => {
+            mint(ir, minted_type(&field.target_type, *present), work)
+        }
+        // The value the outcome's own payload publishes, resolved once by `publish_reads`.
+        ResolvedPayloadValue::PayloadRead {
+            event, field: read, ..
+        } => work
+            .published
+            .get(&(event.name().clone(), read.clone()))
+            .cloned()
+            .ok_or_else(|| Undetermined::NotInterpreted {
+                construct: format!("the published `{}.{read}`", event.name()),
+            }),
         ResolvedPayloadValue::Struct { fields } => {
             let mut members = BTreeMap::new();
             for member in fields {
@@ -2459,6 +2489,16 @@ fn mint(
             },
         );
     }
+    minted(ir, target, &mut || work.next.tick()).map(|value| value.map(Value::Known))
+}
+
+/// A value of `target` drawn from a counter, in the shape its declared type takes: `None` for an
+/// optional type. [`mint`] and [`Store::mint`] both draw this way, so one counter yields one value.
+fn minted(
+    ir: &EssIr,
+    target: &ResolvedTypeRef,
+    tick: &mut dyn FnMut() -> u64,
+) -> Result<Option<Node>, Undetermined> {
     if target.is_optional() {
         return Ok(None);
     }
@@ -2466,24 +2506,43 @@ fn mint(
         what: format!("a value of `{target}`"),
     };
     if let Representation::Primitive(Primitive::Uuid) = representation(ir, target) {
-        Ok(Some(Value::Known(Node::Text(format!(
+        Ok(Some(Node::Text(format!(
             "00000000-0000-4000-8000-{:012}",
-            work.next.tick()
-        )))))
+            tick()
+        ))))
     } else {
         let field = ess_compiler::ir::ResolvedField {
             name: "generated".into(),
             type_ref: target.clone(),
             naming: ess_domain::name::Naming::default(),
         };
-        let distinction = usize::try_from(work.next.tick()).map_err(|_| no_value())?;
+        let distinction = usize::try_from(tick()).map_err(|_| no_value())?;
         crate::witness::fields(
             ir,
             &[field],
             crate::witness::Distinction::further(distinction),
         )
-        .map(|mut values| values.remove("generated").map(Value::Known))
+        .map(|mut values| values.remove("generated"))
         .map_err(|_| no_value())
+    }
+}
+
+impl Store {
+    /// A present value of `target` minted from this store's counter, as every value the model
+    /// leaves to the implementation is: the input a system-issued command's system decides where
+    /// nothing narrower offers one (beyond10x/ess#542, `docs/design/system-issued-commands.md`).
+    pub(super) fn mint(
+        &mut self,
+        ir: &EssIr,
+        target: &ResolvedTypeRef,
+    ) -> Result<Node, Undetermined> {
+        let mut tick = || {
+            self.minted += 1;
+            self.minted
+        };
+        minted(ir, target.required(), &mut tick)?.ok_or_else(|| Undetermined::NoValue {
+            what: format!("a value of `{target}`"),
+        })
     }
 }
 
@@ -2514,6 +2573,105 @@ fn representation(ir: &EssIr, target: &ResolvedTypeRef) -> Representation {
         }
     }
     Representation::Other
+}
+
+/// The type a mint into `target` draws: its required type where the mint is present (ess/25,
+/// beyond10x/ess#545), so an `Optional` field is never left absent.
+fn minted_type(target: &ResolvedTypeRef, present: bool) -> &ResolvedTypeRef {
+    if present {
+        target.required()
+    } else {
+        target
+    }
+}
+
+/// Every `{payload: <Event>.<field>}` the outcome's `sets:` and `affects:` entries read, in the
+/// order written, nested leaves included.
+fn payload_reads(outcome: &ResolvedOutcome) -> Vec<(QualifiedName, String)> {
+    fn walk(fields: &[ResolvedPayloadField], out: &mut Vec<(QualifiedName, String)>) {
+        for field in fields {
+            match &field.value {
+                ResolvedPayloadValue::PayloadRead { event, field, .. } => {
+                    out.push((event.name().clone(), field.clone()));
+                }
+                ResolvedPayloadValue::Struct { fields } => walk(fields, out),
+                _ => {}
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(&outcome.sets, &mut out);
+    for affect in &outcome.affects {
+        walk(&affect.sets, &mut out);
+    }
+    out
+}
+
+/// Resolves, before anything is written, each payload value a `sets:` entry stores (ess/25,
+/// beyond10x/ess#545): minted, given or recorded exactly as [`emit`] would, and kept in
+/// [`Work::published`] so the event carries the same value.
+///
+/// `Ok(Err(_))` is a branch the given values do not describe, which yields no step.
+fn publish_reads(
+    ir: &EssIr,
+    outcome: &ResolvedOutcome,
+    input: &Context<'_>,
+    work: &mut Work<'_>,
+) -> Result<Result<(), Unmatched>, Undetermined> {
+    for (event, field) in payload_reads(outcome) {
+        let key = (event.clone(), field.clone());
+        if work.published.contains_key(&key) {
+            continue;
+        }
+        let gap = || Undetermined::NotInterpreted {
+            construct: format!("the published `{event}.{field}`"),
+        };
+        let index = outcome
+            .emits
+            .iter()
+            .position(|handle| handle.name() == &event)
+            .ok_or_else(gap)?;
+        let declared = ir.event(&outcome.emits[index]);
+        let target = declared
+            .fields
+            .iter()
+            .find(|it| it.name == field)
+            .ok_or_else(gap)?;
+        let source = outcome
+            .payload
+            .iter()
+            .find(|payload| payload.event.name() == &event)
+            .and_then(|payload| payload.fields.iter().find(|it| it.target == field))
+            .ok_or_else(gap)?;
+        // The created identity is assigned once, when the row is created: a stored copy of it is
+        // read from there, which this cut does not do.
+        let creates_it = outcome.subject.as_ref().is_some_and(|subject| {
+            matches!(&subject.instance, ResolvedInstance::Observed { event: carried, field: named }
+                if carried.name() == &event && named.name == field)
+        });
+        if creates_it {
+            return Err(Undetermined::NotInterpreted {
+                construct: format!("a stored copy of the created identity `{event}.{field}`"),
+            });
+        }
+        work.location = vec!["event".into(), index.to_string(), declared.name.to_string()];
+        let value = match &source.value {
+            ResolvedPayloadValue::Generated { present } => {
+                work.location.push(field.clone());
+                or_no_step!(assign(
+                    ir,
+                    &declared.name,
+                    &field,
+                    minted_type(&target.type_ref, *present),
+                    work
+                ))
+            }
+            _ => value(ir, source, input, work)?,
+        };
+        work.published.insert(key, value);
+    }
+    work.location = Vec::new();
+    Ok(Ok(()))
 }
 
 /// The events `outcome` emits, each carrying what the model determines of it.
@@ -2552,22 +2710,31 @@ fn emit(
             ];
             let source = determined
                 .and_then(|payload| payload.fields.iter().find(|it| it.target == field.name));
+            // A value a `sets:` entry already stored (ess/25): the one this event publishes.
+            let published = if identity == Some(field.name.as_str()) {
+                None
+            } else {
+                work.published
+                    .get(&(declared.name.clone(), field.name.clone()))
+                    .cloned()
+            };
             // The field `instance:` names publishes the created identity, whatever source the
             // payload declares for it: `{generated: true}` there says only that the implementation
             // assigns it, and it assigned it once, when the instance was created.
             let value = match (identity == Some(field.name.as_str()), source) {
+                _ if published.is_some() => published.flatten(),
                 (true, _) => created.map(|(_, identity)| Value::Known(identity.clone())),
                 (
                     false,
                     Some(ResolvedPayloadField {
-                        value: ResolvedPayloadValue::Generated,
+                        value: ResolvedPayloadValue::Generated { present },
                         ..
                     }),
                 ) => or_no_step!(assign(
                     ir,
                     &declared.name,
                     &field.name,
-                    &field.type_ref,
+                    minted_type(&field.type_ref, *present),
                     work
                 )),
                 (

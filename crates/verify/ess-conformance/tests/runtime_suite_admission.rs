@@ -92,8 +92,15 @@ fn suite() -> ConformanceSuite {
 }
 
 /// Every suite major a generated Go or TypeScript package can be asked to run.
+///
+/// The await pair (`/50`, `/51`, beyond10x/ess#542) runs in Rust only until its stage 2: both
+/// emitters refuse it by version, so no generated package is ever asked to run one.
 fn emittable_majors() -> BTreeSet<u32> {
-    SUPPORTED_SUITE_FORMATS.iter().copied().collect()
+    SUPPORTED_SUITE_FORMATS
+        .iter()
+        .copied()
+        .filter(|major| !ess_conformance::system_issued::ADMITTED.contains(major))
+        .collect()
 }
 
 /// Whether a major carries a coverage inventory: the odd majors from 5, as
