@@ -525,7 +525,8 @@ fn instance_without_each(name: &str, index: usize, at: String, below_23: bool) -
                  requires specification format ess/23"
             ),
             "drop `instance:`, or declare `format: ess/23` and write one row per element with \
-             `each:` and `instance:`",
+             `each:` and `instance:`; to change one existing row by its identity, write `where: \
+             <identity> == subject.<field>` (ess/25)",
         )
     } else {
         (
@@ -534,7 +535,8 @@ fn instance_without_each(name: &str, index: usize, at: String, below_23: bool) -
                  rows by `where:`; `instance:` names the row an element of `each:` writes"
             ),
             "drop `instance:`, or write one row per element with `each: {in: input.<list>, as: \
-             <name>}` and `instance: <name>.<member>` in place of `where:`",
+             <name>}` and `instance: <name>.<member>` in place of `where:`; to change one existing \
+             row by its identity, write `where: <identity> == subject.<field>` (ess/25)",
         )
     };
     ValidationError::new(ValidationCode::ConflictingDeclaration, at, message).with_hint(hint)
@@ -992,7 +994,16 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
                             ));
                         }
                     }
-                    errors.extend(check_filter(command, entity, None, types, &set.filter, &at));
+                    errors.extend(check_filter(
+                        command,
+                        entity,
+                        None,
+                        types,
+                        &set.filter,
+                        &at,
+                        &at.clone().key("where"),
+                        format,
+                    ));
                     errors.extend(identity_set(
                         entity,
                         &site.clone().key("sets"),
@@ -1036,14 +1047,18 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
                         }
                     }
                     if let Some(filter) = &affect.filter {
+                        let at = at.clone().key("where");
                         errors.extend(check_filter(
-                            command,
-                            entity,
-                            subject,
-                            types,
-                            filter,
-                            &at.clone().key("where"),
+                            command, entity, subject, types, filter, &at, &at, format,
                         ));
+                        // A pin is read from ess/25; below it the read is refused alone, above.
+                        if format.major() >= FormatVersion::V25.major() {
+                            if let Some(refused) = outcome.subject.as_ref().and_then(|written| {
+                                pins_the_subject(entity, written, filter, &outcome.name, index, &at)
+                            }) {
+                                errors.push(refused);
+                            }
+                        }
                     }
                     if let Some(each) = &affect.each {
                         errors.extend(each_rules(
@@ -1219,8 +1234,15 @@ pub(super) fn count_elsewhere(at: &ConstructRef) -> ValidationError {
     .with_hint("fill this field another way")
 }
 
-/// The filter, checked over `entity`'s fields, the command's input under `input.`, and — for an
-/// `affects:` entry — the subject's fields under `subject.`.
+/// The filter, checked over `entity`'s fields and its identity, the command's input under
+/// `input.`, and — for an `affects:` entry — the subject's fields under `subject.`.
+///
+/// The identity is read from `ess/25` (beyond10x/ess#547, `docs/design/set-effect-identity-filters.md`,
+/// D1), as a row-set selector reads it (`super::row_set::candidate_fields`). Below it a read of the
+/// identity is refused at `gate` as `unsupported_format_version` naming `ess/25`; the check runs
+/// over the identity either way, so that refusal comes alone rather than beside an
+/// `unobservable_fact` for the same read. `state` stays unreadable.
+#[allow(clippy::too_many_arguments)]
 fn check_filter(
     command: &CommandSpec,
     entity: &EntitySpec,
@@ -1228,17 +1250,146 @@ fn check_filter(
     types: &TypeRegistry,
     filter: &Predicate,
     at: &ConstructRef,
+    gate: &ConstructRef,
+    format: FormatVersion,
 ) -> ValidationErrors {
-    check_row_predicate(
+    let mut errors = check_row_predicate(
         command,
         entity,
-        &entity.fields,
+        &with_identity(entity),
         subject,
         types,
         filter,
         at,
         false,
-    )
+    );
+    if format.major() < FormatVersion::V25.major() && reads_identity(entity, filter) {
+        let identity = &entity.identity.name;
+        errors.push(
+            ValidationError::at(
+                gate.clone(),
+                ValidationCode::UnsupportedFormatVersion,
+                format!(
+                    "`{identity}` is the identity of `{}`; a set effect's filter reads it from \
+                     ess/25",
+                    entity.name
+                ),
+            )
+            .with_hint("declare `format: ess/25`"),
+        );
+    }
+    errors
+}
+
+/// `entity`'s stored fields and its identity: what a set effect's filter reads of a candidate row
+/// (from `ess/25`, beyond10x/ess#547).
+pub(crate) fn with_identity(entity: &EntitySpec) -> Vec<Field> {
+    let mut fields = entity.fields.clone();
+    if !fields
+        .iter()
+        .any(|field| field.name == entity.identity.name)
+    {
+        fields.push(entity.identity.clone());
+    }
+    fields
+}
+
+/// Whether `filter` reads `entity`'s identity: a path rooted at its name, which no stored field
+/// shares.
+fn reads_identity(entity: &EntitySpec, filter: &Predicate) -> bool {
+    !entity
+        .fields
+        .iter()
+        .any(|field| field.name == entity.identity.name)
+        && filter
+            .fact_paths()
+            .iter()
+            .any(|path| path.namespace() == entity.identity.name)
+}
+
+/// The operand `filter` pins `entity`'s identity to: `<identity> == <operand>` on either side, alone
+/// or as the one such conjunct of a top-level `all:`, where the operand reads `subject.` or
+/// `input.` (`docs/design/set-effect-identity-filters.md`, "A pin"). `None` where it pins none.
+fn pinned_operand<'p>(
+    entity: &EntitySpec,
+    filter: &'p Predicate,
+) -> Option<&'p ess_primitives::facts::FactPath> {
+    let identity = entity.identity.name.as_str();
+    let pin = |predicate: &'p Predicate| {
+        let Predicate::Compare {
+            left: ess_primitives::predicate::Operand::Fact(left),
+            op: ess_primitives::predicate::CompareOp::Eq,
+            right: ess_primitives::predicate::Operand::Fact(right),
+            ..
+        } = predicate
+        else {
+            return None;
+        };
+        let bare = |path: &ess_primitives::facts::FactPath| matches!(path.segments(), [only] if only == identity);
+        let operand = |path: &'p ess_primitives::facts::FactPath| {
+            (path.segments().len() > 1
+                && [SUBJECT_NAMESPACE, super::subject_fact::INPUT_NAMESPACE]
+                    .contains(&path.namespace()))
+            .then_some(path)
+        };
+        if bare(left) {
+            operand(right)
+        } else if bare(right) {
+            operand(left)
+        } else {
+            None
+        }
+    };
+    match filter {
+        Predicate::All(children) => {
+            let mut pins = children.iter().filter_map(pin);
+            let first = pins.next()?;
+            pins.next().is_none().then_some(first)
+        }
+        other => pin(other),
+    }
+}
+
+/// The refusal of an `affects:` entry over the subject's own entity whose filter pins the identity
+/// to the subject's own (`subject.<identity>`, or the input field the outcome's `instance:` names):
+/// it selects only the subject, which every entry excepts (beyond10x/ess#547).
+fn pins_the_subject(
+    entity: &EntitySpec,
+    subject: &Subject,
+    filter: &Predicate,
+    outcome: &OutcomeName,
+    index: usize,
+    at: &ConstructRef,
+) -> Option<ValidationError> {
+    if subject.entity != entity.name
+        || entity.fields.iter().any(|field| {
+            [SUBJECT_NAMESPACE, super::subject_fact::INPUT_NAMESPACE].contains(&field.name.as_str())
+        })
+    {
+        return None;
+    }
+    let operand = pinned_operand(entity, filter)?;
+    let identity = &entity.identity.name;
+    let names_subject = match operand.segments() {
+        [namespace, field] if namespace == SUBJECT_NAMESPACE => field == identity,
+        [namespace, rest @ ..] if namespace == super::subject_fact::INPUT_NAMESPACE => {
+            !matches!(subject.effect, Effect::Creates) && rest.join(".") == subject.instance
+        }
+        _ => false,
+    };
+    names_subject.then(|| {
+        ValidationError::at(
+            at.clone(),
+            ValidationCode::ConflictingDeclaration,
+            format!(
+                "`affects[{index}]` of outcome `{outcome}` pins the identity of `{}` to \
+                 `{operand}`, the subject's own, so it selects only the subject, which every \
+                 `affects:` entry excepts",
+                entity.name
+            ),
+        )
+        .with_hint("drop the entry, or write the change in the outcome's own `sets:`".to_owned())
+    })
 }
 
 /// `predicate` checked over `fields` of a row of `entity`, the command's input under `input.`
