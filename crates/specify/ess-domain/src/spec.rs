@@ -278,6 +278,12 @@ impl Specification {
         &self.actors
     }
 
+    /// Whether `command` is system-issued: granted by at least one actor, every one of which is
+    /// declared `system: true` (ess/25, beyond10x/ess#542, [`crate::system_issued`]).
+    pub fn is_system_issued(&self, command: &QualifiedName) -> bool {
+        crate::system_issued::is_system_issued(self.actors.values(), command)
+    }
+
     /// Every component, indexed by identity.
     pub fn components(
         &self,
@@ -541,6 +547,9 @@ impl Specification {
         for actor in self.actors.values() {
             errors.extend(actor.validate_grants(&command_names, &view_names, self.system.format));
         }
+        // An actor that is the system itself, and what it makes of the commands it alone is
+        // granted (ess/25, beyond10x/ess#542).
+        errors.extend(crate::system_issued::validate_specification(self));
 
         errors.extend(self.validate_components(&command_names, &event_names, refused));
 

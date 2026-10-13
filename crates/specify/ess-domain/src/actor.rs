@@ -68,9 +68,56 @@ pub struct ActorSpec {
     /// caller is not the authority on them, the credential is.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub attributes: Vec<Field>,
+    /// Whether this actor is the system itself (ess/25, beyond10x/ess#542,
+    /// `docs/design/system-issued-commands.md`).
+    ///
+    /// A command granted to at least one actor, every one of them the system, is system-issued:
+    /// conformance awaits its outcome rather than invoking it. `false`, the default, is the same
+    /// document as leaving the key out.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub system: bool,
 }
 
 impl ActorSpec {
+    /// Checks the `system:` key: the format that admits it, and that a system actor carries no
+    /// credential (ess/25, beyond10x/ess#542).
+    pub fn validate_system(&self, format: FormatVersion) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
+        if !self.system {
+            return errors;
+        }
+        let site = ConstructRef::new(ConstructKind::Actor, self.name.to_string());
+        if format.major() < FormatVersion::V25.major() {
+            errors.push(
+                ValidationError::at(
+                    site.key("system"),
+                    ValidationCode::UnsupportedFormatVersion,
+                    "`system: true` on an actor requires specification format ess/25",
+                )
+                .with_hint("write `format: ess/25` on the source that declares the system"),
+            );
+            return errors;
+        }
+        if !self.attributes.is_empty() {
+            errors.push(
+                ValidationError::at(
+                    site.key("attributes"),
+                    ValidationCode::ConflictingDeclaration,
+                    format!(
+                        "`{}` is the system itself and carries no credential, so it declares no \
+                         `attributes:`",
+                        self.name
+                    ),
+                )
+                .with_hint(
+                    "a `{caller: …}` read on a command the system issues has nothing to read; \
+                     drop `attributes:` or `system: true`",
+                ),
+            );
+        }
+        errors
+    }
+
     /// The attribute named `name`, where this actor declares one.
     pub fn attribute(&self, name: &str) -> Option<&Field> {
         self.attributes.iter().find(|field| field.name == name)
@@ -275,6 +322,9 @@ pub struct RawActorSpec {
     /// What its credential carries about it (ess/16).
     #[serde(default)]
     pub attributes: Vec<Field>,
+    /// Whether this actor is the system itself (ess/25). `false` is the same as leaving it out.
+    #[serde(default)]
+    pub system: bool,
 }
 
 impl TryFrom<RawActorSpec> for ActorSpec {
@@ -292,6 +342,7 @@ impl TryFrom<RawActorSpec> for ActorSpec {
             may: raw.may,
             naming: raw.naming,
             attributes: raw.attributes,
+            system: raw.system,
         })
     }
 }
