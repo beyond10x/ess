@@ -1222,6 +1222,24 @@ pub enum ResolvedPayloadValue {
         /// The field's resolved type as declared.
         type_ref: ResolvedTypeRef,
     },
+    /// A field of the first row a selector selects, ranked by `order_by`, as the store held it
+    /// before this outcome (ess/25, beyond10x/ess#543, `docs/design/ordered-related-head.md`):
+    /// `{related: {entity, where, order_by, first}}`.
+    ///
+    /// `ess-domain` admitted the order only where it is total: the last key is the entity's
+    /// identity and no key follows it, every key a required, orderable field of the candidate row.
+    /// An empty selection supplies no value. A variant of its own, rather than an order on
+    /// [`Self::RelatedSelection`], so no reader of the exactly-one read takes a head for one.
+    RelatedHead {
+        /// The entity and the predicate selecting its rows.
+        selection: ResolvedRowSelection,
+        /// The ranking keys, most significant first, written as a view's are.
+        order_by: Vec<Ranking>,
+        /// The field of the head row read.
+        field: String,
+        /// The field's resolved type as declared.
+        type_ref: ResolvedTypeRef,
+    },
 }
 
 /// What stands in for an absent input in [`ResolvedPayloadValue::InputOrGenerated`].
@@ -1656,6 +1674,22 @@ impl ResolvedPayloadValue {
             } => format!(
                 "{}.{field} of the one row whose stored fields satisfy `{}` before the outcome",
                 selection.entity.name(),
+                selection.filter
+            ),
+            Self::RelatedHead {
+                selection,
+                order_by,
+                field,
+                ..
+            } => format!(
+                "{}.{field} of the first row by `{}` whose stored fields satisfy `{}` before the \
+                 outcome",
+                selection.entity.name(),
+                order_by
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", "),
                 selection.filter
             ),
             Self::ChangedCount => "how many rows the outcome changed".to_owned(),

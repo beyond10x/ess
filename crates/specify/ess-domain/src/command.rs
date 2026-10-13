@@ -210,6 +210,7 @@ pub mod input_path;
 pub mod minted_value;
 mod narrowing;
 mod one_time_response;
+pub mod ordered_head;
 pub(crate) mod outcome_shapes;
 pub mod precedence;
 pub mod related_guard;
@@ -1210,6 +1211,23 @@ pub enum PayloadSource {
         #[serde(skip)]
         legacy: row_set::Legacy,
     },
+    /// A field of the first row a selector selects, ranked by an order, as the store held it
+    /// before this outcome: `{related: {entity, where, order_by, first}}` (ess/25,
+    /// beyond10x/ess#543, [`ordered_head`]).
+    ///
+    /// The order is total, ending in the entity's identity, so exactly one selected row is first;
+    /// an empty selection supplies no value.
+    RelatedHead {
+        /// The entity and the predicate selecting its rows.
+        selection: row_set::RowSelection,
+        /// The ranking keys, most significant first, as a view writes them.
+        order_by: Vec<crate::view::Ranking>,
+        /// The field of the head row read.
+        first: String,
+        /// What the reading found wrong with the shape as written, if anything.
+        #[serde(skip)]
+        written: ordered_head::Written,
+    },
     /// An attribute of the authenticated caller: `{caller: account_id}` (ess/16,
     /// beyond10x/ess#168, [`caller_value`]).
     ///
@@ -1272,6 +1290,22 @@ impl fmt::Display for PayloadSource {
                 "field `{field}` of the one `{}` that `{}` selects",
                 selection.entity, selection.filter
             ),
+            Self::RelatedHead {
+                selection,
+                order_by,
+                first,
+                ..
+            } => write!(
+                f,
+                "field `{first}` of the first `{}` by `{}` that `{}` selects",
+                selection.entity,
+                order_by
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                selection.filter
+            ),
             Self::ChangedCount => f.write_str("{count: changed}"),
             Self::Increment { by, .. } => write!(f, "increment by {by}"),
             Self::InputOrGenerated {
@@ -1311,6 +1345,7 @@ impl PayloadSource {
             | Self::Struct { .. }
             | Self::RelatedField { .. }
             | Self::RelatedSelection { .. }
+            | Self::RelatedHead { .. }
             | Self::CallerAttribute { .. }
             | Self::ChangedCount => true,
             Self::ResponseField { .. }
@@ -1379,6 +1414,8 @@ enum RawPayloadSource {
     Texts(Vec<String>),
     /// `{related: {entity, where, field}}` (ess/22, beyond10x/ess#299).
     Selection(RawRelatedSelection),
+    /// `{related: {entity, where, order_by, first}}` (ess/25, beyond10x/ess#543).
+    Head(ordered_head::RawRelatedHead),
     /// The `where:` of a `related:` mapping, kept as written until the shape around it says whether
     /// it is a selector; never left in a source once read.
     #[schemars(skip)]
@@ -1556,12 +1593,20 @@ impl<'de> serde::de::Visitor<'de> for Source {
             }
             entries.push((key, value));
         }
-        if self.related && RawRelatedSelection::selects(&entries) {
+        if self.related
+            && (RawRelatedSelection::selects(&entries) || ordered_head::selects(&entries))
+        {
             // Kept for the mapping around it to recognise; anything else settles it below.
             return Ok(RawPayloadSource::Nested(RawNestedSources(entries)));
         }
         if let Some(selection) = RawRelatedSelection::recognise(&mut entries) {
             return Ok(RawPayloadSource::Selection(selection));
+        }
+        if let Some(head) = ordered_head::RawRelatedHead::recognise(&mut entries) {
+            return Ok(RawPayloadSource::Head(head));
+        }
+        if let Some(refusal) = ordered_head::beside_via(&entries) {
+            return Err(A::Error::custom(refusal));
         }
         for (_, value) in &mut entries {
             value.settle().map_err(A::Error::custom)?;
@@ -1884,6 +1929,7 @@ impl TryFrom<RawPayloadSource> for PayloadSource {
             RawPayloadSource::Selection(RawRelatedSelection { related }) => {
                 Ok(Self::selection(related))
             }
+            RawPayloadSource::Head(head) => Ok(head.into_source()),
             // Never left in a source once read; read as the leaf it always was where it is.
             RawPayloadSource::Captured(value) => legacy_reading(&value)
                 .map_err(|_| "a `where:` under `related:` is read only as a selector")
@@ -2116,6 +2162,12 @@ impl From<&PayloadSource> for RawPayloadSource {
                     written: None,
                 },
             }),
+            PayloadSource::RelatedHead {
+                selection,
+                order_by,
+                first,
+                ..
+            } => Self::Head(ordered_head::RawRelatedHead::of(selection, order_by, first)),
             PayloadSource::ChangedCount => Self::Count(set_effects::RawCountSource::changed()),
             PayloadSource::Increment { by, scalar } => explicit(&|e| {
                 e.increment = Some(match scalar {
@@ -3891,6 +3943,7 @@ fn check_payload_entry(
         | PayloadSource::Struct { .. }
         | PayloadSource::RelatedField { .. }
         | PayloadSource::RelatedSelection { .. }
+        | PayloadSource::RelatedHead { .. }
         | PayloadSource::CallerAttribute { .. } => {}
         PayloadSource::ChangedCount => {
             errors.extend(set_effects::check_count(at, outcome, filled));

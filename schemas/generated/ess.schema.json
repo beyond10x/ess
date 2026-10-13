@@ -2575,6 +2575,47 @@
       },
       "additionalProperties": false
     },
+    "RawHead": {
+      "description": "What `related:` holds in a head read.",
+      "type": "object",
+      "required": [
+        "entity",
+        "first",
+        "order_by",
+        "where"
+      ],
+      "properties": {
+        "entity": {
+          "description": "The entity whose rows are candidates.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/QualifiedName"
+            }
+          ]
+        },
+        "first": {
+          "description": "The field of the head row read.",
+          "type": "string"
+        },
+        "order_by": {
+          "description": "The ranking keys, most significant first: `<field>` or `<field> asc|desc`, ending in the entity's identity.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "where": {
+          "description": "What a candidate must satisfy: its fields bare, the input under `input.`, the addressed subject under `subject.`.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Predicate"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
     "RawIncrement": {
       "description": "The amount of an `{increment: …}`: a whole number, an unquoted decimal, or quoted decimal text.",
       "anyOf": [
@@ -3053,6 +3094,14 @@
               "$ref": "#/definitions/RawRelatedSelection"
             }
           ]
+        },
+        {
+          "description": "`{related: {entity, where, order_by, first}}` (ess/25, beyond10x/ess#543).",
+          "allOf": [
+            {
+              "$ref": "#/definitions/RawRelatedHead"
+            }
+          ]
         }
       ]
     },
@@ -3170,6 +3219,19 @@
               "type": "null"
             }
           ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "RawRelatedHead": {
+      "description": "`{related: {entity, where, order_by, first}}` as the document writes it.",
+      "type": "object",
+      "required": [
+        "related"
+      ],
+      "properties": {
+        "related": {
+          "$ref": "#/definitions/RawHead"
         }
       },
       "additionalProperties": false

@@ -200,7 +200,11 @@ fn rank(ir: &EssIr, view: &ResolvedView, left: &ViewRow, right: &ViewRow) -> Ord
     }
     Ordering::Equal
 }
-fn compare(
+
+/// How two values of `ty` rank, ascending: a `Timestamp` by its instant, anything else by its
+/// node. A view's order and the head of an ordered selection (ess/25, beyond10x/ess#543) both rank
+/// with this, so the two cannot disagree.
+pub(crate) fn compare(
     ir: &EssIr,
     ty: &ResolvedTypeRef,
     left: Option<&Node>,

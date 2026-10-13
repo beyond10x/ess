@@ -117,7 +117,7 @@ pub(crate) fn value_expression(value: &ess_compiler::ir::ResolvedPayloadValue) -
         }
         Source::Struct { .. } => STRUCT,
         Source::RelatedField { .. } => RELATED_VALUE,
-        Source::RelatedSelection { .. } => ROW_SET,
+        Source::RelatedSelection { .. } | Source::RelatedHead { .. } => ROW_SET,
         Source::ResponseField { .. }
         | Source::Generated { .. }
         | Source::PayloadRead { .. }
