@@ -9,8 +9,9 @@
 use std::collections::BTreeMap;
 
 use ess_compiler::ir::{
-    ResolvedCommand, ResolvedCondition, ResolvedEffect, ResolvedEntity, ResolvedInstance,
-    ResolvedRowSelection, ResolvedRowSetTest, ResolvedTypeRef, RowMember, Selected,
+    ResolvedCommand, ResolvedCondition, ResolvedEffect, ResolvedEntity, ResolvedField,
+    ResolvedInstance, ResolvedRowSelection, ResolvedRowSetTest, ResolvedTypeRef, RowMember,
+    Selected,
 };
 use ess_domain::command::ordered_head::Ties;
 use ess_domain::command::OutcomeName;
@@ -36,7 +37,14 @@ pub(super) struct Reader<'a> {
     facts: input::InputFacts<'a>,
     now: Option<crate::occurrence_clock::DecisionInstant>,
     subject: Subject<'a>,
+    /// The values the outcome publishes that its selectors read (ess/25, beyond10x/ess#549),
+    /// resolved before any of them is read; `None` for a guard, which reads none.
+    published: Option<&'a super::Published>,
 }
+
+/// The values one selector reads from its outcome's payload, each under its own root, and the
+/// fields typing them.
+type PublishedHeld = (Vec<ResolvedField>, BTreeMap<String, super::Value>);
 
 /// The subject a selector's `subject.` reads.
 enum Subject<'a> {
@@ -63,7 +71,51 @@ impl<'a> Reader<'a> {
             facts,
             now: input.now,
             subject: subject(ir, spec, store, input),
+            published: None,
         })
+    }
+
+    /// The same reader, its selectors reading the values `published` holds for their listed
+    /// `payload.<Event>.<field>` operands (ess/25, beyond10x/ess#549).
+    pub(super) fn with_published(mut self, published: &'a super::Published) -> Self {
+        self.published = Some(published);
+        self
+    }
+
+    /// The values `selection` reads from its outcome's payload, each under its own root, and the
+    /// fields typing them; `None` where it reads none. A listed read the outcome has not resolved
+    /// is a gap, never an absent operand: validation and `publish_reads` resolve every one first.
+    fn published_facts(
+        &self,
+        selection: &ResolvedRowSelection,
+    ) -> Result<Option<PublishedHeld>, Undetermined> {
+        if selection.reads.is_empty() {
+            return Ok(None);
+        }
+        let mut fields = Vec::with_capacity(selection.reads.len());
+        let mut values = BTreeMap::new();
+        for (index, read) in selection.reads.iter().enumerate() {
+            let slot = set_effects::Published::slot(index);
+            let value = self
+                .published
+                .and_then(|published| {
+                    published.get(&(read.event.name().clone(), read.field.clone()))
+                })
+                .ok_or_else(|| Undetermined::NotInterpreted {
+                    construct: format!(
+                        "the published `{}.{}` a selector reads, before it is resolved",
+                        read.event.name(),
+                        read.field
+                    ),
+                })?;
+            fields.push(ResolvedField {
+                name: slot.clone(),
+                type_ref: read.type_ref.clone(),
+                naming: ess_domain::Naming::default(),
+            });
+            values.insert(slot, value.clone().unwrap_or(super::Value::Absent));
+        }
+        Ok(Some((fields, values)))
     }
 
     /// Every candidate row of `selection`'s entity, with whether it is selected and — where
@@ -74,6 +126,17 @@ impl<'a> Reader<'a> {
         satisfies: Option<&Predicate>,
     ) -> Result<Vec<(&'a Node, &'a Row, RowMember)>, Undetermined> {
         let entity = self.ir.entity(&selection.entity);
+        let published_held = self.published_facts(selection)?;
+        let published_facts = published_held
+            .as_ref()
+            .map(|(fields, values)| super::history::Facts::new(self.ir, fields, values))
+            .transpose()?;
+        let published = published_facts
+            .as_ref()
+            .map(|facts| set_effects::Published {
+                facts,
+                reads: &selection.reads,
+            });
         let fields = set_effects::fields(entity);
         let subject_fields;
         let held = match &self.subject {
@@ -111,6 +174,7 @@ impl<'a> Reader<'a> {
                         row: candidate,
                         input: &self.facts,
                         subject,
+                        published,
                     };
                     predicate.evaluate(&caller::Facts::new(&read, None, &[], self.now))
                 })

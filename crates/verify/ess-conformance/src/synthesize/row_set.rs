@@ -42,9 +42,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use ess_compiler::ir::{
     EntityHandle, EssIr, ResolvedBody, ResolvedCommand, ResolvedCondition, ResolvedEffect,
     ResolvedInstance, ResolvedOutcome, ResolvedPayloadField, ResolvedPayloadValue,
-    ResolvedRowSelection, ResolvedTypeRef, RowMember, Selected,
+    ResolvedPublishedRead, ResolvedRowSelection, ResolvedTypeRef, RowMember, Selected,
 };
 use ess_domain::command::ordered_head::Ties;
+use ess_domain::command::published_operand;
 use ess_domain::command::OutcomeName;
 use ess_domain::entity::StateName;
 use ess_domain::name::QualifiedName;
@@ -180,9 +181,94 @@ fn read_selection(value: &ResolvedPayloadValue) -> Option<&ResolvedRowSelection>
     }
 }
 
+/// The source `outcome`'s payload gives `<event>.<field>`, where it fills that field.
+fn source_of<'o>(
+    outcome: &'o ResolvedOutcome,
+    event: &QualifiedName,
+    field: &str,
+) -> Option<&'o ResolvedPayloadField> {
+    outcome
+        .payload
+        .iter()
+        .filter(|payload| payload.event.name() == event)
+        .flat_map(|payload| &payload.fields)
+        .find(|source| source.target == field)
+}
+
+/// The selectors whose head or one row supply the published values `selection` reads, in any
+/// branch of `command` (ess/25, beyond10x/ess#549).
+fn producers<'c>(
+    command: &'c ResolvedCommand,
+    selection: &ResolvedRowSelection,
+) -> Vec<&'c ResolvedRowSelection> {
+    selection
+        .reads
+        .iter()
+        .flat_map(|read| {
+            command.outcomes.iter().filter_map(move |outcome| {
+                read_selection(&source_of(outcome, read.event.name(), &read.field)?.value)
+            })
+        })
+        .collect()
+}
+
+/// Whether `outcome` publishes every value `selection` reads, so that it reads that selection.
+fn publishes(outcome: &ResolvedOutcome, selection: &ResolvedRowSelection) -> bool {
+    selection
+        .reads
+        .iter()
+        .all(|read| source_of(outcome, read.event.name(), &read.field).is_some())
+}
+
+/// The listed read `path` names, `payload.<event>.<field>[.<member>…]`, by its index in `reads`,
+/// and the member path below it; `None` for any other path (ess/25, beyond10x/ess#549).
+fn published_route<'p>(
+    reads: &[ResolvedPublishedRead],
+    path: &'p FactPath,
+) -> Option<(usize, &'p [String])> {
+    let (root, rest) = path.segments().split_first()?;
+    if root != published_operand::ROOT {
+        return None;
+    }
+    reads.iter().enumerate().find_map(|(index, read)| {
+        let after = rest.strip_prefix(read.event.name().segments())?;
+        let (field, members) = after.split_first()?;
+        (*field == read.field).then_some((index, members))
+    })
+}
+
+/// `filter` with each listed published read `values` holds written in as a literal; a read with
+/// no value is kept as written.
+fn written_published(
+    filter: &Predicate,
+    reads: &[ResolvedPublishedRead],
+    values: &[Option<Node>],
+) -> Predicate {
+    written_in(filter, &|path| {
+        let (index, members) = published_route(reads, path)?;
+        let mut node = values.get(index)?.as_ref()?;
+        for member in members {
+            let Node::Map(entries) = node else {
+                return None;
+            };
+            node = entries.get(member)?;
+        }
+        super::fact_value(node)
+    })
+}
+
+/// Whether `filter` still reads one of the listed published values.
+fn reads_published(filter: &Predicate, reads: &[ResolvedPublishedRead]) -> bool {
+    filter
+        .fact_paths()
+        .iter()
+        .any(|path| published_route(reads, path).is_some())
+}
+
 /// Every selector the command reads, by its guards and its values, each once, in the order they
 /// first appear in it (`docs/design/ordered-related-head.md`, "Several selectors in one command",
-/// beyond10x/ess#543); or a refusal naming the command where it reads none.
+/// beyond10x/ess#543), a selector reading a published value after the selectors supplying it
+/// (beyond10x/ess#549); or a refusal naming the command where it reads none.
 fn selections_of(command: &ResolvedCommand) -> Result<Vec<&ResolvedRowSelection>, RefusalCause> {
     let mut found: Vec<&ResolvedRowSelection> = Vec::new();
     for outcome in &command.outcomes {
@@ -195,17 +281,31 @@ fn selections_of(command: &ResolvedCommand) -> Result<Vec<&ResolvedRowSelection>
             }
         }
     }
-    let mut out: Vec<&ResolvedRowSelection> = Vec::new();
+    let mut pending: Vec<&ResolvedRowSelection> = Vec::new();
     for selection in found {
-        if !out.contains(&selection) {
-            out.push(selection);
+        if !pending.contains(&selection) {
+            pending.push(selection);
         }
     }
-    if out.is_empty() {
+    if pending.is_empty() {
         return Err(gap(
             command.name.to_string(),
             "reads no row set, so no row-set arrangement applies",
         ));
+    }
+    // Topologically by what each reads, then by first appearance; validation refuses a cycle, and
+    // one would be taken in first-appearance order rather than loop.
+    let mut out = Vec::with_capacity(pending.len());
+    while !pending.is_empty() {
+        let ready = pending
+            .iter()
+            .position(|selection| {
+                producers(command, selection)
+                    .iter()
+                    .all(|producer| producer == selection || !pending.contains(producer))
+            })
+            .unwrap_or(0);
+        out.push(pending.remove(ready));
     }
     Ok(out)
 }
@@ -226,8 +326,23 @@ fn scopable(ir: &EssIr, type_ref: &ResolvedTypeRef) -> bool {
 /// Whether the selector selects only rows the scenario's own values name: a top-level equality
 /// between a `String` or `Uuid` field of the row and the input or the addressed subject. From
 /// `ess/23` a `String` or `Uuid` member of a struct identity counts as such a field
-/// (beyond10x/ess#463).
-fn scoped(ir: &EssIr, selection: &ResolvedRowSelection) -> bool {
+/// (beyond10x/ess#463). From `ess/25` a value the outcome publishes counts as the input does where
+/// it is the head or the one row of a selector that is itself scoped, transitively: it then names a
+/// row the scenario arranged (beyond10x/ess#549).
+fn scoped(ir: &EssIr, command: &ResolvedCommand, selection: &ResolvedRowSelection) -> bool {
+    scoped_at(ir, command, selection, 0)
+}
+
+/// How deep a chain of published scopes is followed: validation refuses a cycle, so this bounds
+/// only a malformed model.
+const SCOPE_DEPTH: usize = 16;
+
+fn scoped_at(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    selection: &ResolvedRowSelection,
+    depth: usize,
+) -> bool {
     let entity = ir.entity(&selection.entity);
     let conjuncts: Vec<&Predicate> = match &selection.filter {
         Predicate::All(children) => children.iter().collect(),
@@ -253,6 +368,18 @@ fn scoped(ir: &EssIr, selection: &ResolvedRowSelection) -> bool {
             ]
             .contains(&path.namespace())
     };
+    let published = |path: &FactPath| {
+        depth < SCOPE_DEPTH
+            && published_route(&selection.reads, path).is_some_and(|(index, _)| {
+                let read = &selection.reads[index];
+                command.outcomes.iter().any(|outcome| {
+                    source_of(outcome, read.event.name(), &read.field)
+                        .and_then(|source| read_selection(&source.value))
+                        .is_some_and(|producer| scoped_at(ir, command, producer, depth + 1))
+                })
+            })
+    };
+    let names = |path: &FactPath| named(path) || published(path);
     conjuncts.iter().any(|conjunct| {
         matches!(
             conjunct,
@@ -261,7 +388,7 @@ fn scoped(ir: &EssIr, selection: &ResolvedRowSelection) -> bool {
                 op: CompareOp::Eq,
                 right: Operand::Fact(right),
                 ..
-            } if (field(left) && named(right)) || (field(right) && named(left))
+            } if (field(left) && names(right)) || (field(right) && names(left))
         )
     })
 }
@@ -528,9 +655,81 @@ struct Reading<'a> {
     input: BTreeMap<String, Node>,
     subject: Option<BTreeMap<String, Determined>>,
     rows: &'a Rows,
+    /// The branch whose values a selector reading a published value reads (ess/25,
+    /// beyond10x/ess#549); `None` where only guards are read.
+    outcome: Option<&'a ResolvedOutcome>,
+    /// How many published values are being resolved around the current one.
+    depth: std::cell::Cell<usize>,
 }
 
 impl<'a> Reading<'a> {
+    /// The same reading, a selector's published operands read from what `outcome` publishes.
+    fn for_outcome(mut self, outcome: &'a ResolvedOutcome) -> Self {
+        self.outcome = Some(outcome);
+        self
+    }
+
+    /// The value the branch publishes in `read`, computed over the rows as the selector supplying
+    /// it reads them: the identity or field of the head or the one row, or a literal input. A value
+    /// the target mints, or one the steps leave undetermined, is no literal to scope by.
+    fn published_value(&self, read: &ResolvedPublishedRead) -> Result<Node, String> {
+        let named = || format!("`{}.{}`", read.event.name(), read.field);
+        let outcome = self
+            .outcome
+            .ok_or_else(|| format!("{} is read where no branch publishes it", named()))?;
+        let source = source_of(outcome, read.event.name(), &read.field)
+            .ok_or_else(|| format!("{} is not published by `{}`", named(), outcome.name))?;
+        if self.depth.get() >= SCOPE_DEPTH {
+            return Err(format!(
+                "{} reads published values that read each other",
+                named()
+            ));
+        }
+        self.depth.set(self.depth.get() + 1);
+        let value = match &source.value {
+            ResolvedPayloadValue::InputField { field, .. } => self
+                .input
+                .get(field)
+                .cloned()
+                .ok_or_else(|| format!("{} copies an input the send leaves out", named())),
+            value => match self.read(value) {
+                Some(Ok(row)) => read_value(self.ir, &row)
+                    .and_then(|value| value.as_literal().cloned())
+                    .ok_or_else(|| {
+                        format!(
+                            "{} is not a literal the steps name: a value the target mints",
+                            named()
+                        )
+                    }),
+                Some(Err(why)) => Err(format!("{}: {why}", named())),
+                None => Err(format!(
+                    "{} has a source synthesis does not follow",
+                    named()
+                )),
+            },
+        };
+        self.depth.set(self.depth.get() - 1);
+        value
+    }
+
+    /// `selection`'s filter with the published values it reads and the send's input and subject
+    /// written in.
+    fn closed_selection(&self, selection: &ResolvedRowSelection) -> Result<Predicate, String> {
+        if selection.reads.is_empty() {
+            return self.closed(&selection.filter);
+        }
+        let values = selection
+            .reads
+            .iter()
+            .map(|read| self.published_value(read).map(Some))
+            .collect::<Result<Vec<_>, _>>()?;
+        self.closed(&written_published(
+            &selection.filter,
+            &selection.reads,
+            &values,
+        ))
+    }
+
     fn new(
         ir: &'a EssIr,
         command: &'a ResolvedCommand,
@@ -566,6 +765,8 @@ impl<'a> Reading<'a> {
             },
             subject,
             rows,
+            outcome: None,
+            depth: std::cell::Cell::new(0),
         })
     }
 
@@ -639,7 +840,7 @@ impl<'a> Reading<'a> {
         selection: &ResolvedRowSelection,
         satisfies: Option<&Predicate>,
     ) -> Result<Vec<RowMember>, String> {
-        let filter = self.closed(&selection.filter)?;
+        let filter = self.closed_selection(selection)?;
         let satisfies = satisfies
             .map(|predicate| self.closed(predicate))
             .transpose()?;
@@ -850,7 +1051,7 @@ fn consistent(
     if !rows_decide(command, expected) {
         return Ok(());
     }
-    let reading = Reading::new(ir, command, supplied, rows)?;
+    let reading = Reading::new(ir, command, supplied, rows)?.for_outcome(expected);
     // Which row-set branches answer before `expected` is the precedence plan's: under the
     // precedence order the row-set refusals in declaration order, then the accepting branches in
     // declaration order, then the default. Every row set is still read, in declaration order, so
@@ -970,37 +1171,38 @@ fn selected_values(
     let Ok(reading) = Reading::new(ir, command, supplied, rows) else {
         return out;
     };
+    let reading = reading.for_outcome(outcome);
     for read in reads(outcome) {
-        let Some(Ok(ReadRow {
-            row,
-            field,
-            type_ref,
-            settled_as,
-        })) = reading.read(&read.value)
-        else {
+        let Some(Ok(row)) = reading.read(&read.value) else {
             continue;
         };
-        let identity = &ir.entity(&row.entity).identity.name;
-        let value = if field == identity.as_str() {
-            row.identity.clone()
-        } else if let Some(held) = row.settled.get(field) {
-            Some(held.value.clone())
-        } else if row.unwritten.contains(field) {
-            Some(ScenarioValue::Literal { value: Node::Null })
-        } else {
-            None
-        };
-        if let Some(value) = value {
+        if let Some(value) = read_value(ir, &row) {
             out.insert(
-                settled_as,
+                row.settled_as,
                 Determined {
                     value,
-                    type_ref: type_ref.clone(),
+                    type_ref: row.type_ref.clone(),
                 },
             );
         }
     }
     out
+}
+
+/// The value a filtered read or a head takes from the row it reads: the identity the steps named,
+/// a field they settled, or null for a field the creation left unwritten.
+fn read_value(ir: &EssIr, read: &ReadRow<'_>) -> Option<ScenarioValue> {
+    let row = read.row;
+    let identity = &ir.entity(&row.entity).identity.name;
+    if read.field == identity.as_str() {
+        row.identity.clone()
+    } else if let Some(held) = row.settled.get(read.field) {
+        Some(held.value.clone())
+    } else if row.unwritten.contains(read.field) {
+        Some(ScenarioValue::Literal { value: Node::Null })
+    } else {
+        None
+    }
 }
 
 /// The rows `steps` leave, deciding again every send of a row-set command among them where `check`
@@ -1665,6 +1867,8 @@ fn arrange_row(
 /// first appear: the filter with the input and subject written in, the `forall` predicates of the
 /// row-set guards over it, and the fields the branch copies from the rows it selects.
 struct Plan<'p> {
+    command: &'p ResolvedCommand,
+    outcome: &'p ResolvedOutcome,
     selections: &'p [&'p ResolvedRowSelection],
     filters: Vec<Predicate>,
     foralls: Vec<Vec<Predicate>>,
@@ -1676,7 +1880,7 @@ struct Plan<'p> {
 impl<'p> Plan<'p> {
     /// The plan for `outcome` of `command` over `selections`, each predicate `closed`.
     fn new(
-        command: &ResolvedCommand,
+        command: &'p ResolvedCommand,
         outcome: &'p ResolvedOutcome,
         selections: &'p [&'p ResolvedRowSelection],
         closed: &dyn Fn(&Predicate) -> Predicate,
@@ -1699,6 +1903,8 @@ impl<'p> Plan<'p> {
             })
             .collect();
         Self {
+            command,
+            outcome,
             selections,
             filters: selections
                 .iter()
@@ -1738,24 +1944,39 @@ impl<'p> Plan<'p> {
         violate: Option<(usize, usize)>,
         actors: &BTreeMap<QualifiedName, ActorRef>,
         before: &[ScenarioStep],
+        supplied: &BTreeMap<String, ScenarioValue>,
     ) -> Option<(Vec<ScenarioStep>, Vec<Arrangement>, Vec<RefusalCause>)> {
         let mut taken = captured(before);
         let mut gaps: Vec<RefusalCause> = Vec::new();
         let mut steps = before.to_vec();
         let mut arranged: Vec<Arrangement> = Vec::new();
         for (at, selection) in self.selections.iter().enumerate() {
+            // A selector reading values this branch does not publish is another branch's to read.
+            if !publishes(self.outcome, selection) {
+                continue;
+            }
+            // Its published operands, as the rows arranged so far supply them (ess/25,
+            // beyond10x/ess#549): the selectors supplying them come first.
+            let filters = self.resolved(ir, supplied, &steps);
+            if reads_published(&filters[at], &selection.reads) {
+                return None;
+            }
             let others: Vec<Predicate> = self
                 .selections
                 .iter()
-                .zip(&self.filters)
+                .zip(&filters)
                 .enumerate()
-                .filter(|(other, (sibling, _))| *other != at && sibling.entity == selection.entity)
+                .filter(|(other, (sibling, _))| {
+                    *other != at
+                        && sibling.entity == selection.entity
+                        && publishes(self.outcome, sibling)
+                })
                 .map(|(_, (_, filter))| filter.clone())
                 .collect();
             let rows = arrange_rows(
                 ir,
                 &selection.entity,
-                &self.filters[at],
+                &filters[at],
                 &self.foralls[at],
                 (
                     counts[at],
@@ -1778,8 +1999,235 @@ impl<'p> Plan<'p> {
                 steps.extend(row.steps.iter().cloned());
             }
             arranged.extend(rows);
+            if let Some(order_by) = self.heads[at].filter(|_| counts[at] >= 2) {
+                if !selection.reads.is_empty() {
+                    let decoys = self.cross_decoys(
+                        ir,
+                        (at, order_by),
+                        supplied,
+                        (&filters[at], &others),
+                        actors,
+                        &mut taken,
+                        (&mut steps, &arranged),
+                        &mut gaps,
+                    );
+                    arranged.extend(decoys);
+                }
+            }
         }
         Some((steps, arranged, gaps))
+    }
+
+    /// Every filter with the published values it reads written in, as the rows `steps` leave
+    /// supply them; a value no row supplies yet is kept as written.
+    fn resolved(
+        &self,
+        ir: &EssIr,
+        supplied: &BTreeMap<String, ScenarioValue>,
+        steps: &[ScenarioStep],
+    ) -> Vec<Predicate> {
+        if self
+            .selections
+            .iter()
+            .all(|selection| selection.reads.is_empty())
+        {
+            return self.filters.clone();
+        }
+        let Ok(rows) = walk(ir, steps, false) else {
+            return self.filters.clone();
+        };
+        let Ok(reading) = Reading::new(ir, self.command, supplied, &rows) else {
+            return self.filters.clone();
+        };
+        let reading = reading.for_outcome(self.outcome);
+        self.selections
+            .iter()
+            .zip(&self.filters)
+            .map(|(selection, filter)| {
+                if selection.reads.is_empty() || !publishes(self.outcome, selection) {
+                    return filter.clone();
+                }
+                let values: Vec<Option<Node>> = selection
+                    .reads
+                    .iter()
+                    .map(|read| reading.published_value(read).ok())
+                    .collect();
+                written_published(filter, &selection.reads, &values)
+            })
+            .collect()
+    }
+
+    /// The cross decoys of selector `at`, whose head the branch reads by `order_by` and whose
+    /// filter reads a published value (`docs/design/published-value-operand.md`, "Synthesis",
+    /// item 5): for each other selected row of the selector supplying that value, one row meeting
+    /// every conjunct but the operand's, carrying that other row's value there, ranked above the
+    /// inner head on the first key, with a copied value of its own. A target scoping the inner read
+    /// by the wrong outer row, or by none, then answers a cross decoy. One no creating input places
+    /// is left out and named in `gaps`; the scenario stands.
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+    fn cross_decoys(
+        &self,
+        ir: &EssIr,
+        (at, order_by): (usize, &[Ranking]),
+        supplied: &BTreeMap<String, ScenarioValue>,
+        (resolved, siblings): (&Predicate, &[Predicate]),
+        actors: &BTreeMap<QualifiedName, ActorRef>,
+        taken: &mut BTreeSet<InstanceName>,
+        (steps, arranged): (&mut Vec<ScenarioStep>, &[Arrangement]),
+        gaps: &mut Vec<RefusalCause>,
+    ) -> Vec<Arrangement> {
+        use std::cmp::Ordering;
+        let selection = self.selections[at];
+        let entity = &selection.entity;
+        let Some(first) = order_by.first() else {
+            return Vec::new();
+        };
+        let Ok(rows) = walk(ir, steps, false) else {
+            return Vec::new();
+        };
+        let Ok(reading) = Reading::new(ir, self.command, supplied, &rows) else {
+            return Vec::new();
+        };
+        let reading = reading.for_outcome(self.outcome);
+        let ties = reads(self.outcome)
+            .into_iter()
+            .find_map(|read| match &read.value {
+                ResolvedPayloadValue::RelatedHead {
+                    selection: read,
+                    ties,
+                    ..
+                } if read == selection => Some(*ties),
+                _ => None,
+            })
+            .unwrap_or(Ties::Total);
+        let Ok(head) = reading.head(selection, order_by, ties) else {
+            return Vec::new();
+        };
+        let head_first = row_key(ir, head, &first.field);
+        let copied = &self.copied[at];
+        let head_copied: Vec<Option<Node>> = copied
+            .iter()
+            .map(|field| row_key(ir, head, field))
+            .collect();
+        let values: Vec<Option<Node>> = selection
+            .reads
+            .iter()
+            .map(|read| reading.published_value(read).ok())
+            .collect();
+        let better = if first.direction == Direction::Descending {
+            CompareOp::Gt
+        } else {
+            CompareOp::Lt
+        };
+        let truth = |row: &Arrangement, predicate: &Predicate| {
+            subject_fact::row_truth_with(
+                ir,
+                entity,
+                &row.settled,
+                &row.unwritten,
+                Some(&row.state),
+                predicate,
+                None,
+            )
+        };
+        let mut out: Vec<Arrangement> = Vec::new();
+        for (index, read) in selection.reads.iter().enumerate() {
+            let Some(source) = source_of(self.outcome, read.event.name(), &read.field) else {
+                continue;
+            };
+            // Only a value read from another selector's rows has other rows to scope by.
+            let Some(outer) = read_selection(&source.value) else {
+                continue;
+            };
+            let Some(Ok(outer_head)) = reading.read(&source.value) else {
+                continue;
+            };
+            let (Ok(candidates), Ok(members)) =
+                (reading.candidates(outer), reading.members(outer, None))
+            else {
+                continue;
+            };
+            let others: Vec<Node> = candidates
+                .iter()
+                .zip(&members)
+                .filter(|(row, member)| {
+                    member.selected == Truth::True && !std::ptr::eq(**row, outer_head.row)
+                })
+                .filter_map(|(row, _)| {
+                    let other = ReadRow {
+                        row,
+                        field: outer_head.field,
+                        type_ref: outer_head.type_ref,
+                        settled_as: String::new(),
+                    };
+                    read_value(ir, &other)?.as_literal().cloned()
+                })
+                .filter(|other| Some(other) != values[index].as_ref())
+                .collect();
+            for other in others {
+                let mut moved = values.clone();
+                moved[index] = Some(other);
+                let mut goal = vec![written_published(
+                    &self.filters[at],
+                    &selection.reads,
+                    &moved,
+                )];
+                if let Some(steer) = head_first
+                    .as_ref()
+                    .and_then(|held| compared(&first.field, better, held))
+                {
+                    goal.push(steer);
+                }
+                let goal = Predicate::All(goal);
+                let accept = |row: &Arrangement| {
+                    truth(row, resolved) == Truth::False
+                        && truth(row, &goal) == Truth::True
+                        && siblings
+                            .iter()
+                            .all(|sibling| truth(row, sibling) == Truth::False)
+                        && ordered_head::on(
+                            ir,
+                            entity,
+                            first,
+                            arranged_key(ir, entity, row, &first.field).as_ref(),
+                            head_first.as_ref(),
+                        ) == Some(Ordering::Less)
+                        && copied.iter().zip(&head_copied).all(|(field, held)| {
+                            arranged_key(ir, entity, row, field).is_some_and(|value| {
+                                !zero(&value)
+                                    && Some(&value) != held.as_ref()
+                                    && arranged.iter().chain(&out).all(|earlier| {
+                                        arranged_key(ir, entity, earlier, field).as_ref()
+                                            != Some(&value)
+                                    })
+                            })
+                        })
+                };
+                let distinction = next(ir, entity, taken);
+                let placed =
+                    arrange_row(ir, entity, &goal, actors, distinction, &accept).filter(|row| {
+                        let mut after = steps.clone();
+                        after.extend(row.steps.iter().cloned());
+                        walk(ir, &after, true).is_ok()
+                    });
+                match placed {
+                    Some(row) => {
+                        steps.extend(row.steps.iter().cloned());
+                        out.push(row);
+                    }
+                    None => gaps.push(gap(
+                        format!(
+                            "{}: `{}` scoped by another `{}`",
+                            self.command.name,
+                            entity.name(),
+                            outer.entity.name()
+                        ),
+                        ordered_head::CROSS_UNSTEERED,
+                    )),
+                }
+            }
+        }
+        out
     }
 }
 
@@ -1802,8 +2250,12 @@ fn head_order<'o>(
 
 /// Why no scenario can decide the rows `selection` selects, where none can: it is unscoped, or it
 /// reads a member of a struct identity no row holds as a literal.
-fn decidable(ir: &EssIr, selection: &ResolvedRowSelection) -> Result<(), &'static str> {
-    if !scoped(ir, selection) {
+fn decidable(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    selection: &ResolvedRowSelection,
+) -> Result<(), &'static str> {
+    if !scoped(ir, command, selection) {
         return Err(
             "selects rows by no equality between a String or Uuid field and the input or the \
              addressed subject, so the rows it counts are not only the scenario's own",
@@ -1839,7 +2291,7 @@ pub(super) fn prepare(
     let selections = selections_of(command)?;
     let at = || format!("{}/{}", command.name, outcome.name);
     for selection in &selections {
-        decidable(ir, selection).map_err(|reason| gap(at(), reason))?;
+        decidable(ir, command, selection).map_err(|reason| gap(at(), reason))?;
     }
     let input = input_for(ir, command, outcome, Distinction::PLAIN)?;
     let setup = subject_setup(ir, command, outcome, actors)?;
@@ -1875,6 +2327,47 @@ pub(super) fn prepare(
             return Err(gap(format!("{}: `{}`", at(), first.field), reason));
         }
     }
+    // A selector scoped by a value the target mints reads rows no scenario can arrange against it
+    // (ess/25, beyond10x/ess#549): the branch alone is refused.
+    for selection in selections
+        .iter()
+        .filter(|selection| publishes(outcome, selection))
+    {
+        for read in &selection.reads {
+            let Some(source) = source_of(outcome, read.event.name(), &read.field) else {
+                continue;
+            };
+            let (ResolvedPayloadValue::RelatedSelection {
+                selection: outer,
+                field,
+                ..
+            }
+            | ResolvedPayloadValue::RelatedHead {
+                selection: outer,
+                field,
+                ..
+            }) = &source.value
+            else {
+                continue;
+            };
+            let mints = if ordered_head::is_identity(ir, &outer.entity, field) {
+                !ordered_head::steerable(ir, &outer.entity, field)
+            } else {
+                ordered_head::minted(ir, &outer.entity, field)
+            };
+            if mints {
+                return Err(gap(
+                    format!(
+                        "{}: `{}` where {}",
+                        at(),
+                        selection.entity.name(),
+                        selection.filter
+                    ),
+                    ordered_head::SCOPE_MINTED,
+                ));
+            }
+        }
+    }
     let mut first_failure: Option<String> = None;
     let mut search = |heads: &[usize]| {
         let lists: Vec<&[usize]> = plan
@@ -1888,7 +2381,7 @@ pub(super) fn prepare(
                     continue;
                 }
                 let Some((steps, arranged, gaps)) =
-                    plan.arrange(ir, &counts, *violate, actors, &setup.steps)
+                    plan.arrange(ir, &counts, *violate, actors, &setup.steps, &supplied)
                 else {
                     continue;
                 };
