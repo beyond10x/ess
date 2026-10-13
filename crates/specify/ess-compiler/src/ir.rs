@@ -1788,6 +1788,19 @@ pub struct ResolvedCommand {
     /// Carried through from the declaration so a projection can publish it. Empty by default.
     #[serde(default, skip_serializing_if = "ess_domain::refs::is_empty")]
     pub refs: Refs,
+    /// Whether the system issues this command itself: it has at least one grant and every actor
+    /// granting it is declared `system: true` (ess/25, beyond10x/ess#542,
+    /// `docs/design/system-issued-commands.md`).
+    ///
+    /// A pure function of the grants, written anyway so a consumer can refuse it by name without
+    /// deriving it again. Conformance awaits such a command rather than invoking it. Omitted when
+    /// `false`, so a model without a system actor keeps its IR bytes.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub system_issued: bool,
+    /// How soon the system takes this step, where it declares a bound (ess/25). Omitted when
+    /// absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub await_within: Option<ess_domain::binding::periodic::Period>,
 }
 
 /// One configuration input a component declares, with its type resolved.
@@ -2286,6 +2299,10 @@ pub struct ResolvedActor {
     /// Left out of the document when empty, so a model without them keeps its bytes.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub attributes: Vec<ResolvedField>,
+    /// Whether this actor is the system itself (ess/25, beyond10x/ess#542). Omitted when
+    /// `false`, so a model without a system actor keeps its IR bytes.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub system: bool,
 }
 
 impl ResolvedActor {

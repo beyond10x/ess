@@ -251,6 +251,7 @@ pub const FORMAT_HISTORY: &[FormatHistoryEntry] = &[
         release: None,
         added: &[
             "A minted value may be required present in an `Optional` field, `{generated: true, present: true}`, wherever `{generated: true}` is admitted: the implementation must supply a value, and the interpreted target and synthesis treat it as present; it is refused over a required target and with `present: false` (`type_mismatch`). A `sets:` entry may store the value this outcome publishes, `{payload: <Event>.<field>}`, naming an event this outcome fills under `payload:` and a field given a source there, at a type assignable to the stored field without a conversion; it is refused in a payload, an error payload and after `else:`. Below `ess/25` both shapes keep the nested-mapping reading they had, and a refusal of that reading names `ess/25` (beyond10x/ess#545).",
+            "An actor may declare `system: true`, the system itself; a command granted to at least one actor, every one of them a system actor, is system-issued, and conformance awaits its outcome rather than invoking it. A system-issued command may declare `await_within: PT<seconds>S`, how soon the system takes its step. `system: true` beside `attributes:`, `await_within:` on a command that is not system-issued and a binding invoking a system-issued command are refused (`conflicting_declaration`), and below `ess/25` both keys are refused naming `ess/25` (beyond10x/ess#542).",
         ],
         stricter: &[],
     },

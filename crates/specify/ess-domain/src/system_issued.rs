@@ -113,7 +113,7 @@ pub(crate) fn validate_specification(spec: &crate::Specification) -> ValidationE
                 ConstructRef::new(ConstructKind::Binding, binding.name.to_string()).key("invoke"),
                 ValidationCode::ConflictingDeclaration,
                 format!(
-                    "binding `{}` invokes `{}`, which the system issues itself",
+                    "`{}` invokes `{}`, a command the system issues itself",
                     binding.name, binding.command
                 ),
             )
