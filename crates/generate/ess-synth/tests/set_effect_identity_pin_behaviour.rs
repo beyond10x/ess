@@ -214,3 +214,33 @@ fn an_unpinned_entry_stays_owed_naming_it() {
         }
     }
 }
+
+/// The Go edit that reads no row: the lookup's found flag is ignored.
+const GO_READS_NO_ROW: (&str, &str) = ("if affectedFound0 {", "if affectedFound0 && false {");
+
+#[test]
+fn generated_go_moves_the_row_the_subject_names() {
+    if !related::go_available() {
+        eprintln!("skipped: no Go toolchain");
+        return;
+    }
+    moves_the_row_the_subject_names(Target::Go, "pin-go", GO_READS_NO_ROW);
+}
+
+#[test]
+fn generated_go_skips_a_row_outside_from() {
+    if !related::go_available() {
+        eprintln!("skipped: no Go toolchain");
+        return;
+    }
+    leaves_the_rows_the_effect_skips(Target::Go, "pin-go-from", &names_a_parked_call);
+}
+
+#[test]
+fn generated_go_changes_nothing_for_a_dangling_reference() {
+    if !related::go_available() {
+        eprintln!("skipped: no Go toolchain");
+        return;
+    }
+    leaves_the_rows_the_effect_skips(Target::Go, "pin-go-dangling", &names_no_call);
+}
