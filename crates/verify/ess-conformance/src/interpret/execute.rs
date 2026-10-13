@@ -2489,6 +2489,16 @@ fn mint(
             },
         );
     }
+    minted(ir, target, &mut || work.next.tick()).map(|value| value.map(Value::Known))
+}
+
+/// A value of `target` drawn from a counter, in the shape its declared type takes: `None` for an
+/// optional type. [`mint`] and [`Store::mint`] both draw this way, so one counter yields one value.
+fn minted(
+    ir: &EssIr,
+    target: &ResolvedTypeRef,
+    tick: &mut dyn FnMut() -> u64,
+) -> Result<Option<Node>, Undetermined> {
     if target.is_optional() {
         return Ok(None);
     }
@@ -2496,24 +2506,43 @@ fn mint(
         what: format!("a value of `{target}`"),
     };
     if let Representation::Primitive(Primitive::Uuid) = representation(ir, target) {
-        Ok(Some(Value::Known(Node::Text(format!(
+        Ok(Some(Node::Text(format!(
             "00000000-0000-4000-8000-{:012}",
-            work.next.tick()
-        )))))
+            tick()
+        ))))
     } else {
         let field = ess_compiler::ir::ResolvedField {
             name: "generated".into(),
             type_ref: target.clone(),
             naming: ess_domain::name::Naming::default(),
         };
-        let distinction = usize::try_from(work.next.tick()).map_err(|_| no_value())?;
+        let distinction = usize::try_from(tick()).map_err(|_| no_value())?;
         crate::witness::fields(
             ir,
             &[field],
             crate::witness::Distinction::further(distinction),
         )
-        .map(|mut values| values.remove("generated").map(Value::Known))
+        .map(|mut values| values.remove("generated"))
         .map_err(|_| no_value())
+    }
+}
+
+impl Store {
+    /// A present value of `target` minted from this store's counter, as every value the model
+    /// leaves to the implementation is: the input a system-issued command's system decides where
+    /// nothing narrower offers one (beyond10x/ess#542, `docs/design/system-issued-commands.md`).
+    pub(super) fn mint(
+        &mut self,
+        ir: &EssIr,
+        target: &ResolvedTypeRef,
+    ) -> Result<Node, Undetermined> {
+        let mut tick = || {
+            self.minted += 1;
+            self.minted
+        };
+        minted(ir, target.required(), &mut tick)?.ok_or_else(|| Undetermined::NoValue {
+            what: format!("a value of `{target}`"),
+        })
     }
 }
 
