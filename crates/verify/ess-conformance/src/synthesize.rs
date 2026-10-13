@@ -2648,7 +2648,11 @@ pub(crate) fn needs_of(
             | ScenarioStep::ExpectInvocation { command, .. }
             | ScenarioStep::ExpectEveryInvocation { command, .. }
             | ScenarioStep::ExpectNoInvocation { command, .. }
-            | ScenarioStep::ExecuteCommandWithoutInput { command, .. } => {
+            | ScenarioStep::ExecuteCommandWithoutInput { command, .. }
+            // The component the system's own scheduler sends the command to still serves it
+            // (beyond10x/ess#542).
+            | ScenarioStep::AwaitOutcome { command, .. }
+            | ScenarioStep::ExpectNotIssued { command, .. } => {
                 if !handles(ir, component, command.name()) {
                     needs.insert(command.clone().into());
                 }

@@ -504,10 +504,17 @@ fn generated_docs_typescript_format_refusal_names_the_rule() {
         !runtime.contains("suite/8 and /9 require"),
         "the TypeScript runner still says only suite/8 and /9 need ESS_REPORT_FORMAT=2"
     );
+    // The newest major the TypeScript runner admits, which is not the newest the Rust reader does
+    // while a pair runs in Rust only (beyond10x/ess#542, stage 1).
+    let newest = SUPPORTED_SUITE_FORMATS
+        .iter()
+        .copied()
+        .filter(|&major| typescript(major).is_ok())
+        .max()
+        .unwrap();
     assert!(
         runtime.contains(&format!(
-            "suite/8 through /{} require explicit ESS_REPORT_FORMAT=2",
-            SUPPORTED_SUITE_FORMATS.iter().max().unwrap()
+            "suite/8 through /{newest} require explicit ESS_REPORT_FORMAT=2"
         )),
         "the TypeScript runner's refusal does not name the versions it refuses"
     );
