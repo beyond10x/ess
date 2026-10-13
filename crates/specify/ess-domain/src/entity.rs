@@ -2711,6 +2711,7 @@ lifecycle:
             )],
             response: Vec::new(),
             undeclared_fields: None,
+            await_within: None,
             outcomes: vec![crate::command::Outcome {
                 replays: None,
                 name: crate::command::OutcomeName::new(outcome).expect("a valid outcome name"),

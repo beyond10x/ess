@@ -332,6 +332,8 @@ fn shape(synthesis: &Synthesis, id: &str) -> Vec<&'static str> {
             ScenarioStep::ExecuteCommandWithoutInput { .. } => "execute without input",
             ScenarioStep::ExpectOutcome { .. } => "outcome",
             ScenarioStep::ExpectNotGranted { .. } => "not granted",
+            ScenarioStep::AwaitOutcome { .. } => "await",
+            ScenarioStep::ExpectNotIssued { .. } => "not issued",
             ScenarioStep::ReadAs { .. } => "read as",
             ScenarioStep::ExpectError { .. } => "error",
             ScenarioStep::ExpectEvent { .. } => "event",

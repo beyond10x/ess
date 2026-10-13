@@ -22,6 +22,7 @@
 //! | [`mark_instant`](ConformanceTarget::mark_instant) | none — it names the instant a duration claim is measured from, which the suite may not invent | [`MarkInstant`](crate::scenario::ScenarioStep::MarkInstant) |
 //! | [`observe_elapsed`](ConformanceTarget::observe_elapsed) | a timer, a wrap-up window, a TTL: a length of time the system's own behaviour turns on | [`ExpectNotBefore`](crate::scenario::ScenarioStep::ExpectNotBefore), [`ExpectWithin`](crate::scenario::ScenarioStep::ExpectWithin), [`ExpectQuiet`](crate::scenario::ScenarioStep::ExpectQuiet) |
 //! | [`scan_view`](ConformanceTarget::scan_view) | a view's `order_by:` read one row at a time: whether a consumer can stop the producer | [`ExpectHalt`](crate::scenario::ScenarioStep::ExpectHalt), [`EventuallyHalt`](crate::scenario::ScenarioStep::EventuallyHalt) |
+//! | [`await_outcome`](ConformanceTarget::await_outcome) | an actor declared `system: true`: a command the system issues itself, which no caller can invoke (ess/25, beyond10x/ess#542) | [`AwaitOutcome`](crate::scenario::ScenarioStep::AwaitOutcome), [`ExpectNotIssued`](crate::scenario::ScenarioStep::ExpectNotIssued) |
 //!
 //! Seven of these methods are §7's. The others were added because a step in the closed
 //! vocabulary could not otherwise be executed at all, and each is argued on its own method. None is
@@ -506,6 +507,40 @@ pub trait ConformanceTarget {
     /// [`query_view_anonymous`](Self::query_view_anonymous) reads (beyond10x/ess#286).
     fn scan_view_anonymous(&self, request: OrderedScanRequest) -> Result<OrderedScan, TargetError> {
         self.scan_view(request)
+    }
+
+    /// Reports the outcome the system itself reached for a command it issues, on one instance,
+    /// within a bound (ess/25, beyond10x/ess#542, `docs/design/system-issued-commands.md`).
+    ///
+    /// A command every grant of which is the system is never invoked by the runner: no caller can
+    /// be the system. The target answers what its system did on
+    /// [`instance`](AwaitRequest::instance) after the scenario's preceding steps — the outcome it
+    /// reached, with the input it issued the command with and what it published; or that nothing
+    /// was reached; or that it cannot say.
+    ///
+    /// # The hold
+    ///
+    /// A target that implements this does not let its system take the step on a scenario's records
+    /// until the runner awaits it — a controlled scheduler or a tick the target drives. It is a test
+    /// adapter control, as [`configure_external_outcome`](Self::configure_external_outcome) is. A
+    /// target that cannot hold its system answers unsupported: a step taken early satisfies no
+    /// await, and a state the system leaves on its own would be read after it had already left it.
+    ///
+    /// # The bound
+    ///
+    /// With [`within`](AwaitRequest::within), report the reading of the target's own clock, as
+    /// [`observe_elapsed`](Self::observe_elapsed) does: a reached outcome no later than `within`,
+    /// or nothing reached once at least `within` has passed. Without it, return when the step is
+    /// taken or when [`deadline`](AwaitRequest::deadline) has passed; the runner asks again while
+    /// its own deadline has not.
+    ///
+    /// The default answers [`TargetError::Unsupported`], so a target written before the capability
+    /// keeps compiling and reports each await scenario unsupported, never passed.
+    fn await_outcome(&self, request: AwaitRequest) -> Result<AwaitAnswer, TargetError> {
+        Err(TargetError::unsupported(
+            format!("awaiting `{}` on an instance", request.command),
+            "this target cannot observe, or hold, a step its system takes itself",
+        ))
     }
 
     /// Closes the scenario's execution context (§8).
@@ -1099,6 +1134,49 @@ impl ObservedInvocation {
         self.input.insert(field.into(), value);
         self
     }
+}
+
+// ---- system-issued commands ------------------------------------------------------------------
+
+/// A request for the outcome the system itself reached for a command it issues
+/// ([`ConformanceTarget::await_outcome`], beyond10x/ess#542).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct AwaitRequest {
+    /// The system-issued command.
+    pub command: CommandRef,
+    /// The identity of the record the outcome addresses, resolved by the runner.
+    pub instance: Node,
+    /// The declared bound, where the command declares one (`await_within:`).
+    pub within: Option<Elapsed>,
+    /// When the target may stop waiting, where there is no declared bound: the runner's own.
+    pub deadline: Deadline,
+    /// The input fields whose values the scenario will compare: names only, never values.
+    ///
+    /// A real target ignores it; the interpreted model reads it to answer unsupported where the
+    /// scenario compares a value the model does not determine.
+    pub compared: std::collections::BTreeSet<String>,
+    /// The scenario this belongs to.
+    pub correlation: CorrelationId,
+}
+
+/// What the system did about an awaited command ([`ConformanceTarget::await_outcome`]).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "answer", rename_all = "snake_case")]
+pub enum AwaitAnswer {
+    /// The system issued the command and reached this result.
+    Reached {
+        /// The branch, its error, and what the command published, as an invoked command's.
+        result: SemanticCommandResult,
+        /// The input the system issued the command with, by declared field name.
+        input: BTreeMap<String, Node>,
+        /// The target's clock reading since the await began, in milliseconds, where it keeps one.
+        elapsed_ms: Option<u64>,
+    },
+    /// The system reached no outcome of the command on the instance.
+    NotIssued {
+        /// The target's clock reading since the await began, in milliseconds, where it keeps one.
+        elapsed_ms: Option<u64>,
+    },
 }
 
 // ---- external outcomes -----------------------------------------------------------------------

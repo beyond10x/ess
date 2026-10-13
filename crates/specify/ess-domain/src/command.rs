@@ -2637,6 +2637,13 @@ pub struct CommandSpec {
     /// Empty by default. See [`crate::refs`] for why this is a reference and not a paragraph.
     #[serde(default, skip_serializing_if = "crate::refs::is_empty")]
     pub refs: Refs,
+    /// How soon the system takes this step, where the command is system-issued and says so
+    /// (`ess/25`, beyond10x/ess#542, `docs/design/system-issued-commands.md`).
+    ///
+    /// A property of the system, not of the machine, as an elapsed claim is. `None` where the
+    /// command declares no bound.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub await_within: Option<crate::binding::periodic::Period>,
 }
 
 impl CommandSpec {
@@ -5632,6 +5639,10 @@ pub struct RawCommandSpec {
     /// Empty by default. See [`crate::refs`] for why this is a reference and not a paragraph.
     #[serde(default, skip_serializing_if = "crate::refs::is_empty")]
     pub refs: Refs,
+    /// How soon the system takes this step: positive whole seconds, `PT<seconds>S`, on a command
+    /// every grant of which is a system actor (`ess/25`, beyond10x/ess#542).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub await_within: Option<crate::binding::periodic::Period>,
 }
 
 /// One field of a command's input: a [`Field`] that may also carry an `example:`.
@@ -6763,6 +6774,7 @@ impl TryFrom<RawCommandSpec> for CommandSpec {
             outcomes,
             naming: raw.naming,
             refs: raw.refs,
+            await_within: raw.await_within,
         };
         errors.extend(spec.validate_shape(None));
         errors.into_result(spec)
@@ -6961,6 +6973,7 @@ impl From<CommandSpec> for RawCommandSpec {
             outcomes: command.outcomes.into_iter().map(RawOutcome::from).collect(),
             naming: command.naming,
             refs: command.refs,
+            await_within: command.await_within,
         }
     }
 }
@@ -7077,6 +7090,7 @@ outcomes:
             )],
             response: Vec::new(),
             undeclared_fields: None,
+            await_within: None,
             fixture_inputs: BTreeMap::new(),
             outcomes,
             naming: Naming::default(),
@@ -8324,6 +8338,7 @@ outcomes:
             ],
             response: Vec::new(),
             undeclared_fields: None,
+            await_within: None,
             fixture_inputs: BTreeMap::new(),
             outcomes: vec![
                 Outcome::when(

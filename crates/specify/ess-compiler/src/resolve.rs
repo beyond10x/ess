@@ -2173,6 +2173,8 @@ impl<'a> Resolver<'a> {
                 &needles,
             );
             let domain = self.owner(code, &command.name, "command");
+            // ess/25 (#542): a pure function of the grants, carried so no consumer derives it.
+            let system_issued = self.spec.is_system_issued(&command.name);
             if let (Some(input), Some(response), Some(outcomes), Some(domain)) =
                 (input, response, outcomes, domain)
             {
@@ -2189,6 +2191,8 @@ impl<'a> Resolver<'a> {
                         outcomes,
                         naming: command.naming,
                         refs: command.refs,
+                        system_issued,
+                        await_within: command.await_within,
                     },
                 );
             }
@@ -4193,6 +4197,7 @@ impl<'a> Resolver<'a> {
                     may_read,
                     naming: actor.naming,
                     attributes,
+                    system: actor.system,
                 },
             );
         }

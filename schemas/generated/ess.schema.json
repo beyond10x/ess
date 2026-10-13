@@ -1669,6 +1669,11 @@
               "$ref": "#/definitions/Naming"
             }
           ]
+        },
+        "system": {
+          "description": "Whether this actor is the system itself (ess/25). `false` is the same as leaving it out.",
+          "default": false,
+          "type": "boolean"
         }
       },
       "additionalProperties": false
@@ -2072,6 +2077,17 @@
         "name"
       ],
       "properties": {
+        "await_within": {
+          "description": "How soon the system takes this step: positive whole seconds, `PT<seconds>S`, on a command every grant of which is a system actor (`ess/25`, beyond10x/ess#542).",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Period"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "fixture_inputs": {
           "description": "Independently provisioned conformance inputs, keyed by declared input field.",
           "type": "object",
