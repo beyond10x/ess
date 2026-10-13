@@ -930,6 +930,14 @@ fn actor_changes(before: &EssIr, after: &EssIr, changes: &mut Vec<SemanticChange
                         command: command.clone(),
                     });
                 }
+                // Whether the actor is the system itself (ess/25, beyond10x/ess#542). A command
+                // becoming system-issued follows from this and the grants, and is not compared.
+                if was.system != is.system {
+                    push(ActorChange::SystemChanged {
+                        before: was.system,
+                        after: is.system,
+                    });
+                }
                 for delta in naming_deltas(&was.naming, &is.naming, name.local()) {
                     match delta {
                         NamingDelta::Wire(a, b) => push(ActorChange::WireNameChanged {
@@ -1538,6 +1546,12 @@ fn compare_commands(
         push(CommandChange::ResponseChanged {
             before: parameter_contracts(&was.response),
             after: parameter_contracts(&is.response),
+        });
+    }
+    if was.await_within != is.await_within {
+        push(CommandChange::AwaitWithinChanged {
+            before: was.await_within,
+            after: is.await_within,
         });
     }
     if was.undeclared_fields != is.undeclared_fields {
@@ -2617,7 +2631,8 @@ fn residual_construct(declaration: &mut serde_json::Value, family: &str) {
                 ],
             );
         }
-        "actors" => remove_keys(declaration, &["may"]),
+        // `system` is `system-changed` (ess/25, beyond10x/ess#542).
+        "actors" => remove_keys(declaration, &["may", "system"]),
         "bindings" => {
             remove_keys(
                 declaration,
@@ -2674,6 +2689,9 @@ fn residual_command(declaration: &mut serde_json::Value) {
     residual_fields(declaration, "input");
     // Compared as `ResponseUndeclaredFieldsChanged` (`ess/24`).
     remove_keys(declaration, &["undeclared_fields"]);
+    // `await_within` is `await-within-changed`; `system_issued` is a pure function of the grants
+    // and the actors' `system`, both compared on the actor (ess/25, beyond10x/ess#542).
+    remove_keys(declaration, &["await_within", "system_issued"]);
     // Compared as `InputExampleChanged`, input by input.
     remove_keys(declaration, &["examples"]);
     if let Some(outcomes) = declaration

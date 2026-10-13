@@ -59,6 +59,7 @@
 //! [`begin_scenario`](ConformanceTarget::begin_scenario) — so two runs of one suite produce the
 //! same ones, and the runner never compares one against an expected value.
 
+mod await_outcome;
 mod bindings;
 pub(crate) use bindings::refusal as binding_refusal;
 mod command;
@@ -539,6 +540,14 @@ impl ConformanceTarget for Interpreted {
             return Err(TargetError::not_granted(None::<String>));
         }
         self.query_view(request)
+    }
+
+    // Issued only when awaited: see [`await_outcome`] (beyond10x/ess#542).
+    fn await_outcome(
+        &self,
+        request: crate::target::AwaitRequest,
+    ) -> Result<crate::target::AwaitAnswer, TargetError> {
+        self.await_system_outcome(&request)
     }
 
     fn end_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
