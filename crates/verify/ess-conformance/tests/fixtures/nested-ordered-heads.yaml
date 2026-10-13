@@ -1,0 +1,181 @@
+format: ess/25
+system: demo
+version: v1
+domain: demo.nested
+types:
+  - {name: demo.nested.SlotId, kind: newtype, of: Uuid}
+  - {name: demo.nested.MembershipId, kind: newtype, of: Uuid}
+  - {name: demo.nested.PairId, kind: newtype, of: Uuid}
+  - {name: demo.nested.Side, kind: enum, variants: [Left, Right]}
+entities:
+  - name: demo.nested.Slot
+    identity: {name: slot_id, type: demo.nested.SlotId}
+    fields:
+      - {name: group_id, type: String}
+      - {name: score, type: Integer}
+    lifecycle:
+      initial: Open
+      states: [Open, Closed]
+      terminal: [Closed]
+      transitions:
+        - {name: close, from: [Open], to: Closed}
+  - name: demo.nested.Membership
+    identity: {name: membership_id, type: demo.nested.MembershipId}
+    fields:
+      - {name: slot_id, type: demo.nested.SlotId}
+      - {name: side, type: demo.nested.Side}
+      - {name: element_key, type: String}
+      - {name: element_score, type: Integer}
+    lifecycle:
+      initial: Present
+      states: [Present, Removed]
+      terminal: [Removed]
+      transitions:
+        - {name: remove, from: [Present], to: Removed}
+  - name: demo.nested.Pair
+    identity: {name: pair_id, type: demo.nested.PairId}
+    fields:
+      - {name: group_id, type: String}
+      - {name: slot_id, type: demo.nested.SlotId}
+      - {name: left_key, type: String}
+    lifecycle:
+      initial: Made
+      states: [Made, Done]
+      terminal: [Done]
+      transitions:
+        - {name: finish, from: [Made], to: Done}
+errors:
+  - {name: demo.nested.Empty, summary: No slot of the group is open., fields: []}
+events:
+  - name: demo.nested.SlotOpened
+    fields:
+      - {name: slot_id, type: demo.nested.SlotId}
+  - name: demo.nested.SlotClosed
+    fields:
+      - {name: slot_id, type: demo.nested.SlotId}
+  - name: demo.nested.Joined
+    fields:
+      - {name: membership_id, type: demo.nested.MembershipId}
+  - name: demo.nested.Left
+    fields:
+      - {name: membership_id, type: demo.nested.MembershipId}
+  - name: demo.nested.Finished
+    fields:
+      - {name: pair_id, type: demo.nested.PairId}
+  - name: demo.nested.PairMade
+    fields:
+      - {name: pair_id, type: demo.nested.PairId}
+      - {name: slot_id, type: demo.nested.SlotId}
+      - {name: left_key, type: String}
+      - {name: right_key, type: String}
+views:
+  - name: demo.nested.Pairs
+    source: demo.nested.Pair
+    consistency: read_your_writes
+    fields:
+      - {name: pair_id, type: demo.nested.PairId}
+      - {name: slot_id, type: demo.nested.SlotId}
+      - {name: left_key, type: String}
+commands:
+  - name: demo.nested.OpenSlot
+    input:
+      - {name: slot_id, type: demo.nested.SlotId}
+      - {name: group_id, type: String}
+      - {name: score, type: Integer}
+    outcomes:
+      - name: opened
+        creates: demo.nested.Slot
+        instance: slot_id
+        sets: {group_id: input.group_id, score: input.score}
+        emits: [demo.nested.SlotOpened]
+        payload:
+          demo.nested.SlotOpened: {slot_id: input.slot_id}
+  - name: demo.nested.CloseSlot
+    input:
+      - {name: slot_id, type: demo.nested.SlotId}
+    outcomes:
+      - name: closed
+        moves: demo.nested.Slot.close
+        instance: slot_id
+        emits: [demo.nested.SlotClosed]
+        payload:
+          demo.nested.SlotClosed: {slot_id: input.slot_id}
+  - name: demo.nested.Join
+    input:
+      - {name: membership_id, type: demo.nested.MembershipId}
+      - {name: slot_id, type: demo.nested.SlotId}
+      - {name: side, type: demo.nested.Side}
+      - {name: element_key, type: String}
+      - {name: element_score, type: Integer}
+    outcomes:
+      - name: joined
+        creates: demo.nested.Membership
+        instance: membership_id
+        sets:
+          slot_id: input.slot_id
+          side: input.side
+          element_key: input.element_key
+          element_score: input.element_score
+        emits: [demo.nested.Joined]
+        payload:
+          demo.nested.Joined: {membership_id: input.membership_id}
+  - name: demo.nested.Leave
+    input:
+      - {name: membership_id, type: demo.nested.MembershipId}
+    outcomes:
+      - name: left
+        moves: demo.nested.Membership.remove
+        instance: membership_id
+        emits: [demo.nested.Left]
+        payload:
+          demo.nested.Left: {membership_id: input.membership_id}
+  - name: demo.nested.Finish
+    input:
+      - {name: pair_id, type: demo.nested.PairId}
+    outcomes:
+      - name: finished
+        moves: demo.nested.Pair.finish
+        instance: pair_id
+        emits: [demo.nested.Finished]
+        payload:
+          demo.nested.Finished: {pair_id: input.pair_id}
+  - name: demo.nested.MatchInGroup
+    input:
+      - {name: pair_id, type: demo.nested.PairId}
+      - {name: group_id, type: String}
+    outcomes:
+      - name: empty
+        when_related:
+          entity: demo.nested.Slot
+          where: {all: [group_id == input.group_id, state == Open]}
+          exists: false
+        error: demo.nested.Empty
+      - name: paired
+        creates: demo.nested.Pair
+        instance: pair_id
+        sets:
+          group_id: input.group_id
+          slot_id: {payload: demo.nested.PairMade.slot_id}
+          left_key: {payload: demo.nested.PairMade.left_key}
+        emits: [demo.nested.PairMade]
+        payload:
+          demo.nested.PairMade:
+            pair_id: input.pair_id
+            slot_id:
+              related:
+                entity: demo.nested.Slot
+                where: {all: [group_id == input.group_id, state == Open]}
+                order_by: [score desc, slot_id]
+                first: slot_id
+            left_key:
+              related:
+                entity: demo.nested.Membership
+                where: {all: [slot_id == payload.demo.nested.PairMade.slot_id, side == Left, state == Present]}
+                order_by: [element_score desc, membership_id]
+                first: element_key
+            right_key:
+              related:
+                entity: demo.nested.Membership
+                where: {all: [slot_id == payload.demo.nested.PairMade.slot_id, side == Right, state == Present]}
+                order_by: [element_score desc, membership_id]
+                first: element_key
