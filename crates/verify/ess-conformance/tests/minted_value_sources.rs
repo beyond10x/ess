@@ -79,11 +79,7 @@ fn failing(statuses: &BTreeMap<String, String>) -> Vec<&str> {
 fn the_interpreter_keeps_a_present_mint_present_through_the_invariant() {
     let model = ir(MODEL);
     let synthesis = synthesize(&model);
-    assert!(
-        synthesis.refusals.is_empty(),
-        "{:#?}",
-        synthesis.refusals
-    );
+    assert!(synthesis.refusals.is_empty(), "{:#?}", synthesis.refusals);
     let statuses = run(&synthesis.suite, &Interpreted::for_model(model));
     assert!(statuses.contains_key(BRIDGED), "{statuses:#?}");
     assert!(failing(&statuses).is_empty(), "{statuses:#?}");
@@ -141,11 +137,7 @@ impl ConformanceTarget for StoresAnother {
 fn a_stored_value_read_from_the_payload_equals_the_published_one() {
     let model = ir(&read_from_payload());
     let synthesis = synthesize(&model);
-    assert!(
-        synthesis.refusals.is_empty(),
-        "{:#?}",
-        synthesis.refusals
-    );
+    assert!(synthesis.refusals.is_empty(), "{:#?}", synthesis.refusals);
     let statuses = run(&synthesis.suite, &Interpreted::for_model(model.clone()));
     assert!(statuses.contains_key(BRIDGED), "{statuses:#?}");
     assert!(failing(&statuses).is_empty(), "{statuses:#?}");

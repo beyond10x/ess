@@ -7288,8 +7288,10 @@ fn determined_fields(
             // matched with the other two that determine nothing rather than by a wildcard, so a
             // fifth source has to be decided rather than silently ignored.
             ResolvedPayloadValue::ResponseField { .. }
-            | ResolvedPayloadValue::Generated
+            | ResolvedPayloadValue::Generated { .. }
             | ResolvedPayloadValue::Cleared
+            // ess/25 (#545): a `sets:` source only, refused in a payload by `ess-domain`.
+            | ResolvedPayloadValue::PayloadRead { .. }
             // ess/16 (#167): the rows one scenario changed, asserted by `set_effects` alone.
             | ResolvedPayloadValue::ChangedCount => {}
             // Read as the target's type, as `settled` reads a `sets:` literal: `ess-domain` admits
@@ -8396,8 +8398,10 @@ fn expression_value_at(
         ResolvedPayloadValue::Literal { .. }
         | ResolvedPayloadValue::InputField { .. }
         | ResolvedPayloadValue::ResponseField { .. }
-        | ResolvedPayloadValue::Generated
+        | ResolvedPayloadValue::Generated { .. }
         | ResolvedPayloadValue::Cleared
+        // ess/25 (#545): the published value, which `subject_row` claims where it is safe to.
+        | ResolvedPayloadValue::PayloadRead { .. }
         // ess/16 (#168): read only through `caller::synthesize`, which writes the caller's value in.
         | ResolvedPayloadValue::CallerAttribute { .. }
         | ResolvedPayloadValue::ChangedCount => None,
@@ -8957,13 +8961,15 @@ fn reads<'a>(target: &'a ess_compiler::ir::ResolvedPayloadField, out: &mut Vec<(
         }
         ResolvedPayloadValue::Literal { .. }
         | ResolvedPayloadValue::ResponseField { .. }
-        | ResolvedPayloadValue::Generated
+        | ResolvedPayloadValue::Generated { .. }
         | ResolvedPayloadValue::Cleared
         | ResolvedPayloadValue::SubjectField { .. }
         | ResolvedPayloadValue::RelatedField { .. }
         | ResolvedPayloadValue::Increment { .. }
         | ResolvedPayloadValue::SubjectState { .. }
         | ResolvedPayloadValue::CallerAttribute { .. }
+        // ess/25 (#545): what the payload field reads is collected from the payload itself.
+        | ResolvedPayloadValue::PayloadRead { .. }
         | ResolvedPayloadValue::ChangedCount => {}
     }
 }
@@ -9411,7 +9417,11 @@ fn settled(
                     None => continue,
                 }
             }
-            ResolvedPayloadValue::Generated
+            // ess/25 (#545): the published value is a reference to an observation, which
+            // `subject_row` claims for the branch under test alone; carried forward as a settled
+            // value it would name another act's occurrence of the event.
+            ResolvedPayloadValue::Generated { .. }
+            | ResolvedPayloadValue::PayloadRead { .. }
             | ResolvedPayloadValue::ResponseField { .. }
             | ResolvedPayloadValue::ChangedCount => continue,
         };

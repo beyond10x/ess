@@ -392,7 +392,7 @@ fn reads_other_rows(command: &ResolvedCommand) -> bool {
                 fields.iter().any(|field| cross(&field.value))
             }
             ResolvedPayloadValue::ResponseField { .. }
-            | ResolvedPayloadValue::Generated
+            | ResolvedPayloadValue::Generated { .. }
             | ResolvedPayloadValue::InputField { .. }
             | ResolvedPayloadValue::Literal { .. }
             | ResolvedPayloadValue::Cleared
@@ -401,6 +401,7 @@ fn reads_other_rows(command: &ResolvedCommand) -> bool {
             | ResolvedPayloadValue::Increment { .. }
             | ResolvedPayloadValue::InputOrGenerated { .. }
             | ResolvedPayloadValue::CallerAttribute { .. }
+            | ResolvedPayloadValue::PayloadRead { .. }
             | ResolvedPayloadValue::ChangedCount => false,
         }
     }

@@ -2288,7 +2288,7 @@ impl Projector<'_> {
                 let (source, requirement_kind) = match mapping {
                     None => (BoundSource::Identity, SlotRequirement::Identity),
                     Some(mapped) => match &mapped.value {
-                        ResolvedPayloadValue::Generated => (
+                        ResolvedPayloadValue::Generated { .. } => (
                             BoundSource::Generated,
                             SlotRequirement::Generated {
                                 target: target.clone(),
@@ -2336,6 +2336,7 @@ impl Projector<'_> {
                         | ResolvedPayloadValue::RelatedField { .. }
                         | ResolvedPayloadValue::RelatedSelection { .. }
                         | ResolvedPayloadValue::CallerAttribute { .. }
+                        | ResolvedPayloadValue::PayloadRead { .. }
                         | ResolvedPayloadValue::ChangedCount => {
                             unreachable!(
                                 "literals, clears and value expressions were handled above"
@@ -3076,7 +3077,9 @@ impl Projector<'_> {
             | ResolvedPayloadValue::InputOrGenerated { .. }
             | ResolvedPayloadValue::Struct { .. }
             | ResolvedPayloadValue::RelatedField { .. }
-            | ResolvedPayloadValue::RelatedSelection { .. }) => {
+            | ResolvedPayloadValue::RelatedSelection { .. }
+            | ResolvedPayloadValue::Generated { present: true }
+            | ResolvedPayloadValue::PayloadRead { .. }) => {
                 self.diagnostic_naming(
                     LoweringCode::ValueExpressionUnsupported,
                     subset::value_expression(value),
@@ -3172,7 +3175,7 @@ impl Projector<'_> {
                     })
                 }
             }
-            ResolvedPayloadValue::Generated => {
+            ResolvedPayloadValue::Generated { .. } => {
                 let slot = slots.allocate(
                     None,
                     BoundValue {
@@ -3997,6 +4000,10 @@ fn is_value_expression(value: &ResolvedPayloadValue) -> bool {
             | ResolvedPayloadValue::Struct { .. }
             | ResolvedPayloadValue::RelatedField { .. }
             | ResolvedPayloadValue::RelatedSelection { .. }
+            // ess/25 (beyond10x/ess#545): entity-core has no present mint and no read of the
+            // value a payload publishes.
+            | ResolvedPayloadValue::Generated { present: true }
+            | ResolvedPayloadValue::PayloadRead { .. }
     ) || is_input_path(value)
 }
 

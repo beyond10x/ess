@@ -340,7 +340,7 @@ fn assert_focused_payload(run: &ess_compiler::ir::ResolvedCommand) {
     assert_eq!(private.event.to_string(), "contract.local.PrivateEmission");
     assert!(matches!(
         &private.fields[0].value,
-        ResolvedPayloadValue::Generated
+        ResolvedPayloadValue::Generated { .. }
     ));
     assert!(matches!(
         &private.fields[1].value,

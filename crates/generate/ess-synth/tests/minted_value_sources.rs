@@ -59,7 +59,7 @@ entities:
     lifecycle:
       initial: Open
       states: [Open]
-      terminal: []
+      terminal: [Open]
       transitions: []
 events:
   - name: demo.rates.RateQuoted
@@ -161,6 +161,7 @@ fn run(directory: &Path, program: &str, arguments: &[&str]) -> (String, bool) {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
+    eprintln!("{program} {arguments:?} in {}\n{log}", directory.display());
     (log, output.status.success())
 }
 

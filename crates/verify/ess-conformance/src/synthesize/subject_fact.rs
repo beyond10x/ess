@@ -4889,7 +4889,7 @@ fn unarrangeable(
             driver.outcome.sets.iter().any(|set| {
                 &set.target == field
                     && set.conversion.is_none()
-                    && !matches!(set.value, ResolvedPayloadValue::Generated)
+                    && !matches!(set.value, ResolvedPayloadValue::Generated { .. })
             })
         });
         // A creator that leaves an `Optional` field unwritten arranges it too: absent

@@ -24,7 +24,7 @@ pub(super) fn identity_source(outcome: &ResolvedOutcome) -> Option<&ResolvedPayl
 /// Generated fallback identities use the same bounded collision search as ordinary generation.
 pub(super) fn generated(source: Option<&ResolvedPayloadField>, input: &Context<'_>) -> bool {
     match source.map(|source| &source.value) {
-        None | Some(ResolvedPayloadValue::Generated) => true,
+        None | Some(ResolvedPayloadValue::Generated { .. }) => true,
         Some(ResolvedPayloadValue::InputOrGenerated {
             field,
             otherwise: None,
