@@ -276,30 +276,27 @@ fn a_fresh_suite_awaiting_a_command_is_selected_as_50() {
     assert!(!ess_conformance::system_issued::used_by(&ordinary));
 }
 
+/// Stage 2: the generated Go and TypeScript runners execute the await pair, so both emitters write
+/// a package for it, with the run instructions every major from `/8` carries.
 #[test]
-fn the_go_and_typescript_emitters_refuse_a_50_suite_by_version() {
+fn the_go_and_typescript_emitters_admit_the_await_pair() {
     for major in [50, 51] {
         let suite = ConformanceSuite::new(provenance(major));
-        for (target, refused) in [
-            (
-                "Go",
-                ess_conformance::go::emit(&suite).map(drop).unwrap_err(),
-            ),
-            (
-                "TypeScript",
-                ess_conformance::ts::emit(&suite).map(drop).unwrap_err(),
-            ),
+        let go = ess_conformance::go::emit(&suite)
+            .unwrap_or_else(|error| panic!("Go emits /{major}: {error}"));
+        let typescript = ess_conformance::ts::emit(&suite)
+            .unwrap_or_else(|error| panic!("TypeScript emits /{major}: {error}"));
+        for readme in [
+            go.iter()
+                .find(|artifact| artifact.path.ends_with("README.md"))
+                .map(|artifact| &artifact.contents),
+            typescript
+                .iter()
+                .find(|artifact| artifact.path.ends_with("README.md"))
+                .map(|artifact| &artifact.contents),
         ] {
-            let text = refused.to_string();
-            assert!(
-                text.contains(&format!("generated {target} runner")),
-                "{text}"
-            );
-            assert!(text.contains("`ess-conformance/49`"), "{text}");
-            assert!(
-                text.contains(&format!("`ess-conformance/{major}`")),
-                "{text}"
-            );
+            let readme = readme.expect("a README");
+            assert!(readme.contains("ESS_REPORT_FORMAT=2"), "{readme}");
         }
     }
 }

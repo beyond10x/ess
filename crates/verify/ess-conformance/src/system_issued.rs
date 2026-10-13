@@ -19,11 +19,11 @@
 //! format. A reader that admits only through `/49` refuses a `/50` suite by version, before any
 //! target callback; every reader refuses the vocabulary under a lower major.
 //!
-//! # Cumulative, and Rust only in stage 1
+//! # Cumulative, in every runner
 //!
-//! `/50` and `/51` are cumulative over every major below them. The Rust runner executes them; the
-//! generated Go and TypeScript runtimes do not yet (stage 2), so their emitters keep refusing both
-//! majors by version, and so does browser replay.
+//! `/50` and `/51` are cumulative over every major below them. The Rust runner and the generated
+//! Go and TypeScript runtimes execute them (stage 2: `AwaitTarget` in Go, `awaitOutcome?` in
+//! TypeScript). Browser replay replays only `/5`, `/9` and `/35`, and refuses both by version.
 
 use std::collections::BTreeSet;
 use std::fmt;
@@ -197,7 +197,7 @@ pub fn coverage_floor(suite: &ConformanceSuite) -> Option<u32> {
 }
 
 /// The synthesis refusals this vocabulary adds (`ESS-SYNTH-023`, `-024`): a coverage suite
-/// carries them only from [`COVERAGE`], which no reader older than the Rust one in stage 1 admits.
+/// carries them only from [`COVERAGE`], which no older reader admits.
 pub const REFUSALS: [u16; 2] = [
     crate::synthesize::SYSTEM_ISSUED_UNADDRESSED,
     crate::synthesize::SYSTEM_DECIDED_REFUSAL,
@@ -217,12 +217,6 @@ pub(crate) fn refused_in(inventory: &crate::coverage::Inventory) -> bool {
         .refused
         .iter()
         .any(|refusal| is_refusal(&refusal.code))
-}
-
-/// Whether the Rust reader admits `major`: every major the generated runtimes admit, and this
-/// pair, which they refuse by version until the stage-2 runners land.
-pub(crate) fn rust_admits(major: u32) -> bool {
-    crate::go::admitted_major(major) || ADMITTED.contains(&major)
 }
 
 /// Whether `tag` is one of this vocabulary's steps, under a major that does not carry it.

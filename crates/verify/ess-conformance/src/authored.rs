@@ -1351,6 +1351,36 @@ pub enum Cause {
         /// The ranking keys, as written.
         order: String,
     },
+    /// An act sends a command the system issues itself as a system actor (beyond10x/ess#542,
+    /// `docs/design/system-issued-commands.md`). No caller can be the system: the act names no
+    /// actor and is awaited, or names one the specification does not grant the command and expects
+    /// `refused: not_granted`.
+    SystemActorSends {
+        /// The system actor named.
+        actor: ActorRef,
+        /// The system-issued command.
+        command: CommandRef,
+    },
+    /// An act awaiting a command the system issues itself names no record to await it on: it
+    /// states no value for the identity input, or the command's outcomes address no one existing
+    /// record (beyond10x/ess#542).
+    AwaitedWithoutInstance {
+        /// The system-issued command.
+        command: CommandRef,
+        /// Why no record is named.
+        reason: String,
+    },
+    /// An act expects a refusing outcome of a command the system issues itself, which is read as
+    /// nothing issued within the bound, and claims what only an issued command answers
+    /// (beyond10x/ess#542).
+    NotIssuedClaims {
+        /// The system-issued command.
+        command: CommandRef,
+        /// The refusing outcome the act expects.
+        outcome: String,
+        /// What it claims besides, as written.
+        claims: Vec<String>,
+    },
 }
 
 /// Whether `code` is one a refusal of one authored file can carry: every cause [`Cause::code`]
@@ -2077,6 +2107,22 @@ diagnostic_catalogue! {
              among them is no particular row: arrange the rows so that one ranks first on the \
              keys alone, or declare a total order ending in the identity where the model fixes \
              how ties break";
+        Self::SystemActorSends { .. } => 44,
+            "An act sends a command the system issues itself as a system actor.",
+            "no caller can be the system: name no `actor:`, and the act awaits the system's step; \
+             to check that an outside caller cannot issue it, name an actor the specification \
+             does not grant it, with `refused: not_granted`";
+        Self::AwaitedWithoutInstance { .. } => 45,
+            "An act awaiting a command the system issues itself names no record to await it on.",
+            "state the input the outcomes name as `instance:` under `input:`, a literal or \
+             `{$instance: name}`; a step the system takes to create a record, or over rows with \
+             no subject, is not awaited in this release";
+        Self::NotIssuedClaims { .. } => 46,
+            "An act expects a refusal of a command the system issues itself and claims what only \
+             an issued command answers.",
+            "a refusal of the system's own step is checked as nothing issued within the bound, \
+             none of its events published: state only the instance under `input:`, and drop \
+             `error`, `response`, `events` and `capture`";
     }
 }
 
@@ -2178,6 +2224,25 @@ impl fmt::Display for Cause {
                 "`{command}` reads the head of the `{entity}` rows ranked by `{order}`, and the \
                  rows this scenario arranges tie on every key and rank first; the order declares \
                  `ties: unordered`, so which is the head is the implementation's choice"
+            ),
+            Self::SystemActorSends { actor, command } => write!(
+                f,
+                "`{command}` is sent as `{actor}`, which is the system itself; the system issues \
+                 it, so the act names no actor and the scenario awaits it"
+            ),
+            Self::AwaitedWithoutInstance { command, reason } => write!(
+                f,
+                "`{command}` is issued by the system and awaited on a record, and {reason}"
+            ),
+            Self::NotIssuedClaims {
+                command,
+                outcome,
+                claims,
+            } => write!(
+                f,
+                "`{command}` is expected to refuse with `{outcome}`, which is read as nothing \
+                 issued within the bound and contradicts {}",
+                claims.join(", ")
             ),
             Self::UndeclaredEvent { event } => {
                 write!(f, "`{event}` is not an event this specification declares")
@@ -2781,22 +2846,33 @@ impl<'a> Compiler<'a> {
             self.refused_act(act, &command_ref, &input_fields);
             return;
         }
-        let (actor, caller) = self.sender(act, &command_ref);
-        let refused_before = self.refusals.len();
-        let input = self.values(
-            &act.input,
-            &input_fields,
-            &Surface::Input(command_ref.clone()),
-            Completeness::Total,
-        );
-        let sent = (self.refusals.len() == refused_before).then(|| input.clone());
+        let (step, sent) = if command.system_issued {
+            // A command the system issues itself is awaited, never sent (beyond10x/ess#542).
+            let Some(step) = self.awaited(act, &command_ref, command, &input_fields) else {
+                self.mark(act);
+                return;
+            };
+            (step, None)
+        } else {
+            let (actor, caller) = self.sender(act, &command_ref);
+            let refused_before = self.refusals.len();
+            let input = self.values(
+                &act.input,
+                &input_fields,
+                &Surface::Input(command_ref.clone()),
+                Completeness::Total,
+            );
+            let sent = (self.refusals.len() == refused_before).then(|| input.clone());
+            let step = ScenarioStep::ExecuteCommand {
+                caller,
+                command: command_ref.clone(),
+                actor,
+                input,
+            };
+            (step, sent)
+        };
         self.external_answer(&command_ref, command, act);
-        self.steps.push(ScenarioStep::ExecuteCommand {
-            caller,
-            command: command_ref.clone(),
-            actor,
-            input,
-        });
+        self.steps.push(step);
         self.unordered_tie(&command_ref, command, act, sent.as_ref());
 
         self.expected_outcome(&command_ref, &outcomes, act);
@@ -2849,6 +2925,127 @@ impl<'a> Compiler<'a> {
             self.capture(capture);
         }
         self.mark(act);
+    }
+
+    /// The step an act naming a command the system issues itself compiles to (beyond10x/ess#542,
+    /// `docs/design/system-issued-commands.md`, *Every lane*): `await_outcome` on the record its
+    /// identity input names, with the rest of its `input:` as the stated, partial input, where it
+    /// expects an accepting or `external:` outcome, or none.
+    ///
+    /// `None` where the act is refused, or where it expects a refusing outcome: that is read as
+    /// nothing issued within the bound, and the `expect_not_issued` it compiles to is pushed here,
+    /// with every event the command emits, and those under `no_events:`, unpublished. A claim only
+    /// an issued command answers is refused beside it (`ESS-AUTHOR-046`).
+    fn awaited(
+        &mut self,
+        act: &Act,
+        command_ref: &CommandRef,
+        command: &'a ResolvedCommand,
+        input_fields: &[ResolvedField],
+    ) -> Option<ScenarioStep> {
+        if let Some(written) = &act.actor {
+            if let Some((name, declared)) = self.declared(written, self.ir.actors(), |actor| {
+                Cause::UndeclaredActor { actor }
+            }) {
+                let actor = ActorRef::new(name);
+                let command = command_ref.clone();
+                // Every grant of a system-issued command is a system actor's: any other actor is
+                // simply not granted it.
+                self.refuse(if declared.system {
+                    Cause::SystemActorSends { actor, command }
+                } else {
+                    Cause::ActorMayNot { actor, command }
+                });
+            }
+            return None;
+        }
+        let mut stated = self.values(
+            &act.input,
+            input_fields,
+            &Surface::Input(command_ref.clone()),
+            Completeness::Partial,
+        );
+        let identity = match crate::system_issued::identity_input(command) {
+            Ok(identity) => identity,
+            Err(reason) => {
+                self.refuse(Cause::AwaitedWithoutInstance {
+                    command: command_ref.clone(),
+                    reason: reason.to_string(),
+                });
+                return None;
+            }
+        };
+        let Some(instance) = stated.remove(identity) else {
+            // A value written and refused is reported already.
+            if !act.input.contains_key(identity) {
+                self.refuse(Cause::AwaitedWithoutInstance {
+                    command: command_ref.clone(),
+                    reason: format!(
+                        "it states no value for `{identity}`, the input naming the record"
+                    ),
+                });
+            }
+            return None;
+        };
+        let refusing = act.outcome.as_ref().and_then(|written| {
+            command.outcomes.iter().find(|outcome| {
+                outcome.name.as_str() == written && outcome.error.is_some() && !is_external(outcome)
+            })
+        });
+        let Some(refusing) = refusing else {
+            return Some(ScenarioStep::AwaitOutcome {
+                command: command_ref.clone(),
+                instance,
+                identity: identity.to_owned(),
+                within: command.await_within,
+                input: stated,
+                shape: crate::synthesize::system_issued::input_shape(self.ir, command),
+            });
+        };
+        let mut claims: Vec<String> = stated
+            .keys()
+            .map(|field| format!("a value for `{field}`"))
+            .collect();
+        for (key, written) in [
+            ("error", act.error.is_some()),
+            ("response", act.response.is_some()),
+            ("events", !act.events.is_empty()),
+            ("capture", act.capture.is_some()),
+        ] {
+            if written {
+                claims.push(format!("`{key}:`"));
+            }
+        }
+        if !claims.is_empty() {
+            self.refuse(Cause::NotIssuedClaims {
+                command: command_ref.clone(),
+                outcome: refusing.name.to_string(),
+                claims,
+            });
+            return None;
+        }
+        self.source
+            .insert(OutcomeRef::new(command_ref.clone(), refusing.name.clone()).into());
+        let mut unpublished = crate::synthesize::system_issued::emitted_by(command);
+        for written in &act.no_events {
+            if let Some((name, _)) = self.declared(written, self.ir.events(), |event| {
+                Cause::UndeclaredEvent { event }
+            }) {
+                let event = EventRef::new(name);
+                self.source.insert(event.clone().into());
+                if !unpublished.contains(&event) {
+                    unpublished.push(event);
+                }
+            }
+        }
+        unpublished.sort();
+        self.steps.push(ScenarioStep::ExpectNotIssued {
+            command: command_ref.clone(),
+            instance,
+            within: command.await_within,
+            unpublished,
+        });
+        None
     }
 
     /// Refuses an act whose head read, under `ties: unordered`, ranks two of the rows the file's

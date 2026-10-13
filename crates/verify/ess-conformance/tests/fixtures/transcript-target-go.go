@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -98,7 +99,7 @@ type transcriptTarget struct {
 
 // repeatable methods answer with their last recorded answer once the recording runs out: a runner
 // that polls a view one more time than the other has asked the same question again.
-var repeatable = map[string]bool{"query_view": true, "observe_events": true, "observe_invocations": true}
+var repeatable = map[string]bool{"query_view": true, "observe_events": true, "observe_invocations": true, "await_outcome": true}
 
 func (b *transcriptTarget) next(method, key string, request any) (transcriptEntry, error) {
 	var matching []transcriptEntry
@@ -306,9 +307,42 @@ func (b *transcriptTarget) EstablishEntity(r EntitySetupRequest) error {
 	return err
 }
 
+// AwaitOutcome replays the answer the reference target gave to an await of a command the system
+// issues itself (beyond10x/ess#542): the question is the instance, the declared bound and the
+// compared field names, never the runner's deadline.
+func (b *transcriptTarget) AwaitOutcome(r AwaitRequest) (AwaitAnswer, error) {
+	compared := append([]string{}, r.Compared...)
+	sort.Strings(compared)
+	var within any
+	if r.Within > 0 {
+		within = r.Within
+	}
+	entry, err := b.next("await_outcome", r.Command, map[string]any{
+		"instance": r.Instance, "within": within, "compared": compared,
+	})
+	if err != nil {
+		return AwaitAnswer{}, err
+	}
+	var recorded struct {
+		Answer    string          `json:"answer"`
+		Result    recordedResult  `json:"result"`
+		Input     map[string]Node `json:"input"`
+		ElapsedMs *int64          `json:"elapsed_ms"`
+	}
+	if err := decodeInto(entry.Result, &recorded); err != nil {
+		return AwaitAnswer{}, err
+	}
+	return AwaitAnswer{
+		Reached:       recorded.Answer == "reached",
+		Result:        recorded.Result.result(),
+		Input:         recorded.Input,
+		ElapsedMillis: recorded.ElapsedMs,
+	}, nil
+}
+
 // bareTarget is the transcript target with only the methods of Target: every optional interface
-// (AbsentInputTarget, RepeatedOutcomeTarget, EntitySetupTarget, Clock) is hidden, as it is for a
-// target written before them.
+// (AbsentInputTarget, RepeatedOutcomeTarget, EntitySetupTarget, Clock, AwaitTarget) is hidden, as
+// it is for a target written before them.
 type bareTarget struct{ Target }
 
 func TestTranscriptReplay(t *testing.T) {
