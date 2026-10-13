@@ -1382,6 +1382,11 @@ pub fn related_sentence(
 /// `state` bare, the command's input under `input.` and the addressed subject, as it was before the
 /// outcome, under `subject.`; `now` is the decision's one instant. The rows are the store as it was
 /// immediately before the branch is selected.
+///
+/// From `ess/25` (beyond10x/ess#549, `docs/design/published-value-operand.md`) the selector of a
+/// value source may also read what its outcome publishes, `payload.<Event>.<field>`. Those reads
+/// are listed in [`reads`](Self::reads), so an evaluator routes the `payload` namespace by the list
+/// and never by the candidate entity's fields. A guard's selection reads none.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ResolvedRowSelection {
     /// The entity whose rows are candidates.
@@ -1389,6 +1394,25 @@ pub struct ResolvedRowSelection {
     /// What a candidate must satisfy to be selected.
     #[serde(rename = "where")]
     pub filter: Predicate,
+    /// The values of this outcome's payload the predicate reads, in dependency order: a read whose
+    /// field's own selectors read another of the list comes after it. Omitted when empty, so a
+    /// selection reading none keeps its bytes.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub reads: Vec<ResolvedPublishedRead>,
+}
+
+/// A value of its own outcome's payload that a selector reads: `payload.<event>.<field>` in its
+/// predicate, where the path may continue into the members of a struct field (ess/25,
+/// beyond10x/ess#549). The value is the one the outcome publishes, resolved before the field
+/// whose selector reads it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ResolvedPublishedRead {
+    /// The event the outcome emits and fills.
+    pub event: EventHandle,
+    /// The event field read.
+    pub field: String,
+    /// The field's declared type.
+    pub type_ref: ResolvedTypeRef,
 }
 
 /// What a [`ResolvedCondition::RelatedSet`] branch requires of the rows its selector selects,

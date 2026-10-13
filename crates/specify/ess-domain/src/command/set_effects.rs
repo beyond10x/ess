@@ -995,6 +995,7 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
                         }
                     }
                     errors.extend(check_filter(
+                        spec,
                         command,
                         entity,
                         None,
@@ -1049,7 +1050,7 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
                     if let Some(filter) = &affect.filter {
                         let at = at.clone().key("where");
                         errors.extend(check_filter(
-                            command, entity, subject, types, filter, &at, &at, format,
+                            spec, command, entity, subject, types, filter, &at, &at, format,
                         ));
                         // A pin is read from ess/25; below it the read is refused alone, above.
                         if format.major() >= FormatVersion::V25.major() {
@@ -1244,6 +1245,7 @@ pub(super) fn count_elsewhere(at: &ConstructRef) -> ValidationError {
 /// `unobservable_fact` for the same read. `state` stays unreadable.
 #[allow(clippy::too_many_arguments)]
 fn check_filter(
+    spec: &Specification,
     command: &CommandSpec,
     entity: &EntitySpec,
     subject: Option<&EntitySpec>,
@@ -1254,13 +1256,14 @@ fn check_filter(
     format: FormatVersion,
 ) -> ValidationErrors {
     let mut errors = check_row_predicate(
+        spec,
         command,
         entity,
         &with_identity(entity),
         subject,
         types,
         filter,
-        at,
+        (at, super::published_operand::Site::Effect),
         false,
     );
     if format.major() < FormatVersion::V25.major() && reads_identity(entity, filter) {
@@ -1397,18 +1400,24 @@ fn pins_the_subject(
 /// subject's fields under `subject.` (unless the entity declares a field named `subject`). With
 /// `current_time`, `now` reads the decision's one instant, as over a stored row (ess/22, A3): the
 /// environment a row set's selector and `forall` are checked in (`super::row_set`).
+///
+/// From `ess/25` (beyond10x/ess#549) `site` decides `payload.<Event>.<field>`: a value source
+/// reads what its outcome publishes there ([`super::published_operand`]), and every other site
+/// refuses it by name. A candidate field named `payload` keeps being read as itself.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn check_row_predicate(
+    spec: &Specification,
     command: &CommandSpec,
     entity: &EntitySpec,
     fields: &[Field],
     subject: Option<&EntitySpec>,
     types: &TypeRegistry,
     filter: &Predicate,
-    at: &ConstructRef,
+    (at, site): (&ConstructRef, super::published_operand::Site<'_>),
     current_time: bool,
 ) -> ValidationErrors {
     let owner = at.render();
+    let published = super::published_operand::classify(spec, fields, filter, site, at);
     let mut inner = DomainEnvironment::new(types, fields);
     if current_time {
         inner = inner.with_stored_current_time();
@@ -1433,10 +1442,18 @@ pub(super) fn check_row_predicate(
         }),
         identity: subject.map(|subject| &subject.identity),
         current_time,
+        published: (!published.admitted.is_empty()).then_some(&published.admitted),
     };
     let checked = crate::expression::check_predicate(&environment, filter, &owner);
-    let mut errors = ValidationErrors::new();
+    let mut errors = published.errors;
     for error in &checked.errors {
+        if error
+            .path
+            .as_ref()
+            .is_some_and(|path| published.refused.contains(&path))
+        {
+            continue;
+        }
         errors.push(ValidationError::at(
             at.clone(),
             error.code,
@@ -1446,11 +1463,16 @@ pub(super) fn check_row_predicate(
     errors
 }
 
-/// A type the filter environment reads: one of the specification's, or the subject row.
+/// A type the filter environment reads: one of the specification's, the subject row, or a step of
+/// a published read (`payload.<Event>.<field>`, ess/25).
 #[derive(Clone)]
 enum Read {
     Declared(TypeRef),
     Subject,
+    /// The segments after `payload` read so far, a prefix of an admitted event's name.
+    Published(Vec<String>),
+    /// The payload of an admitted event.
+    PublishedEvent(QualifiedName),
 }
 
 impl fmt::Display for Read {
@@ -1458,11 +1480,21 @@ impl fmt::Display for Read {
         match self {
             Self::Declared(type_ref) => type_ref.fmt(f),
             Self::Subject => f.write_str("the subject"),
+            Self::Published(prefix) => {
+                f.write_str(super::published_operand::ROOT)?;
+                prefix
+                    .iter()
+                    .try_for_each(|segment| write!(f, ".{segment}"))
+            }
+            Self::PublishedEvent(event) => {
+                write!(f, "{}.{event}", super::published_operand::ROOT)
+            }
         }
     }
 }
 
-/// [`DomainEnvironment`], with `subject.<field>` reading the subject's declared fields.
+/// [`DomainEnvironment`], with `subject.<field>` reading the subject's declared fields and, in a
+/// value source's selector, `payload.<Event>.<field>` the values its outcome publishes.
 struct WithSubject<'a> {
     inner: DomainEnvironment<'a>,
     /// The subject's fields, and whether the filtered entity declares a field named `subject`
@@ -1471,13 +1503,15 @@ struct WithSubject<'a> {
     identity: Option<&'a Field>,
     /// Whether `now` is admitted, as over a stored row: a row set's selector (ess/22).
     current_time: bool,
+    /// The published reads admitted, where there are any (ess/25, beyond10x/ess#549).
+    published: Option<&'a super::published_operand::Admitted>,
 }
 
 impl WithSubject<'_> {
     fn declared(read: &Read) -> Option<&TypeRef> {
         match read {
             Read::Declared(type_ref) => Some(type_ref),
-            Read::Subject => None,
+            Read::Subject | Read::Published(_) | Read::PublishedEvent(_) => None,
         }
     }
 }
@@ -1503,6 +1537,9 @@ impl TypeEnvironment for WithSubject<'_> {
         match (self.inner.root(name), self.subject) {
             (Some(found), _) => Some(Read::Declared(found)),
             (None, Some((_, false))) if name == SUBJECT_NAMESPACE => Some(Read::Subject),
+            (None, _) if name == super::published_operand::ROOT && self.published.is_some() => {
+                Some(Read::Published(Vec::new()))
+            }
             _ => None,
         }
     }
@@ -1512,7 +1549,7 @@ impl TypeEnvironment for WithSubject<'_> {
     fn shape(&self, reference: &Read) -> Result<Shape<Read>, String> {
         match reference {
             Read::Declared(type_ref) => self.inner.shape(type_ref).map(lifted),
-            Read::Subject => Ok(Shape::Struct),
+            Read::Subject | Read::Published(_) | Read::PublishedEvent(_) => Ok(Shape::Struct),
         }
     }
     fn is_clock_reading(&self, reference: &Read) -> bool {
@@ -1554,6 +1591,16 @@ impl TypeEnvironment for WithSubject<'_> {
                     .find(|field| field.name == name)
                     .map(|field| Read::Declared(field.type_ref.clone()))
             }
+            Read::Published(prefix) => match self.published?.step(prefix, name)? {
+                super::published_operand::Step::Namespace(segments) => {
+                    Some(Read::Published(segments))
+                }
+                super::published_operand::Step::Event(event) => Some(Read::PublishedEvent(event)),
+            },
+            Read::PublishedEvent(event) => self
+                .published?
+                .field(event, name)
+                .map(|type_ref| Read::Declared(type_ref.clone())),
         }
     }
     fn has_parameters(&self) -> bool {

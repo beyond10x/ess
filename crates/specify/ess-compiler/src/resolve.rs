@@ -70,9 +70,10 @@ use crate::ir::{
     ResolvedConversion, ResolvedDomain, ResolvedEffect, ResolvedEntity, ResolvedError,
     ResolvedEvent, ResolvedFallback, ResolvedField, ResolvedInputRead, ResolvedInstance,
     ResolvedMapping, ResolvedMappingValue, ResolvedOutcome, ResolvedPayload, ResolvedPayloadField,
-    ResolvedPayloadValue, ResolvedRelatedHop, ResolvedRelatedTest, ResolvedRelatedVia,
-    ResolvedRelation, ResolvedRowSelection, ResolvedRowSetTest, ResolvedSubject, ResolvedType,
-    ResolvedTypeRef, ResolvedView, ResolvedWorkload, TypeHandle, ViewHandle,
+    ResolvedPayloadValue, ResolvedPublishedRead, ResolvedRelatedHop, ResolvedRelatedTest,
+    ResolvedRelatedVia, ResolvedRelation, ResolvedRowSelection, ResolvedRowSetTest,
+    ResolvedSubject, ResolvedType, ResolvedTypeRef, ResolvedView, ResolvedWorkload, TypeHandle,
+    ViewHandle,
 };
 use crate::source::{Location, SourceMap, Span};
 
@@ -3147,11 +3148,13 @@ impl<'a> Resolver<'a> {
             return None;
         };
         let read = self.entity_field_resolved(entity, held)?;
+        let reads = self.published_reads(outcome, selection)?;
         Some((
             ResolvedPayloadValue::RelatedSelection {
                 selection: ResolvedRowSelection {
                     entity: EntityHandle::new(entity.name.clone()),
                     filter: selection.filter.clone(),
+                    reads,
                 },
                 field: read.name.clone(),
                 type_ref: read.type_ref.clone(),
@@ -3203,11 +3206,13 @@ impl<'a> Resolver<'a> {
             return None;
         };
         let read = self.entity_field_resolved(entity, held)?;
+        let reads = self.published_reads(outcome, selection)?;
         Some((
             ResolvedPayloadValue::RelatedHead {
                 selection: ResolvedRowSelection {
                     entity: EntityHandle::new(entity.name.clone()),
                     filter: selection.filter.clone(),
+                    reads,
                 },
                 order_by: order_by.clone(),
                 ties: *ties,
@@ -3439,6 +3444,37 @@ impl<'a> Resolver<'a> {
             &[format!("name: {}", entity.name)],
         )?
         .pop()
+    }
+
+    /// The values of `outcome`'s payload that `selection`, one of its value sources, reads under
+    /// `payload.` (ess/25, beyond10x/ess#549), in the dependency order `ess-domain` gives them,
+    /// each at its event field's resolved type. `ess-domain` refused a read of no declared field.
+    fn published_reads(
+        &mut self,
+        outcome: &ess_domain::command::Outcome,
+        selection: &ess_domain::command::row_set::RowSelection,
+    ) -> Option<Vec<ResolvedPublishedRead>> {
+        let spec = self.spec;
+        let mut resolved = Vec::new();
+        for read in ess_domain::command::published_operand::reads(spec, outcome, selection) {
+            let event = spec.events().get(&read.event)?;
+            let held = event.field(&read.field)?;
+            let field = self
+                .fields(
+                    codes::COMMAND_TYPE_MISMATCH,
+                    std::slice::from_ref(held),
+                    &event.name,
+                    &format!("events.{}", event.name),
+                    &[format!("name: {}", event.name)],
+                )?
+                .pop()?;
+            resolved.push(ResolvedPublishedRead {
+                event: EventHandle::new(event.name.clone()),
+                field: field.name,
+                type_ref: field.type_ref,
+            });
+        }
+        Some(resolved)
     }
 
     /// `{caller: <attribute>}` (ess/16, #168): the attribute as the actors that may invoke the
@@ -5471,6 +5507,8 @@ fn condition_of(
             selection: ResolvedRowSelection {
                 entity: EntityHandle::new(selection.entity.clone()),
                 filter: selection.filter.clone(),
+                // A guard decides the branch before anything is published (beyond10x/ess#549).
+                reads: Vec::new(),
             },
             test: match test {
                 RowSetTest::Exists(exists) => ResolvedRowSetTest::Exists(*exists),
