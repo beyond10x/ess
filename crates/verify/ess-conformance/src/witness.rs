@@ -26,8 +26,9 @@
 //!    vary slowest, after every candidate that fills them, and each is reserved inside rule 4's
 //!    bound so a guard with many varied leaves cannot crowd it out. **An optional member the
 //!    command cannot read is sent absent** (beyond10x/ess#546): one no guard, invariant or
-//!    non-copying effect reads — a plain copy is not a read — is left out of every candidate
-//!    first, and filled only in the candidate paired behind it, as a presence-policy member is
+//!    non-copying effect reads — a plain copy is not a read, except by the branch whose own
+//!    scenario is being built ([`under_test`]) — is left out of every candidate first, and filled
+//!    only in the candidate paired behind it, as a presence-policy member is
 //!    ([`unread_optionals`], `docs/design/unread-optional-inputs.md`). A filled optional
 //!    `Timestamp`, number, `Duration` or `Bytes` leaf takes a value [`apart`] from every required
 //!    leaf's and every other optional leaf's, so an optional deadline is never sent at the queue
@@ -1118,8 +1119,10 @@ fn policy_members(
 /// `{input: x, else: …}`, a supplied instance, an input `via`, a converted copy, `each:`, and the
 /// filters of `instances:`, `affects:` and row selections. A member the author gave an `example:`
 /// is kept as well. A plain copy into a stored, payload or error field is not a read: an absent
-/// input copied is an absent field. A later step that reads the stored copy reaches this search as
-/// a guard, translated onto the input by the arrangement that needs it.
+/// input copied is an absent field, except by the branch whose own scenario is being built
+/// ([`under_test`]): that scenario observes the copy, so the member is sent present there. A later
+/// step that reads the stored copy reaches this search as a guard, translated onto the input by the
+/// arrangement that needs it.
 fn unread_optionals(
     ir: &EssIr,
     command: &ResolvedCommand,
@@ -1142,6 +1145,7 @@ fn unread_optionals(
         command_reads(outcome, &mut read);
     }
     invariant_reads(ir, command, &mut read);
+    read.extend(copied_under_test(command));
     read.extend(
         command
             .examples
@@ -1159,6 +1163,124 @@ fn unread_optionals(
         })
         .cloned()
         .collect()
+}
+
+thread_local! {
+    /// The branch whose own scenario is being built, by command name, with the input paths it
+    /// copies ([`under_test`]). `None` outside such a scope: every search then answers for an
+    /// arranging step.
+    static UNDER_TEST: std::cell::RefCell<Option<(ess_domain::name::QualifiedName, BTreeSet<FactPath>)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Holds the scope [`under_test`] opened until dropped, then restores the one before it.
+#[must_use = "the scope closes when this is dropped"]
+pub(crate) struct UnderTest {
+    previous: Option<(ess_domain::name::QualifiedName, BTreeSet<FactPath>)>,
+}
+
+impl Drop for UnderTest {
+    fn drop(&mut self) {
+        let previous = self.previous.take();
+        UNDER_TEST.with(|scope| *scope.borrow_mut() = previous);
+    }
+}
+
+/// Marks `outcome` of `command` as the branch whose own scenario the searches until the returned
+/// guard drops are for (beyond10x/ess#546, `docs/design/unread-optional-inputs.md`).
+///
+/// Within the scope, a search for `command` treats every input path `outcome` copies into a stored
+/// field, an event payload or an error payload as read, so an `Optional` member the branch copies
+/// is sent present — at a value [`apart`] from the others — and the scenario observes the copy. A
+/// search for any other command, the arranging steps of the scenario, is unaffected, and leaves an
+/// unread optional absent. Scopes nest; the innermost wins.
+pub(crate) fn under_test(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ess_compiler::ir::ResolvedOutcome,
+) -> UnderTest {
+    let copied = optional_copies(ir, command, outcome);
+    let previous = UNDER_TEST.with(|scope| scope.replace(Some((command.name.clone(), copied))));
+    UnderTest { previous }
+}
+
+/// The input paths the branch under test copies, where it is a branch of `command`; empty
+/// otherwise. Part of what a witness search answers, so the memo keys on it as well.
+pub(crate) fn copied_under_test(command: &ResolvedCommand) -> BTreeSet<FactPath> {
+    UNDER_TEST.with(|scope| {
+        scope
+            .borrow()
+            .as_ref()
+            .filter(|(name, _)| *name == command.name)
+            .map(|(_, copied)| copied.clone())
+            .unwrap_or_default()
+    })
+}
+
+/// Every input path `outcome` copies — into a stored field of its subject or of a row it affects,
+/// an event payload or an error payload — whose input field reaches an `Optional`. A copy of an
+/// input with no optional anywhere in it cannot change which members are sent, so it is left out,
+/// and the memo keeps answering such a branch's searches from the arranging steps' answers.
+fn optional_copies(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ess_compiler::ir::ResolvedOutcome,
+) -> BTreeSet<FactPath> {
+    use ess_compiler::ir::{ResolvedPayloadField, ResolvedPayloadValue};
+    fn sources(fields: &[ResolvedPayloadField], found: &mut BTreeSet<FactPath>) {
+        for field in fields {
+            match &field.value {
+                ResolvedPayloadValue::InputField { field, .. }
+                | ResolvedPayloadValue::InputOrGenerated { field, .. } => {
+                    if let Ok(path) = FactPath::new(field) {
+                        found.insert(path);
+                    }
+                }
+                ResolvedPayloadValue::Struct { fields } => sources(fields, found),
+                _ => {}
+            }
+        }
+    }
+    fn optional(ir: &EssIr, type_ref: &ResolvedTypeRef, seen: &mut BTreeSet<String>) -> bool {
+        match type_ref {
+            ResolvedTypeRef::Optional { .. } => true,
+            ResolvedTypeRef::Primitive { .. } => false,
+            ResolvedTypeRef::List { of } => optional(ir, of, seen),
+            ResolvedTypeRef::Map { value, .. } => optional(ir, value, seen),
+            ResolvedTypeRef::Declared { name } => {
+                let declared = ir.named_type(name);
+                if !seen.insert(declared.name.to_string()) {
+                    return false;
+                }
+                match &declared.body {
+                    ResolvedBody::Newtype { of, .. } => optional(ir, of, seen),
+                    ResolvedBody::Struct { fields, .. } => fields
+                        .iter()
+                        .any(|member| optional(ir, &member.type_ref, seen)),
+                    ResolvedBody::Enum { .. } | ResolvedBody::Union { .. } => false,
+                }
+            }
+        }
+    }
+    let mut found = BTreeSet::new();
+    sources(&outcome.sets, &mut found);
+    sources(&outcome.error_payload, &mut found);
+    for payload in &outcome.payload {
+        sources(&payload.fields, &mut found);
+    }
+    for affect in &outcome.affects {
+        sources(&affect.sets, &mut found);
+    }
+    found.retain(|path| {
+        path.segments().first().is_some_and(|head| {
+            command
+                .input
+                .iter()
+                .find(|field| field.name.as_str() == head.as_str())
+                .is_some_and(|field| optional(ir, &field.type_ref, &mut BTreeSet::new()))
+        })
+    });
+    found
 }
 
 /// Every input path a branch of `command` copies into a stored field some invariant of that entity

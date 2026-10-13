@@ -8,8 +8,9 @@
 //! was queued, and an implementation that expires items by their deadline failed scenarios that
 //! never mention expiry.
 //!
-//! Where a scenario does need the deadline — a guard reads it, or a later step reads the stored
-//! copy — it is sent, and not at the queue instant's literal.
+//! Where a scenario does need the deadline — the branch it observes copies it, a guard reads it, or
+//! a later step reads the stored copy — it is sent, and not at the queue instant's literal. Every
+//! other step, and every step arranging an item for another branch, leaves it out.
 
 use std::collections::BTreeMap;
 
@@ -214,22 +215,45 @@ fn assert_all_pass(model: &EssIr, result: &Synthesis) {
     assert!(failing.is_empty(), "{failing:#?}");
 }
 
+/// The `Submit` branch under test copies the deadline, so its own scenario sends it, apart from the
+/// queue instant; every scenario that only arranges an item through `Submit` leaves it out.
 #[test]
-fn issue_546_an_optional_input_nothing_reads_is_absent_from_every_step() {
+fn issue_546_an_optional_input_only_copied_is_absent_from_every_arranging_step() {
     let model = ir(MODEL);
     let result = ess_conformance::synthesize::synthesize(&model);
     let steps = submits(&result);
-    // The scenario for `Submit` itself, and every scenario that arranges an item through it.
-    assert!(steps.len() >= 4, "{steps:#?}");
+    let own = "demo.queue.Submit/outcome/submitted";
+    let arranging: Vec<_> = steps
+        .iter()
+        .filter(|(scenario, _)| scenario != own)
+        .collect();
+    assert!(arranging.len() >= 3, "{steps:#?}");
     for (scenario, input) in &steps {
         assert!(
             input.contains_key("queued_at"),
             "{scenario}: the required input is sent: {input:?}"
         );
+    }
+    for (scenario, input) in arranging {
         assert!(
             !input.contains_key("expires_at"),
-            "{scenario}: no guard, invariant or later step reads the deadline, so it is not \
-             sent: {input:?}"
+            "{scenario}: no guard, invariant or later step reads the deadline, and this scenario \
+             does not observe `submitted`'s copy, so it is not sent: {input:?}"
+        );
+    }
+    let observed: Vec<_> = steps
+        .iter()
+        .filter(|(scenario, _)| scenario == own)
+        .collect();
+    assert!(!observed.is_empty(), "{steps:#?}");
+    for (_, input) in observed {
+        let deadline = input
+            .get("expires_at")
+            .unwrap_or_else(|| panic!("`submitted` copies the deadline it observes: {input:?}"));
+        assert_ne!(
+            Some(deadline),
+            input.get("queued_at"),
+            "the deadline is not the queue instant's literal: {input:?}"
         );
     }
     assert_all_pass(&model, &result);
@@ -260,7 +284,6 @@ fn issue_546_a_later_step_reading_the_stored_copy_gets_it_present_and_apart() {
     );
     for id in [
         "demo.queue.Expire/outcome/no-deadline",
-        "demo.queue.Submit/outcome/submitted",
         "demo.queue.Withdraw/outcome/withdrawn",
     ] {
         let found = in_scenario(id);

@@ -2773,6 +2773,8 @@ fn outcome_scenario_noting(
     let id = ScenarioId::Outcome {
         outcome: OutcomeRef::new(CommandRef::new(command.name.clone()), outcome.name.clone()),
     };
+    // Every further run below is this branch again (beyond10x/ess#546).
+    let _under_test = crate::witness::under_test(models.arrangement, command, outcome);
     let (mut steps, mut source, run) = exercise_as(
         models,
         command,
@@ -3131,6 +3133,9 @@ fn exercise_as(
     refusals: &mut Vec<Refusal>,
     witness: Witness,
 ) -> Option<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>, Run)> {
+    // The branch run here is the one the scenario observes: an Optional input it copies is sent
+    // present, while the steps arranging it leave theirs absent (beyond10x/ess#546).
+    let _under_test = crate::witness::under_test(models.arrangement, command, outcome);
     let run = match run_as(models, command, outcome, actors, witness) {
         Ok(run) => run,
         Err(cause) => {
@@ -11137,6 +11142,8 @@ fn lifecycle(
                         driver.outcome.name.clone(),
                     ),
                 };
+                // The move's further sources are this branch again (beyond10x/ess#546).
+                let _under_test = crate::witness::under_test(ir, driver.command, driver.outcome);
                 let Some((mut steps, mut source, run)) = exercise_as(
                     models,
                     driver.command,

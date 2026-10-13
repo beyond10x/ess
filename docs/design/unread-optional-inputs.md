@@ -39,8 +39,19 @@ of these reads it, the optional itself or anything inside it:
 | a later step reading the stored copy | translated onto this command's input by the arrangement that needs it (`subject_fact`, `related_guard`, view filters), so it arrives as a guard of that search |
 
 A plain copy (`input.x` into a stored field, an event payload field or an error payload field) is not
-a read. An absent input copied into an optional field is an absent field, which is what the suite then
-expects; a target that stores or publishes a value nobody sent fails.
+a read for a step that only arranges. An absent input copied into an optional field is an absent
+field, which is what the suite then expects; a target that stores or publishes a value nobody sent
+fails.
+
+The one exception is **the branch under test**. The scenario of a branch — its `/outcome/` id, and
+the `/transition/` id of a move it makes — observes that branch's copies, so there the copied
+optional is sent present, at a value apart from every other leaf, and a target that drops or mangles
+the copy fails. Every arranging step and every other scenario leaves it absent. Synthesis marks
+the branch with `witness::under_test(ir, command, outcome)` around `exercise_as`,
+`outcome_scenario_noting` and each lifecycle driver; within that scope a search for that command
+reads the paths the branch copies, and a search for any other command is unaffected. The scope is
+part of the witness memo's key: only the copied paths whose input field reaches an `Optional` are
+recorded, so a branch copying no optional shares its answers with the arranging steps.
 
 A path a filter reads is matched both as written and with a leading `input` segment removed. That
 over-approximates: an entity field spelled like an input keeps the input filled, which is the old
@@ -84,21 +95,21 @@ witnessed, at an equal pair.
 Only inputs that carry an `Optional` member. A suite whose commands declare none keeps its bytes.
 Among the committed ones (`suites/generated/`), only `gatepass` has one: `AdmitVisitor.badge` is a
 required struct whose `printed_at: Optional<Timestamp>` is copied into the stored badge and the
-payload and read by nothing. It is now absent from those steps, and from the stored and published
-badge the suite expects.
+payload and read by nothing. It is now absent wherever a visit is only arranged: 18 occurrences,
+inputs and the stored and published badge they lead to. The 7 that remain are in the 3 scenarios
+observing `AdmitVisitor/admitted` (its outcome, the `arrive` transition, and the denied grant run
+of it), moved from the base instant `2020-01-01T00:00:00Z` to
+`2020-01-01T01:01:00Z`, apart from every other timestamp of the input.
 
 ## What this does not do
 
 - **Event payloads and delivery contexts.** `witness::fields` builds a delivered event or a delivery
   context the same way and still fills every optional. Leaving one out there needs the same reading
   of binding conditions and mappings; it is not part of this change.
-- **A copy is not observed.** The branch that copies an unread optional is itself sent it absent, in
-  its own outcome scenario as well, so a target that drops or mangles that one copy passes. Two
-  existing tests pin the opposite, and stay red until this is decided: `creates_copies_input.rs`
-  (the creating branch's scenario sends `note` present) and the `KEYS` model of
-  `adversary_map_witness_pass1.rs` (a copied `Optional<Map<…>>` is caught when dropped). Keeping
-  them means the branch under test fills the optionals it copies while every arranging step and
-  every other scenario leaves them absent; that needs the outcome under test passed to the witness
-  search from each synthesis family, which this change does not do.
+- **Other families' own branch.** Only the outcome, transition and disclosure scenarios (through
+  `exercise_as`) mark a branch under test. State refusals, unknown instances, absent input,
+  existence, set effects and invariant scenarios do not, so an error payload copying an unread
+  optional in one of those is sent it absent. An invariant reading the copy still fills it
+  (`invariant_reads`).
 - **An input-level relation or synthesis hint** (`synthesize: absent`, `offset_from:`), which the
   issue offers as alternatives. No authored surface is added.

@@ -1,7 +1,8 @@
 //! One witness search per question, for the length of a synthesis (beyond10x/ess#301).
 //!
 //! [`crate::witness`]'s candidate search is a function of the model, the command, the guards, the
-//! distinction and whether midpoints are added, and nothing else: no clock, no counter, no state
+//! distinction, whether midpoints are added and the copies of the branch under test
+//! ([`crate::witness::under_test`]), and nothing else: no clock, no counter, no state
 //! carried between calls. Synthesis asks it the same question many times: every arrangement that
 //! creates a row runs its creating command again, and a model whose rows own rows arranges each
 //! owner once per scenario that needs one. Over `examples/billing` 124 of 332 searches repeated an
@@ -12,11 +13,12 @@
 //! returned is the one the search returned.
 
 use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::marker::PhantomData;
 
 use ess_compiler::ir::{EssIr, ResolvedCommand};
 use ess_domain::name::QualifiedName;
+use ess_primitives::facts::FactPath;
 use ess_primitives::predicate::Predicate;
 
 use crate::witness::{Distinction, Searched};
@@ -40,8 +42,9 @@ struct Memo {
     answers: BTreeMap<Question, Vec<(Vec<Predicate>, Searched)>>,
 }
 
-/// The command, distinction and midpoint flag a search was asked with.
-type Question = (QualifiedName, Distinction, bool);
+/// The command, distinction and midpoint flag a search was asked with, and the input paths the
+/// branch under test copies where it is a branch of that command ([`crate::witness::under_test`]).
+type Question = (QualifiedName, Distinction, bool, BTreeSet<FactPath>);
 
 /// Holds witness answers for one model until dropped. See [`memoise`].
 pub(crate) struct Memoised<'ir> {
@@ -108,7 +111,12 @@ pub(crate) fn answer(
         executed(ir, command, guards, distinction, between);
         return search();
     }
-    let key = (command.name.clone(), distinction, between);
+    let key = (
+        command.name.clone(),
+        distinction,
+        between,
+        crate::witness::copied_under_test(command),
+    );
     let same = |asked: &[Predicate]| {
         asked.len() == guards.len() && asked.iter().zip(guards).all(|(a, b)| a == *b)
     };
@@ -155,6 +163,7 @@ pub(crate) fn executed(
                 command: command.name.to_string(),
                 distinction,
                 between,
+                copied: crate::witness::copied_under_test(command),
                 guards: guards.iter().map(|guard| (*guard).clone()).collect(),
             };
             if work.seen.contains(&key) {
@@ -185,6 +194,7 @@ struct Key {
     command: String,
     distinction: Distinction,
     between: bool,
+    copied: BTreeSet<FactPath>,
     guards: Vec<Predicate>,
 }
 
