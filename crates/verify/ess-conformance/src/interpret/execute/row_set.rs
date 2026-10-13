@@ -10,9 +10,10 @@ use std::collections::BTreeMap;
 
 use ess_compiler::ir::{
     ResolvedCommand, ResolvedCondition, ResolvedEffect, ResolvedEntity, ResolvedInstance,
-    ResolvedRowSelection, ResolvedRowSetTest, RowMember, Selected,
+    ResolvedRowSelection, ResolvedRowSetTest, ResolvedTypeRef, RowMember, Selected,
 };
 use ess_domain::command::OutcomeName;
+use ess_domain::view::{Direction, Ranking};
 use ess_primitives::facts::FactSource;
 use ess_primitives::node::Node;
 use ess_primitives::predicate::{Predicate, Truth};
@@ -169,6 +170,128 @@ impl<'a> Reader<'a> {
             }),
         }
     }
+
+    /// The first row `selection` selects, ranked by `order_by` (ess/25, beyond10x/ess#543,
+    /// `docs/design/ordered-related-head.md`), or why there is none to read.
+    ///
+    /// The rows are ranked with the comparator a view's order uses, so the two cannot disagree.
+    /// The order is total over the selected rows, its last key the identity, so exactly one is
+    /// first. Sound and deliberately weak over a history: a row whose membership is unknown, or a
+    /// selected row whose key the store does not hold, leaves the head undecidable, unless one row
+    /// is selected and no other may be.
+    pub(super) fn head(
+        &self,
+        selection: &ResolvedRowSelection,
+        order_by: &[Ranking],
+    ) -> Result<(&'a Node, &'a Row), Undetermined> {
+        let members = self.members(selection, None)?;
+        let entity = self.ir.entity(&selection.entity);
+        let undecidable = |why: &str| Undetermined::Undecidable {
+            outcome: format!("ordered read of {}", entity.name),
+            guard: format!(
+                "the first row by `{}` of those `{}` selects: {why}",
+                order_by
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                selection.filter
+            ),
+        };
+        if members
+            .iter()
+            .any(|(.., member)| member.selected == Truth::Unknown)
+        {
+            return Err(undecidable("a row's membership is unknown"));
+        }
+        let selected: Vec<(&'a Node, &'a Row)> = members
+            .iter()
+            .filter(|(.., member)| member.selected == Truth::True)
+            .map(|(key, row, _)| (*key, *row))
+            .collect();
+        match selected.as_slice() {
+            [] => {
+                return Err(Undetermined::NoValue {
+                    what: format!(
+                        "a field of the first `{}` the selector selects: none is",
+                        entity.name
+                    ),
+                })
+            }
+            [one] => return Ok(*one),
+            _ => {}
+        }
+        let types: Vec<ResolvedTypeRef> = order_by
+            .iter()
+            .map(|ranking| key_type(entity, &ranking.field))
+            .collect();
+        let mut ranked = Vec::with_capacity(selected.len());
+        for (key, row) in selected {
+            let mut values = Vec::with_capacity(order_by.len());
+            for ranking in order_by {
+                let Some(value) = key_value(entity, key, row, &ranking.field) else {
+                    return Err(undecidable(&format!(
+                        "the store does not hold `{}` of a selected row",
+                        ranking.field
+                    )));
+                };
+                values.push(value);
+            }
+            ranked.push((key, row, values));
+        }
+        let order = |left: &[Node], right: &[Node]| {
+            for ((ranking, ty), (left, right)) in order_by
+                .iter()
+                .zip(&types)
+                .zip(left.iter().zip(right.iter()))
+            {
+                let compare = super::super::views::compare(self.ir, ty, Some(left), Some(right));
+                if !compare.is_eq() {
+                    return if ranking.direction == Direction::Descending {
+                        compare.reverse()
+                    } else {
+                        compare
+                    };
+                }
+            }
+            std::cmp::Ordering::Equal
+        };
+        ranked
+            .into_iter()
+            .min_by(|(.., left), (.., right)| order(left, right))
+            .map(|(key, row, _)| (key, row))
+            .ok_or_else(|| undecidable("no row is first"))
+    }
+}
+
+/// The type a ranking key of `entity` ranks at: a declared field's, the identity's, or the
+/// entity's `State` for `state`.
+fn key_type(entity: &ResolvedEntity, name: &str) -> ResolvedTypeRef {
+    entity
+        .fields
+        .iter()
+        .chain(std::iter::once(&entity.identity))
+        .find(|field| field.name == name)
+        .map_or_else(
+            || entity.state_field().type_ref,
+            |field| field.type_ref.clone(),
+        )
+}
+
+/// The value of the ranking key `name` on the row `key` names, as the store holds it: a declared
+/// field, the identity, or the held state's name; `None` where the store holds none.
+fn key_value(entity: &ResolvedEntity, key: &Node, row: &Row, name: &str) -> Option<Node> {
+    if entity.fields.iter().any(|field| field.name == name) {
+        return match row.fields.get(name) {
+            Some(super::Value::Known(value)) => Some(value.clone()),
+            _ => None,
+        };
+    }
+    if entity.identity.name == name {
+        return Some(key.clone());
+    }
+    (name == ess_domain::entity::EntitySpec::STATE)
+        .then(|| Node::Text(row.state.as_str().to_owned()))
 }
 
 /// Whether `predicate` reads the addressed subject.
