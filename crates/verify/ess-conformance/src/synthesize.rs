@@ -1183,6 +1183,10 @@ impl RefusalCause {
                  the branch with an authored scenario (ess-scenario/1) that names each row by an \
                  identity of its own"
             }
+            // A head no scenario arranges refuses its branch alone (beyond10x/ess#552).
+            Self::NoWitness(gap) if ordered_head::unarranged(gap.reason) => {
+                ordered_head::HEAD_REPAIR
+            }
             Self::NoWitness(_) => {
                 "give the field a type that has a finite value, or drop it from the command's input"
             }

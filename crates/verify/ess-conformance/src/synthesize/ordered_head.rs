@@ -29,6 +29,38 @@ use ess_primitives::node::Node;
 /// The reason a branch reading a head is refused where no creating command steers a key.
 pub(super) const UNSTEERED: &str =
     "the ranked head is not arranged: no creating command writes this key from its input";
+/// The reason a branch reading a head is refused where the target mints its first key
+/// (beyond10x/ess#552): no scenario states, or steers, a value the target chooses.
+pub(super) const MINTED_KEY: &str = "the ranked head is not arranged: the target mints this key \
+     (`{generated: true}`), so no scenario orders the rows by it";
+/// The repair for a head no scenario arranges: the branch alone is refused, its siblings stand.
+pub(super) const HEAD_REPAIR: &str = "only this branch is refused; write the ranking key from \
+     the creating command's input, or cover the branch with an authored scenario (ess-scenario/1) \
+     that reads the head of the rows the target ranks";
+
+/// Whether `reason` names a head no scenario arranges, for which [`HEAD_REPAIR`] is the repair.
+pub(super) fn unarranged(reason: &str) -> bool {
+    [UNSTEERED, MINTED, MINTED_KEY].contains(&reason)
+}
+
+/// Whether a declared creation of `entity` mints the key `name` (`{generated: true}`).
+pub(super) fn minted(ir: &EssIr, entity: &EntityHandle, name: &str) -> bool {
+    ir.drivers().get(entity).is_some_and(|drivers| {
+        drivers
+            .iter()
+            .filter(|driver| matches!(driver.effect, ResolvedEffect::Creates))
+            .any(|driver| {
+                driver.outcome.sets.iter().any(|set| {
+                    set.target == name
+                        && matches!(
+                            set.value,
+                            ess_compiler::ir::ResolvedPayloadValue::Generated { .. }
+                        )
+                })
+            })
+    })
+}
+
 /// The reason a branch reading a head over at most one selected row is refused.
 pub(super) const UNOBSERVABLE: &str =
     "the ranked head is not observable: the branch reading it admits at most one selected row";
