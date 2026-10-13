@@ -85,8 +85,15 @@ fn the_interpreter_keeps_a_present_mint_present_through_the_invariant() {
     assert!(failing(&statuses).is_empty(), "{statuses:#?}");
 }
 
-/// A target whose rows carry another `connect_seq` than the one it published.
-struct StoresAnother(Interpreted);
+/// A target whose rows carry another `connect_seq` than the one it published, or none.
+struct StoresAnother(Interpreted, Stored);
+
+/// What [`StoresAnother`] shows in place of the stored value.
+#[derive(Clone, Copy)]
+enum Stored {
+    Other,
+    Nothing,
+}
 
 impl ConformanceTarget for StoresAnother {
     fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
@@ -112,7 +119,11 @@ impl ConformanceTarget for StoresAnother {
         for row in &mut result.rows {
             if let Some(Node::Number(seq)) = row.get("connect_seq") {
                 let other = seq.to_string().parse::<i64>().unwrap_or_default() + 1000;
-                row.insert("connect_seq".to_owned(), Node::Number(other.into()));
+                let shown = match self.1 {
+                    Stored::Other => Node::Number(other.into()),
+                    Stored::Nothing => Node::Null,
+                };
+                row.insert("connect_seq".to_owned(), shown);
             }
         }
         Ok(result)
@@ -144,10 +155,23 @@ fn a_stored_value_read_from_the_payload_equals_the_published_one() {
 
     let faulty = run(
         &synthesis.suite,
-        &StoresAnother(Interpreted::for_model(model)),
+        &StoresAnother(Interpreted::for_model(model), Stored::Other),
     );
     assert!(
         failing(&faulty).contains(&SELECTED),
         "a row holding another value than the published one fails {SELECTED}: {faulty:#?}"
     );
+}
+
+/// A present mint is required of the row: a target that shows the minted field absent fails the
+/// scenario of the branch that minted it, where it passed with `{generated: true}`.
+#[test]
+fn a_row_leaving_a_present_mint_absent_fails_the_minting_scenario() {
+    let model = ir(MODEL);
+    let suite = synthesize(&model).suite;
+    let faulty = run(
+        &suite,
+        &StoresAnother(Interpreted::for_model(model), Stored::Nothing),
+    );
+    assert!(failing(&faulty).contains(&SELECTED), "{faulty:#?}");
 }
