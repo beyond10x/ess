@@ -1216,12 +1216,16 @@ pub enum PayloadSource {
     /// beyond10x/ess#543, [`ordered_head`]).
     ///
     /// The order is total, ending in the entity's identity, so exactly one selected row is first;
-    /// an empty selection supplies no value.
+    /// or it declares `ties: unordered`, and a head tying on every key is the implementation's
+    /// choice. An empty selection supplies no value.
     RelatedHead {
         /// The entity and the predicate selecting its rows.
         selection: row_set::RowSelection,
         /// The ranking keys, most significant first, as a view writes them.
         order_by: Vec<crate::view::Ranking>,
+        /// How rows tying on every key rank: never, under a total order.
+        #[serde(skip_serializing_if = "ordered_head::Ties::is_total")]
+        ties: ordered_head::Ties,
         /// The field of the head row read.
         first: String,
         /// What the reading found wrong with the shape as written, if anything.
@@ -1293,17 +1297,23 @@ impl fmt::Display for PayloadSource {
             Self::RelatedHead {
                 selection,
                 order_by,
+                ties,
                 first,
                 ..
             } => write!(
                 f,
-                "field `{first}` of the first `{}` by `{}` that `{}` selects",
+                "field `{first}` of the first `{}` by `{}`{} that `{}` selects",
                 selection.entity,
                 order_by
                     .iter()
                     .map(ToString::to_string)
                     .collect::<Vec<_>>()
                     .join(", "),
+                if ties.is_total() {
+                    ""
+                } else {
+                    ", ties unordered,"
+                },
                 selection.filter
             ),
             Self::ChangedCount => f.write_str("{count: changed}"),
@@ -2165,9 +2175,12 @@ impl From<&PayloadSource> for RawPayloadSource {
             PayloadSource::RelatedHead {
                 selection,
                 order_by,
+                ties,
                 first,
                 ..
-            } => Self::Head(ordered_head::RawRelatedHead::of(selection, order_by, first)),
+            } => Self::Head(ordered_head::RawRelatedHead::of(
+                selection, order_by, *ties, first,
+            )),
             PayloadSource::ChangedCount => Self::Count(set_effects::RawCountSource::changed()),
             PayloadSource::Increment { by, scalar } => explicit(&|e| {
                 e.increment = Some(match scalar {

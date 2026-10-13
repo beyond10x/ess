@@ -44,6 +44,7 @@ use ess_compiler::ir::{
     ResolvedInstance, ResolvedOutcome, ResolvedPayloadField, ResolvedPayloadValue,
     ResolvedRowSelection, ResolvedTypeRef, RowMember, Selected,
 };
+use ess_domain::command::ordered_head::Ties;
 use ess_domain::command::OutcomeName;
 use ess_domain::entity::StateName;
 use ess_domain::name::QualifiedName;
@@ -680,11 +681,13 @@ impl<'a> Reading<'a> {
 
     /// The first row `selection` selects by `order_by` (ess/25, beyond10x/ess#543), or why there is
     /// none to read: no row selected, a row whose membership is unknown, or a ranking the rows'
-    /// known values leave undecided.
+    /// known values leave undecided. Under `ties: unordered` no two selected rows may tie on every
+    /// key, so a scenario never states an order the model leaves to the implementation.
     fn head(
         &self,
         selection: &ResolvedRowSelection,
         order_by: &[Ranking],
+        ties: Ties,
     ) -> Result<&'a Row, String> {
         let members = self.members(selection, None)?;
         if members
@@ -704,6 +707,13 @@ impl<'a> Reading<'a> {
             return Err("no row is selected, and a head needs one".into());
         }
         let value = |row: &&'a Row, name: &str| row_key(self.ir, row, name);
+        if ties == Ties::Unordered
+            && ordered_head::tied(self.ir, &selection.entity, order_by, &value, &selected)
+        {
+            return Err(
+                "two selected rows tie on every key, and the order leaves ties unordered".into(),
+            );
+        }
         ordered_head::first(self.ir, &selection.entity, order_by, &value, &selected)
             .map(|at| selected[at])
             .ok_or_else(|| "which selected row ranks first is not decided".into())
@@ -726,9 +736,10 @@ impl<'a> Reading<'a> {
             ResolvedPayloadValue::RelatedHead {
                 selection,
                 order_by,
+                ties,
                 field,
                 type_ref,
-            } => Some(self.head(selection, order_by).map(|row| ReadRow {
+            } => Some(self.head(selection, order_by, *ties).map(|row| ReadRow {
                 row,
                 field,
                 type_ref,
@@ -1519,7 +1530,8 @@ fn arrange_head(
             break;
         }
         let ranking = &order_by[at];
-        let identity = at == last;
+        // The last key of a total order; never one under `ties: unordered`, which holds none.
+        let identity = ordered_head::is_identity(ir, entity, &ranking.field);
         if identity && value(&selected[1], &ranking.field).is_none() {
             gaps.push(gap(
                 format!("{}: `{}`", entity.name(), ranking.field),

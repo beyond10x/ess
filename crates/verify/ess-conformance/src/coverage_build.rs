@@ -520,7 +520,8 @@ fn authored_refusal(
         | Cause::InvalidPredicate { .. }
         | Cause::ExternalAnswerUnstated { .. }
         | Cause::GuardsContradictOutcome { .. }
-        | Cause::GeneratedValuePinned { .. } => Effect::CandidateNotEmitted,
+        | Cause::GeneratedValuePinned { .. }
+        | Cause::UnorderedTie { .. } => Effect::CandidateNotEmitted,
     };
     Ok(Refusal {
         origin: Origin::Authored,

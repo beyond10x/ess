@@ -471,3 +471,127 @@ fn order_by_beside_via_is_refused() {
     assert!(errors.contains("`via:`"), "{errors}");
     assert!(errors.contains("order_by"), "{errors}");
 }
+
+// ---- struct identities and declared-unordered ties (U7) -----------------------------------------
+
+/// [`MODEL`]'s membership identified by a struct, `{slot_id, seq}`: `@MEMBER@` marks a further
+/// member of it.
+fn struct_identity(order_by: &str, member: &str) -> String {
+    let body = sets_only("ess/25", order_by)
+        .replace(
+            "  - {name: demo.ranked.MembershipId, kind: newtype, of: Uuid}\n",
+            &format!(
+                "  - name: demo.ranked.MembershipId\n    kind: struct\n    fields:\n      - {{name: lane, type: String}}\n      - {{name: seq, type: Integer}}\n{member}"
+            ),
+        );
+    assert!(
+        body.contains("kind: struct\n    fields:\n      - {name: lane"),
+        "{body}"
+    );
+    body
+}
+
+/// A struct identity is unique by construction, so it ends a total order: it ranks by its members
+/// in declaration order (`docs/design/ordered-related-head.md`, "Struct identities").
+#[test]
+fn a_struct_identity_ends_a_total_order() {
+    for order in [
+        "[element_score desc, membership_id]",
+        "[membership_id desc]",
+    ] {
+        spec(&struct_identity(order, "")).unwrap_or_else(|errors| panic!("{order}: {errors}"));
+    }
+    // A nested struct member ranks by its own members.
+    let nested = struct_identity(
+        "[element_score desc, membership_id]",
+        "      - {name: origin, type: demo.ranked.Origin}\n  - name: demo.ranked.Origin\n    kind: struct\n    fields:\n      - {name: region, type: String}\n      - {name: at, type: Timestamp}\n",
+    );
+    spec(&nested).unwrap_or_else(|errors| panic!("{errors}"));
+}
+
+/// A member with no rank leaves the struct identity without one, and the refusal names the member.
+#[test]
+fn a_struct_identity_member_without_a_rank_is_refused() {
+    let errors = refused(&struct_identity(
+        "[element_score desc, membership_id]",
+        "      - {name: waited, type: Duration}\n",
+    ));
+    assert!(errors.contains("type_mismatch"), "{errors}");
+    assert!(errors.contains("order_by[1]"), "{errors}");
+    assert!(errors.contains("membership_id.waited"), "{errors}");
+    assert!(!errors.contains("no other key of it is unique"), "{errors}");
+
+    let errors = refused(&struct_identity(
+        "[membership_id]",
+        "      - {name: note, type: Optional<String>}\n",
+    ));
+    assert!(errors.contains("membership_id.note"), "{errors}");
+    assert!(errors.contains("absence has no rank"), "{errors}");
+}
+
+/// `{related: {entity, where, order_by, first}}` with `ties: unordered`: the order need not be
+/// total, and states that rows tying on every key are in no order the model fixes.
+fn unordered(order_by: &str, ties: &str) -> String {
+    model(
+        "ess/25",
+        &format!(
+            "          element_key:
+            related:
+              entity: demo.ranked.Membership
+              where: {{all: [slot_id == input.slot_id, state == Present]}}
+              order_by: {order_by}
+              ties: {ties}
+              first: element_key
+"
+        ),
+        GENERATED_KEY,
+    )
+}
+
+#[test]
+fn ties_unordered_admits_an_order_without_the_identity() {
+    for order in [
+        "[element_score desc]",
+        "[element_score desc, joined_seq]",
+        "[state]",
+    ] {
+        spec(&unordered(order, "unordered")).unwrap_or_else(|errors| panic!("{order}: {errors}"));
+    }
+    // Every other rule of the order still holds.
+    let errors = refused(&unordered("[note]", "unordered"));
+    assert!(errors.contains("absence has no rank"), "{errors}");
+    let errors = refused(&unordered(
+        "[element_score, element_score desc]",
+        "unordered",
+    ));
+    assert!(errors.contains("duplicate_declaration"), "{errors}");
+}
+
+/// The identity breaks every tie, so an order holding it has none to leave unordered.
+#[test]
+fn ties_unordered_beside_the_identity_is_refused() {
+    for order in ["[element_score desc, membership_id]", "[membership_id]"] {
+        let errors = refused(&unordered(order, "unordered"));
+        assert!(
+            errors.contains("conflicting_declaration"),
+            "{order}: {errors}"
+        );
+        assert!(errors.contains("related.ties"), "{order}: {errors}");
+        assert!(errors.contains("membership_id"), "{order}: {errors}");
+    }
+}
+
+#[test]
+fn a_ties_value_other_than_unordered_is_refused() {
+    let errors = refused(&unordered("[element_score desc]", "total"));
+    assert!(errors.contains("related.ties"), "{errors}");
+    assert!(errors.contains("`unordered`"), "{errors}");
+}
+
+#[test]
+fn ties_unordered_below_ess_25_is_refused_naming_ess_25() {
+    let errors =
+        refused(&unordered("[element_score desc]", "unordered").replace("ess/25", "ess/24"));
+    assert!(errors.contains("unsupported_format_version"), "{errors}");
+    assert!(errors.contains("ess/25"), "{errors}");
+}

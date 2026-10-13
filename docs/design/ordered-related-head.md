@@ -115,11 +115,62 @@ ESS can show to be unique is the entity's identity: an entity declares no unique
   refusal names the tie-break it lacks: `append \`membership_id\` as the last key`.
 - **No key follows the identity.** It could never decide anything. This is the same rule a view
   applies to a repeated key (`view.rs:1703-1712`).
-- **A struct identity is refused** for this source (`unsupported_construct`). A struct has no
-  order, and no other key is unique.
+- **A struct identity ends a total order** like any other identity. It ranks by its members
+  ("Struct identities", below).
+- **`ties: unordered` replaces the identity tie-break** where the model leaves ties to the
+  implementation ("Declared-unordered ties", below).
 
 When a unique-field construct exists, a key it declares unique may end the order. That is a later
 change and does not alter this rule for the identity.
+
+### Struct identities
+
+A struct identity is unique by construction: two rows with equal members are one row. So it ends a
+total order. This replaces the earlier refusal, which an adopter's matching specification met as
+its first use of the source (`[unsupported_construct] …order_by: \`…SlotMembership\` is identified
+by a struct, which has no order`).
+
+- **Rank.** Members in declaration order, the first most significant. Each member ranks by its own
+  type's order (the table under "Orderable keys"). A member that is itself a struct ranks by its
+  members, recursively. The key's direction applies to the whole identity.
+- **Not by name.** A struct's wire form is a mapping. Its keys sort by name, and that order is not
+  the declaration order. The interpreter's comparator (`interpret/views.rs::compare`) reads the
+  declared members, so `{seq: 9, lane: z}` ranks before `{seq: 10, lane: a}` where `seq` is declared
+  first.
+- **Members must rank.** An `Optional<…>` member, or one of an unorderable type, is refused at the
+  key with the type rules of any key, naming the member path:
+  `` `membership_id.waited` is `Duration`, whose values have no rank `` (`type_mismatch`).
+- **Only the identity.** A struct field that is not the identity stays refused as a key. It is not
+  unique, and no adopter needs it as an earlier key.
+
+### Declared-unordered ties
+
+The identity tie-break states an order. An implementation whose ranking breaks no ties — a heap
+that compares the score only, a slot set that keeps equal scores in insertion order — does not have
+that order, and a suite synthesized from it fails a conforming implementation. `ties: unordered`
+states the model's real contract instead: rows tying on every key are in no order the model fixes.
+
+```yaml
+element_key:
+  related:
+    entity: demo.ranked.Membership
+    where: {all: [slot_id == input.slot_id, state == Present]}
+    order_by: [element_score desc]
+    ties: unordered
+    first: element_key
+```
+
+The keys are spelled as a view spells them, and the flag sits beside them inside `related:`. It
+takes one value. Without it the total-order rule above stands.
+
+| layer | rule |
+| --- | --- |
+| validation | the order need not end in the identity; every other key rule holds. A key naming the identity is refused (`conflicting_declaration` at `related.ties`): the identity breaks every tie. A value other than `unordered` is refused (`type_mismatch` at `related.ties`). Below `ess/25` the shape is refused naming `ess/25`, as without the flag |
+| IR | `RelatedHead` carries `"ties": "unordered"` after `order_by`; a total order writes no `ties` key, so its bytes are unchanged. `describe` adds "rows tying on every key in no order the model fixes" |
+| interpreter | rank as before. Where the first two selected rows tie on every key, the answer is `Undetermined::UnorderedTie`, a capability gap the target reports `unsupported`, and no row is picked. A tie behind a head that ranks first alone decides nothing, and the head is read |
+| synthesis | the arrangement is unchanged (S2 the head, neither first nor last inserted), and the reading refuses an arrangement in which two selected rows tie on every key, so no scenario states an order for tying rows |
+| author | `ess verify conform author` replays the file's literals through the interpreter, `setup:` rows and acts in order. An act whose head read the replay answers `UnorderedTie` is refused, `ESS-AUTHOR-043`, naming the command, the entity and the keys. The replay stops, refusing nothing more, at the file's first refusal, an input that is not wholly literal, a branch it does not decide or one that mints a value, an answer other than the branch the act names, and from the start where the model declares a binding |
+| generated targets, diff, schema | as for the total order; the schema admits `ties` with the pattern `^unordered$` |
 
 ### Orderable keys
 
@@ -176,9 +227,11 @@ are. A key refusal is reported at `….related.order_by[<i>]`.
 | a key written twice | `duplicate_declaration` | the view's wording |
 | an `Optional<…>` key | `type_mismatch` | that absence has no rank |
 | a key of an unorderable type | `type_mismatch` | the type, and the orderable ones |
-| the last key is not the identity | `missing_declaration` | the missing tie-break: `append \`<identity>\` as the last key` |
+| the last key is not the identity, without `ties: unordered` | `missing_declaration` | the missing tie-break: `append \`<identity>\` as the last key`; the hint names `ties: unordered` |
 | a key after the identity | `unsupported_construct` | that keys after the identity never decide |
-| a struct identity | `unsupported_construct` | that a struct identity has no order |
+| a member of a struct identity without a rank | `type_mismatch` | the member path and its type, as a key of that type is refused |
+| the identity as a key beside `ties: unordered` | `conflicting_declaration` | at `related.ties`: the identity breaks every tie |
+| `ties:` other than `unordered` | `type_mismatch` | at `related.ties`: `ties:` takes `unordered` |
 | `first:` names no field | `undeclared_reference` | as `field:` does (`value_expression.rs:1760`) |
 | `first:`'s type does not fill the target | `type_mismatch` | as `field:` does |
 | every selector refusal of `{entity, where, field}` | unchanged | unchanged (`value_expression.rs:1685-1775`) |
@@ -434,6 +487,19 @@ Each test is written first and seen red.
   (Rust and Go).
 - `crates/generate/ess-entity-runtime/tests/row_sets.rs`: a head read is refused with the
   row-set limitation.
+- U7, struct identities and declared-unordered ties:
+  - `ess-domain/tests/ordered_related_source.rs`: `a_struct_identity_ends_a_total_order`,
+    `a_struct_identity_member_without_a_rank_is_refused`,
+    `ties_unordered_admits_an_order_without_the_identity`,
+    `ties_unordered_beside_the_identity_is_refused`, `a_ties_value_other_than_unordered_is_refused`,
+    `ties_unordered_below_ess_25_is_refused_naming_ess_25`;
+  - `ess-compiler/tests/ordered_head_ir.rs`: `ties_unordered_is_recorded_beside_the_rankings`;
+  - `ess-conformance/tests/ordered_related_source.rs`:
+    `a_struct_identity_breaks_a_tie_by_its_members_in_declaration_order`,
+    `the_interpreter_answers_a_declared_unordered_tie_unsupported`,
+    `synthesis_arranges_no_tie_under_ties_unordered` (a target breaking ties by insertion order
+    conforms, one taking the first inserted row does not) and
+    `author_refuses_a_scenario_arranging_a_tie_the_order_leaves_unordered`.
 
 ## Implementation units
 

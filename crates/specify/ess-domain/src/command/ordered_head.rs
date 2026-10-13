@@ -16,7 +16,12 @@
 //!
 //! **A total order.** The head must be the same row for every evaluator, and the only key ESS can
 //! show to be unique is the entity's identity, so the last key is the identity and no key follows
-//! it.
+//! it. A struct identity is unique by construction and ranks by its members in declaration order,
+//! each by its own type's order.
+//!
+//! **Declared-unordered ties.** `ties: unordered` beside the keys states that rows tying on every
+//! key are in no order the model fixes: the order need not end in the identity, and must not hold
+//! it. A head that ties is then the implementation's choice, which no evaluator answers for it.
 //!
 //! **Recognition.** The shape is recognised by its exact shape, and its list-valued `order_by:` is
 //! what makes that safe: a list under a nested mapping's key was refused at every format, so no
@@ -37,6 +42,30 @@ use crate::view::Ranking;
 pub const ORDER_BY: &str = "order_by";
 /// The key naming the field read from the head.
 pub const FIRST: &str = "first";
+/// The key declaring how rows tying on every key rank.
+pub const TIES: &str = "ties";
+/// The one value [`TIES`] takes.
+pub const UNORDERED: &str = "unordered";
+
+/// How rows that tie on every ranking key rank among themselves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Ties {
+    /// The order is total: its last key is the identity, so no two rows tie.
+    #[default]
+    Total,
+    /// `ties: unordered`: rows tying on every key are in no order the model fixes, and a head that
+    /// ties is the implementation's choice.
+    Unordered,
+}
+
+impl Ties {
+    /// Whether the order is total, as an order without `ties:` is.
+    #[must_use]
+    pub fn is_total(&self) -> bool {
+        *self == Self::Total
+    }
+}
 
 /// What is wrong with a recognised shape, where something is: the refusals that need no
 /// declaration in hand, decided from the keys alone.
@@ -59,6 +88,8 @@ pub struct Written {
     pub(super) predicate: Option<String>,
     /// Each key that did not parse, by position, with the reader's message.
     pub(super) keys: Vec<(usize, String)>,
+    /// The `ties:` value written, where it is not [`UNORDERED`].
+    pub(super) ties: Option<String>,
     /// What the keys say is wrong with the shape.
     pub(super) conflict: Option<Conflict>,
 }
@@ -84,6 +115,11 @@ struct RawHead {
     /// entity's identity.
     #[schemars(length(min = 1))]
     order_by: Vec<String>,
+    /// `unordered` where rows tying on every key are in no order the model fixes; the order then
+    /// need not end in the identity, and must not hold it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(regex(pattern = r"^unordered$"))]
+    ties: Option<String>,
     /// The field of the head row read.
     first: String,
     /// How the document wrote `where`, where it was read from one.
@@ -120,7 +156,7 @@ pub(super) fn selects(entries: &[(String, RawPayloadSource)]) -> bool {
             value,
             RawPayloadSource::Texts(_) | RawPayloadSource::Text(_)
         ),
-        FIRST | "field" => matches!(value, RawPayloadSource::Text(_)),
+        FIRST | "field" | TIES => matches!(value, RawPayloadSource::Text(_)),
         _ => false,
     });
     if !known {
@@ -154,8 +190,8 @@ impl RawRelatedHead {
         else {
             return None;
         };
-        let (mut entity, mut written, mut order_by, mut first, mut field) =
-            (None, None, None, None, None);
+        let (mut entity, mut written, mut order_by, mut first, mut field, mut ties) =
+            (None, None, None, None, None, None);
         for (key, value) in inner {
             match (key.as_str(), value) {
                 ("entity", RawPayloadSource::Text(text)) => entity = text.parse().ok(),
@@ -163,6 +199,7 @@ impl RawRelatedHead {
                 (ORDER_BY, RawPayloadSource::Texts(keys)) => order_by = Some(keys),
                 (FIRST, RawPayloadSource::Text(text)) => first = Some(text),
                 ("field", RawPayloadSource::Text(text)) => field = Some(text),
+                (TIES, RawPayloadSource::Text(text)) => ties = Some(text),
                 _ => {}
             }
         }
@@ -178,6 +215,7 @@ impl RawRelatedHead {
                 entity: entity?,
                 filter: Predicate::Always,
                 order_by: order_by.unwrap_or_default(),
+                ties,
                 first: first.or(field).unwrap_or_default(),
                 written: Some(written?),
                 conflict,
@@ -189,6 +227,7 @@ impl RawRelatedHead {
     pub(super) fn of(
         selection: &super::row_set::RowSelection,
         order_by: &[Ranking],
+        ties: Ties,
         first: &str,
     ) -> Self {
         Self {
@@ -196,6 +235,7 @@ impl RawRelatedHead {
                 entity: selection.entity.clone(),
                 filter: selection.filter.clone(),
                 order_by: order_by.iter().map(ToString::to_string).collect(),
+                ties: (ties == Ties::Unordered).then(|| UNORDERED.to_owned()),
                 first: first.to_owned(),
                 written: None,
                 conflict: None,
@@ -211,6 +251,7 @@ impl RawRelatedHead {
             entity,
             filter,
             order_by,
+            ties,
             first,
             written,
             conflict,
@@ -230,13 +271,20 @@ impl RawRelatedHead {
                 Err(error) => keys.push((index, error.to_string())),
             }
         }
+        let (ties, unread) = match ties {
+            None => (Ties::Total, None),
+            Some(word) if word == UNORDERED => (Ties::Unordered, None),
+            Some(word) => (Ties::Total, Some(word)),
+        };
         PayloadSource::RelatedHead {
             selection: super::row_set::RowSelection { entity, filter },
             order_by: rankings,
+            ties,
             first,
             written: Written {
                 predicate,
                 keys,
+                ties: unread,
                 conflict,
             },
         }
@@ -337,12 +385,15 @@ pub(super) fn misread_mapping(
 }
 
 /// Every rule of the order over `entity`'s rows: every key is a bare field of the candidate row,
-/// written once, required and of an orderable type; the identity is the last key, and the identity
-/// is no struct. `at` is the source site; a key's refusal is reported at `related.order_by[<i>]`.
+/// written once, required and of an orderable type, a struct identity through every member; under
+/// a total order the identity is the last key, and under `ties: unordered` no key is the identity.
+/// `at` is the source site; a key's refusal is reported at `related.order_by[<i>]`, the flag's at
+/// `related.ties`.
 pub(super) fn check_order(
     entity: &EntitySpec,
     types: &TypeRegistry,
     order_by: &[Ranking],
+    ties: Ties,
     at: &ConstructRef,
 ) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
@@ -361,21 +412,6 @@ pub(super) fn check_order(
         );
         return errors;
     }
-    if types.struct_fields(&entity.identity.type_ref).is_some() {
-        errors.push(
-            ValidationError::at(
-                order,
-                ValidationCode::UnsupportedConstruct,
-                format!(
-                    "`{}` is identified by a struct, which has no order, and no other key of it \
-                     is unique; the head of its rows is no particular row",
-                    entity.name
-                ),
-            )
-            .with_hint("read the one selected row with `field:`"),
-        );
-        return errors;
-    }
     let identity = &entity.identity.name;
     let fields = super::row_set::candidate_fields(entity);
     let mut seen = std::collections::BTreeSet::new();
@@ -389,6 +425,24 @@ pub(super) fn check_order(
             &mut seen,
         ) {
             errors.push(refusal);
+            continue;
+        }
+        if ranking.field == *identity && ties == Ties::Unordered {
+            errors.push(
+                ValidationError::at(
+                    at.clone().key("related").key(TIES),
+                    ValidationCode::ConflictingDeclaration,
+                    format!(
+                        "`ties: unordered` leaves rows that tie on every key in no order, and the \
+                         order ranks by the identity `{identity}`, which no two rows share, so no \
+                         two rows tie"
+                    ),
+                )
+                .with_hint(format!(
+                    "drop `{identity}` from the order, or drop `ties: unordered` for a total order \
+                     ending in `{identity}`"
+                )),
+            );
             continue;
         }
         if ranking.field == *identity && index + 1 < order_by.len() {
@@ -409,7 +463,7 @@ pub(super) fn check_order(
     if !errors.is_empty() {
         return errors;
     }
-    if order_by.last().is_some_and(|last| last.field != *identity) {
+    if ties == Ties::Total && order_by.last().is_some_and(|last| last.field != *identity) {
         errors.push(
             ValidationError::at(
                 order,
@@ -422,12 +476,61 @@ pub(super) fn check_order(
                 ),
             )
             .with_hint(format!(
-                "write `order_by: [{}, {identity}]`",
+                "write `order_by: [{}, {identity}]`, or declare `ties: unordered` where the \
+                 implementation breaks ties its own way",
                 keys(order_by)
             )),
         );
     }
     errors
+}
+
+/// What the reading found wrong with the shape as written, at the source site `at`: the keys'
+/// conflict, a `where:` that is no predicate, a `ties:` value other than `unordered`, or keys that
+/// do not parse. Empty where nothing was.
+pub(super) fn written_refusals(at: &ConstructRef, written: &Written) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    if let Some(conflict) = &written.conflict {
+        errors.push(self::conflict(at, conflict));
+    } else if let Some(why) = &written.predicate {
+        errors.push(ValidationError::at(
+            at.clone(),
+            ValidationCode::TypeMismatch,
+            format!(
+                "the `where:` of `{{related: {{entity, where, order_by, first}}}}` is no \
+                 predicate: {why}"
+            ),
+        ));
+    } else if let Some(word) = &written.ties {
+        errors.push(unread_ties(at, word));
+    } else {
+        for (index, why) in &written.keys {
+            errors.push(
+                ValidationError::at(
+                    at.clone().key("related").key(ORDER_BY).index(*index),
+                    ValidationCode::TypeMismatch,
+                    why.clone(),
+                )
+                .with_hint("write a ranking key as `<field>` or `<field> asc|desc`"),
+            );
+        }
+    }
+    errors
+}
+
+/// The refusal of a `ties:` value other than `unordered`, at the source site `at`.
+pub(super) fn unread_ties(at: &ConstructRef, written: &str) -> ValidationError {
+    ValidationError::at(
+        at.clone().key("related").key(TIES),
+        ValidationCode::TypeMismatch,
+        format!(
+            "`ties: {written}` is no declaration of how tying rows rank; `ties:` takes \
+             `unordered`, which leaves rows tying on every key in no order the model fixes"
+        ),
+    )
+    .with_hint(
+        "write `ties: unordered`, or leave `ties:` out for a total order ending in the identity",
+    )
 }
 
 /// One key's own rules, at `key`: a bare field of the candidate row, written once, required and
@@ -471,8 +574,54 @@ fn check_key<'f>(
             ),
         ));
     }
+    // A struct identity is unique by construction, and ranks by its members in declaration order.
+    if ranking.field == entity.identity.name && struct_members(types, &field.type_ref).is_some() {
+        return unranked_member(types, &field.type_ref, &ranking.field, 0)
+            .map(|(path, refusal, type_ref)| refusal.at(key, &path, &type_ref));
+    }
     unorderable(types, &field.type_ref)
         .map(|refusal| refusal.at(key, &ranking.field, &field.type_ref))
+}
+
+/// The members of `type_ref` where it is a struct, through newtypes but never through
+/// `Optional<…>`.
+fn struct_members<'t>(
+    types: &'t TypeRegistry,
+    type_ref: &'t TypeRef,
+) -> Option<&'t [crate::types::Field]> {
+    let mut current = type_ref;
+    for _ in 0..=types.len() {
+        let TypeRef::Named(name) = current else {
+            return None;
+        };
+        match &types.get(name)?.body {
+            TypeBody::Newtype { of, .. } => current = of,
+            TypeBody::Struct { fields, .. } => return Some(fields),
+            TypeBody::Enum { .. } | TypeBody::Union { .. } => return None,
+        }
+    }
+    None
+}
+
+/// The first member of the struct `type_ref`, at `path`, that has no rank, with why and its type:
+/// each member ranks by its own type's order, a struct member by its own members.
+fn unranked_member(
+    types: &TypeRegistry,
+    type_ref: &TypeRef,
+    path: &str,
+    depth: usize,
+) -> Option<(String, Unorderable, TypeRef)> {
+    let members = struct_members(types, type_ref)?;
+    if depth > types.len() {
+        return Some((path.to_owned(), Unorderable::Kind, type_ref.clone()));
+    }
+    members.iter().find_map(|member| {
+        let at = format!("{path}.{}", member.name);
+        if struct_members(types, &member.type_ref).is_some() {
+            return unranked_member(types, &member.type_ref, &at, depth + 1);
+        }
+        unorderable(types, &member.type_ref).map(|why| (at, why, member.type_ref.clone()))
+    })
 }
 
 /// The keys as written, joined.

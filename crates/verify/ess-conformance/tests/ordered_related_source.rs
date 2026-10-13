@@ -393,8 +393,12 @@ struct Wrong {
 
 impl Wrong {
     fn new(rule: WrongHead) -> Self {
+        Self::with_model(rule, MODEL)
+    }
+
+    fn with_model(rule: WrongHead, model: &str) -> Self {
         Self {
-            inner: Interpreted::for_model(ir(MODEL)),
+            inner: Interpreted::for_model(ir(model)),
             rule,
             joined: std::cell::RefCell::new(Vec::new()),
         }
@@ -586,4 +590,293 @@ fn a_head_over_at_most_one_row_is_a_named_gap() {
         refusals.contains("the ranked head is not observable"),
         "{refusals}"
     );
+}
+
+// ---- struct identities and declared-unordered ties (U7) -----------------------------------------
+
+/// The fixture with the membership identified by a struct whose members are declared `seq` first,
+/// then `lane`: the order of their names is the other way round.
+fn struct_identity() -> String {
+    edit(
+        MODEL,
+        "  - {name: demo.ranked.MembershipId, kind: newtype, of: Uuid}\n",
+        "  - name: demo.ranked.MembershipId\n    kind: struct\n    fields:\n      - {name: seq, type: Integer}\n      - {name: lane, type: String}\n",
+    )
+}
+
+fn key(seq: i64, lane: &str) -> Node {
+    Node::Map(BTreeMap::from([
+        ("seq".to_owned(), number(seq)),
+        ("lane".to_owned(), text(lane)),
+    ]))
+}
+
+fn join_node(target: &dyn ConformanceTarget, id: Node, slot: &str, key: &str, score: i64) {
+    let answer = target
+        .execute_command(request(
+            "demo.ranked.Join",
+            &[
+                ("membership_id", id),
+                ("slot_id", text(slot)),
+                ("element_key", text(key)),
+                ("element_score", number(score)),
+            ],
+        ))
+        .unwrap_or_else(|error| panic!("a membership joins: {error}"));
+    assert_eq!(outcome(&answer), "joined");
+}
+
+/// A struct identity breaks a tie by its members in declaration order, each by its own type's
+/// order: `seq` 1 ranks before `seq` 2 whatever the lanes, and `seq` 9 before `seq` 10, where the
+/// names' order (`lane` first) and the text of the numbers would each answer the other row.
+#[test]
+fn a_struct_identity_breaks_a_tie_by_its_members_in_declaration_order() {
+    let target = target(&struct_identity());
+    join_node(&target, key(2, "a"), "t", "k-seq-2", 30);
+    join_node(&target, key(1, "z"), "t", "k-seq-1", 30);
+    join_node(&target, key(0, "a"), "t", "k-lower-score", 10);
+    let picked = pick(&target, "t");
+    assert_eq!(outcome(&picked), "picked", "{picked:?}");
+    let event = &picked.direct_events[0].payload;
+    assert_eq!(event["element_key"], text("k-seq-1"), "{event:?}");
+    assert_eq!(event["membership_id"], key(1, "z"), "{event:?}");
+
+    let target = self::target(&struct_identity());
+    join_node(&target, key(10, "a"), "t", "k-seq-10", 30);
+    join_node(&target, key(9, "a"), "t", "k-seq-9", 30);
+    let picked = pick(&target, "t");
+    let event = &picked.direct_events[0].payload;
+    assert_eq!(event["element_key"], text("k-seq-9"), "{event:?}");
+}
+
+/// The fixture's three head reads ranked by `[element_score desc]` alone, with `ties: unordered`.
+fn ties_unordered() -> String {
+    // The `sets:` entry sits two columns to the left of the payload's.
+    let text = MODEL
+        .replace(
+            "\n              order_by: [element_score desc, membership_id]\n",
+            "\n              order_by: [element_score desc]\n              ties: unordered\n",
+        )
+        .replace(
+            "\n                order_by: [element_score desc, membership_id]\n",
+            "\n                order_by: [element_score desc]\n                ties: unordered\n",
+        );
+    assert_eq!(text.matches("ties: unordered").count(), 3, "{text}");
+    text
+}
+
+/// Two selected rows that tie on every key of an order declaring `ties: unordered` leave the head
+/// to the implementation: the interpreter answers it unsupported, and picks no row. A tie behind a
+/// head that ranks first alone decides nothing, and the head is read.
+#[test]
+fn the_interpreter_answers_a_declared_unordered_tie_unsupported() {
+    let model = ir(&ties_unordered());
+    let mut store = Store::default();
+    for (id, key, score) in [(S1, "k-first", 30), (S2, "k-second", 30), (S3, "k-low", 10)] {
+        run(
+            &model,
+            &mut store,
+            "Join",
+            &[
+                ("membership_id", text(id)),
+                ("slot_id", text("a")),
+                ("element_key", text(key)),
+                ("element_score", number(score)),
+            ],
+        )
+        .unwrap_or_else(|error| panic!("joined: {error:?}"));
+    }
+    let before = store.clone();
+    let answered = run(
+        &model,
+        &mut store,
+        "Pick",
+        &[("pair_id", text(PAIR)), ("slot_id", text("a"))],
+    );
+    let Err(undetermined) = &answered else {
+        panic!("a tie at the head picks no row: {answered:?}");
+    };
+    assert!(undetermined.is_capability_gap(), "{undetermined:?}");
+    let message = undetermined.to_string();
+    assert!(message.contains("ties: unordered"), "{message}");
+    assert!(message.contains("element_score desc"), "{message}");
+    assert_eq!(store, before);
+
+    // Through the target the answer is `unsupported`.
+    let target = target(&ties_unordered());
+    join(&target, S1, "a", "k-first", 30);
+    join(&target, S2, "a", "k-second", 30);
+    let answered = target.execute_command(request(
+        "demo.ranked.Pick",
+        &[("pair_id", text(PAIR)), ("slot_id", text("a"))],
+    ));
+    assert!(
+        matches!(&answered, Err(error @ TargetError::Unsupported { .. }) if error.to_string().contains("ties: unordered")),
+        "{answered:?}"
+    );
+
+    // A head that ranks first alone is read, whatever ties behind it.
+    let target = self::target(&ties_unordered());
+    join(&target, S1, "a", "k-low-1", 10);
+    join(&target, S2, "a", "k-head", 30);
+    join(&target, S3, "a", "k-low-2", 10);
+    let picked = pick(&target, "a");
+    assert_eq!(outcome(&picked), "picked", "{picked:?}");
+    assert_eq!(
+        picked.direct_events[0].payload["element_key"],
+        text("k-head")
+    );
+}
+
+/// Under `ties: unordered` synthesis arranges no two selected rows with equal keys, and its witness
+/// still has a head that is neither the first nor the last inserted: a target breaking ties by
+/// insertion order conforms, and one taking the first inserted row does not.
+#[test]
+fn synthesis_arranges_no_tie_under_ties_unordered() {
+    let model = ties_unordered();
+    let suite = suite_with_picked(&model);
+    let (slot, joins) = joins_before_pick(&suite);
+    let in_slot: Vec<&Node> = joins
+        .iter()
+        .filter(|(held, _)| *held == slot)
+        .map(|(_, score)| score)
+        .collect();
+    assert!(
+        in_slot.len() >= 3,
+        "three memberships in the slot: {joins:#?}"
+    );
+    let distinct: std::collections::BTreeSet<&Node> = in_slot.iter().copied().collect();
+    assert_eq!(distinct.len(), in_slot.len(), "no two tie: {joins:#?}");
+    let best = in_slot.iter().copied().max().expect("a score");
+    assert_ne!(in_slot.first().copied(), Some(best), "{joins:#?}");
+    assert_ne!(in_slot.last().copied(), Some(best), "{joins:#?}");
+
+    let healthy = statuses(&suite, &Interpreted::for_model(ir(&model)));
+    assert_eq!(failed(&healthy), Vec::<&str>::new(), "{healthy:#?}");
+    let by_insertion = statuses(
+        &suite,
+        &Wrong::with_model(WrongHead::TiesByInsertion, &model),
+    );
+    assert!(
+        !failed(&by_insertion).contains(&PICKED),
+        "{by_insertion:#?}"
+    );
+    let first_inserted = statuses(&suite, &Wrong::with_model(WrongHead::FirstInserted, &model));
+    assert!(
+        failed(&first_inserted).contains(&PICKED),
+        "{first_inserted:#?}"
+    );
+}
+
+/// An authored `demo.ranked` scenario: `arrange` and the timeline's `acts`.
+fn authored(arrange: &str, acts: &str) -> String {
+    format!(
+        "type: ess-scenario/2\ndomain: demo.ranked\nscenario: a-pick\n\
+         summary: What this scenario proves, in one line.\n{arrange}timeline:\n{acts}"
+    )
+}
+
+fn join_act(at: u32, id: &str, score: i64) -> String {
+    format!(
+        "  - at: 2026-01-05T09:00:{at:02}Z\n    command: demo.ranked.Join\n    \
+         input: {{membership_id: {id}, slot_id: a, element_key: k-{at}, element_score: {score}}}\n    \
+         outcome: joined\n"
+    )
+}
+
+fn pick_act(at: u32) -> String {
+    format!(
+        "  - at: 2026-01-05T09:00:{at:02}Z\n    command: demo.ranked.Pick\n    \
+         input: {{pair_id: {PAIR}, slot_id: a}}\n    outcome: picked\n"
+    )
+}
+
+fn author(model: &str, text: &str) -> ess_conformance::authored::Authoring {
+    ess_conformance::authored::compile(
+        &ir(model),
+        &[ess_conformance::authored::Source::new("a-pick.yaml", text)],
+    )
+}
+
+/// `ess verify conform author` refuses an authored scenario whose rows tie, on every key of an order
+/// declaring `ties: unordered`, for the head an act reads: the head it claims is the implementation's
+/// choice. A head ranking first alone, and a total order, are accepted.
+#[test]
+fn author_refuses_a_scenario_arranging_a_tie_the_order_leaves_unordered() {
+    let model = ties_unordered();
+    let tied = authored(
+        "",
+        &[
+            join_act(1, S1, 30),
+            join_act(2, S2, 30),
+            join_act(3, S3, 10),
+            pick_act(4),
+        ]
+        .concat(),
+    );
+    let compiled = author(&model, &tied);
+    assert!(compiled.scenarios.is_empty(), "refused");
+    let refusals: Vec<(String, String)> = compiled
+        .refusals
+        .iter()
+        .map(|refusal| (refusal.code().to_string(), refusal.to_string()))
+        .collect();
+    assert_eq!(refusals.len(), 1, "{refusals:#?}");
+    assert_eq!(refusals[0].0, "ESS-AUTHOR-043", "{refusals:#?}");
+    for named in [
+        "demo.ranked.Pick",
+        "demo.ranked.Membership",
+        "element_score desc",
+        "ties: unordered",
+    ] {
+        assert!(
+            refusals[0].1.contains(named),
+            "names {named}: {}",
+            refusals[0].1
+        );
+    }
+
+    // The same tie arranged with `setup:`.
+    let setup = |id: &str, score: i64| {
+        format!(
+            "  - instance: m-{score}-{}\n    entity: demo.ranked.Membership\n    setup:\n      \
+             identity: {id}\n      fields: {{slot_id: a, element_key: k-{id}, element_score: {score}}}\n      \
+             state: Present\n",
+            &id[id.len() - 1..]
+        )
+    };
+    let arranged = authored(
+        &format!("arrange:\n{}{}", setup(S1, 30), setup(S2, 30)),
+        &pick_act(1),
+    );
+    let compiled = author(&model, &arranged);
+    let codes: Vec<String> = compiled
+        .refusals
+        .iter()
+        .map(|it| it.code().to_string())
+        .collect();
+    assert_eq!(
+        codes,
+        vec!["ESS-AUTHOR-043".to_owned()],
+        "{:#?}",
+        compiled.refusals
+    );
+
+    // A head ranking first alone, whatever ties behind it, is accepted.
+    let alone = authored(
+        "",
+        &[
+            join_act(1, S1, 10),
+            join_act(2, S2, 30),
+            join_act(3, S3, 10),
+            pick_act(4),
+        ]
+        .concat(),
+    );
+    let compiled = author(&model, &alone);
+    assert!(compiled.is_complete(), "{:#?}", compiled.refusals);
+
+    // Under a total order the identity breaks the tie, and the scenario is accepted.
+    let compiled = author(MODEL, &tied);
+    assert!(compiled.is_complete(), "{:#?}", compiled.refusals);
 }

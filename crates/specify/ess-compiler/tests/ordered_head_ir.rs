@@ -124,3 +124,23 @@ fn a_text_order_by_compiles_to_the_same_nested_mapping_at_ess_24_and_ess_25() {
     );
     assert_eq!(at_24, at_25);
 }
+
+/// `ties: unordered` is recorded beside the keys, and only there: a total order's head keeps the
+/// bytes it compiled to before the flag existed.
+#[test]
+fn ties_unordered_is_recorded_beside_the_rankings() {
+    let total = ir(HEAD);
+    assert!(!total.contains(r#""ties""#), "{total}");
+
+    let text = HEAD.replace(
+        "                order_by: [element_score desc, membership_id]\n                first: element_key\n",
+        "                order_by: [element_score desc]\n                ties: unordered\n                first: element_key\n",
+    );
+    assert_ne!(text, HEAD, "fixture edit did not land");
+    let compact = ir(&text);
+    let key = format!(
+        r#"{{"kind":"related_head",{SELECTION},"order_by":["element_score desc"],"ties":"unordered","field":"element_key","type_ref":{{"kind":"primitive","name":"string"}}}}"#
+    )
+    .replace(' ', "");
+    assert!(compact.contains(&key), "{key}\n{compact}");
+}
