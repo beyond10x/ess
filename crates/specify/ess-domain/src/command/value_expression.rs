@@ -436,12 +436,32 @@ fn check(
         PayloadSource::ChangedCount if depth > 0 || place == Place::Sets => {
             errors.push(super::set_effects::count_elsewhere(at));
         }
+        // ess/25 (beyond10x/ess#545): below it both are read back as nested mappings.
+        PayloadSource::Generated { present: true } => {
+            if let Some(refusal) = super::minted_value::check_present(at, target) {
+                errors.push(refusal);
+            }
+        }
+        PayloadSource::PayloadRead { event, field } => {
+            if place == Place::Sets {
+                super::minted_value::check_read(
+                    context.spec,
+                    context.outcome,
+                    at,
+                    target,
+                    (event, field),
+                    errors,
+                );
+            } else {
+                errors.push(super::minted_value::read_elsewhere(at));
+            }
+        }
         PayloadSource::ChangedCount
         | PayloadSource::Scalar { .. }
         | PayloadSource::InputField { .. }
         | PayloadSource::ResponseField { .. }
         | PayloadSource::Cleared
-        | PayloadSource::Generated => {}
+        | PayloadSource::Generated { present: false } => {}
     }
 }
 
@@ -1486,6 +1506,12 @@ fn check_struct(
     }
     let Some(declared) = context.resolved.types.struct_fields(&target.type_ref) else {
         if let Some(refusal) = related_mapping(context, at, fields) {
+            errors.push(refusal);
+            return;
+        }
+        if let Some(refusal) =
+            super::minted_value::misread_mapping(context.spec.system().format, at, target, fields)
+        {
             errors.push(refusal);
             return;
         }

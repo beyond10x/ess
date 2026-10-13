@@ -207,6 +207,7 @@ pub mod finite;
 pub mod fixture_inputs;
 pub mod identity_write;
 pub mod input_path;
+pub mod minted_value;
 mod narrowing;
 mod one_time_response;
 pub(crate) mod outcome_shapes;
@@ -1072,8 +1073,23 @@ pub enum PayloadSource {
         /// The declared response field.
         field: String,
     },
-    /// The implementation chooses this field, subject to its declared type.
-    Generated,
+    /// The implementation chooses this field, subject to its declared type: `{generated: true}`,
+    /// or from `ess/25` `{generated: true, present: true}` over an `Optional` field, which requires
+    /// the value present ([`minted_value`], beyond10x/ess#545).
+    Generated {
+        /// Whether the minted value of an `Optional` field is present. Serialized only when set.
+        #[serde(skip_serializing_if = "std::ops::Not::not")]
+        present: bool,
+    },
+    /// The value this outcome publishes in `field` of `event`: `{payload: <Event>.<field>}`
+    /// (`ess/25`, beyond10x/ess#545, [`minted_value`]). A `sets:` source only, so one mint feeds
+    /// the event and the row.
+    PayloadRead {
+        /// An event this outcome emits and fills under `payload:`.
+        event: QualifiedName,
+        /// The event's field, given a source there.
+        field: String,
+    },
     /// A field of the command's declared input: `input.amount`; from `ess/22` a member of a struct
     /// input reached by a path, `input.opening.label` ([`input_path`], A4).
     InputField {
@@ -1232,7 +1248,9 @@ impl fmt::Display for PayloadSource {
             Self::InputField { field } => write!(f, "{}{field}", Self::INPUT_PREFIX),
             Self::Literal { value } | Self::Scalar { value, .. } => f.write_str(value),
             Self::ResponseField { field } => write!(f, "response field `{field}`"),
-            Self::Generated => f.write_str("implementation-generated"),
+            Self::Generated { present: false } => f.write_str("implementation-generated"),
+            Self::Generated { present: true } => f.write_str("implementation-generated, present"),
+            Self::PayloadRead { event, field } => write!(f, "the published `{event}.{field}`"),
             Self::Cleared => f.write_str("cleared"),
             Self::SubjectField { field } => write!(f, "subject field `{field}`"),
             Self::RelatedField {
@@ -1296,7 +1314,8 @@ impl PayloadSource {
             | Self::CallerAttribute { .. }
             | Self::ChangedCount => true,
             Self::ResponseField { .. }
-            | Self::Generated
+            | Self::Generated { .. }
+            | Self::PayloadRead { .. }
             | Self::InputField { .. }
             | Self::Literal { .. }
             | Self::Scalar { .. }
@@ -1349,6 +1368,10 @@ enum RawPayloadSource {
     Related(RawRelatedSource),
     Caller(caller_value::RawCallerSource),
     Count(set_effects::RawCountSource),
+    /// `{generated: true, present: true}` (ess/25, beyond10x/ess#545).
+    PresentMint(minted_value::RawPresentMint),
+    /// `{payload: <Event>.<field>}` (ess/25, beyond10x/ess#545).
+    PayloadRead(minted_value::RawPayloadRead),
     Nested(RawNestedSources),
     /// A list of texts, read only as the `via:` of `{related: …}` (ess/22, beyond10x/ess#285) and
     /// refused anywhere else; the schema gives it there and nowhere else.
@@ -1551,6 +1574,12 @@ impl<'de> serde::de::Visitor<'de> for Source {
         }
         if let Some(count) = set_effects::RawCountSource::recognise(&entries) {
             return Ok(RawPayloadSource::Count(count));
+        }
+        if let Some(mint) = minted_value::RawPresentMint::recognise(&entries) {
+            return Ok(RawPayloadSource::PresentMint(mint));
+        }
+        if let Some(read) = minted_value::RawPayloadRead::recognise(&entries) {
+            return Ok(RawPayloadSource::PayloadRead(read));
         }
         if !entries.is_empty()
             && entries
@@ -1861,6 +1890,8 @@ impl TryFrom<RawPayloadSource> for PayloadSource {
                 .and_then(Self::try_from),
             RawPayloadSource::Caller(caller) => Ok(caller.into_source()),
             RawPayloadSource::Count(_) => Ok(Self::ChangedCount),
+            RawPayloadSource::PresentMint(_) => Ok(Self::Generated { present: true }),
+            RawPayloadSource::PayloadRead(read) => Ok(read.into_source()),
             RawPayloadSource::Nested(RawNestedSources(entries)) => entries
                 .into_iter()
                 .map(|(target, source)| {
@@ -1920,7 +1951,7 @@ impl PayloadSource {
     /// `value_expression::validate`, which knows the format and the target's type.
     fn fallback(otherwise: RawPayloadSource) -> Result<Option<Box<Self>>, &'static str> {
         match Self::try_from(otherwise)? {
-            Self::Generated => Ok(None),
+            Self::Generated { present: false } => Ok(None),
             literal @ (Self::Literal { .. } | Self::Scalar { .. }) => Ok(Some(Box::new(literal))),
             // From `ess/22` (A4) another input path, which `value_expression` holds to being
             // required along its whole route: `else:` promises a value.
@@ -1962,7 +1993,7 @@ impl PayloadSource {
                 increment: None,
                 input: None,
                 otherwise: None,
-            } => Ok(Self::Generated),
+            } => Ok(Self::Generated { present: false }),
             ExplicitPayloadSource {
                 response: None,
                 generated: None,
@@ -2045,7 +2076,13 @@ impl From<&PayloadSource> for RawPayloadSource {
             PayloadSource::ResponseField { field } => {
                 explicit(&|e| e.response = Some(field.clone()))
             }
-            PayloadSource::Generated => explicit(&|e| e.generated = Some(true)),
+            PayloadSource::Generated { present: false } => explicit(&|e| e.generated = Some(true)),
+            PayloadSource::Generated { present: true } => {
+                Self::PresentMint(minted_value::RawPresentMint::of())
+            }
+            PayloadSource::PayloadRead { event, field } => {
+                Self::PayloadRead(minted_value::RawPayloadRead::of(event, field))
+            }
             PayloadSource::Cleared => explicit(&|e| e.cleared = Some(true)),
             PayloadSource::SubjectField { field } => explicit(&|e| e.subject = Some(field.clone())),
             PayloadSource::RelatedField {
@@ -2091,7 +2128,9 @@ impl From<&PayloadSource> for RawPayloadSource {
             PayloadSource::InputOrGenerated { field, otherwise } => explicit(&|e| {
                 e.input = Some(field.clone());
                 e.otherwise = Some(Box::new(Self::from(
-                    otherwise.as_deref().unwrap_or(&PayloadSource::Generated),
+                    otherwise
+                        .as_deref()
+                        .unwrap_or(&PayloadSource::Generated { present: false }),
                 )));
             }),
             PayloadSource::Struct { fields } => Self::Nested(RawNestedSources(
@@ -3837,7 +3876,8 @@ fn check_payload_entry(
 
     match source {
         // Checked with the entity, input and struct in hand by `value_expression::validate`.
-        PayloadSource::Generated
+        PayloadSource::Generated { .. }
+        | PayloadSource::PayloadRead { .. }
         | PayloadSource::SubjectField { .. }
         | PayloadSource::Increment { .. }
         | PayloadSource::InputOrGenerated { .. }
@@ -4073,11 +4113,11 @@ pub(crate) fn validate_response_contracts(spec: &crate::Specification) -> Valida
                 // `ess/14` hands a field to the implementation with `{generated: true}` (#134).
                 let generated_admitted = spec.system().format.major()
                     >= crate::system::FormatVersion::V14.major()
-                    && matches!(source, PayloadSource::Generated);
+                    && matches!(source, PayloadSource::Generated { .. });
                 if !generated_admitted
                     && matches!(
                         source,
-                        PayloadSource::ResponseField { .. } | PayloadSource::Generated
+                        PayloadSource::ResponseField { .. } | PayloadSource::Generated { .. }
                     )
                 {
                     errors.push(ValidationError::at(
@@ -4093,7 +4133,7 @@ pub(crate) fn validate_response_contracts(spec: &crate::Specification) -> Valida
                     if !modern
                         && matches!(
                             source,
-                            PayloadSource::ResponseField { .. } | PayloadSource::Generated
+                            PayloadSource::ResponseField { .. } | PayloadSource::Generated { .. }
                         )
                     {
                         errors.push(ValidationError::at(at.clone().key("payload").named(event.to_string()).named(field), ValidationCode::UnsupportedFormatVersion, "explicit response/generated payload sources require specification format ess/4"));
