@@ -247,7 +247,7 @@ use std::fmt;
 use ess_compiler::diagnostic::Code;
 use ess_compiler::ir::{
     EssIr, ResolvedBinding, ResolvedBody, ResolvedCommand, ResolvedField, ResolvedOutcome,
-    ResolvedPayloadField, ResolvedPayloadValue, ResolvedTypeRef,
+    ResolvedPayload, ResolvedPayloadField, ResolvedPayloadValue, ResolvedTypeRef,
 };
 use ess_domain::command::{fixture_inputs::FixtureName, OutcomeName, TestStrategy};
 use ess_domain::name::QualifiedName;
@@ -1454,7 +1454,11 @@ fn reachable_branches<'ir>(
         let mut more = Vec::new();
         for emitted in emits {
             for binding in ir.bindings().values() {
-                if binding.cause.event().is_none_or(|it| it.name() != emitted.name()) {
+                if binding
+                    .cause
+                    .event()
+                    .is_none_or(|it| it.name() != emitted.name())
+                {
                     continue;
                 }
                 let Some(invoked) = ir.commands().get(binding.command.name()) else {
@@ -1482,6 +1486,8 @@ struct Fill<'a> {
     /// The branch, as `command/branch`.
     outcome: String,
     fills: &'a [ResolvedPayloadField],
+    /// The branch's `payload:` entries, which a `{payload: <Event>.<field>}` in `sets:` reads.
+    published: &'a [ResolvedPayload],
     /// `None` for a branch a binding invokes, whose input a mapping fills.
     sent: Option<&'a BTreeMap<String, Written>>,
 }
@@ -1490,6 +1496,7 @@ struct Fill<'a> {
 struct OwnedFill<'ir> {
     outcome: String,
     fills: &'ir [ResolvedPayloadField],
+    published: &'ir [ResolvedPayload],
     sent: Option<BTreeMap<String, Written>>,
 }
 
@@ -1508,25 +1515,40 @@ enum RowWrite<'ir> {
     },
 }
 
-/// The value an act pins: `Some(Some(literal))`, `Some(None)` for a fixture, whose whole value the
-/// suite resolves before the run; `None` for a reference, which states a relation.
-fn pinned_value(value: &Written) -> Option<Option<&Node>> {
+/// Whether an act pins the value it writes: a literal does, and so does a fixture, whose whole
+/// value the suite resolves before the run; a reference states a relation and does not.
+fn pins(value: &Written) -> bool {
+    matches!(value, Written::Literal(_) | Written::Fixture(_))
+}
+
+/// The literal an act writes, walked leaf by leaf; `None` for a fixture, pinned whole.
+fn literal(value: &Written) -> Option<&Node> {
     match value {
-        Written::Literal(node) => Some(Some(node)),
-        Written::Fixture(_) => Some(None),
-        Written::Instance(_) | Written::Observed { .. } => None,
+        Written::Literal(node) => Some(node),
+        _ => None,
     }
 }
 
 /// The leaves of the value written for `field` that every one of `fills` leaves to the
 /// implementation, each with how the first marks it. Empty where there is no fill, or where one
 /// fill does not determine `field` as minted.
-fn minted_by_every(field: &str, pinned: Option<&Node>, fills: &[Fill<'_>]) -> BTreeMap<String, String> {
+fn minted_by_every(
+    field: &str,
+    pinned: Option<&Node>,
+    fills: &[Fill<'_>],
+) -> BTreeMap<String, String> {
     let mut common: Option<BTreeMap<String, String>> = None;
     for fill in fills {
         let mut found = BTreeMap::new();
         if let Some(entry) = fill.fills.iter().find(|it| it.target == field) {
-            minted_leaves(&entry.value, pinned, field, fill.sent, &mut found);
+            minted_leaves(
+                &entry.value,
+                pinned,
+                field,
+                fill.sent,
+                fill.published,
+                &mut found,
+            );
         }
         common = Some(match common {
             None => found,
@@ -1548,11 +1570,39 @@ fn minted_leaves(
     written: Option<&Node>,
     path: &str,
     sent: Option<&BTreeMap<String, Written>>,
+    published: &[ResolvedPayload],
     found: &mut BTreeMap<String, String>,
 ) {
     match value {
-        ResolvedPayloadValue::Generated { .. } => {
-            found.insert(path.to_owned(), "`{generated: true}`".to_owned());
+        ResolvedPayloadValue::Generated { present } => {
+            let marked = if *present {
+                "`{generated: true, present: true}`"
+            } else {
+                "`{generated: true}`"
+            };
+            found.insert(path.to_owned(), marked.to_owned());
+        }
+        // `ess/25` (beyond10x/ess#545): the row stores what this branch publishes, so a mint there
+        // is the same mint here.
+        ResolvedPayloadValue::PayloadRead { event, field, .. } => {
+            let read = published
+                .iter()
+                .filter(|payload| payload.event.name() == event.name())
+                .flat_map(|payload| &payload.fields)
+                .find(|it| it.target == *field);
+            if let Some(read) = read {
+                let mut minted = BTreeMap::new();
+                minted_leaves(&read.value, written, path, sent, &[], &mut minted);
+                for (at, how) in minted {
+                    found.insert(
+                        at,
+                        format!(
+                            "`{{payload: {}.{field}}}`, which reads a payload field marked {how}",
+                            event.name()
+                        ),
+                    );
+                }
+            }
         }
         ResolvedPayloadValue::InputOrGenerated {
             field,
@@ -1574,7 +1624,7 @@ fn minted_leaves(
                     },
                 };
                 let at = format!("{path}.{}", member.target);
-                minted_leaves(&member.value, inner, &at, sent, found);
+                minted_leaves(&member.value, inner, &at, sent, published, found);
             }
         }
         _ => {}
@@ -2704,66 +2754,12 @@ impl<'a> Compiler<'a> {
             input,
         });
 
-        if let Some(written) = &act.outcome {
-            match OutcomeName::new(written)
-                .ok()
-                .filter(|outcome| outcomes.contains(outcome))
-            {
-                Some(outcome) => {
-                    let reference = OutcomeRef::new(command_ref.clone(), outcome);
-                    self.source.insert(reference.clone().into());
-                    self.steps
-                        .push(ScenarioStep::ExpectOutcome { outcome: reference });
-                }
-                None => self.refuse(Cause::UndeclaredOutcome {
-                    command: command_ref.clone(),
-                    outcome: written.clone(),
-                    declared: outcomes.iter().map(ToString::to_string).collect(),
-                }),
-            }
-        }
+        self.expected_outcome(&command_ref, &outcomes, act);
         self.guarded_outcome(&command_ref, command, act, sent.as_ref());
-
-        // The branches this act can answer with, for the minted values below; a misnamed branch was
-        // refused above and reaches none.
-        let written = act
-            .outcome
-            .as_ref()
-            .map(|name| command.outcomes.iter().find(|it| it.name.as_str() == name));
-        let reached = match written {
-            Some(None) => Vec::new(),
-            Some(Some(outcome)) => reachable_branches(self.ir, command, Some(outcome)),
-            None => reachable_branches(self.ir, command, None),
-        };
-        self.record_writes(&reached, &act.input);
+        self.generated_claims(command, act);
 
         if let Some(claim) = &act.error {
             self.error(claim);
-            if let Ok(name) = QualifiedName::new(&claim.name) {
-                // An error is the act's own command's answer: a binding's failure is not reported
-                // to the act.
-                let reporting: Vec<Fill<'_>> = reached
-                    .iter()
-                    .filter(|it| {
-                        it.own
-                            && it
-                                .outcome
-                                .error
-                                .as_ref()
-                                .is_some_and(|error| *error.name() == name)
-                    })
-                    .map(|it| Fill {
-                        outcome: branch(it.command, it.outcome),
-                        fills: &it.outcome.error_payload,
-                        sent: Some(&act.input),
-                    })
-                    .collect();
-                self.minted_claims(
-                    &Surface::Error(ErrorRef::new(name)),
-                    &claim.fields,
-                    &reporting,
-                );
-            }
         }
         self.unstated_external(&command_ref, command, act);
         let returning = match &act.outcome {
@@ -2794,29 +2790,6 @@ impl<'a> Compiler<'a> {
         }
         for claim in &act.events {
             self.event(claim);
-            let Ok(name) = QualifiedName::new(&claim.event) else {
-                continue;
-            };
-            // Every branch that can publish the occurrence this act claims, whichever does.
-            let publishing: Vec<Fill<'_>> = reached
-                .iter()
-                .filter(|it| it.outcome.emits.iter().any(|event| *event.name() == name))
-                .map(|it| Fill {
-                    outcome: branch(it.command, it.outcome),
-                    fills: it
-                        .outcome
-                        .payload
-                        .iter()
-                        .find(|payload| *payload.event.name() == name)
-                        .map_or(&[][..], |payload| &payload.fields),
-                    sent: it.own.then_some(&act.input),
-                })
-                .collect();
-            self.minted_claims(
-                &Surface::Payload(EventRef::new(name)),
-                &claim.payload,
-                &publishing,
-            );
         }
         for written in &act.no_events {
             if let Some((name, _)) = self.declared(written, self.ir.events(), |event| {
@@ -3602,6 +3575,101 @@ impl<'a> Compiler<'a> {
             .is_some_and(|declared| declared.type_ref.required() == identity.required())
     }
 
+    /// The branch `act` expects under `outcome:`, one of `outcomes`, the branches of
+    /// `command_ref`; refused where the command declares no such branch.
+    fn expected_outcome(&mut self, command_ref: &CommandRef, outcomes: &[OutcomeName], act: &Act) {
+        let Some(written) = &act.outcome else {
+            return;
+        };
+        match OutcomeName::new(written)
+            .ok()
+            .filter(|outcome| outcomes.contains(outcome))
+        {
+            Some(outcome) => {
+                let reference = OutcomeRef::new(command_ref.clone(), outcome);
+                self.source.insert(reference.clone().into());
+                self.steps
+                    .push(ScenarioStep::ExpectOutcome { outcome: reference });
+            }
+            None => self.refuse(Cause::UndeclaredOutcome {
+                command: command_ref.clone(),
+                outcome: written.clone(),
+                declared: outcomes.iter().map(ToString::to_string).collect(),
+            }),
+        }
+    }
+
+    /// Refuses each exact value `act` claims, in an error's fields or an event's payload, for a
+    /// field every branch that can answer it leaves to the implementation, and records the stored
+    /// fields those branches write for the view rows (beyond10x/ess#544). A misnamed branch was
+    /// refused already and reaches none.
+    fn generated_claims(&mut self, command: &'a ResolvedCommand, act: &Act) {
+        let written = act
+            .outcome
+            .as_ref()
+            .map(|name| command.outcomes.iter().find(|it| it.name.as_str() == name));
+        let reached = match written {
+            Some(None) => Vec::new(),
+            Some(Some(outcome)) => reachable_branches(self.ir, command, Some(outcome)),
+            None => reachable_branches(self.ir, command, None),
+        };
+        self.record_writes(&reached, &act.input);
+        if let Some(claim) = &act.error {
+            if let Ok(name) = QualifiedName::new(&claim.name) {
+                // An error is the act's own command's answer: a binding's failure is not reported
+                // to the act.
+                let reporting: Vec<Fill<'_>> = reached
+                    .iter()
+                    .filter(|it| {
+                        it.own
+                            && it
+                                .outcome
+                                .error
+                                .as_ref()
+                                .is_some_and(|error| *error.name() == name)
+                    })
+                    .map(|it| Fill {
+                        outcome: branch(it.command, it.outcome),
+                        fills: &it.outcome.error_payload,
+                        sent: Some(&act.input),
+                        published: &it.outcome.payload,
+                    })
+                    .collect();
+                self.minted_claims(
+                    &Surface::Error(ErrorRef::new(name)),
+                    &claim.fields,
+                    &reporting,
+                );
+            }
+        }
+        for claim in &act.events {
+            let Ok(name) = QualifiedName::new(&claim.event) else {
+                continue;
+            };
+            // Every branch that can publish the occurrence this act claims, whichever does.
+            let publishing: Vec<Fill<'_>> = reached
+                .iter()
+                .filter(|it| it.outcome.emits.iter().any(|event| *event.name() == name))
+                .map(|it| Fill {
+                    outcome: branch(it.command, it.outcome),
+                    fills: it
+                        .outcome
+                        .payload
+                        .iter()
+                        .find(|payload| *payload.event.name() == name)
+                        .map_or(&[][..], |payload| &payload.fields),
+                    sent: it.own.then_some(&act.input),
+                    published: &it.outcome.payload,
+                })
+                .collect();
+            self.minted_claims(
+                &Surface::Payload(EventRef::new(name)),
+                &claim.payload,
+                &publishing,
+            );
+        }
+    }
+
     /// Every stored field the branches `reached` write, with the input the act's own ones read.
     fn record_writes(&mut self, reached: &[Reached<'a>], sent: &BTreeMap<String, Written>) {
         for branch_reached in reached {
@@ -3620,6 +3688,7 @@ impl<'a> Compiler<'a> {
                         outcome: label.clone(),
                         fills: &outcome.sets,
                         sent: sent.clone(),
+                        published: &outcome.payload,
                     },
                 });
             }
@@ -3630,6 +3699,7 @@ impl<'a> Compiler<'a> {
                         outcome: label.clone(),
                         fills: &affect.sets,
                         sent: sent.clone(),
+                        published: &outcome.payload,
                     },
                 });
                 if let Some(each) = &affect.each {
@@ -3651,9 +3721,10 @@ impl<'a> Compiler<'a> {
         fills: &[Fill<'_>],
     ) {
         for (field, value) in written {
-            let Some(pinned) = pinned_value(value) else {
+            if !pins(value) {
                 continue;
-            };
+            }
+            let pinned = literal(value);
             let minted = minted_by_every(field, pinned, fills);
             for (path, marked) in minted {
                 self.refuse(Cause::GeneratedValuePinned {
@@ -3682,17 +3753,19 @@ impl<'a> Compiler<'a> {
             if !declared.fields.iter().any(|it| it.name == *field) {
                 continue;
             }
-            let Some(pinned) = pinned_value(value) else {
+            if !pins(value) {
                 continue;
-            };
+            }
+            let pinned = literal(value);
             let mut fills = Vec::new();
             let mut stated = false;
             for write in &self.row_writes {
                 match write {
-                    RowWrite::Stated {
-                        entity: at,
-                        fields,
-                    } if at == entity && fields.contains(field) => stated = true,
+                    RowWrite::Stated { entity: at, fields }
+                        if at == entity && fields.contains(field) =>
+                    {
+                        stated = true;
+                    }
                     RowWrite::Branch { entity: at, fill }
                         if at == entity && fill.fills.iter().any(|it| it.target == *field) =>
                     {
@@ -3700,6 +3773,7 @@ impl<'a> Compiler<'a> {
                             outcome: fill.outcome.clone(),
                             fills: fill.fills,
                             sent: fill.sent.as_ref(),
+                            published: fill.published,
                         });
                     }
                     _ => {}

@@ -200,11 +200,7 @@ fn an_exact_value_on_a_generated_payload_field_is_refused() {
     let ir = fixture(RELAY);
     let text = pinned(
         &ir,
-        &document(
-            "",
-            &selected("{agent_id: a1, connect_seq: 7}"),
-            "",
-        ),
+        &document("", &selected("{agent_id: a1, connect_seq: 7}"), ""),
     );
     names(
         &text,
@@ -216,7 +212,10 @@ fn an_exact_value_on_a_generated_payload_field_is_refused() {
             "{$observed:",
         ],
     );
-    assert!(!text.contains("`agent_id`"), "names only the pinned field: {text}");
+    assert!(
+        !text.contains("`agent_id`"),
+        "names only the pinned field: {text}"
+    );
 }
 
 #[test]
@@ -368,7 +367,10 @@ fn an_act_naming_no_outcome_is_refused_where_every_branch_publishing_the_event_m
             "",
         ),
     );
-    names(&text, &["`connect_seq`", "`relay.desk.SelectAgentForEntry/selected`"]);
+    names(
+        &text,
+        &["`connect_seq`", "`relay.desk.SelectAgentForEntry/selected`"],
+    );
 }
 
 #[test]
@@ -453,6 +455,162 @@ fn an_optional_input_sent_keeps_its_exact_value() {
                  payload: {ticket: T-1}\n",
             ),
             "",
+        ),
+    );
+}
+
+/// The `ess/25` shapes (beyond10x/ess#545): a seat whose `connect_seq` is a present mint on the
+/// event and on the row, and whose `bridge_seq` the row reads from the payload's mint with
+/// `{payload: relay.desk.SeatBridged.bridge_seq}`. `TakeSeat` reads the same payload field from
+/// its input, so the row holds a value the act sent.
+const SEATS: &str = r"
+format: ess/25
+system: relay
+version: v1
+domain: relay.desk
+entities:
+  - name: relay.desk.Seat
+    identity: {name: seat_id, type: Uuid}
+    fields:
+      - {name: agent_id, type: String}
+      - {name: connect_seq, type: Optional<Integer>}
+      - {name: bridge_seq, type: Integer}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+events:
+  - name: relay.desk.SeatBridged
+    fields:
+      - {name: seat_id, type: Uuid}
+      - {name: connect_seq, type: Optional<Integer>}
+      - {name: bridge_seq, type: Integer}
+  - name: relay.desk.SeatTaken
+    fields:
+      - {name: seat_id, type: Uuid}
+      - {name: bridge_seq, type: Integer}
+views:
+  - name: relay.desk.Seats
+    source: relay.desk.Seat
+    consistency: read_your_writes
+    fields:
+      - {name: seat_id, type: Uuid}
+      - {name: agent_id, type: String}
+      - {name: connect_seq, type: Optional<Integer>}
+      - {name: bridge_seq, type: Integer}
+commands:
+  - name: relay.desk.Bridge
+    input:
+      - {name: agent_id, type: String}
+    outcomes:
+      - name: bridged
+        creates: relay.desk.Seat
+        instance: seat_id
+        emits: [relay.desk.SeatBridged]
+        payload:
+          relay.desk.SeatBridged:
+            seat_id: {generated: true}
+            connect_seq: {generated: true, present: true}
+            bridge_seq: {generated: true}
+        sets:
+          agent_id: input.agent_id
+          connect_seq: {generated: true, present: true}
+          bridge_seq: {payload: relay.desk.SeatBridged.bridge_seq}
+  - name: relay.desk.TakeSeat
+    input:
+      - {name: agent_id, type: String}
+      - {name: bridge_seq, type: Integer}
+    outcomes:
+      - name: taken
+        creates: relay.desk.Seat
+        instance: seat_id
+        emits: [relay.desk.SeatTaken]
+        payload:
+          relay.desk.SeatTaken: {seat_id: {generated: true}, bridge_seq: input.bridge_seq}
+        sets:
+          agent_id: input.agent_id
+          bridge_seq: {payload: relay.desk.SeatTaken.bridge_seq}
+";
+
+/// The `Bridge` act, claiming `SeatBridged` with the `payload` flow mapping.
+fn bridged(payload: &str) -> String {
+    act(
+        0,
+        "Bridge",
+        "{agent_id: a1}",
+        &format!(
+            "    outcome: bridged\n    events:\n      - event: relay.desk.SeatBridged\n        \
+             payload: {payload}\n"
+        ),
+    )
+}
+
+#[test]
+fn an_exact_value_on_a_present_mint_is_refused_on_the_event_and_the_row() {
+    let ir = fixture(SEATS);
+    let text = pinned(&ir, &document("", &bridged("{connect_seq: 7}"), ""));
+    names(
+        &text,
+        &[
+            "the payload of `relay.desk.SeatBridged`",
+            "`connect_seq`",
+            "`relay.desk.Bridge/bridged`",
+            "`{generated: true, present: true}`",
+        ],
+    );
+    let text = pinned(
+        &ir,
+        &document(
+            "",
+            &bridged("{}"),
+            "assert:\n  - view: relay.desk.Seats\n    contains: {agent_id: a1, connect_seq: 7}\n",
+        ),
+    );
+    names(
+        &text,
+        &[
+            "a row of `relay.desk.Seats`",
+            "`connect_seq`",
+            "`{generated: true, present: true}`",
+        ],
+    );
+}
+
+#[test]
+fn an_exact_value_on_a_stored_field_read_from_a_minted_payload_field_is_refused() {
+    let ir = fixture(SEATS);
+    let text = pinned(
+        &ir,
+        &document(
+            "",
+            &bridged("{}"),
+            "assert:\n  - view: relay.desk.Seats\n    contains: {agent_id: a1, bridge_seq: 7}\n",
+        ),
+    );
+    names(
+        &text,
+        &[
+            "a row of `relay.desk.Seats`",
+            "`bridge_seq`",
+            "`relay.desk.Bridge/bridged`",
+            "`{payload: relay.desk.SeatBridged.bridge_seq}`",
+            "`{generated: true}`",
+        ],
+    );
+}
+
+#[test]
+fn a_stored_field_read_from_a_payload_field_the_input_fills_keeps_its_exact_value() {
+    let ir = fixture(SEATS);
+    accepted(
+        &ir,
+        &document(
+            "",
+            &act(
+                0,
+                "TakeSeat",
+                "{agent_id: a1, bridge_seq: 7}",
+                "    outcome: taken\n    events:\n      - event: relay.desk.SeatTaken\n        \
+                 payload: {bridge_seq: 7}\n",
+            ),
+            "assert:\n  - view: relay.desk.Seats\n    contains: {agent_id: a1, bridge_seq: 7}\n",
         ),
     );
 }

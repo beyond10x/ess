@@ -117,6 +117,18 @@
 
 ### Fixed
 
+- `ess verify conform author` refuses an act that claims an exact value for a field the model
+  leaves to the implementation, as `ESS-AUTHOR-042` naming the field, the value and the branch
+  that mints it. Such an act was accepted, and its suite then passed only where the
+  implementation happened to mint that value. It covers an event's payload and an error's fields
+  where every branch that can publish them marks the field `{generated: true}` (or
+  `{generated: true, present: true}`, or `{input: f, else: {generated: true}}` where the act sends
+  no `f`, or a struct leaf marked so), and a view row's stored field where every branch the
+  scenario reaches writes it so, including through `{payload: <Event>.<field>}`, and no `setup:`
+  states it. A reference (`{$observed: …}`, `{$instance: …}`) is still accepted, and so is the
+  field left out, whose presence and type the suite still checks. The Rust, Go, TypeScript and
+  browser coverage readers admit the new code (https://github.com/beyond10x/ess/issues/544,
+  `docs/design/authored-generated-values.md`).
 - `ess generate synthesize --target go` emits a module that builds when bounded contexts reference
   each other in a loop, for example a command outcome in `publish` refusing with an error declared
   in `session`, `session` referencing `subscription`, and `subscription` referencing a type of
