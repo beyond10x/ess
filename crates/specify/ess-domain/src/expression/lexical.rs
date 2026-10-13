@@ -671,7 +671,8 @@ pub(crate) fn slot<'a>(
             outcome: name,
             place,
         } => match selection_at(outcome(commands, command, name)?, place)? {
-            crate::command::PayloadSource::RelatedSelection { selection, .. } => {
+            crate::command::PayloadSource::RelatedSelection { selection, .. }
+            | crate::command::PayloadSource::RelatedHead { selection, .. } => {
                 Some(&mut selection.filter)
             }
             _ => None,
@@ -1182,11 +1183,15 @@ fn selections(outcome: &serde_yaml::Value) -> Vec<(Vec<String>, serde_yaml::Valu
         };
         if let (1, Some(Value::Mapping(related))) = (mapping.len(), mapping.get("related")) {
             let keys: Vec<&str> = related.keys().filter_map(Value::as_str).collect();
-            if keys.len() == 3
+            let filtered = keys.len() == 3
                 && ["entity", "where", "field"]
                     .iter()
-                    .all(|key| keys.contains(key))
-            {
+                    .all(|key| keys.contains(key));
+            // The head of an ordered selection (ess/25, beyond10x/ess#543): a list `order_by`.
+            let ordered = keys.contains(&"entity")
+                && keys.contains(&"where")
+                && matches!(related.get("order_by"), Some(Value::Sequence(_)));
+            if filtered || ordered {
                 if let Some(filter) = related.get("where") {
                     found.push((place.clone(), filter.clone()));
                 }
@@ -1263,7 +1268,11 @@ fn selection_at<'a>(
             .find(|field| field.target == *member)?
             .source;
     }
-    matches!(source, PayloadSource::RelatedSelection { .. }).then_some(source)
+    matches!(
+        source,
+        PayloadSource::RelatedSelection { .. } | PayloadSource::RelatedHead { .. }
+    )
+    .then_some(source)
 }
 
 /// [`selection_at`], to read: the selector of the filtered read at `place` in `outcome`.
@@ -1294,7 +1303,8 @@ fn selection_in<'a>(
         source = &fields.iter().find(|field| field.target == *member)?.source;
     }
     match source {
-        PayloadSource::RelatedSelection { selection, .. } => Some(selection),
+        PayloadSource::RelatedSelection { selection, .. }
+        | PayloadSource::RelatedHead { selection, .. } => Some(selection),
         _ => None,
     }
 }
