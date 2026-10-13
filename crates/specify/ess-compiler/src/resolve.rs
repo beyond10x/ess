@@ -2714,7 +2714,7 @@ impl<'a> Resolver<'a> {
     }
 
     /// One determined field: the source resolved, and the two types checked against each other.
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
     fn payload_field(
         &mut self,
         command: &CommandSpec,

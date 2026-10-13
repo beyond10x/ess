@@ -334,6 +334,10 @@ pub(super) fn validate_affect(
 
 /// One source against the field it fills. `depth` counts nested mappings; a top-level source that
 /// existed before `ess/14` is checked elsewhere and only its `subject.` spelling is read here.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one arm per source kind, each delegating to its own check"
+)]
 fn check(
     context: &Context<'_>,
     at: &ConstructRef,
