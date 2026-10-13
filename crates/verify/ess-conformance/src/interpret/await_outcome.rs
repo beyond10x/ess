@@ -49,14 +49,13 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use ess_compiler::ir::{
-    EssIr, ResolvedCommand, ResolvedCondition, ResolvedInstance, ResolvedRelatedVia,
-};
+use ess_compiler::ir::{EssIr, ResolvedCommand, ResolvedCondition, ResolvedRelatedVia};
 use ess_domain::name::QualifiedName;
 use ess_primitives::node::Node;
 
 use super::execute::{self, Externals, Step, Store};
 use super::{refusal, response, Interpreted};
+use crate::system_issued::Unaddressed;
 use crate::target::{AwaitAnswer, AwaitRequest, TargetError};
 
 /// The most combinations of decided inputs one await executes. Beyond it the answer is
@@ -288,38 +287,21 @@ fn awaited<'m>(
     Ok((command, identity))
 }
 
-/// The input every outcome that addresses an existing record names as its `instance:`.
+/// The input every outcome that addresses an existing record names as its `instance:`
+/// ([`crate::system_issued::identity_input`], the rule synthesis writes the await by).
 fn identity_input(command: &ResolvedCommand) -> Result<&str, String> {
-    let mut named = BTreeSet::new();
-    for outcome in &command.outcomes {
-        match outcome.subject.as_ref().map(|subject| &subject.instance) {
-            Some(ResolvedInstance::Supplied { field }) => {
-                named.insert(field.name.as_str());
-            }
-            Some(ResolvedInstance::Observed { .. }) => {
-                return Err(format!(
-                    "outcome `{}` creates a record, and awaiting a system-issued command that \
-                     creates one is not interpreted (stage 1 awaits a step on an existing record)",
-                    outcome.name
-                ));
-            }
-            None => {}
-        }
-    }
-    let mut named = named.into_iter();
-    match (named.next(), named.next()) {
-        (Some(field), None) => Ok(field),
-        (None, _) => Err(
-            "no outcome addresses an existing record through `instance:`, so there is no instance \
-             to await"
-                .to_owned(),
+    crate::system_issued::identity_input(command).map_err(|unaddressed| match unaddressed {
+        Unaddressed::Creates { outcome } => format!(
+            "outcome `{outcome}` creates a record, and awaiting a system-issued command that \
+             creates one is not interpreted (stage 1 awaits a step on an existing record)"
         ),
-        (Some(_), Some(_)) => Err(
-            "its outcomes address records through different inputs, so the awaited instance names \
-             no one input"
-                .to_owned(),
-        ),
-    }
+        Unaddressed::NoInstance => "no outcome addresses an existing record through `instance:`, \
+                                    so there is no instance to await"
+            .to_owned(),
+        Unaddressed::SeveralInputs { .. } => "its outcomes address records through different \
+                                              inputs, so the awaited instance names no one input"
+            .to_owned(),
+    })
 }
 
 /// Each input a `when_related:` guard reads through the input, with the entity whose identity it

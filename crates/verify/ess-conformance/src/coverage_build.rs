@@ -465,7 +465,9 @@ fn generated_effect(cause: &crate::RefusalCause) -> Effect {
         | RefusalCause::WitnessRejected(_)
         | RefusalCause::PrecedenceContradicted { .. }
         | RefusalCause::BindingUnobservable { .. }
-        | RefusalCause::ValueInvariantUnwitnessed { .. } => Effect::CandidateNotEmitted,
+        | RefusalCause::ValueInvariantUnwitnessed { .. }
+        | RefusalCause::SystemIssuedUnaddressed { .. }
+        | RefusalCause::SystemDecidedRefusal { .. } => Effect::CandidateNotEmitted,
     }
 }
 fn authored_refusal(
@@ -561,7 +563,8 @@ fn coverage_version(
     // the constrained one included.
     // A system-issued command's await vocabulary (beyond10x/ess#542) is cumulative over every
     // pair below, the opened one included.
-    let awaited = crate::system_issued::coverage_floor(suite).is_some();
+    let awaited = crate::system_issued::coverage_floor(suite).is_some()
+        || crate::system_issued::refused_in(inventory);
     let opened = crate::undeclared_fields::coverage_floor(suite).is_some();
     let constrained = crate::direct_response::constrained_coverage_floor(suite).is_some();
     let counted = crate::event_multiplicity::coverage_floor(suite).is_some();

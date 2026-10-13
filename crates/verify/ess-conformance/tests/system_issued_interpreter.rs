@@ -9,7 +9,7 @@
 //! answer. No candidate reaching means nothing was issued; candidates reaching different accepting
 //! branches, or a compared input the model does not determine, mean unsupported.
 //!
-//! No synthesized suite awaits yet (unit U-4), so every await step here is written by hand.
+//! The await steps here are written by hand; `system_issued_synthesis.rs` runs synthesized ones.
 
 use std::collections::{BTreeMap, BTreeSet};
 

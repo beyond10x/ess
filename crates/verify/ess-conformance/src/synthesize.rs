@@ -200,6 +200,7 @@ mod seeds;
 mod set_effects;
 mod singleton;
 mod subject_fact;
+mod system_issued;
 mod view_grant;
 
 pub use seeds::{AdmittedSeeds, SeedAdmissionError, SeedSelection};
@@ -1020,7 +1021,45 @@ pub enum RefusalCause {
         /// The input the step sends, by field, as it reads.
         input: String,
     },
+    /// A scenario needs a step of a command the system issues itself whose outcome addresses no
+    /// existing record — it creates one, or it names no `instance:` — so there is no instance to
+    /// await its outcome on, and the command is never driven in its place (beyond10x/ess#542,
+    /// `docs/design/system-issued-commands.md`, *The instance*).
+    SystemIssuedUnaddressed {
+        /// The system-issued command.
+        command: CommandRef,
+        /// Why it names no one existing record.
+        reason: crate::system_issued::Unaddressed,
+    },
+    /// A refusal of a command the system issues itself that its input, or the rows its input
+    /// names, decides (beyond10x/ess#542, *Which branches a scenario can claim*): the system
+    /// chooses that input, so a refusal another choice would avoid is not an obligation a scenario
+    /// can claim.
+    SystemDecidedRefusal {
+        /// The refusing branch.
+        outcome: OutcomeRef,
+        /// What decides it, as the specification spells it.
+        decided_by: &'static str,
+    },
 }
+
+/// `RefusalCause::SystemIssuedUnaddressed`'s number in the `SYNTH` family, the next after
+/// [`CHILD_UNWITNESSED`] (beyond10x/ess#542).
+pub const SYSTEM_ISSUED_UNADDRESSED: u16 = 23;
+
+/// `RefusalCause::SystemDecidedRefusal`'s number in the `SYNTH` family, the next after
+/// [`SYSTEM_ISSUED_UNADDRESSED`] (beyond10x/ess#542).
+pub const SYSTEM_DECIDED_REFUSAL: u16 = 24;
+
+/// The repair for a system-issued step with no existing record to await (beyond10x/ess#542).
+const UNADDRESSED_REPAIR: &str = "a step the system takes to create a record, or over rows with \
+     no subject, is not awaited in this release; grant the command to a caller as well to keep it \
+     driven, or move the step onto an existing record that its outcomes name with `instance:`";
+
+/// The repair for a refusal of a system-issued command its input decides (beyond10x/ess#542).
+const SYSTEM_DECIDED_REPAIR: &str = "cover the refusal with an authored scenario \
+     (ess-scenario/1) that arranges the rows the system chooses among, so that every choice is \
+     refused, and expects nothing to be issued";
 
 /// `RefusalCause::PrecedenceContradicted`'s number in the `SYNTH` family, the next after
 /// [`COUNT_UNWITNESSED`].
@@ -1246,6 +1285,8 @@ impl RefusalCause {
             }
             Self::AbsenceUnwitnessed { .. } => ABSENCE_REPAIR,
             Self::ChildUnwitnessed { .. } => CHILD_REPAIR,
+            Self::SystemIssuedUnaddressed { .. } => UNADDRESSED_REPAIR,
+            Self::SystemDecidedRefusal { .. } => SYSTEM_DECIDED_REPAIR,
         }
     }
 }
@@ -1394,6 +1435,15 @@ crate::authored::diagnostic_catalogue! {
             "No input was found where one child of an `any`/`all` alone decides it and it decides \
              the guard; the branch's scenario stands without that input.",
             CHILD_REPAIR;
+        Self::SystemIssuedUnaddressed { .. } => SYSTEM_ISSUED_UNADDRESSED,
+            "A command the system issues itself, whose outcome addresses no existing record \
+             (`creates:`, or no `instance:`), has no awaited scenario, and is not driven in its \
+             place.",
+            UNADDRESSED_REPAIR;
+        Self::SystemDecidedRefusal { .. } => SYSTEM_DECIDED_REFUSAL,
+            "A refusal of a command the system issues itself is decided by its input, or by rows \
+             its input names, which the system chooses; no scenario claims it.",
+            SYSTEM_DECIDED_REPAIR;
     }
 }
 
@@ -1542,6 +1592,20 @@ impl fmt::Display for RefusalCause {
             Self::ChildUnwitnessed { predicate, tried } => write!(
                 f,
                 "no solved candidate of the {tried} tried satisfies `{predicate}`"
+            ),
+            Self::SystemIssuedUnaddressed { command, reason } => write!(
+                f,
+                "`{command}` is issued by the system itself, and {reason}; a scenario awaits a \
+                 system-issued step on an existing record and never drives one"
+            ),
+            Self::SystemDecidedRefusal {
+                outcome,
+                decided_by,
+            } => write!(
+                f,
+                "`{outcome}` refuses a step the system issues itself, and {decided_by} decides \
+                 it: the system chooses that input, so a refusal another choice would avoid is \
+                 not observable as an obligation"
             ),
             Self::InvariantUnobservable { .. } => invariant_unobservable(f, self),
             Self::ValueInvariantUnwitnessed {
@@ -2261,17 +2325,22 @@ fn synthesize_in(ir: &EssIr, seeds: &AdmittedSeeds) -> Synthesis {
 /// naming a scenario the suite does not hold points at nothing.
 fn withdraw(synthesis: &mut Synthesis, id: &ScenarioId, cause: RefusalCause) {
     synthesis.suite.scenarios.remove(id);
-    synthesis.notes.retain(|note| match note {
+    synthesis.notes.retain(|note| !about_scenario(note, id));
+    synthesis.refusals.push(Refusal::about(id, cause));
+}
+
+/// Whether `note` is about the scenario `id`.
+fn about_scenario(note: &Note, id: &ScenarioId) -> bool {
+    match note {
         Note::PartialObservation { scenario, .. }
         | Note::UnseparatedSources { scenario, .. }
         | Note::UnwitnessedOverlap { scenario, .. }
         | Note::UnswappedCallers { scenario, .. }
         | Note::CrossCallerUnswapped { scenario, .. }
         | Note::CrossCallerUnwitnessed { scenario, .. }
-        | Note::UnaccompaniedRelatedCopy { scenario, .. } => scenario != id,
-        _ => true,
-    });
-    synthesis.refusals.push(Refusal::about(id, cause));
+        | Note::UnaccompaniedRelatedCopy { scenario, .. } => scenario == id,
+        _ => false,
+    }
 }
 
 /// Which scenarios a synthesis writes.
@@ -2454,6 +2523,13 @@ fn synthesize_invocations(models: &caller::InvocationModels<'_>, focus: Focus<'_
                 });
             }
         }
+    }
+    // A command the system issues itself is awaited, never driven: the last rewrite of the suite,
+    // over every family's scenarios and the grant refusals built from them (beyond10x/ess#542).
+    for (id, cause) in system_issued::await_system_issued(ir, &mut suite) {
+        notes.retain(|note| !about_scenario(note, &id));
+        refusals.retain(|refusal| !(refusal.stands && refusal.scenario.as_ref() == Some(&id)));
+        refusals.push(Refusal::about(&id, cause));
     }
     suite.select_fresh_format_for(ir);
 
