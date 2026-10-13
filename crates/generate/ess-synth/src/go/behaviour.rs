@@ -1738,6 +1738,39 @@ impl Locals {
     }
 }
 
+/// The locals one pinned `affects:` entry's read and change use (ess/25, beyond10x/ess#547),
+/// numbered by the entry's position so the read and the change name the same ones.
+struct Affected {
+    row: String,
+    identity: String,
+    read: String,
+    found: String,
+    next: String,
+    gone: String,
+    refined: String,
+    moved: String,
+    instance: String,
+    changed: String,
+}
+
+impl Affected {
+    fn new(reserved: &BTreeSet<String>, index: usize) -> Self {
+        let local = |base: &str| fresh(reserved, &format!("{base}{index}"));
+        Self {
+            row: local("affected"),
+            identity: local("affectedIdentity"),
+            read: local("affectedRow"),
+            found: local("affectedFound"),
+            next: local("affectedNext"),
+            gone: local("affectedGone"),
+            refined: local("affectedRefined"),
+            moved: local("affectedMoved"),
+            instance: local("affectedInstance"),
+            changed: local("affectedChanged"),
+        }
+    }
+}
+
 /// Everything rendering one command's method needs.
 struct Writer<'a> {
     ir: &'a EssIr,
@@ -2839,9 +2872,15 @@ impl<'a> Writer<'a> {
                 self.lines.close("}");
                 let held_row = self.locals.held.clone();
                 self.lines.push(&format!("_ = {held_row}"));
+                self.affected_reads(outcome, entity, &identity);
                 let storage = self.storage(&entity.name);
                 let receiver = self.receiver;
-                let reads_before = outcome_reads_before(outcome);
+                let reads_before = outcome_reads_before(outcome)
+                    || outcome
+                        .affects
+                        .iter()
+                        .flat_map(|affect| &affect.sets)
+                        .any(|set| reads_subject(&set.value));
                 let reads_state = outcome_reads_state(outcome);
                 let before = self.locals.before.clone();
                 let mut commit = None;
@@ -2917,11 +2956,17 @@ impl<'a> Writer<'a> {
                         unreachable!("a creation whose identity is supplied is an obligation")
                     }
                 }
+                let affected = self.affected_changes(outcome, entity);
                 let answer = self.variant(outcome, held, None);
                 let prepared = self.temp("answer");
                 self.lines.push(&format!("{prepared} := {answer}"));
                 if let Some(commit) = commit {
                     self.lines.push(&commit);
+                }
+                for (open, write) in affected {
+                    self.lines.open(&open);
+                    self.lines.push(&write);
+                    self.lines.close("}");
                 }
                 self.lines.push(&format!("return {prepared}, nil"));
             }
@@ -2929,6 +2974,220 @@ impl<'a> Writer<'a> {
                 unreachable!("an observed identity outside `creates:` is an obligation")
             }
         }
+    }
+
+    /// The rows `outcome`'s `affects:` entries pin (ess/25, beyond10x/ess#547, D5), each read by
+    /// identity through its entity's storage port into `affected<n>`, a pointer nil where no row is
+    /// read: from the subject `held` as it was before the outcome, or from the input, before
+    /// anything is written. An absent reference, an identity no row carries and, over the
+    /// subject's own entity, the subject's own identity read none. `subject` is the subject's
+    /// entity and `identity` the input member naming it.
+    fn affected_reads(
+        &mut self,
+        outcome: &ResolvedOutcome,
+        subject: &ResolvedEntity,
+        identity: &str,
+    ) {
+        let subject_entity = &outcome
+            .subject
+            .as_ref()
+            .expect("an `affects:` branch has a subject")
+            .entity;
+        for (index, affect) in outcome.affects.iter().enumerate() {
+            let filter = affect
+                .filter
+                .as_ref()
+                .expect("a generated `affects:` entry has a filter");
+            let pin = determined::pin(self.ir, &affect.entity, filter)
+                .expect("a generated `affects:` entry pins the identity");
+            let declared = self.ir.entity(&affect.entity);
+            let storage = self.storage(&declared.name);
+            let snapshot = self.emit.qualify(
+                self.emit.layout.package_of(&declared.name),
+                self.emit.layout.snapshot(&declared.name),
+            );
+            let (member, optional, operand) = match pin.source {
+                determined::PinSource::Subject(field) => (
+                    format!(
+                        "{}.Data.{}",
+                        self.locals.held,
+                        Self::data_member(subject, field)
+                    ),
+                    subject
+                        .field(field)
+                        .is_some_and(|field| field.type_ref.is_optional()),
+                    format!("subject.{field}"),
+                ),
+                determined::PinSource::Input(field) => (
+                    self.input_member(field),
+                    self.command
+                        .input
+                        .iter()
+                        .any(|input| input.name == field && input.type_ref.is_optional()),
+                    format!("input.{field}"),
+                ),
+            };
+            let reference = if optional {
+                member
+            } else {
+                format!("&{member}")
+            };
+            let names = Affected::new(self.reserved, index);
+            self.lines.push(&format!(
+                "// `affects[{index}]`: the `{}` row `{operand}` names, read through its storage port",
+                declared.name
+            ));
+            self.lines
+                .push("// before any write; a reference naming no row changes nothing.");
+            self.lines.push(&format!("var {} *{snapshot}", names.row));
+            self.lines
+                .push(&format!("{} := {reference}", names.identity));
+            // Every `affects:` entry excepts the subject (`set-effects-over-filtered-instances.md`).
+            let except = if affect.entity == *subject_entity {
+                format!(" && *{} != {identity}", names.identity)
+            } else {
+                String::new()
+            };
+            self.lines
+                .open(&format!("if {} != nil{except} {{", names.identity));
+            self.lines.push(&format!(
+                "{}, {} := {}.ports.{storage}.Get(*{})",
+                names.read, names.found, self.receiver, names.identity
+            ));
+            self.lines.open(&format!("if {} {{", names.found));
+            self.lines.push(&format!("{} = &{}", names.row, names.read));
+            self.lines.close("}");
+            self.lines.close("}");
+        }
+    }
+
+    /// What each row [`Self::affected_reads`] read becomes, computed before any write — the other
+    /// conjuncts hold on it, a move takes it from one of its `from` states, `sets:` is written and
+    /// the entity's invariants checked — and the writes, each an opening line and the statement it
+    /// guards, which the caller emits after the subject's own write in the order the entries are
+    /// written: `Put`, or `Delete` for `deletes:`. A row the other conjuncts leave out, or resting
+    /// outside the move's `from` states, is left as it is. `subject` is the subject's entity, which
+    /// a `sets:` source reading the subject reads as it was before the outcome.
+    #[allow(clippy::too_many_lines)] // One entry: its selection, its move or removal, its writes.
+    fn affected_changes(
+        &mut self,
+        outcome: &ResolvedOutcome,
+        subject: &ResolvedEntity,
+    ) -> Vec<(String, String)> {
+        let command = self.command;
+        let mut writes = Vec::new();
+        for (index, affect) in outcome.affects.iter().enumerate() {
+            let filter = affect
+                .filter
+                .as_ref()
+                .expect("a generated `affects:` entry has a filter");
+            let pin = determined::pin(self.ir, &affect.entity, filter)
+                .expect("a generated `affects:` entry pins the identity");
+            let declared = self.ir.entity(&affect.entity);
+            let storage = self.storage(&declared.name);
+            let snapshot = self.emit.qualify(
+                self.emit.layout.package_of(&declared.name),
+                self.emit.layout.snapshot(&declared.name),
+            );
+            let names = Affected::new(self.reserved, index);
+            let receiver = self.receiver;
+            if affect.deletes {
+                self.lines.push(&format!("{} := false", names.gone));
+            } else {
+                self.lines.push(&format!("var {} *{snapshot}", names.next));
+            }
+            self.lines.open(&format!("if {} != nil {{", names.row));
+            let truths: Vec<String> = pin
+                .rest
+                .iter()
+                .map(|conjunct| {
+                    self.predicate(&Env::Subject(command, declared), conjunct, &names.row)
+                })
+                .collect();
+            let depth = match truths.as_slice() {
+                [] => 0,
+                [only] => {
+                    self.uses.helpers.insert("truth");
+                    self.lines.open(&format!("if {only} == verity {{"));
+                    1
+                }
+                _ => {
+                    self.uses.helpers.insert("truth");
+                    self.uses.helpers.insert("allOf");
+                    self.lines
+                        .open(&format!("if allOf({}) == verity {{", truths.join(", ")));
+                    1
+                }
+            };
+            if affect.deletes {
+                self.lines.push(&format!("{} = true", names.gone));
+            } else {
+                let start = match &affect.moves {
+                    Some(transition) => {
+                        let any = self.emit.qualify(
+                            self.emit.layout.package_of(&declared.name),
+                            self.emit.layout.any(&declared.name),
+                        );
+                        self.lines
+                            .push(&format!("{}, _ := {}.Refine()", names.refined, names.row));
+                        self.lines.push(&format!("var {} {any}", names.moved));
+                        self.lines.push(&format!(
+                            "switch {} := {}.(type) {{",
+                            names.instance, names.refined
+                        ));
+                        for from in &transition.from {
+                            let state = self.emit.qualify(
+                                self.emit.layout.package_of(&declared.name),
+                                self.emit.layout.state(&declared.name, from.as_str()),
+                            );
+                            self.lines.push(&format!("case {state}:"));
+                            self.lines.push(&format!(
+                                "\t{} = {}.{}()",
+                                names.moved,
+                                names.instance,
+                                name::exported(&transition.name)
+                            ));
+                        }
+                        self.lines.push("}");
+                        self.lines.open(&format!("if {} != nil {{", names.moved));
+                        format!("{}.Snapshot()", names.moved)
+                    }
+                    None => format!("*{}", names.row),
+                };
+                self.lines.push(&format!("{} := {start}", names.changed));
+                let before = self.locals.before.clone();
+                for set in &affect.sets {
+                    let value = self.value(set, Some((&before, subject)));
+                    self.lines.push(&format!(
+                        "{}.Data.{} = {value}",
+                        names.changed,
+                        Self::data_member(declared, &set.target)
+                    ));
+                }
+                self.invariant_check(declared, &format!("{}.Data", names.changed));
+                self.lines
+                    .push(&format!("{} = &{}", names.next, names.changed));
+                if affect.moves.is_some() {
+                    self.lines.close("}");
+                }
+            }
+            for _ in 0..depth {
+                self.lines.close("}");
+            }
+            self.lines.close("}");
+            writes.push(if affect.deletes {
+                (
+                    format!("if {} {{", names.gone),
+                    format!("{receiver}.ports.{storage}.Delete(*{})", names.identity),
+                )
+            } else {
+                (
+                    format!("if {} != nil {{", names.next),
+                    format!("{receiver}.ports.{storage}.Put(*{})", names.next),
+                )
+            });
+        }
+        writes
     }
 
     /// Whether the wrong-state answer reads the held state, and whether it reads stored fields.

@@ -187,8 +187,9 @@ fn adv_integer_member_alone_is_refused_as_unscoped() {
 // ---- the `instances: {where:}` sibling ----------------------------------------------------------
 
 /// `SealRegion {region}` seals every shelf of a region: a bulk update whose `where:` reads a member
-/// of the struct identity (the sibling the story names). Validate refuses it (`unobservable_fact`:
-/// the identity is no observable root of a bulk `where:`), so no synthesis gate is reached.
+/// of the struct identity (the sibling the story names). Below ess/25 validate refuses it, naming
+/// the format a set effect's filter reads the identity from (beyond10x/ess#547), so no synthesis
+/// gate is reached; from ess/25 it is admitted and witnessed decisively.
 #[test]
 fn adv_bulk_update_where_on_identity_member() {
     let bulk = |filter: &str| {
@@ -213,7 +214,33 @@ fn adv_bulk_update_where_on_identity_member() {
     let raw = RawSpecFile::parse(&bulk("at.region == input.region")).expect("parses");
     let errors = Specification::assemble([(Source::new("shelves.yaml"), raw)])
         .expect_err("a bulk `where:` reading a member of the identity is refused at validate");
-    assert!(errors.to_string().contains("unobservable_fact"), "{errors}");
+    assert!(
+        errors.to_string().contains("unsupported_format_version")
+            && errors.to_string().contains("ess/25")
+            && !errors.to_string().contains("unobservable_fact"),
+        "{errors}"
+    );
+    // From ess/25 a set effect's filter reads the identity (beyond10x/ess#547, D1). The identity
+    // is supplied by `OpenShelf`'s input, so rows are arranged on both sides of the member filter,
+    // and a target sealing every shelf, or none, fails the branch.
+    let at_25 = |filter: &str| bulk(filter).replacen("format: ess/23", "format: ess/25", 1);
+    let suite = passing_suite(&at_25("at.region == input.region"));
+    let sealed_all = "demo.vault.SealRegion/outcome/sealed-all";
+    assert!(
+        suite
+            .scenarios
+            .keys()
+            .any(|id| id.to_string() == sealed_all),
+        "the bulk update is witnessed"
+    );
+    for mutant in ["at.shelf == input.region", "at.region != input.region"] {
+        assert!(
+            failed_by(&suite, &at_25(mutant))
+                .iter()
+                .any(|id| id == sealed_all),
+            "a target selecting by `{mutant}` fails the branch"
+        );
+    }
 }
 
 // ---- the Go and TypeScript runtimes on the new fixture ----------------------------------------
