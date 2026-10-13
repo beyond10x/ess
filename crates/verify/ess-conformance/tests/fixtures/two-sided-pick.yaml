@@ -1,0 +1,145 @@
+format: ess/22
+system: demo
+version: v1
+domain: demo.sides
+summary: Pairs the one waiting element of each side of a slot, read through two selectors in one command.
+types:
+  - {name: demo.sides.MembershipId, kind: newtype, of: Uuid}
+  - {name: demo.sides.PairId, kind: newtype, of: Uuid}
+  - {name: demo.sides.Side, kind: enum, variants: [Left, Right]}
+entities:
+  - name: demo.sides.Membership
+    identity: {name: membership_id, type: demo.sides.MembershipId}
+    fields:
+      - {name: slot_id, type: String}
+      - {name: side, type: demo.sides.Side}
+      - {name: element_key, type: String}
+    lifecycle:
+      initial: Present
+      states: [Present, Removed]
+      terminal: [Removed]
+      transitions:
+        - {name: remove, from: [Present], to: Removed}
+  - name: demo.sides.Pair
+    identity: {name: pair_id, type: demo.sides.PairId}
+    fields:
+      - {name: slot_id, type: String}
+      - {name: left_key, type: String}
+      - {name: right_key, type: String}
+    lifecycle:
+      initial: Open
+      states: [Open, Done]
+      terminal: [Done]
+      transitions:
+        - {name: finish, from: [Open], to: Done}
+errors:
+  - {name: demo.sides.LeftEmpty, summary: No element waits on the left side of the slot., fields: []}
+  - {name: demo.sides.RightEmpty, summary: No element waits on the right side of the slot., fields: []}
+events:
+  - name: demo.sides.Joined
+    fields:
+      - {name: membership_id, type: demo.sides.MembershipId}
+  - name: demo.sides.Paired
+    fields:
+      - {name: pair_id, type: demo.sides.PairId}
+      - {name: left_key, type: String}
+      - {name: right_key, type: String}
+  - name: demo.sides.Left
+    fields:
+      - {name: membership_id, type: demo.sides.MembershipId}
+  - name: demo.sides.Finished
+    fields:
+      - {name: pair_id, type: demo.sides.PairId}
+views:
+  - name: demo.sides.Pairs
+    source: demo.sides.Pair
+    consistency: read_your_writes
+    fields:
+      - {name: pair_id, type: demo.sides.PairId}
+      - {name: slot_id, type: String}
+      - {name: left_key, type: String}
+      - {name: right_key, type: String}
+commands:
+  - name: demo.sides.Join
+    input:
+      - {name: membership_id, type: demo.sides.MembershipId}
+      - {name: slot_id, type: String}
+      - {name: side, type: demo.sides.Side}
+      - {name: element_key, type: String}
+    outcomes:
+      - name: joined
+        creates: demo.sides.Membership
+        instance: membership_id
+        sets:
+          slot_id: input.slot_id
+          side: input.side
+          element_key: input.element_key
+        emits: [demo.sides.Joined]
+        payload:
+          demo.sides.Joined: {membership_id: input.membership_id}
+  - name: demo.sides.Pick
+    input:
+      - {name: pair_id, type: demo.sides.PairId}
+      - {name: slot_id, type: String}
+    outcomes:
+      - name: left-empty
+        when_related:
+          entity: demo.sides.Membership
+          where: {all: [slot_id == input.slot_id, side == Left, state == Present]}
+          exists: false
+        error: demo.sides.LeftEmpty
+      - name: right-empty
+        when_related:
+          entity: demo.sides.Membership
+          where: {all: [slot_id == input.slot_id, side == Right, state == Present]}
+          exists: false
+        error: demo.sides.RightEmpty
+      - name: picked
+        creates: demo.sides.Pair
+        instance: pair_id
+        sets:
+          slot_id: input.slot_id
+          left_key:
+            related:
+              entity: demo.sides.Membership
+              where: {all: [slot_id == input.slot_id, side == Left, state == Present]}
+              field: element_key
+          right_key:
+            related:
+              entity: demo.sides.Membership
+              where: {all: [slot_id == input.slot_id, side == Right, state == Present]}
+              field: element_key
+        emits: [demo.sides.Paired]
+        payload:
+          demo.sides.Paired:
+            pair_id: input.pair_id
+            left_key:
+              related:
+                entity: demo.sides.Membership
+                where: {all: [slot_id == input.slot_id, side == Left, state == Present]}
+                field: element_key
+            right_key:
+              related:
+                entity: demo.sides.Membership
+                where: {all: [slot_id == input.slot_id, side == Right, state == Present]}
+                field: element_key
+  - name: demo.sides.Leave
+    input:
+      - {name: membership_id, type: demo.sides.MembershipId}
+    outcomes:
+      - name: left
+        moves: demo.sides.Membership.remove
+        instance: membership_id
+        emits: [demo.sides.Left]
+        payload:
+          demo.sides.Left: {membership_id: input.membership_id}
+  - name: demo.sides.Finish
+    input:
+      - {name: pair_id, type: demo.sides.PairId}
+    outcomes:
+      - name: finished
+        moves: demo.sides.Pair.finish
+        instance: pair_id
+        emits: [demo.sides.Finished]
+        payload:
+          demo.sides.Finished: {pair_id: input.pair_id}

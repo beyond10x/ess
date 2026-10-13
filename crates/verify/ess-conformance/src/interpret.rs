@@ -68,6 +68,7 @@ mod protected;
 mod response;
 mod setup;
 mod views;
+pub(crate) use views::compare as rank_compare;
 
 use std::cell::RefCell;
 
