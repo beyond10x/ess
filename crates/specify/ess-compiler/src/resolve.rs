@@ -3174,6 +3174,7 @@ impl<'a> Resolver<'a> {
         let PayloadSource::RelatedHead {
             selection,
             order_by,
+            ties,
             first,
             ..
         } = source
@@ -3209,6 +3210,7 @@ impl<'a> Resolver<'a> {
                     filter: selection.filter.clone(),
                 },
                 order_by: order_by.clone(),
+                ties: *ties,
                 field: read.name.clone(),
                 type_ref: read.type_ref.clone(),
             },

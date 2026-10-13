@@ -75,6 +75,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use ess_domain::binding::{BindingName, Delivery, Failure};
+use ess_domain::command::ordered_head::Ties;
 use ess_domain::command::{OutcomeName, TestStrategy};
 use ess_domain::component::{environment_variable, CliName, ComponentName, Reach};
 use ess_domain::entity::{
@@ -1226,15 +1227,21 @@ pub enum ResolvedPayloadValue {
     /// before this outcome (ess/25, beyond10x/ess#543, `docs/design/ordered-related-head.md`):
     /// `{related: {entity, where, order_by, first}}`.
     ///
-    /// `ess-domain` admitted the order only where it is total: the last key is the entity's
-    /// identity and no key follows it, every key a required, orderable field of the candidate row.
-    /// An empty selection supplies no value. A variant of its own, rather than an order on
-    /// [`Self::RelatedSelection`], so no reader of the exactly-one read takes a head for one.
+    /// `ess-domain` admitted the order only where it is total — the last key is the entity's
+    /// identity, a struct one ranked by its members in declaration order, and no key follows it —
+    /// or where it declares `ties: unordered` and holds no identity; every key a required,
+    /// orderable field of the candidate row. An empty selection supplies no value. A variant of
+    /// its own, rather than an order on [`Self::RelatedSelection`], so no reader of the
+    /// exactly-one read takes a head for one.
     RelatedHead {
         /// The entity and the predicate selecting its rows.
         selection: ResolvedRowSelection,
         /// The ranking keys, most significant first, written as a view's are.
         order_by: Vec<Ranking>,
+        /// How rows tying on every key rank: recorded only as `unordered`, so a total order's head
+        /// keeps its bytes.
+        #[serde(skip_serializing_if = "Ties::is_total")]
+        ties: Ties,
         /// The field of the head row read.
         field: String,
         /// The field's resolved type as declared.
@@ -1679,17 +1686,23 @@ impl ResolvedPayloadValue {
             Self::RelatedHead {
                 selection,
                 order_by,
+                ties,
                 field,
                 ..
             } => format!(
-                "{}.{field} of the first row by `{}` whose stored fields satisfy `{}` before the \
-                 outcome",
+                "{}.{field} of the first row by `{}`{} whose stored fields satisfy `{}` before \
+                 the outcome",
                 selection.entity.name(),
                 order_by
                     .iter()
                     .map(ToString::to_string)
                     .collect::<Vec<_>>()
                     .join(", "),
+                if ties.is_total() {
+                    ""
+                } else {
+                    " (rows tying on every key in no order the model fixes)"
+                },
                 selection.filter
             ),
             Self::ChangedCount => "how many rows the outcome changed".to_owned(),

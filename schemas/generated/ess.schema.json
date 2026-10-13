@@ -2605,6 +2605,14 @@
           },
           "minItems": 1
         },
+        "ties": {
+          "description": "`unordered` where rows tying on every key are in no order the model fixes; the order then need not end in the identity, and must not hold it.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^unordered$"
+        },
         "where": {
           "description": "What a candidate must satisfy: its fields bare, the input under `input.`, the addressed subject under `subject.`.",
           "allOf": [

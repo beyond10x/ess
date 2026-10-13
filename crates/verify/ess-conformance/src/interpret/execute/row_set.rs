@@ -12,6 +12,7 @@ use ess_compiler::ir::{
     ResolvedCommand, ResolvedCondition, ResolvedEffect, ResolvedEntity, ResolvedInstance,
     ResolvedRowSelection, ResolvedRowSetTest, ResolvedTypeRef, RowMember, Selected,
 };
+use ess_domain::command::ordered_head::Ties;
 use ess_domain::command::OutcomeName;
 use ess_domain::view::{Direction, Ranking};
 use ess_primitives::facts::FactSource;
@@ -175,14 +176,17 @@ impl<'a> Reader<'a> {
     /// `docs/design/ordered-related-head.md`), or why there is none to read.
     ///
     /// The rows are ranked with the comparator a view's order uses, so the two cannot disagree.
-    /// The order is total over the selected rows, its last key the identity, so exactly one is
-    /// first. Sound and deliberately weak over a history: a row whose membership is unknown, or a
-    /// selected row whose key the store does not hold, leaves the head undecidable, unless one row
-    /// is selected and no other may be.
+    /// A total order's last key is the identity, so exactly one row is first. Under `ties:
+    /// unordered` two rows may tie on every key and rank first, and then the head is the
+    /// implementation's choice: [`Undetermined::UnorderedTie`], and no row is picked. Sound and
+    /// deliberately weak over a history: a row whose membership is unknown, or a selected row
+    /// whose key the store does not hold, leaves the head undecidable, unless one row is selected
+    /// and no other may be.
     pub(super) fn head(
         &self,
         selection: &ResolvedRowSelection,
         order_by: &[Ranking],
+        ties: Ties,
     ) -> Result<(&'a Node, &'a Row), Undetermined> {
         let members = self.members(selection, None)?;
         let entity = self.ir.entity(&selection.entity);
@@ -256,9 +260,27 @@ impl<'a> Reader<'a> {
             }
             std::cmp::Ordering::Equal
         };
+        ranked.sort_by(|(.., left), (.., right)| order(left, right));
+        if let [(.., first), (.., second), ..] = ranked.as_slice() {
+            if order(first, second).is_eq() {
+                // Two rows rank first. A total order ends in the identity, which no two rows share,
+                // so a tie under one is no answer the model gives either.
+                if ties.is_total() {
+                    return Err(undecidable("two rows tie on every key"));
+                }
+                return Err(Undetermined::UnorderedTie {
+                    entity: entity.name.to_string(),
+                    order: order_by
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                });
+            }
+        }
         ranked
             .into_iter()
-            .min_by(|(.., left), (.., right)| order(left, right))
+            .next()
             .map(|(key, row, _)| (key, row))
             .ok_or_else(|| undecidable("no row is first"))
     }

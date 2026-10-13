@@ -266,6 +266,8 @@ use crate::scenario::{
 };
 use crate::synthesize::{payload_shape, reachable_types};
 
+mod ties;
+
 // ---- the diagnostic catalogue ------------------------------------------------------------------
 
 /// Declares a refusal type's diagnostic catalogue and the exhaustive match that maps a value to its
@@ -1333,6 +1335,22 @@ pub enum Cause {
         /// How the first of them marks it.
         marked: String,
     },
+    /// An act reads the head of an ordered selection declaring `ties: unordered`, and the rows the
+    /// scenario arranges tie on every key and rank first (beyond10x/ess#543,
+    /// `docs/design/ordered-related-head.md`, "Declared-unordered ties").
+    ///
+    /// The model leaves which of them is the head to the implementation, so any head the act claims
+    /// passes only where the implementation happens to pick it, and the model interpreter answers
+    /// `unsupported`. Decided by replaying the file's own literals; an act the replay cannot
+    /// follow claims nothing.
+    UnorderedTie {
+        /// The command the act invokes.
+        command: CommandRef,
+        /// The entity whose rows tie.
+        entity: String,
+        /// The ranking keys, as written.
+        order: String,
+    },
 }
 
 /// Whether `code` is one a refusal of one authored file can carry: every cause [`Cause::code`]
@@ -1880,7 +1898,7 @@ impl Cause {
     }
 }
 
-// One arm per cause, and long because there are forty-two of them. A reader comparing two
+// One arm per cause, and long because there are forty-three of them. A reader comparing two
 // repairs reads them side by side or not at all, and splitting the list would put half of it
 // somewhere else. The meaning is the variant's own first line of documentation.
 diagnostic_catalogue! {
@@ -2052,6 +2070,13 @@ diagnostic_catalogue! {
              suite still checks its presence and type, or state its relation to another value \
              with a reference, `{$observed: {event: …, field: …}}` in a view row or `capture:` \
              on the event";
+        Self::UnorderedTie { .. } => 43,
+            "An act reads the head of an order declaring `ties: unordered`, and the arranged rows \
+             tie on every key and rank first.",
+            "the model leaves the order of tying rows to the implementation, so a head chosen \
+             among them is no particular row: arrange the rows so that one ranks first on the \
+             keys alone, or declare a total order ending in the identity where the model fixes \
+             how ties break";
     }
 }
 
@@ -2144,6 +2169,16 @@ impl fmt::Display for Cause {
                     "{surface} pins `{field}` to {value}, a value {minting} {verb} {marked}"
                 )
             }
+            Self::UnorderedTie {
+                command,
+                entity,
+                order,
+            } => write!(
+                f,
+                "`{command}` reads the head of the `{entity}` rows ranked by `{order}`, and the \
+                 rows this scenario arranges tie on every key and rank first; the order declares \
+                 `ties: unordered`, so which is the head is the implementation's choice"
+            ),
             Self::UndeclaredEvent { event } => {
                 write!(f, "`{event}` is not an event this specification declares")
             }
@@ -2467,6 +2502,7 @@ pub(crate) fn compile_one(
         marked: BTreeMap::new(),
         row_writes: Vec::new(),
         steps: Vec::new(),
+        replay: ties::Replay::new(ir),
         source: BTreeSet::new(),
         types: BTreeSet::new(),
     };
@@ -2590,6 +2626,8 @@ struct Compiler<'a> {
     /// check against a minted value (beyond10x/ess#544).
     row_writes: Vec<RowWrite<'a>>,
     steps: Vec<ScenarioStep>,
+    /// The store the file's literals build, for a head its rows leave tied (beyond10x/ess#543).
+    replay: ties::Replay,
     source: BTreeSet<EssSemanticRef>,
     types: BTreeSet<DeclaredTypeRef>,
 }
@@ -2682,6 +2720,12 @@ impl<'a> Compiler<'a> {
                     entity: entity.name().clone(),
                     fields: setup.fields.keys().cloned().collect(),
                 });
+                self.replay.establish(
+                    entity.name().clone(),
+                    setup.identity.clone(),
+                    setup.fields.clone(),
+                    setup.state.clone(),
+                );
                 self.steps.push(ScenarioStep::EstablishEntity {
                     instance: arrangement.instance.clone(),
                     entity,
@@ -2753,6 +2797,7 @@ impl<'a> Compiler<'a> {
             actor,
             input,
         });
+        self.unordered_tie(&command_ref, command, act, sent.as_ref());
 
         self.expected_outcome(&command_ref, &outcomes, act);
         self.guarded_outcome(&command_ref, command, act, sent.as_ref());
@@ -2804,6 +2849,35 @@ impl<'a> Compiler<'a> {
             self.capture(capture);
         }
         self.mark(act);
+    }
+
+    /// Refuses an act whose head read, under `ties: unordered`, ranks two of the rows the file's
+    /// literals arrange first (beyond10x/ess#543). The replay stops at the file's first refusal
+    /// and at an input that is not wholly literal.
+    fn unordered_tie(
+        &mut self,
+        command_ref: &CommandRef,
+        command: &ResolvedCommand,
+        act: &Act,
+        sent: Option<&BTreeMap<String, ScenarioValue>>,
+    ) {
+        let input = match sent {
+            Some(input) if self.refusals.is_empty() => input,
+            _ => {
+                self.replay = ties::Replay::stopped();
+                return;
+            }
+        };
+        if let Some(tie) = self
+            .replay
+            .act(self.ir, command, input, act.outcome.as_deref())
+        {
+            self.refuse(Cause::UnorderedTie {
+                command: command_ref.clone(),
+                entity: tie.entity,
+                order: tie.order,
+            });
+        }
     }
 
     /// Arms the answer an act naming an external branch states, immediately before its call.

@@ -1826,6 +1826,7 @@ fn check_head(
     let PayloadSource::RelatedHead {
         selection,
         order_by,
+        ties,
         first,
         written,
     } = source
@@ -1837,35 +1838,9 @@ fn check_head(
         errors.push(ordered_head::below_ess_25(at));
         return;
     }
-    if let Some(conflict) = &written.conflict {
-        errors.push(ordered_head::conflict(at, conflict));
-        return;
-    }
-    if let Some(why) = &written.predicate {
-        errors.push(ValidationError::at(
-            at.clone(),
-            ValidationCode::TypeMismatch,
-            format!(
-                "the `where:` of `{{related: {{entity, where, order_by, first}}}}` is no \
-                 predicate: {why}"
-            ),
-        ));
-        return;
-    }
-    if !written.keys.is_empty() {
-        for (index, why) in &written.keys {
-            errors.push(
-                ValidationError::at(
-                    at.clone()
-                        .key("related")
-                        .key(ordered_head::ORDER_BY)
-                        .index(*index),
-                    ValidationCode::TypeMismatch,
-                    why.clone(),
-                )
-                .with_hint("write a ranking key as `<field>` or `<field> asc|desc`"),
-            );
-        }
+    let refused = ordered_head::written_refusals(at, written);
+    if !refused.is_empty() {
+        errors.extend(refused);
         return;
     }
     let Some(entity) = spec.entities().get(&selection.entity) else {
@@ -1901,7 +1876,7 @@ fn check_head(
         errors.extend(checked);
         return;
     }
-    let ordered = ordered_head::check_order(entity, &registry, order_by, at);
+    let ordered = ordered_head::check_order(entity, &registry, order_by, *ties, at);
     if !ordered.is_empty() {
         errors.extend(ordered);
         return;

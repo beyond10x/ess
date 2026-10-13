@@ -93,7 +93,7 @@ pub struct Store {
 
 impl Store {
     /// Establish already-validated upstream state without replacing an existing identity.
-    pub(super) fn establish(
+    pub(crate) fn establish(
         &mut self,
         entity: QualifiedName,
         identity: Node,
@@ -302,6 +302,15 @@ pub enum Undetermined {
         /// The invariant, as the author wrote it.
         invariant: String,
     },
+    /// Two rows a head read selects tie on every key of an order declaring `ties: unordered`, and
+    /// rank first: the model leaves which is the head to the implementation (ess/25,
+    /// beyond10x/ess#543, `docs/design/ordered-related-head.md`, "Declared-unordered ties").
+    UnorderedTie {
+        /// The entity whose rows tie.
+        entity: String,
+        /// The ranking keys, as written.
+        order: String,
+    },
 }
 
 impl Undetermined {
@@ -314,6 +323,7 @@ impl Undetermined {
                 | Self::NotInterpreted { .. }
                 | Self::NoValue { .. }
                 | Self::NoCaller { .. }
+                | Self::UnorderedTie { .. }
         )
     }
 }
@@ -347,6 +357,12 @@ impl fmt::Display for Undetermined {
             } => write!(
                 f,
                 "the model's own outcome leaves {instance} violating its invariant `{invariant}`"
+            ),
+            Self::UnorderedTie { entity, order } => write!(
+                f,
+                "two `{entity}` rows the selector selects tie on every key of `{order}` and rank \
+                 first, and the order declares `ties: unordered`: which is the head is the \
+                 implementation's choice"
             ),
         }
     }
@@ -2296,6 +2312,29 @@ fn value(
     Ok(value)
 }
 
+/// The value `field` reads from the first row its ordered selection ranks, in the store as it was
+/// before the outcome (ess/25, beyond10x/ess#543); none selected supplies no value, and a head tying
+/// under `ties: unordered` is [`Undetermined::UnorderedTie`].
+fn related_head(
+    ir: &EssIr,
+    field: &ResolvedPayloadField,
+    input: &Context<'_>,
+    work: &Work<'_>,
+) -> Result<Option<Value>, Undetermined> {
+    let ResolvedPayloadValue::RelatedHead {
+        selection,
+        order_by,
+        ties,
+        ..
+    } = &field.value
+    else {
+        unreachable!("only a head read reads the head of an ordered selection");
+    };
+    let reader = row_set::Reader::new(ir, work.command, work.original, input)?;
+    let (key, row) = reader.head(selection, order_by, *ties)?;
+    values::selected(ir, field, ir.entity(&selection.entity), key, row)
+}
+
 fn value_at(
     ir: &EssIr,
     field: &ResolvedPayloadField,
@@ -2316,15 +2355,7 @@ fn value_at(
         }
         // The first row the selector selects by the order, in the same store (ess/25,
         // beyond10x/ess#543); none supplies no value.
-        ResolvedPayloadValue::RelatedHead {
-            selection,
-            order_by,
-            ..
-        } => {
-            let reader = row_set::Reader::new(ir, work.command, work.original, input)?;
-            let (key, row) = reader.head(selection, order_by)?;
-            values::selected(ir, field, ir.entity(&selection.entity), key, row)
-        }
+        ResolvedPayloadValue::RelatedHead { .. } => related_head(ir, field, input, work),
         ResolvedPayloadValue::SubjectState { .. } => values::held_state(work.before.as_ref()),
         ResolvedPayloadValue::SubjectField {
             field: read,

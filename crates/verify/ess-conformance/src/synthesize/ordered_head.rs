@@ -11,6 +11,10 @@
 //! steps leave, with the comparator the interpreter ranks a view's order and a head with, and the
 //! expected value is that row's.
 //!
+//! Under `ties: unordered` the order holds no identity, so no tie row is arranged on it, and a
+//! reading in which two selected rows tie on every key is refused ([`tied`]): a scenario never
+//! states an order the model leaves to the implementation.
+//!
 //! This module holds what the arrangement and the reading share: the ranking of two rows, which
 //! keys a scenario can steer, and the named gaps.
 
@@ -129,6 +133,23 @@ pub(super) fn first<R>(
             other == *at
                 || rank(ir, entity, order_by, value, &rows[*at], row) == Some(Ordering::Less)
         })
+    })
+}
+
+/// Whether two of `rows` decidedly tie on every key of `order_by`: under `ties: unordered`, an
+/// arrangement holding such a pair states an order the model leaves to the implementation
+/// (`docs/design/ordered-related-head.md`, "Declared-unordered ties").
+pub(super) fn tied<R>(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    order_by: &[Ranking],
+    value: &dyn Fn(&R, &str) -> Option<Node>,
+    rows: &[R],
+) -> bool {
+    rows.iter().enumerate().any(|(at, row)| {
+        rows[at + 1..]
+            .iter()
+            .any(|other| rank(ir, entity, order_by, value, row, other) == Some(Ordering::Equal))
     })
 }
 
