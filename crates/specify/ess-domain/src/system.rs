@@ -51,7 +51,7 @@ use crate::types::{NamedType, TypeBody, TypeRef, TypeRegistry};
 
 /// Specification format major versions this build implements.
 pub const SUPPORTED_FORMATS: &[u32] = &[
-    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
 ];
 
 /// What one specification format admits that the format before it did not.
@@ -246,6 +246,14 @@ pub const FORMAT_HISTORY: &[FormatHistoryEntry] = &[
         ],
         stricter: &[],
     },
+    FormatHistoryEntry {
+        major: 25,
+        release: None,
+        added: &[
+            "A minted value may be required present in an `Optional` field, `{generated: true, present: true}`, wherever `{generated: true}` is admitted: the implementation must supply a value, and the interpreted target and synthesis treat it as present; it is refused over a required target and with `present: false` (`type_mismatch`). A `sets:` entry may store the value this outcome publishes, `{payload: <Event>.<field>}`, naming an event this outcome fills under `payload:` and a field given a source there, at a type assignable to the stored field without a conversion; it is refused in a payload, an error payload and after `else:`. Below `ess/25` both shapes keep the nested-mapping reading they had, and a refusal of that reading names `ess/25` (beyond10x/ess#545).",
+        ],
+        stricter: &[],
+    },
 ];
 
 // `FORMAT_HISTORY` and `SUPPORTED_FORMATS` name the same majors in the same order, and every row
@@ -341,6 +349,9 @@ impl FormatVersion {
     /// A struct type or a command's response that ignores the fields it does not declare,
     /// `undeclared_fields: ignored` (beyond10x/ess#500).
     pub const V24: Self = Self(24);
+    /// A minted value stored present, `{generated: true, present: true}`, and a `sets:` value read
+    /// from the outcome's own payload, `{payload: <Event>.<field>}` (beyond10x/ess#545).
+    pub const V25: Self = Self(25);
 
     /// How a format version is written.
     pub const PREFIX: &'static str = "ess/";

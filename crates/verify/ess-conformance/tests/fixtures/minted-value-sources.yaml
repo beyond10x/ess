@@ -1,0 +1,81 @@
+format: ess/25
+system: demo
+version: v1
+domain: demo.routing
+types:
+  - {name: demo.routing.EntryId, kind: newtype, of: Uuid}
+  - {name: demo.routing.ConnectSeq, kind: newtype, of: Integer}
+entities:
+  - name: demo.routing.Entry
+    identity: {name: entry_id, type: demo.routing.EntryId}
+    fields:
+      - {name: connect_seq, type: Optional<demo.routing.ConnectSeq>}
+    invariants:
+      - any: [{not: "state == Bridged"}, "defined(connect_seq)"]
+    lifecycle:
+      initial: Waiting
+      states: [Waiting, Selected, Bridged]
+      terminal: [Bridged]
+      transitions:
+        - {name: select, from: [Waiting], to: Selected}
+        - {name: bridge, from: [Selected], to: Bridged}
+errors:
+  - {name: demo.routing.EntryStateConflict, summary: The entry is not in a state that allows this., fields: []}
+events:
+  - name: demo.routing.EntryQueued
+    fields:
+      - {name: entry_id, type: demo.routing.EntryId}
+  - name: demo.routing.EntryAgentSelected
+    fields:
+      - {name: entry_id, type: demo.routing.EntryId}
+      - {name: connect_seq, type: demo.routing.ConnectSeq}
+  - name: demo.routing.EntryBridged
+    fields:
+      - {name: entry_id, type: demo.routing.EntryId}
+actors:
+  - name: demo.routing.Router
+    may: [demo.routing.QueueEntry, demo.routing.SelectAgent, demo.routing.BridgeEntry]
+commands:
+  - name: demo.routing.QueueEntry
+    input: []
+    outcomes:
+      - name: queued
+        creates: demo.routing.Entry
+        instance: entry_id
+        emits: [demo.routing.EntryQueued]
+        payload:
+          demo.routing.EntryQueued: {entry_id: {generated: true}}
+  - name: demo.routing.SelectAgent
+    input:
+      - {name: entry_id, type: demo.routing.EntryId}
+    outcomes:
+      - name: selected
+        moves: demo.routing.Entry.select
+        instance: entry_id
+        emits: [demo.routing.EntryAgentSelected]
+        payload:
+          demo.routing.EntryAgentSelected:
+            entry_id: input.entry_id
+            connect_seq: {generated: true}
+        sets:
+          connect_seq: {generated: true, present: true}
+      - {name: not-waiting, wrong_state: true, error: demo.routing.EntryStateConflict}
+  - name: demo.routing.BridgeEntry
+    input:
+      - {name: entry_id, type: demo.routing.EntryId}
+    outcomes:
+      - name: bridged
+        moves: demo.routing.Entry.bridge
+        instance: entry_id
+        emits: [demo.routing.EntryBridged]
+        payload:
+          demo.routing.EntryBridged: {entry_id: input.entry_id}
+      - {name: not-selected, wrong_state: true, error: demo.routing.EntryStateConflict}
+views:
+  - name: demo.routing.Entries
+    source: demo.routing.Entry
+    consistency: read_your_writes
+    fields:
+      - {name: entry_id, type: demo.routing.EntryId}
+      - {name: state, type: demo.routing.Entry.State}
+      - {name: connect_seq, type: Optional<demo.routing.ConnectSeq>}

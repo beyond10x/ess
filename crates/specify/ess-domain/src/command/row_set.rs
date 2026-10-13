@@ -654,7 +654,7 @@ fn nested(source: &mut PayloadSource, at: &str, errors: &mut ValidationErrors) {
                         at.to_owned(),
                         refusal.clone(),
                     ));
-                    PayloadSource::Generated
+                    PayloadSource::Generated { present: false }
                 }
             };
             let leaf = |target: &str, source: PayloadSource| PayloadField {

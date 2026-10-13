@@ -437,7 +437,7 @@ fn value(
             }
         }
         ResolvedPayloadValue::Literal { value } => literal(ir, target, value)?,
-        ResolvedPayloadValue::Generated | ResolvedPayloadValue::Cleared => {}
+        ResolvedPayloadValue::Generated { .. } | ResolvedPayloadValue::Cleared => {}
         ResolvedPayloadValue::Increment { by } => {
             if held.is_none() || !sets {
                 return Err(format!(
@@ -514,6 +514,17 @@ fn value(
         }
         ResolvedPayloadValue::ResponseField { .. } => {
             return Err(format!("a response field for `{}`", field.target));
+        }
+        // Generated code would have to order the payload's value before the row; owed in this cut
+        // (ess/25, beyond10x/ess#545, `docs/design/minted-value-sources.md`).
+        ResolvedPayloadValue::PayloadRead {
+            event, field: read, ..
+        } => {
+            return Err(format!(
+                "a `sets:` value read from the outcome's payload (`{{payload: {}.{read}}}`) for `{}`",
+                event.name(),
+                field.target
+            ));
         }
     }
     let _ = command;

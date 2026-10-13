@@ -174,7 +174,7 @@ pub(super) fn destination<'a>(
                 field: from.clone(),
             }
         }
-        Some((ResolvedPayloadValue::Generated, _)) => unavailable(
+        Some((ResolvedPayloadValue::Generated { .. }, _)) => unavailable(
             "the triggering event carries an identity the implementation mints, known only after \
              the trigger",
         ),

@@ -375,6 +375,9 @@ impl Specification {
             return Err(errors);
         };
 
+        // A present mint and a payload read are `ess/25` sources (beyond10x/ess#545); below it each
+        // mapping is the nested one it was.
+        crate::command::minted_value::read_below_ess_25(system.format, &mut collected.commands);
         // A filtered read is an `ess/22` source; below it the same mapping is the nested one it was.
         crate::command::row_set::read_below_ess_22(
             system.format,

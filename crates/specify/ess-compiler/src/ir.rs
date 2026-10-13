@@ -1091,8 +1091,27 @@ pub enum ResolvedPayloadValue {
         /// Its resolved type.
         type_ref: ResolvedTypeRef,
     },
-    /// Explicit implementation ownership, retaining ordinary type assertions.
-    Generated,
+    /// Explicit implementation ownership, retaining ordinary type assertions: `{generated: true}`,
+    /// or from `ess/25` `{generated: true, present: true}` over an `Optional` field, whose minted
+    /// value is present (beyond10x/ess#545, `docs/design/minted-value-sources.md`).
+    Generated {
+        /// Whether the minted value of an `Optional` target is present. Serialized only when set,
+        /// so a model without a present mint keeps its IR bytes.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        present: bool,
+    },
+    /// The value this outcome publishes in `field` of `event` (`ess/25`, beyond10x/ess#545):
+    /// `{payload: <Event>.<field>}` in `sets:`, so one mint feeds the event and the row.
+    /// `ess-domain` admitted it only where this outcome fills that field under `payload:`, at a type
+    /// assignable to the target's without a conversion.
+    PayloadRead {
+        /// The event, one this outcome emits.
+        event: EventHandle,
+        /// Its field.
+        field: String,
+        /// The field's declared type.
+        type_ref: ResolvedTypeRef,
+    },
     /// A field of the command's input, or from ess/22 (Family F A4) a member of a struct input
     /// reached by a path.
     InputField {
@@ -1603,7 +1622,11 @@ impl ResolvedPayloadValue {
             Self::InputField { field, .. } => format!("input.{field}"),
             Self::Literal { value } => format!("\"{value}\""),
             Self::ResponseField { field, .. } => format!("response field `{field}`"),
-            Self::Generated => "implementation-generated".to_owned(),
+            Self::Generated { present: false } => "implementation-generated".to_owned(),
+            Self::Generated { present: true } => "implementation-generated, present".to_owned(),
+            Self::PayloadRead { event, field, .. } => {
+                format!("the published `{}.{field}`", event.name())
+            }
             Self::Cleared => "cleared".to_owned(),
             Self::SubjectField { field, .. } => format!("subject.{field} before the outcome"),
             Self::SubjectState { .. } => "the state the subject held before the outcome".to_owned(),

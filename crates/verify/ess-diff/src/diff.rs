@@ -1192,9 +1192,6 @@ fn written_fields(owner: &str, fields: &[ess_compiler::ir::ResolvedPayloadField]
                 ess_compiler::ir::ResolvedPayloadValue::ResponseField { field, .. } => {
                     format!("response field `{field}`")
                 }
-                ess_compiler::ir::ResolvedPayloadValue::Generated => {
-                    "implementation-generated".to_owned()
-                }
                 ess_compiler::ir::ResolvedPayloadValue::InputField { field: name, .. } => {
                     format!("input.{name}")
                 }
@@ -1210,6 +1207,9 @@ fn written_fields(owner: &str, fields: &[ess_compiler::ir::ResolvedPayloadField]
                 | ess_compiler::ir::ResolvedPayloadValue::RelatedField { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::RelatedSelection { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::CallerAttribute { .. }
+                // `implementation-generated`, and `…, present` for an ess/25 present mint.
+                | ess_compiler::ir::ResolvedPayloadValue::Generated { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::PayloadRead { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::ChangedCount) => other.describe(),
             };
             let conversion = field
@@ -2212,9 +2212,6 @@ fn written_sets(
                 ess_compiler::ir::ResolvedPayloadValue::ResponseField { field, .. } => {
                     format!("response field `{field}`")
                 }
-                ess_compiler::ir::ResolvedPayloadValue::Generated => {
-                    "implementation-generated".to_owned()
-                }
                 ess_compiler::ir::ResolvedPayloadValue::InputField { field, .. } => {
                     format!("input.{field}")
                 }
@@ -2230,6 +2227,9 @@ fn written_sets(
                 | ess_compiler::ir::ResolvedPayloadValue::RelatedField { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::RelatedSelection { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::CallerAttribute { .. }
+                // `implementation-generated`, and `…, present` for an ess/25 present mint.
+                | ess_compiler::ir::ResolvedPayloadValue::Generated { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::PayloadRead { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::ChangedCount) => other.describe(),
             };
             let conversion = field
@@ -2786,7 +2786,7 @@ fn outcome_payload_change(
             matches!(
                 f.value,
                 ess_compiler::ir::ResolvedPayloadValue::ResponseField { .. }
-                    | ess_compiler::ir::ResolvedPayloadValue::Generated
+                    | ess_compiler::ir::ResolvedPayloadValue::Generated { .. }
             )
         });
     let outcome = name.to_owned();

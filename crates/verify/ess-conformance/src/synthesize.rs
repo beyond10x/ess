@@ -7288,8 +7288,10 @@ fn determined_fields(
             // matched with the other two that determine nothing rather than by a wildcard, so a
             // fifth source has to be decided rather than silently ignored.
             ResolvedPayloadValue::ResponseField { .. }
-            | ResolvedPayloadValue::Generated
+            | ResolvedPayloadValue::Generated { .. }
             | ResolvedPayloadValue::Cleared
+            // ess/25 (#545): a `sets:` source only, refused in a payload by `ess-domain`.
+            | ResolvedPayloadValue::PayloadRead { .. }
             // ess/16 (#167): the rows one scenario changed, asserted by `set_effects` alone.
             | ResolvedPayloadValue::ChangedCount => {}
             // Read as the target's type, as `settled` reads a `sets:` literal: `ess-domain` admits
@@ -7655,6 +7657,16 @@ fn view_expectations(
         out.source.extend(companion.source.iter().cloned());
     }
 
+    // ess/25 (#545): the events a step before the branch under test may already have published,
+    // which a row claim reading the published value must not name.
+    let earlier = earlier_events(
+        ir,
+        run.setup.iter().chain(
+            companions
+                .iter()
+                .flat_map(|companion| companion.steps.iter()),
+        ),
+    );
     for (view, admits_subject) in &decided {
         let name = ViewRef::new(view.name.clone());
         let fields = naming(view);
@@ -7665,7 +7677,9 @@ fn view_expectations(
             // that reads them. It is sound on a target §8 permits to be shared, where a claim
             // about which row comes *first* would not be: a row this scenario did not make cannot
             // stop one it did from holding what it was given.
-            subject_row(ir, view, outcome, run, &subject.entity, &fields, state)
+            let mut row = subject_row(ir, view, outcome, run, &subject.entity, &fields, state);
+            row.extend(minted_row(view, outcome, &fields, &earlier));
+            row
         } else {
             // A cancelled invoice that stays in `OutstandingInvoices` is the defect the positive
             // assertion cannot see, and an entity that has not reached the filtered state yet is
@@ -8396,8 +8410,10 @@ fn expression_value_at(
         ResolvedPayloadValue::Literal { .. }
         | ResolvedPayloadValue::InputField { .. }
         | ResolvedPayloadValue::ResponseField { .. }
-        | ResolvedPayloadValue::Generated
+        | ResolvedPayloadValue::Generated { .. }
         | ResolvedPayloadValue::Cleared
+        // ess/25 (#545): the published value, which `subject_row` claims where it is safe to.
+        | ResolvedPayloadValue::PayloadRead { .. }
         // ess/16 (#168): read only through `caller::synthesize`, which writes the caller's value in.
         | ResolvedPayloadValue::CallerAttribute { .. }
         | ResolvedPayloadValue::ChangedCount => None,
@@ -8957,13 +8973,15 @@ fn reads<'a>(target: &'a ess_compiler::ir::ResolvedPayloadField, out: &mut Vec<(
         }
         ResolvedPayloadValue::Literal { .. }
         | ResolvedPayloadValue::ResponseField { .. }
-        | ResolvedPayloadValue::Generated
+        | ResolvedPayloadValue::Generated { .. }
         | ResolvedPayloadValue::Cleared
         | ResolvedPayloadValue::SubjectField { .. }
         | ResolvedPayloadValue::RelatedField { .. }
         | ResolvedPayloadValue::Increment { .. }
         | ResolvedPayloadValue::SubjectState { .. }
         | ResolvedPayloadValue::CallerAttribute { .. }
+        // ess/25 (#545): what the payload field reads is collected from the payload itself.
+        | ResolvedPayloadValue::PayloadRead { .. }
         | ResolvedPayloadValue::ChangedCount => {}
     }
 }
@@ -9301,6 +9319,92 @@ fn subject_row(
     expectations
 }
 
+/// What a branch under test that mints into its row claims of a view showing it (ess/25,
+/// beyond10x/ess#545, `docs/design/minted-value-sources.md`):
+///
+/// * a `{payload: <Event>.<field>}` entry: the row holds the value the event published, an
+///   [`ScenarioValue::Observed`] the runner resolves against the event's first occurrence in the
+///   scenario — so only where no earlier step may have published that event;
+/// * a `{generated: true, present: true}` entry: the row does not hold the field null.
+///
+/// Nothing where the view does not project the identity (the claim would be about every row) or
+/// shows the field at another type.
+fn minted_row(
+    view: &ResolvedView,
+    outcome: &ResolvedOutcome,
+    identity: &BTreeMap<String, ScenarioValue>,
+    earlier: &BTreeSet<QualifiedName>,
+) -> Vec<ViewExpectation> {
+    if identity.is_empty() {
+        return Vec::new();
+    }
+    let mut claims = Vec::new();
+    for set in &outcome.sets {
+        if set.conversion.is_some()
+            || view.field(&set.target).map(|shown| &shown.type_ref) != Some(&set.target_type)
+        {
+            continue;
+        }
+        match &set.value {
+            ResolvedPayloadValue::PayloadRead { event, field, .. }
+                if !earlier.contains(event.name()) =>
+            {
+                let mut fields = identity.clone();
+                fields.insert(
+                    set.target.clone(),
+                    ScenarioValue::observed(EventRef::from(event), field.clone()),
+                );
+                claims.push(ViewExpectation::Contains { fields });
+            }
+            ResolvedPayloadValue::Generated { present: true } => {
+                let mut fields = identity.clone();
+                fields.insert(set.target.clone(), ScenarioValue::literal(Node::Null));
+                claims.push(ViewExpectation::Excludes { fields });
+            }
+            _ => {}
+        }
+    }
+    claims
+}
+
+/// The events the commands these steps send may publish, and every event a binding's command may
+/// publish, since a binding may run on any of them (ess/25, #545).
+fn earlier_events<'s>(
+    ir: &EssIr,
+    steps: impl Iterator<Item = &'s ScenarioStep>,
+) -> BTreeSet<QualifiedName> {
+    let emitted = |command: &ResolvedCommand| -> Vec<QualifiedName> {
+        command
+            .outcomes
+            .iter()
+            .flat_map(|outcome| outcome.emits.iter().map(|event| event.name().clone()))
+            .collect()
+    };
+    let mut events = BTreeSet::new();
+    let mut sent = false;
+    for step in steps {
+        let (ScenarioStep::ExecuteCommand { command, .. }
+        | ScenarioStep::ExecuteCommandWithoutInput { command, .. }) = step
+        else {
+            continue;
+        };
+        sent = true;
+        if let Some(declared) = ir
+            .commands()
+            .values()
+            .find(|declared| declared.name.to_string() == command.to_string())
+        {
+            events.extend(emitted(declared));
+        }
+    }
+    if sent {
+        for binding in ir.bindings().values() {
+            events.extend(emitted(ir.command(&binding.command)));
+        }
+    }
+    events
+}
+
 /// One `Excludes` per always-present undetermined leaf: no row of **this** subject holds that leaf
 /// null or absent (beyond10x/ess#179). The runner reads an absent dotted path as `null`, so a row
 /// that never wrote `lead.rank` matches and fails. Nothing when the view does not project the
@@ -9411,7 +9515,11 @@ fn settled(
                     None => continue,
                 }
             }
-            ResolvedPayloadValue::Generated
+            // ess/25 (#545): the published value is a reference to an observation, which
+            // `subject_row` claims for the branch under test alone; carried forward as a settled
+            // value it would name another act's occurrence of the event.
+            ResolvedPayloadValue::Generated { .. }
+            | ResolvedPayloadValue::PayloadRead { .. }
             | ResolvedPayloadValue::ResponseField { .. }
             | ResolvedPayloadValue::ChangedCount => continue,
         };

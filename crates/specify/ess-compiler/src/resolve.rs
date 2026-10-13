@@ -2714,7 +2714,7 @@ impl<'a> Resolver<'a> {
     }
 
     /// One determined field: the source resolved, and the two types checked against each other.
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
     fn payload_field(
         &mut self,
         command: &CommandSpec,
@@ -2727,6 +2727,9 @@ impl<'a> Resolver<'a> {
     ) -> Option<ResolvedPayloadField> {
         if let Some(constant) = payload_constant_source(target, source) {
             return Some(constant);
+        }
+        if let PayloadSource::PayloadRead { event, field } = source {
+            return self.payload_read(command, outcome, block, target, source, (event, field));
         }
         if source.needs_value_expressions() {
             return self.expression_field(command, outcome, block, target, source, input, subject);
@@ -2903,6 +2906,64 @@ impl<'a> Resolver<'a> {
         (admitted && command.narrowed_input(outcome, &read.name).is_some()).then(|| ResolvedField {
             type_ref: of.as_ref().clone(),
             ..read.clone()
+        })
+    }
+
+    /// `{payload: <event>.<field>}` (`ess/25`, beyond10x/ess#545): the event field this outcome
+    /// publishes, at its declared type. `ess-domain` refused a read outside `sets:`, of an event
+    /// this outcome does not fill and of a field it does not declare; the refusals here are the
+    /// backstop for a specification built field by field.
+    fn payload_read(
+        &mut self,
+        command: &CommandSpec,
+        outcome: &ess_domain::command::Outcome,
+        block: SourceBlock<'_>,
+        target: &ResolvedField,
+        source: &PayloadSource,
+        (event, field): (&QualifiedName, &String),
+    ) -> Option<ResolvedPayloadField> {
+        let declared = matches!(block, SourceBlock::Sets(_))
+            .then(|| outcome.payload.get(event))
+            .flatten()
+            .filter(|filled| filled.contains_key(field))
+            .and_then(|_| self.spec.events().get(event))
+            .and_then(|declared| declared.field(field))
+            .cloned();
+        let Some(declared) = declared else {
+            self.refuse_payload(
+                command,
+                outcome,
+                block,
+                Some((&target.name, source)),
+                codes::COMMAND_UNDECLARED_REFERENCE,
+                format!(
+                    "outcome `{}` of `{}` stores `{{payload: {event}.{field}}}`, which its \
+                     `payload:` does not fill",
+                    outcome.name, command.name
+                ),
+                Vec::new(),
+            );
+            return None;
+        };
+        let subject = format!("{event}.{field}");
+        let path = format!("events.{event}.{field}");
+        let needles = vec![format!("name: {event}")];
+        let type_ref = self.type_ref(
+            codes::EVENT_UNDECLARED_REFERENCE,
+            &declared.type_ref,
+            &subject,
+            &path,
+            &needles,
+        )?;
+        Some(ResolvedPayloadField {
+            target: target.name.clone(),
+            target_type: target.type_ref.clone(),
+            value: ResolvedPayloadValue::PayloadRead {
+                event: EventHandle::new(event.clone()),
+                field: field.clone(),
+                type_ref,
+            },
+            conversion: None,
         })
     }
 
@@ -5429,7 +5490,9 @@ fn payload_constant_source(
                 value: value.clone(),
             }
         }
-        PayloadSource::Generated => ResolvedPayloadValue::Generated,
+        PayloadSource::Generated { present } => {
+            ResolvedPayloadValue::Generated { present: *present }
+        }
         PayloadSource::Cleared => ResolvedPayloadValue::Cleared,
         PayloadSource::InputField { .. }
         | PayloadSource::ResponseField { .. }
@@ -5438,7 +5501,8 @@ fn payload_constant_source(
         | PayloadSource::Struct { .. }
         | PayloadSource::RelatedField { .. }
         | PayloadSource::RelatedSelection { .. }
-        | PayloadSource::CallerAttribute { .. } => return None,
+        | PayloadSource::CallerAttribute { .. }
+        | PayloadSource::PayloadRead { .. } => return None,
         PayloadSource::ChangedCount => ResolvedPayloadValue::ChangedCount,
         PayloadSource::Increment { by, .. } => ResolvedPayloadValue::Increment { by: by.clone() },
     };
