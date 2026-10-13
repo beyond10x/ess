@@ -68,6 +68,16 @@ pub(super) const UNOBSERVABLE: &str =
 pub(super) const MINTED: &str = "the ranked head is decided by an identity the target mints, \
      which no scenario orders in advance";
 
+/// The reason a branch is refused where a selector it reads is scoped by a published value the
+/// target mints (`docs/design/published-value-operand.md`, "Synthesis", beyond10x/ess#549): no
+/// scenario arranges rows against a value it cannot name before the command.
+pub(super) const SCOPE_MINTED: &str =
+    "the scope of this selector is a value the target mints, which no scenario names in advance";
+/// The reason a cross decoy is left out where no creating input places a row in another selected
+/// outer row's scope ranking above the inner head (beyond10x/ess#549); the scenario stands.
+pub(super) const CROSS_UNSTEERED: &str = "no row in the scope of another selected outer row \
+     ranks above the inner head: a target scoping by the wrong row is not caught";
+
 /// The key a head's value is settled under in the arrangement's fields: not a field name — it
 /// holds spaces — so nothing reading fields by name finds it.
 pub(super) fn key(selection: &ResolvedRowSelection, order_by: &[Ranking], field: &str) -> String {
