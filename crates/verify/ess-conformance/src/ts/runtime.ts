@@ -1212,7 +1212,7 @@ export function checkedRefusal(
     case 'authored': {
       sourceIdentity(refusal.source);
       let valid = false;
-      for (let n = 1; n <= 41; n += 1) {
+      for (let n = 1; n <= 42; n += 1) {
         if (n === 36) {
           continue;
         }

@@ -2834,7 +2834,7 @@ commands:
         ),
         (
             "admission.js",
-            "7258f1b7335fe95a94188138a0295c909577c1498a63d31499bbb957085398b8",
+            "d0a84ad9d456cf3b9e9844fc3bd67bdef4cf7ba635740f4f011a9e13ebbc0fd9",
         ),
     ] {
         assert_eq!(
