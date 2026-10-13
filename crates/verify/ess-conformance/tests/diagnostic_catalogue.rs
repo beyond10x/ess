@@ -40,9 +40,9 @@ fn numbered(entries: &[CatalogueEntry<u16>], last: u16) {
 }
 
 #[test]
-fn author_codes_run_from_001_to_043() {
+fn author_codes_run_from_001_to_046() {
     assert_eq!(Cause::FAMILY, "AUTHOR");
-    numbered(Cause::CATALOGUE, 43);
+    numbered(Cause::CATALOGUE, 46);
 }
 
 #[test]

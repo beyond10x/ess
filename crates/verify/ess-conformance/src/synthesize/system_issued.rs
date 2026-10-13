@@ -302,7 +302,7 @@ fn mentions_input(rendered: &str) -> bool {
 }
 
 /// Every event any outcome of the command emits, in name order.
-fn emitted_by(command: &ResolvedCommand) -> Vec<EventRef> {
+pub(crate) fn emitted_by(command: &ResolvedCommand) -> Vec<EventRef> {
     command
         .outcomes
         .iter()
@@ -313,7 +313,7 @@ fn emitted_by(command: &ResolvedCommand) -> Vec<EventRef> {
 }
 
 /// The command's declared input, flattened as an event payload's is.
-fn input_shape(ir: &EssIr, command: &ResolvedCommand) -> PayloadShape {
+pub(crate) fn input_shape(ir: &EssIr, command: &ResolvedCommand) -> PayloadShape {
     let mut shape = PayloadShape::new();
     for field in &command.input {
         describe(ir, &field.type_ref, &field.name, false, 0, &mut shape);

@@ -202,9 +202,9 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
     )?;
     let version = SuiteFormat::parse(p["suite_version"].text()?)
         .map_err(|e| p["suite_version"].error("UnsupportedSuiteVersion", e.to_string()))?;
-    // The majors every execution reader admits, the generated runtimes' own table, and the await
-    // pair (beyond10x/ess#542), which only the Rust reader executes until stage 2.
-    if !crate::system_issued::rust_admits(version.major()) {
+    // The majors every execution reader admits: the generated runtimes' own table, which the Rust
+    // reader shares since the await pair reached them (beyond10x/ess#542, stage 2).
+    if !crate::go::admitted_major(version.major()) {
         return Err(p["suite_version"].error(
             "UnsupportedSuiteVersion",
             "execution readers admit suite majors 1–51",

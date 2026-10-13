@@ -15,7 +15,9 @@ import {
   ErrUnsupported,
   JsonNumber,
   accountForEveryScenario,
+  admitStep,
   admitSuiteDocument,
+  awaitSeconds,
   asNumber,
   byteCompare,
   canonicalUUID,
@@ -1131,4 +1133,41 @@ test('a unit variant is read as unavailable, and a payload beside its tag is mal
   ]) {
     assert.throws(() => accessor.evaluate({ choice: malformed }), JSON.stringify(malformed));
   }
+});
+
+// ---- a command the system issues itself (suite/50 and /51, beyond10x/ess#542) ---------------------
+
+test('the await steps and value are admitted from suite/50, with a bound spelled as a Period', () => {
+  const awaited = {
+    step: 'await_outcome',
+    command: 'queueing.entry.Assign',
+    instance: { kind: 'instance', instance: 'entry' },
+    identity: 'entry_id',
+    within: 'PT5S',
+    input: { worker: { kind: 'literal', value: 'w-1' } },
+  };
+  const notIssued = {
+    step: 'expect_not_issued',
+    command: 'queueing.entry.Assign',
+    instance: { kind: 'literal', value: 'e-1' },
+    unpublished: ['queueing.entry.Assigned'],
+  };
+  const reads = {
+    step: 'expect_event_values',
+    event: 'queueing.entry.Assigned',
+    payload: { worker: { kind: 'awaited', field: 'worker' } },
+  };
+  for (const step of [awaited, notIssued, reads]) {
+    admitStep(step, 50);
+    assert.throws(() => admitStep(step, 49), /requires suite\/50 or \/51/, step.step);
+  }
+  for (const within of ['PT0S', 'PT05S', 'P5S', 'PT5.0S', 'PT']) {
+    assert.throws(() => admitStep({ ...awaited, within }, 50), /PT<seconds>S/, within);
+  }
+  assert.throws(
+    () => admitStep({ ...awaited, instance: { kind: 'observed', event: 'x.y.Z', field: 'f' } }, 50),
+    /captured instance or a literal identity/,
+  );
+  assert.equal(awaitSeconds('PT4294967295S'), 4294967295);
+  assert.throws(() => awaitSeconds('PT4294967296S'), /PT<seconds>S/);
 });

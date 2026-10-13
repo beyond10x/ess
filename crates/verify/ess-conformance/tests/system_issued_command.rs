@@ -490,3 +490,199 @@ fn each_faulty_queue_fails_at_its_step() {
         }
     }
 }
+
+// ---- the Go and TypeScript runners (stage 2) ---------------------------------------------------
+//
+// Each generated runtime replays the transcript a Rust target wrote while the Rust reference runner
+// asked it (`support_go::Recorder`): the same answers to the same questions, so a verdict that
+// differs is a difference in how the runner read the suite, and a request it sends that the
+// reference runner did not is written down as a divergence.
+
+mod support_go;
+mod support_ts;
+
+/// Every await scenario, one stating the worker, and one with no await at all.
+fn runtime_suite(stated: &str) -> AdmittedSuite {
+    suite(vec![
+        (BOUNDED, assigns_once(Some(5), BTreeMap::new())),
+        (UNBOUNDED, assigns_once(None, BTreeMap::new())),
+        (
+            STATED,
+            assigns_once(
+                Some(5),
+                BTreeMap::from([("worker".to_owned(), ScenarioValue::literal(text(stated)))]),
+            ),
+        ),
+        (OLD, arrange()),
+    ])
+}
+
+fn written(status: Status) -> String {
+    match status {
+        Status::Passed => "passed",
+        Status::Failed => "failed",
+        Status::Error => "error",
+        Status::Unsupported => "unsupported",
+    }
+    .to_owned()
+}
+
+/// The reference verdicts against `target`, and the transcript of what it answered.
+fn recorded<T: ConformanceTarget>(
+    suite: &AdmittedSuite,
+    target: T,
+) -> (BTreeMap<String, String>, support_go::Recorder<T>) {
+    let recorder = support_go::Recorder::new(target);
+    let verdicts = run(suite, &recorder)
+        .into_iter()
+        .map(|(id, result)| (id, written(result.status)))
+        .collect();
+    (verdicts, recorder)
+}
+
+fn every(suite: &AdmittedSuite, status: &str) -> BTreeMap<String, String> {
+    suite
+        .suite()
+        .scenarios
+        .keys()
+        .map(|id| (id.to_string(), status.to_owned()))
+        .collect()
+}
+
+/// `suite`'s verdicts with the await scenarios `status` and the one without an await passed.
+fn awaiting(suite: &AdmittedSuite, status: &str) -> BTreeMap<String, String> {
+    let mut verdicts = every(suite, status);
+    verdicts.insert(OLD.to_owned(), "passed".to_owned());
+    verdicts
+}
+
+fn go_replay<T>(
+    directory: &std::path::Path,
+    suite: &AdmittedSuite,
+    recorder: &support_go::Recorder<T>,
+    bare: bool,
+) -> BTreeMap<String, String> {
+    std::fs::write(
+        directory.join("essconform").join("suite.json"),
+        suite.original_json(),
+    )
+    .unwrap();
+    let env: &[(&str, &str)] = if bare {
+        &[("ESS_TRANSCRIPT_BARE", "1")]
+    } else {
+        &[]
+    };
+    let replayed = support_go::replay(directory, recorder, env);
+    assert!(
+        replayed.divergences.is_empty(),
+        "the Go runtime sent requests the reference runner did not:\n{}\n{}",
+        replayed.divergences.join("\n"),
+        replayed.go.log
+    );
+    assert!(
+        !replayed.go.outcomes.is_empty(),
+        "the Go run published no verdicts:\n{}",
+        replayed.go.log
+    );
+    replayed.go.outcomes
+}
+
+fn ts_replay<T>(
+    package: &support_ts::Package,
+    suite: &AdmittedSuite,
+    recorder: &support_go::Recorder<T>,
+    bare: bool,
+) -> BTreeMap<String, String> {
+    let replayed = package.replay(suite, &recorder.transcript(), bare);
+    assert_ne!(replayed.exit, Some(2), "{}", replayed.log);
+    assert!(
+        replayed.divergences.is_empty(),
+        "the TypeScript runtime sent requests the reference runner did not:\n{}\n{}",
+        replayed.divergences.join("\n"),
+        replayed.log
+    );
+    replayed.outcomes
+}
+
+#[test]
+fn the_go_runner_awaits_a_system_issued_command() {
+    let suite = runtime_suite("w-1");
+    let directory = support_go::package("await", suite.suite(), &[support_go::TRANSCRIPT_TARGET]);
+
+    let (rust, recorder) = recorded(&suite, Queue::new());
+    assert_eq!(rust, every(&suite, "passed"));
+    assert_eq!(go_replay(&directory, &suite, &recorder, false), rust);
+    // A Go target that does not implement AwaitTarget reports each await scenario unsupported,
+    // never passed, and keeps the old one green.
+    assert_eq!(
+        go_replay(&directory, &suite, &recorder, true),
+        awaiting(&suite, "unsupported")
+    );
+
+    let (rust, recorder) = recorded(&suite, Queue::before_await());
+    assert_eq!(rust, awaiting(&suite, "unsupported"));
+    assert_eq!(go_replay(&directory, &suite, &recorder, false), rust);
+
+    let mismatched = runtime_suite("w-2");
+    let (rust, recorder) = recorded(&mismatched, Queue::new());
+    assert_eq!(rust[STATED], "failed", "{rust:?}");
+    assert_eq!(go_replay(&directory, &mismatched, &recorder, false), rust);
+}
+
+#[test]
+fn the_typescript_runner_awaits_a_system_issued_command() {
+    let suite = runtime_suite("w-1");
+    let package = support_ts::Package::new("await", suite.suite());
+
+    let (rust, recorder) = recorded(&suite, Queue::new());
+    assert_eq!(rust, every(&suite, "passed"));
+    assert_eq!(ts_replay(&package, &suite, &recorder, false), rust);
+    // A TypeScript target without `awaitOutcome` reports each await scenario unsupported, never
+    // passed, and keeps the old one green.
+    assert_eq!(
+        ts_replay(&package, &suite, &recorder, true),
+        awaiting(&suite, "unsupported")
+    );
+
+    let (rust, recorder) = recorded(&suite, Queue::before_await());
+    assert_eq!(rust, awaiting(&suite, "unsupported"));
+    assert_eq!(ts_replay(&package, &suite, &recorder, false), rust);
+
+    let mismatched = runtime_suite("w-2");
+    let (rust, recorder) = recorded(&mismatched, Queue::new());
+    assert_eq!(rust[STATED], "failed", "{rust:?}");
+    assert_eq!(ts_replay(&package, &mismatched, &recorder, false), rust);
+}
+
+/// Every faulty queue, through the three runners: the same verdict per scenario, each the one
+/// [`caught`] names. Among them the refusal read as "nothing within the bound": a target that takes
+/// the step from a refusing state, one that publishes without saying so, and one that answers
+/// `nothing` before the window has closed.
+#[test]
+fn all_runners_agree_on_an_await_refusal_within_the_bound() {
+    let suite = await_suite();
+    let directory = support_go::package(
+        "await-faults",
+        suite.suite(),
+        &[support_go::TRANSCRIPT_TARGET],
+    );
+    let package = support_ts::Package::new("await-faults", suite.suite());
+    for &fault in AwaitFault::ALL {
+        let (rust, recorder) = recorded(&suite, AwaitFaulty::new(Queue::new(), fault));
+        let mut expected = every(&suite, "passed");
+        for (id, _) in caught(fault) {
+            expected.insert(id.to_owned(), "failed".to_owned());
+        }
+        assert_eq!(rust, expected, "{fault:?}: the reference runner");
+        assert_eq!(
+            go_replay(&directory, &suite, &recorder, false),
+            rust,
+            "{fault:?}: Go (left) and Rust (right)"
+        );
+        assert_eq!(
+            ts_replay(&package, &suite, &recorder, false),
+            rust,
+            "{fault:?}: TypeScript (left) and Rust (right)"
+        );
+    }
+}

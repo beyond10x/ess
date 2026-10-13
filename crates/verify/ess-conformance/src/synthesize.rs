@@ -200,7 +200,7 @@ mod seeds;
 mod set_effects;
 mod singleton;
 mod subject_fact;
-mod system_issued;
+pub(crate) mod system_issued;
 mod view_grant;
 
 pub use seeds::{AdmittedSeeds, SeedAdmissionError, SeedSelection};
@@ -1076,6 +1076,25 @@ pub const INSTANT_UNTAGGED: u16 = 21;
 /// `RefusalCause::ChildUnwitnessed`'s number in the `SYNTH` family, the next after
 /// [`INSTANT_UNTAGGED`] (<https://github.com/beyond10x/ess/issues/501>).
 pub const CHILD_UNWITNESSED: u16 = 22;
+
+/// The entries of [`RefusalCause::CATALOGUE`] a coverage inventory records as `check_not_emitted`:
+/// the candidate was written, and a check inside it was left out. Every other entry is
+/// `candidate_not_emitted`.
+///
+/// One list for the writer (`coverage_build`) and the Rust reader (`coverage`); the Go, TypeScript
+/// and browser readers restate it, and `tests/coverage_refusal_catalogue.rs` holds each of them to
+/// this one for every code of the catalogue.
+pub const CHECK_NOT_EMITTED: [u16; 9] = [
+    5,
+    11,
+    12,
+    14,
+    crate::aggregate::UNSCOPED,
+    crate::aggregate::UNWITNESSED,
+    ABSENCE_UNWITNESSED,
+    INSTANT_UNTAGGED,
+    CHILD_UNWITNESSED,
+];
 
 /// The repair for a family asked to send a command guarded by a related row (ess/18, #211): only the
 /// command's own outcome scenarios and its drivers arrange that row, and any other family has none

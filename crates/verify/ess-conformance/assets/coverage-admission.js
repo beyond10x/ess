@@ -465,6 +465,12 @@ function selection(value, provenance) {
   if (filter.kind === 'explicit') { ordered(filter.ids, scenarioID); suiteReference(filter.parent) }
 }
 const refusalKey = value => [value.origin, value.source ?? '', referenceKey(value.subject), value.scenario ?? '', value.code, value.effect, value.retained?.origin ?? '', value.retained?.source ?? '', value.scope, value.needs.map(referenceKey).join('\0'), value.message]
+// The last entries of the ESS-SYNTH and ESS-AUTHOR catalogues an inventory may name, and the
+// generated codes recorded as check_not_emitted (ess_conformance's synthesize::CHECK_NOT_EMITTED).
+// tests/coverage_refusal_catalogue.rs holds all three to the Rust catalogues, vector by vector.
+const NEWEST_GENERATED_REFUSAL = 24
+const NEWEST_AUTHORED_REFUSAL = 46
+const CHECK_NOT_EMITTED = [5, 11, 12, 14, 16, 17, 20, 21, 22]
 function inventory(suite) {
   const c = closed(suite.coverage, 'selection knowledge generated authored outside refused authored_sources counts')
   selection(c.selection, suite.provenance); oneOf(c.knowledge, 'unknown complete_inventory')
@@ -504,11 +510,15 @@ function inventory(suite) {
     require(trim(text(r.message)) !== '', 'empty refusal cause'); text(r.code)
     oneOf(r.effect, 'candidate_not_emitted check_not_emitted'); oneOf(r.scope, 'in_scope outside_component outside_origin')
     if (r.origin === 'generated') {
-      const number = Array.from({ length: 14 }, (_, i) => i + 1).find(i => r.code === `ESS-SYNTH-${String(i).padStart(3, '0')}`)
+      const major = Number(suite.provenance.suite_version.split('/')[1])
+      const number = Array.from({ length: NEWEST_GENERATED_REFUSAL }, (_, i) => i + 1).find(i => r.code === `ESS-SYNTH-${String(i).padStart(3, '0')}`)
       require(number !== undefined && r.subject !== null && r.source === null, 'invalid generated refusal')
-      require(r.effect === ([5, 11, 12, 14].includes(number) ? 'check_not_emitted' : 'candidate_not_emitted'), 'refusal effect differs from code')
+      require(number !== 15 || major >= 7, 'accessor observation refusals require suite/7')
+      require(![16, 17].includes(number) || major >= 17, 'aggregate view refusals require suite/17')
+      require(![23, 24].includes(number) || major >= 51, 'system-issued command refusals require suite/51')
+      require(r.effect === (CHECK_NOT_EMITTED.includes(number) ? 'check_not_emitted' : 'candidate_not_emitted'), 'refusal effect differs from code')
     } else {
-      require(Array.from({ length: 43 }, (_, i) => `ESS-AUTHOR-${String(i + 1).padStart(3, '0')}`).filter(c => c !== 'ESS-AUTHOR-036').includes(r.code) && r.effect === 'candidate_not_emitted', 'invalid authored refusal')
+      require(Array.from({ length: NEWEST_AUTHORED_REFUSAL }, (_, i) => `ESS-AUTHOR-${String(i + 1).padStart(3, '0')}`).filter(c => c !== 'ESS-AUTHOR-036').includes(r.code) && r.effect === 'candidate_not_emitted', 'invalid authored refusal')
       const source = c.authored_sources[r.source]
       require(r.source !== null && source !== undefined && source.disposition === 'refused' && source.scenario === r.scenario, 'refusal source disagrees')
       refusedSources.add(r.source)

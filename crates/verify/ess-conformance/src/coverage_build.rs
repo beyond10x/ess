@@ -442,7 +442,23 @@ fn classify(
         }
     }
 }
+/// What a generated refusal omitted. The match decides it for each cause, so a new cause cannot
+/// compile without a decision; every reader reads the same decision by code from
+/// [`CHECK_NOT_EMITTED`](crate::synthesize::CHECK_NOT_EMITTED), and every refusal written here is
+/// held to that list.
 fn generated_effect(cause: &crate::RefusalCause) -> Effect {
+    let effect = decided_effect(cause);
+    debug_assert_eq!(
+        effect,
+        crate::coverage::generated_refusal_effect(cause.catalogue_entry().key)
+            .expect("every catalogued code has an effect"),
+        "{} disagrees with CHECK_NOT_EMITTED",
+        cause.code()
+    );
+    effect
+}
+
+fn decided_effect(cause: &crate::RefusalCause) -> Effect {
     use crate::RefusalCause;
     match cause {
         RefusalCause::ViewUndecidable { .. }
@@ -523,7 +539,10 @@ fn authored_refusal(
         | Cause::ExternalAnswerUnstated { .. }
         | Cause::GuardsContradictOutcome { .. }
         | Cause::GeneratedValuePinned { .. }
-        | Cause::UnorderedTie { .. } => Effect::CandidateNotEmitted,
+        | Cause::UnorderedTie { .. }
+        | Cause::SystemActorSends { .. }
+        | Cause::AwaitedWithoutInstance { .. }
+        | Cause::NotIssuedClaims { .. } => Effect::CandidateNotEmitted,
     };
     Ok(Refusal {
         origin: Origin::Authored,

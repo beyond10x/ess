@@ -360,6 +360,23 @@ fn require(condition: bool, detail: &str) -> Result<(), AdmissionError> {
         Err(error(detail))
     }
 }
+/// The effect a generated refusal of catalogue number `code` carries, or `None` for a number the
+/// synthesis catalogue does not hold: every entry of
+/// [`RefusalCause::CATALOGUE`](crate::synthesize::RefusalCause::CATALOGUE) is admitted, so a code
+/// a newer synthesis writes is never refused by a reader that was not told about it.
+pub(crate) fn generated_refusal_effect(code: u16) -> Option<Effect> {
+    crate::synthesize::RefusalCause::CATALOGUE
+        .iter()
+        .any(|entry| entry.key == code)
+        .then(|| {
+            if crate::synthesize::CHECK_NOT_EMITTED.contains(&code) {
+                Effect::CheckNotEmitted
+            } else {
+                Effect::CandidateNotEmitted
+            }
+        })
+}
+
 fn refusal_cmp(a: &Refusal, b: &Refusal) -> std::cmp::Ordering {
     a.origin
         .cmp(&b.origin)
@@ -591,18 +608,11 @@ impl Inventory {
                     r.subject.is_some() && r.source.is_none(),
                     "generated refusal requires subject and null source",
                 )?;
-                let expected = (1..=crate::aggregate::UNWITNESSED)
-                    .chain(crate::system_issued::REFUSALS)
-                    .find(|n| r.code == format!("ESS-SYNTH-{n:03}"))
+                let effect = crate::synthesize::RefusalCause::CATALOGUE
+                    .iter()
+                    .find(|entry| r.code == format!("ESS-SYNTH-{:03}", entry.key))
+                    .and_then(|entry| generated_refusal_effect(entry.key))
                     .ok_or_else(|| error("unknown generated refusal code"))?;
-                let effect = if matches!(expected, 5 | 11 | 12 | 14)
-                    || [crate::aggregate::UNSCOPED, crate::aggregate::UNWITNESSED]
-                        .contains(&expected)
-                {
-                    Effect::CheckNotEmitted
-                } else {
-                    Effect::CandidateNotEmitted
-                };
                 require(
                     r.effect == effect,
                     "generated refusal effect contradicts code",
