@@ -41,6 +41,20 @@ struct Context<'a> {
     resolved: Resolved<'a>,
     /// The entity the outcome acts on, and whether it existed before the outcome ran.
     subject: Option<(&'a crate::entity::EntitySpec, bool)>,
+    /// Whether the sources are an error outcome's payload, which publishes no event payload for
+    /// a selector to read (ess/25, beyond10x/ess#549).
+    error_payload: bool,
+}
+
+impl Context<'_> {
+    /// Where a selector in these sources stands, for what it may read under `payload.`.
+    fn published_site(&self) -> super::published_operand::Site<'_> {
+        if self.error_payload {
+            super::published_operand::Site::ErrorPayload
+        } else {
+            super::published_operand::Site::Value(self.outcome)
+        }
+    }
 }
 
 /// Checks every `ess/14` source, the leaves of nested mappings, and `subject.<field>` literals.
@@ -77,6 +91,7 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
                     paths: super::input_path::admitted(Some(spec.system().format)),
                 },
                 subject,
+                error_payload: false,
             };
             let site = command.site().key("outcomes").named(outcome.name.as_str());
             for (event_name, fields) in &outcome.payload {
@@ -145,6 +160,8 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
     errors.extend(super::caller_value::validate(spec));
     // Set effects (ess/16, #167, #175): `instances:`, `affects:` and `{count: changed}`.
     errors.extend(super::set_effects::validate(spec));
+    // Published values read by selectors (ess/25, #549): no field reads itself through others.
+    errors.extend(super::published_operand::validate(spec));
     errors
 }
 
@@ -185,6 +202,7 @@ fn error_payload(context: &Context<'_>, site: &ConstructRef) -> ValidationErrors
         outcome,
         resolved: context.resolved,
         subject: row,
+        error_payload: true,
     };
     for (target, source) in &outcome.error_payload {
         let at = site
@@ -302,6 +320,7 @@ pub(super) fn validate_affect(
             paths: super::input_path::admitted(Some(spec.system().format)),
         },
         subject: Some((entity, true)),
+        error_payload: false,
     };
     for (target, source) in sets {
         let held = if entity.identity.name == *target {
@@ -1788,7 +1807,7 @@ fn check_selection(
         entity,
         &registry,
         &selection.filter,
-        at,
+        (at, context.published_site()),
     );
     if !checked.is_empty() {
         errors.extend(checked);
@@ -1870,7 +1889,7 @@ fn check_head(
         entity,
         &registry,
         &selection.filter,
-        at,
+        (at, context.published_site()),
     );
     if !checked.is_empty() {
         errors.extend(checked);

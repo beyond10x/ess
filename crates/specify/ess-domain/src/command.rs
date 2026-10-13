@@ -213,6 +213,7 @@ mod one_time_response;
 pub mod ordered_head;
 pub(crate) mod outcome_shapes;
 pub mod precedence;
+pub mod published_operand;
 pub mod related_guard;
 pub use related_guard::RelatedTest;
 pub mod related_value;
@@ -3280,6 +3281,14 @@ impl CommandSpec {
                 {
                     continue;
                 }
+                // `payload.<Event>.<field>` is a published value from `ess/25` (#549), which a
+                // guard refuses by name; the typed pass knows the format and refuses it either way.
+                if READS_INPUT_NAMESPACE.with(std::cell::Cell::get)
+                    && root == published_operand::ROOT
+                    && path.segments().len() > 2
+                {
+                    continue;
+                }
                 errors.push(
                     ValidationError::at(
                         location.clone().key("when"),
@@ -3355,6 +3364,14 @@ impl CommandSpec {
                 .as_ref()
                 .is_some_and(|path| caller_value::is_caller_path(path, &self.input))
             {
+                continue;
+            }
+            // A published value (ess/25, #549) is refused by name: nothing is published before
+            // the branch is chosen.
+            if let Some(refused) = error.path.as_ref().and_then(|path| {
+                published_operand::guard_refusal(types, path, error.segment.as_deref(), &owner)
+            }) {
+                errors.push(refused);
                 continue;
             }
             let mut diagnostic = error.validation_error();
