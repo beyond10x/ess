@@ -418,6 +418,18 @@ impl Inventory {
             "aggregate view refusals require suite/17",
         )
     }
+    /// A refusal of a system-issued command (`ESS-SYNTH-023`, `-024`) needs coverage suite/51
+    /// (beyond10x/ess#542).
+    fn system_issued_refusals(&self, suite: &ConformanceSuite) -> Result<(), AdmissionError> {
+        require(
+            suite.provenance.suite_version.major() >= crate::system_issued::COVERAGE
+                || !self
+                    .refused
+                    .iter()
+                    .any(|r| crate::system_issued::is_refusal(&r.code)),
+            "system-issued command refusals require suite/51",
+        )
+    }
     pub(crate) fn validate(&self, suite: &ConformanceSuite) -> Result<(), AdmissionError> {
         require(
             suite.provenance.suite_version.major() >= 7
@@ -425,6 +437,7 @@ impl Inventory {
             "accessor observation refusals require suite/7",
         )?;
         self.aggregate_refusals(suite)?;
+        self.system_issued_refusals(suite)?;
         let component = match &self.selection.scope {
             Scope::System => None,
             Scope::Component { component } => Some(component.as_str()),
@@ -579,6 +592,7 @@ impl Inventory {
                     "generated refusal requires subject and null source",
                 )?;
                 let expected = (1..=crate::aggregate::UNWITNESSED)
+                    .chain(crate::system_issued::REFUSALS)
                     .find(|n| r.code == format!("ESS-SYNTH-{n:03}"))
                     .ok_or_else(|| error("unknown generated refusal code"))?;
                 let effect = if matches!(expected, 5 | 11 | 12 | 14)

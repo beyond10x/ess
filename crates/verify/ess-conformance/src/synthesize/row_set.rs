@@ -122,6 +122,7 @@ pub(super) fn uses(command: &ResolvedCommand) -> bool {
 /// read, and the branches their own families file.
 pub(super) fn routes(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> bool {
     uses(command)
+        && rows_decide(command, outcome)
         && outcome.replays.is_none()
         && !(outcome.error.is_some() && matches!(outcome.condition, ResolvedCondition::When { .. }))
         && !matches!(
@@ -133,6 +134,24 @@ pub(super) fn routes(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> bo
                 | ResolvedCondition::WrongState
                 | ResolvedCondition::InputAbsent
         )
+}
+
+/// Whether the rows a selector selects bear on `outcome` at all: its own guard is a row set, it
+/// reads a selected row or the head of an ordered selection, or a branch answered before it under
+/// the precedence order is guarded by a row set, so that the rows must pass that branch over.
+///
+/// A branch none of this holds for is decided without reading a row, so it is witnessed as any
+/// other command's branch is, and what the row-set arrangement cannot do for a sibling — a head
+/// whose key the target mints, rows a binding changes — does not take it away
+/// (<https://github.com/beyond10x/ess/issues/552>).
+fn rows_decide(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> bool {
+    let guarded =
+        |branch: &ResolvedOutcome| matches!(branch.condition, ResolvedCondition::RelatedSet { .. });
+    guarded(outcome)
+        || !reads(outcome).is_empty()
+        || precedence::answers_before(command, outcome)
+            .into_iter()
+            .any(guarded)
 }
 
 /// The refusal for a further witness of a row-set branch, which only its own scenario arranges.
@@ -826,6 +845,10 @@ fn consistent(
                 }
             }
         }
+    }
+    // A branch no row bears on is decided without reading one (beyond10x/ess#552).
+    if !rows_decide(command, expected) {
+        return Ok(());
     }
     let reading = Reading::new(ir, command, supplied, rows)?;
     // Which row-set branches answer before `expected` is the precedence plan's: under the
@@ -1844,6 +1867,8 @@ pub(super) fn prepare(
         if !ordered_head::steerable(ir, &selection.entity, &first.field) {
             let reason = if ordered_head::is_identity(ir, &selection.entity, &first.field) {
                 ordered_head::MINTED
+            } else if ordered_head::minted(ir, &selection.entity, &first.field) {
+                ordered_head::MINTED_KEY
             } else {
                 ordered_head::UNSTEERED
             };
