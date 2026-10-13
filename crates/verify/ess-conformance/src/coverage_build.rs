@@ -519,7 +519,8 @@ fn authored_refusal(
         | Cause::HaltsAtNothing { .. }
         | Cause::InvalidPredicate { .. }
         | Cause::ExternalAnswerUnstated { .. }
-        | Cause::GuardsContradictOutcome { .. } => Effect::CandidateNotEmitted,
+        | Cause::GuardsContradictOutcome { .. }
+        | Cause::GeneratedValuePinned { .. } => Effect::CandidateNotEmitted,
     };
     Ok(Refusal {
         origin: Origin::Authored,
