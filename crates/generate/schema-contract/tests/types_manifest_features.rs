@@ -580,7 +580,7 @@ fn a_decoded_sample_is_serialized_again() {{
         assert!(bundle.with_raw_json(["Holder.id"]).is_err());
     }
 
-    /// Raw text decodes only from serde_json's own deserializer: a union holding it is decoded
+    /// Raw text decodes only from `serde_json`'s own deserializer: a union holding it is decoded
     /// through a raw token rather than a `Value`, and a record that buffers its fields for
     /// `#[serde(flatten)]` cannot hold it and is refused.
     #[test]
