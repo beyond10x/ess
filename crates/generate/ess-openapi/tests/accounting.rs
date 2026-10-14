@@ -54,7 +54,7 @@ fn checked_envelope_preserves_exact_source_and_legacy_bytes() {
     );
     assert_eq!(read_import(&bytes).unwrap().to_canonical_json(), bytes);
     assert_eq!(
-        read_import(&serde_yaml::to_string(&value).unwrap()).unwrap(),
+        read_import(&ess_yaml::to_string(&value).unwrap()).unwrap(),
         report
     );
     assert!(legacy_v1::read_interface(&bytes).is_err());
@@ -216,7 +216,7 @@ fn repeated_fields_and_nested_map_keys_refuse_before_erasure() {
             "{errors:?}"
         );
     }
-    let yaml = serde_yaml::to_string(&serde_json::from_str::<Value>(&bytes).unwrap()).unwrap();
+    let yaml = ess_yaml::to_string(&serde_json::from_str::<Value>(&bytes).unwrap()).unwrap();
     let changed = yaml.replacen(
         "name: invoice-service",
         "name: invoice-service\n    name: invoice-service",
@@ -261,7 +261,7 @@ fn checked_import_rejects_unknown_fields_through_mixed_schema_nesting() {
         for pointer in NESTED_UNIT_POINTERS {
             let mut wire: Value = serde_json::from_str(&report.to_canonical_json()).unwrap();
             wire.pointer_mut(pointer).unwrap()["extra~/"] = json!(null);
-            for bytes in [wire.to_string(), serde_yaml::to_string(&wire).unwrap()] {
+            for bytes in [wire.to_string(), ess_yaml::to_string(&wire).unwrap()] {
                 let errors = read_import(&bytes).unwrap_err();
                 assert!(
                     errors.iter().any(|error| {
@@ -280,7 +280,7 @@ fn nested_units_reload_and_legacy_unit_admission_remains_unchanged() {
     for kind in ["integer", "number", "boolean"] {
         let report = nested_unit_import(kind);
         let wire: Value = serde_json::from_str(&report.to_canonical_json()).unwrap();
-        for bytes in [wire.to_string(), serde_yaml::to_string(&wire).unwrap()] {
+        for bytes in [wire.to_string(), ess_yaml::to_string(&wire).unwrap()] {
             let checked = read_import(&bytes).unwrap();
             assert_eq!(checked, report);
             assert_eq!(project_import(&checked), project_import(&report));
@@ -292,7 +292,7 @@ fn nested_units_reload_and_legacy_unit_admission_remains_unchanged() {
                 .pointer_mut(pointer.strip_prefix("/interface").unwrap())
                 .unwrap()["extra~/"] = json!(null);
         }
-        for bytes in [legacy.to_string(), serde_yaml::to_string(&legacy).unwrap()] {
+        for bytes in [legacy.to_string(), ess_yaml::to_string(&legacy).unwrap()] {
             let expected = report.interface().to_canonical_json();
             assert_eq!(
                 read_interface(&bytes).unwrap().to_canonical_json(),

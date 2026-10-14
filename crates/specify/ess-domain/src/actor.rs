@@ -301,7 +301,7 @@ mod tests {
     use super::*;
 
     fn actor(yaml: &str) -> ActorSpec {
-        let raw: RawActorSpec = serde_yaml::from_str(yaml).expect("the document is well formed");
+        let raw: RawActorSpec = ess_yaml::from_str(yaml).expect("the document is well formed");
         ActorSpec::try_from(raw).expect("an actor is valid on its own")
     }
 
@@ -443,8 +443,8 @@ naming:
   display: Finance operator
 ",
         );
-        let rendered = serde_yaml::to_string(&spec).expect("serialises");
-        let raw: RawActorSpec = serde_yaml::from_str(&rendered).expect("parses back");
+        let rendered = ess_yaml::to_string(&spec).expect("serialises");
+        let raw: RawActorSpec = ess_yaml::from_str(&rendered).expect("parses back");
         let again = ActorSpec::try_from(raw).expect("valid");
         assert_eq!(again, spec);
         assert!(
@@ -455,7 +455,7 @@ naming:
 
     #[test]
     fn a_malformed_command_name_is_refused_when_the_document_is_read() {
-        let error = serde_yaml::from_str::<RawActorSpec>(
+        let error = ess_yaml::from_str::<RawActorSpec>(
             "\
 name: billing.Customer
 may:
@@ -471,7 +471,7 @@ may:
 
     #[test]
     fn a_key_the_model_does_not_know_is_refused() {
-        let error = serde_yaml::from_str::<RawActorSpec>(
+        let error = ess_yaml::from_str::<RawActorSpec>(
             "\
 name: billing.Customer
 can:

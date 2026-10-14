@@ -1609,10 +1609,10 @@ fn caller_sensitive_set_command_arranges_under_another_invocation() {
 
 fn caller_set_source() -> String {
     let source = include_str!("../../../specify/ess-compiler/tests/fixtures/set-effects.yaml");
-    let mut raw: serde_yaml::Value = serde_yaml::from_str(source).unwrap();
+    let mut raw: ess_yaml::Value = ess_yaml::from_str(source).unwrap();
     raw["format"] = "ess/18".into();
     raw["actors"][0]["attributes"] =
-        serde_yaml::from_str("[{name: principal, type: demo.desk.Note}]").unwrap();
+        ess_yaml::from_str("[{name: principal, type: demo.desk.Note}]").unwrap();
     let commands = raw["commands"].as_sequence_mut().unwrap();
     let mut bulk = commands
         .iter()
@@ -1624,11 +1624,11 @@ fn caller_set_source() -> String {
     creating["input"]
         .as_sequence_mut()
         .unwrap()
-        .push(serde_yaml::from_str("{name: bulk, type: Boolean}").unwrap());
+        .push(ess_yaml::from_str("{name: bulk, type: Boolean}").unwrap());
     creating["outcomes"][0]["when"] = "bulk == false".into();
-    creating["outcomes"][0]["sets"]["note"] = serde_yaml::from_str("{caller: principal}").unwrap();
+    creating["outcomes"][0]["sets"]["note"] = ess_yaml::from_str("{caller: principal}").unwrap();
     creating["outcomes"].as_sequence_mut().unwrap().push(bulk);
-    serde_yaml::to_string(&raw).unwrap()
+    ess_yaml::to_string(&raw).unwrap()
 }
 
 fn caller_set_suite() -> ConformanceSuite {

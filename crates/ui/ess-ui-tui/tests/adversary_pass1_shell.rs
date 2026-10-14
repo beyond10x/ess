@@ -8,7 +8,7 @@ use std::time::Duration;
 use ess_ui_tui::{
     App, DataAdapter, FixtureAdapter, Lifecycle, Options, ReadRequest, ReadResult, TuiError,
 };
-use serde_yaml::Value;
+use ess_yaml::Value;
 
 fn example_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../examples/partner-portal")

@@ -10,7 +10,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use serde_yaml::Value;
+use ess_yaml::Value;
 
 const DOCUMENT: &str = r"
 format: ess-ui/1
@@ -193,7 +193,7 @@ fn shown(value: &Value) -> String {
 }
 
 fn choice(yaml: &str) -> ess_ui::Choice {
-    serde_yaml::from_str(yaml).unwrap_or_else(|error| panic!("{yaml}: {error}"))
+    ess_yaml::from_str(yaml).unwrap_or_else(|error| panic!("{yaml}: {error}"))
 }
 
 /// A named `label` field that a row holds as `null` (an `Optional` row field without a value):
@@ -212,7 +212,7 @@ fn a_null_named_label_is_shown_alike_by_both_renderers() {
     );
     let definition =
         choice("{reads: {view: release.Repositories}, value: repository_id, label: nickname}");
-    let row: Value = serde_yaml::from_str("{repository_id: repo-1, nickname: null, name: One}")
+    let row: Value = ess_yaml::from_str("{repository_id: repo-1, nickname: null, name: One}")
         .expect("the row parses");
     let (value, label) = definition
         .row_option(&row, None, None)
@@ -237,7 +237,7 @@ fn a_null_same_name_field_sends_the_same_value_in_both_renderers() {
         &rows,
     );
     let definition = choice("{reads: {view: shop.Items}}");
-    let row: Value = serde_yaml::from_str("{parent_id: null, item_id: item-1, label: One}")
+    let row: Value = ess_yaml::from_str("{parent_id: null, item_id: item-1, label: One}")
         .expect("the row parses");
     let (value, _) = definition
         .row_option(&row, Some("parent_id"), Some("item_id"))

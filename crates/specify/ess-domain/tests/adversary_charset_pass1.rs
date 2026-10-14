@@ -92,7 +92,7 @@ fn every_committed_document_the_parser_reads_is_admitted_at_the_new_charsets() {
         if RawSpecFile::parse(&text).is_err() {
             continue;
         }
-        let Ok(value) = serde_yaml::from_str::<Value>(&text) else {
+        let Ok(value) = ess_yaml::from_str::<Value>(&text) else {
             continue;
         };
         read += 1;
@@ -160,7 +160,7 @@ fn the_published_charset_agrees_with_the_constructor_at_the_boundaries() {
 fn a_transition_name_the_parser_refuses_the_schema_refuses() {
     let validator = definition_validator("Transition");
     for written in ["settle now", "1settle", "billing.settle", "", "settle!"] {
-        let parsed = serde_yaml::from_str::<Transition>(&format!(
+        let parsed = ess_yaml::from_str::<Transition>(&format!(
             "name: {written:?}\nfrom: [Draft]\nto: Paid\n"
         ));
         assert!(
@@ -186,7 +186,7 @@ fn a_transition_name_the_parser_refuses_the_schema_refuses() {
 fn a_binding_written_with_its_id_alias_is_refused_by_the_schema_today() {
     let text = include_str!("../../../generate/ess-synth/tests/fixtures/binding-selection.yaml");
     RawSpecFile::parse(text).expect("the parser reads `id:`");
-    let document: Value = serde_yaml::from_str(text).expect("YAML");
+    let document: Value = ess_yaml::from_str(text).expect("YAML");
     let binding = &document["bindings"][0];
     assert_eq!(binding["id"], json!("choose"));
     let validator = definition_validator("RawBindingSpec");

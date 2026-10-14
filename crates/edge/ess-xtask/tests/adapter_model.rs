@@ -43,9 +43,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use ess_yaml::Value as Yaml;
 use quote::ToTokens;
 use serde_json::Value as Json;
-use serde_yaml::Value as Yaml;
 
 const MODEL: &str = "models/recorded-log-adapter/domains/adapter.yaml";
 const HISTORY_MODEL: &str = "models/concurrent-history/domains/history.yaml";
@@ -138,7 +138,7 @@ fn enum_variants(declaration: &Yaml) -> BTreeSet<String> {
 }
 
 fn read_model(text_of_model: &str) -> Model {
-    let document: Yaml = serde_yaml::from_str(text_of_model).expect("the domain is YAML");
+    let document: Yaml = ess_yaml::from_str(text_of_model).expect("the domain is YAML");
     let mut model = Model {
         structs: BTreeMap::new(),
         enums: BTreeMap::new(),
@@ -1083,7 +1083,7 @@ fn the_schema_declares_exactly_the_modelled_fields_and_values() {
 #[test]
 fn the_redeclared_completion_is_the_history_models() {
     let history: Yaml =
-        serde_yaml::from_str(&source(HISTORY_MODEL)).expect("the history domain is YAML");
+        ess_yaml::from_str(&source(HISTORY_MODEL)).expect("the history domain is YAML");
     let original = sequence(&history, "types")
         .iter()
         .find(|declaration| text(declaration, "name") == Some("concurrent.history.Completion"))

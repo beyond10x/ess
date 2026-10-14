@@ -488,6 +488,60 @@ as a closed domain. No entity field can be named `state`.
 **Widening `SubjectField` in place.** It changes the IR of every ess/6 model that uses it, against
 the byte-preservation rule, for no gain over a sibling variant.
 
+### Create-or-update selected by stored fields (`ess/25`, beyond10x/ess#530)
+
+A command addressed by one identity may create the row when none carries it and otherwise move it,
+with the move chosen by the stored row: `when_subject:` branches beside an `unknown_instance:`
+branch that `creates:` the row under the same identity. `when_subject_state:` already admitted that
+pairing; the predicate form refused it, because the validation that requires every subject-bearing
+branch to name one existing subject counted the creating branch.
+
+```yaml
+- name: reopened-busy
+  when_subject: {predicate: {all: [state == Busy, call_ref != ""]}}
+  moves: demo.desk.Seat.reopen
+  instance: user_id
+- name: opened
+  when_subject: {predicate: state == Closed}
+  moves: demo.desk.Seat.open
+  instance: user_id
+- name: reopened            # every other stored seat
+  moves: demo.desk.Seat.reopen
+  instance: user_id
+- name: first
+  unknown_instance: true
+  creates: demo.desk.Seat
+  instance: user_id
+```
+
+- **No new key.** The precedence order already says what happens: the creating branch answers at
+  step 3 (existence), on an identity no row carries, before any step-4 branch reads a row. So the
+  predicates are decided only on a stored row, whatever the declaration order.
+- **Partition.** `validate_partition` runs over the existing-row branches alone; the creating
+  branch, like every `unknown_instance:` branch, is outside it. A stored row no predicate selects
+  is still `non_exhaustive_branches`, and two predicates selecting one row still
+  `conflicting_declaration`. The finite prover's domains are unchanged: a text field such as
+  `call_ref` has no closed set, so a command guarding on it still needs a genuine default for the
+  rest — the issue's document as filed, with `reopened` guarded by
+  `state == Open or (state == Busy and call_ref == "")`, is refused for that reason, exactly as the
+  same three branches are on a command that creates nothing.
+- **Format.** Admitting the pairing at `ess/24` would make a refused document valid, so it is
+  `ess/25`. Below it the refusal is unchanged — `conflicting_declaration` at `outcomes`, "subject
+  fact selection requires one existing subject identity" — and gains a hint naming `ess/25`. A
+  creating branch that existence does not select (no `unknown_instance:`) stays refused at every
+  format. No persisted field is added and no IR shape changes, so every model below `ess/25` keeps
+  its IR bytes and digest (the selection-precedence, synthesis-suite and lowered-definitions tables
+  pin every repository model).
+- **Conformance.** Synthesis files the creating branch as every creation is, on an identity no
+  scenario arranges (`subject_fact::routes` leaves it to the existence family), and each stored-row
+  branch on an arranged row, as before. The interpreted target and the generated Rust and Go
+  behaviour, which read the addressed row and create it where it is absent before selecting by it,
+  pass the suite (`ess-synth/tests/create_or_update_stored_fields_served.rs`); the Web and command-
+  line targets generate it with the Rust system.
+- **Entity Runtime.** A branch chosen by existence has no entity-core definition, so lowering
+  refuses the command by name (`ExistenceSelectionUnsupported`) whatever selects among its update
+  branches.
+
 ## Rule 2: out of scope, and the steps that are in
 
 A view-level non-overlap constraint was considered:
@@ -761,7 +815,10 @@ of its own:
 
 1. on a command with a `when_related:` branch reading an input, `existing_instance` then `exists: false` (#211 revision); an absent Optional reference (`ess/22`, #304) reads no row, so neither `exists: false` nor step 5 answers it; several rows read through the input (`ess/22`, #283) are read in the declaration order of their `exists: false` branches, and the first missing one answers;
 2. input-guarded refusals, the first declared whose guard holds (#209, #227); a refusal whose
-   `when:` always holds is refused by validation (beyond10x/ess#489), since it had no one step here;
+   `when:` always holds is refused by validation (beyond10x/ess#489), since it had no one step here.
+   From `ess/25` an `external:` refusal marked `before_row: true` answers here too, among them in
+   declaration order, where its provider takes it and its own `when:`, if any, holds
+   ([below](#an-external-refusal-answered-before-the-row-ess25-beyond10xess534));
 3. existence of the addressed row (`unknown_instance`, and `existing_instance` on commands without `when_related`);
 4. the held state: `when_subject_state` and `when_subject` select by it; `wrong_state` answers only
    where the branch step 6 selects moves from a state its move does not start from, so an accepting
@@ -776,7 +833,8 @@ of its own:
    subject (`ess/22`, #304) answers entirely here, whether or not `wrong_state` is declared: its
    field read as the row held it before the branch, absent selecting no related branch, an
    identity no row carries `exists: false`, a stored row its predicate refusal;
-6. accepting and external branches in declaration order (#217).
+6. accepting and external branches in declaration order (#217), every external branch but one
+   marked `before_row: true`.
 
 Validation refuses an accepting or external branch declared before a branch step 4 selects where
 one request can satisfy both input guards (beyond10x/ess#486, `ConflictingDeclaration`, naming
@@ -819,3 +877,83 @@ An input refusal guarded by the held state as well (`when_subject:` beside `when
 step 4, not step 2. Synthesis witnesses the step 3/4 boundary for it: the unknown-instance and
 wrong-state scenarios also send an input it claims and require their own answer
 (beyond10x/ess#454, `outcome-shapes.md`).
+
+### An external refusal answered before the row (`ess/25`, beyond10x/ess#534)
+
+An implementation may refuse a request on something it decides from the request alone, before it
+loads the addressed row: a credential checked against a digest it derives, a client authenticated
+before the token it names is looked up (RFC 7009 § 2.1, RFC 6749 § 3.2.1). The cause is not
+computable in a guard, so it is `external:`, and every external branch answered at step 6, after
+existence and the held state. Declared above a held-state branch it was refused by the #486 rule;
+declared below one it was unreachable for every stored row; and in either order an
+unauthenticated caller learned from the answer whether the row existed and what it held.
+
+```yaml
+- name: bad-credential
+  external: secret is not the digest the service derives from user_id
+  before_row: true
+  error: demo.desk.BadCredential
+```
+
+- **The key.** `before_row: true` on an `external:` branch places it at step 2, among the
+  input-guarded refusals, in declaration order: the first declared step-2 branch that answers is
+  an input refusal whose guard holds or a `before_row` external its provider takes, whose own
+  `when:`, where declared, holds. `before_row: false` is the same document as leaving the key out.
+  A sibling key, as `compensates:` is, rather than a mapping under `external:`: `external:` keeps
+  its one spelling, the cause, and a model without the key keeps its IR bytes and digest. The IR
+  carries it as `before_row` on the outcome, left out where `false`.
+- **Not a precedence list.** An ordered `precedence:` list on a command, and `precedes:
+  held_state` on a branch, were proposed and are not taken: the first reopens the one order this
+  section states for every command, and the second names one step, leaving existence (step 3)
+  answering before the external. Step 2 answers both.
+- **Only a refusal that reads no row.** It is refused (`conflicting_declaration`, at
+  `outcomes.<name>.before_row`) without `external:`; on a branch naming no `error:` (an accepting
+  external acts on the row, so reads it); beside `compensates: true` (it changes the row); and
+  where its error payload reads the addressed row or a related one (`{subject: …}`, an increment,
+  `{related: …}`). A refusal declares no subject except under `compensates:`, so nothing else of
+  it reads the row.
+- **The #486 rule.** A `before_row` external is not a step-6 branch, so a held-state branch may be
+  declared after it, which is the declaration #534 needs; the rule's refusal is unchanged for
+  every external branch without the key. Declared after a branch answering at step 3, 4, 5 or 6 —
+  `existing_instance:` or `unknown_instance:`, a held-state branch, `wrong_state:`, a present-related
+  refusal, an accepting or another external branch — it is refused (`conflicting_declaration`,
+  naming that branch), so declaration order gives this order's answer to a consumer reading one
+  declaration-order pass, as the #486 rule keeps it for steps 4 and 6. Among the input-guarded
+  refusals, and beside the default, its place is free.
+- **`unknown_instance:` and existence.** It answers before them: an identity no row carries is
+  refused with the external cause where the provider takes it, as a stored row in any state is, so
+  the answer says nothing about existence. A creating `unknown_instance:` branch (create-or-update)
+  is reached only where the provider does not take it.
+- **`when_related:`, step 1.** Step 1 answers before step 2. Whether an external decided from the
+  request alone should answer before a related row's existence too is not decided here: a
+  `before_row` external on a command declaring any `when_related:` branch is refused
+  (`conflicting_declaration`), until that order is designed. Admitting it later, in either order,
+  changes no model that validates now.
+- **A narrowed external.** An external branch narrowed by a guard over the addressed row
+  (`story:external-branch-narrowed-by-subject-guard`, not yet designed) reads the row, so it can
+  never answer before it: that design refuses the two keys together.
+- **Format.** Below `ess/25` the key is refused with `unsupported_format_version` at
+  `outcomes.<name>.before_row`, naming `ess/25`.
+- **Every target.** The precedence classification places the branch, so every consumer reading
+  the precedence plan follows it: the model interpreter answers it in `refused_by_input`, the forced
+  branch where its provider was arranged, and under an open provider one possible answer beside
+  whatever the rest of the order selects; the generated Rust and Go behaviour ask the provider
+  before they read the row. The Go and TypeScript explorers offer it, before an input refusal
+  declared after it, an unknown identity and the held state. Entity Runtime lowers an external
+  branch as evidence beside the row it loads, so lowering refuses it by name
+  (`OutcomeShapeUnsupported`, construct "an external refusal answered before the row"). `ess
+  verify diff` reports the key gained or lost as the branch's `outcome-condition-changed`, its
+  condition written with `; before the row` where the key is set: the requests the branch answers
+  moved, as they do when a guard changes, and the change is classified as every condition change
+  is. No change kind is added, so no `ess-diff/` version.
+- **Conformance.** Synthesis forces the external on a row the held state would also select — a
+  row in the state the first declared held-state branch admits — where only an input refusal
+  declared before it can claim the input, and once more on an identity no scenario stores (the one
+  an `unknown_instance:` scenario sends). A target reading the row first answers the held-state
+  branch or the unknown-instance one, and fails. Beside `existing_instance:` it is forced once more
+  on an identity a row created in the scenario already carries, where a target reading existence
+  first answers `existing_instance:` and so tells the caller the row exists. For each input refusal
+  declared after it, it is forced once more on an input that refusal's guard selects, where its own
+  `when:` holds and every input refusal declared before it is refuted; a target asking the
+  provider only after the input refusals answers that refusal, and fails. Where no input is both,
+  nothing tells the two orders apart, and that send is left out.

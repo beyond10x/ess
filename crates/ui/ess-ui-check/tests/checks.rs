@@ -688,8 +688,8 @@ fn token_values() {
     }
 
     // The built-in table, restated as a document's `tokens:`, is in its own grammar.
-    let schema: serde_yaml::Value = serde_yaml::from_str(ess_ui::SCHEMA).expect("schema");
-    let builtins = serde_yaml::to_string(&schema["constructs"]["Tokens"]["builtins"])
+    let schema: ess_yaml::Value = ess_yaml::from_str(ess_ui::SCHEMA).expect("schema");
+    let builtins = ess_yaml::to_string(&schema["constructs"]["Tokens"]["builtins"])
         .expect("the built-in table writes");
     let mut restated = doc(&[]);
     restated.push_str("tokens:\n");
@@ -1496,7 +1496,7 @@ fn run_exits_1_on_an_error_and_0_on_warnings_only() {
 
 #[test]
 fn every_schema_check_is_run() {
-    let schema: serde_yaml::Value = serde_yaml::from_str(ess_ui::SCHEMA).expect("schema");
+    let schema: ess_yaml::Value = ess_yaml::from_str(ess_ui::SCHEMA).expect("schema");
     let list = schema["checks"]["list"].as_sequence().expect("checks.list");
     assert!(list.len() >= 17);
     for entry in list {

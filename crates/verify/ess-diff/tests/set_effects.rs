@@ -191,3 +191,40 @@ fn each_entry_diff_line_names_the_entry() {
         "the added entry is on the line that changed: {json}"
     );
 }
+
+/// One event per changed row (ess/25, beyond10x/ess#531): a per-row event and its state filter are
+/// part of the set effect, so changing the filter is `outcome-set-effect-changed`, naming it.
+#[test]
+fn per_row_event_change_is_classified() {
+    const SEATS: &str =
+        include_str!("../../../specify/ess-compiler/tests/fixtures/set-effects-per-row.yaml");
+    let entry = "{event: demo.desk.Left, each: changed, when_state: Busy}";
+    assert!(SEATS.contains(entry));
+    let widened = SEATS.replacen(
+        entry,
+        "{event: demo.desk.Left, each: changed, when_state: [Open, Busy]}",
+        1,
+    );
+    let delta = diff(&ir(SEATS), &ir(&widened)).unwrap();
+    let json = delta.to_canonical_json();
+    assert!(
+        json.contains(r#""kind": "outcome-set-effect-changed""#),
+        "{json}"
+    );
+    assert!(
+        json.contains("publishes `demo.desk.Left` once per changed row that was `Busy`"),
+        "{json}"
+    );
+    assert!(
+        json.contains("publishes `demo.desk.Left` once per changed row that was `Busy` or `Open`"),
+        "{json}"
+    );
+    let unfiltered = SEATS.replacen(entry, "{event: demo.desk.Left, each: changed}", 1);
+    let json = diff(&ir(SEATS), &ir(&unfiltered))
+        .unwrap()
+        .to_canonical_json();
+    assert!(
+        json.contains(r#"publishes `demo.desk.Left` once per changed row""#),
+        "{json}"
+    );
+}

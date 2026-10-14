@@ -1,6 +1,16 @@
 //! `starts_with`, `ends_with` and `contains` (beyond10x/ess#95) at validation: where they apply,
 //! what they refuse, the `ess/8` gate at every predicate position, and the finite proof declining
 //! them. `docs/design/string-predicate-operators.md` is the binding design.
+//!
+//! `trimmed:` (beyond10x/ess#532, ess/25) wraps one of these operators; its validation cases live
+//! in the modules under `tests/string_operators/`, compiled into this binary.
+
+#[path = "string_operators/adversary_m3_pass1.rs"]
+mod adversary_m3_pass1;
+#[path = "string_operators/trimmed_literal_whitespace.rs"]
+mod trimmed_literal_whitespace;
+#[path = "string_operators/trimmed_text_guard.rs"]
+mod trimmed_text_guard;
 
 use ess_domain::{spec::RawSpecFile, system::Source, Specification};
 use ess_primitives::error::{ValidationCode, ValidationErrors};

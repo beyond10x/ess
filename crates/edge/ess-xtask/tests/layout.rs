@@ -313,3 +313,131 @@ fn the_path_scan_finds_at_least_one_path_in_this_repository() {
          makes about them is vacuous"
     );
 }
+
+/// The packages no published ESS crate may depend on: `serde_yaml` is deprecated, and
+/// `unsafe-libyaml` under it is RUSTSEC-2024-0449 (beyond10x/ess#541).
+const REFUSED_PACKAGES: &[&str] = &["serde_yaml", "unsafe-libyaml"];
+
+/// The workspace's resolved graph, as `cargo metadata` reports it from the committed lock file.
+fn cargo_metadata(root: &Path) -> serde_json::Value {
+    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_owned());
+    let output = Command::new(cargo)
+        .current_dir(root)
+        .args(["metadata", "--locked", "--offline", "--format-version", "1"])
+        .output()
+        .expect("`cargo metadata` runs");
+    assert!(
+        output.status.success(),
+        "`cargo metadata --locked --offline` failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout).expect("`cargo metadata` prints JSON")
+}
+
+/// No published ESS crate depends on `serde_yaml` or `unsafe-libyaml`, directly or through
+/// anything it builds against.
+///
+/// **Published** is every workspace member under `crates/` except `ess-xtask`: no ESS crate is on
+/// crates.io, adopters depend on them by Git tag, and the manifests' `publish` field is set
+/// inconsistently (`docs/design/yaml-parser-replacement.md`, *The test*). Two places are read:
+/// what is reachable from a published crate over normal and build edges, which is what an
+/// adopter's `cargo deny` sees; and each published crate's own dependency list of every kind, so a
+/// dev-dependency cannot bring either package back into the crate's manifest.
+#[test]
+fn no_published_crate_depends_on_serde_yaml_or_unsafe_libyaml() {
+    let root = workspace_root();
+    let metadata = cargo_metadata(&root);
+    let members: BTreeSet<&str> = metadata["workspace_members"]
+        .as_array()
+        .expect("`workspace_members` is a list")
+        .iter()
+        .filter_map(serde_json::Value::as_str)
+        .collect();
+    let packages = metadata["packages"]
+        .as_array()
+        .expect("`packages` is a list");
+    let name_of: std::collections::BTreeMap<&str, &str> = packages
+        .iter()
+        .filter_map(|package| Some((package["id"].as_str()?, package["name"].as_str()?)))
+        .collect();
+    let crates_dir = root.join("crates");
+    let published: Vec<&serde_json::Value> = packages
+        .iter()
+        .filter(|package| {
+            package["id"]
+                .as_str()
+                .is_some_and(|id| members.contains(id))
+                && package["name"].as_str() != Some("ess-xtask")
+                && package["manifest_path"]
+                    .as_str()
+                    .is_some_and(|path| Path::new(path).starts_with(&crates_dir))
+        })
+        .collect();
+    let published_names: BTreeSet<&str> = published
+        .iter()
+        .filter_map(|package| package["name"].as_str())
+        .collect();
+    // An empty selection would pass on any graph.
+    for expected in ["ess-primitives", "ess-domain", "ess-compiler", "ess-cli"] {
+        assert!(
+            published_names.contains(expected),
+            "the published set must include `{expected}`; it is {published_names:?}"
+        );
+    }
+
+    let mut findings = BTreeSet::new();
+    for package in &published {
+        let name = package["name"].as_str().unwrap_or_default();
+        for dependency in package["dependencies"].as_array().into_iter().flatten() {
+            let dependency_name = dependency["name"].as_str().unwrap_or_default();
+            if REFUSED_PACKAGES.contains(&dependency_name) {
+                let kind = dependency["kind"].as_str().unwrap_or("normal");
+                findings.insert(format!(
+                    "`{name}` lists `{dependency_name}` as a {kind} dependency"
+                ));
+            }
+        }
+    }
+
+    let nodes: std::collections::BTreeMap<&str, &serde_json::Value> = metadata["resolve"]["nodes"]
+        .as_array()
+        .expect("`resolve.nodes` is a list")
+        .iter()
+        .filter_map(|node| Some((node["id"].as_str()?, node)))
+        .collect();
+    for package in &published {
+        let start = package["id"].as_str().expect("a package has an id");
+        let mut seen = BTreeSet::from([start]);
+        let mut queue = vec![start];
+        while let Some(id) = queue.pop() {
+            if let Some(name) = name_of.get(id) {
+                if REFUSED_PACKAGES.contains(name) {
+                    findings.insert(format!(
+                        "`{}` reaches `{name}` over normal or build edges",
+                        package["name"].as_str().unwrap_or_default()
+                    ));
+                }
+            }
+            let Some(node) = nodes.get(id) else { continue };
+            for dependency in node["deps"].as_array().into_iter().flatten() {
+                let not_dev_only = dependency["dep_kinds"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .any(|kind| kind["kind"].as_str() != Some("dev"));
+                if let Some(next) = dependency["pkg"].as_str() {
+                    if not_dev_only && seen.insert(next) {
+                        queue.push(next);
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        findings.is_empty(),
+        "no published crate may depend on {REFUSED_PACKAGES:?} (beyond10x/ess#541); YAML goes \
+         through `ess-yaml`. {} finding(s):\n{}",
+        findings.len(),
+        findings.into_iter().collect::<Vec<_>>().join("\n")
+    );
+}

@@ -1,5 +1,5 @@
 //! Explicit authored-source admission traces with real CLI terminal controls.
-//! The source reader is `serde_yaml`; these cases do not run a JSON Schema evaluator.
+//! The source reader is `ess-yaml`; these cases do not run a JSON Schema evaluator.
 
 use ess_cli_contract::Binding;
 use ess_cli_project::runtime::{

@@ -1307,9 +1307,9 @@ mod tests {
     fn the_two_spellings_name_one_instant_and_are_not_one_claim() {
         // They used to be one value, and that is the defect: a date is a day somewhere, an epoch
         // value is an instant everywhere, and the difference has to survive to `is_after`.
-        let by_date: ObservedAt = serde_yaml::from_str("2026-08-30").expect("a date parses");
+        let by_date: ObservedAt = ess_yaml::from_str("2026-08-30").expect("a date parses");
         let by_instant: ObservedAt =
-            serde_yaml::from_str(&by_date.timestamp().epoch_millis().to_string())
+            ess_yaml::from_str(&by_date.timestamp().epoch_millis().to_string())
                 .expect("an instant parses");
         assert_eq!(
             by_date.timestamp(),
@@ -1323,7 +1323,7 @@ mod tests {
             "and the spelling is part of the value, because the two are refused differently"
         );
         assert_eq!(
-            serde_yaml::to_string(&by_date).expect("serialises").trim(),
+            ess_yaml::to_string(&by_date).expect("serialises").trim(),
             by_date.timestamp().epoch_millis().to_string(),
             "the canonical wire form is still the instant, for both"
         );
@@ -1337,7 +1337,7 @@ mod tests {
             "1788048000000ms",
             "an instant prints as the number somebody typed"
         );
-        let refusal = serde_yaml::from_str::<ObservedAt>("last Tuesday")
+        let refusal = ess_yaml::from_str::<ObservedAt>("last Tuesday")
             .expect_err("prose is not an observation time");
         assert!(refusal.to_string().contains("YYYY-MM-DD"), "{refusal}");
     }

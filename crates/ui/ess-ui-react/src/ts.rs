@@ -2,7 +2,7 @@
 
 use std::fmt::Write as _;
 
-use serde_yaml::Value;
+use ess_yaml::Value;
 
 /// A string as a TypeScript string literal (JSON quoting is valid TypeScript).
 pub(crate) fn string(text: &str) -> String {
@@ -72,7 +72,7 @@ pub(crate) fn key_text(key: &Value) -> String {
         Value::Bool(flag) => flag.to_string(),
         Value::Number(number) => number.to_string(),
         Value::Null => "null".to_owned(),
-        other => serde_yaml::to_string(other)
+        other => ess_yaml::to_string(other)
             .unwrap_or_default()
             .trim()
             .to_owned(),

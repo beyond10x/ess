@@ -1,0 +1,92 @@
+# The explorer's fixture for an external refusal answered before the row (`before_row: true`,
+# ess/25, beyond10x/ess#534).
+#
+# A seat is opened, then signed into: `SignIn` checks a credential before it reads the seat
+# (`bad-credential`), refuses a seat no row carries (`no-seat`), and otherwise takes an open seat
+# or releases a busy one. The targets beside it are `explore-before-row-target.mjs` and
+# `explore_before_row_target.go`, each switched by the mode the driver passes.
+
+format: ess/25
+system: exploreext
+version: v1
+domain: exploreext.desk
+summary: Seats signed into after a credential check.
+
+types:
+  - {name: exploreext.desk.SeatId, kind: newtype, of: Uuid}
+
+entities:
+  - name: exploreext.desk.Seat
+    identity: {name: seat_id, type: exploreext.desk.SeatId}
+    fields:
+      - {name: label, type: String}
+    lifecycle:
+      initial: Open
+      states: [Open, Busy]
+      transitions:
+        - {name: take, from: [Open], to: Busy}
+        - {name: release, from: [Busy], to: Open}
+
+actors:
+  - name: exploreext.desk.Clerk
+    may: [exploreext.desk.OpenSeat, exploreext.desk.SignIn]
+
+errors:
+  - {name: exploreext.desk.BadCredential, summary: The secret is not the one the service derives.}
+  - {name: exploreext.desk.NoSeat, summary: No seat carries the identity.}
+
+commands:
+  - name: exploreext.desk.OpenSeat
+    input:
+      - {name: label, type: String}
+    outcomes:
+      - name: opened
+        creates: exploreext.desk.Seat
+        instance: seat_id
+        sets: {label: input.label}
+        emits: [exploreext.desk.SeatOpened]
+        payload:
+          exploreext.desk.SeatOpened: {seat_id: {generated: true}}
+  - name: exploreext.desk.SignIn
+    input:
+      - {name: seat_id, type: exploreext.desk.SeatId}
+      - {name: secret, type: String}
+    outcomes:
+      - name: bad-credential
+        external: the secret is not the digest the service derives
+        before_row: true
+        error: exploreext.desk.BadCredential
+      - name: no-seat
+        unknown_instance: true
+        error: exploreext.desk.NoSeat
+      - name: taken
+        when_subject_state: Open
+        moves: exploreext.desk.Seat.take
+        instance: seat_id
+        emits: [exploreext.desk.Taken]
+        payload:
+          exploreext.desk.Taken: {seat_id: input.seat_id}
+      - name: released
+        when_subject_state: Busy
+        moves: exploreext.desk.Seat.release
+        instance: seat_id
+        emits: [exploreext.desk.Released]
+        payload:
+          exploreext.desk.Released: {seat_id: input.seat_id}
+
+events:
+  - name: exploreext.desk.SeatOpened
+    fields: [{name: seat_id, type: exploreext.desk.SeatId}]
+  - name: exploreext.desk.Taken
+    fields: [{name: seat_id, type: exploreext.desk.SeatId}]
+  - name: exploreext.desk.Released
+    fields: [{name: seat_id, type: exploreext.desk.SeatId}]
+
+views:
+  - name: exploreext.desk.Seats
+    source: exploreext.desk.Seat
+    consistency: read_your_writes
+    fields:
+      - {name: seat_id, type: exploreext.desk.SeatId}
+      - {name: label, type: String}
+      - {name: state, type: exploreext.desk.Seat.State}

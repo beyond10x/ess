@@ -60,13 +60,13 @@ fn issue_139_an_optional_field_declares_its_presence_policy() {
 #[test]
 fn presence_is_written_back_and_absent_presence_keeps_the_bytes() {
     let field: Field =
-        serde_yaml::from_str("name: a\ntype: Optional<String>\npresence: null_when_absent\n")
+        ess_yaml::from_str("name: a\ntype: Optional<String>\npresence: null_when_absent\n")
             .expect("reads");
-    let written = serde_yaml::to_string(&field).expect("writes");
+    let written = ess_yaml::to_string(&field).expect("writes");
     assert!(written.contains("presence: null_when_absent"), "{written}");
-    let plain: Field = serde_yaml::from_str("name: a\ntype: Optional<String>\n").expect("reads");
+    let plain: Field = ess_yaml::from_str("name: a\ntype: Optional<String>\n").expect("reads");
     assert_eq!(
-        serde_yaml::to_string(&plain).expect("writes"),
+        ess_yaml::to_string(&plain).expect("writes"),
         "name: a\ntype: Optional<String>\n"
     );
 }
@@ -93,7 +93,7 @@ fn presence_below_ess_15_is_refused_with_the_format_it_needs() {
 #[test]
 fn an_unknown_presence_policy_is_refused() {
     let error =
-        serde_yaml::from_str::<Field>("name: a\ntype: Optional<String>\npresence: sometimes\n")
+        ess_yaml::from_str::<Field>("name: a\ntype: Optional<String>\npresence: sometimes\n")
             .expect_err("refused");
     assert!(error.to_string().contains("sometimes"), "{error}");
 }
@@ -128,7 +128,7 @@ types:
 ";
     let error = single(variant).expect_err("refused on an enum variant");
     assert!(error.contains("presence"), "{error}");
-    let error = serde_yaml::from_str::<Field>(
+    let error = ess_yaml::from_str::<Field>(
         "name: a\ntype: Optional<String>\nnaming: {presence: null_when_absent}\n",
     )
     .expect_err("presence is a field key, not a naming key");

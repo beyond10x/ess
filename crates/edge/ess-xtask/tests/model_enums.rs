@@ -158,18 +158,18 @@ fn u32_slice(text: &str, name: &str) -> Vec<u32> {
 /// The `variants:` of one named type in one authored domain document.
 fn model_variants(root: &Path, domain: &str, type_name: &str) -> BTreeSet<String> {
     let text = source(root, &format!("models/toolchain/domains/{domain}.yaml"));
-    let document: serde_yaml::Value = serde_yaml::from_str(&text).expect("the domain is YAML");
+    let document: ess_yaml::Value = ess_yaml::from_str(&text).expect("the domain is YAML");
     let declarations = document
         .get("types")
-        .and_then(serde_yaml::Value::as_sequence)
+        .and_then(ess_yaml::Value::as_sequence)
         .expect("the domain declares types");
     let declaration = declarations
         .iter()
-        .find(|value| value.get("name").and_then(serde_yaml::Value::as_str) == Some(type_name))
+        .find(|value| value.get("name").and_then(ess_yaml::Value::as_str) == Some(type_name))
         .unwrap_or_else(|| panic!("{type_name} is declared in {domain}.yaml"));
     declaration
         .get("variants")
-        .and_then(serde_yaml::Value::as_sequence)
+        .and_then(ess_yaml::Value::as_sequence)
         .unwrap_or_else(|| panic!("{type_name} declares `variants:`"))
         .iter()
         .map(|variant| {

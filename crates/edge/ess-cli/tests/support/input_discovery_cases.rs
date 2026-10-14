@@ -216,12 +216,12 @@ fn same_validation_but_listed_scenarios(legacy: &Output, selected: &Output, form
             assert_eq!(report, serde_json::from_str::<Value>(&legacy).unwrap());
         }
         _ => {
-            let mut report: serde_yaml::Value = serde_yaml::from_str(&selected).unwrap();
+            let mut report: ess_yaml::Value = ess_yaml::from_str(&selected).unwrap();
             let count = report.as_mapping_mut().unwrap().remove("scenarios");
-            assert_eq!(count, Some(serde_yaml::Value::from(2)), "{selected}");
+            assert_eq!(count, Some(ess_yaml::Value::from(2)), "{selected}");
             assert_eq!(
                 report,
-                serde_yaml::from_str::<serde_yaml::Value>(&legacy).unwrap()
+                ess_yaml::from_str::<ess_yaml::Value>(&legacy).unwrap()
             );
         }
     }
@@ -833,7 +833,7 @@ fn a22_reserved_collision_is_actionable_and_frozen_old_reader_does_not_accept_ma
     let p = t.mixed("valid", false);
     let source = fs::read_to_string(p.join("ess-inputs.yaml")).unwrap();
     assert!(ess_domain::spec::RawSpecFile::parse(&source).is_err());
-    assert!(serde_yaml::from_str::<ess_conformance::authored::Document>(&source).is_err());
+    assert!(ess_yaml::from_str::<ess_conformance::authored::Document>(&source).is_err());
     // The maintained old document readers are unconditional. The frozen historical executable
     // is an explicit qualification input, never downloaded or substituted by the current binary.
     let Some(old) = std::env::var_os("ESS_DISCOVERY_OLD_CLI") else {

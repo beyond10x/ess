@@ -14,7 +14,7 @@ use std::sync::OnceLock;
 use ess_ui::{
     Body, ChartKind, Columns, Composite, Document, Field, Located, NodePath, NodeRef, PageLayout,
 };
-use serde_yaml::Value;
+use ess_yaml::Value;
 
 /// Whether the terminal has a capability, and what it does instead when it lacks one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -275,7 +275,7 @@ fn media(fields: &[Field]) -> Vec<&'static str> {
 
 fn schema() -> &'static Value {
     static SCHEMA: OnceLock<Value> = OnceLock::new();
-    SCHEMA.get_or_init(|| serde_yaml::from_str(ess_ui::SCHEMA).expect("the schema is YAML"))
+    SCHEMA.get_or_init(|| ess_yaml::from_str(ess_ui::SCHEMA).expect("the schema is YAML"))
 }
 
 /// The `degrades` a construct's schema entry declares (`constructs.<name>.degrades`).
@@ -287,7 +287,7 @@ fn construct_degrades(construct: &str) -> &'static BTreeMap<String, String> {
             for (name, entry) in constructs {
                 if let (Some(name), Ok(table)) = (
                     name.as_str(),
-                    serde_yaml::from_value::<BTreeMap<String, String>>(entry["degrades"].clone()),
+                    ess_yaml::from_value::<BTreeMap<String, String>>(entry["degrades"].clone()),
                 ) {
                     tables.insert(name.to_owned(), table);
                 }

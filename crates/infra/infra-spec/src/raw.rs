@@ -67,11 +67,11 @@ use crate::spec::{
 ///
 /// Every rule that failed, accumulated.
 pub fn read_spec(text: &str) -> Result<InfraSpec, ValidationErrors> {
-    // Through `serde_json::Value`: see the manifest's note beside `serde_yaml`. YAML's superset
+    // Through `serde_json::Value`: see the manifest's note on YAML. YAML's superset
     // shapes this model does not have — non-string keys, tags, aliases into maps — fail here with
     // the same code a malformed document does, which is the honest answer for a document this
     // build cannot read.
-    let value: serde_json::Value = serde_yaml::from_str(text).map_err(|error| {
+    let value: serde_json::Value = ess_primitives::yaml::from_str(text).map_err(|error| {
         let mut errors = ValidationErrors::new();
         errors.refuse(InfraCode::SpecMalformed, "document", error.to_string());
         errors
@@ -418,9 +418,13 @@ fn scope_of(raw: RawScope, location: &str, errors: &mut ValidationErrors) -> Sco
 /// Why `predicate` reads an operator `infra-spec/1` does not carry, or `None`.
 ///
 /// The predicate grammar is shared with ESS, and `infra-spec/1` does not gain the string operators
-/// (beyond10x/ess#95), the case-insensitive ones (beyond10x/ess#140) or distinct list members
-/// (`ess/22`, beyond10x/ess#237) by accident: admitting them is its own format decision.
+/// (beyond10x/ess#95), the case-insensitive ones (beyond10x/ess#140), `trimmed`
+/// (beyond10x/ess#532) or distinct list members (`ess/22`, beyond10x/ess#237) by accident:
+/// admitting them is its own format decision.
 fn foreign_operator(predicate: &Predicate) -> Option<&'static str> {
+    if predicate.uses_trim() {
+        return Some("`trimmed` is not part of infra-spec/1; compare with `==`, `!=` or `any_of`");
+    }
     if predicate.uses_text_match() || predicate.uses_case_fold() {
         return Some(
             "`starts_with`, `ends_with`, `contains`, `equals_ignore_case` and `in_ignore_case` are \

@@ -11,7 +11,7 @@
 use std::collections::BTreeSet;
 
 use ess_ui::{Document, NodePath};
-use serde_yaml::Value;
+use ess_yaml::Value;
 
 use crate::schema::{self, is_unmapped_marker};
 use crate::Sink;
@@ -38,7 +38,7 @@ const PROSE: &[&str] = &[
 ];
 
 pub(crate) fn run(text: &str, document: &Document, sink: &mut Sink) {
-    let Ok(value) = serde_yaml::from_str::<Value>(text) else {
+    let Ok(value) = ess_yaml::from_str::<Value>(text) else {
         return;
     };
     let walker = Walker {
@@ -169,7 +169,7 @@ pub(crate) fn segment(entry: &Value, key: Option<&str>) -> Option<String> {
 
 /// One `first_present` source: a dotted path into the action, whose last segment may be the
 /// schema's `last_segment_snake_case` or `first_key` transform.
-fn derived(mapping: &serde_yaml::Mapping, source: &str) -> Option<String> {
+fn derived(mapping: &ess_yaml::Mapping, source: &str) -> Option<String> {
     let mut segments = source.split('.');
     let mut current = mapping.get(segments.next()?)?;
     for segment in segments {

@@ -75,7 +75,7 @@ fn both_import_spellings_write_the_accounted_envelope_for_every_presentation() {
             let checked = ess_openapi::read_import(&stored).unwrap();
             assert_eq!(checked.accounting().coverage_gaps.len(), 1);
             if format != "text" {
-                let terminal: serde_json::Value = serde_yaml::from_slice(&output.stdout).unwrap();
+                let terminal: serde_json::Value = ess_yaml::from_slice(&output.stdout).unwrap();
                 assert_eq!(terminal["coverage_gaps"].as_array().unwrap().len(), 1);
             }
             bytes.push(stored);
@@ -235,7 +235,7 @@ fn an_openapi_30_document_with_nullable_imports_through_the_cli() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let terminal: serde_json::Value = serde_yaml::from_slice(&output.stdout).unwrap();
+    let terminal: serde_json::Value = ess_yaml::from_slice(&output.stdout).unwrap();
     assert!(!terminal.is_null(), "empty terminal report");
     let checked = ess_openapi::read_import(&std::fs::read_to_string(&out).unwrap()).unwrap();
     assert_eq!(checked.interface().source_openapi, "3.0.3");

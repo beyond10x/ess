@@ -9,6 +9,11 @@
 //!   read back: the changed ones in their new state with what `sets:` wrote, the others as they
 //!   were arranged. The command is then sent again under an input the filter selects no row by
 //!   ([`zero_match`]): accepted, a count of 0, and every row as the first call left it.
+//!   An event published once per changed row (ess/25, beyond10x/ess#531) is claimed once for each
+//!   changed row its `when_state:` admits, with that row's values ([`answer`]); two changed rows
+//!   rest where it publishes and one where it does not, as far as the arranging commands reach.
+//!   A further segment ([`unpublished_segment`]) arranges selected rows it is due for none of and
+//!   claims it not at all.
 //! * **`affects:`** adds a segment to the branch's own scenario ([`affects_segment`]): a subject
 //!   under a fresh name, three rows each entry's filter selects and one per conjunct it leaves
 //!   out, `subject.<field>` conjuncts included, the command, then the subject as the branch leaves
@@ -30,7 +35,7 @@
 //! The claims are about every stored row: the count and the unchanged rows hold on a target no
 //! other scenario writes to at the same time, which is what §8 requires of a shared one.
 
-use ess_compiler::ir::{ResolvedAffect, ResolvedSetSubject, ResolvedTypeRef};
+use ess_compiler::ir::{ResolvedAffect, ResolvedPerRowEvent, ResolvedSetSubject, ResolvedTypeRef};
 use ess_domain::view::Consistency;
 use ess_primitives::facts::{FactPath, FactValue, Number};
 use ess_primitives::predicate::{CompareOp, Operand, Predicate, Truth};
@@ -43,10 +48,10 @@ use super::{
     has_subject_guards, insert, instance_name, lifecycle_state, not_emitted, prepare_in, reach,
     reach_in_state, require, settled, shown, subject_fact, supply, ActorRef, Arrangement,
     AssertionStyle, BTreeMap, BTreeSet, CommandRef, ConformanceScenario, ConformanceSuite,
-    Determined, EntityHandle, EntityRef, EssIr, EssSemanticRef, EventRef, Focus, InstanceName,
-    Node, OutcomeRef, QualifiedName, Refusal, RefusalCause, ResolvedCommand, ResolvedEffect,
-    ResolvedOutcome, ResolvedView, ScenarioId, ScenarioStep, ScenarioValue, StateName,
-    ViewExpectation, ViewRef,
+    Determined, EntityHandle, EntityRef, EssIr, EssSemanticRef, EventRef, Focus, Holds,
+    InstanceName, LeafShape, Node, OutcomeRef, PayloadShape, QualifiedName, Refusal, RefusalCause,
+    ResolvedCommand, ResolvedEffect, ResolvedOutcome, ResolvedView, ScenarioId, ScenarioStep,
+    ScenarioValue, StateName, ViewExpectation, ViewRef,
 };
 
 /// How many rows the filter must select, so a target that changes one of them is caught.
@@ -592,11 +597,48 @@ fn rows(
     outside: Option<Outside<'_>>,
     visible: bool,
 ) -> Result<Rows, &'static str> {
-    let mut changed = Vec::new();
+    rows_preferring(
+        selection,
+        actors,
+        taken,
+        (movable, &|_| Vec::new()),
+        outside,
+        visible,
+    )
+}
+
+/// Which states a row may rest in.
+type Rests<'a> = &'a dyn Fn(&StateName) -> bool;
+
+/// The states the next changed row is preferred in, best tier first, given the states the changed
+/// rows before it rest in ([`witness_tiers`]).
+type Prefer<'a> = &'a dyn Fn(&[StateName]) -> Vec<BTreeSet<StateName>>;
+
+/// [`rows`], each changed row resting first, where the arranging commands reach one, in a state of
+/// the first tier `prefer` names for it that they reach (ess/25, beyond10x/ess#531): each per-row
+/// event's state filter is witnessed on changed rows on both of its sides.
+fn rows_preferring(
+    selection: &Selection<'_>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    taken: &mut BTreeSet<InstanceName>,
+    (movable, prefer): (Rests<'_>, Prefer<'_>),
+    outside: Option<Outside<'_>>,
+    visible: bool,
+) -> Result<Rows, &'static str> {
+    let mut changed: Vec<Arrangement> = Vec::new();
     for _ in 0..MATCHING {
-        changed.push(selection.row(actors, taken, movable, visible).ok_or(
-            "has no three rows the filter selects that the arranging commands can produce",
-        )?);
+        let held: Vec<StateName> = changed.iter().map(|row| row.state.clone()).collect();
+        let preferred = prefer(&held).into_iter().find_map(|tier| {
+            let within = |state: &StateName| movable(state) && tier.contains(state);
+            selection.row(actors, taken, &within, visible)
+        });
+        changed.push(
+            preferred
+                .or_else(|| selection.row(actors, taken, movable, visible))
+                .ok_or(
+                    "has no three rows the filter selects that the arranging commands can produce",
+                )?,
+        );
     }
     let mut kept = Vec::new();
     for miss in misses(&selection.filter)
@@ -740,11 +782,22 @@ fn set_rows<'s>(
     let movable = |state: &StateName| from.is_none_or(|from| from.contains(state));
     let outside = |state: &StateName| from.is_some_and(|from| !from.contains(state));
     let skipped: Option<Outside<'_>> = from.map(|_| (&outside as &dyn Fn(&StateName) -> bool, to));
-    rows(
+    // Each per-row event's state filter (ess/25, beyond10x/ess#531): changed rows rest where it
+    // publishes and where it does not, as far as the arranging commands reach.
+    let states: Vec<&StateName> = selection
+        .ir
+        .entity(&set.entity)
+        .lifecycle
+        .states
+        .iter()
+        .filter(|state| movable(state))
+        .collect();
+    let prefer = |held: &[StateName]| witness_tiers(set, &states, held);
+    let (rows, to) = rows_preferring(
         selection,
         actors,
         &mut BTreeSet::new(),
-        &movable,
+        (&movable, &prefer),
         skipped,
         true,
     )
@@ -752,11 +805,11 @@ fn set_rows<'s>(
         // A move is observed by the state it leaves; where no row can show its `sets:` changing,
         // the state alone still separates the changed rows from the others.
         if to.is_some() {
-            rows(
+            rows_preferring(
                 selection,
                 actors,
                 &mut BTreeSet::new(),
-                &movable,
+                (&movable, &prefer),
                 skipped,
                 false,
             )
@@ -764,17 +817,75 @@ fn set_rows<'s>(
             Err(reason)
         }
     })
-    .map(|rows| (rows, to))
+    .map(|rows| (rows, to))?;
+    if set
+        .events
+        .iter()
+        .any(|entry| !rows.changed.iter().any(|row| publishes(entry, &row.state)))
+    {
+        return Err(
+            "has no row the filter selects, resting where a per-row event's `when_state:` \
+             publishes it, that the arranging commands can produce",
+        );
+    }
+    Ok((rows, to))
+}
+
+/// The states, among `states`, the next changed row of `set` is preferred in, best tier first,
+/// given the states `held` the changed rows before it rest in (ess/25, beyond10x/ess#531). Each
+/// event published once per changed row under a `when_state:` wants two changed rows it publishes
+/// for — two, so a target filling one occurrence from another row's values publishes a value no
+/// claim carries — and one it does not, so its filter is witnessed on both sides. A state scores
+/// what it meets of those wants, summed over the filtered events: the first row an event publishes
+/// for 4, the second 2, the first it does not 1, so its publishing rows come first. The states of
+/// one score form a tier, highest first; a state meeting no want is in none, and an outcome with no
+/// filtered event prefers nothing.
+fn witness_tiers(
+    set: &ResolvedSetSubject,
+    states: &[&StateName],
+    held: &[StateName],
+) -> Vec<BTreeSet<StateName>> {
+    let mut tiers: BTreeMap<std::cmp::Reverse<usize>, BTreeSet<StateName>> = BTreeMap::new();
+    for state in states {
+        let score: usize = set
+            .events
+            .iter()
+            .filter(|entry| !entry.when_state.is_empty())
+            .map(|entry| {
+                let admitted = held.iter().filter(|held| publishes(entry, held)).count();
+                match (publishes(entry, state), admitted) {
+                    (true, 0) => 4,
+                    (true, 1) => 2,
+                    (false, _) if admitted == held.len() => 1,
+                    _ => 0,
+                }
+            })
+            .sum();
+        if score > 0 {
+            tiers
+                .entry(std::cmp::Reverse(score))
+                .or_default()
+                .insert((*state).clone());
+        }
+    }
+    tiers.into_values().collect()
+}
+
+/// Whether a changed row that rested in `state` publishes `entry`.
+fn publishes(entry: &ResolvedPerRowEvent, state: &StateName) -> bool {
+    entry.when_state.is_empty() || entry.when_state.iter().any(|held| held == state.as_str())
 }
 
 /// What the branch's own answer must be: its error, its events — `{count: changed}` equal to the
-/// rows it changed — its typed response, and no other event.
+/// rows it changed, and an event published once per changed row (ess/25, beyond10x/ess#531) once
+/// for each changed row its state filter admits, read from that row as arranged, or not at all
+/// where it admits none — its typed response, and no other event.
 fn answer(
     ir: &EssIr,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     supplied: &BTreeMap<String, ScenarioValue>,
-    changed: usize,
+    rows: &[Arrangement],
     steps: &mut Vec<ScenarioStep>,
     source: &mut BTreeSet<EssSemanticRef>,
 ) -> Result<(), RefusalCause> {
@@ -788,8 +899,35 @@ fn answer(
         ));
     }
     let emitted: Vec<EventRef> = outcome.emits.iter().map(EventRef::from).collect();
-    let changed = i64::try_from(changed).unwrap_or(i64::MAX);
-    for event in &emitted {
+    let changed = i64::try_from(rows.len()).unwrap_or(i64::MAX);
+    let mut unpublished = Vec::new();
+    for (handle, event) in outcome.emits.iter().zip(&emitted) {
+        let per_row = outcome.instances.as_ref().and_then(|set| {
+            set.events
+                .iter()
+                .find(|entry| entry.event == *handle)
+                .map(|entry| (set, entry))
+        });
+        if let Some((set, entry)) = per_row {
+            let shape = crate::response::event_shape(ir, event, outcome);
+            let mut published = 0;
+            for row in rows.iter().filter(|row| publishes(entry, &row.state)) {
+                let before = changed_row(ir, &set.entity, row);
+                let mut literals = determined_payload(ir, outcome, event, supplied, &before);
+                literals.extend(changed_values(ir, outcome, event, supplied, &before));
+                let identities =
+                    super::determined_identities(ir, outcome, event, supplied, &before, None);
+                let mut shape = shape.clone();
+                absent_changed_leaves(ir, outcome, event, supplied, &before, &mut shape);
+                steps.push(super::expect_event_step(event, literals, identities, shape));
+                published += 1;
+            }
+            if published == 0 {
+                unpublished.push(event.clone());
+            }
+            source.insert(event.clone().into());
+            continue;
+        }
         let mut payload = determined_payload(ir, outcome, event, supplied, &BTreeMap::new());
         for field in outcome
             .payload
@@ -821,13 +959,114 @@ fn answer(
             .map(|response| ScenarioStep::ExpectResponsePayload { response }),
     );
     let absent = not_emitted(ir, &emitted);
-    for event in &absent {
+    for event in unpublished.iter().chain(&absent) {
         steps.push(ScenarioStep::ExpectNoEvent {
             event: event.clone(),
         });
     }
     source.extend(absent.into_iter().map(EssSemanticRef::from));
     Ok(())
+}
+
+/// The literal values `{changed: <field>}` and `{changed: state}` read in `event`'s payload from
+/// the changed row `before` holds (ess/25, beyond10x/ess#531), as it was before the outcome: a
+/// target reading the row after the outcome, or another row, publishes another value and fails
+/// `ESS-CF-PAYLOAD`. [`determined_payload`] leaves these sources out, since no other caller has a
+/// changed row to read; an identity is claimed as its instance by `determined_identities`, and an
+/// absent `Optional` is left to the shape, since it may be published left out or as `null`.
+fn changed_values(
+    ir: &EssIr,
+    outcome: &ResolvedOutcome,
+    event: &EventRef,
+    supplied: &BTreeMap<String, ScenarioValue>,
+    before: &BTreeMap<String, Determined>,
+) -> BTreeMap<String, Node> {
+    outcome
+        .payload
+        .iter()
+        .filter(|payload| EventRef::from(&payload.event) == *event)
+        .flat_map(|payload| &payload.fields)
+        .filter(|field| {
+            matches!(
+                field.value,
+                ess_compiler::ir::ResolvedPayloadValue::ChangedField { .. }
+                    | ess_compiler::ir::ResolvedPayloadValue::ChangedState { .. }
+            )
+        })
+        .filter_map(
+            |field| match super::expression_value(ir, field, supplied, before) {
+                Some(ScenarioValue::Literal { value }) if value != Node::Null => {
+                    Some((field.target.clone(), value))
+                }
+                _ => None,
+            },
+        )
+        .collect()
+}
+
+/// Requires every top-level field of `event` that `{changed: <field>}` reads from an `Optional`
+/// the changed row `before` held absent to be absent — left out or `null`, either spelling
+/// (ess/25, beyond10x/ess#531), as `absent_by_reference_leaves` does for a `{related: …}` read: its
+/// leaf admits no present value, so a target filling it from another row fails `ESS-CF-PAYLOAD`.
+fn absent_changed_leaves(
+    ir: &EssIr,
+    outcome: &ResolvedOutcome,
+    event: &EventRef,
+    supplied: &BTreeMap<String, ScenarioValue>,
+    before: &BTreeMap<String, Determined>,
+    shape: &mut PayloadShape,
+) {
+    for field in outcome
+        .payload
+        .iter()
+        .filter(|payload| EventRef::from(&payload.event) == *event)
+        .flat_map(|payload| &payload.fields)
+        .filter(|field| {
+            matches!(
+                field.value,
+                ess_compiler::ir::ResolvedPayloadValue::ChangedField { .. }
+            )
+        })
+    {
+        if super::expression_value(ir, field, supplied, before)
+            != Some(ScenarioValue::literal(Node::Null))
+        {
+            continue;
+        }
+        let presence = shape
+            .leaves()
+            .get(&field.target)
+            .and_then(|leaf| leaf.presence);
+        shape.insert(
+            field.target.clone(),
+            LeafShape {
+                holds: Holds::Enum {
+                    variants: Vec::new(),
+                },
+                optional: true,
+                presence,
+            },
+        );
+    }
+}
+
+/// What a changed row held before the outcome, for `{changed: …}` to read (ess/25,
+/// beyond10x/ess#531): what the arrangement settled, its identity as the instance captured for it,
+/// and its held state.
+fn changed_row(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    row: &Arrangement,
+) -> BTreeMap<String, Determined> {
+    let identity = &ir.entity(entity).identity;
+    let mut before = row.settled.clone();
+    before
+        .entry(identity.name.clone())
+        .or_insert_with(|| Determined {
+            value: ScenarioValue::instance(row.instance.clone()),
+            type_ref: identity.type_ref.clone(),
+        });
+    super::with_held_state(ir, &before, entity, Some(&row.state))
 }
 
 /// The `instances:` scenario.
@@ -887,7 +1126,7 @@ fn set_scenario(
         command,
         outcome,
         &supplied,
-        arranged.changed.len(),
+        &arranged.changed,
         &mut steps,
         &mut source,
     )?;
@@ -911,10 +1150,18 @@ fn set_scenario(
             actors,
             (&views, entity),
             &none,
-            left,
+            left.clone(),
             (&mut steps, &mut source),
         )?;
     }
+    unpublished_segments(
+        models,
+        (command, outcome, set),
+        actors,
+        (&views, entity),
+        left,
+        (&mut steps, &mut source),
+    )?;
     let text = format!(
         "`{}` {} every `{}` its filter selects and no other row, and reports how many",
         command.name,
@@ -1997,7 +2244,7 @@ fn zero_match(
         steps,
         source,
     );
-    answer(ir, command, outcome, &supplied, 0, steps, source)?;
+    answer(ir, command, outcome, &supplied, &[], steps, source)?;
     let unchanged = Rows {
         changed: Vec::new(),
         kept: left,
@@ -2014,6 +2261,159 @@ fn zero_match(
         source,
     );
     Ok(())
+}
+
+/// The segments of rows a per-row event is not due for (ess/25, beyond10x/ess#531), after the rows
+/// `written` so far: first rows every per-row event's state filter leaves out, and one outside a
+/// move's `from` states; then, for each filtered event no segment witnessed yet, a row that
+/// event's filter leaves out. Two filters admitting no state in common leave no row out of both,
+/// and each is still witnessed on a changed row it does not publish for.
+fn unpublished_segments(
+    models: &InvocationModels<'_>,
+    subject: (&ResolvedCommand, &ResolvedOutcome, &ResolvedSetSubject),
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    observed: (&[&ResolvedView], &EntityHandle),
+    mut written: Vec<Arrangement>,
+    (steps, source): (&mut Vec<ScenarioStep>, &mut BTreeSet<EssSemanticRef>),
+) -> Result<(), RefusalCause> {
+    let set = subject.2;
+    let mut excluded: Vec<StateName> = Vec::new();
+    let none_publishes =
+        |state: &StateName| !set.events.iter().any(|entry| publishes(entry, state));
+    if let Some((states, rows)) = unpublished_segment(
+        models,
+        subject,
+        actors,
+        observed,
+        (&written, &none_publishes, true),
+        (&mut *steps, &mut *source),
+    )? {
+        excluded.extend(states);
+        written.extend(rows);
+    }
+    for entry in set
+        .events
+        .iter()
+        .filter(|entry| !entry.when_state.is_empty())
+    {
+        if excluded.iter().any(|state| !publishes(entry, state)) {
+            continue;
+        }
+        let left_out = |state: &StateName| !publishes(entry, state);
+        if let Some((states, rows)) = unpublished_segment(
+            models,
+            subject,
+            actors,
+            observed,
+            (&written, &left_out, false),
+            (&mut *steps, &mut *source),
+        )? {
+            excluded.extend(states);
+            written.extend(rows);
+        }
+    }
+    Ok(())
+}
+
+/// What one segment of [`unpublished_segment`] arranged: the states its changed rows rested in,
+/// and every row as the command left it.
+type Segment = (Vec<StateName>, Vec<Arrangement>);
+
+/// A segment of rows the filter selects that a per-row event is not due for (ess/25,
+/// beyond10x/ess#531): under an input selecting none of the rows `written` so far, one row resting
+/// in a state the outcome changes from that `left_out` admits — a state a per-row event's filter
+/// leaves out — and, where `outside` is set, under a `moves:` one resting outside its `from`
+/// states; then the command, `{count: changed}` equal to the rows it changed, each per-row event
+/// claimed for the changed row where its filter publishes it and `expect_no_event` where it
+/// publishes for none, and the rows read back. A target publishing a per-row event for a row its
+/// filter leaves out fails here, where no claim of the event can take that occurrence. Answers the
+/// states of the changed rows it arranged and every row as the command left it; `None` where the
+/// outcome publishes no event per changed row, where no such input is found, or where the
+/// arranging commands reach no such row.
+#[allow(clippy::too_many_lines)] // One segment, arranged, sent, answered and read back.
+fn unpublished_segment(
+    models: &InvocationModels<'_>,
+    (command, outcome, set): (&ResolvedCommand, &ResolvedOutcome, &ResolvedSetSubject),
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    (views, entity): (&[&ResolvedView], &EntityHandle),
+    (written, left_out, outside_too): (&[Arrangement], Rests<'_>, bool),
+    (steps, source): (&mut Vec<ScenarioStep>, &mut BTreeSet<EssSemanticRef>),
+) -> Result<Option<Segment>, RefusalCause> {
+    if set.events.is_empty() {
+        return Ok(None);
+    }
+    let ir = models.arrangement;
+    let Some(input) = matching_none(ir, command, outcome, &set.filter, entity, written) else {
+        return Ok(None);
+    };
+    let supplied = supply(ir, command, &input, None, None, &BTreeMap::new());
+    let selection = Selection {
+        ir,
+        command,
+        entity,
+        filter: set.filter.clone(),
+        closed: written_in(&set.filter, &|path| input_value(path, &input)),
+        input: &input,
+        supplied: &supplied,
+        sets: outcome,
+        symbols: BTreeMap::new(),
+        other: None,
+    };
+    let (from, to) = match &set.effect {
+        ResolvedEffect::Moves { transition } => (Some(&transition.from), Some(&transition.to)),
+        _ => (None, None),
+    };
+    let mut taken = captured(steps);
+    let unpublished =
+        |state: &StateName| from.is_none_or(|from| from.contains(state)) && left_out(state);
+    let changed: Vec<Arrangement> = selection
+        .row(actors, &mut taken, &unpublished, true)
+        .or_else(|| selection.row(actors, &mut taken, &unpublished, false))
+        .into_iter()
+        .collect();
+    let outside = |state: &StateName| from.is_some_and(|from| !from.contains(state));
+    let kept: Vec<Arrangement> = from
+        .filter(|_| outside_too)
+        .and_then(|_| selection.row(actors, &mut taken, &outside, false))
+        .into_iter()
+        .collect();
+    if changed.is_empty() && kept.is_empty() {
+        return Ok(None);
+    }
+    let start = steps.len();
+    for row in changed.iter().chain(&kept) {
+        steps.extend(row.steps.iter().cloned());
+        source.extend(row.source.iter().cloned());
+    }
+    models.mark(InvocationPhase::Arrange, &mut steps[start..]);
+    invocation(
+        models,
+        command,
+        outcome,
+        actors,
+        supplied.clone(),
+        steps,
+        source,
+    );
+    answer(ir, command, outcome, &supplied, &changed, steps, source)?;
+    let removes = set.effect == ResolvedEffect::Deletes;
+    let rows = Rows { changed, kept };
+    read_back(
+        ir,
+        entity,
+        views,
+        &rows,
+        (to, removes),
+        outcome,
+        &supplied,
+        steps,
+        source,
+    );
+    let states = rows.changed.iter().map(|row| row.state.clone()).collect();
+    Ok(Some((
+        states,
+        left_by(ir, outcome, &supplied, &rows, (to, removes)),
+    )))
 }
 
 /// Whether `steps` take a branch with a set effect (`instances:` or `affects:`): an act whose

@@ -52,8 +52,8 @@ fn through_json(number: Number) -> Number {
 
 /// One write and one read through YAML, the format an authored specification is spelt in.
 fn through_yaml(number: Number) -> Number {
-    let written = serde_yaml::to_string(&number).expect("a number serialises");
-    serde_yaml::from_str::<Number>(&written)
+    let written = ess_yaml::to_string(&number).expect("a number serialises");
+    ess_yaml::from_str::<Number>(&written)
         .unwrap_or_else(|error| panic!("what was written (`{written}`) is read back: {error}"))
 }
 

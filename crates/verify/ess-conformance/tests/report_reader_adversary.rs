@@ -27,9 +27,9 @@ fn assert_routes_with_yaml(value: &Value, expected: bool, yaml_expected: bool) {
     let text = value.to_string();
     // From the JSON text, not from the `Value`: with serde_json's `arbitrary_precision` unified into
     // the build, a `Value`'s numbers serialise through serde as a private one-entry struct, and
-    // serde_yaml writes that as a mapping rather than as the number.
-    let yaml = serde_yaml::to_string(
-        &serde_yaml::from_str::<serde_yaml::Value>(&text).expect("fixture JSON is YAML"),
+    // ess-yaml writes that as a mapping rather than as the number.
+    let yaml = ess_yaml::to_string(
+        &ess_yaml::from_str::<ess_yaml::Value>(&text).expect("fixture JSON is YAML"),
     )
     .expect("fixture is YAML");
     let seed = report(&[], 0, "passed");
@@ -51,7 +51,7 @@ fn assert_routes_with_yaml(value: &Value, expected: bool, yaml_expected: bool) {
         ),
         (
             "YAML mapping",
-            serde_yaml::from_str::<StandaloneConformanceReport>(&yaml).is_ok(),
+            ess_yaml::from_str::<StandaloneConformanceReport>(&yaml).is_ok(),
         ),
         (
             "JSON stream",
@@ -149,13 +149,13 @@ fn closed_wire_fields_preserve_their_formats_scalar_contracts() {
         let opaque_identity = matches!(field.as_str(), "specification" | "implementation");
         assert_routes_with_yaml(&null, false, opaque_identity);
         if opaque_identity {
-            let yaml = serde_yaml::to_string(
-                &serde_yaml::from_str::<serde_yaml::Value>(&null.to_string())
+            let yaml = ess_yaml::to_string(
+                &ess_yaml::from_str::<ess_yaml::Value>(&null.to_string())
                     .expect("fixture JSON is YAML"),
             )
             .expect("YAML fixture");
             let read: StandaloneConformanceReport =
-                serde_yaml::from_str(&yaml).expect("YAML string coercion remains compatible");
+                ess_yaml::from_str(&yaml).expect("YAML string coercion remains compatible");
             assert_eq!(
                 serde_json::to_value(read).expect("report writes")[field],
                 "null"
@@ -189,7 +189,7 @@ fn duplicate_claims_cannot_hide_behind_a_valid_last_value() {
             "reader accepted duplicate claim: {text}"
         );
         assert!(
-            serde_yaml::from_str::<StandaloneConformanceReport>(&text).is_err(),
+            ess_yaml::from_str::<StandaloneConformanceReport>(&text).is_err(),
             "YAML accepted duplicate claim: {text}"
         );
         assert!(

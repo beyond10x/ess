@@ -80,6 +80,11 @@ pub const REPORT_FORMAT_4: &str = "ess-mutation-report/4";
 /// the `/4` that 0.53.0 to 0.56.0 wrote does not have. A report none of whose mutants carries it is
 /// `/4` or `/3` exactly as before.
 pub const REPORT_FORMAT_5: &str = "ess-mutation-report/5";
+/// The report wherever a `precedence-swap` mutant carries `overlap_taken_by`
+/// (<https://github.com/beyond10x/ess/issues/539>): [`REPORT_FORMAT_5`] with that member, which the
+/// `/5` that 0.57.0 and later releases wrote does not have. A report none of whose mutants carries
+/// it is `/5`, `/4` or `/3` exactly as before.
+pub const REPORT_FORMAT_6: &str = "ess-mutation-report/6";
 
 // ---- the classes --------------------------------------------------------------------------------
 
@@ -2136,7 +2141,7 @@ pub fn apply(documents: &[Document], mutation: &Mutation) -> Result<Vec<Document
             if !single_event(found) || found.emits[0].to_string() != *event {
                 return Err(absent());
             }
-            found.emits[0] = to.clone();
+            found.emits[0].set_event(to.clone());
             // The entry keeps its field expressions: whether they fit the new event is the
             // compiler's to say.
             for (key, _) in &mut found.payload.0 {
@@ -2515,6 +2520,103 @@ fn identical_answer(baseline: &EssIr, mutation: &Mutation) -> Option<String> {
     Some(said)
 }
 
+/// For a `precedence-swap` whose two guards overlap, the branches answered before both that take
+/// every input of that overlap, in declaration order
+/// (<https://github.com/beyond10x/ess/issues/539>). Where no input selects both swapped branches
+/// without one of these selected first, the swapped two never answer the same request, so their
+/// order decides nothing a caller observes.
+///
+/// Only a branch selected by an input guard alone (`when:`), which the precedence plan of the
+/// baseline's format reads before the first of the two, is subtracted: a branch the held state, a
+/// stored or related row, a provider or a replay also decides takes the overlap only where that
+/// holds, which is not decided here. A guard [`satisfiable`] cannot read is left out too, and so is
+/// one that meets no input of the overlap, which takes none of it. Leaving a branch out only leaves
+/// more of the overlap, which errs towards scoring as before; the overlap left is decided as
+/// [`satisfiable`] decides a guard, so a combination under which an earlier guard is unknown
+/// decides nothing.
+///
+/// Only where both swapped branches address the same subject — the same stored entity through the
+/// same input field, or neither a stored row (a refusal, a creation, an instance an event
+/// publishes): otherwise their order also decides which row a row-set command reads before any
+/// branch is selected, outside their overlap.
+///
+/// `None` for any other mutation, where the overlap is unsatisfiable on its own
+/// ([`unsatisfiable_guard`] names it), and wherever any part is not decided.
+fn overlap_taken_by(baseline: &EssIr, mutation: &Mutation) -> Option<Vec<String>> {
+    let Mutation::PrecedenceSwap {
+        command,
+        first,
+        second,
+    } = mutation
+    else {
+        return None;
+    };
+    let (found, one) = guard_of(baseline, command, first)?;
+    let (_, other) = guard_of(baseline, command, second)?;
+    let overlap = |more: Option<Predicate>| {
+        Predicate::All(
+            [one.clone(), other.clone()]
+                .into_iter()
+                .chain(more)
+                .collect(),
+        )
+    };
+    if !satisfiable(baseline, found, &overlap(None))? {
+        return None;
+    }
+    let outcome = found
+        .outcomes
+        .iter()
+        .find(|it| it.name.to_string() == *first)?;
+    let partner = found
+        .outcomes
+        .iter()
+        .find(|it| it.name.to_string() == *second)?;
+    // On a row-set command the interpreter reads the row the first declared accepting branch
+    // acting on a stored row addresses before any branch is selected (`addressed_row`), so where
+    // the two address different stored rows, or one a stored row and the other none, their order
+    // decides which row's absence or held state answers a request neither of them takes. A
+    // refusal, and a creation or any branch whose instance an event publishes, addresses none.
+    let addressed = |it: &ess_compiler::ir::ResolvedOutcome| {
+        if it.error.is_some() {
+            return None;
+        }
+        let subject = it.subject.as_ref()?;
+        match (&subject.effect, &subject.instance) {
+            (ess_compiler::ir::ResolvedEffect::Creates, _)
+            | (_, ess_compiler::ir::ResolvedInstance::Observed { .. }) => None,
+            (_, ess_compiler::ir::ResolvedInstance::Supplied { field }) => {
+                Some((subject.entity.clone(), field.name.clone()))
+            }
+        }
+    };
+    if addressed(outcome) != addressed(partner) {
+        return None;
+    }
+    let earlier: Vec<(String, &Predicate)> =
+        crate::synthesize::precedence::answers_before_in(found, baseline.format(), outcome)
+            .into_iter()
+            .filter(|branch| branch.name.to_string() != *second)
+            .filter_map(|branch| match &branch.condition {
+                ess_compiler::ir::ResolvedCondition::When { predicate } => {
+                    Some((branch.name.to_string(), predicate))
+                }
+                _ => None,
+            })
+            .filter(|(_, guard)| equality_tests(guard, &mut BTreeMap::new()))
+            .filter(|(_, guard)| {
+                satisfiable(baseline, found, &overlap(Some((*guard).clone()))) != Some(false)
+            })
+            .collect();
+    if earlier.is_empty() {
+        return None;
+    }
+    let taken = Predicate::Any(earlier.iter().map(|(_, guard)| (*guard).clone()).collect());
+    let left = overlap(Some(Predicate::Not(Box::new(taken))));
+    (!satisfiable(baseline, found, &left)?)
+        .then(|| earlier.into_iter().map(|(name, _)| name).collect())
+}
+
 /// The command of `ir` named `command`, and the input guard of its outcome `outcome`.
 fn guard_of<'ir>(
     ir: &'ir EssIr,
@@ -2861,6 +2963,8 @@ pub enum Verdict {
     /// The rule it wrote is dead by construction, so no scenario of its suite can take it. Also
     /// a `precedence-swap` whose two branches give an identical answer (<https://github.com/beyond10x/ess/issues/517>), on
     /// the same terms: either order answers alike wherever both guards hold.
+    /// And a `precedence-swap` whose overlap branches answered before both take first
+    /// (<https://github.com/beyond10x/ess/issues/539>): the two never answer the same request.
     Equivalent,
     /// `assemble` or `compile` refused the mutant.
     Stillborn,
@@ -3093,6 +3197,13 @@ pub struct MutantEntry {
     /// The scenarios that failed, sorted; only on `killed`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub killers: Option<Vec<String>>,
+    /// The branches answered before both branches of a `precedence-swap` that take every input
+    /// both select, in declaration order, where they do
+    /// (<https://github.com/beyond10x/ess/issues/539>): the two then never answer the same request.
+    /// Apart from `unsatisfiable_guard`, which says their guards never overlap at all. Only in
+    /// `ess-mutation-report/6`, and absent where that is not so.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub overlap_taken_by: Option<Vec<String>>,
     /// Synthesis refusals of the mutant's suite; absent on `stillborn`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub refusals: Option<usize>,
@@ -3172,8 +3283,8 @@ pub struct OutOfScope {
 
 /// The `ess-mutation-report/3` document, or `/4` where it is scored for one component, under a
 /// known-failure declaration, or with unavailable sites, or `/5` where a mutant carries
-/// `identical_answer`: keys sorted, no timestamp, so its bytes are
-/// a function of the tree and the target.
+/// `identical_answer`, or `/6` where one carries `overlap_taken_by`: keys sorted, no timestamp, so
+/// its bytes are a function of the tree and the target.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct MutationReport {
     /// The unmutated suite.
@@ -3184,7 +3295,8 @@ pub struct MutationReport {
     /// How many mutants came to each verdict. Out-of-scope mutants are not counted.
     pub counts: Counts,
     /// [`REPORT_FORMAT`], or [`REPORT_FORMAT_4`] where a component, a declaration or an unavailable
-    /// site is named, or [`REPORT_FORMAT_5`] where a mutant carries `identical_answer`.
+    /// site is named, or [`REPORT_FORMAT_5`] where a mutant carries `identical_answer`, or
+    /// [`REPORT_FORMAT_6`] where one carries `overlap_taken_by`.
     pub format: String,
     /// The implementation that answered.
     pub implementation: String,
@@ -3277,6 +3389,22 @@ impl MutationReport {
                 tail.push(';');
             }
             let _ = write!(tail, " both branches {answer}");
+        }
+        if let Some(taken) = &entry.overlap_taken_by {
+            if entry.verdict == Verdict::Equivalent
+                && entry.unsatisfiable_guard.is_none()
+                && entry.identical_answer.is_none()
+            {
+                let _ = write!(tail, " — {}:", MutateCode::Equivalent.code());
+            } else {
+                tail.push(';');
+            }
+            let named: Vec<String> = taken.iter().map(|name| format!("`{name}`")).collect();
+            let _ = write!(
+                tail,
+                " every input both branches select is taken first by {}",
+                named.join(", ")
+            );
         }
         if let Some(refused) = &entry.baseline_refusals {
             let named: Vec<String> = refused.iter().map(ToString::to_string).collect();
@@ -4028,8 +4156,9 @@ impl Ruler {
     /// baseline's: an unchanged one asks the target what the baseline asked, so it cannot kill it.
     /// A mutant on an outcome the baseline does not witness, or on a transition only such outcomes
     /// perform, is `unwitnessed` as a gained refusal makes it; one that left its guard `dead`, or a
-    /// `precedence-swap` whose branches give an `identical` answer, is `equivalent` unless killed
-    /// or hiding a changed scenario nothing scored.
+    /// `precedence-swap` whose branches give an `identical` answer, or whose overlap branches answered
+    /// before both `taken` first, is `equivalent` unless killed or hiding a changed scenario nothing
+    /// scored.
     ///
     /// An authored scenario runs on the interpreter of the mutant, so one the baseline did not
     /// execute hides a kill even unchanged; on an `identical` answer it can fail only on the
@@ -4041,6 +4170,7 @@ impl Ruler {
         refused: &Refused,
         dead: Option<String>,
         identical: Option<String>,
+        taken: Option<Vec<String>>,
     ) {
         // On a `precedence-swap` whose branches give an identical answer, the interpreter of the
         // mutant answers every input as the specification's does but for the outcome's name, which
@@ -4130,7 +4260,7 @@ impl Ruler {
         // could have killed it (a gained refusal outranks `inconclusive` in `Verdict::judge`, so
         // `hidden` is asked here too).
         entry.verdict = Verdict::judge(&statuses, gained || at_baseline.is_some(), hidden);
-        if (dead.is_some() || identical.is_some()) && !hidden {
+        if (dead.is_some() || identical.is_some() || taken.is_some()) && !hidden {
             entry.verdict = entry.verdict.with_dead_guard();
         }
         // Every possible witness excluded: nothing could have killed it, and nobody found out. A
@@ -4142,6 +4272,7 @@ impl Ruler {
         entry.baseline_refusals = at_baseline;
         entry.unsatisfiable_guard = dead;
         entry.identical_answer = identical;
+        entry.overlap_taken_by = taken;
         if entry.verdict == Verdict::Killed {
             let mut killers: Vec<String> = observed
                 .not_passed
@@ -4258,6 +4389,7 @@ fn blank_entry(mutant: &Mutant) -> MutantEntry {
         id: mutant.id.clone(),
         identical_answer: None,
         killers: None,
+        overlap_taken_by: None,
         refusals: None,
         scenarios: None,
         stillborn: None,
@@ -4371,7 +4503,15 @@ fn measure<T: ConformanceTarget>(
     }
     let dead = unsatisfiable_guard(baseline_ir, &ir, &mutant.mutation);
     let identical = identical_answer(baseline_ir, &mutant.mutation);
-    ruler.judge(&mut entry, &ran.observed, &ran.refused, dead, identical);
+    let taken = overlap_taken_by(baseline_ir, &mutant.mutation);
+    ruler.judge(
+        &mut entry,
+        &ran.observed,
+        &ran.refused,
+        dead,
+        identical,
+        taken,
+    );
     Ok(entry)
 }
 
@@ -4506,11 +4646,30 @@ pub fn audit_with_authored<T: ConformanceTarget>(
     })
 }
 
-/// [`REPORT_FORMAT_5`] where a mutant carries `identical_answer`, which `/4` does not have;
-/// else [`REPORT_FORMAT_4`] where `fourth` (a component, a declaration or an unavailable site)
-/// asks for it; else [`REPORT_FORMAT`].
+/// [`MANIFEST_FORMAT_6`] where a mutant carries `overlap_taken_by`, else [`MANIFEST_FORMAT_5`] where one
+/// carries `identical_answer`, else [`MANIFEST_FORMAT_4`] where `version4`, else [`MANIFEST_FORMAT`].
+/// A `precedence-swap` mutant, the only one carrying either, already makes the emission version 4,
+/// so every suite of a `/5` or `/6` one records its digest too.
+fn manifest_format(entries: &[EmittedMutant], version4: bool) -> &'static str {
+    if entries.iter().any(|entry| entry.overlap_taken_by.is_some()) {
+        MANIFEST_FORMAT_6
+    } else if entries.iter().any(|entry| entry.identical_answer.is_some()) {
+        MANIFEST_FORMAT_5
+    } else if version4 {
+        MANIFEST_FORMAT_4
+    } else {
+        MANIFEST_FORMAT
+    }
+}
+
+/// [`REPORT_FORMAT_6`] where a mutant carries `overlap_taken_by`, which `/5` does not have; else
+/// [`REPORT_FORMAT_5`] where a mutant carries `identical_answer`, which `/4` does not have; else
+/// [`REPORT_FORMAT_4`] where `fourth` (a component, a declaration or an unavailable site) asks for
+/// it; else [`REPORT_FORMAT`].
 fn report_format(entries: &[MutantEntry], fourth: bool) -> String {
-    if entries.iter().any(|entry| entry.identical_answer.is_some()) {
+    if entries.iter().any(|entry| entry.overlap_taken_by.is_some()) {
+        REPORT_FORMAT_6
+    } else if entries.iter().any(|entry| entry.identical_answer.is_some()) {
         REPORT_FORMAT_5
     } else if fourth {
         REPORT_FORMAT_4
@@ -4535,6 +4694,11 @@ pub const MANIFEST_FORMAT_4: &str = "ess-mutation-manifest/4";
 /// the `/4` that 0.53.0 to 0.56.0 wrote does not have. A manifest none of whose mutants carries it
 /// is `/4` or `/3` exactly as before.
 pub const MANIFEST_FORMAT_5: &str = "ess-mutation-manifest/5";
+/// The manifest [`emit_for`] writes where a `precedence-swap` mutant carries `overlap_taken_by`
+/// (<https://github.com/beyond10x/ess/issues/539>): [`MANIFEST_FORMAT_5`] with that member, which
+/// the `/5` that 0.57.0 and later releases wrote does not have. A manifest none of whose mutants
+/// carries it is `/5`, `/4` or `/3` exactly as before.
+pub const MANIFEST_FORMAT_6: &str = "ess-mutation-manifest/6";
 /// The manifest 0.41.0 wrote, which [`collect`] still reads: it names each suite's refusals and no
 /// mutant's `unsatisfiable_guard`, so no mutant it names is scored `equivalent`.
 pub const MANIFEST_FORMAT_2: &str = "ess-mutation-manifest/2";
@@ -4603,6 +4767,11 @@ pub struct EmittedMutant {
     /// in `ess-mutation-manifest/5`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub identical_answer: Option<String>,
+    /// The branches answered before both branches of a `precedence-swap` that take every input both
+    /// select ([`MutantEntry::overlap_taken_by`]); never on a stillborn or out-of-scope mutant, and
+    /// only in `ess-mutation-manifest/6`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overlap_taken_by: Option<Vec<String>>,
     /// `true` where the emission is scoped to a component and the mutant's site belongs to another
     /// component: it then has no suite, and is listed rather than scored. Only in
     /// `ess-mutation-manifest/4`, and only beside its `component`.
@@ -4647,6 +4816,7 @@ impl EmittedMutant {
             id: mutant.id.clone(),
             identical_answer: None,
             out_of_scope,
+            overlap_taken_by: None,
             refusals: None,
             refused: None,
             scenarios: None,
@@ -4672,6 +4842,8 @@ impl EmittedMutant {
             // Named whatever the report scores it, as `unsatisfiable_guard` is.
             identical_answer: self.identical_answer.clone(),
             killers: None,
+            // Named whatever the report scores it, as `unsatisfiable_guard` is.
+            overlap_taken_by: self.overlap_taken_by.clone(),
             refusals: None,
             scenarios: None,
             stillborn: self.stillborn.clone(),
@@ -4696,7 +4868,8 @@ impl EmittedMutant {
                 if !self.out_of_scope
                     && self.refused.is_none()
                     && self.unsatisfiable_guard.is_none()
-                    && self.identical_answer.is_none() =>
+                    && self.identical_answer.is_none()
+                    && self.overlap_taken_by.is_none() =>
             {
                 Ok(None)
             }
@@ -4704,7 +4877,8 @@ impl EmittedMutant {
                 if self.out_of_scope
                     && self.refused.is_none()
                     && self.unsatisfiable_guard.is_none()
-                    && self.identical_answer.is_none() =>
+                    && self.identical_answer.is_none()
+                    && self.overlap_taken_by.is_none() =>
             {
                 Ok(None)
             }
@@ -4768,8 +4942,8 @@ pub struct Manifest {
     /// [`MANIFEST_FORMAT_4`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub component: Option<String>,
-    /// [`MANIFEST_FORMAT_5`], [`MANIFEST_FORMAT_4`] or [`MANIFEST_FORMAT`], or [`MANIFEST_FORMAT_2`] or
-    /// [`MANIFEST_FORMAT_1`] for a manifest an earlier release wrote.
+    /// [`MANIFEST_FORMAT_6`], [`MANIFEST_FORMAT_5`], [`MANIFEST_FORMAT_4`] or [`MANIFEST_FORMAT`], or
+    /// [`MANIFEST_FORMAT_2`] or [`MANIFEST_FORMAT_1`] for a manifest an earlier release wrote.
     pub format: String,
     /// The known-failure declaration the emission bound, copied byte for byte into the emission;
     /// only in [`MANIFEST_FORMAT_4`] (beyond10x/ess#294).
@@ -4909,6 +5083,52 @@ impl Manifest {
         Ok(())
     }
 
+    /// The refusal of a manifest of `format`, which this reader does not know, naming those it does.
+    fn unknown(format: &str) -> String {
+        format!(
+            "{MANIFEST_FILE} is `{format}`, not `{MANIFEST_FORMAT_6}`, `{MANIFEST_FORMAT_5}`, \
+             `{MANIFEST_FORMAT_4}`, `{MANIFEST_FORMAT}`, `{MANIFEST_FORMAT_2}` or `{MANIFEST_FORMAT_1}`"
+        )
+    }
+
+    /// [`Self::identical_answers`] for `/5`, then [`Self::overlaps_taken`] for `/6`.
+    fn swap_members(&self, version: u32) -> Result<(), String> {
+        self.identical_answers(version >= 5)?;
+        self.overlaps_taken(version >= 6)
+    }
+
+    /// Each `overlap_taken_by` (<https://github.com/beyond10x/ess/issues/539>): refused before `/6`
+    /// by name, and on a mutant that is not a `precedence-swap`, which has no two branches whose
+    /// overlap another could take.
+    fn overlaps_taken(&self, version6: bool) -> Result<(), String> {
+        let Some(mutant) = self
+            .mutants
+            .iter()
+            .find(|mutant| mutant.overlap_taken_by.is_some())
+        else {
+            return Ok(());
+        };
+        if !version6 {
+            return Err(format!(
+                "{MANIFEST_FILE}: `{}` carries `overlap_taken_by`, which `{}` does not have; it is \
+                 `{MANIFEST_FORMAT_6}`",
+                mutant.id, self.format
+            ));
+        }
+        if let Some(mutant) = self.mutants.iter().find(|mutant| {
+            mutant.overlap_taken_by.is_some() && mutant.class != MutantClass::PrecedenceSwap
+        }) {
+            return Err(format!(
+                "{MANIFEST_FILE}: `{}` is a `{}` mutant carrying `overlap_taken_by`, which only a \
+                 `{}` mutant has",
+                mutant.id,
+                mutant.class,
+                MutantClass::PrecedenceSwap
+            ));
+        }
+        Ok(())
+    }
+
     /// The unavailable sites (beyond10x/ess#295): refused before `/4` by name, rather than
     /// ignored; in `/4` each must be one a writer produces, listed once, in byte order of id, and
     /// an empty list is not written.
@@ -4953,19 +5173,21 @@ impl Manifest {
     /// Reads a manifest, refusing another format, an incoherent mutant entry, a suite's refusals
     /// that `/2` and later omit, `/1` carries or disagree with its count, an `unsatisfiable_guard`
     /// before `/3`, a `component`, an `out_of_scope` mutant, a class only `/4` knows or
-    /// `unavailable_sites` before `/4`, an `identical_answer` before `/5` or on a mutant that is
-    /// not a `precedence-swap`, an incoherent unavailable site, an `out_of_scope` mutant
-    /// without a `component`, or a directory that leaves the emission.
+    /// `unavailable_sites` before `/4`, an `identical_answer` before `/5` or an `overlap_taken_by`
+    /// before `/6`, or either on a mutant that is not a `precedence-swap`, an incoherent
+    /// unavailable site, an `out_of_scope` mutant without a `component`, or a directory that
+    /// leaves the emission.
     pub fn from_json(text: &str) -> Result<Self, String> {
         // The format first, so a manifest of a version this reader does not know is refused by
         // that name rather than by whichever of its fields this reader does not know.
         let declared = serde_json::from_str::<serde_json::Value>(text)
             .ok()
             .and_then(|value| value.get("format")?.as_str().map(str::to_owned));
-        // Whether suites name their refusals (`/2` on), whether a mutant may name a dead guard
-        // (`/3` on), and whether the emission may be scoped to a component or hold a class only
-        // `/4` knows, and whether a mutant may name an identical answer (`/5`).
+        // Suites name their refusals from `/2`, a mutant a dead guard from `/3`; `/4` scopes to a
+        // component and knows more classes; a mutant names an identical answer from `/5` and an
+        // overlap taken earlier from `/6`.
         let version_of = |format: &str| match format {
+            MANIFEST_FORMAT_6 => Some(6),
             MANIFEST_FORMAT_5 => Some(5),
             MANIFEST_FORMAT_4 => Some(4),
             MANIFEST_FORMAT => Some(3),
@@ -4973,23 +5195,17 @@ impl Manifest {
             MANIFEST_FORMAT_1 => Some(1),
             _ => None,
         };
-        let unknown = |other: &str| {
-            format!(
-                "{MANIFEST_FILE} is `{other}`, not `{MANIFEST_FORMAT_5}`, `{MANIFEST_FORMAT_4}`, \
-                 `{MANIFEST_FORMAT}`, `{MANIFEST_FORMAT_2}` or `{MANIFEST_FORMAT_1}`"
-            )
-        };
         if let Some(other) = declared.as_deref().filter(|it| version_of(it).is_none()) {
-            return Err(unknown(other));
+            return Err(Self::unknown(other));
         }
         let manifest: Self =
             serde_json::from_str(text).map_err(|error| format!("{MANIFEST_FILE}: {error}"))?;
         let Some(version) = version_of(&manifest.format) else {
-            return Err(unknown(&manifest.format));
+            return Err(Self::unknown(&manifest.format));
         };
         let (keyed, guarded, scoped) = (version >= 2, version >= 3, version >= 4);
         // Before the class check, so an earlier manifest carrying it is refused by this name.
-        manifest.identical_answers(version >= 5)?;
+        manifest.swap_members(version)?;
         if !scoped {
             if manifest.component.is_some() {
                 return Err(format!(
@@ -5291,21 +5507,14 @@ pub fn emit_with(
                 entry.unsatisfiable_guard =
                     unsatisfiable_guard(&baseline_ir, &ir, &mutant.mutation);
                 entry.identical_answer = identical_answer(&baseline_ir, &mutant.mutation);
+                entry.overlap_taken_by = overlap_taken_by(&baseline_ir, &mutant.mutation);
             }
             Err(stillborn) => entry.stillborn = Some(stillborn),
         }
         files.insert(format!("{}/{MUTANT_FILE}", mutant.id), canonical(&entry));
         entries.push(entry);
     }
-    // A `precedence-swap` mutant, the only one with an identical answer, already makes the
-    // emission version 4, so every suite of a `/5` one records its digest too.
-    let format = if entries.iter().any(|entry| entry.identical_answer.is_some()) {
-        MANIFEST_FORMAT_5
-    } else if version4 {
-        MANIFEST_FORMAT_4
-    } else {
-        MANIFEST_FORMAT
-    };
+    let format = manifest_format(&entries, version4);
     if let Some(component) = scope {
         outside(&baseline_ir, component, &mut unavailable);
     }
@@ -5645,8 +5854,16 @@ fn score_mutant(
                 unscored(entry, why);
             } else {
                 let dead = entry.unsatisfiable_guard.clone();
+                let taken = entry.overlap_taken_by.clone();
                 let identical = entry.identical_answer.clone();
-                ruler.judge(entry, &scored.observed, &suite.refused(), dead, identical);
+                ruler.judge(
+                    entry,
+                    &scored.observed,
+                    &suite.refused(),
+                    dead,
+                    identical,
+                    taken,
+                );
             }
         }
         Err(why) => unscored(entry, why),
@@ -5759,7 +5976,8 @@ pub fn collect_with(
     let manifest = Manifest::from_json(&text).map_err(AuditRefusal::Uncollectable)?;
     emitted_for(&manifest, component)?;
     let declaration = bound_declaration(&read, &manifest, supplied)?;
-    let version4 = [MANIFEST_FORMAT_4, MANIFEST_FORMAT_5].contains(&manifest.format.as_str());
+    let version4 = [MANIFEST_FORMAT_4, MANIFEST_FORMAT_5, MANIFEST_FORMAT_6]
+        .contains(&manifest.format.as_str());
     let baseline = score(&read, &manifest.baseline, version4)
         .map_err(|why| AuditRefusal::Uncollectable(format!("the baseline: {why}")))?;
     let build = manifest
@@ -6042,7 +6260,7 @@ commands:
         let mut ran = run(&mutated, None, &target).expect("the mutant runs");
         ran.observed.absorb(unexecuted(&ir));
         let mut entry = blank_entry(&mutant);
-        ruler.judge(&mut entry, &ran.observed, &ran.refused, None, None);
+        ruler.judge(&mut entry, &ran.observed, &ran.refused, None, None, None);
         assert_eq!(entry.verdict, Verdict::Unwitnessed, "{entry:#?}");
         assert_eq!(
             entry.excluded.as_deref(),
@@ -6071,7 +6289,7 @@ commands:
             entry
         };
         let mut entry = blank();
-        ruler.judge(&mut entry, &ran.observed, &ran.refused, None, None);
+        ruler.judge(&mut entry, &ran.observed, &ran.refused, None, None, None);
         assert_eq!(entry.verdict, Verdict::Inconclusive, "{entry:#?}");
         let mut entry = blank();
         ruler.judge(
@@ -6080,6 +6298,7 @@ commands:
             &ran.refused,
             None,
             Some("both refuse alike".to_owned()),
+            None,
         );
         assert_eq!(entry.verdict, Verdict::Equivalent, "{entry:#?}");
     }

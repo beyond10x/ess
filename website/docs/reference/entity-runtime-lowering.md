@@ -45,6 +45,7 @@ The last column says what lowering the construct would need. *entity-core* means
 | `now` in a guard | `CurrentTimeUnsupported` | Host value: the request's clock reading as a bound argument; entity-core refuses `$now` |
 | `{related: …}` | `ValueExpressionUnsupported` | Host value: the related row's field, loaded by the host and bound as an argument |
 | an `unknown_instance:` refusal | `OutcomeShapeUnsupported` | Host value: the host's own not-found answer, mapped to the declared refusal |
+| an external refusal answered before the row, `before_row: true` | `OutcomeShapeUnsupported` | Host value: the host's own decision, answered before it loads the row |
 | a branch chosen by existence (`unknown_instance:` on a creation, `existing_instance:`) | `ExistenceSelectionUnsupported` | Host value: the host's own exists answer, selecting the declared branch |
 | `{increment: …}` | `ValueExpressionUnsupported` | entity-core: arithmetic over a stored value |
 | `{cleared: true}` outside a creation's `sets:` | `ClearedValueUnsupported` | entity-core: a removal a definition states; `Remove` is a host-selected action only |
@@ -70,6 +71,7 @@ The last column says what lowering the construct would need. *entity-core* means
 | a value read through an input path (`input.<path>`) | `ValueExpressionUnsupported` | entity-core: a read of a member of a structured argument, absent where an `Optional` on the way is |
 | a struct of sources | `ValueExpressionUnsupported` | entity-core: a value assembled from several sources |
 | `equals_ignore_case`, `in_ignore_case` | `CaseFoldUnsupported` | entity-core: a condition that folds ASCII case |
+| `trimmed:` | `TrimmedTextUnsupported` | entity-core: a condition that removes surrounding ASCII whitespace |
 | `deletes:` | `OutcomeShapeUnsupported` | entity-core: removal of an instance |
 | a creation `into:` a state | `OutcomeShapeUnsupported` | entity-core: creation in a state other than the initial one |
 | `accepts: nothing` | `OutcomeShapeUnsupported` | entity-core: an acceptance with no subject |
@@ -115,6 +117,7 @@ A harness matches on the code. The construct is the one a diagnostic under that 
 | `TextLengthUnsupported` | `.count` of a text through a quantifier element or a union payload | A predicate reads the length of a text through a quantifier element or a union payload. |
 | `ValueExpressionUnsupported` | a value expression | A `sets:` or `payload:` source reads the subject or another row, increments, falls back, or nests. |
 | `CaseFoldUnsupported` | `equals_ignore_case`, `in_ignore_case` | A guard compares text without ASCII case. |
+| `TrimmedTextUnsupported` | `trimmed:` | A guard compares text with its surrounding ASCII whitespace removed. |
 | `OutcomeShapeUnsupported` | an ess/15 outcome shape | An outcome is an `unknown_instance:` refusal, deletes, creates `into:` a state, or accepts nothing. |
 | `InputAbsentUnsupported` | `input_absent:` | An outcome answers a request with no input. |
 | `CurrentTimeUnsupported` | `now` in a guard | A guard orders a `Timestamp` against the current time. |

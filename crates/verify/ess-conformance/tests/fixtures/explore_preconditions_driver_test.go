@@ -3,7 +3,8 @@
 // (`explore-preconditions-driver.mjs`).
 //
 // A case is `{name, mode, options, allowExcluded}`. Each is its own subtest of
-// TestExplorePreconditions, and each writes `<name>.json` and `<name>.assert` into ESS_EXPLORE_OUT.
+// TestExplorePreconditions, and each writes `<name>.json` and `<name>.assert` into ESS_EXPLORE_OUT,
+// and on a failed assertion `<name>.message`, its whole text.
 
 package essconform
 
@@ -48,6 +49,7 @@ func TestExplorePreconditions(t *testing.T) {
 			write(".json", string(bytes))
 			if problem := CheckExplored(result, AssertOptions{AllowExcluded: one.AllowExcluded}); problem != nil {
 				write(".assert", "failed: "+strings.SplitN(problem.Error(), "\n", 2)[0])
+				write(".message", problem.Error())
 			} else {
 				write(".assert", "ok")
 			}

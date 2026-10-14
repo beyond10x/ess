@@ -8,7 +8,7 @@ use ess_ui::{
     Body, Document, Expr, LoadError, NodeRef, Primitive, ThemeChoice, TokenValue, Tokens, Tone,
     ToneBy, ToneToken, TypeToken,
 };
-use serde_yaml::Value;
+use ess_yaml::Value;
 
 const BASE: &str = r"format: ess-ui/1
 app: t
@@ -81,7 +81,7 @@ fn value(text: &str) -> TokenValue {
 }
 
 fn yaml(text: &str) -> Value {
-    serde_yaml::from_str(text).expect("YAML")
+    ess_yaml::from_str(text).expect("YAML")
 }
 
 /// The `tone_by` of the badge or icon at `path`.

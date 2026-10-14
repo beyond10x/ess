@@ -48,6 +48,7 @@ tasks:
         --package ess-ui-test
         --package ess-ui-tui
         --package ess-xtask
+        --package ess-yaml
         --package gatepass-realization
         --package infra-analyze
         --package infra-compiler

@@ -5,8 +5,8 @@
 //! walked again, deepest nodes first, and each node is read on its own as the type its position
 //! says it is. The first one refused is the node at fault, and its canonical path is known.
 
+use ess_yaml::{Mapping, Value};
 use serde::de::DeserializeOwned;
-use serde_yaml::{Mapping, Value};
 
 use std::collections::BTreeSet;
 
@@ -112,7 +112,7 @@ fn classify(segments: &[String], mapping: &Mapping) -> Option<Expected> {
 }
 
 fn refused<T: DeserializeOwned>(value: &Value) -> Option<String> {
-    serde_yaml::from_value::<T>(value.clone())
+    ess_yaml::from_value::<T>(value.clone())
         .err()
         .map(|error| explain_marker(error.to_string()))
 }

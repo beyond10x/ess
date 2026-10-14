@@ -134,21 +134,21 @@ fn retained_result_projection_keeps_origin_and_complete_response_without_new_eve
 
 /// One document, parsed back from the bytes that were written.
 ///
-/// Through JSON rather than as a `serde_yaml::Value`, so that the same walk works on the schemas —
+/// Through JSON rather than as a `ess_yaml::Value`, so that the same walk works on the schemas —
 /// and because "it parses" is only worth asserting when the assertions afterwards read the result.
 fn parsed(artifact: &Artifact) -> Value {
-    let yaml: serde_yaml::Value = serde_yaml::from_str(&artifact.contents)
+    let yaml: ess_yaml::Value = ess_yaml::from_str(&artifact.contents)
         .unwrap_or_else(|error| panic!("{} is YAML: {error}", artifact.path));
     yaml_to_json(yaml)
 }
 
 /// Converts the YAML value structurally instead of routing its number through `serde_json`'s
 /// private arbitrary-precision token, which is enabled by the Entity Runtime dependency graph.
-fn yaml_to_json(value: serde_yaml::Value) -> Value {
+fn yaml_to_json(value: ess_yaml::Value) -> Value {
     match value {
-        serde_yaml::Value::Null => Value::Null,
-        serde_yaml::Value::Bool(value) => Value::Bool(value),
-        serde_yaml::Value::Number(value) => {
+        ess_yaml::Value::Null => Value::Null,
+        ess_yaml::Value::Bool(value) => Value::Bool(value),
+        ess_yaml::Value::Number(value) => {
             if let Some(value) = value.as_i64() {
                 Value::Number(value.into())
             } else if let Some(value) = value.as_u64() {
@@ -162,22 +162,22 @@ fn yaml_to_json(value: serde_yaml::Value) -> Value {
                 )
             }
         }
-        serde_yaml::Value::String(value) => Value::String(value),
-        serde_yaml::Value::Sequence(values) => {
+        ess_yaml::Value::String(value) => Value::String(value),
+        ess_yaml::Value::Sequence(values) => {
             Value::Array(values.into_iter().map(yaml_to_json).collect())
         }
-        serde_yaml::Value::Mapping(values) => Value::Object(
+        ess_yaml::Value::Mapping(values) => Value::Object(
             values
                 .into_iter()
                 .map(|(key, value)| {
-                    let serde_yaml::Value::String(key) = key else {
+                    let ess_yaml::Value::String(key) = key else {
                         panic!("an OpenAPI mapping key is not text: {key:?}")
                     };
                     (key, yaml_to_json(value))
                 })
                 .collect(),
         ),
-        serde_yaml::Value::Tagged(value) => yaml_to_json(value.value),
+        ess_yaml::Value::Tagged(value) => yaml_to_json(value.value),
     }
 }
 
@@ -1854,4 +1854,42 @@ fn every_unfinished_501_declares_whether_the_effect_was_committed() {
         }
     }
     assert!(commands > 0, "the billing documents declare commands");
+}
+
+/// A view declaring `absent:` (ess/25, beyond10x/ess#533) states its default row in its read's
+/// description; the same model without the key keeps the sentence out.
+#[test]
+fn a_view_with_a_default_row_states_it_in_its_description() {
+    const FLAGS: &str =
+        include_str!("../../../verify/ess-conformance/tests/fixtures/view-absent-row.yaml");
+    // A document is written per component, so the model is served by one.
+    let served = |text: &str| {
+        format!(
+            "{text}\ncomponents:\n  - component: flags\n    owns: {{domains: [demo.status]}}\n    \
+             accepts: {{commands: [demo.status.SetFlag, demo.status.Pause, demo.status.Resume, \
+             demo.status.Drop]}}\n    publishes: {{events: [demo.status.FlagSet, \
+             demo.status.FlagPaused, demo.status.FlagResumed, demo.status.FlagDropped]}}\n    \
+             reached_by: network\n"
+        )
+    };
+    let said = |text: &str| {
+        documents(&inline(&[("flags.yaml", &served(text))]))
+            .values()
+            .map(Value::to_string)
+            .collect::<String>()
+    };
+    let sentence = "For a `id` no row carries, the answer holds one default row: `id` the \
+                    requested `id`, `level` `0`, `paused` `false`, `state` `Set`; every other \
+                    field is absent.";
+    let with = said(FLAGS);
+    assert!(with.contains(sentence), "{with}");
+    let without = said(
+        &FLAGS
+            .replace(
+                "    absent:\n      row: {paused: false, level: 0, state: Set}\n",
+                "",
+            )
+            .replace("format: ess/25", "format: ess/24"),
+    );
+    assert!(!without.contains("default row"), "{without}");
 }

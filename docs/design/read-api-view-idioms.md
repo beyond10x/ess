@@ -2,7 +2,9 @@
 
 Status: decision record for requests declined with an idiom (beyond10x/ess#439, #441, #442, #443,
 #444, #446, #447). Each section names what was asked, the construct ESS already has that states
-it, and the shape to start from if the request is reopened. No format changes here.
+it, and the shape to start from if the request is reopened. No format changes here, except the
+last section, "An identity no row carries", which adds the view key `absent:` in `ess/25`
+(beyond10x/ess#533).
 
 Every idiom has a validated model in `docs/design/read-api-view-idioms.example/`, one file and one
 domain per idiom (`system.yaml` carries the header). The held-row idiom of #442 is a conformance
@@ -230,3 +232,82 @@ consumer subtract it from its own clock.
 If reopened, start from a `window:` parameter kind resolved against a request clock the suite can
 set, with a pinned zone-data dependency; it needs `ess/23`, a suite step that fixes the target's
 clock and zone data in every lane.
+
+## An identity no row carries
+
+Asked (#533): a per-record status read answers a default record for an identity no row carries
+(`200`, every flag false, only the identity set), where it used to answer an error. A view lists the
+rows its source holds, so before `ess/25` an empty answer was the only answer for a missing
+identity, and a suite read nothing for one: a target answering the default record and a target
+answering no row both passed. Commands have `unknown_instance:`; views had no counterpart.
+
+From `ess/25` a view read by identity declares its answer for an identity no row carries with
+`absent:`. This cut admits one form, a default row whose fields are literals:
+
+```yaml
+views:
+  - name: demo.status.FlagById
+    source: demo.status.Flag
+    params: [{name: id, type: demo.status.FlagId}]
+    filter: id == param.id
+    fields: [{name: id, type: demo.status.FlagId}, {name: paused, type: Boolean}]
+    absent:
+      row: {paused: false}
+```
+
+A read of `FlagById` for an `id` no `Flag` carries answers one row: `id` the requested value,
+`paused` false. A read for a stored `id` answers that row, as before.
+
+Where it is admitted, and what it refuses:
+
+- The view's filter is the one comparison `<identity field> == param.<name>`, in either operand
+  order, and nothing else: the view selects its source entity by identity, the condition
+  `body: single` reads in `ess-http/1` (`docs/design/http-presentation-binding.md`, ESS-HTTP-031).
+  A filter with further conjuncts is refused, because an identity some row carries and the filter
+  refutes is a second kind of "no row" the default would have to tell apart; admitting it later is
+  additive. Refused as `conflicting_declaration` at `view.<name>.absent`, naming the source entity
+  and its identity field.
+- The identity parameter is not `Optional`: the default row holds the identity the read requested,
+  and a read that leaves an `Optional` parameter out requests none (`conflicting_declaration` at
+  `view.<name>.absent`). Admitting it, with no row as the answer, would be additive.
+- Not beside an aggregate (`group_by:` or an `aggregate:` field) or `paging:`: a default row is one
+  projected row, and an aggregate's row or a page is not one. Refused as `conflicting_declaration`.
+- `row:` names projected fields of the view. Each value is a literal, typed by the rule `sets:`
+  types a literal by: text, a variant of an enum, `true` or `false`, a whole number or a decimal,
+  checked against the view field's type (`type_mismatch`), inside every alphabet and invariant of
+  each newtype that type is written through, as an input's `example:` is. The same holds for every
+  other literal position (`sets:`, `payload:`, a binding's `mapping:`, an enum variant's
+  `attributes:`). A name the view does not project is `undeclared_reference`.
+- The identity field is never in `row:`: its value is the requested parameter
+  (`conflicting_declaration`). Every other projected field that is not `Optional` is in `row:`
+  (`missing_declaration`); an `Optional` field `row:` leaves out is absent in the default row.
+- `absent:` without `row:` and any other key are parse refusals naming the key. An `error:` answer
+  (the error a read of an unknown identity answers) is not in this cut: a view read answers rows
+  only, so a suite expectation of an error needs a suite vocabulary a view read does not have. It is
+  the additive next step, `absent: {error: <Error>}`, designed with that suite format.
+- Below `ess/25`, `absent:` is refused as `unsupported_format_version`, naming `ess/25`.
+
+The IR carries `absent` on the view, `{param, row}`, `row` holding each literal's canonical text,
+an `Integer` or `Decimal` by value (`1.50` is `1.5`, so a respelling is no change),
+and omits it where the view declares none, so every other model keeps its IR bytes, its suite and
+its generated artifacts.
+
+The interpreter answers the default row where no stored row of the source carries the requested
+identity. Synthesis reads it: in every scenario that shows a stored row of such a view, after that
+row's own assertions, it reads the view again for an identity no scenario stores (the witness one
+distinction past the unknown-instance witness) and requires `Contains` the identity, where the view
+projects it, every literal of `row:`, and `null` in every other field. A target that answers no row, or the default row with a
+flag set, fails that read; a target that answers the default row for a stored identity fails the
+read before it. No suite format moves: the read and the expectation are today's `query_view` and
+`contains`. An `Optional` field `row:` leaves out is asserted `null`, as a projection writes an
+`Optional` holding nothing, so a target that fills it fails the read.
+
+Generated view queries keep such a view an obligation, naming `absent:`: a view with an equality
+parameter was one already. OpenAPI states the default row in the view operation's description.
+`ess verify diff` reports the key gained, lost or changed as `absent-changed` on the view.
+
+The HTTP binding keeps its bytes and its rules. `body: single` with `empty: {status: <4xx>}` stays
+the HTTP answer for a view that holds no row, and stays required beside `single`. On a view that
+declares `absent:` an unknown identity holds the default row, so the served answer is `200` with that
+row and `empty` is not reached by a read of an unknown identity. Dropping `empty` beside `absent:`,
+or refusing the pair, is a later ess-http change; neither is made here, so either stays open.

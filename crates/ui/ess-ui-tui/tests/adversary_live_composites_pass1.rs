@@ -15,7 +15,7 @@ use std::time::Duration;
 use ess_ui::binding::Answer;
 use ess_ui_tui::live::Script;
 use ess_ui_tui::{App, DataAdapter, FixtureAdapter, Options, ReadRequest, ReadResult};
-use serde_yaml::Value;
+use ess_yaml::Value;
 
 const DATA: &str = r"
 views:
@@ -79,7 +79,7 @@ fn app(
         .map(|script| {
             vec![Script::parse(
                 "progress",
-                &serde_yaml::from_str(script).expect("the script is YAML"),
+                &ess_yaml::from_str(script).expect("the script is YAML"),
             )
             .expect("the script parses")]
         })

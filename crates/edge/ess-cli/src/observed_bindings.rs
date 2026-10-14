@@ -823,7 +823,7 @@ fn read_yaml<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T> {
     if path.extension().is_some_and(|e| e == "json") {
         Ok(serde_json::from_str(&text)?)
     } else {
-        Ok(serde_yaml::from_str(&text)?)
+        Ok(ess_yaml::from_str(&text)?)
     }
 }
 

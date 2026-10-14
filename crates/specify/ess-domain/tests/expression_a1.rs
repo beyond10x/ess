@@ -292,7 +292,7 @@ fn the_instant_tag_is_an_ess22_form_between_two_timestamps() {
         "[unparsable_predicate] entity graph.tasks.Edge.invariants[0]: cannot parse predicate \
          \"compare: {as: …}\": unknown operator \"as\"; expected one of eq, ne, lt, lte, gt, gte, \
          any_of, none_of, exists, truthy, starts_with, ends_with, contains, equals_ignore_case, \
-         in_ignore_case"
+         in_ignore_case, trimmed"
     );
     let spec = admitted(&model(22, PLAIN, tagged, ""));
     assert_eq!(

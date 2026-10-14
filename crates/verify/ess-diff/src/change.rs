@@ -438,6 +438,10 @@ impl SemanticChange {
                 changed: CommandChange::ResponseUndeclaredFieldsChanged { .. },
                 ..
             } => UNDECLARED_FIELDS_DELTA_FORMAT,
+            Self::View {
+                changed: ViewChange::AbsentChanged { .. },
+                ..
+            } => ABSENT_DELTA_FORMAT,
             Self::Domain { .. } => DOMAIN_DELTA_FORMAT,
             Self::Command { changed, .. } if changed.is_compensation() => 14,
             Self::Binding { changed, .. } if changed.is_refusal_policy() => 14,
@@ -792,6 +796,13 @@ pub const DOMAIN_DELTA_FORMAT: u32 = 15;
 /// Above [`CLASSIFIED_DELTA_FORMAT`](crate::compatibility::CLASSIFIED_DELTA_FORMAT) too, so a delta
 /// that carries one is classified even when nobody asked.
 pub const UNDECLARED_FIELDS_DELTA_FORMAT: u32 = 18;
+
+/// The first delta format whose vocabulary has `absent-changed` on a view: its answer for an identity
+/// no row carries (`absent:`, `ess/25`, beyond10x/ess#533).
+///
+/// Above [`CLASSIFIED_DELTA_FORMAT`](crate::compatibility::CLASSIFIED_DELTA_FORMAT) too, so a delta
+/// that carries one is classified even when nobody asked.
+pub const ABSENT_DELTA_FORMAT: u32 = 19;
 
 /// A domain entered in, or dropped from, the system's `domains:` list.
 ///
@@ -3112,6 +3123,15 @@ pub enum ViewChange {
         /// The paging it has.
         after: Option<PagingContract>,
     },
+    /// What a read answers for an identity no row carries differs (`ess-diff/19`, ess/25
+    /// `absent:`): each side the default row, field to literal text, or `None` where the read
+    /// answers no row.
+    AbsentChanged {
+        /// The default row it had.
+        before: Option<std::collections::BTreeMap<String, String>>,
+        /// The default row it has.
+        after: Option<std::collections::BTreeMap<String, String>>,
+    },
 }
 
 impl ViewChange {
@@ -3121,6 +3141,7 @@ impl ViewChange {
             Self::ParamsChanged { .. } => "params-changed",
             Self::RankingChanged { .. } => "ranking-changed",
             Self::PagingChanged { .. } => "paging-changed",
+            Self::AbsentChanged { .. } => "absent-changed",
             Self::Added => "added",
             Self::Removed => "removed",
             Self::DomainChanged { .. } => "domain-changed",
@@ -3176,6 +3197,11 @@ impl ViewChange {
                 "{}, was {}",
                 PagingContract::render(after.as_ref()),
                 PagingContract::render(before.as_ref())
+            ),
+            Self::AbsentChanged { before, after } => format!(
+                "an unknown identity answers {}, answered {}",
+                default_row(after.as_ref()),
+                default_row(before.as_ref())
             ),
             Self::Added => "declared".to_owned(),
             Self::Removed => "no longer declared".to_owned(),
@@ -3255,6 +3281,21 @@ impl ViewChange {
             ),
         }
     }
+}
+
+/// A view's answer for an unknown identity, for [`ViewChange::describe`]: its default row, field to
+/// literal text, or `no row` where it declares none.
+fn default_row(row: Option<&std::collections::BTreeMap<String, String>>) -> String {
+    row.map_or_else(
+        || "no row".to_owned(),
+        |row| {
+            let values: Vec<String> = row
+                .iter()
+                .map(|(field, literal)| format!("`{field}` `{literal}`"))
+                .collect();
+            format!("a default row ({})", values.join(", "))
+        },
+    )
 }
 
 /// What moved about a binding.

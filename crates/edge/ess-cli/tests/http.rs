@@ -212,13 +212,15 @@ fn a_refused_binding_exits_1_with_every_code_and_path() {
 }
 
 #[test]
-fn a_stage_2_key_is_refused_by_name() {
+fn specify_http_validate_reports_ess_http_027_and_compile_writes_headers_and_redirects() {
     let fixture = Fixture::new();
+    // A `401` answers with a challenge, and this one has none.
     fixture.binding(
-        "routes:
+        "refusals:
+  not_granted: {status: 401, body: none}
+routes:
   - command: catalog.items.ListItem
     method: post
-    request: {encoding: form}
 ",
     );
     let validate = fixture.ess(&[
@@ -230,11 +232,209 @@ fn a_stage_2_key_is_refused_by_name() {
         "--binding",
         "http.yaml",
     ]);
-    assert!(!validate.status.success(), "{}", text(&validate));
+    assert_eq!(validate.status.code(), Some(1), "{}", text(&validate));
+    let shown = text(&validate);
     assert!(
-        text(&validate).contains("unknown field `request`"),
-        "{}",
-        text(&validate)
+        shown.contains("error[ESS-HTTP-027]: refusals.not_granted.headers:"),
+        "{shown}"
+    );
+    assert!(shown.contains("WWW-Authenticate"), "{shown}");
+
+    // A refusal with a challenge, and an outcome that redirects with a header beside it, compile;
+    // the IR writes the headers in name order.
+    fixture.binding(
+        "refusals:
+  not_granted:
+    status: 401
+    body: none
+    headers:
+      WWW-Authenticate: {challenge: {scheme: Bearer, params: {realm: {literal: catalog}}}}
+routes:
+  - command: catalog.items.ListItem
+    method: post
+    outcomes:
+      listed:
+        status: 303
+        body: none
+        headers: {Pragma: {literal: no-cache}, Cache-Control: {literal: no-store}}
+        redirect: {location: input.title, mode: query, parameters: {item: input.item_id}}
+",
+    );
+    let compile = fixture.ess(&[
+        "specify",
+        "http",
+        "compile",
+        "--path",
+        "model",
+        "--binding",
+        "http.yaml",
+        "--out",
+        "http.json",
+    ]);
+    assert!(compile.status.success(), "{}", text(&compile));
+    let written = fs::read_to_string(fixture.0.join("http.json")).unwrap();
+    let ir: serde_json::Value = serde_json::from_str(&written).unwrap();
+    assert_eq!(
+        ir["refusals"],
+        serde_json::json!({"not_granted": {"status": 401, "body": "none", "headers": {
+            "WWW-Authenticate": {"challenge": {"scheme": "Bearer", "params": {
+                "realm": {"literal": "catalog"}}}}}}})
+    );
+    assert_eq!(
+        ir["routes"][0]["outcomes"],
+        serde_json::json!({"listed": {"status": 303, "body": "none",
+            "headers": {"Cache-Control": {"literal": "no-store"}, "Pragma": {"literal": "no-cache"}},
+            "redirect": {"location": "input.title", "mode": "query",
+                "parameters": {"item": "input.item_id"}}}})
+    );
+    assert!(
+        written.find("\"Cache-Control\"") < written.find("\"Pragma\""),
+        "{written}"
+    );
+}
+
+#[test]
+fn specify_http_validate_reports_ess_http_023_and_compile_writes_each_answer() {
+    let fixture = Fixture::new();
+    fixture.binding(
+        "routes:
+  - command: catalog.items.ListItem
+    method: post
+    outcomes: {listed: {status: 404}}
+",
+    );
+    let validate = fixture.ess(&[
+        "specify",
+        "http",
+        "validate",
+        "--path",
+        "model",
+        "--binding",
+        "http.yaml",
+    ]);
+    assert_eq!(validate.status.code(), Some(1), "{}", text(&validate));
+    let shown = text(&validate);
+    assert!(
+        shown.contains("error[ESS-HTTP-023]: routes[0].outcomes.listed.status:"),
+        "{shown}"
+    );
+    assert!(
+        shown.contains("`404`") && shown.contains("`listed`"),
+        "{shown}"
+    );
+
+    // A success on `201` with no body, the view's single row, and a malformed request's answer
+    // compile, and the compiled IR records each.
+    fixture.binding(
+        "refusals:
+  malformed: {status: 400, body: {error: {literal: invalid_request}}}
+routes:
+  - command: catalog.items.ListItem
+    method: post
+    outcomes: {listed: {status: 201, body: none}}
+  - view: catalog.items.ItemById
+    method: get
+    path: /items/{item_id}
+    parameters: {item_id: param.item_id}
+    body: single
+    empty: {status: 404}
+",
+    );
+    let compile = fixture.ess(&[
+        "specify",
+        "http",
+        "compile",
+        "--path",
+        "model",
+        "--binding",
+        "http.yaml",
+        "--out",
+        "http.json",
+    ]);
+    assert!(compile.status.success(), "{}", text(&compile));
+    let ir: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(fixture.0.join("http.json")).unwrap()).unwrap();
+    assert_eq!(
+        ir["refusals"],
+        serde_json::json!({"malformed": {"status": 400, "body": {"error": {"literal": "invalid_request"}}}})
+    );
+    let routes = ir["routes"].as_array().unwrap();
+    let command = routes
+        .iter()
+        .find(|route| route["command"] == "catalog.items.ListItem")
+        .unwrap();
+    assert_eq!(
+        command["outcomes"],
+        serde_json::json!({"listed": {"status": 201, "body": "none"}})
+    );
+    let view = routes
+        .iter()
+        .find(|route| route["view"] == "catalog.items.ItemById")
+        .unwrap();
+    assert_eq!(
+        (&view["body"], &view["empty"]),
+        (
+            &serde_json::json!("single"),
+            &serde_json::json!({"status": 404})
+        )
+    );
+}
+
+#[test]
+fn specify_http_validate_reports_ess_http_020_with_its_path() {
+    let fixture = Fixture::new();
+    fixture.binding(
+        "routes:
+  - command: catalog.items.ListItem
+    method: post
+    request: {encoding: query}
+",
+    );
+    let validate = fixture.ess(&[
+        "specify",
+        "http",
+        "validate",
+        "--path",
+        "model",
+        "--binding",
+        "http.yaml",
+    ]);
+    assert_eq!(validate.status.code(), Some(1), "{}", text(&validate));
+    let shown = text(&validate);
+    assert!(
+        shown.contains("error[ESS-HTTP-020]: routes[0].request.encoding:"),
+        "{shown}"
+    );
+    assert!(
+        shown.contains("`query`") && shown.contains("`post`"),
+        "{shown}"
+    );
+
+    // The same route form-encoded is valid, and its compiled route records the encoding.
+    fixture.binding(
+        "routes:
+  - command: catalog.items.ListItem
+    method: post
+    request: {encoding: form, unknown: ignore}
+",
+    );
+    let compile = fixture.ess(&[
+        "specify",
+        "http",
+        "compile",
+        "--path",
+        "model",
+        "--binding",
+        "http.yaml",
+        "--out",
+        "http.json",
+    ]);
+    assert!(compile.status.success(), "{}", text(&compile));
+    let ir: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(fixture.0.join("http.json")).unwrap()).unwrap();
+    assert_eq!(
+        ir["routes"][0]["request"],
+        serde_json::json!({"encoding": "form", "unknown": "ignore"})
     );
 }
 
@@ -386,7 +586,7 @@ fn generate(fixture: &Fixture, args: &[&str]) -> Output {
 
 fn document(fixture: &Fixture, root: &str) -> serde_json::Value {
     let text = fs::read_to_string(fixture.0.join(root).join("openapi/items-service.yaml")).unwrap();
-    let yaml: serde_yaml::Value = serde_yaml::from_str(&text).unwrap();
+    let yaml: ess_yaml::Value = ess_yaml::from_str(&text).unwrap();
     serde_json::to_value(yaml).unwrap()
 }
 
@@ -534,4 +734,122 @@ fn generate_refuses_http_with_any_kind_but_openapi() {
     let refines = generate(&fixture, &["--kind", "openapi", "--refines", "http.yaml"]);
     assert!(!refines.status.success(), "{}", text(&refines));
     assert!(text(&refines).contains("--http"), "{}", text(&refines));
+}
+
+/// `ess generate synthesize --http` is served by the `rust` and `go` targets only: every other
+/// target refuses it by name, before the model or the binding is read, writes nothing and exits
+/// with the status a usage error has.
+#[test]
+fn synthesize_http_with_another_target_is_refused_by_name() {
+    let fixture = Fixture::new();
+    for target in ["web", "clap"] {
+        let refused = fixture.ess(&[
+            "generate",
+            "synthesize",
+            "--path",
+            "model",
+            "--target",
+            target,
+            "--http",
+            "absent.yaml",
+            "--out",
+            target,
+        ]);
+        assert_eq!(
+            refused.status.code(),
+            Some(2),
+            "{target}: {}",
+            text(&refused)
+        );
+        assert!(
+            text(&refused).contains(&format!(
+                "the `{target}` target does not serve an `ess-http/1` binding"
+            )),
+            "{target}: {}",
+            text(&refused)
+        );
+        assert!(
+            !fixture.0.join(target).exists(),
+            "{target}: a refusal wrote files"
+        );
+    }
+}
+
+/// `ess generate synthesize --target rust --http` (and `--target go`) serves the binding, and
+/// refuses one whose route is open, or claims a path the surface answers itself, writing nothing.
+#[test]
+fn synthesize_rust_serves_the_binding_and_refuses_one_it_cannot_serve() {
+    let fixture = Fixture::new();
+    fixture.binding(
+        "routes:\n  - view: catalog.items.ItemById\n    method: get\n    path: /items/{item_id}\n    \
+         parameters: {item_id: param.item_id}\n  - command: catalog.items.ListItem\n    method: \
+         post\n    path: /items\n",
+    );
+    let served = fixture.ess(&[
+        "generate",
+        "synthesize",
+        "--path",
+        "model",
+        "--target",
+        "rust",
+        "--http",
+        "http.yaml",
+        "--out",
+        "served",
+    ]);
+    assert!(served.status.success(), "{}", text(&served));
+    let surface = fs::read_to_string(
+        fixture
+            .0
+            .join("served/crates/catalog-server/src/items_service.rs"),
+    )
+    .unwrap();
+    assert!(
+        surface.contains("http::matched(\"/items/{item_id}\", &request.path)"),
+        "{surface}"
+    );
+
+    let go = fixture.ess(&[
+        "generate",
+        "synthesize",
+        "--path",
+        "model",
+        "--target",
+        "go",
+        "--http",
+        "http.yaml",
+        "--out",
+        "served-go",
+    ]);
+    assert!(go.status.success(), "{}", text(&go));
+    let surface = fs::read_to_string(fixture.0.join("served-go/server/itemsservice.go")).unwrap();
+    assert!(
+        surface.contains("matched(\"/items/{item_id}\", spelled)"),
+        "{surface}"
+    );
+
+    for (routes, refusal) in [
+        (ROUTES, "has an open route"),
+        (
+            "routes:\n  - command: catalog.items.ListItem\n    method: post\n    path: /docs\n",
+            "a request for `/docs` would match",
+        ),
+    ] {
+        fixture.binding(routes);
+        let refused = fixture.ess(&[
+            "generate",
+            "synthesize",
+            "--path",
+            "model",
+            "--target",
+            "rust",
+            "--http",
+            "http.yaml",
+            "--out",
+            "refused",
+        ]);
+        assert_eq!(refused.status.code(), Some(1), "{}", text(&refused));
+        assert!(text(&refused).contains(refusal), "{}", text(&refused));
+        assert!(!fixture.0.join("refused").exists(), "a refusal wrote files");
+    }
 }

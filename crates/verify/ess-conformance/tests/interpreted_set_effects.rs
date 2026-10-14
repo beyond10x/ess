@@ -822,3 +822,90 @@ mod issue_459 {
         assert_eq!(store, before);
     }
 }
+
+/// ess/25 (beyond10x/ess#531): one `Left` per changed row that was `Busy`, read from that row as it
+/// was before the move, after the one `TeamClosed` counting every changed row.
+#[test]
+fn interpreter_emits_one_left_per_busy_selected_row() {
+    const PER_ROW: &str =
+        include_str!("../../../specify/ess-compiler/tests/fixtures/set-effects-per-row.yaml");
+    let ir = model(PER_ROW);
+    let mut store = Store::default();
+    for (seat, team) in [("s1", "red"), ("s2", "red"), ("s3", "red"), ("s4", "blue")] {
+        invoke(
+            &ir,
+            &mut store,
+            "SitDown",
+            &values([("user_id", text(seat)), ("team", text(team))]),
+        )
+        .unwrap();
+    }
+    for (seat, call) in [("s3", "c3"), ("s1", "c1"), ("s4", "c4")] {
+        invoke(
+            &ir,
+            &mut store,
+            "Take",
+            &values([("user_id", text(seat)), ("call_ref", text(call))]),
+        )
+        .unwrap();
+    }
+    let step = invoke(
+        &ir,
+        &mut store,
+        "CloseAll",
+        &values([("team", text("red"))]),
+    )
+    .unwrap();
+    let published: Vec<(String, BTreeMap<String, Node>)> = step
+        .events
+        .iter()
+        .map(|event| (event.event.to_string(), event.payload.clone()))
+        .collect();
+    let left = |seat: &str, call: &str| {
+        (
+            "demo.desk.Left".to_owned(),
+            values([
+                ("user_id", text(seat)),
+                ("call_ref", text(call)),
+                ("was", text("Busy")),
+            ]),
+        )
+    };
+    assert_eq!(
+        published,
+        vec![
+            (
+                "demo.desk.TeamClosed".to_owned(),
+                values([
+                    ("team", text("red")),
+                    ("closed", Node::Number(3_i64.into()))
+                ]),
+            ),
+            left("s1", "c1"),
+            left("s3", "c3"),
+        ],
+        "one TeamClosed for the three changed seats, then one Left per Busy seat by identity"
+    );
+    for seat in ["s1", "s2", "s3"] {
+        assert_eq!(
+            store
+                .instance(&"demo.desk.Seat".parse().unwrap(), seat)
+                .unwrap()
+                .state
+                .to_string(),
+            "Closed"
+        );
+    }
+    let none = invoke(
+        &ir,
+        &mut store,
+        "CloseAll",
+        &values([("team", text("green"))]),
+    )
+    .unwrap();
+    assert_eq!(
+        none.events.len(),
+        1,
+        "no Left where no row changed: {none:?}"
+    );
+}

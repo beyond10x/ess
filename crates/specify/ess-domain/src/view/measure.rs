@@ -295,6 +295,11 @@ fn walk(predicate: &Predicate, out: &mut Vec<Token>) {
             out.push(Token::Tag(15));
             window(held, out);
         }
+        // Validation refuses `trimmed` outside a command guard; keyed all the same.
+        Predicate::Trimmed(inner) => {
+            out.push(Token::Tag(16));
+            walk(inner, out);
+        }
     }
 }
 

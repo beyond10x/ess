@@ -19,10 +19,10 @@ use std::collections::BTreeSet;
 use std::fmt;
 
 use ess_ui::{LoadError, NodePath};
+use ess_yaml::{Mapping, Value};
 use serde::de::{
     Deserialize, Deserializer, EnumAccess, MapAccess, SeqAccess, VariantAccess, Visitor,
 };
-use serde_yaml::{Mapping, Value};
 
 use crate::Sink;
 use crate::{raw, schema};
@@ -108,12 +108,12 @@ enum Duplicate {
 /// mapping, as the loader walks the document with every first occurrence kept; when that
 /// document does not load either, at the mapping itself.
 fn duplicated(text: &str) -> Option<Duplicate> {
-    let tree = Tree::deserialize(serde_yaml::Deserializer::from_str(text)).ok()?;
+    let tree = Tree::deserialize(ess_yaml::Deserializer::from_str(text)).ok()?;
     let found = tree.duplicate(&NodePath::root(), Held::Root)?;
     if found.names_node {
         return Some(Duplicate::Node(found.holder.child(&found.key)));
     }
-    let nodes: Option<BTreeSet<NodePath>> = serde_yaml::to_string(&tree.first_kept())
+    let nodes: Option<BTreeSet<NodePath>> = ess_yaml::to_string(&tree.first_kept())
         .ok()
         .and_then(|kept| ess_ui::load_str(&kept).ok())
         .map(|document| {

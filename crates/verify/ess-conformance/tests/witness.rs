@@ -347,7 +347,7 @@ fn an_input_list_publishes_its_count_and_one_fact_per_element_leaf() {
         );
     }
     let every = Predicate::from_node(
-        &serde_yaml::from_str("forall: {in: lines, as: line, that: line.quantity > 1}")
+        &ess_yaml::from_str("forall: {in: lines, as: line, that: line.quantity > 1}")
             .expect("yaml"),
     )
     .expect("a quantifier");
@@ -386,7 +386,7 @@ fn no_candidate_is_offered_twice() {
     let ir = compiled();
     let command = place_order(&ir);
     let quantified = Predicate::from_node(
-        &serde_yaml::from_str(
+        &ess_yaml::from_str(
             "exists: {in: lines, as: l, that: {all: [l.quantity > 2, l.description == gift]}}",
         )
         .expect("yaml"),

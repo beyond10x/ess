@@ -1,0 +1,61 @@
+# Adversary pass 1 on beyond10x/ess#538: an `affects:` beside a supplied subject. `Note` writes
+# its seat's `last_reason` and, through `affects:`, that of every other seat of the same team. The
+# explorers do not model the entry and exclude its outcome by name. Targets:
+# `adversary-l3-affects-target.mjs` and `adversary_l3_affects_target.go`.
+
+format: ess/18
+system: advaff
+version: v1
+domain: advaff.desk
+summary: Seats noted together with their team.
+types:
+  - {name: advaff.desk.SeatId, kind: newtype, of: Uuid}
+  - {name: advaff.desk.Team, kind: enum, variants: [red, blue]}
+  - {name: advaff.desk.Reason, kind: enum, variants: [none, hungup]}
+entities:
+  - name: advaff.desk.Seat
+    identity: {name: seat_id, type: advaff.desk.SeatId}
+    fields:
+      - {name: team, type: advaff.desk.Team}
+      - {name: last_reason, type: advaff.desk.Reason}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+actors:
+  - name: advaff.desk.Supervisor
+    may: [advaff.desk.Start, advaff.desk.Note]
+events:
+  - name: advaff.desk.Started
+    fields: [{name: seat_id, type: advaff.desk.SeatId}]
+  - name: advaff.desk.Noted
+    fields: [{name: seat_id, type: advaff.desk.SeatId}]
+commands:
+  - name: advaff.desk.Start
+    input: [{name: team, type: advaff.desk.Team}]
+    outcomes:
+      - name: started
+        creates: advaff.desk.Seat
+        instance: seat_id
+        sets: {team: input.team, last_reason: none}
+        emits: [advaff.desk.Started]
+        payload: {advaff.desk.Started: {seat_id: {generated: true}}}
+  - name: advaff.desk.Note
+    input:
+      - {name: seat_id, type: advaff.desk.SeatId}
+      - {name: reason, type: advaff.desk.Reason}
+    outcomes:
+      - name: noted
+        updates: advaff.desk.Seat
+        instance: seat_id
+        sets: {last_reason: input.reason}
+        affects:
+          - entity: advaff.desk.Seat
+            where: team == subject.team
+            sets: {last_reason: input.reason}
+        emits: [advaff.desk.Noted]
+        payload: {advaff.desk.Noted: {seat_id: input.seat_id}}
+views:
+  - name: advaff.desk.Seats
+    source: advaff.desk.Seat
+    consistency: read_your_writes
+    fields:
+      - {name: seat_id, type: advaff.desk.SeatId}
+      - {name: last_reason, type: advaff.desk.Reason}

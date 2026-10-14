@@ -12,7 +12,7 @@ const REPORT: &str =
 
 /// `text` rewritten as JSON: the same document in the form a JSON-source author writes it.
 fn as_json(text: &str) -> String {
-    let value: serde_yaml::Value = serde_yaml::from_str(text).expect("fixture is YAML");
+    let value: ess_yaml::Value = ess_yaml::from_str(text).expect("fixture is YAML");
     serde_json::to_string_pretty(&value).expect("fixture is JSON-representable")
 }
 

@@ -114,6 +114,7 @@ fn reads(
             }
         }
         Predicate::Not(child) => reads(child, binders, out),
+        Predicate::Trimmed(inner) => reads(inner, binders, out),
         Predicate::Compare { left, right, .. } => {
             for (side, other) in [(left, right), (right, left)] {
                 if let Operand::Fact(path) = side {

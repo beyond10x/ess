@@ -299,7 +299,7 @@ impl ConformanceSuite {
     /// It is **parseable by every future runner** — design §22's whole promise is a suite an HTTP
     /// runner or a certification runner in another language can read, and JSON is the format that
     /// needs no library nobody has. And it has **one canonical spelling here**, where YAML does not:
-    /// `serde_yaml` decides quoting, folding and block style by heuristics on the value, so two
+    /// `ess-yaml` decides quoting, folding and block style by heuristics on the value, so two
     /// versions of one suite can differ in bytes without differing in meaning — which is exactly what
     /// a byte-comparison drift check cannot tolerate.
     ///

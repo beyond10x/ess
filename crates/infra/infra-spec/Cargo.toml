@@ -33,13 +33,13 @@ infra-analyze.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
-# Specifications are authored in YAML. `read_spec` reads the text into a `serde_json::Value` and
-# deserializes from *that*, deliberately: `serde_yaml` 0.9 spells an externally tagged enum as a
-# YAML tag (`!replicas_within`), where the JSON data model spells one as a single-key map — which
-# is the shape a specification is written in. One conversion buys the readable wire form and
-# `deny_unknown_fields` on every variant at once, and JSON parses through the same path because
-# JSON is YAML.
-serde_yaml.workspace = true
+# Specifications are authored in YAML, read through `ess_primitives::yaml` so that
+# `ess-primitives` stays this crate's only ESS dependency outside `infra-*`. `read_spec` reads the
+# text into a `serde_json::Value` and deserializes from *that*, deliberately: the YAML reader
+# spells an externally tagged enum as a YAML tag (`!replicas_within`), where the JSON data model
+# spells one as a single-key map — which is the shape a specification is written in. One
+# conversion buys the readable wire form and `deny_unknown_fields` on every variant at once, and
+# JSON parses through the same path because JSON is YAML.
 
 [lints]
 workspace = true

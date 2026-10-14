@@ -68,6 +68,29 @@ pub(super) fn uses(ir: &EssIr) -> bool {
         .any(|actor| !actor.attributes.is_empty())
 }
 
+/// Marks every command step of a scenario built after the caller readings, from the model itself,
+/// with the caller the suite sends every command as, `first`: a one-time outcome's disclosure
+/// scenarios (beyond10x/ess#550). A step already sent as a caller keeps it, and a model no command
+/// of which reads its caller is left alone, so its suite keeps its bytes.
+pub(super) fn send_as_first(ir: &EssIr, scenario: &mut ConformanceScenario) {
+    if !uses(ir) {
+        return;
+    }
+    let Some(callers) = Callers::of(ir) else {
+        return;
+    };
+    if reading(ir, &callers).is_empty() {
+        return;
+    }
+    for step in &mut scenario.steps {
+        if matches!(step, ScenarioStep::ExecuteCommand { caller, .. } | ScenarioStep::ExecuteCommandWithoutInput { caller, .. } if !caller.is_empty())
+        {
+            continue;
+        }
+        mark(ir, &callers, &|_| Who::First, step);
+    }
+}
+
 /// Which of the two callers sends a command.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Who {

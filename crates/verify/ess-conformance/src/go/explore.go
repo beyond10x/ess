@@ -120,6 +120,21 @@ type Exclusion struct {
 	Reason  string `json:"reason"`
 }
 
+// Refusal is a command the target answered ErrUnsupported to in one held state of the row a step
+// addressed, while it drove the command elsewhere (beyond10x/ess#537). No later step draws the
+// command in that state; a command refused in every state it was drawn in, and driven in none, is
+// in Excluded instead.
+type Refusal struct {
+	Command string `json:"command"`
+	// State is the held state of the row the step addressed: `(no row)` where it addressed none (a
+	// creation, or an identity no row carries), `(no state)` for a row without a lifecycle.
+	State  string `json:"state"`
+	Reason string `json:"reason"`
+	// Count is the steps drawn in that state and not sent: the one the target refused and every
+	// later one.
+	Count int `json:"count"`
+}
+
 // ExploreFailure is a disagreement: its seed, what disagreed, and the shortest trace found that
 // still shows it.
 type ExploreFailure struct {
@@ -142,8 +157,13 @@ type ExploreResult struct {
 	// Unreached is every declared outcome of an included command that no step took.
 	Unreached []string    `json:"unreached"`
 	Excluded  []Exclusion `json:"excluded"`
-	// ExcludedOutcomes is every declared outcome of an excluded command.
+	// ExcludedOutcomes is every declared outcome of an excluded command, and every outcome no step
+	// took that a refused step would have.
 	ExcludedOutcomes []string `json:"excludedOutcomes"`
+	// Refused is every (command, held state) the target answered ErrUnsupported to, of a command it
+	// drove in another state, in order of Command and State. Absent when there is none, so a result
+	// without one keeps its bytes.
+	Refused []Refusal `json:"refused,omitempty"`
 	// Undetermined is what the model could not place, such as a view filter over a field no
 	// command set.
 	Undetermined []string `json:"undetermined"`
@@ -175,8 +195,8 @@ type ExternalReach struct {
 
 // AssertOptions is what AssertExplored accepts.
 type AssertOptions struct {
-	// AllowExcluded accepts outcomes of excluded commands, and external outcomes the target could
-	// not arrange. An explicit, reviewable opt-out.
+	// AllowExcluded accepts outcomes of excluded commands, the (command, held state) pairs the target
+	// refused, and external outcomes the target could not arrange. An explicit, reviewable opt-out.
 	AllowExcluded bool
 }
 
@@ -362,10 +382,10 @@ func exploreResolve(ir map[string]any, ref map[string]any, depth int) exploreKin
 	return exploreResolveAs(ir, ref, depth, false)
 }
 
-// exploreResolveAs is exploreResolve, and with `concurrent` it also draws a `decimal`, a `timestamp`
-// and a type whose values are constrained: concurrent exploration does not judge an answer by this
-// model, `ess` does, so a drawn value outside the constraint is a question the target answers and
-// the checker judges.
+// exploreResolveAs is exploreResolve, and with `concurrent` it also draws a `timestamp` and a type
+// whose values are constrained: concurrent exploration does not judge an answer by this model,
+// `ess` does, so a drawn value outside the constraint is a question the target answers and the
+// checker judges. A `decimal` is drawn either way, as an `integer` is (beyond10x/ess#538).
 func exploreResolveAs(ir map[string]any, ref map[string]any, depth int, concurrent bool) exploreKind {
 	if depth > 32 {
 		return exploreKind{kind: "unsupported", why: "nested too deeply"}
@@ -380,9 +400,9 @@ func exploreResolveAs(ir map[string]any, ref map[string]any, depth int, concurre
 	if ref["kind"] == "primitive" {
 		name := exploreString(ref["name"])
 		switch name {
-		case "integer", "boolean", "string", "uuid":
+		case "integer", "boolean", "string", "uuid", "decimal":
 			return exploreKind{kind: name}
-		case "decimal", "timestamp":
+		case "timestamp":
 			if concurrent {
 				return exploreKind{kind: name}
 			}
@@ -849,7 +869,33 @@ func exploreIsExternal(outcome map[string]any) bool {
 	return kind == "external" || kind == "external_when"
 }
 
-func exploreEffectRefusal(outcome map[string]any) string {
+// exploreEffectRefusal is why the explorer cannot model what outcome does to its subject, or "".
+// A `preserves:` of a supplied subject is modelled as leaving the row as it is, so every view
+// read after the step must still agree with it (beyond10x/ess#536); concurrent exploration does
+// not draw it and keeps the commands it always drew.
+//
+// A selected-rows outcome (`instances: {where: …}`, beyond10x/ess#538) carries no subject. Its
+// move or update is modelled on every row the filter selects; its bulk deletion is left out by
+// name, as a single `deletes:` is, and so is a filter the model cannot read. An event published
+// once per changed row (ess/25, beyond10x/ess#531) is left out by name too: the model expects each
+// listed event once. An `affects:` entry
+// writes rows the model does not apply, so its outcome is left out by name too. Concurrent
+// exploration keeps the commands it always drew.
+func exploreEffectRefusal(outcome map[string]any, concurrent bool) string {
+	if len(exploreList(outcome["affects"])) > 0 && !concurrent {
+		return fmt.Sprintf("outcome `%v` writes the rows its `affects:` selects, which the model does not apply", outcome["name"])
+	}
+	if set := exploreObject(outcome["instances"]); set != nil && !concurrent {
+		if set["effect"] == "deletes" {
+			return fmt.Sprintf("outcome `%v` deletes the rows it selects", outcome["name"])
+		}
+		if len(exploreList(set["events"])) > 0 {
+			return fmt.Sprintf("outcome `%v` publishes an event once per changed row, which the model does not apply", outcome["name"])
+		}
+		if _, refusal := exploreParse(set["filter"]); refusal != "" {
+			return fmt.Sprintf("the filter of `%v`: %s", outcome["name"], refusal)
+		}
+	}
 	subject := exploreObject(outcome["subject"])
 	if subject == nil {
 		return ""
@@ -857,7 +903,8 @@ func exploreEffectRefusal(outcome map[string]any) string {
 	from := exploreObject(subject["instance"])["from"]
 	effect := subject["effect"]
 	allowed := (effect == "creates" && from == "observed") ||
-		((effect == "moves" || effect == "updates") && from == "supplied")
+		((effect == "moves" || effect == "updates") && from == "supplied") ||
+		(effect == "preserves" && from == "supplied" && !concurrent)
 	if allowed {
 		return ""
 	}
@@ -1011,7 +1058,7 @@ func explorePlanAs(ir map[string]any, concurrent bool) *explorePlan {
 		}
 		for _, outcome := range outcomes {
 			if reason == "" {
-				reason = exploreEffectRefusal(exploreObject(outcome))
+				reason = exploreEffectRefusal(exploreObject(outcome), concurrent)
 			}
 		}
 		for _, outcome := range outcomes {
@@ -1164,6 +1211,22 @@ func (p *explorePlan) command(name string) *exploreCommand {
 type exploreRecord struct {
 	id     Node
 	fields Row
+	// unwritten is every `Optional` field of the record no outcome has written, which the
+	// interpreter reads as absent. A field the model forgot, its value undetermined, is not in it.
+	unwritten map[string]bool
+}
+
+// exploreUnwritten is every `Optional` field of entity, by name: what a new record holds as absent
+// until an outcome writes it.
+func exploreUnwritten(ir, entity map[string]any) map[string]bool {
+	unwritten := map[string]bool{}
+	for _, item := range exploreList(entity["fields"]) {
+		declared := exploreObject(item)
+		if exploreOptionalType(ir, exploreObject(declared["type_ref"])) {
+			unwritten[exploreString(declared["name"])] = true
+		}
+	}
+	return unwritten
 }
 
 type exploreModel struct {
@@ -1384,6 +1447,26 @@ func exploreSupplied(command *exploreCommand) map[string]any {
 	return nil
 }
 
+// exploreHeldState is the held state of the row a step of command addresses, which keys a refusal
+// (beyond10x/ess#537): `(no row)` where it addresses none, `(no state)` for a row without a
+// lifecycle.
+func exploreHeldState(command *exploreCommand, input Row, model *exploreModel) string {
+	supplied := exploreSupplied(command)
+	if supplied == nil {
+		return "(no row)"
+	}
+	subject := exploreObject(supplied["subject"])
+	id, _ := exploreReadPath(map[string]any(input), exploreString(exploreObject(exploreObject(subject["instance"])["field"])["name"]))
+	record := model.find(exploreString(subject["entity"]), id)
+	if record == nil {
+		return "(no row)"
+	}
+	if state, ok := record.fields["state"].(string); ok {
+		return state
+	}
+	return "(no state)"
+}
+
 func exploreUnknown(command *exploreCommand) map[string]any {
 	for _, item := range exploreList(command.node["outcomes"]) {
 		outcome := exploreObject(item)
@@ -1437,11 +1520,68 @@ func exploreAllMove(outcomes []map[string]any) bool {
 	return true
 }
 
-// exploreDecide is which branch a step takes, in Entity Runtime's order (beyond10x/ess#235): the
+// exploreDecide is which branch a step takes: exploreDecideRow's answer, with every external
+// refusal marked `before_row: true` (ess/25, beyond10x/ess#534) that answers before it offered
+// beside it. Such a branch answers among the input-guarded refusals, in declaration order, before
+// existence and the held state: one declared before the first input refusal whose guard holds is
+// eligible for every record, an identity no record carries included, and is offered even where
+// the rest of the order answers alone.
+func exploreDecide(command *exploreCommand, input Row, model *exploreModel) exploreDecision {
+	decision := exploreDecideRow(command, input, model)
+	if decision.kind != "take" && decision.kind != "ambiguous" {
+		return decision
+	}
+	source := facts(input)
+	early := []map[string]any{}
+	for _, item := range exploreList(command.node["outcomes"]) {
+		outcome := exploreObject(item)
+		guard := command.guards[fmt.Sprint(outcome["name"])]
+		if exploreIsInputRefusal(outcome) {
+			if guard.evaluate(source) == truthTrue {
+				break
+			}
+			continue
+		}
+		if !exploreIsExternal(outcome) || outcome["before_row"] != true {
+			continue
+		}
+		if exploreObject(outcome["condition"])["kind"] == "external_when" {
+			switch guard.evaluate(source) {
+			case truthUnknown:
+				return exploreDecision{kind: "unknown", reason: fmt.Sprintf("the guard of `%v` (%s) is unknown over a generated input", outcome["name"], guard)}
+			case truthFalse:
+				continue
+			}
+		}
+		early = append(early, outcome)
+	}
+	if len(early) == 0 {
+		return decision
+	}
+	externals := early
+	for _, outcome := range decision.externals {
+		offered := false
+		for _, before := range early {
+			if fmt.Sprint(before["name"]) == fmt.Sprint(outcome["name"]) {
+				offered = true
+			}
+		}
+		if !offered {
+			externals = append(externals, outcome)
+		}
+	}
+	if decision.kind == "ambiguous" {
+		return exploreDecision{kind: "take", externals: externals, names: decision.names}
+	}
+	decision.externals = externals
+	return decision
+}
+
+// exploreDecideRow is which branch a step takes, in Entity Runtime's order (beyond10x/ess#235): the
 // input-guarded refusals, the first declared whose guard holds; then the accepting guarded branch
 // that holds, or the default; then, where that branch moves from a state no move of the command
 // starts from, the wrong-state branch.
-func exploreDecide(command *exploreCommand, input Row, model *exploreModel) exploreDecision {
+func exploreDecideRow(command *exploreCommand, input Row, model *exploreModel) exploreDecision {
 	outcomes := []map[string]any{}
 	for _, outcome := range exploreList(command.node["outcomes"]) {
 		outcomes = append(outcomes, exploreObject(outcome))
@@ -1626,7 +1766,79 @@ func exploreDecide(command *exploreCommand, input Row, model *exploreModel) expl
 		}
 		return orExternal(exploreDecision{kind: "ambiguous", names: names})
 	}
-	return exploreDecision{kind: "take", outcome: exploreTerminal(command, selected, input, model), externals: externals}
+	taken := exploreTerminal(command, selected, input, model)
+	// A selected-rows branch whose filter reads a stored field whose value the model does not hold
+	// leaves it unable to say which rows change: the draw is redrawn and reported, the command kept. Only an
+	// accepting `when:` or default branch carries `instances:`, never an external one.
+	if _, undetermined := exploreSelectedRows(command.name, taken, input, model); undetermined != "" {
+		return exploreDecision{kind: "undetermined", reason: undetermined}
+	}
+	return exploreDecision{kind: "take", outcome: taken, externals: externals}
+}
+
+// exploreSelectedRows is the records a selected-rows outcome (`instances: {where: …}`) selects for
+// input, read before the outcome changes any of them, or why the model cannot say. A `moves:`
+// skips a row resting outside the transition's `from` states before its filter is read, as the
+// interpreter's `select` does. Only a filter that holds selects a row. One left Unknown by a
+// stored field held as null or an `Optional` field no outcome wrote (both absent), or by an input
+// path the draw left out, does not hold, so the row is not selected; one left Unknown by a field
+// whose value the model does not hold (a required field no outcome wrote, or a value it could not
+// determine) is undetermined, as in the interpreter's `only_absent`
+// (`docs/design/set-effects-over-filtered-instances.md`, "Selection").
+func exploreSelectedRows(command string, outcome map[string]any, input Row, model *exploreModel) ([]*exploreRecord, string) {
+	set := exploreObject(outcome["instances"])
+	if set == nil {
+		return nil, ""
+	}
+	filter, refusal := exploreParse(set["filter"])
+	if refusal != "" {
+		return nil, fmt.Sprintf("%s filter of `%v`: %s", command, outcome["name"], refusal)
+	}
+	from := exploreStrings(exploreObject(set["transition"])["from"])
+	selected := []*exploreRecord{}
+	for _, record := range model.of(exploreString(set["entity"])) {
+		if set["effect"] == "moves" && !exploreContains(from, fmt.Sprint(record.fields["state"])) {
+			continue
+		}
+		combined := Row{}
+		for field := range record.unwritten {
+			combined[field] = nil
+		}
+		for field, value := range record.fields {
+			combined[field] = value
+		}
+		combined["input"] = map[string]any(input)
+		source := facts(combined)
+		switch filter.evaluate(source) {
+		case truthTrue:
+			selected = append(selected, record)
+		case truthUnknown:
+			for _, path := range explorePaths(filter) {
+				if _, bound := source[path]; !bound && !strings.HasPrefix(path, "input.") {
+					return nil, fmt.Sprintf("%s filter of `%v` reads %s, whose value the model does not hold", command, outcome["name"], path)
+				}
+			}
+		}
+	}
+	return selected, ""
+}
+
+// exploreApplySets writes what outcome's `sets:` determine into record: a determined value, null
+// for a cleared one, and the field forgotten where the model cannot say.
+func exploreApplySets(ir map[string]any, outcome map[string]any, input Row, record *exploreRecord) {
+	for _, set := range exploreList(outcome["sets"]) {
+		set := exploreObject(set)
+		value, state := exploreValue(ir, exploreObject(set["value"]), input, exploreObject(set["target_type"]))
+		target := exploreString(set["target"])
+		delete(record.unwritten, target)
+		if state == exploreDetermined {
+			record.fields[target] = value
+		} else if state == exploreCleared {
+			record.fields[target] = nil
+		} else {
+			delete(record.fields, target)
+		}
+	}
 }
 
 // exploreRowHolds is whether a branch selected by the stored row holds for record and this input,
@@ -2082,7 +2294,7 @@ func explorePerform(s *exploreSession, command *exploreCommand, step *exploreSte
 			if into, ok := subject["into"]; ok && into != nil {
 				state = into
 			}
-			record = &exploreRecord{id: id, fields: Row{identity: id, "state": state}}
+			record = &exploreRecord{id: id, fields: Row{identity: id, "state": state}, unwritten: exploreUnwritten(ir, entity)}
 			s.model.records[entityName] = append(s.model.records[entityName], record)
 		} else {
 			id, _ := exploreReadPath(map[string]any(step.input), field)
@@ -2091,19 +2303,23 @@ func explorePerform(s *exploreSession, command *exploreCommand, step *exploreSte
 				record.fields["state"] = exploreObject(subject["transition"])["to"]
 			}
 		}
-		if record != nil {
-			for _, set := range exploreList(outcome["sets"]) {
-				set := exploreObject(set)
-				value, state := exploreValue(ir, exploreObject(set["value"]), step.input, exploreObject(set["target_type"]))
-				target := exploreString(set["target"])
-				if state == exploreDetermined {
-					record.fields[target] = value
-				} else if state == exploreCleared {
-					record.fields[target] = nil
-				} else {
-					delete(record.fields, target)
-				}
+		// A preserving outcome leaves the row exactly as it was: its state and every field, so the
+		// views read below hold the target to an unchanged subject (beyond10x/ess#536).
+		if record != nil && subject["effect"] != "preserves" {
+			exploreApplySets(ir, outcome, step.input, record)
+		}
+	}
+	// A selected-rows outcome (beyond10x/ess#538) changes every row its filter selected before
+	// it ran: a `moves:` takes each selected row, none of which rests outside the transition's
+	// `from` states, an `updates:` changes each, and `sets:` applies to every changed row.
+	if set := exploreObject(outcome["instances"]); set != nil {
+		rows, _ := exploreSelectedRows(command.name, outcome, step.input, s.model)
+		transition := exploreObject(set["transition"])
+		for _, record := range rows {
+			if set["effect"] == "moves" {
+				record.fields["state"] = transition["to"]
 			}
+			exploreApplySets(ir, outcome, step.input, record)
 		}
 	}
 
@@ -2535,6 +2751,14 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 	// and stops every later restart.
 	performed := 0
 	refused := ""
+	// refusals is every (command, held state) the target answered ErrUnsupported to, under
+	// `command` NUL `state`, in the order refused; refusedOutcomes is every `command/outcome` a step
+	// left out for one would have taken; driven is every command a step was sent for
+	// (beyond10x/ess#537).
+	refusals := map[string]*Refusal{}
+	refusalOrder := []string{}
+	refusedOutcomes := map[string]bool{}
+	driven := map[string]bool{}
 
 	for _, seed := range seeds {
 		if len(p.commands) == 0 || failure != nil {
@@ -2587,6 +2811,14 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 			if len(choices) > 1 {
 				outcome = explorePick(r, choices)
 			}
+			// A command the target refused in this held state is not sent in it again.
+			state := exploreHeldState(command, step.input, s.model)
+			held := command.name + "\x00" + state
+			if refusal := refusals[held]; refusal != nil {
+				refusal.Count++
+				refusedOutcomes[command.name+"/"+fmt.Sprint(outcome.expected["name"])] = true
+				continue
+			}
 			if outcome.arrangement != "" {
 				step.external = outcome.arrangement
 				arranging, unsupported := exploreArrange(s, command, step.external)
@@ -2602,9 +2834,12 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 			}
 			disagreement, unsupported := explorePerform(s, command, step, outcome.expected)
 			if unsupported != nil {
-				p.exclude(command.name, "the target does not expose it: "+unsupported.reason)
+				refusals[held] = &Refusal{Command: command.name, State: state, Reason: "the target does not expose it: " + unsupported.reason, Count: 1}
+				refusalOrder = append(refusalOrder, held)
+				refusedOutcomes[command.name+"/"+fmt.Sprint(outcome.expected["name"])] = true
 				continue
 			}
+			driven[command.name] = true
 			executed++
 			trace = append(trace, step)
 			performed += pending
@@ -2641,12 +2876,31 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 		}
 	}
 
+	// A command refused in every state it was drawn in, and driven in none, is excluded with its
+	// first refusal's reason, as one refused step excluded it before beyond10x/ess#537.
+	narrowed := []Refusal{}
+	for _, key := range refusalOrder {
+		refusal := refusals[key]
+		switch {
+		case p.excludedCommands[refusal.Command]:
+		case driven[refusal.Command]:
+			narrowed = append(narrowed, *refusal)
+		default:
+			p.exclude(refusal.Command, refusal.Reason)
+		}
+	}
+	sort.SliceStable(narrowed, func(i, j int) bool {
+		if narrowed[i].Command != narrowed[j].Command {
+			return narrowed[i].Command < narrowed[j].Command
+		}
+		return narrowed[i].State < narrowed[j].State
+	})
 	unreached := map[string]bool{}
 	excludedOutcomes := map[string]bool{}
 	for _, declared := range p.declared {
 		for _, outcome := range declared.outcomes {
 			id := declared.command + "/" + outcome
-			if p.excludedCommands[declared.command] {
+			if p.excludedCommands[declared.command] || (refusedOutcomes[id] && !reached[id]) {
 				excludedOutcomes[id] = true
 			} else if _, refused := p.unarrangeable[id]; !reached[id] && !refused {
 				unreached[id] = true
@@ -2658,7 +2912,7 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 		reach := ExternalReach{Outcome: branch.id, Cause: branch.cause, Reach: "unreached"}
 		reason, refused := p.unarrangeable[branch.id]
 		switch {
-		case p.excludedCommands[branch.command]:
+		case p.excludedCommands[branch.command] || (refusedOutcomes[branch.id] && !reached[branch.id]):
 			reach.Reach = "excluded"
 		case reached[branch.id]:
 			reach.Reach = "reached"
@@ -2688,6 +2942,7 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 		Unreached:        exploreSet(unreached),
 		Excluded:         excluded,
 		ExcludedOutcomes: exploreSet(excludedOutcomes),
+		Refused:          narrowed,
 		Undetermined:     exploreSet(undetermined),
 		Ambiguous:        exploreSet(ambiguous),
 		External:         external,
@@ -2757,15 +3012,37 @@ func CheckExplored(result ExploreResult, options AssertOptions) error {
 		problems = append(problems, fmt.Sprintf("explore: %d declared outcome(s) no sequence reached:\n%s", len(result.Unreached), strings.Join(lines, "\n")))
 	}
 	if len(result.ExcludedOutcomes) > 0 && !options.AllowExcluded {
-		lines := []string{}
-		for _, outcome := range result.ExcludedOutcomes {
-			lines = append(lines, "  "+outcome)
-		}
+		excluded := map[string]bool{}
 		reasons := []string{}
 		for _, exclusion := range result.Excluded {
+			excluded[exclusion.Subject] = true
 			reasons = append(reasons, fmt.Sprintf("  %s: %s", exclusion.Subject, exclusion.Reason))
 		}
-		problems = append(problems, fmt.Sprintf("explore: %d declared outcome(s) of excluded commands were never tried:\n%s\nexcluded:\n%s\naccept them explicitly with AssertOptions{AllowExcluded: true}", len(result.ExcludedOutcomes), strings.Join(lines, "\n"), strings.Join(reasons, "\n")))
+		lines := []string{}
+		for _, outcome := range result.ExcludedOutcomes {
+			line, command := "  "+outcome, outcome
+			if slash := strings.LastIndex(outcome, "/"); slash >= 0 {
+				command = outcome[:slash]
+			}
+			if !excluded[command] {
+				line += " (only a step the target refused would have taken it)"
+			}
+			lines = append(lines, line)
+		}
+		listed := ""
+		if len(reasons) > 0 {
+			listed = "\nexcluded:\n" + strings.Join(reasons, "\n")
+		}
+		problems = append(problems, fmt.Sprintf("explore: %d declared outcome(s) of excluded commands were never tried:\n%s%s\naccept them explicitly with AssertOptions{AllowExcluded: true}", len(result.ExcludedOutcomes), strings.Join(lines, "\n"), listed))
+	}
+	// A refusal fails the strict assertion whether or not it left an outcome untried: the command
+	// was not sent in that state, and before beyond10x/ess#537 the refusal excluded it.
+	if len(result.Refused) > 0 && !options.AllowExcluded {
+		lines := []string{}
+		for _, refusal := range result.Refused {
+			lines = append(lines, fmt.Sprintf("  %s in %s: %s (%d step(s) not sent)", refusal.Command, refusal.State, refusal.Reason, refusal.Count))
+		}
+		problems = append(problems, fmt.Sprintf("explore: %d (command, held state) pair(s) the target refused were never tried again:\n%s\naccept them explicitly with AssertOptions{AllowExcluded: true}", len(result.Refused), strings.Join(lines, "\n")))
 	}
 	unarrangeable := []string{}
 	for _, branch := range result.External {
@@ -2792,8 +3069,9 @@ func CheckExplored(result ExploreResult, options AssertOptions) error {
 }
 
 // AssertExplored fails t when an exploration failed, when a declared outcome went unreached, or
-// when an excluded command's outcomes, or external outcomes the target could not arrange, were
-// never tried and AllowExcluded is not set, or when restarts were asked for and none was performed.
+// when an excluded command's outcomes, a refused (command, held state), or external outcomes the
+// target could not arrange, were never tried and AllowExcluded is not set, or when restarts were
+// asked for and none was performed.
 // What the model could not place, and the draws it would not decide, are logged and do not fail.
 func AssertExplored(t testing.TB, result ExploreResult, options AssertOptions) {
 	t.Helper()

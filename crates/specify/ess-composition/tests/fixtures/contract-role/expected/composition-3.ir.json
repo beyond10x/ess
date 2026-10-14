@@ -1,0 +1,77 @@
+{
+  "format": "ess-composition/3",
+  "composition": "demo-wire",
+  "services": {
+    "demo": {
+      "system": "demo",
+      "version": 1,
+      "source_digest": "<demo>",
+      "component": "relay",
+      "commands": [
+        "demo.gate.Admit",
+        "demo.gate.Answer",
+        "demo.gate.Bare",
+        "demo.gate.Count",
+        "demo.gate.Insist"
+      ],
+      "queries": [],
+      "events": [
+        "demo.gate.Admitted",
+        "demo.gate.Counted"
+      ],
+      "errors": [],
+      "types": [
+        "demo.gate.Channel"
+      ]
+    },
+    "wire": {
+      "system": "wire",
+      "version": 1,
+      "source_digest": "<wire>",
+      "component": "wire-server",
+      "commands": [
+        "wire.server.Subscribe"
+      ],
+      "queries": [],
+      "events": [
+        "wire.server.Subscribed"
+      ],
+      "errors": [],
+      "types": [
+        "wire.server.Channel"
+      ]
+    }
+  },
+  "references": [
+    {
+      "service": "wire",
+      "semantic": {
+        "kind": "command",
+        "name": "wire.server.Subscribe"
+      }
+    }
+  ],
+  "conformances": [
+    {
+      "local": {
+        "service": "demo",
+        "type": "demo.gate.Channel"
+      },
+      "conforms_to": {
+        "service": "wire",
+        "type": "wire.server.Channel"
+      }
+    },
+    {
+      "local": {
+        "service": "demo",
+        "type": "demo.gate.Channel"
+      },
+      "conforms_to": {
+        "service": "wire",
+        "type": "wire.server.Channel"
+      },
+      "reader": true
+    }
+  ]
+}

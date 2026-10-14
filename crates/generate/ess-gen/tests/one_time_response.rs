@@ -46,7 +46,7 @@ fn every_document_projection_preserves_policy_and_implementation_obligations() {
         let value = if generator == "schema" {
             serde_json::from_str(output).unwrap()
         } else {
-            serde_yaml::from_str(output).unwrap()
+            ess_yaml::from_str(output).unwrap()
         };
         assert_policy(&value);
     }

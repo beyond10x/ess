@@ -15,7 +15,7 @@ use std::process::{Child, Command, Output, Stdio};
 use std::sync::OnceLock;
 
 use ess_ui::binding::Answer;
-use serde_yaml::Value;
+use ess_yaml::Value;
 
 /// The workspace root, found by walking up rather than by counting `..`.
 fn workspace_root() -> PathBuf {
@@ -247,7 +247,7 @@ fn register(base: &str, visitor: &str, building: &str) {
     let bases = BTreeMap::from([("pass-service".to_owned(), base.to_owned())]);
     let adapter = ess_ui_tui::HttpAdapter::new(binding, &bases, Some(RECEPTIONIST.to_owned()))
         .expect("the adapter is built");
-    let input: BTreeMap<String, Value> = serde_yaml::from_str(&format!(
+    let input: BTreeMap<String, Value> = ess_yaml::from_str(&format!(
         "{{visitor: {visitor}, building: {building}, host: {{kind: employee, value: E1}}, \
          expected_minutes: 30, expected_stay: PT30M, \
          deposit: {{amount: '0', currency: EUR}}, escorts: [], notes: {{}}, on_watchlist: false}}"

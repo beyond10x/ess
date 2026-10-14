@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use ess_ui::{
     ActionConfirm, Body, Composite, Document, Located, NavPages, NodeRef, PageLayout, Primitive,
 };
-use serde_yaml::{Mapping, Value};
+use ess_yaml::{Mapping, Value};
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..")
@@ -19,11 +19,11 @@ fn example_file() -> PathBuf {
 
 fn example_value() -> Value {
     let text = std::fs::read_to_string(example_file()).expect("the example reads");
-    serde_yaml::from_str(&text).expect("the example is YAML")
+    ess_yaml::from_str(&text).expect("the example is YAML")
 }
 
 fn load_value(value: &Value) -> Result<Document, ess_ui::LoadError> {
-    ess_ui::load_str(&serde_yaml::to_string(value).expect("a value writes"))
+    ess_ui::load_str(&ess_yaml::to_string(value).expect("a value writes"))
 }
 
 fn example() -> Document {
@@ -31,7 +31,7 @@ fn example() -> Document {
 }
 
 fn schema() -> Value {
-    serde_yaml::from_str(ess_ui::SCHEMA).expect("the schema is YAML")
+    ess_yaml::from_str(ess_ui::SCHEMA).expect("the schema is YAML")
 }
 
 fn paths(document: &Document) -> BTreeSet<String> {
@@ -368,7 +368,7 @@ fn insert_first(document: &mut Value, keys: &[&str], entry: Value) {
 }
 
 fn entry(yaml: &str) -> Value {
-    serde_yaml::from_str(yaml).expect("an entry is YAML")
+    ess_yaml::from_str(yaml).expect("an entry is YAML")
 }
 
 #[test]

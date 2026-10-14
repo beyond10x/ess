@@ -330,3 +330,201 @@ fn an_external_branch_before_a_lifecycle_branch_is_refused() {
         Vec::<String>::new()
     );
 }
+
+/// beyond10x/ess#534: `SignIn` checks a credential before it reads the seat.
+const SIGN_IN: &str = include_str!("../../ess-compiler/tests/fixtures/external-before-row.yaml");
+
+/// The second adopter: a revocation authenticating the client before it reads the token.
+const REVOKE: &str =
+    include_str!("../../ess-compiler/tests/fixtures/external-before-row-revoke.yaml");
+
+/// The `before_row:` line of both fixtures.
+const KEY: &str = "        before_row: true\n";
+
+/// The `ConflictingDeclaration` refusals naming `before_row`, one line each.
+fn before_row_refusals(body: &str) -> Vec<String> {
+    spec(body).map_or_else(
+        |errors| {
+            errors
+                .lines()
+                .filter(|line| line.contains("before_row"))
+                .map(str::to_owned)
+                .collect()
+        },
+        |_| Vec::new(),
+    )
+}
+
+/// An external refusal marked `before_row: true` answers at step 2, before existence and the held
+/// state, so the held-state branches declared after it validate (ess/25, beyond10x/ess#534): the
+/// issue's `SignIn` and the revocation that authenticates its client first.
+#[test]
+fn external_refusal_before_row_validates_above_held_state_branches_at_ess_25() {
+    for body in [SIGN_IN, REVOKE] {
+        assert!(body.contains(KEY));
+        if let Err(errors) = spec(body) {
+            panic!("{errors}\n{body}");
+        }
+    }
+}
+
+/// Without the key the external refusal is a step-6 branch, and the #486 refusal of every
+/// held-state branch declared after it is unchanged, word for word.
+#[test]
+fn external_refusal_without_the_key_keeps_the_486_refusal() {
+    let errors = refusal(&SIGN_IN.replace(KEY, ""));
+    for branch in ["reopened-busy", "reopened", "opened"] {
+        assert!(
+            errors.contains(&format!(
+                "[conflicting_declaration] command.demo.desk.SignIn.outcomes.{branch}: `{branch}` \
+                 is selected by the held state, which answers before the external branch \
+                 `bad-credential` declared above it"
+            )),
+            "{branch}: {errors}"
+        );
+    }
+    let errors = refusal(&REVOKE.replace(KEY, ""));
+    for branch in ["issued-to-another-client", "already-revoked"] {
+        assert!(
+            errors.contains(&format!(
+                "`{branch}` is selected by the held state, which answers before the external \
+                 branch `invalid-client` declared above it"
+            )),
+            "{branch}: {errors}"
+        );
+    }
+}
+
+/// Only an external refusal reads no row: the key is refused on an accepting external branch, on a
+/// branch that is not external, beside `compensates:`, where its error payload reads the row, below
+/// `ess/25`, declared after a branch a later step answers and on a command reading a related row.
+#[test]
+fn before_row_on_an_accepting_external_or_below_ess_25_is_refused() {
+    // An accepting external branch acts on the row, so reads it.
+    let accepting = SIGN_IN.replace(
+        "        error: demo.desk.BadCredential\n",
+        "        moves: demo.desk.Seat.close\n        instance: user_id\n        emits: \
+         [demo.desk.Closed]\n        payload: {demo.desk.Closed: {user_id: input.user_id}}\n",
+    );
+    let refused = before_row_refusals(&accepting);
+    assert!(
+        refused.iter().any(|line| line.contains(
+            "[conflicting_declaration] command.demo.desk.SignIn.outcomes.bad-credential.before_row"
+        ) && line.contains("names no error")),
+        "{refused:#?}"
+    );
+
+    // Below ess/25 the key is refused naming ess/25.
+    let errors = refusal(&SIGN_IN.replace("format: ess/25", "format: ess/24"));
+    assert!(
+        errors.contains(
+            "[unsupported_format_version] command.demo.desk.SignIn.outcomes.bad-credential.\
+             before_row"
+        ) && errors.contains("ess/25"),
+        "{errors}"
+    );
+
+    // A branch that is not external.
+    let plain = SIGN_IN.replace(
+        "        external: secret is not the digest the service derives from user_id\n",
+        "        when: secret == \"\"\n",
+    );
+    let refused = before_row_refusals(&plain);
+    assert!(
+        refused
+            .iter()
+            .any(|line| line.contains("conflicting_declaration") && line.contains("external")),
+        "{refused:#?}"
+    );
+
+    // Declared after a branch the held state selects.
+    let bad = "      - name: bad-credential\n        external: secret is not the digest the \
+               service derives from user_id\n        before_row: true\n        error: \
+               demo.desk.BadCredential\n";
+    let after = SIGN_IN.replace(bad, "").replace(
+        "      - name: first\n",
+        &format!("{bad}      - name: first\n"),
+    );
+    let refused = before_row_refusals(&after);
+    assert!(
+        refused.iter().any(
+            |line| line.contains("conflicting_declaration") && line.contains("`reopened-busy`")
+        ),
+        "{refused:#?}"
+    );
+
+    // Its error payload reading the stored row.
+    let reading = SIGN_IN
+        .replace(
+            "        error: demo.desk.BadCredential\n",
+            "        error: demo.desk.BadCredential\n        payload:\n          \
+             demo.desk.BadCredential: {call_ref: {subject: call_ref}}\n",
+        )
+        .replace(
+            "  - name: demo.desk.BadCredential\n",
+            "  - name: demo.desk.BadCredential\n    fields: [{name: call_ref, type: String}]\n",
+        );
+    let refused = before_row_refusals(&reading);
+    assert!(
+        refused
+            .iter()
+            .any(|line| line.contains("conflicting_declaration") && line.contains("reads")),
+        "{refused:#?}"
+    );
+}
+
+/// A refusal that changes its addressed row (`compensates: true`) reads it, so it never answers
+/// before it.
+#[test]
+fn before_row_beside_compensates_is_refused() {
+    let text = include_str!("../../ess-compiler/tests/fixtures/refusal-with-effect.yaml")
+        .replace("format: ess/22", "format: ess/25")
+        .replace(
+            "        compensates: true\n",
+            "        compensates: true\n        before_row: true\n",
+        );
+    let refused = before_row_refusals(&text);
+    assert!(
+        refused.iter().any(|line| line.contains(
+            "[conflicting_declaration] command.shop.order.JoinOrder.outcomes.failed.before_row"
+        ) && line.contains("compensates")),
+        "{refused:#?}"
+    );
+}
+
+/// Step 1 (a related row read through the input, or a row set) answers before step 2; whether a
+/// `before_row` external should answer before it is not designed, so the pair is refused.
+#[test]
+fn before_row_on_a_command_reading_a_related_row_is_refused() {
+    let text =
+        include_str!("../../ess-compiler/tests/fixtures/precedence-upsert-unknown-instance.yaml")
+            .replace("format: ess/23", "format: ess/25")
+            .replacen(
+                "      - name: unknown-book\n",
+                "      - name: unauthenticated\n        external: the curator is not \
+                 authenticated\n        before_row: true\n        error: demo.shelf.Refused\n      \
+                 - name: unknown-book\n",
+                1,
+            );
+    let refused = before_row_refusals(&text);
+    assert!(
+        refused.iter().any(|line| line.contains(
+            "[conflicting_declaration] command.demo.shelf.Shelve.outcomes.unauthenticated.\
+             before_row"
+        ) && line.contains("when_related")),
+        "{refused:#?}"
+    );
+}
+
+/// `before_row: false` is the document without the key: the #486 refusal stands.
+#[test]
+fn before_row_false_is_the_key_left_out() {
+    let errors = refusal(&SIGN_IN.replace(KEY, "        before_row: false\n"));
+    assert!(
+        errors.contains(
+            "`reopened-busy` is selected by the held state, which answers before the external \
+             branch `bad-credential` declared above it"
+        ),
+        "{errors}"
+    );
+}

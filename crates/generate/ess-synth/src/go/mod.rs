@@ -298,6 +298,24 @@ impl<'a> Emit<'a> {
 /// refused — a defect in this crate, and the one lie neither the plan nor the target report may be
 /// allowed to tell.
 pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::TargetFailure> {
+    workspace_bound(ir, plan, None)
+}
+
+/// [`workspace`], its server serving an `ess-http/1` binding's routes where one is given
+/// ([`crate::synthesize_bound`]). Without one it is [`workspace`], byte for byte.
+///
+/// # Errors
+///
+/// [`crate::TargetFailure`] when the target cannot represent the plan.
+///
+/// # Panics
+///
+/// As [`workspace`].
+pub fn workspace_bound(
+    ir: &EssIr,
+    plan: &SynthesisPlan,
+    http_binding: Option<&ess_gen::http::Binding>,
+) -> Result<Emission, crate::TargetFailure> {
     crate::failure::binary64(ir, plan, crate::Target::Go)?;
     crate::failure::input_absent(ir, plan, crate::Target::Go)?;
     crate::failure::one_time_response(ir, plan, crate::Target::Go)?;
@@ -371,6 +389,7 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::Ta
         plan,
         &layout,
         &refusals,
+        http_binding,
         &mut covered,
     ));
     artifacts.extend(entry::artifacts(ir, plan, &layout, &seams));

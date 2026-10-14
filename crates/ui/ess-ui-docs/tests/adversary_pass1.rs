@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde_yaml::Value;
+use ess_yaml::Value;
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..")
@@ -15,7 +15,7 @@ fn schema_text() -> String {
 }
 
 fn schema() -> Value {
-    serde_yaml::from_str(&schema_text()).expect("the schema is YAML")
+    ess_yaml::from_str(&schema_text()).expect("the schema is YAML")
 }
 
 fn html() -> String {
@@ -218,7 +218,7 @@ fn every_indexed_shorthand_is_shown_on_the_construct_it_names() {
         let body = squash(&html_text(section(&html, &id)));
         let at = entry["at"].as_str().unwrap_or("the value itself");
         let expands: Value = entry["expands_to"].clone();
-        let expands = squash(&serde_yaml::to_string(&expands).expect("YAML"));
+        let expands = squash(&ess_yaml::to_string(&expands).expect("YAML"));
         let expands_leaf = expands.trim_end_matches('\n').to_owned();
         let shown = body.contains("You may also write")
             && body.contains(at)
@@ -352,7 +352,7 @@ fn a_highlighted_example_reads_back_as_the_construct_example() {
         let last = shown
             .last()
             .unwrap_or_else(|| panic!("{name} shows an example"));
-        let back: Value = serde_yaml::from_str(last)
+        let back: Value = ess_yaml::from_str(last)
             .unwrap_or_else(|error| panic!("{name}'s example is not YAML ({error}):\n{last}"));
         assert_eq!(back, construct["example"], "{name}'s example as shown");
         checked += 1;
@@ -376,7 +376,7 @@ fn a_markdown_example_reads_back_as_the_construct_example() {
             .nth(1)
             .and_then(|b| b.split("```\n").next())
             .expect("a fenced example");
-        let back: Value = serde_yaml::from_str(block)
+        let back: Value = ess_yaml::from_str(block)
             .unwrap_or_else(|error| panic!("{name}'s example is not YAML ({error}):\n{block}"));
         assert_eq!(back, construct["example"], "{name}'s Markdown example");
     }
@@ -541,7 +541,7 @@ fn schema_text_is_mdx_safe_on_the_markdown_page() {
         .and_then(|rest| rest.split_once("\n---\n"))
         .map(|(front, _)| front)
         .expect("front matter");
-    let front: Value = serde_yaml::from_str(front).expect("the front matter is YAML");
+    let front: Value = ess_yaml::from_str(front).expect("the front matter is YAML");
     assert!(front["title"].is_string() && front["description"].is_string());
     let prose = md_prose(&markdown);
     for c in ['{', '}', '<', '>'] {

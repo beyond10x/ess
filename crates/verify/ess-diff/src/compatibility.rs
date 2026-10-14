@@ -54,6 +54,7 @@
 //! | a struct opened or closed, `undeclared_fields: ignored` ↔ `refused` (`ess-diff/18`, ess/24) | decided as `expanded`, or `narrowed`: an open record admits every value the closed one did and more |
 //! | a command response opened (`ess-diff/18`) | breaking for readers: one written against the closed response may be sent a field it refuses; compatible for callers and history |
 //! | a command response closed (`ess-diff/18`) | compatible: it carries only what every reader of the open one admitted |
+//! | a view's answer for an identity no row carries gained, lost or changed (`absent:`, `ess-diff/19`, ess/25) | breaking for readers; compatible for callers and history |
 //! | a view is removed | breaking for readers |
 //! | an event or an entity is removed | breaking for history |
 //!
@@ -715,7 +716,10 @@ fn dimensions(change: &SemanticChange, uses: &BTreeSet<TypeUse>) -> Dimensions {
         },
         SemanticChange::View { changed, .. } => match changed {
             ViewChange::Added => [C, C, C],
-            ViewChange::Removed => [C, B, C],
+            // `AbsentChanged`: a read of an unknown identity answers a different row, or a row
+            // where it answered none (`absent:`, ess/25): a reader written against the old answer
+            // meets the new one. Nothing is sent to a view, and nothing stored changes.
+            ViewChange::Removed | ViewChange::AbsentChanged { .. } => [C, B, C],
             _ => [U, U, C],
         },
         SemanticChange::Entity { changed, .. } => match changed {

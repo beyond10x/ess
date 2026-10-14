@@ -5,7 +5,10 @@ Status: binding for https://github.com/beyond10x/ess/issues/493; stage 1 is buil
 `decision-blocker:http-surface-scope` (option (b), the staged presentation binding). This page
 covers the whole format before any stage is built, so stage 1 fixes no key that stage 2 would have
 to bump. Stage 1 is planned for 0.60.0, stage 2 for the release after it, and stage 3 after that
-(`decision-blocker:ess-060-wave-scope`). Each section below says which stage it belongs to.
+(`decision-blocker:ess-060-wave-scope`). Each section below says which stage it belongs to. Stage
+2's open questions are answered on 2026-10-13 ("Decided for stage 2"), and "Stage 2: keys,
+precedence and the units that build them" fixes every stage-2 key, refusal and precedence before
+any of its units is built; stage 2 is planned for 0.61.0.
 
 ## Problem
 
@@ -50,7 +53,7 @@ AsyncAPI (`event-transport-binding.md:100-102`).
 | stage | adds | release |
 |---|---|---|
 | 1 | the document, its envelope, the method and path of a command or view, path parameters, refinement, the OpenAPI projection | 0.60.0 |
-| 2 | request encoding, response body per outcome, status per outcome, response headers including `WWW-Authenticate`, redirects, overrides for the standard refusals, the Rust and Go servers' template dispatch | the release after 0.60.0 |
+| 2 | request encoding, response body per outcome, status per outcome, response headers including `WWW-Authenticate`, redirects, overrides for the standard refusals, the Rust and Go servers' template dispatch (both servers built, units k5 and k6) | the release after 0.60.0 |
 | 3 | an HTTP conformance target that reaches an implementation through the binding | after stage 2 |
 
 ## Stage 1: the document and the route
@@ -299,7 +302,9 @@ its key once per element, the rule view parameters already follow (`openapi.rs:1
 scalar field receives twice is a malformed request (RFC 6749 §3.1). Booleans are `true` and `false`,
 integers exact decimal text. Keys are the fields' wire names. `unknown: ignore` admits a request
 parameter no field names (RFC 6749 §3.1, "MUST ignore unrecognized request parameters"); the
-default, `refuse`, keeps ESS's closed bodies.
+default, `refuse`, keeps ESS's closed bodies. A key whose percent-decoding fails names no field,
+because every declared name is UTF-8, so it is unknown: ignored with its value under `ignore`, and
+malformed under `refuse`.
 
 ### Response body per outcome
 
@@ -307,11 +312,11 @@ default, `refuse`, keeps ESS's closed bodies.
 |---|---|---|
 | `envelope` (default) | any outcome | today's body: `outcome`, `error`, `payload`, `published`, `response` (`openapi.rs:57-70`) |
 | `response` | a `returns: true` outcome without `error` | the command's declared response object, bare |
-| `{<member>: error}` | an outcome with `error` | an object whose `<member>` is the error's wire name (`naming.wire`, falling back to the local name, `crates/specify/ess-domain/src/name.rs:240-242`), beside the error's own fields under their wire names |
+| `{<member>: error}` | an outcome with `error` | an object whose `<member>` is the error's wire name (`naming.wire`, falling back to the local name, `crates/specify/ess-domain/src/name.rs:240-242`), beside the error's own fields under their wire names, unchanged (decided for stage 2, answer 9) |
 | `{<member>: {literal: <text>}}` | a standard refusal (below) | an object with one fixed member |
-| `none` | any outcome | no body; required with `204`, `304` and every redirect |
+| `none` | any outcome | no body; required with `204` and every redirect |
 | `rows` (default) | a view | today's `{rows: [...]}` |
-| `single` | a view | the one row, bare; with `empty: {status}` answering a view that holds none |
+| `single` | a view selected by its source entity's identity (decided for stage 2, answer 7) | the one row, bare; with `empty: {status}` answering a view that holds none |
 
 A bare body carries no `outcome` and no `published`. A caller of such a route sees the branch only
 through status, body shape and headers, and sees no published event. That is what the protocol
@@ -324,10 +329,22 @@ says, and stage 3 counts what it costs.
 
 - `1xx` for anything;
 - `2xx` for an outcome with `error`, and `4xx` or `5xx` for one without. `3xx` is admitted for both,
-  because RFC 6749 §4.1.2.1 answers an authorization error with a redirect;
+  because RFC 6749 §4.1.2.1 answers an authorization error with a redirect, but only the five
+  redirect statuses `301`, `302`, `303`, `307` and `308`: `300`, `304`, `305` and `306` are refused
+  in stage 2 (decided for stage 2, answer 15);
 - two outcomes of one operation on one status unless the bodies tell them apart: both `envelope`
   (the `outcome` member does), or both `{<member>: error}` on one member with distinct error wire
-  names. Otherwise a reader, and the stage-3 target, cannot say which branch was taken.
+  names; or, on a redirect status, unless both declare a `redirect` and one of them always writes
+  a parameter the other never writes. A parameter is always written when its source is not
+  `Optional`. An OAuth authorization endpoint answers success and error both with `302`, the
+  success always writing `code` and the error always writing `error` (RFC 6749 §4.1.2,
+  §4.1.2.1), and compiles. Two redirects are also told apart when both write one parameter from
+  `error.wire` and their error wire names differ, as two `{<member>: error}` bodies are: every
+  authorization error redirects with its own `error` (RFC 6749 §4.1.2.1), so `access_denied` and
+  `invalid_scope` on one `302`, both `parameters: {error: error.wire}`, compile, and two outcomes
+  reporting one error do not. Two redirects whose always-written names are equal, or where each
+  always-written name of one is one the other may write, are otherwise refused. Otherwise a reader,
+  and the stage-3 target, cannot say which branch was taken.
 
 ### Response headers
 
@@ -340,21 +357,35 @@ says, and stage 3 counts what it costs.
 | `{challenge: {scheme, params}}` | one RFC 9110 §11.6.1 challenge: `scheme` a token, each param a `literal` or a `source`, serialised as a quoted string by the generator |
 
 `WWW-Authenticate` with its `error` attribute (RFC 6750 §3) is the third form with
-`error: {source: error.wire}`. The generator writes the quoting, so an error wire name cannot break
-out of the challenge. `Content-Type`, `Content-Length` and `Transfer-Encoding` belong to the
-encoding, and `Location` belongs to `redirect`. Declaring any of them is refused.
+`error: {source: error.wire}`. The generator writes the quoting, so an error wire name a quoted
+string carries cannot break out of the challenge. The wire name is known when the binding
+compiles, so `error.wire` is held to what a literal holding the same text is: a header reading it
+is refused when the wire name is not a field value (`ESS-HTTP-026`), and a challenge param reading
+it when no quoted string carries the wire name (`ESS-HTTP-027`). `Content-Type`,
+`Content-Encoding`, `Content-Length` and `Transfer-Encoding` belong to the encoding, `Connection`
+to the server, and `Location` to `redirect`. Declaring any of them is refused.
 
 This states a header. It does not add authentication to the model: `security` and `securitySchemes`
-stay omitted for the reason `openapi.rs:164` and `openapi.rs:171-191` give. A `401` with a challenge
-is the answer a declared outcome gives; how a caller proves who it is remains the realization's.
+stay omitted for the reason `openapi.rs:164` and `openapi.rs:171-191` give (decided for stage 2,
+answer 8). A `401` with a challenge is the answer a declared outcome gives; how a caller proves who
+it is remains the realization's.
 
 ### Redirects
 
 `redirect` belongs to a `3xx` status (`301`, `302`, `303`, `307`, `308`), and each of those requires
-it. `location` names a `String` source holding an absolute URI. `mode: query` appends `parameters`
+it. `location` names a `String` source holding an absolute URI, never `error.wire`, which is a
+wire name. `mode: query` appends `parameters`
 to its query, keeping a query it already has (RFC 6749 §3.1.2); `mode: fragment` writes them as the
 fragment. Parameter values are scalar sources; an absent optional is omitted, which is how RFC 6749
-§4.1.2 returns `state` only when the request carried it. The body is `none`.
+§4.1.2 returns `state` only when the request carried it. A parameter name is one or more RFC 3986
+`unreserved` characters (`A-Z a-z 0-9 - . _ ~`), which no encoding of the query or fragment
+changes; any other name is refused (`ESS-HTTP-028`). The body is `none`.
+
+In `mode: query` the location's existing query is kept. A location that already carries a
+parameter name a redirect declares therefore writes that name twice, and a reader may take the
+location's value: it can defeat the parameter-based distinction of two redirects on one status
+(`ESS-HTTP-025`) at run time. The generator does not check it; the location's value is the
+specification's to constrain.
 
 A redirect to a URI taken from input is an open redirect unless the specification's guards compare
 that input with something stored. ESS does not add that check; the outcome that redirects must be
@@ -374,19 +405,22 @@ keeps today's answer.
 
 | code | refused | names |
 |---|---|---|
-| `ESS-HTTP-020` | an encoding outside the set; `form` or `json` on `get`; `query` on anything but `get` | `routes[i].request.encoding` |
+| `ESS-HTTP-020` | an encoding outside the set; `form` or `json` on `get`; `query` on anything but `get`; `request:` on a view; `unknown: ignore` with `json`, or an `unknown` value outside `refuse` and `ignore` | `routes[i].request.encoding` or `routes[i].request.unknown` |
 | `ESS-HTTP-021` | a `form` or `query` field whose type has no flat spelling (struct, nested list, map, `Json`) | the field and its type |
 | `ESS-HTTP-022` | an `outcomes:` key that is not an outcome of the command, or `outcomes:` on a view | `routes[i].outcomes.<name>` |
-| `ESS-HTTP-023` | a status outside `100..=599`, or in a class the outcome may not use | the outcome, the status, the class |
-| `ESS-HTTP-024` | a body form not admitted for the outcome or operation (`response` on an outcome without `returns: true`, `{…: error}` without `error`, a body on `204` or `304`, `single` on a command) | the outcome and the form |
-| `ESS-HTTP-025` | two outcomes on one status that the bodies cannot tell apart | both outcomes and the status |
-| `ESS-HTTP-026` | a header name that is not a token, a header the encoding or `redirect` owns, a header declared twice ignoring case, a source that names no field or names a non-scalar | the header and the source |
-| `ESS-HTTP-027` | a challenge whose scheme or param name is not a token, or a param declared twice | the header, the param |
-| `ESS-HTTP-028` | `redirect` without a `3xx` status, a `3xx` without `redirect`, a `location` that is not a `String`, a `mode` outside the set, a parameter declared twice | the outcome and the key |
-| `ESS-HTTP-029` | a `refusals:` key outside the set, or a status in the wrong class for it | `refusals.<key>` |
-| `ESS-HTTP-030` | `body: single` without `empty`, or `empty` without `single` | `routes[i]` |
+| `ESS-HTTP-023` | a status outside `100..=599`, in a class the outcome may not use, or a `3xx` other than `301`, `302`, `303`, `307` and `308` | the outcome, the status, the class |
+| `ESS-HTTP-024` | a body form not admitted for the outcome or operation: `response` on an outcome without `returns: true` or with `error`; `{…: error}` without `error`; `{…: {literal: …}}` on an outcome; a body other than `none` on `204` or beside a `redirect`; `single` or `rows` on a command, or an outcome form on a view; `single` on a paged view; a `<member>` that is empty or equals the wire name of one of the error's fields | the outcome (or `routes[i].body`) and the form |
+| `ESS-HTTP-025` | two outcomes on one status that the bodies cannot tell apart, an unlisted outcome counted at its derived status with `envelope`, unless both declare a `redirect` and one always writes (its source not `Optional`) a parameter name the other never writes, or both write one parameter name from `error.wire` with distinct error wire names; a `refusals:` override on a route the binding names, on the status of an outcome of its command, with a body that does not tell the two apart (answer 24) | both outcomes and the status (for an override, `refusals.<key>`, the route and the outcomes) |
+| `ESS-HTTP-026` | a header name that is not a token, a header the server (`Connection`), the encoding (`Content-Type`, `Content-Encoding`, `Content-Length`, `Transfer-Encoding`) or `redirect` (`Location`) owns, a literal that is not a field value, `error.wire` whose wire name is not a field value, a header declared twice ignoring case, a source that names no field or names a non-scalar, a source the outcome cannot supply (`response.` without `returns: true`, `error.` without `error`), `error.wire` on an outcome whose error declares a field named `wire`, or any `source` in a `refusals:` header | the header and the source |
+| `ESS-HTTP-027` | a challenge whose scheme or param name is not a token, a param declared twice, a literal param or a param reading `error.wire` whose text no quoted string carries, a challenge under any header but `WWW-Authenticate`, or a declared `401` (outcome or refusal) without a `WWW-Authenticate` challenge | the header, the param |
+| `ESS-HTTP-028` | `redirect` without a `3xx` status, a `3xx` without `redirect`, a `location` that is not a `String` or a newtype of `String`, or is `Optional`, or that reads `error.wire`; a `mode` absent or outside the set, a parameter name that is not one or more RFC 3986 `unreserved` characters, a parameter declared twice, a parameter source that names no field, names a non-scalar or that the outcome cannot supply | the outcome and the key |
+| `ESS-HTTP-029` | a `refusals:` key outside the set; a status in the wrong class for it (`4xx` for `malformed` and `not_granted`, `5xx` for `unfinished`); a body other than `{<member>: {literal: …}}` or `none` | `refusals.<key>` |
+| `ESS-HTTP-030` | `body: single` without `empty`, `empty` without `single`, or an `empty` status outside `4xx` | `routes[i]` |
+| `ESS-HTTP-031` | `body: single` on a view whose filter does not select by its source entity's identity: neither the filter nor a member of a top-level `all` (nested `all` included) is `<identity field> == param.<name>`, compared by value, in either operand order | `routes[i].body`, the view, its source entity and the entity's identity field |
 
-A refinement may not change a refined route's stage-2 keys either; that is `ESS-HTTP-012`.
+A refinement may not change a refined route's stage-2 keys either; that is `ESS-HTTP-012`. A
+missing `status` in a listed outcome or refusal, and an unknown key anywhere, are parse refusals
+naming the key, as a missing `method` is in stage 1.
 
 ### What generated artifacts change (stage 2)
 
@@ -407,6 +441,151 @@ The format stays `ess-http/1` and `ess-http-ir/1`. A document that uses no stage
 the same IR bytes under a stage-2 reader: absent keys are omitted, never written as defaults. An
 OpenAPI document generated from such a binding keeps its stage-1 bytes. Header and parameter maps
 are `BTreeMap`s, so the emitted order is the name order, not the authored order.
+
+### Stage 2: keys, precedence and the units that build them
+
+Stage 2 is built by units k1 to k6 of wave k, in that order; k1 to k3 change one file,
+`crates/specify/ess-http/src/lib.rs`, so they run one after another. Each unit adds the keys and
+codes below and nothing else, appends its codes to `CODES` in code order and to `compile`'s table
+of refusals, and runs `task test-xtask`, because a new code moves pins outside the crate (AGENTS.md).
+
+#### Keys
+
+Every key is optional unless the table says so. The IR spells each key and value exactly as the
+authored document does (canonical JSON of the same value), and omits a key whose value is its
+default, whether or not the author wrote it, so two documents that mean the same compile to the
+same bytes.
+
+| authored key | values | default, and what the IR omits | unit |
+|---|---|---|---|
+| `routes[].request.encoding` | `json`, `form`, `query` | `json`, omitted | k1 |
+| `routes[].request.unknown` | `refuse`, `ignore` | `refuse`, omitted; `request` itself is omitted when both are defaults | k1 |
+| `routes[].outcomes.<outcome>` | an object per listed outcome of the command, keyed by its local name | absent: the outcome keeps `outcome_status` and `envelope` | k2 |
+| `routes[].outcomes.<outcome>.status` | an integer; **required** in a listed outcome | always written | k2 |
+| `routes[].outcomes.<outcome>.body` | `envelope`, `response`, `none`, `{<member>: error}` | `envelope`, omitted | k2 |
+| `routes[].body` (view route) | `rows`, `single` | `rows`, omitted | k2 |
+| `routes[].empty.status` (view route) | an integer, `4xx`; **required** with `single`, and the only key of `empty` | written with `single` | k2 |
+| `refusals.<key>` | `malformed`, `not_granted`, `unfinished` | absent: today's answer | k2 |
+| `refusals.<key>.status` | an integer; **required** | always written | k2 |
+| `refusals.<key>.body` | `{<member>: {literal: <text>}}`, `none`; **required** | always written | k2 |
+| `routes[].outcomes.<outcome>.headers.<Name>` | `{literal: <text>}`, `{source: <path>}`, `{challenge: {scheme, params}}` | absent, omitted when empty; ordered by name | k3 |
+| `routes[].outcomes.<outcome>.headers.<Name>.challenge.scheme` | a token; **required** | written as authored | k3 |
+| `routes[].outcomes.<outcome>.headers.<Name>.challenge.params.<param>` | `{literal: <text>}` or `{source: <path>}` | omitted when empty; ordered by name | k3 |
+| `refusals.<key>.headers.<Name>` | `{literal}` or `{challenge}` whose params are all literals | omitted when empty | k3 |
+| `routes[].outcomes.<outcome>.redirect.location` | a source text (`input.<field>`, `response.<field>`); **required** | written | k3 |
+| `routes[].outcomes.<outcome>.redirect.mode` | `query`, `fragment`; **required** | written | k3 |
+| `routes[].outcomes.<outcome>.redirect.parameters.<name>` | a source text | omitted when empty; ordered by name | k3 |
+
+A header source is one of `input.<field>`, `response.<field>`, `error.<field>` or `error.wire`, and
+names a top-level field: there is no expression language and no nested path, as in stage 1. Header
+names, challenge params and redirect parameters are read as ordered entries, the way `Parameters`
+keeps a key written twice (`crates/specify/ess-http/src/lib.rs:153-156`), so that a duplicate is
+refused with its code rather than one entry silently replacing the other. The IR keeps a header
+name as authored.
+
+k4 to k6 add no binding key:
+
+| unit | adds |
+|---|---|
+| k4 | the OpenAPI projection of every key above (below); `security` and `securitySchemes` stay omitted (answer 8) |
+| k5 | `ess generate synthesize --target rust --http FILE [--refines FILE]`, modelled first in `models/toolchain/domains/generate.yaml`; `--http` with any other target is refused by name, `go` included until k6; built |
+| k6 | `--http` admitted for `--target go`, with the Rust server's behaviour, byte for byte where both write the same answer; built |
+
+#### Codes per unit
+
+| unit | adds | widens |
+|---|---|---|
+| k1 | `ESS-HTTP-020`, `ESS-HTTP-021` | `ESS-HTTP-014` admits a `get` command's input field that is query-encoded; `ESS-HTTP-012` covers `request` |
+| k2 | `ESS-HTTP-022`, `-023`, `-024` (except its `redirect` clause), `-025`, `-029`, `-030`, `-031` | `ESS-HTTP-012` covers `outcomes` (status, body), `body`, `empty` and `refusals` |
+| k3 | `ESS-HTTP-026`, `-027`, `-028`, and `-024`'s clause for a body beside a `redirect` | `ESS-HTTP-012` covers headers and redirects |
+| k4, k5, k6 | no code | — |
+
+k3 refuses a `3xx` outcome without a `redirect` (`ESS-HTTP-028`) and a `401` without a challenge
+(`ESS-HTTP-027`), which k2 alone compiled; no release falls between the two units. k3 also widens
+`ESS-HTTP-025`: two redirects of one operation on one status, both `body: none`, are told apart by
+the parameters they always write, or by distinct error wire names both write under one
+parameter from `error.wire` ("Status per outcome"). The
+synthesis refusals of k5 and k6 carry no `ESS-HTTP` code, as the OpenAPI
+projection's refusal of an open route carries none (`crates/edge/ess-cli/src/http.rs:100-126`):
+the document is valid, and the artifact cannot honour it. They are a binding with an open route,
+naming the operation, and a route whose template a request for `/openapi.json` or `/docs` would
+match: the literal path itself, or a one-segment template such as `/{name}`, by the overlap rule of
+`ESS-HTTP-011`. `ess specify http validate` accepts both.
+
+#### Refinement
+
+A refining document restates each stage-2 key of every route of the refined binding exactly: one it
+adds, changes or drops on such a route is `ESS-HTTP-012`, naming the key, the refined value and the
+new one. Its top-level `refusals:` equals the refined binding's, both absent or both the same. A
+route the refining document adds may carry any stage-2 key. The comparison is over the compiled
+values, so writing a default explicitly is not a change.
+
+#### Precedence
+
+A served request on a bound route is answered by the first of these that applies, the order the
+servers already follow (`crates/generate/ess-synth/src/rust/http.rs:824-868`):
+
+1. A request the HTTP layer cannot read (framing, header lines): today's `400`, never overridden.
+2. No route matches: today's `404`. `/openapi.json` and `/docs` keep their answers; no bound route
+   can match them (above).
+3. The path matches and the method does not: today's `405`.
+4. The caller is not granted the operation: `refusals.not_granted`, else today's `403`.
+5. The request carries no input at all and the command declares `input_absent:`: that declared
+   answer (`http.rs:83-86`), before `malformed`, as today.
+6. The input cannot be read per `request` (not the declared media type, not UTF-8, a scalar key
+   twice, an unknown key under `refuse`, a missing required field, a value its type refuses):
+   `refusals.malformed`, else today's `400`. A path variable's value wins over a body or query key
+   for the same field, and that key counts as unknown.
+7. The command runs and takes an outcome: the route's `outcomes.<outcome>` if listed, else
+   `outcome_status` and `envelope`. A view answers `rows`, or `single` with the row or `empty`.
+8. The realization is unfinished: `refusals.unfinished`, else today's `501`.
+
+`refusals:` applies to the routes the binding names and to no derived route, and never replaces a
+declared outcome. A listed outcome replaces status and body as a whole; its headers are added to
+the ones the encoding and `redirect` write, which they cannot name (`ESS-HTTP-026`). At compile
+time there is no precedence: every refusal is reported at once, and a view route with `body:
+single` and no identity selection and no `empty` earns both `ESS-HTTP-030` and `ESS-HTTP-031`.
+
+#### What the servers write (k5, k6)
+
+- **Form and query.** UTF-8, `+` as a space, percent-decoding, keys the fields' wire names. A
+  `form` request whose `Content-Type` is not `application/x-www-form-urlencoded` (parameters
+  ignored) is malformed. An absent key is an absent optional; an empty value is the empty text for a
+  `String` and malformed for any other scalar.
+- **Headers.** A literal is checked at compile time. A sourced value or challenge param that is not
+  a valid field value at run time (a control character other than horizontal tab, or a leading or
+  trailing space for a bare value) is never written: the answer is `unfinished` with `committed`
+  `true`, because the effect stands and its answer could not be delivered. A challenge param is
+  always a quoted string; `"` and `\` are escaped with `\`, so a value cannot leave it. An absent
+  optional omits the header, or the param.
+- **Redirects.** `location` must hold an absolute URI without a fragment at run time, else the same
+  `unfinished` answer. `query` appends the parameters to any query the URI already has, `fragment`
+  writes them as the fragment, both `application/x-www-form-urlencoded` (RFC 6749 Appendix B), in
+  name order; an absent optional is omitted.
+- **Go and Rust alike (k6).** The Go server answers a bound request with the Rust server's status,
+  headers and body bytes wherever the binding writes the answer
+  (`crates/generate/ess-synth/tests/http_binding/go.rs`,
+  `the_go_and_rust_servers_answer_one_binding_alike`). Both match routes on the path as the
+  request line spells it, read a `json` body with one reader (the Rust server's `json::parse`,
+  ported: one document, nesting at most 64, the first of a repeated member), and write a body the
+  binding declares with members in declaration order and the Rust server's string escaping. Two
+  differences stay: `net/http` refuses a
+  request line holding a malformed percent-escape with its own `400` before the surface reads it
+  (step 1 of "Precedence"), where the Rust server refuses the path variable as `malformed`; and an
+  answer the binding does not write (an envelope, a derived refusal, `rows`) keeps each server's
+  member order, as it does without a binding.
+
+#### What OpenAPI writes (k4)
+
+`requestBody` content is `application/x-www-form-urlencoded` for `form`, with the flat field
+schema; `query` has no `requestBody`, and each unmapped field is an `in: query` parameter, a `List`
+with `style: form` and `explode: true`. Each declared status is one response: the bare response
+schema, the error object (`<member>` a `const` of the wire name beside the error's fields), or no
+content; headers as response `headers`, a challenge as a `string` header, and a redirect's
+`Location`. Every response of a bound operation carries `x-ess-outcomes`, the outcomes it answers in
+the order the command declares them. A view route with `single` answers the row schema at `200` and
+no content at its `empty` status. A `refusals:` override replaces the standard refusal's response on
+every bound operation that can answer it.
 
 ## Stage 3: an HTTP conformance target
 
@@ -457,15 +636,82 @@ Formats: the `ess-conformance/*` documents do not change. `--target` gains one v
 5. `ess verify diff` does not compare two bindings in stage 1; that is one unit of stage 2.
 6. A view is bound to `get` only in stage 1.
 
+## Decided for stage 2 (2026-10-13, `story:http-stage-2-design-answers`)
+
+Answers 7 to 9 were the open stage-2 questions of this page, each settled on the recommended
+option. Answers 14 to 24 settle what the stage-2 sections above left unstated; each takes the
+option that is narrower, so a later release can relax it as an addition without a format change,
+and none can be tightened later without refusing a document that compiled.
+
+7. **A `single` view with more than one row cannot exist.** Compile refuses `body: single` unless
+   the view's filter selects by its source entity's identity (`<identity field> == param.<name>`,
+   the filter itself or a member of a top-level `all`), so a `single` route never holds two rows at
+   run time: `ESS-HTTP-031`, naming `routes[i].body`, the view, the entity and its identity field.
+   The identity is the entity's `identity` field (`crates/specify/ess-domain/src/entity.rs:935`),
+   and the filter reads a parameter as `param.<name>` (`crates/specify/ess-domain/src/view.rs:942-946`),
+   so the check reads the compiled view and needs nothing new in the model. Rejected: answering the
+   first row by key order, which hides a model error behind an answer; answering `500`, a run-time
+   failure that a compile can prevent.
+8. **No `securitySchemes` in stage 2.** A challenge is a response header only, until the model has
+   an authentication construct. `security` and `securitySchemes` stay omitted for the reason the
+   OpenAPI projection gives: `may:` is authorization, and a scheme says how a caller proves who it
+   is, which the model does not state (`crates/generate/ess-gen/src/openapi.rs:164`,
+   `openapi.rs:171-191`). Rejected: deriving a scheme from each declared challenge, which claims an
+   authentication mechanism the model does not declare, and which every generated client would
+   then implement.
+9. **`{<member>: error}` writes the error's own fields under their wire names, unchanged.** A
+   protocol field such as `error_description` (RFC 6749 §5.2) is a field of that name on the
+   model's error (`crates/specify/ess-domain/src/command.rs:4880-4881`, `fields`), so the model
+   owns every name on the wire. A field whose wire name equals `<member>` is refused
+   (`ESS-HTTP-024`), because the object would hold that member twice. Rejected: a per-field rename
+   map in the binding, a second mapping of names the model already owns, and one that two bindings
+   of the same specification could spell differently.
+14. `request.unknown: ignore` is admitted with `form` and `query` only, and `request:` is refused on
+    a view (`ESS-HTTP-020`). A JSON body stays closed, as ESS's bodies are today; RFC 6749 §3.1's
+    "MUST ignore unrecognized request parameters" is about form and query parameters.
+15. A `3xx` status is one of `301`, `302`, `303`, `307` and `308`, each with a `redirect`
+    (`ESS-HTTP-023`, `ESS-HTTP-028`). `304` answers a conditional request, which the binding cannot
+    state, and `300`, `305` and `306` name no answer an outcome gives.
+16. A listed outcome requires `status`, and a refusal override requires `status` and `body`, so the
+    IR states every answer it changes. Admitting a header on the derived status without restating
+    it is an addition for later.
+17. `refusals:` applies to the routes the binding names, never to a derived route, a declared
+    outcome, an unmatched path (`404`) or method (`405`). `malformed` and `not_granted` take a `4xx`
+    status, `unfinished` a `5xx` (`ESS-HTTP-029`). An unmatched path is a property of the whole
+    surface, which a binding of some routes does not own.
+18. `{challenge}` is admitted under `WWW-Authenticate` only, and a declared `401` (an outcome or a
+    refusal) requires a `WWW-Authenticate` challenge, as RFC 9110 §15.5.2 requires of every `401`
+    (`ESS-HTTP-027`). `Proxy-Authenticate` and other `401` answers wait for a protocol that needs
+    them.
+19. `error.wire` always names the error's wire name. A source `error.wire` on an outcome whose error
+    declares a field named `wire` is refused as ambiguous (`ESS-HTTP-026`), rather than one reading
+    shadowing the other.
+20. `single` is refused on a paged view (`ESS-HTTP-024`), whose answer carries a page, and `empty`
+    holds a `4xx` status and nothing else: the empty answer has no body (`ESS-HTTP-030`).
+21. A refining document restates every stage-2 key of each refined route, and `refusals:`, exactly
+    (`ESS-HTTP-012`). A protocol fixes its encoding, statuses and challenges as it fixes a path; a
+    server binding may later be allowed to fill in what a protocol binding leaves out.
+22. A sourced header value, challenge param or redirect location that cannot be written at run time
+    is answered as `unfinished` with `committed` `true`; it is never written, truncated or
+    re-encoded, because a header value from input must not inject a header.
+23. `redirect.location` is a `String`, or a newtype of `String`, never `Optional`; `redirect.mode`
+    is required. A redirect without a location has nowhere to send the caller, and a default mode
+    would choose between query and fragment for the author.
+24. A `refusals:` override that shares a status with an outcome of a route the binding names, the
+    outcome listed or counted at its derived status with `envelope`, is refused (`ESS-HTTP-025`, at
+    `refusals.<key>`) unless its body tells the two apart, which only
+    `{<member>: {literal: <text>}}` beside `{<member>: error}` on one member does, the text
+    differing from the error's wire name; a client reading the status and body could not otherwise
+    tell a refusal from an outcome.
+
+Stage 1's answer 5 places a comparison of two bindings in `ess verify diff` in stage 2. Wave k has
+no unit for it, so it stays a stage-2 item without a unit and is not part of 0.61.0.
+
 ## Open questions
 
 These could not be settled from the sources. Each needs a decision before the stage it names.
+Questions 7 to 9 are answered above.
 
-7. **Stage 2.** What does a `single` view answer when it holds more than one row?
-8. **Stage 2.** Should a binding be able to declare `securitySchemes` once a challenge is declared,
-   or does that wait for an authentication construct in the model?
-9. **Stage 2.** Which error fields does `{<member>: error}` admit: the error's fields under their
-   wire names unchanged, or does `error_description` (RFC 6749 §5.2) need its own mapping?
 10. **Stage 3.** How does the HTTP target begin each scenario on an isolated state
     (`target.rs:175-180` leaves "how" to the target) and seed a scenario's initial records, against
     a server it does not control?

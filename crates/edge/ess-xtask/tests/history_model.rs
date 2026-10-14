@@ -42,8 +42,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use ess_yaml::Value as Yaml;
 use quote::ToTokens;
-use serde_yaml::Value as Yaml;
 
 const MODEL: &str = "models/concurrent-history/domains/history.yaml";
 const SOURCE: &str = "crates/verify/ess-conformance/src/history.rs";
@@ -134,7 +134,7 @@ fn rust_spelling(model_type: &str) -> String {
 }
 
 fn model() -> Model {
-    let document: Yaml = serde_yaml::from_str(&source(MODEL)).expect("the domain is YAML");
+    let document: Yaml = ess_yaml::from_str(&source(MODEL)).expect("the domain is YAML");
     let mut enums = BTreeMap::new();
     let mut newtypes = BTreeSet::new();
     for declaration in sequence(&document, "types") {
@@ -864,7 +864,7 @@ fn integer_const(text: &str, owner: Option<&str>, name: &str) -> u64 {
 
 /// What the model declares about `SpecDigest`: its alphabet and its length bounds.
 fn modelled_digest() -> (BTreeSet<char>, u64, u64) {
-    let document: Yaml = serde_yaml::from_str(&source(MODEL)).expect("the domain is YAML");
+    let document: Yaml = ess_yaml::from_str(&source(MODEL)).expect("the domain is YAML");
     let declaration = sequence(&document, "types")
         .iter()
         .find(|declaration| text(declaration, "name") == Some("concurrent.history.SpecDigest"))

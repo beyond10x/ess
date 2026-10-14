@@ -19,7 +19,7 @@ fn command_local_replay_retains_the_original_create_identity_without_input_id() 
         .find(|o| o.name.as_str() == "replayed")
         .unwrap();
     assert_eq!(replay.test_strategy().as_str(), "replay_result");
-    let encoded = serde_yaml::to_string(replay).unwrap();
+    let encoded = ess_yaml::to_string(replay).unwrap();
     assert!(encoded.contains("replays: seeded"));
     assert!(!encoded.contains("instance:"));
 }

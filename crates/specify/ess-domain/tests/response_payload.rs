@@ -14,10 +14,10 @@ fn response_sources_and_generated_fields_admit_and_round_trip() {
     let source = model("ess/4", RESPONSE, PAYLOAD);
     let parsed = spec(&source).unwrap();
     let command = parsed.commands().values().next().unwrap();
-    let encoded = serde_yaml::to_string(command).unwrap();
+    let encoded = ess_yaml::to_string(command).unwrap();
     assert!(encoded.contains("response:"));
     assert!(encoded.contains("generated: true"));
-    let raw: ess_domain::command::RawCommandSpec = serde_yaml::from_str(&encoded).unwrap();
+    let raw: ess_domain::command::RawCommandSpec = ess_yaml::from_str(&encoded).unwrap();
     let roundtrip = ess_domain::command::CommandSpec::try_from(raw).unwrap();
     assert_eq!(&roundtrip, command);
 }

@@ -17,7 +17,7 @@ ess-gen.workspace = true
 clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-serde_yaml.workspace = true
+ess-yaml.workspace = true
 
 [lints]
 workspace = true

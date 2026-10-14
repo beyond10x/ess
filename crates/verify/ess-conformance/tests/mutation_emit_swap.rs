@@ -344,7 +344,7 @@ fn a_multi_event_outcome_keeps_emit_drop_and_is_no_swap_site() {
         .unwrap();
     let outcome = &mut place.outcomes[0];
     let noted = ess_domain::name::QualifiedName::new("swaps.order.Noted").unwrap();
-    outcome.emits.push(noted.clone());
+    outcome.emits.push(noted.clone().into());
     let table = outcome.payload.0[0].1.clone();
     outcome.payload.0.push((noted, table));
     mutate::compile(files.clone(), &texts).expect("two events compile");

@@ -140,7 +140,7 @@ pub struct Error(pub String);
 impl Binding {
     /// Read an authored YAML document.
     pub fn from_yaml(text: &str) -> Result<Self, Error> {
-        let binding: Self = serde_yaml::from_str(text).map_err(|e| Error(e.to_string()))?;
+        let binding: Self = ess_yaml::from_str(text).map_err(|e| Error(e.to_string()))?;
         binding.plan_format()?;
         binding.globals()?;
         Ok(binding)

@@ -190,6 +190,35 @@ impl std::fmt::Display for LayoutRefusal {
 
 impl std::error::Error for LayoutRefusal {}
 
+/// An `ess-http/1` binding the synthesis cannot serve (`docs/design/http-presentation-binding.md`,
+/// "Stage 2: keys, precedence and the units that build them").
+///
+/// Decided before anything is planned, and carries no plan. Neither carries an `ESS-HTTP` code:
+/// the document is valid, and the artifact cannot honour it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BindingRefusal {
+    /// The target serves no HTTP binding: only `rust` and `go` do.
+    Target(&'static str),
+    /// A route the served surface cannot answer: it is open, or a request for `/openapi.json` or
+    /// `/docs` would match it.
+    Unservable(ess_gen::http::Unprojectable),
+}
+
+impl std::fmt::Display for BindingRefusal {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Target(target) => write!(
+                formatter,
+                "the `{target}` target does not serve an `ess-http/1` binding: `--http` is an \
+                 option of the `rust` and `go` targets only"
+            ),
+            Self::Unservable(unservable) => unservable.fmt(formatter),
+        }
+    }
+}
+
+impl std::error::Error for BindingRefusal {}
+
 /// Why [`synthesize_laid_out`] produced nothing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SynthesisFailure {
@@ -197,6 +226,8 @@ pub enum SynthesisFailure {
     Layout(LayoutRefusal),
     /// The target cannot represent the source.
     Target(TargetFailure),
+    /// The target cannot serve the `ess-http/1` binding it was given; nothing was planned.
+    Binding(BindingRefusal),
 }
 
 impl From<TargetFailure> for SynthesisFailure {
@@ -210,6 +241,7 @@ impl std::fmt::Display for SynthesisFailure {
         match self {
             Self::Layout(refusal) => refusal.fmt(formatter),
             Self::Target(failure) => failure.fmt(formatter),
+            Self::Binding(refusal) => refusal.fmt(formatter),
         }
     }
 }
@@ -381,7 +413,7 @@ pub fn synthesize(ir: &EssIr) -> Result<Synthesis, TargetFailure> {
 /// that target refused. That is a defect in this crate, not in any specification, and shipping it
 /// would make `PLAN.md` a lie about the tree beside it.
 pub fn synthesize_for(ir: &EssIr, target: Target) -> Result<Synthesis, TargetFailure> {
-    emit(ir, target, OutputLayout::Workspace)
+    emit(ir, target, OutputLayout::Workspace, None)
 }
 
 /// [`synthesize_for`], with the Rust target's output laid out as chosen.
@@ -400,17 +432,55 @@ pub fn synthesize_laid_out(
     target: Target,
     layout: OutputLayout,
 ) -> Result<Synthesis, SynthesisFailure> {
+    synthesize_bound(ir, target, layout, None)
+}
+
+/// [`synthesize_laid_out`], with the routes of an `ess-http/1` binding served
+/// (`ess generate synthesize --http`).
+///
+/// Without a binding it is [`synthesize_laid_out`], byte for byte. With one, the `rust` and
+/// `go` targets' servers dispatch by template and method, decode `form` and `query` requests,
+/// and write the declared status, body, headers, challenge and redirect per outcome and per
+/// standard refusal (`docs/design/http-presentation-binding.md`, "Precedence" and "What the
+/// servers write (k5, k6)"); the served `OpenAPI` document is the bound one. Every other
+/// target refuses a binding by name.
+///
+/// # Errors
+///
+/// [`SynthesisFailure::Binding`] when the target serves no binding, or a route of it cannot be
+/// served ([`ess_gen::http::Binding::servable`]); otherwise as [`synthesize_laid_out`].
+pub fn synthesize_bound(
+    ir: &EssIr,
+    target: Target,
+    layout: OutputLayout,
+    http: Option<&ess_gen::http::Binding>,
+) -> Result<Synthesis, SynthesisFailure> {
     if layout != OutputLayout::Workspace && target != Target::Rust {
         return Err(SynthesisFailure::Layout(LayoutRefusal {
             target: target.name(),
             layout: layout.name(),
         }));
     }
-    Ok(emit(ir, target, layout)?)
+    if let Some(binding) = http {
+        if !matches!(target, Target::Rust | Target::Go) {
+            return Err(SynthesisFailure::Binding(BindingRefusal::Target(
+                target.name(),
+            )));
+        }
+        binding
+            .servable()
+            .map_err(|refused| SynthesisFailure::Binding(BindingRefusal::Unservable(refused)))?;
+    }
+    Ok(emit(ir, target, layout, http)?)
 }
 
 /// Both stages, for a target and a layout the target emits.
-fn emit(ir: &EssIr, target: Target, layout: OutputLayout) -> Result<Synthesis, TargetFailure> {
+fn emit(
+    ir: &EssIr,
+    target: Target,
+    layout: OutputLayout,
+    http: Option<&ess_gen::http::Binding>,
+) -> Result<Synthesis, TargetFailure> {
     let mut plan = SynthesisPlan::of(ir);
     if layout != OutputLayout::Workspace {
         plan.scope.layout = Some(layout.name().to_owned());
@@ -433,8 +503,8 @@ fn emit(ir: &EssIr, target: Target, layout: OutputLayout) -> Result<Synthesis, T
     let report = match target {
         Target::Rust => {
             let emitted = match layout {
-                OutputLayout::Workspace => rust::workspace(ir, &plan)?,
-                OutputLayout::Crate => rust::single_crate(ir, &plan)?,
+                OutputLayout::Workspace => rust::workspace_bound(ir, &plan, http)?,
+                OutputLayout::Crate => rust::single_crate_bound(ir, &plan, http)?,
             };
             for artifact in emitted {
                 insert(&mut artifacts, artifact);
@@ -442,7 +512,7 @@ fn emit(ir: &EssIr, target: Target, layout: OutputLayout) -> Result<Synthesis, T
             None
         }
         Target::Go => {
-            let emission = go::workspace(ir, &plan)?;
+            let emission = go::workspace_bound(ir, &plan, http)?;
             for artifact in emission.artifacts {
                 insert(&mut artifacts, artifact);
             }

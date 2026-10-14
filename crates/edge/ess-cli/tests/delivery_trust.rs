@@ -37,6 +37,16 @@ fn workspace() -> PathBuf {
         .canonicalize()
         .unwrap()
 }
+/// Binds a publisher synchronization socket in a short directory of its own. The fixture root
+/// (`<TMPDIR>/ess-delivery-trust-<pid>-<nanos>-<seq>`) leaves too little of the 108-byte
+/// `sun_path` under a long `TMPDIR`: binding there failed with an `InvalidInput` error.
+fn sync_socket(name: &str) -> (tempfile::TempDir, PathBuf, UnixListener) {
+    let dir = tempfile::Builder::new().prefix("s").tempdir().unwrap();
+    let path = dir.path().join(name);
+    let listener = UnixListener::bind(&path).unwrap();
+    listener.set_nonblocking(true).unwrap();
+    (dir, path, listener)
+}
 fn model() -> ess_compiler::EssIr {
     use ess_domain::{
         spec::{RawSpecFile, Specification},
@@ -360,7 +370,7 @@ fn t01_t02_placeholders_and_rehashed_evidence_remain_only_consistency_checked() 
     for release in b.releases.values() {
         for (extension, raw) in [
             ("json", release.to_canonical_json()),
-            ("yaml", serde_yaml::to_string(release).unwrap()),
+            ("yaml", ess_yaml::to_string(release).unwrap()),
         ] {
             f.write(&format!("release.{extension}"), raw);
             let out = f
@@ -383,7 +393,7 @@ fn t01_t02_placeholders_and_rehashed_evidence_remain_only_consistency_checked() 
             assert!(String::from_utf8_lossy(&out.stdout).contains("consistency checked"));
         }
     }
-    let yaml = serde_yaml::to_string(&b).unwrap();
+    let yaml = ess_yaml::to_string(&b).unwrap();
     assert_eq!(ReleaseBundle::from_yaml(&yaml).unwrap(), b);
     f.write("bundle.json", b.to_canonical_json());
     success(
@@ -918,11 +928,10 @@ fn t13_mutating_caller_paths_after_admission_cannot_change_staged_report_or_bund
             "report.json"
         }))
         .unwrap();
-        let listener = UnixListener::bind(f.root.join("admitted.sock")).unwrap();
-        listener.set_nonblocking(true).unwrap();
+        let (_sync_dir, sync, listener) = sync_socket("admitted.sock");
         let mut command = f.qualify(route, false);
         command
-            .env("ESS_RELEASE_SYNC", f.root.join("admitted.sock"))
+            .env("ESS_RELEASE_SYNC", &sync)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         let mut child = command.spawn().unwrap();
@@ -1014,7 +1023,7 @@ fn t17_grouped_flat_streams_and_existing_canonical_outputs_are_identical() {
         let expected = if format == "json" {
             serde_json::to_string_pretty(&f.bundle).unwrap() + "\n"
         } else {
-            serde_yaml::to_string(&f.bundle).unwrap()
+            ess_yaml::to_string(&f.bundle).unwrap()
         };
         assert_eq!(a.stdout, expected.as_bytes());
     }
@@ -1271,7 +1280,7 @@ fn t15_publisher_failure_is_propagated_before_any_later_evidence_or_bundle_call(
 fn t16_action_input_environment_and_generic_check_failure_contract() {
     let raw = fs::read_to_string(workspace().join(".github/actions/release-component/action.yml"))
         .unwrap();
-    let action: Value = serde_yaml::from_str(&raw).unwrap();
+    let action: Value = ess_yaml::from_str(&raw).unwrap();
     for name in ["spec-path", "conformance-report"] {
         assert_eq!(action["inputs"][name]["required"], true);
     }
@@ -1898,7 +1907,7 @@ fn adversary2_coherent_wrong_model_bundle_refuses_qualification_after_plain_cons
         let canonical = bundle.to_canonical_json();
         assert_ne!(bundle.digest(), f.bundle.digest());
         assert_eq!(
-            ReleaseBundle::from_yaml(&serde_yaml::to_string(&bundle).unwrap()).unwrap(),
+            ReleaseBundle::from_yaml(&ess_yaml::to_string(&bundle).unwrap()).unwrap(),
             bundle
         );
         f.write("bundle.json", &canonical);
@@ -2054,11 +2063,10 @@ fn adversary2_post_admission_model_and_deployment_replacement_keeps_owned_contex
         } else {
             fs::read(f.root.join("report.json")).unwrap()
         };
-        let listener = UnixListener::bind(f.root.join("context.sock")).unwrap();
-        listener.set_nonblocking(true).unwrap();
+        let (_sync_dir, sync, listener) = sync_socket("context.sock");
         let mut command = f.qualify(route, false);
         command
-            .env("ESS_RELEASE_SYNC", f.root.join("context.sock"))
+            .env("ESS_RELEASE_SYNC", &sync)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         let started = std::time::SystemTime::now();

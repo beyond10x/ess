@@ -54,6 +54,14 @@ pub(super) fn query(
         .map_err(|_| unsupported())?,
     );
     let mut rows = project(ir, view, select(ir, view, store, &parameters)?)?;
+    // `absent:` (ess/25, beyond10x/ess#533): the filter is the identity comparison alone, so no
+    // row selected is no stored row carrying the requested identity, and the read answers the
+    // declared default row.
+    if rows.is_empty() {
+        if let Some(absent) = &view.absent {
+            rows.push(default_row(ir, view, absent, &request.params)?);
+        }
+    }
     rows.sort_by(|left, right| rank(ir, view, left, right));
     let total = rows.len();
     if let Some(paging) = &view.paging {
@@ -89,6 +97,35 @@ pub(super) fn query(
     }
     Ok(result)
 }
+/// The row a view declaring `absent:` answers for an identity no row carries: the requested value
+/// in the identity field, each literal of the default row typed by its field, and nothing in every
+/// other field, which `ess-domain` holds to be `Optional`.
+fn default_row(
+    ir: &EssIr,
+    view: &ResolvedView,
+    absent: &ess_compiler::ir::ResolvedAbsent,
+    params: &BTreeMap<String, Node>,
+) -> Result<ViewRow, TargetError> {
+    let identity = &ir.entity(&view.source).identity.name;
+    let requested = params.get(&absent.param).ok_or_else(unsupported)?;
+    let mut row = BTreeMap::new();
+    for field in &view.fields {
+        let value = if &field.name == identity {
+            requested.clone()
+        } else if let Some(text) = absent.row.get(&field.name) {
+            super::execute::literal(ir, &field.type_ref, text).map_err(|_| unsupported())?
+        } else if field.type_ref.is_optional() {
+            Node::Null
+        } else {
+            return Err(unsupported());
+        };
+        crate::input::validate_typed_value(ir, &field.type_ref, &value)
+            .map_err(|_| unsupported())?;
+        row.insert(field.name.clone(), value);
+    }
+    Ok(row)
+}
+
 /// Every source row the filter admits, each with the measures whose condition (`where:`,
 /// beyond10x/ess#363) it satisfies. Each measure reads its own subset of the row's group; an
 /// unknown filter or condition makes the whole observation undetermined — never a partial row,

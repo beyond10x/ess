@@ -401,6 +401,8 @@ fn reads_other_rows(command: &ResolvedCommand) -> bool {
             | ResolvedPayloadValue::Increment { .. }
             | ResolvedPayloadValue::InputOrGenerated { .. }
             | ResolvedPayloadValue::CallerAttribute { .. }
+            | ResolvedPayloadValue::ChangedField { .. }
+            | ResolvedPayloadValue::ChangedState { .. }
             | ResolvedPayloadValue::ChangedCount => false,
         }
     }

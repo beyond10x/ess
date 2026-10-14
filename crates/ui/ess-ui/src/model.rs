@@ -8,9 +8,9 @@
 
 use std::collections::BTreeMap;
 
+use ess_yaml::{Mapping, Value};
 use serde::de::Error as _;
 use serde::{Deserialize, Deserializer};
-use serde_yaml::{Mapping, Value};
 
 /// The members of the composite union, in the order the schema lists them.
 pub const COMPOSITE_KINDS: &[&str] = &[
@@ -960,8 +960,7 @@ fn node_live(frame: Mapping, body: &Body) -> Result<Option<Live>, String> {
     let Some(value) = frame.into_iter().next().map(|(_, value)| value) else {
         return Ok(None);
     };
-    let mut live: Live =
-        serde_yaml::from_value(value).map_err(|error| format!("`live`: {error}"))?;
+    let mut live: Live = ess_yaml::from_value(value).map_err(|error| format!("`live`: {error}"))?;
     let Some(reads) = body.live_reads() else {
         return Err(
             "`live` applies a channel's events to the node's own `reads`, and this node reads \
@@ -2867,5 +2866,5 @@ fn split(mapping: Mapping, keys: &[&str]) -> (Mapping, Mapping) {
 }
 
 fn from_mapping<T: serde::de::DeserializeOwned>(mapping: Mapping) -> Result<T, String> {
-    serde_yaml::from_value(Value::Mapping(mapping)).map_err(|error| error.to_string())
+    ess_yaml::from_value(Value::Mapping(mapping)).map_err(|error| error.to_string())
 }

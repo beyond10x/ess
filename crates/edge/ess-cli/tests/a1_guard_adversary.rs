@@ -7,7 +7,7 @@
 
 use std::{fs, path::Path, process::Command};
 
-use serde_yaml::Value;
+use ess_yaml::Value;
 
 const MODEL: &str = r#"
 format: ess/1
@@ -108,7 +108,7 @@ views:
 "#;
 
 fn model() -> Value {
-    serde_yaml::from_str(MODEL).expect("the inlined model is YAML")
+    ess_yaml::from_str(MODEL).expect("the inlined model is YAML")
 }
 
 fn named<'a>(list: &'a mut Value, key: &str, name: &str) -> &'a mut Value {
@@ -131,7 +131,7 @@ fn push_seq(target: &mut Value, key: &str, item: &str) {
         .get_mut(key)
         .and_then(Value::as_sequence_mut)
         .unwrap_or_else(|| panic!("no sequence `{key}`"))
-        .push(serde_yaml::from_str(item).expect("an item"));
+        .push(ess_yaml::from_str(item).expect("an item"));
 }
 
 fn with_input(mut model: Value, field: &str) -> Value {
@@ -141,7 +141,7 @@ fn with_input(mut model: Value, field: &str) -> Value {
 
 /// The model with `when` (a YAML fragment) on outcome `placed` of `PlaceOrder`.
 fn with_when(mut model: Value, when: &str) -> Value {
-    let when: Value = serde_yaml::from_str(when).expect("the guard is YAML");
+    let when: Value = ess_yaml::from_str(when).expect("the guard is YAML");
     named(place_order(&mut model), "outcomes", "placed")
         .as_mapping_mut()
         .expect("an outcome is a mapping")
@@ -157,7 +157,7 @@ struct Run {
 fn ess(args: &[&str], document: &Value, extra: &[&Path]) -> Run {
     let directory = tempfile::tempdir().expect("a temporary directory");
     let path = directory.path().join("model.yaml");
-    fs::write(&path, serde_yaml::to_string(document).expect("serialize")).expect("write");
+    fs::write(&path, ess_yaml::to_string(document).expect("serialize")).expect("write");
     let mut command = Command::new(env!("CARGO_BIN_EXE_ess"));
     command.args(args).arg("--path").arg(&path);
     for arg in extra {
@@ -184,7 +184,7 @@ fn synthesize(document: &Value) -> (Run, Option<serde_json::Value>) {
     let out = out_dir.path().join("suite.json");
     let directory = tempfile::tempdir().expect("a temporary directory");
     let path = directory.path().join("model.yaml");
-    fs::write(&path, serde_yaml::to_string(document).expect("serialize")).expect("write");
+    fs::write(&path, ess_yaml::to_string(document).expect("serialize")).expect("write");
     let output = Command::new(env!("CARGO_BIN_EXE_ess"))
         .args([
             "verify",

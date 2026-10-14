@@ -7,7 +7,7 @@
 //! call it, and the React runtime mirrors it (`ess-ui-react/tests/choice_value.rs`).
 
 use ess_ui::{Body, Choice, Composite, Document};
-use serde_yaml::Value;
+use ess_yaml::Value;
 
 const DOCUMENT: &str = r"
 format: ess-ui/1
@@ -65,7 +65,7 @@ fn choice_at<'a>(document: &'a Document, section: &str) -> &'a Choice {
 }
 
 fn row(yaml: &str) -> Value {
-    serde_yaml::from_str(yaml).expect("the row parses")
+    ess_yaml::from_str(yaml).expect("the row parses")
 }
 
 /// The standalone choice with `value` and `label` replaced by `yaml` (one line, or nothing).

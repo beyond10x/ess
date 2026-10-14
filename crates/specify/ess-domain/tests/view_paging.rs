@@ -254,9 +254,9 @@ fn a_paged_view_round_trips_through_yaml() {
         &paged("{page: page, size: size, first_page: 1, total: true}"),
     ));
     let view = spec.views().values().next().expect("declared").clone();
-    let written = serde_yaml::to_string(&view).expect("serializes");
+    let written = ess_yaml::to_string(&view).expect("serializes");
     assert!(written.contains("paging:"), "{written}");
-    let read: ess_domain::view::RawViewSpec = serde_yaml::from_str(&written).expect("parses");
+    let read: ess_domain::view::RawViewSpec = ess_yaml::from_str(&written).expect("parses");
     let back = ess_domain::view::ViewSpec::try_from(read).expect("valid");
     assert_eq!(back.paging, view.paging);
 }
@@ -269,3 +269,11 @@ fn an_unknown_key_in_paging_is_refused() {
         "`cursor` is not a paging key"
     );
 }
+
+/// A view's answer for an identity no row carries (`absent:`, ess/25, beyond10x/ess#533).
+#[path = "view_paging/absent_answer.rs"]
+mod absent_answer;
+
+/// Adversary pass 1 for the absent-row view (beyond10x/ess#533).
+#[path = "view_paging/adversary_m5_pass1.rs"]
+mod adversary_m5_pass1;

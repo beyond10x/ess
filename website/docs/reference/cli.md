@@ -546,9 +546,9 @@ ess specify compose [OPTIONS] --path <PATH> --service <KEY=PATH>
 
 | Argument | Value | Required | Default | Description |
 |---|---|---|---|---|
-| `--path` | `<PATH>` | yes |  | An `ess-composition/1`, `/2` or `/3` JSON or YAML document |
+| `--path` | `<PATH>` | yes |  | An `ess-composition/1` to `/4` JSON or YAML document |
 | `--service` | `<KEY=PATH>`… | yes |  | A compiled ESS source, written `service-key=path`. Repeat for every import |
-| `--out` | `<OUT>` | no |  | Where to write canonical composition IR; its format echoes the input's (`/1`–`/3`) |
+| `--out` | `<OUT>` | no |  | Where to write canonical composition IR; its format echoes the input's (`/1`–`/4`) |
 | `--client-plan-out` | `<CLIENT_PLAN_OUT>` | no |  | Where to write canonical `ess-client-plan/1` |
 | `--client-rust-out` | `<CLIENT_RUST_OUT>` | no |  | Root for the generated dependency-free Rust composition client |
 | `--ownership-root` | `<OWNERSHIP_ROOT>` | no |  | One enclosing ownership anchor for every composition output |
@@ -872,6 +872,8 @@ ess generate synthesize [OPTIONS]
 | `--layout` | `<LAYOUT>` | no | `workspace` | How the `rust` target lays its output out: a workspace of crates, or one crate at `--out` with its HTTP surface behind a `server` Cargo feature. Other targets refuse `crate`. One of `workspace`, `crate`. |
 | `--out` | `<OUT>` | no |  |  |
 | `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
+| `--http` | `<HTTP>` | no |  | An `ess-http/1` document binding commands and views to methods, paths and answers; only with `--target rust` or `go`. Compiled as `ess specify http compile` compiles it, and refused when a route has no path or claims `/openapi.json` or `/docs` |
+| `--refines` | `<REFINES>` | no |  | The `ess-http/1` binding the `--http` document refines, whose bytes its `refines:` digest pins |
 
 #### `ess generate project buildkit`
 
@@ -1552,7 +1554,7 @@ emit-swap replaces an outcome's only event with another declared event of exactl
 
 Exit 0: no baseline scenario failed or ended error, at least one mutant ran and was not equivalent, every scored mutant was killed or equivalent, none is inconclusive or unwitnessed, and no selected in-scope site is unavailable. Exit 1: the specification did not load, or at least one mutant survived. Exit 3: a baseline scenario failed or ended error (ESS-MUTATE-001), the baseline executed nothing (nothing scored), the classes found no site (ESS-MUTATE-003), or no mutant survived and at least one was unwitnessed or inconclusive, a selected in-scope site was unavailable, or none ran that was not equivalent. Exit 2: the `--known-failing` declaration was refused. Known failures are listed first in the text and never count as a pass: the audit makes no conformance claim.
 
-For an implementation of your own, split the audit in two. `--emit DIR` writes the baseline suite to `DIR/baseline/suite.json`, every mutant's suite to `DIR/<mutant-id>/suite.json` and a manifest, and runs nothing (exit 0, or 3 on ESS-MUTATE-003). Run your runner over each suite and write its conformance report to `report.json` beside it. `--collect DIR` scores those reports with the exit statuses above; a missing report makes its mutant inconclusive. `--emit` writes an ess-mutation-manifest/3, or /4 where it holds a sets-drop, precedence-swap or emit-swap mutant or an unavailable site, or names a component, and /5 where a precedence-swap mutant's two branches give an identical answer; `--collect` also reads the /2 and /1 manifests earlier releases wrote.
+For an implementation of your own, split the audit in two. `--emit DIR` writes the baseline suite to `DIR/baseline/suite.json`, every mutant's suite to `DIR/<mutant-id>/suite.json` and a manifest, and runs nothing (exit 0, or 3 on ESS-MUTATE-003). Run your runner over each suite and write its conformance report to `report.json` beside it. `--collect DIR` scores those reports with the exit statuses above; a missing report makes its mutant inconclusive. `--emit` writes an ess-mutation-manifest/3, or /4 where it holds a sets-drop, precedence-swap or emit-swap mutant or an unavailable site, or names a component, /5 where a precedence-swap mutant's two branches give an identical answer, and /6 where branches answered before both take their overlap; `--collect` also reads the /2 and /1 manifests earlier releases wrote.
 
 For a repository that implements one component, `--emit --component NAME` writes the component's suites, as `synthesize --component` writes them, and marks out of scope every mutant whose site belongs to another component (a command that component handles, a view it owns, a transition its commands perform): it has no suite, and `--collect` lists it in an ess-mutation-report/4 naming the component rather than scoring it. A survivor on the component's own site is scored and counted. `--collect --component NAME` refuses an emission made for another component or for none. `--target` takes no `--component`: the built-in targets implement whole systems.
 
@@ -1568,7 +1570,7 @@ ess verify conform mutate [OPTIONS] <--target <TARGET>|--emit <EMIT>|--collect <
 | `--emit` | `<EMIT>` | no |  | Write the baseline's and every mutant's suite, and a manifest, into this new or empty directory; run nothing |
 | `--collect` | `<COLLECT>` | no |  | Score the `report.json` a runner wrote beside each suite of an emitted directory |
 | `--component` | `<COMPONENT>` | no |  | With `--emit`, scope every suite to this declared component; with `--collect`, require the emission to have been scoped to it |
-| `--report-out` | `<REPORT_OUT>` | no |  | Where to write the `ess-mutation-report/3` document (`/4` for a component, a declaration or unavailable sites, `/5` where a mutant's two branches answer alike) |
+| `--report-out` | `<REPORT_OUT>` | no |  | Where to write the `ess-mutation-report/3` document (`/4` for a component, a declaration or unavailable sites, `/5` where a mutant's two branches answer alike, `/6` where earlier branches take their overlap) |
 | `--known-failing` | `<KNOWN_FAILING>` | no |  | An `ess-known-failures/1` declaration of baseline scenarios the target is known to fail. They are excluded from scoring rather than refused, and each mutant is scored on the scenarios the baseline passed: a declared scenario, or one the baseline's suite does not hold, never kills. Every failure it does not name still refuses with ESS-MUTATE-001. With `--target` it binds the running `ess` executable's SHA-256 as the build; `--emit` copies it into the emission and binds it there (ess-mutation-manifest/4); `--collect` uses only the declaration the emission bound, and refuses any other. A refused declaration exits 2 |
 | `--scenarios` | `<SCENARIOS>` | no |  | The `ess-scenario/1` documents to run beside the synthesized scenarios, read and refused as `run --scenarios` reads them. Requires `--target interpreted`: each runs against the interpreter of the specification for the baseline and against the interpreter of each mutant, which it kills by failing there |
 | `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |

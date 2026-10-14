@@ -388,7 +388,7 @@ fn adv_a_non_ascii_fold_literal_is_tried_in_its_unicode_case_to_refute_unicode_f
         .get(&QualifiedName::new("demo.orders.Place").unwrap())
         .unwrap();
     let guard = Predicate::from_node(
-        &serde_yaml::from_str("{source: {equals_ignore_case: \"café\"}}").unwrap(),
+        &ess_yaml::from_str("{source: {equals_ignore_case: \"café\"}}").unwrap(),
     )
     .unwrap();
     let tried: Vec<String> = candidates(&ir, command, &[&guard], Distinction::PLAIN)

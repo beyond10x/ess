@@ -62,8 +62,8 @@ impl ComponentSpec {
     }
 
     /// Reads a strict YAML component descriptor.
-    pub fn from_yaml(text: &str) -> Result<Self, serde_yaml::Error> {
-        serde_yaml::from_str(text)
+    pub fn from_yaml(text: &str) -> Result<Self, ess_yaml::Error> {
+        ess_yaml::from_str(text)
     }
 }
 
@@ -295,8 +295,8 @@ impl ReleaseBundle {
     }
 
     /// Reads a strict YAML release bundle.
-    pub fn from_yaml(text: &str) -> Result<Self, serde_yaml::Error> {
-        serde_yaml::from_str(text)
+    pub fn from_yaml(text: &str) -> Result<Self, ess_yaml::Error> {
+        ess_yaml::from_str(text)
     }
 
     /// Canonical JSON with a trailing newline.

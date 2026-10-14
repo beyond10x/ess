@@ -6,6 +6,10 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.60.0](#a-composition-states-which-component-plays-anothers-role-and-which-command-implements-or-gates-it) | A composition states which component plays another's role, and which command implements or gates it | capability | notable |
+| [0.60.0](#commands-and-views-bind-to-http-routes-and-mutation-testing-covers-more-of-a-model) | Commands and views bind to HTTP routes, and mutation testing covers more of a model | capability | notable |
+| [0.60.0](#http-bindings-declare-encodings-statuses-headers-and-redirects-and-synthesis-writes-rust-and-go-servers) | HTTP bindings declare encodings, statuses, headers and redirects, and synthesis writes Rust and Go servers | capability | significant |
+| [0.60.0](#source-format-ess25-selects-an-upserts-update-by-the-stored-row-and-adds-per-row-events-and-default-view-rows) | Source format ess/25 selects an upsert's update by the stored row and adds per-row events and default view rows | capability | significant |
 | [0.59.0](#an-authored-act-states-the-caller-its-command-is-sent-as-and-synthesis-fixes-two-guard-cases) | An authored act states the caller its command is sent as, and synthesis fixes two guard cases | capability | notable |
 | [0.58.0](#a-struct-or-a-command-response-may-ignore-undeclared-fields-and-generation-verify-diff-and-runners-follow) | A struct or a command response may ignore undeclared fields, and generation, verify diff and runners follow | capability | notable |
 | [0.57.0](#cli-bindings-may-omit-globals-verify-diff-flags-caller-breaking-changes-runners-check-constrained-responses) | CLI bindings may omit globals, verify diff flags caller-breaking changes, runners check constrained responses | capability | notable |
@@ -63,6 +67,32 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.60.0 — 2026-10-14
+
+### A composition states which component plays another's role, and which command implements or gates it
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.60.0)
+
+`ess-composition/4` adds `roles:`: one imported component plays another's, and each local command `implements` or `gates` a contract command, checked for input drift by `ess specify compose` ([#525](https://github.com/beyond10x/ess/issues/525)).
+
+### Commands and views bind to HTTP routes, and mutation testing covers more of a model
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.60.0)
+
+`ess-http/1` binds commands and views to HTTP routes, projected into OpenAPI by `--http` ([#493](https://github.com/beyond10x/ess/issues/493)). `mutate` covers `when_subject:`/`when_related:` guards and authored scenarios ([#515](https://github.com/beyond10x/ess/issues/515)). Go synthesis builds when bounded contexts reference each other in a loop.
+
+### HTTP bindings declare encodings, statuses, headers and redirects, and synthesis writes Rust and Go servers
+
+capability · significant impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.60.0)
+
+An `ess-http/1` route declares its request encoding, each outcome's status, body, headers and redirect, and the standard refusals. `--http` projects them into OpenAPI, and `ess generate synthesize --target rust` or `go` writes a server that serves the binding ([#493](https://github.com/beyond10x/ess/issues/493)).
+
+### Source format ess/25 selects an upsert's update by the stored row and adds per-row events and default view rows
+
+capability · significant impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.60.0)
+
+`ess/25` lets a create-or-update command pick its update with `when_subject:` ([#530](https://github.com/beyond10x/ess/issues/530)), publish an event per changed row, answer an `external:` refusal before the row is read, compare `trimmed:` text, and give a view an `absent:` row. `ess-diff/19` classifies the view change.
 
 ## 0.59.0 — 2026-10-11
 

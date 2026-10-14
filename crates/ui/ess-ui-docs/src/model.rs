@@ -3,7 +3,7 @@
 
 use std::collections::BTreeSet;
 
-use serde_yaml::{Mapping, Value};
+use ess_yaml::{Mapping, Value};
 
 /// One chapter.
 pub(crate) struct Group<'a> {

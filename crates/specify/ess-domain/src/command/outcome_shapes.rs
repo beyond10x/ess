@@ -297,7 +297,7 @@ fn validate_existence_pair(command: &CommandSpec) -> ValidationErrors {
         .iter()
         .filter(|outcome| creates_unknown(outcome))
     {
-        if !command.outcomes.iter().any(names_existing) {
+        if !command.outcomes.iter().any(addresses_existing) {
             // Reported by `validate_command` as an unreachable branch.
             continue;
         }
@@ -440,6 +440,19 @@ pub(crate) fn names_existing(outcome: &Outcome) -> bool {
     })
 }
 
+/// `true` when `outcome` addresses an existing instance the caller names in its input, changing it
+/// or not: [`names_existing`], or a `preserves:` branch reading `instance:` from input
+/// (beyond10x/ess#535). A read-only command reads the row its input names, so an identity no row
+/// carries reaches it as surely as it reaches an update; this is where an `unknown_instance:`
+/// branch is reachable. The create-or-update pairing stays on [`names_existing`].
+fn addresses_existing(outcome: &Outcome) -> bool {
+    names_existing(outcome)
+        || outcome.subject.as_ref().is_some_and(|subject| {
+            subject.effect == Effect::Preserves
+                && subject.surface() == InstanceSurface::CommandInput
+        })
+}
+
 /// At most one `unknown_instance:` branch per command, and only where an unknown identity can
 /// arrive.
 pub(super) fn validate_command(command: &CommandSpec) -> ValidationErrors {
@@ -465,20 +478,20 @@ pub(super) fn validate_command(command: &CommandSpec) -> ValidationErrors {
         );
     }
     if let Some(first) = marked.first() {
-        if !command.outcomes.iter().any(names_existing) {
+        if !command.outcomes.iter().any(addresses_existing) {
             errors.push(
                 ValidationError::at(
                     command.site().key("outcomes").named(first.name.as_str()),
                     ValidationCode::UnreachableBranch,
                     format!(
                         "outcome `{}` answers an identity no record carries, and no branch of \
-                         `{}` acts on an instance its input names, so no such identity reaches it",
+                         `{}` addresses an instance its input names, so no such identity reaches it",
                         first.name, command.name
                     ),
                 )
                 .with_hint(
-                    "declare it on a command whose `moves:`, `updates:` or `deletes:` branch \
-                     reads `instance:` from input",
+                    "declare it on a command whose `moves:`, `updates:`, `deletes:` or \
+                     `preserves:` branch reads `instance:` from input",
                 ),
             );
         }

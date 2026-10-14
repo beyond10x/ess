@@ -33,7 +33,7 @@ sha2 = "0.11"
 # workspace is YAML — so the authoring surface reads the format the model documents are already in
 # rather than asking an author to hand-write the canonical JSON a suite is stored as. It is a reader
 # only: what this crate *writes* is still `serde_json`, for the reason `to_canonical_json` gives.
-serde_yaml.workspace = true
+ess-yaml.workspace = true
 
 [lints]
 workspace = true

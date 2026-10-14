@@ -408,14 +408,14 @@ pub fn admit_rendered(text: &str, namespace: &Text) -> Admitted<Vec<RenderedObje
         ));
     }
     let mut rendered: Vec<RenderedObject> = Vec::new();
-    for document in serde_yaml::Deserializer::from_str(text) {
-        let value = serde_yaml::Value::deserialize(document)
+    for document in ess_yaml::Deserializer::from_str(text) {
+        let value = ess_yaml::Value::deserialize(document)
             .map_err(|error| preparation(format!("a rendered document is not YAML: {error}")))?;
         if value.is_null() {
             continue;
         }
         let json: serde_json::Value =
-            serde_yaml::from_value(serde_yaml::to_value(&value).map_err(|error| {
+            ess_yaml::from_value(ess_yaml::to_value(&value).map_err(|error| {
                 preparation(format!("a rendered document is not encodable: {error}"))
             })?)
             .map_err(|error| {

@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/http-servers-0.60.0
+repository: ess
+publishedAt: 2026-10-14T00:00:00Z
+title: HTTP bindings declare encodings, statuses, headers and redirects, and synthesis writes Rust and Go servers
+summary: >-
+  An `ess-http/1` route declares its request encoding, each outcome's status, body, headers and
+  redirect, and the standard refusals. `--http` projects them into OpenAPI, and
+  `ess generate synthesize --target rust` or `go` writes a server that serves the binding
+  ([#493](https://github.com/beyond10x/ess/issues/493)).
+kind: capability
+impact: significant
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.60.0
+  version: 0.60.0
+journeys: [specify, operate-services]
+affectedSurfaces: [ess/docs]

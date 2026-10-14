@@ -569,7 +569,7 @@ fn below_ess_22_an_affect_s_related_mapping_keeps_its_struct_meaning() {
     // Deserialised directly, the reader knows no format and recognises the shape; assembly reads
     // it back as the nested mapping wherever it stands, an `affects:` entry included.
     let raw: RawSpecFile =
-        serde_yaml::from_str(AFFECTED).unwrap_or_else(|error| panic!("deserialised: {error}"));
+        ess_yaml::from_str(AFFECTED).unwrap_or_else(|error| panic!("deserialised: {error}"));
     let direct = Specification::assemble([(Source::new("model.yaml"), raw)])
         .unwrap_or_else(|errors| panic!("validates:\n{}", listed(&errors)));
     for spec in [&parsed, &direct] {

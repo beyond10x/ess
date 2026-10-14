@@ -1,0 +1,89 @@
+# The fixture the `ess-http/1` header, challenge and redirect tests bind (`tests/headers.rs`): a
+# command read behind a bearer token whose refusal carries an error description, and an approval
+# that redirects to a URI from its input, with a state it returns only when given one.
+format: ess/22
+system: catalog
+version: v1
+domain: catalog.auth
+types:
+  - {name: catalog.auth.ItemId, kind: newtype, of: String}
+  - {name: catalog.auth.ReturnUri, kind: newtype, of: String}
+  - {name: catalog.auth.Count, kind: newtype, of: Integer}
+  - name: catalog.auth.Grant
+    kind: struct
+    fields:
+      - {name: scope, type: String}
+entities:
+  - name: catalog.auth.Item
+    identity: {name: item_id, type: catalog.auth.ItemId}
+    fields:
+      - {name: title, type: String}
+    lifecycle: {initial: Listed, states: [Listed], terminal: [Listed], transitions: []}
+errors:
+  - name: catalog.auth.TokenRefused
+    naming: {wire: invalid_token}
+    fields:
+      - {name: description, type: String, naming: {wire: error_description}}
+      - {name: retry_after, type: Optional<Integer>}
+      - {name: grant, type: catalog.auth.Grant}
+  - name: catalog.auth.AccessDenied
+    naming: {wire: access_denied}
+  # An error that declares a field named `wire`, which `error.wire` would shadow.
+  - name: catalog.auth.Wired
+    fields:
+      - {name: wire, type: String}
+commands:
+  - name: catalog.auth.ReadPrivateItem
+    input:
+      - {name: item_id, type: catalog.auth.ItemId}
+    response:
+      - {name: item_id, type: catalog.auth.ItemId}
+    outcomes:
+      - name: token-refused
+        error: catalog.auth.TokenRefused
+      - name: read
+        when: item_id == item_id
+        returns: true
+        emits: [catalog.auth.ItemRead]
+        payload:
+          catalog.auth.ItemRead: {item_id: input.item_id}
+  - name: catalog.auth.ApproveOrder
+    input:
+      - {name: return_to, type: catalog.auth.ReturnUri}
+      - {name: state, type: Optional<String>}
+      - {name: client, type: String}
+      - {name: count, type: catalog.auth.Count}
+      - {name: maybe_uri, type: Optional<catalog.auth.ReturnUri>}
+      - {name: scopes, type: List<String>}
+    response:
+      - {name: code, type: String}
+    outcomes:
+      - name: denied
+        when: client == client
+        error: catalog.auth.AccessDenied
+      - name: wired
+        when: count < 0
+        error: catalog.auth.Wired
+      - name: approved
+        when: count >= 0
+        returns: true
+        emits: [catalog.auth.Approved]
+        payload:
+          catalog.auth.Approved: {client: input.client}
+      - name: noted
+        emits: [catalog.auth.Approved]
+        payload:
+          catalog.auth.Approved: {client: input.client}
+events:
+  - name: catalog.auth.ItemRead
+    fields:
+      - {name: item_id, type: catalog.auth.ItemId}
+  - name: catalog.auth.Approved
+    fields:
+      - {name: client, type: String}
+components:
+  - component: auth-service
+    reached_by: network
+    owns: {domains: [catalog.auth]}
+    accepts: {commands: [catalog.auth.ApproveOrder, catalog.auth.ReadPrivateItem]}
+    publishes: {events: [catalog.auth.Approved, catalog.auth.ItemRead]}

@@ -698,7 +698,7 @@ impl fmt::Display for ConstructRef {
 
 /// Where a construct was written, when the producer knows.
 ///
-/// Nothing supplies one yet: `serde_yaml` discards positions for a semantic error, so the compiler
+/// Nothing supplies one yet: `ess-yaml` discards positions for a semantic error, so the compiler
 /// still finds the line by searching the source text. The type exists because the first producer
 /// that can supply a position needs no change to the bridge that consumes it.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

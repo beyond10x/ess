@@ -28,10 +28,16 @@
 //! a route is built from — the domain's wire name and the construct's — are both declared, and the
 //! `commands`/`views` segment between them is what stops a path from reading as a resource.
 
-use ess_compiler::ir::{
-    CommandHandle, EssIr, ResolvedComponent, ResolvedCondition, ResolvedOutcome, ViewHandle,
-};
+use ess_compiler::ir::{CommandHandle, EssIr, ResolvedComponent, ResolvedCondition, ViewHandle};
 use ess_domain::component::Reach;
+
+// The status of each declared outcome lives in `ess-http`, which checks a binding against it
+// (`ESS-HTTP-025`); every item is re-exported here, so the document and the servers keep reading it
+// from this module.
+pub use ess_http::status::{
+    answers_with_response, outcome_status, status, ANSWERED, CONFLICT, DIRECT_ANSWER_FORMAT,
+    FORBIDDEN, NOT_FOUND, NO_INPUT, REFUSED, TAKEN, UPSTREAM,
+};
 
 /// Where the served component publishes the contract it answers.
 ///
@@ -44,59 +50,37 @@ pub const OPENAPI: &str = "/openapi.json";
 /// Where it publishes the prose the same model produced.
 pub const DOCS: &str = "/docs";
 
-/// The branch was taken; its events reach consumers elsewhere.
-pub const TAKEN: &str = "202";
+/// The two paths a served surface answers about itself, which no bound route may match
+/// ([`Binding::servable`]).
+pub const RESERVED: [&str; 2] = [OPENAPI, DOCS];
+
+/// Whether a request for the concrete `path` would match a route whose template is `segments`: as
+/// many segments, each literal equal and each variable taking whatever is there. The overlap rule
+/// of `ESS-HTTP-011`, with one side a path rather than a template.
+pub fn template_matches(segments: &[ess_http::Segment], path: &str) -> bool {
+    let Some(rest) = path.strip_prefix('/') else {
+        return false;
+    };
+    let given: Vec<&str> = if rest.is_empty() {
+        Vec::new()
+    } else {
+        rest.split('/').collect()
+    };
+    given.len() == segments.len()
+        && segments
+            .iter()
+            .zip(given)
+            .all(|(segment, text)| match segment {
+                ess_http::Segment::Literal(literal) => literal == text,
+                ess_http::Segment::Variable(_) => true,
+            })
+}
 
 /// The projection was read.
 ///
 /// The one `2xx` here that is not a `202`: a `GET` on a view returns the rows, so the response
 /// *is* the answer rather than a receipt for a branch that was taken.
 pub const READ: &str = "200";
-
-/// The input was understood and refused on domain grounds.
-///
-/// A `422` and not a `400`: `400` is for a request the server could not parse, which is decided by
-/// the schema and would be true of any endpoint. A refusal on domain grounds is a request the
-/// server understood, and a client can act on the difference — one means fix the value, the other
-/// means fix the serialiser.
-pub const REFUSED: &str = "422";
-
-/// Something outside the request refused; the input was acceptable.
-///
-/// A `5xx` because `external` names a branch the input cannot decide. Reporting it as a `4xx` sends
-/// the caller to fix the one thing it cannot fix and tells every retry layer between that retrying
-/// is pointless. `502` rather than `500`, which would claim a fault in this component, or `503`,
-/// which would claim the whole component is unavailable when one provider refused one request.
-pub const UPSTREAM: &str = "502";
-
-/// The input was acceptable and the subject was in a state the command does not act from.
-///
-/// A `409` and not a `422`, and the difference is what a caller does next. `422` says the request
-/// was wrong and resending it unchanged is pointless; `409` says the request was fine and the world
-/// was not — the same visit, admitted before it was signed out, would have been accepted.
-pub const CONFLICT: &str = "409";
-
-/// The request named an identity no record carries, and the command declares that answer
-/// (`unknown_instance:`, ess/15).
-pub const NOT_FOUND: &str = "404";
-
-/// The request carried no input at all, and the command declares that answer (`input_absent:`,
-/// ess/16). A `400` and not a `422`: nothing was there to understand, which is the request the
-/// server could not read rather than one it refused on domain grounds.
-pub const NO_INPUT: &str = "400";
-
-/// The caller is not one the branch admits: its guard compares the authenticated caller with the
-/// input or the record (`caller.<attribute>`, ess/16). A `403` and not a `409` or a `422`: the
-/// request and the record are fine, and the same request from the record's own agent is accepted.
-///
-/// It is also the status of the standard refusal for an actor no grant admits (beyond10x/ess#265,
-/// [`NOT_GRANTED`]). One status for both, because both answer the same question — *this caller
-/// may not do this* — and a client acts on both the same way: send it as someone else. `401`
-/// would claim the credential is missing or wrong, and how a caller proves who it is belongs to
-/// the realization, not to this contract. The two are told apart by the body: a declared branch
-/// carries `outcome` and the declared `error`, the standard refusal carries `refused` and `actor`
-/// and neither of those.
-pub const FORBIDDEN: &str = "403";
 
 /// The `refused` member of the standard refusal for an actor no grant admits (beyond10x/ess#265).
 ///
@@ -173,79 +157,6 @@ pub fn body_required_without(
             .outcomes
             .iter()
             .any(|outcome| outcome.condition == ResolvedCondition::InputAbsent)
-}
-
-/// Which status one declared outcome is.
-///
-/// The whole mapping, in one place, so that "which HTTP status does this refusal get" has exactly
-/// one answer for the document that publishes it and the server that answers it. A server whose
-/// statuses were computed separately would agree on the day it was written.
-pub fn status(outcome: &ResolvedOutcome) -> &'static str {
-    match (&outcome.condition, outcome.error.is_some()) {
-        // First: who sent it decided the refusal, whatever else the guard reads.
-        (_, true) if outcome.decided_by_caller => FORBIDDEN,
-        (ResolvedCondition::External { .. } | ResolvedCondition::ExternalWhen { .. }, true) => {
-            UPSTREAM
-        }
-        // All three are decided by the state the subject is resting in rather than by the
-        // request, so a refusal from one of them is a conflict with that state and not a bad
-        // request: `StateChange` is `SubjectState` with the states derived from the move.
-        (
-            ResolvedCondition::WrongState
-            | ResolvedCondition::SubjectState { .. }
-            | ResolvedCondition::SubjectField { .. }
-            | ResolvedCondition::SubjectPredicate { .. }
-            | ResolvedCondition::StateChange { .. }
-            // And so is one decided by a stored row of another entity (ess/18, `when_related:`).
-            | ResolvedCondition::Related { .. }
-            // And by the rows a selector selects (ess/22, `when_related: {entity, where, …}`).
-            | ResolvedCondition::RelatedSet { .. }
-            // A duplicate of a record that exists conflicts with that record (ess/16).
-            | ResolvedCondition::ExistingInstance,
-            true,
-        ) => CONFLICT,
-        (ResolvedCondition::UnknownInstance, true) => NOT_FOUND,
-        (ResolvedCondition::InputAbsent, true) => NO_INPUT,
-        (ResolvedCondition::When { .. } | ResolvedCondition::Otherwise, true) => REFUSED,
-        // An external branch that emits rather than errors is still a branch that was taken; what
-        // decided it does not change what happened.
-        (_, false) => TAKEN,
-    }
-}
-
-/// The branch was taken and its answer is the command's response (`returns: true`, from
-/// [`DIRECT_ANSWER_FORMAT`]).
-///
-/// A `200` and not a `202`: `202` tells a client the request was queued for later processing, and
-/// a branch that returns its result in the same response was carried out, not queued
-/// (beyond10x/ess#424).
-pub const ANSWERED: &str = "200";
-
-/// The first source format whose `returns: true` outcome is answered [`ANSWERED`], with the
-/// command's declared response under `response` (beyond10x/ess#423, beyond10x/ess#424).
-///
-/// Below it the branch keeps the [`TAKEN`] status and the body it was published with, so a client
-/// of an `ess/17` to `ess/21` contract keeps the answer it was told about.
-pub const DIRECT_ANSWER_FORMAT: u32 = 22;
-
-/// Whether `outcome` answers its caller with the command's response, under [`ANSWERED`].
-///
-/// The one answer for the document that declares the body and the servers that write it.
-pub fn answers_with_response(ir: &EssIr, outcome: &ResolvedOutcome) -> bool {
-    outcome.returns && outcome.error.is_none() && ir.format().major() >= DIRECT_ANSWER_FORMAT
-}
-
-/// Which status one declared outcome of `ir` is answered with: [`status`], except that a branch
-/// that [answers with the response](answers_with_response) is [`ANSWERED`].
-///
-/// Every surface that writes or declares a command's status reads this, so the document and the
-/// served Rust and Go applications cannot disagree about it.
-pub fn outcome_status(ir: &EssIr, outcome: &ResolvedOutcome) -> &'static str {
-    if answers_with_response(ir, outcome) {
-        ANSWERED
-    } else {
-        status(outcome)
-    }
 }
 
 /// The caller attributes a command reads (ess/16, beyond10x/ess#168), each once, in name order:
@@ -476,6 +387,41 @@ impl Binding {
         &self.0
     }
 
+    /// Every route a served surface cannot answer, with its operation, in route order: one whose
+    /// template a request for [`OPENAPI`] or [`DOCS`] would match. Each server answers those two
+    /// paths about itself (`docs/design/http-presentation-binding.md`, "What generated artifacts
+    /// change (stage 1)"), so a route claiming either is refused at synthesis rather than shadowed
+    /// or shadowing. `ess specify http validate` accepts such a route: the document is valid, and
+    /// only the server cannot honour it.
+    ///
+    /// # Errors
+    ///
+    /// [`Unprojectable`] naming each such route, by [`Reason::Reserved`].
+    pub fn servable(&self) -> Result<(), Unprojectable> {
+        let refused: Vec<(ess_http::Operation, Reason)> = self
+            .0
+            .routes()
+            .iter()
+            .filter_map(|route| {
+                let segments = route.segments()?;
+                RESERVED
+                    .into_iter()
+                    .find(|reserved| template_matches(&segments, reserved))
+                    .map(|reserved| (route.operation.clone(), Reason::Reserved(reserved)))
+            })
+            .collect();
+        if refused.is_empty() {
+            Ok(())
+        } else {
+            Err(Unprojectable(refused))
+        }
+    }
+
+    /// The standard refusal `key` the binding answers its own way, if it overrides it.
+    pub fn refusal(&self, key: ess_http::RefusalKey) -> Option<&ess_http::Refusal> {
+        self.0.refusals().get(&key)
+    }
+
     /// The binding's route of `served`, if it declares one.
     pub fn route(&self, served: Served<'_>) -> Option<&ess_http::Route> {
         self.0.route(&served.operation())
@@ -489,6 +435,8 @@ pub enum Reason {
     Open,
     /// It names a method no route is served on.
     Method(ess_http::Method),
+    /// Its template matches this path, which a served surface answers about itself.
+    Reserved(&'static str),
 }
 
 /// The routes of a binding [`Binding::new`] refuses, each with its operation, in route order.
@@ -511,6 +459,11 @@ impl std::fmt::Display for Unprojectable {
                 Reason::Method(method) => write!(
                     formatter,
                     "{operation} is bound to `{method}`, which no route is served on"
+                )?,
+                Reason::Reserved(path) => write!(
+                    formatter,
+                    "{operation} has a path a request for `{path}` would match, and a served \
+                     surface answers `{path}` itself; route it elsewhere"
                 )?,
             }
         }
@@ -678,4 +631,154 @@ fn view_path(ir: &EssIr, handle: &ViewHandle) -> String {
         domain.naming.wire_or(&domain.name),
         view.naming.wire_or(&view.name)
     )
+}
+
+/// How a server reads one scalar off the wire as text — a path segment, a `form` or `query`
+/// value — before the input's decoder reads it as the value it declares
+/// (`docs/design/http-presentation-binding.md`, "What the servers write (k5, k6)").
+///
+/// Target-neutral: the Rust and Go servers read the same table, so a request one refuses the
+/// other refuses too.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Flat {
+    /// `String`, or a newtype of it: any text, the empty text included.
+    String,
+    /// Any other scalar a decoder reads from JSON text — a decimal, an instant, a duration, a
+    /// UUID, base64 bytes, an enum's wire spelling. Empty text is malformed.
+    Text,
+    /// `Integer`: exact decimal text, read as a JSON number; anything else stays text for the
+    /// decoder to refuse by name. Empty text is malformed.
+    Integer,
+    /// `Boolean`: `true` or `false`; anything else stays text for the decoder to refuse by name.
+    /// Empty text is malformed.
+    Boolean,
+}
+
+impl Flat {
+    /// The variant's name, as an emitted table spells it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::String => "String",
+            Self::Text => "Text",
+            Self::Integer => "Integer",
+            Self::Boolean => "Boolean",
+        }
+    }
+}
+
+/// How many values one `form` or `query` key carries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Shape {
+    /// Exactly one: the key given twice is malformed (RFC 6749 §3.1), absent is for the decoder
+    /// to refuse.
+    One,
+    /// At most one: absent is `None`.
+    Optional,
+    /// Any number: the key repeats once per element.
+    List,
+}
+
+impl Shape {
+    /// The variant's name, as an emitted table spells it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::One => "One",
+            Self::Optional => "Optional",
+            Self::List => "List",
+        }
+    }
+}
+
+/// How a value of `type_ref` is read from flat text, if it has a flat spelling: a scalar, an
+/// `Optional` scalar or a `List` of scalars, a scalar being a primitive other than `Json` and
+/// `Binary64`, an enum, or a newtype of a scalar. The same line `ESS-HTTP-021` draws, so every field
+/// a compiled binding carries in a `form` or `query` request has one.
+pub fn flat(ir: &EssIr, type_ref: &ess_compiler::ir::ResolvedTypeRef) -> Option<(Shape, Flat)> {
+    use ess_compiler::ir::ResolvedTypeRef;
+    match type_ref {
+        ResolvedTypeRef::Optional { of } => scalar(ir, of).map(|flat| (Shape::Optional, flat)),
+        ResolvedTypeRef::List { of } => scalar(ir, of).map(|flat| (Shape::List, flat)),
+        _ => scalar(ir, type_ref).map(|flat| (Shape::One, flat)),
+    }
+}
+
+/// How one scalar of `type_ref` is read from flat text; `None` for anything that is not one.
+pub fn scalar(ir: &EssIr, type_ref: &ess_compiler::ir::ResolvedTypeRef) -> Option<Flat> {
+    use ess_compiler::ir::{ResolvedBody, ResolvedTypeRef};
+    use ess_domain::Primitive;
+    match type_ref {
+        ResolvedTypeRef::Primitive { name } => match name {
+            Primitive::String => Some(Flat::String),
+            Primitive::Integer => Some(Flat::Integer),
+            Primitive::Boolean => Some(Flat::Boolean),
+            Primitive::Json | Primitive::Binary64 => None,
+            _ => Some(Flat::Text),
+        },
+        ResolvedTypeRef::Declared { name } => match &ir.named_type(name).body {
+            ResolvedBody::Newtype { of, .. } => scalar(ir, of),
+            ResolvedBody::Enum { .. } => Some(Flat::Text),
+            ResolvedBody::Struct { .. } | ResolvedBody::Union { .. } => None,
+        },
+        ResolvedTypeRef::Optional { .. }
+        | ResolvedTypeRef::List { .. }
+        | ResolvedTypeRef::Map { .. } => None,
+    }
+}
+
+/// The fields a bound route reads: a command's input fields, or a view's parameters.
+fn route_fields<'a>(ir: &'a EssIr, route: &Route<'a>) -> &'a [ess_compiler::ir::ResolvedField] {
+    match route.serves {
+        Served::Command(handle) => &ir.command(handle).input,
+        Served::View(handle) => &ir.view(handle).params,
+    }
+}
+
+/// Each path variable of a bound route, in path order, with the input field or view parameter it
+/// carries. Empty for a derived route, whose path has no variable.
+pub fn path_fields<'a>(
+    ir: &'a EssIr,
+    route: &Route<'a>,
+) -> Vec<(String, &'a ess_compiler::ir::ResolvedField)> {
+    let Some(declared) = route.declared else {
+        return Vec::new();
+    };
+    let fields = route_fields(ir, route);
+    declared
+        .segments()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|segment| match segment {
+            ess_http::Segment::Variable(variable) => {
+                let source = declared.parameters.get(&variable)?;
+                let field = fields.iter().find(|field| field.name == source.field())?;
+                Some((variable, field))
+            }
+            ess_http::Segment::Literal(_) => None,
+        })
+        .collect()
+}
+
+/// The names of the fields a bound route's path carries, which leave its body or query string.
+pub fn carried<'a>(ir: &'a EssIr, route: &Route<'a>) -> std::collections::BTreeSet<&'a str> {
+    path_fields(ir, route)
+        .into_iter()
+        .map(|(_, field)| field.name.as_str())
+        .collect()
+}
+
+/// A bound route's request: its encoding and what an unknown parameter does. A derived route, and
+/// a bound one that states none, read ESS's own `json` body.
+pub fn request(route: &Route<'_>) -> ess_http::Request {
+    route
+        .declared
+        .and_then(|declared| declared.request)
+        .unwrap_or_default()
+}
+
+/// The answer a bound route lists for `outcome`, if it lists one; an outcome it does not list
+/// keeps [`outcome_status`] and the envelope.
+pub fn listed<'a>(route: &Route<'a>, outcome: &str) -> Option<&'a ess_http::Outcome> {
+    route
+        .declared
+        .and_then(|declared| declared.outcomes.get(outcome))
 }

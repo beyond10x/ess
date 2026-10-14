@@ -1646,8 +1646,7 @@ mod tests {
     use super::*;
 
     fn component(yaml: &str) -> ComponentSpec {
-        let raw: RawComponentSpec =
-            serde_yaml::from_str(yaml).expect("the document is well formed");
+        let raw: RawComponentSpec = ess_yaml::from_str(yaml).expect("the document is well formed");
         ComponentSpec::try_from(raw).expect("a component is valid on its own")
     }
 
@@ -1835,7 +1834,7 @@ reached_by: network
 
     #[test]
     fn a_reach_the_model_does_not_declare_is_refused_by_the_word() {
-        let refused: Result<RawComponentSpec, _> = serde_yaml::from_str(
+        let refused: Result<RawComponentSpec, _> = ess_yaml::from_str(
             "\
 component: invoice-service
 owns:
@@ -2224,7 +2223,7 @@ accepts:
     #[test]
     fn a_component_that_owns_nothing_accepts_nothing_and_publishes_nothing_is_refused() {
         let raw: RawComponentSpec =
-            serde_yaml::from_str("component: invoice-service\n").expect("well formed");
+            ess_yaml::from_str("component: invoice-service\n").expect("well formed");
         let errors = ComponentSpec::try_from(raw).expect_err("a component that does nothing");
         assert_eq!(errors.len(), 1, "{errors}");
         assert_eq!(errors.as_slice()[0].code, ValidationCode::EmptyDeclaration);
@@ -2233,7 +2232,7 @@ accepts:
 
     #[test]
     fn a_component_name_spelt_like_a_type_is_refused() {
-        let raw: RawComponentSpec = serde_yaml::from_str(
+        let raw: RawComponentSpec = ess_yaml::from_str(
             "\
 component: InvoiceService
 owns:
@@ -2271,7 +2270,7 @@ owns:
 
     #[test]
     fn a_key_the_model_does_not_know_is_refused() {
-        let error = serde_yaml::from_str::<RawComponentSpec>(
+        let error = ess_yaml::from_str::<RawComponentSpec>(
             "\
 component: invoice-service
 own:
@@ -2291,8 +2290,7 @@ own:
 
     /// A written `cli:` block, refused or not, without `try_from`'s `expect`.
     fn command_line(yaml: &str) -> Result<ComponentSpec, ValidationErrors> {
-        let raw: RawComponentSpec =
-            serde_yaml::from_str(yaml).expect("the document is well formed");
+        let raw: RawComponentSpec = ess_yaml::from_str(yaml).expect("the document is well formed");
         ComponentSpec::try_from(raw)
     }
 

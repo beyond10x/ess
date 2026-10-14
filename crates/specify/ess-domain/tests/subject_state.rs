@@ -2,7 +2,7 @@
 use ess_domain::command::{Outcome, RawOutcome};
 
 fn outcome(text: &str) -> Result<Outcome, String> {
-    let raw: RawOutcome = serde_yaml::from_str(text).map_err(|error| error.to_string())?;
+    let raw: RawOutcome = ess_yaml::from_str(text).map_err(|error| error.to_string())?;
     raw.try_into()
         .map_err(|error: ess_primitives::error::ValidationErrors| error.to_string())
 }
@@ -11,7 +11,7 @@ fn outcome(text: &str) -> Result<Outcome, String> {
 fn subject_state_round_trips_with_an_independent_input_guard() {
     let source = "name: preserved\nwhen: incoming == Ringing\nwhen_subject_state: Bridged\nupdates: calls.core.Call\ninstance: call_id\n";
     let parsed = outcome(source).unwrap();
-    let encoded = serde_yaml::to_string(&parsed).unwrap();
+    let encoded = ess_yaml::to_string(&parsed).unwrap();
     assert!(encoded.contains("when_subject_state: Bridged"));
     assert!(encoded.contains("incoming == Ringing"));
     assert_eq!(outcome(&encoded).unwrap(), parsed);

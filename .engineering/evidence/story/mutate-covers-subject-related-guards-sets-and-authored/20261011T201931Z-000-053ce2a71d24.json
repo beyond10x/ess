@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-11T20:19:31Z",
+  "actor": "human:timo",
+  "artifact": "story:mutate-covers-subject-related-guards-sets-and-authored",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "https://github.com/beyond10x/ess/actions/runs/38167938704"
+  }
+}

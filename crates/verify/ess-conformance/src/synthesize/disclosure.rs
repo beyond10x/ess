@@ -525,6 +525,10 @@ fn insert(
     id: ScenarioId,
     mut scenario: ConformanceScenario,
 ) {
+    // The cell is built from the model itself, outside the caller readings that mark every other
+    // scenario: a command it sends is sent as the suite's caller, whose attributes the outcome
+    // may read (`{caller: <attribute>}`, beyond10x/ess#550).
+    super::caller::send_as_first(ir, &mut scenario);
     if let Err(reason) = crate::one_time_response::produce::attach(ir, &mut scenario) {
         synthesis.refusals.push(refusal(&id, &reason));
         return;

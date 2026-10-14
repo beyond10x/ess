@@ -1,8 +1,7 @@
 # Prepares a verified release artifact for every version tag. The reusable gate, WASM correctness
 # checks and native packages run concurrently at one resolved commit; preparation requires all
-# three. The gate is skipped only when a successful `Gate` check-run already covers those exact bytes: on the
-# commit itself, or on the head of the pull request it merged when that head has its tree (the
-# `prior-gate` step states the whole condition).
+# three. The gate always runs, in full: this run is the release gate, and no earlier `Gate` stands
+# in for it, because a pull request's `Gate` runs the narrowed feature-off build.
 # A trusted coordinator publishes the artifact with the organization bot after this workflow.
 # Atlas observes that published release and documentation bundles asynchronously.
 #
@@ -42,15 +41,11 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
-      # Read-only: the prior-gate step asks for `Gate` check-runs and for the pull request a
-      # merge commit closed.
-      checks: read
-      pull-requests: read
+      # Read-only: the prebuilt step asks for `package.yml` runs and their artifacts.
       actions: read
     outputs:
       tag: ${{ steps.release.outputs.tag }}
       commit: ${{ steps.release.outputs.commit }}
-      gate-passed: ${{ steps.prior-gate.outputs.passed }}
       prebuilt-run: ${{ steps.prebuilt.outputs.run }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -79,78 +74,6 @@ jobs:
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "commit=$commit" >> "$GITHUB_OUTPUT"
-
-      # The gate has usually run on these exact bytes already, so a green `Gate` is reused instead
-      # of paid for twice. It counts when either holds:
-      #
-      # 1. the tagged commit carries one — normally the `main` push run;
-      # 2. the tagged commit is the merge commit of exactly one merged pull request, the commit's
-      #    tree is that pull request's head's tree, `main` before the merge (the commit's first
-      #    parent) is in the head's history, and the head carries one.
-      #
-      # The tree equality is what makes 2 honest: the tested bytes are the tagged bytes. The
-      # ancestry is what makes the head's `Gate` a test of them — a `pull_request` run tests the
-      # head merged into the base of its day, which is the head's own tree only when that base was
-      # already in the head. Only the newest `Gate` GitHub Actions itself recorded counts, and only
-      # as a completed success. Anything else — none, a failure, one still running, an API or
-      # fetch error — runs the gate below as before. `ci_lanes.rs` runs this script against both.
-      - name: Look for a green Gate on the tagged bytes
-        id: prior-gate
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-          COMMIT: ${{ steps.release.outputs.commit }}
-        run: |
-          set -euo pipefail
-          newest_gate() {
-            gh api "repos/$REPOSITORY/commits/$1/check-runs?check_name=Gate&filter=all&per_page=100" --jq '
-              [.check_runs[] | select(.name == "Gate" and .app.slug == "github-actions")]
-              | sort_by(.started_at) | last
-              | if . == null then "none" else "\(.status)/\(.conclusion) \(.html_url)" end'
-          }
-          decide() {
-            echo "$2"
-            echo "passed=$1" >> "$GITHUB_OUTPUT"
-            exit 0
-          }
-
-          latest=$(newest_gate "$COMMIT") || latest="unavailable"
-          echo "newest Gate check-run on $COMMIT: $latest"
-          if [ "${latest%% *}" = "completed/success" ]; then
-            decide true "reusing the Gate on the tagged commit"
-          fi
-
-          pull=$(gh api "repos/$REPOSITORY/commits/$COMMIT/pulls" --jq '
-              [.[] | select(.merged_at != null and .merge_commit_sha == env.COMMIT)]
-              | if length == 1 then "pr \(.[0].number) \(.[0].head.sha)" else "count \(length)" end') \
-            || decide false "running the gate: the pull requests of $COMMIT are unavailable"
-          case "$pull" in
-            "pr "*) ;;
-            *) decide false "running the gate: $COMMIT is the merge commit of no single merged pull request ($pull)" ;;
-          esac
-          read -r _ number head <<< "$pull"
-          if [[ ! "$head" =~ ^[0-9a-f]{40}$ ]]; then
-            decide false "running the gate: #$number names no head commit ($head)"
-          fi
-          git fetch --no-tags --quiet origin "$head" \
-            || decide false "running the gate: head $head of #$number cannot be fetched"
-          merge_tree=$(git rev-parse --verify --quiet "$COMMIT^{tree}") \
-            || decide false "running the gate: $COMMIT has no tree"
-          head_tree=$(git rev-parse --verify --quiet "$head^{tree}") \
-            || decide false "running the gate: head $head of #$number has no tree"
-          if [ "$merge_tree" != "$head_tree" ]; then
-            decide false "running the gate: $COMMIT's tree $merge_tree is not head $head's tree $head_tree"
-          fi
-          if ! git merge-base --is-ancestor "$COMMIT^1" "$head"; then
-            decide false "running the gate: main before $COMMIT is not in head $head's history, so no run of #$number tested this tree"
-          fi
-          head_gate=$(newest_gate "$head") || head_gate="unavailable"
-          echo "newest Gate check-run on head $head of #$number: $head_gate"
-          if [ "${head_gate%% *}" = "completed/success" ]; then
-            decide true "reusing the Gate on head $head of #$number, whose tree is the tagged tree"
-          fi
-          decide false "running the gate: head $head of #$number has no green Gate"
 
       - name: Look for the archives a queue run built from the tagged commit
         id: prebuilt
@@ -191,7 +114,6 @@ jobs:
 
   gate:
     needs: resolve
-    if: ${{ needs.resolve.outputs.gate-passed != 'true' }}
     uses: ./.github/workflows/ci.yml
     with:
       checkout-ref: ${{ needs.resolve.outputs.commit }}
@@ -245,7 +167,7 @@ jobs:
   release:
     name: Prepare the release artifact
     needs: [resolve, gate, wasm, package]
-    if: ${{ always() && needs.resolve.result == 'success' && (needs.gate.result == 'success' || (needs.gate.result == 'skipped' && needs.resolve.outputs.gate-passed == 'true')) && needs.wasm.result == 'success' && (needs.package.result == 'success' || (needs.package.result == 'skipped' && needs.resolve.outputs.prebuilt-run != '')) }}
+    if: ${{ always() && needs.resolve.result == 'success' && needs.gate.result == 'success' && needs.wasm.result == 'success' && (needs.package.result == 'success' || (needs.package.result == 'skipped' && needs.resolve.outputs.prebuilt-run != '')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

@@ -82,7 +82,10 @@ pub(crate) const INPUT_PATH: &str = "a value read through an input path (`input.
 pub(crate) const STRUCT: &str = "a struct of sources";
 pub(crate) const RELATED_VALUE: &str = "`{related: …}`";
 pub(crate) const CASE_FOLD: &str = "`equals_ignore_case`, `in_ignore_case`";
+pub(crate) const TRIMMED: &str = "`trimmed:`";
 pub(crate) const UNKNOWN_REFUSAL: &str = "an `unknown_instance:` refusal";
+pub(crate) const BEFORE_ROW_EXTERNAL: &str =
+    "an external refusal answered before the row, `before_row: true`";
 pub(crate) const DELETES: &str = "`deletes:`";
 pub(crate) const INTO: &str = "a creation `into:` a state";
 pub(crate) const ACCEPTS_NOTHING: &str = "`accepts: nothing`";
@@ -124,6 +127,8 @@ pub(crate) fn value_expression(value: &ess_compiler::ir::ResolvedPayloadValue) -
         | Source::Literal { .. }
         | Source::Cleared
         | Source::CallerAttribute { .. }
+        | Source::ChangedField { .. }
+        | Source::ChangedState { .. }
         | Source::ChangedCount => LoweringCode::ValueExpressionUnsupported.construct(),
     }
 }
@@ -312,12 +317,19 @@ pub const CONSTRUCTS: &[Construct] = &[
         &["tests/outcome_shapes_adversary.rs::adversary_an_unknown_instance_branch_is_refused_by_name"],
     ),
     refused(
+        BEFORE_ROW_EXTERNAL,
+        LoweringCode::OutcomeShapeUnsupported,
+        Needs::HostValue("the host's own decision, answered before it loads the row"),
+        &["tests/refusal_beside_state.rs::before_row_external_is_refused_by_name"],
+    ),
+    refused(
         EXISTENCE,
         LoweringCode::ExistenceSelectionUnsupported,
         Needs::HostValue("the host's own exists answer, selecting the declared branch"),
         &[
             "tests/upsert_by_existence.rs::create_or_update_is_refused_by_name",
             "tests/upsert_by_existence.rs::create_or_refuse_is_refused_by_name",
+            "tests/upsert_by_existence.rs::create_or_update_selected_by_stored_fields_is_refused_by_name",
         ],
     ),
     refused(
@@ -498,6 +510,12 @@ pub const CONSTRUCTS: &[Construct] = &[
         ],
     ),
     refused(
+        TRIMMED,
+        LoweringCode::TrimmedTextUnsupported,
+        Needs::EntityCore("a condition that removes surrounding ASCII whitespace"),
+        &["tests/lowering.rs::trimmed_guard_is_refused_by_name"],
+    ),
+    refused(
         DELETES,
         LoweringCode::OutcomeShapeUnsupported,
         Needs::EntityCore("removal of an instance"),
@@ -632,6 +650,7 @@ impl LoweringCode {
         Self::TextLengthUnsupported,
         Self::ValueExpressionUnsupported,
         Self::CaseFoldUnsupported,
+        Self::TrimmedTextUnsupported,
         Self::OutcomeShapeUnsupported,
         Self::InputAbsentUnsupported,
         Self::CurrentTimeUnsupported,
@@ -817,6 +836,11 @@ impl LoweringCode {
                 "CaseFoldUnsupported",
                 CASE_FOLD,
                 "A guard compares text without ASCII case.",
+            ),
+            Self::TrimmedTextUnsupported => (
+                "TrimmedTextUnsupported",
+                TRIMMED,
+                "A guard compares text with its surrounding ASCII whitespace removed.",
             ),
             Self::OutcomeShapeUnsupported => (
                 "OutcomeShapeUnsupported",

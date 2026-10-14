@@ -1,0 +1,30 @@
+domain: wire.server
+
+types:
+  - name: wire.server.Channel
+    kind: newtype
+    of: String
+
+actors:
+  - name: wire.server.Client
+    may:
+      - wire.server.Subscribe
+
+commands:
+  - name: wire.server.Subscribe
+    input:
+      - name: channel
+        type: wire.server.Channel
+    outcomes:
+      - name: subscribed
+        emits:
+          - wire.server.Subscribed
+        payload:
+          wire.server.Subscribed:
+            channel: input.channel
+
+events:
+  - name: wire.server.Subscribed
+    fields:
+      - name: channel
+        type: wire.server.Channel

@@ -710,7 +710,7 @@ pub mod codes {
 
 /// Where a declaration is written, when that can be answered honestly.
 ///
-/// `serde_yaml` gives a line for a *syntax* error and nothing for a semantic one, so the line has to
+/// `ess-yaml` gives a line for a *syntax* error and nothing for a semantic one, so the line has to
 /// be recovered by finding the declaration's own text in the file it was read from. That is a
 /// heuristic, and [`crate::source`]'s honesty rule is enforced mechanically here: a needle is
 /// located **only when it occurs exactly once across every file searched**. Two occurrences means
@@ -2308,6 +2308,7 @@ impl<'a> Resolver<'a> {
                 accepts_nothing: outcome.accepts_nothing,
                 returns: outcome.returns,
                 compensates: outcome.compensates,
+                before_row: outcome.before_row,
                 one_time_response: outcome.one_time_response.clone(),
                 summary: outcome.summary.clone(),
                 refs: outcome.refs.clone(),
@@ -2377,10 +2378,28 @@ impl<'a> Resolver<'a> {
                             .clone(),
                     },
                 };
+                // Each per-row event is among the outcome's `emits`, whose walk refuses one that
+                // does not resolve (ess/25, beyond10x/ess#531).
+                let events = set
+                    .events
+                    .iter()
+                    .map(|entry| crate::ir::ResolvedPerRowEvent {
+                        event: EventHandle::new(entry.event.clone()),
+                        when_state: entry
+                            .when_state
+                            .iter()
+                            .flat_map(ess_domain::entity::HeldStates::iter)
+                            .map(|state| state.as_str().to_owned())
+                            .collect::<BTreeSet<_>>()
+                            .into_iter()
+                            .collect(),
+                    })
+                    .collect();
                 Some(crate::ir::ResolvedSetSubject {
                     entity,
                     effect,
                     filter: set.filter.clone(),
+                    events,
                 })
             }
         };
@@ -2636,6 +2655,12 @@ impl<'a> Resolver<'a> {
             .subject
             .as_ref()
             .and_then(|declared| entities.get(&declared.entity));
+        // The rows a set outcome changed, which `{changed: …}` reads (ess/25, beyond10x/ess#531).
+        let changed = outcome
+            .set_effects
+            .instances
+            .as_ref()
+            .and_then(|set| entities.get(&set.entity));
         let mut complete = true;
         let mut resolved = Vec::new();
         for (event_name, fields) in &outcome.payload {
@@ -2671,6 +2696,12 @@ impl<'a> Resolver<'a> {
                 let Some(source) = fields.get(&target.name) else {
                     continue;
                 };
+                // A whole field read from the changed row reads the set subject's entity.
+                let reads = if matches!(source, PayloadSource::ChangedField { .. }) {
+                    changed
+                } else {
+                    subject
+                };
                 match self.payload_field(
                     command,
                     outcome,
@@ -2678,7 +2709,7 @@ impl<'a> Resolver<'a> {
                     target,
                     source,
                     input,
-                    subject,
+                    reads,
                 ) {
                     Some(field) => determined.push(field),
                     None => complete = false,
@@ -3028,6 +3059,51 @@ impl<'a> Resolver<'a> {
             }
             PayloadSource::RelatedSelection { .. } => {
                 self.selection_field(command, outcome, block, (target, source))?
+            }
+            // A whole event field read from the changed row (ess/25, beyond10x/ess#531): `subject`
+            // is the set subject's entity there. `ess-domain` refused it anywhere else; the refusal
+            // here is the backstop for a specification built field by field.
+            PayloadSource::ChangedField { field } => {
+                let read = subject.and_then(|entity| {
+                    if field == ess_domain::entity::EntitySpec::STATE {
+                        let state = entity.state_field().type_ref;
+                        return Some((
+                            ResolvedPayloadValue::ChangedState {
+                                type_ref: state.clone(),
+                            },
+                            state,
+                        ));
+                    }
+                    std::iter::once(&entity.identity)
+                        .chain(&entity.fields)
+                        .find(|held| &held.name == field)
+                        .map(|held| {
+                            (
+                                ResolvedPayloadValue::ChangedField {
+                                    field: held.name.clone(),
+                                    type_ref: held.type_ref.clone(),
+                                },
+                                held.type_ref.clone(),
+                            )
+                        })
+                });
+                let Some(read) = read else {
+                    self.refuse_payload(
+                        command,
+                        outcome,
+                        block,
+                        Some((&target.name, source)),
+                        codes::COMMAND_UNDECLARED_REFERENCE,
+                        format!(
+                            "outcome `{}` of `{}` reads `{{changed: {field}}}`, which no row it \
+                             changes holds",
+                            outcome.name, command.name
+                        ),
+                        Vec::new(),
+                    );
+                    return None;
+                };
+                read
             }
             _ => unreachable!("every other source is resolved by `payload_field`"),
         };
@@ -3842,6 +3918,54 @@ impl<'a> Resolver<'a> {
         Some(machine.clone())
     }
 
+    /// A view's `absent:` (ess/25), with the parameter its identity is read from. `ess-domain`
+    /// admits the key only where the filter is the identity comparison, so the parameter is found
+    /// whenever the specification validated.
+    ///
+    /// Each literal is held in its canonical text: an `Integer` or `Decimal` by value, so `1.5` and
+    /// `'1.50'` over a `Decimal` are one default row and `ess verify diff` reports no change
+    /// between them (adversary pass 1 of beyond10x/ess#533). `projected` is the view's projected
+    /// fields, `None` where they did not resolve.
+    fn absent(
+        &self,
+        view: &ViewSpec,
+        projected: Option<&[Field]>,
+    ) -> Option<crate::ir::ResolvedAbsent> {
+        let absent = view.absent.as_ref()?;
+        let identity = &self.spec.entities().get(&view.source)?.identity.name;
+        let numeric = |field: &str| {
+            projected
+                .and_then(|fields| fields.iter().find(|declared| declared.name == field))
+                .is_some_and(|declared| {
+                    matches!(
+                        self.registry.newtype_layers(&declared.type_ref).terminal,
+                        TypeRef::Primitive(
+                            ess_domain::types::Primitive::Integer
+                                | ess_domain::types::Primitive::Decimal
+                        )
+                    )
+                })
+        };
+        let row = absent
+            .row
+            .iter()
+            .map(|(field, literal)| {
+                let canonical = numeric(field)
+                    .then(|| ess_primitives::facts::Number::decimal_literal(&literal.value))
+                    .flatten()
+                    .map(ess_primitives::facts::Number::exact_text);
+                (
+                    field.clone(),
+                    canonical.unwrap_or_else(|| literal.value.clone()),
+                )
+            })
+            .collect();
+        Some(crate::ir::ResolvedAbsent {
+            param: view.identity_parameter(identity)?.to_owned(),
+            row,
+        })
+    }
+
     /// Every view, with its source entity and its projected fields resolved.
     ///
     /// The consistency and the assertion style come across unchanged, and the style is the domain
@@ -3910,6 +4034,7 @@ impl<'a> Resolver<'a> {
             let aggregation = view.aggregation.as_ref().map(|aggregation| {
                 self.aggregation(aggregation, entities.get(source.name()), &view)
             });
+            let absent = self.absent(&view, declared_fields.as_deref());
             resolved.insert(
                 view.name.clone(),
                 ResolvedView {
@@ -3923,6 +4048,7 @@ impl<'a> Resolver<'a> {
                     aggregation,
                     order_by: view.order_by,
                     paging: view.paging,
+                    absent,
                     consistency: view.consistency,
                     assertion_style: view.consistency.assertion_style(),
                     naming: view.naming,
@@ -5438,7 +5564,8 @@ fn payload_constant_source(
         | PayloadSource::Struct { .. }
         | PayloadSource::RelatedField { .. }
         | PayloadSource::RelatedSelection { .. }
-        | PayloadSource::CallerAttribute { .. } => return None,
+        | PayloadSource::CallerAttribute { .. }
+        | PayloadSource::ChangedField { .. } => return None,
         PayloadSource::ChangedCount => ResolvedPayloadValue::ChangedCount,
         PayloadSource::Increment { by, .. } => ResolvedPayloadValue::Increment { by: by.clone() },
     };

@@ -486,7 +486,7 @@ fn enum_attribute_reads_agree_with_the_evaluator_in_every_form() {
         };
         for written in [form.to_owned(), negated] {
             let node: ess_primitives::node::Node =
-                serde_yaml::from_str(&written).unwrap_or_else(|error| panic!("{written}: {error}"));
+                ess_yaml::from_str(&written).unwrap_or_else(|error| panic!("{written}: {error}"));
             let original = LexicalPredicate::from_node(&node)
                 .unwrap_or_else(|error| panic!("{written}: {error}"))
                 .literal();

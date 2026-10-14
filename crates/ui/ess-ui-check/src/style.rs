@@ -331,7 +331,7 @@ fn theme_choice(document: &Document, sink: &mut Sink) {
                 }
             }
         }
-        let default = state.default.as_ref().and_then(serde_yaml::Value::as_str);
+        let default = state.default.as_ref().and_then(ess_yaml::Value::as_str);
         if let Some(default) = default.filter(|default| !themes.contains(default)) {
             sink.push(
                 "theme_choice",

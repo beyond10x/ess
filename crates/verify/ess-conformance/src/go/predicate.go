@@ -273,6 +273,8 @@ func (p predicate) String() string {
 			parts = append(parts, fmt.Sprintf("%q", value))
 		}
 		return p.path + " " + p.kind + " [" + strings.Join(parts, ", ") + "]"
+	case "trimmed":
+		return "trimmed(" + p.body.String() + ")"
 	case "forall", "exists":
 		return fmt.Sprintf("%s %s in %s: (%s)", p.kind, p.bind, p.over, p.body)
 	case "distinct":
@@ -827,6 +829,8 @@ func parseOperator(path, key string, raw any, binders []string) (predicate, erro
 			values = append(values, text)
 		}
 		return predicate{kind: key, path: path, values: values}, nil
+	case "trimmed":
+		return parseTrimmed(path, raw, binders)
 	case "exists", "defined":
 		expected, ok := raw.(bool)
 		if !ok {
@@ -841,6 +845,58 @@ func parseOperator(path, key string, raw any, binders []string) (predicate, erro
 		return predicate{kind: "truthy", path: path}, nil
 	}
 	return predicate{}, fmt.Errorf("`%s` carries the operator %q, which this runner does not know", path, key)
+}
+
+// trimmedWhitespace is the ASCII whitespace a `trimmed` operator removes from either end of a text
+// (beyond10x/ess#532, `docs/design/value-expressions.md` § E10): space, tab, LF, VT, FF and CR.
+// Not `strings.TrimSpace`, which also removes Unicode spaces such as U+00A0, which every lane
+// compares as themselves.
+const trimmedWhitespace = " \t\n\v\f\r"
+
+// parseTrimmed reads `trimmed:` as Rust's `Predicate::trimmed` does: a mapping of exactly one text
+// operator over the same fact. `equals` and `in` (and their aliases) read as `any_of` over JSON
+// strings, the wrapped string and case-insensitive operators as they read unwrapped.
+func parseTrimmed(path string, raw any, binders []string) (predicate, error) {
+	shape := fmt.Errorf("`%s: {trimmed: …}` takes a mapping of exactly one text operator: equals, in, equals_ignore_case, in_ignore_case, starts_with, ends_with or contains", path)
+	mapping, ok := raw.(map[string]any)
+	if !ok || len(mapping) != 1 {
+		return predicate{}, shape
+	}
+	for key, operand := range mapping {
+		var inner predicate
+		switch key {
+		case "eq", "equals", "==":
+			text, ok := operand.(string)
+			if !ok {
+				return predicate{}, shape
+			}
+			inner = predicate{kind: "any_of", path: path, values: []Node{text}}
+		case "in", "any_of", "one_of":
+			items, ok := operand.([]any)
+			if !ok {
+				return predicate{}, shape
+			}
+			values := make([]Node, 0, len(items))
+			for _, item := range items {
+				text, ok := item.(string)
+				if !ok {
+					return predicate{}, shape
+				}
+				values = append(values, text)
+			}
+			inner = predicate{kind: "any_of", path: path, values: values}
+		case "starts_with", "ends_with", "contains", "equals_ignore_case", "in_ignore_case":
+			parsed, err := parseOperator(path, key, operand, binders)
+			if err != nil {
+				return predicate{}, err
+			}
+			inner = parsed
+		default:
+			return predicate{}, shape
+		}
+		return predicate{kind: "trimmed", path: path, body: &inner}, nil
+	}
+	return predicate{}, shape
 }
 
 // parseFactOperand reads the explicit fact operand `{fact: <path>}`, the canonical spelling of a
@@ -1208,6 +1264,8 @@ func (p predicate) evaluate(source factSource) truth {
 		return p.textMatch(source)
 	case "equals_ignore_case", "in_ignore_case":
 		return p.foldMatch(source)
+	case "trimmed":
+		return p.body.evaluate(trimmedSource(source, p.path))
 	case "forall", "exists":
 		return p.quantify(source)
 	case "distinct":
@@ -1505,6 +1563,21 @@ func (p predicate) foldMatch(source factSource) truth {
 		}
 	}
 	return truthFalse
+}
+
+// trimmedSource is `source` with the text at `path` trimmed of `trimmedWhitespace` at either end, and
+// every other fact as it was: only the wrapped operator's own fact is trimmed (beyond10x/ess#532).
+func trimmedSource(source factSource, path string) factSource {
+	text, ok := source[path].(string)
+	if !ok {
+		return source
+	}
+	trimmed := make(factSource, len(source))
+	for key, value := range source {
+		trimmed[key] = value
+	}
+	trimmed[path] = strings.Trim(text, trimmedWhitespace)
+	return trimmed
 }
 
 // asciiEqualFold compares two texts byte for byte after mapping `A`–`Z` to `a`–`z`.

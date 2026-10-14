@@ -323,7 +323,8 @@ pub(crate) fn decides_over_value(predicate: &Predicate) -> bool {
         P::TextMatch {
             path: fact, value, ..
         } => path(fact) && value.as_literal().is_some(),
-        P::Forall(_) | P::Exists(_) | P::Distinct(_) | P::Window(_) => false,
+        // Validation admits `trimmed` only in a command guard, never in a newtype rule.
+        P::Forall(_) | P::Exists(_) | P::Distinct(_) | P::Window(_) | P::Trimmed(_) => false,
     }
 }
 
