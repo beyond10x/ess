@@ -121,6 +121,11 @@ fn leaf(ir: &EssIr, type_ref: &ResolvedTypeRef) -> (bool, Leaf) {
     (optional, Leaf::Other)
 }
 
+/// Whether `type_ref` holds an instant: a `Timestamp`, through any newtype or `Optional`.
+pub(super) fn holds_instant(ir: &EssIr, type_ref: &ResolvedTypeRef) -> bool {
+    leaf(ir, type_ref).1 == Leaf::Primitive(Primitive::Timestamp)
+}
+
 /// How one value of a field is chosen at a ladder ordinal (`docs/design/aggregate-views.md`,
 /// "The ladder").
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -952,13 +957,13 @@ const COUNT: &str = "count";
 /// One bound of a window the caller resolved into instants (beyond10x/ess#439): a top-level
 /// ordering of a `Timestamp` field against a `Timestamp` parameter, `started_at >= param.from`.
 #[derive(Debug, Clone)]
-struct Bound {
-    param: String,
-    field: String,
+pub(super) struct Bound {
+    pub(super) param: String,
+    pub(super) field: String,
     /// Whether rows at or after the parameter pass (`>=`, `>`), rather than at or before it.
-    lower: bool,
+    pub(super) lower: bool,
     /// Whether a row at the parameter's instant passes (`>=`, `<=`).
-    inclusive: bool,
+    pub(super) inclusive: bool,
     /// The position of the conjunct it is, among the filter's top-level conjuncts.
     conjunct: usize,
 }
@@ -969,7 +974,7 @@ const WINDOW_FROM: &str = "2020-01-01T10:00:00Z";
 const WINDOW_TO: &str = "2020-01-01T12:00:00Z";
 
 /// `field <op> param.name` with `<op>` an ordering, either way round, as a [`Bound`].
-fn ordering_bound(predicate: &Predicate) -> Option<Bound> {
+pub(super) fn ordering_bound(predicate: &Predicate) -> Option<Bound> {
     let Predicate::Compare {
         left: Operand::Fact(left),
         op,
@@ -1019,15 +1024,30 @@ fn ordering_bound(predicate: &Predicate) -> Option<Bound> {
     })
 }
 
+/// One edge of a window: the parameter sent at it, the field it bounds, and whether a row at it
+/// passes.
+#[derive(Debug, Clone)]
+struct Edge {
+    param: String,
+    field: String,
+    inclusive: bool,
+}
+
+/// One row's instants: the value of each field a window bounds.
+type Instants = Vec<(String, String)>;
+
 /// The instants a window's rows are arranged at, and the value each bound parameter is sent: inside
 /// each edge, outside each edge, and one row inside whose spelling sorts outside
 /// ([`window_rows`]).
+///
+/// The two edges bound one field, `started_at >= param.from, started_at < param.to`, or each its
+/// own, `started_at < param.to, ended_at > param.from` — a period overlapping the window
+/// (beyond10x/ess#568, [`Self::period`]).
 struct Window {
-    field: String,
-    /// The parameter sent at [`WINDOW_FROM`] and whether a row at it passes.
-    lower: Option<(String, bool)>,
-    /// The parameter sent at [`WINDOW_TO`] and whether a row at it passes.
-    upper: Option<(String, bool)>,
+    /// The edge whose parameter is sent at [`WINDOW_FROM`]: rows at or after it pass.
+    lower: Option<Edge>,
+    /// The edge whose parameter is sent at [`WINDOW_TO`]: rows at or before it pass.
+    upper: Option<Edge>,
     /// The view with every bound conjunct taken out of its filter: what a row outside the window
     /// must still hold, so that the bound alone refutes it. `None` where the bounds are the whole
     /// filter.
@@ -1035,38 +1055,39 @@ struct Window {
 }
 
 impl Window {
-    /// One window from its bounds; `Err` names why they make none: two fields, or two bounds on
-    /// one side.
+    /// One window from its bounds; `Err` names why they make none: two bounds on one side.
     fn of(bounds: &[Bound]) -> Result<Option<Self>, String> {
-        let Some(first) = bounds.first() else {
+        if bounds.is_empty() {
             return Ok(None);
-        };
+        }
         let mut window = Self {
-            field: first.field.clone(),
             lower: None,
             upper: None,
             residual: None,
         };
         for bound in bounds {
-            if bound.field != window.field {
-                return Err(format!(
-                    "the parameters `{}` and `{}` bound two fields, `{}` and `{}`; one window is \
-                     arranged per view",
-                    first.param, bound.param, first.field, bound.field
-                ));
-            }
             let side = if bound.lower {
                 &mut window.lower
             } else {
                 &mut window.upper
             };
-            if let Some((other, _)) = side {
+            if let Some(other) = side {
                 return Err(format!(
-                    "the parameters `{other}` and `{}` both bound `{}` from the same side",
-                    bound.param, bound.field
+                    "the parameters `{}` and `{}` both bound {} from the same side",
+                    other.param,
+                    bound.param,
+                    if other.field == bound.field {
+                        format!("`{}`", bound.field)
+                    } else {
+                        format!("`{}` and `{}`", other.field, bound.field)
+                    }
                 ));
             }
-            *side = Some((bound.param.clone(), bound.inclusive));
+            *side = Some(Edge {
+                param: bound.param.clone(),
+                field: bound.field.clone(),
+                inclusive: bound.inclusive,
+            });
         }
         Ok(Some(window))
     }
@@ -1087,6 +1108,24 @@ impl Window {
         Self { residual, ..self }
     }
 
+    /// The fields the window bounds, each once.
+    fn fields(&self) -> BTreeSet<&str> {
+        self.lower
+            .iter()
+            .chain(&self.upper)
+            .map(|edge| edge.field.as_str())
+            .collect()
+    }
+
+    /// The two edges, where each bounds a field of its own: a row is a period, and passes where
+    /// it overlaps the window (beyond10x/ess#568).
+    fn period(&self) -> Option<(&Edge, &Edge)> {
+        match (&self.lower, &self.upper) {
+            (Some(lower), Some(upper)) if lower.field != upper.field => Some((lower, upper)),
+            _ => None,
+        }
+    }
+
     fn at(text: &str) -> ess_primitives::time::Rfc3339Instant {
         ess_primitives::time::Rfc3339Instant::parse_rfc3339(text)
             .unwrap_or_else(|| unreachable!("`{text}` is an instant"))
@@ -1099,78 +1138,167 @@ impl Window {
             .to_rfc3339()
     }
 
-    /// Whether `text` passes the window, read as an instant — or, with `as_text`, as its spelling.
-    fn passes(&self, text: &str, as_text: bool) -> bool {
-        let lower = self.lower.as_ref().is_none_or(|(_, inclusive)| {
-            if as_text {
-                text > WINDOW_FROM || (*inclusive && text == WINDOW_FROM)
-            } else {
-                Self::at(text) > Self::at(WINDOW_FROM)
-                    || (*inclusive && Self::at(text) == Self::at(WINDOW_FROM))
-            }
-        });
-        let upper = self.upper.as_ref().is_none_or(|(_, inclusive)| {
-            if as_text {
-                text < WINDOW_TO || (*inclusive && text == WINDOW_TO)
-            } else {
-                Self::at(text) < Self::at(WINDOW_TO)
-                    || (*inclusive && Self::at(text) == Self::at(WINDOW_TO))
-            }
-        });
-        lower && upper
+    /// Whether `text` passes the lower edge, read as an instant — or, with `as_text`, as its
+    /// spelling.
+    fn passes_lower(inclusive: bool, text: &str, as_text: bool) -> bool {
+        if as_text {
+            text > WINDOW_FROM || (inclusive && text == WINDOW_FROM)
+        } else {
+            Self::at(text) > Self::at(WINDOW_FROM)
+                || (inclusive && Self::at(text) == Self::at(WINDOW_FROM))
+        }
     }
 
-    /// The instants inside the window, each edge's first: at a bound that passes, a second inside
-    /// one that does not; then an hour inside, spelled at an offset under which its text sorts
-    /// outside, so a target comparing spellings counts it out.
-    fn inside(&self) -> Vec<String> {
-        let mut out = Vec::new();
-        if let Some((_, inclusive)) = &self.lower {
-            out.push(if *inclusive {
-                WINDOW_FROM.to_owned()
-            } else {
-                Self::moved(WINDOW_FROM, 1)
-            });
+    /// Whether `text` passes the upper edge, as [`Self::passes_lower`] reads it.
+    fn passes_upper(inclusive: bool, text: &str, as_text: bool) -> bool {
+        if as_text {
+            text < WINDOW_TO || (inclusive && text == WINDOW_TO)
+        } else {
+            Self::at(text) < Self::at(WINDOW_TO)
+                || (inclusive && Self::at(text) == Self::at(WINDOW_TO))
         }
-        if let Some((_, inclusive)) = &self.upper {
-            out.push(if *inclusive {
-                WINDOW_TO.to_owned()
-            } else {
-                Self::moved(WINDOW_TO, -1)
+    }
+
+    /// Whether `text` passes every edge of a window over one field.
+    fn passes(&self, text: &str, as_text: bool) -> bool {
+        self.lower
+            .as_ref()
+            .is_none_or(|edge| Self::passes_lower(edge.inclusive, text, as_text))
+            && self
+                .upper
+                .as_ref()
+                .is_none_or(|edge| Self::passes_upper(edge.inclusive, text, as_text))
+    }
+
+    /// The instant inside the lower edge at it: the edge itself where a row there passes, a second
+    /// after it where none does.
+    fn inside_lower(edge: &Edge) -> String {
+        if edge.inclusive {
+            WINDOW_FROM.to_owned()
+        } else {
+            Self::moved(WINDOW_FROM, 1)
+        }
+    }
+
+    /// The instant inside the upper edge at it, as [`Self::inside_lower`].
+    fn inside_upper(edge: &Edge) -> String {
+        if edge.inclusive {
+            WINDOW_TO.to_owned()
+        } else {
+            Self::moved(WINDOW_TO, -1)
+        }
+    }
+
+    /// The instant outside the lower edge at it: the edge itself where a row there does not pass,
+    /// a second before it where one does.
+    fn outside_lower(edge: &Edge) -> String {
+        if edge.inclusive {
+            Self::moved(WINDOW_FROM, -1)
+        } else {
+            WINDOW_FROM.to_owned()
+        }
+    }
+
+    /// The instant outside the upper edge at it, as [`Self::outside_lower`].
+    fn outside_upper(edge: &Edge) -> String {
+        if edge.inclusive {
+            Self::moved(WINDOW_TO, 1)
+        } else {
+            WINDOW_TO.to_owned()
+        }
+    }
+
+    /// `instant` spelled at an offset under which its text no longer `passes`, or as it is where
+    /// none does.
+    fn spelled(
+        instant: &ess_primitives::time::Rfc3339Instant,
+        passes: impl Fn(&str) -> bool,
+    ) -> String {
+        [-3, 3, -5, 5, -1, 1]
+            .into_iter()
+            .filter_map(|hours: i32| instant.to_rfc3339_at(hours * 60))
+            .find(|text| !passes(text))
+            .unwrap_or_else(|| instant.to_rfc3339())
+    }
+
+    /// An instant `seconds` from `text`.
+    fn from_edge(text: &str, seconds: i64) -> ess_primitives::time::Rfc3339Instant {
+        Self::at(text)
+            .plus_seconds(seconds)
+            .unwrap_or_else(|| unreachable!("an hour from a fixed instant"))
+    }
+
+    /// The instants of each row inside the window, each edge's first.
+    ///
+    /// Over one field: at a bound that passes, a second inside one that does not; then an hour
+    /// inside, spelled at an offset under which its text sorts outside, so a target comparing
+    /// spellings counts it out.
+    ///
+    /// Over a period ([`Self::period`]), the upper-bounded field never after the lower-bounded
+    /// one: a period ending at the lower edge, one starting at the upper edge, one across both, and
+    /// one inside, each end spelled to sort outside its edge.
+    fn inside(&self) -> Vec<Instants> {
+        if let Some((lower, upper)) = self.period() {
+            let before = Self::from_edge(WINDOW_FROM, -3_600).to_rfc3339();
+            let after = Self::from_edge(WINDOW_TO, 3_600).to_rfc3339();
+            let ends = Self::spelled(&Self::from_edge(WINDOW_FROM, 5_400), |text| {
+                Self::passes_lower(lower.inclusive, text, true)
             });
+            let starts = Self::spelled(&Self::from_edge(WINDOW_FROM, 1_800), |text| {
+                Self::passes_upper(upper.inclusive, text, true)
+            });
+            return [
+                (Self::inside_lower(lower), before.clone()),
+                (after.clone(), Self::inside_upper(upper)),
+                (after, before),
+                (ends, starts),
+            ]
+            .into_iter()
+            .map(|(ends, starts)| vec![(lower.field.clone(), ends), (upper.field.clone(), starts)])
+            .collect();
+        }
+        let Some(field) = self.fields().into_iter().next().map(str::to_owned) else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        if let Some(edge) = &self.lower {
+            out.push(Self::inside_lower(edge));
+        }
+        if let Some(edge) = &self.upper {
+            out.push(Self::inside_upper(edge));
         }
         let middle = if self.lower.is_some() {
-            Self::at(WINDOW_FROM).plus_seconds(3_600)
+            Self::from_edge(WINDOW_FROM, 3_600)
         } else {
-            Self::at(WINDOW_TO).plus_seconds(-3_600)
-        }
-        .unwrap_or_else(|| unreachable!("an hour from a fixed instant"));
-        let spelled = [-3, 3, -5, 5, -1, 1]
-            .into_iter()
-            .filter_map(|hours: i32| middle.to_rfc3339_at(hours * 60))
-            .find(|text| !self.passes(text, true))
-            .unwrap_or_else(|| middle.to_rfc3339());
-        out.push(spelled);
-        out
+            Self::from_edge(WINDOW_TO, -3_600)
+        };
+        out.push(Self::spelled(&middle, |text| self.passes(text, true)));
+        out.into_iter()
+            .map(|at| vec![(field.clone(), at)])
+            .collect()
     }
 
-    /// The instants outside the window: at a bound that does not pass, a second outside one that
-    /// does.
-    fn outside(&self) -> Vec<String> {
-        let mut out = Vec::new();
-        if let Some((_, inclusive)) = &self.lower {
-            out.push(if *inclusive {
-                Self::moved(WINDOW_FROM, -1)
-            } else {
-                WINDOW_FROM.to_owned()
-            });
+    /// The instants of each row outside the window: at a bound that does not pass, a second
+    /// outside one that does. Over a period, a period ending at the lower edge and one starting at
+    /// the upper edge, each inside the other edge.
+    fn outside(&self) -> Vec<Instants> {
+        if let Some((lower, upper)) = self.period() {
+            let before = Self::from_edge(WINDOW_FROM, -3_600).to_rfc3339();
+            let after = Self::from_edge(WINDOW_TO, 3_600).to_rfc3339();
+            return [
+                (Self::outside_lower(lower), before),
+                (after, Self::outside_upper(upper)),
+            ]
+            .into_iter()
+            .map(|(ends, starts)| vec![(lower.field.clone(), ends), (upper.field.clone(), starts)])
+            .collect();
         }
-        if let Some((_, inclusive)) = &self.upper {
-            out.push(if *inclusive {
-                Self::moved(WINDOW_TO, 1)
-            } else {
-                WINDOW_TO.to_owned()
-            });
+        let mut out = Vec::new();
+        if let Some(edge) = &self.lower {
+            out.push(vec![(edge.field.clone(), Self::outside_lower(edge))]);
+        }
+        if let Some(edge) = &self.upper {
+            out.push(vec![(edge.field.clone(), Self::outside_upper(edge))]);
         }
         out
     }
@@ -1180,24 +1308,24 @@ impl Window {
         let lower = self
             .lower
             .iter()
-            .map(|(param, _)| (param.clone(), WINDOW_FROM));
+            .map(|edge| (edge.param.clone(), WINDOW_FROM));
         let upper = self
             .upper
             .iter()
-            .map(|(param, _)| (param.clone(), WINDOW_TO));
+            .map(|edge| (edge.param.clone(), WINDOW_TO));
         lower
             .chain(upper)
             .map(|(param, at)| (param, ScenarioValue::literal(Node::Text(at.to_owned()))))
     }
 }
 
-/// Every row's instant in the window's field (beyond10x/ess#439). Admitted rows are inside, the
-/// first of group A at each inside edge and one spelled to sort outside. Group A gains one row per
-/// outside edge, `y1`, `y2`, … ([`Row::window_edge`]): each holds every other conjunct of the filter
-/// and is refuted by the bound alone, so a target that ignores a bound or moves an edge counts it.
-/// The pattern's other refuted rows keep their role: where the filter has conjuncts beside the
-/// window they are refuted by those, inside it; where the window is the whole filter they are
-/// outside it.
+/// Every row's instants in the window's fields (beyond10x/ess#439, beyond10x/ess#568). Admitted
+/// rows are inside, the first of group A at each inside edge and one spelled to sort outside. Group
+/// A gains one row per outside edge, `y1`, `y2`, … ([`Row::window_edge`]): each holds every other
+/// conjunct of the filter and is refuted by the bound alone, so a target that ignores a bound or
+/// moves an edge counts it. The pattern's other refuted rows keep their role: where the filter has
+/// conjuncts beside the window they are refuted by those, inside it; where the window is the whole
+/// filter they are outside it.
 fn window_rows(window: &Window, rows: &mut Vec<Row>) {
     let inside = window.inside();
     let outside = window.outside();
@@ -1211,8 +1339,9 @@ fn window_rows(window: &Window, rows: &mut Vec<Row>) {
             refuted += 1;
             &outside[(refuted - 1) % outside.len()]
         };
-        row.values
-            .insert(window.field.clone(), Node::Text(at.clone()));
+        for (field, text) in at {
+            row.values.insert(field.clone(), Node::Text(text.clone()));
+        }
     }
     let Some(template) = rows.iter().find(|row| row.tuple == 0).cloned() else {
         return;
@@ -1223,8 +1352,9 @@ fn window_rows(window: &Window, rows: &mut Vec<Row>) {
         edge.admitted = false;
         edge.window_edge = true;
         edge.state = None;
-        edge.values
-            .insert(window.field.clone(), Node::Text(at.clone()));
+        for (field, text) in at {
+            edge.values.insert(field.clone(), Node::Text(text.clone()));
+        }
         rows.push(edge);
     }
 }
@@ -1931,22 +2061,24 @@ fn scenario(
             ));
         }
     }
-    // A window's field is arranged at instants, never walked: one an aggregate also reads is not
+    // A window's fields are arranged at instants, never walked: one an aggregate also reads is not
     // arranged here.
-    if let Some(window) = window.as_ref().filter(|window| {
-        aggregation.functions.values().any(|aggregate| {
-            aggregate
-                .input
-                .as_ref()
-                .is_some_and(|input| input.name == window.field)
+    let read = window.as_ref().and_then(|window| {
+        window.fields().into_iter().find(|field| {
+            aggregation.functions.values().any(|aggregate| {
+                aggregate
+                    .input
+                    .as_ref()
+                    .is_some_and(|input| input.name == *field)
+            })
         })
-    }) {
+    });
+    if let Some(field) = read {
         return Err(unwitnessed(
             view,
             format!(
-                "`{}` is bounded by a window and read by an aggregate, which the instants a window \
-                 is arranged at do not witness",
-                window.field
+                "`{field}` is bounded by a window and read by an aggregate, which the instants a \
+                 window is arranged at do not witness"
             ),
         ));
     }
