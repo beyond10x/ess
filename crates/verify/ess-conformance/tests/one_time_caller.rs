@@ -249,3 +249,188 @@ fn a_target_dropping_the_caller_or_disclosing_twice_fails_a_disclosure_scenario(
         "{verdicts:?}"
     );
 }
+
+const TWO_COMMANDS: &str = include_str!("fixtures/one-time-caller/two-commands.yaml");
+const WITH_VIEW: &str = include_str!("fixtures/one-time-caller/with-view.yaml");
+const EXISTING_KEY: &str = include_str!("fixtures/one-time-caller/existing-key.yaml");
+const GUIDE: &str = include_str!("../../../../website/docs/guides/verify/one-time-responses.md");
+const GUIDE_HEADING: &str = "## The disclosure scenarios synthesis adds";
+const RETRY: &str = "keys.api.IssueKey/disclosure/issued/secret/retry/as/actor/keys.api.Admin";
+
+/// Every scenario of `ir`'s suite and its disclosure scenarios, as the runner would count them.
+fn counts(ir: &EssIr) -> (usize, usize) {
+    let suite = ess_conformance::synthesize(ir).suite;
+    let disclosures = suite
+        .scenarios
+        .keys()
+        .filter(|id| matches!(id, ScenarioId::Disclosure { .. }))
+        .count();
+    (suite.scenarios.len(), disclosures)
+}
+
+/// The fences of `language` in `body`, in order.
+fn fences<'a>(body: &'a str, language: &str) -> Vec<&'a str> {
+    body.split(format!("```{language}\n").as_str())
+        .skip(1)
+        .map(|fence| fence.split("```").next().unwrap())
+        .collect()
+}
+
+/// The guide lists the cells synthesis adds for a `one_time_response` field, the refused ones, the
+/// id shape and the order of growth, and its worked counts are the ones synthesis produces for the
+/// three minimal variants (beyond10x/ess#573).
+#[test]
+fn one_time_guide_lists_the_cells() {
+    let marker = format!("\n{GUIDE_HEADING}\n");
+    let body = GUIDE
+        .split(marker.as_str())
+        .nth(1)
+        .unwrap_or_else(|| panic!("the guide has no heading `{GUIDE_HEADING}`"))
+        .split("\n## ")
+        .next()
+        .unwrap();
+    let normalized = body.split_whitespace().collect::<Vec<_>>().join(" ");
+    let missing: Vec<&str> = [
+        "`<command>/disclosure/<outcome>/<field>/<aspect>/as/<actor>`",
+        "`origin`",
+        "`retry`",
+        "`rotation`",
+        "`command/<command>/<outcome>`",
+        "`denied/<command>`",
+        "`read/<view>`",
+        "`as/anonymous`",
+        "`existing_instance:`",
+        "actors × (outcomes + commands + views)",
+        "refused",
+    ]
+    .into_iter()
+    .filter(|phrase| !normalized.contains(phrase))
+    .collect();
+    assert_eq!(
+        missing,
+        Vec::<&str>::new(),
+        "the section does not state these"
+    );
+
+    // The worked model is the one this file's caller tests run, so the variants below extend it.
+    let models = fences(body, "yaml");
+    assert_eq!(models, [WITH_CALLER], "the section fences the worked model");
+    let ir = model(WITH_CALLER);
+    let synthesis = ess_conformance::synthesize(&ir);
+    let built: Vec<String> = synthesis
+        .suite
+        .scenarios
+        .keys()
+        .filter(|id| matches!(id, ScenarioId::Disclosure { .. }))
+        .map(ToString::to_string)
+        .collect();
+    let refused: Vec<String> = synthesis
+        .refusals
+        .iter()
+        .filter_map(|refusal| refusal.scenario.as_ref())
+        .filter(|id| matches!(id, ScenarioId::Disclosure { .. }))
+        .map(ToString::to_string)
+        .collect();
+    for ordinary in synthesis
+        .suite
+        .scenarios
+        .keys()
+        .filter(|id| !matches!(id, ScenarioId::Disclosure { .. }))
+    {
+        let named = format!("`{ordinary}`");
+        assert!(
+            normalized.contains(&named),
+            "the section does not name {named}"
+        );
+    }
+    let listed = fences(body, "text");
+    let [built_listed, refused_listed] = listed.as_slice() else {
+        panic!("the section lists the built and the refused cells: {listed:?}");
+    };
+    assert_eq!(built_listed.lines().collect::<Vec<_>>(), built);
+    assert_eq!(refused_listed.lines().collect::<Vec<_>>(), refused);
+
+    let worked = [
+        ("1 command, 2 actors", WITH_CALLER, (5, 4)),
+        ("2 commands, 3 actors", TWO_COMMANDS, (10, 8)),
+        ("2 commands, 3 actors, 1 view", WITH_VIEW, (11, 9)),
+    ];
+    for (variant, text, expected) in worked {
+        let (scenarios, disclosures) = counts(&model(text));
+        assert_eq!((scenarios, disclosures), expected, "{variant}");
+        let row = format!("| {variant} | {scenarios} | {disclosures} |");
+        assert!(normalized.contains(&row), "the section has no row `{row}`");
+    }
+}
+
+/// A create whose identity the caller supplies, with no declared answer for an identity a row
+/// already carries: the retry cell is refused naming that missing declaration, not a surviving
+/// subject (beyond10x/ess#574).
+#[test]
+fn supplied_identity_retry_names_its_cause() {
+    let synthesis = ess_conformance::synthesize(&model(WITH_CALLER));
+    let retry: ScenarioId = RETRY.parse().unwrap();
+    assert!(!synthesis.suite.scenarios.contains_key(&retry));
+    let causes: Vec<String> = synthesis
+        .refusals
+        .iter()
+        .filter(|refusal| refusal.scenario.as_ref() == Some(&retry))
+        .map(|refusal| refusal.cause.to_string())
+        .collect();
+    let [cause] = causes.as_slice() else {
+        panic!("one refusal names the retry cell: {causes:?}");
+    };
+    assert!(!cause.contains("surviving subject"), "{cause}");
+    for phrase in ["`key_id`", "`keys.api.IssueKey`", "`existing_instance:`"] {
+        assert!(cause.contains(phrase), "{cause} does not name {phrase}");
+    }
+}
+
+/// With an `existing_instance:` refusal declared, the retry is the origin's own invocation sent
+/// again over the row it created, answered by that refusal, and it passes on the interpreted
+/// target (beyond10x/ess#574).
+#[test]
+fn supplied_identity_retry_expects_the_declared_refusal() {
+    let ir = model(EXISTING_KEY);
+    let synthesis = ess_conformance::synthesize(&ir);
+    let retry: ScenarioId = RETRY.parse().unwrap();
+    let scenario = synthesis.suite.scenario(&retry).unwrap_or_else(|| {
+        panic!(
+            "no retry cell: {:#?}",
+            synthesis
+                .refusals
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+        )
+    });
+    let invocations: Vec<_> = scenario
+        .steps
+        .iter()
+        .filter(|step| matches!(step, ScenarioStep::ExecuteCommand { command, .. } if command.to_string() == "keys.api.IssueKey"))
+        .collect();
+    assert_eq!(invocations.len(), 2, "{:#?}", scenario.steps);
+    assert_eq!(invocations[0], invocations[1], "the retry is not identical");
+    let branches: Vec<_> = scenario
+        .steps
+        .iter()
+        .filter_map(|step| match step {
+            ScenarioStep::ExpectOutcome { outcome } => Some(outcome.outcome.to_string()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(branches, ["issued", "already-issued"]);
+    ess_conformance::AdmittedSuite::from_suite(&synthesis.suite).unwrap();
+    let report = run(&ir, ir.clone());
+    let statuses = statuses(&report);
+    assert!(
+        statuses
+            .iter()
+            .any(|(id, status)| id == RETRY && *status == Status::Passed),
+        "{statuses:?}"
+    );
+    assert!(
+        statuses.iter().all(|(_, status)| *status == Status::Passed),
+        "{statuses:?}"
+    );
+}
