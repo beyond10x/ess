@@ -382,17 +382,44 @@ fn typed_writes_preserve_falsy_inputs_and_apply_fallback_generation_and_clear() 
 
 #[test]
 fn constrained_literal_violation_cannot_publish_partial_set_writes() {
-    let source = WRITES
-        .replace(
-            "prefix: 'n-'",
-            "prefix: 'n-', invariants: ['value != \"n-forbidden\"']",
-        )
-        .replace("else: n-fallback", "else: n-forbidden");
-    let ir = model(&source);
+    let constrained = WRITES.replace(
+        "prefix: 'n-'",
+        "prefix: 'n-', invariants: ['value != \"n-forbidden\"']",
+    );
+    // Since 0.60.0 validation holds a literal in `sets:` to its newtype's invariants, so a
+    // violating `else: n-forbidden` is refused by name before the interpreter can see it.
+    let literal = constrained.replace("else: n-fallback", "else: n-forbidden");
+    let errors = Specification::assemble([(
+        Source::new("sets.yaml"),
+        RawSpecFile::parse(&literal).unwrap(),
+    )])
+    .unwrap_err();
+    assert_eq!(
+        errors
+            .as_slice()
+            .iter()
+            .map(|error| (error.code, error.location.as_str()))
+            .collect::<Vec<_>>(),
+        [(
+            ess_primitives::error::ValidationCode::TypeMismatch,
+            "commands.demo.desk.Patch.outcomes.patched.sets.note"
+        )]
+    );
+    // The violating value still reaches the write through the command's input: the outcome is
+    // refused as a whole and no row of the matched set is written.
+    let ir = model(&constrained);
     let mut store = Store::default();
-    invoke(&ir, &mut store, "Open", &values([("group", text("one"))])).unwrap();
+    for _ in 0..2 {
+        invoke(&ir, &mut store, "Open", &values([("group", text("one"))])).unwrap();
+    }
     let before = store.clone();
-    assert!(invoke(&ir, &mut store, "Patch", &values([("group", text("one"))])).is_err());
+    assert!(invoke(
+        &ir,
+        &mut store,
+        "Patch",
+        &values([("group", text("one")), ("note", text("n-forbidden"))])
+    )
+    .is_err());
     assert_eq!(store, before);
 }
 

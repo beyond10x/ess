@@ -21,6 +21,7 @@ use ess_entity_runtime::{
     lower, lower_component, ComponentLoweringError, LoweringCode, LoweringDiagnostic,
     LoweringOptions,
 };
+use ess_primitives::error::{ValidationCode, ValidationErrors};
 use ess_service_contract::{extract, ServiceDiagnostic};
 use ess_synth::SynthesisPlan;
 
@@ -35,6 +36,20 @@ fn repository_root() -> PathBuf {
 /// The focused contract fixture at ess/18, with `Child` carrying an `Integer` and a struct field,
 /// and each `(file, before, after)` edit applied once.
 fn contract(changes: &[(&str, &str, &str)]) -> EssIr {
+    let (specification, sources, labels) = assembled(changes);
+    let specification = specification.unwrap_or_else(|errors| panic!("{errors}"));
+    compile_locating(&specification, &sources, &labels).expect("fixture compiles")
+}
+
+/// The focused contract fixture of [`contract`], assembled but not compiled: validation's answer,
+/// with the sources and labels a compile would locate against.
+fn assembled(
+    changes: &[(&str, &str, &str)],
+) -> (
+    Result<Specification, ValidationErrors>,
+    SourceMap,
+    Vec<String>,
+) {
     let base = crate_root().join("tests/fixtures/contract");
     let mut changes = changes.to_vec();
     changes.push(("system.yaml", "format: ess/4", "format: ess/18"));
@@ -80,8 +95,7 @@ fn contract(changes: &[(&str, &str, &str)]) -> EssIr {
         ));
         labels.push(label);
     }
-    let specification = Specification::assemble(parsed).unwrap_or_else(|errors| panic!("{errors}"));
-    compile_locating(&specification, &sources, &labels).expect("fixture compiles")
+    (Specification::assemble(parsed), sources, labels)
 }
 
 /// An event publishing the identity a creation takes from its input.
@@ -115,6 +129,24 @@ fn with_command(
     outcomes: &str,
     extra: &[(&'static str, &'static str, &'static str)],
 ) -> EssIr {
+    with_command_changes(name, outcomes, extra, contract)
+}
+
+/// Validation's answer for the fixture of [`with_command`], before any compile.
+fn with_command_assembled(
+    name: &str,
+    outcomes: &str,
+    extra: &[(&'static str, &'static str, &'static str)],
+) -> Result<Specification, ValidationErrors> {
+    with_command_changes(name, outcomes, extra, |changes| assembled(changes).0)
+}
+
+fn with_command_changes<T>(
+    name: &str,
+    outcomes: &str,
+    extra: &[(&'static str, &'static str, &'static str)],
+    then: impl FnOnce(&[(&str, &str, &str)]) -> T,
+) -> T {
     let declared = format!(
         "  - name: contract.local.{name}\n{INPUT}    outcomes:\n{outcomes}\n  - name: contract.local.Admin\n"
     );
@@ -126,7 +158,7 @@ fn with_command(
         &declared,
     ));
     changes.push(("wiring.yaml", "        - contract.local.Run\n", &accepted));
-    contract(&changes)
+    then(&changes)
 }
 
 fn versions() -> LoweringOptions {
@@ -371,50 +403,70 @@ const CHILD_ID_ALPHABET: (&str, &str, &str) = (
     "  - name: contract.local.ChildId\n    kind: newtype\n    of: String\n    alphabet: \"0123456789abcdef-\"\n",
 );
 
-/// ESS holds a literal to a declared prefix and to an enum's variants, not to an alphabet. Every
-/// place the lowering writes a text literal into a field entity-core validates — an update's
-/// `sets:`, a creation's `sets:`, a creation's identity — refuses one with a character outside the
-/// field's alphabet by name; the same literal inside the alphabet lowers.
+/// ESS holds a literal to a declared prefix and to an enum's variants, and since 0.60.0 to its
+/// newtype's `alphabet:` and invariants too: validation refuses a literal written in `sets:` or
+/// `payload:` outside its type's alphabet (`type_mismatch`), before any compile. The lowering's own
+/// `alphabet_unsupported` refusal of such a literal, which this test pinned for an update's
+/// `sets:`, a creation's `sets:` and a creation's identity, can therefore no longer be reached by a
+/// literal; each of the three places is now held to validation's refusal by name instead. The same
+/// literal inside the alphabet still validates and lowers without an alphabet refusal.
 #[test]
 fn a_literal_outside_its_fields_alphabet_is_refused_by_name_wherever_it_is_written() {
-    let refused_literals =
+    let validation_refusals =
         |outcomes: &str, extra: &[(&'static str, &'static str, &'static str)]| {
-            refused(&with_command("Tune", outcomes, extra))
-                .into_iter()
-                .filter(|diagnostic| diagnostic.code == LoweringCode::AlphabetUnsupported)
-                .map(|diagnostic| (diagnostic.path, diagnostic.construct))
+            let errors = with_command_assembled("Tune", outcomes, extra)
+                .expect_err("validation refuses a literal outside its type's alphabet");
+            errors
+                .as_slice()
+                .iter()
+                .map(|error| (error.code, error.location.clone()))
                 .collect::<Vec<_>>()
         };
-    let construct = "a text literal written outside its field's `alphabet:`";
     assert_eq!(
-        refused_literals(
+        validation_refusals(
             &update("tuned", "          note: \"kept!\"\n"),
             &[SHARED_ALPHABET]
         ),
-        [("contract.local.Tune.tuned.note".to_owned(), construct)],
+        [(
+            ValidationCode::TypeMismatch,
+            "commands.contract.local.Tune.outcomes.tuned.sets.note".to_owned()
+        )],
         "an update's `sets:`"
     );
     assert_eq!(
-        refused_literals(
+        validation_refusals(
             &CREATE.replace("note: input.note", "note: \"kept!\""),
             &[SHARED_ALPHABET, STORED]
         ),
-        [("contract.local.Tune.made.note".to_owned(), construct)],
+        [(
+            ValidationCode::TypeMismatch,
+            "commands.contract.local.Tune.outcomes.made.sets.note".to_owned()
+        )],
         "a creation's `sets:`"
     );
     assert_eq!(
-        refused_literals(
+        validation_refusals(
             &CREATE.replace("{child_id: input.child_id}", "{child_id: \"kept!\"}"),
             &[CHILD_ID_ALPHABET, STORED]
         ),
-        [("contract.local.Tune.made.identity".to_owned(), construct)],
+        [(
+            ValidationCode::TypeMismatch,
+            "command.contract.local.Tune.outcomes.made.payload.contract.local.Stored.child_id"
+                .to_owned()
+        )],
         "a creation's identity"
     );
+    let alphabet_refusals = refused(&with_command(
+        "Tune",
+        &update("tuned", "          note: \"kept\"\n"),
+        &[SHARED_ALPHABET],
+    ))
+    .into_iter()
+    .filter(|diagnostic| diagnostic.code == LoweringCode::AlphabetUnsupported)
+    .map(|diagnostic| (diagnostic.path, diagnostic.construct))
+    .collect::<Vec<_>>();
     assert_eq!(
-        refused_literals(
-            &update("tuned", "          note: \"kept\"\n"),
-            &[SHARED_ALPHABET]
-        ),
+        alphabet_refusals,
         Vec::<(String, &str)>::new(),
         "a literal inside the alphabet"
     );

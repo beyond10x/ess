@@ -1,4 +1,4 @@
-#	models=290	lines=424
+#	models=291	lines=425
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	REFUSED	95eb461796949834a9d78ef0c04afcab1acfa13dbf2dfd6da3af2f3c93549630:687
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing/system.yaml	ASSEMBLE
@@ -233,6 +233,7 @@ crates/verify/ess-conformance/tests/fixtures/subject-state.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/typed-text-operands.yaml	components=1
 crates/verify/ess-conformance/tests/fixtures/typed-text-operands.yaml	directory-service	REFUSED	b5d5a4905a4d3b17db9d0adfe1d75c5c52b6df167f36f0ca7f1e4de30c5edfa0:1108
 crates/verify/ess-conformance/tests/fixtures/unique-within-scope.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/view-absent-row.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/view-paging.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/view-param-binding.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/when-subject-eventual.yaml	components=0
