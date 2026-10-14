@@ -640,6 +640,186 @@ fn the_test_shards_run_the_archives_two_jobs_build_side_by_side_and_compile_noth
     }
 }
 
+/// Every archive a shard downloads, with the step id of its first attempt and the task that runs
+/// it.
+const ARCHIVE_DOWNLOADS: [(&str, &str, &str); 2] = [
+    ("nextest-archive-workspace", "archives", "test-shard"),
+    (
+        "nextest-archive-feature-off",
+        "feature-off-archive",
+        "test-feature-off",
+    ),
+];
+
+/// Attempts per archive download, and the minutes each attempt may take.
+const ARCHIVE_ATTEMPTS: usize = 3;
+const ARCHIVE_ATTEMPT_MINUTES: u64 = 30;
+
+/// The step ids of one archive's download attempts, in order: `archives`, `archives-retry`,
+/// `archives-retry-2`.
+fn archive_attempt_ids(first: &str) -> Vec<String> {
+    (0..ARCHIVE_ATTEMPTS)
+        .map(|attempt| match attempt {
+            0 => first.to_owned(),
+            1 => format!("{first}-retry"),
+            n => format!("{first}-retry-{n}"),
+        })
+        .collect()
+}
+
+fn assert_archive_downloads_survive_slow_throughput(ci: &Value) {
+    let job = &ci["jobs"]["test"];
+    assert!(
+        job["continue-on-error"].is_null(),
+        "a shard that never got its archive would not fail the job"
+    );
+    let steps: Vec<&Value> = job["steps"].as_sequence().into_iter().flatten().collect();
+    for (artifact, first, task) in ARCHIVE_DOWNLOADS {
+        let attempts: Vec<&Value> = steps
+            .iter()
+            .copied()
+            .filter(|step| {
+                text(&step["uses"]).starts_with("actions/download-artifact@")
+                    && text(&step["with"]["name"]) == artifact
+            })
+            .collect();
+        let ids = archive_attempt_ids(first);
+        assert_eq!(
+            attempts
+                .iter()
+                .map(|step| text(&step["id"]))
+                .collect::<Vec<_>>(),
+            ids,
+            "`{artifact}` is not downloaded in {ARCHIVE_ATTEMPTS} attempts"
+        );
+        for (index, attempt) in attempts.iter().enumerate() {
+            let id = &ids[index];
+            assert_eq!(
+                attempt["timeout-minutes"].as_u64(),
+                Some(ARCHIVE_ATTEMPT_MINUTES),
+                "`{id}` is not bounded at {ARCHIVE_ATTEMPT_MINUTES} minutes"
+            );
+            // Only the last attempt's failure fails the shard; the ones before it are retried.
+            let last = index + 1 == ARCHIVE_ATTEMPTS;
+            if last {
+                assert!(
+                    attempt["continue-on-error"].is_null(),
+                    "`{id}` is the last attempt and its failure is ignored, so a shard \
+                     without its archive skips its tests and passes"
+                );
+            } else {
+                assert_eq!(
+                    attempt["continue-on-error"].as_bool(),
+                    Some(true),
+                    "`{id}` is not the last attempt and its failure fails the shard"
+                );
+            }
+            let guard = if index == 0 {
+                "${{ !cancelled() }}".to_owned()
+            } else {
+                let earlier: Vec<String> = ids[..index]
+                    .iter()
+                    .map(|earlier| format!("steps.{earlier}.outcome != 'success'"))
+                    .collect();
+                format!("${{{{ !cancelled() && {} }}}}", earlier.join(" && "))
+            };
+            assert!(
+                text(&attempt["if"]) == guard || (index == 0 && attempt["if"].is_null()),
+                "`{id}` does not run exactly when every earlier attempt failed: {:?}",
+                attempt["if"]
+            );
+        }
+        let any = ids
+            .iter()
+            .map(|id| format!("steps.{id}.outcome == 'success'"))
+            .collect::<Vec<_>>()
+            .join(" || ");
+        let runs: Vec<&Value> = steps
+            .iter()
+            .copied()
+            .filter(|step| {
+                text(&step["run"])
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .windows(2)
+                    .any(|words| words == ["task", task])
+            })
+            .collect();
+        let [run] = runs.as_slice() else {
+            panic!("`test` runs `{task}` {} times, not once", runs.len())
+        };
+        assert_eq!(
+            text(&run["if"]),
+            format!("${{{{ !cancelled() && ({any}) }}}}"),
+            "`{task}` does not run after any successful attempt of `{artifact}`"
+        );
+        assert!(run["continue-on-error"].is_null());
+    }
+}
+
+/// An archive download that is slow but progressing must not fail a shard whose tests pass. On
+/// release run 38588707717 and main run 38599096240 (2026-10-14) the 8985 MiB workspace and
+/// 5662 MiB feature-off archives ran into the 12-minute timeout of both attempts on 13 and 5 of 20
+/// shards, while shards that got them ran green. Each archive now gets three 30-minute attempts;
+/// each runs only when every earlier one failed, the first two may fail and the last may not, so a
+/// shard that never got its archive still fails rather than silently skipping its tests.
+#[test]
+fn each_nextest_archive_gets_three_thirty_minute_attempts_and_a_missing_one_fails_the_shard() {
+    let ci = yaml(".github/workflows/ci.yml");
+    assert_archive_downloads_survive_slow_throughput(&ci);
+
+    let mutate = |change: &dyn Fn(&mut Value)| {
+        let mut mutated = ci.clone();
+        change(&mut mutated);
+        let caught =
+            std::panic::catch_unwind(|| assert_archive_downloads_survive_slow_throughput(&mutated));
+        assert!(caught.is_err(), "a mutation of ci.yml went unnoticed");
+    };
+    let step_index = |ci: &Value, id: &str| {
+        ci["jobs"]["test"]["steps"]
+            .as_sequence()
+            .unwrap()
+            .iter()
+            .position(|step| text(&step["id"]) == id)
+            .unwrap()
+    };
+    // The last attempt's failure ignored: a shard without its archive skips its tests.
+    mutate(&|ci: &mut Value| {
+        let index = step_index(ci, "archives-retry-2");
+        ci["jobs"]["test"]["steps"][index]["continue-on-error"] = Value::Bool(true);
+    });
+    // A third attempt dropped.
+    mutate(&|ci: &mut Value| {
+        let index = step_index(ci, "feature-off-archive-retry-2");
+        ci["jobs"]["test"]["steps"]
+            .as_sequence_mut()
+            .unwrap()
+            .remove(index);
+    });
+    // A tests step that ignores the last attempt's success.
+    mutate(&|ci: &mut Value| {
+        let index = step_index(ci, "archives-retry-2") + 1;
+        let steps = ci["jobs"]["test"]["steps"].as_sequence_mut().unwrap();
+        let run = steps
+            .iter_mut()
+            .skip(index)
+            .find(|step| text(&step["run"]).contains("task test-shard"))
+            .unwrap();
+        run["if"] = Value::String(
+            "${{ !cancelled() && (steps.archives.outcome == 'success' || \
+             steps.archives-retry.outcome == 'success') }}"
+                .to_owned(),
+        );
+    });
+    // A retry that runs after an earlier attempt already succeeded.
+    mutate(&|ci: &mut Value| {
+        let index = step_index(ci, "archives-retry-2");
+        ci["jobs"]["test"]["steps"][index]["if"] = Value::String(
+            "${{ !cancelled() && steps.archives-retry.outcome != 'success' }}".to_owned(),
+        );
+    });
+}
+
 fn assert_transport_network_controls(ci: &Value, taskfile: &Value) {
     let job = &ci["jobs"]["transport-network"];
     assert!(
@@ -741,9 +921,25 @@ fn the_gate_check_aggregates_every_lane_and_cannot_be_skipped() {
     // downloads of shards 19 and 20 took 1,512 s and 1,730 s, the first reaching its 12-minute
     // timeout and retrying. The shard's own tests take up to 23 minutes, so 45 minutes left the
     // retry no room and cancelled two shards near their last test; 70 covers about 29 minutes of
-    // downloads, 23 of tests and the setup. Every other job compiles or checks and stays at 30.
+    // downloads, 23 of tests and the setup. On 2026-10-14 downloads ran past two 12-minute
+    // attempts on most shards, so each archive now has three 30-minute attempts (see
+    // `each_nextest_archive_gets_three_thirty_minute_attempts_and_a_missing_one_fails_the_shard`),
+    // and the job holds every attempt of both archives plus 45 minutes for the setup and the
+    // tests. Every other job compiles or checks and stays at 30.
+    let downloads: u64 = ci["jobs"]["test"]["steps"]
+        .as_sequence()
+        .into_iter()
+        .flatten()
+        .filter(|step| text(&step["uses"]).starts_with("actions/download-artifact@"))
+        .map(|step| step["timeout-minutes"].as_u64().unwrap_or(360))
+        .sum();
+    assert_eq!(
+        downloads,
+        2 * ARCHIVE_ATTEMPTS as u64 * ARCHIVE_ATTEMPT_MINUTES,
+        "the shards' downloads are not three 30-minute attempts per archive"
+    );
     for id in gated_jobs(&ci) {
-        let bound = if id == "test" { 70 } else { 30 };
+        let bound = if id == "test" { downloads + 45 } else { 30 };
         assert_eq!(
             ci["jobs"][id.as_str()]["timeout-minutes"].as_u64(),
             Some(bound),
