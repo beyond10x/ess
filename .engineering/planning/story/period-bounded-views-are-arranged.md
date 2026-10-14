@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:period-bounded-views-are-arranged
 kind: story
-status: draft
+status: active
 title: Synthesis arranges views bounded by period parameters, and an undecided view drops no other scenario
 tags:
 - adopter-report
@@ -13,7 +13,10 @@ refs:
   reference: beyond10x/ess#569
 relations:
 - serves: vision:O2
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-14T14:33:20Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-10-14T14:33:20Z", actor: "human:timo", revision: 3}
 ---
 ## Outcome
 
