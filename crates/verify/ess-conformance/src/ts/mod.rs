@@ -179,6 +179,12 @@ reached, and on the outcomes of a command the explorer left out (`excluded` says
 `{ allowExcluded: true }` accepts them. A view field is compared with the entity field of the same
 name. `ir.json` must hash to `suite.json`'s `spec_digest`; regenerate both together.
 
+A command the target throws `unsupported` for is not sent again in the state of the row that step
+addressed, and is drawn in every other. `refused` lists each such state with the target's reason
+and the steps not sent; an outcome only those steps would have taken counts as excluded, and
+`assertExplored` fails on a refusal unless `allowExcluded` accepts it. A command refused in every
+state it was drawn in is in `excluded`, as is a view the target refuses.
+
 An outcome declared `external:` is a choice the explorer may take: where it is eligible, a seeded
 draw picks it or the ordinary branch, `configureExternalOutcome` arranges it, and the step expects
 it. Once a command has had a branch arranged in a sequence, the explorer stops expecting that

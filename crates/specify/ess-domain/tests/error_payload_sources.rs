@@ -68,7 +68,7 @@ fn an_error_payload_keeps_its_sources_on_the_outcome_and_round_trips() {
         sources,
         ["limit=10", "reason=Quantity", "requested=input.quantity"]
     );
-    let written = serde_yaml::to_string(refusal).expect("an outcome serialises");
+    let written = ess_yaml::to_string(refusal).expect("an outcome serialises");
     assert!(
         written.contains("demo.order.TooMany"),
         "the error's block is written back under `payload:`:\n{written}"

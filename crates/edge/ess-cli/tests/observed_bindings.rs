@@ -21,7 +21,7 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let dir = TemporaryDirectory::create("ess-observed-bindings").unwrap();
-        let mut realization: Value = serde_yaml::from_str(
+        let mut realization: Value = ess_yaml::from_str(
             &std::fs::read_to_string(root().join("examples/realizations/billing-local.yaml"))
                 .unwrap(),
         )

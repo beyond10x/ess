@@ -48,13 +48,13 @@ fn issue_146_a_string_newtype_declares_a_prefix() {
 #[test]
 fn a_prefix_is_written_back_and_absence_keeps_the_bytes() {
     let spec = single(&channel("")).expect("validates");
-    let written = serde_yaml::to_string(declared(&spec, "demo.msgs.Channel")).expect("writes");
+    let written = ess_yaml::to_string(declared(&spec, "demo.msgs.Channel")).expect("writes");
     assert!(written.contains("prefix: /"), "{written}");
     let plain = single(&format!(
         "{HEADER}types:\n  - {{name: demo.msgs.Plain, kind: newtype, of: String}}\n"
     ))
     .expect("validates");
-    let written = serde_yaml::to_string(declared(&plain, "demo.msgs.Plain")).expect("writes");
+    let written = ess_yaml::to_string(declared(&plain, "demo.msgs.Plain")).expect("writes");
     assert!(!written.contains("prefix"), "{written}");
 }
 

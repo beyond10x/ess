@@ -4,12 +4,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::OnceLock;
 
-use serde_yaml::Value;
+use ess_yaml::Value;
 
 fn schema() -> &'static Value {
     static PARSED: OnceLock<Value> = OnceLock::new();
-    PARSED
-        .get_or_init(|| serde_yaml::from_str(ess_ui::SCHEMA).expect("the embedded schema is YAML"))
+    PARSED.get_or_init(|| ess_yaml::from_str(ess_ui::SCHEMA).expect("the embedded schema is YAML"))
 }
 
 fn strings(value: &Value) -> Vec<String> {

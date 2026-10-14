@@ -160,3 +160,57 @@ injected scenario stays and nothing is refused.
 No format moves, for the reason section 2 gives. A suite for a command declaring both outcomes
 loses the `…/outcome/wrong-state` scenario section 2 added and its not-found scenario changes
 content under the same id.
+
+## 2b. A read-only command declares its unknown-instance answer (beyond10x/ess#535)
+
+### Before
+
+`unknown_instance:` (ess/15, `outcome-shapes.md`) was admitted only on a command with a `moves:`,
+`updates:` or `deletes:` branch reading `instance:` from input. A command whose branches only
+preserve the row its input names, or refuse it through `when_subject:`, reads that row just the
+same, and its implementation answers an identity no row carries with its own error. Validation
+refused the marker there with `unreachable_branch`, and the only form left was an `external:`
+refusal that nothing tied to a missing row.
+
+```yaml
+- name: demo.desk.Ring
+  input: [{name: user_id, type: String}]
+  outcomes:
+    - {name: no-seat, unknown_instance: true, error: demo.desk.NoSeat}
+    - {name: closed, when_subject: {predicate: state == Closed}, error: demo.desk.NoSeat}
+    - {name: rung, preserves: demo.desk.Seat, instance: user_id}
+```
+
+### Rule
+
+> An `unknown_instance:` branch is reachable on a command with a branch that addresses an existing
+> instance from input: a `moves:`, `updates:`, `deletes:` or `preserves:` branch reading
+> `instance:` from input.
+
+A `when_subject:` refusal reads the subject a sibling branch addresses, so a command with one has
+that sibling, and the sibling decides. A command with no input-addressed branch at all keeps
+`unreachable_branch`.
+
+The create-or-update pairing (`outcome-shapes.md`, ess/16) is unchanged: a creating
+`unknown_instance:` still needs a sibling `moves:` or `updates:` on the same entity, so one beside
+a `preserves:` branch alone is refused `conflicting_declaration`.
+
+### Witness
+
+The section 2 scenario, keyed by the declared branch's own id: the command, the input reaching the
+preserving branch, a fresh identity, nothing arranged, the declared branch, its error where it
+refuses, and no declared event. A `preserves:` branch is tried for that input only after every
+moving, updating and deleting branch, and only on a command declaring `unknown_instance:`.
+
+A preserving command that declares no `unknown_instance:` branch takes no not-found or
+`wrong_state:` answer from its preserving branch, and its scenarios are unchanged. Declaring the
+branch adds its one scenario and changes no other.
+
+The interpreted target and the generated Rust and Go behaviour already answered a missing row on a
+preserving branch with the command's declared unknown-instance answer; they pass the scenario
+unchanged.
+
+### Formats
+
+No format moves: the key existed, the scenario uses the existing `Outcome` id and steps, and a
+document this change admits was refused before.

@@ -24,7 +24,7 @@ fn null_empty_and_escaped_unknown_unit_fields_refuse() {
         ] {
             let mut wire = original.clone();
             wire["interface"]["types"]["A"][key] = value;
-            for bytes in [wire.to_string(), serde_yaml::to_string(&wire).unwrap()] {
+            for bytes in [wire.to_string(), ess_yaml::to_string(&wire).unwrap()] {
                 let errors = read_import(&bytes).unwrap_err();
                 assert!(
                     errors.iter().any(|error| {

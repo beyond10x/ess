@@ -140,7 +140,7 @@
 //! hash. The ordered table this file serialises maps through keeps insertion order, so that a
 //! struct's properties read in the order their author declared them rather than alphabetically; the
 //! order is still a function of the IR alone. That is also why a payload is carried as a
-//! `serde_yaml::Value` rather than a `serde_json::Value`: `serde_json`'s map is a `BTreeMap`, so the
+//! `ess_yaml::Value` rather than a `serde_json::Value`: `serde_json`'s map is a `BTreeMap`, so the
 //! round trip would sort a struct's properties and throw away the one ordering its author expressed.
 
 use std::collections::BTreeMap;
@@ -231,7 +231,7 @@ fn documents(ir: &EssIr, mint: &ProvenanceMint, transport: Option<&TransportIr>)
         .map(|component| {
             let sliced = component_slice(ir, component, mint);
             let document = document(ir, component, &sliced.provenance, transport);
-            let body = serde_yaml::to_string(&document)
+            let body = ess_yaml::to_string(&document)
                 .unwrap_or_else(|error| panic!("an AsyncAPI document serialises: {error}"));
             Artifact::sliced(
                 format!("{}.yaml", component.name),
@@ -749,7 +749,7 @@ enum Payload {
 /// exactly how the drift happened: a keyword the mapping emits and this struct had no field for was
 /// unrepresentable, so it was silently dropped from the published contract rather than failing
 /// anything.
-type Fragment = serde_yaml::Value;
+type Fragment = ess_yaml::Value;
 
 /// One channel's worth of reasons to exist.
 struct Plan<'a> {
@@ -1530,7 +1530,7 @@ fn failure_means(ir: &EssIr, binding: &ResolvedBinding) -> String {
 /// Via the enum's own serialisation, so the sentence and the extension can never spell it
 /// differently.
 fn word_for(value: impl serde::Serialize) -> String {
-    serde_yaml::to_string(&value)
+    ess_yaml::to_string(&value)
         .unwrap_or_default()
         .trim()
         .to_owned()

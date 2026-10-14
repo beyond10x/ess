@@ -18,7 +18,7 @@ impl Fixture {
     fn write(&self, name: &str, value: &serde_json::Value) -> PathBuf {
         let path = self.0.join(name);
         let text = if name.ends_with("yaml") {
-            serde_yaml::to_string(value).unwrap()
+            ess_yaml::to_string(value).unwrap()
         } else {
             serde_json::to_string(value).unwrap()
         };

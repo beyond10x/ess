@@ -164,6 +164,7 @@ fn a_branch_shape_carries_the_facts_its_phase_depends_on() {
             error: true,
             subject: false,
             replays: false,
+            before_row: false,
         }
     );
     refusal.replays = Some(OutcomeName::new("created").unwrap());
@@ -187,6 +188,7 @@ fn shape(condition: ConditionShape, error: bool) -> BranchShape {
         error,
         subject: false,
         replays: false,
+        before_row: false,
     }
 }
 
@@ -678,6 +680,43 @@ fn an_input_refusal_beside_a_held_state_branch_answers_before_it() {
             (Phase::Default, &["not-configured"]),
         ])
     );
+}
+
+/// An external refusal marked `before_row: true` answers at step 2, among the input refusals, before
+/// existence and the held state (ess/25, beyond10x/ess#534); without the key, or on an accepting
+/// external branch, it stays at step 6.
+#[test]
+fn a_before_row_external_refusal_answers_at_step_two() {
+    let sign_in = include_str!("../../ess-compiler/tests/fixtures/external-before-row.yaml");
+    assert_eq!(
+        phases(sign_in, "demo.desk.SignIn", true),
+        expect(&[
+            (Phase::InputRefusal, &["bad-credential"]),
+            (Phase::Existence, &["first"]),
+            (Phase::HeldState, &["reopened-busy", "reopened", "opened"]),
+        ])
+    );
+    for condition in [ConditionShape::External, ConditionShape::ExternalWhen] {
+        let marked = BranchShape {
+            before_row: true,
+            ..shape(condition, true)
+        };
+        assert_eq!(
+            place(&marked, &alone(marked)),
+            ess_domain::command::precedence::Place {
+                phase: Phase::InputRefusal,
+                rank: Rank::Declared,
+            },
+            "{condition:?}"
+        );
+        let unmarked = shape(condition, true);
+        assert_eq!(place(&unmarked, &alone(unmarked)).phase, Phase::Accepting);
+        let accepting = BranchShape {
+            before_row: true,
+            ..shape(condition, false)
+        };
+        assert_eq!(place(&accepting, &alone(accepting)).phase, Phase::Accepting);
+    }
 }
 
 /// The precedence order with `one` and `other` exchanged.

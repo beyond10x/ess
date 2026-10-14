@@ -5154,6 +5154,9 @@ func admitPredicateConstraint(value any) error {
 				if _, ok := operand.(string); !ok {
 					return fmt.Errorf("predicate %s takes a string", operator)
 				}
+			case "trimmed":
+				// Decided at synthesis, in a command guard only (beyond10x/ess#532): no suite carries one.
+				return fmt.Errorf("`trimmed` text operators are decided at synthesis, and no suite format carries one")
 			case "in_ignore_case":
 				// A JSON list of strings: a scalar is not read as a one-element list here, because
 				// the Rust reader refuses it.

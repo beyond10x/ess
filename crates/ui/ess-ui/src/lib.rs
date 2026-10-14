@@ -105,11 +105,11 @@ pub fn load_str_with(text: &str, model: &dyn binding::ModelEnums) -> Result<Docu
 }
 
 fn load(text: &str, model: Option<&dyn binding::ModelEnums>) -> Result<Document, LoadError> {
-    let raw: serde_yaml::Value = serde_yaml::from_str(text)
+    let raw: ess_yaml::Value = ess_yaml::from_str(text)
         .map_err(|error| LoadError::new(NodePath::root(), error.to_string()))?;
     let schema = schema::Schema::embedded();
     let (expanded, model_enums) = expand::expand(raw, &schema, model)?;
-    let mut document: Document = match serde_yaml::from_value(expanded.clone()) {
+    let mut document: Document = match ess_yaml::from_value(expanded.clone()) {
         Ok(document) => document,
         Err(error) => {
             return Err(locate::locate(&expanded)

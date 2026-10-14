@@ -12,7 +12,7 @@ use ess_gen::artifact::{run, Generator as _};
 use ess_gen::asyncapi::AsyncApi;
 use ess_gen::docs::Docs;
 use ess_gen::graph::SystemGraph;
-use serde_yaml::Value;
+use ess_yaml::Value;
 
 const MODEL: &str =
     include_str!("../../../verify/ess-conformance/tests/fixtures/refusal-policy.yaml");
@@ -64,7 +64,7 @@ fn reaction(ir: &EssIr) -> Value {
         .into_iter()
         .map(|artifact| (artifact.path, artifact.contents))
         .collect();
-    let document: Value = serde_yaml::from_str(&documents["ledger.yaml"]).unwrap();
+    let document: Value = ess_yaml::from_str(&documents["ledger.yaml"]).unwrap();
     document["operations"]["receive.demo.ledger.OrderPlaced"]["x-ess-reactions"][0].clone()
 }
 

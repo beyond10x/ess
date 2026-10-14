@@ -502,8 +502,8 @@ mod tests {
         // `version: v3` and `version: 3` are one version written two ways. If they ever disagree,
         // two documents naming different versions compare equal and nothing says so.
         for major in [1_u32, 2, 42, u32::MAX] {
-            let written: Version = serde_yaml::from_str(&format!("v{major}")).expect("written");
-            let numeric: Version = serde_yaml::from_str(&major.to_string()).expect("numeric");
+            let written: Version = ess_yaml::from_str(&format!("v{major}")).expect("written");
+            let numeric: Version = ess_yaml::from_str(&major.to_string()).expect("numeric");
             assert_eq!(written, numeric, "the spellings of v{major} disagree");
             assert_eq!(written.get(), major);
             assert_eq!(
@@ -519,7 +519,7 @@ mod tests {
         // Every one of these used to become `v4294967295` or `v1`, silently: the numeric path cast
         // with `as u32`, which saturates. The written spelling refused all of them already.
         for refused in ["4294967296", "1e300", "-1", "1.5", "0"] {
-            let error = serde_yaml::from_str::<Version>(refused)
+            let error = ess_yaml::from_str::<Version>(refused)
                 .expect_err(&format!("`{refused}` is not a version"));
             assert!(
                 Version::parse(&format!("v{refused}")).is_err(),
@@ -539,7 +539,7 @@ mod tests {
     fn a_version_wider_than_the_model_is_refused_by_the_version_bound() {
         // Dependency feature unification changes which deserializer layer first sees a huge
         // scalar. Both layers must refuse it; neither may truncate it into a different version.
-        let error = serde_yaml::from_str::<Version>("18446744073709551616").expect_err("too wide");
+        let error = ess_yaml::from_str::<Version>("18446744073709551616").expect_err("too wide");
         let rendered = error.to_string();
         assert!(
             rendered.contains("versions run from 1 to 4294967295")
@@ -634,8 +634,8 @@ mod tests {
         );
         assert!(Version::parse("v0").is_err(), "zero invites `unversioned`");
 
-        let from_text: Version = serde_yaml::from_str("v2").expect("parses");
-        let from_number: Version = serde_yaml::from_str("2").expect("parses");
+        let from_text: Version = ess_yaml::from_str("v2").expect("parses");
+        let from_number: Version = ess_yaml::from_str("2").expect("parses");
         assert_eq!(
             from_text, from_number,
             "both spellings read naturally in a document"

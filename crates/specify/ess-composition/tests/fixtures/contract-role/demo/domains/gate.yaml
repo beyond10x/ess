@@ -1,0 +1,96 @@
+domain: demo.gate
+
+types:
+  - name: demo.gate.Channel
+    kind: newtype
+    of: String
+
+actors:
+  - name: demo.gate.Client
+    may:
+      - demo.gate.Admit
+      - demo.gate.Answer
+      - demo.gate.Count
+      - demo.gate.Bare
+      - demo.gate.Insist
+
+commands:
+  # The issue's command: it decides `wire.server.Subscribe`, and its input also answers it.
+  - name: demo.gate.Admit
+    input:
+      - name: channel
+        type: demo.gate.Channel
+    outcomes:
+      - name: admitted
+        emits:
+          - demo.gate.Admitted
+        payload:
+          demo.gate.Admitted:
+            channel: input.channel
+
+  # Answers `wire.server.Subscribe` with an extra input the contract's caller may leave out.
+  - name: demo.gate.Answer
+    input:
+      - name: channel
+        type: demo.gate.Channel
+      - name: note
+        type: Optional<String>
+    outcomes:
+      - name: answered
+        emits:
+          - demo.gate.Admitted
+        payload:
+          demo.gate.Admitted:
+            channel: input.channel
+
+  # `channel` of another type than the contract's.
+  - name: demo.gate.Count
+    input:
+      - name: channel
+        type: Integer
+    outcomes:
+      - name: counted
+        emits:
+          - demo.gate.Counted
+        payload:
+          demo.gate.Counted:
+            channel: input.channel
+
+  # Lacks the contract's `channel` and requires a `topic` the contract's caller never sends.
+  - name: demo.gate.Bare
+    input:
+      - name: topic
+        type: String
+    outcomes:
+      - name: bared
+        emits:
+          - demo.gate.Counted
+        payload:
+          demo.gate.Counted:
+            channel: 0
+
+  # An extra input it reads as `null` when absent: the contract's caller never sends the key.
+  - name: demo.gate.Insist
+    input:
+      - name: channel
+        type: demo.gate.Channel
+      - name: note
+        type: Optional<String>
+        presence: null_when_absent
+    outcomes:
+      - name: insisted
+        emits:
+          - demo.gate.Admitted
+        payload:
+          demo.gate.Admitted:
+            channel: input.channel
+
+events:
+  - name: demo.gate.Admitted
+    fields:
+      - name: channel
+        type: demo.gate.Channel
+  - name: demo.gate.Counted
+    fields:
+      - name: channel
+        type: Integer

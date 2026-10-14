@@ -163,6 +163,7 @@ fn branch(outcome: &ResolvedOutcome) -> BranchShape {
         error: outcome.error.is_some(),
         subject: outcome.subject.is_some(),
         replays: outcome.replays.is_some(),
+        before_row: outcome.before_row,
     }
 }
 

@@ -128,6 +128,31 @@ pub fn openapi(
     }
 }
 
+/// `ess generate synthesize --target rust|go --http FILE [--refines FILE]`: the binding a synthesized
+/// server serves.
+///
+/// Compiled exactly as `ess specify http compile` compiles it, with the same refusals, then held
+/// to a path on every route: a server cannot serve an open route. Whether a route claims a path the
+/// server answers itself is the synthesis's to refuse (`ess_synth::synthesize_bound`). `Ok(None)`
+/// is a refusal already reported; the caller exits 1 and writes nothing.
+pub fn server(
+    binding: &Path,
+    refines: Option<&Path>,
+    ir: &EssIr,
+    format: Format,
+) -> Result<Option<ess_gen::http::Binding>> {
+    let Some(http) = load(binding, refines, ir, format)? else {
+        return Ok(None);
+    };
+    match ess_gen::http::Binding::new(http) {
+        Ok(bound) => Ok(Some(bound)),
+        Err(unservable) => {
+            eprintln!("{} cannot be served:\n{unservable}", binding.display());
+            Ok(None)
+        }
+    }
+}
+
 pub fn run(command: &Command) -> Result<ExitCode> {
     let (input, out) = match command {
         Command::Validate(input) => (input, None),

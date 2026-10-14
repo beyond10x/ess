@@ -242,6 +242,101 @@ fn macos_regenerates_over_os_provenance_label() {
     assert_eq!(snapshot(&f.0), before, "the output is unchanged");
 }
 
+/// `ess generate synthesize --target rust --layout crate` over `examples/gatepass` into `out`.
+fn synthesize_crate(out: &Path) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_ess"))
+        .args(["generate", "synthesize", "--path"])
+        .arg(workspace().join("examples/gatepass"))
+        .args(["--target", "rust", "--layout", "crate", "--out"])
+        .arg(out)
+        .output()
+        .unwrap()
+}
+
+/// Set `name` on `root` and on every file and directory below it, the ownership record under
+/// `.ess-output` included, as macOS does to everything a tagged process writes. Returns how many
+/// entries were labelled, or the first refusal of `setxattr`.
+fn label_every_entry(root: &Path, name: &str, value: &[u8]) -> rustix::io::Result<usize> {
+    let mut labelled = 0;
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(path) = pending.pop() {
+        set_label(&path, name, value)?;
+        labelled += 1;
+        if fs::symlink_metadata(&path).unwrap().is_dir() {
+            for entry in fs::read_dir(&path).unwrap() {
+                pending.push(entry.unwrap().path());
+            }
+        }
+    }
+    Ok(labelled)
+}
+
+/// beyond10x/ess#548: the synthesized crate layout regenerates over itself when macOS has put
+/// `com.apple.provenance` on every file and every directory of it, not only on one file of a
+/// site. A refused `setxattr` fails the case: the label must be there to decide anything.
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_synthesize_crate_regenerates_over_provenance_on_every_entry() {
+    let _serial = serial();
+    let f = Fixture::new();
+    let out = f.0.join("crate");
+    let first = synthesize_crate(&out);
+    assert!(first.status.success(), "{first:?}");
+    let labelled = label_every_entry(
+        &out,
+        "com.apple.provenance",
+        b"\x01\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+    )
+    .expect("setting com.apple.provenance on every generated entry");
+    assert!(
+        out.join(".ess-output").is_dir() && out.join("src").is_dir() && labelled > 4,
+        "the label reached the ownership record and nested directories ({labelled} entries)"
+    );
+    let before = snapshot(&out);
+    let again = synthesize_crate(&out);
+    assert!(
+        again.status.success(),
+        "regeneration over an OS provenance label on every entry succeeds: {again:?}"
+    );
+    assert_eq!(snapshot(&out), before, "the output is unchanged");
+}
+
+/// The same walk with an attribute nobody admits: every entry the macOS case labels is one the
+/// ownership check reads, so a foreign label anywhere in the crate refuses before any write.
+#[test]
+fn synthesize_crate_refuses_a_foreign_label_on_every_entry() {
+    let _serial = serial();
+    let f = Fixture::new();
+    let out = f.0.join("crate");
+    let first = synthesize_crate(&out);
+    assert!(first.status.success(), "{first:?}");
+    match label_every_entry(&out, "user.ess_test", b"1") {
+        Ok(labelled) => assert!(labelled > 4, "{labelled} entries labelled"),
+        Err(rustix::io::Errno::NOTSUP) => {
+            eprintln!("not run: this filesystem carries no user attributes");
+            return;
+        }
+        Err(error) => panic!("setting user.ess_test for the test: {error}"),
+    }
+    let before = snapshot(&out);
+    let again = synthesize_crate(&out);
+    assert!(
+        !again.status.success(),
+        "a foreign attribute refuses regeneration: {again:?}"
+    );
+    let stderr = String::from_utf8_lossy(&again.stderr);
+    for expected in [
+        "user.ess_test".to_owned(),
+        format!("ess {} refused output", env!("CARGO_PKG_VERSION")),
+    ] {
+        assert!(
+            stderr.contains(&expected),
+            "the refusal names {expected}: {stderr}"
+        );
+    }
+    assert_eq!(snapshot(&out), before, "nothing was written");
+}
+
 #[test]
 fn requires_pin_answers_producing_release() {
     let page = fs::read_to_string(workspace().join("website/docs/guides/generate-artifacts.md"))

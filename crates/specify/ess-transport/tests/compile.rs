@@ -427,10 +427,9 @@ fn every_admitted_event_path_depth_and_literal_v2_compile() {
     );
     assert_ne!(null_parameters, literal, "the null mapping was inserted");
     assert!(TransportSpec::from_yaml(&null_parameters).is_err());
-    let null_json = serde_json::to_string(
-        &serde_yaml::from_str::<serde_yaml::Value>(&null_parameters).unwrap(),
-    )
-    .unwrap();
+    let null_json =
+        serde_json::to_string(&ess_yaml::from_str::<ess_yaml::Value>(&null_parameters).unwrap())
+            .unwrap();
     assert!(TransportSpec::from_json(&null_json).is_err());
 }
 
@@ -734,12 +733,11 @@ fn transport_v1_rejects_parameters_and_keeps_braces_literal() {
     );
     let v1_with_parameters = v2.replacen("ess-transport/2", "ess-transport/1", 1);
     assert!(TransportSpec::from_yaml(&v1_with_parameters).is_err());
-    let v1_json = serde_json::to_string(
-        &serde_yaml::from_str::<serde_yaml::Value>(&v1_with_parameters).unwrap(),
-    )
-    .unwrap();
+    let v1_json =
+        serde_json::to_string(&ess_yaml::from_str::<ess_yaml::Value>(&v1_with_parameters).unwrap())
+            .unwrap();
     assert!(TransportSpec::from_json(&v1_json).is_err());
-    assert!(serde_yaml::from_str::<TransportSpec>(&v1_with_parameters).is_err());
+    assert!(ess_yaml::from_str::<TransportSpec>(&v1_with_parameters).is_err());
     assert!(serde_json::from_str::<TransportSpec>(&v1_json).is_err());
     assert!(TransportSpec::from_yaml(&v1_with_parameters.replace(
         "    parameters:\n      service: event.source.service\n      environment: event.source.environment\n",
@@ -752,7 +750,7 @@ fn transport_v1_rejects_parameters_and_keeps_braces_literal() {
         "",
     );
     let v1_literal_json =
-        serde_json::to_string(&serde_yaml::from_str::<serde_yaml::Value>(&v1_literal).unwrap())
+        serde_json::to_string(&ess_yaml::from_str::<ess_yaml::Value>(&v1_literal).unwrap())
             .unwrap();
     let duplicate_type = v1_literal_json.replacen(
         "\"type\":\"ess-transport/1\"",

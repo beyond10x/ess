@@ -1,0 +1,128 @@
+# The explorer draws a command whose outcome `preserves:` a supplied subject (beyond10x/ess#536).
+#
+# `Pause` moves an active session to `Paused` and answers `already-paused` on a paused one: an
+# accepted branch that leaves the row as it is. `PauseAgain` has nothing but that answer and a
+# refusal of a session that is not paused. `Resume` moves a paused session back. Before #536 a
+# `preserves:` outcome put its whole command out of every sequence, so a target that changed the
+# row on the no-op answer was never caught. `Purge` `deletes:` its subject, which the explorer
+# still leaves out by name.
+#
+# The targets beside it are `explore-preserves-target.mjs` and `explore_preserves_target.go`.
+
+format: ess/18
+system: explorekeep
+version: v1
+domain: explorekeep.desk
+
+summary: Sessions that are started, paused, paused again, resumed and purged.
+
+types:
+  - {name: explorekeep.desk.SessionId, kind: newtype, of: Uuid}
+
+entities:
+  - name: explorekeep.desk.Session
+    identity: {name: session_id, type: explorekeep.desk.SessionId}
+    fields:
+      - {name: label, type: String}
+    lifecycle:
+      initial: Active
+      states: [Active, Paused]
+      transitions:
+        - {name: pause, from: [Active], to: Paused}
+        - {name: resume, from: [Paused], to: Active}
+
+actors:
+  - name: explorekeep.desk.Operator
+    may:
+      - explorekeep.desk.Start
+      - explorekeep.desk.Pause
+      - explorekeep.desk.PauseAgain
+      - explorekeep.desk.Resume
+      - explorekeep.desk.Purge
+
+errors:
+  - {name: explorekeep.desk.NotPaused, fields: []}
+  - {name: explorekeep.desk.NotActive, fields: []}
+
+events:
+  - name: explorekeep.desk.Started
+    fields: [{name: session_id, type: explorekeep.desk.SessionId}]
+  - name: explorekeep.desk.Paused
+    fields: [{name: session_id, type: explorekeep.desk.SessionId}]
+  - name: explorekeep.desk.Resumed
+    fields: [{name: session_id, type: explorekeep.desk.SessionId}]
+  - name: explorekeep.desk.Purged
+    fields: [{name: session_id, type: explorekeep.desk.SessionId}]
+
+commands:
+  - name: explorekeep.desk.Start
+    input:
+      - {name: label, type: String}
+    outcomes:
+      - name: started
+        creates: explorekeep.desk.Session
+        instance: session_id
+        sets: {label: input.label}
+        emits: [explorekeep.desk.Started]
+        payload: {explorekeep.desk.Started: {session_id: {generated: true}}}
+
+  - name: explorekeep.desk.Pause
+    input:
+      - {name: session_id, type: explorekeep.desk.SessionId}
+    outcomes:
+      - name: already-paused
+        when_subject_state: Paused
+        preserves: explorekeep.desk.Session
+        instance: session_id
+      - name: paused
+        moves: explorekeep.desk.Session.pause
+        instance: session_id
+        emits: [explorekeep.desk.Paused]
+        payload: {explorekeep.desk.Paused: {session_id: input.session_id}}
+
+  - name: explorekeep.desk.PauseAgain
+    input:
+      - {name: session_id, type: explorekeep.desk.SessionId}
+    outcomes:
+      - name: still-paused
+        when_subject_state: Paused
+        preserves: explorekeep.desk.Session
+        instance: session_id
+      - {name: not-paused, error: explorekeep.desk.NotPaused}
+
+  - name: explorekeep.desk.Resume
+    input:
+      - {name: session_id, type: explorekeep.desk.SessionId}
+    outcomes:
+      - name: resumed
+        moves: explorekeep.desk.Session.resume
+        instance: session_id
+        emits: [explorekeep.desk.Resumed]
+        payload: {explorekeep.desk.Resumed: {session_id: input.session_id}}
+      - {name: not-active, wrong_state: true, error: explorekeep.desk.NotActive}
+
+  - name: explorekeep.desk.Purge
+    input:
+      - {name: session_id, type: explorekeep.desk.SessionId}
+    outcomes:
+      - name: purged
+        deletes: explorekeep.desk.Session
+        instance: session_id
+        emits: [explorekeep.desk.Purged]
+        payload: {explorekeep.desk.Purged: {session_id: input.session_id}}
+
+views:
+  - name: explorekeep.desk.Sessions
+    source: explorekeep.desk.Session
+    consistency: read_your_writes
+    fields:
+      - {name: session_id, type: explorekeep.desk.SessionId}
+      - {name: state, type: explorekeep.desk.Session.State}
+      - {name: label, type: String}
+  - name: explorekeep.desk.PausedSessions
+    source: explorekeep.desk.Session
+    consistency: read_your_writes
+    filter: state == Paused
+    fields:
+      - {name: session_id, type: explorekeep.desk.SessionId}
+      - {name: label, type: String}

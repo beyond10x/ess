@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use ess_ui_tui::{App, DataAdapter, FixtureAdapter, Options, ReadRequest, ReadResult};
-use serde_yaml::Value;
+use ess_yaml::Value;
 
 const DOCUMENT: &str = r"
 format: ess-ui/1
@@ -190,7 +190,7 @@ fn app_over(text: &str, rows: &str, binding: Option<ess_ui::binding::Binding>) -
     let document = ess_ui::load_str(text).unwrap_or_else(|error| panic!("{error}"));
     let sent = Sent::default();
     let adapter = Box::new(Table {
-        rows: serde_yaml::from_str(rows).expect("the rows parse"),
+        rows: ess_yaml::from_str(rows).expect("the rows parse"),
         sent: Rc::clone(&sent),
     });
     let serial = APPS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);

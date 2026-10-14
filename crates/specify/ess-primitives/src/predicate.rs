@@ -546,6 +546,89 @@ impl fmt::Display for FoldOp {
     }
 }
 
+/// The map-form key of [`Predicate::Trimmed`] (`ess/25`, beyond10x/ess#532).
+pub const TRIMMED: &str = "trimmed";
+
+/// The ASCII whitespace a [`Predicate::Trimmed`] removes from either end of a text: space, `\t`,
+/// `\n`, `\v`, `\f` and `\r`, and nothing else (`docs/design/value-expressions.md` § E10).
+///
+/// Fixed so every evaluator answers alike from its standard library: Rust trims this set with
+/// `trim_matches`, Go with `strings.Trim(s, " \t\n\v\f\r")` (not `TrimSpace`, which also trims
+/// Unicode spaces), TypeScript with one fixed character class. `u8::is_ascii_whitespace` is not
+/// it: it leaves out `\v`. A Unicode space such as U+00A0 compares as itself.
+pub const TRIMMED_WHITESPACE: [char; 6] = [' ', '\t', '\n', '\u{b}', '\u{c}', '\r'];
+
+/// `text` with every leading and trailing character of [`TRIMMED_WHITESPACE`] removed.
+pub fn trim_ascii_whitespace(text: &str) -> &str {
+    text.trim_matches(TRIMMED_WHITESPACE.as_slice())
+}
+
+/// The facts a [`Predicate::Trimmed`] hands its wrapped operator: `inner`'s, with the text at
+/// `path` trimmed and every other answer forwarded.
+struct TrimmedFacts<'a> {
+    inner: &'a dyn FactSource,
+    path: &'a FactPath,
+}
+
+impl TrimmedFacts<'_> {
+    fn trimmed(value: Option<FactValue>) -> Option<FactValue> {
+        match value {
+            Some(FactValue::Text(text)) => {
+                Some(FactValue::Text(trim_ascii_whitespace(&text).to_owned()))
+            }
+            other => other,
+        }
+    }
+}
+
+impl FactSource for TrimmedFacts<'_> {
+    fn fact(&self, path: &FactPath) -> Option<FactValue> {
+        let value = self.inner.fact(path);
+        if path == self.path {
+            Self::trimmed(value)
+        } else {
+            value
+        }
+    }
+
+    fn observe(&self, path: &FactPath) -> Option<FactValue> {
+        let value = self.inner.observe(path);
+        if path == self.path {
+            Self::trimmed(value)
+        } else {
+            value
+        }
+    }
+
+    fn present(&self, path: &FactPath) -> bool {
+        self.inner.present(path)
+    }
+
+    fn observed_presence(&self, path: &FactPath) -> Option<bool> {
+        self.inner.observed_presence(path)
+    }
+
+    fn scales(&self) -> &Scales {
+        self.inner.scales()
+    }
+
+    fn orders_as_instant(&self, path: &FactPath) -> bool {
+        self.inner.orders_as_instant(path)
+    }
+
+    fn now(&self) -> Option<crate::time::Rfc3339Instant> {
+        self.inner.now()
+    }
+
+    fn orders_text_by_bytes(&self, path: &FactPath) -> bool {
+        self.inner.orders_text_by_bytes(path)
+    }
+
+    fn cardinality(&self, path: &FactPath) -> Option<usize> {
+        self.inner.cardinality(path)
+    }
+}
+
 /// One side of a comparison: either a fact to look up, or a literal.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(untagged)]
@@ -1210,7 +1293,7 @@ impl fmt::Display for Operand {
 /// How deep `all`/`any`/`not` nesting may go before a predicate is refused.
 ///
 /// Both spellings let a document choose the parser's recursion depth. The structured form nests
-/// mappings, which `serde_yaml` caps at 128 on its own; the string form is one scalar, so
+/// mappings, which `ess-yaml` caps at 128 on its own; the string form is one scalar, so
 /// `not not not …` is bounded by nothing but the file size. Measured on this machine, a debug build
 /// of [`Predicate::parse_expression`] overflows the 8 MiB main-thread stack between 2 500 and 3 000
 /// prefixes and the 2 MiB a spawned worker gets between 600 and 800. A stack overflow aborts the
@@ -1220,7 +1303,7 @@ impl fmt::Display for Operand {
 /// 32 because the deepest predicate anybody writes is an `all` of `any`s of comparisons — three or
 /// four — and because `MAX_TYPE_DEPTH` and `ess-domain`'s `WRAPPER_LIMIT` are also 32: one number
 /// across the workspace is easier to defend, and to remember, than three. It sits an order of
-/// magnitude under the smallest measured floor and well under `serde_yaml`'s 128, so a document
+/// magnitude under the smallest measured floor and well under `ess-yaml`'s 128, so a document
 /// nested past it is refused here, with a code and a limit, rather than by the deserializer.
 pub const MAX_PREDICATE_DEPTH: usize = 32;
 
@@ -1346,6 +1429,17 @@ pub enum Predicate {
         /// The literals, verbatim as written: never a fact path, never read as a number.
         values: Vec<FactValue>,
     },
+    /// The text fact, its surrounding ASCII whitespace removed ([`trim_ascii_whitespace`]),
+    /// satisfies the wrapped text operator (`ess/25`, beyond10x/ess#532,
+    /// `docs/design/value-expressions.md` § E10).
+    ///
+    /// Map form only: `reason: {trimmed: {in_ignore_case: [NEW, DONE]}}`. The wrapped predicate is
+    /// one of [`Predicate::AnyOf`] (`equals`, `in` and their aliases: one or more text literals),
+    /// [`Predicate::TextMatch`] or [`Predicate::FoldMatch`], over the same fact; the reader builds
+    /// nothing else, and only that fact's value is trimmed, never a parameter or an input it is
+    /// compared with. Unobserved is [`Truth::Unknown`]; an observed value that is not text reaches
+    /// the wrapped operator untouched, which answers [`Truth::False`] for it.
+    Trimmed(Box<Predicate>),
     /// Every element of a collection satisfies the body.
     ///
     /// Empty holds vacuously; unobserved is [`Truth::Unknown`].
@@ -1798,6 +1892,12 @@ impl Predicate {
                     Truth::from_bool(op.holds(text, &literals))
                 })
             }
+            // Only the wrapped operator's own fact is trimmed (E10); a fact the reader cannot place
+            // under it is read untrimmed, which the reader never builds.
+            Self::Trimmed(inner) => match inner.trimmed_subject() {
+                Some(path) => inner.evaluate(&TrimmedFacts { inner: facts, path }),
+                None => inner.evaluate(facts),
+            },
             Self::Forall(quantified) => quantified.evaluate(facts, true),
             Self::Exists(quantified) => quantified.evaluate(facts, false),
             Self::Distinct(distinct) => distinct.evaluate(facts),
@@ -2148,7 +2248,7 @@ impl Predicate {
                     child.visit_free_paths(bound, visit);
                 }
             }
-            Self::Not(inner) => inner.visit_free_paths(bound, visit),
+            Self::Not(inner) | Self::Trimmed(inner) => inner.visit_free_paths(bound, visit),
             Self::Compare { left, right, .. } => {
                 for path in [left.fact_path(), right.fact_path()].into_iter().flatten() {
                     if !bound.contains(&path.namespace()) {
@@ -2218,7 +2318,7 @@ impl Predicate {
                     child.visit_quantified(bound, found);
                 }
             }
-            Self::Not(inner) => inner.visit_quantified(bound, found),
+            Self::Not(inner) | Self::Trimmed(inner) => inner.visit_quantified(bound, found),
             Self::Forall(quantified) | Self::Exists(quantified) => {
                 if !bound.contains(&quantified.over.namespace()) {
                     found.push(&quantified.over);
@@ -2253,7 +2353,7 @@ impl Predicate {
         match self {
             Self::TextMatch { .. } => true,
             Self::All(children) | Self::Any(children) => children.iter().any(Self::uses_text_match),
-            Self::Not(inner) => inner.uses_text_match(),
+            Self::Not(inner) | Self::Trimmed(inner) => inner.uses_text_match(),
             Self::Forall(quantified) | Self::Exists(quantified) => {
                 quantified.body.uses_text_match()
             }
@@ -2279,7 +2379,7 @@ impl Predicate {
             Self::All(children) | Self::Any(children) => {
                 children.iter().any(Self::uses_text_operand)
             }
-            Self::Not(inner) => inner.uses_text_operand(),
+            Self::Not(inner) | Self::Trimmed(inner) => inner.uses_text_operand(),
             Self::Forall(quantified) | Self::Exists(quantified) => {
                 quantified.body.uses_text_operand()
             }
@@ -2312,7 +2412,7 @@ impl Predicate {
             Self::All(children) | Self::Any(children) => children
                 .iter()
                 .any(|child| child.reads_text_parameter(name)),
-            Self::Not(inner) => inner.reads_text_parameter(name),
+            Self::Not(inner) | Self::Trimmed(inner) => inner.reads_text_parameter(name),
             Self::Forall(quantified) | Self::Exists(quantified) => {
                 quantified.body.reads_text_parameter(name)
             }
@@ -2350,7 +2450,7 @@ impl Predicate {
             Self::All(children) | Self::Any(children) => children
                 .iter()
                 .any(|child| child.reads_root_fact_in(binders)),
-            Self::Not(inner) => inner.reads_root_fact_in(binders),
+            Self::Not(inner) | Self::Trimmed(inner) => inner.reads_root_fact_in(binders),
             Self::Forall(quantified) | Self::Exists(quantified) => {
                 binders.push(&quantified.bind);
                 let found = quantified.body.reads_root_fact_in(binders);
@@ -2384,7 +2484,7 @@ impl Predicate {
             Self::All(children) | Self::Any(children) => {
                 children.iter().any(Self::compares_instants)
             }
-            Self::Not(inner) => inner.compares_instants(),
+            Self::Not(inner) | Self::Trimmed(inner) => inner.compares_instants(),
             Self::Forall(quantified) | Self::Exists(quantified) => {
                 quantified.body.compares_instants()
             }
@@ -2410,7 +2510,7 @@ impl Predicate {
                 matches!(left, Operand::Offset(_)) || matches!(right, Operand::Offset(_))
             }
             Self::All(children) | Self::Any(children) => children.iter().any(Self::reads_offset),
-            Self::Not(inner) => inner.reads_offset(),
+            Self::Not(inner) | Self::Trimmed(inner) => inner.reads_offset(),
             Self::Forall(quantified) | Self::Exists(quantified) => quantified.body.reads_offset(),
             Self::Always
             | Self::Never
@@ -2432,7 +2532,7 @@ impl Predicate {
         match self {
             Self::Distinct(_) => true,
             Self::All(children) | Self::Any(children) => children.iter().any(Self::reads_distinct),
-            Self::Not(inner) => inner.reads_distinct(),
+            Self::Not(inner) | Self::Trimmed(inner) => inner.reads_distinct(),
             Self::Forall(quantified) | Self::Exists(quantified) => quantified.body.reads_distinct(),
             Self::Always
             | Self::Never
@@ -2463,7 +2563,7 @@ impl Predicate {
                         walk(child, found);
                     }
                 }
-                Predicate::Not(inner) => walk(inner, found),
+                Predicate::Not(inner) | Predicate::Trimmed(inner) => walk(inner, found),
                 Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
                     walk(&quantified.body, found);
                 }
@@ -2525,7 +2625,7 @@ impl Predicate {
             Self::All(children) | Self::Any(children) => {
                 children.iter().any(Self::reads_utf8_bytes)
             }
-            Self::Not(inner) => inner.reads_utf8_bytes(),
+            Self::Not(inner) | Self::Trimmed(inner) => inner.reads_utf8_bytes(),
             Self::Forall(quantified) | Self::Exists(quantified) => {
                 quantified.body.reads_utf8_bytes()
             }
@@ -2561,7 +2661,7 @@ impl Predicate {
         match self {
             Self::FoldMatch { .. } => true,
             Self::All(children) | Self::Any(children) => children.iter().any(Self::uses_case_fold),
-            Self::Not(inner) => inner.uses_case_fold(),
+            Self::Not(inner) | Self::Trimmed(inner) => inner.uses_case_fold(),
             Self::Forall(quantified) | Self::Exists(quantified) => quantified.body.uses_case_fold(),
             Self::Always
             | Self::Never
@@ -2573,6 +2673,44 @@ impl Predicate {
             | Self::TextMatch { .. }
             | Self::Distinct(_)
             | Self::Window(_) => false,
+        }
+    }
+
+    /// Whether any leaf of this predicate, at any depth, is a [`Predicate::Trimmed`] text operator.
+    ///
+    /// The question every format gate asks of the construct (beyond10x/ess#532): `ess/25` for an
+    /// authored specification, and every lane that does not evaluate it — `infra-spec/1`, Entity
+    /// Runtime, a selection plan, a suite — to refuse it by name. The wrapped operator still
+    /// answers [`Self::uses_text_match`] or [`Self::uses_case_fold`] as it would unwrapped.
+    pub fn uses_trim(&self) -> bool {
+        match self {
+            Self::Trimmed(_) => true,
+            Self::All(children) | Self::Any(children) => children.iter().any(Self::uses_trim),
+            Self::Not(inner) => inner.uses_trim(),
+            Self::Forall(quantified) | Self::Exists(quantified) => quantified.body.uses_trim(),
+            Self::Always
+            | Self::Never
+            | Self::Compare { .. }
+            | Self::Truthy(_)
+            | Self::Defined(_)
+            | Self::AnyOf { .. }
+            | Self::NoneOf { .. }
+            | Self::TextMatch { .. }
+            | Self::FoldMatch { .. }
+            | Self::Distinct(_)
+            | Self::Window(_) => false,
+        }
+    }
+
+    /// The fact a text operator a [`Predicate::Trimmed`] may wrap reads: the path of an
+    /// [`Self::AnyOf`], a [`Self::TextMatch`] or a [`Self::FoldMatch`], and `None` for every other
+    /// predicate, which the reader never wraps.
+    pub fn trimmed_subject(&self) -> Option<&FactPath> {
+        match self {
+            Self::AnyOf { path, .. }
+            | Self::TextMatch { path, .. }
+            | Self::FoldMatch { path, .. } => Some(path),
+            _ => None,
         }
     }
 
@@ -3105,15 +3243,74 @@ impl Predicate {
             "truthy" => Ok(Self::Truthy(path)),
             "starts_with" | "ends_with" | "contains" => Self::text_match(path, operator, operand),
             "equals_ignore_case" | "in_ignore_case" => Self::fold_match(path, operator, operand),
+            TRIMMED => Self::trimmed(path, operand),
             unknown => Err(ParseError::predicate(
                 &format!("{path}: {{{unknown}: …}}"),
                 format!(
                     "unknown operator {unknown:?}; expected one of eq, ne, lt, lte, gt, gte, \
                      any_of, none_of, exists, truthy, starts_with, ends_with, contains, \
-                     equals_ignore_case, in_ignore_case"
+                     equals_ignore_case, in_ignore_case, trimmed"
                 ),
             )),
         }
+    }
+
+    /// Parses `trimmed:` (beyond10x/ess#532, E10): a mapping of exactly one text operator — `equals`
+    /// (`eq`, `==`) or `in` (`any_of`, `one_of`) over text literals, `starts_with`, `ends_with`,
+    /// `contains`, `equals_ignore_case` or `in_ignore_case` — read as that operator over the same
+    /// fact, its value trimmed of surrounding ASCII whitespace. `equals` and `in` both read as an
+    /// [`Predicate::AnyOf`], one literal or a list of them, each text kept byte for byte as a
+    /// string operator's is; a number or a Boolean is kept for validation to refuse.
+    fn trimmed(path: FactPath, operand: &Node) -> Result<Self, ParseError> {
+        const SHAPE: &str = "`trimmed` takes a mapping of exactly one text operator: equals, in, \
+             equals_ignore_case, in_ignore_case, starts_with, ends_with or contains";
+        let written = format!("{path}: {{{TRIMMED}: {operand}}}");
+        let Node::Map(entries) = operand else {
+            return Err(ParseError::predicate(&written, SHAPE));
+        };
+        let mut entries = entries.iter();
+        let (Some((operator, inner)), None) = (entries.next(), entries.next()) else {
+            return Err(ParseError::predicate(&written, SHAPE));
+        };
+        let scalar = |node: &Node| match node {
+            Node::Text(text) => Ok(FactValue::Text(text.clone())),
+            Node::Number(number) => Ok(FactValue::Number(*number)),
+            Node::Bool(value) => Ok(FactValue::Bool(*value)),
+            _ => Err(ParseError::predicate(
+                &written,
+                "a comparison operand must be a scalar",
+            )),
+        };
+        let wrapped = match operator.as_str() {
+            "eq" | "equals" | "==" => match inner {
+                Node::Seq(_) => {
+                    return Err(ParseError::predicate(
+                        &written,
+                        "`equals` takes one text literal; use `in` for a list",
+                    ))
+                }
+                other => Self::AnyOf {
+                    path,
+                    values: vec![scalar(other)?],
+                },
+            },
+            "in" | "any_of" | "one_of" => match inner {
+                Node::Seq(items) => Self::AnyOf {
+                    path,
+                    values: items.iter().map(scalar).collect::<Result<_, _>>()?,
+                },
+                _ => {
+                    return Err(ParseError::predicate(
+                        &written,
+                        "`in` takes a list of text literals",
+                    ))
+                }
+            },
+            "starts_with" | "ends_with" | "contains" => Self::text_match(path, operator, inner)?,
+            "equals_ignore_case" | "in_ignore_case" => Self::fold_match(path, operator, inner)?,
+            _ => return Err(ParseError::predicate(&written, SHAPE)),
+        };
+        Ok(Self::Trimmed(Box::new(wrapped)))
     }
 
     /// Parses a string operator's operand: a text is the literal byte for byte, never read through
@@ -3396,6 +3593,16 @@ impl Predicate {
             Self::Distinct(distinct) => distinct.to_node(),
             // Explicit: a window has no compact form.
             Self::Window(window) => Node::Map([("window".to_owned(), window.to_node())].into()),
+            // Explicit: `{<path>: {trimmed: {<operator>: <operand>}}}`, the wrapped operator's own
+            // mapping moved under the key (E10). `equals` and `in` both write as `any_of`, which the
+            // reader takes back under `trimmed`.
+            Self::Trimmed(inner) => match inner.node_in(binders) {
+                Node::Map(mut entries) if entries.len() == 1 => {
+                    let (path, operator) = entries.pop_first().expect("one entry");
+                    Node::Map([(path, Node::Map([(TRIMMED.to_owned(), operator)].into()))].into())
+                }
+                other => other,
+            },
             // Explicit, never the compact fallback below: there is no compact form, so a string
             // operator rendered as text would be a document no reader parses back. A text operand
             // is written as the text, with no quotes added, because the reader takes it verbatim; a
@@ -3825,6 +4032,8 @@ impl fmt::Display for InScope<'_, '_> {
                     None => Ok(()),
                 }
             }
+            // For a reader and the semantic diff, never read back.
+            Predicate::Trimmed(inner) => write!(f, "trimmed({})", nested(inner)),
             Predicate::Window(window) => write!(f, "{window}"),
         }
     }
@@ -4112,7 +4321,9 @@ impl schemars::JsonSchema for Predicate {
              input, `{input: <name>}`. A command guard may hold an instant to a calendar \
              window at UTC or a fixed offset, `{window: {at: now | <path>, days: [mon, …], \
              from: \"HH:MM\", to: \"HH:MM\", offset: Z | ±HH:MM}}`; a named time zone is \
-             refused."
+             refused. From `ess/25` a command guard may compare a text fact with its surrounding \
+             ASCII whitespace removed, `{trimmed: {<text operator>: …}}` around `equals`, `in`, \
+             `equals_ignore_case`, `in_ignore_case`, `starts_with`, `ends_with` or `contains`."
                 .to_owned(),
         );
         schema.into()
@@ -4186,7 +4397,7 @@ mod tests {
     }
 
     fn quantifier(yaml: &str) -> Predicate {
-        let node: Node = serde_yaml::from_str(yaml).expect("yaml");
+        let node: Node = ess_yaml::from_str(yaml).expect("yaml");
         Predicate::from_node(&node).expect("parses")
     }
 
@@ -4398,7 +4609,7 @@ mod tests {
     #[test]
     fn a_malformed_quantifier_is_refused_by_what_is_wrong_with_it() {
         let refusal = |yaml: &str| {
-            let node: Node = serde_yaml::from_str(yaml).expect("yaml");
+            let node: Node = ess_yaml::from_str(yaml).expect("yaml");
             Predicate::from_node(&node)
                 .expect_err("refused")
                 .to_string()
@@ -4789,7 +5000,7 @@ mod tests {
                   - risk: {gte: medium}
               - task.kind: {any_of: [feature, bugfix]}
         ";
-        let node: Node = serde_yaml::from_str(written).expect("well formed");
+        let node: Node = ess_yaml::from_str(written).expect("well formed");
         Predicate::from_node(&node).expect("a realistic predicate");
 
         // And the whole budget, exactly, one level short of the refusal.
@@ -4865,7 +5076,7 @@ mod tests {
             ("note: {ne: null}", "!="),
             ("note: null", "=="),
         ] {
-            let node: Node = serde_yaml::from_str(yaml).expect("yaml");
+            let node: Node = ess_yaml::from_str(yaml).expect("yaml");
             let error = Predicate::from_node(&node).expect_err(yaml);
             assert!(
                 matches!(
@@ -5002,6 +5213,139 @@ mod tests {
             parse(r#"at < "2020-01-01T00:00:00Z""#).evaluate(&facts),
             Truth::Unknown,
             "an instant nobody can read is not a text to sort"
+        );
+    }
+
+    /// beyond10x/ess#532, E10: `trimmed:` wraps each of the seven text operators, removes only the
+    /// six ASCII whitespace characters at either end, and writes back to a document that reads as
+    /// the same predicate.
+    #[test]
+    fn trimmed_wraps_every_text_operator() {
+        let cases: [(&str, &str, &str); 9] = [
+            ("{trimmed: {equals: DONE}}", " \tDONE\r\n", "D ONE"),
+            ("{trimmed: {eq: DONE}}", "\u{b}\u{c}DONE", "\u{a0}DONE"),
+            ("{trimmed: {in: [NEW, DONE]}}", "  NEW ", "new"),
+            ("{trimmed: {equals_ignore_case: done}}", " \tdOnE ", "DO NE"),
+            (
+                "{trimmed: {in_ignore_case: [NEW, HOLD, DONE]}}",
+                "\t done\n",
+                "\u{a0}DONE\u{a0}",
+            ),
+            ("{trimmed: {starts_with: SP}}", "  SPRING24\n", "x SPRING24"),
+            (
+                "{trimmed: {ends_with: '24'}}",
+                "SPRING24 \n",
+                "SPRING24\u{a0}",
+            ),
+            ("{trimmed: {contains: RIN}}", " SPRING24 ", "SPR ING"),
+            ("{trimmed: {in: [' ']}}", " ", "\u{a0}"),
+        ];
+        for (operator, accepted, refused) in cases {
+            let predicate = quantifier(&format!("code: {operator}"));
+            assert!(predicate.uses_trim(), "{operator}");
+            let Predicate::Trimmed(inner) = &predicate else {
+                panic!("{operator} reads as {predicate:?}");
+            };
+            assert_eq!(
+                inner.trimmed_subject().map(ToString::to_string).as_deref(),
+                Some("code"),
+                "{operator}"
+            );
+            let at = |value: &str| predicate.evaluate(&store(&[("code", FactValue::text(value))]));
+            // `{in: [' ']}` holds for nothing once trimmed: every all-whitespace text is empty.
+            if operator.contains("' '") {
+                assert_eq!(at(accepted), Truth::False, "{operator} over {accepted:?}");
+            } else {
+                assert_eq!(at(accepted), Truth::True, "{operator} over {accepted:?}");
+            }
+            assert_eq!(at(refused), Truth::False, "{operator} over {refused:?}");
+            assert_eq!(
+                predicate.evaluate(&FactStore::new()),
+                Truth::Unknown,
+                "{operator} unobserved"
+            );
+            let written = predicate.to_node();
+            assert_eq!(
+                Predicate::from_node(&written).expect("reads back"),
+                predicate,
+                "{operator} written as {written:?}"
+            );
+            assert!(
+                predicate.to_string().starts_with("trimmed(code "),
+                "{predicate}"
+            );
+        }
+        // The set is the six ASCII characters and nothing else.
+        assert_eq!(
+            trim_ascii_whitespace(" \t\n\u{b}\u{c}\rx\r\u{c}\u{b}\n\t "),
+            "x"
+        );
+        assert_eq!(trim_ascii_whitespace("\u{a0}x\u{2003}"), "\u{a0}x\u{2003}");
+        assert_eq!(trim_ascii_whitespace("\u{85}x\u{1c}"), "\u{85}x\u{1c}");
+        // Composed under the connectives, and the wrapped operator still answers its own gate.
+        let nested = quantifier("not: {code: {trimmed: {in_ignore_case: [NEW, DONE]}}}");
+        assert!(nested.uses_trim() && nested.uses_case_fold() && !nested.uses_text_match());
+        assert_eq!(
+            nested.evaluate(&store(&[("code", FactValue::text(" DONE "))])),
+            Truth::False
+        );
+        let prefix = quantifier("code: {trimmed: {starts_with: SP}}");
+        assert!(prefix.uses_text_match() && !prefix.uses_case_fold());
+        assert!(!quantifier("code: {in_ignore_case: [NEW]}").uses_trim());
+        // Only the wrapped operator's own fact is trimmed, never the operand it compares with.
+        let operand = quantifier("code: {trimmed: {starts_with: {input: prefix}}}");
+        assert_eq!(
+            operand.evaluate(&store(&[
+                ("code", FactValue::text("  SP1 ")),
+                ("input.prefix", FactValue::text(" SP")),
+            ])),
+            Truth::False
+        );
+    }
+
+    /// beyond10x/ess#532: `trimmed:` wraps a text operator and nothing else, and a value that is not
+    /// text reaches the wrapped operator untrimmed, which answers false for it — the evaluator's
+    /// half of the `type_mismatch` validation gives a fact that is not text.
+    #[test]
+    fn trimmed_over_a_non_text_fact_is_a_type_mismatch() {
+        for refused in [
+            "code: {trimmed: {gt: 3}}",
+            "code: {trimmed: {ne: DONE}}",
+            "code: {trimmed: {none_of: [DONE]}}",
+            "code: {trimmed: {exists: true}}",
+            "code: {trimmed: {trimmed: {equals: DONE}}}",
+            "code: {trimmed: {equals: DONE, contains: O}}",
+            "code: {trimmed: {}}",
+            "code: {trimmed: DONE}",
+            "code: {trimmed: [DONE]}",
+            "code: {trimmed: {equals: [DONE]}}",
+            "code: {trimmed: {in: DONE}}",
+        ] {
+            let node: Node = ess_yaml::from_str(refused).expect("yaml");
+            let error = Predicate::from_node(&node).expect_err(refused);
+            assert!(
+                matches!(error, ParseError::Predicate { .. }),
+                "{refused}: {error:?}"
+            );
+        }
+        let predicate = quantifier("code: {trimmed: {in: [DONE]}}");
+        for value in [FactValue::count(3), FactValue::Bool(true)] {
+            assert_eq!(
+                predicate.evaluate(&store(&[("code", value.clone())])),
+                Truth::False,
+                "{value:?}"
+            );
+        }
+        // A number literal is kept, not refused here: validation refuses it with a code and a site.
+        let number = quantifier("code: {trimmed: {equals: 44}}");
+        assert_eq!(
+            number.evaluate(&store(&[("code", FactValue::text(" 44 "))])),
+            Truth::False
+        );
+        assert_eq!(
+            quantifier("code: {trimmed: {equals: '44'}}")
+                .evaluate(&store(&[("code", FactValue::text(" 44 "))])),
+            Truth::True
         );
     }
 }

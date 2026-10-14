@@ -238,14 +238,14 @@ fn a_listed_state_on_a_branch_with_a_subject_needs_its_move_to_start_in_each() {
 fn a_listed_state_round_trips_through_the_document_form() {
     let spec = accepted(SHIP);
     let ship = &spec.commands()[&"demo.ship.ShipOrder".parse().unwrap()];
-    let written = serde_yaml::to_string(ship).unwrap();
+    let written = ess_yaml::to_string(ship).unwrap();
     assert!(written.contains("when_subject_state:\n"), "{written}");
     assert!(written.contains("when_subject_state: Shipped"), "{written}");
-    let reread: ess_domain::command::RawCommandSpec = serde_yaml::from_str(&written).unwrap();
-    let again = serde_yaml::to_string(&reread).unwrap();
+    let reread: ess_domain::command::RawCommandSpec = ess_yaml::from_str(&written).unwrap();
+    let again = ess_yaml::to_string(&reread).unwrap();
     assert_eq!(
-        serde_yaml::from_str::<serde_yaml::Value>(&again).unwrap()["outcomes"],
-        serde_yaml::from_str::<serde_yaml::Value>(&written).unwrap()["outcomes"]
+        ess_yaml::from_str::<ess_yaml::Value>(&again).unwrap()["outcomes"],
+        ess_yaml::from_str::<ess_yaml::Value>(&written).unwrap()["outcomes"]
     );
 }
 

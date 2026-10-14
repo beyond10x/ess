@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use ess_ui::TypeExpr;
-use serde_yaml::Value;
+use ess_yaml::Value;
 
 use crate::ts;
 

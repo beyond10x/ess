@@ -122,12 +122,12 @@ impl Written {
     ///
     /// A value other than `ignored` or `refused` is refused as the document is read, naming the
     /// declaration's position, as a misspelt value of any other closed key is.
-    pub(crate) fn take(document: &mut serde_yaml::Value) -> Result<Self, serde_yaml::Error> {
+    pub(crate) fn take(document: &mut ess_yaml::Value) -> Result<Self, ess_yaml::Error> {
         let mut written = Self::default();
         for section in Section::ALL {
             let Some(items) = document
                 .get_mut(section.key())
-                .and_then(serde_yaml::Value::as_sequence_mut)
+                .and_then(ess_yaml::Value::as_sequence_mut)
             else {
                 continue;
             };
@@ -138,8 +138,8 @@ impl Written {
                 let Some(value) = mapping.shift_remove(UndeclaredFields::KEY) else {
                     continue;
                 };
-                let value = serde_yaml::from_value::<UndeclaredFields>(value).map_err(|error| {
-                    <serde_yaml::Error as serde::de::Error>::custom(format!(
+                let value = ess_yaml::from_value::<UndeclaredFields>(value).map_err(|error| {
+                    <ess_yaml::Error as serde::de::Error>::custom(format!(
                         "{}[{index}].{}: {error}",
                         section.key(),
                         UndeclaredFields::KEY

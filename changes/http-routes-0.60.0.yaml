@@ -1,0 +1,18 @@
+schema: b10x-change/v1
+id: ess/http-routes-0.60.0
+repository: ess
+publishedAt: 2026-10-14T00:00:00Z
+title: Commands and views bind to HTTP routes, and mutation testing covers more of a model
+summary: >-
+  `ess-http/1` binds commands and views to HTTP routes, projected into OpenAPI by
+  `--http` ([#493](https://github.com/beyond10x/ess/issues/493)). `mutate` covers
+  `when_subject:`/`when_related:` guards and authored scenarios
+  ([#515](https://github.com/beyond10x/ess/issues/515)). Go synthesis builds when bounded contexts
+  reference each other in a loop.
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.60.0
+  version: 0.60.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

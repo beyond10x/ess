@@ -261,6 +261,8 @@ fn set_source(set: &ess_compiler::ir::ResolvedPayloadField) -> Option<String> {
         | ess_compiler::ir::ResolvedPayloadValue::RelatedField { .. }
         | ess_compiler::ir::ResolvedPayloadValue::RelatedSelection { .. }
         | ess_compiler::ir::ResolvedPayloadValue::CallerAttribute { .. }
+        | ess_compiler::ir::ResolvedPayloadValue::ChangedField { .. }
+        | ess_compiler::ir::ResolvedPayloadValue::ChangedState { .. }
         | ess_compiler::ir::ResolvedPayloadValue::ChangedCount => None,
     }
 }

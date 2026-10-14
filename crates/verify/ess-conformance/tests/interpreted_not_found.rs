@@ -124,3 +124,46 @@ fn issue_291_the_interpreter_answers_the_declared_not_found_refusal() {
         );
     }
 }
+
+/// beyond10x/ess#535: the read-only `Ring` — every branch preserves the seat its input names or
+/// refuses it — answers an identity no seat carries with its `unknown_instance:` branch, and the
+/// interpreted target passes every scenario the model synthesizes, that one included.
+#[test]
+fn the_interpreter_answers_a_read_only_command_on_an_unknown_identity() {
+    const READ_ONLY: &str = include_str!(
+        "../../../specify/ess-compiler/tests/fixtures/read-only-unknown-instance.yaml"
+    );
+    const NO_SEAT: &str = "demo.desk.Ring/outcome/no-seat";
+    let raw = RawSpecFile::parse(READ_ONLY).unwrap_or_else(|error| panic!("{error}"));
+    let spec = Specification::assemble([(Source::new("desk.yaml"), raw)])
+        .unwrap_or_else(|errors| panic!("{errors}"));
+    let model = compile(&spec, &SourceMap::new()).unwrap_or_else(|error| panic!("{error:?}"));
+    let suite = synthesize(&model).suite;
+    let target = ess_conformance::interpret::Interpreted::for_model(model);
+    let admitted = AdmittedSuite::from_suite(&suite).unwrap_or_else(|e| panic!("{e}"));
+    let report = Runner::for_suite(admitted.suite())
+        .run_admitted(&admitted, &target)
+        .into_report();
+    let statuses: BTreeMap<String, String> = report
+        .scenarios
+        .iter()
+        .map(|run| {
+            (
+                run.scenario.to_string(),
+                format!("{:?} {:?}", run.status, run.checks),
+            )
+        })
+        .collect();
+    assert!(
+        statuses.contains_key(NO_SEAT),
+        "{NO_SEAT} is synthesized: {statuses:#?}"
+    );
+    for run in &report.scenarios {
+        assert_eq!(
+            run.status,
+            Status::Passed,
+            "{}: {statuses:#?}",
+            run.scenario
+        );
+    }
+}

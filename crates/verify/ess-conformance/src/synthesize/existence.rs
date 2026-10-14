@@ -15,6 +15,7 @@
 //! steps select.
 
 use ess_compiler::ir::{Driver, ResolvedPayloadValue};
+use ess_domain::command::TestStrategy;
 use ess_domain::view::Consistency;
 
 use crate::witness::{candidates, WitnessGap, MAX_CANDIDATES};
@@ -303,6 +304,7 @@ pub(super) fn existence(
             }
         }
         refusals_on_a_stored_row(models, command, actors, suite, refusals);
+        externals_on_a_stored_row(models, command, actors, suite, refusals);
         refusals_on_an_arranged_row(models, command, actors, suite, refusals);
         refusals_in_each_held_state(models, command, actors, suite, refusals);
     }
@@ -883,6 +885,10 @@ struct Segment {
 /// (beyond10x/ess#479). Sent the stored identity over the refused input, `{item_id: ""}` became
 /// `{item_id: item_id-1048595}`, which `item_id == ""` refutes. Where another input keeps the guard
 /// with the stored identity — `item_id == "" or title == ""` sent `title: ""` — that one is sent.
+///
+/// An external refusal answered before the row (`before_row: true`, ess/25, beyond10x/ess#534) is
+/// sent with its provider forced, and `None` where the stored identity takes the input outside the
+/// branch's own eligibility or into an input refusal declared before it.
 fn segment(
     models: &InvocationModels<'_>,
     command: &ResolvedCommand,
@@ -909,15 +915,9 @@ fn segment(
     let mut first = creating_input(ir, creator, creating, at, actors)?;
     let identity = identity_at(ir, creator, field, fresh, &first)?;
     super::set_at(&mut first, field, Some(identity.clone()));
-    let second = if declared.condition == ResolvedCondition::ExistingInstance {
-        let mut second = second;
-        super::set_at(&mut second, field, Some(identity));
-        second
-    } else {
-        match super::reach_pinned(ir, command, declared, second, field, &identity)? {
-            Some(second) => second,
-            None => return Ok(None),
-        }
+    let forced = declared.test_strategy == TestStrategy::InjectFault;
+    let Some(second) = sent_for_stored(ir, command, declared, second, field, identity)? else {
+        return Ok(None);
     };
 
     let driver = Driver {
@@ -959,6 +959,12 @@ fn segment(
     steps.extend(preservation.before.iter().cloned());
     let supplied = supply(ir, command, &second, None, None, &BTreeMap::new());
     let expected = super::expect_error(ir, declared, error, &supplied, &setup.settled);
+    if forced {
+        steps.push(ScenarioStep::ConfigureExternalOutcome {
+            force: branch.clone(),
+            times: None,
+        });
+    }
     steps.push(ScenarioStep::ExecuteCommand {
         command: command_ref.clone(),
         actor: actors.get(&command.name).cloned(),
@@ -995,6 +1001,31 @@ fn segment(
         source.extend(part.source);
     }
     Ok(Some(Segment { steps, source }))
+}
+
+/// The second send of a [`segment`]: `second` with `field` set to the stored `identity`, or `None`
+/// where that send no longer reaches `declared`. `existing_instance:` takes any input; an external
+/// refusal answered before the row (ess/25, beyond10x/ess#534) is forced, so the provider decides
+/// it, and the send is kept where the branch's own eligibility still holds and every input refusal
+/// declared before it is still refuted; an input refusal is kept as [`super::reach_pinned`] finds it.
+fn sent_for_stored(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    declared: &ResolvedOutcome,
+    mut second: BTreeMap<String, Node>,
+    field: &str,
+    identity: Node,
+) -> Result<Option<BTreeMap<String, Node>>, RefusalCause> {
+    if declared.condition == ResolvedCondition::ExistingInstance {
+        super::set_at(&mut second, field, Some(identity));
+        return Ok(Some(second));
+    }
+    if declared.test_strategy == TestStrategy::InjectFault {
+        let reached = super::set_at(&mut second, field, Some(identity))
+            && super::reaches_before_row(ir, command, declared, &second, None)?;
+        return Ok(reached.then_some(second));
+    }
+    super::reach_pinned(ir, command, declared, second, field, &identity)
 }
 
 fn recreated(
@@ -1248,6 +1279,81 @@ fn refusals_on_a_stored_row(
                 scenario.source.extend(part.source);
             }
             // No stored identity selects the refusal: its plain send is its whole witness.
+            Ok(None) => {}
+            Err(cause) => {
+                suite.scenarios.remove(&id);
+                refusals.push(Refusal::about(&id, cause));
+            }
+        }
+    }
+}
+
+/// Every external refusal answered before the row (`before_row: true`, ess/25, beyond10x/ess#534)
+/// beside `existing_instance:`, forced once more for an identity a row already carries: a row
+/// created through a declared creation under a fresh identity, the provider forced, that identity
+/// sent, and the external refusal required with no event and the row unchanged. Its own scenario
+/// sends an identity no row carries, where a target that reads existence first answers the
+/// external too; here it answers `existing_instance:` and so tells an unauthenticated caller the
+/// row exists. Where the half cannot be built the scenario is withdrawn and refused, as
+/// [`refusals_on_a_stored_row`] does; where no input sent for the stored identity reaches the
+/// branch, its plain send stands alone. A model without the key, or without `existing_instance:`,
+/// keeps its suite's bytes.
+fn externals_on_a_stored_row(
+    models: &InvocationModels<'_>,
+    command: &ResolvedCommand,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    suite: &mut ConformanceSuite,
+    refusals: &mut Vec<Refusal>,
+) {
+    let ir = models.arrangement;
+    if !command
+        .outcomes
+        .iter()
+        .any(|outcome| outcome.condition == ResolvedCondition::ExistingInstance)
+    {
+        return;
+    }
+    let creating = creations(command);
+    let Some(first_creation) = creating.first().copied() else {
+        return;
+    };
+    // Past every slot the creations and the input refusals above take.
+    let taken = creating.len()
+        + command
+            .outcomes
+            .iter()
+            .filter(|outcome| is_input_guarded_refusal(outcome))
+            .count();
+    for (nth, external) in command
+        .outcomes
+        .iter()
+        .filter(|outcome| outcome.before_row && outcome.test_strategy == TestStrategy::InjectFault)
+        .enumerate()
+    {
+        let id = outcome_id(command, external);
+        if !suite.scenarios.contains_key(&id) {
+            continue;
+        }
+        let built = reach(ir, command, external, Distinction::PLAIN).and_then(|sent| {
+            segment(
+                models,
+                command,
+                first_creation,
+                sent,
+                external,
+                Fresh::Stored(taken + nth),
+                actors,
+            )
+        });
+        match built {
+            Ok(Some(part)) => {
+                let scenario = suite
+                    .scenarios
+                    .get_mut(&id)
+                    .expect("checked to be filed above");
+                scenario.steps.extend(part.steps);
+                scenario.source.extend(part.source);
+            }
             Ok(None) => {}
             Err(cause) => {
                 suite.scenarios.remove(&id);

@@ -238,7 +238,7 @@ impl Refusal {
 }
 /// Reads an importer-produced service-interface document from JSON or YAML.
 pub fn read_interface(text: &str) -> Result<ServiceInterface, Vec<Refusal>> {
-    let interface: ServiceInterface = match serde_yaml::from_str(text) {
+    let interface: ServiceInterface = match ess_yaml::from_str(text) {
         Ok(interface) => interface,
         Err(error) => {
             return Err(vec![Refusal::new(

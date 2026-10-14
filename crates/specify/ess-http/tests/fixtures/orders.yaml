@@ -1,0 +1,117 @@
+# The fixture the `ess-http/1` stage-2 answer tests bind (`tests/outcomes.rs`): a command whose
+# success returns its response beside three refusals, a command without `returns`, and views that
+# select by identity, by another field, or by page.
+format: ess/22
+system: catalog
+version: v1
+domain: catalog.orders
+types:
+  - {name: catalog.orders.OrderId, kind: newtype, of: String}
+entities:
+  - name: catalog.orders.Order
+    identity: {name: order_id, type: catalog.orders.OrderId}
+    fields:
+      - {name: quantity, type: Integer}
+    lifecycle: {initial: Placed, states: [Placed], terminal: [Placed], transitions: []}
+errors:
+  - name: catalog.orders.OutOfStock
+    naming: {wire: out_of_stock}
+    fields:
+      - {name: available, type: Integer}
+  - name: catalog.orders.TooMany
+    naming: {wire: too_many}
+  # An error whose one field travels as `error`, the member a body would name the error under.
+  - name: catalog.orders.Mislabelled
+    fields:
+      - {name: kind, type: String, naming: {wire: error}}
+commands:
+  - name: catalog.orders.PlaceOrder
+    input:
+      - {name: order_id, type: catalog.orders.OrderId}
+      - {name: quantity, type: Integer}
+    response:
+      - {name: order_id, type: catalog.orders.OrderId}
+    outcomes:
+      - name: out-of-stock
+        when: quantity > 100
+        error: catalog.orders.OutOfStock
+      - name: too-many
+        when: quantity > 50
+        error: catalog.orders.TooMany
+      - name: mislabelled
+        error: catalog.orders.Mislabelled
+      - name: placed
+        when: quantity >= 0
+        creates: catalog.orders.Order
+        instance: order_id
+        sets: {quantity: input.quantity}
+        returns: true
+        emits: [catalog.orders.OrderPlaced]
+        payload:
+          catalog.orders.OrderPlaced: {order_id: input.order_id}
+  - name: catalog.orders.NoteOrder
+    input:
+      - {name: order_id, type: catalog.orders.OrderId}
+    outcomes:
+      - name: noted
+        emits: [catalog.orders.OrderPlaced]
+        payload:
+          catalog.orders.OrderPlaced: {order_id: input.order_id}
+events:
+  - name: catalog.orders.OrderPlaced
+    fields:
+      - {name: order_id, type: catalog.orders.OrderId}
+views:
+  - name: catalog.orders.OrderById
+    source: catalog.orders.Order
+    params:
+      - {name: order_id, type: catalog.orders.OrderId}
+    filter: order_id == param.order_id
+    fields:
+      - {name: order_id, type: catalog.orders.OrderId}
+      - {name: quantity, type: Integer}
+  - name: catalog.orders.OrderByIdReversed
+    source: catalog.orders.Order
+    params:
+      - {name: order_id, type: catalog.orders.OrderId}
+    filter: param.order_id == order_id
+    fields:
+      - {name: order_id, type: catalog.orders.OrderId}
+  - name: catalog.orders.LargeOrderById
+    source: catalog.orders.Order
+    params:
+      - {name: order_id, type: catalog.orders.OrderId}
+    filter: {all: [quantity > 10, {all: [quantity < 1000, order_id == param.order_id]}]}
+    fields:
+      - {name: order_id, type: catalog.orders.OrderId}
+  - name: catalog.orders.OrdersOfSize
+    source: catalog.orders.Order
+    params:
+      - {name: quantity, type: Integer}
+    filter: quantity == param.quantity
+    fields:
+      - {name: order_id, type: catalog.orders.OrderId}
+  - name: catalog.orders.AnyOrderById
+    source: catalog.orders.Order
+    params:
+      - {name: order_id, type: catalog.orders.OrderId}
+    filter: {any: [order_id == param.order_id, quantity > 10]}
+    fields:
+      - {name: order_id, type: catalog.orders.OrderId}
+  - name: catalog.orders.OrderPage
+    source: catalog.orders.Order
+    params:
+      - {name: order_id, type: catalog.orders.OrderId}
+      - {name: page, type: Integer}
+      - {name: size, type: Integer}
+    filter: order_id == param.order_id
+    order_by: [order_id asc]
+    paging: {page: page, size: size}
+    fields:
+      - {name: order_id, type: catalog.orders.OrderId}
+components:
+  - component: orders-service
+    reached_by: network
+    owns: {domains: [catalog.orders]}
+    accepts: {commands: [catalog.orders.NoteOrder, catalog.orders.PlaceOrder]}
+    publishes: {events: [catalog.orders.OrderPlaced]}

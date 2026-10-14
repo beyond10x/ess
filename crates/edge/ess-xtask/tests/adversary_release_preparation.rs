@@ -1,6 +1,6 @@
 //! Adversarial release-preparation and release-record workflow checks.
 
-use serde_yaml::Value;
+use ess_yaml::Value;
 use std::fs;
 use std::path::Path;
 use std::process::{Command, Output};
@@ -45,7 +45,7 @@ fn checkout_step(workflow: &Value) -> &Value {
 
 #[test]
 fn release_record_fetches_historical_tag_objects_before_checking_off_main() {
-    let workflow: Value = serde_yaml::from_str(include_str!(
+    let workflow: Value = ess_yaml::from_str(include_str!(
         "../../../../.github/workflows/release-record.yml"
     ))
     .expect("release-record workflow parses");

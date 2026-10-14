@@ -332,6 +332,14 @@ impl<'a> Check<'a> {
                      evaluate"
                 ))
             }
+            // Validation admits `trimmed` only in a command guard, and the shared invariant
+            // evaluator trims nothing: refused by name rather than rendered as the wrapped operator.
+            Predicate::Trimmed(_) => {
+                return Err(format!(
+                    "`{predicate}` compares text with `trimmed`, which the generated invariant \
+                     check does not evaluate"
+                ))
+            }
         })
     }
 

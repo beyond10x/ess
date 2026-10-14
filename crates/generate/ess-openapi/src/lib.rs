@@ -262,7 +262,7 @@ impl Refusal {
 
 /// Imports one `OpenAPI` 3.0 or 3.1 document into typed service-interface IR.
 pub fn import(text: &str) -> Result<ImportReport, Vec<Refusal>> {
-    let value: Value = match serde_yaml::from_value(accounting::strict_value(text)?) {
+    let value: Value = match ess_yaml::from_value(accounting::strict_value(text)?) {
         Ok(value) => value,
         Err(error) => {
             return Err(vec![Refusal::new(
@@ -276,7 +276,7 @@ pub fn import(text: &str) -> Result<ImportReport, Vec<Refusal>> {
 
 /// Reads an importer-produced service-interface document from JSON or YAML.
 pub fn read_interface(text: &str) -> Result<ServiceInterface, Vec<Refusal>> {
-    let interface: ServiceInterface = match serde_yaml::from_str(text) {
+    let interface: ServiceInterface = match ess_yaml::from_str(text) {
         Ok(interface) => interface,
         Err(error) => {
             return Err(vec![Refusal::new(
@@ -316,7 +316,7 @@ pub fn project(interface: &ServiceInterface) -> Result<String, Vec<Refusal>> {
         "components".to_owned(),
         serde_json::json!({ "schemas": schemas }),
     );
-    serde_yaml::to_string(&Value::Object(root))
+    ess_yaml::to_string(&Value::Object(root))
         .map_err(|error| vec![Refusal::new("/", format!("projection failed: {error}"))])
 }
 

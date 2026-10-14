@@ -27,17 +27,23 @@ rest of this file does not apply to you.
 `crates/<area>/<crate>/`. The area is the directory only; a crate's name is its identity and is
 never changed to follow a move.
 
-- **`crates/specify/`** — `ess-primitives`, `ess-domain`, `ess-compiler`, `ess-composition`,
-  `ess-realization`, `ess-http`: an authored system becomes a validated, resolved IR.
+- **`crates/specify/`** — `ess-yaml`, `ess-primitives`, `ess-domain`, `ess-compiler`,
+  `ess-composition`, `ess-realization`, `ess-http`: an authored system becomes a validated,
+  resolved IR. `ess-yaml` is a leaf with no ESS dependency and the only crate that names a YAML
+  library; every other crate reads and writes YAML through it, and a crate depends on neither
+  `serde_yaml` nor `unsafe-libyaml` (`crates/edge/ess-xtask/tests/layout.rs`,
+  `docs/design/yaml-parser-replacement.md`).
 - **`crates/generate/`** — `ess-gen`, `ess-synth`, `ess-openapi`, `schema-contract`,
   `ess-deployment`: that IR becomes artifacts, and nothing here applies one to a running system.
 - **`crates/verify/`** — `ess-conformance`, `ess-diff`: an implementation held to the
   specification, and one revision of a specification against another.
 - **`crates/infra/`** — `infra-domain`, `infra-compiler`, `infra-analyze`, `infra-spec`,
   `infra-project`, `ess-kubernetes`: the observed cluster, a separate bounded context whose only
-  dependency on the rest is `ess-primitives`.
+  dependency on the rest is `ess-primitives`. It reads YAML through `ess_primitives::yaml`, which
+  re-exports `ess-yaml`.
 - **`crates/ui/`** — `ess-ui`: a renderer-neutral UI document (`ess-ui/1`, schema at
-  `schemas/ui/ess-ui.schema.yaml`) loaded into typed Rust, with no dependency on the rest.
+  `schemas/ui/ess-ui.schema.yaml`) loaded into typed Rust, with no dependency on the rest except
+  the leaf `ess-yaml`.
 - **`crates/edge/`** — `ess-cli`, `ess-xtask`: the `ess` binary an adopter runs, and this
   repository's own tooling.
 
@@ -116,8 +122,8 @@ pages' `npm` steps in `tutorial_page.rs`, which need the npm registry; unset, th
 For a pull request, CI owns the full gate. Before pushing, run only the crates the change touches
 — `task fmt-check` (not `cargo fmt --all --check`, which also rewrites the byte-pinned generated crates), `cargo clippy -p <crate> --all-targets --locked -- -D warnings`,
 `cargo test -p <crate> --locked`, and `task ci-lint` when a workflow, Taskfile or public API
-changed — then push and read the lanes. Run the whole `task check` locally only for a release tag
-(below) or to reproduce a lane that failed in CI.
+changed — then push and read the lanes. Run the whole `task check` locally only to reproduce a
+lane that failed in CI.
 
 **The package-gate subset.** The crates to gate are named by the change, not guessed:
 
@@ -163,10 +169,17 @@ a one-line `package.json` change, `npm --prefix website install`, and `cargo xta
 refusal saying the IR is not the compiled model means `ess-ui`'s pinned ESS release and this
 workspace compile the example differently: move the `ess-ui` pin to a commit built on this release.
 
-Before pushing a release tag, run `task check`, `task web-check`, `task test-browser-product` and `task test-slow-probes` on the commit being tagged; those Firefox tests and slow probes are ignored in the CI test shards.
-`task test` alone builds about 45 GiB into the tree's `target/` (44.8 GiB measured on 2026-10-07 at
-0.56.0), so start the local release bar only with that much free disk beyond what other work on the
-machine needs, and watch free space during the step rather than only between steps.
+**The release gate is the CI run on the tag.** `release.yml` runs the reusable `ci.yml` gate on
+the tagged commit, always and in full (below); that run is the full pre-release suite. Run no
+local pre-release suite and no local full gate before a release: each unit passes its package
+gates, the pull request's CI gates the merge into `main`, and the tag run gates the release. A wave holds at most 5 stories and ends in one release.
+
+`task test-browser-product` and `task test-slow-probes` run in no CI lane (those Firefox tests and
+slow probes are ignored in the CI test shards); run them locally when a change touches what they
+cover. To reproduce the whole gate locally, mind that `task test` alone builds about 45 GiB into
+the tree's `target/` (44.8 GiB measured on 2026-10-07 at 0.56.0), so start it only with that much
+free disk beyond what other work on the machine needs, and watch free space during the step rather
+than only between steps.
 Set `ESS_TYPES_NODE` to a `node_modules` outside the checkout that holds `@types/node` at the version
 `ci.yml` installs (`npm install --prefix <dir> @types/node@26.3.0`): without it the TypeScript cases
 in `adversary_287_pass1` fail with `TS2688: Cannot find type definition file for 'node'` and
@@ -178,28 +191,12 @@ cases in `ess-ui-react` exit 127 and `cargo test` stops there.
 Consumer coverage is not part of that bar while it is parked (revision 3, above).
 The release workflow runs the reusable gate, the WebAssembly realization check and native
 packaging concurrently at that exact commit, then retains a read-only preparation artifact only
-after all succeed. It skips the
-gate only when a green `Gate` already covers the tagged bytes. "Green" means the newest `Gate`
-check-run GitHub Actions recorded on a commit is a completed success. The gate is skipped when
-**either** of these holds:
-
-1. the tagged commit itself has a green `Gate`, normally from the `main` push run; or
-2. all of the following hold:
-   - `GET /repos/{owner}/{repo}/commits/{sha}/pulls` returns exactly one merged pull request
-     whose `merge_commit_sha` is the tagged commit;
-   - `git rev-parse <sha>^{tree}` equals `<head>^{tree}` for that pull request's head, which the
-     release fetches;
-   - the tagged commit's first parent (`main` before the merge) is an ancestor of that head;
-   - that head has a green `Gate`.
-
-Anything else runs the gate, including an API or fetch failure. The tree equality makes the tested
-bytes the tagged bytes. The ancestry makes the head's `Gate` a test of those bytes: a
-`pull_request` run tests the head merged into the base of its day, and that is the head's own tree
-only when the base was already in the head. So tag the merge commit of an up-to-date pull request
-as soon as it lands; there is no need to wait for `main`'s run. That pull-request `Gate` ran the
-narrowed feature-off build (above), and `main`'s run of the full one is still in flight when
-such a preparation runs. `release.yml`'s `prior-gate` step is the implementation, and
-`ci_lanes.rs` runs it against real Git histories.
+after all succeed. It runs the full reusable gate on every tag and never reuses a pull-request or
+`main` `Gate`, whatever already ran on the tagged bytes: the tag run is the release gate, and a
+pull-request `Gate` runs the narrowed feature-off build (above). A call from `release.yml` passes
+`checkout-ref`, which `ci.yml` never narrows, so a backfill dispatched from any branch runs it in
+full too. The macOS output-ownership witnesses run on every tag as well; only a backfill
+(`workflow_dispatch`), which may gate a commit older than their test target, skips them. `ci_lanes.rs` (`a_release_tag_always_runs_its_full_gate`) holds both workflows to that.
 
 The four archives are usually built before the tag exists. `.github/workflows/package.yml` runs
 on every `queue/**` push and packages the commit when its workspace version has a dated changelog
@@ -334,6 +331,18 @@ A change an adopter asks for — an issue, another session's message, a downstre
 assessed with `.agents/skills/assessing-external-requests/SKILL.md` before a story is written
 around it. The requester's proposed syntax is evidence of a need, not a design, and a story from an
 external request is not dispatched in a wave without its fit review.
+
+**Downstream findings are designed into generic features, never filed one per finding.**
+
+- Gaps, refusals, defects and documentation gaps from a downstream specification arrive as one
+  collected report or review; the reporter's proposed ideas are input, not the request.
+- Read the report against the open and closed issues, earlier reports and the design pages, and
+  design generic features that each cover many findings; each feature is a local story in the
+  plan store, with the findings it covers named in its fit review.
+- A GitHub issue exists only for outside visibility: one per generic feature, or one batched issue
+  as a last resort. Never one issue per finding, and never a one-to-one implementation of a
+  request. An issue already filed for a single finding is linked to its feature's story and closed
+  or merged into the feature's issue, with a comment naming it.
 
 ## Commits
 

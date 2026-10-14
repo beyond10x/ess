@@ -1,0 +1,102 @@
+# The `ess-http/1` routes and refusals `tests/http_binding_rust.rs` binds to
+# `http-binding-shop.yaml`; the test writes `type` and `specification` above them, with the
+# model's own digest.
+refusals:
+  malformed:
+    status: 400
+    body: {error: {literal: invalid_request}}
+    headers:
+      Cache-Control: {literal: no-store}
+  not_granted:
+    status: 403
+    body: {error: {literal: access_denied}}
+  unfinished:
+    status: 503
+    body: none
+routes:
+  - view: shop.items.ItemById
+    method: get
+    path: /items/{item_id}
+    parameters: {item_id: param.item_id}
+    body: single
+    empty: {status: 404}
+  - command: shop.items.PutItem
+    method: put
+    path: /items/{item_id}
+    parameters: {item_id: input.item_id}
+  - command: shop.items.DropItem
+    method: delete
+    path: /items/{item_id}
+    parameters: {item_id: input.item_id}
+  - command: shop.items.Order
+    method: post
+    path: /orders
+    request: {encoding: form, unknown: ignore}
+  - command: shop.items.StrictOrder
+    method: post
+    path: /strict-orders
+    request: {encoding: form}
+  - command: shop.items.Search
+    method: get
+    path: /search
+    request: {encoding: query}
+  - command: shop.items.Place
+    method: post
+    path: /places
+    outcomes:
+      placed:
+        status: 201
+        body: response
+        headers:
+          Cache-Control: {literal: no-store}
+          X-Item: {source: input.item_id}
+          X-Code: {source: response.code}
+      refused:
+        status: 409
+        body: {error: error}
+        headers:
+          X-Error: {source: error.wire}
+  - command: shop.items.ReadPrivate
+    method: get
+    path: /private/{item_id}
+    parameters: {item_id: input.item_id}
+    request: {encoding: query}
+    outcomes:
+      token-refused:
+        status: 401
+        body: {error: error}
+        headers:
+          WWW-Authenticate:
+            challenge:
+              scheme: Bearer
+              params:
+                realm: {literal: shop}
+                error: {source: error.wire}
+                hint: {source: input.hint}
+  - command: shop.items.Approve
+    method: get
+    path: /approve
+    request: {encoding: query}
+    outcomes:
+      approved:
+        status: 302
+        body: none
+        redirect:
+          location: input.return_to
+          mode: query
+          parameters:
+            client: input.client
+            state: input.state
+      denied:
+        status: 303
+        body: none
+        redirect:
+          location: input.return_to
+          mode: fragment
+          parameters:
+            error: error.wire
+            state: input.state
+  - command: shop.items.Purge
+    method: post
+    path: /purge/{item_id}
+    parameters: {item_id: input.item_id}

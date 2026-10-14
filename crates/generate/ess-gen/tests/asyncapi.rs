@@ -38,7 +38,7 @@ use ess_domain::system::Source;
 use ess_gen::artifact::Generator as _;
 use ess_gen::asyncapi::AsyncApi;
 use ess_gen::provenance::Provenance;
-use serde_yaml::Value;
+use ess_yaml::Value;
 
 #[test]
 fn retained_command_relation_is_visible_without_a_synthetic_event() {
@@ -55,7 +55,7 @@ fn retained_command_relation_is_visible_without_a_synthetic_event() {
     let ir = compile(&spec, &ess_compiler::source::SourceMap::new()).unwrap();
     let docs = documents(&ir);
     let text = docs.values().next().unwrap();
-    let doc: Value = serde_yaml::from_str(text).unwrap();
+    let doc: Value = ess_yaml::from_str(text).unwrap();
     let relation = &doc["x-ess-retained-results"][0];
     assert_eq!(relation["command"].as_str(), Some("retained.core.Seed"));
     assert_eq!(relation["outcome"].as_str(), Some("replayed"));
@@ -262,7 +262,7 @@ fn parsed(ir: &EssIr, path: &str) -> Value {
     let text = documents
         .get(path)
         .unwrap_or_else(|| panic!("{path} is generated; got {:?}", documents.keys()));
-    serde_yaml::from_str(text).unwrap_or_else(|error| panic!("{path} parses as YAML: {error}"))
+    ess_yaml::from_str(text).unwrap_or_else(|error| panic!("{path} parses as YAML: {error}"))
 }
 
 /// The value at a mapping path, or a panic naming the path that was missing.
@@ -303,7 +303,7 @@ fn every_component_gets_one_document_named_after_it() {
 fn a_document_is_a_valid_asyncapi_three_skeleton() {
     for ir in [billing(), probe()] {
         for (path, text) in documents(&ir) {
-            let document: Value = serde_yaml::from_str(&text)
+            let document: Value = ess_yaml::from_str(&text)
                 .unwrap_or_else(|error| panic!("{path} parses as YAML: {error}"));
             assert_eq!(
                 document.get("asyncapi").and_then(Value::as_str),
@@ -657,7 +657,7 @@ fn the_channel_and_its_message_say_nothing_about_the_binding() {
     let document = parsed(&billing(), "email-service.yaml");
     for section in ["channels", "components"] {
         let rendered =
-            serde_yaml::to_string(at(&document, &[section])).expect("the section serialises");
+            ess_yaml::to_string(at(&document, &[section])).expect("the section serialises");
         for forbidden in ["on_failure", "delivery", "mapping", "x-ess-reactions"] {
             assert!(
                 !rendered.contains(forbidden),
@@ -672,7 +672,7 @@ fn every_ref_resolves_inside_the_document_that_holds_it() {
     for ir in [billing(), probe()] {
         for (path, text) in documents(&ir) {
             let document: Value =
-                serde_yaml::from_str(&text).unwrap_or_else(|error| panic!("{path}: {error}"));
+                ess_yaml::from_str(&text).unwrap_or_else(|error| panic!("{path}: {error}"));
             let mut refs = Vec::new();
             collect_refs(&document, &mut refs);
             assert!(!refs.is_empty(), "{path} references something");
@@ -945,7 +945,7 @@ fn every_document_carries_the_provenance_of_the_model_it_came_from() {
             text.contains("# contract digest "),
             "{path} does not say which model slice it derives from"
         );
-        let document: Value = serde_yaml::from_str(&text).expect("parses");
+        let document: Value = ess_yaml::from_str(&text).expect("parses");
         let recorded = at(&document, &["info", "x-ess-provenance"]);
         assert_eq!(
             recorded.get("source_digest").and_then(Value::as_str),

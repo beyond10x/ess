@@ -28,6 +28,11 @@ pub(crate) fn view(ir: &EssIr, view: &ResolvedView) -> Result<(), String> {
     if view.paging.is_some() {
         return Err("a paged view (`paging:`)".to_owned());
     }
+    // ess/25 (beyond10x/ess#533): the default row a read of an unstored identity answers is not
+    // generated. Its equality parameter keeps the query owed below as well; this names the key.
+    if view.absent.is_some() {
+        return Err("a view's answer for an identity no row carries (`absent:`)".to_owned());
+    }
     params(ir, view)?;
     let entity = ir.entity(&view.source);
     if let Some(filter) = &view.filter {

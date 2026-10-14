@@ -100,7 +100,7 @@ fn read_all(root: &Path) -> Result<Vec<Fragment>> {
     let mut fragments = Vec::new();
     for path in paths {
         let text = fs::read_to_string(&path)?;
-        let fragment: Fragment = serde_yaml::from_str(&text)
+        let fragment: Fragment = ess_yaml::from_str(&text)
             .with_context(|| format!("{} is not a {SCHEMA} fragment", path.display()))?;
         let name = path.file_name().unwrap_or_default().to_string_lossy();
         if fragment.schema != SCHEMA {

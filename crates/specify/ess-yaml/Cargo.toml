@@ -1,0 +1,20 @@
+[package]
+name = "ess-yaml"
+description = "YAML for ESS: the one crate that names a YAML library, behind the serde_yaml 0.9 API subset ESS uses."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+# A stopgap backend (`docs/design/yaml-parser-replacement.md`, *Reversibility*): a maintained fork
+# of `serde_yaml` 0.9, byte- and behaviour-identical by measurement, that does not depend on
+# `unsafe-libyaml` (RUSTSEC-2024-0449). Pinned exactly, because every byte ESS writes as YAML and
+# every document it accepts is decided here. An ESS-owned parser and emitter replace it later,
+# behind the same API.
+serde_norway = "=0.9.42"
+
+[lints]
+workspace = true

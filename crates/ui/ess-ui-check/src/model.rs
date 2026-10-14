@@ -51,7 +51,7 @@ use ess_ui::{
     Action, ActorSource, Body, Carries, Channel, Composite, Document, Expr, NavPages, NodePath,
     NodeRef, Paging, Reads, Region, RegionKind,
 };
-use serde_yaml::Value;
+use ess_yaml::Value;
 
 use crate::walk::{composite_reads, in_declaration, is_section, page_of, section_of};
 use crate::{CheckError, Sink};
@@ -754,8 +754,8 @@ impl Model {
                 .options
                 .iter()
                 .map(|option| match &option.value {
-                    serde_yaml::Value::String(text) => text.clone(),
-                    other => serde_yaml::to_string(other)
+                    ess_yaml::Value::String(text) => text.clone(),
+                    other => ess_yaml::to_string(other)
                         .unwrap_or_default()
                         .trim()
                         .to_owned(),

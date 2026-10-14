@@ -18,7 +18,7 @@ use ess_ui::binding::{Binding, CommandRoute, ViewRoute};
 use ess_ui::{Body, Composite, Document, NodeRef};
 use ess_ui_tui::live::Script;
 use ess_ui_tui::FixtureAdapter;
-use serde_yaml::Value;
+use ess_yaml::Value;
 
 use crate::spec::{Check, SectionState, Step, Test, TestFile};
 
@@ -92,7 +92,7 @@ fn fixtured(file: &TestFile, document: &Document) -> Fixtured {
             .index
             .as_ref()
             .and_then(|file| std::fs::read_to_string(base.join(file)).ok())
-            .and_then(|text| serde_yaml::from_str::<ess_ui::FixtureIndex>(&text).ok());
+            .and_then(|text| ess_yaml::from_str::<ess_ui::FixtureIndex>(&text).ok());
         if let Some(listed) = listed {
             derived.extend(listed.derived);
         }
@@ -531,7 +531,7 @@ fn emit_step(
 /// their types, an object by the fields it names (`expect.objectContaining`), a list item by item,
 /// and a dotted field name as nested objects.
 fn input_matcher(input: &BTreeMap<String, Value>) -> String {
-    let mut nested = serde_yaml::Mapping::new();
+    let mut nested = ess_yaml::Mapping::new();
     for (field, value) in input {
         let mut segments: Vec<&str> = field.split('.').collect();
         let last = segments.pop().unwrap_or_default();
@@ -539,7 +539,7 @@ fn input_matcher(input: &BTreeMap<String, Value>) -> String {
         for segment in segments {
             let key = Value::String(segment.to_owned());
             if !at.get(&key).is_some_and(Value::is_mapping) {
-                at.insert(key.clone(), Value::Mapping(serde_yaml::Mapping::new()));
+                at.insert(key.clone(), Value::Mapping(ess_yaml::Mapping::new()));
             }
             let Some(Value::Mapping(inner)) = at.get_mut(&key) else {
                 unreachable!("inserted above")

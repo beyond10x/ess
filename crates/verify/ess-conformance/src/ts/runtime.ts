@@ -7662,6 +7662,11 @@ export function admitPredicateConstraint(value: Node): void {
           // A string operator (beyond10x/ess#95): one scalar, kept verbatim, as Rust parses it.
           admitPredicateScalar(operand);
           break;
+        case 'trimmed':
+          // Decided at synthesis, in a command guard only (beyond10x/ess#532): no suite carries one.
+          throw new Error(
+            '`trimmed` text operators are decided at synthesis, and no suite format carries one',
+          );
         case 'in_ignore_case':
           // A JSON list of strings; a scalar is not a one-element list here.
           if (!Array.isArray(operand) || !operand.every((item) => typeof item === 'string')) {

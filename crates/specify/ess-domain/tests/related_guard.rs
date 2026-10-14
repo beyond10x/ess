@@ -61,7 +61,7 @@ fn at(text: &str, format: &str) -> String {
 
 /// `text` rewritten as JSON: the same document in the form a JSON-source author writes it.
 fn as_json(text: &str) -> String {
-    let value: serde_yaml::Value = serde_yaml::from_str(text).expect("fixture is YAML");
+    let value: ess_yaml::Value = ess_yaml::from_str(text).expect("fixture is YAML");
     serde_json::to_string_pretty(&value).expect("fixture is JSON-representable")
 }
 
@@ -287,15 +287,15 @@ fn issue_211_one_related_row_per_command() {
 fn issue_211_the_guard_round_trips_through_the_document_form() {
     let spec = accepted(SIGN_IN);
     let command = &spec.commands()[&"demo.signin.InitiateSignIn".parse().unwrap()];
-    let written = serde_yaml::to_string(command).unwrap();
+    let written = ess_yaml::to_string(command).unwrap();
     assert!(written.contains("when_related:"), "{written}");
     assert!(written.contains("via: input.tenant"), "{written}");
     assert!(written.contains("exists: false"), "{written}");
-    let reread: ess_domain::command::RawCommandSpec = serde_yaml::from_str(&written).unwrap();
-    let again = serde_yaml::to_string(&reread).unwrap();
+    let reread: ess_domain::command::RawCommandSpec = ess_yaml::from_str(&written).unwrap();
+    let again = ess_yaml::to_string(&reread).unwrap();
     assert_eq!(
-        serde_yaml::from_str::<serde_yaml::Value>(&again).unwrap()["outcomes"],
-        serde_yaml::from_str::<serde_yaml::Value>(&written).unwrap()["outcomes"]
+        ess_yaml::from_str::<ess_yaml::Value>(&again).unwrap()["outcomes"],
+        ess_yaml::from_str::<ess_yaml::Value>(&written).unwrap()["outcomes"]
     );
 }
 

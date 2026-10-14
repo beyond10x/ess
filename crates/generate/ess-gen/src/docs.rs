@@ -1524,6 +1524,14 @@ fn outcome_prose(
         )));
     }
     out.extend(condition_sentence(ir, command, &outcome.condition));
+    // An external refusal answered before the row is read (ess/25, beyond10x/ess#534); a model
+    // without the key keeps its documentation bytes.
+    if outcome.before_row {
+        out.push(Inline::text(
+            " It is decided before the addressed row is read, among the input-guarded refusals: \
+             before existence and the held state.",
+        ));
+    }
     out.push(Inline::text(" "));
     if let Some(replay) = &outcome.replays {
         out.push(Inline::text("It returns the exact retained result of "));

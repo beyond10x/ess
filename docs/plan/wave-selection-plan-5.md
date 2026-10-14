@@ -11,7 +11,7 @@
 | fact | evidence |
 |---|---|
 | root filesystem 67 G free | `df -h /`, after `cargo clean` in the PR 488 tree |
-| `synthesize.rs` and `synthesize/` are free of the ess controller | conductor, after https://github.com/beyond10x/ess/pull/495 merged (`86b493d7f`) |
+| `synthesize.rs` and `synthesize/` are free of the ess controller | the coordinator, after https://github.com/beyond10x/ess/pull/495 merged (`86b493d7f`) |
 | the synthesis bytes pin passes on this base | `synthesis_suite_bytes_table` 2 passed, after re-pinning three lines main moved (`ff92194804`) |
 
 ## 2. Units
@@ -56,7 +56,7 @@ The open adversary cases are committed as `#[ignore]` tests naming their owner:
 `adversary_selection_plan_w5_u4_pass1_open.rs` (6: 4 pre-existing, `story:related-guard-wrong-state-beside-external`;
 2 test-seam only). The coordinator ran U4's six against the base `related_guard.rs`: all six fail there too.
 
-Not run under the disk rule (DEC-20261008-29, `/` under 40 G): the adversaries' mutant and base
+Not run under the disk rule (`/` under 40 G): the adversaries' mutant and base
 scratch builds for U3 and U5. The implementors' mutant runs in their own trees stand.
 
 `story:synthesis-reads-selection-plan`: every helper Acceptance bullet 2 names now reads the plan.

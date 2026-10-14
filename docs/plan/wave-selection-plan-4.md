@@ -28,7 +28,7 @@ units 2 to 5 change it (waves 5 and 6).
 `aep plan artifact waves` places the interpreter story in its wave 4 because three draft stories
 outside the epic (`feature-request-361`, `feature-request-362`,
 `the-interpreter-executes-stored-field-guards`) also scope `interpret/execute.rs`; none is active.
-The conductor is asked to keep the `ess` controller off those files while U1 runs.
+The coordinator is asked to keep the `ess` controller off those files while U1 runs.
 
 ## 3. Unit records
 

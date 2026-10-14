@@ -26,9 +26,12 @@ types:
     kind: newtype
     of: String
 
-  # `--http`: the `ess-http/1` binding `ess generate --kind openapi` projects routes from
+  # `--http`: the `ess-http/1` binding `ess generate --kind openapi` projects routes from, and
+  # `ess generate synthesize --target rust` and `--target go` serve
   # (`crates/edge/ess-cli/src/http.rs`, `docs/design/http-presentation-binding.md`). The model
-  # does not read the binding; it only names the file a projection was asked to bind.
+  # does not read the binding; it only names the file a projection or a synthesis was asked to
+  # bind. `--refines` names the binding it refines, which is part of compiling it and is not
+  # modelled apart from it.
   - name: toolchain.generate.BindingPath
     kind: newtype
     of: String
@@ -173,6 +176,16 @@ errors:
   - name: toolchain.generate.BindingRefused
     summary: The HTTP binding does not compile against the model, or leaves a route open.
 
+  # `ess generate synthesize --http`: only the `rust` and `go` targets serve an `ess-http/1`
+  # binding; every other target refuses the flag by name before anything is planned.
+  - name: toolchain.generate.BindingWithoutServer
+    summary: An HTTP binding was given for a synthesis target that does not serve one.
+
+  - name: toolchain.generate.BindingUnservable
+    summary: >-
+      The HTTP binding does not compile against the model, leaves a route open, or claims a path
+      the served surface reserves for its own documents.
+
   - name: toolchain.generate.TargetFailure
     summary: The target cannot represent the plan, so it emitted nothing.
     fields:
@@ -283,8 +296,14 @@ commands:
         type: toolchain.generate.OutputRoot
       - name: target
         type: toolchain.generate.SynthesisTarget
+      - name: http
+        type: Optional<toolchain.generate.BindingPath>
 
     outcomes:
+      - name: binding-without-server
+        when: {all: [defined(http), target != rust, target != go]}
+        error: toolchain.generate.BindingWithoutServer
+
       - name: planned
         creates: toolchain.generate.Synthesis
         instance: target_root
@@ -300,6 +319,15 @@ commands:
       - name: refused
         external: the target cannot represent a construct the plan holds
         error: toolchain.generate.TargetFailure
+
+      # Compiled as `ess specify http compile` compiles it, then held to what a server can serve:
+      # a path on every route, and none a request for `/openapi.json` or `/docs` would match. What
+      # refuses is the binding against the model, which no predicate over this input decides.
+      - name: binding-unservable
+        external: >-
+          the HTTP binding does not compile against the model, leaves a route open, or claims a
+          path the served surface reserves
+        error: toolchain.generate.BindingUnservable
 
   - name: toolchain.generate.EmitSynthesis
 

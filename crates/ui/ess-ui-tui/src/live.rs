@@ -8,7 +8,7 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use serde_yaml::Value;
+use ess_yaml::Value;
 
 /// One channel's event script.
 #[derive(Debug, Clone, PartialEq)]
@@ -219,7 +219,7 @@ mod tests {
 
     #[test]
     fn a_looping_script_plays_up_to_the_clock_and_restarts() {
-        let value: Value = serde_yaml::from_str(
+        let value: Value = ess_yaml::from_str(
             "{channel: c, loop: true, events: [{at: 0s, event: e, payload: 1}, {at: 4s, lifecycle: stale}]}",
         )
         .unwrap();

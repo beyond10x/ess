@@ -497,7 +497,7 @@ impl<'de> serde::Deserialize<'de> for RawFailure {
     /// reader unchanged, over the same document value.
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         use serde::de::Error as _;
-        let value = <serde_yaml::Value as serde::Deserialize>::deserialize(deserializer)?;
+        let value = <ess_yaml::Value as serde::Deserialize>::deserialize(deserializer)?;
         if refusal::is_selected(&value) {
             let selected = refusal::read(&value).map_err(D::Error::custom)?;
             let (failure, emits, retry) = selected.legacy_view();
@@ -508,7 +508,7 @@ impl<'de> serde::Deserialize<'de> for RawFailure {
                 selected: Some(selected),
             });
         }
-        serde_yaml::from_value::<Universal>(value)
+        ess_yaml::from_value::<Universal>(value)
             .map(|Universal(raw)| raw)
             .map_err(D::Error::custom)
     }
@@ -742,7 +742,7 @@ pub struct Mapping {
 
 /// A binding's mapping, as a document says it: one entry per line, in the order written.
 ///
-/// A `BTreeMap` here would make one of this module's rules unenforceable. `serde_yaml` accepts a
+/// A `BTreeMap` here would make one of this module's rules unenforceable. `ess-yaml` accepts a
 /// repeated key and keeps the last, so
 ///
 /// ```yaml
@@ -2667,7 +2667,7 @@ delivery: at_least_once
 on_failure: {escalate: {emits: billing.email.DeliveryEscalated}}
 refs: [jira:DEV-630, zendesk:204519]
 ";
-        let raw: RawBindingSpec = serde_yaml::from_str(document).expect("parses");
+        let raw: RawBindingSpec = ess_yaml::from_str(document).expect("parses");
         let binding = BindingSpec::try_from(raw).expect("a valid binding");
         assert_eq!(
             binding
@@ -2679,7 +2679,7 @@ refs: [jira:DEV-630, zendesk:204519]
             "order is the author's: the first reference is usually why the thing exists"
         );
 
-        let written = serde_yaml::to_string(&binding).expect("writes");
+        let written = ess_yaml::to_string(&binding).expect("writes");
         assert!(written.contains("jira:DEV-630"), "{written}");
     }
 
@@ -2692,11 +2692,11 @@ invoke: {command: billing.email.SendEmail}
 delivery: at_least_once
 on_failure: {escalate: {emits: billing.email.DeliveryEscalated}}
 ";
-        let raw: RawBindingSpec = serde_yaml::from_str(document).expect("parses");
+        let raw: RawBindingSpec = ess_yaml::from_str(document).expect("parses");
         let binding = BindingSpec::try_from(raw).expect("a valid binding");
         assert_eq!(binding.refs.len(), 0, "{:?}", binding.refs);
 
-        let written = serde_yaml::to_string(&binding).expect("writes");
+        let written = ess_yaml::to_string(&binding).expect("writes");
         assert!(
             !written.contains("refs"),
             "an empty list is absence, and writing it back would put a key in every document: \
@@ -2847,7 +2847,7 @@ on_failure: {escalate: {emits: billing.email.DeliveryEscalated}}
 
     /// Reads a binding the way a document does.
     fn parse(event: &str, command: &str, mapping: &str) -> Result<BindingSpec, ValidationErrors> {
-        let raw: RawBindingSpec = serde_yaml::from_str(&format!(
+        let raw: RawBindingSpec = ess_yaml::from_str(&format!(
             "id: notify-on-invoice-created\nwhen:\n  event: {event}\ninvoke:\n  command: \
              {command}\nmapping:\n{mapping}delivery: at_least_once\non_failure:\n  escalate:\n    \
              emits: {ESCALATION}\n"
@@ -3080,7 +3080,7 @@ on_failure: {escalate: {emits: billing.email.DeliveryEscalated}}
             "  recipient: event.customer_email\n  recipient: event.invoice_id\n  template: \
              invoice-created\n",
         )
-        .expect_err("`serde_yaml` keeps the last of a repeated key and says nothing");
+        .expect_err("`ess-yaml` keeps the last of a repeated key and says nothing");
 
         let error = only(&errors);
         assert_eq!(error.code, ValidationCode::DuplicateDeclaration);
@@ -3551,15 +3551,15 @@ on_failure: {escalate: {emits: billing.email.DeliveryEscalated}}
                 "id: b\nwhen:\n  event: a.B\ninvoke:\n  command: a.C\ndelivery: at_least_once\n",
             ),
         ] {
-            let error = serde_yaml::from_str::<RawBindingSpec>(document)
+            let error = ess_yaml::from_str::<RawBindingSpec>(document)
                 .expect_err("a binding that can fail silently");
             assert!(error.to_string().contains(missing), "{missing}: {error}");
         }
     }
 
     /// The example's binding with `on_failure:` written however a test needs it.
-    fn with_policy(policy: &str) -> Result<RawBindingSpec, serde_yaml::Error> {
-        serde_yaml::from_str(&format!(
+    fn with_policy(policy: &str) -> Result<RawBindingSpec, ess_yaml::Error> {
+        ess_yaml::from_str(&format!(
             "id: notify-on-invoice-created\nwhen:\n  event: {EVENT}\ninvoke:\n  command: \
              {COMMAND}\nmapping:\n{MAPPING}delivery: at_least_once\non_failure: {policy}\n"
         ))
@@ -3728,7 +3728,7 @@ on_failure: {escalate: {emits: billing.email.DeliveryEscalated}}
 
     #[test]
     fn a_delivery_guarantee_this_build_does_not_implement_is_refused_while_the_document_is_read() {
-        let error = serde_yaml::from_str::<RawBindingSpec>(
+        let error = ess_yaml::from_str::<RawBindingSpec>(
             "id: b\nwhen:\n  event: a.B\ninvoke:\n  command: a.C\ndelivery: exactly_once\non_failure: escalate\n",
         )
         .expect_err("`exactly_once` is what everyone believes they have until a retry proves otherwise");
@@ -3743,7 +3743,7 @@ on_failure: {escalate: {emits: billing.email.DeliveryEscalated}}
         // The word a consumer boundary needed: one HTTP attempt whose response is never read is not
         // an at-least-once crossing, and a specification forced to claim the stronger guarantee is
         // the F3 failure one variant along.
-        let raw: RawBindingSpec = serde_yaml::from_str(&format!(
+        let raw: RawBindingSpec = ess_yaml::from_str(&format!(
             "id: notify-on-invoice-created\nwhen:\n  event: {EVENT}\ninvoke:\n  command: \
              {COMMAND}\nmapping:\n{MAPPING}delivery: at_most_once\non_failure: drop\n"
         ))
@@ -3765,12 +3765,9 @@ on_failure: {escalate: {emits: billing.email.DeliveryEscalated}}
             ("at_least_once", Delivery::AtLeastOnce),
             ("at_most_once", Delivery::AtMostOnce),
         ] {
+            assert_eq!(ess_yaml::from_str::<Delivery>(word).expect(word), delivery);
             assert_eq!(
-                serde_yaml::from_str::<Delivery>(word).expect(word),
-                delivery
-            );
-            assert_eq!(
-                serde_yaml::to_string(&delivery).expect(word).trim(),
+                ess_yaml::to_string(&delivery).expect(word).trim(),
                 word,
                 "{delivery:?}"
             );

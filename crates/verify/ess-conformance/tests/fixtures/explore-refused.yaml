@@ -1,0 +1,108 @@
+# A target refuses one step, not the whole command (beyond10x/ess#537).
+#
+# `Dial` creates a call that rings. `Hold` moves a ringing call to `Waiting`. `Answer` connects a
+# ringing call (`answered`) or a waiting one (`picked-up`), and refuses a connected one. The targets
+# beside it answer `Answer` ErrUnsupported while the call rings, or everywhere; they refuse the view
+# `RingingCalls` always, which keeps its per-view exclusion. Before #537 the first refusal put
+# `Answer` out of every sequence, so `picked-up` and every connected call went unexplored.
+#
+# The targets beside it are `explore-refused-target.mjs` and `explore_refused_target.go`.
+
+format: ess/18
+system: explorerefused
+version: v1
+domain: explorerefused.desk
+
+summary: Calls that are dialled, held and answered.
+
+types:
+  - {name: explorerefused.desk.CallId, kind: newtype, of: Uuid}
+
+entities:
+  - name: explorerefused.desk.Call
+    identity: {name: call_id, type: explorerefused.desk.CallId}
+    fields:
+      - {name: line, type: String}
+    lifecycle:
+      initial: Ringing
+      states: [Ringing, Waiting, Connected]
+      terminal: [Connected]
+      transitions:
+        - {name: hold, from: [Ringing], to: Waiting}
+        - {name: answer, from: [Ringing], to: Connected}
+        - {name: pickup, from: [Waiting], to: Connected}
+
+actors:
+  - name: explorerefused.desk.Operator
+    may:
+      - explorerefused.desk.Dial
+      - explorerefused.desk.Hold
+      - explorerefused.desk.Answer
+
+errors:
+  - {name: explorerefused.desk.NotRinging, fields: []}
+  - {name: explorerefused.desk.NotOpen, fields: []}
+
+events:
+  - name: explorerefused.desk.Dialled
+    fields: [{name: call_id, type: explorerefused.desk.CallId}]
+  - name: explorerefused.desk.Held
+    fields: [{name: call_id, type: explorerefused.desk.CallId}]
+  - name: explorerefused.desk.Connected
+    fields: [{name: call_id, type: explorerefused.desk.CallId}]
+
+commands:
+  - name: explorerefused.desk.Dial
+    input:
+      - {name: line, type: String}
+    outcomes:
+      - name: dialled
+        creates: explorerefused.desk.Call
+        instance: call_id
+        sets: {line: input.line}
+        emits: [explorerefused.desk.Dialled]
+        payload: {explorerefused.desk.Dialled: {call_id: {generated: true}}}
+
+  - name: explorerefused.desk.Hold
+    input:
+      - {name: call_id, type: explorerefused.desk.CallId}
+    outcomes:
+      - name: held
+        moves: explorerefused.desk.Call.hold
+        instance: call_id
+        emits: [explorerefused.desk.Held]
+        payload: {explorerefused.desk.Held: {call_id: input.call_id}}
+      - {name: not-ringing, wrong_state: true, error: explorerefused.desk.NotRinging}
+
+  - name: explorerefused.desk.Answer
+    input:
+      - {name: call_id, type: explorerefused.desk.CallId}
+    outcomes:
+      - name: answered
+        when_subject_state: Ringing
+        moves: explorerefused.desk.Call.answer
+        instance: call_id
+        emits: [explorerefused.desk.Connected]
+        payload: {explorerefused.desk.Connected: {call_id: input.call_id}}
+      - name: picked-up
+        when_subject_state: Waiting
+        moves: explorerefused.desk.Call.pickup
+        instance: call_id
+        emits: [explorerefused.desk.Connected]
+        payload: {explorerefused.desk.Connected: {call_id: input.call_id}}
+      - {name: not-open, when_subject_state: Connected, error: explorerefused.desk.NotOpen}
+
+views:
+  - name: explorerefused.desk.Calls
+    source: explorerefused.desk.Call
+    consistency: read_your_writes
+    fields:
+      - {name: call_id, type: explorerefused.desk.CallId}
+      - {name: state, type: explorerefused.desk.Call.State}
+      - {name: line, type: String}
+  - name: explorerefused.desk.RingingCalls
+    source: explorerefused.desk.Call
+    consistency: read_your_writes
+    filter: state == Ringing
+    fields:
+      - {name: call_id, type: explorerefused.desk.CallId}

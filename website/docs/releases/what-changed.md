@@ -9,6 +9,32 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.60.0 — 2026-10-14
+
+### A composition states which component plays another's role, and which command implements or gates it
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.60.0)
+
+`ess-composition/4` adds `roles:`: one imported component plays another's, and each local command `implements` or `gates` a contract command, checked for input drift by `ess specify compose` ([#525](https://github.com/beyond10x/ess/issues/525)).
+
+### Commands and views bind to HTTP routes, and mutation testing covers more of a model
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.60.0)
+
+`ess-http/1` binds commands and views to HTTP routes, projected into OpenAPI by `--http` ([#493](https://github.com/beyond10x/ess/issues/493)). `mutate` covers `when_subject:`/`when_related:` guards and authored scenarios ([#515](https://github.com/beyond10x/ess/issues/515)). Go synthesis builds when bounded contexts reference each other in a loop.
+
+### HTTP bindings declare encodings, statuses, headers and redirects, and synthesis writes Rust and Go servers
+
+capability · significant impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.60.0)
+
+An `ess-http/1` route declares its request encoding, each outcome's status, body, headers and redirect, and the standard refusals. `--http` projects them into OpenAPI, and `ess generate synthesize --target rust` or `go` writes a server that serves the binding ([#493](https://github.com/beyond10x/ess/issues/493)).
+
+### Source format ess/25 selects an upsert's update by the stored row and adds per-row events and default view rows
+
+capability · significant impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.60.0)
+
+`ess/25` lets a create-or-update command pick its update with `when_subject:` ([#530](https://github.com/beyond10x/ess/issues/530)), publish an event per changed row, answer an `external:` refusal before the row is read, compare `trimmed:` text, and give a view an `absent:` row. `ess-diff/19` classifies the view change.
+
 ## 0.59.0 — 2026-10-11
 
 ### An authored act states the caller its command is sent as, and synthesis fixes two guard cases

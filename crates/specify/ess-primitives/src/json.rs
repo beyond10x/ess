@@ -127,43 +127,41 @@ pub fn canonical(value: &Value) -> Result<Value, serde_json::Error> {
 /// YAML for a serialisable value whose numbers are plain YAML numbers in both builds.
 ///
 /// With `arbitrary_precision` on, every `serde_json::Number` inside `value` serialises as a
-/// one-entry struct, which `serde_yaml` writes as a mapping. This writes each such number as the
-/// number [`number`] reads for its spelling. Without the feature it is `serde_yaml::to_string`.
+/// one-entry struct, which `ess-yaml` writes as a mapping. This writes each such number as the
+/// number [`number`] reads for its spelling. Without the feature it is `ess_yaml::to_string`.
 ///
 /// # Errors
 ///
-/// As [`serde_yaml::to_string`].
-pub fn to_yaml_string<T: Serialize + ?Sized>(value: &T) -> Result<String, serde_yaml::Error> {
+/// As [`ess_yaml::to_string`].
+pub fn to_yaml_string<T: Serialize + ?Sized>(value: &T) -> Result<String, ess_yaml::Error> {
     if !arbitrary_precision() {
-        return serde_yaml::to_string(value);
+        return ess_yaml::to_string(value);
     }
-    serde_yaml::to_string(&to_yaml_value(value)?)
+    ess_yaml::to_string(&to_yaml_value(value)?)
 }
 
 /// [`to_yaml_string`]'s value, for a caller that goes on editing it.
 ///
 /// # Errors
 ///
-/// As [`serde_yaml::to_value`].
-pub fn to_yaml_value<T: Serialize + ?Sized>(
-    value: &T,
-) -> Result<serde_yaml::Value, serde_yaml::Error> {
-    let mut value = serde_yaml::to_value(value)?;
+/// As [`ess_yaml::to_value`].
+pub fn to_yaml_value<T: Serialize + ?Sized>(value: &T) -> Result<ess_yaml::Value, ess_yaml::Error> {
+    let mut value = ess_yaml::to_value(value)?;
     if arbitrary_precision() {
         plain_numbers(&mut value)?;
     }
     Ok(value)
 }
 
-fn plain_numbers(value: &mut serde_yaml::Value) -> Result<(), serde_yaml::Error> {
+fn plain_numbers(value: &mut ess_yaml::Value) -> Result<(), ess_yaml::Error> {
     match value {
-        serde_yaml::Value::Mapping(entries) => {
+        ess_yaml::Value::Mapping(entries) => {
             if entries.len() == 1 {
-                if let Some(serde_yaml::Value::String(spelling)) =
+                if let Some(ess_yaml::Value::String(spelling)) =
                     entries.get(ARBITRARY_PRECISION_NUMBER)
                 {
-                    let number = number(spelling)
-                        .map_err(<serde_yaml::Error as serde::ser::Error>::custom)?;
+                    let number =
+                        number(spelling).map_err(<ess_yaml::Error as serde::ser::Error>::custom)?;
                     *value = yaml_number(&number);
                     return Ok(());
                 }
@@ -172,20 +170,20 @@ fn plain_numbers(value: &mut serde_yaml::Value) -> Result<(), serde_yaml::Error>
                 plain_numbers(entry)?;
             }
         }
-        serde_yaml::Value::Sequence(items) => {
+        ess_yaml::Value::Sequence(items) => {
             for item in items {
                 plain_numbers(item)?;
             }
         }
-        serde_yaml::Value::Tagged(tagged) => plain_numbers(&mut tagged.value)?,
+        ess_yaml::Value::Tagged(tagged) => plain_numbers(&mut tagged.value)?,
         _ => {}
     }
     Ok(())
 }
 
 /// The YAML number the build without `arbitrary_precision` writes for a `serde_json::Number`.
-fn yaml_number(number: &Number) -> serde_yaml::Value {
-    serde_yaml::Value::Number(if let Some(value) = number.as_u64() {
+fn yaml_number(number: &Number) -> ess_yaml::Value {
+    ess_yaml::Value::Number(if let Some(value) = number.as_u64() {
         value.into()
     } else if let Some(value) = number.as_i64() {
         value.into()

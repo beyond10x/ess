@@ -494,6 +494,9 @@ fn unchosen(
         ResolvedPayloadValue::ResponseField { .. } => "an external response",
         ResolvedPayloadValue::CallerAttribute { .. } => "a `{caller: …}` source",
         ResolvedPayloadValue::ChangedCount => "`{count: changed}`",
+        // ess/25 (#531): an event payload source only, never a row's.
+        ResolvedPayloadValue::ChangedField { .. } => "`{changed: …}`",
+        ResolvedPayloadValue::ChangedState { .. } => "`{changed: state}`",
         ResolvedPayloadValue::RelatedSelection { .. } => {
             "a value read from the row a selector selects"
         }

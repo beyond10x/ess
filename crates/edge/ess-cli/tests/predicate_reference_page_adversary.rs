@@ -10,7 +10,7 @@ use std::{
     process::Command,
 };
 
-use serde_yaml::Value;
+use ess_yaml::Value;
 
 const PAGE: &str = "website/docs/reference/predicates.md";
 
@@ -27,7 +27,7 @@ fn page_model() -> Value {
     let body = &page[start..];
     let body = &body[body.find('\n').expect("fence line ends") + 1..];
     let body = &body[..body.find("\n```").expect("the model block closes")];
-    serde_yaml::from_str(body).expect("the page's model is YAML")
+    ess_yaml::from_str(body).expect("the page's model is YAML")
 }
 
 fn named<'a>(list: &'a mut Value, key: &str, name: &str) -> &'a mut Value {
@@ -47,7 +47,7 @@ fn place_order(model: &mut Value) -> &mut Value {
 
 /// The page's model with `when` (a YAML fragment) on outcome `placed` of `PlaceOrder`.
 fn with_when(mut model: Value, when: &str) -> Value {
-    let when: Value = serde_yaml::from_str(when).expect("the guard is YAML");
+    let when: Value = ess_yaml::from_str(when).expect("the guard is YAML");
     named(place_order(&mut model), "outcomes", "placed")
         .as_mapping_mut()
         .expect("an outcome is a mapping")
@@ -63,7 +63,7 @@ struct Run {
 fn validate(document: &Value, name: &str) -> Run {
     let directory = tempfile::tempdir().expect("a temporary directory");
     let path = directory.path().join(format!("{name}.yaml"));
-    fs::write(&path, serde_yaml::to_string(document).expect("serialize")).expect("write");
+    fs::write(&path, ess_yaml::to_string(document).expect("serialize")).expect("write");
     let output = Command::new(env!("CARGO_BIN_EXE_ess"))
         .args(["specify", "validate", "--path"])
         .arg(&path)
@@ -87,7 +87,7 @@ fn the_page_says_duration_has_no_ordering_so_validate_refuses_ordering_a_duratio
         .get_mut("input")
         .and_then(Value::as_sequence_mut)
         .expect("PlaceOrder has an input list")
-        .push(serde_yaml::from_str("{name: wait, type: Duration}").expect("a field"));
+        .push(ess_yaml::from_str("{name: wait, type: Duration}").expect("a field"));
     let document = with_when(model, r#"wait > "PT5M""#);
     let run = validate(&document, "duration-ordering");
     assert_eq!(

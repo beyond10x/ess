@@ -50,7 +50,7 @@ fn replaced(text: &str, from: &str, to: &str) -> String {
 
 /// The same document as JSON text, which the reader takes through the same path.
 fn as_json(text: &str) -> String {
-    let value: serde_json::Value = serde_yaml::from_str(text).expect("the fixture is YAML");
+    let value: serde_json::Value = ess_yaml::from_str(text).expect("the fixture is YAML");
     serde_json::to_string_pretty(&value).expect("JSON")
 }
 

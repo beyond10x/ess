@@ -15,7 +15,7 @@ use std::sync::OnceLock;
 
 use ess_ui::binding::{classify, Answer, Binding};
 use ess_ui_tui::{App, DataAdapter, HttpAdapter, Options, ReadRequest, Region};
-use serde_yaml::Value;
+use ess_yaml::Value;
 
 const WIDTH: u16 = 120;
 const HEIGHT: u16 = 40;
@@ -177,7 +177,7 @@ fn adapter(binding: &Binding, base: &str, authorization: &str) -> HttpAdapter {
 }
 
 fn input(yaml: &str) -> BTreeMap<String, Value> {
-    serde_yaml::from_str(yaml).expect("the input parses")
+    ess_yaml::from_str(yaml).expect("the input parses")
 }
 
 /// A whole valid registration, `expected_minutes` long.

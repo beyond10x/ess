@@ -178,6 +178,11 @@ const BASE: &str = include_str!("fixtures/adversary-244b-base-digests.tsv");
 /// unknown identity beside stored-row branches, and the overlap of two input refusals; the
 /// `id-required` and `secret-too-short` scenarios of `arrangement-input-refusal` and the
 /// `blank-note` scenario of `now-stored-rows` gain steps. IR, refusals and mutants are unchanged.
+///
+/// 0.60.0 (beyond10x/ess#515): `ess verify conform mutate` mutates `when_subject` and
+/// `when_related` predicates and accounts for every `sets` entry, so each model below that carries
+/// one gains mutants. IR, suite and refusals are unchanged; `now-stored-rows` keeps its 0.54.0
+/// suite.
 const INTENDED: &[(&str, &str)] = &[
     (
         "crates/verify/ess-conformance/tests/fixtures/arrangement-input-refusal.yaml",
@@ -189,7 +194,139 @@ const INTENDED: &[(&str, &str)] = &[
     ),
     (
         "crates/verify/ess-conformance/tests/fixtures/now-stored-rows.yaml",
-        "ir=fad93168fa11c42db418:30720 suite=37ae4b7217b154be6972:109803 refusals=b0abbc30c3882c8c5037:423 mutants=cba7fdbc721a7942835e:2631",
+        "ir=fad93168fa11c42db418:30720 suite=37ae4b7217b154be6972:109803 refusals=b0abbc30c3882c8c5037:423 mutants=bc6271e9f57ec341f933:3988",
+    ),
+    (
+        "crates/specify/ess-domain/tests/fixtures/text-length-positions.yaml",
+        "ir=64397198ca8b3f008517:12944 suite=1fc3b8f3846fac6fbb2b:323 refusals=b364fba60dba0462e7c1:334 mutants=898f900fbd76ae62a1bb:658",
+    ),
+    (
+        "crates/specify/ess-domain/tests/fixtures/text-length-positions.yaml@ess22",
+        "ir=64397198ca8b3f008517:12944 suite=1fc3b8f3846fac6fbb2b:323 refusals=b364fba60dba0462e7c1:334 mutants=898f900fbd76ae62a1bb:658",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/aggregate-stored-guarded-move.yaml",
+        "ir=5500cec8d73ec1066754:12118 suite=c9591218350b81be905c:41344 refusals=e3b0c44298fc1c149afb:0 mutants=fc6d5af3ab402a5a71c6:901",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/aggregate-stored-guarded-move.yaml@ess22",
+        "ir=5500cec8d73ec1066754:12118 suite=c9591218350b81be905c:41344 refusals=e3b0c44298fc1c149afb:0 mutants=fc6d5af3ab402a5a71c6:901",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/arrangement-paid-route.yaml",
+        "ir=8078b5131c26dfc079fd:13470 suite=1cf6db0f3e0a10bbebd7:57258 refusals=e3b0c44298fc1c149afb:0 mutants=f8ab55352caeafcc1558:1206",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/arrangement-paid-route.yaml@ess22",
+        "ir=8078b5131c26dfc079fd:13470 suite=1cf6db0f3e0a10bbebd7:57258 refusals=e3b0c44298fc1c149afb:0 mutants=f8ab55352caeafcc1558:1206",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/arrangement-two-creators.yaml",
+        "ir=4a198eb2e776e280388f:12951 suite=835f415354c704786882:50441 refusals=e3b0c44298fc1c149afb:0 mutants=141c10daad914ab05627:1210",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/arrangement-two-creators.yaml@ess22",
+        "ir=4a198eb2e776e280388f:12951 suite=835f415354c704786882:50441 refusals=e3b0c44298fc1c149afb:0 mutants=141c10daad914ab05627:1210",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/explore-stored-rows.yaml",
+        "ir=3ade52cbdd7f200803c5:38581 suite=0415c4076059d44644d8:196402 refusals=e3b0c44298fc1c149afb:0 mutants=7da604504e62e6d0c5dc:3555",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/explore-stored-rows.yaml@ess22",
+        "ir=3ade52cbdd7f200803c5:38581 suite=0415c4076059d44644d8:196402 refusals=e3b0c44298fc1c149afb:0 mutants=7da604504e62e6d0c5dc:3555",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/related-guard-copied-value.yaml",
+        "ir=2f88b3a80c3a08f99c5e:12758 suite=c9885fcc7d121c6cd204:16434 refusals=e3b0c44298fc1c149afb:0 mutants=ec1d182e4932ee05c224:476",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/related-guard-copied-value.yaml@ess22",
+        "ir=2f88b3a80c3a08f99c5e:12758 suite=c9885fcc7d121c6cd204:16434 refusals=e3b0c44298fc1c149afb:0 mutants=ec1d182e4932ee05c224:476",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/related-guard-multiple.yaml",
+        "ir=ecf9fba0c35c8f05f6f6:23733 suite=40c28675f65f47ca763a:89794 refusals=dc01d36d68b12c2cacb2:1043 mutants=3ef47f665a160f847bdc:2757",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/related-guard-optional.yaml",
+        "ir=ad19424ea5327eca6573:16818 suite=0345d2d3f2d6c5fed768:57439 refusals=d30825fef61960483efb:550 mutants=7712e3612fb39c49500e:2038",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/related-guard-owner-link.yaml",
+        "ir=838035241c8956c47216:18375 suite=8321029dd2307525da7b:47863 refusals=e3b0c44298fc1c149afb:0 mutants=c5c8a6851a640e3b28ca:854",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/related-guard-owner-link.yaml@ess22",
+        "ir=838035241c8956c47216:18375 suite=8321029dd2307525da7b:47863 refusals=e3b0c44298fc1c149afb:0 mutants=c5c8a6851a640e3b28ca:854",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/related-guard-release.yaml",
+        "ir=f94e97df357fa758fd87:15482 suite=13d157c274d5d2cef8d9:43973 refusals=66eb987124e594b9fa5f:1219 mutants=32f97ac94a7d324118f2:1104",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/related-guard-release.yaml@ess22",
+        "ir=f94e97df357fa758fd87:15482 suite=13d157c274d5d2cef8d9:43973 refusals=66eb987124e594b9fa5f:1219 mutants=32f97ac94a7d324118f2:1104",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/related-guard-sign-in.yaml",
+        "ir=29cfb8aef921be1c775d:13029 suite=a4720f0b8e486a522b1d:17016 refusals=e3b0c44298fc1c149afb:0 mutants=93245710a26963f67c04:711",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/related-guard-sign-in.yaml@ess22",
+        "ir=29cfb8aef921be1c775d:13029 suite=a4720f0b8e486a522b1d:17016 refusals=e3b0c44298fc1c149afb:0 mutants=93245710a26963f67c04:711",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/related-guard-stored-reference.yaml",
+        "ir=4991ac392e7b2fe208cf:10985 suite=d2806897f3d0cd08f3d6:35833 refusals=e3b0c44298fc1c149afb:0 mutants=75e051220592a5b9c31f:1097",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/state-in-subject-predicate.yaml",
+        "ir=93ad22bc62ea70588000:11608 suite=db49e2aec3c2f0f40957:36777 refusals=e3b0c44298fc1c149afb:0 mutants=9b686dfbaa8859f1a79a:1151",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/state-in-subject-predicate.yaml@ess22",
+        "ir=93ad22bc62ea70588000:11608 suite=db49e2aec3c2f0f40957:36777 refusals=e3b0c44298fc1c149afb:0 mutants=9b686dfbaa8859f1a79a:1151",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/stored-field-guards.yaml",
+        "ir=f5690ad7914f4165a715:8364 suite=e55baa7c2c4be0a2989c:26862 refusals=06a644cde2b8fc51e318:546 mutants=a60b1be30f50bcf9e065:932",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/stored-field-guards.yaml@ess22",
+        "ir=f5690ad7914f4165a715:8364 suite=e55baa7c2c4be0a2989c:26862 refusals=06a644cde2b8fc51e318:546 mutants=a60b1be30f50bcf9e065:932",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/subject-guard-copied-field.yaml",
+        "ir=bbf12fce16b887c3b60d:20824 suite=2705e065bf055f8f707c:124591 refusals=e3b0c44298fc1c149afb:0 mutants=d2aee002c3d5342df8af:2425",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/subject-guard-copied-field.yaml@ess22",
+        "ir=bbf12fce16b887c3b60d:20824 suite=2705e065bf055f8f707c:124591 refusals=e3b0c44298fc1c149afb:0 mutants=d2aee002c3d5342df8af:2425",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/subject-guard-input.yaml",
+        "ir=aa83bc892312d4854d25:7016 suite=b7c14452cfcd4040e342:18848 refusals=9abbe950081eeb90978c:496 mutants=16c6a166a4d9b002aa32:429",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/subject-guard-input.yaml@ess22",
+        "ir=aa83bc892312d4854d25:7016 suite=b7c14452cfcd4040e342:18848 refusals=9abbe950081eeb90978c:496 mutants=16c6a166a4d9b002aa32:429",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/when-subject-eventual.yaml",
+        "ir=5781561e33e4cb327676:11017 suite=dd22493eb4d33d9bc62b:28607 refusals=2a80cca606aa08bb095f:1009 mutants=b20a6db7d368a06c594e:575",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/when-subject-eventual.yaml@ess22",
+        "ir=5781561e33e4cb327676:11017 suite=dd22493eb4d33d9bc62b:28607 refusals=2a80cca606aa08bb095f:1009 mutants=b20a6db7d368a06c594e:575",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/when-subject-fallback-refusal.yaml",
+        "ir=f59eafbb12aebf53ff70:11025 suite=f7ba7d533df0abd1de62:29867 refusals=2a80cca606aa08bb095f:1009 mutants=b20a6db7d368a06c594e:575",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/when-subject-fallback-refusal.yaml@ess22",
+        "ir=f59eafbb12aebf53ff70:11025 suite=f7ba7d533df0abd1de62:29867 refusals=2a80cca606aa08bb095f:1009 mutants=b20a6db7d368a06c594e:575",
     ),
 ];
 

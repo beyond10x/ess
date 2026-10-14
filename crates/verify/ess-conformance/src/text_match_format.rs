@@ -36,6 +36,12 @@ pub const CASE_FOLD_COVERAGE: u32 = 21;
 
 const CASE_FOLD_REQUIRES: &str = "case-insensitive text operators require suite/20 or /21";
 
+/// Why a suite carrying `trimmed:` (beyond10x/ess#532) is refused at every major: validation admits it
+/// only in a command guard, which synthesis decides and no suite carries, so no suite format reads it.
+/// A reader that took it as the operator it wraps would decide a different rule.
+pub const TRIMMED_REFUSED: &str =
+    "`trimmed` text operators are decided at synthesis, and no suite format carries one";
+
 /// Whether a typed suite carries a string operator where a suite carries a predicate.
 pub fn used_by(suite: &ConformanceSuite) -> bool {
     carried(suite, Predicate::uses_text_match)
@@ -58,6 +64,13 @@ fn carried(suite: &ConformanceSuite, uses: fn(&Predicate) -> bool) -> bool {
 /// Reject explicitly pinned older formats before serialization or target effects.
 pub fn admit_suite(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
     let major = suite.provenance.suite_version.major();
+    if carried(suite, Predicate::uses_trim) {
+        return Err(AdmissionError::new(
+            "UnsupportedVocabulary",
+            "$suite",
+            TRIMMED_REFUSED,
+        ));
+    }
     if major < CASE_FOLD_ORDINARY && case_fold_used_by(suite) {
         return Err(AdmissionError::new(
             "UnsupportedVocabulary",
@@ -153,6 +166,13 @@ pub(crate) fn admit_predicate(raw: &str, major: u32) -> Result<(), AdmissionErro
     let predicate = Predicate::from_node(&node).map_err(|error| {
         AdmissionError::new("InvalidPredicate", "$predicate", error.to_string())
     })?;
+    if predicate.uses_trim() {
+        return Err(AdmissionError::new(
+            "UnsupportedVocabulary",
+            "$predicate",
+            TRIMMED_REFUSED,
+        ));
+    }
     let folds = predicate.uses_case_fold();
     if !predicate.uses_text_match() && !folds {
         return Ok(());

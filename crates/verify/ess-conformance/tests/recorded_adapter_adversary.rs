@@ -62,7 +62,7 @@ fn a_tagged_values_map_is_refused_as_the_base_reader_refused_it() {
     );
 }
 
-/// `ok: !Returned` is `serde_yaml`'s tagged spelling of the enum value `Returned`: the YAML form of
+/// `ok: !Returned` is `ess-yaml`'s tagged spelling of the enum value `Returned`: the YAML form of
 /// the one-key map `{ Returned: null }` the adapter-document table refuses as "undeclared, admitted
 /// only through serde's untagged buffer". The base reader refused it; the new one admits it, and a
 /// YAML-to-JSON conversion of it is not a document the schema admits.

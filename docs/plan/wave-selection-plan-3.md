@@ -2,7 +2,7 @@
 
 > **Status: approved 2026-10-07 by the operator (option A).** Written on `integrate/selection-plan` `0f4e89a2c`
 > (wave 2 merged in; PR #488 open, its merge to `main` held until the ESS 0.56.0 release lands,
-> conductor DEC-20261007-91). Skill: `aep:implementing` 0.20.1, wave mode. The wave stacks on the
+> the coordinator's hold). Skill: `aep:implementing` 0.20.1, wave mode. The wave stacks on the
 > same integration branch and is delivered by PR #488's successor, or by #488 itself if it has not
 > merged when this wave closes.
 
@@ -85,7 +85,7 @@ beyond10x/ess#489, PR #490), after four consumers answered that shape differentl
 (`wrong_state:` beside a present-related refusal and acceptance) stays refused by validation:
 this epic changes no verdict.
 
-Disk: the wave paused about 40 minutes at conductor's hold (DEC-20261007-106) after `/` fell to
+Disk: the wave paused about 40 minutes at the coordinator's disk hold after `/` fell to
 2 G; caches were discarded per unit as each merged.
 
 Cost per agent (as the harness reported: tokens / tool uses / wall seconds):
@@ -105,4 +105,4 @@ The opening store commit (this page, three stories moved to `active`) on `integr
 one commit per unit on its branch; the three merges into `integrate/selection-plan`; the closing
 store commit; the push of `integrate/selection-plan`. If PR #488 has merged by then, one new pull
 request against `main`; otherwise the push updates #488. Merged through the App when `Gate` is
-green and the conductor's hold allows. Nothing else: no tag, no release, no later wave.
+green and the coordinator's hold allows. Nothing else: no tag, no release, no later wave.

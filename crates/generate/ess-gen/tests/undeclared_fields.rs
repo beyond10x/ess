@@ -109,7 +109,7 @@ fn yaml(outputs: &std::collections::BTreeMap<String, ess_gen::Artifact>, key: &s
     let artifact = outputs
         .get(key)
         .unwrap_or_else(|| panic!("{key} in {:?}", outputs.keys().collect::<Vec<_>>()));
-    serde_yaml::from_str(&artifact.contents).expect("the document is YAML")
+    ess_yaml::from_str(&artifact.contents).expect("the document is YAML")
 }
 
 #[test]

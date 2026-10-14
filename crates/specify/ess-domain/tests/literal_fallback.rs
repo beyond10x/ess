@@ -313,10 +313,10 @@ sets:
   label: {input: label, else: 'none yet'}
   flag: {input: flag, else: {generated: true}}
 ";
-    let raw: RawOutcome = serde_yaml::from_str(written).unwrap_or_else(|error| panic!("{error}"));
-    let again = serde_yaml::to_string(&raw).expect("an outcome serializes");
+    let raw: RawOutcome = ess_yaml::from_str(written).unwrap_or_else(|error| panic!("{error}"));
+    let again = ess_yaml::to_string(&raw).expect("an outcome serializes");
     let reread: RawOutcome =
-        serde_yaml::from_str(&again).unwrap_or_else(|error| panic!("{error}\n{again}"));
+        ess_yaml::from_str(&again).unwrap_or_else(|error| panic!("{error}\n{again}"));
     assert_eq!(raw.sets, reread.sets, "{again}");
     assert!(again.contains("else: 3"), "{again}");
     assert!(again.contains("else: Express"), "{again}");

@@ -154,7 +154,7 @@ fn no_document_in_the_repository_the_parser_reads_is_newly_refused() {
         if RawSpecFile::parse(&text).is_err() {
             continue;
         }
-        let Ok(value) = serde_yaml::from_str::<Value>(&text) else {
+        let Ok(value) = ess_yaml::from_str::<Value>(&text) else {
             continue;
         };
         read += 1;
@@ -181,7 +181,7 @@ fn no_document_in_the_repository_the_parser_reads_is_newly_refused() {
 #[test]
 fn the_comparison_sees_a_selection_mapping_refused_inside_any_of() {
     let text = include_str!("../../../generate/ess-synth/tests/fixtures/binding-selection.yaml");
-    let mut value: Value = serde_yaml::from_str(text).expect("YAML");
+    let mut value: Value = ess_yaml::from_str(text).expect("YAML");
     let mapping = value["bindings"][0]["mapping"]
         .as_object_mut()
         .expect("the fixture maps its binding");
@@ -247,7 +247,7 @@ fn the_validator_and_the_schema_both_refuse_a_hyphenated_input_selector_and_path
             Err(errors) => !errors.to_string().is_empty(),
             Ok(spec) => !spec.validate().is_empty(),
         };
-        let value: Value = serde_yaml::from_str(&written).expect("YAML");
+        let value: Value = ess_yaml::from_str(&written).expect("YAML");
         assert!(refused, "{what}: ess validate refuses it");
         assert!(
             !strict.is_valid(&value),

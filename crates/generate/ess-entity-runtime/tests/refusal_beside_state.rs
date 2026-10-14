@@ -38,9 +38,14 @@ fn compiled() -> EssIr {
 }
 
 fn compiled_with(refusals: &str) -> EssIr {
+    compiled_at("format: ess/18\n", HELD, refusals)
+}
+
+/// [`compiled_with`] in source format `format`, `CancelInvoice` declared as `held`.
+fn compiled_at(format: &str, held: &str, refusals: &str) -> EssIr {
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../examples/billing");
     let changes: [(&str, &str, &str); 5] = [
-        ("system.yaml", "format: ess/1\n", "format: ess/18\n"),
+        ("system.yaml", "format: ess/1\n", format),
         (
             "domains/email.yaml",
             "            recipient: input.recipient\n",
@@ -51,7 +56,7 @@ fn compiled_with(refusals: &str) -> EssIr {
             "          billing.invoice.InvoiceCreated:\n",
             "          billing.invoice.InvoiceCreated:\n            invoice_id: {generated: true}\n",
         ),
-        ("domains/invoice.yaml", CANCEL, HELD),
+        ("domains/invoice.yaml", CANCEL, held),
         ("domains/invoice.yaml", WRONG_STATE, refusals),
     ];
     let mut pending = vec![base.clone()];
@@ -224,4 +229,49 @@ fn of_two_overlapping_refusals_the_first_declared_answers_before_any_row_is_read
             );
         }
     }
+}
+
+/// An external refusal the implementation decides before it reads the row (`before_row: true`,
+/// ess/25, beyond10x/ess#534) is answered at step 2, before the row is loaded. Entity Runtime
+/// lowers an external branch as evidence read beside the loaded row, so the lowering refuses it by
+/// name rather than answer it after the load.
+#[test]
+fn before_row_external_is_refused_by_name() {
+    let held = HELD.replace(
+        "    outcomes:\n",
+        "    outcomes:\n      - name: unauthorised\n        external: the caller's token does not \
+         grant cancellation\n        before_row: true\n        error: \
+         billing.invoice.InvoiceStateConflict\n",
+    );
+    let ir = compiled_at("format: ess/25\n", &held, REFUSALS);
+    let plan = SynthesisPlan::of(&ir);
+    let service = extract(&ir, &plan, &ComponentName::new("invoice-service").unwrap())
+        .expect("service extracts");
+    let Err(diagnostics) = lower(
+        &service,
+        &LoweringOptions {
+            definition_versions: ["billing.invoice.Account", "billing.invoice.Invoice"]
+                .iter()
+                .map(|entry| (QualifiedName::new(entry).unwrap(), NonZeroU32::MIN))
+                .collect(),
+            scales: BTreeMap::new(),
+        },
+    ) else {
+        panic!("a before-row external refusal lowers as evidence read after the row load");
+    };
+    let refused: Vec<String> = diagnostics
+        .as_slice()
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    assert_eq!(
+        refused,
+        [
+            "billing.invoice.CancelInvoice.unauthorised: OutcomeShapeUnsupported (an external \
+             refusal answered before the row, `before_row: true`): an external refusal marked \
+             `before_row: true` (ess/25) answers before the row is loaded, and an Entity Runtime \
+             external branch is evidence read beside the loaded row"
+        ],
+        "{diagnostics:#?}"
+    );
 }

@@ -42,6 +42,8 @@ use super::layout::Layout;
 use super::wire::{self, Surface};
 use super::{name, system, EDITION};
 
+mod bound;
+
 /// The label every startup line carries, so a reader can tell this record from any other JSON a
 /// process writes.
 const LOG_FORMAT: &str = "ess/1";
@@ -59,6 +61,8 @@ pub(super) struct Server<'a> {
     layout: &'a Layout,
     /// The types crate, as a path spells it from inside this crate.
     types: String,
+    /// The `ess-http/1` binding whose routes the surface serves, if one was given.
+    binding: Option<&'a http::Binding>,
 }
 
 /// The wire emitter's seam. The server carries the whole generated wire rather than the slice one
@@ -121,6 +125,7 @@ pub(super) fn server_crate(
     ir: &EssIr,
     plan: &SynthesisPlan,
     layout: &Layout,
+    binding: Option<&http::Binding>,
     covered: &mut BTreeSet<Capability>,
 ) -> Vec<Artifact> {
     let components = served(ir);
@@ -132,6 +137,7 @@ pub(super) fn server_crate(
         plan,
         layout,
         types: Layout::crate_ident(layout.package()),
+        binding,
     };
     let package = layout.server_package();
     let provenance = &plan.provenance;
@@ -172,12 +178,22 @@ pub(super) fn server_crate(
         ),
         Artifact::new(
             format!("crates/{package}/src/http.rs"),
-            format!(
-                "{}{}{}",
-                provenance.commented_for("//", REGENERATE),
-                HTTP,
-                if serves_params(ir) { QUERY } else { "" }
-            ),
+            if binding.is_some() {
+                // A served binding decodes `form` and `query` requests with the query reader's
+                // helpers, so it carries them whatever its views declare.
+                format!(
+                    "{}{}{QUERY}{}",
+                    provenance.commented_for("//", REGENERATE),
+                    bound::http_module(HTTP),
+                    bound::BOUND
+                )
+            } else {
+                format!(
+                    "{}{HTTP}{}",
+                    provenance.commented_for("//", REGENERATE),
+                    if serves_params(ir) { QUERY } else { "" }
+                )
+            },
         ),
         Artifact::new(
             format!("crates/{package}/src/entry.rs"),
@@ -205,7 +221,7 @@ pub(super) fn server_crate(
         artifacts.push(super::entry::binary(ir, plan, layout, component));
         artifacts.push(Artifact::new(
             format!("crates/{package}/src/{}.openapi.json", component.name),
-            ess_gen::openapi::json(ir, component),
+            ess_gen::openapi::bound_json(ir, component, binding),
         ));
         artifacts.push(Artifact::new(
             format!("crates/{package}/src/{}.docs.md", component.name),
@@ -365,7 +381,9 @@ fn surface_module(
     let ir = server.ir;
     let layout = server.layout;
     let package = layout.server_package();
-    let routes = http::routes(ir, component);
+    let routes = http::bound_routes(ir, component, server.binding);
+    // A surface the binding routes nothing of keeps every byte it has without one.
+    let bound = routes.iter().any(|route| route.declared.is_some());
 
     let mut out = server.plan.provenance.commented_for("//", REGENERATE);
     out.push('\n');
@@ -387,16 +405,27 @@ fn surface_module(
     documents(&mut out, component);
     route_table(&mut out, &routes, ir);
     startup(&mut out, server, component, &routes, siblings);
-    serve_function(&mut out, server, component);
-    dispatch(&mut out, server, &routes);
+    serve_function(&mut out, server, component, bound);
+    if bound {
+        bound::dispatch(&mut out, server, &routes);
+    } else {
+        dispatch(&mut out, server, &routes);
+    }
     entry_point(&mut out, server, component, &routes);
     if http::checks_grants(ir) && (commands_served(&routes) || reads_checked(ir, &routes)) {
-        grant_check(&mut out, server);
+        grant_check(
+            &mut out,
+            server,
+            !bound || bound::answers_standard_not_granted(server, &routes),
+        );
     }
     if reads_checked(ir, &routes) {
         read_grant_check(&mut out, server);
     }
     handlers(&mut out, server, component, &routes);
+    if bound {
+        bound::refusals(&mut out, server, &routes);
+    }
 
     Artifact::new(
         format!("crates/{package}/src/{}.rs", module_ident(component)),
@@ -625,7 +654,12 @@ fn text(value: &str) -> String {
 }
 
 /// The listener: bind, announce, then answer one connection at a time until something breaks.
-fn serve_function(out: &mut String, server: &Server<'_>, component: &ResolvedComponent) {
+fn serve_function(
+    out: &mut String,
+    server: &Server<'_>,
+    component: &ResolvedComponent,
+    bound: bool,
+) {
     let system_crate = Layout::crate_ident(server.layout.system_package());
     let angled = generic_list(server);
 
@@ -668,7 +702,13 @@ fn serve_function(out: &mut String, server: &Server<'_>, component: &ResolvedCom
     let authentication = if grants { ", authenticate" } else { "" };
     let _ = writeln!(out, "{{ serve_with_static(system, address{authentication}, None) }}\n\n/// Serves the declared surface, with files only for paths outside its route table.\n///\n/// # Errors\n/// Returns a listener or static-root error before announcing readiness.\npub fn serve_with_static{angled}(system: &mut {system_crate}::System{angled}, address: &str{}, static_root: Option<&std::path::Path>) -> std::io::Result<()>", if grants { format!(", authenticate: impl Fn(&http::Request) -> Option<{}::actor::Caller>", server.types) } else { String::new() });
     out.push_str(&where_clause(server));
-    let body = SERVE_BODY.replace("    let listener", "    let static_root = static_root.map(std::fs::canonicalize).transpose()?;\n    if static_root.as_ref().is_some_and(|root| !root.is_dir()) { return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, \"static root is not a directory\")); }\n    let listener").replace("Ok(request) => (dispatch(system, &request), false),", "Ok(request) => {\n                if !ROUTES.iter().any(|(_, path)| *path == request.path) {\n                    if let Some(root) = &static_root {\n                        let _ = crate::static_assets::answer(reader.get_mut(), root, &request);\n                        continue;\n                    }\n                }\n                (dispatch(system, &request), false)\n            },");
+    let unrouted = if bound {
+        // A bound route is a template: a path it matches is routed, whatever the variables hold.
+        "if !ROUTES.iter().any(|(_, path)| http::matched(path, &request.path).is_some()) {"
+    } else {
+        "if !ROUTES.iter().any(|(_, path)| *path == request.path) {"
+    };
+    let body = SERVE_BODY.replace("    let listener", "    let static_root = static_root.map(std::fs::canonicalize).transpose()?;\n    if static_root.as_ref().is_some_and(|root| !root.is_dir()) { return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, \"static root is not a directory\")); }\n    let listener").replace("Ok(request) => (dispatch(system, &request), false),", &format!("Ok(request) => {{\n                {unrouted}\n                    if let Some(root) = &static_root {{\n                        let _ = crate::static_assets::answer(reader.get_mut(), root, &request);\n                        continue;\n                    }}\n                }}\n                (dispatch(system, &request), false)\n            }},"));
     out.push_str(&if grants {
         body.replace(
             "dispatch(system, &request)",
@@ -681,8 +721,9 @@ fn serve_function(out: &mut String, server: &Server<'_>, component: &ResolvedCom
 
 /// The grant check every command route and every command `handle` runs first (beyond10x/ess#265),
 /// and the standard refusal the route answers when it fails. Emitted only in a model that declares
-/// an actor.
-fn grant_check(out: &mut String, server: &Server<'_>) {
+/// an actor. `standard` emits the standard refusal too; a bound surface whose binding overrides it
+/// on every route that checks a grant has no use for it.
+fn grant_check(out: &mut String, server: &Server<'_>, standard: bool) {
     let types = &server.types;
     let _ = write!(
         out,
@@ -693,7 +734,14 @@ fn grant_check(out: &mut String, server: &Server<'_>) {
          Option<&{types}::actor::Caller>, command: &str) -> Result<(), Option<&'static str>> \
          {{\n    match caller {{\n        Some(caller) if caller.may(command) => Ok(()),\n        \
          Some(caller) => Err(Some(caller.actor.name())),\n        None => Err(None),\n    \
-         }}\n}}\n\n/// The standard refusal for an actor no grant admits, as the contract declares \
+         }}\n}}\n",
+    );
+    if !standard {
+        return;
+    }
+    let _ = write!(
+        out,
+        "\n/// The standard refusal for an actor no grant admits, as the contract declares \
          it: `403`,\n/// `{{\"refused\": \"not granted\", \"actor\": <name or null>}}`.\nfn \
          not_granted(actor: Option<&str>) -> http::Response {{\n    let mut body = \
          String::from(\"{{\");\n    json::member(&mut body, \"refused\");\n    \
@@ -887,13 +935,13 @@ fn view_call(ir: &EssIr, layout: &Layout, handle: &ess_compiler::ir::ViewHandle)
 }
 
 /// The handler function name for one construct: its whole qualified name, snake-cased.
-fn handler_ident(layout: &Layout, declared: &QualifiedName) -> String {
+pub(super) fn handler_ident(layout: &Layout, declared: &QualifiedName) -> String {
     format!("serve_{}", wire::ident(layout, declared))
 }
 
 /// The transport-free half of one construct's handler — decode, port, declared outcome — which
 /// both the route and [`entry_point`]'s `handle` call, so the two cannot answer differently.
-fn runner_ident(layout: &Layout, declared: &QualifiedName) -> String {
+pub(super) fn runner_ident(layout: &Layout, declared: &QualifiedName) -> String {
     format!("run_{}", wire::ident(layout, declared))
 }
 
@@ -1045,9 +1093,18 @@ fn handlers(
 ) {
     let ir = server.ir;
     for route in routes {
+        // A route the binding declares is served by its own handler, which reads the request
+        // the binding says it is and answers what the binding declares; the transport-free half
+        // (`run_*`) is the same either way.
+        let declared = route.declared.is_some();
         match route.serves {
-            Served::Command(handle) => command_handler(out, server, component, ir.command(handle)),
-            Served::View(handle) => view_handler(out, server, component, ir.view(handle)),
+            Served::Command(handle) => {
+                command_handler(out, server, component, ir.command(handle), declared);
+            }
+            Served::View(handle) => view_handler(out, server, component, ir.view(handle), declared),
+        }
+        if declared {
+            bound::handler(out, server, route);
         }
     }
 }
@@ -1058,6 +1115,7 @@ fn command_handler(
     server: &Server<'_>,
     component: &ResolvedComponent,
     command: &ess_compiler::ir::ResolvedCommand,
+    declared: bool,
 ) {
     let layout = server.layout;
     let system_crate = Layout::crate_ident(layout.system_package());
@@ -1077,20 +1135,22 @@ fn command_handler(
     );
     let settle = settle(server);
 
-    let _ = write!(
-        out,
-        "\n/// `POST` `{}`: reads the declared input, runs the port, answers the declared \
-         outcome.\nfn serve_{ident}{angled}(system: &mut {system_crate}::System{angled}, body: \
-         &[u8]) -> http::Response\n",
-        command.name
-    );
-    out.push_str(&bounds);
-    out.push_str(if ess_gen::http::body_required(command) {
-        READ_BODY
-    } else {
-        READ_OPTIONAL_BODY
-    });
-    let _ = write!(out, "    http::answer({run}(system, &value))\n}}\n");
+    if !declared {
+        let _ = write!(
+            out,
+            "\n/// `POST` `{}`: reads the declared input, runs the port, answers the declared \
+             outcome.\nfn serve_{ident}{angled}(system: &mut {system_crate}::System{angled}, \
+             body: &[u8]) -> http::Response\n",
+            command.name
+        );
+        out.push_str(&bounds);
+        out.push_str(if ess_gen::http::body_required(command) {
+            READ_BODY
+        } else {
+            READ_OPTIONAL_BODY
+        });
+        let _ = write!(out, "    http::answer({run}(system, &value))\n}}\n");
+    }
 
     // The transport-free half, which the route above and `handle` both call.
     let _ = write!(
@@ -1320,6 +1380,7 @@ fn view_handler(
     server: &Server<'_>,
     component: &ResolvedComponent,
     view: &ResolvedView,
+    declared: bool,
 ) {
     let layout = server.layout;
     let system_crate = Layout::crate_ident(layout.system_package());
@@ -1340,7 +1401,7 @@ fn view_handler(
         );
         (String::new(), String::new())
     } else {
-        params_route(out, server, view)
+        params_route(out, server, view, declared)
     };
     out.push_str(&where_clause(server));
     let _ = write!(
@@ -1372,23 +1433,30 @@ fn view_handler(
 /// wire name, and the opening of the `run_*` function the route and `handle` share, which decodes
 /// them into the types the port takes (story:served-view-params). Answers the decoding statement
 /// the function body starts with, and the arguments the port is called with.
-fn params_route(out: &mut String, server: &Server<'_>, view: &ResolvedView) -> (String, String) {
+fn params_route(
+    out: &mut String,
+    server: &Server<'_>,
+    view: &ResolvedView,
+    declared: bool,
+) -> (String, String) {
     let system_crate = Layout::crate_ident(server.layout.system_package());
     let angled = generic_list(server);
     let bounds = where_clause(server);
     let ident = wire::ident(server.layout, &view.name);
     let run = runner_ident(server.layout, &view.name);
-    let _ = write!(
-        out,
-        "\n/// `GET` `{}`: reads the declared parameters from the query string by their wire \
+    if !declared {
+        let _ = write!(
+            out,
+            "\n/// `GET` `{}`: reads the declared parameters from the query string by their wire \
          names, runs the\n/// port, answers its rows. A key the view does not declare is \
          ignored.\nfn serve_{ident}{angled}(system: &{system_crate}::System{angled}, query: \
          &str) -> http::Response\n{bounds}{{\n    match http::query_object(query, {}, \"query\") \
          {{\n        Ok(value) => http::answer({run}(system, &value)),\n        Err(refused) => \
          http::Response::refusal(400, &refused),\n    }}\n}}\n",
-        view.name,
-        query_table(server.ir, view),
-    );
+            view.name,
+            query_table(server.ir, view),
+        );
+    }
     let _ = write!(
         out,
         "\n/// `GET` `{}` at `{}` consistency: every row the owed projection holds for the \
@@ -1846,8 +1914,13 @@ pub(crate) fn serves_params(ir: &EssIr) -> bool {
 /// A view's declared parameters as the `(wire name, scalar)` table [`QUERY`]'s `query_object`
 /// reads, as Rust source: `&[("who", http::Scalar::Text), …]`.
 fn query_table(ir: &EssIr, view: &ResolvedView) -> String {
-    let rows: Vec<String> = view
-        .params
+    query_params(ir, &view.params.iter().collect::<Vec<_>>())
+}
+
+/// [`query_table`] for any parameters, in the order given: a bound route's table leaves out the
+/// parameters its path carries.
+fn query_params(ir: &EssIr, params: &[&ess_compiler::ir::ResolvedField]) -> String {
+    let rows: Vec<String> = params
         .iter()
         .map(|param| {
             let scalar = match crate::view_query::query_scalar(ir, &param.type_ref) {

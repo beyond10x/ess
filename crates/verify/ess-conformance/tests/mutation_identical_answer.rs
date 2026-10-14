@@ -420,3 +420,456 @@ fn a_swap_of_refusals_every_binding_answers_alike_keeps_its_identical_answer() {
         assert_eq!(ledger_answer(policy).as_deref(), Some(shared), "{case}");
     }
 }
+
+/// <https://github.com/beyond10x/ess/issues/539>: `done-paused-default` takes every input both
+/// `done-paused` (`pause == true`) and `done-default` (`code` absent or `""`) select, so which of the
+/// two is declared first decides nothing. `EARLIER` is the rest of `done-paused-default`'s guard.
+const JOB: &str = r#"format: ess/23
+system: demo
+version: v1
+domain: demo.job
+entities:
+  - name: demo.job.Job
+    identity: {name: job_id, type: Uuid}
+    fields:
+      - {name: note, type: String}
+    lifecycle:
+      initial: Open
+      states: [Open, Closed]
+      terminal: [Closed]
+      transitions:
+        - {name: close, from: [Open], to: Closed}
+errors:
+  - {name: demo.job.JobNotFound, summary: No such job., fields: []}
+events:
+  - name: demo.job.Opened
+    fields: [{name: job_id, type: Uuid}]
+  - {name: demo.job.PausedDefault, fields: []}
+  - {name: demo.job.Paused, fields: []}
+  - {name: demo.job.Defaulted, fields: []}
+  - {name: demo.job.Done, fields: []}
+commands:
+  - name: demo.job.Open
+    input:
+      - {name: note, type: String}
+    outcomes:
+      - name: opened
+        creates: demo.job.Job
+        instance: job_id
+        emits: [demo.job.Opened]
+        payload: {demo.job.Opened: {job_id: {generated: true}}}
+        sets: {note: input.note}
+  - name: demo.job.Finish
+    input:
+      - {name: job_id, type: Uuid}
+      - {name: note, type: String}
+      - {name: pause, type: Boolean}
+      - {name: code, type: Optional<String>}
+    outcomes:
+      - name: done-paused-default
+EARLIER        updates: demo.job.Job
+        instance: job_id
+        emits: [demo.job.PausedDefault]
+        sets: {note: input.note}
+      - name: done-paused
+        when: pause == true
+        updates: demo.job.Job
+        instance: job_id
+        emits: [demo.job.Paused]
+        sets: {note: input.note}
+      - name: done-default
+        when: {any: [{code: {defined: false}}, 'code == ""']}
+        updates: demo.job.Job
+        instance: job_id
+        emits: [demo.job.Defaulted]
+        sets: {note: input.note}
+      - name: done
+        moves: demo.job.Job.close
+        instance: job_id
+        emits: [demo.job.Done]
+        sets: {note: input.note}
+      - {name: not-found, unknown_instance: true, error: demo.job.JobNotFound}
+"#;
+
+/// `done-paused-default` as the issue declares it: `pause == true`, and `code` absent or `""`.
+const COVERING: &str =
+    "        when: {all: ['pause == true', {any: [{code: {defined: false}}, 'code == \"\"']}]}\n";
+
+const SWAP: &str = "precedence-swap/demo.job.Finish/done-paused/done-default";
+
+/// The `JOB` model with `earlier` as the rest of `done-paused-default`'s guard.
+fn job(earlier: &str) -> (Vec<Document>, SourceMap) {
+    let text = JOB.replace("EARLIER", earlier);
+    let label = "job.yaml".to_owned();
+    let raw = RawSpecFile::parse(&text).unwrap_or_else(|error| panic!("{error}\n{text}"));
+    let mut texts = SourceMap::new();
+    texts.insert(label.clone(), text);
+    (vec![(Source::new(label), raw)], texts)
+}
+
+/// The audit of `JOB`'s precedence swaps with `earlier`, as JSON, and its text.
+fn job_audit(earlier: &str) -> (Value, String) {
+    let (files, texts) = job(earlier);
+    let ir = mutate::compile(files.clone(), &texts).unwrap_or_else(|error| panic!("{error:?}"));
+    let report = mutate::audit(&files, &texts, &[MutantClass::PrecedenceSwap], || {
+        Interpreted::for_model(ir.clone())
+    })
+    .unwrap_or_else(|refusal| panic!("{refusal}"));
+    let text = report.render_text();
+    (
+        serde_json::from_str(&report.to_canonical_json()).unwrap(),
+        text,
+    )
+}
+
+#[test]
+fn a_swap_whose_overlap_an_earlier_branch_takes_is_equivalent() {
+    let (json, text) = job_audit(COVERING);
+    let swap = mutant(&json, SWAP);
+    assert_eq!(swap["verdict"], "equivalent", "{text}");
+    assert_eq!(
+        swap["overlap_taken_by"],
+        serde_json::json!(["done-paused-default"]),
+        "{swap:#}"
+    );
+    assert!(
+        swap.get("unsatisfiable_guard").is_none() && swap.get("identical_answer").is_none(),
+        "the guards overlap on `pause == true` with `code` absent, and the branches answer \
+         differently: {swap:#}"
+    );
+    assert_eq!(
+        json["format"], "ess-mutation-report/6",
+        "`ess-mutation-report/5`, which 0.57.0 wrote, has no `overlap_taken_by`"
+    );
+    assert!(
+        text.lines()
+            .any(|line| line.starts_with(&format!("equivalent {SWAP}: "))
+                && line.ends_with(
+                    " — ESS-MUTATE-005: every input both branches select is taken first by \
+                 `done-paused-default`"
+                )),
+        "{text}"
+    );
+}
+
+#[test]
+fn a_swap_whose_overlap_is_partly_uncovered_still_survives_or_is_killed() {
+    // Without `code == ""`, `pause == true` with `code == ""` reaches both swapped branches.
+    let (json, text) =
+        job_audit("        when: {all: ['pause == true', {code: {defined: false}}]}\n");
+    let swap = mutant(&json, SWAP);
+    assert!(swap.get("overlap_taken_by").is_none(), "{swap:#}");
+    assert_ne!(swap["verdict"], "equivalent", "{text}");
+}
+
+#[test]
+fn an_earlier_branch_guarded_by_stored_state_does_not_cover() {
+    // The same input guard beside a `when_subject:` predicate takes the overlap only on a row it
+    // holds of; on any other row both swapped branches still compete.
+    let (json, text) = job_audit(&format!(
+        "{COVERING}        when_subject:\n          predicate: note == \"held\"\n"
+    ));
+    let swap = mutant(&json, SWAP);
+    assert!(swap.get("overlap_taken_by").is_none(), "{swap:#}");
+    assert_ne!(swap["verdict"], "equivalent", "{text}");
+}
+
+/// The emission of `JOB`'s precedence swaps with `COVERING`, with a report beside every suite as
+/// [`emitted_for`] writes them.
+fn job_emitted() -> (Emission, BTreeMap<String, String>) {
+    let (files, texts) = job(COVERING);
+    let ir = mutate::compile(files.clone(), &texts).expect("the model compiles");
+    let emission = mutate::emit_for(&files, &texts, &[MutantClass::PrecedenceSwap], None)
+        .expect("the model emits");
+    let mut written = emission.files.clone();
+    let mut dirs = vec![BASELINE_DIR.to_owned()];
+    dirs.extend(
+        emission
+            .manifest
+            .mutants
+            .iter()
+            .filter_map(|it| it.dir.clone()),
+    );
+    for dir in dirs {
+        let admitted = AdmittedSuite::from_json(&emission.files[&format!("{dir}/{SUITE_FILE}")])
+            .expect("an emitted suite is admitted");
+        let run = Runner::for_suite(admitted.suite())
+            .run_admitted(&admitted, &Interpreted::for_model(ir.clone()));
+        let text = CountReport::from_run(&run, &admitted)
+            .unwrap()
+            .to_canonical_json()
+            .unwrap();
+        written.insert(format!("{dir}/{REPORT_FILE}"), text);
+    }
+    (emission, written)
+}
+
+#[test]
+fn the_manifest_and_the_collected_report_name_the_branches_taking_the_overlap() {
+    let (emission, written) = job_emitted();
+    let manifest: Value = serde_json::from_str(&written[MANIFEST_FILE]).unwrap();
+    assert_eq!(manifest["format"], "ess-mutation-manifest/6");
+    let swap = mutant(&manifest, SWAP);
+    assert_eq!(
+        swap["overlap_taken_by"],
+        serde_json::json!(["done-paused-default"]),
+        "{swap:#}"
+    );
+    let mutant_file: Value = serde_json::from_str(&emission.files[&format!("{SWAP}/mutant.json")])
+        .expect("the mutant's own entry");
+    assert_eq!(
+        mutant_file["overlap_taken_by"],
+        serde_json::json!(["done-paused-default"])
+    );
+    let report =
+        mutate::collect(|path| written.get(path).cloned()).unwrap_or_else(|it| panic!("{it}"));
+    let json: Value = serde_json::from_str(&report.to_canonical_json()).unwrap();
+    assert_eq!(json["format"], "ess-mutation-report/6");
+    let swap = mutant(&json, SWAP);
+    assert_eq!(swap["verdict"], "equivalent", "{}", report.render_text());
+    assert_eq!(
+        swap["overlap_taken_by"],
+        serde_json::json!(["done-paused-default"])
+    );
+}
+
+#[test]
+fn a_version_5_manifest_carrying_overlap_taken_by_is_refused_naming_version_6() {
+    // 0.57.0 to this release wrote `ess-mutation-manifest/5` without `overlap_taken_by`; a member
+    // new to a released format changes its meaning, so it has a version of its own.
+    let (emission, mut written) = job_emitted();
+    assert_eq!(emission.manifest.format, "ess-mutation-manifest/6");
+    let manifest = written[MANIFEST_FILE]
+        .replace("\"ess-mutation-manifest/6\"", "\"ess-mutation-manifest/5\"");
+    written.insert(MANIFEST_FILE.to_owned(), manifest);
+    let refusal = mutate::collect(|path| written.get(path).cloned())
+        .expect_err("`ess-mutation-manifest/5` has no `overlap_taken_by`");
+    let said = refusal.to_string();
+    assert!(
+        said.contains("`overlap_taken_by`")
+            && said.contains("`ess-mutation-manifest/5`")
+            && said.contains("`ess-mutation-manifest/6`"),
+        "{said}"
+    );
+}
+
+/// A swap whose overlap an earlier branch takes and which a runner's report kills still names
+/// that branch, and its text line says so after a `;`, never as the `ESS-MUTATE-005` reason the
+/// `equivalent` line gives (`render_text`'s branch for a verdict other than `equivalent`). Moved
+/// from adversary pass 1, whose fixture swapped branches addressing different rows: those no
+/// longer carry `overlap_taken_by`, so the kill comes from a report recording a failure.
+#[test]
+fn a_killed_swap_names_the_branch_taking_its_overlap_without_claiming_equivalence() {
+    let (_, mut written) = job_emitted();
+    let path = format!("{SWAP}/{REPORT_FILE}");
+    let mut value: Value = serde_json::from_str(&written[&path]).unwrap();
+    let passed = value["outcomes"]["passed"].as_array_mut().unwrap();
+    assert!(!passed.is_empty(), "the swap's suite ran a scenario");
+    let failing = passed.remove(0);
+    let left = passed.len();
+    value["outcomes"]["failed"] = Value::Array(vec![failing]);
+    value["counts"]["passed"] = Value::from(left);
+    value["counts"]["failed"] = Value::from(1);
+    value["execution_status"] = Value::from("failed");
+    value["conformance_status"] = Value::from("failed");
+    written.insert(path, serde_json::to_string_pretty(&value).unwrap() + "\n");
+    let report =
+        mutate::collect(|path| written.get(path).cloned()).unwrap_or_else(|it| panic!("{it}"));
+    let rendered = report.render_text();
+    let json: Value = serde_json::from_str(&report.to_canonical_json()).unwrap();
+    let swap = mutant(&json, SWAP);
+    assert_eq!(swap["verdict"], "killed", "{swap:#}\n{rendered}");
+    assert_eq!(
+        swap["overlap_taken_by"],
+        serde_json::json!(["done-paused-default"]),
+        "{swap:#}"
+    );
+    assert_eq!(json["format"], "ess-mutation-report/6", "{rendered}");
+    let line = rendered
+        .lines()
+        .find(|line| line.starts_with(&format!("killed {SWAP}")))
+        .unwrap_or_else(|| panic!("no killed line for the swap:\n{rendered}"));
+    assert!(
+        line.contains("; every input both branches select is taken first by `done-paused-default`")
+            && !line.contains("ESS-MUTATE-005"),
+        "{line}"
+    );
+}
+
+#[test]
+fn overlap_taken_by_on_a_mutant_that_swaps_nothing_is_refused() {
+    let (emission, mut written) = emitted(&[MutantClass::GuardNegate]);
+    assert_eq!(emission.manifest.format, "ess-mutation-manifest/3");
+    let mut manifest: Value = serde_json::from_str(&written[MANIFEST_FILE]).unwrap();
+    manifest["format"] = "ess-mutation-manifest/6".into();
+    let carrier = manifest["mutants"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|it| it.get("dir").is_some())
+        .expect("a mutant with a suite");
+    carrier["overlap_taken_by"] = serde_json::json!(["leading-hold"]);
+    written.insert(
+        MANIFEST_FILE.to_owned(),
+        serde_json::to_string_pretty(&manifest).unwrap(),
+    );
+    let refusal = mutate::collect(|path| written.get(path).cloned())
+        .expect_err("only a `precedence-swap` has branches declared before both");
+    let said = refusal.to_string();
+    assert!(
+        said.contains("`overlap_taken_by`") && said.contains("precedence-swap"),
+        "{said}"
+    );
+}
+
+/// A row-set command (`refused` reads a row set through the input) where `rushed`, an
+/// input-guarded refusal the plan reads before the swapped pair, takes every input both select.
+/// `PAIR` is the swapped two: `paused` (`pause == true`) on a book, then `TWIN` (`rush == true`),
+/// which addresses a book or a shelf. The interpreter reads the row the first declared branch
+/// acting on a stored row addresses before any branch is selected (`addressed_row`), so which of
+/// the two is first decides whose absence refuses a request neither of them takes.
+const SHELF: &str = r"format: ess/23
+system: demo
+version: v1
+domain: demo.shelf
+entities:
+  - name: demo.shelf.Library
+    identity: {name: library, type: String}
+    fields:
+      - {name: curator, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: demo.shelf.Book
+    identity: {name: book, type: String}
+    fields: []
+    lifecycle: {initial: Shelved, states: [Shelved], terminal: [Shelved]}
+  - name: demo.shelf.Shelf
+    identity: {name: shelf, type: String}
+    fields: []
+    lifecycle: {initial: Up, states: [Up], terminal: [Up]}
+errors:
+  - {name: demo.shelf.Refused, summary: A library of the curator is open., fields: []}
+  - {name: demo.shelf.Unknown, summary: No row carries the identity., fields: []}
+  - {name: demo.shelf.Rushed, summary: A rush is not taken., fields: []}
+  - {name: demo.shelf.Idle, summary: Nothing was asked., fields: []}
+events:
+  - name: demo.shelf.LibraryOpened
+    fields: [{name: library, type: String}]
+  - name: demo.shelf.ShelfBuilt
+    fields: [{name: shelf, type: String}]
+  - name: demo.shelf.BookAdded
+    fields: [{name: book, type: String}]
+  - name: demo.shelf.BookPaused
+    fields: [{name: book, type: String}]
+  - name: demo.shelf.Twin
+    fields: [{name: key, type: String}]
+commands:
+  - name: demo.shelf.OpenLibrary
+    input:
+      - {name: library, type: String}
+      - {name: curator, type: String}
+    outcomes:
+      - name: opened
+        creates: demo.shelf.Library
+        instance: library
+        sets: {curator: input.curator}
+        emits: [demo.shelf.LibraryOpened]
+        payload:
+          demo.shelf.LibraryOpened: {library: input.library}
+  - name: demo.shelf.BuildShelf
+    input:
+      - {name: shelf, type: String}
+    outcomes:
+      - name: built
+        creates: demo.shelf.Shelf
+        instance: shelf
+        emits: [demo.shelf.ShelfBuilt]
+        payload:
+          demo.shelf.ShelfBuilt: {shelf: input.shelf}
+  - name: demo.shelf.AddBook
+    input:
+      - {name: book, type: String}
+    outcomes:
+      - name: added
+        creates: demo.shelf.Book
+        instance: book
+        emits: [demo.shelf.BookAdded]
+        payload:
+          demo.shelf.BookAdded: {book: input.book}
+  - name: demo.shelf.Act
+    input:
+      - {name: book, type: String}
+      - {name: shelf, type: String}
+      - {name: curator, type: String}
+      - {name: pause, type: Boolean}
+      - {name: rush, type: Boolean}
+    outcomes:
+      - {name: unknown, unknown_instance: true, error: demo.shelf.Unknown}
+      - name: refused
+        when_related:
+          entity: demo.shelf.Library
+          where: curator == input.curator
+          exists: true
+        error: demo.shelf.Refused
+      - {name: rushed, when: rush == true, error: demo.shelf.Rushed}
+      - name: paused
+        when: pause == true
+        updates: demo.shelf.Book
+        instance: book
+        emits: [demo.shelf.BookPaused]
+        payload:
+          demo.shelf.BookPaused: {book: input.book}
+      - name: twin
+        when: rush == true
+        updates: demo.shelf.TWIN
+        instance: TWIN_KEY
+        emits: [demo.shelf.Twin]
+        payload:
+          demo.shelf.Twin: {key: input.TWIN_KEY}
+      - {name: idle, error: demo.shelf.Idle}
+";
+
+const SHELF_SWAP: &str = "precedence-swap/demo.shelf.Act/paused/twin";
+
+/// The audit of `SHELF`'s precedence swaps with `twin` acting on `entity` through `key`.
+fn shelf_audit(entity: &str, key: &str) -> (Value, String) {
+    let text = SHELF.replace("TWIN_KEY", key).replace("TWIN", entity);
+    let label = "shelf.yaml".to_owned();
+    let raw = RawSpecFile::parse(&text).unwrap_or_else(|error| panic!("{error}\n{text}"));
+    let mut texts = SourceMap::new();
+    texts.insert(label.clone(), text);
+    let files = vec![(Source::new(label), raw)];
+    let ir = mutate::compile(files.clone(), &texts).unwrap_or_else(|error| panic!("{error:?}"));
+    let report = mutate::audit(&files, &texts, &[MutantClass::PrecedenceSwap], || {
+        Interpreted::for_model(ir.clone())
+    })
+    .unwrap_or_else(|refusal| panic!("{refusal}"));
+    let rendered = report.render_text();
+    (
+        serde_json::from_str(&report.to_canonical_json()).unwrap(),
+        rendered,
+    )
+}
+
+#[test]
+fn a_swap_of_branches_addressing_different_rows_names_no_overlap_taken() {
+    // Swapped, the shelf is the addressed row: a request selecting neither branch, on a store
+    // holding the shelf and not the book, no longer refuses as an unknown book. The earlier branch
+    // taking the overlap says nothing about that answer.
+    let (json, text) = shelf_audit("Shelf", "shelf");
+    let swap = mutant(&json, SHELF_SWAP);
+    assert!(swap.get("overlap_taken_by").is_none(), "{swap:#}\n{text}");
+    assert_ne!(swap["verdict"], "equivalent", "{swap:#}\n{text}");
+    assert_ne!(json["format"], "ess-mutation-report/6", "{text}");
+}
+
+#[test]
+fn a_swap_of_branches_addressing_the_same_row_names_the_overlap_taken() {
+    let (json, text) = shelf_audit("Book", "book");
+    let swap = mutant(&json, SHELF_SWAP);
+    assert_eq!(
+        swap["overlap_taken_by"],
+        serde_json::json!(["rushed"]),
+        "{swap:#}\n{text}"
+    );
+    assert_eq!(swap["verdict"], "equivalent", "{swap:#}\n{text}");
+}

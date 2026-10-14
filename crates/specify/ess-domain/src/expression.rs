@@ -13,7 +13,8 @@ use ess_primitives::error::{ValidationCode, ValidationError, ValidationErrors};
 use ess_primitives::facts::{FactPath, FactValue};
 use ess_primitives::predicate::{
     CompareKind, CompareOp, Derived, Distinct, DistinctKeyKind, FoldOp, OffsetMagnitude,
-    OffsetOperand, Operand, Predicate, Quantified, TextNamespace, TextOp, TextOperand,
+    OffsetOperand, Operand, Predicate, Quantified, TextNamespace, TextOp, TextOperand, TRIMMED,
+    TRIMMED_WHITESPACE,
 };
 use ess_primitives::window::{CalendarWindow, WindowInstant};
 
@@ -170,6 +171,14 @@ pub trait TypeEnvironment {
     ///
     /// `true` by default, for the reason [`Self::admits_text_length`] is.
     fn admits_aggregate_presence(&self) -> bool {
+        true
+    }
+    /// Whether this environment admits `trimmed:` (beyond10x/ess#532), which `ess/25` introduced.
+    /// Below it the format gate refuses every `trimmed:` by name, so the checker reports nothing
+    /// further about one, as a case-insensitive operator below `ess/15` is refused by format alone.
+    ///
+    /// `true` by default, for the reason [`Self::admits_text_length`] is.
+    fn admits_trimmed(&self) -> bool {
         true
     }
     /// Where and under which format this environment admits the current-time operand, `now`, in an
@@ -470,6 +479,11 @@ impl TypeEnvironment for DomainEnvironment<'_> {
         self.registry
             .format()
             .is_none_or(|format| format.major() >= crate::system::FormatVersion::V16.major())
+    }
+    fn admits_trimmed(&self) -> bool {
+        self.registry
+            .format()
+            .is_none_or(|format| format.major() >= crate::system::FormatVersion::V25.major())
     }
     fn admits_root_facts(&self) -> bool {
         self.registry
@@ -1654,6 +1668,7 @@ pub fn read_input_namespace(predicate: &Predicate) -> Predicate {
                 Predicate::Any(children.iter().map(|child| walk(child, bound)).collect())
             }
             Predicate::Not(inner) => Predicate::Not(Box::new(walk(inner, bound))),
+            Predicate::Trimmed(inner) => Predicate::Trimmed(Box::new(walk(inner, bound))),
             Predicate::Compare {
                 left,
                 op,
@@ -1927,6 +1942,7 @@ impl<E: TypeEnvironment> Checker<'_, E> {
             {
                 Some(path)
             }
+            Predicate::Trimmed(inner) if left.scalar.is_none() => inner.trimmed_subject(),
             Predicate::Compare {
                 left: Operand::Fact(path),
                 ..
@@ -3059,6 +3075,120 @@ impl<E: TypeEnvironment> Checker<'_, E> {
         }
     }
 
+    /// A `trimmed:` text operator (beyond10x/ess#532, `docs/design/value-expressions.md` § E10):
+    /// admitted only where a command outcome decides a request — its `when:`, `when_subject:` and
+    /// `when_related:` guards — over a `String` fact or a newtype of one, `Optional` admitted. The
+    /// wrapped operator is then checked as it would be unwrapped, and its literals are text.
+    fn trimmed(&mut self, predicate: &Predicate, inner: &Predicate) {
+        // Below ess/25 the format gate refuses it by name, and nothing more is said of it.
+        if !self.environment.admits_trimmed() {
+            return;
+        }
+        let Some(path) = inner.trimmed_subject() else {
+            self.checked.errors.push(error(
+                self.owner,
+                ValidationCode::UnsupportedConstruct,
+                None,
+                None,
+                format!("`{predicate}`: `trimmed` wraps one text operator"),
+            ));
+            return;
+        };
+        if !self.environment.current_time().site {
+            self.checked.errors.push(error(
+                self.owner,
+                ValidationCode::UnsupportedConstruct,
+                Some(path),
+                None,
+                format!(
+                    "`{predicate}`: `trimmed` is admitted only in a command outcome's guard: its \
+                     `when:` over the input, and its `when_subject:` and `when_related:` predicates \
+                     over a stored row. An invariant, a view filter, a selection and a set-effect \
+                     filter do not read it"
+                ),
+            ));
+            return;
+        }
+        if let Some(typed) = self.operand(&Operand::Fact(path.clone())) {
+            if !typed.string {
+                self.mismatch(predicate, TRIMMED, &typed, None);
+                return;
+            }
+        }
+        if let Predicate::AnyOf { values, .. } = inner {
+            if values.is_empty() {
+                self.checked.errors.push(error(
+                    self.owner,
+                    ValidationCode::EmptyDeclaration,
+                    Some(path),
+                    None,
+                    format!("`{predicate}` lists no literal, so it holds for no text"),
+                ));
+                return;
+            }
+            if let Some(value) = values.iter().find(|value| value.as_text().is_none()) {
+                self.checked.errors.push(error(
+                    self.owner,
+                    ValidationCode::TypeMismatch,
+                    Some(path),
+                    None,
+                    format!(
+                        "`{predicate}`: the operand {value} is a {}, not text; `trimmed` compares \
+                         with text literals. YAML reads an unquoted scalar such as `44` as a number \
+                         and `true` as a Boolean before ESS sees it: quote the literal exactly as \
+                         written",
+                        value.type_name()
+                    ),
+                ));
+                return;
+            }
+        }
+        self.untrimmed_literals(predicate, path, inner);
+        self.predicate(inner);
+    }
+
+    /// A `trimmed:` literal compared at an end that carries ASCII whitespace holds for no text: a
+    /// trimmed text never starts or ends with one of [`TRIMMED_WHITESPACE`]. So an `equals` or `in`
+    /// literal, case-folded or not, with one at either end, a `starts_with` literal with one at its
+    /// start and an `ends_with` literal with one at its end are each refused as
+    /// `empty_declaration`, as an `in` listing no literal is. `contains` compares no end.
+    fn untrimmed_literals(&mut self, predicate: &Predicate, path: &FactPath, inner: &Predicate) {
+        let padded_start = |text: &str| text.starts_with(TRIMMED_WHITESPACE.as_slice());
+        let padded_end = |text: &str| text.ends_with(TRIMMED_WHITESPACE.as_slice());
+        let either = |text: &str| padded_start(text) || padded_end(text);
+        let never: Vec<&str> = match inner {
+            Predicate::AnyOf { values, .. } | Predicate::FoldMatch { values, .. } => values
+                .iter()
+                .filter_map(FactValue::as_text)
+                .filter(|text| either(text))
+                .collect(),
+            Predicate::TextMatch { op, value, .. } => value
+                .as_literal()
+                .and_then(FactValue::as_text)
+                .filter(|text| match op {
+                    TextOp::StartsWith => padded_start(text),
+                    TextOp::EndsWith => padded_end(text),
+                    TextOp::Contains => false,
+                })
+                .into_iter()
+                .collect(),
+            _ => Vec::new(),
+        };
+        for text in never {
+            self.checked.errors.push(error(
+                self.owner,
+                ValidationCode::EmptyDeclaration,
+                Some(path),
+                None,
+                format!(
+                    "`{predicate}`: the literal {text:?} is not trimmed: it has ASCII whitespace at \
+                     an end it is compared at, which a trimmed text never has, so it holds for no \
+                     text. Write the literal without that whitespace"
+                ),
+            ));
+        }
+    }
+
     fn predicate(&mut self, predicate: &Predicate) {
         match predicate {
             Predicate::Always | Predicate::Never => {}
@@ -3068,6 +3198,7 @@ impl<E: TypeEnvironment> Checker<'_, E> {
             Predicate::FoldMatch { path, op, values } => {
                 self.fold_match(predicate, path, *op, values);
             }
+            Predicate::Trimmed(inner) => self.trimmed(predicate, inner),
             Predicate::All(children) | Predicate::Any(children) => {
                 for child in children {
                     self.predicate(child);

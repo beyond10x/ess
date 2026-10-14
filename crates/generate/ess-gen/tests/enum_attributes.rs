@@ -110,7 +110,7 @@ fn enum_attributes_projected() {
             {
                 serde_json::from_str(&contents).expect("JSON")
             } else {
-                serde_yaml::from_str(&contents).expect("YAML")
+                ess_yaml::from_str(&contents).expect("YAML")
             };
             let mut operators = Vec::new();
             declarations(&document, "demo.rules.Operator", &mut operators);

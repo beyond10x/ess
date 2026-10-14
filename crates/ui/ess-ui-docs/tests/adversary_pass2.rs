@@ -6,7 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use ess_ui_docs::{DocsArgs, DocsError};
-use serde_yaml::Value;
+use ess_yaml::Value;
 
 /// The same minimal schema `refusals.rs` uses.
 const VALID: &str = r"format: ess-ui/1
@@ -59,7 +59,7 @@ fn scratch() -> PathBuf {
 
 /// `VALID` with one more construct appended, named `name` (written as a quoted YAML key).
 fn with_construct(name: &str) -> String {
-    let key = serde_yaml::to_string(&Value::from(name)).expect("a YAML key");
+    let key = ess_yaml::to_string(&Value::from(name)).expect("a YAML key");
     format!(
         "{VALID}  {}:\n    group: document\n    order: 3\n    summary: Extra.\n    doc: An extra construct.\n    fields:\n      x: {{type: string, note: a text}}\n    example: {{x: y}}\n",
         key.trim_end()
@@ -307,7 +307,7 @@ fn a_chapter_title_with_underscores_links_to_the_id_the_site_derives() {
 fn front_matter_carries_the_format_verbatim() {
     let mut broken = Vec::new();
     for format in ["ess-ui: 1", "\"quoted\" ui", "ui #1", "ui/1 'x'"] {
-        let quoted = serde_yaml::to_string(&Value::from(format)).expect("a YAML scalar");
+        let quoted = ess_yaml::to_string(&Value::from(format)).expect("a YAML scalar");
         let text = VALID.replacen(
             "format: ess-ui/1",
             &format!("format: {}", quoted.trim_end()),
@@ -318,7 +318,7 @@ fn front_matter_carries_the_format_verbatim() {
             .strip_prefix("---\n")
             .and_then(|rest| rest.split("\n---\n").next())
             .expect("front matter");
-        match serde_yaml::from_str::<Value>(front) {
+        match ess_yaml::from_str::<Value>(front) {
             Ok(meta) => {
                 let title = meta["title"].as_str().unwrap_or_default();
                 if title != format!("{format} reference") {

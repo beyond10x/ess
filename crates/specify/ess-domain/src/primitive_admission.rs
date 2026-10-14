@@ -470,7 +470,8 @@ type OperatorFormat = (
 
 /// The predicate operators that arrived after `ess/1`, each with the format that admits it:
 /// `starts_with`, `ends_with` and `contains` (beyond10x/ess#95) in `ess/8`, and
-/// `equals_ignore_case` and `in_ignore_case` (beyond10x/ess#140) in `ess/15`. One walk over every
+/// `equals_ignore_case` and `in_ignore_case` (beyond10x/ess#140) in `ess/15`, and `trimmed`
+/// (beyond10x/ess#532) in `ess/25`. One walk over every
 /// predicate position, so a later operator is gated where the earlier ones are.
 const OPERATOR_FORMATS: &[OperatorFormat] = &[
     (
@@ -482,6 +483,11 @@ const OPERATOR_FORMATS: &[OperatorFormat] = &[
         FormatVersion::V15,
         ess_primitives::predicate::Predicate::uses_case_fold,
         "case-insensitive text operators require specification format ess/15",
+    ),
+    (
+        FormatVersion::V25,
+        ess_primitives::predicate::Predicate::uses_trim,
+        "`trimmed` text operators require specification format ess/25",
     ),
 ];
 
@@ -628,25 +634,37 @@ pub(crate) fn specification(spec: &Specification) -> ValidationErrors {
         );
     }
     for view in spec.views().values() {
-        aggregate_view(view, format, &mut errors);
-        errors.extend(view.absent_value_admission(format, &spec.system().types));
-        errors.extend(view.paging_admission(format));
-        if let Some(members) = view.projected_fields(&spec.system().types) {
-            fields(
-                members,
-                format,
-                &spec.system().types,
-                &format!("view.{}.fields", view.name),
-                &mut errors,
-            );
-        }
-        fields(
-            &view.params,
-            format,
-            &spec.system().types,
-            &format!("view.{}.params", view.name),
-            &mut errors,
-        );
+        view_admission(view, format, &spec.system().types, &mut errors);
     }
     errors
+}
+
+/// The source-format gates of one view: its aggregate, absent values, paging, its answer for an
+/// identity no row carries (`absent:`), and the types of its projected fields and parameters.
+fn view_admission(
+    view: &crate::ViewSpec,
+    format: FormatVersion,
+    types: &TypeRegistry,
+    errors: &mut ValidationErrors,
+) {
+    aggregate_view(view, format, errors);
+    errors.extend(view.absent_value_admission(format, types));
+    errors.extend(view.paging_admission(format));
+    errors.extend(view.absent_admission(format));
+    if let Some(members) = view.projected_fields(types) {
+        fields(
+            members,
+            format,
+            types,
+            &format!("view.{}.fields", view.name),
+            errors,
+        );
+    }
+    fields(
+        &view.params,
+        format,
+        types,
+        &format!("view.{}.params", view.name),
+        errors,
+    );
 }

@@ -43,7 +43,10 @@ use crate::plan::{Capability, CapabilityKind, SynthesisPlan};
 
 use super::layout::{Layout, Package};
 use super::refusal::TargetRefusals;
+use super::selection::go_string;
 use super::{name, Emit};
+
+mod bound;
 
 /// The label every startup line carries.
 const LOG_FORMAT: &str = "ess/1";
@@ -71,12 +74,22 @@ pub(super) fn server_package(
     plan: &SynthesisPlan,
     layout: &Layout,
     refusals: &TargetRefusals,
+    binding: Option<&http::Binding>,
     covered: &mut BTreeSet<Capability>,
 ) -> Vec<Artifact> {
     let components = served(ir, refusals);
     if components.is_empty() {
         return Vec::new();
     }
+    // The binding is served only where it routes something of a served surface; a binding that
+    // routes nothing served leaves every byte as it is without one.
+    let binding = binding.filter(|binding| {
+        components.iter().any(|component| {
+            http::bound_routes(ir, component, Some(binding))
+                .iter()
+                .any(|route| route.declared.is_some())
+        })
+    });
     let package = layout.server();
     let provenance = &plan.provenance;
     // The system records what its bindings invoked exactly where it delivers any binding, which is
@@ -87,8 +100,20 @@ pub(super) fn server_package(
             && !refusals.refuses_kind(CapabilityKind::BindingDelivery, &source)
     });
     let mut artifacts = vec![
-        helpers_file(ir, layout, refusals, package, provenance),
-        wire_file(ir, plan, layout, refusals, package, provenance),
+        helpers_file(ir, layout, refusals, package, provenance, binding),
+        wire_file(
+            ir,
+            plan,
+            layout,
+            refusals,
+            package,
+            provenance,
+            if binding.is_some() {
+                Members::Ordered
+            } else {
+                Members::Map
+            },
+        ),
     ];
 
     // Every served command checks the caller's grant before it runs (beyond10x/ess#265).
@@ -111,10 +136,11 @@ pub(super) fn server_package(
             component,
             &components,
             records_invocations,
+            binding,
         ));
         artifacts.push(Artifact::new(
             format!("{}/{}.openapi.json", package.dir, component.name),
-            ess_gen::openapi::json(ir, component),
+            ess_gen::openapi::bound_json(ir, component, binding),
         ));
         artifacts.push(Artifact::new(
             format!("{}/{}.docs.md", package.dir, component.name),
@@ -135,6 +161,7 @@ fn helpers_file(
     refusals: &TargetRefusals,
     package: &Package,
     provenance: &Provenance,
+    binding: Option<&http::Binding>,
 ) -> Artifact {
     let emit = Emit::new(ir, layout, package, None);
     emit.import("bytes");
@@ -158,11 +185,37 @@ fn helpers_file(
             helpers.push_str(&read_grant_helpers(ir));
         }
     }
-    if serves_params(ir, refusals) {
+    // A served binding decodes `form` and `query` requests with the query reader's helpers, so it
+    // carries them whatever its views declare.
+    if serves_params(ir, refusals) || binding.is_some() {
         emit.import("net/url");
         emit.import("strings");
         emit.import("unicode/utf8");
         helpers.push_str(QUERY_HELPERS);
+    }
+    if let Some(binding) = binding {
+        helpers = bound::surface_helpers(&helpers);
+        for import in bound::IMPORTS {
+            emit.import(import);
+        }
+        if super::json::used(ir) {
+            helpers.push_str(&super::json::with_json(
+                bound::BOUND,
+                super::json::BOUND_SUBSTITUTIONS,
+            ));
+        } else {
+            helpers.push_str(bound::BOUND);
+        }
+        let checks_grant = served(ir, refusals).into_iter().any(|component| {
+            http::bound_routes(ir, component, Some(binding))
+                .iter()
+                .filter(|route| route.declared.is_some())
+                .any(|route| match route.serves {
+                    Served::Command(_) => http::checks_grants(ir),
+                    Served::View(handle) => http::read_checked(ir, handle.name()),
+                })
+        });
+        helpers.push_str(&bound::refusals(binding, checks_grant));
     }
     emit.file(provenance, SERVER_DOC, &helpers)
 }
@@ -267,9 +320,9 @@ fn grant_helpers(ir: &EssIr) -> String {
     for actor in ir.actors().keys() {
         let _ = writeln!(
             out,
-            "\t{:width$} Actor = {:?}",
+            "\t{:width$} Actor = {}",
             actor_ident(actor),
-            actor.to_string()
+            go_string(&actor.to_string())
         );
     }
     out.push_str(
@@ -280,7 +333,7 @@ fn grant_helpers(ir: &EssIr) -> String {
         let commands: Vec<String> = declared
             .may
             .iter()
-            .map(|command| format!("{:?}", command.name().to_string()))
+            .map(|command| go_string(&command.name().to_string()))
             .collect();
         let key = format!("{}:", actor_ident(actor));
         let _ = writeln!(
@@ -313,9 +366,9 @@ fn grant_helpers(ir: &EssIr) -> String {
          string) *response {{\n\tadmitted, named := Admit(caller, command)\n\tif admitted \
          {{\n\t\treturn nil\n\t}}\n\tvar actor any\n\tif named != \"\" {{\n\t\tactor = \
          string(named)\n\t}}\n\tanswer := rendered({status}, map[string]any{{\"refused\": \
-         {not_granted:?}, \"actor\": actor}})\n\treturn &answer\n}}\n",
+         {not_granted}, \"actor\": actor}})\n\treturn &answer\n}}\n",
         status = http::FORBIDDEN,
-        not_granted = http::NOT_GRANTED,
+        not_granted = go_string(http::NOT_GRANTED),
     );
     out
 }
@@ -339,7 +392,7 @@ fn read_grant_helpers(ir: &EssIr) -> String {
         let views: Vec<String> = declared
             .may_read
             .iter()
-            .map(|view| format!("{:?}", view.name().to_string()))
+            .map(|view| go_string(&view.name().to_string()))
             .collect();
         let key = format!("{}:", actor_ident(actor));
         let _ = writeln!(
@@ -368,14 +421,43 @@ fn read_grant_helpers(ir: &EssIr) -> String {
          *Caller, view string) *response {{\n\tadmitted, named := AdmitRead(caller, view)\n\tif \
          admitted {{\n\t\treturn nil\n\t}}\n\tvar actor any\n\tif named != \"\" {{\n\t\tactor = \
          string(named)\n\t}}\n\tanswer := rendered({status}, map[string]any{{\"refused\": \
-         {not_granted:?}, \"actor\": actor}})\n\treturn &answer\n}}\n",
+         {not_granted}, \"actor\": actor}})\n\treturn &answer\n}}\n",
         status = http::FORBIDDEN,
-        not_granted = http::NOT_GRANTED,
+        not_granted = go_string(http::NOT_GRANTED),
     );
     out
 }
 
 // ---- the codecs -------------------------------------------------------------------------------
+
+/// How an encoder builds the object it writes.
+#[derive(Clone, Copy)]
+enum Members {
+    /// A `map[string]any`, whose members `encoding/json` writes sorted by name.
+    Map,
+    /// The `orderedObject` of a package serving an `ess-http/1` binding, which writes its members
+    /// in declaration order: the order the Rust server writes them in, so a body the binding
+    /// declares is the same bytes from both servers (`bound::BOUND`).
+    Ordered,
+}
+
+impl Members {
+    /// The Go expression of an empty object.
+    fn empty(self) -> &'static str {
+        match self {
+            Self::Map => "map[string]any{}",
+            Self::Ordered => "&orderedObject{}",
+        }
+    }
+
+    /// The Go statement giving `out` the member `wire` holding `expression`.
+    fn set(self, wire: &str, expression: &str) -> String {
+        match self {
+            Self::Map => format!("out[{}] = {expression}", go_string(wire)),
+            Self::Ordered => format!("out.set({}, {expression})", go_string(wire)),
+        }
+    }
+}
 
 /// Every generated declaration, as JSON, in both directions.
 fn wire_file(
@@ -385,6 +467,7 @@ fn wire_file(
     refusals: &TargetRefusals,
     package: &Package,
     provenance: &Provenance,
+    members: Members,
 ) -> Artifact {
     let emit = Emit::new(ir, layout, package, None);
     emit.import("encoding/base64");
@@ -412,23 +495,23 @@ fn wire_file(
     };
     for declared in ir.types().values() {
         if presents(CapabilityKind::DomainType, &declared.name) {
-            type_encoder(&mut body, &emit, declared);
+            type_encoder(&mut body, &emit, declared, members);
             type_decoder(&mut body, &emit, declared);
         }
     }
     for event in ir.events().values() {
         if presents(CapabilityKind::EventType, &event.name) {
-            event_encoder(&mut body, &emit, event);
+            event_encoder(&mut body, &emit, event, members);
         }
     }
     for error in ir.errors().values() {
         if presents(CapabilityKind::ErrorType, &error.name) {
-            error_encoder(&mut body, &emit, error);
+            error_encoder(&mut body, &emit, error, members);
         }
     }
     for view in ir.views().values() {
         if presents(CapabilityKind::ViewType, &view.name) {
-            view_encoder(&mut body, &emit, view);
+            view_encoder(&mut body, &emit, view, members);
             if !view.params.is_empty() {
                 params_decoder(&mut body, &emit, view);
             }
@@ -437,7 +520,7 @@ fn wire_file(
     for command in ir.commands().values() {
         if presents(CapabilityKind::CommandContract, &command.name) {
             command_decoder(&mut body, &emit, command);
-            response_encoder(&mut body, &emit, command);
+            response_encoder(&mut body, &emit, command, members);
         }
     }
     emit.file_at(format!("{}/wire.go", package.dir), provenance, "", &body)
@@ -457,7 +540,7 @@ fn ident<'a>(layout: &'a Layout, declared: &QualifiedName) -> &'a str {
 }
 
 /// One declared type, written.
-fn type_encoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType) {
+fn type_encoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType, members: Members) {
     let layout = emit.layout;
     let go = emit.reference(&declared.name);
     let function = format!("encode{}", ident(layout, &declared.name));
@@ -473,7 +556,7 @@ fn type_encoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType) {
             let _ = writeln!(out, "\treturn {expression}");
         }
         ResolvedBody::Struct { fields, .. } => {
-            out.push_str("\tout := map[string]any{}\n");
+            let _ = writeln!(out, "\tout := {}", members.empty());
             let mut slot = 0;
             for field in fields {
                 encode_member(
@@ -484,6 +567,7 @@ fn type_encoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType) {
                     &format!("value.{}", super::items::member_ident(fields, &field.name)),
                     &field.type_ref,
                     &mut slot,
+                    members,
                 );
             }
             out.push_str("\treturn out\n");
@@ -493,9 +577,9 @@ fn type_encoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType) {
             for variant in variants {
                 let _ = writeln!(
                     out,
-                    "\tcase {}:\n\t\treturn {:?}",
+                    "\tcase {}:\n\t\treturn {}",
                     emit.reference_variant(&declared.name, variant),
-                    variant.wire()
+                    go_string(variant.wire())
                 );
             }
             out.push_str(UNREACHABLE_VARIANT);
@@ -510,8 +594,8 @@ fn type_encoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType) {
                     "\tcase {}:",
                     emit.reference_variant(&declared.name, label)
                 );
-                let _ = writeln!(out, "\t\tout := map[string]any{{}}");
-                let _ = writeln!(out, "\t\tout[{tag:?}] = {label:?}");
+                let _ = writeln!(out, "\t\tout := {}", members.empty());
+                let _ = writeln!(out, "\t\t{}", members.set(tag, &go_string(label)));
                 // A unit variant (ess/22) is written as its tag alone.
                 if let Some(payload) = payload {
                     let mut slot = 0;
@@ -523,6 +607,7 @@ fn type_encoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType) {
                         "shape.Value",
                         payload,
                         &mut slot,
+                        members,
                     );
                 }
                 out.push_str("\t\treturn out\n");
@@ -579,62 +664,75 @@ fn type_decoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType) {
                     .map(|variant| variant.wire().to_owned())
                     .collect::<Vec<_>>(),
             );
+            let expected = go_string(&expected);
             let _ = writeln!(
                 out,
-                "\ttext, err := textAt(value, at, {expected:?})\n\tif err != nil {{\n\t\treturn \
+                "\ttext, err := textAt(value, at, {expected})\n\tif err != nil {{\n\t\treturn \
                  out, err\n\t}}\n\tswitch text {{"
             );
             for variant in variants {
                 let _ = writeln!(
                     out,
-                    "\tcase {:?}:\n\t\treturn {}{{}}, nil",
-                    variant.wire(),
+                    "\tcase {}:\n\t\treturn {}{{}}, nil",
+                    go_string(variant.wire()),
                     emit.reference_variant(&declared.name, variant)
                 );
             }
             let _ = writeln!(
                 out,
-                "\t}}\n\treturn out, DecodeError{{At: at, Expected: {expected:?}, Found: \
+                "\t}}\n\treturn out, DecodeError{{At: at, Expected: {expected}, Found: \
                  fmt.Sprintf(\"`%s`\", text)}}"
             );
         }
         ResolvedBody::Union { tag, variants } => {
-            let content = ess_gen::schema::union_content_key(tag);
-            let labels: Vec<String> = variants.keys().cloned().collect();
-            let expected = variant_list(&labels);
-            let _ = writeln!(
-                out,
-                "\ttagged, tagAt, err := required(value, at, {tag:?})\n\tif err != nil {{\n\t\t\
-                 return out, err\n\t}}\n\tlabel, err := textAt(tagged, tagAt, \
-                 {expected:?})\n\tif err != nil {{\n\t\treturn out, err\n\t}}\n\tswitch label {{"
-            );
-            for (label, payload) in variants {
-                let _ = writeln!(out, "\tcase {label:?}:");
-                let Some(payload) = payload else {
-                    unit_variant_decoder(out, emit, &declared.name, content, label);
-                    continue;
-                };
-                let carried = ResolvedField {
-                    name: content.to_owned(),
-                    type_ref: payload.clone(),
-                    naming: ess_domain::name::Naming::default(),
-                };
-                let mut slot = 0;
-                decode_member(out, emit, "\t\t", "", &carried, &mut slot);
-                let _ = writeln!(
-                    out,
-                    "\t\treturn {}{{Value: shape}}, nil",
-                    emit.reference_variant(&declared.name, label)
-                );
-            }
-            let _ = writeln!(
-                out,
-                "\t}}\n\treturn out, DecodeError{{At: tagAt, Expected: {expected:?}, Found: \
-                 fmt.Sprintf(\"`%s`\", label)}}"
-            );
+            union_decoder(out, emit, &declared.name, tag, variants);
         }
     }
     out.push_str("}\n");
+}
+
+/// The body of a union's decoder: the tag, then the arm its label names.
+fn union_decoder(
+    out: &mut String,
+    emit: &Emit<'_>,
+    union: &QualifiedName,
+    tag: &str,
+    variants: &std::collections::BTreeMap<String, Option<ResolvedTypeRef>>,
+) {
+    let content = ess_gen::schema::union_content_key(tag);
+    let labels: Vec<String> = variants.keys().cloned().collect();
+    let expected = go_string(&variant_list(&labels));
+    let tag_text = go_string(tag);
+    let _ = writeln!(
+        out,
+        "\ttagged, tagAt, err := required(value, at, {tag_text})\n\tif err != nil {{\n\t\t\
+         return out, err\n\t}}\n\tlabel, err := textAt(tagged, tagAt, \
+         {expected})\n\tif err != nil {{\n\t\treturn out, err\n\t}}\n\tswitch label {{"
+    );
+    for (label, payload) in variants {
+        let _ = writeln!(out, "\tcase {}:", go_string(label));
+        let Some(payload) = payload else {
+            unit_variant_decoder(out, emit, union, content, label);
+            continue;
+        };
+        let carried = ResolvedField {
+            name: content.to_owned(),
+            type_ref: payload.clone(),
+            naming: ess_domain::name::Naming::default(),
+        };
+        let mut slot = 0;
+        decode_member(out, emit, "\t\t", "", &carried, &mut slot);
+        let _ = writeln!(
+            out,
+            "\t\treturn {}{{Value: shape}}, nil",
+            emit.reference_variant(union, label)
+        );
+    }
+    let _ = writeln!(
+        out,
+        "\t}}\n\treturn out, DecodeError{{At: tagAt, Expected: {expected}, Found: \
+         fmt.Sprintf(\"`%s`\", label)}}"
+    );
 }
 
 /// One unit variant's arm of a union decoder (ess/22): the tag alone. A content member beside it,
@@ -646,13 +744,14 @@ fn unit_variant_decoder(
     content: &str,
     label: &str,
 ) {
+    let content_text = go_string(content);
     let _ = writeln!(
         out,
         "\t\tif object, ok := value.(map[string]any); ok {{\n\t\t\tif member, present := \
-         object[{content:?}]; present {{\n\t\t\t\treturn out, DecodeError{{At: nested(at, \
-         {content:?}), Expected: {:?}, Found: describes(member)}}\n\t\t\t}}\n\t\t}}\n\t\treturn \
+         object[{content_text}]; present {{\n\t\t\t\treturn out, DecodeError{{At: nested(at, \
+         {content_text}), Expected: {}, Found: describes(member)}}\n\t\t\t}}\n\t\t}}\n\t\treturn \
          {}{{}}, nil",
-        format!("no `{content}`: `{label}` carries nothing"),
+        go_string(&format!("no `{content}`: `{label}` carries nothing")),
         emit.reference_variant(union, label)
     );
 }
@@ -670,7 +769,7 @@ fn variant_list<T: AsRef<str>>(variants: &[T]) -> String {
 }
 
 /// One event's encoder, for the `published` list a command's answer carries.
-fn event_encoder(out: &mut String, emit: &Emit<'_>, event: &ResolvedEvent) {
+fn event_encoder(out: &mut String, emit: &Emit<'_>, event: &ResolvedEvent, members: Members) {
     record_encoder(
         out,
         emit.layout,
@@ -678,11 +777,12 @@ fn event_encoder(out: &mut String, emit: &Emit<'_>, event: &ResolvedEvent) {
         &emit.reference(&event.name),
         &format!("the event `{}`", event.name),
         &event.fields,
+        members,
     );
 }
 
 /// One declared error's encoder.
-fn error_encoder(out: &mut String, emit: &Emit<'_>, error: &ResolvedError) {
+fn error_encoder(out: &mut String, emit: &Emit<'_>, error: &ResolvedError, members: Members) {
     record_encoder(
         out,
         emit.layout,
@@ -690,11 +790,12 @@ fn error_encoder(out: &mut String, emit: &Emit<'_>, error: &ResolvedError) {
         &emit.reference(&error.name),
         &format!("the declared error `{}`", error.name),
         &error.fields,
+        members,
     );
 }
 
 /// One view row's encoder.
-fn view_encoder(out: &mut String, emit: &Emit<'_>, view: &ResolvedView) {
+fn view_encoder(out: &mut String, emit: &Emit<'_>, view: &ResolvedView, members: Members) {
     record_encoder(
         out,
         emit.layout,
@@ -702,6 +803,7 @@ fn view_encoder(out: &mut String, emit: &Emit<'_>, view: &ResolvedView) {
         &emit.reference(&view.name),
         &format!("one row of the view `{}`", view.name),
         &view.fields,
+        members,
     );
 }
 
@@ -713,11 +815,13 @@ fn record_encoder(
     go: &str,
     describes: &str,
     fields: &[ResolvedField],
+    members: Members,
 ) {
     let _ = write!(
         out,
         "\n// {function} writes {describes} as JSON.\nfunc {function}(value {go}) any \
-         {{\n\tout := map[string]any{{}}\n"
+         {{\n\tout := {empty}\n",
+        empty = members.empty(),
     );
     let mut slot = 0;
     for field in fields {
@@ -729,6 +833,7 @@ fn record_encoder(
             &format!("value.{}", super::items::member_ident(fields, &field.name)),
             &field.type_ref,
             &mut slot,
+            members,
         );
     }
     out.push_str("\treturn out\n}\n");
@@ -774,6 +879,7 @@ fn command_decoder(out: &mut String, emit: &Emit<'_>, command: &ResolvedCommand)
 // ---- the two walkers ---------------------------------------------------------------------------
 
 /// One member of an object being written — or nothing at all where an optional value is absent.
+#[allow(clippy::too_many_arguments)]
 fn encode_member(
     out: &mut String,
     layout: &Layout,
@@ -782,6 +888,7 @@ fn encode_member(
     source: &str,
     type_ref: &ResolvedTypeRef,
     slot: &mut usize,
+    members: Members,
 ) {
     if let ResolvedTypeRef::Optional { of } = type_ref {
         let held = format!("held{}", next(slot));
@@ -789,12 +896,12 @@ fn encode_member(
         let _ = writeln!(out, "{indent}\t{held} := *{source}");
         let inner = format!("{indent}\t");
         let expression = encode_into(out, layout, &inner, &held, of, slot);
-        let _ = writeln!(out, "{indent}\tout[{wire:?}] = {expression}");
+        let _ = writeln!(out, "{indent}\t{}", members.set(wire, &expression));
         let _ = writeln!(out, "{indent}}}");
         return;
     }
     let expression = encode_into(out, layout, indent, source, type_ref, slot);
-    let _ = writeln!(out, "{indent}out[{wire:?}] = {expression}");
+    let _ = writeln!(out, "{indent}{}", members.set(wire, &expression));
 }
 
 /// Emits whatever statements one value needs and returns the expression that is its JSON.
@@ -900,7 +1007,7 @@ fn decode_member(
     field: &ResolvedField,
     slot: &mut usize,
 ) {
-    let wire = ess_gen::schema::wire_field_name(field);
+    let wire = go_string(ess_gen::schema::wire_field_name(field));
     let position = next(slot);
     let member = format!("member{position}");
     let at = format!("at{position}");
@@ -924,7 +1031,7 @@ fn decode_member(
         let found = format!("found{position}");
         let _ = writeln!(
             out,
-            "{indent}{member}, {at}, {found}, err := optional(value, at, {wire:?})\n{indent}if err \
+            "{indent}{member}, {at}, {found}, err := optional(value, at, {wire})\n{indent}if err \
              != nil {{\n{indent}\treturn out, err\n{indent}}}\n{indent}if {found} {{"
         );
         let inner = format!("{indent}\t");
@@ -938,7 +1045,7 @@ fn decode_member(
 
     let _ = writeln!(
         out,
-        "{indent}{member}, {at}, err := required(value, at, {wire:?})\n{indent}if err != nil \
+        "{indent}{member}, {at}, err := required(value, at, {wire})\n{indent}if err != nil \
          {{\n{indent}\treturn out, err\n{indent}}}"
     );
     let held = decode_into(out, emit, indent, &member, &at, &field.type_ref, slot);
@@ -960,9 +1067,10 @@ fn decode_into(
     match type_ref {
         ResolvedTypeRef::Primitive { name } => {
             let (helper, expected) = decode_primitive(*name);
+            let expected = go_string(expected);
             let _ = writeln!(
                 out,
-                "{indent}{held}, err := {helper}({source}, {at}, {expected:?})\n{indent}if err != \
+                "{indent}{held}, err := {helper}({source}, {at}, {expected})\n{indent}if err != \
                  nil {{\n{indent}\treturn out, err\n{indent}}}"
             );
             match name {
@@ -1112,6 +1220,7 @@ fn next(slot: &mut usize) -> usize {
 // ---- the surface ------------------------------------------------------------------------------
 
 /// One served component: its routes, its startup record, its handlers and its listener.
+#[allow(clippy::too_many_arguments)]
 fn surface_file(
     ir: &EssIr,
     plan: &SynthesisPlan,
@@ -1120,6 +1229,7 @@ fn surface_file(
     component: &ResolvedComponent,
     served: &[&ResolvedComponent],
     records_invocations: bool,
+    binding: Option<&http::Binding>,
 ) -> Artifact {
     let provenance = &plan.provenance;
     let emit = Emit::new(ir, layout, package, None);
@@ -1129,7 +1239,9 @@ fn surface_file(
     emit.import("net");
     emit.import("net/http");
     let system = emit.qualify(layout.system(), "System");
-    let routes = http::routes(ir, component);
+    let routes = http::bound_routes(ir, component, binding);
+    // A surface the binding routes nothing of keeps every byte it has without one.
+    let bound = routes.iter().any(|route| route.declared.is_some());
     let rows = table(&routes, ir);
     let exported = name::exported(&component.name.to_string());
 
@@ -1173,35 +1285,22 @@ fn surface_file(
         },
     );
 
-    serve_static(&mut body, &system, &exported, grants);
+    serve_static(&mut body, &system, &exported, grants, bound);
 
-    dispatch(&mut body, ir, layout, &routes, &rows, &system, &exported);
-
-    for route in &routes {
-        match route.serves {
-            Served::Command(handle) => {
-                command_handler(
-                    &mut body,
-                    &emit,
-                    layout,
-                    component,
-                    ir.command(handle),
-                    &system,
-                    records_invocations,
-                );
-            }
-            Served::View(handle) => {
-                view_handler(
-                    &mut body,
-                    &emit,
-                    layout,
-                    component,
-                    ir.view(handle),
-                    &system,
-                );
-            }
-        }
+    if bound {
+        bound::dispatch(&mut body, ir, layout, &routes, &rows, &system, &exported);
+    } else {
+        dispatch(&mut body, ir, layout, &routes, &rows, &system, &exported);
     }
+
+    handlers(
+        &mut body,
+        &emit,
+        component,
+        &routes,
+        &system,
+        records_invocations,
+    );
 
     emit.file_at(
         format!("{}/{}.go", package.dir, module_stem(component)),
@@ -1221,7 +1320,14 @@ fn surface_file(
     )
 }
 
-fn serve_static(body: &mut String, system: &str, exported: &str, grants: bool) {
+fn serve_static(body: &mut String, system: &str, exported: &str, grants: bool, bound: bool) {
+    // A bound route is a template: a path it matches is routed, whatever the variables hold.
+    let known = if bound {
+        "if _, ok := matched(route[1], request.URL.EscapedPath()); ok || route[1] == \
+         request.URL.Path {"
+    } else {
+        "if route[1] == request.URL.Path {"
+    };
     let authenticate = if grants {
         ", authenticate func(*http.Request) *Caller"
     } else {
@@ -1250,7 +1356,7 @@ func Serve{exported}WithStatic(system *{system}, address string{authenticate}, s
 	return http.Serve(listener, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {{
 		known := false
 		for _, route := range Routes{exported} {{
-			if route[1] == request.URL.Path {{
+			{known}
 				known = true
 				break
 			}}
@@ -1264,6 +1370,55 @@ func Serve{exported}WithStatic(system *{system}, address string{authenticate}, s
 	}}))
 }}"#
     );
+}
+
+/// Every route's handler: a derived route's, or the one a binding declares.
+fn handlers(
+    body: &mut String,
+    emit: &Emit<'_>,
+    component: &ResolvedComponent,
+    routes: &[http::Route<'_>],
+    system: &str,
+    records_invocations: bool,
+) {
+    let ir = emit.ir;
+    let layout = emit.layout;
+    for route in routes {
+        // A route the binding declares is served by its own handler, which reads the request the
+        // binding says it is and answers what the binding declares; a command's rendering of its
+        // outcomes (`answer*`) is the same either way.
+        let declared = route.declared.is_some();
+        match route.serves {
+            Served::Command(handle) => {
+                command_handler(
+                    body,
+                    emit,
+                    layout,
+                    component,
+                    ir.command(handle),
+                    system,
+                    records_invocations,
+                    declared,
+                );
+            }
+            Served::View(handle) => {
+                if !declared {
+                    view_handler(body, emit, layout, component, ir.view(handle), system);
+                }
+            }
+        }
+        if declared {
+            bound::handler(
+                body,
+                ir,
+                layout,
+                component,
+                route,
+                system,
+                records_invocations,
+            );
+        }
+    }
 }
 
 /// The route match: one arm per path, and one arm for everything else.
@@ -1300,10 +1455,12 @@ fn dispatch(
          serving.Unlock()\n\tswitch request.URL.Path {{\n"
     );
     for (method, path, _, _) in rows {
+        let method_text = go_string(method);
         let _ = writeln!(
             body,
-            "\tcase {path:?}:\n\t\tif request.Method != {method:?} {{\n\t\t\treturn \
-             methodNotAllowed({method:?})\n\t\t}}"
+            "\tcase {}:\n\t\tif request.Method != {method_text} {{\n\t\t\treturn \
+             methodNotAllowed({method_text})\n\t\t}}",
+            go_string(path)
         );
         if path == http::OPENAPI {
             let _ = writeln!(
@@ -1327,9 +1484,9 @@ fn dispatch(
                     if grants {
                         let _ = writeln!(
                             body,
-                            "\t\tif refused := admit(caller, {:?}); refused != nil {{\n\t\t\treturn \
+                            "\t\tif refused := admit(caller, {}); refused != nil {{\n\t\t\treturn \
                              *refused\n\t\t}}",
-                            ir.command(handle).name.to_string()
+                            go_string(&ir.command(handle).name.to_string())
                         );
                     }
                     let _ = writeln!(
@@ -1344,9 +1501,9 @@ fn dispatch(
                     if http::read_checked(ir, &view.name) {
                         let _ = writeln!(
                             body,
-                            "\t\tif refused := admitRead(caller, {:?}); refused != nil {{\n\t\t\treturn \
+                            "\t\tif refused := admitRead(caller, {}); refused != nil {{\n\t\t\treturn \
                              *refused\n\t\t}}",
-                            view.name.to_string()
+                            go_string(&view.name.to_string())
                         );
                     }
                     let _ = writeln!(
@@ -1394,7 +1551,7 @@ fn route_table(body: &mut String, rows: &[Row], exported: &str) {
          and this table forgot.\nvar Routes{exported} = [][2]string{{\n"
     );
     for (method, path, _, _) in rows {
-        let _ = writeln!(body, "\t{{{method:?}, {path:?}}},");
+        let _ = writeln!(body, "\t{{{}, {}}},", go_string(method), go_string(path));
     }
     body.push_str("}\n");
 }
@@ -1421,7 +1578,7 @@ fn startup(
          them.\nvar Startup{exported} = []string{{\n"
     );
     for line in &lines {
-        let _ = writeln!(body, "\t{line:?},");
+        let _ = writeln!(body, "\t{},", go_string(line));
     }
     body.push_str("}\n");
 
@@ -1511,8 +1668,8 @@ fn published_list(out: &mut String, emit: &Emit<'_>, outcome: &ResolvedOutcome) 
     for field in &carried {
         let _ = write!(
             out,
-            "\n\t\t\tmap[string]any{{\"event\": {:?}, \"payload\": encodeEvent{}(taken.{})}},",
-            field.event.name().to_string(),
+            "\n\t\t\tmap[string]any{{\"event\": {}, \"payload\": encodeEvent{}(taken.{})}},",
+            go_string(&field.event.name().to_string()),
             ident(emit.layout, field.event.name()),
             field.field
         );
@@ -1565,7 +1722,12 @@ fn response_encoder_name(layout: &Layout, command: &QualifiedName) -> String {
 
 /// A command's declared response, for the `response` member of a branch that answers with it.
 /// Only for a command with such a branch, so every other wire file keeps its bytes.
-fn response_encoder(out: &mut String, emit: &Emit<'_>, command: &ResolvedCommand) {
+fn response_encoder(
+    out: &mut String,
+    emit: &Emit<'_>,
+    command: &ResolvedCommand,
+    members: Members,
+) {
     let answers = command
         .outcomes
         .iter()
@@ -1583,10 +1745,15 @@ fn response_encoder(out: &mut String, emit: &Emit<'_>, command: &ResolvedCommand
         ),
         &format!("the response of `{}`", command.name),
         &command.response,
+        members,
     );
 }
 
 /// One accepted command: body in, declared outcome out, at the status the contract publishes.
+///
+/// A route an `ess-http/1` binding `declared` is read by its own handler (`bound::handler`), so
+/// only the rendering of its outcomes is emitted here.
+#[allow(clippy::too_many_arguments)]
 fn command_handler(
     out: &mut String,
     emit: &Emit<'_>,
@@ -1595,43 +1762,21 @@ fn command_handler(
     command: &ResolvedCommand,
     system: &str,
     records_invocations: bool,
+    declared: bool,
 ) {
     let function = ident(emit.layout, &command.name);
     let field = name::exported(&component.name.to_string());
     let method = layout.declared(&command.name);
-    let read = if ess_gen::http::body_required(command) {
-        "\tvalue, refused := readJSON(body)\n\tif refused != nil {\n\t\treturn *refused\n\t}\n"
-            .to_owned()
-    } else {
-        emit.import("bytes");
-        "\t// The contract declares no required body for this command, so a request without one \
-         is\n\t// its input with nothing in it.\n\tvar value any = map[string]any{}\n\tif \
-         len(bytes.TrimSpace(body)) != 0 {\n\t\tread, refused := readJSON(body)\n\t\tif refused \
-         != nil {\n\t\t\treturn *refused\n\t\t}\n\t\tvalue = read\n\t}\n"
-            .to_owned()
-    };
-    let _ = write!(
-        out,
-        "\n// serve{function} answers `POST` `{}`: reads the declared input, runs the port, \
-         answers the\n// declared outcome.\nfunc serve{function}(system *{system}, body []byte) \
-         response {{\n{read}\tinput, err := decodeCommand{function}(value, \"body\")\n\tif err != nil \
-         {{\n\t\t// 400 and not 422: this is a body the schema decides, which is the \
-         difference\n\t\t// between fixing a value and fixing a serialiser.\n\t\treturn \
-         refusal(400, err.Error())\n\t}}\n\toutcome, unmet := \
-         system.{field}.{method}(input)\n\tif unmet != nil {{\n\t\treturn \
-         unfinished(unmet.Error(), false)\n\t}}\n\t// Deliver what this command published to every binding that reacts to it, then \
-         take it\n\t// off the log: a long-running server keeps nothing from one request to the \
-         next. Pump answers\n\t// only for what this command published, and returns with all of \
-         it delivered.\n\tfailure := system.Pump()\n\tsystem.TakePublished()\n{invocations}\tif \
-         failure != nil {{\n\t\treturn unfinished(\"delivering what the command published: \
-         \"+failure.Error(), true)\n\t}}\n\treturn answer{function}(outcome)\n}}\n",
-        command.name,
-        invocations = if records_invocations {
-            "\tsystem.TakeInvocations()\n"
-        } else {
-            ""
-        },
-    );
+    if !declared {
+        command_route(
+            out,
+            emit,
+            command,
+            system,
+            records_invocations,
+            (function, &field, method),
+        );
+    }
 
     let outcome_type = emit.reference_outcome(&command.name);
     let _ = write!(
@@ -1649,7 +1794,11 @@ fn command_handler(
             "\tcase {}:",
             emit.reference_outcome_variant(&command.name, outcome.name.as_str())
         );
-        let _ = writeln!(out, "\t\tbody[\"outcome\"] = {:?}", outcome.name.as_str());
+        let _ = writeln!(
+            out,
+            "\t\tbody[\"outcome\"] = {}",
+            go_string(outcome.name.as_str())
+        );
         published_list(out, emit, outcome);
         if let Some(handle) = &outcome.error {
             let declared = emit.ir.error(handle);
@@ -1684,10 +1833,10 @@ fn command_handler(
         );
         let _ = writeln!(
             out,
-            "\tcase {}:\n\t\tbody[\"outcome\"] = {:?}\n\t\tbody[\"published\"] = \
+            "\tcase {}:\n\t\tbody[\"outcome\"] = {}\n\t\tbody[\"published\"] = \
              []any{{}}\n\t\tbody[\"error\"] = {}\n\t\treturn rendered({}, body)",
             emit.reference_unknown_instance_variant(&command.name),
-            declared.name.as_str(),
+            go_string(declared.name.as_str()),
             serde_json::to_string(&error.wire_code()).expect("a string always serializes"),
             http::status(declared)
         );
@@ -1698,6 +1847,51 @@ fn command_handler(
          value no\n\t// generated code can construct, and it is reported rather than \
          dropped.\n\treturn refusal(500, \"the port answered an outcome this surface has no \
          branch for\")\n}\n",
+    );
+}
+
+/// The route of a command no binding declares: its body read as JSON, the port run, the declared
+/// outcome answered. `names` is the codec stem, the component's field and the port's method.
+fn command_route(
+    out: &mut String,
+    emit: &Emit<'_>,
+    command: &ResolvedCommand,
+    system: &str,
+    records_invocations: bool,
+    (function, field, method): (&str, &str, &str),
+) {
+    let read = if ess_gen::http::body_required(command) {
+        "\tvalue, refused := readJSON(body)\n\tif refused != nil {\n\t\treturn *refused\n\t}\n"
+            .to_owned()
+    } else {
+        emit.import("bytes");
+        "\t// The contract declares no required body for this command, so a request without one \
+         is\n\t// its input with nothing in it.\n\tvar value any = map[string]any{}\n\tif \
+         len(bytes.TrimSpace(body)) != 0 {\n\t\tread, refused := readJSON(body)\n\t\tif refused \
+         != nil {\n\t\t\treturn *refused\n\t\t}\n\t\tvalue = read\n\t}\n"
+            .to_owned()
+    };
+    let _ = write!(
+        out,
+        "\n// serve{function} answers `POST` `{}`: reads the declared input, runs the port, \
+         answers the\n// declared outcome.\nfunc serve{function}(system *{system}, body []byte) \
+         response {{\n{read}\tinput, err := decodeCommand{function}(value, \"body\")\n\tif err != nil \
+         {{\n\t\t// 400 and not 422: this is a body the schema decides, which is the \
+         difference\n\t\t// between fixing a value and fixing a serialiser.\n\t\treturn \
+         refusal(400, err.Error())\n\t}}\n\toutcome, unmet := \
+         system.{field}.{method}(input)\n\tif unmet != nil {{\n\t\treturn \
+         unfinished(unmet.Error(), false)\n\t}}\n\t// Deliver what this command published to every binding that reacts to it, then \
+         take it\n\t// off the log: a long-running server keeps nothing from one request to the \
+         next. Pump answers\n\t// only for what this command published, and returns with all of \
+         it delivered.\n\tfailure := system.Pump()\n\tsystem.TakePublished()\n{invocations}\tif \
+         failure != nil {{\n\t\treturn unfinished(\"delivering what the command published: \
+         \"+failure.Error(), true)\n\t}}\n\treturn answer{function}(outcome)\n}}\n",
+        command.name,
+        invocations = if records_invocations {
+            "\tsystem.TakeInvocations()\n"
+        } else {
+            ""
+        },
     );
 }
 
@@ -1760,8 +1954,13 @@ fn view_handler(
 
 /// A view's declared parameters as the `[]queryParam` literal `queryObject` reads.
 fn query_table(ir: &EssIr, view: &ResolvedView) -> String {
-    let rows: Vec<String> = view
-        .params
+    query_params(ir, &view.params.iter().collect::<Vec<_>>())
+}
+
+/// [`query_table`] for any parameters, in the order given: a bound route's table leaves out the
+/// parameters its path carries.
+fn query_params(ir: &EssIr, params: &[&ResolvedField]) -> String {
+    let rows: Vec<String> = params
         .iter()
         .map(|param| {
             let scalar = match crate::view_query::query_scalar(ir, &param.type_ref) {
@@ -1771,8 +1970,8 @@ fn query_table(ir: &EssIr, view: &ResolvedView) -> String {
                 Some(crate::view_query::QueryScalar::Text) | None => "queryText",
             };
             format!(
-                "{{wire: {:?}, scalar: {scalar}}}",
-                ess_gen::schema::wire_field_name(param)
+                "{{wire: {}, scalar: {scalar}}}",
+                go_string(ess_gen::schema::wire_field_name(param))
             )
         })
         .collect();

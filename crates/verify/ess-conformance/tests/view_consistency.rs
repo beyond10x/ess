@@ -648,3 +648,504 @@ fn rows_on_an_operation_that_never_answered_are_refused_by_name() {
         HistoryRefusal::IndeterminateWithRows { operation_id: id }
     );
 }
+
+// ---- an identity no row carries (`absent:`, ess/25, beyond10x/ess#533) --------------------------
+
+/// How [`AbsentFault`] rewrites the rows a read of an unstored identity answers.
+type RowFault = fn(&mut Vec<ess_conformance::target::ViewRow>);
+
+/// The interpreter, with each read of an identity in `unstored` answered as `fault` rewrites it.
+struct AbsentFault {
+    inner: ess_conformance::interpret::Interpreted,
+    fault: RowFault,
+    unstored: std::collections::BTreeSet<Node>,
+}
+
+/// `suite` run against `target`, admitted first.
+fn run_suite<T: ess_conformance::target::ConformanceTarget>(
+    suite: &ess_conformance::ConformanceSuite,
+    target: &T,
+) -> ess_conformance::runner::ExecutedRun {
+    let input = ess_conformance::AdmittedSuite::from_suite(suite).unwrap();
+    ess_conformance::Runner::for_suite(input.suite()).run_admitted(&input, target)
+}
+
+/// The ids of the scenarios of `suite` that read `FlagById` and require its declared default row:
+/// the requested `id`, `paused` false, `state` `Set`, and `note`, which the row leaves out, `null`.
+/// Sorted.
+fn default_row_reads(suite: &ess_conformance::ConformanceSuite) -> Vec<String> {
+    use ess_conformance::scenario::{ScenarioStep, ScenarioValue, ViewExpectation};
+    let mut reading: Vec<String> = suite
+        .scenarios
+        .iter()
+        .filter(|(_, scenario)| {
+            scenario.steps.windows(2).any(|pair| {
+                matches!(
+                    pair,
+                    [
+                        ScenarioStep::QueryView { params, .. },
+                        ScenarioStep::ExpectView {
+                            expectation: ViewExpectation::Contains { fields },
+                            ..
+                        },
+                    ] if params.get("id").is_some_and(|id| matches!(id, ScenarioValue::Literal { .. }))
+                        && fields.get("paused") == Some(&ScenarioValue::literal(Node::Bool(false)))
+                        && fields.get("state")
+                            == Some(&ScenarioValue::literal(Node::Text("Set".into())))
+                        && fields.get("id") == params.get("id")
+                        && fields.get("note") == Some(&ScenarioValue::literal(Node::Null))
+                )
+            })
+        })
+        .map(|(id, _)| id.to_string())
+        .collect();
+    reading.sort();
+    reading
+}
+
+/// The identities the default-row reads of `suite` send, which no scenario stores.
+fn unstored_identities(
+    suite: &ess_conformance::ConformanceSuite,
+) -> std::collections::BTreeSet<Node> {
+    use ess_conformance::scenario::{ScenarioStep, ScenarioValue, ViewExpectation};
+    suite
+        .scenarios
+        .values()
+        .flat_map(|scenario| scenario.steps.windows(2))
+        .filter_map(|pair| match pair {
+            [ScenarioStep::QueryView { params, .. }, ScenarioStep::ExpectView {
+                expectation: ViewExpectation::Contains { fields },
+                ..
+            }] if fields.get("id") == params.get("id") => match params.get("id") {
+                Some(ScenarioValue::Literal { value }) => Some(value.clone()),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect()
+}
+
+impl ess_conformance::target::ConformanceTarget for AbsentFault {
+    fn identity(
+        &self,
+    ) -> Result<ess_conformance::target::ImplementationIdentity, ess_conformance::target::TargetError>
+    {
+        Ok(ess_conformance::target::ImplementationIdentity::new(
+            "absent-fault",
+            "1",
+        ))
+    }
+    fn begin_scenario(
+        &self,
+        scenario: &ess_conformance::target::ScenarioContext,
+    ) -> Result<(), ess_conformance::target::TargetError> {
+        self.inner.begin_scenario(scenario)
+    }
+    fn end_scenario(
+        &self,
+        scenario: &ess_conformance::target::ScenarioContext,
+    ) -> Result<(), ess_conformance::target::TargetError> {
+        self.inner.end_scenario(scenario)
+    }
+    fn execute_command(
+        &self,
+        request: ess_conformance::target::SemanticCommandRequest,
+    ) -> Result<ess_conformance::target::SemanticCommandResult, ess_conformance::target::TargetError>
+    {
+        self.inner.execute_command(request)
+    }
+    fn query_view(
+        &self,
+        request: ess_conformance::target::SemanticViewRequest,
+    ) -> Result<ess_conformance::target::SemanticViewResult, ess_conformance::target::TargetError>
+    {
+        let requested = request.params.get("id").cloned();
+        let mut result = self.inner.query_view(request)?;
+        if requested.is_some_and(|id| self.unstored.contains(&id)) {
+            (self.fault)(&mut result.rows);
+        }
+        Ok(result)
+    }
+    fn observe_events(
+        &self,
+        request: ess_conformance::target::EventObservationRequest,
+    ) -> Result<Vec<ess_conformance::target::ObservedEvent>, ess_conformance::target::TargetError>
+    {
+        self.inner.observe_events(request)
+    }
+    fn configure_external_outcome(
+        &self,
+        request: ess_conformance::target::ExternalOutcomeControl,
+    ) -> Result<(), ess_conformance::target::TargetError> {
+        self.inner.configure_external_outcome(request)
+    }
+    fn redeliver_event(
+        &self,
+        request: ess_conformance::target::RedeliveryRequest,
+    ) -> Result<(), ess_conformance::target::TargetError> {
+        self.inner.redeliver_event(request)
+    }
+}
+
+/// Synthesis reads `FlagById` for an identity no scenario stores and requires the declared default
+/// row: the interpreter passes, and a target answering no row there, or the default row with
+/// `paused` set, fails exactly the scenarios that read it.
+#[test]
+fn synthesis_reads_an_unstored_identity_and_expects_the_declared_answer() {
+    use ess_conformance::report::Status;
+    let source = include_str!("fixtures/view-absent-row.yaml");
+    let specification = Specification::assemble([(
+        Source::new("view-absent-row.yaml"),
+        RawSpecFile::parse(source).unwrap(),
+    )])
+    .unwrap();
+    let ir = compile(&specification, &SourceMap::new()).unwrap();
+    let synthesis = ess_conformance::synthesize(&ir);
+    let reading = default_row_reads(&synthesis.suite);
+    assert!(
+        !reading.is_empty(),
+        "some scenario reads the default row: {:#?}",
+        synthesis.suite.scenarios
+    );
+    let unstored = unstored_identities(&synthesis.suite);
+    assert!(!unstored.is_empty());
+    let correct = run_suite(
+        &synthesis.suite,
+        &ess_conformance::interpret::Interpreted::for_model(ir.clone()),
+    );
+    let failing: Vec<_> = correct
+        .scenarios
+        .iter()
+        .filter(|scenario| scenario.status != Status::Passed)
+        .collect();
+    assert!(failing.is_empty(), "{failing:#?}");
+    let faults: [(&str, RowFault); 2] = [
+        ("no row", |rows| rows.clear()),
+        ("paused set", |rows| {
+            for row in rows {
+                row.insert("paused".into(), Node::Bool(true));
+            }
+        }),
+    ];
+    for (what, fault) in faults {
+        let report = run_suite(
+            &synthesis.suite,
+            &AbsentFault {
+                inner: ess_conformance::interpret::Interpreted::for_model(ir.clone()),
+                fault,
+                unstored: unstored.clone(),
+            },
+        );
+        let mut failed: Vec<String> = report
+            .scenarios
+            .iter()
+            .filter(|scenario| scenario.status == Status::Failed)
+            .map(|scenario| scenario.scenario.to_string())
+            .collect();
+        failed.sort();
+        assert_eq!(failed, reading, "a target answering {what} fails the reads");
+    }
+}
+
+/// Adversary pass 1 for the absent-row view (`absent:`, ess/25, beyond10x/ess#533): what the
+/// synthesized suite does not hold a target to, and models around the fixture whose suite the
+/// interpreter itself does not pass.
+mod adversary_m5_pass1 {
+    use super::*;
+    use ess_conformance::report::Status;
+
+    const FLAGS: &str = include_str!("fixtures/view-absent-row.yaml");
+    const ROW: &str = "    absent:\n      row: {paused: false, level: 0, state: Set}\n";
+
+    fn replaced(text: &str, from: &str, to: &str) -> String {
+        let out = text.replace(from, to);
+        assert_ne!(out, text, "`{from}` is in the text");
+        out
+    }
+
+    fn model(text: &str) -> EssIr {
+        let specification = Specification::assemble([(
+            Source::new("view-absent-row.yaml"),
+            RawSpecFile::parse(text).unwrap_or_else(|error| panic!("{error}\n{text}")),
+        )])
+        .unwrap_or_else(|errors| panic!("{errors}\n{text}"));
+        compile(&specification, &SourceMap::new()).unwrap_or_else(|errors| panic!("{errors}"))
+    }
+
+    /// The ids of the scenarios that did not pass on `target`, with their status.
+    fn not_passing<T: ess_conformance::target::ConformanceTarget>(
+        suite: &ess_conformance::ConformanceSuite,
+        target: &T,
+    ) -> Vec<String> {
+        let mut out: Vec<String> = run_suite(suite, target)
+            .scenarios
+            .iter()
+            .filter(|scenario| scenario.status != Status::Passed)
+            .map(|scenario| format!("{} {:?}", scenario.scenario, scenario.status))
+            .collect();
+        out.sort();
+        out
+    }
+
+    /// The scenarios failing on the interpreter with each read of an unstored identity rewritten
+    /// by `fault`.
+    fn failing_under(ir: &EssIr, fault: RowFault) -> Vec<String> {
+        let synthesis = ess_conformance::synthesize(ir);
+        let report = run_suite(
+            &synthesis.suite,
+            &AbsentFault {
+                inner: ess_conformance::interpret::Interpreted::for_model(ir.clone()),
+                fault,
+                unstored: unstored_identities(&synthesis.suite),
+            },
+        );
+        let mut failed: Vec<String> = report
+            .scenarios
+            .iter()
+            .filter(|scenario| scenario.status == Status::Failed)
+            .map(|scenario| scenario.scenario.to_string())
+            .collect();
+        failed.sort();
+        failed
+    }
+
+    /// The default row leaves `note` out, so it is absent there (`read-api-view-idioms.md`, "An
+    /// identity no row carries": "every other field is absent"). A target that fills it with a
+    /// value answers a row the specification does not, and the suite must fail it.
+    #[test]
+    fn a_target_filling_the_left_out_optional_field_fails_the_default_row_reads() {
+        let ir = model(FLAGS);
+        let reading = default_row_reads(&ess_conformance::synthesize(&ir).suite);
+        assert!(!reading.is_empty(), "some scenario reads the default row");
+        let failed = failing_under(&ir, |rows| {
+            for row in rows {
+                row.insert("note".into(), Node::Text("set by nobody".into()));
+            }
+        });
+        assert_eq!(
+            failed, reading,
+            "a default row carrying `note` is not the declared one"
+        );
+    }
+
+    /// Flags created from a caller-supplied `id` (with an `existing_instance` refusal), and a
+    /// `Pause` refusing an unknown flag (`unknown_instance`): the synthesized suite still reads the
+    /// default row, and the interpreter, which answers it, passes every scenario.
+    #[test]
+    fn the_interpreter_passes_its_suite_where_commands_refuse_an_unknown_or_existing_flag() {
+        let text = replaced(
+            &replaced(
+                &replaced(
+                    FLAGS,
+                    "      - {name: level, type: Integer}\n    outcomes:\n      - name: set\n",
+                    "      - {name: id, type: demo.status.FlagId}\n      - {name: level, type: \
+                     Integer}\n    outcomes:\n      - name: set\n",
+                ),
+                "payload: {demo.status.FlagSet: {id: {generated: true}}}\n",
+                "payload: {demo.status.FlagSet: {id: input.id}}\n      - {name: taken, \
+                 existing_instance: true, error: demo.status.NotSet}\n",
+            ),
+            "      - {name: not-set, wrong_state: true, error: demo.status.NotSet}\n",
+            "      - {name: not-set, wrong_state: true, error: demo.status.NotSet}\n      - \
+             {name: unknown, unknown_instance: true, error: demo.status.NotSet}\n",
+        );
+        let ir = model(&text);
+        let synthesis = ess_conformance::synthesize(&ir);
+        assert!(
+            !default_row_reads(&synthesis.suite).is_empty(),
+            "{:#?}",
+            synthesis.refusals
+        );
+        let failing = not_passing(
+            &synthesis.suite,
+            &ess_conformance::interpret::Interpreted::for_model(ir.clone()),
+        );
+        assert!(failing.is_empty(), "{failing:#?}");
+    }
+
+    /// `Optional` fields of other shapes given literals in the default row: a `Decimal` and an
+    /// enum (a `Timestamp` has no literal, as in `sets:`). The interpreter answers them and passes its suite, and a
+    /// target answering a different `amount` fails the reads.
+    #[test]
+    fn literals_of_every_scalar_shape_round_trip_through_the_suite() {
+        let fields = "      - {name: amount, type: 'Optional<Decimal>'}\n      - {name: colour, \
+                      type: 'Optional<demo.status.Colour>'}\n";
+        let text = replaced(
+            &replaced(
+                &replaced(
+                    &replaced(
+                        FLAGS,
+                        "  - {name: demo.status.FlagId, kind: newtype, of: Uuid}\n",
+                        "  - {name: demo.status.FlagId, kind: newtype, of: Uuid}\n  - {name: \
+                         demo.status.Colour, kind: enum, variants: [red, blue]}\n",
+                    ),
+                    "      - {name: note, type: 'Optional<String>'}\n    lifecycle:",
+                    &format!(
+                        "      - {{name: note, type: 'Optional<String>'}}\n{fields}    lifecycle:"
+                    ),
+                ),
+                "      - {name: note, type: 'Optional<String>'}\n    absent:",
+                &format!("      - {{name: note, type: 'Optional<String>'}}\n{fields}    absent:"),
+            ),
+            ROW,
+            "    absent:\n      row: {paused: false, level: 0, state: Set, amount: 1.50, colour: \
+             blue}\n",
+        );
+        let ir = model(&text);
+        let synthesis = ess_conformance::synthesize(&ir);
+        let reading = default_row_reads(&synthesis.suite);
+        assert!(!reading.is_empty(), "{:#?}", synthesis.refusals);
+        let failing = not_passing(
+            &synthesis.suite,
+            &ess_conformance::interpret::Interpreted::for_model(ir.clone()),
+        );
+        assert!(failing.is_empty(), "{failing:#?}");
+        let failed = failing_under(&ir, |rows| {
+            for row in rows {
+                row.insert("amount".into(), Node::Number(Number::new(2.0).unwrap()));
+            }
+        });
+        assert_eq!(failed, reading, "a wrong `amount` fails the reads");
+    }
+
+    /// A union of unit variants names one of a fixed set, as an enum does. Where the default row may
+    /// hold one, synthesis reads it rather than refusing the view's whole default-row check.
+    #[test]
+    fn a_unit_union_literal_the_domain_admits_is_read_by_synthesis() {
+        let field = "      - {name: mode, type: 'Optional<demo.status.Mode>'}\n";
+        let text = replaced(
+            &replaced(
+                &replaced(
+                    &replaced(
+                        FLAGS,
+                        "  - {name: demo.status.FlagId, kind: newtype, of: Uuid}\n",
+                        "  - {name: demo.status.FlagId, kind: newtype, of: Uuid}\n  - {name: \
+                         demo.status.Mode, kind: union, tag: kind, variants: {On: ~, Off: ~}}\n",
+                    ),
+                    "      - {name: note, type: 'Optional<String>'}\n    lifecycle:",
+                    &format!(
+                        "      - {{name: note, type: 'Optional<String>'}}\n{field}    lifecycle:"
+                    ),
+                ),
+                "      - {name: note, type: 'Optional<String>'}\n    absent:",
+                &format!("      - {{name: note, type: 'Optional<String>'}}\n{field}    absent:"),
+            ),
+            ROW,
+            "    absent:\n      row: {paused: false, level: 0, state: Set, mode: On}\n",
+        );
+        let parsed = RawSpecFile::parse(&text).unwrap_or_else(|error| panic!("{error}"));
+        let Ok(specification) =
+            Specification::assemble([(Source::new("view-absent-row.yaml"), parsed)])
+        else {
+            // Refused where it is written: consistent, nothing for synthesis to read.
+            return;
+        };
+        let ir = compile(&specification, &SourceMap::new()).unwrap();
+        let synthesis = ess_conformance::synthesize(&ir);
+        assert!(
+            !default_row_reads(&synthesis.suite).is_empty(),
+            "the domain admits `mode: On` and synthesis reads no default row: {:#?}",
+            synthesis.refusals
+        );
+    }
+
+    /// An `Optional` identity parameter: a read that leaves it out requests no identity, so it
+    /// cannot be "an identity no row carries". The domain refuses `absent:` over such a parameter
+    /// at the key, and the same view without `absent:` stays admitted and answers that read.
+    #[test]
+    fn an_optional_identity_parameter_under_absent_is_refused() {
+        use ess_conformance::target::{ConformanceTarget, Deadline, SemanticViewRequest};
+        use ess_primitives::{consistency::QueryConsistency, ids::CorrelationId, time::Timestamp};
+        let text = replaced(
+            FLAGS,
+            "params: [{name: id, type: demo.status.FlagId}]",
+            "params: [{name: id, type: 'Optional<demo.status.FlagId>'}]",
+        );
+        // The same view without `absent:` answers a read leaving `id` out: the refusal is the key's.
+        let without =
+            ess_conformance::interpret::Interpreted::for_model(model(&replaced(&text, ROW, "")))
+                .query_view(SemanticViewRequest {
+                    view: "demo.status.FlagById".parse().unwrap(),
+                    params: BTreeMap::new(),
+                    consistency: QueryConsistency::Current,
+                    correlation: CorrelationId::new("absent-optional").unwrap(),
+                    deadline: Deadline::at(Timestamp::from_epoch_millis(0)),
+                });
+        assert!(without.is_ok(), "{without:?}");
+        let refused = Specification::assemble([(
+            Source::new("view-absent-row.yaml"),
+            RawSpecFile::parse(&text).unwrap(),
+        )])
+        .map(|_| ())
+        .expect_err("`absent:` over an `Optional` identity parameter is refused")
+        .to_string();
+        let lines: Vec<&str> = refused
+            .lines()
+            .filter(|line| line.starts_with('['))
+            .collect();
+        assert_eq!(
+            lines,
+            [
+                "[conflicting_declaration] view.demo.status.FlagById.absent: \
+              `demo.status.FlagById` declares `absent:`, and its identity parameter `id` is \
+              `Optional<demo.status.FlagId>`: a read leaving it out requests no identity, so the \
+              default row has none to hold (hint: declare `id` without `Optional`, or drop \
+              `absent:`)"
+            ],
+            "{refused}"
+        );
+    }
+
+    /// A default row the domain admits is one the model's own interpreter answers: `code` is a
+    /// newtype of `String` drawn from `ab`, and the row gives it `xyz`. Either the document is
+    /// refused at `absent.row.code`, or a read of an unstored identity is answered.
+    #[test]
+    fn an_admitted_default_row_is_one_the_interpreter_answers() {
+        use ess_conformance::target::{ConformanceTarget, Deadline, SemanticViewRequest};
+        use ess_primitives::{consistency::QueryConsistency, ids::CorrelationId, time::Timestamp};
+        let field = "      - {name: code, type: 'Optional<demo.status.Code>'}\n";
+        let text = replaced(
+            &replaced(
+                &replaced(
+                    &replaced(
+                        FLAGS,
+                        "  - {name: demo.status.FlagId, kind: newtype, of: Uuid}\n",
+                        "  - {name: demo.status.FlagId, kind: newtype, of: Uuid}\n  - {name: \
+                         demo.status.Code, kind: newtype, of: String, alphabet: \"ab\"}\n",
+                    ),
+                    "      - {name: note, type: 'Optional<String>'}\n    lifecycle:",
+                    &format!(
+                        "      - {{name: note, type: 'Optional<String>'}}\n{field}    lifecycle:"
+                    ),
+                ),
+                "      - {name: note, type: 'Optional<String>'}\n    absent:",
+                &format!("      - {{name: note, type: 'Optional<String>'}}\n{field}    absent:"),
+            ),
+            ROW,
+            "    absent:\n      row: {paused: false, level: 0, state: Set, code: xyz}\n",
+        );
+        let parsed = RawSpecFile::parse(&text).unwrap();
+        let Ok(specification) =
+            Specification::assemble([(Source::new("view-absent-row.yaml"), parsed)])
+        else {
+            return;
+        };
+        let ir = compile(&specification, &SourceMap::new()).unwrap();
+        let target = ess_conformance::interpret::Interpreted::for_model(ir);
+        let answer = target.query_view(SemanticViewRequest {
+            view: "demo.status.FlagById".parse().unwrap(),
+            params: BTreeMap::from([(
+                "id".into(),
+                Node::Text("00000000-0000-4000-8000-0000000005aa".into()),
+            )]),
+            consistency: QueryConsistency::Current,
+            correlation: CorrelationId::new("absent-alphabet").unwrap(),
+            deadline: Deadline::at(Timestamp::from_epoch_millis(0)),
+        });
+        assert!(
+            answer.is_ok(),
+            "the domain admits `code: xyz` and the interpreter cannot answer the default row: \
+             {answer:?}"
+        );
+    }
+}

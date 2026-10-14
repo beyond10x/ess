@@ -15,7 +15,7 @@ ess-ui-react = { path = "../ess-ui-react" }
 clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-serde_yaml.workspace = true
+ess-yaml.workspace = true
 # The version ess-ui-tui draws with: the runner renders its screen into ratatui's test backend.
 ratatui = { version = "=0.29.0", default-features = false }
 tempfile = "3.27"

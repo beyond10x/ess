@@ -67,7 +67,7 @@ fn spelled(suite: &ConformanceSuite, id: &str, command: &str, field: &str) -> BT
 }
 
 fn window_of(text: &str) -> ess_primitives::window::CalendarWindow {
-    let node: Node = serde_yaml::from_str(text).expect("yaml");
+    let node: Node = ess_yaml::from_str(text).expect("yaml");
     let Predicate::Window(window) = Predicate::from_node(&node).expect("a window") else {
         panic!("a window");
     };

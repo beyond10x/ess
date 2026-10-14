@@ -22,7 +22,7 @@ use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde_yaml::Value;
+use ess_yaml::Value;
 
 /// Why a schema could not be rendered.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -134,7 +134,7 @@ fn read(schema: &Path) -> Result<String, DocsError> {
 }
 
 fn render(text: &str, format: Format) -> Result<String, DocsError> {
-    let root: Value = serde_yaml::from_str(text)
+    let root: Value = ess_yaml::from_str(text)
         .map_err(|error| DocsError::one(format!("the schema is not YAML: {error}")))?;
     let schema = model::Schema::read(&root).map_err(|problems| DocsError { problems })?;
     let blocks = doc::build(&schema).map_err(|problems| DocsError { problems })?;

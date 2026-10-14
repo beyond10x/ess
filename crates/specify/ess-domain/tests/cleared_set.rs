@@ -90,9 +90,9 @@ fn clearing_an_optional_entity_field_is_admitted_and_round_trips() {
         .values()
         .find(|c| c.name.to_string() == "demo.lanes.ClearLane")
         .expect("the command");
-    let encoded = serde_yaml::to_string(command).unwrap();
+    let encoded = ess_yaml::to_string(command).unwrap();
     assert!(encoded.contains("cleared: true"), "{encoded}");
-    let raw: ess_domain::command::RawCommandSpec = serde_yaml::from_str(&encoded).unwrap();
+    let raw: ess_domain::command::RawCommandSpec = ess_yaml::from_str(&encoded).unwrap();
     let roundtrip = ess_domain::command::CommandSpec::try_from(raw).unwrap();
     assert_eq!(&roundtrip, command, "the construct survives a round trip");
 }

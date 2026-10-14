@@ -1,0 +1,161 @@
+# Adversary pass 1 on beyond10x/ess#538: two selected-rows outcomes the interpreter decides and
+# the explorer's model reports as undetermined.
+#
+# `CloseTagged` moves every `Open` seat whose `tag` equals the team sent. `tag` is an
+# `Optional<…>` no creation writes: the interpreter reads an unwritten Optional as absent, so an
+# untagged seat is simply not selected (`set_effects.rs`, `only_absent`).
+#
+# `Finish` moves every `Active` desk whose `zone` equals the zone sent. `zone` is written only by
+# `Activate`, which is also what takes a desk out of `Idle`: every desk the move could take holds a
+# zone. The interpreter skips a row outside the move's `from` states before it reads the filter
+# (`set_effects.rs`, `select`), so an `Idle` desk is never asked about its zone.
+#
+# The targets beside it are `adversary-l3-selected-rows-target.mjs` and
+# `adversary_l3_selected_rows_target.go`.
+
+format: ess/18
+system: advrows
+version: v1
+domain: advrows.desk
+
+summary: Seats closed by tag, and desks finished by zone.
+
+types:
+  - {name: advrows.desk.SeatId, kind: newtype, of: Uuid}
+  - {name: advrows.desk.DeskId, kind: newtype, of: Uuid}
+  - {name: advrows.desk.Team, kind: enum, variants: [red, blue]}
+  - {name: advrows.desk.Reason, kind: enum, variants: [none, hungup]}
+
+entities:
+  - name: advrows.desk.Seat
+    identity: {name: seat_id, type: advrows.desk.SeatId}
+    fields:
+      - {name: team, type: advrows.desk.Team}
+      - {name: tag, type: Optional<advrows.desk.Team>}
+      - {name: last_reason, type: advrows.desk.Reason}
+    lifecycle:
+      initial: Open
+      states: [Open, Closed]
+      terminal: [Closed]
+      transitions:
+        - {name: close, from: [Open], to: Closed}
+  - name: advrows.desk.Desk
+    identity: {name: desk_id, type: advrows.desk.DeskId}
+    fields:
+      - {name: owner, type: advrows.desk.Team}
+      - {name: zone, type: advrows.desk.Team}
+    lifecycle:
+      initial: Idle
+      states: [Idle, Active, Done]
+      terminal: [Done]
+      transitions:
+        - {name: activate, from: [Idle], to: Active}
+        - {name: finish, from: [Active], to: Done}
+
+actors:
+  - name: advrows.desk.Supervisor
+    may:
+      - advrows.desk.Start
+      - advrows.desk.Tag
+      - advrows.desk.CloseTagged
+      - advrows.desk.OpenDesk
+      - advrows.desk.Activate
+      - advrows.desk.Finish
+
+
+events:
+  - name: advrows.desk.Started
+    fields: [{name: seat_id, type: advrows.desk.SeatId}]
+  - name: advrows.desk.Tagged
+    fields: [{name: seat_id, type: advrows.desk.SeatId}]
+  - name: advrows.desk.TagClosed
+    fields: [{name: team, type: advrows.desk.Team}]
+  - name: advrows.desk.DeskOpened
+    fields: [{name: desk_id, type: advrows.desk.DeskId}]
+  - name: advrows.desk.Activated
+    fields: [{name: desk_id, type: advrows.desk.DeskId}]
+  - name: advrows.desk.Finished
+    fields: [{name: zone, type: advrows.desk.Team}]
+
+commands:
+  - name: advrows.desk.Start
+    input:
+      - {name: team, type: advrows.desk.Team}
+    outcomes:
+      - name: started
+        creates: advrows.desk.Seat
+        instance: seat_id
+        sets: {team: input.team, last_reason: none}
+        emits: [advrows.desk.Started]
+        payload: {advrows.desk.Started: {seat_id: {generated: true}}}
+
+  - name: advrows.desk.Tag
+    input:
+      - {name: seat_id, type: advrows.desk.SeatId}
+      - {name: tag, type: advrows.desk.Team}
+    outcomes:
+      - name: tagged
+        updates: advrows.desk.Seat
+        instance: seat_id
+        sets: {tag: input.tag}
+        emits: [advrows.desk.Tagged]
+        payload: {advrows.desk.Tagged: {seat_id: input.seat_id}}
+
+  - name: advrows.desk.CloseTagged
+    input:
+      - {name: team, type: advrows.desk.Team}
+    outcomes:
+      - name: closed
+        moves: advrows.desk.Seat.close
+        instances: {where: tag == input.team}
+        sets: {last_reason: hungup}
+        emits: [advrows.desk.TagClosed]
+        payload: {advrows.desk.TagClosed: {team: input.team}}
+
+  - name: advrows.desk.OpenDesk
+    input:
+      - {name: owner, type: advrows.desk.Team}
+    outcomes:
+      - name: opened
+        creates: advrows.desk.Desk
+        instance: desk_id
+        sets: {owner: input.owner}
+        emits: [advrows.desk.DeskOpened]
+        payload: {advrows.desk.DeskOpened: {desk_id: {generated: true}}}
+
+  - name: advrows.desk.Activate
+    input:
+      - {name: desk_id, type: advrows.desk.DeskId}
+      - {name: zone, type: advrows.desk.Team}
+    outcomes:
+      - name: activated
+        moves: advrows.desk.Desk.activate
+        instance: desk_id
+        sets: {zone: input.zone}
+        emits: [advrows.desk.Activated]
+        payload: {advrows.desk.Activated: {desk_id: input.desk_id}}
+
+  - name: advrows.desk.Finish
+    input:
+      - {name: zone, type: advrows.desk.Team}
+    outcomes:
+      - name: finished
+        moves: advrows.desk.Desk.finish
+        instances: {where: zone == input.zone}
+        emits: [advrows.desk.Finished]
+        payload: {advrows.desk.Finished: {zone: input.zone}}
+
+views:
+  - name: advrows.desk.Seats
+    source: advrows.desk.Seat
+    consistency: read_your_writes
+    fields:
+      - {name: seat_id, type: advrows.desk.SeatId}
+      - {name: state, type: advrows.desk.Seat.State}
+      - {name: last_reason, type: advrows.desk.Reason}
+  - name: advrows.desk.Desks
+    source: advrows.desk.Desk
+    consistency: read_your_writes
+    fields:
+      - {name: desk_id, type: advrows.desk.DeskId}
+      - {name: state, type: advrows.desk.Desk.State}

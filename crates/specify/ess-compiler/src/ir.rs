@@ -943,6 +943,12 @@ pub struct ResolvedOutcome {
     /// of the document when `false`.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub compensates: bool,
+    /// An `external:` refusal answered at step 2 of the precedence order, before existence and the
+    /// held state (`before_row: true`, ess/25, beyond10x/ess#534): the implementation decides it
+    /// from the request alone, before it reads the addressed row. Left out of the document when
+    /// `false`, so every model without it keeps its IR bytes.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub before_row: bool,
     /// Required String response fields disclosed only by their originating invocation.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub one_time_response: Vec<String>,
@@ -1016,6 +1022,24 @@ pub struct ResolvedSetSubject {
     pub effect: ResolvedEffect,
     /// The rows selected: the entity's stored fields, with `input.<field>` operands.
     pub filter: Predicate,
+    /// The events published once per changed row (ess/25, beyond10x/ess#531), in the order the
+    /// outcome's `emits` lists them; each is among those `emits`. Left out of the document where
+    /// there is none, so every other model keeps its bytes.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub events: Vec<ResolvedPerRowEvent>,
+}
+
+/// An event a set outcome publishes once per row it changed (ess/25, beyond10x/ess#531): at its
+/// place among the outcome's events, one occurrence per changed row, in ascending order of the
+/// rows' identities, its `{changed: …}` fields read from that row as it was before the outcome.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ResolvedPerRowEvent {
+    /// The event.
+    pub event: EventHandle,
+    /// The states a changed row held before the outcome for the event to be published for it, in
+    /// name order; left out where every changed row publishes it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub when_state: Vec<String>,
 }
 
 /// One `affects:` entry (ess/16): every row of an entity its filter selects comes to hold what its
@@ -1192,6 +1216,21 @@ pub enum ResolvedPayloadValue {
     },
     /// How many rows the set outcome changed (ess/16, beyond10x/ess#167): `{count: changed}`.
     ChangedCount,
+    /// A field of the changed row an event published once per changed row is for, as the row was
+    /// immediately before the outcome (ess/25, beyond10x/ess#531): `{changed: user_id}`.
+    ChangedField {
+        /// The entity field read, the identity included.
+        field: String,
+        /// Its resolved type.
+        type_ref: ResolvedTypeRef,
+    },
+    /// The lifecycle state the changed row an event published once per changed row is for held
+    /// immediately before the outcome (ess/25, beyond10x/ess#531): `{changed: state}`. A variant
+    /// of its own, as [`Self::SubjectState`] is.
+    ChangedState {
+        /// The entity's `State` type.
+        type_ref: ResolvedTypeRef,
+    },
     /// A field of the one row a selector selects, as the store held it before this outcome
     /// (ess/22, beyond10x/ess#299): `{related: {entity, where, field}}`. Zero or several selected
     /// rows supply no value, and no first or latest is chosen.
@@ -1636,6 +1675,12 @@ impl ResolvedPayloadValue {
                 selection.filter
             ),
             Self::ChangedCount => "how many rows the outcome changed".to_owned(),
+            Self::ChangedField { field, .. } => {
+                format!("changed row.{field} before the outcome")
+            }
+            Self::ChangedState { .. } => {
+                "the state the changed row held before the outcome".to_owned()
+            }
             Self::Increment { by } => format!("its previous value plus {by}"),
             Self::InputOrGenerated {
                 field,
@@ -2030,6 +2075,12 @@ pub struct ResolvedView {
     /// [`Self::order_by`] is what a page slices.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub paging: Option<Paging>,
+    /// What a read answers for an identity no row of the source carries (`absent:`, ess/25,
+    /// beyond10x/ess#533): the default row.
+    ///
+    /// Omitted when `None`, so the IR bytes and digest of every model without one are unchanged.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub absent: Option<ResolvedAbsent>,
     /// How soon it reflects a command that has already returned.
     pub consistency: Consistency,
     /// The block a generated scenario must assert this view in.
@@ -2042,6 +2093,23 @@ pub struct ResolvedView {
     pub assertion_style: AssertionStyle,
     /// What it is called on the wire, and shown as.
     pub naming: Naming,
+}
+
+/// What a view read answers for an identity no row of its source carries (`absent:`, ess/25,
+/// beyond10x/ess#533, `docs/design/read-api-view-idioms.md`, "An identity no row carries").
+///
+/// The view's filter is the one comparison `<identity> == param.<param>`, checked by `ess-domain`.
+/// The default row holds the requested value in the identity field, where the view projects it,
+/// each literal of [`Self::row`] in its field, and nothing in every other field, each of which is
+/// `Optional`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ResolvedAbsent {
+    /// The view parameter the identity is read from.
+    pub param: String,
+    /// Each projected field the default row gives a value, with its literal's canonical text,
+    /// ordered by name: an `Integer` or `Decimal` by value, so `1.50` is held as `1.5`. Typed by
+    /// the field's type as a payload literal is ([`EssIr::literal_primitive`]).
+    pub row: BTreeMap<String, String>,
 }
 
 /// One aggregate field's computation, with its input resolved.

@@ -448,8 +448,7 @@ fn one_changed_byte_in_ir_json_is_refused_in_both_languages() {
         }
     };
     let root = scratch("digest");
-    let refusal =
-        "refused: `ir.json` and `suite.json` come from different specifications; regenerate the package";
+    let refusal = "refused: `ir.json` and `suite.json` come from different specifications; regenerate the package";
     assert_eq!(
         typescript(&root, &ir, &cases, edit).asserts["correct"],
         refusal
@@ -602,4 +601,852 @@ fn the_packages_with_a_model_add_the_explorer_and_nothing_else_moves() {
             assert_eq!(added, file);
         }
     }
+}
+
+// ---- beyond10x/ess#536: a command that preserves a supplied subject is drawn ---------------------
+
+const PRESERVES_FIXTURE: &str = include_str!("fixtures/explore-preserves.yaml");
+
+fn preserves_ir() -> EssIr {
+    let mut sources = SourceMap::new();
+    sources.insert("explore-preserves.yaml", PRESERVES_FIXTURE);
+    let raw = RawSpecFile::parse(PRESERVES_FIXTURE).expect("the fixture parses");
+    let specification = Specification::assemble(vec![(Source::new("explore-preserves.yaml"), raw)])
+        .unwrap_or_else(|errors| panic!("the fixture validates:\n{errors}"));
+    compile(&specification, &sources).unwrap_or_else(|diagnostics| panic!("{diagnostics}"))
+}
+
+fn read_fixture(name: &str) -> String {
+    std::fs::read_to_string(fixture(name)).expect("the fixture reads")
+}
+
+/// One lane over `explore-preserves.yaml`: each case's result and assertion, and the runner log.
+#[derive(Debug)]
+struct KeepLane {
+    results: BTreeMap<String, Value>,
+    asserts: BTreeMap<String, String>,
+    /// The whole text of each failed assertion, by case.
+    messages: BTreeMap<String, String>,
+    log: String,
+}
+
+fn read_keep_lane(out: &Path, cases: &Value, log: String) -> KeepLane {
+    let mut results = BTreeMap::new();
+    let mut asserts = BTreeMap::new();
+    let mut messages = BTreeMap::new();
+    for case in cases.as_array().expect("a case list") {
+        let name = case["name"].as_str().expect("a case name").to_owned();
+        let assert = std::fs::read_to_string(out.join(format!("{name}.assert")))
+            .unwrap_or_else(|_| panic!("`{name}` wrote no assertion:\n{log}"));
+        let text = std::fs::read_to_string(out.join(format!("{name}.json")))
+            .unwrap_or_else(|_| panic!("`{name}` wrote no result ({assert}):\n{log}"));
+        results.insert(name.clone(), serde_json::from_str(&text).expect("JSON"));
+        if let Ok(message) = std::fs::read_to_string(out.join(format!("{name}.message"))) {
+            messages.insert(name.clone(), message.trim_end().to_owned());
+        }
+        asserts.insert(name, assert.trim_end().to_owned());
+    }
+    KeepLane {
+        results,
+        asserts,
+        messages,
+        log,
+    }
+}
+
+/// The TypeScript lane over `explore-preserves.yaml`, run by the preconditions driver with the
+/// target swapped in.
+fn keep_typescript(root: &Path, ir: &EssIr, cases: &Value) -> KeepLane {
+    driven_typescript(root, ir, cases, "explore-preserves-target.mjs")
+}
+
+/// The TypeScript lane over `ir`, run by the preconditions driver with the fixture `target` swapped
+/// in for its own.
+fn driven_typescript(root: &Path, ir: &EssIr, cases: &Value, target: &str) -> KeepLane {
+    let package = root.join("typescript");
+    for artifact in ess_conformance::ts::emit_with_model(&suite(ir), ir).unwrap() {
+        write(&package.join(&artifact.path), &artifact.contents);
+    }
+    let ts = package.join("essconform");
+    std::fs::copy(fixture(target), ts.join(target)).expect("the target copies");
+    let driver = read_fixture("explore-preconditions-driver.mjs")
+        .replace("./explore-preconditions-target.mjs", &format!("./{target}"));
+    write(&ts.join("preserves-driver.mjs"), &driver);
+    write(
+        &ts.join("runtime-test.tsconfig.json"),
+        r#"{"extends":"./tsconfig.json","compilerOptions":{"types":[],"noCheck":true}}"#,
+    );
+    let compiled = Command::new("tsc")
+        .args(["--project", "runtime-test.tsconfig.json"])
+        .current_dir(&ts)
+        .output()
+        .expect("`tsc` is on PATH: the explorer lane does not skip");
+    assert!(compiled.status.success(), "{}", printed(&compiled));
+    let out = root.join("out-typescript");
+    std::fs::create_dir_all(&out).unwrap();
+    let run = Command::new("node")
+        .args(["--test", "preserves-driver.mjs"])
+        .env("ESS_EXPLORE_CASES", cases.to_string())
+        .env("ESS_EXPLORE_OUT", &out)
+        .current_dir(&ts)
+        .output()
+        .expect("`node` is on PATH: the explorer lane does not skip");
+    let log = printed(&run);
+    assert!(run.status.success(), "{log}");
+    for (index, case) in cases.as_array().unwrap().iter().enumerate() {
+        let line = format!("ok {} - {}", index + 1, case["name"].as_str().unwrap());
+        assert!(
+            log.lines().any(|it| it == line),
+            "`{line}` is not in the node log:\n{log}"
+        );
+    }
+    read_keep_lane(&out, cases, log)
+}
+
+/// The Go lane over `explore-preserves.yaml`, run by the preconditions driver with the target
+/// swapped in.
+fn keep_go(root: &Path, ir: &EssIr, cases: &Value) -> KeepLane {
+    driven_go(
+        root,
+        ir,
+        cases,
+        "explore_preserves_target.go",
+        "newExploreKeepTarget",
+    )
+}
+
+/// The Go lane over `ir`, run by the preconditions driver with the fixture `target` swapped in for
+/// its own, built by the Go function `constructor`.
+fn driven_go(root: &Path, ir: &EssIr, cases: &Value, target: &str, constructor: &str) -> KeepLane {
+    let module = root.join("go");
+    for artifact in ess_conformance::go::emit_with_model(&suite(ir), ir).unwrap() {
+        write(&module.join(&artifact.path), &artifact.contents);
+    }
+    write(
+        &module.join("go.mod"),
+        "module example.invalid/explorekeep\n\ngo 1.24\n",
+    );
+    let stem = target.trim_end_matches(".go");
+    std::fs::copy(
+        fixture(target),
+        module.join(format!("essconform/{stem}_test.go")),
+    )
+    .expect("the target copies");
+    let driver = read_fixture("explore_preconditions_driver_test.go").replace(
+        "newExplorePreTarget(one.Mode)",
+        &format!("{constructor}(one.Mode)"),
+    );
+    write(
+        &module.join("essconform/explore_preserves_driver_test.go"),
+        &driver,
+    );
+    let out = root.join("out-go");
+    std::fs::create_dir_all(&out).unwrap();
+    let run = Command::new("go")
+        .args([
+            "test",
+            "./essconform",
+            "-run",
+            "TestExplorePreconditions",
+            "-count=1",
+            "-v",
+        ])
+        .env("ESS_EXPLORE_CASES", cases.to_string())
+        .env("ESS_EXPLORE_OUT", &out)
+        .env("GOWORK", "off")
+        .current_dir(&module)
+        .output()
+        .expect("`go` is on PATH: the explorer lane does not skip");
+    let log = printed(&run);
+    assert!(run.status.success(), "{log}");
+    for case in cases.as_array().unwrap() {
+        let line = format!(
+            "--- PASS: TestExplorePreconditions/{}",
+            case["name"].as_str().unwrap()
+        );
+        assert!(
+            log.lines().any(|it| it.trim_start().starts_with(&line)),
+            "`{line}` is not in the go log:\n{log}"
+        );
+    }
+    read_keep_lane(&out, cases, log)
+}
+
+/// Every mode of the preserving target, run once per lane: `(typescript, go)`. `Purge` deletes its
+/// subject and stays excluded, so every case accepts excluded outcomes.
+fn keep_lanes() -> &'static (KeepLane, KeepLane) {
+    static LANES: OnceLock<(KeepLane, KeepLane)> = OnceLock::new();
+    LANES.get_or_init(|| {
+        let ir = preserves_ir();
+        let cases = serde_json::json!([
+            {"name": "correct", "allowExcluded": true},
+            {"name": "again-resumes", "mode": "again-resumes", "allowExcluded": true},
+            {"name": "paused-relabels", "mode": "paused-relabels", "allowExcluded": true},
+        ]);
+        let root = scratch("preserves");
+        let lanes = (
+            keep_typescript(&root, &ir, &cases),
+            keep_go(&root, &ir, &cases),
+        );
+        std::fs::remove_dir_all(&root).ok();
+        lanes
+    })
+}
+
+fn keep_each_lane() -> [(&'static str, &'static KeepLane); 2] {
+    [("typescript", &keep_lanes().0), ("go", &keep_lanes().1)]
+}
+
+/// Every declared outcome of `explore-preserves.yaml` but `Purge`'s.
+const KEPT_REACHED: &[&str] = &[
+    "explorekeep.desk.Pause/already-paused",
+    "explorekeep.desk.Pause/paused",
+    "explorekeep.desk.PauseAgain/not-paused",
+    "explorekeep.desk.PauseAgain/still-paused",
+    "explorekeep.desk.Resume/not-active",
+    "explorekeep.desk.Resume/resumed",
+    "explorekeep.desk.Start/started",
+];
+
+fn assert_preserving_commands_drawn(language: &str, lane: &KeepLane) {
+    let found = &lane.results["correct"];
+    assert_eq!(
+        lane.asserts["correct"], "ok",
+        "{language}: {found}\n{}",
+        lane.log
+    );
+    assert!(found.get("failure").is_none(), "{language}: {found}");
+    // `Excluded` names neither `Pause` nor `PauseAgain`: only `Purge`, with today's reason.
+    assert_eq!(
+        found["excluded"],
+        serde_json::json!([{
+            "reason": "outcome `purged` deletes its subject from `supplied`",
+            "subject": "explorekeep.desk.Purge"
+        }]),
+        "{language}: {found}"
+    );
+    assert_eq!(
+        strings(&found["excludedOutcomes"]),
+        ["explorekeep.desk.Purge/purged"],
+        "{language}: {found}"
+    );
+    assert_eq!(
+        strings(&found["reached"]),
+        KEPT_REACHED,
+        "{language}: {found}"
+    );
+    assert!(
+        strings(&found["unreached"]).is_empty(),
+        "{language}: {found}"
+    );
+}
+
+#[test]
+fn a_preserving_command_on_a_supplied_subject_is_drawn() {
+    assert_preserving_commands_drawn("go", &keep_lanes().1);
+}
+
+#[test]
+fn a_target_that_changes_a_preserved_subject_fails_exploration() {
+    for (language, lane) in keep_each_lane() {
+        for (mode, command, view) in [
+            (
+                "again-resumes",
+                "explorekeep.desk.PauseAgain",
+                "explorekeep.desk.PausedSessions",
+            ),
+            (
+                "paused-relabels",
+                "explorekeep.desk.Pause",
+                "explorekeep.desk.PausedSessions",
+            ),
+        ] {
+            let found = &lane.results[mode];
+            assert!(
+                lane.asserts[mode].starts_with("failed: explore: seed "),
+                "{language}: `{mode}` passed: {}\n{found}",
+                lane.asserts[mode]
+            );
+            let failure = &found["failure"];
+            let message = failure["message"].as_str().unwrap_or_default();
+            assert!(
+                message.contains(view),
+                "{language}: `{mode}` names no `{view}`: {failure}"
+            );
+            let trace = strings(&failure["trace"]);
+            assert!(
+                trace.last().is_some_and(|step| step.starts_with(command)),
+                "{language}: `{mode}` ends on no `{command}` step: {failure}"
+            );
+            let step = format!("(step {}: {command} ", trace.len());
+            assert!(
+                message.contains(&step),
+                "{language}: `{mode}` names no `{step}`: {failure}"
+            );
+        }
+    }
+}
+
+#[test]
+fn the_typescript_explorer_draws_a_preserving_command() {
+    assert_preserving_commands_drawn("typescript", &keep_lanes().0);
+    for name in ["correct", "again-resumes", "paused-relabels"] {
+        assert_eq!(
+            keep_lanes().0.results[name],
+            keep_lanes().1.results[name],
+            "`{name}` differs between TypeScript and Go"
+        );
+        assert_eq!(
+            keep_lanes().0.asserts[name],
+            keep_lanes().1.asserts[name],
+            "`{name}`"
+        );
+    }
+}
+
+// ---- beyond10x/ess#538: the model applies a selected-rows effect and draws a `Decimal` -----------
+
+const ROWS_FIXTURE: &str = include_str!("fixtures/explore-selected-rows.yaml");
+
+fn rows_ir() -> EssIr {
+    let mut sources = SourceMap::new();
+    sources.insert("explore-selected-rows.yaml", ROWS_FIXTURE);
+    let raw = RawSpecFile::parse(ROWS_FIXTURE).expect("the fixture parses");
+    let specification =
+        Specification::assemble(vec![(Source::new("explore-selected-rows.yaml"), raw)])
+            .unwrap_or_else(|errors| panic!("the fixture validates:\n{errors}"));
+    compile(&specification, &sources).unwrap_or_else(|diagnostics| panic!("{diagnostics}"))
+}
+
+/// Every mode of the selected-rows target, run once per lane: `(typescript, go)`.
+fn rows_lanes() -> &'static (KeepLane, KeepLane) {
+    static LANES: OnceLock<(KeepLane, KeepLane)> = OnceLock::new();
+    LANES.get_or_init(|| {
+        let ir = rows_ir();
+        let cases = serde_json::json!([
+            {"name": "correct"},
+            {"name": "close-skips-one", "mode": "close-skips-one"},
+            {"name": "close-every-team", "mode": "close-every-team"},
+            {"name": "dial-adds-one", "mode": "dial-adds-one"},
+        ]);
+        let root = scratch("selected-rows");
+        let lanes = (
+            driven_typescript(&root, &ir, &cases, "explore-selected-rows-target.mjs"),
+            driven_go(
+                &root,
+                &ir,
+                &cases,
+                "explore_selected_rows_target.go",
+                "newExploreRowsTarget",
+            ),
+        );
+        std::fs::remove_dir_all(&root).ok();
+        lanes
+    })
+}
+
+fn rows_each_lane() -> [(&'static str, &'static KeepLane); 2] {
+    [("typescript", &rows_lanes().0), ("go", &rows_lanes().1)]
+}
+
+/// Every declared outcome of `explore-selected-rows.yaml`.
+const ROWS_DECLARED: &[&str] = &[
+    "explorerows.desk.Close/closed",
+    "explorerows.desk.Dial/dialled",
+    "explorerows.desk.Note/noted",
+    "explorerows.desk.Reopen/not-closed",
+    "explorerows.desk.Reopen/reopened",
+    "explorerows.desk.Start/started",
+];
+
+/// The correct target passes with nothing excluded and every declared outcome reached.
+fn assert_rows_correct(language: &str, lane: &KeepLane) {
+    let found = &lane.results["correct"];
+    assert_eq!(
+        lane.asserts["correct"], "ok",
+        "{language}: {found}\n{}",
+        lane.log
+    );
+    assert!(found.get("failure").is_none(), "{language}: {found}");
+    assert_eq!(
+        found["excluded"],
+        serde_json::json!([]),
+        "{language}: {found}"
+    );
+    assert_eq!(
+        strings(&found["reached"]),
+        ROWS_DECLARED,
+        "{language}: {found}"
+    );
+    assert!(
+        strings(&found["undetermined"]).is_empty(),
+        "{language}: {found}"
+    );
+}
+
+/// `mode` fails exploration on a step of `command`, the last of its shrunk trace, with a message
+/// naming `needle`; the trace is returned.
+fn assert_rows_fail<'a>(
+    language: &str,
+    lane: &'a KeepLane,
+    mode: &str,
+    command: &str,
+    needle: &str,
+) -> Vec<&'a str> {
+    let found = &lane.results[mode];
+    assert!(
+        lane.asserts[mode].starts_with("failed: explore: seed "),
+        "{language}: `{mode}` passed: {}\n{found}",
+        lane.asserts[mode]
+    );
+    let failure = &found["failure"];
+    let message = failure["message"].as_str().unwrap_or_default();
+    assert!(
+        message.contains(needle),
+        "{language}: `{mode}` names no `{needle}`: {failure}"
+    );
+    let trace = strings(&failure["trace"]);
+    assert!(
+        trace.last().is_some_and(|step| step.starts_with(command)),
+        "{language}: `{mode}` ends on no `{command}` step: {failure}"
+    );
+    let step = format!("(step {}: {command} ", trace.len());
+    assert!(
+        message.contains(&step),
+        "{language}: `{mode}` names no `{step}`: {failure}"
+    );
+    trace
+}
+
+#[test]
+fn the_model_moves_and_sets_every_selected_row() {
+    for (language, lane) in rows_each_lane() {
+        assert_rows_correct(language, lane);
+        assert_rows_fail(
+            language,
+            lane,
+            "close-skips-one",
+            "explorerows.desk.Close",
+            "view-field: `explorerows.desk.Seats`.last_reason of ",
+        );
+    }
+}
+
+#[test]
+fn a_selected_row_effect_leaves_unselected_rows_alone() {
+    for (language, lane) in rows_each_lane() {
+        // A model that moved or set every row would fail the correct target here.
+        assert_rows_correct(language, lane);
+        assert_rows_fail(
+            language,
+            lane,
+            "close-every-team",
+            "explorerows.desk.Close",
+            "view-field: `explorerows.desk.Seats`.",
+        );
+    }
+}
+
+#[test]
+fn a_decimal_input_is_drawn_sequentially() {
+    for (language, lane) in rows_each_lane() {
+        assert_rows_correct(language, lane);
+        let trace = assert_rows_fail(
+            language,
+            lane,
+            "dial-adds-one",
+            "explorerows.desk.Dial",
+            "view-field: `explorerows.desk.Seats`.level of ",
+        );
+        // `Decimal` declares no scale of its own: the drawn values are whole numbers, as an
+        // `Integer`'s are, which every scale holds exactly.
+        let mut drawn = 0;
+        for step in trace {
+            let (command, input) = step.split_once(' ').expect("a step names its input");
+            let input: Value = serde_json::from_str(input).expect("the input is JSON");
+            let field = match command {
+                "explorerows.desk.Dial" => "dial_level",
+                "explorerows.desk.Start" => "level",
+                _ => continue,
+            };
+            let value = &input[field];
+            assert!(
+                value.as_number().is_some_and(serde_json::Number::is_i64),
+                "{language}: {command}.{field} drew {value}"
+            );
+            drawn += 1;
+        }
+        assert!(drawn >= 2, "{language}: no decimal was drawn");
+    }
+}
+
+#[test]
+fn the_typescript_explorer_agrees_on_selected_rows_and_decimals() {
+    let (typescript, go) = rows_lanes();
+    assert_eq!(typescript.results.len(), 4);
+    for (name, result) in &typescript.results {
+        assert_eq!(
+            result, &go.results[name],
+            "`{name}` differs between TypeScript and Go"
+        );
+        assert_eq!(typescript.asserts[name], go.asserts[name], "`{name}`");
+    }
+}
+
+/// Which unwritten stored fields a selected-rows filter may read (adversary pass 1 on
+/// beyond10x/ess#538). An `Optional` field no outcome wrote is absent, as the interpreter's
+/// `only_absent` reads it: `SweepTagged` selects no seat and is never reported. A required field no
+/// outcome wrote has no value the model holds: `Sweep` beside a seat is reported in `undetermined`,
+/// under a message that no longer claims no command sets the field.
+#[test]
+fn a_selected_rows_filter_reads_an_unwritten_optional_as_absent() {
+    const UNKNOWN: &str = include_str!("fixtures/explore-selected-rows-unknown.yaml");
+    let mut sources = SourceMap::new();
+    sources.insert("explore-selected-rows-unknown.yaml", UNKNOWN);
+    let raw = RawSpecFile::parse(UNKNOWN).expect("the fixture parses");
+    let specification = Specification::assemble(vec![(
+        Source::new("explore-selected-rows-unknown.yaml"),
+        raw,
+    )])
+    .unwrap_or_else(|errors| panic!("the fixture validates:\n{errors}"));
+    let ir =
+        compile(&specification, &sources).unwrap_or_else(|diagnostics| panic!("{diagnostics}"));
+    let cases = serde_json::json!([{"name": "correct"}]);
+    let root = scratch("selected-rows-unknown");
+    let lanes = [
+        (
+            "typescript",
+            driven_typescript(
+                &root,
+                &ir,
+                &cases,
+                "explore-selected-rows-unknown-target.mjs",
+            ),
+        ),
+        (
+            "go",
+            driven_go(
+                &root,
+                &ir,
+                &cases,
+                "explore_selected_rows_unknown_target.go",
+                "newExploreUnkTarget",
+            ),
+        ),
+    ];
+    std::fs::remove_dir_all(&root).ok();
+    for (language, lane) in &lanes {
+        let found = &lane.results["correct"];
+        assert_eq!(
+            lane.asserts["correct"], "ok",
+            "{language}: {found}\n{}",
+            lane.log
+        );
+        assert_eq!(
+            strings(&found["undetermined"]),
+            [
+                "exploreunk.desk.Sweep filter of `swept` reads zone, whose value the model does \
+                 not hold"
+            ],
+            "{language}: {found}"
+        );
+        assert_eq!(
+            strings(&found["reached"]),
+            [
+                "exploreunk.desk.Start/started",
+                "exploreunk.desk.Sweep/swept",
+                "exploreunk.desk.SweepTagged/swept-tagged"
+            ],
+            "{language}: {found}"
+        );
+    }
+}
+
+// ---- beyond10x/ess#537: an unsupported step excludes the command only in that state -------------
+
+const REFUSED_FIXTURE: &str = include_str!("fixtures/explore-refused.yaml");
+
+/// Every mode of the refusing target, run once per lane: `(typescript, go)`.
+fn refused_lanes() -> &'static (KeepLane, KeepLane) {
+    static LANES: OnceLock<(KeepLane, KeepLane)> = OnceLock::new();
+    LANES.get_or_init(|| {
+        let mut sources = SourceMap::new();
+        sources.insert("explore-refused.yaml", REFUSED_FIXTURE);
+        let raw = RawSpecFile::parse(REFUSED_FIXTURE).expect("the fixture parses");
+        let specification =
+            Specification::assemble(vec![(Source::new("explore-refused.yaml"), raw)])
+                .unwrap_or_else(|errors| panic!("the fixture validates:\n{errors}"));
+        let ir =
+            compile(&specification, &sources).unwrap_or_else(|diagnostics| panic!("{diagnostics}"));
+        let cases = serde_json::json!([
+            {"name": "correct"},
+            {"name": "ringing", "mode": "ringing"},
+            {"name": "ringing-allowed", "mode": "ringing", "allowExcluded": true},
+            {"name": "answer", "mode": "answer"},
+            {"name": "answer-allowed", "mode": "answer", "allowExcluded": true},
+        ]);
+        let root = scratch("refused");
+        let lanes = (
+            driven_typescript(&root, &ir, &cases, "explore-refused-target.mjs"),
+            driven_go(
+                &root,
+                &ir,
+                &cases,
+                "explore_refused_target.go",
+                "newExploreRefusedTarget",
+            ),
+        );
+        std::fs::remove_dir_all(&root).ok();
+        lanes
+    })
+}
+
+/// The view every mode refuses, excluded per view as before #537.
+fn assert_view_excluded(language: &str, found: &Value) -> Vec<Value> {
+    let excluded = found["excluded"].as_array().expect("a list").clone();
+    let view: Vec<&Value> = excluded
+        .iter()
+        .filter(|item| item["subject"] == "explorerefused.desk.RingingCalls")
+        .collect();
+    assert_eq!(view.len(), 1, "{language}: {found}");
+    assert!(
+        view[0]["reason"].as_str().is_some_and(|reason| reason
+            .starts_with("the target does not expose it: ")
+            && reason.ends_with("is not served")),
+        "{language}: {found}"
+    );
+    excluded
+        .into_iter()
+        .filter(|item| item["subject"] != "explorerefused.desk.RingingCalls")
+        .collect()
+}
+
+/// `Answer` refused while ringing is drawn in `Waiting` and `Connected`: `picked-up` and `not-open`
+/// are reached, one refusal is reported for (`Answer`, `Ringing`) with its reason and count, and only
+/// `answered`, which no step outside `Ringing` can take, is left to `AllowExcluded`.
+fn assert_narrowed(language: &str, lane: &KeepLane) {
+    let correct = &lane.results["correct"];
+    assert_eq!(
+        lane.asserts["correct"], "ok",
+        "{language}: {correct}\n{}",
+        lane.log
+    );
+    assert!(correct.get("refused").is_none(), "{language}: {correct}");
+    assert!(
+        assert_view_excluded(language, correct).is_empty(),
+        "{language}: {correct}"
+    );
+
+    let found = &lane.results["ringing"];
+    assert!(found.get("failure").is_none(), "{language}: {found}");
+    assert!(
+        assert_view_excluded(language, found).is_empty(),
+        "{language}: `Answer` is excluded for the whole run: {found}"
+    );
+    let reached = strings(&found["reached"]);
+    for outcome in [
+        "explorerefused.desk.Answer/picked-up",
+        "explorerefused.desk.Answer/not-open",
+    ] {
+        assert!(
+            reached.contains(&outcome),
+            "{language}: {outcome} unreached: {found}"
+        );
+    }
+    let refused = found["refused"]
+        .as_array()
+        .unwrap_or_else(|| panic!("{language}: {found}"));
+    assert_eq!(refused.len(), 1, "{language}: {found}");
+    assert_eq!(
+        refused[0]["command"], "explorerefused.desk.Answer",
+        "{language}: {found}"
+    );
+    assert_eq!(refused[0]["state"], "Ringing", "{language}: {found}");
+    assert_eq!(
+        refused[0]["reason"],
+        "the target does not expose it: Answer has no callback while the call rings",
+        "{language}: {found}"
+    );
+    assert!(
+        refused[0]["count"].as_u64().is_some_and(|count| count >= 1),
+        "{language}: {found}"
+    );
+    assert_eq!(
+        strings(&found["excludedOutcomes"]),
+        ["explorerefused.desk.Answer/answered"],
+        "{language}: {found}"
+    );
+    assert!(
+        strings(&found["unreached"]).is_empty(),
+        "{language}: {found}"
+    );
+    assert_eq!(
+        lane.asserts["ringing"],
+        "failed: explore: 1 declared outcome(s) of excluded commands were never tried:",
+        "{language}"
+    );
+    assert_eq!(lane.asserts["ringing-allowed"], "ok", "{language}");
+}
+
+/// `Answer` refused in every state ends in `excluded`, as before #537, with every outcome left to
+/// `AllowExcluded` and no refusal reported beside it.
+fn assert_still_excluded(language: &str, lane: &KeepLane) {
+    let found = &lane.results["answer"];
+    assert!(found.get("failure").is_none(), "{language}: {found}");
+    assert_eq!(
+        assert_view_excluded(language, found),
+        [serde_json::json!({
+            "reason": "the target does not expose it: Answer has no callback",
+            "subject": "explorerefused.desk.Answer"
+        })],
+        "{language}: {found}"
+    );
+    assert!(found.get("refused").is_none(), "{language}: {found}");
+    assert_eq!(
+        strings(&found["excludedOutcomes"]),
+        [
+            "explorerefused.desk.Answer/answered",
+            "explorerefused.desk.Answer/not-open",
+            "explorerefused.desk.Answer/picked-up",
+        ],
+        "{language}: {found}"
+    );
+    assert!(
+        strings(&found["unreached"]).is_empty(),
+        "{language}: {found}"
+    );
+    assert_eq!(
+        lane.asserts["answer"],
+        "failed: explore: 3 declared outcome(s) of excluded commands were never tried:",
+        "{language}"
+    );
+    assert_eq!(lane.asserts["answer-allowed"], "ok", "{language}");
+}
+
+#[test]
+fn an_unsupported_step_excludes_the_command_only_in_that_state() {
+    assert_narrowed("go", &refused_lanes().1);
+}
+
+#[test]
+fn a_command_unsupported_in_every_state_is_still_excluded() {
+    assert_still_excluded("go", &refused_lanes().1);
+}
+
+#[test]
+fn the_typescript_explorer_narrows_an_unsupported_step() {
+    let (typescript, go) = refused_lanes();
+    assert_narrowed("typescript", typescript);
+    assert_still_excluded("typescript", typescript);
+    assert_eq!(typescript.results.len(), 5);
+    for (name, result) in &typescript.results {
+        assert_eq!(
+            result, &go.results[name],
+            "`{name}` differs between TypeScript and Go"
+        );
+        assert_eq!(typescript.asserts[name], go.asserts[name], "`{name}`");
+    }
+}
+
+/// The lines of `message` from the one equal to `heading` up to the next `accept them explicitly`
+/// line, without either.
+fn section<'a>(message: &'a str, heading: &str) -> Vec<&'a str> {
+    message
+        .lines()
+        .skip_while(|line| *line != heading)
+        .skip(1)
+        .take_while(|line| !line.starts_with("accept them explicitly"))
+        .collect()
+}
+
+/// A refusal has its own heading in the assertion, naming the command, the held state, the
+/// target's reason and the steps not sent; the excluded list names only what was excluded, and an
+/// excluded outcome that only a refused step would have taken says so.
+fn assert_refusal_lines(language: &str, lane: &KeepLane) {
+    let message = &lane.messages["ringing"];
+    let count = lane.results["ringing"]["refused"][0]["count"]
+        .as_u64()
+        .expect("a count");
+    let outcomes = section(
+        message,
+        "explore: 1 declared outcome(s) of excluded commands were never tried:",
+    );
+    assert_eq!(
+        outcomes.first(),
+        Some(
+            &"  explorerefused.desk.Answer/answered (only a step the target refused would have taken it)"
+        ),
+        "{language}:\n{message}"
+    );
+    let excluded: Vec<&str> = outcomes
+        .iter()
+        .skip_while(|line| **line != "excluded:")
+        .copied()
+        .collect();
+    assert!(
+        excluded.len() > 1
+            && excluded[1..]
+                .iter()
+                .all(|line| line.starts_with("  explorerefused.desk.RingingCalls: ")),
+        "{language}: a refusal is listed as an exclusion:\n{message}"
+    );
+    assert_eq!(
+        section(
+            message,
+            "explore: 1 (command, held state) pair(s) the target refused were never tried again:"
+        ),
+        [format!(
+            "  explorerefused.desk.Answer in Ringing: the target does not expose it: Answer has no \
+             callback while the call rings ({count} step(s) not sent)"
+        )],
+        "{language}:\n{message}"
+    );
+
+    let message = &lane.messages["answer"];
+    assert!(
+        !message.contains("the target refused were never tried again"),
+        "{language}: an exclusion is listed as a refusal:\n{message}"
+    );
+    assert!(
+        message
+            .lines()
+            .any(|line| line
+                == "  explorerefused.desk.Answer: the target does not expose it: Answer has no callback"),
+        "{language}:\n{message}"
+    );
+    assert!(
+        !message.contains("(only a step the target refused"),
+        "{language}:\n{message}"
+    );
+    for allowed in ["ringing-allowed", "answer-allowed"] {
+        assert!(
+            !lane.messages.contains_key(allowed),
+            "{language}: {allowed}"
+        );
+    }
+}
+
+#[test]
+fn a_refusal_has_its_own_lines_in_the_assertion_in_both_languages() {
+    let (typescript, go) = refused_lanes();
+    assert_refusal_lines("go", go);
+    assert_refusal_lines("typescript", typescript);
+    let without_option = |message: &str| -> Vec<String> {
+        message
+            .lines()
+            .filter(|line| !line.starts_with("accept them explicitly"))
+            .map(str::to_owned)
+            .collect()
+    };
+    for (name, message) in &go.messages {
+        assert_eq!(
+            without_option(message),
+            without_option(&typescript.messages[name]),
+            "`{name}` differs between TypeScript and Go"
+        );
+    }
+    assert_eq!(
+        go.messages.keys().collect::<Vec<_>>(),
+        typescript.messages.keys().collect::<Vec<_>>()
+    );
 }

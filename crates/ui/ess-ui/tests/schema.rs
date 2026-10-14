@@ -4,10 +4,10 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use serde_yaml::{Mapping, Value};
+use ess_yaml::{Mapping, Value};
 
 fn schema() -> Value {
-    serde_yaml::from_str(ess_ui::SCHEMA).expect("the schema is YAML")
+    ess_yaml::from_str(ess_ui::SCHEMA).expect("the schema is YAML")
 }
 
 fn constructs(schema: &Value) -> &Mapping {
@@ -345,7 +345,7 @@ fn a_badge_and_an_icon_take_one_tone_by_naming_a_tone_map() {
     assert_eq!(badge, &constructs["icon"]["fields"]["tone_by"]["type"]);
     assert_eq!(
         badge["record"]["tones"],
-        serde_yaml::from_str::<Value>("{optional: {ref: tone_map}}").expect("YAML")
+        ess_yaml::from_str::<Value>("{optional: {ref: tone_map}}").expect("YAML")
     );
     assert!(
         strings(&schema["type_rule"]["constructors"]["ref"]["kinds"]).contains(&"tone_map"),

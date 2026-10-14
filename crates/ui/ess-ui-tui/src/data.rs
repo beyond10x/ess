@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use ess_ui::binding::Answer;
 use ess_ui::Document;
-use serde_yaml::{Mapping, Value};
+use ess_yaml::{Mapping, Value};
 
 use crate::expr::display;
 use crate::live::Script;
@@ -106,7 +106,7 @@ impl FixtureAdapter {
         if let Some(file) = &index.index {
             let path = adapter.document_relative(file);
             let value = read_yaml(&path)?;
-            let index: ess_ui::FixtureIndex = serde_yaml::from_value(value)
+            let index: ess_ui::FixtureIndex = ess_yaml::from_value(value)
                 .map_err(|error| TuiError::Fixture(format!("{}: {error}", path.display())))?;
             views.extend(index.views);
             derived.extend(index.derived);
@@ -267,7 +267,7 @@ impl DataAdapter for FixtureAdapter {
 fn read_yaml(path: &Path) -> Result<Value, TuiError> {
     let text = std::fs::read_to_string(path)
         .map_err(|error| TuiError::Fixture(format!("cannot read {}: {error}", path.display())))?;
-    serde_yaml::from_str(&text)
+    ess_yaml::from_str(&text)
         .map_err(|error| TuiError::Fixture(format!("{}: {error}", path.display())))
 }
 
@@ -293,7 +293,7 @@ mod tests {
         adapter.views.insert(
             "things.Page".to_owned(),
             ViewData {
-                rows: serde_yaml::from_str(rows).expect("the rows parse"),
+                rows: ess_yaml::from_str(rows).expect("the rows parse"),
                 total: Some(40),
                 by_params: None,
             },
@@ -305,7 +305,7 @@ mod tests {
         let request = ReadRequest {
             view: "things.Page".to_owned(),
             fixture: None,
-            params: serde_yaml::from_str(params).expect("the params parse"),
+            params: ess_yaml::from_str(params).expect("the params parse"),
         };
         let result = adapter.read(&request).expect("the read is answered");
         let ids = result.rows.iter().map(|row| display(&row["id"])).collect();

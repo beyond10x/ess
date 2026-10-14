@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use ess_ui_tui::live::Script;
 use ess_ui_tui::{App, DataAdapter, FixtureAdapter, Options, ReadRequest, ReadResult};
-use serde_yaml::Value;
+use ess_yaml::Value;
 
 fn example_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../examples/partner-portal")
@@ -64,7 +64,7 @@ fn app_with(
         Some(scripts) => scripts
             .iter()
             .map(|(channel, yaml)| {
-                Script::parse(channel, &serde_yaml::from_str(yaml).expect("script yaml"))
+                Script::parse(channel, &ess_yaml::from_str(yaml).expect("script yaml"))
                     .expect("the script parses")
             })
             .collect(),
