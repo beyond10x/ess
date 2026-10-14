@@ -835,6 +835,7 @@ ess generate types [OPTIONS] --target <TARGET> --out <OUT> <--root <ROOT>|--all-
 | `--target` | `<TARGET>` | yes |  | Data library target. Unsupported language targets are not silently substituted. One of `typescript`, `rust`, `go`. |
 | `--package` | `<PACKAGE>` | no |  | Native package identity, required for Rust and Go |
 | `--module` | `<MODULE>` | no |  | Go module identity, required only for Go |
+| `--rust-raw-json` | `<TYPE[.FIELD]>`… | no |  | Rust only: keep `Json` values as their exact JSON text (`Box<serde_json::value::RawValue>`), so their bytes round-trip without `exact-numbers`. A type, by its qualified model or component name, covers each of its `Json` fields, `<type>.<field>` that one field. Repeatable |
 | `--names` | `<NAMES>` | no | `qualified` | How declarations are named: the qualified model name, or its last segment. One of `qualified`, `short`. |
 | `--out` | `<OUT>` | yes |  | Library destination, outside the specification input tree |
 
@@ -1009,6 +1010,7 @@ ess generate schema types-bundle [OPTIONS] --bundle <BUNDLE> --root <ROOT> --tar
 | `--target` | `<TARGET>` | yes |  | Data library target. Unsupported language targets are not silently substituted. One of `typescript`, `rust`, `go`. |
 | `--package` | `<PACKAGE>` | no |  | Native package identity, required for Rust and Go |
 | `--module` | `<MODULE>` | no |  | Go module identity, required only for Go |
+| `--rust-raw-json` | `<TYPE[.FIELD]>`… | no |  | Rust only: keep `Json` values as their exact JSON text (`Box<serde_json::value::RawValue>`), so their bytes round-trip without `exact-numbers`. A type, by its qualified model or component name, covers each of its `Json` fields, `<type>.<field>` that one field. Repeatable |
 | `--out` | `<OUT>` | yes |  | Directory for declarations, target accounting and the retained source bundle |
 
 #### `ess generate schema normalize-check`

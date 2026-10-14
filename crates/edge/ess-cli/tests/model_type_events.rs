@@ -113,3 +113,79 @@ fn a_root_beside_an_all_selector_is_refused() {
         assert!(!fixture.0.join("ts").exists(), "{selector} wrote output");
     }
 }
+
+/// `--rust-raw-json` (beyond10x/ess#577) names model locations; the Rust target alone takes it.
+mod rust_raw_json {
+    use super::*;
+
+    const RAW: &str = "format: ess/22
+system: demo
+version: v1
+domain: demo.store
+types:
+  - name: demo.store.Record
+    kind: struct
+    fields:
+      - {name: id, type: String}
+      - {name: body, type: Json}
+";
+
+    fn fixture() -> Fixture {
+        let fixture = Fixture::new();
+        fs::write(fixture.0.join("model/system.yaml"), RAW).unwrap();
+        fixture
+    }
+
+    fn types(fixture: &Fixture, target: &str, raw: &str) -> Output {
+        let mut args = vec!["--root", "demo.store.Record", "--target", target];
+        args.extend(["--package", "demo-store", "--out", "out"]);
+        if target == "go" {
+            args.extend(["--module", "example.com/demo/store"]);
+        }
+        args.extend(["--rust-raw-json", raw]);
+        fixture.run(&args)
+    }
+
+    #[test]
+    fn raw_json_on_a_field_keeps_its_text_in_the_rust_library() {
+        let fixture = fixture();
+        let output = types(&fixture, "rust", "demo.store.Record.body");
+        assert!(output.status.success(), "{output:?}");
+        let types = fixture.read("out/types.rs");
+        assert!(types.contains("pub body: EssRawJson,"), "{types}");
+        assert!(!types.contains("::serde_json::Value"), "{types}");
+        assert!(
+            fixture.read("out/Cargo.toml").contains("raw_value"),
+            "{types}"
+        );
+    }
+
+    #[test]
+    fn raw_json_names_an_unknown_or_non_json_location_and_is_refused() {
+        for named in ["demo.store.Missing", "demo.store.Record.id"] {
+            let fixture = fixture();
+            let output = types(&fixture, "rust", named);
+            assert!(!output.status.success(), "{named}: {output:?}");
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(
+                stderr.contains("--rust-raw-json") && stderr.contains(&format!("{named:?}")),
+                "{named}: {stderr}"
+            );
+            assert!(!fixture.0.join("out").exists(), "{named}");
+        }
+    }
+
+    #[test]
+    fn raw_json_is_refused_for_a_target_other_than_rust() {
+        for target in ["typescript", "go"] {
+            let fixture = fixture();
+            let output = types(&fixture, target, "demo.store.Record.body");
+            assert!(!output.status.success(), "{target}: {output:?}");
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(
+                stderr.contains("--rust-raw-json is only supported for the Rust target"),
+                "{target}: {stderr}"
+            );
+        }
+    }
+}

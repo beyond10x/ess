@@ -192,7 +192,10 @@ Rust emits a standalone Cargo library with an explicit package name, Serde and
 library declares a default-on `exact-numbers` feature that enables `serde_json`'s
 arbitrary-precision numbers. A consumer that depends on it with `default-features = false`
 gets those numbers as binary64, and the types report names each affected value under
-`rust_exact_numbers`. Required fields use a deserialization
+`rust_exact_numbers`. `--rust-raw-json` (beyond10x/ess#577) instead keeps a named `Json` value
+as its exact text in `EssRawJson` (a `Box<serde_json::value::RawValue>`), which does not count
+toward `exact-numbers` and is named under `rust_raw_json`; a record with declared fields and
+additional values cannot hold one, and is refused. Required fields use a deserialization
 hook that does not treat missing nullable fields as null. Optional fields use
 `EssPresence<T>` independently of their value type. Open objects retain unknown
 properties; serialization refuses additional-key collisions with declared fields.

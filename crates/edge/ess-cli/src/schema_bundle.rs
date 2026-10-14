@@ -131,6 +131,12 @@ pub struct TypeOptions {
     /// Go module identity, required only for Go.
     #[arg(long)]
     module: Option<String>,
+    /// Rust only: keep `Json` values as their exact JSON text (`Box<serde_json::value::RawValue>`),
+    /// so their bytes round-trip without `exact-numbers`. A type, by its qualified model or
+    /// component name, covers each of its `Json` fields, `<type>.<field>` that one field.
+    /// Repeatable.
+    #[arg(long, value_name = "TYPE[.FIELD]")]
+    rust_raw_json: Vec<String>,
 }
 
 pub fn types(args: &TypesArgs) -> Result<ExitCode> {
@@ -166,6 +172,9 @@ pub fn type_files(
     plan: &schema_contract::realize::Plan,
     args: &TypeOptions,
 ) -> Result<std::collections::BTreeMap<String, String>> {
+    if !args.rust_raw_json.is_empty() && !matches!(args.target, TypesTarget::Rust) {
+        bail!("--rust-raw-json is only supported for the Rust target");
+    }
     let (declaration_path, realization) = match args.target {
         TypesTarget::Typescript => {
             if args.package.is_some() || args.module.is_some() {
@@ -181,7 +190,15 @@ pub fn type_files(
                 .package
                 .as_deref()
                 .context("the Rust target requires --package")?;
-            ("types.rs", plan.rust(package)?)
+            let realization = if args.rust_raw_json.is_empty() {
+                plan.rust(package)?
+            } else {
+                plan.clone()
+                    .with_raw_json(&args.rust_raw_json)
+                    .context("--rust-raw-json")?
+                    .rust(package)?
+            };
+            ("types.rs", realization)
         }
         TypesTarget::Go => {
             let package = args

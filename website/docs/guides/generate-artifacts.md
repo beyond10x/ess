@@ -345,6 +345,12 @@ serde_json's `arbitrary_precision`. A consumer that depends on the library with
 affected value under the `rust_exact_numbers` rule. A library whose types hold none
 declares no feature and leaves serde_json's number handling to its consumer.
 
+A `Json` value can instead keep its exact JSON text: `--rust-raw-json <type>` realizes each
+`Json` field of that model type, and `--rust-raw-json <type>.<field>` one field, as `EssRawJson`,
+a `Box<serde_json::value::RawValue>`. Its bytes round-trip with or without `exact-numbers`, it does
+not count toward that feature, and the report names it under `rust_raw_json`. A location that
+names no selected type or field, or no `Json` value, is refused; other targets refuse the option.
+
 The `ess-types-report/3` envelope records typed input provenance, the language and explicit native package/module
 configuration. These are data libraries, not complete schema validators or application
 decoders: defaults, aliases and external module dispatch are not applied.

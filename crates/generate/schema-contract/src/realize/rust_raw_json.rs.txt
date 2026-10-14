@@ -1,0 +1,35 @@
+/// A JSON value kept as its exact text, so its bytes round-trip whatever serde_json features the
+/// build unifies. Source decoding requires raw-capable JSON input. Equality compares the text.
+#[derive(Debug, Clone)]
+pub struct EssRawJson(pub ::std::boxed::Box<::serde_json::value::RawValue>);
+
+impl EssRawJson {
+    /// The exact JSON text.
+    pub fn get(&self) -> &str { self.0.get() }
+    pub fn into_inner(self) -> ::std::boxed::Box<::serde_json::value::RawValue> { self.0 }
+}
+
+impl ::std::convert::From<::std::boxed::Box<::serde_json::value::RawValue>> for EssRawJson {
+    fn from(value: ::std::boxed::Box<::serde_json::value::RawValue>) -> Self { Self(value) }
+}
+
+impl ::std::ops::Deref for EssRawJson {
+    type Target = ::serde_json::value::RawValue;
+    fn deref(&self) -> &Self::Target { &self.0 }
+}
+
+impl ::std::cmp::PartialEq for EssRawJson {
+    fn eq(&self, other: &Self) -> bool { self.0.get() == other.0.get() }
+}
+
+impl ::serde::Serialize for EssRawJson {
+    fn serialize<S: ::serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(&self.0, serializer)
+    }
+}
+
+impl<'de> ::serde::Deserialize<'de> for EssRawJson {
+    fn deserialize<D: ::serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        <::std::boxed::Box<::serde_json::value::RawValue> as ::serde::Deserialize>::deserialize(deserializer).map(Self)
+    }
+}

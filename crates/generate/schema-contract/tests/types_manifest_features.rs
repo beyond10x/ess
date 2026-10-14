@@ -351,3 +351,273 @@ fn a_decoded_pair_serializes_to_the_expected_bytes() {
         );
     }
 }
+
+/// `--rust-raw-json` (beyond10x/ess#577): a `Json` value kept as its exact JSON text, so its bytes
+/// round-trip whatever `serde_json` features a consumer's build unifies.
+mod raw_json {
+    use super::*;
+
+    /// The report rule naming each value the Rust target keeps as raw JSON text.
+    const RAW_RULE: &str = "rust_raw_json";
+
+    /// The float beyond10x/ess#577 reported: best-effort parsing reads it back one unit lower.
+    const INPUT: &str = r#"{"v":1.0715660391465826e-75}"#;
+
+    const SAMPLE: &str = r"format: ess/22
+system: catalog
+version: v1
+domain: catalog.items
+types:
+  - name: catalog.items.Sample
+    kind: struct
+    fields:
+      - {name: v, type: Json}
+";
+
+    const RECORDS: &str = r"format: ess/22
+system: catalog
+version: v1
+domain: catalog.items
+types:
+  - name: catalog.items.Document
+    kind: newtype
+    of: Json
+  - name: catalog.items.Plain
+    kind: struct
+    fields:
+      - {name: label, type: String}
+  - name: catalog.items.Record
+    kind: struct
+    fields:
+      - {name: v, type: Json}
+      - {name: extra, type: Optional<Json>}
+      - {name: body_text, type: Json, wire: bodyText}
+      - {name: note, type: String}
+      - {name: count, type: Integer}
+      - {name: doc, type: catalog.items.Document}
+      - {name: plain, type: catalog.items.Plain}
+";
+
+    const ROOTS: &[&str] = &["catalog.items.Record"];
+
+    fn raw_pointers(realization: &Realization) -> BTreeSet<String> {
+        serde_json::to_value(&realization.report).unwrap()["obligations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|finding| finding["rule"] == RAW_RULE)
+            .map(|finding| finding["pointer"].as_str().unwrap().to_owned())
+            .collect()
+    }
+
+    /// Builds `rust` and decodes then encodes `INPUT` through its `Sample` with default features
+    /// off, returning the bytes it serialized.
+    fn round_trip_without_default_features(rust: &Realization, package: &str) -> String {
+        let root = Path::new(env!("CARGO_TARGET_TMPDIR"))
+            .join(format!("raw-json-{package}-{}", std::process::id()));
+        fs::create_dir_all(root.join("tests")).unwrap();
+        fs::write(root.join("Cargo.toml"), &rust.supporting["Cargo.toml"]).unwrap();
+        fs::write(root.join("types.rs"), &rust.declarations).unwrap();
+        let bytes = root.join("bytes.json");
+        fs::write(
+            root.join("tests/bytes.rs"),
+            format!(
+                r#"
+#[test]
+fn a_decoded_sample_is_serialized_again() {{
+    let input = std::env::var("ESS_INPUT").unwrap();
+    let sample: {package}::CatalogItemsSample = serde_json::from_str(&input).unwrap();
+    std::fs::write(std::env::var("ESS_OUTPUT").unwrap(), serde_json::to_vec(&sample).unwrap()).unwrap();
+}}
+"#
+            ),
+        )
+        .unwrap();
+        let output = Command::new(env!("CARGO"))
+            .args(["test", "--offline", "--quiet", "--no-default-features"])
+            .arg("--manifest-path")
+            .arg(root.join("Cargo.toml"))
+            .env("ESS_INPUT", INPUT)
+            .env("ESS_OUTPUT", &bytes)
+            .env(
+                "CARGO_TARGET_DIR",
+                Path::new(env!("CARGO_TARGET_TMPDIR")).join("exact-numbers-target"),
+            )
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        fs::read_to_string(bytes).unwrap()
+    }
+
+    #[test]
+    fn raw_json_field_round_trips_its_bytes() {
+        let raw = model_plan(SAMPLE, &["catalog.items.Sample"])
+            .with_raw_json(["catalog.items.Sample.v"])
+            .unwrap()
+            .rust("raw_types")
+            .unwrap();
+        let manifest = &raw.supporting["Cargo.toml"];
+        assert!(
+            serde_json_dependency(manifest).contains("features = [\"raw_value\"]"),
+            "{manifest}"
+        );
+        assert!(!manifest.contains("arbitrary_precision"), "{manifest}");
+        assert_eq!(exact_number_findings(&raw), Vec::<Value>::new());
+        assert_eq!(
+            raw_pointers(&raw),
+            BTreeSet::from(["/$defs/catalog.items.Sample/properties/v".to_owned()])
+        );
+        assert_eq!(
+            round_trip_without_default_features(&raw, "raw_types"),
+            INPUT
+        );
+
+        // The same model without the option holds the value in `serde_json::Value`, and with
+        // `exact-numbers` off its bytes move: the case above is not passing by accident.
+        let value = model_plan(SAMPLE, &["catalog.items.Sample"])
+            .rust("value_types")
+            .unwrap();
+        assert_ne!(
+            round_trip_without_default_features(&value, "value_types"),
+            INPUT
+        );
+    }
+
+    #[test]
+    fn raw_json_on_a_type_covers_every_json_field_of_it() {
+        let rust = model_plan(RECORDS, ROOTS)
+            .with_raw_json(["catalog.items.Record", "catalog.items.Document"])
+            .unwrap()
+            .rust("catalog_types")
+            .unwrap();
+        let declarations = &rust.declarations;
+        for line in [
+            "pub v: EssRawJson,",
+            "pub extra: EssPresence<EssRawJson>,",
+            "pub body_text: EssRawJson,",
+            "pub struct CatalogItemsDocument(pub EssRawJson);",
+        ] {
+            assert!(declarations.contains(line), "{line}\n{declarations}");
+        }
+        assert!(
+            !declarations.contains("::serde_json::Value,"),
+            "{declarations}"
+        );
+        let at = "/$defs/catalog.items.Record/properties";
+        assert_eq!(
+            raw_pointers(&rust),
+            BTreeSet::from([
+                "/$defs/catalog.items.Document".to_owned(),
+                format!("{at}/bodyText"),
+                format!("{at}/extra"),
+                format!("{at}/v"),
+            ])
+        );
+        // The raw values no longer count toward `exact-numbers`; the `Integer` still does.
+        assert_eq!(
+            pointers(&exact_number_findings(&rust)),
+            BTreeSet::from([format!("{at}/count").as_str()])
+        );
+
+        // A field, by its declared or its wire name, covers that field alone.
+        for named in [
+            "catalog.items.Record.body_text",
+            "catalog.items.Record.bodyText",
+        ] {
+            let one = model_plan(RECORDS, ROOTS)
+                .with_raw_json([named])
+                .unwrap()
+                .rust("catalog_types")
+                .unwrap();
+            assert_eq!(
+                raw_pointers(&one),
+                BTreeSet::from([format!("{at}/bodyText")]),
+                "{named}"
+            );
+            assert!(
+                one.declarations.contains("pub v: ::serde_json::Value,"),
+                "{}",
+                one.declarations
+            );
+        }
+    }
+
+    #[test]
+    fn raw_json_names_an_unknown_or_non_json_location_and_is_refused() {
+        for named in [
+            "catalog.items.Missing",
+            "catalog.items.Record.missing",
+            "catalog.items.Record.note",
+            "catalog.items.Record.doc",
+            "catalog.items.Plain",
+            "Record",
+            "",
+        ] {
+            let refused = model_plan(RECORDS, ROOTS)
+                .with_raw_json(["catalog.items.Record.v", named])
+                .expect_err(named);
+            assert_eq!(refused.0.len(), 1, "{named}: {refused}");
+            let finding = &refused.0[0];
+            assert_eq!(finding.rule, RAW_RULE, "{named}: {refused}");
+            assert!(
+                finding.detail.contains(&format!("{named:?}")),
+                "{named}: {refused}"
+            );
+        }
+        // A bundle names its components the same way.
+        let bundle = bundle_plan(
+            &json!({"Holder": {"type": "object", "additionalProperties": false,
+                "required": ["payload", "id"],
+                "properties": {"payload": true, "id": {"type": "string"}}}}),
+            &["Holder"],
+        );
+        assert!(bundle.clone().with_raw_json(["Holder.payload"]).is_ok());
+        assert!(bundle.with_raw_json(["Holder.id"]).is_err());
+    }
+
+    /// Raw text decodes only from serde_json's own deserializer: a union holding it is decoded
+    /// through a raw token rather than a `Value`, and a record that buffers its fields for
+    /// `#[serde(flatten)]` cannot hold it and is refused.
+    #[test]
+    fn raw_json_is_decoded_from_a_raw_token_or_refused_where_it_cannot_be() {
+        let schemas = json!({
+            "Holder": {"type": "object", "additionalProperties": false, "required": ["payload"],
+                "properties": {"payload": true}},
+            "Either": {"anyOf": [{"type": "string"},
+                {"$ref": "#/components/schemas/Holder"}]},
+            "Open": {"type": "object", "required": ["payload"], "properties": {"payload": true}}
+        });
+        let rust = bundle_plan(&schemas, &["Holder", "Either"])
+            .with_raw_json(["Holder.payload"])
+            .unwrap()
+            .rust("raw_types")
+            .unwrap();
+        assert!(
+            rust.declarations.contains(
+                "let value = <::std::boxed::Box<::serde_json::value::RawValue> as ::serde::Deserialize>::deserialize(deserializer)?;"
+            ),
+            "{}",
+            rust.declarations
+        );
+        assert_eq!(exact_number_findings(&rust), Vec::<Value>::new());
+
+        let refused = bundle_plan(&schemas, &["Open"])
+            .with_raw_json(["Open.payload"])
+            .unwrap()
+            .rust("raw_types")
+            .unwrap_err();
+        assert_eq!(
+            refused
+                .0
+                .iter()
+                .map(|finding| (finding.pointer.as_str(), finding.rule.as_str()))
+                .collect::<Vec<_>>(),
+            [("/components/schemas/Open", "rust_raw_json_open_record")]
+        );
+    }
+}
