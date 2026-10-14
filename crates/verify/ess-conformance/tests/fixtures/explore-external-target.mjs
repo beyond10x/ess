@@ -6,6 +6,8 @@
 //   (empty)              arranges every external branch it is asked to
 //   cannot-arrange       `configureExternalOutcome` is not supported
 //   ignores-arrangement  accepts every arrangement and then takes the ordinary branch anyway
+//   fail-keeps-pending   arranges every external branch, and answers an arranged capture failure
+//                        without failing the payment, which stays pending
 //
 // `explore_external_target.go` is the same target in Go, line for line.
 
@@ -64,7 +66,7 @@ export function newTarget(mode = '') {
             };
           }
           if (arranged(command, 'failed')) {
-            payment.state = 'Failed';
+            if (mode !== 'fail-keeps-pending') payment.state = 'Failed';
             return answered('failed', 'exploreext.pay.CaptureFailed', {
               payment_id: payment.payment_id,
             });

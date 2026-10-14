@@ -630,7 +630,21 @@ fn candidates(
     ir: &EssIr,
     command: &ResolvedCommand,
 ) -> Result<Vec<BTreeMap<String, Node>>, CheckRefusal> {
-    let guards: Vec<_> = command.outcomes.iter().filter_map(crate::when).collect();
+    // An `external:` branch's eligibility guard is not a verdict, so `when` leaves it out; but an
+    // answer a target was asked to arrange is explained only by an input the guard admits, so its
+    // literals are candidates too (beyond10x/ess#576).
+    let guards: Vec<_> = command
+        .outcomes
+        .iter()
+        .filter_map(|outcome| {
+            crate::when(outcome).or(match &outcome.condition {
+                ess_compiler::ir::ResolvedCondition::ExternalWhen { predicate, .. } => {
+                    Some(predicate)
+                }
+                _ => None,
+            })
+        })
+        .collect();
     let built = witness::candidates(ir, command, &guards, Distinction::PLAIN).map_err(|gap| {
         CheckRefusal::NoInput {
             command: command.name.to_string(),

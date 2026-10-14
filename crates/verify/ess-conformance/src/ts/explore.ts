@@ -2899,7 +2899,8 @@ export interface ConcurrentOptions {
   calls?: number;
   /**
    * Accept commands the target does not expose (it threw `unsupported`), whose calls are then not
-   * written to any history. An explicit, reviewable opt-out, as `assertExplored` has.
+   * written to any history, and external branches it cannot arrange. An explicit, reviewable
+   * opt-out, as `assertExplored` has.
    */
   allowExcluded?: boolean;
   /**
@@ -2964,6 +2965,17 @@ export interface ConcurrentResult {
   failure?: ConcurrentFailure;
   /** What was injected across every history, all empty without `inject`. */
   injected: ConcurrentInjected;
+  /**
+   * The calls whose external branch the target was asked to arrange through
+   * `configureExternalOutcome`, by `command/outcome`, as the sequential walk asks
+   * (beyond10x/ess#576). Absent when none was, so a result without one keeps its bytes.
+   */
+  arranged?: Record<string, number>;
+  /**
+   * Every external branch, as `command/outcome`, the target threw `unsupported` for arranging, and
+   * why, in the order found. Its calls are sent unarranged. Absent when there is none.
+   */
+  unarrangeable?: Exclusion[];
 }
 
 /** The refusal when `ess` is not on PATH. */
@@ -3106,6 +3118,10 @@ interface Recording {
   injected: ConcurrentInjected;
   /** Each client's last consistency token, empty until one of its commands answers one. */
   tokens: string[];
+  /** Each external branch arranged, by `command/outcome`. */
+  arranged: Record<string, number>;
+  /** Every external branch the target cannot arrange, in the order found; this history asks no more. */
+  unarrangeable: Exclusion[];
 }
 
 /** Moves the injections' SplitMix64 sequence away from the schedule's, as `ess` does. */
@@ -3154,6 +3170,55 @@ function declaresOtherExternal(command: Command): boolean {
     (outcome: Node) =>
       (outcome.replays === undefined || outcome.replays === null) && isExternal(outcome),
   );
+}
+
+/**
+ * Every external branch of `command`, other than a `replays:` one, a call with `input` may take where
+ * the sequential walk offers it: an unguarded `external:`, or one beside a `when:` that holds over
+ * `input`. A guard unknown over `input` offers none. Concurrent exploration holds no model state, so
+ * a branch that moves its subject is offered whatever state the subject is in, and the target
+ * answers from the state it holds.
+ */
+function arrangeable(command: Command, input: Row): string[] {
+  const source = facts(input);
+  const names: string[] = [];
+  for (const outcome of list(command.node.outcomes)) {
+    if ((outcome.replays !== undefined && outcome.replays !== null) || !isExternal(outcome))
+      continue;
+    if (outcome.condition.kind === 'external_when') {
+      const guard = command.guards.get(outcome.name);
+      if (guard === undefined || guard.evaluate(source) !== TruthTrue) continue;
+    }
+    names.push(String(outcome.name));
+  }
+  return names;
+}
+
+/**
+ * Asks the target to make `command` take the external branch `outcome`, as the sequential walk does
+ * before the step it drew it for. A branch the target cannot arrange is recorded and its calls are
+ * sent unarranged; any other refusal fails the exploration.
+ */
+async function arrangeCall(h: Recording, command: Command, outcome: string): Promise<void> {
+  const id = `${command.name}/${outcome}`;
+  if (h.unarrangeable.some((known) => known.subject === id)) return;
+  try {
+    await h.target.configureExternalOutcome({
+      command: command.name,
+      outcome,
+      correlation: h.correlation,
+    });
+  } catch (error) {
+    if (isUnsupported(error)) {
+      h.unarrangeable.push({
+        subject: id,
+        reason: `the target cannot arrange it: ${errorText(error)}`,
+      });
+      return;
+    }
+    throw new Error(`arranging \`${id}\`, the target threw ${errorText(error)}`);
+  }
+  bump(h.arranged, id);
 }
 
 function requestOf(h: Recording, command: Command, step: Step): CommandRequest {
@@ -3320,6 +3385,7 @@ async function invokeCall(
   command: Command,
   step: Step,
 ): Promise<Flight> {
+  if (step.external !== '') await arrangeCall(h, command, step.external);
   const request = requestOf(h, command, step);
   const index = reserve(h, client, command, step);
   // One call, one correlation: a retry sends it again under the same one, and a target tells a
@@ -3596,6 +3662,8 @@ async function recordHistory(
       retries: Array.from({ length: clients }, () => null),
       injected: newInjected(),
       tokens: Array.from({ length: clients }, () => ''),
+      arranged: {},
+      unarrangeable: [],
     };
     const model = new Model();
 
@@ -3626,6 +3694,15 @@ async function recordHistory(
           const command = p.commands[choice] as Command;
           const step = draw(command, rng, model);
           if (step !== null) {
+            // An external branch the call may take is drawn beside its ordinary branch, as the
+            // sequential walk draws it, and arranged when the call is invoked. Nothing is drawn for
+            // a call no external branch is offered to, so its seed draws what it drew before
+            // arrangement existed. The prefix arranges nothing.
+            const names = arrangeable(command, step.input);
+            if (names.length > 0) {
+              const picked = rng.int(0, names.length);
+              if (picked > 0) step.external = names[picked - 1] as string;
+            }
             own.push({ command, step, view: null });
             break;
           }
@@ -3791,6 +3868,15 @@ export async function exploreConcurrent(
       if (!result.excluded.some((earlier) => earlier.subject === exclusion.subject))
         result.excluded.push(exclusion);
     }
+    for (const [id, count] of Object.entries(recording.arranged)) {
+      result.arranged ??= {};
+      result.arranged[id] = (result.arranged[id] ?? 0) + count;
+    }
+    for (const branch of recording.unarrangeable) {
+      result.unarrangeable ??= [];
+      if (!result.unarrangeable.some((earlier) => earlier.subject === branch.subject))
+        result.unarrangeable.push(branch);
+    }
     const name = `history-${seed}.json`;
     const file = join(out, name);
     try {
@@ -3849,6 +3935,13 @@ export function concurrentProblem(result: ConcurrentResult): string | null {
     const lines = result.excluded.map((exclusion) => `  ${exclusion.subject}: ${exclusion.reason}`);
     problems.push(
       `explore: ${result.excluded.length} command(s) the target does not expose were left out of concurrent exploration:\n${lines.join('\n')}\naccept them explicitly with { allowExcluded: true }`,
+    );
+  }
+  const unarrangeable = result.unarrangeable ?? [];
+  if (unarrangeable.length > 0 && !result.allowExcluded) {
+    const lines = unarrangeable.map((branch) => `  ${branch.subject}: ${branch.reason}`);
+    problems.push(
+      `explore: ${unarrangeable.length} external outcome(s) the target could not arrange were never arranged in concurrent exploration:\n${lines.join('\n')}\naccept them explicitly with { allowExcluded: true }`,
     );
   }
   return problems.length === 0 ? null : problems.join('\n');

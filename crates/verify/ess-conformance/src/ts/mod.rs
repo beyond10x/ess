@@ -244,6 +244,16 @@ read's return instant, and the identity of each row it answered is written as `r
 holds the target to each view's declared consistency. A view that throws `unsupported` is left out
 as a command is.
 
+A call of a command declaring an `external:` branch draws it beside the ordinary branch, as
+`explore` does, wherever the call's input makes it eligible: an unguarded `external:`, or one whose
+`when:` holds over the input (a `replays:` branch is the retry `inject` sends instead). A drawn
+branch is arranged through `configureExternalOutcome` when the call is invoked, and the arrangement
+may hold for later calls of the command, which `ess` reads as that branch or another the model
+admits. Nothing is arranged in the prefix, and a call no external branch is offered to draws
+nothing more. `result.arranged` counts the arrangements by `command/outcome`. A branch the target
+throws `unsupported` for arranging is in `result.unarrangeable`, its calls are sent unarranged, and
+`assertConcurrent` fails on it unless `{ allowExcluded: true }` accepts it.
+
 `{ inject: true }` injects every fault the specification declares, and no other: a second delivery
 (`redeliverEvent`) of an event only `delivery: at_least_once` bindings react to; the same request
 sent again, written with `retry_of` naming the first, for a command declaring `replays:`; and an

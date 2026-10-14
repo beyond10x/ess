@@ -3278,7 +3278,8 @@ type ConcurrentOptions struct {
 	// Calls is how many calls each client makes after the prefix. Zero means 3.
 	Calls int `json:"calls,omitempty"`
 	// AllowExcluded accepts commands the target does not expose (ErrUnsupported), whose calls are
-	// then not written to any history. An explicit, reviewable opt-out, as AssertOptions has.
+	// then not written to any history, and external branches it cannot arrange. An explicit,
+	// reviewable opt-out, as AssertOptions has.
 	AllowExcluded bool `json:"allowExcluded,omitempty"`
 	// Inject injects every fault the specification declares, and no other, each as one more move
 	// the seed schedules: a second delivery of an event only `delivery: at_least_once` bindings
@@ -3350,6 +3351,13 @@ type ConcurrentResult struct {
 	Failure  *ConcurrentFailure `json:"failure,omitempty"`
 	// Injected is what was injected across every history, all empty without Inject.
 	Injected ConcurrentInjected `json:"injected"`
+	// Arranged counts, by `command/outcome`, the calls whose external branch the target was asked
+	// to arrange through ConfigureExternalOutcome, as the sequential walk asks (beyond10x/ess#576).
+	// Absent when none was, so a result without one keeps its bytes.
+	Arranged map[string]int `json:"arranged,omitempty"`
+	// Unarrangeable is every external branch, as `command/outcome`, the target answered
+	// ErrUnsupported to arranging, and why, in the order found. Its calls are sent unarranged.
+	Unarrangeable []Exclusion `json:"unarrangeable,omitempty"`
 }
 
 // ErrNoEss is the refusal when `ess` is not on PATH.
@@ -3473,6 +3481,10 @@ type exploreRecording struct {
 	injected     ConcurrentInjected
 	// tokens is each client's last consistency token, empty until one of its commands answers one.
 	tokens []string
+	// arranged counts each external branch arranged, by `command/outcome`; unarrangeable is every
+	// one the target cannot arrange, in the order found, which this history asks no more.
+	arranged      map[string]int
+	unarrangeable []Exclusion
 }
 
 // exploreKey is an identity as a subject key: its text, or empty when it is not text.
@@ -3501,6 +3513,52 @@ func exploreExternalOther(command *exploreCommand) bool {
 		}
 	}
 	return false
+}
+
+// exploreArrangeable is every external branch of command, other than a `replays:` one, a call with
+// input may take where the sequential walk offers it: an unguarded `external:`, or one beside a
+// `when:` that holds over input. A guard unknown over input offers none. Concurrent exploration
+// holds no model state, so a branch that moves its subject is offered whatever state the subject
+// is in, and the target answers from the state it holds.
+func exploreArrangeable(command *exploreCommand, input Row) []string {
+	names := []string{}
+	source := facts(input)
+	for _, node := range exploreList(command.node["outcomes"]) {
+		outcome := exploreObject(node)
+		if outcome["replays"] != nil || !exploreIsExternal(outcome) {
+			continue
+		}
+		if exploreObject(outcome["condition"])["kind"] == "external_when" {
+			guard, ok := command.guards[fmt.Sprint(outcome["name"])]
+			if !ok || guard.evaluate(source) != truthTrue {
+				continue
+			}
+		}
+		names = append(names, fmt.Sprint(outcome["name"]))
+	}
+	return names
+}
+
+// arrange asks the target to make command take the external branch outcome, as the sequential walk
+// does before the step it drew it for. A branch the target cannot arrange is recorded and its calls
+// are sent unarranged; any other refusal fails the exploration.
+func (h *exploreRecording) arrange(command *exploreCommand, outcome string) error {
+	id := command.name + "/" + outcome
+	for _, known := range h.unarrangeable {
+		if known.Subject == id {
+			return nil
+		}
+	}
+	err := h.target.ConfigureExternalOutcome(ExternalOutcomeControl{Command: command.name, Outcome: outcome, Correlation: h.correlation})
+	switch {
+	case err == nil:
+		h.arranged[id]++
+	case errors.Is(err, ErrUnsupported):
+		h.unarrangeable = append(h.unarrangeable, Exclusion{Subject: id, Reason: "the target cannot arrange it: " + err.Error()})
+	default:
+		return fmt.Errorf("arranging `%s`, the target threw %s", id, err.Error())
+	}
+	return nil
 }
 
 func (h *exploreRecording) request(command *exploreCommand, step *exploreStep) CommandRequest {
@@ -3612,7 +3670,12 @@ func (h *exploreRecording) send(request CommandRequest) PendingCommand {
 	return pending
 }
 
-func (h *exploreRecording) invoke(client int, command *exploreCommand, step *exploreStep) *exploreFlight {
+func (h *exploreRecording) invoke(client int, command *exploreCommand, step *exploreStep) (*exploreFlight, error) {
+	if step.external != "" {
+		if err := h.arrange(command, step.external); err != nil {
+			return nil, err
+		}
+	}
 	request := h.request(command, step)
 	index := h.reserve(client, command, step)
 	// One call, one correlation: a retry sends it again under the same one, and a target tells a
@@ -3632,7 +3695,7 @@ func (h *exploreRecording) invoke(client int, command *exploreCommand, step *exp
 			}
 		}
 	}
-	return &exploreFlight{pending: h.send(request), command: command, index: index, client: client, timeout: timeout}
+	return &exploreFlight{pending: h.send(request), command: command, index: index, client: client, timeout: timeout}, nil
 }
 
 // invokeRetry sends a client's retry: the request it sent, unchanged, as a new operation.
@@ -3891,7 +3954,7 @@ func exploreRecordHistory(p *explorePlan, newTarget func() Target, digest string
 		return nil, nil, err
 	}
 	defer func() { _ = target.EndScenario(scenario) }()
-	h := &exploreRecording{target: target, correlation: scenario.Correlation, ir: p.ir, arranging: true, retries: make([]*exploreRetry, clients), injected: newConcurrentInjected(), tokens: make([]string, clients)}
+	h := &exploreRecording{target: target, correlation: scenario.Correlation, ir: p.ir, arranging: true, retries: make([]*exploreRetry, clients), injected: newConcurrentInjected(), tokens: make([]string, clients), arranged: map[string]int{}}
 	if options.Inject {
 		h.injection = NewSplitMix64(uint64(seed) ^ exploreInjectionStream)
 	}
@@ -3913,7 +3976,11 @@ func exploreRecordHistory(p *explorePlan, newTarget func() Target, digest string
 		if step == nil {
 			continue
 		}
-		id, entity, err := h.complete(h.invoke(0, command, step))
+		flight, err := h.invoke(0, command, step)
+		if err != nil {
+			return nil, nil, err
+		}
+		id, entity, err := h.complete(flight)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -3935,6 +4002,15 @@ func exploreRecordHistory(p *explorePlan, newTarget func() Target, digest string
 				}
 				command := p.commands[choice]
 				if step := exploreDrawStep(command, r, model); step != nil {
+					// An external branch the call may take is drawn beside its ordinary branch, as the
+					// sequential walk draws it, and arranged when the call is invoked. Nothing is drawn
+					// for a call no external branch is offered to, so its seed draws what it drew
+					// before arrangement existed. The prefix arranges nothing.
+					if names := exploreArrangeable(command, step.input); len(names) > 0 {
+						if choice := r.Int(0, len(names)); choice > 0 {
+							step.external = names[choice-1]
+						}
+					}
 					workload[client] = append(workload[client], exploreCall{command: command, step: step})
 					break
 				}
@@ -3991,7 +4067,11 @@ func exploreRecordHistory(p *explorePlan, newTarget func() Target, digest string
 			if call.view != nil {
 				flying[client] = h.invokeRead(client, call.view)
 			} else {
-				flying[client] = h.invoke(client, call.command, call.step)
+				flight, err := h.invoke(client, call.command, call.step)
+				if err != nil {
+					return nil, nil, err
+				}
+				flying[client] = flight
 			}
 		}
 	}
@@ -4057,7 +4137,7 @@ func ExploreConcurrent(newTarget func() Target, options ConcurrentOptions) (Conc
 			seeds = append(seeds, seed)
 		}
 	}
-	result := ConcurrentResult{Verdicts: []string{}, Excluded: []Exclusion{}, AllowExcluded: options.AllowExcluded, Injected: newConcurrentInjected()}
+	result := ConcurrentResult{Verdicts: []string{}, Excluded: []Exclusion{}, AllowExcluded: options.AllowExcluded, Injected: newConcurrentInjected(), Arranged: map[string]int{}}
 	for _, seed := range seeds {
 		if len(p.commands) == 0 {
 			break
@@ -4075,6 +4155,18 @@ func ExploreConcurrent(newTarget func() Target, options ConcurrentOptions) (Conc
 			}
 			if !known {
 				result.Excluded = append(result.Excluded, exclusion)
+			}
+		}
+		for id, count := range recording.arranged {
+			result.Arranged[id] += count
+		}
+		for _, branch := range recording.unarrangeable {
+			known := false
+			for _, earlier := range result.Unarrangeable {
+				known = known || earlier.Subject == branch.Subject
+			}
+			if !known {
+				result.Unarrangeable = append(result.Unarrangeable, branch)
 			}
 		}
 		name := fmt.Sprintf("history-%d.json", seed)
@@ -4134,6 +4226,13 @@ func CheckConcurrent(result ConcurrentResult) error {
 			lines = append(lines, fmt.Sprintf("  %s: %s", exclusion.Subject, exclusion.Reason))
 		}
 		problems = append(problems, fmt.Sprintf("explore: %d command(s) the target does not expose were left out of concurrent exploration:\n%s\naccept them explicitly with ConcurrentOptions{AllowExcluded: true}", len(result.Excluded), strings.Join(lines, "\n")))
+	}
+	if len(result.Unarrangeable) > 0 && !result.AllowExcluded {
+		lines := []string{}
+		for _, branch := range result.Unarrangeable {
+			lines = append(lines, fmt.Sprintf("  %s: %s", branch.Subject, branch.Reason))
+		}
+		problems = append(problems, fmt.Sprintf("explore: %d external outcome(s) the target could not arrange were never arranged in concurrent exploration:\n%s\naccept them explicitly with ConcurrentOptions{AllowExcluded: true}", len(result.Unarrangeable), strings.Join(lines, "\n")))
 	}
 	if len(problems) == 0 {
 		return nil

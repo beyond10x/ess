@@ -240,6 +240,16 @@ asked at the read's return instant, and the identity of each row it answered is 
 so `ess` holds the target to each view's declared consistency. A view answered with
 `ErrUnsupported` is left out as a command is.
 
+A call of a command declaring an `external:` branch draws it beside the ordinary branch, as
+`Explore` does, wherever the call's input makes it eligible: an unguarded `external:`, or one whose
+`when:` holds over the input (a `replays:` branch is the retry `Inject` sends instead). A drawn
+branch is arranged through `ConfigureExternalOutcome` when the call is invoked, and the arrangement
+may hold for later calls of the command, which `ess` reads as that branch or another the model
+admits. Nothing is arranged in the prefix, and a call no external branch is offered to draws
+nothing more. `ConcurrentResult.Arranged` counts the arrangements by `command/outcome`. A branch the
+target answers `ErrUnsupported` to arranging is in `Unarrangeable`, its calls are sent unarranged,
+and `AssertConcurrent` fails on it unless `ConcurrentOptions{AllowExcluded: true}` accepts it.
+
 `ConcurrentOptions{Inject: true}` injects every fault the specification declares, and no other: a
 second delivery (`RedeliverEvent`) of an event only `delivery: at_least_once` bindings react to; the
 same request sent again, written with `retry_of` naming the first, for a command declaring
