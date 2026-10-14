@@ -1,6 +1,6 @@
 # Generic language features: one expression language, queries over rows, aggregates over expressions, one precedence rule
 
-Status: proposed, 2026-10-13. Binding once accepted; no code, IR, suite or source format changes
+Status: accepted, 2026-10-14 (proposed 2026-10-13). Binding; no code, IR, suite or source format changes
 with this page. It supersedes, for the constructs it names, the scope cuts in
 [`value-expressions.md`](value-expressions.md) ("Not in this design"),
 [`expression-family-source22.md`](expression-family-source22.md) ("Boundary"),
