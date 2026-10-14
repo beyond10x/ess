@@ -320,5 +320,8 @@ The build, component, release, stack and deployment commands under `ess generate
 | `unknown_component` | The imported specification does not declare the selected component. | Select a component the imported specification declares. |
 | `reference_outside_component` | A name exists in the imported specification but is outside the selected component. | Refer only to what the selected component exposes, or select the component that owns it. |
 | `type_conformance_drift` | A local type said to conform to an imported type differs from it in a field's name, presence or type. | Change the local type to match the imported one field for field. |
+| `unknown_role_service` | A role's `service` or `plays` names a service the composition does not import. | Import the service, or correct the key in the role. |
+| `conflicting_role` | A role plays its own service, repeats a role already declared for the same two services, or repeats a command entry. | Name another imported service in `plays`, and write each role and each command entry once. |
+| `role_input_drift` | A local command said to implement a contract command lacks one of its input fields, reads one as another type, or requires an input the contract's caller never sends. | Give the local command every contract input field with a conforming type, make its other inputs optional, or say `gates` if it only decides before the contract command. |
 
 [ess-diagnostics-end]: #

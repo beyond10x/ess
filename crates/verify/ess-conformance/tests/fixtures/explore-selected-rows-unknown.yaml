@@ -1,0 +1,84 @@
+# beyond10x/ess#538 adversary pass 1: which stored fields a selected-rows filter may read that no
+# outcome wrote. `tag` is an `Optional<…>` no outcome writes, so the model reads it as absent, as
+# the interpreter's `only_absent` does: `SweepTagged` selects no seat and is decided. `zone` is a
+# required field no outcome writes, so the model does not hold its value: `Sweep`, drawn beside a
+# seat, is reported in `undetermined` and redrawn (the interpreter calls it undecidable). With no
+# seat to read, `Sweep` selects nothing and is decided.
+#
+# The targets beside it are `explore-selected-rows-unknown-target.mjs` and
+# `explore_selected_rows_unknown_target.go`.
+
+format: ess/18
+system: exploreunk
+version: v1
+domain: exploreunk.desk
+
+summary: Seats swept by a field nothing writes.
+
+types:
+  - {name: exploreunk.desk.SeatId, kind: newtype, of: Uuid}
+  - {name: exploreunk.desk.Team, kind: enum, variants: [red, blue]}
+
+entities:
+  - name: exploreunk.desk.Seat
+    identity: {name: seat_id, type: exploreunk.desk.SeatId}
+    fields:
+      - {name: team, type: exploreunk.desk.Team}
+      - {name: zone, type: exploreunk.desk.Team}
+      - {name: tag, type: Optional<exploreunk.desk.Team>}
+    lifecycle:
+      initial: Open
+      states: [Open, Closed]
+      terminal: [Closed]
+      transitions:
+        - {name: close, from: [Open], to: Closed}
+
+actors:
+  - name: exploreunk.desk.Supervisor
+    may: [exploreunk.desk.Start, exploreunk.desk.Sweep, exploreunk.desk.SweepTagged]
+
+events:
+  - name: exploreunk.desk.Started
+    fields: [{name: seat_id, type: exploreunk.desk.SeatId}]
+  - name: exploreunk.desk.Swept
+    fields: [{name: team, type: exploreunk.desk.Team}]
+
+commands:
+  - name: exploreunk.desk.Start
+    input:
+      - {name: team, type: exploreunk.desk.Team}
+    outcomes:
+      - name: started
+        creates: exploreunk.desk.Seat
+        instance: seat_id
+        sets: {team: input.team}
+        emits: [exploreunk.desk.Started]
+        payload: {exploreunk.desk.Started: {seat_id: {generated: true}}}
+
+  - name: exploreunk.desk.Sweep
+    input:
+      - {name: team, type: exploreunk.desk.Team}
+    outcomes:
+      - name: swept
+        moves: exploreunk.desk.Seat.close
+        instances: {where: zone == input.team}
+        emits: [exploreunk.desk.Swept]
+        payload: {exploreunk.desk.Swept: {team: input.team}}
+
+  - name: exploreunk.desk.SweepTagged
+    input:
+      - {name: team, type: exploreunk.desk.Team}
+    outcomes:
+      - name: swept-tagged
+        moves: exploreunk.desk.Seat.close
+        instances: {where: tag == input.team}
+        emits: [exploreunk.desk.Swept]
+        payload: {exploreunk.desk.Swept: {team: input.team}}
+
+views:
+  - name: exploreunk.desk.Seats
+    source: exploreunk.desk.Seat
+    consistency: read_your_writes
+    fields:
+      - {name: seat_id, type: exploreunk.desk.SeatId}
+      - {name: state, type: exploreunk.desk.Seat.State}

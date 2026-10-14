@@ -10,10 +10,11 @@ authors.workspace = true
 
 [dependencies]
 # The document and its schema are YAML, read with the reader the rest of the workspace already
-# uses. Nothing here writes YAML back, so serde_yaml's quoting heuristics never reach a byte this
-# crate produces.
+# uses: `ess-yaml`, a leaf crate with no ESS dependency, so this crate still depends on nothing
+# else of ESS. Nothing here writes YAML back, so the writer's quoting heuristics never reach a byte
+# this crate produces.
 serde.workspace = true
-serde_yaml.workspace = true
+ess-yaml.workspace = true
 serde_json.workspace = true
 ryu-js.workspace = true
 

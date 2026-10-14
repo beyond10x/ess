@@ -29,7 +29,7 @@ use std::{
     process::Command,
 };
 
-use serde_yaml::Value;
+use ess_yaml::Value;
 
 const PAGE: &str = "website/docs/reference/predicates.md";
 const SIDEBAR: &str = "website/sidebars.ts";
@@ -146,7 +146,7 @@ fn model(examples: &[Example]) -> Value {
         "{PAGE} carries exactly one `ess-check=\"model\"` block; found {}",
         models.len()
     );
-    serde_yaml::from_str(&models[0].body)
+    ess_yaml::from_str(&models[0].body)
         .unwrap_or_else(|error| panic!("{}: the model is not YAML: {error}", models[0].at()))
 }
 
@@ -163,7 +163,7 @@ fn named<'a>(list: &'a mut Value, key: &str, name: &str) -> &'a mut Value {
 
 /// The page's model with one fragment put where its `ess-check` says.
 fn spliced(model: &Value, example: &Example) -> Result<Value, String> {
-    let fragment: Value = serde_yaml::from_str(&example.body)
+    let fragment: Value = ess_yaml::from_str(&example.body)
         .map_err(|error| format!("{}: the example is not YAML: {error}", example.at()))?;
     let key = example.check();
     let Some(value) = fragment
@@ -220,7 +220,7 @@ fn ess(arguments: &[&str], path: &Path) -> Run {
 /// Runs one example and says what disagreed with the page, if anything.
 fn verdict(example: &Example, document: &Value, directory: &Path) -> Result<(), String> {
     let path = directory.join(format!("example-{}.yaml", example.line));
-    fs::write(&path, serde_yaml::to_string(document).expect("serialize")).expect("write");
+    fs::write(&path, ess_yaml::to_string(document).expect("serialize")).expect("write");
     let expect = example.attribute("ess-expect").unwrap_or("");
     let validate = ess(&["specify", "validate"], &path);
     let (kind, code) = expect.split_once(':').unwrap_or((expect, ""));
@@ -515,7 +515,7 @@ fn every_form_the_story_names_is_run_by_at_least_one_example_today() {
         .filter(|e| e.check() != "model" && e.attribute("ess-pending").is_none())
     {
         sites.insert(example.check().to_owned());
-        let value: Value = serde_yaml::from_str(&example.body).unwrap_or(Value::Null);
+        let value: Value = ess_yaml::from_str(&example.body).unwrap_or(Value::Null);
         match value.get(example.check()) {
             Some(Value::String(text)) => whole.push(text.clone()),
             Some(Value::Sequence(items)) => {

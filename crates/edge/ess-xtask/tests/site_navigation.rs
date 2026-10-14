@@ -520,7 +520,7 @@ fn every_page_has_front_matter_that_parses() {
             refused.push(format!("{shown}: front matter does not close"));
             continue;
         };
-        match serde_yaml::from_str::<serde_yaml::Mapping>(&body[..end]) {
+        match ess_yaml::from_str::<ess_yaml::Mapping>(&body[..end]) {
             Ok(mapping) if mapping.contains_key("title") => {}
             Ok(_) => refused.push(format!("{shown}: front matter has no title")),
             Err(error) => refused.push(format!("{shown}: {error}")),

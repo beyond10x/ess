@@ -209,19 +209,33 @@ func writeText(out *bytes.Buffer, text string) error {
 "#;
 
 /// The fixed helpers' pieces a model that uses `Json` reads differently: objects arrive as the
-/// ordered `*object` rather than a `map[string]any`.
+/// ordered `*object` rather than a `map[string]any`. A served binding's readers still hand the
+/// decoder a request's own members as a `map[string]any` (a `form` or `query` request, a path, a
+/// `json` body's top level, whose order no value keeps), so both are an object.
 pub(crate) const WIRE_SUBSTITUTIONS: &[(&str, &str)] = &[
     (
         "\tcase map[string]any:\n\t\treturn \"an object\"\n",
-        "\tcase *object:\n\t\treturn \"an object\"\n",
+        "\tcase *object, map[string]any:\n\t\treturn \"an object\"\n",
     ),
     (
         "\tobject, ok := value.(map[string]any)\n\tif !ok {\n\t\treturn nil, DecodeError{At: at, \
          Expected: expected, Found: describes(value)}\n\t}\n\treturn object, nil\n",
-        "\tobject, ok := value.(*object)\n\tif !ok {\n\t\treturn nil, DecodeError{At: at, \
-         Expected: expected, Found: describes(value)}\n\t}\n\treturn object.members, nil\n",
+        "\tswitch held := value.(type) {\n\tcase *object:\n\t\treturn held.members, \
+         nil\n\tcase map[string]any:\n\t\treturn held, nil\n\t}\n\treturn nil, DecodeError{At: \
+         at, Expected: expected, Found: describes(value)}\n",
     ),
 ];
+
+/// The same for a served binding's readers (`http::bound::BOUND`): an object inside a `json`
+/// body is the ordered `*object`, so a `Json` value leaves with its members where they arrived,
+/// as the Rust server writes it.
+pub(crate) const BOUND_SUBSTITUTIONS: &[(&str, &str)] = &[(
+    "\tcase jsonObject:\n\t\treturn decoderValue(shaped)\n",
+    "\tcase jsonObject:\n\t\theld := &object{members: map[string]any{}}\n\t\tfor _, member := range \
+     shaped {\n\t\t\tif _, seen := held.members[member.name]; !seen {\n\t\t\t\theld.order = \
+     append(held.order, member.name)\n\t\t\t\theld.members[member.name] = \
+     memberValue(member.value)\n\t\t\t}\n\t\t}\n\t\treturn held\n",
+)];
 
 /// The same for the surface's `readJSON`: the standard decoder still decides what is refused, and
 /// the accepted body is then read into the ordered tree.

@@ -109,6 +109,50 @@ and each document then serves every operation the binding routes at its method a
 An operation the binding does not name keeps its derived route, byte for byte, and every projection
 generated without `--http` is unchanged.
 
+### Encoding, statuses, headers and redirects
+
+A route may also state how its request is encoded and how each outcome is answered:
+
+```yaml
+refusals:
+  malformed: {status: 400, body: {error: {literal: invalid_request}}}
+routes:
+  - command: catalog.orders.PlaceOrder
+    method: post
+    path: /api/orders
+    request: {encoding: form, unknown: ignore}
+    outcomes:
+      placed:
+        status: 200
+        body: response
+        headers:
+          Cache-Control: {literal: no-store}
+      out-of-stock: {status: 400, body: {error: error}}
+  - view: catalog.orders.OrderById
+    method: get
+    path: /orders/{order_id}
+    parameters: {order_id: param.order_id}
+    body: single
+    empty: {status: 404}
+```
+
+The document follows those keys on the routes that use them:
+
+- `encoding: form` makes the request body `application/x-www-form-urlencoded`. `encoding: query`
+  removes the request body, and each input field the path does not carry becomes an `in: query`
+  parameter under its wire name (a `List` repeats its key, `style: form`, `explode: true`).
+- Each declared status is its own response. `body: response` answers the command's response
+  object bare, `{error: error}` an object whose `error` is the error's wire name beside the error's
+  own fields, and `none` no content. An outcome the route does not list keeps its derived status
+  and ESS's envelope.
+- Declared headers are response `headers`, a `WWW-Authenticate` challenge among them, and a
+  `redirect` answers a required `Location` header and no content.
+- A `single` view answers its one row at `200` and no content at its `empty` status.
+- A `refusals:` entry replaces the standard answer for that refusal on every operation the binding
+  names.
+- A bare body names no branch, so every response of such a command carries `x-ess-outcomes`, the
+  outcomes it answers. A challenge is a header only: the document declares no `securitySchemes`.
+
 A binding with an open route is refused, naming each operation whose path it leaves open, and
 nothing is written: a published document cannot carry a route nobody can send a request to. Give the
 server binding that fills it in, with the protocol binding as `--refines`.

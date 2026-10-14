@@ -1,0 +1,74 @@
+format: ess/25
+system: demo
+version: v1
+domain: demo.revoke
+# beyond10x/ess#534, the second adopter: token revocation authenticates the client before it looks
+# at the token (RFC 7009 § 2.1, RFC 6749 § 3.2.1). `invalid-client` is an external refusal marked
+# `before_row: true`, so an unauthenticated caller learns nothing of whether the token exists, whom
+# it was issued to or whether it is revoked.
+entities:
+  - name: demo.revoke.Token
+    identity: {name: token, type: String}
+    fields:
+      - {name: client_id, type: String}
+    lifecycle:
+      initial: Active
+      states: [Active, Revoked]
+      terminal: [Revoked]
+      transitions:
+        - {name: revoke, from: [Active], to: Revoked}
+actors:
+  - {name: demo.revoke.Client, may: [demo.revoke.Issue, demo.revoke.Revoke]}
+commands:
+  - name: demo.revoke.Issue
+    input:
+      - {name: token, type: String}
+      - {name: client_id, type: String}
+    outcomes:
+      - name: issued
+        creates: demo.revoke.Token
+        instance: token
+        sets: {client_id: input.client_id}
+        emits: [demo.revoke.Issued]
+        payload: {demo.revoke.Issued: {token: input.token}}
+  - name: demo.revoke.Revoke
+    input:
+      - {name: token, type: String}
+      - {name: client_id, type: String}
+    outcomes:
+      - name: invalid-client
+        external: client authentication failed
+        before_row: true
+        error: demo.revoke.InvalidClient
+      - name: invalid-token
+        unknown_instance: true
+        refuses: false
+      - name: issued-to-another-client
+        when_subject: {predicate: client_id != input.client_id}
+        error: demo.revoke.TokenNotIssuedToClient
+      - name: already-revoked
+        when_subject: {predicate: state == Revoked}
+        error: demo.revoke.AlreadyRevoked
+      - name: revoked
+        moves: demo.revoke.Token.revoke
+        instance: token
+        emits: [demo.revoke.Revoked]
+        payload: {demo.revoke.Revoked: {token: input.token}}
+errors:
+  - name: demo.revoke.InvalidClient
+    summary: The client did not authenticate.
+  - name: demo.revoke.TokenNotIssuedToClient
+    summary: The token was issued to another client.
+  - name: demo.revoke.AlreadyRevoked
+    summary: The token is already revoked.
+events:
+  - {name: demo.revoke.Issued, fields: [{name: token, type: String}]}
+  - {name: demo.revoke.Revoked, fields: [{name: token, type: String}]}
+views:
+  - name: demo.revoke.Tokens
+    source: demo.revoke.Token
+    consistency: read_your_writes
+    fields:
+      - {name: token, type: String}
+      - {name: client_id, type: String}
+      - {name: state, type: demo.revoke.Token.State}

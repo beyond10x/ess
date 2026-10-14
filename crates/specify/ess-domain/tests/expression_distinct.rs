@@ -358,7 +358,7 @@ fn distinct_below_ess22_is_refused_naming_the_format() {
 fn distinct_a_direct_assembly_without_a_kind_is_refused_and_one_with_it_is_checked() {
     // Deserialised directly, a source keeps no spelling to resolve: the key kind is what it wrote.
     let direct = |when: &str| -> Result<Specification, String> {
-        let raw: RawSpecFile = serde_yaml::from_str(&model(22, when, PLAIN, PLAIN))
+        let raw: RawSpecFile = ess_yaml::from_str(&model(22, when, PLAIN, PLAIN))
             .map_err(|error| format!("parse: {error}"))?;
         Specification::assemble([(Source::new("model.yaml"), raw)])
             .map_err(|errors| errors.to_string())

@@ -16,7 +16,7 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde_yaml::{Mapping, Value};
+use ess_yaml::{Mapping, Value};
 
 use crate::binding::{EnumLookup, ModelEnums};
 use crate::model::{Widget, COMPOSITE_KINDS};
@@ -293,7 +293,7 @@ fn snake_case(text: &str) -> String {
 fn key_text(key: &Value) -> String {
     match key {
         Value::String(text) => text.clone(),
-        other => serde_yaml::to_string(other)
+        other => ess_yaml::to_string(other)
             .unwrap_or_default()
             .trim()
             .to_owned(),
@@ -405,8 +405,8 @@ fn accepts(accepted: &Value, value: &Value) -> bool {
 }
 
 fn not_accepted(at: &NodePath, construct: &str, accepted: &Value, value: &Value) -> LoadError {
-    let accepted = serde_yaml::to_string(accepted).unwrap_or_default();
-    let value = serde_yaml::to_string(value).unwrap_or_default();
+    let accepted = ess_yaml::to_string(accepted).unwrap_or_default();
+    let value = ess_yaml::to_string(value).unwrap_or_default();
     LoadError::new(
         at.clone(),
         format!(
@@ -814,14 +814,14 @@ fn declaration_view(widgets: &mut Mapping) {
                     .collect()
             })
             .unwrap_or_default();
-        if structural.is_empty() || serde_yaml::from_value::<Widget>(widget.clone()).is_ok() {
+        if structural.is_empty() || ess_yaml::from_value::<Widget>(widget.clone()).is_ok() {
             continue;
         }
         let mut stripped = widget.clone();
         if let Some(body) = stripped.get_mut("body") {
             strip_args(body, &structural);
         }
-        if serde_yaml::from_value::<Widget>(stripped.clone()).is_ok() {
+        if ess_yaml::from_value::<Widget>(stripped.clone()).is_ok() {
             *widget = stripped;
         }
     }

@@ -128,6 +128,23 @@ export interface Exclusion {
   reason: string;
 }
 
+/**
+ * A command the target answered unsupported to in one held state of the row a step addressed, while
+ * it drove the command elsewhere (beyond10x/ess#537). No later step draws the command in that state;
+ * a command refused in every state it was drawn in, and driven in none, is in `excluded` instead.
+ */
+export interface Refusal {
+  command: string;
+  /**
+   * The held state of the row the step addressed: `(no row)` where it addressed none (a creation,
+   * or an identity no row carries), `(no state)` for a row without a lifecycle.
+   */
+  state: string;
+  reason: string;
+  /** The steps drawn in that state and not sent: the one the target refused and every later one. */
+  count: number;
+}
+
 /** A disagreement: its seed, what disagreed, and the shortest trace found that still shows it. */
 export interface ExploreFailure {
   seed: number;
@@ -148,8 +165,17 @@ export interface ExploreResult {
   /** Declared outcomes of included commands that no step took. */
   unreached: string[];
   excluded: Exclusion[];
-  /** Every declared outcome of an excluded command. */
+  /**
+   * Every declared outcome of an excluded command, and every outcome no step took that a refused
+   * step would have.
+   */
   excludedOutcomes: string[];
+  /**
+   * Every (command, held state) the target answered unsupported to, of a command it drove in
+   * another state, in order of `command` and `state`. Absent when there is none, so a result
+   * without one keeps its bytes.
+   */
+  refused?: Refusal[];
   /** What the model could not place, such as a view filter over a field no command set. */
   undetermined: string[];
   /** Draws the specification does not decide, which were redrawn rather than executed. */
@@ -186,8 +212,8 @@ export interface ExternalReach {
 /** What `assertExplored` accepts. */
 export interface AssertOptions {
   /**
-   * Accept outcomes of excluded commands, and external outcomes the target could not arrange. An
-   * explicit, reviewable opt-out.
+   * Accept outcomes of excluded commands, the (command, held state) pairs the target refused, and
+   * external outcomes the target could not arrange. An explicit, reviewable opt-out.
    */
   allowExcluded?: boolean;
 }
@@ -312,10 +338,11 @@ function identityOwner(ir: Node, type: string): string | null {
 }
 
 /**
- * The kind of values an input of type `ref` is drawn from. With `concurrent` it also draws a `decimal`,
- * a `timestamp` and a type whose values are constrained: concurrent exploration does not judge an
+ * The kind of values an input of type `ref` is drawn from. With `concurrent` it also draws a
+ * `timestamp` and a type whose values are constrained: concurrent exploration does not judge an
  * answer by this model, `ess` does, so a drawn value outside the constraint is a question the target
- * answers and the checker judges.
+ * answers and the checker judges. A `decimal` is drawn either way, as an `integer` is
+ * (beyond10x/ess#538).
  */
 function resolveKind(ir: Node, ref: Node, depth = 0, concurrent = false): Kind {
   if (depth > 32) return { kind: 'unsupported', why: 'nested too deeply' };
@@ -329,8 +356,8 @@ function resolveKind(ir: Node, ref: Node, depth = 0, concurrent = false): Kind {
       case 'boolean':
       case 'string':
       case 'uuid':
-        return { kind: ref.name };
       case 'decimal':
+        return { kind: ref.name };
       case 'timestamp':
         if (concurrent) return { kind: ref.name };
         return { kind: 'unsupported', why: `a \`${ref.name}\`` };
@@ -667,13 +694,40 @@ function isExternal(outcome: Node): boolean {
   return kind === 'external' || kind === 'external_when';
 }
 
-function effectRefusal(outcome: Node): string | null {
+/**
+ * Why the explorer cannot model what `outcome` does to its subject, or null. A `preserves:` of a
+ * supplied subject is modelled as leaving the row as it is, so every view read after the step must
+ * still agree with it (beyond10x/ess#536); concurrent exploration does not draw it and keeps the
+ * commands it always drew.
+ *
+ * A selected-rows outcome (`instances: {where: …}`, beyond10x/ess#538) carries no subject. Its move
+ * or update is modelled on every row the filter selects; its bulk deletion is left out by name, as a
+ * single `deletes:` is, and so is a filter the model cannot read. An event published once per
+ * changed row (ess/25, beyond10x/ess#531) is left out by name too: the model expects each listed
+ * event once. An `affects:` entry writes rows the
+ * model does not apply, so its outcome is left out by name too. Concurrent exploration keeps the
+ * commands it always drew.
+ */
+function effectRefusal(outcome: Node, concurrent: boolean): string | null {
+  if (list(outcome.affects).length > 0 && !concurrent) {
+    return `outcome \`${outcome.name}\` writes the rows its \`affects:\` selects, which the model does not apply`;
+  }
+  const set = outcome.instances;
+  if (set !== null && set !== undefined && !concurrent) {
+    if (set.effect === 'deletes') return `outcome \`${outcome.name}\` deletes the rows it selects`;
+    if (list(set.events).length > 0) {
+      return `outcome \`${outcome.name}\` publishes an event once per changed row, which the model does not apply`;
+    }
+    const filter = parsed(set.filter);
+    if (typeof filter === 'string') return `the filter of \`${outcome.name}\`: ${filter}`;
+  }
   const subject = outcome.subject;
   if (subject === null || subject === undefined) return null;
   const from = subject.instance?.from;
   const allowed =
     (subject.effect === 'creates' && from === 'observed') ||
-    ((subject.effect === 'moves' || subject.effect === 'updates') && from === 'supplied');
+    ((subject.effect === 'moves' || subject.effect === 'updates') && from === 'supplied') ||
+    (subject.effect === 'preserves' && from === 'supplied' && !concurrent);
   return allowed
     ? null
     : `outcome \`${outcome.name}\` ${subject.effect} its subject from \`${from}\``;
@@ -829,7 +883,7 @@ function plan(ir: Node, concurrent = false): Plan {
     if (reason === null && existing !== undefined && addresses(node).length > 1) {
       reason = `outcome \`${existing.name}\` answers an existing instance of creations that name it differently`;
     }
-    for (const outcome of outcomes) reason ??= effectRefusal(outcome);
+    for (const outcome of outcomes) reason ??= effectRefusal(outcome, concurrent);
     for (const outcome of outcomes) {
       if (
         reason === null &&
@@ -959,6 +1013,23 @@ function exclude(p: Plan, subject: string, reason: string): void {
 interface Rec {
   id: Node;
   fields: Row;
+  /**
+   * Every `Optional` field of the record no outcome has written, which the interpreter reads as
+   * absent. A field the model forgot, its value undetermined, is not in it.
+   */
+  unwritten?: Set<string>;
+}
+
+/**
+ * Every `Optional` field of `entity`, by name: what a new record holds as absent until an outcome
+ * writes it.
+ */
+function unwrittenOf(ir: Node, entity: Node): Set<string> {
+  const unwritten = new Set<string>();
+  for (const declared of list(entity.fields)) {
+    if (optionalType(ir, declared.type_ref)) unwritten.add(String(declared.name));
+  }
+  return unwritten;
 }
 
 class Model {
@@ -1113,6 +1184,23 @@ function suppliedOutcome(command: Command): Node | undefined {
   );
 }
 
+/**
+ * The held state of the row a step of `command` addresses, which keys a refusal
+ * (beyond10x/ess#537): `(no row)` where it addresses none, `(no state)` for a row without a
+ * lifecycle.
+ */
+function heldState(command: Command, input: Row, model: Model): string {
+  const supplied = suppliedOutcome(command);
+  if (supplied === undefined) return '(no row)';
+  const record = model.find(
+    supplied.subject.entity,
+    readPath(input, supplied.subject.instance.field.name),
+  );
+  if (record === undefined) return '(no row)';
+  const state = record.fields.state;
+  return typeof state === 'string' ? state : '(no state)';
+}
+
 function unknownOutcome(command: Command): Node | undefined {
   return list(command.node.outcomes).find(
     (outcome: Node) => outcome.condition?.kind === 'unknown_instance',
@@ -1141,12 +1229,58 @@ function isInputRefusal(outcome: Node): boolean {
 }
 
 /**
+ * Which branch a step takes: `decideRow`'s answer, with every external refusal marked
+ * `before_row: true` (ess/25, beyond10x/ess#534) that answers before it offered beside it. Such a
+ * branch answers among the input-guarded refusals, in declaration order, before existence and the
+ * held state: one declared before the first input refusal whose guard holds is eligible for every
+ * record, an identity no record carries included, and is offered even where the rest of the order
+ * answers alone.
+ */
+function decide(command: Command, input: Row, model: Model): Decision {
+  const decision = decideRow(command, input, model);
+  if (decision.kind !== 'take' && decision.kind !== 'ambiguous') return decision;
+  const source = facts(input);
+  const early: Node[] = [];
+  for (const outcome of list(command.node.outcomes)) {
+    const guard = command.guards.get(outcome.name) as Predicate;
+    if (isInputRefusal(outcome)) {
+      if (guard.evaluate(source) === TruthTrue) break;
+      continue;
+    }
+    if (!isExternal(outcome) || outcome.before_row !== true) continue;
+    if (outcome.condition.kind === 'external_when') {
+      const truth = guard.evaluate(source);
+      if (truth === TruthUnknown) {
+        return {
+          kind: 'unknown',
+          reason: `the guard of \`${outcome.name}\` (${guard}) is unknown over a generated input`,
+        };
+      }
+      if (truth === TruthFalse) continue;
+    }
+    early.push(outcome);
+  }
+  if (early.length === 0) return decision;
+  const offered = new Set(early.map((outcome: Node) => outcome.name));
+  if (decision.kind === 'ambiguous') {
+    return { kind: 'take', outcome: undefined, externals: early, names: decision.names };
+  }
+  return {
+    ...decision,
+    externals: [
+      ...early,
+      ...decision.externals.filter((outcome: Node) => !offered.has(outcome.name)),
+    ],
+  };
+}
+
+/**
  * Which branch a step takes, in Entity Runtime's order (beyond10x/ess#235): the input-guarded
  * refusals, the first declared whose guard holds; then the accepting guarded branch that holds, or
  * the default; then, where that branch moves from a state no move of the command starts from, the
  * wrong-state branch.
  */
-function decide(command: Command, input: Row, model: Model): Decision {
+function decideRow(command: Command, input: Row, model: Model): Decision {
   const outcomes = list(command.node.outcomes);
   const supplied = suppliedOutcome(command);
   const record =
@@ -1298,7 +1432,63 @@ function decide(command: Command, input: Row, model: Model): Decision {
     if (wrong !== undefined) names.push(String(wrong.name));
     return orExternal({ kind: 'ambiguous', names });
   }
-  return { kind: 'take', outcome: terminal(command, selected, input, model), externals };
+  const taken = terminal(command, selected, input, model);
+  // A selected-rows branch whose filter reads a stored field whose value the model does not hold
+  // leaves it unable to say which rows change: the draw is redrawn and reported, the command kept. Only an accepting
+  // `when:` or default branch carries `instances:`, never an external one.
+  const rows = selectedRows(command.name, taken, input, model);
+  if (typeof rows === 'string') return { kind: 'undetermined', reason: rows };
+  return { kind: 'take', outcome: taken, externals };
+}
+
+/**
+ * The records a selected-rows outcome (`instances: {where: …}`) selects for `input`, read before the
+ * outcome changes any of them, or why the model cannot say. A `moves:` skips a row resting outside
+ * the transition's `from` states before its filter is read, as the interpreter's `select` does.
+ * Only a filter that holds selects a row. One left Unknown by a stored field held as null or an
+ * `Optional` field no outcome wrote (both absent), or by an input path the draw left out, does not
+ * hold, so the row is not selected; one left Unknown by a field whose value the model does not hold
+ * (a required field no outcome wrote, or a value it could not determine) is undetermined, as in the
+ * interpreter's `only_absent` (`docs/design/set-effects-over-filtered-instances.md`, "Selection").
+ */
+function selectedRows(command: string, outcome: Node, input: Row, model: Model): Rec[] | string {
+  const set = outcome?.instances;
+  if (set === null || set === undefined) return [];
+  const filter = parsed(set.filter);
+  if (typeof filter === 'string') return `${command} filter of \`${outcome.name}\`: ${filter}`;
+  const from = list(set.transition?.from);
+  const selected: Rec[] = [];
+  for (const record of model.of(set.entity)) {
+    if (set.effect === 'moves' && !from.includes(record.fields.state)) continue;
+    const absent: Row = {};
+    for (const field of record.unwritten ?? []) absent[field] = null;
+    const source = facts({ ...absent, ...record.fields, input });
+    const truth = filter.evaluate(source);
+    if (truth === TruthTrue) {
+      selected.push(record);
+    } else if (truth === TruthUnknown) {
+      for (const path of paths(filter)) {
+        if (!source.has(path) && !path.startsWith('input.')) {
+          return `${command} filter of \`${outcome.name}\` reads ${path}, whose value the model does not hold`;
+        }
+      }
+    }
+  }
+  return selected;
+}
+
+/**
+ * Writes what `outcome`'s `sets:` determine into `record`: a determined value, null for a cleared
+ * one, and the field forgotten where the model cannot say.
+ */
+function applySets(ir: Node, outcome: Node, input: Row, record: Rec): void {
+  for (const set of list(outcome.sets)) {
+    const value = valueOf(ir, set.value, input, set.target_type);
+    record.unwritten?.delete(set.target);
+    if (value === undefined) delete record.fields[set.target];
+    else if (value === CLEARED) record.fields[set.target] = null;
+    else record.fields[set.target] = value;
+  }
 }
 
 /**
@@ -1780,6 +1970,7 @@ async function perform(
       record = {
         id,
         fields: { [entity.identity.name]: id, state: subject.into ?? entity.lifecycle?.initial },
+        unwritten: unwrittenOf(ir, entity),
       };
       s.model.of(subject.entity).push(record);
     } else {
@@ -1787,13 +1978,23 @@ async function perform(
       if (record !== undefined && subject.effect === 'moves')
         record.fields.state = subject.transition.to;
     }
-    if (record !== undefined) {
-      for (const set of list(outcome.sets)) {
-        const value = valueOf(ir, set.value, step.input, set.target_type);
-        if (value === undefined) delete record.fields[set.target];
-        else if (value === CLEARED) record.fields[set.target] = null;
-        else record.fields[set.target] = value;
+    // A preserving outcome leaves the row exactly as it was: its state and every field, so the views
+    // read below hold the target to an unchanged subject (beyond10x/ess#536).
+    if (record !== undefined && subject.effect !== 'preserves') {
+      applySets(ir, outcome, step.input, record);
+    }
+  }
+  // A selected-rows outcome (beyond10x/ess#538) changes every row its filter selected before it
+  // ran: a `moves:` takes each selected row, none of which rests outside the transition's `from`
+  // states, an `updates:` changes each, and `sets:` applies to every changed row.
+  const set = outcome.instances;
+  if (set !== null && set !== undefined) {
+    const rows = selectedRows(command.name, outcome, step.input, s.model);
+    for (const record of typeof rows === 'string' ? [] : rows) {
+      if (set.effect === 'moves') {
+        record.fields.state = set.transition.to;
       }
+      applySets(ir, outcome, step.input, record);
     }
   }
 
@@ -2157,6 +2358,12 @@ export async function explore(
   // The restarts a command followed, and why the target cannot restart, which stops every later one.
   let performed = 0;
   let refused = '';
+  // Every (command, held state) the target answered unsupported to, under `command` NUL `state`, in
+  // the order refused; every `command/outcome` a step left out for one would have taken; every
+  // command a step was sent for (beyond10x/ess#537).
+  const refusals = new Map<string, Refusal>();
+  const refusedOutcomes = new Set<string>();
+  const driven = new Set<string>();
 
   for (const seed of seeds) {
     if (p.commands.length === 0 || failure !== undefined) break;
@@ -2202,6 +2409,15 @@ export async function explore(
           continue;
         }
         const outcome = available.length > 1 ? rng.pick(available) : (available[0] as Choice);
+        // A command the target refused in this held state is not sent in it again.
+        const state = heldState(command, step.input, s.model);
+        const held = `${command.name}\u0000${state}`;
+        const refusal = refusals.get(held);
+        if (refusal !== undefined) {
+          refusal.count += 1;
+          refusedOutcomes.add(`${command.name}/${outcome.expected.name}`);
+          continue;
+        }
         if (outcome.arrangement !== '') {
           step.external = outcome.arrangement;
           let arranging: Disagreement | null;
@@ -2232,11 +2448,18 @@ export async function explore(
           disagreement = await perform(s, command, step, outcome.expected);
         } catch (error) {
           if (error instanceof Unsupported) {
-            exclude(p, command.name, `the target does not expose it: ${error.message}`);
+            refusals.set(held, {
+              command: command.name,
+              state,
+              reason: `the target does not expose it: ${error.message}`,
+              count: 1,
+            });
+            refusedOutcomes.add(`${command.name}/${outcome.expected.name}`);
             continue;
           }
           throw error;
         }
+        driven.add(command.name);
         executed += 1;
         trace.push(step);
         performed += pending;
@@ -2282,19 +2505,34 @@ export async function explore(
     if (found !== null) failure = await shrink(p, newTarget, seed, trace, found);
   }
 
+  // A command refused in every state it was drawn in, and driven in none, is excluded with its
+  // first refusal's reason, as one refused step excluded it before beyond10x/ess#537.
+  const narrowed: Refusal[] = [];
+  for (const refusal of refusals.values()) {
+    if (p.excludedCommands.has(refusal.command)) continue;
+    if (driven.has(refusal.command)) narrowed.push(refusal);
+    else exclude(p, refusal.command, refusal.reason);
+  }
+  narrowed.sort(
+    (left, right) =>
+      byteCompare(left.command, right.command) || byteCompare(left.state, right.state),
+  );
   const unreached: string[] = [];
   const excludedOutcomes: string[] = [];
   for (const [command, outcomes] of p.declared) {
     for (const outcome of outcomes) {
       const id = `${command}/${outcome}`;
-      if (p.excludedCommands.has(command)) excludedOutcomes.push(id);
-      else if (!reached.has(id) && !p.unarrangeable.has(id)) unreached.push(id);
+      if (p.excludedCommands.has(command) || (refusedOutcomes.has(id) && !reached.has(id))) {
+        excludedOutcomes.push(id);
+      } else if (!reached.has(id) && !p.unarrangeable.has(id)) unreached.push(id);
     }
   }
   const external: ExternalReach[] = p.externals
     .map(({ command, id, cause }): ExternalReach => {
       const reason = p.unarrangeable.get(id);
-      if (p.excludedCommands.has(command)) return { outcome: id, cause, reach: 'excluded' };
+      if (p.excludedCommands.has(command) || (refusedOutcomes.has(id) && !reached.has(id))) {
+        return { outcome: id, cause, reach: 'excluded' };
+      }
       if (reached.has(id)) return { outcome: id, cause, reach: 'reached' };
       if (reason !== undefined) return { outcome: id, cause, reach: 'unarrangeable', reason };
       return { outcome: id, cause, reach: 'unreached' };
@@ -2314,6 +2552,7 @@ export async function explore(
     undetermined: sortStrings([...undetermined]),
     ambiguous: sortStrings([...ambiguous]),
   };
+  if (narrowed.length > 0) result.refused = narrowed;
   if (external.length > 0) result.external = external;
   if (every > 0) {
     result.restarts = { every, performed };
@@ -2405,12 +2644,37 @@ export function exploreProblem(result: ExploreResult, options: AssertOptions = {
     );
   }
   if (result.excludedOutcomes.length > 0 && options.allowExcluded !== true) {
+    const excluded = new Set(result.excluded.map((exclusion) => exclusion.subject));
+    const lines = result.excludedOutcomes.map((outcome) => {
+      const slash = outcome.lastIndexOf('/');
+      const command = slash >= 0 ? outcome.slice(0, slash) : outcome;
+      return excluded.has(command)
+        ? `  ${outcome}`
+        : `  ${outcome} (only a step the target refused would have taken it)`;
+    });
     problems.push(
       `explore: ${result.excludedOutcomes.length} declared outcome(s) of excluded commands were never tried:\n` +
-        result.excludedOutcomes.map((outcome) => `  ${outcome}`).join('\n') +
-        '\nexcluded:\n' +
-        result.excluded
-          .map((exclusion) => `  ${exclusion.subject}: ${exclusion.reason}`)
+        lines.join('\n') +
+        (result.excluded.length > 0
+          ? '\nexcluded:\n' +
+            result.excluded
+              .map((exclusion) => `  ${exclusion.subject}: ${exclusion.reason}`)
+              .join('\n')
+          : '') +
+        '\naccept them explicitly with { allowExcluded: true }',
+    );
+  }
+  // A refusal fails the strict assertion whether or not it left an outcome untried: the command
+  // was not sent in that state, and before beyond10x/ess#537 the refusal excluded it.
+  const refused = result.refused ?? [];
+  if (refused.length > 0 && options.allowExcluded !== true) {
+    problems.push(
+      `explore: ${refused.length} (command, held state) pair(s) the target refused were never tried again:\n` +
+        refused
+          .map(
+            (refusal) =>
+              `  ${refusal.command} in ${refusal.state}: ${refusal.reason} (${refusal.count} step(s) not sent)`,
+          )
           .join('\n') +
         '\naccept them explicitly with { allowExcluded: true }',
     );
@@ -2444,10 +2708,10 @@ export function exploreProblem(result: ExploreResult, options: AssertOptions = {
 
 /**
  * assertExplored throws when an exploration failed, when a declared outcome went unreached, or
- * when an excluded command's outcomes, or external outcomes the target could not arrange, were
- * never tried and `allowExcluded` is not set, or when restarts were asked for and none was
- * performed. What the model could not place, and the draws it would not decide, are printed and do
- * not fail.
+ * when an excluded command's outcomes, a refused (command, held state), or external outcomes the
+ * target could not arrange, were never tried and `allowExcluded` is not set, or when restarts were
+ * asked for and none was performed. What the model could not place, and the draws it would not
+ * decide, are printed and do not fail.
  */
 export function assertExplored(result: ExploreResult, options: AssertOptions = {}): void {
   for (const note of result.undetermined) console.log(`explore: undetermined: ${note}`);

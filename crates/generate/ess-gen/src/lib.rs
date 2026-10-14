@@ -43,6 +43,9 @@ mod set_effects;
 pub mod unknown_instance;
 
 pub use artifact::{Artifact, Generator};
+/// The `ess-http/1` binding [`http::Binding`] holds, re-exported so a reader of a bound route
+/// table — the synthesized servers — reads its keys without a second dependency on the format.
+pub use ess_http;
 pub use graph::SystemGraph;
 pub use provenance::Provenance;
 

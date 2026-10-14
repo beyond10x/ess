@@ -15,7 +15,7 @@ use std::time::Duration;
 use ess_ui::{Action, Body, Composite, Document, FixtureIndex, Form, NodeRef, TabFields};
 use ess_ui_tui::live::Script;
 use ess_ui_tui::{App, DataAdapter, FixtureAdapter, Lifecycle, Options, ReadRequest, ReadResult};
-use serde_yaml::{Mapping, Value};
+use ess_yaml::{Mapping, Value};
 
 use crate::screen::{Screen, SectionBox};
 use crate::spec::{scalar, Check, Fixtures, Play, SectionState, Step, Test};
@@ -1125,7 +1125,7 @@ fn with_fixtures(
         let text = std::fs::read_to_string(&path)
             .map_err(|error| format!("cannot read {}: {error}", path.display()))?;
         let listed: FixtureIndex =
-            serde_yaml::from_str(&text).map_err(|error| format!("{}: {error}", path.display()))?;
+            ess_yaml::from_str(&text).map_err(|error| format!("{}: {error}", path.display()))?;
         index.views.extend(listed.views);
         index.derived.extend(listed.derived);
         index.scripts.extend(listed.scripts);
@@ -1141,7 +1141,7 @@ fn with_fixtures(
     }
     let mut root = Mapping::new();
     root.insert(Value::String("views".into()), Value::Mapping(views));
-    let text = serde_yaml::to_string(&Value::Mapping(root)).map_err(|error| error.to_string())?;
+    let text = ess_yaml::to_string(&Value::Mapping(root)).map_err(|error| error.to_string())?;
     std::fs::write(&file, text).map_err(|error| format!("{}: {error}", file.display()))?;
     doc.fixtures = Some(index);
     Ok(doc)

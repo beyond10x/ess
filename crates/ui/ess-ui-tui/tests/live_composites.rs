@@ -12,7 +12,7 @@ use std::time::Duration;
 use ess_ui::binding::{Answer, Binding};
 use ess_ui_tui::live::Script;
 use ess_ui_tui::{App, DataAdapter, FixtureAdapter, Options, ReadRequest, ReadResult};
-use serde_yaml::Value;
+use ess_yaml::Value;
 
 const DOCUMENT: &str = r"
 format: ess-ui/1
@@ -139,7 +139,7 @@ fn app(test: &str) -> (App, Reads) {
     let (inner, _) = FixtureAdapter::load(&document, &base, None).expect("the fixtures load");
     let script = Script::parse(
         "progress",
-        &serde_yaml::from_str(SCRIPT).expect("the script is YAML"),
+        &ess_yaml::from_str(SCRIPT).expect("the script is YAML"),
     )
     .expect("the script parses");
     let reads = Rc::new(RefCell::new(BTreeMap::new()));
@@ -312,7 +312,7 @@ fn a_live_node_in_a_record_item_follows_its_row_context() {
     let (adapter, _) = FixtureAdapter::load(&document, &base, None).expect("the fixtures load");
     let script = Script::parse(
         "progress",
-        &serde_yaml::from_str(SCRIPT).expect("the script is YAML"),
+        &ess_yaml::from_str(SCRIPT).expect("the script is YAML"),
     )
     .expect("the script parses");
     let mut app = App::with_adapter(
@@ -349,7 +349,7 @@ fn a_live_form_field_choice_reads_its_options_again_on_an_event() {
     let (inner, _) = FixtureAdapter::load(&document, &base, None).expect("the fixtures load");
     let script = Script::parse(
         "progress",
-        &serde_yaml::from_str(SCRIPT).expect("the script is YAML"),
+        &ess_yaml::from_str(SCRIPT).expect("the script is YAML"),
     )
     .expect("the script parses");
     let reads = Rc::new(RefCell::new(BTreeMap::new()));
@@ -441,7 +441,7 @@ impl DataAdapter for Served {
     fn read(&self, request: &ReadRequest) -> Result<ReadResult, String> {
         *self.reads.borrow_mut().entry(request.key()).or_default() += 1;
         Ok(ReadResult {
-            rows: vec![serde_yaml::from_str("{visit_id: v-1, visitor: Ada}").expect("a row")],
+            rows: vec![ess_yaml::from_str("{visit_id: v-1, visitor: Ada}").expect("a row")],
             total: Some(1),
         })
     }

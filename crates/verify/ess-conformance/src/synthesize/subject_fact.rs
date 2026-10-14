@@ -115,9 +115,12 @@ pub(super) fn common(command: &ResolvedCommand) -> Option<&ResolvedSubject> {
 /// Every branch of a command reading stored fields that an arranged row decides: the guarded ones,
 /// the default and any input-guarded sibling — including a refusal that names no subject of its
 /// own and reads the command's. Faults, wrong-state refusals and replays keep their own families.
+/// The creating half of a create-or-update pair (ess/25, beyond10x/ess#530) reads no row: the
+/// existence step selects it on an identity no row carries, so it is filed as every creation is.
 pub(super) fn routes(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> bool {
     uses(command)
         && outcome.replays.is_none()
+        && !super::existence::creates_unknown(outcome)
         && !matches!(
             outcome.condition,
             ResolvedCondition::External { .. }
@@ -5790,12 +5793,20 @@ fn required(
 /// row proves nothing about one its projection has not caught up with. Where no immediate view
 /// projects the identity, the send keeps the assertions that need no view, and no absence is
 /// claimed (beyond10x/ess#496).
+///
+/// On a create-or-update command (ess/25, beyond10x/ess#530) the specification does declare an
+/// outcome for that identity: its `unknown_instance:` branch creates the row at step 3 of the
+/// precedence order. There is no absence to witness, so the witness is empty; the creation is the
+/// existence family's scenario.
 pub(super) fn absent(
     ir: &EssIr,
     command: &ResolvedCommand,
     subject: &ResolvedSubject,
     actors: &BTreeMap<QualifiedName, ActorRef>,
 ) -> Result<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>), RefusalCause> {
+    if super::existence::creates_on_unknown(command) {
+        return Ok((Vec::new(), BTreeSet::new()));
+    }
     let ResolvedInstance::Supplied { field } = &subject.instance else {
         return Err(RefusalCause::StrategyWithoutGuard {
             strategy: ess_domain::command::TestStrategy::ObserveSubjectFact,

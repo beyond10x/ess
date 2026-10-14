@@ -13,12 +13,12 @@ use ess_primitives::predicate::{FoldOp, Predicate, Truth};
 const CORPUS: &str = include_str!("vectors/primitive-semantics.json");
 
 fn yaml(text: &str) -> Predicate {
-    let node: Node = serde_yaml::from_str(text).expect("the fixture is YAML");
+    let node: Node = ess_yaml::from_str(text).expect("the fixture is YAML");
     Predicate::from_node(&node).unwrap_or_else(|error| panic!("{text}: {error}"))
 }
 
 fn refused(text: &str) -> String {
-    let node: Node = serde_yaml::from_str(text).expect("the fixture is YAML");
+    let node: Node = ess_yaml::from_str(text).expect("the fixture is YAML");
     Predicate::from_node(&node).expect_err(text).to_string()
 }
 

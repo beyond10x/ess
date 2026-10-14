@@ -154,7 +154,7 @@ fn specify_formats_json_carries_release_and_additions() {
         }
     }
     let yaml: serde_json::Value =
-        serde_yaml::from_str(&stdout(&ess(&["specify", "formats", "--format", "yaml"])))
+        ess_yaml::from_str(&stdout(&ess(&["specify", "formats", "--format", "yaml"])))
             .expect("YAML");
     assert_eq!(
         yaml,

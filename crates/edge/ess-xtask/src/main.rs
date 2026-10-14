@@ -1220,6 +1220,32 @@ mod tests {
     use super::*;
     use crate::scratch::Scratch;
 
+    /// `sync`, retried while it refuses only because its output is busy.
+    ///
+    /// Tests in this binary run on threads of one process, and some spawn children. Between fork
+    /// and exec a child holds a copy of every descriptor the process has open, so a projection
+    /// lock that a finished `sync` already closed stays held until that child execs. A test that
+    /// means the busy refusal calls `sync` itself.
+    fn settled_sync(
+        out: &Path,
+        expected: &BTreeMap<String, String>,
+        check: bool,
+        excluded: &[&str],
+    ) -> AnyResult<String> {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        loop {
+            match sync(out, expected, check, excluded) {
+                Err(error)
+                    if error.to_string().contains("ownership busy")
+                        && std::time::Instant::now() < deadline =>
+                {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                result => return result,
+            }
+        }
+    }
+
     fn format_entry(major: u32, release: Option<&'static str>) -> FormatHistoryEntry {
         FormatHistoryEntry {
             major,
@@ -1343,7 +1369,7 @@ mod tests {
             ("docs/index.md".to_owned(), "new\n".to_owned()),
             ("site/sidebar.json".to_owned(), "{}\n".to_owned()),
         ]);
-        let drift = sync(&root, &expected, true, &["go"])
+        let drift = settled_sync(&root, &expected, true, &["go"])
             .expect_err("check must report changed, missing, and orphaned files")
             .to_string();
         assert!(drift.contains("docs/index.md"));
@@ -1352,11 +1378,11 @@ mod tests {
         assert!(!drift.contains("owned-elsewhere.go"));
 
         assert_eq!(
-            sync(&root, &expected, false, &["go"]).expect("reconcile projections"),
+            settled_sync(&root, &expected, false, &["go"]).expect("reconcile projections"),
             "projections written: 2 changed, 1 no longer generated\n"
         );
         assert_eq!(
-            sync(&root, &expected, true, &["go"]).expect("reconciled tree must pass"),
+            settled_sync(&root, &expected, true, &["go"]).expect("reconciled tree must pass"),
             "projections are up to date\n"
         );
         assert_eq!(
@@ -1382,7 +1408,8 @@ mod tests {
             fs::write(root.join("old.md"), "authored sentinel").expect("write sentinel");
             let expected = BTreeMap::from([("new.md".to_owned(), "generated".to_owned())]);
             for check in [true, false] {
-                let error = sync(&root, &expected, check, &[]).expect_err("refuse enrolled tree");
+                let error =
+                    settled_sync(&root, &expected, check, &[]).expect_err("refuse enrolled tree");
                 assert!(error
                     .to_string()
                     .contains("reserved output ownership state"));
@@ -1406,7 +1433,7 @@ mod tests {
         fs::create_dir_all(root.join(".ess-output")).expect("create enrolled ancestor");
         let out = root.join("missing/output");
         let expected = BTreeMap::from([("file.md".to_owned(), "generated".to_owned())]);
-        assert!(sync(&out, &expected, false, &[]).is_err());
+        assert!(settled_sync(&out, &expected, false, &[]).is_err());
         assert!(!root.join("missing").exists());
         fs::remove_dir(root.join(".ess-output")).expect("remove empty fixture state");
         for path in [
@@ -1414,7 +1441,7 @@ mod tests {
             "nested/.ess-output-init-partial/file",
         ] {
             let expected = BTreeMap::from([(path.to_owned(), "generated".to_owned())]);
-            assert!(sync(&out, &expected, false, &[]).is_err());
+            assert!(settled_sync(&out, &expected, false, &[]).is_err());
             assert!(!root.join("missing").exists());
         }
     }
@@ -1426,7 +1453,7 @@ mod tests {
         fs::create_dir_all(root.join("go/.ess-output")).expect("create excluded state");
         fs::write(root.join("go/.ess-output/state.json"), "checkpoint").expect("write state");
         fs::write(root.join(".orphan"), "stale projection").expect("write hidden orphan");
-        sync(&root, &BTreeMap::new(), false, &["go"])
+        settled_sync(&root, &BTreeMap::new(), false, &["go"])
             .expect("excluded ownership does not intersect");
         assert!(!root.join(".orphan").exists());
         assert_eq!(
@@ -1446,7 +1473,7 @@ mod tests {
         std::os::unix::fs::symlink(root.join("owned/file.md"), root.join("projection/file.md"))
             .expect("create alias");
         let expected = BTreeMap::from([("file.md".to_owned(), "new".to_owned())]);
-        assert!(sync(&root.join("projection"), &expected, false, &[]).is_err());
+        assert!(settled_sync(&root.join("projection"), &expected, false, &[]).is_err());
         assert_eq!(
             fs::read(root.join("owned/file.md")).expect("owned bytes remain"),
             b"owned sentinel"
@@ -1465,8 +1492,10 @@ mod tests {
         ] {
             // Independently hold the directory inode the CLI protocol locks. Using our own
             // acquisition helper here could let both sides agree on the wrong lock object.
+            // Blocking: a lock this test's own earlier sync dropped can outlive its descriptor
+            // for as long as another test's child holds a copy of it (see `settled_sync`).
             let lock = fs::File::open(locked_directory).expect("open competing directory");
-            rustix::fs::flock(&lock, rustix::fs::FlockOperation::NonBlockingLockExclusive)
+            rustix::fs::flock(&lock, rustix::fs::FlockOperation::LockExclusive)
                 .expect("acquire competing native lock");
             for destination in [&out, &out.join("nested")] {
                 let error = sync(destination, &expected, false, &[])
@@ -1475,7 +1504,7 @@ mod tests {
                 assert!(!destination.join("file.md").exists());
             }
             drop(lock);
-            sync(&out, &expected, false, &[]).expect("writer proceeds after lock release");
+            settled_sync(&out, &expected, false, &[]).expect("writer proceeds after lock release");
             assert_eq!(
                 fs::read(out.join("file.md")).expect("published output"),
                 b"new"
@@ -1504,9 +1533,8 @@ mod tests {
 
     #[test]
     fn release_preparation_is_evaluated_after_every_dependency_finishes() {
-        let workflow: serde_yaml::Value =
-            serde_yaml::from_str(include_str!("../../../../.github/workflows/release.yml"))
-                .unwrap();
+        let workflow: ess_yaml::Value =
+            ess_yaml::from_str(include_str!("../../../../.github/workflows/release.yml")).unwrap();
         let jobs = &workflow["jobs"];
         for name in ["gate", "wasm", "package"] {
             assert_eq!(jobs[name]["needs"].as_str(), Some("resolve"));
@@ -1537,9 +1565,8 @@ mod tests {
             jobs["package"]["with"]["ref"].as_str(),
             Some("${{ needs.resolve.outputs.commit }}")
         );
-        let packaging: serde_yaml::Value =
-            serde_yaml::from_str(include_str!("../../../../.github/workflows/package.yml"))
-                .unwrap();
+        let packaging: ess_yaml::Value =
+            ess_yaml::from_str(include_str!("../../../../.github/workflows/package.yml")).unwrap();
         for (_, job) in packaging["jobs"].as_mapping().unwrap() {
             for step in job["steps"].as_sequence().unwrap() {
                 if step["uses"]

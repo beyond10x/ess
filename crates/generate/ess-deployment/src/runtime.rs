@@ -222,8 +222,8 @@ impl RuntimeSpec {
     }
 
     /// Reads a strict YAML runtime.
-    pub fn from_yaml(text: &str) -> Result<Self, serde_yaml::Error> {
-        serde_yaml::from_str(text)
+    pub fn from_yaml(text: &str) -> Result<Self, ess_yaml::Error> {
+        ess_yaml::from_str(text)
     }
 }
 

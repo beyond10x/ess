@@ -1005,6 +1005,38 @@ A generated suite carries one of these operators only in a view expectation. Suc
 `ess-conformance/20`, or `/21` with coverage; a guard over command input is decided when the suite
 is generated and does not change its format.
 
+### From `ess/25`: surrounding whitespace
+
+From `ess/25` (beyond10x/ess#532), `trimmed` wraps one text operator and applies it to the fact
+with its surrounding ASCII whitespace removed: `reason: {trimmed: {in_ignore_case: [NEW, HOLD,
+DONE]}}` holds for ` done` followed by a tab, as an implementation that trims and upper-cases
+before it checks accepts it. The wrapped operator is one of `equals` (`eq`), `in` (`any_of`) over
+text literals, `equals_ignore_case`, `in_ignore_case`, `starts_with`, `ends_with` and `contains`,
+over the same fact; anything else under `trimmed`, or more than one operator, is refused.
+
+Only space, tab, line feed, vertical tab, form feed and carriage return are removed, and only at
+either end. An inner space stays, and a Unicode space such as the no-break space U+00A0 compares
+as itself, so Rust, Go and TypeScript all answer alike. The literals and any input compared with
+the fact are never trimmed. An unobserved fact is unknown.
+
+`trimmed` is accepted in a command outcome's guards only: its `when:`, and its `when_subject:` and
+`when_related:` predicates. An invariant, a view filter or a selection refuses it as
+`unsupported_construct`; under `ess/24` and earlier it is `unsupported_format_version`. Over a fact
+that is not a `String` or a newtype of one, or with a literal that is not text, it is
+`type_mismatch`. A literal that no trimmed text can match is `empty_declaration`, as an empty `in`
+is: an `equals` or `in` literal (case-insensitive or not) with ASCII whitespace at either end, a
+`starts_with` literal with it at its start and an `ends_with` literal with it at its end.
+`contains` is not affected. A command guarded by it needs a default branch, as with the
+case-insensitive operators.
+
+Synthesis sends the guarded branch each literal padded with a space and a tab before it and a space
+after it (in its other case under a case-insensitive operator), and the literal between a vertical
+tab and form feed and a carriage return and line feed. It sends the other side the literal with an
+inner space and the literal between two no-break spaces, which an implementation trimming Unicode
+spaces accepts and so fails the scenario. Entity Runtime lowering refuses it by name
+(`TrimmedTextUnsupported`), and `infra-spec/1` refuses it. A guard is decided when the suite is
+generated, so no suite carries `trimmed` and it changes no suite format.
+
 ## Text shapes without patterns
 
 ESS has no pattern predicate: there is no regular-expression operator, and `matches:` is refused

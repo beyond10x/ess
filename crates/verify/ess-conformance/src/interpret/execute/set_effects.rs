@@ -29,7 +29,17 @@ struct Eligibility<'a> {
     subject: Option<(&'a ResolvedEntity, &'a Row)>,
 }
 
-/// None means this is not an instances outcome. Some(0) is its successful zero-match result.
+/// The rows an `instances:` outcome changed (ess/16), with each as it was before the outcome.
+pub(super) struct Changed {
+    /// How many rows the outcome changed or removed: `{count: changed}`.
+    pub(super) count: usize,
+    /// Each changed row as it was immediately before the outcome, its identity among its fields,
+    /// in ascending order of identity (ess/25, beyond10x/ess#531): the rows an event published
+    /// once per changed row is for.
+    pub(super) rows: Vec<(Node, Row)>,
+}
+
+/// None means this is not an instances outcome. A count of 0 is its successful zero-match result.
 pub(super) fn apply(
     ir: &EssIr,
     spec: &ResolvedCommand,
@@ -37,7 +47,7 @@ pub(super) fn apply(
     before: &State,
     supplied: &super::Context<'_>,
     work: &mut Work<'_>,
-) -> Result<Option<usize>, Undetermined> {
+) -> Result<Option<Changed>, Undetermined> {
     if outcome.instances.is_none() && outcome.affects.is_empty() {
         return Ok(None);
     }
@@ -110,8 +120,10 @@ pub(super) fn apply(
             });
         }
     }
-    let applied = carry_out(ir, plans, supplied, work)?;
-    Ok(outcome.instances.as_ref().map(|_| applied))
+    let (count, mut rows) = carry_out(ir, plans, supplied, work)?;
+    // `instances:` stands alone among the plans, so every row changed is one of its own.
+    rows.sort_by(|(left, _), (right, _)| left.cmp(right));
+    Ok(outcome.instances.as_ref().map(|_| Changed { count, rows }))
 }
 
 /// What one `affects:` entry does to each row it selects: from ess/22 it may move them
@@ -131,14 +143,16 @@ fn affect_effect(affect: &ess_compiler::ir::ResolvedAffect) -> ResolvedEffect {
 
 /// Every plan applied to `work`, in declaration order, over the rows each selected from the store
 /// before the outcome; each row left in place is then checked at rest. Returns how many rows the
-/// plans changed or removed.
+/// plans changed or removed, and each selected row they changed or removed as it was before, with
+/// its identity among its fields.
 fn carry_out(
     ir: &EssIr,
     plans: Vec<Plan<'_>>,
     supplied: &super::Context<'_>,
     work: &mut Work<'_>,
-) -> Result<usize, Undetermined> {
+) -> Result<(usize, Vec<(Node, Row)>), Undetermined> {
     let mut applied = 0;
+    let mut changed = Vec::new();
     let mut touched = BTreeSet::new();
     for (occurrence, plan) in plans.into_iter().enumerate() {
         if let Some(each) = plan.each {
@@ -170,6 +184,9 @@ fn carry_out(
                 format!("{key:?}"),
                 "sets".into(),
             ];
+            let mut was = row.clone();
+            was.fields
+                .insert(plan.entity.identity.name.clone(), Value::Known(key.clone()));
             let after = match act(ir, plan.sets, &plan.effect, &row, supplied, work)? {
                 Acted::Rests(after) => after,
                 Acted::Removed => {
@@ -177,6 +194,7 @@ fn carry_out(
                         held.remove(&key);
                     }
                     applied += 1;
+                    changed.push((key, was));
                     continue;
                 }
                 Acted::NotFromHere => {
@@ -191,14 +209,15 @@ fn carry_out(
                 .entry(plan.entity.name.clone())
                 .or_default()
                 .insert(key.clone(), after);
-            touched.insert((plan.entity.name.clone(), key));
+            touched.insert((plan.entity.name.clone(), key.clone()));
             applied += 1;
+            changed.push((key, was));
         }
     }
     for (entity, key) in touched {
         at_rest(ir, &work.next, &entity, &key)?;
     }
-    Ok(applied)
+    Ok((applied, changed))
 }
 
 /// One `each:` entry applied to `work` (ess/23, beyond10x/ess#459): for each element of its input

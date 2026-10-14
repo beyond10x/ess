@@ -541,7 +541,7 @@ fn correction_actual_yaml_requires_complete_matching_paired_attribution() {
             .unwrap()
             .1;
         let header: String = artifact.contents.split_inclusive('\n').take(4).collect();
-        let body: serde_yaml::Value = serde_yaml::from_str(&artifact.contents).unwrap();
+        let body: ess_yaml::Value = ess_yaml::from_str(&artifact.contents).unwrap();
         assert!(
             Provenance::read_digests(&artifact.contents).is_some(),
             "{kind}"
@@ -557,7 +557,7 @@ fn correction_actual_yaml_requires_complete_matching_paired_attribution() {
                 .as_mapping_mut()
                 .unwrap()
                 .remove(field);
-            let text = format!("{header}{}", serde_yaml::to_string(&damaged).unwrap());
+            let text = format!("{header}{}", ess_yaml::to_string(&damaged).unwrap());
             assert!(
                 Provenance::read_digests(&text).is_none(),
                 "{kind} missing {field}"
@@ -566,8 +566,8 @@ fn correction_actual_yaml_requires_complete_matching_paired_attribution() {
         for field in ["system", "specification_version"] {
             let mut damaged = body.clone();
             damaged["info"]["x-ess-provenance"][field] =
-                serde_yaml::Value::String("different".into());
-            let text = format!("{header}{}", serde_yaml::to_string(&damaged).unwrap());
+                ess_yaml::Value::String("different".into());
+            let text = format!("{header}{}", ess_yaml::to_string(&damaged).unwrap());
             assert!(
                 Provenance::read_digests(&text).is_none(),
                 "{kind} conflicting {field}"
@@ -579,7 +579,7 @@ fn correction_actual_yaml_requires_complete_matching_paired_attribution() {
             .unwrap()
             .remove("x-ess-provenance");
         for invalid_body in [
-            serde_yaml::to_string(&missing).unwrap(),
+            ess_yaml::to_string(&missing).unwrap(),
             "openapi: [unterminated".into(),
             "[workspace]\nresolver = \"2\"\n".into(),
         ] {

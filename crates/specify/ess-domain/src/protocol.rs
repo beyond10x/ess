@@ -33,9 +33,9 @@ pub struct RawProtocol {
 
 impl RawProtocol {
     /// Read YAML or JSON through an intermediate YAML value, refusing duplicate mapping keys.
-    pub fn parse(text: &str) -> Result<Self, serde_yaml::Error> {
-        let value: serde_yaml::Value = serde_yaml::from_str(text)?;
-        serde_yaml::from_value(value)
+    pub fn parse(text: &str) -> Result<Self, ess_yaml::Error> {
+        let value: ess_yaml::Value = ess_yaml::from_str(text)?;
+        ess_yaml::from_value(value)
     }
 }
 

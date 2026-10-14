@@ -2125,6 +2125,10 @@ fn an_alphabet_on_a_declared_response_field_is_refused_by_name() {
 /// `CancelInvoice` under `ess/15`, with an input `note` beside the identity and `posted` guarded by
 /// `when_subject: {predicate: <predicate>}`.
 fn ess15_cancel_ir(predicate: &str) -> EssIr {
+    cancel_ir_at("format: ess/15\n", predicate)
+}
+
+fn cancel_ir_at(format: &str, predicate: &str) -> EssIr {
     // A mapping is written as YAML; a compact expression is quoted, as `adv_cancel_ir` quotes it.
     let predicate = if predicate.starts_with('{') {
         predicate.to_owned()
@@ -2135,7 +2139,7 @@ fn ess15_cancel_ir(predicate: &str) -> EssIr {
     compile_changes(
         &example("billing"),
         &[
-            ("system.yaml", "format: ess/1\n", "format: ess/15\n"),
+            ("system.yaml", "format: ess/1\n", format),
             (
                 "domains/email.yaml",
                 "            recipient: input.recipient\n",
@@ -2229,6 +2233,48 @@ fn a_case_insensitive_guard_is_refused_by_name_by_the_lowering() {
         );
         assert!(
             diagnostics[0].message.contains("ignore_case"),
+            "{diagnostics:?}"
+        );
+    }
+}
+
+/// `trimmed:` (beyond10x/ess#532, ess/25) has no entity-core condition, so lowering refuses it by
+/// name rather than lowering the wrapped operator over the untrimmed text, which would decide a
+/// different rule. A wrapped fold is refused as a fold too: the refusals accumulate.
+#[test]
+fn trimmed_guard_is_refused_by_name() {
+    for (guard, also) in [
+        ("{note: {trimmed: {equals: routine}}}", None),
+        ("{note: {trimmed: {starts_with: rout}}}", None),
+        (
+            "{not: {note: {trimmed: {in_ignore_case: [a, b]}}}}",
+            Some(LoweringCode::CaseFoldUnsupported),
+        ),
+    ] {
+        let diagnostics = lower_billing_changes(&cancel_ir_at("format: ess/25\n", guard))
+            .expect_err("trimming has no entity-core operator")
+            .into_vec();
+        let mut expected = vec![(
+            LoweringCode::TrimmedTextUnsupported,
+            "command.billing.invoice.CancelInvoice.outcomes.posted.when_subject",
+        )];
+        expected.extend(also.map(|code| {
+            (
+                code,
+                "command.billing.invoice.CancelInvoice.outcomes.posted.when_subject",
+            )
+        }));
+        assert_eq!(
+            diagnostics
+                .iter()
+                .map(|diagnostic| (diagnostic.code, diagnostic.path.as_str()))
+                .collect::<Vec<_>>(),
+            expected,
+            "{guard}"
+        );
+        assert!(
+            diagnostics[0].message.contains("`trimmed`")
+                && diagnostics[0].construct == "`trimmed:`",
             "{diagnostics:?}"
         );
     }

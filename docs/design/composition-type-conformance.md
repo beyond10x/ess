@@ -118,8 +118,9 @@ stays drift — decides it. Only a value that is always an object is read as `Ma
 
 ## Compatibility
 
-- `SUPPORTED_COMPOSITION_FORMATS` is `[1, 2, 3]`; `cargo xtask docs` reads it, so a new major
-  without a release row and a reference page is refused.
+- `SUPPORTED_COMPOSITION_FORMATS` is `[1, 2, 3]` here (`/4`, contract roles, is
+  [composition-contract-roles.md](composition-contract-roles.md)); `cargo xtask docs` reads it, so
+  a new major without a release row and a reference page is refused.
 - A `/1` or `/2` document whose conformance entry carries `reader`, whatever its value (`false` and
   `null` included), is refused as `unsupported_format`, naming `/3`. `/3` keeps the key as written; an entry without it is
   serialised without it, so a `/2` entry's authored and compiled bytes are unchanged.

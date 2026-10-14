@@ -1,0 +1,105 @@
+# A view read by identity declares its answer for an identity no row carries (ess/25,
+# beyond10x/ess#533, `docs/design/read-api-view-idioms.md`, "An identity no row carries").
+#
+# `FlagById` selects one `Flag` by its identity. A read for an `id` no flag carries answers the
+# default row `absent:` declares: `paused` false, `level` 0, the state `Set`, `id` the requested
+# value, and `note`, which is `Optional`, absent. `Pause` and `Resume` move a flag and set `paused`; `Drop`
+# deletes it, after which its identity is one no row carries again.
+
+format: ess/25
+system: demo
+version: v1
+domain: demo.status
+
+summary: Feature flags read one at a time, with a default for a flag nobody set.
+
+types:
+  - {name: demo.status.FlagId, kind: newtype, of: Uuid}
+
+entities:
+  - name: demo.status.Flag
+    identity: {name: id, type: demo.status.FlagId}
+    fields:
+      - {name: paused, type: Boolean}
+      - {name: level, type: Integer}
+      - {name: note, type: 'Optional<String>'}
+    lifecycle:
+      initial: Set
+      states: [Set, Paused]
+      transitions:
+        - {name: pause, from: [Set], to: Paused}
+        - {name: resume, from: [Paused], to: Set}
+
+errors:
+  - {name: demo.status.NotSet, fields: []}
+
+events:
+  - name: demo.status.FlagSet
+    fields: [{name: id, type: demo.status.FlagId}]
+  - name: demo.status.FlagPaused
+    fields: [{name: id, type: demo.status.FlagId}]
+  - name: demo.status.FlagResumed
+    fields: [{name: id, type: demo.status.FlagId}]
+  - name: demo.status.FlagDropped
+    fields: [{name: id, type: demo.status.FlagId}]
+
+commands:
+  - name: demo.status.SetFlag
+    input:
+      - {name: level, type: Integer}
+    outcomes:
+      - name: set
+        creates: demo.status.Flag
+        instance: id
+        sets: {paused: false, level: input.level}
+        emits: [demo.status.FlagSet]
+        payload: {demo.status.FlagSet: {id: {generated: true}}}
+
+  - name: demo.status.Pause
+    input:
+      - {name: id, type: demo.status.FlagId}
+    outcomes:
+      - name: paused
+        moves: demo.status.Flag.pause
+        instance: id
+        sets: {paused: true}
+        emits: [demo.status.FlagPaused]
+        payload: {demo.status.FlagPaused: {id: input.id}}
+      - {name: not-set, wrong_state: true, error: demo.status.NotSet}
+
+  - name: demo.status.Resume
+    input:
+      - {name: id, type: demo.status.FlagId}
+    outcomes:
+      - name: resumed
+        moves: demo.status.Flag.resume
+        instance: id
+        sets: {paused: false}
+        emits: [demo.status.FlagResumed]
+        payload: {demo.status.FlagResumed: {id: input.id}}
+      - {name: not-paused, wrong_state: true, error: demo.status.NotSet}
+
+  - name: demo.status.Drop
+    input:
+      - {name: id, type: demo.status.FlagId}
+    outcomes:
+      - name: dropped
+        deletes: demo.status.Flag
+        instance: id
+        emits: [demo.status.FlagDropped]
+        payload: {demo.status.FlagDropped: {id: input.id}}
+
+views:
+  - name: demo.status.FlagById
+    source: demo.status.Flag
+    consistency: read_your_writes
+    params: [{name: id, type: demo.status.FlagId}]
+    filter: id == param.id
+    fields:
+      - {name: id, type: demo.status.FlagId}
+      - {name: paused, type: Boolean}
+      - {name: level, type: Integer}
+      - {name: state, type: demo.status.Flag.State}
+      - {name: note, type: 'Optional<String>'}
+    absent:
+      row: {paused: false, level: 0, state: Set}

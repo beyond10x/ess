@@ -9,13 +9,13 @@ use std::fmt::Write as _;
 
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
+use ess_yaml::Value;
 use ratatui::backend::TestBackend;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, Paragraph};
 use ratatui::{Frame, Terminal};
-use serde_yaml::Value;
 
 use ess_ui::{
     Body, ChartKind, Composite, Field, Form, MetricFormat, Node, NodePath, Primitive, TabFields,
@@ -1448,7 +1448,7 @@ fn cell_value(field: &Field, value: &Value) -> String {
                 time.trim_end_matches('Z').chars().take(5).collect()
             })
         }
-        Some("json") => serde_yaml::to_string(value)
+        Some("json") => ess_yaml::to_string(value)
             .map(|text| text.replace('\n', " ").trim().to_owned())
             .unwrap_or_default(),
         Some("audio" | "iframe") => format!("↗ {}", display(value)),

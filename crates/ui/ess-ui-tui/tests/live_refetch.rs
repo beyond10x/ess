@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use ess_ui_tui::live::Script;
 use ess_ui_tui::{App, DataAdapter, FixtureAdapter, Options, ReadRequest, ReadResult};
-use serde_yaml::Value;
+use ess_yaml::Value;
 
 fn example_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../examples/partner-portal")
@@ -71,7 +71,7 @@ fn tickets_list(test: &str, effect: &str) -> (App, Rc<RefCell<Vec<String>>>) {
         FixtureAdapter::load(&document, &example_dir(), None).expect("the fixtures load");
     let script = Script::parse(
         "tickets",
-        &serde_yaml::from_str(BURST).expect("the script is YAML"),
+        &ess_yaml::from_str(BURST).expect("the script is YAML"),
     )
     .expect("the script parses");
     let reads = Rc::new(RefCell::new(Vec::new()));

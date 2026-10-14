@@ -4,7 +4,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde_yaml::Value;
+use ess_yaml::Value;
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..")
@@ -15,7 +15,7 @@ fn schema_path() -> PathBuf {
 }
 
 fn schema() -> Value {
-    serde_yaml::from_str(&fs::read_to_string(schema_path()).expect("the schema reads"))
+    ess_yaml::from_str(&fs::read_to_string(schema_path()).expect("the schema reads"))
         .expect("the schema is YAML")
 }
 

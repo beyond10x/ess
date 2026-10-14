@@ -648,7 +648,7 @@ fn published_by_openapi(ir: &EssIr) -> Published {
     // it out of `components.schemas` because `ess import openapi` reads that table back and an
     // entity's shape reaches constructs its subset does not carry.
     for (path, artifact) in artifacts(&OpenApi, ir) {
-        let document: Value = serde_yaml::from_str(&artifact.contents)
+        let document: Value = ess_yaml::from_str(&artifact.contents)
             .unwrap_or_else(|error| panic!("{path} is YAML: {error}"));
         for (key, fragment) in document["x-ess-entities"]
             .as_object()
@@ -693,7 +693,7 @@ fn under_components(
 ) -> Published {
     let mut out = Published::new(projection);
     for (path, artifact) in artifacts(generator, ir) {
-        let document: Value = serde_yaml::from_str(&artifact.contents)
+        let document: Value = ess_yaml::from_str(&artifact.contents)
             .unwrap_or_else(|error| panic!("{path} is YAML: {error}"));
         let schemas = document
             .get("components")

@@ -146,6 +146,7 @@ impl RawGroupOutcome {
             accepts: None,
             returns: false,
             compensates: false,
+            before_row: false,
             replays: None,
             instance: None,
             instances: None,

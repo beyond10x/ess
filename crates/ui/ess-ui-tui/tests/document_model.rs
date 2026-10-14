@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use ess_ui_tui::{App, DataAdapter, Options, ReadRequest, ReadResult};
-use serde_yaml::Value;
+use ess_yaml::Value;
 
 /// Answers every read from rows held in memory, by view.
 struct Rows(BTreeMap<String, Vec<Value>>);
@@ -66,7 +66,7 @@ pages:
 }
 
 fn rows(yaml: &str) -> Vec<Value> {
-    serde_yaml::from_str(yaml).expect("the rows parse")
+    ess_yaml::from_str(yaml).expect("the rows parse")
 }
 
 fn screen(document: &str, data: &[(&str, &str)], test: &str) -> String {

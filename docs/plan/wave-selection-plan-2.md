@@ -119,4 +119,4 @@ this page) on `integrate/selection-plan`; one commit for U1 on its branch; the m
 move); the push of `integrate/selection-plan` and one pull request against `main`, merged through
 the App when `Gate` is green. Nothing else: no tag, no release, no later wave.
 
-**Merge hold (conductor DEC-20261007-91, 2026-10-07):** the pull request is opened and run through CI, and merged into `main` only after the ESS 0.56.0 release pull request has merged; `main` requires an up-to-date branch, and merging first would force the release branch through a third full gate.
+**Merge hold (2026-10-07):** the pull request is opened and run through CI, and merged into `main` only after the ESS 0.56.0 release pull request has merged; `main` requires an up-to-date branch, and merging first would force the release branch through a third full gate.

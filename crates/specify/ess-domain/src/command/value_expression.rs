@@ -334,6 +334,8 @@ pub(super) fn validate_affect(
 
 /// One source against the field it fills. `depth` counts nested mappings; a top-level source that
 /// existed before `ess/14` is checked elsewhere and only its `subject.` spelling is read here.
+// One arm per source; ess/25 `{changed: …}` took it past the line limit.
+#[allow(clippy::too_many_lines)]
 fn check(
     context: &Context<'_>,
     at: &ConstructRef,
@@ -436,7 +438,21 @@ fn check(
         PayloadSource::ChangedCount if depth > 0 || place == Place::Sets => {
             errors.push(super::set_effects::count_elsewhere(at));
         }
-        PayloadSource::ChangedCount
+        PayloadSource::ChangedField { .. } if depth > 0 => {
+            errors.push(super::set_effects::changed_elsewhere(
+                at,
+                "a nested mapping",
+            ));
+        }
+        PayloadSource::ChangedField { .. } if place == Place::Sets => {
+            errors.push(super::set_effects::changed_elsewhere(
+                at,
+                "a row, in `sets:`",
+            ));
+        }
+        // A whole payload field: checked with the changed rows in hand by `set_effects`.
+        PayloadSource::ChangedField { .. }
+        | PayloadSource::ChangedCount
         | PayloadSource::Scalar { .. }
         | PayloadSource::InputField { .. }
         | PayloadSource::ResponseField { .. }
@@ -455,6 +471,7 @@ fn kind(source: &PayloadSource) -> &'static str {
         PayloadSource::RelatedSelection { .. } => "`{related: {entity, where, field}}`",
         PayloadSource::CallerAttribute { .. } => "`{caller: …}`",
         PayloadSource::ChangedCount => "`{count: changed}`",
+        PayloadSource::ChangedField { .. } => "`{changed: …}`",
         _ => "payload",
     }
 }

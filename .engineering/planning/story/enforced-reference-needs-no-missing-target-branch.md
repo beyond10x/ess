@@ -12,7 +12,7 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 1
+revision: 2
 ---
 ## Outcome
 
@@ -34,3 +34,20 @@ command deletes it.
 - A command or binding that can delete the target makes the declaration refused, naming that
   command.
 - Conformance checks the enforced integrity: a target that deletes the target row fails.
+
+## Second adopter (2026-10-13)
+
+A second adopter, reported 2026-10-13 on https://github.com/beyond10x/ess/issues/509: a downstream
+incident-ledger specification (ess 0.59.0, `ess/24`). Two owned records read their owner through a
+stored reference; the owner is created first and never deleted.
+
+- Without the branch: `ESS-COMMAND-005` "`review.ApproveReview` reads the related row's fields, and a
+  missing row makes every predicate over it unknown: no branch answers when the row does not exist".
+- With it, synthesis proves it unreachable, `ESS-SYNTH-003`: "… unreachable: every act writing
+  `incident_id` (`review.OpenReview/opened`) refuses an identity no row carries before storing it, so
+  no run holds one" (`crates/verify/ess-conformance/src/synthesize/related_guard/stored.rs:195`).
+
+Synthesis already proves the branch unreachable from the writers' guards; validation could accept
+the same proof instead of a new authored key. Fits none of the four generic language features
+(`docs/design/generic-language-features.md`, being drafted); closest is
+`epic:generic-row-queries` (references).

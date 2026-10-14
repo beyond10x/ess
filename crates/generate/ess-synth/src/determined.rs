@@ -35,6 +35,20 @@ fn uncompensated(command: &ResolvedCommand) -> Result<(), String> {
     }
 }
 
+/// Whether `command` declares an external branch answered at step 6, after the row is read. An
+/// external refusal answered before the row (`before_row: true`, ess/25, beyond10x/ess#534) is
+/// decided at step 2, among the input refusals, before the held state is read, so it shares no
+/// step with a lifecycle branch and is not counted.
+fn answers_external_after_the_row(command: &ResolvedCommand) -> bool {
+    command.outcomes.iter().any(|outcome| {
+        !outcome.before_row
+            && matches!(
+                outcome.condition,
+                ResolvedCondition::External { .. } | ResolvedCondition::ExternalWhen { .. }
+            )
+    })
+}
+
 /// `Ok` when every outcome of `command` is expressible; `Err` names the construct that keeps the
 /// whole command an obligation, in a phrase that reads after "kept an obligation by".
 pub(crate) fn command(ir: &EssIr, command: &ResolvedCommand) -> Result<(), String> {
@@ -49,13 +63,7 @@ pub(crate) fn command(ir: &EssIr, command: &ResolvedCommand) -> Result<(), Strin
             ResolvedCondition::SubjectState { .. } | ResolvedCondition::StateChange { .. }
         )
     });
-    let external = command.outcomes.iter().any(|outcome| {
-        matches!(
-            outcome.condition,
-            ResolvedCondition::External { .. } | ResolvedCondition::ExternalWhen { .. }
-        )
-    });
-    if lifecycle && external {
+    if lifecycle && answers_external_after_the_row(command) {
         return Err("`when_subject_state:` beside `external:` in one command".to_owned());
     }
     let defaults = command
@@ -503,6 +511,10 @@ fn value(
         }
         ResolvedPayloadValue::ChangedCount => {
             return Err(format!("`{{count: changed}}` for `{}`", field.target));
+        }
+        // A set outcome is refused before its sources are read (ess/25, beyond10x/ess#531).
+        ResolvedPayloadValue::ChangedField { .. } | ResolvedPayloadValue::ChangedState { .. } => {
+            return Err(format!("`{{changed: …}}` for `{}`", field.target));
         }
         // Generated storage enumerates no rows by a selector in this cut (ess/22, beyond10x/ess#299).
         ResolvedPayloadValue::RelatedSelection { .. } => {
@@ -1145,6 +1157,11 @@ pub(crate) fn supported(ir: &EssIr, env: &Env<'_>, predicate: &Predicate) -> Res
         // the command stays owed, naming it, rather than rendered without it.
         Predicate::Window(_) => Err(format!(
             "`{predicate}`, a calendar window no generated guard evaluates"
+        )),
+        // Nor `trimmed` (beyond10x/ess#532, ess/25): owed by name, never rendered as the operator it
+        // wraps over the untrimmed text.
+        Predicate::Trimmed(_) => Err(format!(
+            "`{predicate}`, a `trimmed` text test no generated guard evaluates"
         )),
         _ => Err(format!("the guard `{predicate}`")),
     }

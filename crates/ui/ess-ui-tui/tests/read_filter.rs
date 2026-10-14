@@ -1,6 +1,6 @@
 //! Client row filtering over a shared raw adapter result.
 use ess_ui_tui::{App, DataAdapter, Lifecycle, Options, ReadRequest, ReadResult};
-use serde_yaml::Value;
+use ess_yaml::Value;
 use std::{cell::Cell, collections::BTreeMap, path::PathBuf, rc::Rc, time::Duration};
 
 /// A state directory `<TMPDIR>/<name>-<pid>`, removed when dropped, panics included.
@@ -29,7 +29,7 @@ impl DataAdapter for Rows {
         );
         self.0.set(self.0.get() + 1);
         Ok(ReadResult {
-            rows: serde_yaml::from_str(
+            rows: ess_yaml::from_str(
                 "[{id: a, group: one, label: Alpha}, {id: b, group: two, label: Beta}]",
             )
             .unwrap(),
@@ -133,7 +133,7 @@ fn live_app(name: &str, filter: &str, events: &str) -> (Scratch, App) {
         .replace("filter: row.group == one}, columns: [label]}", &format!("filter: '{filter}'}}, columns: [label], live: {{channel: updates, effect: insert_or_patch, only_if: row.label != blocked, when_paged_away: count_new}}}}"));
     let script = ess_ui_tui::live::Script::parse(
         "updates",
-        &serde_yaml::from_str(&format!("{{events: [{events}]}}")).unwrap(),
+        &ess_yaml::from_str(&format!("{{events: [{events}]}}")).unwrap(),
     )
     .unwrap();
     let state = Scratch::new(name);

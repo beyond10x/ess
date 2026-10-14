@@ -13,7 +13,7 @@ ess-ui = { path = "../ess-ui" }
 clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-serde_yaml.workspace = true
+ess-yaml.workspace = true
 ratatui = { version = "=0.29.0", default-features = false, features = ["crossterm"] }
 crossterm = "=0.28.1"
 unicode-width = "=0.2.0"

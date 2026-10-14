@@ -80,10 +80,10 @@ fn checked_site_rejects_deserialized_collisions_with_late_static_assets() {
 fn checked_site_preserves_valid_deserialized_nested_pages_and_every_artifact_byte() {
     let document = adversary_document(&["index", "Plan", "Plan/Board", "plan2", "docs.v1"]);
     let json = serde_json::to_string(&document).unwrap();
-    let yaml = serde_yaml::to_string(&document).unwrap();
+    let yaml = ess_yaml::to_string(&document).unwrap();
     for decoded in [
         serde_json::from_str::<ess_gen::document::Document>(&json).unwrap(),
-        serde_yaml::from_str::<ess_gen::document::Document>(&yaml).unwrap(),
+        ess_yaml::from_str::<ess_gen::document::Document>(&yaml).unwrap(),
     ] {
         let site = ess_gen::html::Site::new();
         let provenance = &decoded.pages[0].provenance.provenance;

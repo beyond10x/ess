@@ -26,7 +26,7 @@ fn read(relative: &str) -> (Source, RawSpecFile) {
     let path = example().join(relative);
     let text = std::fs::read_to_string(&path)
         .unwrap_or_else(|error| panic!("{} is readable: {error}", path.display()));
-    // `RawSpecFile::parse`, not `serde_yaml::from_str`: the latter keeps the last of two identical
+    // `RawSpecFile::parse`, not `ess_yaml::from_str`: the latter keeps the last of two identical
     // mapping keys without saying so, and it is not what any real caller uses — the CLI reads the
     // example through `RawSpecFile::parse` (AEP's `aep-cli`). A test of the
     // normative example that takes a path no caller takes is not testing the example.
@@ -288,12 +288,12 @@ fn a_view_may_project_the_identity_and_the_state_as_well_as_the_fields() {
 fn a_reference_to_something_nobody_declared_is_refused_with_what_was_available() {
     let (source, mut invoice) = read("domains/invoice.yaml");
     // Emit an event nobody declares.
-    let text = serde_yaml::to_string(&invoice.commands).expect("re-serialises");
+    let text = ess_yaml::to_string(&invoice.commands).expect("re-serialises");
     let broken = text.replace(
         "billing.invoice.InvoiceCreated",
         "billing.invoice.InvoiceRaised",
     );
-    invoice.commands = serde_yaml::from_str(&broken).expect("still well formed");
+    invoice.commands = ess_yaml::from_str(&broken).expect("still well formed");
 
     let errors = Specification::assemble([
         read("system.yaml"),

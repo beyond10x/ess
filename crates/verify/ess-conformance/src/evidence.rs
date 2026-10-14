@@ -304,7 +304,7 @@ mod tests {
             ),
             (
                 "YAML",
-                serde_yaml::from_str::<StandaloneConformanceReport>(&text).is_ok(),
+                ess_yaml::from_str::<StandaloneConformanceReport>(&text).is_ok(),
             ),
         ];
         assert!(
@@ -323,7 +323,7 @@ mod tests {
         let from_reader =
             serde_json::from_reader::<_, StandaloneConformanceReport>(written.as_bytes())
                 .expect("reader reads");
-        let from_yaml = serde_yaml::from_str::<StandaloneConformanceReport>(&written)
+        let from_yaml = ess_yaml::from_str::<StandaloneConformanceReport>(&written)
             .expect("other Serde formats accept valid reports");
         for read in [from_report, from_value, from_reader, from_yaml] {
             assert_eq!(&read, report);

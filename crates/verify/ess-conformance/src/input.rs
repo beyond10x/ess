@@ -592,6 +592,10 @@ impl ProofBudget {
                 }
             }
             Predicate::Not(child) => self.predicate(child, width)?,
+            Predicate::Trimmed(inner) => {
+                self.charge(ess_primitives::predicate::TRIMMED.len())?;
+                self.predicate(inner, width)?;
+            }
             Predicate::Compare { left, right, .. } => {
                 for operand in [left, right] {
                     match operand {
@@ -1234,6 +1238,11 @@ impl<'ir> InputFacts<'ir> {
             | Predicate::NoneOf { path, .. }
             | Predicate::TextMatch { path, .. }
             | Predicate::FoldMatch { path, .. } => push(self.explain_path(path)),
+            Predicate::Trimmed(inner) => {
+                if let Some(path) = inner.trimmed_subject() {
+                    push(self.explain_path(path));
+                }
+            }
             Predicate::Compare {
                 left, op, right, ..
             } => {

@@ -111,14 +111,14 @@ fn the_nested_spelling_reads_as_exactly_the_flat_one() {
 
 #[test]
 fn every_naming_key_is_read_from_the_nested_form() {
-    let field: Field = serde_yaml::from_str(
+    let field: Field = ess_yaml::from_str(
         "name: order_id\ntype: String\nnaming: {wire: orderId, display: Order, summary: The order.}\n",
     )
     .expect("reads");
     assert_eq!(field.naming.wire.as_deref(), Some("orderId"));
     assert_eq!(field.naming.display.as_deref(), Some("Order"));
     assert_eq!(field.naming.summary.as_deref(), Some("The order."));
-    let written = serde_yaml::to_string(&field).expect("writes");
+    let written = ess_yaml::to_string(&field).expect("writes");
     assert!(
         !written.contains("naming"),
         "a field is written back in the flat form, so its bytes do not depend on the spelling: \
@@ -132,7 +132,7 @@ fn writing_both_spellings_is_refused() {
         "name: order_id\ntype: String\nwire: orderId\nnaming: {wire: orderId}\n",
         "name: order_id\ntype: String\ndisplay: Order\nnaming: {wire: orderId}\n",
     ] {
-        let error = serde_yaml::from_str::<Field>(text)
+        let error = ess_yaml::from_str::<Field>(text)
             .expect_err("two places to say one thing is refused")
             .to_string();
         assert!(error.contains("naming"), "{error}");
@@ -148,7 +148,7 @@ fn writing_both_spellings_is_refused() {
 
 #[test]
 fn a_misspelt_key_inside_the_nested_form_is_still_refused() {
-    let error = serde_yaml::from_str::<Field>("name: a\ntype: String\nnaming: {wrie: b}\n")
+    let error = ess_yaml::from_str::<Field>("name: a\ntype: String\nnaming: {wrie: b}\n")
         .expect_err("refused");
     assert!(error.to_string().contains("wrie"), "{error}");
 }

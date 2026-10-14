@@ -1133,14 +1133,10 @@ fn every_refusal_is_returned_at_once() {
 fn a_stage_2_key_is_refused_as_an_unknown_field_naming_it() {
     let ir = model();
     for key in [
-        "request: {encoding: form}",
         "response: {}",
         "status: 200",
         "headers: {Cache-Control: {literal: no-store}}",
         "redirect: {location: input.title}",
-        "outcomes: {}",
-        "body: single",
-        "empty: {status: 404}",
     ] {
         let name = key.split(':').next().unwrap();
         let text = header(&ir)
@@ -1153,11 +1149,27 @@ fn a_stage_2_key_is_refused_as_an_unknown_field_naming_it() {
             "{name}: {error}"
         );
     }
-    let text = header(&ir) + "refusals: {}\n" + ROUTES;
+    // Every stage-2 key is built: `headers` and `redirect` are an outcome's keys, read there and
+    // nowhere else, and a key no stage of the format has is refused by name inside an outcome and a
+    // refusal.
+    for key in ["location: input.title", "cookies: {session: {literal: x}}"] {
+        let name = key.split(':').next().unwrap();
+        let text = header(&ir)
+            + &format!(
+                "routes:\n  - command: catalog.items.ListItem\n    method: post\n    outcomes:\n      listed: {{status: 201, {key}}}\n"
+            );
+        let error = HttpSpec::from_yaml(&text).expect_err(name).to_string();
+        assert!(
+            error.contains(&format!("unknown field `{name}`")),
+            "{name}: {error}"
+        );
+    }
+    let text =
+        header(&ir) + "refusals:\n  malformed: {status: 400, body: none, redirect: {}}\n" + ROUTES;
     let error = HttpSpec::from_yaml(&text)
         .expect_err("refusals")
         .to_string();
-    assert!(error.contains("unknown field `refusals`"), "{error}");
+    assert!(error.contains("unknown field `redirect`"), "{error}");
     let text = header(&ir).replace("version: v1", "version: v1\n  extra: 1") + ROUTES;
     let error = HttpSpec::from_yaml(&text)
         .expect_err("specification")
@@ -1166,7 +1178,7 @@ fn a_stage_2_key_is_refused_as_an_unknown_field_naming_it() {
 }
 
 #[test]
-fn every_code_this_crate_can_emit_is_one_of_the_stage_1_codes() {
+fn every_code_this_crate_can_emit_is_one_of_the_codes_built_so_far() {
     for code in ess_http::CODES {
         assert!(
             matches!(
@@ -1185,6 +1197,18 @@ fn every_code_this_crate_can_emit_is_one_of_the_stage_1_codes() {
                     | "ESS-HTTP-012"
                     | "ESS-HTTP-013"
                     | "ESS-HTTP-014"
+                    | "ESS-HTTP-020"
+                    | "ESS-HTTP-021"
+                    | "ESS-HTTP-022"
+                    | "ESS-HTTP-023"
+                    | "ESS-HTTP-024"
+                    | "ESS-HTTP-025"
+                    | "ESS-HTTP-026"
+                    | "ESS-HTTP-027"
+                    | "ESS-HTTP-028"
+                    | "ESS-HTTP-029"
+                    | "ESS-HTTP-030"
+                    | "ESS-HTTP-031"
             ),
             "{code}"
         );
@@ -1277,7 +1301,7 @@ fn the_refined_digest_is_the_sha256_of_the_refined_files_bytes() {
     assert_eq!(refined.digest(), ess_http::digest(text.as_bytes()));
     assert_eq!(refined.spec(), &HttpSpec::from_yaml(&text).unwrap());
     let json =
-        serde_json::to_string(&serde_yaml::from_str::<serde_json::Value>(&text).unwrap()).unwrap();
+        serde_json::to_string(&ess_yaml::from_str::<serde_json::Value>(&text).unwrap()).unwrap();
     let from_json = Refined::from_json(json.as_bytes()).expect("parses as JSON");
     assert_eq!(from_json.spec(), refined.spec());
     assert_eq!(from_json.digest(), ess_http::digest(json.as_bytes()));

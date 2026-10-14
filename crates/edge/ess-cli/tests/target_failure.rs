@@ -63,7 +63,7 @@ fn accessor_models_version_early_target_failures_before_output_writes() {
                 let failure: serde_json::Value = if format == "json" {
                     serde_json::from_slice(&output.stdout).unwrap()
                 } else {
-                    serde_yaml::from_slice(&output.stdout).unwrap()
+                    ess_yaml::from_slice(&output.stdout).unwrap()
                 };
                 assert_eq!(
                     failure["format"], "ess-target-failure/3",
@@ -156,7 +156,7 @@ fn go_missing_owner_refuses_before_any_destination_write() {
                     let value: serde_json::Value = if format == "json" {
                         serde_json::from_slice(&output.stdout).unwrap()
                     } else {
-                        serde_yaml::from_slice(&output.stdout).unwrap()
+                        ess_yaml::from_slice(&output.stdout).unwrap()
                     };
                     assert_eq!(value["format"], "ess-target-failure/2");
                     assert_eq!(value["target"], "go");
@@ -317,7 +317,7 @@ fn fatal_synthesis_preserves_destinations_and_has_a_typed_envelope() {
                         let value: serde_json::Value = if format == "json" {
                             serde_json::from_slice(&output.stdout).unwrap()
                         } else {
-                            serde_yaml::from_slice(&output.stdout).unwrap()
+                            ess_yaml::from_slice(&output.stdout).unwrap()
                         };
                         assert_eq!(value["format"], "ess-target-failure/1");
                         assert_eq!(value["target"], target);

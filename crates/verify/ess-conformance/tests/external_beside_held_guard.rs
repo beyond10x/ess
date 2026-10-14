@@ -1154,3 +1154,112 @@ fn repository_model_suites_change_only_where_claimed() {
          claimable at base)"
     );
 }
+
+/// beyond10x/ess#534: `SignIn` checks a credential before it reads the seat (`bad-credential`,
+/// `before_row: true`, ess/25).
+const SIGN_IN: &str =
+    include_str!("../../../specify/ess-compiler/tests/fixtures/external-before-row.yaml");
+
+/// The revocation that authenticates its client before it reads the token.
+const REVOKE: &str =
+    include_str!("../../../specify/ess-compiler/tests/fixtures/external-before-row-revoke.yaml");
+
+/// `text`'s IR with `outcome` of `command` read as if it were not marked `before_row`: a target
+/// that reads the addressed row before it asks the provider.
+fn read_row_first(text: &str, command: &str, outcome: &str) -> EssIr {
+    ir(text).with_commands_rewritten(|resolved| {
+        let mut resolved = resolved.clone();
+        if resolved.name.to_string() == command {
+            for branch in &mut resolved.outcomes {
+                if branch.name.as_str() == outcome {
+                    assert!(branch.before_row, "`{outcome}` is marked in the IR");
+                    branch.before_row = false;
+                }
+            }
+        }
+        resolved
+    })
+}
+
+/// Every scenario of `suite` run on the model interpreter of `ir`, by id.
+fn run_on(ir: EssIr, suite: &ConformanceSuite) -> BTreeMap<String, Status> {
+    let admitted = AdmittedSuite::from_suite(suite).unwrap_or_else(|error| panic!("{error}"));
+    Runner::for_suite(admitted.suite())
+        .run_admitted(&admitted, &Interpreted::for_model(ir))
+        .into_report()
+        .scenarios
+        .into_iter()
+        .map(|result| (result.scenario.to_string(), result.status))
+        .collect()
+}
+
+/// Every forced send of `command`/`outcome` in `scenario`, by input.
+fn forced_sends<'a>(
+    scenario: &'a ConformanceScenario,
+    command: &str,
+    outcome: &str,
+) -> Vec<&'a BTreeMap<String, ScenarioValue>> {
+    sends(scenario, command)
+        .into_iter()
+        .filter(|(at, _)| forced_before(scenario, *at, command, outcome))
+        .map(|(_, input)| input)
+        .collect()
+}
+
+/// Synthesis forces a `before_row` external refusal on a row the held state would also select —
+/// a `Busy` seat, which `reopened-busy` selects — and once more on an identity no row carries,
+/// which `first` would create; the interpreter answers the refusal in both places, and an
+/// interpreter reading the row before it asks the provider fails the scenario.
+#[test]
+fn before_row_external_is_witnessed_on_a_row_held_state_would_also_select() {
+    let result = synthesis(SIGN_IN);
+    let id = "demo.desk.SignIn/outcome/bad-credential";
+    let witness = scenario(&result, id);
+    let forced = forced_sends(witness, "demo.desk.SignIn", "bad-credential");
+    assert_eq!(forced.len(), 2, "{witness:#?}");
+    // The first is sent naming an arranged seat, which a `Take` moved to `Busy`.
+    let ScenarioValue::Instance { instance } = &forced[0]["user_id"] else {
+        panic!("the first forced send names an arranged seat: {witness:#?}");
+    };
+    assert!(
+        sends(witness, "demo.desk.Take")
+            .iter()
+            .any(|(_, input)| matches!(&input["user_id"],
+                ScenarioValue::Instance { instance: taken } if taken == instance)),
+        "the seat is taken to `Busy` before the forced send: {witness:#?}"
+    );
+    // The second names a seat no step arranged.
+    assert!(
+        !matches!(&forced[1]["user_id"], ScenarioValue::Instance { .. }),
+        "the second forced send names an identity no row carries: {witness:#?}"
+    );
+
+    let statuses = run(SIGN_IN, &result.suite);
+    assert_eq!(not_passed(&statuses), Vec::<String>::new());
+    let faulty = run_on(
+        read_row_first(SIGN_IN, "demo.desk.SignIn", "bad-credential"),
+        &result.suite,
+    );
+    assert_ne!(
+        faulty.get(id),
+        Some(&Status::Passed),
+        "a target reading the seat first answers the held state or creates it: {faulty:#?}"
+    );
+
+    // The revocation: `invalid-client` answers before the token is read.
+    let result = synthesis(REVOKE);
+    let id = "demo.revoke.Revoke/outcome/invalid-client";
+    let witness = scenario(&result, id);
+    assert_eq!(
+        forced_sends(witness, "demo.revoke.Revoke", "invalid-client").len(),
+        2,
+        "{witness:#?}"
+    );
+    let statuses = run(REVOKE, &result.suite);
+    assert_eq!(not_passed(&statuses), Vec::<String>::new());
+    let faulty = run_on(
+        read_row_first(REVOKE, "demo.revoke.Revoke", "invalid-client"),
+        &result.suite,
+    );
+    assert_ne!(faulty.get(id), Some(&Status::Passed), "{faulty:#?}");
+}

@@ -618,7 +618,7 @@ mod tests {
 
     #[test]
     fn a_bare_member_name_means_a_member_of_this_domain() {
-        let raw: RawDomainSpec = serde_yaml::from_str(
+        let raw: RawDomainSpec = ess_yaml::from_str(
             r"
 domain: billing.invoice
 commands: [CreateInvoice]
@@ -643,7 +643,7 @@ types:
 
     #[test]
     fn a_qualified_member_from_another_domain_is_refused_when_the_document_is_read() {
-        let raw: RawDomainSpec = serde_yaml::from_str(
+        let raw: RawDomainSpec = ess_yaml::from_str(
             r"
 domain: billing.invoice
 commands: [billing.email.SendEmail]
@@ -660,7 +660,7 @@ commands: [billing.email.SendEmail]
 
     #[test]
     fn a_bare_actor_name_is_qualified_and_owned_like_every_other_member() {
-        let raw: RawDomainSpec = serde_yaml::from_str(
+        let raw: RawDomainSpec = ess_yaml::from_str(
             r"
 domain: billing.invoice
 actors: [Clerk]

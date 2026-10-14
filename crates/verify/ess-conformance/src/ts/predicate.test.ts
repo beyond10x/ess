@@ -986,6 +986,60 @@ test('every case fold the corpus states is the truth the evaluator answers', () 
   }
 });
 
+// ---- trimmed --------------------------------------------------------------------------------------
+
+// `trimmed:` (beyond10x/ess#532): the wrapped text operator over the fact with its surrounding ASCII
+// whitespace removed, and nothing else removed. The `trimmed-text.json` table beside the primitive
+// corpus decides Rust, Go and this runtime alike; this fails rather than skipping when it is not named.
+test('every trimmed vector the corpus states is the truth the evaluator answers', () => {
+  const at = process.env.ESS_PRIMITIVE_VECTORS;
+  assert.ok(at, 'ESS_PRIMITIVE_VECTORS names the primitive corpus');
+  const vectors = JSON.parse(readFileSync(join(dirname(at), 'trimmed-text.json'), 'utf8'))
+    .trimmed as { name: string; value?: Node; operator: Node; truth: string }[];
+  assert.ok(vectors.length >= 25, `the corpus states ${vectors.length} trimmed vectors`);
+  const truths: Record<string, Truth> = {
+    true: TruthTrue,
+    false: TruthFalse,
+    unknown: TruthUnknown,
+  };
+  for (const vector of vectors) {
+    const node = { source: { trimmed: vector.operator } };
+    assert.match(
+      raised(() => admitPredicateVersion(node, 49)),
+      /no suite format carries one/,
+      vector.name,
+    );
+    const leaf = fromNode(node);
+    assert.ok(String(leaf).startsWith('trimmed(source '), String(leaf));
+    const want = truths[vector.truth];
+    assert.ok(want !== undefined, `${vector.name}: ${vector.truth} is not a truth`);
+    const facts = source(vector.value === undefined ? {} : { source: vector.value });
+    assert.equal(leaf.evaluate(facts), want, vector.name);
+    assert.equal(
+      new Predicate({ kind: 'not', body: leaf }).evaluate(facts),
+      truthNot(want),
+      `not ${vector.name}`,
+    );
+    // Only the fact is trimmed, never the source handed in.
+    if (typeof vector.value === 'string') assert.equal(facts.get('source'), vector.value);
+  }
+  for (const operand of [
+    { gt: 3 },
+    { ne: 'x' },
+    { equals: 3 },
+    { in: 'x' },
+    {},
+    'x',
+    { eq: 'a', contains: 'b' },
+  ]) {
+    assert.match(
+      raised(() => fromNode({ source: { trimmed: operand } })),
+      /takes a mapping of exactly one text operator/,
+      JSON.stringify(operand),
+    );
+  }
+});
+
 test('a fold renders with its operator and refuses an operand of the wrong shape', () => {
   assert.equal(
     String(fromNode({ source: { equals_ignore_case: 'web' } })),

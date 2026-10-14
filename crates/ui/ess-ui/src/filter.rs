@@ -4,7 +4,7 @@
 //! while an unknown predicate must never reveal rows. Both the checker and terminal use this
 //! parser. The React runtime implements the same grammar and value comparisons.
 
-use serde_yaml::Value;
+use ess_yaml::Value;
 
 /// A parsed filter expression. Bare words are string literals; dotted names are paths.
 #[derive(Debug, Clone, PartialEq)]

@@ -737,7 +737,7 @@ impl Run {
 
     /// Writes the realization and binding documents for this run's exact image.
     fn author_inputs(&mut self, sdk: &Value) -> Result<String> {
-        let template: Value = serde_yaml::from_str(&fs::read_to_string(
+        let template: Value = ess_yaml::from_str(&fs::read_to_string(
             self.root.join("examples/realizations/billing-local.yaml"),
         )?)?;
         let digest = self.image.digest.clone().context("image digest")?;
@@ -951,7 +951,7 @@ impl Run {
         let text = String::from_utf8(declared.bytes)?;
         let items = text
             .split("\n---\n")
-            .map(serde_yaml::from_str::<Value>)
+            .map(ess_yaml::from_str::<Value>)
             .collect::<Result<Vec<_>, _>>()?;
         let path = self.scratch.join("inputs/declaration.json");
         fs::write(
@@ -2561,7 +2561,7 @@ mod tests {
             let text = String::from_utf8(manifest.bytes).unwrap();
             assert!(!text.contains("{{"), "{variant:?} left a placeholder");
             for document in text.split("\n---\n") {
-                serde_yaml::from_str::<Value>(document)
+                ess_yaml::from_str::<Value>(document)
                     .unwrap_or_else(|e| panic!("{variant:?} is not YAML: {e}"));
             }
         }
@@ -2569,8 +2569,7 @@ mod tests {
             HarnessManifest::render(Variant::ExtraContainer, &image, &sentinel().unwrap()).bytes,
         )
         .unwrap();
-        let deployment: Value =
-            serde_yaml::from_str(extra.split("\n---\n").nth(2).unwrap()).unwrap();
+        let deployment: Value = ess_yaml::from_str(extra.split("\n---\n").nth(2).unwrap()).unwrap();
         let names: Vec<&str> = deployment["spec"]["template"]["spec"]["containers"]
             .as_array()
             .unwrap()
@@ -2674,7 +2673,7 @@ mod tests {
 
     #[test]
     fn the_placement_intent_is_a_valid_infra_spec_naming_the_harness_workload() {
-        let intent: Value = serde_yaml::from_str(INTENT).unwrap();
+        let intent: Value = ess_yaml::from_str(INTENT).unwrap();
         assert_eq!(intent["format"], "infra-spec/1");
         let exists = &intent["expectations"][0]["expect"]["workload_exists"];
         assert_eq!(exists["namespace"], NAMESPACE);

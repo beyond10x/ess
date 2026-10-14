@@ -21,7 +21,7 @@ ess-gen.workspace = true
 schemars.workspace = true
 serde_json.workspace = true
 serde.workspace = true
-serde_yaml.workspace = true
+ess-yaml.workspace = true
 syn = { version = "=2.0.119", features = ["full", "visit"] }
 quote = "=1.0.47"
 proc-macro2 = "=1.0.107"

@@ -5,7 +5,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use serde_yaml::{Mapping, Value};
+use ess_yaml::{Mapping, Value};
 
 use crate::{TestError, FORMAT};
 
@@ -239,7 +239,7 @@ pub(crate) fn scalar(value: &Value) -> String {
         Value::Bool(flag) => flag.to_string(),
         Value::Number(number) => number.to_string(),
         Value::Null => String::new(),
-        other => serde_yaml::to_string(other)
+        other => ess_yaml::to_string(other)
             .unwrap_or_default()
             .trim_end()
             .to_owned(),
@@ -249,7 +249,7 @@ pub(crate) fn scalar(value: &Value) -> String {
 /// Parses a test file's text; `source` names it in errors.
 pub fn parse_str(text: &str, source: &Path) -> Result<TestFile, TestError> {
     let at = |message: String| TestError(format!("{}: {message}", source.display()));
-    let value: Value = serde_yaml::from_str(text).map_err(|error| at(error.to_string()))?;
+    let value: Value = ess_yaml::from_str(text).map_err(|error| at(error.to_string()))?;
     let root = value
         .as_mapping()
         .ok_or_else(|| at("a test file is a map".into()))?;
@@ -285,7 +285,7 @@ pub fn parse_str(text: &str, source: &Path) -> Result<TestFile, TestError> {
 
 /// Parses a YAML list of steps.
 pub fn parse_steps(text: &str) -> Result<Vec<Step>, TestError> {
-    let value: Value = serde_yaml::from_str(text).map_err(|error| TestError(error.to_string()))?;
+    let value: Value = ess_yaml::from_str(text).map_err(|error| TestError(error.to_string()))?;
     let steps = value
         .as_sequence()
         .ok_or_else(|| TestError("steps are a list".into()))?;

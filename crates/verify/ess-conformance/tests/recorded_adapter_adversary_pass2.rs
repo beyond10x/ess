@@ -132,7 +132,7 @@ fn a_json_word_mapped_twice_is_refused_as_its_yaml_spelling_is() {
 }
 
 /// A JSON adapter that names the source `client` twice. The base reader read JSON through
-/// `serde_yaml` into the derived struct, which refuses a duplicate field; the JSON-first reader
+/// `ess-yaml` into the derived struct, which refuses a duplicate field; the JSON-first reader
 /// keeps the last member and admits it.
 #[test]
 fn a_json_field_written_twice_is_refused_as_the_base_reader_refused_it() {

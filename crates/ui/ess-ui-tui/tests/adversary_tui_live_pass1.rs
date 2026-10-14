@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 
 use ess_ui::binding::{Answer, Binding};
 use ess_ui_tui::{App, DataAdapter, HttpAdapter, Options, ReadRequest, ReadResult};
-use serde_yaml::Value;
+use ess_yaml::Value;
 
 const WIDTH: u16 = 200;
 const HEIGHT: u16 = 50;
@@ -140,7 +140,7 @@ struct Scripted {
 impl DataAdapter for Scripted {
     fn read(&self, _: &ReadRequest) -> Result<ReadResult, String> {
         self.log.borrow_mut().reads += 1;
-        let row: Value = serde_yaml::from_str(
+        let row: Value = ess_yaml::from_str(
             "{id: v1, visit_id: v1, visitor: Ada, building: North, state: Expected}",
         )
         .expect("the row parses");
@@ -477,7 +477,7 @@ fn answer(status: &str, body: &str, close: bool) -> Vec<u8> {
 const ACCEPTED: &str = "{\"outcome\":\"registered\",\"published\":[]}";
 
 fn registration() -> BTreeMap<String, Value> {
-    serde_yaml::from_str(
+    ess_yaml::from_str(
         "{visitor: Ada, building: North, host: {kind: employee, value: E1}, \
          expected_minutes: 30, expected_stay: PT30M, \
          deposit: {amount: '0', currency: EUR}, escorts: [], notes: {}, on_watchlist: false}",

@@ -144,8 +144,8 @@ fn an_empty_group_by_is_read_as_absent_and_not_written_back() {
 fn an_aggregate_view_round_trips_through_the_document_form() {
     let spec = assemble(METRICS).unwrap();
     for view in spec.views().values() {
-        let written = serde_yaml::to_string(view).unwrap();
-        let reread: RawViewSpec = serde_yaml::from_str(&written).unwrap();
+        let written = ess_yaml::to_string(view).unwrap();
+        let reread: RawViewSpec = ess_yaml::from_str(&written).unwrap();
         let reread = ViewSpec::try_from(reread).unwrap();
         assert_eq!(&reread, view, "{written}");
     }
@@ -270,7 +270,7 @@ fn v3_v5_and_v13_accumulate_with_the_shape_errors_of_the_written_view() {
 
 #[test]
 fn v3_v5_and_v13_are_raised_by_the_conversion_itself() {
-    let raw: RawViewSpec = serde_yaml::from_str(
+    let raw: RawViewSpec = ess_yaml::from_str(
         "name: metrics.session.V\nsource: metrics.session.Session\nshape: metrics.session.Row\ngroup_by: [a, a]\n",
     )
     .unwrap();

@@ -11,7 +11,7 @@ authors.workspace = true
 [dependencies]
 clap.workspace = true
 ess-ui = { path = "../ess-ui" }
-serde_yaml.workspace = true
+ess-yaml.workspace = true
 
 [lints]
 workspace = true

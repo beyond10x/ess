@@ -13,7 +13,7 @@ use ess_domain::system::Source;
 use ess_gen::artifact::run;
 use ess_gen::asyncapi::{AsyncApi, TransportedAsyncApi};
 use ess_transport::TransportSpec;
-use serde_yaml::Value;
+use ess_yaml::Value;
 use sha2::{Digest as _, Sha256};
 
 const MODEL: &str = "format: ess/20
@@ -118,7 +118,7 @@ fn transported(ir: &EssIr, body: &str) -> Value {
     let spec = TransportSpec::from_yaml(&text).expect("parses");
     let transport = ess_transport::compile(&spec, ir).expect("compiles");
     let artifacts = run(&TransportedAsyncApi(transport), ir).expect("generates");
-    serde_yaml::from_str(&artifacts["asyncapi/producer.yaml"].contents).expect("YAML")
+    ess_yaml::from_str(&artifacts["asyncapi/producer.yaml"].contents).expect("YAML")
 }
 
 #[test]
@@ -164,7 +164,7 @@ fn parameterized_with(ir: &EssIr, body: &str) -> Value {
     let spec = TransportSpec::from_yaml(&text).expect("parses");
     let transport = ess_transport::compile(&spec, ir).expect("compiles");
     let artifacts = run(&TransportedAsyncApi(transport), ir).expect("generates");
-    serde_yaml::from_str(&artifacts["asyncapi/producer.yaml"].contents).expect("YAML")
+    ess_yaml::from_str(&artifacts["asyncapi/producer.yaml"].contents).expect("YAML")
 }
 
 #[test]

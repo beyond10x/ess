@@ -1,0 +1,30 @@
+{
+  "format": "ess-http-ir/1",
+  "specification": {
+    "system": "catalog",
+    "version": "v1",
+    "source_digest": "sha256:SOURCE_DIGEST"
+  },
+  "routes": [
+    {
+      "command": "catalog.items.ListItem",
+      "method": "post"
+    },
+    {
+      "view": "catalog.items.ItemById",
+      "method": "get",
+      "path": "/items/{item_id}",
+      "parameters": {
+        "item_id": "param.item_id"
+      }
+    },
+    {
+      "command": "catalog.items.TouchItem",
+      "method": "get",
+      "path": "/items/{item_id}/touch",
+      "parameters": {
+        "item_id": "input.item_id"
+      }
+    }
+  ]
+}

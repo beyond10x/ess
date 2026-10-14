@@ -1,0 +1,192 @@
+# The model the served `ess-http/1` binding tests serve (`tests/http_binding_rust.rs`): two methods
+# and a view on one templated path, `form` requests that ignore and refuse an unknown parameter, a
+# `query` command with a `List`, a declared answer with headers, a bearer challenge whose error
+# wire name holds `"` and `\`, redirects in both modes, and a command no actor is granted.
+format: ess/22
+system: shop
+version: v1
+domain: shop.items
+types:
+  - {name: shop.items.ItemId, kind: newtype, of: String}
+  - {name: shop.items.ReturnUri, kind: newtype, of: String}
+entities:
+  - name: shop.items.Item
+    identity: {name: item_id, type: shop.items.ItemId}
+    fields:
+      - {name: title, type: String}
+    lifecycle: {initial: Listed, states: [Listed], terminal: [Listed], transitions: []}
+errors:
+  - name: shop.items.OutOfStock
+    naming: {wire: out_of_stock}
+  - name: shop.items.TokenRefused
+    naming: {wire: 'invalid "token" \ here'}
+  - name: shop.items.AccessDenied
+    naming: {wire: access_denied}
+events:
+  - name: shop.items.Put
+    fields:
+      - {name: item_id, type: shop.items.ItemId}
+      - {name: title, type: String}
+  - name: shop.items.Touched
+    fields:
+      - {name: item_id, type: shop.items.ItemId}
+  - name: shop.items.Ordered
+    fields:
+      - {name: item_id, type: shop.items.ItemId}
+      - {name: count, type: Integer}
+  - name: shop.items.Searched
+    fields:
+      - {name: words, type: List<String>}
+      - {name: limit, type: Integer}
+  - name: shop.items.Approved
+    fields:
+      - {name: client, type: String}
+commands:
+  - name: shop.items.PutItem
+    input:
+      - {name: item_id, type: shop.items.ItemId}
+      - {name: title, type: String}
+    outcomes:
+      - name: put
+        creates: shop.items.Item
+        instance: item_id
+        sets: {title: input.title}
+        emits: [shop.items.Put]
+        payload:
+          shop.items.Put: {item_id: input.item_id, title: input.title}
+  - name: shop.items.DropItem
+    input:
+      - {name: item_id, type: shop.items.ItemId}
+    outcomes:
+      - name: dropped
+        emits: [shop.items.Touched]
+        payload:
+          shop.items.Touched: {item_id: input.item_id}
+  - name: shop.items.Order
+    input:
+      - {name: item_id, type: shop.items.ItemId}
+      - {name: count, type: Integer}
+      - {name: note, type: Optional<String>}
+    outcomes:
+      - name: out-of-stock
+        when: count > 5
+        error: shop.items.OutOfStock
+      - name: ordered
+        emits: [shop.items.Ordered]
+        payload:
+          shop.items.Ordered: {item_id: input.item_id, count: input.count}
+  - name: shop.items.StrictOrder
+    input:
+      - {name: item_id, type: shop.items.ItemId}
+      - {name: count, type: Integer}
+    outcomes:
+      - name: ordered
+        emits: [shop.items.Ordered]
+        payload:
+          shop.items.Ordered: {item_id: input.item_id, count: input.count}
+  - name: shop.items.Search
+    input:
+      - {name: words, type: List<String>}
+      - {name: limit, type: Integer}
+    outcomes:
+      - name: searched
+        emits: [shop.items.Searched]
+        payload:
+          shop.items.Searched: {words: input.words, limit: input.limit}
+  - name: shop.items.Place
+    input:
+      - {name: item_id, type: shop.items.ItemId}
+      - {name: count, type: Integer}
+    response:
+      - {name: code, type: String}
+    outcomes:
+      - name: refused
+        when: count > 5
+        error: shop.items.OutOfStock
+      - name: placed
+        returns: true
+        emits: [shop.items.Touched]
+        payload:
+          shop.items.Touched: {item_id: input.item_id}
+  - name: shop.items.ReadPrivate
+    input:
+      - {name: item_id, type: shop.items.ItemId}
+      - {name: level, type: Integer}
+      - {name: hint, type: String}
+    outcomes:
+      - name: token-refused
+        when: level < 1
+        error: shop.items.TokenRefused
+      - name: read
+        emits: [shop.items.Touched]
+        payload:
+          shop.items.Touched: {item_id: input.item_id}
+  - name: shop.items.Approve
+    input:
+      - {name: return_to, type: shop.items.ReturnUri}
+      - {name: state, type: Optional<String>}
+      - {name: client, type: String}
+      - {name: level, type: Integer}
+    outcomes:
+      - name: denied
+        when: level < 1
+        error: shop.items.AccessDenied
+      - name: approved
+        emits: [shop.items.Approved]
+        payload:
+          shop.items.Approved: {client: input.client}
+  - name: shop.items.Purge
+    input:
+      - {name: item_id, type: shop.items.ItemId}
+    outcomes:
+      - name: purged
+        emits: [shop.items.Touched]
+        payload:
+          shop.items.Touched: {item_id: input.item_id}
+  - name: shop.items.Archive
+    input:
+      - {name: item_id, type: shop.items.ItemId}
+    outcomes:
+      - name: archived
+        emits: [shop.items.Touched]
+        payload:
+          shop.items.Touched: {item_id: input.item_id}
+views:
+  - name: shop.items.ItemById
+    source: shop.items.Item
+    consistency: read_your_writes
+    params:
+      - {name: item_id, type: shop.items.ItemId}
+    filter: item_id == param.item_id
+    fields:
+      - {name: item_id, type: shop.items.ItemId}
+      - {name: title, type: String}
+actors:
+  - name: shop.items.Clerk
+    may:
+      - shop.items.PutItem
+      - shop.items.DropItem
+      - shop.items.Order
+      - shop.items.StrictOrder
+      - shop.items.Search
+      - shop.items.Place
+      - shop.items.ReadPrivate
+      - shop.items.Approve
+components:
+  - component: shop-service
+    reached_by: network
+    owns: {domains: [shop.items]}
+    accepts:
+      commands:
+        - shop.items.PutItem
+        - shop.items.DropItem
+        - shop.items.Order
+        - shop.items.StrictOrder
+        - shop.items.Search
+        - shop.items.Place
+        - shop.items.ReadPrivate
+        - shop.items.Approve
+        - shop.items.Purge
+        - shop.items.Archive
+    publishes:
+      events: [shop.items.Put, shop.items.Touched, shop.items.Ordered, shop.items.Searched, shop.items.Approved]

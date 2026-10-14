@@ -164,9 +164,9 @@ impl RawSpecFile {
     /// Reads one file's text.
     ///
     /// Two stages, and the first one is the point: deserialising straight into this type lets
-    /// `serde_yaml` **silently keep the last of two identical mapping keys**, so a document
+    /// `ess-yaml` **silently keep the last of two identical mapping keys**, so a document
     /// declaring `a-service` twice loses the first entry and nothing says so. Going through
-    /// [`serde_yaml::Value`] first refuses it, with the key and the line.
+    /// [`ess_yaml::Value`] first refuses it, with the key and the line.
     ///
     /// That applies to every mapping in the format, not just one section — which is why the check
     /// lives here rather than in each module that happens to hold a map.
@@ -179,8 +179,8 @@ impl RawSpecFile {
     /// `ess/22` reads its bare words by (`docs/design/expression-family-source22.md`, A1). A file
     /// deserialised directly rather than through here keeps every bare word the text it is
     /// spelled as, which is what every earlier format means by it.
-    pub fn parse(text: &str) -> Result<Self, serde_yaml::Error> {
-        let mut document: serde_yaml::Value = serde_yaml::from_str(text)?;
+    pub fn parse(text: &str) -> Result<Self, ess_yaml::Error> {
+        let mut document: ess_yaml::Value = ess_yaml::from_str(text)?;
         let spelled = crate::expression::lexical::Written::from_document(&document);
         // A type's `undeclared_fields:` is read beside its body rather than in it (`ess/24`), and
         // every other declaration's is read so it can be refused at its line.
@@ -191,7 +191,7 @@ impl RawSpecFile {
         let read = move || {
             crate::types::MapKeyNewtypes::current()
                 .with_value(&document)
-                .scope(|| serde_yaml::from_value(document))
+                .scope(|| ess_yaml::from_value(document))
         };
         let mut file: Self = match format {
             Some(format) => reading_format(format, read),
@@ -207,10 +207,10 @@ impl RawSpecFile {
     /// The same as [`Self::parse`] on each, except that a newtype declared in any of the files may
     /// key a map in any other: validity must not depend on which file declares what. A file that
     /// names no format reads the operand grammar of the one its system header names.
-    pub fn parse_all(texts: &[&str]) -> Vec<Result<Self, serde_yaml::Error>> {
+    pub fn parse_all(texts: &[&str]) -> Vec<Result<Self, ess_yaml::Error>> {
         let headers: Vec<Option<FormatVersion>> = texts
             .iter()
-            .filter_map(|text| serde_yaml::from_str::<serde_yaml::Value>(text).ok())
+            .filter_map(|text| ess_yaml::from_str::<ess_yaml::Value>(text).ok())
             .filter(|document| document.get("system").is_some())
             .map(|document| written_format(&document))
             .collect();
@@ -235,10 +235,10 @@ fn reading_format<T>(format: FormatVersion, read: impl FnOnce() -> T) -> T {
 }
 
 /// The format a document names in its `format:` key, when it names one this build can read.
-fn written_format(document: &serde_yaml::Value) -> Option<FormatVersion> {
+fn written_format(document: &ess_yaml::Value) -> Option<FormatVersion> {
     document
         .get("format")
-        .and_then(serde_yaml::Value::as_str)
+        .and_then(ess_yaml::Value::as_str)
         .and_then(|format| FormatVersion::parse(format).ok())
 }
 
@@ -327,6 +327,7 @@ impl Specification {
         );
         crate::command::set_effects::refuse_deletions(&mut files, &mut errors);
         crate::command::set_effects::refuse_each(&mut files, &mut errors);
+        crate::command::set_effects::refuse_per_row_events(&mut files, &mut errors);
 
         // A guard reads `input.<field>` only in an `ess/22` source, named by its one header.
         let headers: Vec<Option<FormatVersion>> = files
@@ -385,6 +386,7 @@ impl Specification {
         crate::command::related_value::read_below_ess_16(system.format, &mut collected.commands);
         crate::command::caller_value::read_below_ess_16(system.format, &mut collected.commands);
         crate::command::set_effects::read_below_ess_16(system.format, &mut collected.commands);
+        crate::command::set_effects::read_below_ess_25(system.format, &mut collected.commands);
         let mut specification = Self {
             system,
             entities: collected.entities,
@@ -528,6 +530,13 @@ impl Specification {
             if let Err(view_errors) = view.validate(&registry, &catalogue) {
                 errors.extend(view_errors);
             }
+            // `absent:` (ess/25) reads the source entity's identity, which the catalogue does not carry.
+            errors.extend(crate::view::absent::validate(
+                view,
+                self.entities.get(&view.source),
+                &registry,
+                &self.conversions,
+            ));
         }
 
         let command_names: BTreeSet<QualifiedName> =
@@ -1552,7 +1561,7 @@ mod tests {
     fn file(source: &str, yaml: &str) -> (Source, RawSpecFile) {
         (
             Source::new(source),
-            serde_yaml::from_str(yaml).expect("well formed"),
+            ess_yaml::from_str(yaml).expect("well formed"),
         )
     }
 
@@ -2600,7 +2609,7 @@ topology:
 
     #[test]
     fn the_two_stage_parse_reads_what_the_one_stage_parse_read() {
-        // Going through `serde_yaml::Value` must not change what a valid document means. A type
+        // Going through `ess_yaml::Value` must not change what a valid document means. A type
         // with a hand-written `Deserialize` is where that would break, so the fixture uses several.
         let text = "\
 format: ess/1
@@ -2609,7 +2618,7 @@ version: v3
 domains: [billing.invoice]
 ";
         let staged = RawSpecFile::parse(text).expect("valid");
-        let direct: RawSpecFile = serde_yaml::from_str(text).expect("valid");
+        let direct: RawSpecFile = ess_yaml::from_str(text).expect("valid");
         assert_eq!(
             staged.system.map(|name| name.to_string()),
             direct.system.map(|name| name.to_string())

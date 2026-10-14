@@ -2,7 +2,246 @@
 
 ## [Unreleased]
 
+## [0.60.0] — 2026-10-14
+
 ### Added
+
+- Source format `ess/25`. Its first construct: a create-or-update command selects among its update
+  branches with `when_subject:` predicates over the stored row's fields and held state, beside an
+  `unknown_instance:` branch that `creates:` the row, as `when_subject_state:` already allowed. The
+  creating branch answers an identity no row carries before any predicate reads a row, and the
+  predicates must partition the stored rows alone (a text field compared in them still needs a
+  default branch, as on any command). Synthesis writes the creation on an identity nothing stores
+  and one scenario per stored-row branch on an arranged row; the interpreted target and the
+  generated Rust and Go behaviour pass them, and Entity Runtime lowering refuses the command by
+  name (`ExistenceSelectionUnsupported`). Below `ess/25` the pairing keeps its
+  `conflicting_declaration` refusal, now with a hint naming `ess/25`; a model that does not use it
+  keeps its IR bytes and digest (https://github.com/beyond10x/ess/issues/530,
+  `docs/design/cross-record-and-stored-field-guards.md`).
+- From `ess/25`, a command guard compares a text fact with its surrounding ASCII whitespace
+  removed: `trimmed:` wraps one of `equals`, `in`, `equals_ignore_case`, `in_ignore_case`,
+  `starts_with`, `ends_with` and `contains`, so `not: {reason: {trimmed: {in_ignore_case: [NEW,
+  HOLD, DONE]}}}` no longer claims that ` DONE ` is refused when the implementation trims before
+  it checks. Only space, tab, LF, VT, FF and CR are removed, at either end, so Rust, Go and
+  TypeScript answer alike and a Unicode space compares as itself. It is admitted in `when:`,
+  `when_subject:` and `when_related:` and refused elsewhere as `unsupported_construct`, and below
+  `ess/25` by format alone, naming `ess/25`. A literal that holds for no text once the fact is
+  trimmed is refused as `empty_declaration`, as an empty `in` is: an `equals` or `in` literal,
+  case-folded or not, with ASCII whitespace at either end, a `starts_with` literal with it at its
+  start and an `ends_with` literal with it at its end; `contains` is not affected. Synthesis sends
+  the guarded branch the literal padded with ASCII whitespace, and the other side the literal with
+  an inner space and between two U+00A0, also inside a `forall` or `exists` body, so a target
+  that does not trim, or trims Unicode spaces, fails a scenario. Entity Runtime lowering
+  refuses it as `TrimmedTextUnsupported`, `infra-spec/1` and every suite admission refuse it by
+  name, and no suite format changes (https://github.com/beyond10x/ess/issues/532,
+  `docs/design/value-expressions.md` § E10).
+- `ess/25`: an outcome with `instances:` may publish an event once per row it changed, listed in
+  `emits:` as `{event: <name>, each: changed, when_state: <states>}`; its payload reads that row as
+  it was before the outcome with `{changed: <field>}` and `{changed: state}`, and `when_state:`
+  publishes it only for rows that held one of those states. The interpreter publishes one occurrence
+  per admitted row, in ascending order of identity; synthesis claims each with the row's values,
+  and a segment of rows the filter leaves out claims none. Entity Runtime and the Rust, Go, Web and
+  Clap synthesizers keep refusing set effects by name, the generated explorers leave such an outcome
+  out, and `outcome-set-effect-changed` names each per-row event and its filter. Below `ess/25`, or
+  on an outcome without `instances:`, the entry is refused at its place in `emits:`; a model that
+  does not use it keeps its IR bytes and digest (https://github.com/beyond10x/ess/issues/531,
+  `docs/design/set-effects-over-filtered-instances.md`).
+- `before_row: true` on an `external:` refusal (`ess/25`): the refusal answers at step 2 of the
+  precedence order, among the input-guarded refusals in declaration order, before existence and
+  the held state, for a check the implementation makes before it reads the row (a credential, a
+  client authenticated before the token it names is looked up). The held-state branches declared
+  after it validate, where the `conflicting_declaration` of beyond10x/ess#486 refused them; without
+  the key that refusal is unchanged. The key is refused (`conflicting_declaration`) on a branch
+  that is not `external:`, on one naming no `error:`, beside `compensates: true`, where the error
+  payload reads a row, declared after a branch a later step answers, and on a command declaring a
+  `when_related:` branch; below `ess/25` it is refused naming `ess/25`. Synthesis forces the
+  refusal on a row the held state would also select and once more on an identity no row carries,
+  beside `existing_instance:` on an identity a row already carries, and on an input each input
+  refusal declared after it selects; the interpreted target, the generated Rust and Go behaviour and the Go and TypeScript explorers
+  answer it there, and Entity Runtime lowering refuses it by name (`OutcomeShapeUnsupported`).
+  `ess verify diff` reports the key gained or lost as `outcome-condition-changed`. A model without
+  the key keeps its IR bytes and digest (https://github.com/beyond10x/ess/issues/534,
+  `docs/design/cross-record-and-stored-field-guards.md`).
+- `absent: {row: {<field>: <literal>…}}` on a view (`ess/25`): a view whose filter is the one
+  comparison `<identity> == param.<name>` declares its answer for an identity no row carries, one
+  default row holding the requested identity, each literal of `row:` (typed as a `sets:` literal
+  is, inside the alphabets and invariants of its newtypes) and nothing in the `Optional` fields it
+  leaves out. Refused as `conflicting_declaration` on any other filter, on an `Optional` identity
+  parameter, beside an aggregate or `paging:`, and on the identity field in `row:`; as
+  `missing_declaration` where a required projected field has no value; as `undeclared_reference`
+  for a field the view does not project; and below `ess/25` as `unsupported_format_version` naming
+  `ess/25`. An `error:` answer is not in this cut. The IR carries `absent: {param, row}` on the
+  view, each `Integer` or `Decimal` literal held by value (`1.50` as `1.5`), omitted where absent,
+  so other models keep their IR, suites and artifacts. The interpreted target answers the default
+  row; synthesis reads the view for an identity no scenario stores beside each stored-row read and
+  requires `contains` the identity, every literal and `null` in each `Optional` field `row:` leaves
+  out, with no suite format change. Generated view queries stay owed, naming `absent:`; OpenAPI
+  states the default row in the read's description. `ess verify diff` writes `ess-diff/19` for
+  `view/<name>/absent-changed`, breaking for readers. The `ess-http/1` binding is unchanged:
+  `single` still requires `empty`, which a read of an unknown identity no longer reaches on such a
+  view (https://github.com/beyond10x/ess/issues/533, `docs/design/read-api-view-idioms.md`).
+- An `ess-http/1` route declares how a command's request is encoded:
+  `request: {encoding: json | form | query, unknown: refuse | ignore}`. `form` is an
+  `application/x-www-form-urlencoded` body, and `query` carries every input field the path does
+  not map in the query string, so a command on `get` no longer has to map its whole input to the
+  path (`ESS-HTTP-014` admits a query-encoded field). `ess specify http validate` and `compile`
+  read the key and write it into the route of `ess-http-ir/1`, omitting `encoding: json`,
+  `unknown: refuse` and a `request` holding only those. `ESS-HTTP-020` refuses an encoding outside
+  the set, `json` or `form` written on a `get` command, `query` on any other method, an `unknown`
+  outside the set, `ignore` beside `json`, and `request` on a view; `ESS-HTTP-021` refuses a
+  `form` or `query` field whose type has no flat spelling (a struct, a union, a map, `Json`, or an
+  `Optional` or `List` of anything but a scalar), naming the field and its type. A refining
+  document restates each refined route's `request` (`ESS-HTTP-012`). A binding that uses no
+  `request` compiles to the bytes 0.60.0 wrote, and the format stays `ess-http/1`. The OpenAPI
+  projection reads it (below); the generated servers do not yet
+  (https://github.com/beyond10x/ess/issues/493, `docs/design/http-presentation-binding.md`,
+  "Request encoding").
+- An `ess-http/1` route declares the status and body of each outcome:
+  `outcomes: {<outcome>: {status, body}}`, the body `envelope` (the default), `response` (the
+  command's response, bare, for a `returns: true` outcome without an error), `none` or
+  `{<member>: error}` (the error's wire name under `<member>`, beside the error's fields). A view
+  route declares `body: single` with `empty: {status}` to answer its one row, and top-level
+  `refusals:` overrides the standard `malformed`, `not_granted` and `unfinished` answers with a
+  status and a literal body or none. `ess specify http compile` writes them into `ess-http-ir/1`,
+  omitting `envelope`, `rows` and an empty `outcomes` or `refusals`, so a binding without them keeps
+  the bytes 0.60.0 wrote. `ESS-HTTP-022` refuses an outcome the command does not declare and
+  `outcomes` on a view; `-023` a status outside `100..=599`, a `1xx`, a `2xx` on an outcome with an
+  error, a `4xx` or `5xx` on one without, and a `3xx` other than `301`, `302`, `303`, `307` and
+  `308`; `-024` a body the outcome or route does not admit (`response` without `returns: true`, the
+  error object without an error or under a member one of the error's fields travels as, a body on
+  `204`, `single` on a command or a paged view); `-025` two outcomes on one status their bodies
+  cannot tell apart, an unlisted outcome counted at its derived status with the envelope; `-029` a
+  refusal key outside the set, a status outside its class or a body other than a literal or none;
+  `-030` `single` without `empty`, `empty` without `single` or an `empty` status outside `4xx`;
+  `-031` `single` on a view whose filter does not select its source entity by identity. A refining
+  document restates each refined route's answers and `refusals:` (`ESS-HTTP-012`). The status ESS
+  derives per outcome moved from `ess_gen::http` into `ess_http::status`, re-exported unchanged, so
+  a binding is checked against the same answer the document and the servers write. The OpenAPI
+  projection reads them (below); the generated servers do not yet
+  (https://github.com/beyond10x/ess/issues/493, `docs/design/http-presentation-binding.md`,
+  "Response body per outcome", "Status per outcome", "Standard refusals").
+- Composition format `ess-composition/4` adds `roles:`. An entry says that the component one
+  imported service selects plays the component another selects (`service:` and `plays:`, both
+  service keys of the composition), and which local command stands where in that contract:
+  `commands: [{local, stands, contract}]`, where `stands` is `implements` (the local command answers
+  the contract command: every contract input field is a local input field of a conforming type,
+  compared as type conformance compares fields, and a local input the contract does not declare is
+  `Optional` and not `null_when_absent`) or `gates` (the local command decides before the contract
+  command succeeds; recorded, not executed, and no inputs are compared). `ess specify compose`
+  admits each command on its component's `accepts` surface and writes the roles, in document order,
+  into the compiled composition, each end with the system, version, digest and component it was
+  checked at. New refusals: `unknown_role_service` (`roles[i].service` or `roles[i].plays` is not
+  imported), `conflicting_role` (a role playing its own service, a repeated role or command entry)
+  and `role_input_drift` (an `implements` entry whose inputs differ, naming every field); a command
+  outside its selected component or undeclared keeps `reference_outside_component` or
+  `unresolved_semantic_reference`, its detail naming `roles[i].commands[j].local` or `.contract`.
+  `/1` to `/3` documents keep their compiled bytes, and one carrying `roles`, even empty, is still
+  refused as an unknown field; the client plan does not change. Delivering a local event through
+  the contract's delivery is not part of it (https://github.com/beyond10x/ess/issues/525,
+  `docs/design/composition-contract-roles.md`).
+
+- `ess verify conform mutate` scores a `precedence-swap` of two branches `equivalent`
+  (`ESS-MUTATE-005`) when every input both branches select is already taken by branches answered
+  before both, instead of `survived`: the two then never answer the same request, so their order
+  decides nothing. Only branches selected by an input guard alone are subtracted, decided as a dead
+  guard is; a branch the held state or a related row also decides is not, and a swap whose overlap
+  is partly uncovered keeps the verdict its run gives. Only two branches addressing the same
+  stored row through the same input field, or neither a stored row, are scored so: on a row-set
+  command their order otherwise decides which row a request neither of them takes reads. The
+  entry names those branches in a new `overlap_taken_by` list, apart from `unsatisfiable_guard`,
+  which still says only that the two guards never overlap, and its text line ends
+  ``— ESS-MUTATE-005: every input both branches select is taken first by `done-paused-default` ``.
+  A report or manifest carrying it is the new
+  `ess-mutation-report/6` or `ess-mutation-manifest/6`, and one carrying none keeps its earlier
+  version and bytes; an earlier manifest carrying it, `/5` included, or one carrying it on a mutant
+  that is not a `precedence-swap`, is refused (https://github.com/beyond10x/ess/issues/539).
+
+- An `ess-http/1` outcome declares response headers and a redirect, and a standard refusal
+  declares headers. `headers: {<Name>: …}` maps an RFC 9110 token to `{literal: <text>}`,
+  `{source: <path>}` (`input.<field>`, `response.<field>`, `error.<field>` or `error.wire`, a
+  scalar or an `Optional` scalar) or `{challenge: {scheme, params}}`, one `WWW-Authenticate`
+  challenge whose params are literals or sources, so a `401` answers `Bearer` with
+  `error: {source: error.wire}` (RFC 6750 §3). `redirect: {location, mode: query | fragment,
+  parameters}` sends the caller to the URI a `String` source holds, with each parameter a scalar
+  source. `ess specify http compile` writes both into `ess-http-ir/1`, header, param and parameter
+  maps in name order whatever the authored order, each name as authored, and omits an empty map,
+  so a binding without them keeps its bytes. `ESS-HTTP-026` refuses a header name that is not a
+  token, `Connection`, `Content-Type`, `Content-Encoding`, `Content-Length`, `Transfer-Encoding`
+  and `Location` in any case, a name declared twice ignoring case, a literal that is not a field
+  value, a header reading `error.wire` whose wire name, known when the binding compiles, is not
+  one, a source naming no field, a non-scalar or one the outcome cannot supply, `error.wire`
+  beside an error field named `wire`, and any source in a refusal's header; `-027` a challenge
+  scheme or param name that is not a token, a param twice, a literal param or one reading
+  `error.wire` whose text a quoted string cannot carry, a challenge under any other header, and a
+  `401` outcome or refusal without a `WWW-Authenticate` challenge; `-028` a `redirect` on a status
+  other than `301`, `302`, `303`, `307` and `308`, one of those without a `redirect`, a
+  `location` that is not a `String` or a newtype of one, is `Optional` or reads `error.wire`, a
+  `mode` absent or outside the set, a parameter name outside RFC 3986 `unreserved`, and a
+  parameter twice or reading what a header could not. `-024` refuses a body other than `none`
+  beside a redirect. Two redirects on one status, both `body: none`, are told apart when one
+  always writes a parameter (its source not `Optional`) the other never writes, so an OAuth
+  authorization endpoint answers success (`code`) and error (`error`) both with `302` (RFC 6749
+  §4.1.2, §4.1.2.1), and when both write one parameter from `error.wire` and their error wire
+  names differ, so `access_denied` and `invalid_scope` both answer `302` with their own `error`
+  (§4.1.2.1); `ESS-HTTP-025` refuses two that neither tells apart. A refining document restates
+  each refined outcome's headers and redirect and each refusal's headers (`ESS-HTTP-012`).
+  The OpenAPI projection reads them (below); the generated servers do not yet (https://github.com/beyond10x/ess/issues/493,
+  `docs/design/http-presentation-binding.md`, "Response headers", "Redirects").
+- `ess generate --kind openapi --http` projects a binding's stage-2 keys. A `form` route's request
+  body is `application/x-www-form-urlencoded`; a `query` route has no request body and no
+  `{command}.Input`, and each input field its path does not carry is an `in: query` parameter
+  under its wire name, a `List` with `style: form` and `explode: true`. Each declared status is
+  its own response: `body: response` answers the command's `{command}.Result` bare, `{<member>:
+  error}` an object whose `<member>` is a `const` of the error's wire name beside the error's own
+  fields, `none` no content; two error objects on one status are told apart by a discriminator on
+  `<member>`. Declared headers are response `headers` (a literal a `const`, a source a `string`
+  required unless it may be absent, a challenge a `string` described param by param), and a
+  redirect answers a required `Location` header of `format: uri` and no content. A `single` view
+  answers its row schema at `200` and no content at its `empty` status, and a `refusals:`
+  override replaces the standard answer on every bound operation that can give it. Every response
+  of a command whose route uses a stage-2 key, or of a binding that overrides a refusal, carries
+  `x-ess-outcomes`, the outcomes it answers in declaration order, because a bare body names no
+  branch. `security` and `securitySchemes` stay omitted. A binding without a stage-2 key keeps
+  every byte the projection wrote before (https://github.com/beyond10x/ess/issues/493,
+  `docs/design/http-presentation-binding.md`, "What OpenAPI writes (k4)").
+- `ess generate synthesize --target rust --http FILE [--refines FILE]` emits a Rust server that
+  serves an `ess-http/1` binding. A bound route is a template: several methods share one path, a
+  path variable is percent-decoded into its input field or view parameter, a path no route matches
+  is `404` and one a route matches under another method is `405` naming every method there. A
+  `form` request (`Content-Type: application/x-www-form-urlencoded`) and a `query` request are
+  decoded by wire name, `+` as a space, a `List` repeating its key; a scalar key given twice, an
+  empty non-`String` value, an unknown key under `unknown: refuse`, and a body or query naming a
+  field the path carries are malformed. A listed outcome answers its declared status and body
+  (`response`, `{<member>: error}`, `none`), its headers, its `WWW-Authenticate` challenge, each
+  param a quoted string whose `"` and `\` are escaped, and its redirect, whose parameters are
+  form-encoded in name order onto the location's query or as its fragment, an absent optional
+  left out; an outcome not listed keeps the envelope at its derived status. A sourced header,
+  param or location that cannot be written (a control character, a location that is not an
+  absolute URI without a fragment) is never written: the answer is `unfinished` with `committed`
+  `true`. `refusals:` overrides `malformed`, `not_granted` and `unfinished` on the routes the
+  binding names; every derived route keeps today's answers, and a `single` view answers its row
+  bare or its `empty` status without a body. The served `/openapi.json` is the bound document. A
+  binding with an open route, or a route a request for `/openapi.json` or `/docs` would match
+  (`/{page}` included), is refused at synthesis naming the operation, and `--http` with any target
+  but `rust` and `go` is refused by name with exit status 2. Without `--http` every synthesized
+  byte is unchanged (https://github.com/beyond10x/ess/issues/493,
+  `docs/design/http-presentation-binding.md`, "What the servers write (k5, k6)").
+- `ess generate synthesize --target go --http FILE [--refines FILE]` emits a Go server that serves
+  an `ess-http/1` binding as the Rust server does: template dispatch over the escaped path, `form`
+  and `query` decoding, each listed outcome's status, body, headers, challenge and redirect, the
+  `refusals:` overrides, a `405` naming its methods in `Allow`, and a `204` written without a
+  length or a body. Where the binding writes the answer, the two servers answer one request with
+  the same status, headers and body bytes: a `single` row, a `response` body and an error object
+  write their members in the order the model declares them and escape text as the Rust server
+  does (U+2028 and U+2029 written as themselves), a `json` body is read as the Rust server reads
+  one (text after the document, a lone surrogate escape or nesting past 64 is `malformed`, and of
+  a repeated member the first is kept), routes match the path as the request spells it
+  (`/openapi%2Ejson` is not `/openapi.json`, and a `404` names the escaped path), and any text a
+  binding declares, such as a refusal literal holding a no-break space, is written into the Go
+  source as a valid Go string. The same bindings are refused at synthesis, `--http`
+  is now refused only for `web` and `clap`, and without `--http` every synthesized Go byte is
+  unchanged (https://github.com/beyond10x/ess/issues/493,
+  `docs/design/http-presentation-binding.md`, "What the servers write (k5, k6)").
 
 - `ess-http/1`, a document beside the specification that binds its commands and views to HTTP
   routes, pinned to the specification's source digest as `ess-transport/1` is: each route names
@@ -115,7 +354,88 @@
   and manifest keeps its bytes; no persisted field is added and no format moves. The library entry
   point is `ess_conformance::mutate::audit_with_authored`.
 
+### Changed
+
+- A read-only command can declare `unknown_instance:`. A command whose branches only preserve the
+  row its input names (`preserves:` with `instance:` from input), or refuse it through
+  `when_subject:`, declares its answer for an identity no row carries, where validation refused the
+  marker with `unreachable_branch`. Synthesis writes the scenario that sends such a command an
+  identity nothing stores and expects the declared branch and its error; the interpreted target
+  and the generated Rust and Go behaviour pass it. A command with no input-addressed branch keeps
+  `unreachable_branch`, a creating `unknown_instance:` beside a `preserves:` branch alone is still
+  refused `conflicting_declaration`, and a preserving command without the marker synthesizes the
+  scenarios it did (https://github.com/beyond10x/ess/issues/535,
+  `docs/design/typed-literals-and-unknown-instances.md` section 2b).
+- A literal written through a newtype is refused as `type_mismatch` where it lies outside that
+  newtype's `alphabet:` or makes one of its `invariants:` other than true, in `sets:`, `payload:`,
+  a binding's `mapping:`, an enum variant's `attributes:` and a view's default row alike, with the
+  sentence an input's `example:` gets for the same value. Before, only the representation was
+  checked, so `code: xyz` over a newtype drawn from `ab`, or `level: 0` over one whose invariant is
+  `value >= 1`, validated and named a value no target could hold. A model whose literals are
+  values of their types is unaffected (https://github.com/beyond10x/ess/issues/533).
+
 ### Fixed
+
+- The disclosure scenarios synthesized for a `one_time_response:` outcome send every command as
+  the suite's caller, as the outcome's own scenario does, wherever a command of the model reads
+  its caller (`{caller: <attribute>}`). Before, they sent no caller, so an outcome recording who
+  issued its secret (`sets: {issued_by: {caller: user_id}}`) left the interpreted target with no
+  value to record, and every such scenario came back `unsupported` instead of testing the
+  non-disclosure rule. A model none of whose commands reads its caller keeps its suite bytes
+  (https://github.com/beyond10x/ess/issues/550).
+- The generated explorers (Go `Explore` and the TypeScript `explore`) draw a command with a
+  `preserves:` outcome on a supplied subject, instead of leaving the whole command out of every
+  sequence. The model leaves the row as it was, state and fields, so a target that changes it on
+  the accepted no-op answer (pause when already paused, logout when logged out) fails at the view
+  that shows the change, naming the step. Concurrent exploration still leaves such a command out
+  with the reason it gave before, and a `deletes:` outcome stays excluded as before
+  (https://github.com/beyond10x/ess/issues/536).
+- The generated explorers' model applies a selected-rows effect (`moves:` or `updates:` with
+  `instances: {where: …}`) to every row the filter selects, as synthesis and the interpreter do:
+  a `moves:` takes each selected row resting in the transition's `from` states and skips the
+  others, and the outcome's `sets:` apply to every changed row. Before, the model kept the
+  selected rows as they were, so the first view read after such a step reported a disagreement a
+  correct target did not make. As in the interpreter, a row outside a `moves:`'s `from` states is
+  skipped before its filter is read, and an `Optional` field no outcome wrote is read as absent,
+  so the row is not selected; a filter reading a field whose value the model does not hold (a
+  required field no outcome wrote) is reported in `undetermined` and the draw redrawn. A bulk
+  `deletes:` with `instances:` is now excluded by name, as a single `deletes:` is, and so is an
+  outcome with an `affects:` entry, which the model does not apply: such a command was drawn
+  before and a correct target failed with a view disagreement on the rows `affects:` wrote. The
+  sequential explorer also draws a `Decimal` input as it
+  draws an `Integer` one, instead of excluding the command ("is a `decimal`")
+  (https://github.com/beyond10x/ess/issues/538).
+- The generated sequential explorers stop sending a command the target answers `ErrUnsupported`
+  (TypeScript: throws `unsupported`) only in the held state of the row that step addressed (a step
+  that addresses no row is the state `(no row)`), and keep drawing it in every other state, instead
+  of excluding the command for the rest of the run. A target that could not drive a command in one
+  state lost the command and every state reachable only through it. A command refused in every
+  state it was drawn in, and driven in none, is in `excluded` with the reason it had before, so
+  `allowExcluded` and the coverage check read as they did. A command driven elsewhere is reported in
+  a new, additive result field `refused` (Go `Refused []Refusal`), one `{command, state, reason,
+  count}` per refused state, absent when empty so a result without one keeps its bytes; an outcome
+  no step took that a refused step would have taken is in `excludedOutcomes`. The strict assertion
+  (`assertExplored` without `allowExcluded`) fails on a nonempty `refused`, as it failed on the
+  exclusion each refusal made before, and `allowExcluded` accepts it; the message lists each refusal
+  on its own line (command, held state, reason, steps not sent) under its own heading, never among
+  the exclusions, and marks an excluded outcome only a refused step would have taken. A view the
+  target refuses stays excluded for the run, and concurrent exploration keeps its per-command
+  exclusion. A seed now names a different sequence wherever a command was refused, because the
+  command stays in the draw
+  (https://github.com/beyond10x/ess/issues/537).
+- An `ess-composition/1` document carrying `conformances` with a `null` value (`conformances:`,
+  `conformances: ~`, JSON `null`) is refused as `unsupported_format`, as `conformances: []` is,
+  instead of reading as a document without the key and compiling. `/2` and later read a `null`
+  `conformances` as the absent key, as before (https://github.com/beyond10x/ess/issues/525).
+- No ESS crate depends on `serde_yaml` or `unsafe-libyaml` any more, so `cargo deny check
+  advisories` in a crate that depends on ESS no longer reports RUSTSEC-2024-0449. YAML now goes
+  through one new crate, `ess-yaml` (`crates/specify/ess-yaml`), which every other crate names
+  instead of a YAML library (the `infra-*` crates through `ess_primitives::yaml`). Its backend is
+  `serde_norway` 0.9.42, a stopgap: a maintained fork of `serde_yaml` 0.9 that reads every
+  committed document to the same values and writes the same bytes, so no accepted document,
+  diagnostic or generated byte changes. An ESS-owned parser and emitter are planned behind the
+  same API (`docs/design/yaml-parser-replacement.md`,
+  https://github.com/beyond10x/ess/issues/541).
 
 - `ess generate synthesize --target go` emits a module that builds when bounded contexts reference
   each other in a loop, for example a command outcome in `publish` refusing with an error declared

@@ -261,3 +261,107 @@ fn a_command_that_creates_only_has_no_unknown_instance_to_answer() {
         synthesis.notes
     );
 }
+
+/// beyond10x/ess#535: a read-only command — `Ring` preserves the seat its input names, or refuses
+/// one in `Closed` — declares `unknown_instance:` for an identity no seat carries.
+const READ_ONLY: &str =
+    include_str!("../../../specify/ess-compiler/tests/fixtures/read-only-unknown-instance.yaml");
+
+const RING_NO_SEAT: &str = "demo.desk.Ring/outcome/no-seat";
+
+#[test]
+fn a_read_only_command_is_witnessed_on_an_identity_no_record_carries() {
+    let synthesis = synthesis(READ_ONLY);
+    assert!(synthesis.refusals.is_empty(), "{:#?}", synthesis.refusals);
+    let unknown = scenario(&synthesis.suite, RING_NO_SEAT);
+
+    // Nothing is arranged: the identity names no seat because none was made.
+    assert!(
+        !unknown.steps.iter().any(|step| matches!(
+            step,
+            ScenarioStep::EstablishEntity { .. } | ScenarioStep::CaptureInstance { .. }
+        )),
+        "the scenario arranges no seat:\n{:#?}",
+        unknown.steps
+    );
+    let ScenarioStep::ExecuteCommand { command, input, .. } = &unknown.steps[0] else {
+        panic!("the command is the first step:\n{:#?}", unknown.steps);
+    };
+    assert_eq!(command.to_string(), "demo.desk.Ring");
+    let Some(ScenarioValue::Literal { value: identity }) = input.get("user_id") else {
+        panic!("the identity is a literal the suite chose: {input:#?}");
+    };
+    // Fresh: no scenario makes a seat with it, so no target shared between scenarios holds one.
+    // (`CloseSeat/no-seat` may send the same identity: it too is answered for a seat nobody made.)
+    for (id, other) in &synthesis.suite.scenarios {
+        for step in &other.steps {
+            if let ScenarioStep::ExecuteCommand { command, input, .. } = step {
+                if command.to_string() != "demo.desk.TakeSeat" {
+                    continue;
+                }
+                assert_ne!(
+                    input.get("user_id"),
+                    Some(&ScenarioValue::Literal {
+                        value: identity.clone()
+                    }),
+                    "`{identity:?}` is sent by {id} too"
+                );
+            }
+        }
+    }
+    let outcome = unknown.steps.iter().any(|step| {
+        matches!(step, ScenarioStep::ExpectOutcome { outcome }
+            if outcome.to_string() == "demo.desk.Ring/no-seat")
+    });
+    let error = unknown.steps.iter().any(|step| {
+        matches!(step, ScenarioStep::ExpectError { error, .. }
+            if error.to_string() == "demo.desk.NoSeat")
+    });
+    assert!(
+        outcome && error,
+        "branch and error required:\n{:#?}",
+        unknown.steps
+    );
+    assert!(
+        !synthesis
+            .notes
+            .iter()
+            .any(|note| note.to_string().contains("demo.desk.Ring")),
+        "Ring declares its answer, so it is witnessed and not noted: {:?}",
+        synthesis.notes
+    );
+}
+
+#[test]
+fn a_read_only_command_without_unknown_instance_keeps_every_scenario_it_had() {
+    // The widening reaches only a command that declares the branch: without it, `Ring` takes the
+    // path every preserving command took before, and adding the branch adds its one scenario and
+    // changes no other.
+    let declared = synthesis(READ_ONLY).suite;
+    let undeclared = synthesis(&READ_ONLY.replace(
+        "      - name: no-seat
+        unknown_instance: true
+        error: demo.desk.NoSeat
+      - name: closed",
+        "      - name: closed",
+    ))
+    .suite;
+    let mut added = declared.scenarios.clone();
+    added.retain(|id, _| !undeclared.scenarios.contains_key(id));
+    assert_eq!(
+        added.keys().map(ToString::to_string).collect::<Vec<_>>(),
+        vec![RING_NO_SEAT.to_owned()],
+        "only the declared branch's scenario is new"
+    );
+    for (id, before) in &undeclared.scenarios {
+        let after = declared
+            .scenarios
+            .get(id)
+            .unwrap_or_else(|| panic!("{id} is still synthesized"));
+        assert_eq!(
+            serde_json::to_string(before).expect("serializes"),
+            serde_json::to_string(after).expect("serializes"),
+            "{id} is byte-identical with and without the branch"
+        );
+    }
+}

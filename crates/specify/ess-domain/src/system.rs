@@ -51,7 +51,7 @@ use crate::types::{NamedType, TypeBody, TypeRef, TypeRegistry};
 
 /// Specification format major versions this build implements.
 pub const SUPPORTED_FORMATS: &[u32] = &[
-    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
 ];
 
 /// What one specification format admits that the format before it did not.
@@ -246,6 +246,18 @@ pub const FORMAT_HISTORY: &[FormatHistoryEntry] = &[
         ],
         stricter: &[],
     },
+    FormatHistoryEntry {
+        major: 25,
+        release: Some("0.60.0"),
+        added: &[
+            "A create-or-update command may select among its update branches with `when_subject:` predicates over the stored row's fields and held state beside an `unknown_instance:` branch that `creates:` the row: the creating branch answers an identity no row carries, before any predicate reads a row, and the predicates must partition the stored rows alone; below `ess/25` the pairing is refused as `conflicting_declaration`, its hint naming `ess/25` (beyond10x/ess#530).",
+            "An outcome with `instances:` may publish an event once per row it changed, listed in `emits:` as `{event: <name>, each: changed}` with an optional `when_state:` naming the states a row held before the outcome; its payload reads that row with `{changed: <field>}` and `{changed: state}`, as it was before the outcome, and occurrences follow in ascending order of identity; the entry is refused by name on any other outcome, and below `ess/25` it is refused naming `ess/25` (beyond10x/ess#531).",
+            "An `external:` refusal may declare `before_row: true`: the implementation decides it from the request alone, before it reads the addressed row, so it answers at step 2 of the precedence order, among the input-guarded refusals in declaration order, before existence and the held state, and the branches the held state selects may be declared after it; the key is refused as `conflicting_declaration` on a branch that is not `external:`, on one naming no `error:`, beside `compensates: true`, where the error payload reads a row, declared after a branch a later step answers and on a command with a `when_related:` branch, and below `ess/25` as `unsupported_format_version` naming `ess/25` (beyond10x/ess#534).",
+            "A command guard may compare a text fact with its surrounding ASCII whitespace removed, `{trimmed: {<text operator>: …}}` around `equals`, `in`, `equals_ignore_case`, `in_ignore_case`, `starts_with`, `ends_with` or `contains`; below `ess/25` it is refused naming `ess/25`, and outside a command guard as `unsupported_construct` (beyond10x/ess#532).",
+            "A view whose filter is the one comparison `<identity> == param.<name>` may declare `absent: {row: {<field>: <literal>…}}`, its answer for an identity no row carries: one default row holding the requested identity, each literal typed as a `sets:` literal is, and nothing in the `Optional` fields it leaves out; refused as `conflicting_declaration` on any other filter, beside an aggregate or `paging:`, and on the identity field in `row:`, as `missing_declaration` where a required projected field has no value, and below `ess/25` as `unsupported_format_version` naming `ess/25` (beyond10x/ess#533).",
+        ],
+        stricter: &[],
+    },
 ];
 
 // `FORMAT_HISTORY` and `SUPPORTED_FORMATS` name the same majors in the same order, and every row
@@ -341,6 +353,9 @@ impl FormatVersion {
     /// A struct type or a command's response that ignores the fields it does not declare,
     /// `undeclared_fields: ignored` (beyond10x/ess#500).
     pub const V24: Self = Self(24);
+    /// A create-or-update command selects among its update branches by the stored row's fields,
+    /// `when_subject:` beside a creating `unknown_instance:` branch (beyond10x/ess#530).
+    pub const V25: Self = Self(25);
 
     /// How a format version is written.
     pub const PREFIX: &'static str = "ess/";
@@ -1519,7 +1534,7 @@ mod tests {
     }
 
     fn system(yaml: &str) -> Result<SystemSpec, ValidationErrors> {
-        let raw: RawSystemSpec = serde_yaml::from_str(yaml).expect("document parses");
+        let raw: RawSystemSpec = ess_yaml::from_str(yaml).expect("document parses");
         SystemSpec::try_from(raw)
     }
 
@@ -1529,7 +1544,7 @@ mod tests {
     }
 
     fn part(source: &str, yaml: &str) -> SpecPart {
-        let raw: RawSystemSpec = serde_yaml::from_str(yaml).expect("document parses");
+        let raw: RawSystemSpec = ess_yaml::from_str(yaml).expect("document parses");
         raw.into_part(source).expect("the document is well formed")
     }
 
@@ -2056,7 +2071,7 @@ domains:
     #[test]
     fn a_fragment_that_sets_system_level_fields_without_naming_the_system_is_refused() {
         let raw: RawSystemSpec =
-            serde_yaml::from_str("format: ess/1\nversion: v2\n").expect("document parses");
+            ess_yaml::from_str("format: ess/1\nversion: v2\n").expect("document parses");
         let errors = raw
             .into_part("domains/invoice.yaml")
             .expect_err("a format without a system");

@@ -1,0 +1,16 @@
+schema: b10x-change/v1
+id: ess/composition-roles-0.60.0
+repository: ess
+publishedAt: 2026-10-14T00:00:00Z
+title: A composition states which component plays another's role, and which command implements or gates it
+summary: >-
+  `ess-composition/4` adds `roles:`: one imported component plays another's, and each local
+  command `implements` or `gates` a contract command, checked for input drift by
+  `ess specify compose` ([#525](https://github.com/beyond10x/ess/issues/525)).
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.60.0
+  version: 0.60.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

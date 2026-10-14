@@ -1,0 +1,28 @@
+format: ess/23
+system: wire
+version: v1
+
+domains:
+  - wire.server
+  - wire.admin
+
+components:
+  - component: wire-server
+    owns:
+      domains:
+        - wire.server
+    accepts:
+      commands:
+        - wire.server.Subscribe
+    publishes:
+      events:
+        - wire.server.Subscribed
+    reached_by: network
+  - component: wire-admin
+    owns:
+      domains:
+        - wire.admin
+    accepts:
+      commands:
+        - wire.admin.Drain
+    reached_by: network

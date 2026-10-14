@@ -36,8 +36,12 @@ pages:
       ask: {kind: dialog, component: confirm, title: Drop thing}
 ";
 
-fn document() -> PathBuf {
-    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("ess-ui-test-confirm");
+/// Each test writes its own copy: a test that rewrote a shared `ui.yaml` while another read it
+/// handed that reader an empty document.
+fn document(name: &str) -> PathBuf {
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join("ess-ui-test-confirm")
+        .join(name);
     std::fs::create_dir_all(&dir).expect("the dir is made");
     std::fs::write(
         dir.join("things.yaml"),
@@ -48,10 +52,10 @@ fn document() -> PathBuf {
     dir.join("ui.yaml")
 }
 
-fn file(steps: &[&str]) -> ess_ui_test::TestFile {
+fn file(name: &str, steps: &[&str]) -> ess_ui_test::TestFile {
     let mut text = format!(
         "format: ess-ui-test/1\ndocument: {}\ntests:\n- name: confirm\n  steps:\n",
-        document().display()
+        document(name).display()
     );
     for step in steps {
         text.push_str("  - ");
@@ -62,16 +66,16 @@ fn file(steps: &[&str]) -> ess_ui_test::TestFile {
         .unwrap_or_else(|error| panic!("{error}\n{text}"))
 }
 
-fn run(steps: &[&str]) -> Outcome {
-    let report =
-        ess_ui_test::execute(&document(), &[file(steps)]).unwrap_or_else(|error| panic!("{error}"));
+fn run(name: &str, steps: &[&str]) -> Outcome {
+    let report = ess_ui_test::execute(&document(name), &[file(name, steps)])
+        .unwrap_or_else(|error| panic!("{error}"));
     report.tests.into_iter().next().expect("one outcome")
 }
 
-fn spec(steps: &[&str]) -> String {
+fn spec(name: &str, steps: &[&str]) -> String {
     ess_ui_test::playwright(
-        &[file(steps)],
-        &ess_ui::load_path(&document()).expect("the document loads"),
+        &[file(name, steps)],
+        &ess_ui::load_path(&document(name)).expect("the document loads"),
     )
 }
 
@@ -87,9 +91,9 @@ fn an_inline_confirm_is_addressed_under_its_row_and_confirming_runs_the_action()
         &format!("act: {CONFIRM}"),
         "expect_command: {command: things.Remove, input: {thing: th-2}}",
     ];
-    let outcome = run(&steps);
+    let outcome = run("inline", &steps);
     assert_eq!(outcome.status, Status::Passed, "{outcome:?}");
-    let spec = spec(&steps);
+    let spec = spec("inline", &steps);
     let at = format!("[data-ui-path=\"{CONFIRM}\"]");
     for wanted in [
         format!("await expect(page.locator('{at}')).toContainText(\"Remove thing\");"),
@@ -102,7 +106,7 @@ fn an_inline_confirm_is_addressed_under_its_row_and_confirming_runs_the_action()
 
 #[test]
 fn another_rows_confirm_is_not_open() {
-    let outcome = run(&[
+    let outcome = run("another-row", &[
         "open: things.list",
         "act: pages/things.list/sections/list/rows/th-2/row_actions/remove",
         "expect: {at: pages/things.list/sections/list/rows/th-1/row_actions/remove/confirm/overlay, text: Remove thing}",
@@ -121,20 +125,23 @@ fn a_row_actions_confirm_without_its_row_is_refused_in_both_renderers() {
         "act: pages/things.list/sections/list/rows/th-2/row_actions/remove",
         "act: pages/things.list/sections/list/row_actions/remove/confirm/overlay",
     ];
-    let outcome = run(&steps);
+    let outcome = run("without-row", &steps);
     assert_eq!(outcome.step, Some(3), "{outcome:?}");
     let message = outcome.message.unwrap_or_default();
     assert!(message.contains("under its row"), "{message}");
-    assert!(spec(&steps).contains("under its row"));
+    assert!(spec("without-row", &steps).contains("under its row"));
 }
 
 #[test]
 fn a_confirm_overlay_without_does_runs_the_opening_action() {
-    let outcome = run(&[
-        "open: things.list",
-        "act: pages/things.list/sections/list/rows/th-2/row_actions/drop",
-        "act: pages/things.list/overlays/ask",
-        "expect_command: {command: things.Drop, input: {thing: th-2}}",
-    ]);
+    let outcome = run(
+        "without-does",
+        &[
+            "open: things.list",
+            "act: pages/things.list/sections/list/rows/th-2/row_actions/drop",
+            "act: pages/things.list/overlays/ask",
+            "expect_command: {command: things.Drop, input: {thing: th-2}}",
+        ],
+    );
     assert_eq!(outcome.status, Status::Passed, "{outcome:?}");
 }

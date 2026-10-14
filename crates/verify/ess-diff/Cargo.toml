@@ -38,9 +38,9 @@ ess-domain.workspace = true
 ess-gen.workspace = true
 
 # The two the delta format needs, both already in `[workspace.dependencies]`. A committed delta is
-# JSON for the reason a committed suite is: it is this repository's canonical form, and `serde_yaml`
-# decides quoting and folding by heuristics, so two spellings of one delta could differ in bytes
-# without differing in meaning.
+# JSON for the reason a committed suite is: it is this repository's canonical form, and the YAML
+# writer decides quoting and folding by heuristics, so two spellings of one delta could differ in
+# bytes without differing in meaning.
 #
 # Still no third-party crate beyond the workspace list. `sha2` was considered for the change id and
 # refused: a hashed id is unreadable in a review comment and tells a reader nothing about what it

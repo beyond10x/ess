@@ -257,7 +257,7 @@ pub fn resolve<'a>(command: &'a CommandSpec, name: &str) -> Resolved<'a> {
 
 /// Whether an `on_failure:` value is a refusal-selected one: a mapping in which some policy writes
 /// a selector. Everything else is the universal reader's.
-pub(crate) fn is_selected(value: &serde_yaml::Value) -> bool {
+pub(crate) fn is_selected(value: &ess_yaml::Value) -> bool {
     let Some(mapping) = value.as_mapping() else {
         return false;
     };
@@ -266,8 +266,8 @@ pub(crate) fn is_selected(value: &serde_yaml::Value) -> bool {
             return false;
         };
         match value {
-            serde_yaml::Value::Sequence(_) => policy != Failure::Escalate,
-            serde_yaml::Value::Mapping(block) => block
+            ess_yaml::Value::Sequence(_) => policy != Failure::Escalate,
+            ess_yaml::Value::Mapping(block) => block
                 .keys()
                 .any(|key| matches!(key.as_str(), Some("outcomes" | "except"))),
             _ => false,
@@ -279,7 +279,7 @@ pub(crate) fn is_selected(value: &serde_yaml::Value) -> bool {
 /// no policy, a policy written twice, a key its block does not take, and a value of the wrong
 /// shape. Everything else is validation's, so that a selected shape below ess/22 still reaches
 /// the format refusal.
-pub(crate) fn read(value: &serde_yaml::Value) -> Result<RefusalPolicy, String> {
+pub(crate) fn read(value: &ess_yaml::Value) -> Result<RefusalPolicy, String> {
     let mapping = value
         .as_mapping()
         .ok_or_else(|| "a refusal-selected `on_failure:` is a block of policies".to_owned())?;
@@ -303,7 +303,7 @@ pub(crate) fn read(value: &serde_yaml::Value) -> Result<RefusalPolicy, String> {
         }
         let mut entry = RefusalEntry::empty(policy);
         match value {
-            serde_yaml::Value::Sequence(_) if policy == Failure::Escalate => {
+            ess_yaml::Value::Sequence(_) if policy == Failure::Escalate => {
                 return Err(
                     "`escalate:` takes a block naming the event it emits — `escalate: {emits: \
                      <event>, outcomes: [...]}` or with `except: [...]` — and has no list \
@@ -311,10 +311,10 @@ pub(crate) fn read(value: &serde_yaml::Value) -> Result<RefusalPolicy, String> {
                         .to_owned(),
                 );
             }
-            serde_yaml::Value::Sequence(_) => {
+            ess_yaml::Value::Sequence(_) => {
                 entry.outcomes = Some(names(value, written, "outcomes")?);
             }
-            serde_yaml::Value::Mapping(block) => {
+            ess_yaml::Value::Mapping(block) => {
                 for (key, value) in block {
                     let key = key.as_str().unwrap_or_default();
                     match (key, policy) {
@@ -373,7 +373,7 @@ fn taken(policy: Failure) -> &'static str {
 }
 
 /// A list of refusal names.
-fn names(value: &serde_yaml::Value, policy: &str, key: &str) -> Result<Vec<String>, String> {
+fn names(value: &ess_yaml::Value, policy: &str, key: &str) -> Result<Vec<String>, String> {
     let items = value
         .as_sequence()
         .ok_or_else(|| format!("`{policy}:` writes `{key}` as a list of refusal names"))?;

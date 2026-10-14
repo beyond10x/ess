@@ -9,7 +9,7 @@ use ess_ui::{
     NavPages, NodeCommon, NodePath, NodeRef, OverlayKind, PageLayout, PlacementProfile, Primitive,
     Profile, Reads, RegionKind, State, StateClass, Store, TabFields, TypeExpr, WidgetUse,
 };
-use serde_yaml::Value;
+use ess_yaml::Value;
 
 use crate::expr;
 use crate::schema::{self, Capability};
@@ -122,7 +122,7 @@ impl Fixtures {
             let read = std::fs::read_to_string(&path)
                 .map_err(|error| error.to_string())
                 .and_then(|text| {
-                    serde_yaml::from_str::<FixtureIndex>(&text).map_err(|error| error.to_string())
+                    ess_yaml::from_str::<FixtureIndex>(&text).map_err(|error| error.to_string())
                 });
             match read {
                 Ok(file) => fixtures.absorb(&file),

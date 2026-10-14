@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use ess_ui_tui::placement::{Placement, StateStore};
 use ess_ui_tui::{App, FixtureAdapter, Options};
-use serde_yaml::Value;
+use ess_yaml::Value;
 
 fn example_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../examples/partner-portal")

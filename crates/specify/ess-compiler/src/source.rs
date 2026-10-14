@@ -1,6 +1,6 @@
 //! Where a diagnostic points.
 //!
-//! `serde_yaml` gives a line and column for a *syntax* error and nothing for a semantic one, so a
+//! `ess-yaml` gives a line and column for a *syntax* error and nothing for a semantic one, so a
 //! semantic diagnostic would point at the top of the file — which is a diagnostic someone has to
 //! search from, and design §29 asks for `--> domains/bindings.yaml:14:18`.
 //!

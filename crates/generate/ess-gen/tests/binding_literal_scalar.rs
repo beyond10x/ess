@@ -111,7 +111,7 @@ fn binding_literal_asyncapi_and_docs_read_the_constant_typed() {
         {
             serde_json::from_str(&contents).expect("JSON")
         } else {
-            serde_yaml::from_str(&contents).expect("YAML")
+            ess_yaml::from_str(&contents).expect("YAML")
         };
         literals(&document, &mut found);
     }

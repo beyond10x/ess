@@ -2807,7 +2807,7 @@ fn deployment_plan() -> serde_json::Value {
 fn write_plan(root: &Path, name: &str, value: &serde_json::Value) -> PathBuf {
     let path = root.join(name);
     let text = if name.ends_with("yaml") {
-        serde_yaml::to_string(value).unwrap()
+        ess_yaml::to_string(value).unwrap()
     } else {
         serde_json::to_string(value).unwrap()
     };

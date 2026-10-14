@@ -48,8 +48,10 @@ use ess_primitives::predicate::{Predicate, WrittenPredicate};
 use crate::name::{Naming, QualifiedName};
 use crate::types::{Field, Primitive, TypeBody, TypeRef, TypeRegistry, MAX_TYPE_DEPTH};
 
+pub(crate) mod absent;
 mod measure;
 mod paging;
+pub use absent::Absent;
 pub use paging::Paging;
 
 /// How soon a view reflects a command that has already returned.
@@ -507,7 +509,7 @@ impl Aggregation {
 /// read. So do a second `where:` and an empty one — `null`, empty text, an empty list or an empty
 /// map — which would otherwise read as every row, a condition nobody wrote.
 ///
-/// Read and written by hand as a map rather than derived: `serde_yaml` reads and writes a derived
+/// Read and written by hand as a map rather than derived: `ess-yaml` reads and writes a derived
 /// externally tagged enum as a YAML tag (`!sum talk_seconds`), which is not the syntax the design
 /// page fixes and not what a JSON document can carry. The schema is written by hand to match — one
 /// object per function with exactly that key, and `skip_absent` beside the five that read a value.
@@ -964,6 +966,9 @@ pub struct ViewSpec {
     /// How its rows are paged, where they are (ess/16, [`Paging`]). `None`: every read answers
     /// every row the filter admits.
     pub paging: Option<Paging>,
+    /// What a read answers for an identity no row of the source carries, where the view declares
+    /// it (ess/25, [`Absent`]). `None`: no row.
+    pub absent: Option<Absent>,
     /// How soon it reflects a command that has already returned.
     pub consistency: Consistency,
     /// What it is called on the wire and shown as.
@@ -1806,6 +1811,9 @@ pub struct RawViewSpec {
     /// How its rows are paged (ess/16). Absent: every read answers every row.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub paging: Option<Paging>,
+    /// What a read answers for an identity no row carries (ess/25). Absent: no row.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub absent: Option<Absent>,
     /// How soon it reflects a command that has already returned. Defaults to `eventual`.
     #[serde(default)]
     pub consistency: Consistency,
@@ -1899,6 +1907,7 @@ impl TryFrom<RawViewSpec> for ViewSpec {
             aggregation,
             order_by: raw.order_by,
             paging: raw.paging,
+            absent: raw.absent,
             consistency: raw.consistency,
             naming: raw.naming,
         };
@@ -1934,6 +1943,7 @@ impl From<ViewSpec> for RawViewSpec {
             group_by,
             order_by: view.order_by,
             paging: view.paging,
+            absent: view.absent,
             consistency: view.consistency,
             naming: view.naming,
         }
@@ -2066,12 +2076,12 @@ consistency: read_your_writes
 ";
 
     fn invoice_by_id() -> ViewSpec {
-        let raw: RawViewSpec = serde_yaml::from_str(INVOICE_BY_ID).expect("parses");
+        let raw: RawViewSpec = ess_yaml::from_str(INVOICE_BY_ID).expect("parses");
         ViewSpec::try_from(raw).expect("a valid view")
     }
 
     fn shaped_invoice_by_id() -> ViewSpec {
-        let raw: RawViewSpec = serde_yaml::from_str(SHAPED_INVOICE_BY_ID).expect("parses");
+        let raw: RawViewSpec = ess_yaml::from_str(SHAPED_INVOICE_BY_ID).expect("parses");
         ViewSpec::try_from(raw).expect("a shape is a complete view declaration")
     }
 
@@ -2082,14 +2092,14 @@ consistency: read_your_writes
 
     fn ordered(order_by: &str) -> Result<ViewSpec, ValidationErrors> {
         let document = format!("{INVOICE_BY_ID}order_by:\n{order_by}");
-        let raw: RawViewSpec = serde_yaml::from_str(&document).expect("parses");
+        let raw: RawViewSpec = ess_yaml::from_str(&document).expect("parses");
         ViewSpec::try_from(raw)
     }
 
     /// `InvoiceById`, asked about one customer rather than about the whole system.
     fn parameterised(params: &str, filter: &str) -> ViewSpec {
         let document = format!("{INVOICE_BY_ID}params:\n{params}filter: {filter}\n");
-        let raw: RawViewSpec = serde_yaml::from_str(&document).expect("parses");
+        let raw: RawViewSpec = ess_yaml::from_str(&document).expect("parses");
         ViewSpec::try_from(raw).expect("the shape is well formed")
     }
 
@@ -2118,7 +2128,7 @@ consistency: read_your_writes
         );
 
         let round_tripped: RawViewSpec =
-            serde_yaml::from_str(&serde_yaml::to_string(&view).expect("writes")).expect("re-reads");
+            ess_yaml::from_str(&ess_yaml::to_string(&view).expect("writes")).expect("re-reads");
         assert_eq!(
             ViewSpec::try_from(round_tripped)
                 .expect("valid")
@@ -2181,7 +2191,7 @@ consistency: read_your_writes
         );
 
         let round_tripped: RawViewSpec =
-            serde_yaml::from_str(&serde_yaml::to_string(&view).expect("writes")).expect("re-reads");
+            ess_yaml::from_str(&ess_yaml::to_string(&view).expect("writes")).expect("re-reads");
         assert_eq!(
             ViewSpec::try_from(round_tripped).expect("valid").order_by,
             view.order_by
@@ -2237,7 +2247,7 @@ consistency: read_your_writes
         // A ranking is refused where it is read, not where the view is validated: `sideways` is
         // not a direction in any view, so there is nothing about this view to check it against.
         let read = |order_by: &str| {
-            serde_yaml::from_str::<RawViewSpec>(&format!("{INVOICE_BY_ID}order_by:\n{order_by}"))
+            ess_yaml::from_str::<RawViewSpec>(&format!("{INVOICE_BY_ID}order_by:\n{order_by}"))
                 .expect_err("refused")
                 .to_string()
         };
@@ -2280,7 +2290,7 @@ consistency: read_your_writes
 
     #[test]
     fn a_view_that_does_not_declare_its_consistency_is_eventual() {
-        let raw: RawViewSpec = serde_yaml::from_str(
+        let raw: RawViewSpec = ess_yaml::from_str(
             r"
 name: billing.invoice.InvoiceById
 source: billing.invoice.Invoice
@@ -2304,8 +2314,8 @@ fields:
     #[test]
     fn a_view_round_trips_through_yaml() {
         let view = invoice_by_id();
-        let rendered = serde_yaml::to_string(&view).expect("serialises");
-        let reparsed: RawViewSpec = serde_yaml::from_str(&rendered).expect("re-parses");
+        let rendered = ess_yaml::to_string(&view).expect("serialises");
+        let reparsed: RawViewSpec = ess_yaml::from_str(&rendered).expect("re-parses");
         let round_tripped = ViewSpec::try_from(reparsed).expect("still valid");
 
         assert_eq!(round_tripped, view, "{rendered}");
@@ -2336,7 +2346,7 @@ fields:
             ["invoice_id", "total"]
         );
 
-        let rendered = serde_yaml::to_string(&view).expect("serialises");
+        let rendered = ess_yaml::to_string(&view).expect("serialises");
         assert!(
             rendered.contains("shape: billing.invoice.InvoiceRow"),
             "the reusable identity survives: {rendered}"
@@ -2345,13 +2355,13 @@ fields:
             !rendered.contains("fields:"),
             "serialisation must not expand the shape back into boilerplate: {rendered}"
         );
-        let raw: RawViewSpec = serde_yaml::from_str(&rendered).expect("re-parses");
+        let raw: RawViewSpec = ess_yaml::from_str(&rendered).expect("re-parses");
         assert_eq!(ViewSpec::try_from(raw).expect("still valid"), view);
     }
 
     #[test]
     fn a_view_cannot_declare_both_a_shape_and_inline_fields() {
-        let raw: RawViewSpec = serde_yaml::from_str(
+        let raw: RawViewSpec = ess_yaml::from_str(
             r"
 name: billing.invoice.InvoiceById
 source: billing.invoice.Invoice
@@ -2576,7 +2586,7 @@ fields:
 
     #[test]
     fn a_view_that_projects_nothing_is_refused() {
-        let raw: RawViewSpec = serde_yaml::from_str(
+        let raw: RawViewSpec = ess_yaml::from_str(
             r"
 name: billing.invoice.InvoiceById
 source: billing.invoice.Invoice
@@ -2596,7 +2606,7 @@ source: billing.invoice.Invoice
 
     #[test]
     fn a_field_projected_twice_is_refused() {
-        let raw: RawViewSpec = serde_yaml::from_str(
+        let raw: RawViewSpec = ess_yaml::from_str(
             r"
 name: billing.invoice.InvoiceById
 source: billing.invoice.Invoice

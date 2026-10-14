@@ -30,7 +30,8 @@ pub enum Phase {
     /// Step 1: on a command reading a related row or a row set, `existing_instance:`; then each
     /// `exists: false` over a row the input names, in declaration order.
     RelatedRow,
-    /// Step 2: the input-guarded refusals, the first declared whose guard holds.
+    /// Step 2: the input-guarded refusals, the first declared whose guard holds, and from ess/25 the
+    /// external refusals marked `before_row: true`, among them in declaration order.
     InputRefusal,
     /// Step 3: existence — `existing_instance:` on any other command, then `unknown_instance:`.
     Existence,
@@ -209,7 +210,11 @@ impl From<&OutcomeCondition> for ConditionShape {
 }
 
 /// One branch as the classification reads it: its condition's shape, and whether it names an
-/// `error:`, a subject and `replays:`.
+/// `error:`, a subject and `replays:`, and is marked `before_row:`.
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "one flag per fact of the branch the classification reads, not a state machine"
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BranchShape {
     /// Its condition.
@@ -220,6 +225,8 @@ pub struct BranchShape {
     pub subject: bool,
     /// It replays a retained result.
     pub replays: bool,
+    /// It is an `external:` refusal marked `before_row: true` (ess/25): read at step 2.
+    pub before_row: bool,
 }
 
 impl BranchShape {
@@ -230,6 +237,7 @@ impl BranchShape {
             error: outcome.error.is_some(),
             subject: outcome.subject.is_some(),
             replays: outcome.replays.is_some(),
+            before_row: outcome.before_row,
         }
     }
 
@@ -455,6 +463,13 @@ pub fn place(branch: &BranchShape, command: &Composition) -> Place {
             } else {
                 at(Phase::Accepting, Rank::Declared)
             }
+        }
+        // An external refusal the implementation decides before it reads the row (`before_row:`,
+        // ess/25, beyond10x/ess#534) answers among the input-guarded refusals, in declaration order.
+        ConditionShape::External | ConditionShape::ExternalWhen
+            if branch.before_row && branch.error =>
+        {
+            at(Phase::InputRefusal, Rank::Declared)
         }
         ConditionShape::External | ConditionShape::ExternalWhen => {
             at(Phase::Accepting, Rank::Declared)

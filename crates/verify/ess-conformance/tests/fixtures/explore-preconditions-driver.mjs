@@ -4,7 +4,8 @@
 //
 // A case is `{name, mode, options, allowExcluded}`. Each is its own named test, and each writes
 // `<name>.json` (the result) and `<name>.assert` (`ok`, `failed: <first line>` or
-// `refused: <message>`) into `ESS_EXPLORE_OUT`.
+// `refused: <message>`) into `ESS_EXPLORE_OUT`, and on a failed assertion `<name>.message`, its
+// whole text.
 
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -31,6 +32,7 @@ for (const one of cases) {
       write('.assert', 'ok');
     } catch (error) {
       write('.assert', `failed: ${error.message.split('\n')[0]}`);
+      write('.message', error.message);
     }
   });
 }

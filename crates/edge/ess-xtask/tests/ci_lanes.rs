@@ -7,11 +7,10 @@
 //! silent failure mode — a step of `task check` that no job calls exits nowhere, so nothing turns
 //! red when it goes missing. The coverage case below reads both files and names the step instead.
 //!
-//! The release workflow reuses a green `Gate` rather than running the gate a second time: the one
-//! on the exact tagged commit, or the one on the head of the pull request whose merge commit is the
-//! tagged commit when that head has the tagged tree. The reuse is a condition in two jobs and a
-//! script in a third; the release cases below hold the conditions, and run the script itself
-//! against a real Git history and a stand-in for `gh`.
+//! The release workflow runs the full gate on every tag and never reuses an earlier `Gate`: the
+//! tag run is the release gate, and a pull request's `Gate` runs the narrowed feature-off build.
+//! It does reuse the archives a queue run built from the tagged commit; the release cases below
+//! hold both, and run the archive-reuse script itself against a stand-in for `gh`.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -22,8 +21,8 @@ use std::process::Command;
 #[path = "../../ess-cli/tests/support/executable.rs"]
 mod executable;
 
+use ess_yaml::Value;
 use serde_json::json;
-use serde_yaml::Value;
 
 fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -40,7 +39,7 @@ fn yaml(relative: &str) -> Value {
     let path = workspace_root().join(relative);
     let text =
         fs::read_to_string(&path).unwrap_or_else(|error| panic!("reading {relative}: {error}"));
-    serde_yaml::from_str(&text).unwrap_or_else(|error| panic!("parsing {relative}: {error}"))
+    ess_yaml::from_str(&text).unwrap_or_else(|error| panic!("parsing {relative}: {error}"))
 }
 
 fn text(value: &Value) -> &str {
@@ -728,7 +727,7 @@ fn the_gate_check_aggregates_every_lane_and_cannot_be_skipped() {
         .as_sequence()
         .into_iter()
         .flatten()
-        .map(|step| serde_yaml::to_string(step).unwrap())
+        .map(|step| ess_yaml::to_string(step).unwrap())
         .collect();
     for need in &needs {
         assert!(
@@ -868,12 +867,12 @@ fn pull_requests_run_feature_off_on_number_semantics_and_every_other_run_runs_al
     );
     assert_eq!(
         on["merge_group"]["types"],
-        serde_yaml::from_str::<Value>("[checks_requested]").unwrap(),
+        ess_yaml::from_str::<Value>("[checks_requested]").unwrap(),
         "ci.yml does not run in the merge queue, so the queue can never see a Gate"
     );
     assert_eq!(
         on["push"]["branches"],
-        serde_yaml::from_str::<Value>("[main, 'queue/**']").unwrap(),
+        ess_yaml::from_str::<Value>("[main, 'queue/**']").unwrap(),
         "ci.yml no longer runs on every push to main and to the bot merge queue"
     );
     let crons: Vec<&str> = on["schedule"]
@@ -894,7 +893,7 @@ fn pull_requests_run_feature_off_on_number_semantics_and_every_other_run_runs_al
         .job;
     assert_eq!(
         text(&ci["jobs"][builder.as_str()]["env"]["FEATURE_OFF"]),
-        "${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || startsWith(github.ref, 'refs/heads/queue/')) && 'number-semantics' || 'full' }}",
+        "${{ inputs.checkout-ref == '' && (github.event_name == 'pull_request' || github.event_name == 'merge_group' || startsWith(github.ref, 'refs/heads/queue/')) && 'number-semantics' || 'full' }}",
         "only a pull request or its merge-queue run may narrow the feature-off archive"
     );
 
@@ -1118,16 +1117,7 @@ mod toml_lines {
     }
 }
 
-fn prior_gate_step(release: &Value) -> &Value {
-    release["jobs"]["resolve"]["steps"]
-        .as_sequence()
-        .expect("resolve steps")
-        .iter()
-        .find(|step| text(&step["id"]) == "prior-gate")
-        .expect("resolve looks for a prior Gate")
-}
-
-/// A public workflow may inspect GitHub to reuse exact prior evidence, but release publication is
+/// A public workflow may inspect GitHub to reuse exact prior archives, but release publication is
 /// an organization-bot operation from the trusted coordinator. The preparation run therefore has
 /// no write permission and carries no `gh release` mutation that would use `github.token` as
 /// `github-actions[bot]`.
@@ -1207,48 +1197,319 @@ fn release_preparation_retains_an_exact_tag_and_commit_artifact() {
     assert_eq!(text(&upload["with"]["if-no-files-found"]), "error");
 }
 
+/// What a GitHub Actions expression evaluates to, as far as the readers in this suite need.
+#[derive(Clone, Debug, PartialEq)]
+enum ExpressionValue {
+    Text(String),
+    Flag(bool),
+}
+
+impl ExpressionValue {
+    fn truthy(&self) -> bool {
+        match self {
+            Self::Text(text) => !text.is_empty(),
+            Self::Flag(flag) => *flag,
+        }
+    }
+}
+
+/// The tokens of a GitHub Actions expression: operators, parentheses, commas, quoted literals and
+/// names (a context path or a function).
+fn expression_tokens(source: &str) -> Vec<&str> {
+    let mut tokens = Vec::new();
+    let mut rest = source.trim_start();
+    while !rest.is_empty() {
+        let length = if let Some(operator) = ["&&", "||", "==", "!="]
+            .into_iter()
+            .find(|operator| rest.starts_with(operator))
+        {
+            operator.len()
+        } else if rest.starts_with(['(', ')', ',', '!']) {
+            1
+        } else if let Some(after) = rest.strip_prefix('\'') {
+            after
+                .find('\'')
+                .unwrap_or_else(|| panic!("an unterminated literal at `{rest}`"))
+                + 2
+        } else {
+            rest.find(|character: char| {
+                !(character.is_ascii_alphanumeric() || "._-".contains(character))
+            })
+            .unwrap_or(rest.len())
+        };
+        assert!(
+            length > 0,
+            "this reader cannot read the expression at `{rest}`"
+        );
+        tokens.push(&rest[..length]);
+        rest = rest[length..].trim_start();
+    }
+    tokens
+}
+
+/// Reads one GitHub Actions expression by precedence: `||`, then `&&`, then `==` and `!=`, then
+/// `!`, then a parenthesised expression, a literal, `startsWith(…, …)` or a context name.
+struct ExpressionReader<'a> {
+    tokens: Vec<&'a str>,
+    at: usize,
+    context: &'a BTreeMap<&'a str, &'a str>,
+}
+
+impl<'a> ExpressionReader<'a> {
+    fn peek(&self) -> Option<&'a str> {
+        self.tokens.get(self.at).copied()
+    }
+
+    fn take(&mut self) -> &'a str {
+        let token = self
+            .peek()
+            .unwrap_or_else(|| panic!("the expression {:?} ends early", self.tokens));
+        self.at += 1;
+        token
+    }
+
+    fn expect(&mut self, token: &str) {
+        let found = self.take();
+        assert_eq!(
+            found, token,
+            "the expression {:?} is malformed",
+            self.tokens
+        );
+    }
+
+    // `||` and `&&` yield one of their operands, not a boolean, as GitHub's do: that is what makes
+    // `cond && 'a' || 'b'` the language's conditional.
+    fn or(&mut self) -> ExpressionValue {
+        let mut value = self.and();
+        while self.peek() == Some("||") {
+            self.at += 1;
+            let right = self.and();
+            if !value.truthy() {
+                value = right;
+            }
+        }
+        value
+    }
+
+    fn and(&mut self) -> ExpressionValue {
+        let mut value = self.comparison();
+        while self.peek() == Some("&&") {
+            self.at += 1;
+            let right = self.comparison();
+            if value.truthy() {
+                value = right;
+            }
+        }
+        value
+    }
+
+    fn comparison(&mut self) -> ExpressionValue {
+        let left = self.unary();
+        match self.peek() {
+            Some(operator @ ("==" | "!=")) => {
+                self.at += 1;
+                let right = self.unary();
+                ExpressionValue::Flag((left == right) == (operator == "=="))
+            }
+            _ => left,
+        }
+    }
+
+    fn unary(&mut self) -> ExpressionValue {
+        if self.peek() == Some("!") {
+            self.at += 1;
+            ExpressionValue::Flag(!self.unary().truthy())
+        } else {
+            self.primary()
+        }
+    }
+
+    fn primary(&mut self) -> ExpressionValue {
+        let token = self.take();
+        if token == "(" {
+            let value = self.or();
+            self.expect(")");
+            value
+        } else if let Some(literal) = token.strip_prefix('\'') {
+            ExpressionValue::Text(literal.strip_suffix('\'').unwrap().to_owned())
+        } else if token == "startsWith" {
+            self.expect("(");
+            let whole = self.or();
+            self.expect(",");
+            let prefix = self.or();
+            self.expect(")");
+            match (whole, prefix) {
+                (ExpressionValue::Text(whole), ExpressionValue::Text(prefix)) => {
+                    ExpressionValue::Flag(whole.starts_with(&prefix))
+                }
+                other => panic!("startsWith over {other:?} is not text"),
+            }
+        } else {
+            let value = self.context.get(token).unwrap_or_else(|| {
+                panic!("the expression names `{token}`, which this case gives no value")
+            });
+            ExpressionValue::Text((*value).to_owned())
+        }
+    }
+}
+
+/// Evaluates `${{ … }}` over `context`. A name the context does not hold panics, so a term added
+/// to the expression cannot pass a case unread.
+fn evaluate(expression: &str, context: &BTreeMap<&str, &str>) -> ExpressionValue {
+    let inner = expression
+        .trim()
+        .strip_prefix("${{")
+        .and_then(|rest| rest.strip_suffix("}}"))
+        .unwrap_or_else(|| panic!("`{expression}` is not one expression"));
+    let mut reader = ExpressionReader {
+        tokens: expression_tokens(inner),
+        at: 0,
+        context,
+    };
+    let value = reader.or();
+    assert_eq!(
+        reader.at,
+        reader.tokens.len(),
+        "the expression {:?} has tokens after its end",
+        reader.tokens
+    );
+    value
+}
+
+/// A release tag never skips its gate. The CI run on the tag is the release gate, and a
+/// pull-request `Gate` ran the narrowed feature-off build, so no earlier `Gate` stands in for it.
+/// `release.yml` calls the reusable gate unconditionally and with nothing but the commit,
+/// publication requires that call to have succeeded, and `ci.yml`'s feature-off selection is
+/// `full` for every run a release makes: a tag push, and a backfill dispatched from any branch,
+/// a queue branch included.
 #[test]
-fn a_release_reuses_a_green_gate_on_the_exact_tagged_commit_and_otherwise_runs_it() {
+// Both workflows' halves of one contract, which reads best whole.
+#[allow(clippy::too_many_lines)]
+fn a_release_tag_always_runs_its_full_gate() {
     let ci = yaml(".github/workflows/ci.yml");
     let release = yaml(".github/workflows/release.yml");
     let jobs = &release["jobs"];
-    let check = text(&ci["jobs"]["gate"]["name"]);
+
+    let gate = &jobs["gate"];
+    assert_eq!(text(&gate["uses"]), "./.github/workflows/ci.yml");
+    assert_eq!(needs_of(gate), BTreeSet::from(["resolve".to_owned()]));
+    assert!(
+        gate["if"].is_null(),
+        "the release gate runs only when {:?} holds, so a release can skip it",
+        gate["if"]
+    );
+    let passed: BTreeMap<String, String> = gate["with"]
+        .as_mapping()
+        .into_iter()
+        .flatten()
+        .map(|(name, value)| (text(name).to_owned(), scalar(value)))
+        .collect();
+    assert_eq!(
+        passed,
+        BTreeMap::from([(
+            "checkout-ref".to_owned(),
+            "${{ needs.resolve.outputs.commit }}".to_owned()
+        )]),
+        "the release passes its gate something besides the tagged commit"
+    );
+    let declared: BTreeSet<&str> = ci["on"]["workflow_call"]["inputs"]
+        .as_mapping()
+        .into_iter()
+        .flatten()
+        .map(|(name, _)| text(name))
+        .collect();
+    assert_eq!(
+        declared,
+        BTreeSet::from(["checkout-ref"]),
+        "ci.yml takes an input a caller could narrow the gate with"
+    );
 
     let resolve = &jobs["resolve"];
-    assert_eq!(text(&resolve["permissions"]["checks"]), "read");
-    assert_eq!(text(&resolve["permissions"]["contents"]), "read");
-    // The pull requests a commit belongs to are read through the pull-requests scope.
-    assert_eq!(text(&resolve["permissions"]["pull-requests"]), "read");
-    assert_eq!(
-        text(&resolve["outputs"]["gate-passed"]),
-        "${{ steps.prior-gate.outputs.passed }}"
+    let steps: Vec<&str> = resolve["steps"]
+        .as_sequence()
+        .into_iter()
+        .flatten()
+        .map(|step| text(&step["id"]))
+        .collect();
+    assert!(
+        !steps.contains(&"prior-gate"),
+        "resolve still looks for an earlier Gate to stand in for the release gate: {steps:?}"
     );
-    let query = prior_gate_step(&release);
-    let run = text(&query["run"]);
-    assert_eq!(text(&query["shell"]), "bash");
-    assert_eq!(
-        text(&query["env"]["COMMIT"]),
-        "${{ steps.release.outputs.commit }}"
-    );
-    assert!(run.contains("/check-runs?"), "{run}");
-    assert!(run.contains(&format!("check_name={check}")), "{run}");
-    assert!(run.contains(&format!(".name == \"{check}\"")), "{run}");
-    assert!(run.contains(".app.slug == \"github-actions\""), "{run}");
-    // Only a completed success counts; every other answer, including an API failure, runs it.
-    assert!(run.contains("\"completed/success\""), "{run}");
-    assert!(run.contains("decide false"), "{run}");
-
-    assert_eq!(
-        text(&jobs["gate"]["if"]),
-        "${{ needs.resolve.outputs.gate-passed != 'true' }}"
+    assert!(
+        resolve["outputs"]["gate-passed"].is_null(),
+        "resolve still reports an earlier Gate"
     );
     let publish = text(&jobs["release"]["if"]);
     assert!(
-        publish.contains(
-            "(needs.gate.result == 'success' || (needs.gate.result == 'skipped' && \
-             needs.resolve.outputs.gate-passed == 'true'))"
+        publish.contains("needs.gate.result == 'success'"),
+        "publication does not require the release gate: {publish}"
+    );
+    for stand_in in ["needs.gate.result == 'skipped'", "gate-passed"] {
+        assert!(
+            !publish.contains(stand_in),
+            "publication accepts `{stand_in}` in place of the release gate: {publish}"
+        );
+    }
+
+    let builder = lane_invocations(&ci)
+        .into_iter()
+        .find(|lane| lane.task == "test-archive-feature-off")
+        .expect("a job builds the feature-off archive")
+        .job;
+    let feature_off = text(&ci["jobs"][builder.as_str()]["env"]["FEATURE_OFF"]);
+    let commit = "3ec2deb977bb19c292a611dcf92a3e676352864a";
+    let runs = [
+        // The release, which always passes the tagged commit.
+        ("push", "refs/tags/0.60.0", commit, "full"),
+        ("workflow_dispatch", "refs/heads/main", commit, "full"),
+        (
+            "workflow_dispatch",
+            "refs/heads/queue/pr-119",
+            commit,
+            "full",
         ),
-        "publication accepts a skipped gate without a green prior Gate: {publish}"
+        // The runs of ci.yml's own, which this reader must tell apart from it.
+        ("push", "refs/heads/main", "", "full"),
+        ("schedule", "refs/heads/main", "", "full"),
+        ("pull_request", "refs/pull/7/merge", "", "number-semantics"),
+        (
+            "merge_group",
+            "refs/heads/gh-readonly-queue/main/pr-7",
+            "",
+            "number-semantics",
+        ),
+        ("push", "refs/heads/queue/pr-119", "", "number-semantics"),
+    ];
+    // The macOS ownership witnesses run for a tag too: only a backfill, dispatched to gate an
+    // older commit that may predate their test target, leaves them out.
+    let ownership = text(&ci["jobs"]["output-ownership-macos"]["if"]);
+    let mut wrong = Vec::new();
+    for (event, reference, checkout, expected) in runs {
+        let context = BTreeMap::from([
+            ("github.event_name", event),
+            ("github.ref", reference),
+            ("inputs.checkout-ref", checkout),
+        ]);
+        let selected = evaluate(feature_off, &context);
+        if selected != ExpressionValue::Text(expected.to_owned()) {
+            wrong.push(format!(
+                "{event} on {reference} (checkout-ref `{checkout}`): {selected:?}, expected {expected}"
+            ));
+        }
+        let witnessed = evaluate(ownership, &context).truthy();
+        let backfill = event == "workflow_dispatch" && !checkout.is_empty();
+        if witnessed == backfill {
+            wrong.push(format!(
+                "{event} on {reference} (checkout-ref `{checkout}`): output-ownership-macos runs \
+                 {witnessed} under `{ownership}`, expected {}",
+                !backfill
+            ));
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "ci.yml runs these wrongly (feature-off `{feature_off}`):\n{}",
+        wrong.join("\n")
     );
 }
 
@@ -1289,177 +1550,9 @@ fn isolated(program: &str, directory: &Path) -> Command {
     command
 }
 
-fn git(directory: &Path, args: &[&str]) -> String {
-    let output = isolated("git", directory).args(args).output().unwrap();
-    assert!(
-        output.status.success(),
-        "git {args:?}: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8(output.stdout).unwrap().trim().to_owned()
-}
-
-fn commit_file(directory: &Path, name: &str, contents: &str) -> String {
-    commit_file_as(directory, name, contents, name)
-}
-
-fn commit_file_as(directory: &Path, name: &str, contents: &str, message: &str) -> String {
-    fs::write(directory.join(name), contents).unwrap();
-    git(directory, &["add", name]);
-    git(directory, &["commit", "--quiet", "--message", message]);
-    git(directory, &["rev-parse", "HEAD"])
-}
-
-fn merge(directory: &Path, branch: &str) -> String {
-    git(directory, &["checkout", "--quiet", "main"]);
-    git(
-        directory,
-        &["merge", "--quiet", "--no-ff", "--message", branch, branch],
-    );
-    let parents = git(
-        directory,
-        &["rev-list", "--parents", "--max-count=1", "HEAD"],
-    );
-    assert_eq!(
-        parents.split_whitespace().count(),
-        3,
-        "merging `{branch}` made no merge commit, so the fixture is not the history it names"
-    );
-    git(directory, &["rev-parse", "HEAD"])
-}
-
-/// The histories the reuse rule has to tell apart, each ending in the commit a tag would name.
-struct History {
-    /// `main` merged an up-to-date branch: the merge's tree is the head's, and `main` before the
-    /// merge is in the head's history.
-    fresh: (String, String),
-    /// `main` moved after the branch left it: the merge carries a change the head never had.
-    stale: (String, String),
-    /// `main` and the branch made the same change independently: the trees agree, but `main`
-    /// before the merge is not in the head's history, so no pull-request run tested this tree.
-    twin: (String, String),
-    /// A squash merge of an up-to-date branch: one parent, the head's tree, and a head that only
-    /// the pull request's ref holds, so the checkout has to fetch it.
-    squash: (String, String),
-    /// A merge commit whose parents are `main` and an up-to-date head but whose tree carries a
-    /// file the head never had: the ancestry holds and only the tree comparison refuses it.
-    forged: (String, String),
-    origin: PathBuf,
-}
-
-fn history(root: &Path) -> History {
-    let origin = root.join("origin");
-    fs::create_dir_all(&origin).unwrap();
-    git(&origin, &["init", "--quiet", "--initial-branch", "main"]);
-    // GitHub serves any reachable commit by id; a local upload-pack does only when told to.
-    git(
-        &origin,
-        &["config", "uploadpack.allowAnySHA1InWant", "true"],
-    );
-    commit_file(&origin, "base.txt", "base\n");
-
-    git(&origin, &["checkout", "--quiet", "-b", "fresh"]);
-    let fresh_head = commit_file(&origin, "fresh.txt", "fresh\n");
-    let fresh = merge(&origin, "fresh");
-
-    git(&origin, &["checkout", "--quiet", "-b", "stale"]);
-    let stale_head = commit_file(&origin, "stale.txt", "stale\n");
-    git(&origin, &["checkout", "--quiet", "main"]);
-    commit_file(&origin, "moved.txt", "moved\n");
-    let stale = merge(&origin, "stale");
-
-    git(&origin, &["checkout", "--quiet", "-b", "twin"]);
-    let twin_head = commit_file(&origin, "twin.txt", "twin\n");
-    git(&origin, &["checkout", "--quiet", "main"]);
-    // Another message, or with fixed dates the two commits would be one and nothing would merge.
-    commit_file_as(&origin, "twin.txt", "twin\n", "twin.txt on main");
-    assert_ne!(git(&origin, &["rev-parse", "HEAD"]), twin_head);
-    let twin = merge(&origin, "twin");
-
-    git(&origin, &["checkout", "--quiet", "-b", "squash"]);
-    let squash_head = commit_file(&origin, "squash.txt", "squash\n");
-    git(&origin, &["checkout", "--quiet", "main"]);
-    git(&origin, &["merge", "--quiet", "--squash", "squash"]);
-    git(&origin, &["commit", "--quiet", "--message", "squash"]);
-    let squash = git(&origin, &["rev-parse", "HEAD"]);
-    // The squashed branch survives only as a ref the release checkout does not clone.
-    git(&origin, &["update-ref", "refs/pull/4/head", &squash_head]);
-    git(&origin, &["branch", "--quiet", "-D", "squash"]);
-
-    git(&origin, &["checkout", "--quiet", "-b", "forged"]);
-    let forged_head = commit_file(&origin, "forged.txt", "forged\n");
-    commit_file(&origin, "smuggled.txt", "smuggled\n");
-    let smuggled = git(&origin, &["rev-parse", "HEAD^{tree}"]);
-    let forged = git(
-        &origin,
-        &[
-            "commit-tree",
-            &smuggled,
-            "-p",
-            &squash,
-            "-p",
-            &forged_head,
-            "-m",
-            "forged",
-        ],
-    );
-    git(&origin, &["checkout", "--quiet", "main"]);
-    git(&origin, &["update-ref", "refs/heads/main", &forged]);
-    git(&origin, &["reset", "--quiet", "--hard", "main"]);
-    git(&origin, &["branch", "--quiet", "-D", "forged"]);
-
-    History {
-        fresh: (fresh, fresh_head),
-        stale: (stale, stale_head),
-        twin: (twin, twin_head),
-        squash: (squash, squash_head),
-        forged: (forged, forged_head),
-        origin,
-    }
-}
-
-fn gate_run(status: &str, conclusion: Option<&str>, app: &str) -> serde_json::Value {
-    json!({ "check_runs": [
-        { "name": "Other", "app": { "slug": "github-actions" }, "status": "completed",
-          "conclusion": "success", "started_at": "2026-01-01T00:00:09Z",
-          "html_url": "https://example.invalid/other" },
-        { "name": "Gate", "app": { "slug": "github-actions" }, "status": "completed",
-          "conclusion": "failure", "started_at": "2026-01-01T00:00:00Z",
-          "html_url": "https://example.invalid/older" },
-        { "name": "Gate", "app": { "slug": app }, "status": status, "conclusion": conclusion,
-          "started_at": "2026-01-01T00:00:05Z", "html_url": "https://example.invalid/newest" },
-    ]})
-}
-
-fn pull(number: u64, merged: bool, merge_commit: &str, head: &str) -> serde_json::Value {
-    json!({
-        "number": number,
-        "merged_at": if merged { json!("2026-01-01T00:00:00Z") } else { json!(null) },
-        "merge_commit_sha": merge_commit,
-        "head": { "sha": head },
-    })
-}
-
-/// Stands in for `gh api <path> --jq <filter>`: answers from `<sha>.<endpoint>.json` in
-/// `$GH_STUB_RESPONSES` through the real `jq`, and fails like an HTTP error when there is none.
-const GH_STUB: &str = r#"#!/usr/bin/env bash
-set -euo pipefail
-if [ "$#" -ne 4 ] || [ "$1" != api ] || [ "$3" != --jq ]; then
-  echo "gh stub: unexpected arguments: $*" >&2
-  exit 2
-fi
-IFS=/ read -r _ _ _ _ sha endpoint <<< "$2"
-file="$GH_STUB_RESPONSES/$sha.${endpoint%%\?*}.json"
-if [ ! -f "$file" ]; then
-  echo "gh: HTTP 404: Not Found (https://api.github.com/$2)" >&2
-  exit 1
-fi
-exec jq -r "$4" "$file"
-"#;
-
 /// A `gh` stub this suite installs runs at once, even while other cases fork children.
 ///
-/// `prior_gate` and `prebuilt` install a `gh` stub and the step they run executes it through
+/// `prebuilt` installs a `gh` stub and the step it runs executes it through
 /// `PATH`, as threads of one process with every other case here. A child another thread forks
 /// while the stub is open for writing inherits that descriptor until it executes, and until then
 /// the kernel refuses to execute the stub (`ETXTBSY`). This installs forty and runs each once
@@ -1479,300 +1572,6 @@ fn a_freshly_installed_gh_stub_runs_while_other_cases_spawn() {
         unlaunched.is_empty(),
         "{} of 40 freshly installed stubs never ran: {unlaunched:#?}",
         unlaunched.len()
-    );
-}
-
-/// Runs release.yml's `prior-gate` step the way Actions runs a `shell: bash` step, in a fresh
-/// clone of `main`, and returns the `passed` value it wrote.
-fn prior_gate(
-    root: &Path,
-    index: usize,
-    history: &History,
-    commit: &str,
-    responses: &[(&str, &str, serde_json::Value)],
-) -> String {
-    let release = yaml(".github/workflows/release.yml");
-    let step = prior_gate_step(&release);
-    for name in ["GH_TOKEN", "REPOSITORY", "COMMIT"] {
-        assert!(
-            !step["env"][name].is_null(),
-            "the prior-gate step no longer receives {name}; this harness supplies it"
-        );
-    }
-    let case = &root.join(format!("case-{index}"));
-    let bin = case.join("bin");
-    let answers = case.join("responses");
-    fs::create_dir_all(&bin).unwrap();
-    fs::create_dir_all(&answers).unwrap();
-    let stub = bin.join("gh");
-    executable::install_bytes(&stub, GH_STUB.as_bytes()).unwrap();
-    for (sha, endpoint, body) in responses {
-        fs::write(
-            answers.join(format!("{sha}.{endpoint}.json")),
-            body.to_string(),
-        )
-        .unwrap();
-    }
-    let checkout = case.join("checkout");
-    let origin = history.origin.to_str().unwrap();
-    git(
-        root,
-        &[
-            "clone",
-            "--quiet",
-            "--no-local",
-            "--single-branch",
-            "--branch",
-            "main",
-            "--no-tags",
-            origin,
-            checkout.to_str().unwrap(),
-        ],
-    );
-    let script = case.join("prior-gate.sh");
-    fs::write(&script, text(&step["run"])).unwrap();
-    let output_file = case.join("github-output");
-    fs::write(&output_file, "").unwrap();
-    let path = format!(
-        "{}:{}",
-        bin.display(),
-        std::env::var("PATH").unwrap_or_default()
-    );
-    let output = isolated("bash", &checkout)
-        .args(["--noprofile", "--norc", "-eo", "pipefail"])
-        .arg(&script)
-        .env("PATH", path)
-        .env("GH_TOKEN", "fixture")
-        .env("REPOSITORY", "owner/repository")
-        .env("COMMIT", commit)
-        .env("GITHUB_OUTPUT", &output_file)
-        .env("GH_STUB_RESPONSES", &answers)
-        .output()
-        .unwrap();
-    let log = format!(
-        "{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert!(
-        output.status.success(),
-        "the prior-gate step failed the resolve job instead of deciding: {log}"
-    );
-    let written = fs::read_to_string(&output_file).unwrap();
-    let decisions: Vec<&str> = written
-        .lines()
-        .filter_map(|line| line.strip_prefix("passed="))
-        .collect();
-    let [decision] = decisions.as_slice() else {
-        panic!("the prior-gate step wrote {decisions:?}, not one decision: {log}")
-    };
-    format!("{decision}\n{log}")
-}
-
-/// Canned `gh` answers: the commit, the endpoint, the JSON body.
-type Responses<'a> = Vec<(&'a str, &'a str, serde_json::Value)>;
-/// One history the rule is asked about: its name, the tagged commit, the answers, the decision.
-type Case<'a> = (&'a str, &'a str, Responses<'a>, &'a str);
-
-/// The gate counts as passed when the tagged commit carries a green `Gate`, or when it is the
-/// merge commit of exactly one merged pull request whose head has the tagged tree, whose head
-/// already contained the `main` it merged into, and whose head carries a green `Gate`. Every
-/// other answer — and every failure on the way — runs the gate.
-#[test]
-// One table of cases, which reads best whole.
-#[allow(clippy::too_many_lines)]
-fn a_release_reuses_the_gate_of_a_merged_pull_request_only_when_it_tested_the_tagged_tree() {
-    let root = Scratch::new("release-reuse");
-    let history = history(&root.0);
-    let (fresh, fresh_head) = (history.fresh.0.as_str(), history.fresh.1.as_str());
-    let (stale, stale_head) = (history.stale.0.as_str(), history.stale.1.as_str());
-    let (twin, twin_head) = (history.twin.0.as_str(), history.twin.1.as_str());
-    let (squash, squash_head) = (history.squash.0.as_str(), history.squash.1.as_str());
-    let (forged, forged_head) = (history.forged.0.as_str(), history.forged.1.as_str());
-    let absent = "0123456789abcdef0123456789abcdef01234567";
-    let green = || gate_run("completed", Some("success"), "github-actions");
-    let none = || json!({ "check_runs": [] });
-
-    let cases: Vec<Case> = vec![
-        (
-            "a green Gate on the tagged commit itself",
-            fresh,
-            vec![(fresh, "check-runs", green())],
-            "true",
-        ),
-        (
-            "an up-to-date merged pull request whose head's Gate is green",
-            fresh,
-            vec![
-                (fresh, "check-runs", none()),
-                (fresh, "pulls", json!([pull(1, true, fresh, fresh_head)])),
-                (fresh_head, "check-runs", green()),
-            ],
-            "true",
-        ),
-        (
-            "the tagged commit's check-runs are unavailable, and the head's Gate is green",
-            fresh,
-            vec![
-                (fresh, "pulls", json!([pull(1, true, fresh, fresh_head)])),
-                (fresh_head, "check-runs", green()),
-            ],
-            "true",
-        ),
-        (
-            "a squash merge whose head only the pull request ref holds",
-            squash,
-            vec![
-                (squash, "check-runs", none()),
-                (squash, "pulls", json!([pull(4, true, squash, squash_head)])),
-                (squash_head, "check-runs", green()),
-            ],
-            "true",
-        ),
-        (
-            "the head's newest Gate failed",
-            fresh,
-            vec![
-                (fresh, "check-runs", none()),
-                (fresh, "pulls", json!([pull(1, true, fresh, fresh_head)])),
-                (
-                    fresh_head,
-                    "check-runs",
-                    gate_run("completed", Some("failure"), "github-actions"),
-                ),
-            ],
-            "false",
-        ),
-        (
-            "the head's newest Gate is still running",
-            fresh,
-            vec![
-                (fresh, "check-runs", none()),
-                (fresh, "pulls", json!([pull(1, true, fresh, fresh_head)])),
-                (
-                    fresh_head,
-                    "check-runs",
-                    gate_run("in_progress", None, "github-actions"),
-                ),
-            ],
-            "false",
-        ),
-        (
-            "the head's green Gate was recorded by another app",
-            fresh,
-            vec![
-                (fresh, "check-runs", none()),
-                (fresh, "pulls", json!([pull(1, true, fresh, fresh_head)])),
-                (
-                    fresh_head,
-                    "check-runs",
-                    gate_run("completed", Some("success"), "impostor"),
-                ),
-            ],
-            "false",
-        ),
-        (
-            "main moved after the branch left it, so the merge's tree is not the head's",
-            stale,
-            vec![
-                (stale, "check-runs", none()),
-                (stale, "pulls", json!([pull(2, true, stale, stale_head)])),
-                (stale_head, "check-runs", green()),
-            ],
-            "false",
-        ),
-        (
-            "the trees agree but main before the merge is not in the head's history",
-            twin,
-            vec![
-                (twin, "check-runs", none()),
-                (twin, "pulls", json!([pull(3, true, twin, twin_head)])),
-                (twin_head, "check-runs", green()),
-            ],
-            "false",
-        ),
-        (
-            "two merged pull requests name the tagged commit",
-            fresh,
-            vec![
-                (fresh, "check-runs", none()),
-                (
-                    fresh,
-                    "pulls",
-                    json!([
-                        pull(1, true, fresh, fresh_head),
-                        pull(5, true, fresh, fresh_head)
-                    ]),
-                ),
-                (fresh_head, "check-runs", green()),
-            ],
-            "false",
-        ),
-        (
-            "the pull request was never merged",
-            fresh,
-            vec![
-                (fresh, "check-runs", none()),
-                (fresh, "pulls", json!([pull(1, false, fresh, fresh_head)])),
-                (fresh_head, "check-runs", green()),
-            ],
-            "false",
-        ),
-        (
-            "the pull request merged as another commit",
-            fresh,
-            vec![
-                (fresh, "check-runs", none()),
-                (fresh, "pulls", json!([pull(1, true, stale, fresh_head)])),
-                (fresh_head, "check-runs", green()),
-            ],
-            "false",
-        ),
-        (
-            "the tagged commit's pull requests are unavailable",
-            fresh,
-            vec![
-                (fresh, "check-runs", none()),
-                (fresh_head, "check-runs", green()),
-            ],
-            "false",
-        ),
-        (
-            "the head cannot be fetched",
-            fresh,
-            vec![
-                (fresh, "check-runs", none()),
-                (fresh, "pulls", json!([pull(1, true, fresh, absent)])),
-                (absent, "check-runs", green()),
-            ],
-            "false",
-        ),
-        (
-            "the merge commit's tree carries a file its up-to-date head never had",
-            forged,
-            vec![
-                (forged, "check-runs", none()),
-                (forged, "pulls", json!([pull(6, true, forged, forged_head)])),
-                (forged_head, "check-runs", green()),
-            ],
-            "false",
-        ),
-    ];
-
-    let mut wrong = Vec::new();
-    for (index, (name, commit, responses, expected)) in cases.into_iter().enumerate() {
-        let answer = prior_gate(&root.0, index, &history, commit, &responses);
-        let (decision, log) = answer.split_once('\n').unwrap();
-        if decision != expected {
-            wrong.push(format!(
-                "{name}: passed={decision}, expected {expected}\n{log}"
-            ));
-        }
-    }
-    assert!(
-        wrong.is_empty(),
-        "the prior-gate step decided these wrongly:\n{}",
-        wrong.join("\n")
     );
 }
 
@@ -1938,7 +1737,7 @@ fn a_queue_run_prebuilds_the_archives_the_tag_publishes_and_the_release_builds_t
     let on = &packaging["on"];
     assert_eq!(
         on["push"]["branches"],
-        serde_yaml::from_str::<Value>("['queue/**']").unwrap(),
+        ess_yaml::from_str::<Value>("['queue/**']").unwrap(),
         "package.yml does not run on exactly the queue branches"
     );
     for input in ["ref", "version"] {

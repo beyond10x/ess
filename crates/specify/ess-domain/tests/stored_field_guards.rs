@@ -73,18 +73,18 @@ fn the_predicate_form_round_trips_through_the_document_form() {
     let raw = RawSpecFile::parse(PARCELS).unwrap();
     let spec = Specification::assemble([(Source::new("parcels.yaml"), raw)]).unwrap();
     let dispatch = &spec.commands()[&"shipping.parcel.Dispatch".parse().unwrap()];
-    let written = serde_yaml::to_string(dispatch).unwrap();
+    let written = ess_yaml::to_string(dispatch).unwrap();
     assert!(written.contains("when_subject:"), "{written}");
     assert!(written.contains("predicate:"), "{written}");
     assert!(!written.contains("field:"), "{written}");
-    let reread: ess_domain::command::RawCommandSpec = serde_yaml::from_str(&written).unwrap();
+    let reread: ess_domain::command::RawCommandSpec = ess_yaml::from_str(&written).unwrap();
     let reread = ess_domain::command::CommandSpec::try_from(reread).unwrap();
     assert_eq!(&reread, dispatch);
 }
 
 #[test]
 fn the_field_equals_form_keeps_its_written_bytes() {
-    let raw: ess_domain::command::RawOutcome = serde_yaml::from_str(
+    let raw: ess_domain::command::RawOutcome = ess_yaml::from_str(
         "name: kept\nwhen_subject: {field: channel, equals: Post}\npreserves: billing.invoice.Invoice\ninstance: invoice_id\n",
     )
     .unwrap();

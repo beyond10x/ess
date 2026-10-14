@@ -52,11 +52,11 @@ fn issue_141_a_field_name_may_begin_with_an_underscore() {
 #[test]
 fn leading_underscores_are_admitted_only_before_a_letter() {
     for spelling in ["_url", "__v", "_Url", "_a1_b"] {
-        serde_yaml::from_str::<Field>(&format!("name: {spelling}\ntype: String\n"))
+        ess_yaml::from_str::<Field>(&format!("name: {spelling}\ntype: String\n"))
             .unwrap_or_else(|error| panic!("{spelling:?} is a field name: {error}"));
     }
     for spelling in ["_", "__", "_1", "_-a", "1_a"] {
-        let error = serde_yaml::from_str::<Field>(&format!("name: {spelling:?}\ntype: String\n"))
+        let error = ess_yaml::from_str::<Field>(&format!("name: {spelling:?}\ntype: String\n"))
             .expect_err(spelling);
         assert!(
             error.to_string().contains("field name"),
@@ -70,7 +70,7 @@ fn the_published_field_pattern_admits_exactly_what_the_parser_admits() {
     let pattern = regex_lite(Field::PATTERN);
     for spelling in ["_url", "__v", "invoice_id", "_", "_1", "1a", "a-b", ""] {
         let parsed =
-            serde_yaml::from_str::<Field>(&format!("name: {spelling:?}\ntype: String\n")).is_ok();
+            ess_yaml::from_str::<Field>(&format!("name: {spelling:?}\ntype: String\n")).is_ok();
         assert_eq!(pattern(spelling), parsed, "{spelling:?}");
     }
 }
@@ -216,7 +216,7 @@ fn a_reader_of_one_file_adds_its_own_declarations_to_those_in_view() {
     let sibling = MapKeyNewtypes::from_documents([
         "types:\n  - {name: demo.orders.Sku, kind: newtype, of: String}\n",
     ]);
-    let file: serde_yaml::Value = serde_yaml::from_str(
+    let file: ess_yaml::Value = ess_yaml::from_str(
         "types:\n  - {name: demo.orders.ItemId, kind: newtype, of: demo.orders.Sku}\n",
     )
     .unwrap();

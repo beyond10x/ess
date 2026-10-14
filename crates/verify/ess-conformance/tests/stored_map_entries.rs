@@ -415,7 +415,7 @@ errors:
     )]);
     let facts = ess_conformance::flatten(&ir, command, &input).unwrap_or_else(|e| panic!("{e}"));
     let guard: ess_primitives::predicate::Predicate =
-        serde_yaml::from_str("{exists: {in: due, as: r, that: 'r < 2020-01-01T00:00:00Z'}}")
+        ess_yaml::from_str("{exists: {in: due, as: r, that: 'r < 2020-01-01T00:00:00Z'}}")
             .expect("a predicate");
     assert_eq!(
         guard.evaluate(&facts),

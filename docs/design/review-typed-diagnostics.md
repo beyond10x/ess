@@ -260,7 +260,11 @@ this block, a count that does not match, and a listed file that has none, are ea
 `ValidationError::at` under the `command` head. No string-located site was added. It rose to 56 with
 beyond10x/ess#486: a branch the held state selects, declared after an accepting or external branch
 it may overlap, is refused at the branch's own `command <name>.outcomes.<outcome>` site. It rose to
-57 with beyond10x/ess#489: a refusal whose `when:` always holds is refused at its own site.
+57 with beyond10x/ess#489: a refusal whose `when:` always holds is refused at its own site. It rose
+to 61 with beyond10x/ess#534: `validate_before_row`, which refuses a misused `before_row: true`
+from one helper, its `ess/25` format gate `before_row_format`, and the two order refusals of
+`validate_before_row_order`, all written with `ValidationError::at` at the branch's
+`command <name>.outcomes.<outcome>.before_row` site. No string-located site was added.
 
 `types.rs` rose from 16 to 17 string-located sites, and its `types` head from 8 to 9 literals, with
 beyond10x/ess#426 and #448: a YAML boolean written as an enum variant is refused at
@@ -290,7 +294,7 @@ from one `ConstructRef` helper, so it adds no head literal below.
 accessor.rs 1 0
 actor.rs 3 2
 binding.rs 36 0
-command.rs 13 57
+command.rs 13 61
 component.rs 15 9
 domain.rs 5 0
 entity.rs 17 5

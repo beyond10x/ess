@@ -160,7 +160,7 @@ fn unknown_fields_cannot_smuggle_credential_values_into_the_document() {
 #[test]
 fn implementation_only_selection_is_explicit_v2_and_v1_remains_strict() {
     let ess = compiled_ess();
-    let original: serde_json::Value = serde_yaml::from_str(&source(&ess)).unwrap();
+    let original: serde_json::Value = ess_yaml::from_str(&source(&ess)).unwrap();
     let mut value = original.clone();
     value["actors"] = serde_json::json!([]);
     value["entrypoints"] = serde_json::json!([]);

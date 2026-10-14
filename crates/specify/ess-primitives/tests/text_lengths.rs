@@ -15,7 +15,7 @@ use ess_primitives::predicate::{Predicate, Truth};
 const CORPUS: &str = include_str!("vectors/primitive-semantics.json");
 
 fn yaml(text: &str) -> Predicate {
-    let node: Node = serde_yaml::from_str(text).expect("the fixture is YAML");
+    let node: Node = ess_yaml::from_str(text).expect("the fixture is YAML");
     Predicate::from_node(&node).unwrap_or_else(|error| panic!("{text}: {error}"))
 }
 
@@ -139,11 +139,12 @@ fn samples() -> Vec<Predicate> {
             | Predicate::NoneOf { .. }
             | Predicate::Exists(_)
             | Predicate::Distinct(_) => {}
-            // A string or case-insensitive operator reads text, not a number, so it has no `.count`
+            // A string, case-insensitive or trimmed operator reads text, not a number, so it has no `.count`
             // sample; a connective reads through its children. Each is named, so a new kind is a
             // compile error here rather than a silent gap.
             Predicate::TextMatch { .. }
             | Predicate::FoldMatch { .. }
+            | Predicate::Trimmed(_)
             | Predicate::Window(_)
             | Predicate::Forall(_)
             | Predicate::All(_)

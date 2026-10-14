@@ -228,9 +228,9 @@ fn an_example_on_a_scalar_input_is_admitted_and_round_trips() {
         let spec = admitted(&example(field, value));
         let command = &spec.commands()[&"keypad.dial.SendKeys".parse().unwrap()];
         assert!(command.examples.contains_key(field), "{field}: {command:?}");
-        let written = serde_yaml::to_string(command).unwrap();
+        let written = ess_yaml::to_string(command).unwrap();
         assert!(written.contains("example:"), "{written}");
-        let reread: ess_domain::command::RawCommandSpec = serde_yaml::from_str(&written).unwrap();
+        let reread: ess_domain::command::RawCommandSpec = ess_yaml::from_str(&written).unwrap();
         let reread = ess_domain::command::CommandSpec::try_from(reread).unwrap();
         assert_eq!(&reread, command, "{field} round-trips");
     }

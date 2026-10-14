@@ -80,7 +80,7 @@ fn documents() -> Vec<serde_json::Value> {
             {
                 serde_json::from_str(&artifact.contents).expect("JSON")
             } else {
-                serde_yaml::from_str(&artifact.contents).expect("YAML")
+                ess_yaml::from_str(&artifact.contents).expect("YAML")
             }
         })
         .collect()

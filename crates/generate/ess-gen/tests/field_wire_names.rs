@@ -64,9 +64,9 @@ fn compiled(text: &str) -> EssIr {
 }
 
 /// Every mapping key anywhere in a JSON or YAML document.
-fn keys(value: &serde_yaml::Value, into: &mut Vec<String>) {
+fn keys(value: &ess_yaml::Value, into: &mut Vec<String>) {
     match value {
-        serde_yaml::Value::Mapping(map) => {
+        ess_yaml::Value::Mapping(map) => {
             for (key, value) in map {
                 if let Some(key) = key.as_str() {
                     into.push(key.to_owned());
@@ -74,8 +74,8 @@ fn keys(value: &serde_yaml::Value, into: &mut Vec<String>) {
                 keys(value, into);
             }
         }
-        serde_yaml::Value::Sequence(items) => items.iter().for_each(|item| keys(item, into)),
-        serde_yaml::Value::Tagged(tagged) => keys(&tagged.value, into),
+        ess_yaml::Value::Sequence(items) => items.iter().for_each(|item| keys(item, into)),
+        ess_yaml::Value::Tagged(tagged) => keys(&tagged.value, into),
         _ => {}
     }
 }
@@ -100,7 +100,7 @@ fn schema_openapi_and_asyncapi_key_the_field_by_its_wire_name() {
     let artifacts = artifacts(&ir);
     let mut seen = std::collections::BTreeSet::new();
     for (path, contents) in &artifacts {
-        let Ok(document) = serde_yaml::from_str::<serde_yaml::Value>(contents) else {
+        let Ok(document) = ess_yaml::from_str::<ess_yaml::Value>(contents) else {
             continue;
         };
         let mut found = Vec::new();

@@ -126,10 +126,10 @@ fn the_written_form_round_trips() {
     let spec = admitted(MODEL);
     for command in spec.commands().values() {
         for outcome in &command.outcomes {
-            let written = serde_yaml::to_string(&RawOutcome::from(outcome.clone()))
+            let written = ess_yaml::to_string(&RawOutcome::from(outcome.clone()))
                 .expect("an outcome serializes");
             let read: RawOutcome =
-                serde_yaml::from_str(&written).unwrap_or_else(|error| panic!("{error}\n{written}"));
+                ess_yaml::from_str(&written).unwrap_or_else(|error| panic!("{error}\n{written}"));
             let back = ess_domain::command::Outcome::try_from(read)
                 .unwrap_or_else(|errors| panic!("{errors}\n{written}"));
             assert_eq!(&back, outcome, "{written}");
@@ -498,10 +498,10 @@ fn bulk_delete_and_a_deleting_affects_entry_are_admitted_under_ess_23() {
     assert!(entry.deletes, "the entry removes the rows it selects");
     assert!(entry.sets.is_empty() && entry.moves.is_none());
     for outcome in [revoked, deleted] {
-        let written = serde_yaml::to_string(&RawOutcome::from(outcome.clone()))
-            .expect("an outcome serializes");
+        let written =
+            ess_yaml::to_string(&RawOutcome::from(outcome.clone())).expect("an outcome serializes");
         let read: RawOutcome =
-            serde_yaml::from_str(&written).unwrap_or_else(|error| panic!("{error}\n{written}"));
+            ess_yaml::from_str(&written).unwrap_or_else(|error| panic!("{error}\n{written}"));
         let back = ess_domain::command::Outcome::try_from(read)
             .unwrap_or_else(|errors| panic!("{errors}\n{written}"));
         assert_eq!(back, outcome, "{written}");
@@ -816,11 +816,11 @@ mod issue_459 {
             ["source_id"],
             "the element reads are the entry's, not literals: {entry:#?}"
         );
-        let written = serde_yaml::to_string(&RawOutcome::from(outcome.clone())).unwrap();
+        let written = ess_yaml::to_string(&RawOutcome::from(outcome.clone())).unwrap();
         assert!(written.contains("each:"), "{written}");
         assert!(written.contains("doc.document_id"), "{written}");
         assert!(!written.contains("where:"), "{written}");
-        let read: RawOutcome = serde_yaml::from_str(&written).unwrap();
+        let read: RawOutcome = ess_yaml::from_str(&written).unwrap();
         let back = ess_domain::command::Outcome::try_from(read)
             .unwrap_or_else(|errors| panic!("{errors}\n{written}"));
         assert_eq!(back.set_effects, outcome.set_effects, "{written}");

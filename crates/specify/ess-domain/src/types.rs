@@ -158,7 +158,7 @@ pub enum TypeRef {
 /// written. The number is this bound's own: `WRAPPER_LIMIT` in [`crate::binding`] is also 32 and no
 /// longer bounds anything this one does — it is what a documentation renderer traverses, while this
 /// is what keeps a parser off the stack's end — so neither number is a reason for the other.
-/// `serde_yaml`'s own structural recursion cap is 128, so this refusal is reached first and carries
+/// `ess-yaml`'s own structural recursion cap is 128, so this refusal is reached first and carries
 /// our message rather than the deserializer's.
 pub const MAX_TYPE_DEPTH: usize = 32;
 
@@ -296,7 +296,7 @@ impl MapKeyNewtypes {
     pub fn from_documents<'a>(texts: impl IntoIterator<Item = &'a str>) -> Self {
         let mut keys = Self::default();
         for text in texts {
-            if let Ok(document) = serde_yaml::from_str::<serde_yaml::Value>(text) {
+            if let Ok(document) = ess_yaml::from_str::<ess_yaml::Value>(text) {
                 keys.absorb(&document);
             }
         }
@@ -340,27 +340,24 @@ impl MapKeyNewtypes {
     /// with no loader involved, and one declared in a sibling file does when the loader put it in
     /// view.
     #[must_use]
-    pub fn with_value(&self, document: &serde_yaml::Value) -> Self {
+    pub fn with_value(&self, document: &ess_yaml::Value) -> Self {
         let mut keys = self.clone();
         keys.absorb(document);
         keys
     }
 
     /// Adds the newtypes one document declares.
-    fn absorb(&mut self, document: &serde_yaml::Value) {
-        let Some(types) = document
-            .get("types")
-            .and_then(serde_yaml::Value::as_sequence)
-        else {
+    fn absorb(&mut self, document: &ess_yaml::Value) {
+        let Some(types) = document.get("types").and_then(ess_yaml::Value::as_sequence) else {
             return;
         };
         for entry in types {
-            if entry.get("kind").and_then(serde_yaml::Value::as_str) != Some("newtype") {
+            if entry.get("kind").and_then(ess_yaml::Value::as_str) != Some("newtype") {
                 continue;
             }
             let (Some(name), Some(of)) = (
-                entry.get("name").and_then(serde_yaml::Value::as_str),
-                entry.get("of").and_then(serde_yaml::Value::as_str),
+                entry.get("name").and_then(ess_yaml::Value::as_str),
+                entry.get("of").and_then(ess_yaml::Value::as_str),
             ) else {
                 continue;
             };
@@ -2740,7 +2737,7 @@ mod tests {
     }
 
     fn declared(yaml: &str) -> Result<NamedType, ValidationErrors> {
-        let raw: RawNamedType = serde_yaml::from_str(yaml).expect("the document is well formed");
+        let raw: RawNamedType = ess_yaml::from_str(yaml).expect("the document is well formed");
         NamedType::try_from(raw)
     }
 
@@ -3048,7 +3045,7 @@ mod tests {
             ("invarants: [value >= 0]", "invarants"),
             ("namin:\n  wire: money", "namin"),
         ] {
-            let error = serde_yaml::from_str::<RawNamedType>(&format!(
+            let error = ess_yaml::from_str::<RawNamedType>(&format!(
                 "name: billing.Money\nkind: newtype\nof: Decimal\n{misspelling}\n"
             ))
             .expect_err("a misspelt key used to be dropped in silence");
@@ -3092,7 +3089,7 @@ mod tests {
 
     /// Reads a type declaration the way a document does.
     fn declaration(yaml: &str) -> Result<NamedType, ValidationErrors> {
-        NamedType::try_from(serde_yaml::from_str::<RawNamedType>(yaml).expect("well formed"))
+        NamedType::try_from(ess_yaml::from_str::<RawNamedType>(yaml).expect("well formed"))
     }
 
     #[test]
@@ -3150,7 +3147,7 @@ mod tests {
     fn a_declaration_reaches_the_model_only_through_the_conversion() {
         // The two-stage rule, checked rather than trusted: `NamedType` has no `Deserialize`, so a
         // document cannot become one without `TryFrom` running every rule on it.
-        let raw = serde_yaml::from_str::<RawNamedType>(
+        let raw = ess_yaml::from_str::<RawNamedType>(
             "name: billing.Money\nkind: newtype\nof: Decimal\ninvariants: [amount > 0]\n",
         )
         .expect("well formed");
@@ -3165,14 +3162,14 @@ mod tests {
     fn a_field_name_must_be_spellable_as_an_identifier() {
         for spelling in ["", "not a field name!", "1st", "total-amount"] {
             let error =
-                serde_yaml::from_str::<Field>(&format!("name: {spelling:?}\ntype: Decimal\n"))
+                ess_yaml::from_str::<Field>(&format!("name: {spelling:?}\ntype: Decimal\n"))
                     .expect_err(spelling);
             assert!(
                 error.to_string().contains("field name"),
                 "{spelling:?}: {error}"
             );
         }
-        serde_yaml::from_str::<Field>("name: invoice_id\ntype: Decimal\n")
+        ess_yaml::from_str::<Field>("name: invoice_id\ntype: Decimal\n")
             .expect("`invoice_id` is a field name");
 
         let schema = serde_json::to_value(schemars::schema_for!(Field)).expect("serialises");

@@ -1679,3 +1679,302 @@ mod issue_459 {
         }
     }
 }
+
+/// One event per changed row (ess/25, beyond10x/ess#531): `CloseAll` closes every seat of a team and
+/// publishes one `Left` for each seat that was `Busy`. The scenario claims a `Left` per arranged
+/// `Busy` seat it closes, and a segment of seats the state filter leaves out claims none; the
+/// interpreter passes it, and a target publishing `Left` for an `Open` seat or omitting one for a
+/// `Busy` seat fails it.
+mod issue_531 {
+    use super::*;
+
+    const MODEL: &str =
+        include_str!("../../../specify/ess-compiler/tests/fixtures/set-effects-per-row.yaml");
+    const CLOSED: &str = "demo.desk.CloseAll/outcome/closed-all";
+    const LEFT: &str = "demo.desk.Left";
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum Fault {
+        /// Also publishes `Left` for every `Open` seat it closes.
+        LeftForOpen,
+        /// Publishes one `Left` fewer than the `Busy` seats it closed.
+        OmitsOneBusy,
+        /// Publishes a `call_ref` in every `Left` whose seat held none.
+        InventsAbsentCallRef,
+        /// Also publishes `Released` for every `Busy` seat it closes.
+        ReleasedForBusy,
+    }
+
+    const RELEASED: &str = "demo.desk.Released";
+
+    /// The fixture with `Take` clearing `call_ref` rather than writing it: every `Busy` seat holds
+    /// no call reference, which the arrangement determines.
+    fn cleared_on_take() -> String {
+        let model = MODEL.replacen(
+            "          call_ref: input.call_ref\n",
+            "          call_ref: {cleared: true}\n",
+            1,
+        );
+        assert_ne!(model, MODEL);
+        model
+    }
+
+    /// The fixture with a second per-row event, `Released`, for each changed seat that was `Open`:
+    /// the two state filters admit no state in common.
+    fn two_filters() -> String {
+        let model = MODEL
+            .replacen(
+                "errors:\n",
+                "  - name: demo.desk.Released\n    fields:\n      - {name: user_id, type: demo.desk.UserId}\nerrors:\n",
+                1,
+            )
+            .replacen(
+                "          - {event: demo.desk.Left, each: changed, when_state: Busy}\n",
+                "          - {event: demo.desk.Left, each: changed, when_state: Busy}\n          - {event: demo.desk.Released, each: changed, when_state: Open}\n",
+                1,
+            )
+            .replacen(
+                "          demo.desk.Left: {user_id: {changed: user_id}",
+                "          demo.desk.Released: {user_id: {changed: user_id}}\n          demo.desk.Left: {user_id: {changed: user_id}",
+                1,
+            );
+        assert_eq!(model.matches(RELEASED).count(), 3, "{model}");
+        model
+    }
+
+    /// The interpreter, with what it publishes for `CloseAll` broken one way.
+    struct Target {
+        inner: ess_conformance::interpret::Interpreted,
+        fault: Fault,
+        /// Each seat by identity: its team and its state.
+        seats: RefCell<BTreeMap<Node, (Node, &'static str)>>,
+    }
+
+    impl ConformanceTarget for Target {
+        fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
+            self.inner.identity()
+        }
+        fn begin_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
+            self.seats.borrow_mut().clear();
+            self.inner.begin_scenario(scenario)
+        }
+        fn end_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
+            self.inner.end_scenario(scenario)
+        }
+        fn execute_command(
+            &self,
+            request: SemanticCommandRequest,
+        ) -> Result<SemanticCommandResult, TargetError> {
+            let command = request.command.to_string();
+            let input = request.input.clone();
+            let mut result = self.inner.execute_command(request)?;
+            let taken = result
+                .outcome
+                .as_ref()
+                .map(|taken| taken.outcome.to_string());
+            let field = |name: &str| input.get(name).cloned().unwrap_or(Node::Null);
+            let mut seats = self.seats.borrow_mut();
+            match (command.as_str(), taken.as_deref()) {
+                ("demo.desk.SitDown", Some("seated")) => {
+                    seats.insert(field("user_id"), (field("team"), "Open"));
+                }
+                ("demo.desk.Take", Some("taken")) => {
+                    if let Some(seat) = seats.get_mut(&field("user_id")) {
+                        seat.1 = "Busy";
+                    }
+                }
+                ("demo.desk.CloseAll", Some("closed-all")) => {
+                    let team = field("team");
+                    match self.fault {
+                        Fault::LeftForOpen => {
+                            for (seat, _) in seats
+                                .iter()
+                                .filter(|(_, (held, state))| *held == team && *state == "Open")
+                            {
+                                let mut left = ObservedEvent::new(LEFT.parse().unwrap());
+                                left.payload.insert("user_id".into(), seat.clone());
+                                left.payload.insert("call_ref".into(), Node::Null);
+                                left.payload.insert("was".into(), Node::Text("Open".into()));
+                                result.direct_events.push(left);
+                            }
+                        }
+                        Fault::OmitsOneBusy => {
+                            if let Some(last) = result
+                                .direct_events
+                                .iter()
+                                .rposition(|event| event.event.to_string() == LEFT)
+                            {
+                                result.direct_events.remove(last);
+                            }
+                        }
+                        Fault::InventsAbsentCallRef => {
+                            for event in result.direct_events.iter_mut().filter(|event| {
+                                event.event.to_string() == LEFT
+                                    && event
+                                        .payload
+                                        .get("call_ref")
+                                        .is_none_or(|held| *held == Node::Null)
+                            }) {
+                                event
+                                    .payload
+                                    .insert("call_ref".into(), Node::Text("invented".into()));
+                            }
+                        }
+                        Fault::ReleasedForBusy => {
+                            for (seat, _) in seats
+                                .iter()
+                                .filter(|(_, (held, state))| *held == team && *state == "Busy")
+                            {
+                                let mut released = ObservedEvent::new(RELEASED.parse().unwrap());
+                                released.payload.insert("user_id".into(), seat.clone());
+                                result.direct_events.push(released);
+                            }
+                        }
+                    }
+                    for (held, state) in seats.values_mut() {
+                        if *held == team {
+                            *state = "Closed";
+                        }
+                    }
+                }
+                _ => {}
+            }
+            Ok(result)
+        }
+        fn query_view(
+            &self,
+            request: SemanticViewRequest,
+        ) -> Result<SemanticViewResult, TargetError> {
+            self.inner.query_view(request)
+        }
+        fn observe_events(
+            &self,
+            request: EventObservationRequest,
+        ) -> Result<Vec<ObservedEvent>, TargetError> {
+            self.inner.observe_events(request)
+        }
+        fn configure_external_outcome(
+            &self,
+            request: ExternalOutcomeControl,
+        ) -> Result<(), TargetError> {
+            self.inner.configure_external_outcome(request)
+        }
+        fn redeliver_event(&self, request: RedeliveryRequest) -> Result<(), TargetError> {
+            self.inner.redeliver_event(request)
+        }
+    }
+
+    fn claims_of_left(step: &ScenarioStep) -> bool {
+        matches!(
+            step,
+            ScenarioStep::ExpectEvent { event, .. } | ScenarioStep::ExpectEventValues { event, .. }
+                if event.to_string() == LEFT
+        )
+    }
+
+    #[test]
+    fn synthesis_witnesses_a_per_row_event_and_a_row_its_state_filter_excludes() {
+        let ir = ir_of(MODEL);
+        let synthesis = ess_conformance::synthesize::synthesize(&ir);
+        assert!(
+            synthesis
+                .refusals
+                .iter()
+                .all(|refusal| !format!("{refusal:?}").contains("CloseAll")),
+            "{:#?}",
+            synthesis.refusals
+        );
+        let closed = scenario(&synthesis.suite, CLOSED);
+        let acts: Vec<&[ScenarioStep]> = closed
+            .steps
+            .split(|step| matches!(step, ScenarioStep::ExecuteCommand { .. }))
+            .collect();
+        assert!(
+            acts.iter()
+                .any(|act| act.iter().filter(|step| claims_of_left(step)).count() == 2),
+            "one act claims a Left for each of two Busy seats: {closed:#?}"
+        );
+        assert!(
+            closed.steps.iter().any(|step| matches!(
+                step,
+                ScenarioStep::ExpectNoEvent { event } if event.to_string() == LEFT
+            )),
+            "a segment where no seat it closes was Busy claims no Left: {closed:#?}"
+        );
+
+        let statuses = run(
+            &synthesis.suite,
+            &ess_conformance::interpret::Interpreted::for_model(ir.clone()),
+        );
+        assert!(not_passed(&statuses).is_empty(), "{statuses:#?}");
+        assert_eq!(statuses.get(CLOSED), Some(&Status::Passed));
+        for fault in [Fault::LeftForOpen, Fault::OmitsOneBusy] {
+            let target = Target {
+                inner: ess_conformance::interpret::Interpreted::for_model(ir.clone()),
+                fault,
+                seats: RefCell::new(BTreeMap::new()),
+            };
+            assert_eq!(
+                run(&synthesis.suite, &target).get(CLOSED),
+                Some(&Status::Failed),
+                "{fault:?}"
+            );
+        }
+    }
+
+    /// Synthesizes `model` without refusing `CloseAll`, and requires the interpreter to pass the
+    /// whole suite and a target broken by each of `faults` to fail the `closed-all` scenario.
+    fn closed_all_fails_under(model: &str, faults: &[Fault]) {
+        let ir = ir_of(model);
+        let synthesis = ess_conformance::synthesize::synthesize(&ir);
+        assert!(
+            synthesis
+                .refusals
+                .iter()
+                .all(|refusal| !format!("{refusal:?}").contains("CloseAll")),
+            "{:#?}",
+            synthesis.refusals
+        );
+        let statuses = run(
+            &synthesis.suite,
+            &ess_conformance::interpret::Interpreted::for_model(ir.clone()),
+        );
+        assert!(not_passed(&statuses).is_empty(), "{statuses:#?}");
+        for fault in faults {
+            let target = Target {
+                inner: ess_conformance::interpret::Interpreted::for_model(ir.clone()),
+                fault: *fault,
+                seats: RefCell::new(BTreeMap::new()),
+            };
+            assert_eq!(
+                run(&synthesis.suite, &target).get(CLOSED),
+                Some(&Status::Failed),
+                "{fault:?}: {:#?}",
+                scenario(&synthesis.suite, CLOSED)
+            );
+        }
+    }
+
+    /// `{changed: call_ref}` over a seat whose arrangement cleared it reads an absent `Optional`:
+    /// the claim for that seat admits no present value, so a target publishing one — another
+    /// seat's, or the value after the outcome — fails.
+    #[test]
+    fn an_absent_optional_a_per_row_event_reads_is_claimed_absent() {
+        closed_all_fails_under(&cleared_on_take(), &[Fault::InventsAbsentCallRef]);
+    }
+
+    /// Two per-row events whose state filters share no state: each is witnessed on a changed row it
+    /// publishes for and on one it leaves out, so a target publishing `Released` for a `Busy` seat
+    /// fails as one publishing `Left` for an `Open` seat does.
+    #[test]
+    fn each_state_filter_is_witnessed_on_a_row_it_leaves_out() {
+        closed_all_fails_under(
+            &two_filters(),
+            &[
+                Fault::LeftForOpen,
+                Fault::ReleasedForBusy,
+                Fault::OmitsOneBusy,
+            ],
+        );
+    }
+}

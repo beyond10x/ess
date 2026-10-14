@@ -39,7 +39,7 @@ pub(crate) struct Input {
 }
 
 /// All required values are decoded strictly. In particular YAML scalars such as `true` and `42`
-/// are not converted to strings by `serde_yaml`'s permissive String deserializer.
+/// are not converted to strings by `ess-yaml`'s permissive String deserializer.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Manifest {
@@ -58,19 +58,19 @@ fn optional_string<'de, D: serde::Deserializer<'de>>(
     string(d).map(Some)
 }
 fn string<'de, D: serde::Deserializer<'de>>(d: D) -> std::result::Result<String, D::Error> {
-    match serde_yaml::Value::deserialize(d)? {
-        serde_yaml::Value::String(s) => Ok(s),
+    match ess_yaml::Value::deserialize(d)? {
+        ess_yaml::Value::String(s) => Ok(s),
         _ => Err(serde::de::Error::custom("expected a string")),
     }
 }
 fn strings<'de, D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Vec<String>, D::Error> {
-    let serde_yaml::Value::Sequence(values) = serde_yaml::Value::deserialize(d)? else {
+    let ess_yaml::Value::Sequence(values) = ess_yaml::Value::deserialize(d)? else {
         return Err(serde::de::Error::custom("expected a list of strings"));
     };
     values
         .into_iter()
         .map(|v| match v {
-            serde_yaml::Value::String(s) => Ok(s),
+            ess_yaml::Value::String(s) => Ok(s),
             _ => Err(serde::de::Error::custom("expected a string list entry")),
         })
         .collect()
@@ -275,7 +275,7 @@ fn manifest_lists(manifest: &Path) -> Result<Manifest> {
 
 fn parse_manifest(text: &str) -> Result<Manifest> {
     // Struct deserialization rejects duplicate top-level keys and multiple YAML documents.
-    let configuration: Manifest = serde_yaml::from_str(text).context("invalid input manifest")?;
+    let configuration: Manifest = ess_yaml::from_str(text).context("invalid input manifest")?;
     if configuration.format == FORMAT {
         if configuration.requires.is_some() {
             bail!("`requires` needs format {FORMAT_REQUIRES}; {FORMAT} has no such field");

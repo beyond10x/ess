@@ -9,7 +9,7 @@ use ess_ui::{
     Primitive, Reads, Region, RegionKind, Section, SectionStates, Selection, Shell, State,
     StateClass, Store, Tab, TabFields, TabForm,
 };
-use serde_yaml::Value;
+use ess_yaml::Value;
 
 use crate::fixtures::millis;
 use crate::jsx::{fragment, indent, El};
@@ -149,16 +149,14 @@ const MAX_POLL_MS: u64 = 24 * 3_600_000;
 /// `constructs.PlacementProfile.profiles.<profile>.defaults` of the schema this crate was built
 /// with: the store each profile gives each state class.
 fn schema_profiles() -> BTreeMap<String, BTreeMap<String, Store>> {
-    let schema: Value = serde_yaml::from_str(ess_ui::SCHEMA).unwrap_or(Value::Null);
+    let schema: Value = ess_yaml::from_str(ess_ui::SCHEMA).unwrap_or(Value::Null);
     let mut out = BTreeMap::new();
     if let Some(profiles) = schema["constructs"]["PlacementProfile"]["profiles"].as_mapping() {
         for (name, profile) in profiles {
             let defaults = profile
                 .get("defaults")
                 .cloned()
-                .and_then(|defaults| {
-                    serde_yaml::from_value::<BTreeMap<String, Store>>(defaults).ok()
-                })
+                .and_then(|defaults| ess_yaml::from_value::<BTreeMap<String, Store>>(defaults).ok())
                 .unwrap_or_default();
             out.insert(ts::key_text(name), defaults);
         }

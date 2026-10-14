@@ -2801,6 +2801,43 @@ fn outcome_scenario_noting(
     );
     steps.extend(further);
     source.extend(depends);
+    // ess/25 (#534): an external refusal answered before the row is forced once more on an
+    // identity no row carries, so a target reading existence first fails. A model without the key
+    // keeps its suite's bytes.
+    if before_row_identity(command, outcome).is_some() {
+        if let Some((more, depends, _)) = exercise_as(
+            models,
+            command,
+            outcome,
+            actors,
+            &id,
+            refusals,
+            Witness::Unstored,
+        ) {
+            steps.extend(more);
+            source.extend(depends);
+        }
+    }
+    // ess/25 (#534): step 2 is read in declaration order, so the external refusal is forced once
+    // more for each input refusal declared after it, on an input that refusal's guard selects: a
+    // target asking the provider only after every input refusal answers the later refusal there.
+    // An input no target can send to both answers nothing about the order, so none is refused.
+    if outcome.before_row {
+        for nth in 0..later_refusals(command, outcome).count() {
+            if let Some((more, depends, _)) = exercise_as(
+                models,
+                command,
+                outcome,
+                actors,
+                &id,
+                &mut Vec::new(),
+                Witness::InsideLaterRefusal(nth),
+            ) {
+                steps.extend(more);
+                source.extend(depends);
+            }
+        }
+    }
     // ess/16 (#163): the branch again with every input it reads only through `else: <literal>`
     // left out, after everything the full invocation asserts, so the suite asserts both halves of
     // `{input: f, else: <literal>}` — the sent value wins, and the literal stands in for none.
@@ -3094,6 +3131,14 @@ enum Witness {
     /// it sends (ess/22, beyond10x/ess#418, [`arranged_with_union_variant`]), so a synthesized suite
     /// sends each variant and not only the first label.
     UnionVariant(usize),
+    /// A further invocation of an external refusal answered before the row (`before_row: true`,
+    /// ess/25, beyond10x/ess#534), sent an identity no row carries ([`arranged_unstored`]), so a
+    /// target that reads the row first answers the unknown identity instead and fails.
+    Unstored,
+    /// A further invocation of an external refusal answered before the row, sent an input the
+    /// guard of the `n`th input refusal declared after it selects ([`arranged_inside_later`]), so
+    /// a target that asks the provider only after every input refusal answers that one and fails.
+    InsideLaterRefusal(usize),
 }
 
 /// Arrange the instance the branch acts on, run the branch, and assert everything it promises.
@@ -3558,7 +3603,9 @@ fn run_as(
                 Witness::LiteralFallbacks(_)
                 | Witness::Listed(_)
                 | Witness::RelatedValueAbsent(_)
-                | Witness::UnionVariant(_) => return Err(related_guard::unarranged()),
+                | Witness::UnionVariant(_)
+                | Witness::Unstored
+                | Witness::InsideLaterRefusal(_) => return Err(related_guard::unarranged()),
             }
         } else {
             // A guard no input meets beside the invariants of the entity it copies the input into is
@@ -3858,6 +3905,11 @@ fn unclaimed_external(
         || lifecycle.states.iter().cloned().collect(),
         |transition| transition.from.iter().cloned().collect(),
     );
+    let states = if outcome.before_row {
+        held_state_selected_first(command, states)
+    } else {
+        states
+    };
     let mut plain = Some(setup);
     let mut tried = 0;
     for state in states {
@@ -3924,6 +3976,32 @@ fn unclaimed_external(
         ),
         tried,
     })
+}
+
+/// `states`, with those a branch selected by the held state admits first, in the declaration order
+/// of those branches: an external refusal answered before the row (`before_row: true`, ess/25,
+/// beyond10x/ess#534) is witnessed on a row the held state would also select, where a target
+/// reading the row first answers that branch instead and fails.
+fn held_state_selected_first(command: &ResolvedCommand, states: Vec<StateName>) -> Vec<StateName> {
+    let mut first: Vec<StateName> = Vec::new();
+    for branch in &command.outcomes {
+        let admitted: Vec<&StateName> = match &branch.condition {
+            ResolvedCondition::SubjectState { state, .. } => state.iter().collect(),
+            ResolvedCondition::StateChange { states, .. } => states.iter().collect(),
+            _ => continue,
+        };
+        for state in admitted {
+            if states.contains(state) && !first.contains(state) {
+                first.push(state.clone());
+            }
+        }
+    }
+    let rest: Vec<StateName> = states
+        .into_iter()
+        .filter(|state| !first.contains(state))
+        .collect();
+    first.extend(rest);
+    first
 }
 
 /// A re-witnessed external branch's input, freshened as [`arranged_plain`] freshens every plain
@@ -7291,7 +7369,10 @@ fn determined_fields(
             | ResolvedPayloadValue::Generated
             | ResolvedPayloadValue::Cleared
             // ess/16 (#167): the rows one scenario changed, asserted by `set_effects` alone.
-            | ResolvedPayloadValue::ChangedCount => {}
+            | ResolvedPayloadValue::ChangedCount
+            // ess/25 (#531): the row one occurrence is for, asserted by `set_effects` alone.
+            | ResolvedPayloadValue::ChangedField { .. }
+            | ResolvedPayloadValue::ChangedState { .. } => {}
             // Read as the target's type, as `settled` reads a `sets:` literal: `ess-domain` admits
             // `true`, a whole number and a decimal over the primitives they spell, and asserting
             // their text would fail every implementation that publishes the number.
@@ -7772,9 +7853,110 @@ fn view_expectations(
                 }),
             }
         }
+        // `absent:` (ess/25, beyond10x/ess#533): beside the stored row just read, the default row
+        // an identity no row carries is answered. Last, for the reason the read above is.
+        if *admits_subject {
+            out.asserted.extend(absent_read(ir, view, id, refusals));
+        }
         out.views.insert(name);
     }
     out
+}
+
+/// The witness of a view's `absent:` (ess/25, beyond10x/ess#533, `docs/design/read-api-view-idioms.md`,
+/// "An identity no row carries"): a read of the view for an identity no scenario stores, and that
+/// it `Contains` the default row: the requested identity where the view projects it, and each
+/// literal the row declares, typed by its field, and `null` in every other field. Nothing for a view
+/// without one.
+///
+/// The identity is the parameter's witness one distinction past [`Distinction::UNKNOWN`], which an
+/// unknown-instance scenario may create, checked apart from the plain witness and every further
+/// one an arrangement numbers. Where the parameter's type has too few values for that, or a literal
+/// has no value synthesis can spell, the read is refused by name rather than made.
+fn absent_read(
+    ir: &EssIr,
+    view: &ResolvedView,
+    id: &ScenarioId,
+    refusals: &mut Vec<Refusal>,
+) -> Vec<ScenarioStep> {
+    let Some(absent) = &view.absent else {
+        return Vec::new();
+    };
+    let Some(param) = view.params.iter().find(|param| param.name == absent.param) else {
+        return Vec::new();
+    };
+    let gap = |reason: &'static str| {
+        Refusal::about(
+            id,
+            RefusalCause::NoWitness(WitnessGap {
+                path: format!("{}.{}", view.name, absent.param),
+                type_ref: param.type_ref.to_string(),
+                reason,
+            }),
+        )
+    };
+    let at = |distinction: Distinction| {
+        crate::witness::fields(ir, std::slice::from_ref(param), distinction)
+            .ok()
+            .and_then(|mut values| values.remove(&param.name))
+    };
+    let unstored = Distinction::further(Distinction::UNKNOWN.get() + 1);
+    let Some(requested) = at(unstored) else {
+        refusals.push(gap("has no value synthesis can send"));
+        return Vec::new();
+    };
+    if std::iter::once(Distinction::UNKNOWN)
+        .chain((0..=MAX_CANDIDATES).map(Distinction::further))
+        .any(|distinction| at(distinction).as_ref() == Some(&requested))
+    {
+        refusals.push(gap(
+            "has too few values to name an identity no other scenario stores, so the view's \
+             default row (`absent:`) is not read",
+        ));
+        return Vec::new();
+    }
+    let identity = &ir.entity(&view.source).identity.name;
+    let mut fields = BTreeMap::new();
+    for field in &view.fields {
+        let value = if &field.name == identity {
+            requested.clone()
+        } else if let Some(text) = absent.row.get(&field.name) {
+            let Some(value) = literal_value(ir, &field.type_ref, text, 0) else {
+                refusals.push(gap(
+                    "names a default row (`absent:`) whose literal synthesis cannot spell",
+                ));
+                return Vec::new();
+            };
+            value
+        } else {
+            // An `Optional` field the row leaves out is absent, and asserted as `null`: a target
+            // filling it answers a row the specification does not (adversary pass 1 of
+            // beyond10x/ess#533). A row field is compared as a projection writes it, which is
+            // `null` for an `Optional` holding nothing.
+            Node::Null
+        };
+        fields.insert(field.name.clone(), ScenarioValue::literal(value));
+    }
+    let name = ViewRef::new(view.name.clone());
+    let params = BTreeMap::from([(absent.param.clone(), ScenarioValue::literal(requested))]);
+    let expectation = ViewExpectation::Contains { fields };
+    match view.assertion_style {
+        AssertionStyle::Expect => vec![
+            ScenarioStep::QueryView {
+                view: name.clone(),
+                params,
+            },
+            ScenarioStep::ExpectView {
+                view: name,
+                expectation,
+            },
+        ],
+        AssertionStyle::Eventually => vec![ScenarioStep::EventuallyView {
+            view: name,
+            params,
+            expectation,
+        }],
+    }
 }
 
 /// The identity a re-keying `updates:` (ess/23, beyond10x/ess#429) leaves its row under, as this
@@ -8320,12 +8502,15 @@ fn expression_value_at(
     target_location: &[String],
 ) -> Option<ScenarioValue> {
     match &field.value {
-        ResolvedPayloadValue::SubjectField { field: read, .. } => {
+        ResolvedPayloadValue::SubjectField { field: read, .. }
+        // ess/25 (#531): the changed row one occurrence is for, `before` holding that row.
+        | ResolvedPayloadValue::ChangedField { field: read, .. } => {
             before.get(read).map(|held| held.value.clone())
         }
         // ess/23 (beyond10x/ess#458): the state the arrangement left the row in, where the caller
         // passed it ([`with_held_state`]).
-        ResolvedPayloadValue::SubjectState { .. } => {
+        ResolvedPayloadValue::SubjectState { .. }
+        | ResolvedPayloadValue::ChangedState { .. } => {
             before.get(HELD_STATE).map(|held| held.value.clone())
         }
         // ess/16 (#166): the referenced row's value, which `related::arrange` settled — absent
@@ -8604,11 +8789,125 @@ fn arranged_as(
         Witness::UnionVariant(nth) => {
             arranged_with_union_variant(ir, command, outcome, actors, nth)
         }
+        Witness::Unstored => arranged_unstored(ir, command, outcome),
+        Witness::InsideLaterRefusal(nth) => arranged_inside_later(ir, command, outcome, nth),
         // Only a command reading a related row builds one, and `run_as` arranges it there.
         Witness::RelatedBoundary { .. } | Witness::RelatedAbsent(_) => {
             Err(related_guard::unarranged())
         }
     }
+}
+
+/// The input field an external refusal answered before the row (`before_row: true`, ess/25,
+/// beyond10x/ess#534) names the addressed row through: the field the first sibling acting on a
+/// supplied instance takes it from. `None` where no branch of the command addresses one.
+fn before_row_identity<'c>(
+    command: &'c ResolvedCommand,
+    outcome: &ResolvedOutcome,
+) -> Option<&'c str> {
+    if !outcome.before_row {
+        return None;
+    }
+    command
+        .outcomes
+        .iter()
+        .find_map(|branch| match &branch.subject {
+            Some(ResolvedSubject {
+                instance: ResolvedInstance::Supplied { field },
+                ..
+            }) => Some(field.name.as_str()),
+            _ => None,
+        })
+}
+
+/// The arrangement and input of [`Witness::Unstored`]: no row, and the plain witness input with the
+/// addressed identity replaced by the one no scenario stores, which an `unknown_instance:` scenario
+/// sends ([`fresh_identity`]). The external refusal answers before existence is read, so it is the
+/// answer there too.
+fn arranged_unstored(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+) -> Result<(Setup, BTreeMap<String, Node>), RefusalCause> {
+    let Some(field) = before_row_identity(command, outcome) else {
+        return Err(RefusalCause::StrategyWithoutGuard {
+            strategy: TestStrategy::InjectFault,
+        });
+    };
+    let mut input = reach(ir, command, outcome, Distinction::PLAIN)?;
+    let identity = fresh_identity(ir, command, field, Some(&input))?;
+    set_at(&mut input, field, Some(identity));
+    Ok((Setup::none(), input))
+}
+
+/// Whether `input` reaches an external refusal answered before the row (`before_row: true`,
+/// ess/25, beyond10x/ess#534) once its provider is forced: its own `when:`, where it declares one,
+/// holds, `inside` holds where given, and every input refusal declared before it is refuted, since
+/// those answer first.
+pub(super) fn reaches_before_row(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    input: &BTreeMap<String, Node>,
+    inside: Option<&Predicate>,
+) -> Result<bool, RefusalCause> {
+    let mut wanted: Vec<&Predicate> = Vec::new();
+    if let ResolvedCondition::ExternalWhen { predicate, .. } = &outcome.condition {
+        wanted.push(predicate);
+    }
+    wanted.extend(inside);
+    let earlier: Vec<&Predicate> = sibling_refusals(command, outcome)
+        .filter_map(when)
+        .collect();
+    let facts = flatten(ir, command, input).map_err(RefusalCause::WitnessRejected)?;
+    Ok(decides(&facts, &wanted, true)? && decides(&facts, &earlier, false)?)
+}
+
+/// The arrangement and input of [`Witness::InsideLaterRefusal`]: no row, since both branches
+/// answer before it is read, and an input the guard of the `nth` input refusal declared after the
+/// external refusal selects ([`reaches_before_row`]). Refused where no candidate is one; the
+/// caller drops that refusal, since no input then separates the two.
+fn arranged_inside_later(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    nth: usize,
+) -> Result<(Setup, BTreeMap<String, Node>), RefusalCause> {
+    let unarranged = || RefusalCause::StrategyWithoutGuard {
+        strategy: TestStrategy::InjectFault,
+    };
+    if !outcome.before_row {
+        return Err(unarranged());
+    }
+    let guard = later_refusals(command, outcome)
+        .nth(nth)
+        .and_then(when)
+        .ok_or_else(unarranged)?;
+    let mut wanted: Vec<&Predicate> = vec![guard];
+    if let ResolvedCondition::ExternalWhen { predicate, .. } = &outcome.condition {
+        wanted.push(predicate);
+    }
+    let mut widened = wanted.clone();
+    widened.extend(sibling_refusals(command, outcome).filter_map(when));
+    let mut tried = 0;
+    for inputs in searched_candidates(
+        ir,
+        command,
+        vec![wanted.clone(), widened],
+        Distinction::PLAIN,
+    ) {
+        let inputs = inputs?;
+        for input in &inputs {
+            if reaches_before_row(ir, command, outcome, input, Some(guard))? {
+                return Ok((Setup::none(), input.clone()));
+            }
+        }
+        tried = tried.max(inputs.len());
+    }
+    Err(RefusalCause::GuardUnsatisfiable {
+        predicate: rendered(&wanted, true),
+        tried,
+    })
 }
 
 /// The arrangement and input of [`Witness::LiteralFallbacks`]: a further instance, under a
@@ -8964,6 +9263,8 @@ fn reads<'a>(target: &'a ess_compiler::ir::ResolvedPayloadField, out: &mut Vec<(
         | ResolvedPayloadValue::Increment { .. }
         | ResolvedPayloadValue::SubjectState { .. }
         | ResolvedPayloadValue::CallerAttribute { .. }
+        | ResolvedPayloadValue::ChangedField { .. }
+        | ResolvedPayloadValue::ChangedState { .. }
         | ResolvedPayloadValue::ChangedCount => {}
     }
 }
@@ -9413,6 +9714,9 @@ fn settled(
             }
             ResolvedPayloadValue::Generated
             | ResolvedPayloadValue::ResponseField { .. }
+            // ess/25 (#531): an event payload source only, never a row's.
+            | ResolvedPayloadValue::ChangedField { .. }
+            | ResolvedPayloadValue::ChangedState { .. }
             | ResolvedPayloadValue::ChangedCount => continue,
         };
         out.insert(
@@ -11566,6 +11870,46 @@ fn names_existing(outcome: &ResolvedOutcome) -> Option<&str> {
     }
 }
 
+/// The input field naming the existing instance a `preserves:` branch reads, where it reads one
+/// from input (beyond10x/ess#535).
+fn preserves_supplied(outcome: &ResolvedOutcome) -> Option<&str> {
+    let subject = outcome.subject.as_ref()?;
+    match (&subject.effect, &subject.instance) {
+        (ResolvedEffect::Preserves, ResolvedInstance::Supplied { field }) => {
+            Some(field.name.as_str())
+        }
+        _ => None,
+    }
+}
+
+/// The branches an identity naming no record reaches, in the order [`unknown_instance`] tries
+/// them: every [`names_existing`] branch, then — only on a command declaring an
+/// `unknown_instance:` branch — every `preserves:` branch reading its instance from input
+/// (beyond10x/ess#535). A read-only command reads the row its input names as an update does, and
+/// the declared branch is its answer for a row that is not there. A preserving command declaring
+/// no such branch keeps the answers it had: no not-found refusal or `wrong_state:` is read off a
+/// branch that changes nothing.
+fn unknown_reachable(command: &ResolvedCommand) -> Vec<&ResolvedOutcome> {
+    let mut reached: Vec<&ResolvedOutcome> = command
+        .outcomes
+        .iter()
+        .filter(|outcome| names_existing(outcome).is_some())
+        .collect();
+    if command
+        .outcomes
+        .iter()
+        .any(|outcome| outcome.condition == ResolvedCondition::UnknownInstance)
+    {
+        reached.extend(
+            command
+                .outcomes
+                .iter()
+                .filter(|outcome| preserves_supplied(outcome).is_some()),
+        );
+    }
+    reached
+}
+
 /// The unknown-instance rule, witnessed once per command acting on an input-named instance that
 /// declares an answer for it (`docs/design/typed-literals-and-unknown-instances.md`, sections 2
 /// and 2a).
@@ -11597,11 +11941,7 @@ fn unknown_instances(
         if !focus.takes(&command.name) {
             continue;
         }
-        let acting: Vec<&ResolvedOutcome> = command
-            .outcomes
-            .iter()
-            .filter(|outcome| names_existing(outcome).is_some())
-            .collect();
+        let acting = unknown_reachable(command);
         if acting.is_empty() || existence::creates_on_unknown(command) {
             continue;
         }
@@ -11768,7 +12108,9 @@ fn unknown_instance(
             strategy: declared.test_strategy,
         }));
     };
-    let field = names_existing(attempt).unwrap_or_default();
+    let field = names_existing(attempt)
+        .or_else(|| preserves_supplied(attempt))
+        .unwrap_or_default();
     let fresh = fresh_identity(ir, command, field, Some(&input))?;
     input.insert(field.to_owned(), fresh);
 
@@ -13055,7 +13397,8 @@ fn window_refutations(
     found
 }
 
-/// `input` with the scalar at `path` replaced, or nothing where the path does not land on one.
+/// `input` with the scalar at `path` replaced, or the list there by a list, or nothing where the
+/// path does not land on one.
 fn with_leaf(
     input: &BTreeMap<String, Node>,
     path: &FactPath,
@@ -13074,7 +13417,13 @@ fn with_leaf(
             _ => return None,
         };
     }
-    if !matches!(at, Node::Number(_) | Node::Text(_)) {
+    // A scalar leaf takes a scalar; a list takes a whole list, as a `trimmed` witness inside a
+    // quantifier body is sent (beyond10x/ess#532, [`crate::witness::trim_witnesses`]).
+    let replaces = matches!(
+        (&*at, &value),
+        (Node::Number(_) | Node::Text(_), _) | (Node::Seq(_), Node::Seq(_))
+    );
+    if !replaces {
         return None;
     }
     *at = value;
@@ -13509,7 +13858,9 @@ fn boundary_inputs(
             // Each child of every connective below the top-level ones that the guarded branch
             // witnesses (https://github.com/beyond10x/ess/issues/501).
             nested_rows(ir, command, guard, true, primary, &mut rows, &keep, missed);
-            for candidate in overlap_inputs(ir, command, outcome) {
+            // Then the overlaps, and a `trimmed` guard's padded literals (#532, [`trim_rows`]).
+            let overlaps = overlap_inputs(ir, command, outcome).into_iter();
+            for candidate in overlaps.chain(trim_rows(guard, primary)) {
                 keep(candidate, &mut rows);
             }
         }
@@ -13573,7 +13924,8 @@ fn boundary_inputs(
                 // A case-insensitive guard's literal in a case only Unicode folding equates with it
                 // (beyond10x/ess#140): ASCII folding refutes it, so the default is sent it, and a target
                 // that folds Unicode takes the guarded branch and fails.
-                for (path, value) in crate::witness::unicode_refutations(guard) {
+                // So is a `trimmed` guard's literal with an inner space or between U+00A0s (#532).
+                for (path, value) in crate::witness::refutations(guard) {
                     if let Some(candidate) = reference
                         .as_ref()
                         .and_then(|base| with_leaf(base, &path, value.clone()))
@@ -13587,6 +13939,17 @@ fn boundary_inputs(
         _ => {}
     }
     rows
+}
+
+/// The rows a `trimmed` guard's literals give the branch it guards (beyond10x/ess#532): each
+/// literal of [`crate::witness::trim_witnesses`] in `primary`'s place, the caller keeping only the
+/// rows that still select the branch. The literal between `\v\f` and `\r\n` is among them, which a
+/// target trimming only spaces and tabs, or with Rust's `trim_ascii`, refuses and so fails.
+fn trim_rows(guard: &Predicate, primary: &BTreeMap<String, Node>) -> Vec<BTreeMap<String, Node>> {
+    crate::witness::trim_witnesses(guard)
+        .into_iter()
+        .filter_map(|(path, value)| with_leaf(primary, &path, value))
+        .collect()
 }
 
 /// One input region the declared precedence answers with `first` although `other` holds there too
@@ -14613,6 +14976,7 @@ fn map_paths(predicate: &Predicate, onto: &dyn Fn(&FactPath) -> FactPath) -> Pre
                 .collect(),
         ),
         Predicate::Not(inner) => Predicate::Not(Box::new(map_paths(inner, onto))),
+        Predicate::Trimmed(inner) => Predicate::Trimmed(Box::new(map_paths(inner, onto))),
         Predicate::Compare {
             left,
             op,
