@@ -2,9 +2,11 @@
 format: aep.planning-md/3
 id: decision-blocker:release-060-waits-for-parallel-issues
 kind: decision-blocker
-status: open
+status: cleared
 title: Release 0.60.0 waits for the issues fixed on a parallel branch?
-revision: 1
+revision: 3
+transitions:
+- {from: "open", to: "cleared", at: "2026-10-14T17:54:49Z", actor: "human:timo", revision: 3}
 ---
 ## Question
 
@@ -19,3 +21,7 @@ Does release 0.60.0 wait for the fixes of #542-#547, #549, #551 and #552? Anothe
 ## Recommendation
 
 A. Two releases are cheaper than holding 15 shipped fixes for an unknown time.
+
+## Decision
+
+Option A, decided by the operator on 2026-10-14 at 15:21Z ("tag + gh release"): release 0.60.0 now from `main`, at the merge of #575. #542-#547, #549, #551 and #552 ship in a later release.
