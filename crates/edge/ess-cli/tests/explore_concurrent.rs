@@ -1144,3 +1144,288 @@ fn a_lost_creation_of_one_entity_never_withholds_a_row_of_another_entitys_view()
         );
     }
 }
+
+// ---- concurrent exploration checks what the sequential walk checks (beyond10x/ess#576) ----------
+
+/// `explore-external.yaml` with one more command, `Note`, whose guard reads an `Optional` input: a
+/// draw that leaves `memo` out leaves the guard unknown, and the walk excludes `Note` there and
+/// then. With the `cannot-arrange` double, the first external branch drawn is unarrangeable too.
+/// Both are exclusions an earlier seed of a run makes before a later seed is drawn.
+fn noted_external_spec(scratch: &Path) -> PathBuf {
+    let source = std::fs::read_to_string(fixture("explore-external.yaml"))
+        .expect("the external fixture reads")
+        .replace(
+            "      - exploreext.pay.Capture\n",
+            "      - exploreext.pay.Capture\n      - exploreext.pay.Note\n",
+        )
+        .replace(
+            "\nevents:\n",
+            "
+  - name: exploreext.pay.Note
+    input:
+      - name: memo
+        type: Optional<Integer>
+    outcomes:
+      - name: noted
+        when: memo >= 1
+        emits:
+          - exploreext.pay.Noted
+        payload:
+          exploreext.pay.Noted:
+            memo: input.memo
+      - name: ignored
+        error: exploreext.pay.InvalidAmount
+
+events:
+  - name: exploreext.pay.Noted
+    fields:
+      - name: memo
+        type: Optional<Integer>
+",
+        );
+    assert!(
+        source.contains("exploreext.pay.Note\n    input"),
+        "the command was added"
+    );
+    let path = scratch.join("noted-external.yaml");
+    std::fs::write(&path, source).unwrap();
+    path
+}
+
+/// The Go half of the walk-parity lane: `driver` as a test of the package emitted for `spec`, with
+/// each of `copies` (a fixture, and its name in the package). Returns what `driver` wrote.
+fn walk_go(scratch: &Path, spec: &Path, copies: &[(&str, &str)], driver: &str, run: &str) -> Value {
+    let module = scratch.join("go");
+    let package = emit(spec.to_str().unwrap(), "go", &module);
+    std::fs::write(
+        module.join("go.mod"),
+        "module example.invalid/walk\n\ngo 1.24\n",
+    )
+    .unwrap();
+    for (from, to) in copies {
+        std::fs::copy(fixture(from), package.join(to)).expect("the fixture copies");
+    }
+    std::fs::write(package.join("walk_parity_driver_test.go"), driver).unwrap();
+    let out = scratch.join("out-go.json");
+    let output = Command::new("go")
+        .args([
+            "test",
+            "./essconform",
+            "-run",
+            run,
+            "-count=1",
+            "-v",
+            "-timeout",
+            "30m",
+        ])
+        .env("ESS_WALK_OUT", &out)
+        .env("ESS_WALK_SPEC", spec)
+        .env("PATH", path_with_ess())
+        .env("GOWORK", "off")
+        .current_dir(&module)
+        .output()
+        .expect("`go` is on PATH: the lane does not skip");
+    let log = printed(&output);
+    assert!(output.status.success(), "{log}");
+    assert!(log.contains(&format!("--- PASS: {run}")), "{log}");
+    serde_json::from_str(&std::fs::read_to_string(&out).unwrap_or_else(|_| panic!("{log}")))
+        .expect("the driver wrote JSON")
+}
+
+/// The TypeScript half of the walk-parity lane, as [`walk_go`].
+fn walk_typescript(scratch: &Path, spec: &Path, copies: &[&str], driver: &str) -> Value {
+    let package = emit(
+        spec.to_str().unwrap(),
+        "typescript",
+        &scratch.join("typescript"),
+    );
+    for name in copies {
+        std::fs::copy(fixture(name), package.join(name)).expect("the fixture copies");
+    }
+    std::fs::write(package.join("walk-parity-driver.mjs"), driver).unwrap();
+    std::fs::write(
+        package.join("runtime-test.tsconfig.json"),
+        r#"{"extends":"./tsconfig.json","compilerOptions":{"types":[],"noCheck":true}}"#,
+    )
+    .unwrap();
+    let compiled = Command::new("tsc")
+        .args(["--project", "runtime-test.tsconfig.json"])
+        .current_dir(&package)
+        .output()
+        .expect("`tsc` is on PATH: the lane does not skip");
+    assert!(compiled.status.success(), "{}", printed(&compiled));
+    let out = scratch.join("out-typescript.json");
+    let output = Command::new("node")
+        .args(["--test", "walk-parity-driver.mjs"])
+        .env("ESS_WALK_OUT", &out)
+        .env("ESS_WALK_SPEC", spec)
+        .env("PATH", path_with_ess())
+        .current_dir(&package)
+        .output()
+        .expect("`node` is on PATH: the lane does not skip");
+    let log = printed(&output);
+    assert!(output.status.success(), "{log}");
+    assert!(log.lines().any(|line| line.starts_with("ok 1 - ")), "{log}");
+    serde_json::from_str(&std::fs::read_to_string(&out).unwrap_or_else(|_| panic!("{log}")))
+        .expect("the driver wrote JSON")
+}
+
+/// Every command a seed sends, by scenario, in a run of six seeds and in six runs of one seed each.
+const SEED_REPLAY_GO: &str = r#"package essconform
+
+import (
+	"encoding/json"
+	"os"
+	"testing"
+)
+
+type seedReplayLog struct {
+	Target
+	scenario string
+	log      map[string][]string
+}
+
+func (t *seedReplayLog) BeginScenario(s ScenarioContext) error {
+	t.scenario = s.Scenario
+	return t.Target.BeginScenario(s)
+}
+
+func (t *seedReplayLog) ExecuteCommand(r CommandRequest) (CommandResult, error) {
+	input, _ := json.Marshal(r.Input)
+	t.log[t.scenario] = append(t.log[t.scenario], r.Command+" "+string(input))
+	if r.Command == "exploreext.pay.Note" {
+		if memo, ok := r.Input["memo"].(float64); ok && memo >= 1 {
+			return CommandResult{Outcome: "noted", DirectEvents: []ObservedEvent{{Event: "exploreext.pay.Noted", Payload: map[string]Node{"memo": memo}}}}, nil
+		}
+		return CommandResult{Outcome: "ignored", Error: "exploreext.pay.InvalidAmount", DirectEvents: []ObservedEvent{}}, nil
+	}
+	return t.Target.ExecuteCommand(r)
+}
+
+func TestSeedReplay(t *testing.T) {
+	logged := func(log map[string][]string) func() Target {
+		return func() Target { return &seedReplayLog{Target: newExploreExtTarget("cannot-arrange"), log: log} }
+	}
+	run := map[string][]string{}
+	result, err := Explore(logged(run), ExploreOptions{Seeds: 6, Steps: 30})
+	if err != nil {
+		t.Fatal(err)
+	}
+	alone := map[string][]string{}
+	for seed := 1; seed <= 6; seed++ {
+		if _, err := Explore(logged(alone), ExploreOptions{Seed: seed, Steps: 30}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	bytes, err := json.Marshal(map[string]any{"run": run, "alone": alone, "result": result})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(os.Getenv("ESS_WALK_OUT"), bytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+"#;
+
+const SEED_REPLAY_TS: &str = r#"import { writeFileSync } from 'node:fs';
+import test from 'node:test';
+
+import { explore, goMarshal } from './dist/index.js';
+import { newTarget } from './explore-external-target.mjs';
+
+const logged = (log) => () => {
+  const inner = newTarget('cannot-arrange');
+  let scenario = '';
+  return {
+    ...inner,
+    beginScenario(context) {
+      scenario = context.scenario;
+      return inner.beginScenario(context);
+    },
+    executeCommand(request) {
+      (log[scenario] ??= []).push(`${request.command} ${JSON.stringify(request.input)}`);
+      if (request.command === 'exploreext.pay.Note') {
+        const memo = request.input.memo;
+        if (typeof memo === 'number' && memo >= 1) {
+          return { outcome: 'noted', directEvents: [{ event: 'exploreext.pay.Noted', payload: { memo } }] };
+        }
+        return { outcome: 'ignored', error: 'exploreext.pay.InvalidAmount', directEvents: [] };
+      }
+      return inner.executeCommand(request);
+    },
+  };
+};
+
+await test('seed replay', async () => {
+  const run = {};
+  const result = await explore(logged(run), { seeds: 6, steps: 30 });
+  const alone = {};
+  for (let seed = 1; seed <= 6; seed += 1) await explore(logged(alone), { seed, steps: 30 });
+  writeFileSync(
+    process.env.ESS_WALK_OUT,
+    `{"run":${JSON.stringify(run)},"alone":${JSON.stringify(alone)},"result":${goMarshal(result)}}`,
+  );
+});
+"#;
+
+/// beyond10x/ess#576, finding 3: the sequence a seed draws inside a run is the sequence it draws
+/// alone, after an earlier seed excluded a command (`Note`, its guard unknown over a draw) and an
+/// external branch the target cannot arrange.
+#[test]
+fn a_seed_drawn_inside_a_multi_seed_run_replays_alone_the_same_sequence() {
+    let scratch = tempfile::tempdir().unwrap();
+    let spec = noted_external_spec(scratch.path());
+    let go = walk_go(
+        &scratch.path().join("seed-go"),
+        &spec,
+        &[(
+            "explore_external_target.go",
+            "explore_external_target_test.go",
+        )],
+        SEED_REPLAY_GO,
+        "TestSeedReplay",
+    );
+    let typescript = walk_typescript(
+        &scratch.path().join("seed-typescript"),
+        &spec,
+        &["explore-external-target.mjs"],
+        SEED_REPLAY_TS,
+    );
+    for (language, lane) in [("go", &go), ("typescript", &typescript)] {
+        let result = &lane["result"];
+        // Not vacuous: an earlier seed excluded a command and found a branch unarrangeable.
+        assert!(
+            result["excluded"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|exclusion| exclusion["subject"] == "exploreext.pay.Note"),
+            "{language}: no seed excluded `Note`: {result}"
+        );
+        assert!(
+            result["external"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|branch| branch["reach"] == "unarrangeable"),
+            "{language}: no branch was unarrangeable: {result}"
+        );
+        assert_eq!(result["sequences"], 6, "{language}: {result}");
+        for seed in 1..=6 {
+            let scenario = format!("explore/seed-{seed}");
+            let inside = &lane["run"][&scenario];
+            assert!(
+                inside.as_array().is_some_and(|sent| !sent.is_empty()),
+                "{language} {scenario}"
+            );
+            assert_eq!(
+                inside, &lane["alone"][&scenario],
+                "{language}: seed {seed} sent another sequence alone than inside the run"
+            );
+        }
+    }
+    assert_eq!(
+        go["run"], typescript["run"],
+        "Go and TypeScript drew different sequences"
+    );
+}

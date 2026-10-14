@@ -174,13 +174,16 @@ await test("random command sequences", async () => {
 ```
 
 `seeds` sequences are seeded `1…seeds`; `seed` runs exactly one of them, which is how a reported
-failure is replayed. `assertExplored` fails on a disagreement, on a declared outcome no sequence
+failure is replayed: a seed draws alone the sequence it drew inside the run. What a sequence finds
+it cannot use — a command whose guard a draw leaves unknown, an external branch the target cannot
+arrange, a state the target refused a command in — it finds again for itself, so nothing an earlier
+seed found changes a later seed's draws, and the result reports each for the whole run. `assertExplored` fails on a disagreement, on a declared outcome no sequence
 reached, and on the outcomes of a command the explorer left out (`excluded` says why) unless
 `{ allowExcluded: true }` accepts them. A view field is compared with the entity field of the same
 name. `ir.json` must hash to `suite.json`'s `spec_digest`; regenerate both together.
 
-A command the target throws `unsupported` for is not sent again in the state of the row that step
-addressed, and is drawn in every other. `refused` lists each such state with the target's reason
+A command the target throws `unsupported` for is not sent again in that sequence in the state of the
+row that step addressed, and is drawn in every other. `refused` lists each such state with the target's reason
 and the steps not sent; an outcome only those steps would have taken counts as excluded, and
 `assertExplored` fails on a refusal unless `allowExcluded` accepts it. A command refused in every
 state it was drawn in is in `excluded`, as is a view the target refuses.

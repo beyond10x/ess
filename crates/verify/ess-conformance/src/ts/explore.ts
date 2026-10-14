@@ -672,6 +672,12 @@ interface Plan {
   ir: Node;
   system: string;
   commands: Command[];
+  /**
+   * Every command the plan admitted, fixed once it is made: every sequence draws from it, so what an
+   * earlier seed of a run excluded never changes what a later seed draws, and a seed replays alone
+   * the sequence it drew inside the run (beyond10x/ess#576).
+   */
+  drawn: Command[];
   views: Node[];
   excluded: Exclusion[];
   excludedCommands: Set<string>;
@@ -989,6 +995,7 @@ function plan(ir: Node, concurrent = false): Plan {
     ir,
     system: String(ir.system),
     commands,
+    drawn: [...commands],
     views,
     excluded,
     excludedCommands,
@@ -1648,7 +1655,7 @@ function eligibleExternals(
 /**
  * The branches a step may take: the ordinary one, unless an earlier arrangement of this command
  * may still hold and an external branch is eligible, then every eligible external branch the
- * target has not refused to arrange.
+ * target has not refused to arrange in this sequence.
  */
 interface Choice {
   arrangement: string;
@@ -1669,7 +1676,7 @@ function choices(
     out.push({ arrangement: '', expected: decision.outcome });
   }
   for (const outcome of decision.externals) {
-    if (!s.p.unarrangeable.has(`${command.name}/${outcome.name}`)) {
+    if (!s.unarrangeable.has(`${command.name}/${outcome.name}`)) {
       out.push({
         arrangement: String(outcome.name),
         expected: terminal(command, outcome, input, s.model),
@@ -1866,6 +1873,12 @@ interface Session {
   undetermined: Set<string>;
   /** Every command the target was asked to arrange a branch for in this sequence. */
   forced: Set<string>;
+  /**
+   * `command/outcome` for every external branch the target refused to arrange in this sequence. It
+   * is the sequence's own, so a branch an earlier seed found unarrangeable does not change what a
+   * later seed draws (beyond10x/ess#576).
+   */
+  unarrangeable: Set<string>;
   /** The consistency token the last command returned. */
   token: string;
   scenario: string;
@@ -2191,6 +2204,7 @@ async function open(
     correlation,
     undetermined: new Set<string>(),
     forced: new Set<string>(),
+    unarrangeable: new Set<string>(),
     token: '',
     scenario,
   };
@@ -2212,7 +2226,7 @@ async function preconditions(s: Session): Promise<void> {
       );
     }
     const planned =
-      s.p.commands.find((candidate) => candidate.name === name) ?? s.p.sendable.get(name);
+      s.p.drawn.find((candidate) => candidate.name === name) ?? s.p.sendable.get(name);
     if (planned === undefined) {
       throw new Error(`precondition \`${name}\` is a command exploration excludes`);
     }
@@ -2269,7 +2283,7 @@ async function replay(
         }
         continue;
       }
-      const command = p.commands.find((candidate) => candidate.name === recorded.command);
+      const command = p.drawn.find((candidate) => candidate.name === recorded.command);
       if (command === undefined) continue;
       const input = JSON.parse(JSON.stringify(recorded.input)) as Row;
       let resolvable = true;
@@ -2366,7 +2380,7 @@ export async function explore(
   const driven = new Set<string>();
 
   for (const seed of seeds) {
-    if (p.commands.length === 0 || failure !== undefined) break;
+    if (p.drawn.length === 0 || failure !== undefined) break;
     sequences += 1;
     const rng = new Mulberry32(seed);
     const s = await open(p, newTarget, `explore/seed-${seed}`);
@@ -2378,14 +2392,20 @@ export async function explore(
     let restarts = 0;
     let pending = 0;
     let found: Found | null = null;
+    // What this sequence draws from: every admitted command, less those this sequence excluded; and
+    // every (command, held state) the target refused in this sequence. Both are the sequence's own,
+    // as its unarrangeable branches are, so a seed draws inside a run what it draws alone
+    // (beyond10x/ess#576). What they find is still reported for the run.
+    let drawable = [...p.drawn];
+    const refusedHere = new Set<string>();
     try {
       for (
         let attempts = 0;
         (trace.length - restarts < steps || pending > 0) && attempts < steps * ATTEMPTS_PER_STEP;
         attempts += 1
       ) {
-        if (p.commands.length === 0) break;
-        const command = rng.pick(p.commands);
+        if (drawable.length === 0) break;
+        const command = rng.pick(drawable);
         const step = draw(command, rng, s.model);
         if (step === null) continue;
         const decision = decide(command, step.input, s.model);
@@ -2394,7 +2414,8 @@ export async function explore(
           continue;
         }
         if (decision.kind === 'unknown') {
-          exclude(p, command.name, decision.reason);
+          drawable = drawable.filter((other) => other !== command);
+          if (!p.excludedCommands.has(command.name)) exclude(p, command.name, decision.reason);
           continue;
         }
         if (decision.kind === 'undetermined') {
@@ -2413,7 +2434,7 @@ export async function explore(
         const state = heldState(command, step.input, s.model);
         const held = `${command.name}\u0000${state}`;
         const refusal = refusals.get(held);
-        if (refusal !== undefined) {
+        if (refusal !== undefined && refusedHere.has(held)) {
           refusal.count += 1;
           refusedOutcomes.add(`${command.name}/${outcome.expected.name}`);
           continue;
@@ -2425,10 +2446,11 @@ export async function explore(
             arranging = await arrange(s, command, step.external);
           } catch (error) {
             if (error instanceof Unsupported) {
-              p.unarrangeable.set(
-                `${command.name}/${step.external}`,
-                `the target cannot arrange it: ${error.message}`,
-              );
+              const id = `${command.name}/${step.external}`;
+              s.unarrangeable.add(id);
+              if (!p.unarrangeable.has(id)) {
+                p.unarrangeable.set(id, `the target cannot arrange it: ${error.message}`);
+              }
               continue;
             }
             throw error;
@@ -2448,12 +2470,16 @@ export async function explore(
           disagreement = await perform(s, command, step, outcome.expected);
         } catch (error) {
           if (error instanceof Unsupported) {
-            refusals.set(held, {
-              command: command.name,
-              state,
-              reason: `the target does not expose it: ${error.message}`,
-              count: 1,
-            });
+            refusedHere.add(held);
+            if (refusal !== undefined) refusal.count += 1;
+            else {
+              refusals.set(held, {
+                command: command.name,
+                state,
+                reason: `the target does not expose it: ${error.message}`,
+                count: 1,
+              });
+            }
             refusedOutcomes.add(`${command.name}/${outcome.expected.name}`);
             continue;
           }
@@ -2567,7 +2593,7 @@ function sameFailure(p: Plan, original: Found, replayed: Found): boolean {
   if (original.kind !== replayed.kind) return false;
   const last = original.executed[original.executed.length - 1];
   const next = replayed.executed[replayed.executed.length - 1];
-  const command = p.commands.find((candidate) => candidate.name === last?.command);
+  const command = p.drawn.find((candidate) => candidate.name === last?.command);
   const optional = (kind: Kind): boolean =>
     kind.kind === 'optional' ||
     (kind.kind === 'struct' && kind.fields.some(([, member]) => optional(member))) ||

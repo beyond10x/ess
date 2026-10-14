@@ -845,9 +845,13 @@ type exploreExternal struct {
 }
 
 type explorePlan struct {
-	ir               map[string]any
-	system           string
-	commands         []*exploreCommand
+	ir       map[string]any
+	system   string
+	commands []*exploreCommand
+	// drawn is every command the plan admitted, fixed once it is made: every sequence draws from it,
+	// so what an earlier seed of a run excluded never changes what a later seed draws, and a seed
+	// replays alone the sequence it drew inside the run (beyond10x/ess#576).
+	drawn            []*exploreCommand
 	views            []map[string]any
 	excluded         []Exclusion
 	excludedCommands map[string]bool
@@ -1174,6 +1178,7 @@ func explorePlanAs(ir map[string]any, concurrent bool) *explorePlan {
 			p.views = append(p.views, view)
 		}
 	}
+	p.drawn = append([]*exploreCommand{}, p.commands...)
 	return p
 }
 
@@ -1197,8 +1202,10 @@ func (p *explorePlan) exclude(subject, reason string) {
 	p.views = views
 }
 
+// command is the admitted command named name, excluded during a run or not: a precondition, a
+// replayed trace and a shrink look it up in every seed alike.
 func (p *explorePlan) command(name string) *exploreCommand {
-	for _, command := range p.commands {
+	for _, command := range p.drawn {
 		if command.name == name {
 			return command
 		}
@@ -1979,7 +1986,7 @@ func exploreEligible(command *exploreCommand, outcomes []map[string]any, source 
 
 // exploreChoices is the branches a step may take: the ordinary one, unless an earlier arrangement
 // of this command may still hold and an external branch is eligible, then every eligible external
-// branch the target has not refused to arrange.
+// branch the target has not refused to arrange in this sequence.
 type exploreChoice struct {
 	arrangement string
 	expected    map[string]any
@@ -1991,7 +1998,7 @@ func exploreChoices(s *exploreSession, command *exploreCommand, decision explore
 		choices = append(choices, exploreChoice{expected: decision.outcome})
 	}
 	for _, outcome := range decision.externals {
-		if _, refused := s.p.unarrangeable[command.name+"/"+fmt.Sprint(outcome["name"])]; !refused {
+		if !s.unarrangeable[command.name+"/"+fmt.Sprint(outcome["name"])] {
 			choices = append(choices, exploreChoice{arrangement: fmt.Sprint(outcome["name"]), expected: exploreTerminal(command, outcome, input, s.model)})
 		}
 	}
@@ -2194,6 +2201,10 @@ type exploreSession struct {
 	undetermined map[string]bool
 	// forced is every command the target was asked to arrange a branch for in this sequence.
 	forced map[string]bool
+	// unarrangeable is `command/outcome` for every external branch the target refused to arrange in
+	// this sequence. It is the sequence's own, so a branch an earlier seed found unarrangeable does
+	// not change what a later seed draws (beyond10x/ess#576).
+	unarrangeable map[string]bool
 	// token is the consistency token the last command returned.
 	token string
 }
@@ -2532,7 +2543,7 @@ func exploreSameFailure(p *explorePlan, original, replayed *exploreFound) bool {
 	last := original.executed[len(original.executed)-1]
 	next := replayed.executed[len(replayed.executed)-1]
 	strict := false
-	for _, command := range p.commands {
+	for _, command := range p.drawn {
 		if command.name != last.command {
 			continue
 		}
@@ -2567,7 +2578,7 @@ func exploreOpen(p *explorePlan, newTarget func() Target, scenario string) (*exp
 	}
 	s := &exploreSession{
 		p: p, target: target, model: &exploreModel{records: map[string][]*exploreRecord{}},
-		correlation: correlation, scenario: scenario, undetermined: map[string]bool{}, forced: map[string]bool{},
+		correlation: correlation, scenario: scenario, undetermined: map[string]bool{}, forced: map[string]bool{}, unarrangeable: map[string]bool{},
 	}
 	if err := explorePreconditions(s); err != nil {
 		s.close()
@@ -2761,7 +2772,7 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 	driven := map[string]bool{}
 
 	for _, seed := range seeds {
-		if len(p.commands) == 0 || failure != nil {
+		if len(p.drawn) == 0 || failure != nil {
 			break
 		}
 		sequences++
@@ -2778,11 +2789,17 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 		restarts := 0
 		pending := 0
 		var found *exploreFound
+		// drawable is what this sequence draws from: every admitted command, less those this sequence
+		// excluded; refusedHere is every (command, held state) the target refused in this sequence.
+		// Both are the sequence's own, as its unarrangeable branches are, so a seed draws inside a run
+		// what it draws alone (beyond10x/ess#576). What they find is still reported for the run.
+		drawable := append([]*exploreCommand{}, p.drawn...)
+		refusedHere := map[string]bool{}
 		for attempts := 0; (len(trace)-restarts < steps || pending > 0) && attempts < steps*exploreAttempts; attempts++ {
-			if len(p.commands) == 0 {
+			if len(drawable) == 0 {
 				break
 			}
-			command := explorePick(r, p.commands)
+			command := explorePick(r, drawable)
 			step := exploreDrawStep(command, r, s.model)
 			if step == nil {
 				continue
@@ -2793,7 +2810,16 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 				continue
 			}
 			if decision.kind == "unknown" {
-				p.exclude(command.name, decision.reason)
+				kept := []*exploreCommand{}
+				for _, other := range drawable {
+					if other != command {
+						kept = append(kept, other)
+					}
+				}
+				drawable = kept
+				if !p.excludedCommands[command.name] {
+					p.exclude(command.name, decision.reason)
+				}
 				continue
 			}
 			if decision.kind == "undetermined" {
@@ -2814,7 +2840,7 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 			// A command the target refused in this held state is not sent in it again.
 			state := exploreHeldState(command, step.input, s.model)
 			held := command.name + "\x00" + state
-			if refusal := refusals[held]; refusal != nil {
+			if refusal := refusals[held]; refusal != nil && refusedHere[held] {
 				refusal.Count++
 				refusedOutcomes[command.name+"/"+fmt.Sprint(outcome.expected["name"])] = true
 				continue
@@ -2823,7 +2849,10 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 				step.external = outcome.arrangement
 				arranging, unsupported := exploreArrange(s, command, step.external)
 				if unsupported != nil {
-					p.unarrangeable[command.name+"/"+step.external] = "the target cannot arrange it: " + unsupported.reason
+					s.unarrangeable[command.name+"/"+step.external] = true
+					if _, known := p.unarrangeable[command.name+"/"+step.external]; !known {
+						p.unarrangeable[command.name+"/"+step.external] = "the target cannot arrange it: " + unsupported.reason
+					}
 					continue
 				}
 				if arranging != nil {
@@ -2834,8 +2863,13 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 			}
 			disagreement, unsupported := explorePerform(s, command, step, outcome.expected)
 			if unsupported != nil {
-				refusals[held] = &Refusal{Command: command.name, State: state, Reason: "the target does not expose it: " + unsupported.reason, Count: 1}
-				refusalOrder = append(refusalOrder, held)
+				refusedHere[held] = true
+				if refusal := refusals[held]; refusal != nil {
+					refusal.Count++
+				} else {
+					refusals[held] = &Refusal{Command: command.name, State: state, Reason: "the target does not expose it: " + unsupported.reason, Count: 1}
+					refusalOrder = append(refusalOrder, held)
+				}
 				refusedOutcomes[command.name+"/"+fmt.Sprint(outcome.expected["name"])] = true
 				continue
 			}

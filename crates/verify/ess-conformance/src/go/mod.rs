@@ -170,13 +170,16 @@ func TestExplore(t *testing.T) {
 ```
 
 `Seeds` sequences are seeded `1…Seeds`; `Seed` runs exactly one of them, which is how a reported
-failure is replayed. `AssertExplored` fails on a disagreement, on a declared outcome no sequence
+failure is replayed: a seed draws alone the sequence it drew inside the run. What a sequence finds
+it cannot use — a command whose guard a draw leaves unknown, an external branch the target cannot
+arrange, a state the target refused a command in — it finds again for itself, so nothing an earlier
+seed found changes a later seed's draws, and the result reports each for the whole run. `AssertExplored` fails on a disagreement, on a declared outcome no sequence
 reached, and on the outcomes of a command the explorer left out (`Excluded` says why) unless
 `AssertOptions{AllowExcluded: true}` accepts them. A view field is compared with the entity field
 of the same name. `ir.json` must hash to `suite.json`'s `spec_digest`; regenerate both together.
 
-A command the target returns `ErrUnsupported` for is not sent again in the state of the row that
-step addressed, and is drawn in every other. `Refused` lists each such state with the target's
+A command the target returns `ErrUnsupported` for is not sent again in that sequence in the state
+of the row that step addressed, and is drawn in every other. `Refused` lists each such state with the target's
 reason and the steps not sent; an outcome only those steps would have taken counts as excluded, and
 `AssertExplored` fails on a refusal unless `AllowExcluded` accepts it. A command refused in every
 state it was drawn in is in `Excluded`, as is a view the target refuses.
