@@ -1,0 +1,62 @@
+format: ess/22
+system: keys
+version: v1
+domain: keys.api
+entities:
+  - name: keys.api.ApiKey
+    identity: {name: key_id, type: Uuid}
+    fields:
+      - {name: issued_by, type: String}
+      - {name: label, type: Optional<String>}
+    lifecycle:
+      initial: Active
+      states: [Active]
+      terminal: [Active]
+actors:
+  - name: keys.api.Admin
+    attributes:
+      - {name: user_id, type: String}
+    may: [keys.api.IssueKey, keys.api.LabelKey]
+  - name: keys.api.Operator
+    attributes:
+      - {name: user_id, type: String}
+    may: [keys.api.LabelKey]
+  - name: keys.api.Viewer
+    attributes:
+      - {name: user_id, type: String}
+    may: []
+commands:
+  - name: keys.api.IssueKey
+    input:
+      - {name: key_id, type: Uuid}
+    response:
+      - {name: secret, type: String}
+    outcomes:
+      - name: issued
+        creates: keys.api.ApiKey
+        instance: key_id
+        sets: {issued_by: {caller: user_id}}
+        returns: true
+        one_time_response: [secret]
+        emits: [keys.api.KeyIssued]
+        payload:
+          keys.api.KeyIssued: {key_id: input.key_id}
+  - name: keys.api.LabelKey
+    input:
+      - {name: key_id, type: Uuid}
+      - {name: label, type: String}
+    outcomes:
+      - name: labelled
+        updates: keys.api.ApiKey
+        instance: key_id
+        sets: {label: input.label}
+        emits: [keys.api.KeyLabelled]
+        payload:
+          keys.api.KeyLabelled: {key_id: input.key_id}
+events:
+  - name: keys.api.KeyIssued
+    fields:
+      - {name: key_id, type: Uuid}
+  - name: keys.api.KeyLabelled
+    fields:
+      - {name: key_id, type: Uuid}
