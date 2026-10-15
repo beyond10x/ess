@@ -3426,9 +3426,18 @@ type exploreOperation struct {
 	// input is what a command's call sent, copied when it was invoked, written as `input`
 	// (`ess-history/3`); nil for a read.
 	input Row
-	// events is the name of every event a returned command published, in the order published,
-	// written as `events` (`ess-history/3`); nil where the call did not answer.
-	events []string
+	// events is every event a returned command published, in the order published, with its
+	// payload, written as `events` (`ess-history/3`); nil where the call did not answer.
+	events []exploreRecordedEvent
+	// arranged is the external branch a command's call arranged before it was sent, written as
+	// `arranged` (`ess-history/3`): empty where it arranged none; nil for a read.
+	arranged []string
+}
+
+// exploreRecordedEvent is one event a call published, as `ess-history/3` records it.
+type exploreRecordedEvent struct {
+	event   string
+	payload map[string]any
 }
 
 type exploreFlight struct {
@@ -3547,24 +3556,26 @@ func exploreArrangeable(command *exploreCommand, input Row) []string {
 
 // arrange asks the target to make command take the external branch outcome, as the sequential walk
 // does before the step it drew it for. A branch the target cannot arrange is recorded and its calls
-// are sent unarranged; any other refusal fails the exploration.
-func (h *exploreRecording) arrange(command *exploreCommand, outcome string) error {
+// are sent unarranged; any other refusal fails the exploration. It reports whether the target
+// arranged it.
+func (h *exploreRecording) arrange(command *exploreCommand, outcome string) (bool, error) {
 	id := command.name + "/" + outcome
 	for _, known := range h.unarrangeable {
 		if known.Subject == id {
-			return nil
+			return false, nil
 		}
 	}
 	err := h.target.ConfigureExternalOutcome(ExternalOutcomeControl{Command: command.name, Outcome: outcome, Correlation: h.correlation})
 	switch {
 	case err == nil:
 		h.arranged[id]++
+		return true, nil
 	case errors.Is(err, ErrUnsupported):
 		h.unarrangeable = append(h.unarrangeable, Exclusion{Subject: id, Reason: "the target cannot arrange it: " + err.Error()})
+		return false, nil
 	default:
-		return fmt.Errorf("arranging `%s`, the target threw %s", id, err.Error())
+		return false, fmt.Errorf("arranging `%s`, the target threw %s", id, err.Error())
 	}
-	return nil
 }
 
 func (h *exploreRecording) request(command *exploreCommand, step *exploreStep) CommandRequest {
@@ -3588,7 +3599,7 @@ func (h *exploreRecording) reserve(client int, command *exploreCommand, step *ex
 	h.clock++
 	index := len(h.operations)
 	input, _ := exploreCopy(map[string]any(step.input)).(map[string]any)
-	h.operations = append(h.operations, exploreOperation{client: client, command: command.name, subjectKey: subject, invokedAt: h.clock, creates: creates, input: Row(input)})
+	h.operations = append(h.operations, exploreOperation{client: client, command: command.name, subjectKey: subject, invokedAt: h.clock, creates: creates, input: Row(input), arranged: []string{}})
 	return index
 }
 
@@ -3678,13 +3689,18 @@ func (h *exploreRecording) send(request CommandRequest) PendingCommand {
 }
 
 func (h *exploreRecording) invoke(client int, command *exploreCommand, step *exploreStep) (*exploreFlight, error) {
+	arranged := false
 	if step.external != "" {
-		if err := h.arrange(command, step.external); err != nil {
+		var err error
+		if arranged, err = h.arrange(command, step.external); err != nil {
 			return nil, err
 		}
 	}
 	request := h.request(command, step)
 	index := h.reserve(client, command, step)
+	if arranged {
+		h.operations[index].arranged = []string{step.external}
+	}
 	// One call, one correlation: a retry sends it again under the same one, and a target tells a
 	// retry from a new call of the same input only by it — it never replays one call for another.
 	request.Correlation = fmt.Sprintf("%s-%d", h.correlation, index+1)
@@ -3849,15 +3865,20 @@ func (h *exploreRecording) complete(flight *exploreFlight) (Node, string, error)
 	if operation.outcome == "" {
 		operation.outcome = exploreUndeclared
 	}
-	// What it published, by name, for `check-history` to hold to the branch's `emits:`. A nameless
-	// event is written under a name no event can have, as a nameless outcome is.
-	operation.events = []string{}
+	// What it published, with each payload, for `check-history` to hold to the branch's `emits:`
+	// and `payload:`. A nameless event is written under a name no event can have, as a nameless
+	// outcome is.
+	operation.events = []exploreRecordedEvent{}
 	for _, event := range result.DirectEvents {
 		name := event.Event
 		if name == "" {
 			name = exploreUndeclared
 		}
-		operation.events = append(operation.events, name)
+		payload := map[string]any{}
+		for field, value := range event.Payload {
+			payload[field] = value
+		}
+		operation.events = append(operation.events, exploreRecordedEvent{event: name, payload: payload})
 	}
 	if id == nil {
 		return nil, "", nil
@@ -3886,12 +3907,51 @@ func exploreJSON(value any) string {
 	return strings.TrimSuffix(out.String(), "\n")
 }
 
+// exploreBinary64 is value with every number it holds turned into its float64 and every negative
+// zero into zero, so that encoding/json writes each in the one spelling `ess-history/3` admits:
+// the shortest digits of the binary64 value, as JSON.stringify writes them (`100`, never `100.0`;
+// `1e+21`). An integer a float64 does not carry exactly is recorded as the float64 nearest it.
+func exploreBinary64(value any) any {
+	text, err := json.Marshal(value)
+	if err != nil {
+		return value
+	}
+	var decoded any
+	if err := json.Unmarshal(text, &decoded); err != nil {
+		return value
+	}
+	var zero func(any) any
+	zero = func(node any) any {
+		switch typed := node.(type) {
+		case float64:
+			if typed == 0 {
+				return float64(0)
+			}
+			return typed
+		case []any:
+			for index, item := range typed {
+				typed[index] = zero(item)
+			}
+			return typed
+		case map[string]any:
+			for key, item := range typed {
+				typed[key] = zero(item)
+			}
+			return typed
+		default:
+			return node
+		}
+	}
+	return zero(decoded)
+}
+
 // exploreHistoryBytes is the history in the one spelling `ess` reads and writes: compact, keys in
 // declaration order, an absent `returned_at` and `outcome` for a call that never answered.
 func exploreHistoryBytes(digest string, seed, clients int, operations []exploreOperation) []byte {
 	written := []string{}
 	// format is the lowest that carries what the written operations record: `ess-history/3` where
-	// one records its input or its events, `ess-history/2` where one records a decision time.
+	// one records its input, its events or what it arranged, `ess-history/2` where one records a
+	// decision time.
 	timed, inputs := false, false
 	kept := []exploreOperation{}
 	// position is where each written operation stands among the written ones, from 1, for a retry
@@ -3941,15 +4001,26 @@ func exploreHistoryBytes(digest string, seed, clients int, operations []exploreO
 		}
 		if operation.input != nil {
 			inputs = true
-			members = append(members, [2]string{"input", exploreJSON(map[string]any(operation.input))})
+			members = append(members, [2]string{"input", exploreJSON(exploreBinary64(map[string]any(operation.input)))})
 		}
 		if operation.returned && operation.events != nil {
 			inputs = true
-			quoted := make([]string, 0, len(operation.events))
+			published := make([]string, 0, len(operation.events))
 			for _, event := range operation.events {
-				quoted = append(quoted, exploreQuote(event))
+				published = append(published, exploreJSONObject([][2]string{
+					{"event", exploreQuote(event.event)},
+					{"payload", exploreJSON(exploreBinary64(event.payload))},
+				}))
 			}
-			members = append(members, [2]string{"events", "[" + strings.Join(quoted, ",") + "]"})
+			members = append(members, [2]string{"events", "[" + strings.Join(published, ",") + "]"})
+		}
+		if operation.arranged != nil {
+			inputs = true
+			quoted := make([]string, 0, len(operation.arranged))
+			for _, outcome := range operation.arranged {
+				quoted = append(quoted, exploreQuote(outcome))
+			}
+			members = append(members, [2]string{"arranged", "[" + strings.Join(quoted, ",") + "]"})
 		}
 		written = append(written, exploreJSONObject(members))
 	}

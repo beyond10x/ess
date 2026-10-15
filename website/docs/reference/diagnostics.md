@@ -230,8 +230,8 @@ history.no-clients: `clients` is 0
 
 | Name | Meaning | Repair |
 |---|---|---|
-| `history.malformed` | The bytes are not an `ess-history/1`, `ess-history/2` or `ess-history/3` document: not JSON, an unknown or missing field, a value outside its declared type, a `decision_time` that is `null`, not the one spelling of an instant, or in an `ess-history/1` document, or an `input` or `events` that is `null` or in a document below `ess-history/3`. | Write the document as `schemas/ess-history.schema.json` describes; the detail names the field or the position. |
-| `history.unsupported-format` | The `format` is absent, or names a format this build does not read. | Write `format: ess-history/1`, `ess-history/2` where an operation records a `decision_time`, or `ess-history/3` where one records its `input` or `events`. |
+| `history.malformed` | The bytes are not an `ess-history/1`, `ess-history/2` or `ess-history/3` document: not JSON, an unknown or missing field, a value outside its declared type, a `decision_time` that is `null`, not the one spelling of an instant, or in an `ess-history/1` document, an `input`, `events` or `arranged` that is `null` or in a document below `ess-history/3`, a key written twice inside an `input` or a `payload`, or a number there in another spelling than its one. | Write the document as `schemas/ess-history.schema.json` describes; the detail names the field or the position. |
+| `history.unsupported-format` | The `format` is absent, or names a format this build does not read. | Write `format: ess-history/1`, `ess-history/2` where an operation records a `decision_time`, or `ess-history/3` where one records its `input`, `events` or `arranged`. |
 | `history.spec-digest-mismatch` | The history was recorded against another specification. | Check the history against the specification it was recorded against, or record it again against this one. |
 | `history.no-clients` | The history counts no clients. | Set `clients` to the number of clients that sent operations. |
 | `history.duplicate-operation` | Two operations carry one identity. | Give every operation its own identity. |

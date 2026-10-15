@@ -24,6 +24,14 @@ types:
     kind: enum
     variants: [Linearizable, Violation, Unknown]
 
+  - name: concurrent.history.PublishedEvent
+    kind: struct
+    fields:
+      - name: event
+        type: concurrent.history.QualifiedName
+      - name: payload
+        type: Map<String, Json>
+
 entities:
   - name: concurrent.history.History
     identity:
@@ -86,6 +94,8 @@ entities:
       - name: input
         type: Optional<Map<String, Json>>
       - name: events
+        type: Optional<List<concurrent.history.PublishedEvent>>
+      - name: arranged
         type: Optional<List<concurrent.history.QualifiedName>>
     lifecycle:
       initial: Recorded

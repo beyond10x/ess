@@ -208,8 +208,9 @@ Restarts are sequential-only: `ConcurrentOptions` has none.
 
 `ExploreConcurrent` drives fresh targets from two to four clients at once and writes each run as
 an `ess-history/3` document, one per seed, into `Out`: every command call with the input it
-sent, and every answered one with the name of every event its answer published, in order, so
-`ess` holds an answer to its input and to the events its branch declares, on a model without
+sent and the external branch it arranged, and every answered one with every event its answer
+published, in order, with its payload, so `ess` holds an answer to its input, to the events and
+payloads its branch declares and to the external causes somebody arranged, on a model without
 entities too. It does not judge them itself: it runs
 `ess verify conform check-history --path <Path>` on each and reports the verdict, and for a
 violation the checker's report with its shrunk history. `ess` must be on `PATH`; without it the

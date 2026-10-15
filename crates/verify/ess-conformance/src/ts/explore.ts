@@ -60,9 +60,11 @@ import {
   byteCompare,
   equal,
   errorText,
+  ExactNumber,
   goMarshal,
   isObject,
   isUnsupported,
+  JsonNumber,
   newHarness,
   ranked,
   sortStrings,
@@ -3067,10 +3069,15 @@ export interface HistoryOperation {
    */
   input?: Row;
   /**
-   * The name of every event a returned command published, in the order published, written as
-   * `events` (`ess-history/3`); absent where the call did not answer.
+   * Every event a returned command published, in the order published, with its payload, written
+   * as `events` (`ess-history/3`); absent where the call did not answer.
    */
-  events?: string[];
+  events?: { event: string; payload: Row }[];
+  /**
+   * The external branch a command's call arranged before it was sent, written as `arranged`
+   * (`ess-history/3`): empty where it arranged none; absent for a read.
+   */
+  arranged?: string[];
 }
 
 type Operation = HistoryOperation;
@@ -3207,11 +3214,12 @@ function arrangeable(command: Command, input: Row): string[] {
 /**
  * Asks the target to make `command` take the external branch `outcome`, as the sequential walk does
  * before the step it drew it for. A branch the target cannot arrange is recorded and its calls are
- * sent unarranged; any other refusal fails the exploration.
+ * sent unarranged; any other refusal fails the exploration. Resolves to whether the target arranged
+ * it.
  */
-async function arrangeCall(h: Recording, command: Command, outcome: string): Promise<void> {
+async function arrangeCall(h: Recording, command: Command, outcome: string): Promise<boolean> {
   const id = `${command.name}/${outcome}`;
-  if (h.unarrangeable.some((known) => known.subject === id)) return;
+  if (h.unarrangeable.some((known) => known.subject === id)) return false;
   try {
     await h.target.configureExternalOutcome({
       command: command.name,
@@ -3224,11 +3232,12 @@ async function arrangeCall(h: Recording, command: Command, outcome: string): Pro
         subject: id,
         reason: `the target cannot arrange it: ${errorText(error)}`,
       });
-      return;
+      return false;
     }
     throw new Error(`arranging \`${id}\`, the target threw ${errorText(error)}`);
   }
   bump(h.arranged, id);
+  return true;
 }
 
 function requestOf(h: Recording, command: Command, step: Step): CommandRequest {
@@ -3260,7 +3269,8 @@ function reserve(h: Recording, client: number, command: Command, step: Step): nu
     retryOf: 0,
     creates,
     source: '',
-    input: structuredClone(step.input),
+    input: binary64(step.input) as Row,
+    arranged: [],
   });
   return index;
 }
@@ -3396,9 +3406,10 @@ async function invokeCall(
   command: Command,
   step: Step,
 ): Promise<Flight> {
-  if (step.external !== '') await arrangeCall(h, command, step.external);
+  const arranged = step.external !== '' && (await arrangeCall(h, command, step.external));
   const request = requestOf(h, command, step);
   const index = reserve(h, client, command, step);
+  if (arranged) (h.operations[index] as Operation).arranged = [step.external];
   // One call, one correlation: a retry sends it again under the same one, and a target tells a
   // retry from a new call of the same input only by it — it never replays one call for another.
   request.correlation = `${h.correlation}-${index + 1}`;
@@ -3557,14 +3568,33 @@ async function completeCall(
   }
   operation.returnedAt = h.clock;
   operation.outcome = taken === '' ? UNDECLARED : taken;
-  // What it published, by name, for `check-history` to hold to the branch's `emits:`. A nameless
-  // event is written under a name no event can have, as a nameless outcome is.
-  operation.events = (result.directEvents ?? []).map((event) =>
-    typeof event.event === 'string' && event.event !== '' ? event.event : UNDECLARED,
-  );
+  // What it published, with each payload, for `check-history` to hold to the branch's `emits:` and
+  // `payload:`. A nameless event is written under a name no event can have, as a nameless outcome
+  // is.
+  operation.events = (result.directEvents ?? []).map((event) => ({
+    event: typeof event.event === 'string' && event.event !== '' ? event.event : UNDECLARED,
+    payload: isObject(event.payload) ? (binary64(event.payload) as Row) : {},
+  }));
   if (created === null) return null;
   if (operation.subjectKey === '') operation.subjectKey = created.id;
   return created;
+}
+
+/**
+ * A copy of `value` with every number it holds as the binary64 it denotes, so `goMarshal` writes
+ * each in the one spelling `ess-history/3` admits, `JSON.stringify`'s (`100`, never `100.0`; `0`,
+ * never `-0`). An integer a binary64 does not carry exactly is recorded as the binary64 nearest it.
+ */
+function binary64(value: Node): Node {
+  const unsigned = (number: number): number => (Object.is(number, -0) ? 0 : number);
+  if (value instanceof ExactNumber) return unsigned(Number(value.digits));
+  if (typeof value === 'bigint' || value instanceof JsonNumber) return unsigned(asNumber(value)[0]);
+  if (typeof value === 'number') return unsigned(value);
+  if (Array.isArray(value)) return value.map(binary64);
+  if (isObject(value)) {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, binary64(item)]));
+  }
+  return value;
 }
 
 function uuidOf(n: bigint): string {
@@ -3584,8 +3614,8 @@ function jsonObject(members: [string, string][]): string {
 /**
  * The history in the one spelling `ess` reads and writes: compact, keys in declaration order, an
  * absent `returned_at` and `outcome` for a call that never answered, and the lowest format that
- * carries what the written operations record: `ess-history/3` where one records its `input` or
- * `events`, `ess-history/2` where one records a `decision_time`.
+ * carries what the written operations record: `ess-history/3` where one records its `input`,
+ * `events` or `arranged`, `ess-history/2` where one records a `decision_time`.
  */
 export function historyText(
   digest: string,
@@ -3643,7 +3673,17 @@ export function historyText(
     }
     if (operation.returnedAt !== undefined && operation.events !== undefined) {
       inputs = true;
-      members.push(['events', `[${operation.events.map(quote).join(',')}]`]);
+      const published = operation.events.map((event) =>
+        jsonObject([
+          ['event', quote(event.event)],
+          ['payload', goMarshal(event.payload, false)],
+        ]),
+      );
+      members.push(['events', `[${published.join(',')}]`]);
+    }
+    if (operation.arranged !== undefined) {
+      inputs = true;
+      members.push(['arranged', `[${operation.arranged.map(quote).join(',')}]`]);
     }
     return jsonObject(members);
   });

@@ -1531,7 +1531,12 @@ func (t *walkCalcTarget) ExecuteCommand(r CommandRequest) (CommandResult, error)
 			event = "calc.core.Small"
 		}
 	}
-	return CommandResult{Outcome: outcome, DirectEvents: []ObservedEvent{{Event: event, Payload: map[string]Node{"n": r.Input["n"]}}}}, nil
+	payload := map[string]Node{"n": r.Input["n"]}
+	if t.mutant == "wrong-payload" {
+		// The adversary's mutant: the right branch and events, a payload the input does not give.
+		payload = map[string]Node{"n": n + 1}
+	}
+	return CommandResult{Outcome: outcome, DirectEvents: []ObservedEvent{{Event: event, Payload: payload}}}, nil
 }
 func (t *walkCalcTarget) QueryView(ViewRequest) (ViewResult, error) {
 	return ViewResult{}, exploreExtUnsupported{"no view"}
@@ -1620,7 +1625,9 @@ const calcTarget = (mutant) => ({
       }
       if (mutant === 'wrong-events') event = 'calc.core.Small';
     }
-    return { outcome, directEvents: [{ event, payload: { n: input.n } }] };
+    // The adversary's mutant: the right branch and events, a payload the input does not give.
+    const n = mutant === 'wrong-payload' ? input.n + 1 : input.n;
+    return { outcome, directEvents: [{ event, payload: { n } }] };
   },
   queryView: () => {
     throw unsupported('no view');
@@ -1972,7 +1979,7 @@ fn an_ess_history_3_operation_records_its_input_and_events_and_the_reader_holds_
             "ab".repeat(32)
         )
     };
-    let returned = r#"{"operation_id":"00000000-0000-4000-8000-000000000002","client":0,"command":"calc.core.Check","subject_key":"","invoked_at":1,"returned_at":2,"completion":"Returned","outcome":"big","input":{"n":100,"note":null,"tag":{"a":"x","b":[true]}},"events":["calc.core.Big"]}"#;
+    let returned = r#"{"operation_id":"00000000-0000-4000-8000-000000000002","client":0,"command":"calc.core.Check","subject_key":"","invoked_at":1,"returned_at":2,"completion":"Returned","outcome":"big","input":{"n":100,"note":null,"tag":{"a":"x","b":[true]}},"events":[{"event":"calc.core.Big","payload":{"n":100}}],"arranged":[]}"#;
     let bytes = document("ess-history/3", returned);
     let history = read(bytes.as_bytes(), &digest).unwrap_or_else(|refusal| panic!("{refusal}"));
     assert_eq!(history.format, HistoryFormat::EssHistory3);
@@ -1990,7 +1997,7 @@ fn an_ess_history_3_operation_records_its_input_and_events_and_the_reader_holds_
             .as_ref()
             .expect("the events are read")
             .iter()
-            .map(ess_conformance::history::QualifiedName::as_str)
+            .map(|event| event.event.as_str())
             .collect::<Vec<_>>(),
         ["calc.core.Big"]
     );
@@ -2023,7 +2030,7 @@ fn an_ess_history_3_operation_records_its_input_and_events_and_the_reader_holds_
             "`operations[0].input` is `null`",
         ),
         (
-            r#""events":["calc.core.Big"]"#,
+            r#""events":[{"event":"calc.core.Big","payload":{"n":100}}]"#,
             r#""events":null"#,
             "`operations[0].events` is `null`",
         ),
@@ -2032,12 +2039,48 @@ fn an_ess_history_3_operation_records_its_input_and_events_and_the_reader_holds_
             r#""input":[100]"#,
             "",
         ),
-        (r#""events":["calc.core.Big"]"#, r#""events":[""]"#, ""),
         (
-            r#""events":["calc.core.Big"]"#,
+            r#""events":[{"event":"calc.core.Big","payload":{"n":100}}]"#,
+            r#""events":[{"event":"","payload":{}}]"#,
+            "",
+        ),
+        (
+            r#""events":[{"event":"calc.core.Big","payload":{"n":100}}]"#,
             r#""events":"calc.core.Big""#,
             "",
         ),
+        // Each event is an object naming the event and carrying its payload, nothing else.
+        (
+            r#""events":[{"event":"calc.core.Big","payload":{"n":100}}]"#,
+            r#""events":["calc.core.Big"]"#,
+            "",
+        ),
+        (
+            r#""events":[{"event":"calc.core.Big","payload":{"n":100}}]"#,
+            r#""events":[["calc.core.Big",{"n":100}]]"#,
+            "",
+        ),
+        (
+            r#""events":[{"event":"calc.core.Big","payload":{"n":100}}]"#,
+            r#""events":[{"event":"calc.core.Big"}]"#,
+            "payload",
+        ),
+        (
+            r#""events":[{"event":"calc.core.Big","payload":{"n":100}}]"#,
+            r#""events":[{"event":"calc.core.Big","payload":{"n":100},"at":1}]"#,
+            "at",
+        ),
+        (
+            r#""events":[{"event":"calc.core.Big","payload":{"n":100}}]"#,
+            r#""events":[{"event":"calc.core.Big","payload":{"n":100.0}}]"#,
+            "`operations[0].events[0].payload.n` is written `100.0`",
+        ),
+        (
+            r#""arranged":[]"#,
+            r#""arranged":null"#,
+            "`operations[0].arranged` is `null`",
+        ),
+        (r#""arranged":[]"#, r#""arranged":[""]"#, ""),
     ] {
         let changed = returned.replace(from, to);
         assert_ne!(changed, returned);
@@ -2060,7 +2103,10 @@ fn an_ess_history_3_operation_records_its_input_and_events_and_the_reader_holds_
             operation_id: "00000000-0000-4000-8000-000000000002".to_owned()
         }
     );
-    let sent = indeterminate.replace(r#","events":["calc.core.Big"]"#, "");
+    let sent = indeterminate.replace(
+        r#","events":[{"event":"calc.core.Big","payload":{"n":100}}]"#,
+        "",
+    );
     let read_back = read(document("ess-history/3", &sent).as_bytes(), &digest).unwrap();
     assert!(read_back.operations[0].input.is_some());
     // The retained format 1 reader refuses it by its format.
@@ -2070,4 +2116,213 @@ fn an_ess_history_3_operation_records_its_input_and_events_and_the_reader_holds_
             found: Some("ess-history/3".to_owned())
         }
     );
+}
+
+// ---- adversary: an external answer nobody arranged (beyond10x/ess#576) -------------------------
+
+/// Adversarial case for the story's outcome, "concurrent exploration checks what the sequential
+/// walk checks", at the `external:` seam.
+mod adversary_external_answer_unarranged {
+    use super::*;
+
+    /// A double that declines every authorization from 1000 up whether or not it was asked to.
+    ///
+    /// The sequential walk expects the ordinary branch of a call no arrangement is pending for
+    /// (`exploreChoices` offers `declined` only once `Authorize` was arranged in the sequence), so it
+    /// fails the first unarranged `declined`. A concurrent history records no arrangement, so a
+    /// checker that admits `declined` wherever the input makes it eligible cannot tell this double
+    /// from a correct one, in any of 200 histories.
+    #[test]
+    fn concurrent_exploration_catches_an_external_answer_nobody_arranged() {
+        let scratch = tempfile::tempdir().expect("a scratch directory");
+        let spec = reachable_external_spec(scratch.path());
+        let cases = serde_json::json!([
+            {"name": "declines-unasked", "target": "external", "mutant": "declines-unasked", "options": {"seeds": SEEDS}},
+        ]);
+        let (typescript, go) = walk_concurrent(scratch.path(), &spec, &cases);
+        let mut missed = Vec::new();
+        for (lane, name) in [(&typescript, "TypeScript"), (&go, "Go")] {
+            let planted = result(lane, "declines-unasked");
+            println!(
+                "{name}: declines-unasked: {} violation(s) of {SEEDS}; arranged {}",
+                count(planted, "violations"),
+                planted["arranged"]
+            );
+            // The double declined more often than it was asked to: the histories hold unarranged
+            // `declined` answers the checker has to judge.
+            let declined = lane.histories["declines-unasked"]
+                .values()
+                .flat_map(|bytes| {
+                    let document: Value = serde_json::from_slice(bytes).unwrap();
+                    document["operations"].as_array().unwrap().clone()
+                })
+                .filter(|operation| {
+                    operation["command"] == "exploreext.pay.Authorize"
+                        && operation["outcome"] == "declined"
+                })
+                .count() as u64;
+            let arranged = planted["arranged"]["exploreext.pay.Authorize/declined"]
+                .as_u64()
+                .unwrap_or(0);
+            assert!(
+                declined > arranged,
+                "{name}: {declined} `declined` answers, {arranged} arranged: none unarranged"
+            );
+            if count(planted, "violations") == 0 {
+                missed.push(format!(
+                    "{name}: 0 violations, {declined} `declined` answers of which {arranged} were \
+                     arranged: {planted}"
+                ));
+            }
+        }
+        assert!(missed.is_empty(), "{}", missed.join("\n"));
+    }
+}
+
+// ---- adversary: every command call records its input and its events (beyond10x/ess#576) -------
+
+/// Adversarial case for the first acceptance at the writers: the Go and TypeScript explorers record
+/// the input of every command call and the events of every answered one — refused calls, calls
+/// whose answer was lost and client retries included — not only the plain calls of `calc`.
+mod adversary_every_call_records {
+    use super::*;
+
+    /// Every view a fixture of these lanes declares: a read records rows, not an input.
+    const VIEWS: [&str; 8] = [
+        "explore.desk.OpenTickets",
+        "explore.desk.TicketsByItems",
+        "billing.invoice.InvoiceById",
+        "billing.invoice.OutstandingInvoices",
+        "retry.core.Records",
+        "pair.core.Boxes",
+        "pair.core.Crates",
+        "exploreext.pay.PendingPayments",
+    ];
+
+    /// What is wrong with how one command operation of `history` records its input and events.
+    fn wrong(operation: &Value, by_id: &BTreeMap<String, Value>) -> Option<String> {
+        let returned = operation["completion"] == "Returned";
+        if !operation["input"].is_object() {
+            return Some("no `input`".to_owned());
+        }
+        if operation["events"].is_array() != returned {
+            return Some(format!(
+                "`events` {} on a {} call",
+                if operation["events"].is_array() {
+                    "written"
+                } else {
+                    "missing"
+                },
+                operation["completion"]
+            ));
+        }
+        if let Some(original) = operation["retry_of"].as_str() {
+            let original = by_id.get(original)?;
+            if original["input"] != operation["input"] {
+                return Some(format!(
+                    "a retry records {} where its original sent {}",
+                    operation["input"], original["input"]
+                ));
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn every_command_call_of_every_lane_records_its_input_and_every_answered_one_its_events() {
+        let all = lanes();
+        let external = external_lanes();
+        let mut missing = Vec::new();
+        let mut seen = BTreeMap::<&str, u64>::new();
+        for (pair, label) in [
+            (&all.explore, "explore"),
+            (&all.billing, "billing"),
+            (&all.retry, "retry"),
+            (&all.pair, "pair"),
+            (external, "external"),
+        ] {
+            for (lane, language) in [(&pair.0, "TypeScript"), (&pair.1, "Go")] {
+                for (name, histories) in &lane.histories {
+                    for (seed, bytes) in histories {
+                        let document: Value = serde_json::from_slice(bytes).unwrap();
+                        let operations = document["operations"].as_array().unwrap();
+                        let by_id = operations
+                            .iter()
+                            .map(|operation| {
+                                (
+                                    operation["operation_id"].as_str().unwrap().to_owned(),
+                                    operation.clone(),
+                                )
+                            })
+                            .collect::<BTreeMap<_, _>>();
+                        for operation in operations {
+                            if VIEWS.contains(&operation["command"].as_str().unwrap()) {
+                                continue;
+                            }
+                            *seen
+                                .entry(if operation["completion"] == "Indeterminate" {
+                                    "indeterminate"
+                                } else if operation["retry_of"].is_string() {
+                                    "retry"
+                                } else {
+                                    "returned"
+                                })
+                                .or_default() += 1;
+                            if let Some(why) = wrong(operation, &by_id) {
+                                missing.push(format!(
+                                    "{language} {label}/{name} seed {seed}: {why}: {operation}"
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        println!("command operations checked: {seen:?}");
+        for kind in ["indeterminate", "retry", "returned"] {
+            assert!(
+                seen.get(kind).is_some_and(|count| *count > 0),
+                "no {kind} call"
+            );
+        }
+        let shown = missing.len().min(10);
+        assert!(
+            missing.is_empty(),
+            "{} call(s) recorded wrongly, the first {shown}:\n{}",
+            missing.len(),
+            missing[..shown].join("\n")
+        );
+    }
+}
+
+// ---- adversary: a payload the input does not give (beyond10x/ess#576) --------------------------
+
+/// Adversarial case for the story's outcome at the payload: the sequential walk holds each
+/// published event's payload to the branch's `payload:` mapping, and a concurrent history records
+/// event names only, so a target that answers the right branch with the right events and a wrong
+/// payload is judged `Linearizable` in every history.
+mod adversary_wrong_payload {
+    use super::*;
+
+    #[test]
+    fn concurrent_exploration_catches_a_payload_the_input_does_not_give() {
+        let scratch = tempfile::tempdir().expect("a scratch directory");
+        let spec = calc_spec(scratch.path());
+        let cases = serde_json::json!([
+            {"name": "wrong-payload", "target": "calc", "mutant": "wrong-payload", "options": {"seeds": SEEDS}},
+        ]);
+        let (typescript, go) = walk_concurrent(scratch.path(), &spec, &cases);
+        let mut missed = Vec::new();
+        for (lane, name) in [(&typescript, "TypeScript"), (&go, "Go")] {
+            let planted = result(lane, "wrong-payload");
+            println!(
+                "{name}: wrong-payload: {} violation(s) of {SEEDS}",
+                count(planted, "violations")
+            );
+            if count(planted, "violations") == 0 {
+                missed.push(format!("{name}: 0 violations: {planted}"));
+            }
+        }
+        assert!(missed.is_empty(), "{}", missed.join("\n"));
+    }
 }

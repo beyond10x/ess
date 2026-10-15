@@ -272,6 +272,16 @@ impl Transition {
             .map(|event| event.event.name().to_string())
     }
 
+    /// The value the `index`th event this step publishes carries in `field`: `Ok(None)` where it
+    /// carries none, and `Err(())` where the model leaves the value to the implementation, so no
+    /// recorded value can disagree with it.
+    pub(crate) fn payload_value(&self, index: usize, field: &str) -> Result<Option<Node>, ()> {
+        self.events
+            .get(index)
+            .and_then(|event| event.payload.get(field))
+            .map_or(Ok(None), Value::concrete)
+    }
+
     pub(super) fn publish(self) -> Result<Step, Undetermined> {
         Ok(Step {
             outcome: self.outcome,

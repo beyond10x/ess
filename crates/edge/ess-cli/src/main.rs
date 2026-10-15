@@ -972,10 +972,12 @@ enum ConformCommand {
     /// accepts, answer for answer, reading an operation's recorded `decision_time` as the current
     /// time. An operation that records its `input` (`ess-history/3`) is stepped with exactly that
     /// input, and one that records its `events` takes only a branch publishing those events, in
-    /// order; an operation that records no input is explained by any candidate input synthesis
-    /// would submit for its command. Reads of views are not judged and are listed. A violation is
-    /// reported with the longest partial linearization found and a shrunk history that is still a
-    /// violation.
+    /// order, with the payload values the model computes from the recorded input; one that records
+    /// `arranged` takes an `external:` branch only where a call of its command arranged it before
+    /// this one returned. An operation that records no input is explained by any candidate input
+    /// synthesis would submit for its command. Reads of views are not judged and are listed. A
+    /// violation is reported with the longest partial linearization found and a shrunk history
+    /// that is still a violation.
     ///
     /// Exit 0: linearizable. Exit 1: violation. Exit 3: unknown — the search spent `--budget`
     /// before it finished, which is never a pass. Exit 2: the specification or the history could
