@@ -17,6 +17,12 @@ capability · notable impact · [release notes](https://github.com/beyond10x/ess
 
 `ess-composition/4` adds `roles:`: one imported component plays another's, and each local command `implements` or `gates` a contract command, checked for input drift by `ess specify compose` ([#525](https://github.com/beyond10x/ess/issues/525)).
 
+### Source format ess/25, and an HTTP binding that generates Rust and Go servers
+
+capability · significant impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.60.0)
+
+`ess/25` adds create-or-update selection by stored fields, trimmed text guards, one event per changed row and refusals ahead of held state. `ess-http/1` binds commands and views to HTTP; `ess generate` projects it to OpenAPI and emits Rust and Go servers. `ess-composition/4` adds roles.
+
 ### Commands and views bind to HTTP routes, and mutation testing covers more of a model
 
 capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.60.0)
@@ -42,6 +48,12 @@ capability · significant impact · [release notes](https://github.com/beyond10x
 capability · notable impact · [release post](https://beyond10x.github.io/ess/releases/authored-caller-attributes) · [release notes](https://github.com/beyond10x/ess/releases/tag/0.59.0)
 
 `ess-scenario/5` lets an act state its caller under `caller:`, so a command that records `{caller: …}` runs from an authored scenario. Synthesis decides a related guard on a captured struct key ([#521](https://github.com/beyond10x/ess/issues/521)) and writes stored-field guard scenarios no view observes ([#496](https://github.com/beyond10x/ess/issues/496)).
+
+### An authored scenario states the caller its command is sent as
+
+capability · notable impact · [release post](https://beyond10x.github.io/ess/releases/authored-caller-attributes) · [release notes](https://github.com/beyond10x/ess/releases/tag/0.59.0)
+
+`ess-scenario/5` adds `caller:` to an authored act, so a command that records caller attributes runs from an authored scenario on every target. Synthesis covers `when_subject:` commands whose guarded field no view observes, and picks a related row against the subject's real key.
 
 ## 0.58.0 — 2026-10-10
 

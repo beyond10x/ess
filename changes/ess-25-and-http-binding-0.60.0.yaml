@@ -1,0 +1,16 @@
+schema: b10x-change/v1
+id: ess/ess-25-and-http-binding-0.60.0
+repository: ess
+publishedAt: 2026-10-14T00:00:00Z
+title: Source format ess/25, and an HTTP binding that generates Rust and Go servers
+summary: >-
+  `ess/25` adds create-or-update selection by stored fields, trimmed text guards, one event per
+  changed row and refusals ahead of held state. `ess-http/1` binds commands and views to HTTP;
+  `ess generate` projects it to OpenAPI and emits Rust and Go servers. `ess-composition/4` adds roles.
+kind: capability
+impact: significant
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.60.0
+  version: 0.60.0
+journeys: [specify, operate-services]
+affectedSurfaces: [ess/docs]

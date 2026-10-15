@@ -1,0 +1,16 @@
+schema: b10x-change/v1
+id: ess/caller-attributes-0.59.0
+repository: ess
+publishedAt: 2026-10-11T00:00:00Z
+title: An authored scenario states the caller its command is sent as
+summary: >-
+  `ess-scenario/5` adds `caller:` to an authored act, so a command that records caller attributes
+  runs from an authored scenario on every target. Synthesis covers `when_subject:` commands whose
+  guarded field no view observes, and picks a related row against the subject's real key.
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.59.0
+  version: 0.59.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

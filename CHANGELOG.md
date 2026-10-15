@@ -2,6 +2,39 @@
 
 ## [Unreleased]
 
+### Added
+
+- `ess generate types --target rust` and `ess generate schema types-bundle` take a repeatable
+  `--rust-raw-json <type>` or `<type>.<field>`: the named `Json` values are realized as
+  `EssRawJson`, a `Box<serde_json::value::RawValue>` with text equality, so their bytes round-trip
+  with or without `exact-numbers`. A location naming no selected type or field, or no `Json` value,
+  is refused by name; other targets refuse the flag. Without it the output is unchanged
+  (https://github.com/beyond10x/ess/issues/577).
+- The one-time response guide lists the disclosure cells synthesis adds for each
+  `one_time_response` field, the scenario id shape, how the count grows with actors, outcomes,
+  commands and views, and worked counts for three minimal models
+  (https://github.com/beyond10x/ess/issues/573).
+
+### Fixed
+
+- Synthesis arranges views bounded by period parameters. An aggregate range whose bounds sit on
+  two fields (`started_at < param.to, ended_at > param.from`) is arranged as periods at, across and
+  inside both edges, each edge row refuted by its own bound. A row-level view whose `Timestamp`
+  parameter a top-level ordering compares with a stored `Timestamp` field is sent the stored
+  instant's admitting edge and read once more just past it, expecting the row absent. A view whose
+  filter a scenario cannot decide no longer drops that scenario: ESS-SYNTH-005 names the read it
+  skips (https://github.com/beyond10x/ess/issues/569).
+- The retry disclosure cell of a create whose identity the caller supplies sends the origin's
+  invocation again and expects the declared `existing_instance:` refusal; without one it is refused
+  naming the identity input and the missing declaration, instead of "no established surviving
+  subject" (https://github.com/beyond10x/ess/issues/574).
+- rustls 0.23.46, for RUSTSEC-2026-0346 to -0349.
+
+### Changed
+
+- CI: each test shard gets three 30-minute attempts per nextest archive download, the last one
+  failing the job, so a slow artifact download no longer fails shards whose tests pass.
+
 ## [0.60.0] — 2026-10-14
 
 ### Added
