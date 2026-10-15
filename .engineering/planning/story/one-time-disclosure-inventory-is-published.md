@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:one-time-disclosure-inventory-is-published
 kind: story
-status: active
+status: implemented
 title: The one-time disclosure inventory is published, and each cell is built or refused by its real cause
 tags:
 - adopter-report
@@ -14,10 +14,11 @@ refs:
 relations:
 - serves: vision:O2
 - informed_by: story:disclosure-scenarios-bind-the-caller
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-14T14:33:21Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-14T14:33:21Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-15T08:45:06Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 
