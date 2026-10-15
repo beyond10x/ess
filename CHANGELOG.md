@@ -15,8 +15,21 @@
   commands and views, and worked counts for three minimal models
   (https://github.com/beyond10x/ess/issues/573).
 
+- History format `ess-history/3`: an operation may record `input` (the command's input as sent)
+  and `events` (the events a returned answer published, in order). `ess verify conform
+  check-history` steps such an operation with exactly that input and admits only a branch
+  publishing exactly those events, so on a model without entities a target answering a declared
+  but wrong outcome no longer passes. The generated Go and TypeScript concurrent explorers record
+  both on every call. A writer selects the lowest format its operations need, so a history without
+  either keeps format 1 or 2 and its bytes; format 1 and 2 documents still read, and either new
+  field in them is refused by name (https://github.com/beyond10x/ess/issues/576).
+
 ### Fixed
 
+- Concurrent exploration (`ExploreConcurrent`) arranges an `external:` cause through
+  `ConfigureExternalOutcome` wherever the sequential walk would, and a seed reported failing by a
+  multi-seed run replays alone, with `ExploreOptions.Seed`, the command sequence it drew inside
+  that run (https://github.com/beyond10x/ess/issues/576).
 - Synthesis arranges views bounded by period parameters. An aggregate range whose bounds sit on
   two fields (`started_at < param.to, ended_at > param.from`) is arranged as periods at, across and
   inside both edges, each edge row refuted by its own bound. A row-level view whose `Timestamp`
