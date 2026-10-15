@@ -347,8 +347,16 @@ fn every_accepted_setting_derives_a_slot_that_carries_every_statement_it_made() 
                     );
                     let slot = &container.secrets[0];
                     assert_eq!(slot.name.to_string(), "log-level", "{cell} kept the name");
-                    assert_eq!(slot.environment, "LOG_LEVEL", "{cell} kept the variable");
-                    assert_eq!(slot.key, "log-level", "{cell} kept the key");
+                    assert_eq!(
+                        slot.environment.as_deref(),
+                        Some("LOG_LEVEL"),
+                        "{cell} kept the variable"
+                    );
+                    assert_eq!(
+                        slot.key.as_deref(),
+                        Some("log-level"),
+                        "{cell} kept the key"
+                    );
                     assert!(
                         value.is_none(),
                         "{cell} is accepted with a literal beside a secret, and `SecretSlot` \

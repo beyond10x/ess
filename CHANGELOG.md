@@ -14,6 +14,21 @@
   `one_time_response` field, the scenario id shape, how the count grows with actors, outcomes,
   commands and views, and worked counts for three minimal models
   (https://github.com/beyond10x/ess/issues/573).
+- Runtime format `ess-runtime/2`, compiled to `ess-runtime-ir/2`, beside `/1`. A workload may
+  declare `schedule:` (a cron expression, an optional IANA `time_zone`, `overlap:` forbid, replace
+  or allow, history limits, `suspended`, start and run deadlines, a retry limit and a restart
+  policy), and `ess generate project helm` renders it as a `batch/v1` `CronJob` whose job template
+  carries the pod a Deployment would, with a `PersistentVolumeClaim` per named volume that every
+  run mounts. A scheduled workload without `run_deadline_seconds` is refused as unbounded; an
+  invalid cron expression, an unknown time zone, `replicas`, legacy `storage`, a provided endpoint
+  or a readiness probe beside a schedule, a deadline below one and a negative retry limit are
+  refused naming the workload. Every workload kind also takes pod settings: container `resources`
+  (cpu and memory requests and limits) and `read_only_root_filesystem`, workload `security`
+  (`run_as_user`, `run_as_group`, `fs_group`, `run_as_non_root`) and `service_account_token`, a
+  secret slot `mount:` rendered as a read-only `secret` volume with `items` and an octal `mode`,
+  and a process `image` given as a reference pinned by digest, rendered verbatim. An
+  `ess-runtime/1` document keeps its compiled bytes, digest and chart, and refuses the new keys
+  naming `ess-runtime/2` (`docs/design/runtime-workload-kinds.md`).
 
 ### Fixed
 
@@ -32,6 +47,8 @@
 
 ### Changed
 
+- `ess-deployment`: `Process::image` is a `ProcessImage`, `Workload::replicas` an `Option<u32>`,
+  and `SecretSlot::environment` and `SecretSlot::key` are `Option<String>`, for `ess-runtime/2`.
 - CI: each test shard gets three 30-minute attempts per nextest archive download, the last one
   failing the job, so a slow artifact download no longer fails shards whose tests pass.
 

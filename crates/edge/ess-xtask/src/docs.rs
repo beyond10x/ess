@@ -303,6 +303,9 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-build-ir", 1, Some("0.9.0")),
     ("ess-runtime", 1, Some("0.9.0")),
     ("ess-runtime-ir", 1, Some("0.9.0")),
+    // Scheduled workloads and pod settings (`docs/design/runtime-workload-kinds.md`).
+    ("ess-runtime", 2, None),
+    ("ess-runtime-ir", 2, None),
     ("ess-release", 1, Some("0.9.0")),
     ("ess-release-catalog", 1, Some("0.9.0")),
     ("ess-stack", 1, Some("0.9.0")),
