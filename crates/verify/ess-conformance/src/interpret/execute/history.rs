@@ -264,6 +264,14 @@ pub(crate) struct Transition {
 }
 
 impl Transition {
+    /// The name of every event this step publishes, in the order published: what an
+    /// `ess-history/3` operation's `events` is held to.
+    pub(crate) fn published(&self) -> impl Iterator<Item = String> + '_ {
+        self.events
+            .iter()
+            .map(|event| event.event.name().to_string())
+    }
+
     pub(super) fn publish(self) -> Result<Step, Undetermined> {
         Ok(Step {
             outcome: self.outcome,

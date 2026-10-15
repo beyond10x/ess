@@ -1144,3 +1144,930 @@ fn a_lost_creation_of_one_entity_never_withholds_a_row_of_another_entitys_view()
         );
     }
 }
+
+// ---- concurrent exploration checks what the sequential walk checks (beyond10x/ess#576) ----------
+
+/// `explore-external.yaml` with one more command, `Note`, whose guard reads an `Optional` input: a
+/// draw that leaves `memo` out leaves the guard unknown, and the walk excludes `Note` there and
+/// then. With the `cannot-arrange` double, the first external branch drawn is unarrangeable too.
+/// Both are exclusions an earlier seed of a run makes before a later seed is drawn.
+fn noted_external_spec(scratch: &Path) -> PathBuf {
+    let source = std::fs::read_to_string(fixture("explore-external.yaml"))
+        .expect("the external fixture reads")
+        .replace(
+            "      - exploreext.pay.Capture\n",
+            "      - exploreext.pay.Capture\n      - exploreext.pay.Note\n",
+        )
+        .replace(
+            "\nevents:\n",
+            "
+  - name: exploreext.pay.Note
+    input:
+      - name: memo
+        type: Optional<Integer>
+    outcomes:
+      - name: noted
+        when: memo >= 1
+        emits:
+          - exploreext.pay.Noted
+        payload:
+          exploreext.pay.Noted:
+            memo: input.memo
+      - name: ignored
+        error: exploreext.pay.InvalidAmount
+
+events:
+  - name: exploreext.pay.Noted
+    fields:
+      - name: memo
+        type: Optional<Integer>
+",
+        );
+    assert!(
+        source.contains("exploreext.pay.Note\n    input"),
+        "the command was added"
+    );
+    let path = scratch.join("noted-external.yaml");
+    std::fs::write(&path, source).unwrap();
+    path
+}
+
+/// The Go half of the walk-parity lane: `driver` as the test `run` of the package emitted for
+/// `spec`, with each of `copies` (a fixture, and its name in the package), under `env` and
+/// `ESS_WALK_SPEC`. Returns the log.
+fn walk_go(
+    scratch: &Path,
+    spec: &Path,
+    copies: &[(&str, &str)],
+    driver: &str,
+    run: &str,
+    env: &[(&str, String)],
+) -> String {
+    let module = scratch.join("go");
+    let package = emit(spec.to_str().unwrap(), "go", &module);
+    std::fs::write(
+        module.join("go.mod"),
+        "module example.invalid/walk\n\ngo 1.24\n",
+    )
+    .unwrap();
+    for (from, to) in copies {
+        std::fs::copy(fixture(from), package.join(to)).expect("the fixture copies");
+    }
+    std::fs::write(package.join("walk_parity_driver_test.go"), driver).unwrap();
+    let output = Command::new("go")
+        .args([
+            "test",
+            "./essconform",
+            "-run",
+            run,
+            "-count=1",
+            "-v",
+            "-timeout",
+            "30m",
+        ])
+        .envs(env.iter().map(|(key, value)| (*key, value)))
+        .env("ESS_WALK_SPEC", spec)
+        .env("PATH", path_with_ess())
+        .env("GOWORK", "off")
+        .current_dir(&module)
+        .output()
+        .expect("`go` is on PATH: the lane does not skip");
+    let log = printed(&output);
+    assert!(output.status.success(), "{log}");
+    assert!(log.contains(&format!("--- PASS: {run}")), "{log}");
+    log
+}
+
+/// The TypeScript half of the walk-parity lane, as [`walk_go`]: `driver` run with `node --test`.
+fn walk_typescript(
+    scratch: &Path,
+    spec: &Path,
+    copies: &[&str],
+    driver: &str,
+    env: &[(&str, String)],
+) -> String {
+    let package = emit(
+        spec.to_str().unwrap(),
+        "typescript",
+        &scratch.join("typescript"),
+    );
+    for name in copies {
+        std::fs::copy(fixture(name), package.join(name)).expect("the fixture copies");
+    }
+    std::fs::write(package.join("walk-parity-driver.mjs"), driver).unwrap();
+    std::fs::write(
+        package.join("runtime-test.tsconfig.json"),
+        r#"{"extends":"./tsconfig.json","compilerOptions":{"types":[],"noCheck":true}}"#,
+    )
+    .unwrap();
+    let compiled = Command::new("tsc")
+        .args(["--project", "runtime-test.tsconfig.json"])
+        .current_dir(&package)
+        .output()
+        .expect("`tsc` is on PATH: the lane does not skip");
+    assert!(compiled.status.success(), "{}", printed(&compiled));
+    let output = Command::new("node")
+        .args(["--test", "walk-parity-driver.mjs"])
+        .envs(env.iter().map(|(key, value)| (*key, value)))
+        .env("ESS_WALK_SPEC", spec)
+        .env("PATH", path_with_ess())
+        .current_dir(&package)
+        .output()
+        .expect("`node` is on PATH: the lane does not skip");
+    let log = printed(&output);
+    assert!(output.status.success(), "{log}");
+    assert!(log.lines().any(|line| line.starts_with("ok 1 - ")), "{log}");
+    log
+}
+
+/// What a walk-parity driver wrote to `out`, as JSON.
+fn walk_json(out: &Path, log: &str) -> Value {
+    serde_json::from_str(&std::fs::read_to_string(out).unwrap_or_else(|_| panic!("{log}")))
+        .expect("the driver wrote JSON")
+}
+
+/// Every command a seed sends, by scenario, in a run of six seeds and in six runs of one seed each.
+const SEED_REPLAY_GO: &str = r#"package essconform
+
+import (
+	"encoding/json"
+	"os"
+	"testing"
+)
+
+type seedReplayLog struct {
+	Target
+	scenario string
+	log      map[string][]string
+}
+
+func (t *seedReplayLog) BeginScenario(s ScenarioContext) error {
+	t.scenario = s.Scenario
+	return t.Target.BeginScenario(s)
+}
+
+func (t *seedReplayLog) ExecuteCommand(r CommandRequest) (CommandResult, error) {
+	input, _ := json.Marshal(r.Input)
+	t.log[t.scenario] = append(t.log[t.scenario], r.Command+" "+string(input))
+	if r.Command == "exploreext.pay.Note" {
+		if memo, ok := r.Input["memo"].(float64); ok && memo >= 1 {
+			return CommandResult{Outcome: "noted", DirectEvents: []ObservedEvent{{Event: "exploreext.pay.Noted", Payload: map[string]Node{"memo": memo}}}}, nil
+		}
+		return CommandResult{Outcome: "ignored", Error: "exploreext.pay.InvalidAmount", DirectEvents: []ObservedEvent{}}, nil
+	}
+	return t.Target.ExecuteCommand(r)
+}
+
+func TestSeedReplay(t *testing.T) {
+	logged := func(log map[string][]string) func() Target {
+		return func() Target { return &seedReplayLog{Target: newExploreExtTarget("cannot-arrange"), log: log} }
+	}
+	run := map[string][]string{}
+	result, err := Explore(logged(run), ExploreOptions{Seeds: 6, Steps: 30})
+	if err != nil {
+		t.Fatal(err)
+	}
+	alone := map[string][]string{}
+	for seed := 1; seed <= 6; seed++ {
+		if _, err := Explore(logged(alone), ExploreOptions{Seed: seed, Steps: 30}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	bytes, err := json.Marshal(map[string]any{"run": run, "alone": alone, "result": result})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(os.Getenv("ESS_WALK_OUT"), bytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+"#;
+
+const SEED_REPLAY_TS: &str = r#"import { writeFileSync } from 'node:fs';
+import test from 'node:test';
+
+import { explore, goMarshal } from './dist/index.js';
+import { newTarget } from './explore-external-target.mjs';
+
+const logged = (log) => () => {
+  const inner = newTarget('cannot-arrange');
+  let scenario = '';
+  return {
+    ...inner,
+    beginScenario(context) {
+      scenario = context.scenario;
+      return inner.beginScenario(context);
+    },
+    executeCommand(request) {
+      (log[scenario] ??= []).push(`${request.command} ${JSON.stringify(request.input)}`);
+      if (request.command === 'exploreext.pay.Note') {
+        const memo = request.input.memo;
+        if (typeof memo === 'number' && memo >= 1) {
+          return { outcome: 'noted', directEvents: [{ event: 'exploreext.pay.Noted', payload: { memo } }] };
+        }
+        return { outcome: 'ignored', error: 'exploreext.pay.InvalidAmount', directEvents: [] };
+      }
+      return inner.executeCommand(request);
+    },
+  };
+};
+
+await test('seed replay', async () => {
+  const run = {};
+  const result = await explore(logged(run), { seeds: 6, steps: 30 });
+  const alone = {};
+  for (let seed = 1; seed <= 6; seed += 1) await explore(logged(alone), { seed, steps: 30 });
+  writeFileSync(
+    process.env.ESS_WALK_OUT,
+    `{"run":${JSON.stringify(run)},"alone":${JSON.stringify(alone)},"result":${goMarshal(result)}}`,
+  );
+});
+"#;
+
+/// beyond10x/ess#576, finding 3: the sequence a seed draws inside a run is the sequence it draws
+/// alone, after an earlier seed excluded a command (`Note`, its guard unknown over a draw) and an
+/// external branch the target cannot arrange.
+#[test]
+fn a_seed_drawn_inside_a_multi_seed_run_replays_alone_the_same_sequence() {
+    let scratch = tempfile::tempdir().unwrap();
+    let spec = noted_external_spec(scratch.path());
+    let out = scratch.path().join("seed-go.json");
+    let log = walk_go(
+        &scratch.path().join("seed-go"),
+        &spec,
+        &[(
+            "explore_external_target.go",
+            "explore_external_target_test.go",
+        )],
+        SEED_REPLAY_GO,
+        "TestSeedReplay",
+        &[("ESS_WALK_OUT", out.display().to_string())],
+    );
+    let go = walk_json(&out, &log);
+    let out = scratch.path().join("seed-typescript.json");
+    let log = walk_typescript(
+        &scratch.path().join("seed-typescript"),
+        &spec,
+        &["explore-external-target.mjs"],
+        SEED_REPLAY_TS,
+        &[("ESS_WALK_OUT", out.display().to_string())],
+    );
+    let typescript = walk_json(&out, &log);
+    for (language, lane) in [("go", &go), ("typescript", &typescript)] {
+        let result = &lane["result"];
+        // Not vacuous: an earlier seed excluded a command and found a branch unarrangeable.
+        assert!(
+            result["excluded"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|exclusion| exclusion["subject"] == "exploreext.pay.Note"),
+            "{language}: no seed excluded `Note`: {result}"
+        );
+        assert!(
+            result["external"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|branch| branch["reach"] == "unarrangeable"),
+            "{language}: no branch was unarrangeable: {result}"
+        );
+        assert_eq!(result["sequences"], 6, "{language}: {result}");
+        for seed in 1..=6 {
+            let scenario = format!("explore/seed-{seed}");
+            let inside = &lane["run"][&scenario];
+            assert!(
+                inside.as_array().is_some_and(|sent| !sent.is_empty()),
+                "{language} {scenario}"
+            );
+            assert_eq!(
+                inside, &lane["alone"][&scenario],
+                "{language}: seed {seed} sent another sequence alone than inside the run"
+            );
+        }
+    }
+    assert_eq!(
+        go["run"], typescript["run"],
+        "Go and TypeScript drew different sequences"
+    );
+}
+
+/// Runs every concurrent case of `cases` against the package emitted for `spec`, in Go and in
+/// TypeScript, through [`WALK_CONCURRENT_GO`] and [`WALK_CONCURRENT_TS`].
+fn walk_concurrent(scratch: &Path, spec: &Path, cases: &Value) -> (Lane, Lane) {
+    let go_out = scratch.join("out-go");
+    let typescript_out = scratch.join("out-typescript");
+    for out in [&go_out, &typescript_out] {
+        std::fs::create_dir_all(out).unwrap();
+    }
+    let log = walk_go(
+        &scratch.join("go-lane"),
+        spec,
+        &[(
+            "explore_external_target.go",
+            "explore_external_target_test.go",
+        )],
+        WALK_CONCURRENT_GO,
+        "TestWalkConcurrent",
+        &[
+            ("ESS_WALK_CASES", cases.to_string()),
+            ("ESS_WALK_DIR", go_out.display().to_string()),
+        ],
+    );
+    let go = read_lane(&go_out, cases, log);
+    let log = walk_typescript(
+        &scratch.join("typescript-lane"),
+        spec,
+        &["explore-external-target.mjs"],
+        WALK_CONCURRENT_TS,
+        &[
+            ("ESS_WALK_CASES", cases.to_string()),
+            ("ESS_WALK_DIR", typescript_out.display().to_string()),
+        ],
+    );
+    let typescript = read_lane(&typescript_out, cases, log);
+    (typescript, go)
+}
+
+/// Runs `ExploreConcurrent` once per case in `ESS_WALK_CASES` against the external double or the
+/// entity-less calculator, and writes what [`read_lane`] reads into `ESS_WALK_DIR`.
+const WALK_CONCURRENT_GO: &str = r#"package essconform
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+type walkCase struct {
+	Name    string            `json:"name"`
+	Target  string            `json:"target"`
+	Mutant  string            `json:"mutant"`
+	Options ConcurrentOptions `json:"options"`
+}
+
+// walkCalcTarget answers `calc.core.Check`: `big` from 10 up, `small` below. `wrong-outcome`
+// answers `small` from 10 up, a declared branch the input does not take; `wrong-events` answers
+// `big` from 10 up and publishes `Small`, an event the branch does not declare.
+type walkCalcTarget struct{ mutant string }
+
+func (t *walkCalcTarget) Identity() (Identity, error) {
+	return Identity{Name: "walk-calc", Version: "1"}, nil
+}
+func (t *walkCalcTarget) BeginScenario(ScenarioContext) error { return nil }
+func (t *walkCalcTarget) EndScenario(ScenarioContext) error   { return nil }
+func (t *walkCalcTarget) ExecuteCommand(r CommandRequest) (CommandResult, error) {
+	n, _ := r.Input["n"].(float64)
+	outcome, event := "small", "calc.core.Small"
+	if n >= 10 {
+		outcome, event = "big", "calc.core.Big"
+		if t.mutant == "wrong-outcome" {
+			outcome, event = "small", "calc.core.Small"
+		}
+		if t.mutant == "wrong-events" {
+			event = "calc.core.Small"
+		}
+	}
+	return CommandResult{Outcome: outcome, DirectEvents: []ObservedEvent{{Event: event, Payload: map[string]Node{"n": r.Input["n"]}}}}, nil
+}
+func (t *walkCalcTarget) QueryView(ViewRequest) (ViewResult, error) {
+	return ViewResult{}, exploreExtUnsupported{"no view"}
+}
+func (t *walkCalcTarget) ObserveEvents(EventObservationRequest) ([]ObservedEvent, error) {
+	return nil, nil
+}
+func (t *walkCalcTarget) ConfigureExternalOutcome(ExternalOutcomeControl) error {
+	return exploreExtUnsupported{"no external outcome"}
+}
+func (t *walkCalcTarget) RedeliverEvent(RedeliveryRequest) error {
+	return exploreExtUnsupported{"no redelivery"}
+}
+func (t *walkCalcTarget) ObserveInvocations(InvocationObservationRequest) ([]Invocation, error) {
+	return nil, exploreExtUnsupported{"no bindings"}
+}
+
+func TestWalkConcurrent(t *testing.T) {
+	out := os.Getenv("ESS_WALK_DIR")
+	draws := NewSplitMix64(1)
+	outputs := []string{}
+	for index := 0; index < 5; index++ {
+		outputs = append(outputs, fmt.Sprint(draws.Next()))
+	}
+	if err := os.WriteFile(filepath.Join(out, "splitmix64"), []byte(strings.Join(outputs, " ")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var cases []walkCase
+	if err := json.Unmarshal([]byte(os.Getenv("ESS_WALK_CASES")), &cases); err != nil {
+		t.Fatal(err)
+	}
+	for _, one := range cases {
+		write := func(suffix, text string) {
+			if err := os.WriteFile(filepath.Join(out, one.Name+suffix), []byte(text+"\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		options := one.Options
+		options.Path = os.Getenv("ESS_WALK_SPEC")
+		options.Out = filepath.Join(out, one.Name)
+		mutant := one.Mutant
+		newTarget := func() Target { return newExploreExtTarget(mutant) }
+		if one.Target == "calc" {
+			newTarget = func() Target { return &walkCalcTarget{mutant: mutant} }
+		}
+		result, err := ExploreConcurrent(newTarget, options)
+		if err != nil {
+			write(".refused", err.Error())
+			continue
+		}
+		bytes, err := json.Marshal(result)
+		if err != nil {
+			t.Fatal(err)
+		}
+		write(".json", string(bytes))
+		if problem := CheckConcurrent(result); problem != nil {
+			write(".problem", problem.Error())
+		} else {
+			write(".problem", "none")
+		}
+	}
+}
+"#;
+
+const WALK_CONCURRENT_TS: &str = r"import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import test from 'node:test';
+
+import { concurrentProblem, exploreConcurrent, goMarshal, SplitMix64, unsupported } from './dist/index.js';
+import { newTarget } from './explore-external-target.mjs';
+
+// The calculator `walk_concurrent_go` describes, in TypeScript.
+const calcTarget = (mutant) => ({
+  identity: () => ({ name: 'walk-calc', version: '1' }),
+  beginScenario: () => {},
+  endScenario: () => {},
+  executeCommand({ input }) {
+    let outcome = 'small';
+    let event = 'calc.core.Small';
+    if (input.n >= 10) {
+      outcome = 'big';
+      event = 'calc.core.Big';
+      if (mutant === 'wrong-outcome') {
+        outcome = 'small';
+        event = 'calc.core.Small';
+      }
+      if (mutant === 'wrong-events') event = 'calc.core.Small';
+    }
+    return { outcome, directEvents: [{ event, payload: { n: input.n } }] };
+  },
+  queryView: () => {
+    throw unsupported('no view');
+  },
+  observeEvents: () => [],
+  configureExternalOutcome: () => {
+    throw unsupported('no external outcome');
+  },
+  redeliverEvent: () => {
+    throw unsupported('no redelivery');
+  },
+  observeInvocations: () => {
+    throw unsupported('no bindings');
+  },
+});
+
+const out = process.env.ESS_WALK_DIR ?? '.';
+const draws = new SplitMix64(1);
+const outputs = [];
+for (let index = 0; index < 5; index += 1) outputs.push(draws.next().toString());
+writeFileSync(join(out, 'splitmix64'), `${outputs.join(' ')}\n`);
+
+await test('walk concurrent', async () => {
+  for (const one of JSON.parse(process.env.ESS_WALK_CASES ?? '[]')) {
+    const write = (suffix, text) => writeFileSync(join(out, `${one.name}${suffix}`), `${text}\n`);
+    const make =
+      one.target === 'calc' ? () => calcTarget(one.mutant ?? '') : () => newTarget(one.mutant ?? '');
+    try {
+      const result = await exploreConcurrent(make, {
+        ...(one.options ?? {}),
+        path: process.env.ESS_WALK_SPEC,
+        out: join(out, one.name),
+      });
+      write('.json', goMarshal(result));
+      write('.problem', concurrentProblem(result) ?? 'none');
+    } catch (error) {
+      write('.refused', error.message);
+    }
+  }
+});
+";
+
+fn external_cases() -> Value {
+    serde_json::json!([
+        {"name": "external", "target": "external", "options": {"seeds": SEEDS}},
+        {"name": "fail-keeps-pending", "target": "external", "mutant": "fail-keeps-pending", "options": {"seeds": SEEDS}},
+        {"name": "cannot-arrange", "target": "external", "mutant": "cannot-arrange", "options": {"seeds": 20}},
+        {"name": "cannot-arrange-allowed", "target": "external", "mutant": "cannot-arrange", "options": {"seeds": 20, "allowExcluded": true}},
+    ])
+}
+
+/// `explore-external.yaml` with `Authorize/declined` declared before `authorized`.
+///
+/// As the fixture declares them, `authorized` (`amount >= 1`) is the accepting branch declared
+/// first, so the model never admits `declined` (`amount >= 1000`, `external:`) and synthesis
+/// refuses it; declared first, it is a branch an input from 1000 up may take, which is what a
+/// concurrent history must be able to show.
+fn reachable_external_spec(scratch: &Path) -> PathBuf {
+    let declined = "      - name: declined
+        when: amount >= 1000
+        external: the card network declines
+        error: exploreext.pay.Declined
+";
+    let source = std::fs::read_to_string(fixture("explore-external.yaml"))
+        .expect("the external fixture reads");
+    assert!(source.contains(declined), "the fixture declares `declined`");
+    let source = source.replace(declined, "").replacen(
+        "      - name: authorized\n",
+        &format!("{declined}      - name: authorized\n"),
+        1,
+    );
+    let path = scratch.join("reachable-external.yaml");
+    std::fs::write(&path, source).unwrap();
+    path
+}
+
+/// The external lane pair: [`reachable_external_spec`] explored concurrently, once for every test
+/// below.
+fn external_lanes() -> &'static (Lane, Lane) {
+    static LANES: OnceLock<(Lane, Lane)> = OnceLock::new();
+    LANES.get_or_init(|| {
+        let scratch = tempfile::tempdir().expect("a scratch directory");
+        let spec = reachable_external_spec(scratch.path());
+        walk_concurrent(scratch.path(), &spec, &external_cases())
+    })
+}
+
+/// beyond10x/ess#576, finding 2: concurrent exploration arranges an `external:` cause through
+/// `ConfigureExternalOutcome` wherever the sequential walk would, so a defect that only an external
+/// answer reaches — a capture failure that leaves its payment pending — is caught.
+#[test]
+fn concurrent_exploration_arranges_external_branches_and_catches_a_backend_dependent_defect() {
+    let (typescript, go) = external_lanes();
+    for name in ["external", "fail-keeps-pending", "cannot-arrange"] {
+        assert_eq!(
+            typescript.histories[name], go.histories[name],
+            "`{name}`: the TypeScript and Go histories differ"
+        );
+        assert_eq!(result(typescript, name), result(go, name), "`{name}`");
+    }
+    for lane in [typescript, go] {
+        let planted = result(lane, "fail-keeps-pending");
+        println!(
+            "fail-keeps-pending: {} violation(s) of {SEEDS}; first failing seed {}",
+            count(planted, "violations"),
+            planted["failure"]["seed"]
+        );
+        assert!(count(planted, "violations") >= 1, "{planted}");
+        let correct = result(lane, "external");
+        println!("external: arranged {}", correct["arranged"]);
+        assert_eq!(count(correct, "linearizable"), SEEDS, "{correct}");
+        for branch in [
+            "exploreext.pay.Authorize/declined",
+            "exploreext.pay.Capture/failed",
+        ] {
+            assert!(
+                correct["arranged"][branch]
+                    .as_u64()
+                    .is_some_and(|count| count > 0),
+                "`{branch}` was never arranged: {correct}"
+            );
+        }
+        assert!(correct.get("unarrangeable").is_none(), "{correct}");
+        assert_eq!(lane.problems["external"], "none");
+        let refused = result(lane, "cannot-arrange");
+        assert_eq!(count(refused, "violations"), 0, "{refused}");
+        let reason = "the target cannot arrange it: this double arranges no external outcome";
+        let branches = refused["unarrangeable"]
+            .as_array()
+            .expect("unarrangeable branches");
+        let subjects: std::collections::BTreeSet<&str> = branches
+            .iter()
+            .map(|branch| branch["subject"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            subjects,
+            [
+                "exploreext.pay.Authorize/declined",
+                "exploreext.pay.Capture/failed"
+            ]
+            .into(),
+            "{refused}"
+        );
+        assert_eq!(branches.len(), 2, "{refused}");
+        assert!(
+            branches.iter().all(|branch| branch["reason"] == reason),
+            "{refused}"
+        );
+        assert!(
+            lane.problems["cannot-arrange"].contains(
+                "external outcome(s) the target could not arrange were never arranged in concurrent exploration"
+            ),
+            "{}",
+            lane.problems["cannot-arrange"]
+        );
+        assert_eq!(lane.problems["cannot-arrange-allowed"], "none");
+    }
+}
+
+// ---- the input and events a history records (`ess-history/3`, beyond10x/ess#576) ---------------
+
+/// The digest the committed `history2/` documents carry.
+fn history2_digest() -> ess_conformance::history::SpecDigest {
+    ess_conformance::history::SpecDigest::new("ab".repeat(32)).unwrap()
+}
+
+fn history2(name: &str) -> Vec<u8> {
+    std::fs::read(fixture("history2").join(name)).expect("the history2 fixture is committed")
+}
+
+/// The old-reader compatibility case: an `ess-history/1` or `ess-history/2` document a writer wrote
+/// before `ess-history/3` existed reads, selects its own format again and writes back byte for
+/// byte, and the retained format 1 reader refuses every later format by its `format` alone.
+#[test]
+fn an_older_history_reads_and_writes_back_unchanged_and_the_format1_reader_refuses_later_formats() {
+    use ess_conformance::history::{read, read_format1, HistoryFormat, HistoryRefusal};
+    let digest = history2_digest();
+    for (name, format) in [
+        ("written-format1.json", HistoryFormat::EssHistory1),
+        ("written.json", HistoryFormat::EssHistory2),
+    ] {
+        let bytes = history2(name);
+        let bytes = bytes.strip_suffix(b"\n").unwrap_or(&bytes);
+        let history = read(bytes, &digest).unwrap_or_else(|refusal| panic!("{name}: {refusal}"));
+        assert_eq!(history.format, format, "{name}");
+        assert_eq!(
+            HistoryFormat::for_operations(&history.operations),
+            format,
+            "{name}"
+        );
+        assert_eq!(serde_json::to_vec(&history).unwrap(), bytes, "{name}");
+    }
+    let format1 = history2("written-format1.json");
+    let text = String::from_utf8(format1).unwrap();
+    let text = text.trim_end();
+    assert!(read_format1(text.as_bytes(), &history2_digest()).is_ok());
+    for later in ["ess-history/2", "ess-history/3"] {
+        let relabelled = text.replace(
+            "\"format\":\"ess-history/1\"",
+            &format!("\"format\":\"{later}\""),
+        );
+        assert_ne!(relabelled, text);
+        assert_eq!(
+            read_format1(relabelled.as_bytes(), &digest).unwrap_err(),
+            HistoryRefusal::UnsupportedFormat {
+                found: Some(later.to_owned())
+            },
+            "{later}"
+        );
+    }
+}
+/// `calc.core`: one command and no entity, the shape of the model beyond10x/ess#576 was found on.
+fn calc_spec(scratch: &Path) -> PathBuf {
+    let path = scratch.join("calc.yaml");
+    std::fs::write(
+        &path,
+        "format: ess/6
+system: calc
+version: v1
+domains:
+  - calc.core
+
+domain: calc.core
+
+summary: A check that answers big or small, over no entity at all.
+
+actors:
+  - name: calc.core.Caller
+    may:
+      - calc.core.Check
+
+commands:
+  - name: calc.core.Check
+    input:
+      - name: n
+        type: Integer
+    outcomes:
+      - name: big
+        when: n >= 10
+        emits:
+          - calc.core.Big
+        payload:
+          calc.core.Big:
+            n: input.n
+      - name: small
+        emits:
+          - calc.core.Small
+        payload:
+          calc.core.Small:
+            n: input.n
+
+events:
+  - name: calc.core.Big
+    fields:
+      - name: n
+        type: Integer
+  - name: calc.core.Small
+    fields:
+      - name: n
+        type: Integer
+",
+    )
+    .unwrap();
+    path
+}
+
+fn calc_cases() -> Value {
+    serde_json::json!([
+        {"name": "calc", "target": "calc", "options": {"seeds": SEEDS}},
+        {"name": "wrong-outcome", "target": "calc", "mutant": "wrong-outcome", "options": {"seeds": SEEDS}},
+        {"name": "wrong-events", "target": "calc", "mutant": "wrong-events", "options": {"seeds": SEEDS}},
+    ])
+}
+
+/// beyond10x/ess#576, finding 1: on a model without entities, a history that records each call's
+/// input and published events lets `check-history` refuse an answer that is a declared outcome but
+/// not the one the input takes, and one that publishes events its branch does not declare.
+#[test]
+fn check_history_holds_each_answer_to_its_recorded_input_and_events_on_a_model_without_entities() {
+    let scratch = tempfile::tempdir().expect("a scratch directory");
+    let spec = calc_spec(scratch.path());
+    let (typescript, go) = walk_concurrent(scratch.path(), &spec, &calc_cases());
+    for name in ["calc", "wrong-outcome", "wrong-events"] {
+        assert_eq!(
+            typescript.histories[name], go.histories[name],
+            "`{name}`: the TypeScript and Go histories differ"
+        );
+        assert_eq!(result(&typescript, name), result(&go, name), "`{name}`");
+    }
+    let digest = ess_conformance::history::SpecDigest::new(
+        serde_json::from_str::<Value>(
+            &std::fs::read_to_string(
+                emit(spec.to_str().unwrap(), "go", &scratch.path().join("digest"))
+                    .join("suite.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap()["provenance"]["spec_digest"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
+    for lane in [&typescript, &go] {
+        for name in ["wrong-outcome", "wrong-events"] {
+            let planted = result(lane, name);
+            println!(
+                "{name}: {} violation(s) of {SEEDS}; first failing seed {}",
+                count(planted, "violations"),
+                planted["failure"]["seed"]
+            );
+            assert!(count(planted, "violations") >= 1, "{planted}");
+        }
+        let correct = result(lane, "calc");
+        assert_eq!(count(correct, "linearizable"), SEEDS, "{correct}");
+        assert_eq!(lane.problems["calc"], "none");
+        // Every history is `ess-history/3`, every call records its input, every answered call its
+        // events, and each is written in the reader's own spelling.
+        assert_eq!(lane.histories["calc"].len() as u64, SEEDS);
+        for (seed, bytes) in &lane.histories["calc"] {
+            let history = ess_conformance::history::read(bytes, &digest)
+                .unwrap_or_else(|refusal| panic!("seed {seed} is refused: {refusal}"));
+            assert_eq!(&serde_json::to_vec(&history).unwrap(), bytes, "seed {seed}");
+            let document: Value = serde_json::from_slice(bytes).unwrap();
+            assert_eq!(document["format"], "ess-history/3", "seed {seed}");
+            for operation in document["operations"].as_array().unwrap() {
+                assert!(operation["input"].is_object(), "seed {seed}: {operation}");
+                assert_eq!(
+                    operation["events"].is_array(),
+                    operation["completion"] == "Returned",
+                    "seed {seed}: {operation}"
+                );
+            }
+        }
+    }
+}
+
+/// An operation of `ess-history/3` carries its input and its events, reads and writes back byte for
+/// byte, and is held to the format: neither field in a lower format, neither written `null`, and no
+/// events on a call that never answered.
+#[test]
+#[allow(clippy::too_many_lines)]
+fn an_ess_history_3_operation_records_its_input_and_events_and_the_reader_holds_them_to_the_format()
+{
+    use ess_conformance::history::{read, read_format1, HistoryFormat, HistoryRefusal, Node};
+    let digest = history2_digest();
+    let document = |format: &str, operation: &str| {
+        format!(
+            r#"{{"format":"{format}","history_id":"00000000-0000-4000-8000-000000000001","spec_digest":"{}","seed":1,"clients":1,"operations":[{operation}]}}"#,
+            "ab".repeat(32)
+        )
+    };
+    let returned = r#"{"operation_id":"00000000-0000-4000-8000-000000000002","client":0,"command":"calc.core.Check","subject_key":"","invoked_at":1,"returned_at":2,"completion":"Returned","outcome":"big","input":{"n":100,"note":null,"tag":{"a":"x","b":[true]}},"events":["calc.core.Big"]}"#;
+    let bytes = document("ess-history/3", returned);
+    let history = read(bytes.as_bytes(), &digest).unwrap_or_else(|refusal| panic!("{refusal}"));
+    assert_eq!(history.format, HistoryFormat::EssHistory3);
+    assert_eq!(
+        HistoryFormat::for_operations(&history.operations),
+        HistoryFormat::EssHistory3
+    );
+    let operation = &history.operations[0];
+    let input = operation.input.as_ref().expect("the input is read");
+    assert_eq!(input["note"], Node::Null);
+    assert_eq!(input["n"], serde_json::from_str::<Node>("100").unwrap());
+    assert_eq!(
+        operation
+            .events
+            .as_ref()
+            .expect("the events are read")
+            .iter()
+            .map(ess_conformance::history::QualifiedName::as_str)
+            .collect::<Vec<_>>(),
+        ["calc.core.Big"]
+    );
+    assert_eq!(serde_json::to_vec(&history).unwrap(), bytes.as_bytes());
+
+    // A lower format carries neither field, on the wire or written.
+    for format in ["ess-history/1", "ess-history/2"] {
+        let refused = read(document(format, returned).as_bytes(), &digest).unwrap_err();
+        assert_eq!(refused.code(), "history.malformed", "{format}: {refused}");
+        assert!(
+            refused.to_string().contains("write `ess-history/3`"),
+            "{format}: {refused}"
+        );
+        let mut lowered = history.clone();
+        lowered.format = if format == "ess-history/1" {
+            HistoryFormat::EssHistory1
+        } else {
+            HistoryFormat::EssHistory2
+        };
+        assert!(
+            serde_json::to_vec(&lowered).is_err(),
+            "{format} was written"
+        );
+    }
+    // Absent where nothing was recorded, never `null`, and of its one shape.
+    for (from, to, needle) in [
+        (
+            r#""input":{"n":100,"note":null,"tag":{"a":"x","b":[true]}}"#,
+            r#""input":null"#,
+            "`operations[0].input` is `null`",
+        ),
+        (
+            r#""events":["calc.core.Big"]"#,
+            r#""events":null"#,
+            "`operations[0].events` is `null`",
+        ),
+        (
+            r#""input":{"n":100,"note":null,"tag":{"a":"x","b":[true]}}"#,
+            r#""input":[100]"#,
+            "",
+        ),
+        (r#""events":["calc.core.Big"]"#, r#""events":[""]"#, ""),
+        (
+            r#""events":["calc.core.Big"]"#,
+            r#""events":"calc.core.Big""#,
+            "",
+        ),
+    ] {
+        let changed = returned.replace(from, to);
+        assert_ne!(changed, returned);
+        let refused = read(document("ess-history/3", &changed).as_bytes(), &digest).unwrap_err();
+        assert_eq!(refused.code(), "history.malformed", "{to}: {refused}");
+        assert!(refused.to_string().contains(needle), "{to}: {refused}");
+    }
+    // A call that never answered published nothing anyone saw; it still sent its input.
+    let indeterminate = returned.replace(
+        r#""returned_at":2,"completion":"Returned","outcome":"big","#,
+        r#""completion":"Indeterminate","#,
+    );
+    assert_eq!(
+        read(
+            document("ess-history/3", &indeterminate).as_bytes(),
+            &digest
+        )
+        .unwrap_err(),
+        HistoryRefusal::IndeterminateWithEvents {
+            operation_id: "00000000-0000-4000-8000-000000000002".to_owned()
+        }
+    );
+    let sent = indeterminate.replace(r#","events":["calc.core.Big"]"#, "");
+    let read_back = read(document("ess-history/3", &sent).as_bytes(), &digest).unwrap();
+    assert!(read_back.operations[0].input.is_some());
+    // The retained format 1 reader refuses it by its format.
+    assert_eq!(
+        read_format1(bytes.as_bytes(), &digest).unwrap_err(),
+        HistoryRefusal::UnsupportedFormat {
+            found: Some("ess-history/3".to_owned())
+        }
+    );
+}

@@ -220,9 +220,9 @@ func advr2New(name, target, out string) func() Target {
 	log := filepath.Join(out, name+".log")
 	switch target {
 	case "stale-lost-opened":
-		return func() Target { return &advr2Explore{exploreFixtureTarget: newExploreFixtureTarget("stale-read", "low"), log: log} }
+		return func() Target { return &advr2Explore{exploreFixtureTarget: newExploreFixtureTarget("stale-read", "high"), log: log} }
 	case "correct-lost-opened":
-		return func() Target { return &advr2Explore{exploreFixtureTarget: newExploreFixtureTarget("", "low"), log: log} }
+		return func() Target { return &advr2Explore{exploreFixtureTarget: newExploreFixtureTarget("", "high"), log: log} }
 	case "double-apply":
 		return func() Target { return newExploreBillingTarget("double-apply") }
 	case "double-apply-lost-rejected":
@@ -281,7 +281,7 @@ const append = (path, lines) => {
 // The Go driver's advr2Explore, line for line.
 function lostOpened(mutant, log) {
   return () => {
-    const target = newTarget(mutant, 'low');
+    const target = newTarget(mutant, 'high');
     let seed = '';
     let opened = 0;
     let lost = new Set();

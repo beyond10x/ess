@@ -177,13 +177,13 @@ func advrNew(name string) func() Target {
 	case "retry":
 		return func() Target { return newExploreRetryTarget("") }
 	case "stale":
-		return func() Target { return newExploreFixtureTarget("stale-read", "low") }
+		return func() Target { return newExploreFixtureTarget("stale-read", "high") }
 	case "stale-lost-rejected":
-		return func() Target { return &advrTarget{exploreFixtureTarget: newExploreFixtureTarget("stale-read", "low"), mode: name} }
+		return func() Target { return &advrTarget{exploreFixtureTarget: newExploreFixtureTarget("stale-read", "high"), mode: name} }
 	case "correct":
-		return func() Target { return newExploreFixtureTarget("", "low") }
+		return func() Target { return newExploreFixtureTarget("", "high") }
 	default:
-		return func() Target { return &advrTarget{exploreFixtureTarget: newExploreFixtureTarget("", "low"), mode: name} }
+		return func() Target { return &advrTarget{exploreFixtureTarget: newExploreFixtureTarget("", "high"), mode: name} }
 	}
 }
 
@@ -256,7 +256,7 @@ const version = (token) => {
 // The explore fixture target under one of the modes the Go driver lists.
 function wrapped(mode) {
   return () => {
-    const target = newTarget(mode === 'stale-lost-rejected' ? 'stale-read' : '', 'low');
+    const target = newTarget(mode === 'stale-lost-rejected' ? 'stale-read' : '', 'high');
     let current = 0;
     let snapshot = [];
     let snapAt = 0;
@@ -320,9 +320,9 @@ function advrNew(name) {
     case 'retry':
       return () => newRetryTarget('');
     case 'stale':
-      return () => newTarget('stale-read', 'low');
+      return () => newTarget('stale-read', 'high');
     case 'correct':
-      return () => newTarget('', 'low');
+      return () => newTarget('', 'high');
     default:
       return wrapped(name);
   }
