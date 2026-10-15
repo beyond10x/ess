@@ -1779,3 +1779,294 @@ fn concurrent_exploration_arranges_external_branches_and_catches_a_backend_depen
         assert_eq!(lane.problems["cannot-arrange-allowed"], "none");
     }
 }
+
+// ---- the input and events a history records (`ess-history/3`, beyond10x/ess#576) ---------------
+
+/// The digest the committed `history2/` documents carry.
+fn history2_digest() -> ess_conformance::history::SpecDigest {
+    ess_conformance::history::SpecDigest::new("ab".repeat(32)).unwrap()
+}
+
+fn history2(name: &str) -> Vec<u8> {
+    std::fs::read(fixture("history2").join(name)).expect("the history2 fixture is committed")
+}
+
+/// The old-reader compatibility case: an `ess-history/1` or `ess-history/2` document a writer wrote
+/// before `ess-history/3` existed reads, selects its own format again and writes back byte for
+/// byte, and the retained format 1 reader refuses every later format by its `format` alone.
+#[test]
+fn an_older_history_reads_and_writes_back_unchanged_and_the_format1_reader_refuses_later_formats() {
+    use ess_conformance::history::{read, read_format1, HistoryFormat, HistoryRefusal};
+    let digest = history2_digest();
+    for (name, format) in [
+        ("written-format1.json", HistoryFormat::EssHistory1),
+        ("written.json", HistoryFormat::EssHistory2),
+    ] {
+        let bytes = history2(name);
+        let bytes = bytes.strip_suffix(b"\n").unwrap_or(&bytes);
+        let history = read(bytes, &digest).unwrap_or_else(|refusal| panic!("{name}: {refusal}"));
+        assert_eq!(history.format, format, "{name}");
+        assert_eq!(
+            HistoryFormat::for_operations(&history.operations),
+            format,
+            "{name}"
+        );
+        assert_eq!(serde_json::to_vec(&history).unwrap(), bytes, "{name}");
+    }
+    let format1 = history2("written-format1.json");
+    let text = String::from_utf8(format1).unwrap();
+    let text = text.trim_end();
+    assert!(read_format1(text.as_bytes(), &history2_digest()).is_ok());
+    for later in ["ess-history/2", "ess-history/3"] {
+        let relabelled = text.replace(
+            "\"format\":\"ess-history/1\"",
+            &format!("\"format\":\"{later}\""),
+        );
+        assert_ne!(relabelled, text);
+        assert_eq!(
+            read_format1(relabelled.as_bytes(), &digest).unwrap_err(),
+            HistoryRefusal::UnsupportedFormat {
+                found: Some(later.to_owned())
+            },
+            "{later}"
+        );
+    }
+}
+/// `calc.core`: one command and no entity, the shape of the model beyond10x/ess#576 was found on.
+fn calc_spec(scratch: &Path) -> PathBuf {
+    let path = scratch.join("calc.yaml");
+    std::fs::write(
+        &path,
+        "format: ess/6
+system: calc
+version: v1
+domains:
+  - calc.core
+
+domain: calc.core
+
+summary: A check that answers big or small, over no entity at all.
+
+actors:
+  - name: calc.core.Caller
+    may:
+      - calc.core.Check
+
+commands:
+  - name: calc.core.Check
+    input:
+      - name: n
+        type: Integer
+    outcomes:
+      - name: big
+        when: n >= 10
+        emits:
+          - calc.core.Big
+        payload:
+          calc.core.Big:
+            n: input.n
+      - name: small
+        emits:
+          - calc.core.Small
+        payload:
+          calc.core.Small:
+            n: input.n
+
+events:
+  - name: calc.core.Big
+    fields:
+      - name: n
+        type: Integer
+  - name: calc.core.Small
+    fields:
+      - name: n
+        type: Integer
+",
+    )
+    .unwrap();
+    path
+}
+
+fn calc_cases() -> Value {
+    serde_json::json!([
+        {"name": "calc", "target": "calc", "options": {"seeds": SEEDS}},
+        {"name": "wrong-outcome", "target": "calc", "mutant": "wrong-outcome", "options": {"seeds": SEEDS}},
+        {"name": "wrong-events", "target": "calc", "mutant": "wrong-events", "options": {"seeds": SEEDS}},
+    ])
+}
+
+/// beyond10x/ess#576, finding 1: on a model without entities, a history that records each call's
+/// input and published events lets `check-history` refuse an answer that is a declared outcome but
+/// not the one the input takes, and one that publishes events its branch does not declare.
+#[test]
+fn check_history_holds_each_answer_to_its_recorded_input_and_events_on_a_model_without_entities() {
+    let scratch = tempfile::tempdir().expect("a scratch directory");
+    let spec = calc_spec(scratch.path());
+    let (typescript, go) = walk_concurrent(scratch.path(), &spec, &calc_cases());
+    for name in ["calc", "wrong-outcome", "wrong-events"] {
+        assert_eq!(
+            typescript.histories[name], go.histories[name],
+            "`{name}`: the TypeScript and Go histories differ"
+        );
+        assert_eq!(result(&typescript, name), result(&go, name), "`{name}`");
+    }
+    let digest = ess_conformance::history::SpecDigest::new(
+        serde_json::from_str::<Value>(
+            &std::fs::read_to_string(
+                emit(spec.to_str().unwrap(), "go", &scratch.path().join("digest"))
+                    .join("suite.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap()["provenance"]["spec_digest"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
+    for lane in [&typescript, &go] {
+        for name in ["wrong-outcome", "wrong-events"] {
+            let planted = result(lane, name);
+            println!(
+                "{name}: {} violation(s) of {SEEDS}; first failing seed {}",
+                count(planted, "violations"),
+                planted["failure"]["seed"]
+            );
+            assert!(count(planted, "violations") >= 1, "{planted}");
+        }
+        let correct = result(lane, "calc");
+        assert_eq!(count(correct, "linearizable"), SEEDS, "{correct}");
+        assert_eq!(lane.problems["calc"], "none");
+        // Every history is `ess-history/3`, every call records its input, every answered call its
+        // events, and each is written in the reader's own spelling.
+        assert_eq!(lane.histories["calc"].len() as u64, SEEDS);
+        for (seed, bytes) in &lane.histories["calc"] {
+            let history = ess_conformance::history::read(bytes, &digest)
+                .unwrap_or_else(|refusal| panic!("seed {seed} is refused: {refusal}"));
+            assert_eq!(&serde_json::to_vec(&history).unwrap(), bytes, "seed {seed}");
+            let document: Value = serde_json::from_slice(bytes).unwrap();
+            assert_eq!(document["format"], "ess-history/3", "seed {seed}");
+            for operation in document["operations"].as_array().unwrap() {
+                assert!(operation["input"].is_object(), "seed {seed}: {operation}");
+                assert_eq!(
+                    operation["events"].is_array(),
+                    operation["completion"] == "Returned",
+                    "seed {seed}: {operation}"
+                );
+            }
+        }
+    }
+}
+
+/// An operation of `ess-history/3` carries its input and its events, reads and writes back byte for
+/// byte, and is held to the format: neither field in a lower format, neither written `null`, and no
+/// events on a call that never answered.
+#[test]
+fn an_ess_history_3_operation_records_its_input_and_events_and_the_reader_holds_them_to_the_format()
+{
+    use ess_conformance::history::{read, read_format1, HistoryFormat, HistoryRefusal, Node};
+    let digest = history2_digest();
+    let document = |format: &str, operation: &str| {
+        format!(
+            r#"{{"format":"{format}","history_id":"00000000-0000-4000-8000-000000000001","spec_digest":"{}","seed":1,"clients":1,"operations":[{operation}]}}"#,
+            "ab".repeat(32)
+        )
+    };
+    let returned = r#"{"operation_id":"00000000-0000-4000-8000-000000000002","client":0,"command":"calc.core.Check","subject_key":"","invoked_at":1,"returned_at":2,"completion":"Returned","outcome":"big","input":{"n":100,"note":null,"tag":{"a":"x","b":[true]}},"events":["calc.core.Big"]}"#;
+    let bytes = document("ess-history/3", returned);
+    let history = read(bytes.as_bytes(), &digest).unwrap_or_else(|refusal| panic!("{refusal}"));
+    assert_eq!(history.format, HistoryFormat::EssHistory3);
+    assert_eq!(
+        HistoryFormat::for_operations(&history.operations),
+        HistoryFormat::EssHistory3
+    );
+    let operation = &history.operations[0];
+    let input = operation.input.as_ref().expect("the input is read");
+    assert_eq!(input["note"], Node::Null);
+    assert_eq!(input["n"], serde_json::from_str::<Node>("100").unwrap());
+    assert_eq!(
+        operation
+            .events
+            .as_ref()
+            .expect("the events are read")
+            .iter()
+            .map(|name| name.as_str())
+            .collect::<Vec<_>>(),
+        ["calc.core.Big"]
+    );
+    assert_eq!(serde_json::to_vec(&history).unwrap(), bytes.as_bytes());
+
+    // A lower format carries neither field, on the wire or written.
+    for format in ["ess-history/1", "ess-history/2"] {
+        let refused = read(document(format, returned).as_bytes(), &digest).unwrap_err();
+        assert_eq!(refused.code(), "history.malformed", "{format}: {refused}");
+        assert!(
+            refused.to_string().contains("write `ess-history/3`"),
+            "{format}: {refused}"
+        );
+        let mut lowered = history.clone();
+        lowered.format = if format == "ess-history/1" {
+            HistoryFormat::EssHistory1
+        } else {
+            HistoryFormat::EssHistory2
+        };
+        assert!(
+            serde_json::to_vec(&lowered).is_err(),
+            "{format} was written"
+        );
+    }
+    // Absent where nothing was recorded, never `null`, and of its one shape.
+    for (from, to, needle) in [
+        (
+            r#""input":{"n":100,"note":null,"tag":{"a":"x","b":[true]}}"#,
+            r#""input":null"#,
+            "`operations[0].input` is `null`",
+        ),
+        (
+            r#""events":["calc.core.Big"]"#,
+            r#""events":null"#,
+            "`operations[0].events` is `null`",
+        ),
+        (
+            r#""input":{"n":100,"note":null,"tag":{"a":"x","b":[true]}}"#,
+            r#""input":[100]"#,
+            "",
+        ),
+        (r#""events":["calc.core.Big"]"#, r#""events":[""]"#, ""),
+        (
+            r#""events":["calc.core.Big"]"#,
+            r#""events":"calc.core.Big""#,
+            "",
+        ),
+    ] {
+        let changed = returned.replace(from, to);
+        assert_ne!(changed, returned);
+        let refused = read(document("ess-history/3", &changed).as_bytes(), &digest).unwrap_err();
+        assert_eq!(refused.code(), "history.malformed", "{to}: {refused}");
+        assert!(refused.to_string().contains(needle), "{to}: {refused}");
+    }
+    // A call that never answered published nothing anyone saw; it still sent its input.
+    let indeterminate = returned.replace(
+        r#""returned_at":2,"completion":"Returned","outcome":"big","#,
+        r#""completion":"Indeterminate","#,
+    );
+    assert_eq!(
+        read(
+            document("ess-history/3", &indeterminate).as_bytes(),
+            &digest
+        )
+        .unwrap_err(),
+        HistoryRefusal::IndeterminateWithEvents {
+            operation_id: "00000000-0000-4000-8000-000000000002".to_owned()
+        }
+    );
+    let sent = indeterminate.replace(r#","events":["calc.core.Big"]"#, "");
+    let read_back = read(document("ess-history/3", &sent).as_bytes(), &digest).unwrap();
+    assert!(read_back.operations[0].input.is_some());
+    // The retained format 1 reader refuses it by its format.
+    assert_eq!(
+        read_format1(bytes.as_bytes(), &digest).unwrap_err(),
+        HistoryRefusal::UnsupportedFormat {
+            found: Some("ess-history/3".to_owned())
+        }
+    );
+}

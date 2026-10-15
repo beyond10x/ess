@@ -1137,6 +1137,11 @@ fn located(refusal: HistoryRefusal, origins: &[(usize, String)]) -> ImportRefusa
         HistoryRefusal::IndeterminateWithRows { operation_id } => {
             (by_id(operation_id), Some("rows"))
         }
+        // An adapter maps no `events` (`ess-history/3`), so an imported operation never carries
+        // one; named here so the match stays total.
+        HistoryRefusal::IndeterminateWithEvents { operation_id } => {
+            (by_id(operation_id), Some("events"))
+        }
         HistoryRefusal::RetryOfUnknown { operation_id, .. } => {
             (by_id(operation_id), Some("retry_of"))
         }

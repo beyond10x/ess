@@ -211,7 +211,10 @@ sequential-only: `exploreConcurrent` refuses `restartEvery`.
 ## Concurrent histories
 
 `exploreConcurrent` drives fresh targets from two to four clients at once and writes each run as
-an `ess-history/1` document, one per seed, into `out`. It does not judge them itself: it runs
+an `ess-history/3` document, one per seed, into `out`: every command call with the input it
+sent, and every answered one with the name of every event its answer published, in order, so
+`ess` holds an answer to its input and to the events its branch declares, on a model without
+entities too. It does not judge them itself: it runs
 `ess verify conform check-history --path <path>` on each and reports the verdict, and for a
 violation the checker's report with its shrunk history. `ess` must be on `PATH`; without it the
 call throws `NO_ESS`, and nothing is skipped.

@@ -3423,6 +3423,12 @@ type exploreOperation struct {
 	rows []string
 	// decisionTime is the instant the call's decision observed, or nil where none was observed.
 	decisionTime *DecisionInstant
+	// input is what a command's call sent, copied when it was invoked, written as `input`
+	// (`ess-history/3`); nil for a read.
+	input Row
+	// events is the name of every event a returned command published, in the order published,
+	// written as `events` (`ess-history/3`); nil where the call did not answer.
+	events []string
 }
 
 type exploreFlight struct {
@@ -3581,7 +3587,8 @@ func (h *exploreRecording) reserve(client int, command *exploreCommand, step *ex
 	}
 	h.clock++
 	index := len(h.operations)
-	h.operations = append(h.operations, exploreOperation{client: client, command: command.name, subjectKey: subject, invokedAt: h.clock, creates: creates})
+	input, _ := exploreCopy(map[string]any(step.input)).(map[string]any)
+	h.operations = append(h.operations, exploreOperation{client: client, command: command.name, subjectKey: subject, invokedAt: h.clock, creates: creates, input: Row(input)})
 	return index
 }
 
@@ -3842,6 +3849,16 @@ func (h *exploreRecording) complete(flight *exploreFlight) (Node, string, error)
 	if operation.outcome == "" {
 		operation.outcome = exploreUndeclared
 	}
+	// What it published, by name, for `check-history` to hold to the branch's `emits:`. A nameless
+	// event is written under a name no event can have, as a nameless outcome is.
+	operation.events = []string{}
+	for _, event := range result.DirectEvents {
+		name := event.Event
+		if name == "" {
+			name = exploreUndeclared
+		}
+		operation.events = append(operation.events, name)
+	}
 	if id == nil {
 		return nil, "", nil
 	}
@@ -3857,10 +3874,15 @@ func exploreUUID(n uint64) string {
 
 // exploreQuote is a JSON string as `ess` writes one: no HTML escaping.
 func exploreQuote(text string) string {
+	return exploreJSON(text)
+}
+
+// exploreJSON is a JSON value as `ess` writes one: compact, object keys sorted, no HTML escaping.
+func exploreJSON(value any) string {
 	var out strings.Builder
 	encoder := json.NewEncoder(&out)
 	encoder.SetEscapeHTML(false)
-	_ = encoder.Encode(text)
+	_ = encoder.Encode(value)
 	return strings.TrimSuffix(out.String(), "\n")
 }
 
@@ -3868,8 +3890,9 @@ func exploreQuote(text string) string {
 // declaration order, an absent `returned_at` and `outcome` for a call that never answered.
 func exploreHistoryBytes(digest string, seed, clients int, operations []exploreOperation) []byte {
 	written := []string{}
-	// format is `ess-history/2` exactly when a written operation records a decision time.
-	format := "ess-history/1"
+	// format is the lowest that carries what the written operations record: `ess-history/3` where
+	// one records its input or its events, `ess-history/2` where one records a decision time.
+	timed, inputs := false, false
 	kept := []exploreOperation{}
 	// position is where each written operation stands among the written ones, from 1, for a retry
 	// naming it.
@@ -3913,10 +3936,28 @@ func exploreHistoryBytes(digest string, seed, clients int, operations []exploreO
 			members = append(members, [2]string{"retry_of", exploreQuote(exploreUUID(uint64(original)))})
 		}
 		if operation.decisionTime != nil {
-			format = "ess-history/2"
+			timed = true
 			members = append(members, [2]string{"decision_time", exploreQuote(operation.decisionTime.String())})
 		}
+		if operation.input != nil {
+			inputs = true
+			members = append(members, [2]string{"input", exploreJSON(map[string]any(operation.input))})
+		}
+		if operation.returned && operation.events != nil {
+			inputs = true
+			quoted := make([]string, 0, len(operation.events))
+			for _, event := range operation.events {
+				quoted = append(quoted, exploreQuote(event))
+			}
+			members = append(members, [2]string{"events", "[" + strings.Join(quoted, ",") + "]"})
+		}
 		written = append(written, exploreJSONObject(members))
+	}
+	format := "ess-history/1"
+	if inputs {
+		format = "ess-history/3"
+	} else if timed {
+		format = "ess-history/2"
 	}
 	return []byte(exploreJSONObject([][2]string{
 		{"format", exploreQuote(format)},

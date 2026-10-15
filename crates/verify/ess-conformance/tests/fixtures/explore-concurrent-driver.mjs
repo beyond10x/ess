@@ -37,7 +37,9 @@ for (const one of cases) {
             ? () => newRetryTarget(one.mutant ?? '')
             : one.target === 'pair'
               ? () => newPairTarget(one.mutant ?? '')
-              : () => newTarget(one.mutant ?? '', 'low');
+              : // `high`: a score from 50 to 60 takes the branch declared first, as
+                // `ess check-history` decides it once a history records the score.
+                () => newTarget(one.mutant ?? '', 'high');
       const result = await exploreConcurrent(make, {
         ...(one.options ?? {}),
         path: process.env.ESS_CONCURRENT_SPEC,

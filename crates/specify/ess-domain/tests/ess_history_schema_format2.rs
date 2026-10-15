@@ -67,6 +67,6 @@ fn the_schema_refuses_what_the_reader_refuses_about_decision_time() {
     );
 
     let mut future = written("written.json");
-    future["format"] = json!("ess-history/3");
+    future["format"] = json!("ess-history/4");
     assert!(!validator.is_valid(&future), "an unknown future major");
 }

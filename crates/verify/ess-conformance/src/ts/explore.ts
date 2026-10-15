@@ -3061,6 +3061,16 @@ export interface HistoryOperation {
   rows?: string[];
   /** The instant the call's decision observed; absent where none was observed. */
   decisionTime?: string;
+  /**
+   * What a command's call sent, copied when it was invoked, written as `input` (`ess-history/3`);
+   * absent for a read.
+   */
+  input?: Row;
+  /**
+   * The name of every event a returned command published, in the order published, written as
+   * `events` (`ess-history/3`); absent where the call did not answer.
+   */
+  events?: string[];
 }
 
 type Operation = HistoryOperation;
@@ -3250,6 +3260,7 @@ function reserve(h: Recording, client: number, command: Command, step: Step): nu
     retryOf: 0,
     creates,
     source: '',
+    input: structuredClone(step.input),
   });
   return index;
 }
@@ -3546,6 +3557,11 @@ async function completeCall(
   }
   operation.returnedAt = h.clock;
   operation.outcome = taken === '' ? UNDECLARED : taken;
+  // What it published, by name, for `check-history` to hold to the branch's `emits:`. A nameless
+  // event is written under a name no event can have, as a nameless outcome is.
+  operation.events = (result.directEvents ?? []).map((event) =>
+    typeof event.event === 'string' && event.event !== '' ? event.event : UNDECLARED,
+  );
   if (created === null) return null;
   if (operation.subjectKey === '') operation.subjectKey = created.id;
   return created;
@@ -3567,8 +3583,9 @@ function jsonObject(members: [string, string][]): string {
 
 /**
  * The history in the one spelling `ess` reads and writes: compact, keys in declaration order, an
- * absent `returned_at` and `outcome` for a call that never answered, and `ess-history/2` exactly
- * when a written operation records a `decision_time`.
+ * absent `returned_at` and `outcome` for a call that never answered, and the lowest format that
+ * carries what the written operations record: `ess-history/3` where one records its `input` or
+ * `events`, `ess-history/2` where one records a `decision_time`.
  */
 export function historyText(
   digest: string,
@@ -3576,8 +3593,10 @@ export function historyText(
   clients: number,
   operations: HistoryOperation[],
 ): string {
-  // `ess-history/2` exactly when a written operation records a decision time.
-  let format = 'ess-history/1';
+  // Whether a written operation records a decision time, and whether one records its input or
+  // its events.
+  let timed = false;
+  let inputs = false;
   // Where each written operation stands among the written ones, from 1, for a retry naming it.
   const position = new Map<number, number>();
   let kept = 0;
@@ -3615,11 +3634,20 @@ export function historyText(
       members.push(['retry_of', quote(uuidOf(BigInt(original)))]);
     }
     if (operation.decisionTime !== undefined) {
-      format = 'ess-history/2';
+      timed = true;
       members.push(['decision_time', quote(operation.decisionTime)]);
+    }
+    if (operation.input !== undefined) {
+      inputs = true;
+      members.push(['input', goMarshal(operation.input, false)]);
+    }
+    if (operation.returnedAt !== undefined && operation.events !== undefined) {
+      inputs = true;
+      members.push(['events', `[${operation.events.map(quote).join(',')}]`]);
     }
     return jsonObject(members);
   });
+  const format = inputs ? 'ess-history/3' : timed ? 'ess-history/2' : 'ess-history/1';
   return jsonObject([
     ['format', quote(format)],
     ['history_id', quote(uuidOf(BigInt(seed) & 0xffffffffffffn))],

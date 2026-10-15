@@ -1,13 +1,16 @@
-//! `ess-history/1` and `ess-history/2`: one recorded concurrent run, as a document the checker
-//! reads.
+//! `ess-history/1`, `ess-history/2` and `ess-history/3`: one recorded concurrent run, as a document
+//! the checker reads.
 //!
 //! A concurrent runner drives an adopter's target from several clients at once and records, per
 //! operation, which client called which command on which subject, when the call was invoked, when
 //! it returned and what it answered. `ess-history/2` adds one optional operation field,
 //! `decision_time`: the UTC instant the command's decision observed
-//! ([`crate::occurrence_clock`], beyond10x/ess#244). A writer selects format 2 exactly when an
-//! operation records one ([`HistoryFormat::for_operations`]) and refuses to write format 1 with one,
-//! so a document written before the field existed keeps its bytes and its meaning. The document is
+//! ([`crate::occurrence_clock`], beyond10x/ess#244). `ess-history/3` adds two more, `input` (what
+//! the client sent) and `events` (the names of the events the answer published, in order), so the
+//! checker holds an answer to the input it was given and to the events its branch declares
+//! (beyond10x/ess#576). A writer selects the lowest format its operations need
+//! ([`HistoryFormat::for_operations`]) and refuses to write a lower one, so a document written
+//! before a field existed keeps its bytes and its meaning. The document is
 //! declared by `models/concurrent-history/`;
 //! the types here are that declaration in Rust, and `crates/edge/ess-xtask/tests/history_model.rs`
 //! fails when the two disagree in a field or an enum value. `schemas/ess-history.schema.json` is
@@ -19,14 +22,15 @@
 //!    level, the document or an operation written as a JSON array rather than an object, a value
 //!    outside its type, a number written with a decimal point or an exponent, a `decision_time`
 //!    that is not the one spelling of an instant, written `null`, or carried by an
-//!    `ess-history/1` document ([`HistoryRefusal::Malformed`], the detail naming which) — or
-//!    another `format`, a future major included. [`read_format1`] is the retained format 1 reader: it
-//!    refuses `ess-history/2` by its format, before any operation is read;
+//!    `ess-history/1` document, or an `input` or `events` written `null` or carried by a document
+//!    below `ess-history/3` ([`HistoryRefusal::Malformed`], the detail naming which) — or another
+//!    `format`, a future major included. [`read_format1`] is the retained format 1 reader: it
+//!    refuses `ess-history/2` and `ess-history/3` by their format, before any operation is read;
 //! 2. a history recorded against a specification other than the one being checked, before any
 //!    operation is looked at;
-//! 3. an operation whose completion disagrees with its instants, its outcome or its rows, one on a
-//!    client the history does not count, two operations with one identity (compared without regard
-//!    to hexadecimal case), and a UUID not written in lower case.
+//! 3. an operation whose completion disagrees with its instants, its outcome, its rows or its
+//!    events, one on a client the history does not count, two operations with one identity
+//!    (compared without regard to hexadecimal case), and a UUID not written in lower case.
 //!
 //! A [`Completion::Returned`] operation carries both its return instant and its outcome. An
 //! operation with no answer is [`Completion::Indeterminate`]. It carries no return instant and
@@ -44,11 +48,12 @@
 //! [`read`] is the only way from bytes to a [`History`]: the public types serialize and do not
 //! deserialize, so no caller can obtain one that skipped these checks.
 //!
-//! An `Optional` field may be absent or `null`; both read as `None` — except `decision_time`, which
-//! is absent where no decision was observed and is never `null`. Everything else has one
-//! spelling, and one document reads to one value whatever the order of its keys.
+//! An `Optional` field may be absent or `null`; both read as `None` — except `decision_time`,
+//! `input` and `events`, which are absent where nothing was recorded and are never `null`.
+//! Everything else has one spelling, and one document reads to one value whatever the order of its
+//! keys.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use serde::de::{self, Deserializer};
@@ -57,13 +62,18 @@ use serde::{Deserialize, Serialize};
 
 pub use crate::occurrence_clock::DecisionInstant;
 pub use ess_primitives::evidence::SpecDigest;
+pub use ess_primitives::node::Node;
 
 /// The `format` of a history whose operations record no decision time, which every writer before
 /// `ess-history/2` wrote.
 pub const HISTORY_FORMAT: &str = "ess-history/1";
 
-/// The `format` of a history at least one of whose operations records a `decision_time`.
+/// The `format` of a history at least one of whose operations records a `decision_time`, and none
+/// an `input` or `events`.
 pub const HISTORY_FORMAT_2: &str = "ess-history/2";
+
+/// The `format` of a history at least one of whose operations records its `input` or its `events`.
+pub const HISTORY_FORMAT_3: &str = "ess-history/3";
 
 /// The largest integer an `ess-history/1` document carries: 2^53 − 1.
 ///
@@ -80,14 +90,20 @@ pub enum HistoryFormat {
     /// `ess-history/2`: an operation may carry `decision_time`.
     #[serde(rename = "ess-history/2")]
     EssHistory2,
+    /// `ess-history/3`: an operation may carry `input` and `events` as well.
+    #[serde(rename = "ess-history/3")]
+    EssHistory3,
 }
 
 impl HistoryFormat {
-    /// The format a writer selects for `operations`: `ess-history/2` exactly when one of them
-    /// records a decision time.
+    /// The format a writer selects for `operations`, the lowest that carries them:
+    /// `ess-history/3` exactly when one of them records its input or its events, otherwise
+    /// `ess-history/2` exactly when one records a decision time.
     #[must_use]
     pub fn for_operations(operations: &[Operation]) -> Self {
-        if operations
+        if operations.iter().any(Operation::records_format3) {
+            Self::EssHistory3
+        } else if operations
             .iter()
             .any(|operation| operation.decision_time.is_some())
         {
@@ -103,11 +119,12 @@ impl HistoryFormat {
         match self {
             Self::EssHistory1 => HISTORY_FORMAT,
             Self::EssHistory2 => HISTORY_FORMAT_2,
+            Self::EssHistory3 => HISTORY_FORMAT_3,
         }
     }
 
     fn named(text: &str) -> Option<Self> {
-        [Self::EssHistory1, Self::EssHistory2]
+        [Self::EssHistory1, Self::EssHistory2, Self::EssHistory3]
             .into_iter()
             .find(|format| format.as_str() == text)
     }
@@ -229,7 +246,8 @@ pub enum Verdict {
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct History {
-    /// [`HistoryFormat::EssHistory2`] where an operation records a decision time, otherwise
+    /// [`HistoryFormat::EssHistory3`] where an operation records its input or its events,
+    /// [`HistoryFormat::EssHistory2`] where one records a decision time, otherwise
     /// [`HistoryFormat::EssHistory1`] ([`HistoryFormat::for_operations`]).
     pub format: HistoryFormat,
     /// The run's identity.
@@ -301,10 +319,44 @@ pub struct Operation {
     /// as an instant. An `Indeterminate` operation carries one when its decision began.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub decision_time: Option<DecisionInstant>,
+    /// The command's input as the client sent it (`ess-history/3`): every input field by name, its
+    /// value as sent, the field naming the subject included.
+    ///
+    /// The checker steps the operation with exactly this input, where without it it asks whether
+    /// some candidate input explains the answer ([`crate::linearize`]). Absent on a read and on an
+    /// operation whose writer recorded none; never `null`. A retry carries the input its request
+    /// sent, which is its original's. An integral number below 2^53 is written as the integer,
+    /// as the Go and TypeScript writers write it ([`integral_numbers`]).
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "integral_numbers"
+    )]
+    pub input: Option<BTreeMap<String, Node>>,
+    /// The name of every event the answer published, in the order published (`ess-history/3`).
+    ///
+    /// Written only on a `Returned` command: a call that never answered published nothing anyone
+    /// saw. The checker holds it to the `emits:` of the branch the step takes. Absent on a read
+    /// and on an operation whose writer recorded none; never `null`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub events: Option<Vec<QualifiedName>>,
 }
 
 impl Serialize for History {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        if self.format != HistoryFormat::EssHistory3 {
+            if let Some(operation) = self
+                .operations
+                .iter()
+                .find(|operation| operation.records_format3())
+            {
+                return Err(ser::Error::custom(format!(
+                    "`{}` carries no `input` and no `events`, and operation {} records one; write \
+                     `{HISTORY_FORMAT_3}`",
+                    self.format.as_str(),
+                    operation.operation_id.as_str()
+                )));
+            }
+        }
         if self.format == HistoryFormat::EssHistory1 {
             if let Some(operation) = self
                 .operations
@@ -371,6 +423,8 @@ struct OperationWire {
     rows: Option<Vec<String>>,
     retry_of: Option<Uuid>,
     decision_time: Option<DecisionInstant>,
+    input: Option<BTreeMap<String, Node>>,
+    events: Option<Vec<QualifiedName>>,
 }
 
 impl From<OperationWire> for Operation {
@@ -387,6 +441,8 @@ impl From<OperationWire> for Operation {
             rows: wire.rows,
             retry_of: wire.retry_of,
             decision_time: wire.decision_time,
+            input: wire.input,
+            events: wire.events,
         }
     }
 }
@@ -403,6 +459,12 @@ pub enum ReturnBound {
 }
 
 impl Operation {
+    /// Whether the operation records a field only `ess-history/3` carries: its input or its events.
+    #[must_use]
+    pub fn records_format3(&self) -> bool {
+        self.input.is_some() || self.events.is_some()
+    }
+
     /// When this operation is read as having returned (design decision 4).
     ///
     /// An admitted operation is `Returned` with a return instant or `Indeterminate` without one,
@@ -482,6 +544,12 @@ pub enum HistoryRefusal {
         /// The operation.
         operation_id: String,
     },
+    /// An operation is `Indeterminate` and carries `events`: a call that never answered published
+    /// nothing anyone saw.
+    IndeterminateWithEvents {
+        /// The operation.
+        operation_id: String,
+    },
     /// An operation is `Returned` and carries no outcome.
     ReturnedWithoutOutcome {
         /// The operation.
@@ -519,16 +587,17 @@ impl HistoryRefusal {
 crate::authored::diagnostic_catalogue! {
     impl HistoryRefusal => &'static str {
         Self::Malformed { .. } => "history.malformed",
-            "The bytes are not an `ess-history/1` or `ess-history/2` document: not JSON, an \
-             unknown or missing field, a value outside its declared type, or a `decision_time` \
-             that is `null`, not the one spelling of an instant, or in an `ess-history/1` \
-             document.",
+            "The bytes are not an `ess-history/1`, `ess-history/2` or `ess-history/3` document: \
+             not JSON, an unknown or missing field, a value outside its declared type, a \
+             `decision_time` that is `null`, not the one spelling of an instant, or in an \
+             `ess-history/1` document, or an `input` or `events` that is `null` or in a document \
+             below `ess-history/3`.",
             "Write the document as `schemas/ess-history.schema.json` describes; the detail names \
              the field or the position.";
         Self::UnsupportedFormat { .. } => "history.unsupported-format",
             "The `format` is absent, or names a format this build does not read.",
-            "Write `format: ess-history/1`, or `ess-history/2` where an operation records a \
-             `decision_time`.";
+            "Write `format: ess-history/1`, `ess-history/2` where an operation records a \
+             `decision_time`, or `ess-history/3` where one records its `input` or `events`.";
         Self::SpecDigestMismatch { .. } => "history.spec-digest-mismatch",
             "The history was recorded against another specification.",
             "Check the history against the specification it was recorded against, or record it \
@@ -558,6 +627,10 @@ crate::authored::diagnostic_catalogue! {
             "An operation is `Indeterminate` and carries `rows`: a read that never answered \
              answered no rows.",
             "Drop `rows`, or mark the operation `Returned` if it did return.";
+        Self::IndeterminateWithEvents { .. } => "history.indeterminate-with-events",
+            "An operation is `Indeterminate` and carries `events`: a call that never answered \
+             published nothing anyone saw.",
+            "Drop `events`, or mark the operation `Returned` if it did return.";
         Self::ReturnedWithoutOutcome { .. } => "history.returned-without-outcome",
             "An operation is `Returned` and carries no outcome.",
             "Record the outcome the operation returned.";
@@ -585,7 +658,8 @@ impl fmt::Display for HistoryRefusal {
             ),
             Self::UnsupportedFormat { found: None } => write!(
                 formatter,
-                "{code}: no `format` string; expected `{HISTORY_FORMAT}` or `{HISTORY_FORMAT_2}`"
+                "{code}: no `format` string; expected `{HISTORY_FORMAT}`, `{HISTORY_FORMAT_2}` or \
+                 `{HISTORY_FORMAT_3}`"
             ),
             Self::SpecDigestMismatch { expected, found } => write!(
                 formatter,
@@ -627,6 +701,10 @@ impl fmt::Display for HistoryRefusal {
             Self::IndeterminateWithRows { operation_id } => write!(
                 formatter,
                 "{code}: operation {operation_id} is `Indeterminate` and carries `rows`"
+            ),
+            Self::IndeterminateWithEvents { operation_id } => write!(
+                formatter,
+                "{code}: operation {operation_id} is `Indeterminate` and carries `events`"
             ),
             Self::ReturnedWithoutOutcome { operation_id } => write!(
                 formatter,
@@ -712,8 +790,8 @@ fn in_range(field: impl FnOnce() -> String, value: u64) -> Result<(), HistoryRef
     }
 }
 
-/// Reads one `ess-history/1` or `ess-history/2` document recorded against the specification whose
-/// digest is `expected`.
+/// Reads one `ess-history/1`, `ess-history/2` or `ess-history/3` document recorded against the
+/// specification whose digest is `expected`.
 ///
 /// The format is decided first, the shape second, the digest third and each operation last, so a
 /// history recorded against another specification is refused by
@@ -724,12 +802,17 @@ pub fn read(bytes: &[u8], expected: &SpecDigest) -> Result<History, HistoryRefus
     read_admitting(
         bytes,
         expected,
-        &[HistoryFormat::EssHistory1, HistoryFormat::EssHistory2],
+        &[
+            HistoryFormat::EssHistory1,
+            HistoryFormat::EssHistory2,
+            HistoryFormat::EssHistory3,
+        ],
     )
 }
 
 /// The retained `ess-history/1` reader: [`read`] for a consumer that holds no decision-time
-/// authority. `ess-history/2` is refused by its format before any operation is read.
+/// authority. `ess-history/2` and `ess-history/3` are refused by their format before any operation
+/// is read.
 pub fn read_format1(bytes: &[u8], expected: &SpecDigest) -> Result<History, HistoryRefusal> {
     read_admitting(bytes, expected, &[HistoryFormat::EssHistory1])
 }
@@ -754,10 +837,26 @@ fn read_admitting(
         }
         _ => return Err(HistoryRefusal::UnsupportedFormat { found: None }),
     }
-    null_decision_time(bytes)?;
+    never_null(bytes)?;
     let ObjectOnly(wire): ObjectOnly<HistoryWire> =
         serde_json::from_slice(bytes).map_err(malformed)?;
     let history = History::from(wire);
+    if history.format != HistoryFormat::EssHistory3 {
+        if let Some(operation) = history
+            .operations
+            .iter()
+            .find(|operation| operation.records_format3())
+        {
+            return Err(HistoryRefusal::Malformed {
+                detail: format!(
+                    "operation {} records its `input` or `events`, which `{}` does not carry; \
+                     write `{HISTORY_FORMAT_3}`",
+                    operation.operation_id.as_str(),
+                    history.format.as_str()
+                ),
+            });
+        }
+    }
     if history.format == HistoryFormat::EssHistory1 {
         if let Some(operation) = history
             .operations
@@ -821,10 +920,11 @@ fn read_admitting(
     Ok(history)
 }
 
-/// Refuses an operation writing `decision_time` as `null`, which serde would read as absent.
+/// Refuses an operation writing `decision_time`, `input` or `events` as `null`, which serde would
+/// read as absent.
 ///
-/// Only the key's presence is read here; the operation's shape is the derived reader's.
-fn null_decision_time(bytes: &[u8]) -> Result<(), HistoryRefusal> {
+/// Only the keys' presence is read here; the operation's shape is the derived reader's.
+fn never_null(bytes: &[u8]) -> Result<(), HistoryRefusal> {
     #[derive(Deserialize)]
     struct Operations {
         #[serde(default)]
@@ -836,19 +936,23 @@ fn null_decision_time(bytes: &[u8]) -> Result<(), HistoryRefusal> {
     else {
         return Ok(());
     };
-    match operations.iter().position(|operation| {
-        operation
-            .get("decision_time")
-            .is_some_and(serde_json::Value::is_null)
-    }) {
-        Some(operation) => Err(HistoryRefusal::Malformed {
-            detail: format!(
-                "`operations[{operation}].decision_time` is `null`; leave it out where no decision \
-                 was observed"
-            ),
-        }),
-        None => Ok(()),
+    for (index, operation) in operations.iter().enumerate() {
+        for field in ["decision_time", "input", "events"] {
+            if operation.get(field).is_some_and(serde_json::Value::is_null) {
+                return Err(HistoryRefusal::Malformed {
+                    detail: format!(
+                        "`operations[{index}].{field}` is `null`; leave it out where {}",
+                        if field == "decision_time" {
+                            "no decision was observed"
+                        } else {
+                            "nothing was recorded"
+                        }
+                    ),
+                });
+            }
+        }
     }
+    Ok(())
 }
 
 /// Refuses a UUID written with upper-case hexadecimal.
@@ -904,6 +1008,59 @@ fn check(operation: &Operation, clients: u64) -> Result<(), HistoryRefusal> {
                 operation_id: operation_id(),
             })
         }
+        (Completion::Indeterminate, None) if operation.events.is_some() => {
+            Err(HistoryRefusal::IndeterminateWithEvents {
+                operation_id: operation_id(),
+            })
+        }
         (Completion::Returned, Some(_)) | (Completion::Indeterminate, None) => Ok(()),
+    }
+}
+
+/// [`MAX_INTEGER`] as a binary64, which carries it exactly (2^53 − 1).
+const MAX_INTEGER_F64: f64 = 9_007_199_254_740_991.0;
+
+/// Writes an operation's `input` in the one spelling every writer uses: a number whose binary64
+/// value is an integer of at most [`MAX_INTEGER`] in magnitude is written as that integer (`100`,
+/// never `100.0`), as Go's `encoding/json` and JavaScript's `JSON.stringify` write it; every other
+/// value is written as [`Node`] writes it.
+// serde hands a `serialize_with` function the field as declared, `&Option<_>`.
+#[allow(clippy::ref_option)]
+fn integral_numbers<S: Serializer>(
+    input: &Option<BTreeMap<String, Node>>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    fn spelled(value: serde_json::Value) -> serde_json::Value {
+        match value {
+            serde_json::Value::Number(number) => match number.as_f64() {
+                Some(float)
+                    if float.fract() == 0.0
+                        && float.abs() <= MAX_INTEGER_F64
+                        && !(float == 0.0 && float.is_sign_negative()) =>
+                {
+                    // The cast is exact: the value is integral and within 2^53 − 1.
+                    #[allow(clippy::cast_possible_truncation)]
+                    serde_json::Value::from(float as i64)
+                }
+                _ => serde_json::Value::Number(number),
+            },
+            serde_json::Value::Array(items) => {
+                serde_json::Value::Array(items.into_iter().map(spelled).collect())
+            }
+            serde_json::Value::Object(members) => serde_json::Value::Object(
+                members
+                    .into_iter()
+                    .map(|(key, value)| (key, spelled(value)))
+                    .collect(),
+            ),
+            other => other,
+        }
+    }
+    match input {
+        None => serializer.serialize_none(),
+        Some(input) => {
+            let value = serde_json::to_value(input).map_err(ser::Error::custom)?;
+            spelled(value).serialize(serializer)
+        }
     }
 }

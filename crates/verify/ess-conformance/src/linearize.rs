@@ -65,9 +65,20 @@
 //! never a pass by trying instants nobody recorded. `invoked_at` and `returned_at` are ordering
 //! coordinates and are never read as `now`.
 //!
-//! # What `ess-history/1` does not record, and how the search reads it
+//! # The input and the events an operation records
 //!
-//! An operation records its command, its subject and its outcome, and **not its input**. So the
+//! An `ess-history/3` operation records the input its client sent ([`Operation::input`]) and, where
+//! it answered, the name of every event the answer published ([`Operation::events`]). The search
+//! steps such an operation with exactly that input, and holds it to the events: an order whose step
+//! takes a branch publishing other events, or the same events in another order, explains nothing
+//! (beyond10x/ess#576). The answer, the input and the events together are what the sequential walk
+//! holds one step to; on a model without entities they are all a history says about a command.
+//! Payload values are not recorded and not compared.
+//!
+//! # What an operation without its input does not record, and how the search reads it
+//!
+//! An `ess-history/1` or `ess-history/2` operation, and an `ess-history/3` one whose writer recorded
+//! none, records its command, its subject and its outcome, and **not its input**. So the
 //! search asks whether *some* input explains it: the candidate inputs [`witness::candidates`] builds
 //! for the command from its declared input types and the literals its guards write — the same ones
 //! synthesis submits — with the field that names the subject set to the recorded `subject_key`.
@@ -78,13 +89,13 @@
 //! is discarded and cannot decide a later guard. Public native generated-value policies retain
 //! their concrete semantics.
 //!
-//! Because `ess-history/1` records no inputs, neither verdict is exact. A `Violation` says no
+//! Without a recorded input, neither verdict is exact. A `Violation` says no
 //! candidate input explains the history, and an input outside the candidates might have. A
 //! `Linearizable` says some candidate input explains every answer — not that the input the client
 //! actually sent does, so a fault that shows only in how an answer depends on its input (an amount
 //! refused that should have been accepted, say) can be judged `Linearizable`. The witness strategy
-//! is the same bounded one the synthesized suite already stands on; recording inputs is a change
-//! to the format, not to this checker.
+//! is the same bounded one the synthesized suite already stands on; recording inputs
+//! (`ess-history/3`) is what makes the verdict exact for an operation.
 //!
 //! # Views
 //!
@@ -545,25 +556,30 @@ fn split<'h>(ir: &'h EssIr, history: &'h History) -> Result<Split<'h>, CheckRefu
                 why: "ess-history/1 records text subject identities; this command requires nontext identities".into(),
             });
         }
-        if !inputs.contains_key(key) {
-            inputs.insert(key, candidates(ir, command)?);
-        }
         let subject = Node::Text(operation.subject_key.clone());
-        let inputs = inputs[key]
-            .iter()
-            .map(|input| {
-                let mut input = input.clone();
-                for field in supplied(command) {
-                    input.insert(field.to_owned(), subject.clone());
-                }
-                input
-            })
-            .fold(Vec::new(), |mut distinct, input| {
-                if !distinct.contains(&input) {
-                    distinct.push(input);
-                }
-                distinct
-            });
+        let inputs = if let Some(recorded) = &operation.input {
+            // `ess-history/3`: the input the client sent, and no other.
+            vec![recorded.clone()]
+        } else {
+            if !inputs.contains_key(key) {
+                inputs.insert(key, candidates(ir, command)?);
+            }
+            inputs[key]
+                .iter()
+                .map(|input| {
+                    let mut input = input.clone();
+                    for field in supplied(command) {
+                        input.insert(field.to_owned(), subject.clone());
+                    }
+                    input
+                })
+                .fold(Vec::new(), |mut distinct, input| {
+                    if !distinct.contains(&input) {
+                        distinct.push(input);
+                    }
+                    distinct
+                })
+        };
         let generated = Generated::Recorded(
             observed(command)
                 .map(|slot| (slot, subject.clone()))
@@ -765,6 +781,17 @@ fn step(
             };
             if !answers {
                 continue;
+            }
+            if let (Completion::Returned, Some(recorded)) =
+                (&operation.completion, &operation.events)
+            {
+                // `ess-history/3`: the branch publishes what the answer published, in order.
+                if !taken
+                    .published()
+                    .eq(recorded.iter().map(|name| name.as_str().to_owned()))
+                {
+                    continue;
+                }
             }
             let mut taken_now = held.taken.clone();
             if let Some(request) = &prepared.request {
@@ -1694,9 +1721,9 @@ fn judge(
 fn only(history: &History, keep: impl Fn(&Operation) -> bool) -> History {
     let mut kept = history.clone();
     kept.operations.retain(|operation| keep(operation));
-    // A part of a history written as `ess-history/2` is written as format 2 only while one of its
-    // operations still records a decision time.
-    if kept.format == HistoryFormat::EssHistory2 {
+    // A part of a history written as `ess-history/2` or `ess-history/3` is written in that format
+    // only while one of its operations still records what only that format carries.
+    if kept.format != HistoryFormat::EssHistory1 {
         kept.format = HistoryFormat::for_operations(&kept.operations);
     }
     kept
