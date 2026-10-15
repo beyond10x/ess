@@ -307,3 +307,547 @@ fn every_lost_update_race_shrinks_to_two_clients_and_four_operations_whatever_el
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+// ---- `ess-history/3`: the input and the events an operation records (beyond10x/ess#576) ---------
+
+/// Adversarial cases for `ess-history/3`, aimed at the reader's spelling rules for the two new
+/// fields and at what `check-history` does with a recorded input and recorded events.
+mod ess_history_3_adversary {
+    use super::*;
+    use ess_conformance::history::{HistoryFormat, Node};
+    use serde_json::{json, Value};
+
+    /// One command over no entity whose `big` branch publishes two events in a declared order, and
+    /// one whose branch is decided by whether an `Optional` input is defined.
+    const PROBE: &str = "format: ess/16
+system: probe
+version: v1
+domain: probe.core
+actors:
+  - {name: probe.core.Caller, may: [probe.core.Check, probe.core.Tag]}
+commands:
+  - name: probe.core.Check
+    input:
+      - {name: n, type: Integer}
+    outcomes:
+      - name: big
+        when: n >= 10
+        emits: [probe.core.Big, probe.core.Noted]
+        payload:
+          probe.core.Big: {n: input.n}
+          probe.core.Noted: {n: input.n}
+      - name: small
+        emits: [probe.core.Small]
+        payload:
+          probe.core.Small: {n: input.n}
+  - name: probe.core.Tag
+    input:
+      - {name: tag, type: Optional<String>}
+    outcomes:
+      - name: tagged
+        when: {tag: {defined: true}}
+        emits: [probe.core.Tagged]
+        payload:
+          probe.core.Tagged: {n: 1}
+      - name: plain
+        emits: [probe.core.Plain]
+        payload:
+          probe.core.Plain: {n: 1}
+events:
+  - name: probe.core.Big
+    fields:
+      - {name: n, type: Integer}
+  - name: probe.core.Noted
+    fields:
+      - {name: n, type: Integer}
+  - name: probe.core.Small
+    fields:
+      - {name: n, type: Integer}
+  - name: probe.core.Tagged
+    fields:
+      - {name: n, type: Integer}
+  - name: probe.core.Plain
+    fields:
+      - {name: n, type: Integer}
+";
+
+    fn probe() -> EssIr {
+        let raw = RawSpecFile::parse(PROBE).expect("the model parses");
+        let specification = Specification::assemble([(Source::new("probe.yaml"), raw)])
+            .unwrap_or_else(|errors| panic!("the model validates:\n{errors}"));
+        compile(&specification, &SourceMap::new())
+            .unwrap_or_else(|diagnostics| panic!("the model resolves:\n{diagnostics}"))
+    }
+
+    fn digest(ir: &EssIr) -> history::SpecDigest {
+        SuiteProvenance::of(ir).spec_digest
+    }
+
+    /// One `Returned` operation of client 0 at `[2i+1, 2i+2]`, with `input` and `events` written
+    /// only where given.
+    fn returned(
+        index: u64,
+        command: &str,
+        outcome: &str,
+        input: Option<Value>,
+        events: Option<&[&str]>,
+    ) -> Value {
+        let mut operation = json!({
+            "operation_id": format!("00000000-0000-4000-8000-{:012}", index + 1),
+            "client": 0,
+            "command": command,
+            "subject_key": "",
+            "invoked_at": 2 * index + 1,
+            "returned_at": 2 * index + 2,
+            "completion": "Returned",
+            "outcome": outcome,
+        });
+        if let Some(input) = input {
+            operation["input"] = input;
+        }
+        if let Some(events) = events {
+            operation["events"] = json!(events);
+        }
+        operation
+    }
+
+    /// The document in the writer's own spelling: compact, keys in declaration order (`input`'s
+    /// own keys sorted, as every writer sorts them).
+    fn document(ir: &EssIr, operations: &[Value]) -> Vec<u8> {
+        const KEYS: [&str; 13] = [
+            "operation_id",
+            "client",
+            "command",
+            "subject_key",
+            "invoked_at",
+            "returned_at",
+            "completion",
+            "outcome",
+            "rows",
+            "retry_of",
+            "decision_time",
+            "input",
+            "events",
+        ];
+        let operations = operations
+            .iter()
+            .map(|operation| {
+                let members = KEYS
+                    .iter()
+                    .filter_map(|key| {
+                        operation
+                            .get(*key)
+                            .map(|value| format!("{}:{value}", Value::from(*key)))
+                    })
+                    .collect::<Vec<_>>();
+                format!("{{{}}}", members.join(","))
+            })
+            .collect::<Vec<_>>();
+        format!(
+            r#"{{"format":"ess-history/3","history_id":"00000000-0000-4000-8000-0000000000aa","spec_digest":"{}","seed":1,"clients":1,"operations":[{}]}}"#,
+            digest(ir).as_str(),
+            operations.join(",")
+        )
+        .into_bytes()
+    }
+
+    fn judged(ir: &EssIr, operations: &[Value]) -> Result<Verdict, String> {
+        let bytes = document(ir, operations);
+        let history = history::read(&bytes, &digest(ir)).map_err(|refusal| refusal.to_string())?;
+        linearize::check(ir, &history, DEFAULT_BUDGET)
+            .map(|checked| checked.verdict)
+            .map_err(|refusal| format!("{refusal:?}"))
+    }
+
+    const CHECK: &str = "probe.core.Check";
+    const TAG: &str = "probe.core.Tag";
+    const BIG: &str = "probe.core.Big";
+    const NOTED: &str = "probe.core.Noted";
+    const SMALL: &str = "probe.core.Small";
+
+    // ---- the reader -------------------------------------------------------------------------
+
+    /// A key written twice inside `input` is two readings of one document: serde keeps the last,
+    /// another reader keeps the first. The reader refuses a repeated operation field
+    /// (`history_format2.rs`, `a_repeated_or_unknown_field_is_refused`); a repeated input field
+    /// decides which branch the checker steps, so it is refused too.
+    #[test]
+    #[ignore = "finding: a repeated `input` key is admitted and the last value silently wins"]
+    fn an_input_field_written_twice_is_refused() {
+        let ir = probe();
+        let once = String::from_utf8(document(
+            &ir,
+            &[returned(0, CHECK, "big", Some(json!({"n": 100})), None)],
+        ))
+        .unwrap();
+        let twice = once.replace(r#""input":{"n":100}"#, r#""input":{"n":5,"n":100}"#);
+        assert_ne!(once, twice);
+        let read = history::read(twice.as_bytes(), &digest(&ir));
+        assert!(
+            read.is_err(),
+            "admitted, input read as {:?}",
+            read.unwrap().operations[0].input
+        );
+    }
+
+    /// Whatever spelling of an input number the reader admits writes back as itself: the reader's
+    /// promise is one spelling, and a history read and written back keeps its bytes.
+    #[test]
+    #[ignore = "finding: `input` admits 100.0, 1e2, 100.00 and 1.0e2 and writes each back as 100"]
+    fn an_admitted_input_number_writes_back_in_the_spelling_it_was_read_in() {
+        let ir = probe();
+        let canonical = String::from_utf8(document(
+            &ir,
+            &[returned(0, CHECK, "big", Some(json!({"n": 100})), None)],
+        ))
+        .unwrap();
+        let mut admitted = Vec::new();
+        for spelling in [
+            "100.0",
+            "1e2",
+            "100.00",
+            "1.0e2",
+            // How Go's encoding/json and JavaScript's JSON.stringify spell 10^21 and 2^-30.
+            "1e+21",
+            "9.313225746154785e-10",
+        ] {
+            let text = canonical.replace(r#""n":100"#, &format!(r#""n":{spelling}"#));
+            assert_ne!(text, canonical);
+            if let Ok(history) = history::read(text.as_bytes(), &digest(&ir)) {
+                let written = String::from_utf8(serde_json::to_vec(&history).unwrap()).unwrap();
+                if written != text {
+                    admitted.push(format!("`{spelling}` read and written back as {written}"));
+                }
+            }
+        }
+        assert!(admitted.is_empty(), "{}", admitted.join("\n"));
+    }
+
+    /// An empty input (a command with no field) and an empty `events` (a refused branch) are each a
+    /// recorded value, not an absent one: both are written back, and the history stays format 3.
+    #[test]
+    fn an_empty_input_and_empty_events_are_recorded_values_and_keep_format3() {
+        let ir = probe();
+        let bytes = document(
+            &ir,
+            &[returned(0, TAG, "plain", Some(json!({})), Some(&[]))],
+        );
+        let history = history::read(&bytes, &digest(&ir)).expect("admitted");
+        assert_eq!(history.format, HistoryFormat::EssHistory3);
+        assert_eq!(
+            HistoryFormat::for_operations(&history.operations),
+            HistoryFormat::EssHistory3
+        );
+        assert_eq!(history.operations[0].input, Some(BTreeMap::new()));
+        assert_eq!(history.operations[0].events, Some(Vec::new()));
+        assert_eq!(serde_json::to_vec(&history).unwrap(), bytes);
+    }
+
+    /// An `Optional` input sent as `null` and one left out are different documents, and each reads
+    /// back as itself.
+    #[test]
+    fn an_optional_input_sent_null_and_one_left_out_read_and_write_back_apart() {
+        let ir = probe();
+        for input in [json!({"tag": null}), json!({})] {
+            let bytes = document(&ir, &[returned(0, TAG, "plain", Some(input.clone()), None)]);
+            let history = history::read(&bytes, &digest(&ir)).expect("admitted");
+            assert_eq!(serde_json::to_vec(&history).unwrap(), bytes, "{input}");
+        }
+        let null = history::read(
+            &document(
+                &ir,
+                &[returned(0, TAG, "plain", Some(json!({"tag": null})), None)],
+            ),
+            &digest(&ir),
+        )
+        .unwrap();
+        assert_eq!(
+            null.operations[0].input.as_ref().unwrap().get("tag"),
+            Some(&Node::Null)
+        );
+    }
+
+    // ---- check-history holds the answer to the input it records -----------------------------
+
+    #[test]
+    fn a_recorded_input_that_takes_small_does_not_explain_big() {
+        let ir = probe();
+        assert_eq!(
+            judged(
+                &ir,
+                &[returned(0, CHECK, "big", Some(json!({"n": 5})), None)]
+            ),
+            Ok(Verdict::Violation)
+        );
+        assert_eq!(
+            judged(
+                &ir,
+                &[returned(0, CHECK, "small", Some(json!({"n": 100})), None)]
+            ),
+            Ok(Verdict::Violation)
+        );
+        // The boundary itself.
+        assert_eq!(
+            judged(
+                &ir,
+                &[returned(0, CHECK, "big", Some(json!({"n": 10})), None)]
+            ),
+            Ok(Verdict::Linearizable)
+        );
+        assert_eq!(
+            judged(
+                &ir,
+                &[returned(0, CHECK, "small", Some(json!({"n": 9})), None)]
+            ),
+            Ok(Verdict::Linearizable)
+        );
+    }
+
+    #[test]
+    fn the_recorded_events_are_held_to_the_branch_in_order_and_in_number() {
+        let ir = probe();
+        let big = || Some(json!({"n": 100}));
+        assert_eq!(
+            judged(
+                &ir,
+                &[returned(0, CHECK, "big", big(), Some(&[BIG, NOTED]))]
+            ),
+            Ok(Verdict::Linearizable),
+            "the branch's own events, in its order"
+        );
+        for (events, why) in [
+            (&[NOTED, BIG][..], "the same events in another order"),
+            (&[BIG][..], "an event missing"),
+            (&[BIG, NOTED, NOTED][..], "an event published twice"),
+            (&[][..], "no event"),
+            (&[SMALL][..], "the other branch's event"),
+            (&[BIG, NOTED, SMALL][..], "the other branch's event besides"),
+            (&["probe.core.Nowhere"][..], "an event no model declares"),
+        ] {
+            assert_eq!(
+                judged(&ir, &[returned(0, CHECK, "big", big(), Some(events))]),
+                Ok(Verdict::Violation),
+                "{why}: {events:?}"
+            );
+            // Without the input too: no candidate input makes `big` publish these.
+            assert_eq!(
+                judged(&ir, &[returned(0, CHECK, "big", None, Some(events))]),
+                Ok(Verdict::Violation),
+                "{why}, input not recorded: {events:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_input_without_events_and_events_without_an_input_are_each_held_to_what_they_record() {
+        let ir = probe();
+        // Input recorded, events not: held to the input only.
+        assert_eq!(
+            judged(
+                &ir,
+                &[returned(0, CHECK, "big", Some(json!({"n": 100})), None)]
+            ),
+            Ok(Verdict::Linearizable)
+        );
+        // Events recorded, input not: some candidate input takes `big`.
+        assert_eq!(
+            judged(&ir, &[returned(0, CHECK, "big", None, Some(&[BIG, NOTED]))]),
+            Ok(Verdict::Linearizable)
+        );
+        // Neither: as `ess-history/2` reads it.
+        assert_eq!(
+            judged(&ir, &[returned(0, CHECK, "small", None, None)]),
+            Ok(Verdict::Linearizable)
+        );
+    }
+
+    #[test]
+    fn an_optional_input_is_held_to_whether_it_was_sent() {
+        let ir = probe();
+        for (input, outcome, events, expected) in [
+            (
+                json!({"tag": "x"}),
+                "tagged",
+                "probe.core.Tagged",
+                Verdict::Linearizable,
+            ),
+            (
+                json!({"tag": "x"}),
+                "plain",
+                "probe.core.Plain",
+                Verdict::Violation,
+            ),
+            (
+                json!({"tag": null}),
+                "tagged",
+                "probe.core.Tagged",
+                Verdict::Violation,
+            ),
+            (
+                json!({"tag": null}),
+                "plain",
+                "probe.core.Plain",
+                Verdict::Linearizable,
+            ),
+            (json!({}), "tagged", "probe.core.Tagged", Verdict::Violation),
+            (
+                json!({}),
+                "plain",
+                "probe.core.Plain",
+                Verdict::Linearizable,
+            ),
+        ] {
+            assert_eq!(
+                judged(
+                    &ir,
+                    &[returned(
+                        0,
+                        TAG,
+                        outcome,
+                        Some(input.clone()),
+                        Some(&[events])
+                    )]
+                ),
+                Ok(expected),
+                "{input} answered {outcome}"
+            );
+        }
+    }
+
+    /// An input the command could not have been sent — a required field missing, a value of another
+    /// type, a fraction for an `Integer` or a field the command does not declare — is no input a
+    /// target answered `small` for.
+    #[test]
+    fn an_input_the_command_does_not_declare_explains_no_answer() {
+        let ir = probe();
+        let mut wrong = Vec::new();
+        for input in [
+            json!({}),
+            json!({"n": "five"}),
+            json!({"n": null}),
+            json!({"n": 5.5}),
+            json!({"n": 5, "undeclared": 1}),
+        ] {
+            let verdict = judged(
+                &ir,
+                &[returned(
+                    0,
+                    CHECK,
+                    "small",
+                    Some(input.clone()),
+                    Some(&[SMALL]),
+                )],
+            );
+            if verdict == Ok(Verdict::Linearizable) {
+                wrong.push(format!("{input} explains `small`"));
+            }
+        }
+        assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+    }
+
+    /// The shrunk history of a format 3 violation keeps what made it one: its format and every
+    /// recorded input and event, and it is still a violation when read back.
+    #[test]
+    fn a_format3_violation_shrinks_to_a_format3_history_that_keeps_its_inputs_and_events() {
+        let ir = probe();
+        let operations = [
+            returned(0, CHECK, "small", Some(json!({"n": 3})), Some(&[SMALL])),
+            returned(1, CHECK, "big", Some(json!({"n": 50})), Some(&[BIG, NOTED])),
+            returned(2, CHECK, "big", Some(json!({"n": 5})), Some(&[BIG, NOTED])),
+        ];
+        let bytes = document(&ir, &operations);
+        let history = history::read(&bytes, &digest(&ir)).expect("admitted");
+        let report = linearize::report(&ir, &history, DEFAULT_BUDGET).expect("checked");
+        assert_eq!(report.verdict, Verdict::Violation);
+        let shrunk = report.shrunk.expect("a violation is shrunk");
+        assert_eq!(shrunk.format, HistoryFormat::EssHistory3);
+        assert!(
+            shrunk
+                .operations
+                .iter()
+                .all(|operation| operation.input.is_some() && operation.events.is_some()),
+            "{shrunk:#?}"
+        );
+        assert!(shrunk
+            .operations
+            .iter()
+            .any(|operation| operation.input.as_ref().unwrap()["n"]
+                == serde_json::from_str::<Node>("5").unwrap()));
+        let again = through_the_reader(&ir, &shrunk);
+        assert_eq!(verdict(&ir, &again, DEFAULT_BUDGET), Verdict::Violation);
+    }
+
+    // ---- an entity model: the recorded input and the recorded subject -----------------------
+
+    /// `two_registers` written as format 3: each write records the input it sent.
+    fn recorded_registers() -> (EssIr, History) {
+        let (model, mut history) = two_registers();
+        history.format = HistoryFormat::EssHistory3;
+        for operation in &mut history.operations {
+            let mut input = BTreeMap::new();
+            if operation.command.as_str() != "register.cell.CreateRegister" {
+                input.insert(
+                    "register_id".to_owned(),
+                    Node::Text(operation.subject_key.clone()),
+                );
+            }
+            operation.input = Some(input);
+        }
+        let history = through_the_reader(&model, &history);
+        assert_eq!(history.format, HistoryFormat::EssHistory3);
+        (model, history)
+    }
+
+    #[test]
+    fn a_format3_history_of_the_models_own_answers_is_linearizable() {
+        let (model, history) = recorded_registers();
+        assert_eq!(
+            verdict(&model, &history, DEFAULT_BUDGET),
+            Verdict::Linearizable
+        );
+    }
+
+    /// The operation says it addressed one register and records an input naming the other. No
+    /// client sent both: the document contradicts itself, and the checker may not explain the
+    /// answer with whichever of the two suits it.
+    #[test]
+    fn an_input_naming_another_subject_than_subject_key_is_not_explained() {
+        let (model, mut history) = recorded_registers();
+        let other = history.operations[0].subject_key.clone();
+        let write = &mut history.operations[2];
+        assert_ne!(
+            write.subject_key, other,
+            "the write addresses the second register"
+        );
+        write
+            .input
+            .as_mut()
+            .unwrap()
+            .insert("register_id".to_owned(), Node::Text(other));
+        let bytes = serde_json::to_vec(&history).unwrap();
+        let outcome = history::read(&bytes, &SuiteProvenance::of(&model).spec_digest)
+            .map_err(|refusal| refusal.to_string())
+            .and_then(|history| {
+                linearize::check(&model, &history, DEFAULT_BUDGET)
+                    .map(|checked| checked.verdict)
+                    .map_err(|refusal| format!("{refusal:?}"))
+            });
+        assert_ne!(outcome, Ok(Verdict::Linearizable));
+    }
+
+    /// A write that never answered may never have happened, and where it did it wrote the register
+    /// its recorded input names.
+    #[test]
+    fn an_unanswered_write_with_its_input_may_or_may_not_have_happened() {
+        let (model, mut history) = recorded_registers();
+        let write = &mut history.operations[2];
+        write.completion = Completion::Indeterminate;
+        write.returned_at = None;
+        write.outcome = None;
+        let history = through_the_reader(&model, &history);
+        assert_eq!(
+            verdict(&model, &history, DEFAULT_BUDGET),
+            Verdict::Linearizable
+        );
+    }
+}
