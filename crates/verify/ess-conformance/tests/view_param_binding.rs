@@ -432,3 +432,239 @@ fn instance_struct_member_refused_by_name() {
         0
     );
 }
+
+// ---- beyond10x/ess#568, beyond10x/ess#569: views bounded by a period ---------------------------
+
+const PERIOD: &str = include_str!("fixtures/period-bounded-views.yaml");
+const OVERLAPPING: &str = "demo.ledger.IncidentsOverlapping";
+const STARTED_IN_RANGE: &str = "demo.ledger.IncidentsStartedInRange";
+const RESOLVED: &str = "demo.ledger.ResolveIncident/outcome/resolved";
+
+fn instant(value: &ScenarioValue) -> ess_primitives::time::Rfc3339Instant {
+    match literal(value) {
+        Node::Text(text) => ess_primitives::time::Rfc3339Instant::parse_rfc3339(text)
+            .unwrap_or_else(|| panic!("not an instant: {text}")),
+        other => panic!("not a text: {other:?}"),
+    }
+}
+
+/// `suite` against the interpreter executing `model`: the scenarios that did not pass.
+fn interpreted_failures(
+    suite: &ess_conformance::ConformanceSuite,
+    model: &str,
+) -> std::collections::BTreeSet<String> {
+    let admitted = AdmittedSuite::from_suite(suite).unwrap_or_else(|error| panic!("{error}"));
+    Runner::for_suite(admitted.suite())
+        .run_admitted(
+            &admitted,
+            &ess_conformance::interpret::Interpreted::for_model(ir(model)),
+        )
+        .into_report()
+        .scenarios
+        .into_iter()
+        .filter(|result| result.status != Status::Passed)
+        .map(|result| result.scenario.to_string())
+        .collect()
+}
+
+/// The fixture with one view's filter replaced, exactly once.
+fn refiltered(from: &str, to: &str) -> String {
+    assert_eq!(PERIOD.matches(from).count(), 1, "{from}");
+    PERIOD.replace(from, to)
+}
+
+/// The overlap filter `started_at < param.to, ended_at > param.from` on an aggregate view is
+/// arranged: rows before the period, across each bound, across both, inside and after it, each
+/// read counting only those that overlap — so a target reading it as a range on `started_at`, or
+/// moving either edge, fails the view's scenario.
+#[test]
+fn overlap_filter_on_an_aggregate_view_is_arranged() {
+    let synthesis = synthesize(&ir(PERIOD));
+    let refused = refusals_naming(&synthesis, OVERLAPPING);
+    assert_eq!(refused, Vec::<String>::new());
+    let id = format!("{OVERLAPPING}/aggregate");
+    let scenario = scenario(&synthesis, &id);
+    let rows: Vec<_> = scenario
+        .steps
+        .iter()
+        .filter_map(|step| match step {
+            ScenarioStep::ExecuteCommand { command, input, .. }
+                if command.to_string() == "demo.ledger.RecordIncident" =>
+            {
+                Some((instant(&input["started_at"]), instant(&input["ended_at"])))
+            }
+            _ => None,
+        })
+        .collect();
+    let found = reads(scenario, OVERLAPPING);
+    assert_ne!(found.len(), 0, "a read of {OVERLAPPING}");
+    for params in found {
+        let (from, to) = (instant(&params["from"]), instant(&params["to"]));
+        let held = |name: &str, holds: &dyn Fn(&_, &_) -> bool| {
+            assert!(
+                rows.iter().any(|(start, end)| holds(start, end)),
+                "a row {name} [{from:?}, {to:?}): {rows:?}"
+            );
+        };
+        held("before", &|_, end| *end <= from);
+        held("across `from`", &|start, end| {
+            *start < from && from < *end && *end <= to
+        });
+        held("across `to`", &|start, end| {
+            from <= *start && *start < to && to < *end
+        });
+        held("across both", &|start, end| *start < from && to < *end);
+        held("inside", &|start, end| from <= *start && *end <= to);
+        held("after", &|start, _| to <= *start);
+    }
+    // The interpreter of the model passes the suite; one reading the filter otherwise fails the
+    // view's scenario.
+    assert_eq!(
+        interpreted_failures(&synthesis.suite, PERIOD),
+        std::collections::BTreeSet::new()
+    );
+    let overlap = "filter: [state == Resolved, started_at < param.to, ended_at > param.from]";
+    for faulty in [
+        "filter: [state == Resolved, started_at >= param.from, started_at < param.to]",
+        "filter: [state == Resolved, started_at <= param.to, ended_at > param.from]",
+        "filter: [state == Resolved, started_at < param.to, ended_at >= param.from]",
+        "filter: [state == Resolved, started_at < param.to, ended_at > param.from, \
+         ended_at < param.to]",
+        "filter: [state == Resolved, started_at < param.to, {any: [ended_at > param.from, \
+         state == Resolved]}]",
+        "filter: [state == Resolved, {any: [started_at < param.to, state == Resolved]}, \
+         ended_at > param.from]",
+    ] {
+        let failed = interpreted_failures(&synthesis.suite, &refiltered(overlap, faulty));
+        assert!(failed.contains(&id), "{faulty} survived: {failed:?}");
+    }
+}
+
+/// The range filter `started_at >= param.from, started_at < param.to` on a list view is bound
+/// around the instant the scenario stored: one read with both bounds holding the row, and one per
+/// bound with it on the other side of that instant, which holds no row.
+#[test]
+fn range_bounded_list_view_is_arranged() {
+    let synthesis = synthesize(&ir(PERIOD));
+    let refused = refusals_naming(&synthesis, STARTED_IN_RANGE);
+    assert_eq!(refused, Vec::<String>::new());
+    for id in [
+        RESOLVED,
+        "demo.ledger.Incident/transition/resolve/by/demo.ledger.ResolveIncident/resolved",
+    ] {
+        let scenario = scenario(&synthesis, id);
+        let stored = scenario
+            .steps
+            .iter()
+            .find_map(|step| match step {
+                ScenarioStep::ExecuteCommand { command, input, .. }
+                    if command.to_string() == "demo.ledger.RecordIncident" =>
+                {
+                    Some(instant(&input["started_at"]))
+                }
+                _ => None,
+            })
+            .expect("the incident is recorded");
+        let found = reads(scenario, STARTED_IN_RANGE);
+        let bounds: Vec<_> = found
+            .iter()
+            .map(|params| (instant(&params["from"]), instant(&params["to"])))
+            .collect();
+        assert!(
+            bounds
+                .iter()
+                .any(|(from, to)| *from <= stored && stored < *to),
+            "{id}: a read holding {stored:?}: {bounds:?}"
+        );
+        assert!(
+            bounds
+                .iter()
+                .any(|(from, to)| stored < *from && stored < *to),
+            "{id}: a read with `from` after {stored:?}: {bounds:?}"
+        );
+        assert!(
+            bounds
+                .iter()
+                .any(|(from, to)| *from <= stored && *to <= stored),
+            "{id}: a read with `to` at or before {stored:?}: {bounds:?}"
+        );
+        let expected = expectations(scenario, STARTED_IN_RANGE);
+        assert!(
+            expected
+                .iter()
+                .any(|expectation| matches!(expectation, ViewExpectation::Contains { .. })),
+            "{id}: {expected:#?}"
+        );
+        assert!(
+            expected
+                .iter()
+                .any(|expectation| matches!(expectation, ViewExpectation::Excludes { .. })),
+            "{id}: {expected:#?}"
+        );
+    }
+    assert_eq!(
+        interpreted_failures(&synthesis.suite, PERIOD),
+        std::collections::BTreeSet::new()
+    );
+    let range = "filter: [state == Resolved, started_at >= param.from, started_at < param.to]";
+    for faulty in [
+        "filter: [state == Resolved, started_at > param.from, started_at < param.to]",
+        "filter: [state == Resolved, started_at >= param.from, started_at <= param.to]",
+        "filter: [state == Resolved, {any: [started_at >= param.from, state == Resolved]}, \
+         started_at < param.to]",
+        "filter: [state == Resolved, started_at >= param.from, {any: [started_at < param.to, \
+         state == Resolved]}]",
+    ] {
+        let failed = interpreted_failures(&synthesis.suite, &refiltered(range, faulty));
+        assert!(failed.contains(RESOLVED), "{faulty} survived: {failed:?}");
+    }
+}
+
+/// A view whose filter stays undecided for the row a scenario made skips that view's read and
+/// nothing else: the scenarios of the commands that reach it stand, observing every other view,
+/// and the refusal says so rather than that they are missing.
+#[test]
+fn an_undecided_view_keeps_other_commands_scenarios() {
+    let undecided = "demo.ledger.IncidentsSinceOrPower";
+    let model = format!(
+        "{PERIOD}  - name: {undecided}
+    source: demo.ledger.Incident
+    consistency: read_your_writes
+    params: [{{name: since, type: Timestamp}}]
+    filter:
+      all:
+        - state == Resolved
+        - any: [started_at >= param.since, cause == power]
+    fields:
+      - {{name: incident_id, type: Uuid}}
+"
+    );
+    let synthesis = synthesize(&ir(&model));
+    let kept = [
+        RESOLVED,
+        "demo.ledger.Incident/transition/resolve/by/demo.ledger.ResolveIncident/resolved",
+    ];
+    let refused = refusals_naming(&synthesis, undecided);
+    assert_eq!(refused.len(), kept.len(), "{refused:#?}");
+    for id in kept {
+        let scenario = scenario(&synthesis, id);
+        assert_eq!(reads(scenario, undecided).len(), 0, "{id}");
+        assert_ne!(reads(scenario, STARTED_IN_RANGE).len(), 0, "{id}");
+        let refusal = refused
+            .iter()
+            .find(|refusal| refusal.contains(&format!("`{id}`")))
+            .unwrap_or_else(|| panic!("{id}: {refused:#?}"));
+        assert!(refusal.starts_with("refusal[ESS-SYNTH-005]"), "{refusal}");
+        assert!(!refusal.contains("has no scenario"), "{refusal}");
+        assert!(
+            refusal.contains(&format!(
+                "has a scenario `{id}` that skips its read of `{undecided}`"
+            )),
+            "{refusal}"
+        );
+    }
+    let failed = interpreted_failures(&synthesis.suite, &model);
+    for id in kept {
+        assert!(!failed.contains(id), "{id}: {failed:?}");
+    }
+}

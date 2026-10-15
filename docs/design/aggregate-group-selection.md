@@ -60,10 +60,24 @@ each outside edge (`y1`, `y2`, …) arranged so that every other conjunct of the
 so the bound alone refutes it; with no such state the view is refused by name. Where the filter
 has conjuncts beside the window, the pattern's other refuted rows are refuted by those, inside the
 window; where the window is the whole filter, they lie outside it. The expected
-numbers come from `shows`, which compares instants. Bounds on two fields, two bounds on one side,
-and a bounded field an aggregate reads are refused by name; every other read of a `Timestamp`
-parameter keeps `ESS-SYNTH-017`. The caller resolves a named range or a sliding window into the two
-instants (`docs/design/read-api-view-idioms.md`).
+numbers come from `shows`, which compares instants. Two bounds on one side and a bounded field an
+aggregate reads are refused by name; every other read of a `Timestamp` parameter keeps
+`ESS-SYNTH-017`. The caller resolves a named range or a sliding window into the two instants
+(`docs/design/read-api-view-idioms.md`).
+
+The lower and upper bound may each bound a field of its own (beyond10x/ess#568): `started_at <
+param.to, ended_at > param.from` counts every period overlapping the window. Each row is then a
+period, its upper-bounded field never after its lower-bounded one: admitted rows end at the lower
+edge, start at the upper edge, span both, and lie inside (each end spelled at an offset under which
+its text sorts outside its bound); the outside rows end at the lower edge (`y1`) and start at the
+upper edge (`y2`), each refuted by its own bound alone. So a target reading the overlap as a range
+on one field, moving an edge, or dropping a bound counts another number.
+
+A row-level view bounded the same way (beyond10x/ess#569) needs no arrangement of its own: each
+scenario binds the period parameter around the instant its subject's row stores, at the edge where
+the bound admits it, and reads the view once more per parameter with it moved just past that
+instant, which must hold no row of the subject's. A view whose filter a scenario still cannot
+decide is not read in it; the scenario stands, and `ESS-SYNTH-005` is reported beside it.
 
 Parameter and field types are the source-resolved ones, including nominal and `Optional` wrappers.
 Values come through the existing key ladder, related arrangement and actual settled value, never

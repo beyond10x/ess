@@ -1495,8 +1495,8 @@ so cannot tell the rows apart, the scenario keeps what it asserts about its own 
 not assert that such a view holds no rows once another row it admits has been created.
 
 A filter that compares a value no scenario binds, such as `note`, which no command sets, is
-undecided, and synthesis refuses every scenario that reads the view with `ESS-SYNTH-005`. Filter on
-`state` wherever the rule allows it.
+undecided. Every scenario whose row it cannot decide skips its read of that view and stands,
+reported beside it with `ESS-SYNTH-005`. Filter on `state` wherever the rule allows it.
 
 ```yaml ess-check="filter" ess-expect="unwitnessed:ESS-SYNTH-005" ess-says="note == hello"
 filter: note == hello

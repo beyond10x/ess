@@ -693,6 +693,21 @@ impl fmt::Display for Refusal {
                 self.code(),
                 self.subject
             ),
+            // The scenario exists; it skips its read of a view whose filter it cannot decide
+            // (beyond10x/ess#569).
+            Some(id)
+                if self.stands && matches!(self.cause, RefusalCause::ViewUndecidable { .. }) =>
+            {
+                let RefusalCause::ViewUndecidable { view, .. } = &self.cause else {
+                    unreachable!("matched above")
+                };
+                writeln!(
+                    f,
+                    "refusal[{}]: {} has a scenario `{id}` that skips its read of `{view}`",
+                    self.code(),
+                    self.subject
+                )
+            }
             // The scenario exists; a held state its refusal claims has no row in it (ess/23,
             // beyond10x/ess#461).
             Some(id) if self.stands => writeln!(
@@ -7700,10 +7715,13 @@ fn view_expectations(
             // Neither asserted nor counted: an eventual read of a row left as it was proves nothing.
             Ok(_) if awaits_nothing(command, view, run, state) => {}
             Ok(admits) => decided.push((view, admits)),
+            // The view's read is skipped and the scenario stands without it: a filter this scenario
+            // cannot decide costs that view's observation, never another command's scenario
+            // (beyond10x/ess#569).
             Err(mut unbound) => {
                 let unprojected = identity::unprojected(ir, view, settled, &unbound);
                 unbound.retain(|path| !unprojected.contains(path));
-                refusals.push(Refusal::about(
+                refusals.push(Refusal::beside(
                     id,
                     RefusalCause::ViewUndecidable {
                         view: ViewRef::new(view.name.clone()),
@@ -7834,23 +7852,32 @@ fn view_expectations(
         if *admits_subject && !left_out.is_empty() && !fields.is_empty() {
             let mut absent = bound(ir, view, settled, identity);
             absent.retain(|param, _| !left_out.contains(&param.as_str()));
-            let expectation = ViewExpectation::Excludes { fields };
-            match view.assertion_style {
-                AssertionStyle::Expect => {
-                    out.asserted.push(ScenarioStep::QueryView {
-                        view: name.clone(),
-                        params: absent,
-                    });
-                    out.asserted.push(ScenarioStep::ExpectView {
-                        view: name.clone(),
-                        expectation,
-                    });
+            read_again(
+                view,
+                &name,
+                absent,
+                ViewExpectation::Excludes {
+                    fields: fields.clone(),
+                },
+                &mut out.asserted,
+            );
+        }
+        // A period parameter moved just past the instant the subject's row stores
+        // (beyond10x/ess#569): its bound alone refutes the row, so a target ignoring the bound or
+        // moving its edge shows it. Last, for the reason the read above is.
+        if *admits_subject && !fields.is_empty() {
+            for moved in period_moves(ir, view, settled, &bound(ir, view, settled, identity)) {
+                if shows_row(ir, view, state, settled, identity, &moved) == Ok(false) {
+                    read_again(
+                        view,
+                        &name,
+                        moved,
+                        ViewExpectation::Excludes {
+                            fields: fields.clone(),
+                        },
+                        &mut out.asserted,
+                    );
                 }
-                AssertionStyle::Eventually => out.asserted.push(ScenarioStep::EventuallyView {
-                    view: name.clone(),
-                    params: absent,
-                    expectation,
-                }),
             }
         }
         // `absent:` (ess/25, beyond10x/ess#533): beside the stored row just read, the default row
@@ -10416,6 +10443,35 @@ fn require(
     }
 }
 
+/// Adds one requirement about one view on a read of its own, sending `params`: unlike
+/// [`require`], it queries again, so the expectation reads what those parameters select and every
+/// requirement before it keeps the read that sent its own.
+fn read_again(
+    view: &ResolvedView,
+    name: &ViewRef,
+    params: BTreeMap<String, ScenarioValue>,
+    expectation: ViewExpectation,
+    steps: &mut Vec<ScenarioStep>,
+) {
+    match view.assertion_style {
+        AssertionStyle::Expect => {
+            steps.push(ScenarioStep::QueryView {
+                view: name.clone(),
+                params,
+            });
+            steps.push(ScenarioStep::ExpectView {
+                view: name.clone(),
+                expectation,
+            });
+        }
+        AssertionStyle::Eventually => steps.push(ScenarioStep::EventuallyView {
+            view: name.clone(),
+            params,
+            expectation,
+        }),
+    }
+}
+
 /// How many rows this scenario puts in one view: its subject, where the filter admits it, and every
 /// further instance arranged beside it.
 ///
@@ -11025,11 +11081,93 @@ fn bound(
             text_param(view, &param.name, settled)
                 .or_else(|| identity::param(ir, view, &param.name, settled, identity))
                 .or_else(|| {
+                    period_read(ir, view, &param.name, settled)
+                        .and_then(|(bound, stored)| period_param(&bound, &stored, true))
+                })
+                .or_else(|| {
                     settled
                         .get(&param.name)
                         .map(|determined| determined.value.clone())
                 })
                 .map(|value| (param.name.clone(), value))
+        })
+        .collect()
+}
+
+/// A `Timestamp` parameter a top-level conjunct of a view's filter orders a `Timestamp` field
+/// against, `started_at >= param.from` (beyond10x/ess#569): the bound, and the instant the scenario
+/// stored in that field. `None` where no such conjunct reads an instant this scenario settled.
+fn period_read(
+    ir: &EssIr,
+    view: &ResolvedView,
+    name: &str,
+    settled: &BTreeMap<String, Determined>,
+) -> Option<(aggregate::Bound, ess_primitives::time::Rfc3339Instant)> {
+    let param = view.params.iter().find(|param| param.name == name)?;
+    if !aggregate::holds_instant(ir, &param.type_ref) {
+        return None;
+    }
+    let top: Vec<&Predicate> = match view.filter.as_ref()? {
+        Predicate::All(children) => children.iter().collect(),
+        other => vec![other],
+    };
+    top.into_iter()
+        .filter_map(aggregate::ordering_bound)
+        .filter(|bound| bound.param == name)
+        .find_map(|bound| {
+            let field = ir.entity(&view.source).observable_field(&bound.field)?;
+            if !aggregate::holds_instant(ir, &field.type_ref) {
+                return None;
+            }
+            let ScenarioValue::Literal {
+                value: Node::Text(text),
+            } = &settled.get(&bound.field)?.value
+            else {
+                return None;
+            };
+            let stored = ess_primitives::time::Rfc3339Instant::parse_rfc3339(text)?;
+            Some((bound, stored))
+        })
+}
+
+/// The instant a period parameter ([`period_read`]) is sent: at the edge of the stored instant
+/// where `holds`, so the bound admits the row — the instant itself under `>=` or `<=`, a second
+/// past it on the admitting side under `>` or `<` — and otherwise just past it on the other side,
+/// so the bound alone refutes the row.
+fn period_param(
+    bound: &aggregate::Bound,
+    stored: &ess_primitives::time::Rfc3339Instant,
+    holds: bool,
+) -> Option<ScenarioValue> {
+    let seconds = match (bound.lower, bound.inclusive, holds) {
+        (_, true, true) | (_, false, false) => 0,
+        (true, false, true) | (false, true, false) => -1,
+        (false, false, true) | (true, true, false) => 1,
+    };
+    stored
+        .plus_seconds(seconds)
+        .map(|at| ScenarioValue::literal(Node::Text(at.to_rfc3339())))
+}
+
+/// The reads of `view` beside `params` that each move one period parameter just past the stored
+/// instant (beyond10x/ess#569): its bound alone then refutes the row, so a target that ignores the
+/// bound or moves its edge shows it. Only a parameter `params` sends at the admitting edge moves.
+fn period_moves(
+    ir: &EssIr,
+    view: &ResolvedView,
+    settled: &BTreeMap<String, Determined>,
+    params: &BTreeMap<String, ScenarioValue>,
+) -> Vec<BTreeMap<String, ScenarioValue>> {
+    view.params
+        .iter()
+        .filter_map(|param| {
+            let (bound, stored) = period_read(ir, view, &param.name, settled)?;
+            if params.get(&param.name) != period_param(&bound, &stored, true).as_ref() {
+                return None;
+            }
+            let mut moved = params.clone();
+            moved.insert(param.name.clone(), period_param(&bound, &stored, false)?);
+            Some(moved)
         })
         .collect()
 }

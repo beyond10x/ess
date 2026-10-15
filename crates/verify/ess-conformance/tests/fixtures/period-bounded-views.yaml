@@ -1,0 +1,75 @@
+format: ess/22
+system: demo
+version: v1
+domain: demo.ledger
+summary: >-
+  Incidents recorded with the period they ran over, resolved, and read by the period a caller
+  resolved into two instants (beyond10x/ess#568, beyond10x/ess#569).
+entities:
+  - name: demo.ledger.Incident
+    identity: {name: incident_id, type: Uuid}
+    fields:
+      - {name: cause, type: String}
+      - {name: started_at, type: Timestamp}
+      - {name: ended_at, type: Timestamp}
+    lifecycle:
+      initial: Open
+      states: [Open, Resolved]
+      terminal: [Resolved]
+      transitions:
+        - {name: resolve, from: [Open], to: Resolved}
+errors:
+  - {name: demo.ledger.Conflict, summary: The incident is resolved., fields: []}
+events:
+  - name: demo.ledger.IncidentRecorded
+    fields: [{name: incident_id, type: Uuid}]
+  - name: demo.ledger.IncidentResolved
+    fields: [{name: incident_id, type: Uuid}]
+actors:
+  - name: demo.ledger.Operator
+    may: [demo.ledger.RecordIncident, demo.ledger.ResolveIncident]
+commands:
+  - name: demo.ledger.RecordIncident
+    input:
+      - {name: cause, type: String}
+      - {name: started_at, type: Timestamp}
+      - {name: ended_at, type: Timestamp}
+    outcomes:
+      - name: recorded
+        creates: demo.ledger.Incident
+        instance: incident_id
+        sets: {cause: input.cause, started_at: input.started_at, ended_at: input.ended_at}
+        emits: [demo.ledger.IncidentRecorded]
+        payload: {demo.ledger.IncidentRecorded: {incident_id: {generated: true}}}
+  - name: demo.ledger.ResolveIncident
+    input:
+      - {name: incident_id, type: Uuid}
+    outcomes:
+      - name: resolved
+        moves: demo.ledger.Incident.resolve
+        instance: incident_id
+        emits: [demo.ledger.IncidentResolved]
+        payload: {demo.ledger.IncidentResolved: {incident_id: input.incident_id}}
+      - name: wrong-state
+        wrong_state: true
+        error: demo.ledger.Conflict
+views:
+  # Every resolved incident that ran during any part of the period, per cause: one across a bound
+  # counts in each period it touches.
+  - name: demo.ledger.IncidentsOverlapping
+    source: demo.ledger.Incident
+    consistency: read_your_writes
+    params: [{name: from, type: Timestamp}, {name: to, type: Timestamp}]
+    filter: [state == Resolved, started_at < param.to, ended_at > param.from]
+    group_by: [cause]
+    fields:
+      - {name: cause, type: String}
+      - {name: incidents, type: Integer, aggregate: {count: {}}}
+  # Every resolved incident that started in the period, `from` inclusive and `to` exclusive.
+  - name: demo.ledger.IncidentsStartedInRange
+    source: demo.ledger.Incident
+    consistency: read_your_writes
+    params: [{name: from, type: Timestamp}, {name: to, type: Timestamp}]
+    filter: [state == Resolved, started_at >= param.from, started_at < param.to]
+    fields:
+      - {name: incident_id, type: Uuid}
