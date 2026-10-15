@@ -1596,7 +1596,7 @@ func TestWalkConcurrent(t *testing.T) {
 }
 "#;
 
-const WALK_CONCURRENT_TS: &str = r#"import { writeFileSync } from 'node:fs';
+const WALK_CONCURRENT_TS: &str = r"import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 
@@ -1661,7 +1661,7 @@ await test('walk concurrent', async () => {
     }
   }
 });
-"#;
+";
 
 fn external_cases() -> Value {
     serde_json::json!([
@@ -1961,6 +1961,7 @@ fn check_history_holds_each_answer_to_its_recorded_input_and_events_on_a_model_w
 /// byte, and is held to the format: neither field in a lower format, neither written `null`, and no
 /// events on a call that never answered.
 #[test]
+#[allow(clippy::too_many_lines)]
 fn an_ess_history_3_operation_records_its_input_and_events_and_the_reader_holds_them_to_the_format()
 {
     use ess_conformance::history::{read, read_format1, HistoryFormat, HistoryRefusal, Node};
@@ -1989,7 +1990,7 @@ fn an_ess_history_3_operation_records_its_input_and_events_and_the_reader_holds_
             .as_ref()
             .expect("the events are read")
             .iter()
-            .map(|name| name.as_str())
+            .map(ess_conformance::history::QualifiedName::as_str)
             .collect::<Vec<_>>(),
         ["calc.core.Big"]
     );
