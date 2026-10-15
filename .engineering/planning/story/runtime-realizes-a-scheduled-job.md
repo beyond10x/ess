@@ -2,20 +2,24 @@
 format: aep.planning-md/3
 id: story:runtime-realizes-a-scheduled-job
 kind: story
-status: draft
+status: active
 title: A runtime workload can be realized as a scheduled job (Kubernetes CronJob)
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 1
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-15T03:05:53Z", actor: "human:timo", revision: 4}
+- {from: "proposed", to: "active", at: "2026-10-15T03:05:53Z", actor: "human:timo", revision: 5}
 ---
 ## Outcome
 
 An `ess-runtime` workload can be declared a scheduled job, and `ess generate project helm` renders
-it as a Kubernetes `CronJob` (`batch/v1`) instead of a `Deployment` or `StatefulSet`: a cron
-schedule, a concurrency policy that forbids overlapping runs, successful- and failed-run history
-limits, secret references as the long-running workloads take them, and a declared state location
-that survives between runs.
+it as a Kubernetes `CronJob` (`batch/v1`) and the `Job` template it spawns, instead of a
+`Deployment` or `StatefulSet`: a cron schedule, a concurrency policy (`forbid` by default,
+`replace`, `allow`), successful- and failed-run history limits, a suspended flag, a run deadline, a
+retry limit, secret references as the long-running workloads take them, and a declared state
+location that survives between runs. A scheduled workload that could run unbounded is refused.
 
 ## Evidence
 
@@ -30,21 +34,29 @@ that survives between runs.
 
 ## Acceptance
 
-Failing tests first:
+Failing tests first, each a module of an existing test binary of the crate (no new `tests/*.rs`):
 
 - `a_scheduled_workload_renders_a_cron_job`: a runtime with one workload declared
-  `schedule: {cron: "*/15 * * * *"}` renders `apiVersion: batch/v1`, `kind: CronJob` with that
-  schedule, `concurrencyPolicy: Forbid` by default, and the job template carrying the container,
-  its environment, config and secret references exactly as a `Deployment` would.
+  `schedule: {cron: "*/15 * * * *"}` and a run deadline renders `apiVersion: batch/v1`,
+  `kind: CronJob` with that schedule, `concurrencyPolicy: Forbid` by default, and the
+  `jobTemplate` carrying the container, its environment, config and secret references exactly as a
+  `Deployment` would, with `restartPolicy: Never` or `OnFailure` as declared.
 - `a_scheduled_workload_declares_history_limits_and_overlap`: `successful_runs`, `failed_runs` and
   `overlap: forbid | replace | allow` render `successfulJobsHistoryLimit`, `failedJobsHistoryLimit`
   and `concurrencyPolicy`.
+- `a_scheduled_workload_declares_suspend_deadline_and_retries`: `suspended: true` renders
+  `suspend: true` (absent renders `false`), the run deadline renders the job's
+  `activeDeadlineSeconds`, and the retry limit renders the job's `backoffLimit`.
+- `an_unbounded_scheduled_workload_is_refused_by_name`: a scheduled workload with no run deadline
+  is refused with a named diagnostic that names the workload and the missing deadline.
 - `a_scheduled_workload_keeps_state_between_runs`: a declared state location renders a
   PersistentVolumeClaim the job mounts on every run (no `StatefulSet`).
 - `a_malformed_or_conflicting_schedule_is_refused_by_name`: an invalid cron expression, a schedule
-  beside replicas or a Service port, and a readiness probe on a scheduled workload are refused
-  with a named diagnostic.
+  beside replicas or a Service port, a readiness probe on a scheduled workload, and a negative or
+  zero deadline or a negative retry limit are refused with a named diagnostic.
 - `a_runtime_without_schedules_keeps_its_chart_bytes`.
+- The format consequence of the new `ess-runtime` keys is decided under the repository's format
+  rules, with the old-reader compatibility test first.
 
 ## Design first
 
