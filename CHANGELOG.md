@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.61.0] — 2026-10-15
+
 ### Added
 
 - `ess generate types --target rust` and `ess generate schema types-bundle` take a repeatable

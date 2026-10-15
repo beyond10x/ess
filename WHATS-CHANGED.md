@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.61.0](#concurrent-histories-record-each-calls-input-and-events-and-check-history-holds-them) | Concurrent histories record each call's input and events, and check-history holds them | capability | notable |
 | [0.60.0](#a-composition-states-which-component-plays-anothers-role-and-which-command-implements-or-gates-it) | A composition states which component plays another's role, and which command implements or gates it | capability | notable |
 | [0.60.0](#source-format-ess25-and-an-http-binding-that-generates-rust-and-go-servers) | Source format ess/25, and an HTTP binding that generates Rust and Go servers | capability | significant |
 | [0.60.0](#commands-and-views-bind-to-http-routes-and-mutation-testing-covers-more-of-a-model) | Commands and views bind to HTTP routes, and mutation testing covers more of a model | capability | notable |
@@ -69,6 +70,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.61.0 — 2026-10-15
+
+### Concurrent histories record each call's input and events, and check-history holds them
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.61.0)
+
+`ess-history/3` records each operation's input and published events, and `check-history` holds a target to both. Concurrent exploration arranges `external:` causes and replays a failing seed alone. Synthesis arranges period-bounded views, Rust types take raw JSON values, and the one-time response guide counts disclosure cells.
 
 ## 0.60.0 — 2026-10-14
 

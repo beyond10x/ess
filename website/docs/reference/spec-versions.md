@@ -637,7 +637,7 @@ history with none is still written as `ess-history/1`, byte for byte; `check-his
 and refuses a `decision_time` in an `ess-history/1` document. A reader of `ess-history/1` only
 refuses `ess-history/2` by its `format`.
 
-`ess-history/3`, unreleased, adds two optional operation fields: `input`, the command's input as
+`ess-history/3`, added in [0.61.0][r61], adds two optional operation fields: `input`, the command's input as
 the client sent it, and `events`, the name of every event a returned command's answer published,
 in order. A writer selects it exactly when an operation records either, so a history with neither
 keeps its format and its bytes; `check-history` reads all three, steps an operation with the input
@@ -803,3 +803,4 @@ published release that carries them.
 [r58]: https://github.com/beyond10x/ess/releases/tag/0.58.0
 [r59]: https://github.com/beyond10x/ess/releases/tag/0.59.0
 [r60]: https://github.com/beyond10x/ess/releases/tag/0.60.0
+[r61]: https://github.com/beyond10x/ess/releases/tag/0.61.0

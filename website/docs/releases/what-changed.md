@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.61.0 — 2026-10-15
+
+### Concurrent histories record each call's input and events, and check-history holds them
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.61.0)
+
+`ess-history/3` records each operation's input and published events, and `check-history` holds a target to both. Concurrent exploration arranges `external:` causes and replays a failing seed alone. Synthesis arranges period-bounded views, Rust types take raw JSON values, and the one-time response guide counts disclosure cells.
+
 ## 0.60.0 — 2026-10-14
 
 ### A composition states which component plays another's role, and which command implements or gates it
