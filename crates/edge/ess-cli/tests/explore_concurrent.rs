@@ -1979,7 +1979,7 @@ fn an_ess_history_3_operation_records_its_input_and_events_and_the_reader_holds_
             "ab".repeat(32)
         )
     };
-    let returned = r#"{"operation_id":"00000000-0000-4000-8000-000000000002","client":0,"command":"calc.core.Check","subject_key":"","invoked_at":1,"returned_at":2,"completion":"Returned","outcome":"big","input":{"n":100,"note":null,"tag":{"a":"x","b":[true]}},"events":["calc.core.Big"]}"#;
+    let returned = r#"{"operation_id":"00000000-0000-4000-8000-000000000002","client":0,"command":"calc.core.Check","subject_key":"","invoked_at":1,"returned_at":2,"completion":"Returned","outcome":"big","input":{"n":100,"note":null,"tag":{"a":"x","b":[true]}},"events":[{"event":"calc.core.Big","payload":{"n":100}}],"arranged":[]}"#;
     let bytes = document("ess-history/3", returned);
     let history = read(bytes.as_bytes(), &digest).unwrap_or_else(|refusal| panic!("{refusal}"));
     assert_eq!(history.format, HistoryFormat::EssHistory3);
@@ -1997,7 +1997,7 @@ fn an_ess_history_3_operation_records_its_input_and_events_and_the_reader_holds_
             .as_ref()
             .expect("the events are read")
             .iter()
-            .map(ess_conformance::history::QualifiedName::as_str)
+            .map(|event| event.event.as_str())
             .collect::<Vec<_>>(),
         ["calc.core.Big"]
     );
@@ -2030,7 +2030,7 @@ fn an_ess_history_3_operation_records_its_input_and_events_and_the_reader_holds_
             "`operations[0].input` is `null`",
         ),
         (
-            r#""events":["calc.core.Big"]"#,
+            r#""events":[{"event":"calc.core.Big","payload":{"n":100}}]"#,
             r#""events":null"#,
             "`operations[0].events` is `null`",
         ),
@@ -2039,12 +2039,48 @@ fn an_ess_history_3_operation_records_its_input_and_events_and_the_reader_holds_
             r#""input":[100]"#,
             "",
         ),
-        (r#""events":["calc.core.Big"]"#, r#""events":[""]"#, ""),
         (
-            r#""events":["calc.core.Big"]"#,
+            r#""events":[{"event":"calc.core.Big","payload":{"n":100}}]"#,
+            r#""events":[{"event":"","payload":{}}]"#,
+            "",
+        ),
+        (
+            r#""events":[{"event":"calc.core.Big","payload":{"n":100}}]"#,
             r#""events":"calc.core.Big""#,
             "",
         ),
+        // Each event is an object naming the event and carrying its payload, nothing else.
+        (
+            r#""events":[{"event":"calc.core.Big","payload":{"n":100}}]"#,
+            r#""events":["calc.core.Big"]"#,
+            "",
+        ),
+        (
+            r#""events":[{"event":"calc.core.Big","payload":{"n":100}}]"#,
+            r#""events":[["calc.core.Big",{"n":100}]]"#,
+            "",
+        ),
+        (
+            r#""events":[{"event":"calc.core.Big","payload":{"n":100}}]"#,
+            r#""events":[{"event":"calc.core.Big"}]"#,
+            "payload",
+        ),
+        (
+            r#""events":[{"event":"calc.core.Big","payload":{"n":100}}]"#,
+            r#""events":[{"event":"calc.core.Big","payload":{"n":100},"at":1}]"#,
+            "at",
+        ),
+        (
+            r#""events":[{"event":"calc.core.Big","payload":{"n":100}}]"#,
+            r#""events":[{"event":"calc.core.Big","payload":{"n":100.0}}]"#,
+            "`operations[0].events[0].payload.n` is written `100.0`",
+        ),
+        (
+            r#""arranged":[]"#,
+            r#""arranged":null"#,
+            "`operations[0].arranged` is `null`",
+        ),
+        (r#""arranged":[]"#, r#""arranged":[""]"#, ""),
     ] {
         let changed = returned.replace(from, to);
         assert_ne!(changed, returned);
@@ -2067,7 +2103,10 @@ fn an_ess_history_3_operation_records_its_input_and_events_and_the_reader_holds_
             operation_id: "00000000-0000-4000-8000-000000000002".to_owned()
         }
     );
-    let sent = indeterminate.replace(r#","events":["calc.core.Big"]"#, "");
+    let sent = indeterminate.replace(
+        r#","events":[{"event":"calc.core.Big","payload":{"n":100}}]"#,
+        "",
+    );
     let read_back = read(document("ess-history/3", &sent).as_bytes(), &digest).unwrap();
     assert!(read_back.operations[0].input.is_some());
     // The retained format 1 reader refuses it by its format.
@@ -2094,7 +2133,6 @@ mod adversary_external_answer_unarranged {
     /// checker that admits `declined` wherever the input makes it eligible cannot tell this double
     /// from a correct one, in any of 200 histories.
     #[test]
-    #[ignore = "finding: an unarranged `declined` answer is Linearizable in all 200 histories"]
     fn concurrent_exploration_catches_an_external_answer_nobody_arranged() {
         let scratch = tempfile::tempdir().expect("a scratch directory");
         let spec = reachable_external_spec(scratch.path());
@@ -2267,7 +2305,6 @@ mod adversary_wrong_payload {
     use super::*;
 
     #[test]
-    #[ignore = "finding: a published payload the input does not give is Linearizable in all 200 histories"]
     fn concurrent_exploration_catches_a_payload_the_input_does_not_give() {
         let scratch = tempfile::tempdir().expect("a scratch directory");
         let spec = calc_spec(scratch.path());

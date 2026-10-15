@@ -247,6 +247,7 @@ impl<T: Interleaved, V: ConformanceTarget> Recording<'_, T, V> {
             decision_time: None,
             input: None,
             events: None,
+            arranged: None,
         });
         index
     }

@@ -352,6 +352,7 @@ impl<T: Interleaved> Recording<'_, T> {
             decision_time: None,
             input: None,
             events: None,
+            arranged: None,
         });
         Ok(InFlight {
             pending: self.target.invoke(request),

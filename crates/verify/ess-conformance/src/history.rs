@@ -5,10 +5,12 @@
 //! operation, which client called which command on which subject, when the call was invoked, when
 //! it returned and what it answered. `ess-history/2` adds one optional operation field,
 //! `decision_time`: the UTC instant the command's decision observed
-//! ([`crate::occurrence_clock`], beyond10x/ess#244). `ess-history/3` adds two more, `input` (what
-//! the client sent) and `events` (the names of the events the answer published, in order), so the
-//! checker holds an answer to the input it was given and to the events its branch declares
-//! (beyond10x/ess#576). A writer selects the lowest format its operations need
+//! ([`crate::occurrence_clock`], beyond10x/ess#244). `ess-history/3` adds three more: `input` (what
+//! the client sent), `events` (each event the answer published, in order, with its payload) and
+//! `arranged` (the `external:` branches the client arranged before sending the call), so the
+//! checker holds an answer to the input it was given, to the events and payloads its branch
+//! declares and to the external causes somebody arranged (beyond10x/ess#576). A writer selects the
+//! lowest format its operations need
 //! ([`HistoryFormat::for_operations`]) and refuses to write a lower one, so a document written
 //! before a field existed keeps its bytes and its meaning. The document is
 //! declared by `models/concurrent-history/`;
@@ -22,8 +24,10 @@
 //!    level, the document or an operation written as a JSON array rather than an object, a value
 //!    outside its type, a number written with a decimal point or an exponent, a `decision_time`
 //!    that is not the one spelling of an instant, written `null`, or carried by an
-//!    `ess-history/1` document, or an `input` or `events` written `null` or carried by a document
-//!    below `ess-history/3` ([`HistoryRefusal::Malformed`], the detail naming which) — or another
+//!    `ess-history/1` document, an `input`, `events` or `arranged` written `null` or carried by a
+//!    document below `ess-history/3`, a key written twice in an object inside an `input` or an
+//!    event's `payload`, or a number there in any spelling but its one ([`canonical_numbers`])
+//!    ([`HistoryRefusal::Malformed`], the detail naming which) — or another
 //!    `format`, a future major included. [`read_format1`] is the retained format 1 reader: it
 //!    refuses `ess-history/2` and `ess-history/3` by their format, before any operation is read;
 //! 2. a history recorded against a specification other than the one being checked, before any
@@ -49,9 +53,10 @@
 //! deserialize, so no caller can obtain one that skipped these checks.
 //!
 //! An `Optional` field may be absent or `null`; both read as `None` — except `decision_time`,
-//! `input` and `events`, which are absent where nothing was recorded and are never `null`.
-//! Everything else has one spelling, and one document reads to one value whatever the order of its
-//! keys.
+//! `input`, `events` and `arranged`, which are absent where nothing was recorded and are never
+//! `null`. Everything else has one spelling, and one document reads to one value whatever the order
+//! of its keys. A number inside an `input` or a `payload` is spelled as `JSON.stringify` and Go's
+//! `encoding/json` spell its binary64 value, so a document read and written back keeps its bytes.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -69,10 +74,11 @@ pub use ess_primitives::node::Node;
 pub const HISTORY_FORMAT: &str = "ess-history/1";
 
 /// The `format` of a history at least one of whose operations records a `decision_time`, and none
-/// an `input` or `events`.
+/// an `input`, `events` or `arranged`.
 pub const HISTORY_FORMAT_2: &str = "ess-history/2";
 
-/// The `format` of a history at least one of whose operations records its `input` or its `events`.
+/// The `format` of a history at least one of whose operations records its `input`, its `events` or
+/// what it `arranged`.
 pub const HISTORY_FORMAT_3: &str = "ess-history/3";
 
 /// The largest integer an `ess-history/1` document carries: 2^53 − 1.
@@ -90,14 +96,15 @@ pub enum HistoryFormat {
     /// `ess-history/2`: an operation may carry `decision_time`.
     #[serde(rename = "ess-history/2")]
     EssHistory2,
-    /// `ess-history/3`: an operation may carry `input` and `events` as well.
+    /// `ess-history/3`: an operation may carry `input`, `events` and `arranged` as well.
     #[serde(rename = "ess-history/3")]
     EssHistory3,
 }
 
 impl HistoryFormat {
     /// The format a writer selects for `operations`, the lowest that carries them:
-    /// `ess-history/3` exactly when one of them records its input or its events, otherwise
+    /// `ess-history/3` exactly when one of them records its input, its events or what it arranged,
+    /// otherwise
     /// `ess-history/2` exactly when one records a decision time.
     #[must_use]
     pub fn for_operations(operations: &[Operation]) -> Self {
@@ -246,7 +253,8 @@ pub enum Verdict {
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct History {
-    /// [`HistoryFormat::EssHistory3`] where an operation records its input or its events,
+    /// [`HistoryFormat::EssHistory3`] where an operation records its input, its events or what it
+    /// arranged,
     /// [`HistoryFormat::EssHistory2`] where one records a decision time, otherwise
     /// [`HistoryFormat::EssHistory1`] ([`HistoryFormat::for_operations`]).
     pub format: HistoryFormat,
@@ -325,20 +333,68 @@ pub struct Operation {
     /// The checker steps the operation with exactly this input, where without it it asks whether
     /// some candidate input explains the answer ([`crate::linearize`]). Absent on a read and on an
     /// operation whose writer recorded none; never `null`. A retry carries the input its request
-    /// sent, which is its original's. An integral number below 2^53 is written as the integer,
-    /// as the Go and TypeScript writers write it ([`integral_numbers`]).
+    /// sent, which is its original's. Every number in it has one spelling, the one the Go and
+    /// TypeScript writers write ([`canonical_numbers`]).
     #[serde(
         skip_serializing_if = "Option::is_none",
-        serialize_with = "integral_numbers"
+        serialize_with = "canonical_numbers"
     )]
     pub input: Option<BTreeMap<String, Node>>,
-    /// The name of every event the answer published, in the order published (`ess-history/3`).
+    /// Every event the answer published, in the order published, with its payload
+    /// (`ess-history/3`).
     ///
     /// Written only on a `Returned` command: a call that never answered published nothing anyone
-    /// saw. The checker holds it to the `emits:` of the branch the step takes. Absent on a read
-    /// and on an operation whose writer recorded none; never `null`.
+    /// saw. The checker holds the names to the `emits:` of the branch the step takes and, where the
+    /// operation records its input, each payload field the branch maps from that input or from a
+    /// literal to the value the model computes. Absent on a read and on an operation whose writer
+    /// recorded none; never `null`.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub events: Option<Vec<QualifiedName>>,
+    pub events: Option<Vec<PublishedEvent>>,
+    /// The `external:` branches the client asked the target to arrange, through
+    /// `ConfigureExternalOutcome`, before it sent this call (`ess-history/3`); `[]` where it
+    /// arranged none.
+    ///
+    /// A target keeps an arrangement for its command until the scenario ends, so an arrangement
+    /// one call recorded may answer another call of the command that had not yet returned. Where an
+    /// operation records it, the checker admits an external branch other than a `replays:` one
+    /// only as such an arrangement allows ([`crate::linearize`]). Absent where the writer recorded
+    /// none, which leaves every eligible external branch open; never `null`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arranged: Option<Vec<QualifiedName>>,
+}
+
+/// `concurrent.history.PublishedEvent`: one event an answer published, as the target published it.
+///
+/// Read only through [`read`], which refuses a JSON array in its place, an unknown, missing or
+/// repeated field, a key written twice inside `payload` and a number there in any spelling but its
+/// one ([`canonical_numbers`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PublishedEvent {
+    /// The event's name.
+    pub event: QualifiedName,
+    /// Its payload, every field by name as published.
+    #[serde(serialize_with = "canonical_numbers")]
+    pub payload: BTreeMap<String, Node>,
+}
+
+/// What [`read`] admits for a [`PublishedEvent`]: the same fields, deserialized only from a JSON
+/// object ([`ObjectOnly`]).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PublishedEventWire {
+    event: QualifiedName,
+    payload: BTreeMap<String, Node>,
+}
+
+impl<'de> Deserialize<'de> for PublishedEvent {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let ObjectOnly(wire) = ObjectOnly::<PublishedEventWire>::deserialize(deserializer)?;
+        Ok(Self {
+            event: wire.event,
+            payload: wire.payload,
+        })
+    }
 }
 
 impl Serialize for History {
@@ -350,8 +406,8 @@ impl Serialize for History {
                 .find(|operation| operation.records_format3())
             {
                 return Err(ser::Error::custom(format!(
-                    "`{}` carries no `input` and no `events`, and operation {} records one; write \
-                     `{HISTORY_FORMAT_3}`",
+                    "`{}` carries no `input`, `events` or `arranged`, and operation {} records \
+                     one; write `{HISTORY_FORMAT_3}`",
                     self.format.as_str(),
                     operation.operation_id.as_str()
                 )));
@@ -424,7 +480,8 @@ struct OperationWire {
     retry_of: Option<Uuid>,
     decision_time: Option<DecisionInstant>,
     input: Option<BTreeMap<String, Node>>,
-    events: Option<Vec<QualifiedName>>,
+    events: Option<Vec<PublishedEvent>>,
+    arranged: Option<Vec<QualifiedName>>,
 }
 
 impl From<OperationWire> for Operation {
@@ -443,6 +500,7 @@ impl From<OperationWire> for Operation {
             decision_time: wire.decision_time,
             input: wire.input,
             events: wire.events,
+            arranged: wire.arranged,
         }
     }
 }
@@ -459,10 +517,11 @@ pub enum ReturnBound {
 }
 
 impl Operation {
-    /// Whether the operation records a field only `ess-history/3` carries: its input or its events.
+    /// Whether the operation records a field only `ess-history/3` carries: its input, its events or
+    /// what it arranged.
     #[must_use]
     pub fn records_format3(&self) -> bool {
-        self.input.is_some() || self.events.is_some()
+        self.input.is_some() || self.events.is_some() || self.arranged.is_some()
     }
 
     /// When this operation is read as having returned (design decision 4).
@@ -590,14 +649,16 @@ crate::authored::diagnostic_catalogue! {
             "The bytes are not an `ess-history/1`, `ess-history/2` or `ess-history/3` document: \
              not JSON, an unknown or missing field, a value outside its declared type, a \
              `decision_time` that is `null`, not the one spelling of an instant, or in an \
-             `ess-history/1` document, or an `input` or `events` that is `null` or in a document \
-             below `ess-history/3`.",
+             `ess-history/1` document, an `input`, `events` or `arranged` that is `null` or in a \
+             document below `ess-history/3`, a key written twice inside an `input` or a \
+             `payload`, or a number there in another spelling than its one.",
             "Write the document as `schemas/ess-history.schema.json` describes; the detail names \
              the field or the position.";
         Self::UnsupportedFormat { .. } => "history.unsupported-format",
             "The `format` is absent, or names a format this build does not read.",
             "Write `format: ess-history/1`, `ess-history/2` where an operation records a \
-             `decision_time`, or `ess-history/3` where one records its `input` or `events`.";
+             `decision_time`, or `ess-history/3` where one records its `input`, `events` or \
+             `arranged`.";
         Self::SpecDigestMismatch { .. } => "history.spec-digest-mismatch",
             "The history was recorded against another specification.",
             "Check the history against the specification it was recorded against, or record it \
@@ -838,6 +899,7 @@ fn read_admitting(
         _ => return Err(HistoryRefusal::UnsupportedFormat { found: None }),
     }
     never_null(bytes)?;
+    spelled(bytes)?;
     let ObjectOnly(wire): ObjectOnly<HistoryWire> =
         serde_json::from_slice(bytes).map_err(malformed)?;
     let history = History::from(wire);
@@ -849,8 +911,8 @@ fn read_admitting(
         {
             return Err(HistoryRefusal::Malformed {
                 detail: format!(
-                    "operation {} records its `input` or `events`, which `{}` does not carry; \
-                     write `{HISTORY_FORMAT_3}`",
+                    "operation {} records its `input`, `events` or `arranged`, which `{}` does \
+                     not carry; write `{HISTORY_FORMAT_3}`",
                     operation.operation_id.as_str(),
                     history.format.as_str()
                 ),
@@ -920,8 +982,8 @@ fn read_admitting(
     Ok(history)
 }
 
-/// Refuses an operation writing `decision_time`, `input` or `events` as `null`, which serde would
-/// read as absent.
+/// Refuses an operation writing `decision_time`, `input`, `events` or `arranged` as `null`, which
+/// serde would read as absent.
 ///
 /// Only the keys' presence is read here; the operation's shape is the derived reader's.
 fn never_null(bytes: &[u8]) -> Result<(), HistoryRefusal> {
@@ -937,7 +999,7 @@ fn never_null(bytes: &[u8]) -> Result<(), HistoryRefusal> {
         return Ok(());
     };
     for (index, operation) in operations.iter().enumerate() {
-        for field in ["decision_time", "input", "events"] {
+        for field in ["decision_time", "input", "events", "arranged"] {
             if operation.get(field).is_some_and(serde_json::Value::is_null) {
                 return Err(HistoryRefusal::Malformed {
                     detail: format!(
@@ -953,6 +1015,177 @@ fn never_null(bytes: &[u8]) -> Result<(), HistoryRefusal> {
         }
     }
     Ok(())
+}
+
+/// Refuses a key written twice in any object inside an operation's `input` or an event's
+/// `payload`, and a number there in any spelling but its one ([`canonical_numbers`]).
+///
+/// serde keeps the last of two values under one key, and another reader the first; the input
+/// decides which branch the checker steps, so both readings must be the same one. A number's
+/// spelling is read here, from the bytes, because a [`Node`] does not keep it: `100.0`, `1e2` and
+/// `100` are one value there, and only `100` writes back as itself.
+///
+/// Only those two values are read here; the operation's shape is the derived reader's, so a
+/// document whose shape this probe cannot read is left to it.
+fn spelled(bytes: &[u8]) -> Result<(), HistoryRefusal> {
+    use serde_json::value::RawValue;
+
+    #[derive(Deserialize)]
+    struct Operations {
+        #[serde(default)]
+        operations: Option<Vec<OperationValues>>,
+    }
+    #[derive(Deserialize)]
+    struct OperationValues {
+        #[serde(default)]
+        input: Option<Box<RawValue>>,
+        #[serde(default)]
+        events: Option<Vec<EventValues>>,
+    }
+    #[derive(Deserialize)]
+    struct EventValues {
+        #[serde(default)]
+        payload: Option<Box<RawValue>>,
+    }
+    let Ok(Operations {
+        operations: Some(operations),
+    }) = serde_json::from_slice::<Operations>(bytes)
+    else {
+        return Ok(());
+    };
+    let refused = |detail: String| HistoryRefusal::Malformed { detail };
+    for (index, operation) in operations.iter().enumerate() {
+        if let Some(input) = &operation.input {
+            one_spelling(input, &format!("operations[{index}].input")).map_err(refused)?;
+        }
+        for (position, event) in operation.events.iter().flatten().enumerate() {
+            if let Some(payload) = &event.payload {
+                one_spelling(
+                    payload,
+                    &format!("operations[{index}].events[{position}].payload"),
+                )
+                .map_err(refused)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The members of one JSON object in the order written, each value still as its text.
+struct Members(Vec<(String, Box<serde_json::value::RawValue>)>);
+
+impl<'de> Deserialize<'de> for Members {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Visit;
+
+        impl<'de> de::Visitor<'de> for Visit {
+            type Value = Members;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a JSON object")
+            }
+
+            fn visit_map<A: de::MapAccess<'de>>(self, mut map: A) -> Result<Members, A::Error> {
+                let mut members = Vec::new();
+                while let Some(member) = map.next_entry()? {
+                    members.push(member);
+                }
+                Ok(Members(members))
+            }
+        }
+
+        deserializer.deserialize_map(Visit)
+    }
+}
+
+/// Every object in `value` without a repeated key and every number in it in its one spelling;
+/// otherwise what is wrong and where, under `at`.
+fn one_spelling(value: &serde_json::value::RawValue, at: &str) -> Result<(), String> {
+    let text = value.get();
+    match text.as_bytes().first() {
+        Some(b'{') => {
+            let Members(members) = serde_json::from_str(text).map_err(|error| error.to_string())?;
+            let mut keys = BTreeSet::new();
+            for (key, member) in &members {
+                if !keys.insert(key.as_str()) {
+                    return Err(format!(
+                        "`{at}` writes the key `{key}` twice; write each key once"
+                    ));
+                }
+                one_spelling(member, &format!("{at}.{key}"))?;
+            }
+            Ok(())
+        }
+        Some(b'[') => {
+            let items: Vec<Box<serde_json::value::RawValue>> =
+                serde_json::from_str(text).map_err(|error| error.to_string())?;
+            items
+                .iter()
+                .enumerate()
+                .try_for_each(|(index, item)| one_spelling(item, &format!("{at}[{index}]")))
+        }
+        Some(b'-' | b'0'..=b'9') => {
+            let value = text
+                .parse::<f64>()
+                .ok()
+                .filter(|value| value.is_finite())
+                .ok_or_else(|| format!("`{at}` is `{text}`, which no binary64 carries"))?;
+            let spelling = number_spelling(value);
+            if spelling == text {
+                Ok(())
+            } else {
+                Err(format!(
+                    "`{at}` is written `{text}`; its one spelling is `{spelling}`, and a value \
+                     binary64 does not carry exactly is refused"
+                ))
+            }
+        }
+        _ => Ok(()),
+    }
+}
+
+/// A binary64 in the spelling ECMAScript's `Number::toString` gives it, which is what
+/// `JSON.stringify` writes and Go's `encoding/json` writes for a `float64`: the shortest digits
+/// that read back as the value, positional from 10^-6 up to below 10^21 and with an exponent
+/// (`1e+21`, `1.5e-7`) outside that, and `0` for both zeros.
+fn number_spelling(value: f64) -> String {
+    if value == 0.0 {
+        return "0".to_owned();
+    }
+    let sign = if value < 0.0 { "-" } else { "" };
+    // Rust's `{:e}` is the shortest round-tripping digits, `d.ddde<exponent>`.
+    let scientific = format!("{:e}", value.abs());
+    let (mantissa, exponent) = scientific
+        .split_once('e')
+        .expect("`{:e}` writes an exponent");
+    let digits: String = mantissa.chars().filter(char::is_ascii_digit).collect();
+    let exponent: i64 = exponent.parse().expect("`{:e}` writes an integer exponent");
+    // ECMAScript's `n`: the value is 0.<digits> × 10^n.
+    let n = exponent + 1;
+    let k = i64::try_from(digits.len()).expect("a binary64 has at most 17 significant digits");
+    let zeros = |count: i64| "0".repeat(usize::try_from(count).unwrap_or(0));
+    let body = if k <= n && n <= 21 {
+        format!("{digits}{}", zeros(n - k))
+    } else if 0 < n && n <= 21 {
+        let (whole, fraction) = digits.split_at(usize::try_from(n).unwrap_or(0));
+        format!("{whole}.{fraction}")
+    } else if -6 < n && n <= 0 {
+        format!("0.{}{digits}", zeros(-n))
+    } else {
+        let power = n - 1;
+        let power = if power < 0 {
+            format!("-{}", -power)
+        } else {
+            format!("+{power}")
+        };
+        let (first, rest) = digits.split_at(1);
+        if rest.is_empty() {
+            format!("{first}e{power}")
+        } else {
+            format!("{first}.{rest}e{power}")
+        }
+    };
+    format!("{sign}{body}")
 }
 
 /// Refuses a UUID written with upper-case hexadecimal.
@@ -1017,50 +1250,67 @@ fn check(operation: &Operation, clients: u64) -> Result<(), HistoryRefusal> {
     }
 }
 
-/// [`MAX_INTEGER`] as a binary64, which carries it exactly (2^53 − 1).
-const MAX_INTEGER_F64: f64 = 9_007_199_254_740_991.0;
-
-/// Writes an operation's `input` in the one spelling every writer uses: a number whose binary64
-/// value is an integer of at most [`MAX_INTEGER`] in magnitude is written as that integer (`100`,
-/// never `100.0`), as Go's `encoding/json` and JavaScript's `JSON.stringify` write it; every other
-/// value is written as [`Node`] writes it.
-// serde hands a `serialize_with` function the field as declared, `&Option<_>`.
-#[allow(clippy::ref_option)]
-fn integral_numbers<S: Serializer>(
-    input: &Option<BTreeMap<String, Node>>,
+/// Writes an `input` or a `payload` with every number in its one spelling: the ECMAScript
+/// spelling of its binary64 value ([`number_spelling`]), which is what Go's `encoding/json` and
+/// `JSON.stringify` write, so `100`, never `100.0`. [`read`] refuses every other spelling, so a
+/// history read and written back keeps its bytes.
+///
+/// A [`Node`] number that binary64 does not carry exactly (`2^53 + 1`) has no such spelling and is
+/// refused: no writer of the format can write it, and [`read`] would refuse it.
+fn canonical_numbers<T: Serialize, S: Serializer>(
+    value: &T,
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
-    fn spelled(value: serde_json::Value) -> serde_json::Value {
-        match value {
-            serde_json::Value::Number(number) => match number.as_f64() {
-                Some(float)
-                    if float.fract() == 0.0
-                        && float.abs() <= MAX_INTEGER_F64
-                        && !(float == 0.0 && float.is_sign_negative()) =>
-                {
-                    // The cast is exact: the value is integral and within 2^53 − 1.
-                    #[allow(clippy::cast_possible_truncation)]
-                    serde_json::Value::from(float as i64)
+    /// A JSON value whose numbers are written in their one spelling.
+    struct Spelled(serde_json::Value);
+
+    impl Serialize for Spelled {
+        fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            match &self.0 {
+                serde_json::Value::Number(number) => {
+                    let exact = if number.is_f64() {
+                        number.as_f64()
+                    } else {
+                        // An integer, which `Node` writes only for a value binary64 does not
+                        // carry; kept where the binary64 reads back as the same integer.
+                        number
+                            .as_i64()
+                            .map(i128::from)
+                            .or_else(|| number.as_u64().map(i128::from))
+                            .and_then(|integer| {
+                                #[allow(
+                                    clippy::cast_precision_loss,
+                                    clippy::cast_possible_truncation
+                                )]
+                                let float = integer as f64;
+                                #[allow(clippy::cast_possible_truncation)]
+                                let back = float as i128;
+                                (back == integer).then_some(float)
+                            })
+                    };
+                    let value = exact.filter(|value| value.is_finite()).ok_or_else(|| {
+                        ser::Error::custom(format!(
+                            "the number {number} is not a binary64 value, which is all a history \
+                             carries"
+                        ))
+                    })?;
+                    serde_json::value::RawValue::from_string(number_spelling(value))
+                        .map_err(ser::Error::custom)?
+                        .serialize(serializer)
                 }
-                _ => serde_json::Value::Number(number),
-            },
-            serde_json::Value::Array(items) => {
-                serde_json::Value::Array(items.into_iter().map(spelled).collect())
+                serde_json::Value::Array(items) => {
+                    serializer.collect_seq(items.iter().cloned().map(Spelled))
+                }
+                serde_json::Value::Object(members) => serializer.collect_map(
+                    members
+                        .iter()
+                        .map(|(key, member)| (key, Spelled(member.clone()))),
+                ),
+                other => other.serialize(serializer),
             }
-            serde_json::Value::Object(members) => serde_json::Value::Object(
-                members
-                    .into_iter()
-                    .map(|(key, value)| (key, spelled(value)))
-                    .collect(),
-            ),
-            other => other,
         }
     }
-    match input {
-        None => serializer.serialize_none(),
-        Some(input) => {
-            let value = serde_json::to_value(input).map_err(ser::Error::custom)?;
-            spelled(value).serialize(serializer)
-        }
-    }
+
+    let value = serde_json::to_value(value).map_err(ser::Error::custom)?;
+    Spelled(value).serialize(serializer)
 }

@@ -402,11 +402,21 @@ events:
             "completion": "Returned",
             "outcome": outcome,
         });
+        // `ess-history/3` records each event with its payload: the one `PROBE` maps, `{n: 1}` for
+        // `Tagged` and `Plain` and `{n: input.n}` for the rest, where the input has an `n`.
+        let payload = |event: &str| match (event, input.as_ref().and_then(|input| input.get("n"))) {
+            ("probe.core.Tagged" | "probe.core.Plain", _) => json!({"n": 1}),
+            (_, Some(n)) => json!({ "n": n }),
+            (_, None) => json!({}),
+        };
+        if let Some(events) = events {
+            operation["events"] = events
+                .iter()
+                .map(|event| json!({"event": event, "payload": payload(event)}))
+                .collect();
+        }
         if let Some(input) = input {
             operation["input"] = input;
-        }
-        if let Some(events) = events {
-            operation["events"] = json!(events);
         }
         operation
     }
@@ -472,7 +482,6 @@ events:
     /// (`history_format2.rs`, `a_repeated_or_unknown_field_is_refused`); a repeated input field
     /// decides which branch the checker steps, so it is refused too.
     #[test]
-    #[ignore = "finding: a repeated `input` key is admitted and the last value silently wins"]
     fn an_input_field_written_twice_is_refused() {
         let ir = probe();
         let once = String::from_utf8(document(
@@ -493,7 +502,6 @@ events:
     /// Whatever spelling of an input number the reader admits writes back as itself: the reader's
     /// promise is one spelling, and a history read and written back keeps its bytes.
     #[test]
-    #[ignore = "finding: `input` admits 100.0, 1e2, 100.00 and 1.0e2 and writes each back as 100"]
     fn an_admitted_input_number_writes_back_in_the_spelling_it_was_read_in() {
         let ir = probe();
         let canonical = String::from_utf8(document(
@@ -848,6 +856,390 @@ events:
         assert_eq!(
             verdict(&model, &history, DEFAULT_BUDGET),
             Verdict::Linearizable
+        );
+    }
+}
+
+// ---- `ess-history/3`: what a call arranged, and what its events carried (beyond10x/ess#576) ----
+
+/// The checker's side of the adversary's third and fourth findings, and the reader's one spelling
+/// of a number: an `external:` answer is admitted only where an arrangement the history records
+/// could have produced it, and a published payload is held to the value the model computes from
+/// the recorded input.
+mod ess_history_3_arrangements_and_payloads {
+    use super::*;
+    use ess_conformance::history::HistoryRefusal;
+    use serde_json::{json, Value};
+
+    /// One command over no entity: an external decline eligible from 1000 up, and an ordinary
+    /// branch whose event carries the input's amount, its optional note and a literal version.
+    const PAY: &str = "format: ess/16
+system: arrange
+version: v1
+domain: arrange.core
+actors:
+  - {name: arrange.core.Caller, may: [arrange.core.Pay]}
+commands:
+  - name: arrange.core.Pay
+    input:
+      - {name: amount, type: Integer}
+      - {name: note, type: Optional<String>}
+    outcomes:
+      - name: declined
+        when: amount >= 1000
+        external: the card network declines
+        error: arrange.core.Declined
+      - name: paid
+        emits: [arrange.core.Paid]
+        payload:
+          arrange.core.Paid: {amount: input.amount, note: input.note, version: 2}
+events:
+  - name: arrange.core.Paid
+    fields:
+      - {name: amount, type: Integer}
+      - {name: note, type: Optional<String>}
+      - {name: version, type: Integer}
+errors:
+  - name: arrange.core.Declined
+    summary: The card network declined.
+";
+
+    fn pay() -> EssIr {
+        let raw = RawSpecFile::parse(PAY).expect("the model parses");
+        let specification = Specification::assemble([(Source::new("pay.yaml"), raw)])
+            .unwrap_or_else(|errors| panic!("the model validates:\n{errors}"));
+        compile(&specification, &SourceMap::new())
+            .unwrap_or_else(|diagnostics| panic!("the model resolves:\n{diagnostics}"))
+    }
+
+    /// One call of `Pay`: `index` names it, `client` made it, it ran from `invoked` to `returned`
+    /// and answered `outcome`, with its input, events and arrangements written only where given.
+    struct Call {
+        index: u64,
+        client: u64,
+        invoked: u64,
+        returned: u64,
+        outcome: &'static str,
+        input: Option<Value>,
+        events: Option<Value>,
+        arranged: Option<Value>,
+    }
+
+    impl Call {
+        fn new(index: u64, outcome: &'static str) -> Self {
+            Self {
+                index,
+                client: 0,
+                invoked: 2 * index + 1,
+                returned: 2 * index + 2,
+                outcome,
+                input: None,
+                events: None,
+                arranged: None,
+            }
+        }
+
+        fn json(&self) -> Value {
+            let mut operation = json!({
+                "operation_id": format!("00000000-0000-4000-8000-{:012}", self.index + 1),
+                "client": self.client,
+                "command": "arrange.core.Pay",
+                "subject_key": "",
+                "invoked_at": self.invoked,
+                "returned_at": self.returned,
+                "completion": "Returned",
+                "outcome": self.outcome,
+            });
+            for (key, value) in [
+                ("input", &self.input),
+                ("events", &self.events),
+                ("arranged", &self.arranged),
+            ] {
+                if let Some(value) = value {
+                    operation[key] = value.clone();
+                }
+            }
+            operation
+        }
+    }
+
+    fn bytes(ir: &EssIr, calls: &[Call]) -> Vec<u8> {
+        serde_json::to_vec(&json!({
+            "format": "ess-history/3",
+            "history_id": "00000000-0000-4000-8000-0000000000aa",
+            "spec_digest": SuiteProvenance::of(ir).spec_digest.as_str(),
+            "seed": 1,
+            "clients": 2,
+            "operations": calls.iter().map(Call::json).collect::<Vec<_>>(),
+        }))
+        .unwrap()
+    }
+
+    fn judged(ir: &EssIr, calls: &[Call]) -> Verdict {
+        let history = history::read(&bytes(ir, calls), &SuiteProvenance::of(ir).spec_digest)
+            .unwrap_or_else(|refusal| panic!("{refusal}"));
+        linearize::check(ir, &history, DEFAULT_BUDGET)
+            .unwrap_or_else(|refusal| panic!("{refusal:?}"))
+            .verdict
+    }
+
+    /// A call of `amount` that answered `declined`, recording what it arranged.
+    fn declined(index: u64, amount: i64, arranged: &[&str]) -> Call {
+        Call {
+            input: Some(json!({ "amount": amount })),
+            arranged: Some(json!(arranged)),
+            events: Some(json!([])),
+            ..Call::new(index, "declined")
+        }
+    }
+
+    #[test]
+    fn an_external_answer_no_arrangement_explains_is_a_violation() {
+        let ir = pay();
+        assert_eq!(judged(&ir, &[declined(0, 5000, &[])]), Verdict::Violation);
+        assert_eq!(
+            judged(&ir, &[declined(0, 5000, &["declined"])]),
+            Verdict::Linearizable,
+            "its own arrangement explains it"
+        );
+        // An arrangement does not lift the branch's eligibility guard.
+        assert_eq!(
+            judged(&ir, &[declined(0, 5, &["declined"])]),
+            Verdict::Violation
+        );
+    }
+
+    /// A target keeps an arrangement until the scenario ends, and clients run at once: another
+    /// call's arrangement explains an answer when that call was invoked before this one returned,
+    /// and only then.
+    #[test]
+    fn another_calls_arrangement_explains_an_answer_only_when_it_came_before_this_one_returned() {
+        let ir = pay();
+        let arranging = |invoked, returned| Call {
+            client: 0,
+            invoked,
+            returned,
+            ..declined(0, 5000, &["declined"])
+        };
+        let unarranged = |invoked, returned| Call {
+            client: 1,
+            invoked,
+            returned,
+            ..declined(1, 5000, &[])
+        };
+        // Overlapping, the arrangement invoked first.
+        assert_eq!(
+            judged(&ir, &[arranging(1, 4), unarranged(2, 3)]),
+            Verdict::Linearizable
+        );
+        // Long after it: the arrangement still holds.
+        assert_eq!(
+            judged(&ir, &[arranging(1, 2), unarranged(5, 6)]),
+            Verdict::Linearizable
+        );
+        // The arrangement was made after the unarranged call had returned.
+        assert_eq!(
+            judged(&ir, &[unarranged(1, 2), arranging(3, 4)]),
+            Verdict::Violation
+        );
+    }
+
+    /// An arrangement may already have been used, so the ordinary branch stays open beside it;
+    /// a history that records no arrangement at all keeps every eligible external branch open.
+    #[test]
+    fn the_ordinary_branch_stays_open_and_a_history_without_arrangements_is_read_as_before() {
+        let ir = pay();
+        let paid = Call {
+            input: Some(json!({"amount": 5000})),
+            arranged: Some(json!(["declined"])),
+            ..Call::new(0, "paid")
+        };
+        assert_eq!(judged(&ir, &[paid]), Verdict::Linearizable);
+        let unrecorded = Call {
+            input: Some(json!({"amount": 5000})),
+            ..Call::new(0, "declined")
+        };
+        assert_eq!(judged(&ir, &[unrecorded]), Verdict::Linearizable);
+    }
+
+    fn paid(index: u64, input: Option<Value>, payload: Value) -> Call {
+        Call {
+            input,
+            events: Some(json!([{"event": "arrange.core.Paid", "payload": payload}])),
+            arranged: Some(json!([])),
+            ..Call::new(index, "paid")
+        }
+    }
+
+    #[test]
+    fn a_payload_is_held_to_what_the_recorded_input_and_the_literals_give() {
+        let ir = pay();
+        let input = || Some(json!({"amount": 5}));
+        for (payload, expected, why) in [
+            (
+                json!({"amount": 5, "version": 2}),
+                Verdict::Linearizable,
+                "as mapped",
+            ),
+            (
+                json!({"amount": 6, "version": 2}),
+                Verdict::Violation,
+                "another amount",
+            ),
+            (
+                json!({"version": 2}),
+                Verdict::Violation,
+                "the amount left out",
+            ),
+            (
+                json!({"amount": 5, "version": 3}),
+                Verdict::Violation,
+                "another literal",
+            ),
+            (
+                json!({"amount": 5, "note": null, "version": 2}),
+                Verdict::Linearizable,
+                "an absent note written null",
+            ),
+            (
+                json!({"amount": 5, "note": "x", "version": 2}),
+                Verdict::Violation,
+                "a note nobody sent",
+            ),
+            (
+                json!({"amount": 5, "version": 2, "unmapped": true}),
+                Verdict::Linearizable,
+                "a field no mapping names is not compared",
+            ),
+        ] {
+            assert_eq!(judged(&ir, &[paid(0, input(), payload)]), expected, "{why}");
+        }
+        assert_eq!(
+            judged(
+                &ir,
+                &[paid(
+                    0,
+                    Some(json!({"amount": 5, "note": "x"})),
+                    json!({"amount": 5, "note": "x", "version": 2})
+                )]
+            ),
+            Verdict::Linearizable
+        );
+        // Without its input, an operation is held to the names of its events only.
+        assert_eq!(
+            judged(&ir, &[paid(0, None, json!({"amount": 999_999}))]),
+            Verdict::Linearizable
+        );
+    }
+
+    /// The bytes of a one-call history in the writer's own spelling, with `amount` written as
+    /// `spelling` in the input and in the payload.
+    fn spelled(ir: &EssIr, spelling: &str) -> String {
+        let written = history::read(
+            &bytes(
+                ir,
+                &[paid(0, Some(json!({"amount": 1})), json!({"amount": 1}))],
+            ),
+            &SuiteProvenance::of(ir).spec_digest,
+        )
+        .unwrap();
+        let canonical = String::from_utf8(serde_json::to_vec(&written).unwrap()).unwrap();
+        assert_eq!(canonical.matches(r#""amount":1"#).count(), 2, "{canonical}");
+        canonical.replace(r#""amount":1"#, &format!(r#""amount":{spelling}"#))
+    }
+
+    #[test]
+    fn a_number_in_an_input_or_a_payload_has_one_spelling_and_writes_back_as_itself() {
+        let ir = pay();
+        let digest = SuiteProvenance::of(&ir).spec_digest;
+        for spelling in [
+            "0",
+            "-3",
+            "0.5",
+            "123456789012",
+            "9007199254740992",
+            "1e+21",
+            "1.5e-7",
+            "0.000001",
+            "-1.25e+30",
+        ] {
+            let text = spelled(&ir, spelling);
+            let history = history::read(text.as_bytes(), &digest).unwrap_or_else(|refusal| {
+                panic!("`{spelling}` is its one spelling and is refused: {refusal}")
+            });
+            assert_eq!(
+                String::from_utf8(serde_json::to_vec(&history).unwrap()).unwrap(),
+                text,
+                "`{spelling}`"
+            );
+        }
+        for (spelling, one) in [
+            ("-0", "0"),
+            ("1.0", "1"),
+            ("1E2", "100"),
+            ("1e21", "1e+21"),
+            ("0.0000001", "1e-7"),
+            ("9007199254740993", "9007199254740992"),
+        ] {
+            let refused = history::read(spelled(&ir, spelling).as_bytes(), &digest).unwrap_err();
+            assert_eq!(refused.code(), "history.malformed", "`{spelling}`");
+            assert!(
+                refused.to_string().contains(&format!(
+                    "`operations[0].input.amount` is written `{spelling}`; its one spelling is \
+                     `{one}`"
+                )),
+                "`{spelling}`: {refused}"
+            );
+        }
+        // The payload is held to the same rule, and so is every depth of both.
+        let payload = spelled(&ir, "1").replacen(r#""amount":1"#, "@", 1);
+        let payload = payload
+            .replace(r#""amount":1"#, r#""amount":1.0"#)
+            .replace('@', r#""amount":1"#);
+        let refused = history::read(payload.as_bytes(), &digest).unwrap_err();
+        assert!(
+            refused
+                .to_string()
+                .contains("`operations[0].events[0].payload.amount` is written `1.0`"),
+            "{refused}"
+        );
+        let nested = spelled(&ir, r#"1,"tags":[{"at":[2.50]}]"#);
+        let refused = history::read(nested.as_bytes(), &digest).unwrap_err();
+        assert!(
+            refused
+                .to_string()
+                .contains("`operations[0].input.tags[0].at[0]` is written `2.50`"),
+            "{refused}"
+        );
+        assert!(matches!(
+            history::read(spelled(&ir, "1e400").as_bytes(), &digest),
+            Err(HistoryRefusal::Malformed { .. })
+        ));
+    }
+
+    #[test]
+    fn a_key_written_twice_in_a_payload_or_deep_in_an_input_is_refused_by_name() {
+        let ir = pay();
+        let digest = SuiteProvenance::of(&ir).spec_digest;
+        let canonical = spelled(&ir, "1");
+        let twice_in_payload = {
+            let at = canonical.rfind(r#""amount":1"#).unwrap();
+            format!("{}\"amount\":7,{}", &canonical[..at], &canonical[at..])
+        };
+        let refused = history::read(twice_in_payload.as_bytes(), &digest).unwrap_err();
+        assert!(
+            refused
+                .to_string()
+                .contains("`operations[0].events[0].payload` writes the key `amount` twice"),
+            "{refused}"
+        );
+        let deep = spelled(&ir, r#"1,"meta":{"a":1,"a":2}"#);
+        let refused = history::read(deep.as_bytes(), &digest).unwrap_err();
+        assert!(
+            refused
+                .to_string()
+                .contains("`operations[0].input.meta` writes the key `a` twice"),
+            "{refused}"
         );
     }
 }

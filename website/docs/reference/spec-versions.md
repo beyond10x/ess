@@ -637,12 +637,16 @@ history with none is still written as `ess-history/1`, byte for byte; `check-his
 and refuses a `decision_time` in an `ess-history/1` document. A reader of `ess-history/1` only
 refuses `ess-history/2` by its `format`.
 
-`ess-history/3`, unreleased, adds two optional operation fields: `input`, the command's input as
-the client sent it, and `events`, the name of every event a returned command's answer published,
-in order. A writer selects it exactly when an operation records either, so a history with neither
-keeps its format and its bytes; `check-history` reads all three, steps an operation with the input
-it recorded, holds it to the events it recorded, and refuses either field in an `ess-history/1` or
-`ess-history/2` document. A reader of `ess-history/1` only refuses `ess-history/3` by its `format`.
+`ess-history/3`, unreleased, adds three optional operation fields: `input`, the command's input as
+the client sent it; `events`, each event a returned command's answer published, in order, with its
+payload; and `arranged`, the `external:` branches the client arranged before sending the call. A
+writer selects it exactly when an operation records any of them, so a history with none keeps its
+format and its bytes. A number inside `input` or a payload has one spelling, the one
+`JSON.stringify` writes, and an object there repeats no key. `check-history` reads all three
+formats, steps an operation with the input it recorded, holds it to the events and payloads it
+recorded and to the external branches somebody arranged, and refuses the new fields in an
+`ess-history/1` or `ess-history/2` document. A reader of `ess-history/1` only refuses
+`ess-history/3` by its `format`.
 
 `ess-history-adapter/1`, introduced in [0.39.0][r39], maps each field of a JSON Lines call log to a
 JSON pointer or declares it `absent`, for `ess verify conform import-history`.

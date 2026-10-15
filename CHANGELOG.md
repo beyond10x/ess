@@ -15,14 +15,20 @@
   commands and views, and worked counts for three minimal models
   (https://github.com/beyond10x/ess/issues/573).
 
-- History format `ess-history/3`: an operation may record `input` (the command's input as sent)
-  and `events` (the events a returned answer published, in order). `ess verify conform
-  check-history` steps such an operation with exactly that input and admits only a branch
-  publishing exactly those events, so on a model without entities a target answering a declared
-  but wrong outcome no longer passes. The generated Go and TypeScript concurrent explorers record
-  both on every call. A writer selects the lowest format its operations need, so a history without
-  either keeps format 1 or 2 and its bytes; format 1 and 2 documents still read, and either new
-  field in them is refused by name (https://github.com/beyond10x/ess/issues/576).
+- History format `ess-history/3`: an operation may record `input` (the command's input as sent),
+  `events` (each event a returned answer published, in order, with its payload) and `arranged`
+  (the `external:` branches its client arranged before sending it). `ess verify conform
+  check-history` steps such an operation with exactly that input, admits only a branch publishing
+  exactly those events, holds each payload field the branch maps from the input or a literal to
+  the value the model computes, and admits an external answer only where an arrangement of it
+  preceded the call's return. So on a model without entities a target answering a declared but
+  wrong outcome, publishing a wrong payload or answering an external branch nobody arranged no
+  longer passes. A number in `input` or a payload has one spelling (`100`, never `100.0`) and an
+  object there repeats no key; either is refused by name. The generated Go and TypeScript
+  concurrent explorers record all three on every call. A writer selects the lowest format its
+  operations need, so a history without them keeps format 1 or 2 and its bytes; format 1 and 2
+  documents still read, and each new field in them is refused by name
+  (https://github.com/beyond10x/ess/issues/576).
 
 ### Fixed
 
