@@ -72,7 +72,7 @@ func (t *exploreExtTarget) ExecuteCommand(request CommandRequest) (CommandResult
 	switch request.Command {
 	case "exploreext.pay.Authorize":
 		amount := exploreExtNumber(input["amount"])
-		if amount >= 1000 && t.arranged(request.Command, "declined") {
+		if amount >= 1000 && (t.arranged(request.Command, "declined") || t.mode == "declines-unasked") {
 			return CommandResult{Outcome: "declined", Error: "exploreext.pay.Declined", DirectEvents: []ObservedEvent{}}, nil
 		}
 		if !(amount >= 1) {
