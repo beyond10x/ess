@@ -6,8 +6,8 @@ use std::fmt::Write as _;
 use super::native::{nullable, string_values};
 
 use super::{
-    children, finding, Field, Finding, IntegerWidth, Node, Plan, Realization, Refused, Report,
-    Shape, TargetConfiguration, UnionMode,
+    children, finding, path, Field, Finding, IntegerWidth, Node, Plan, Realization, Refused,
+    Report, Shape, TargetConfiguration, UnionMode,
 };
 
 const DERIVE: &str =
@@ -212,6 +212,20 @@ impl Emitter<'_> {
             }
             _ => {
                 let ty = self.ty(node);
+                if let Some(constraint) = self
+                    .plan
+                    .text
+                    .get(&node.pointer)
+                    .filter(|_| ty == "::std::string::String")
+                {
+                    checked_text(&mut output, name, &node.pointer, constraint);
+                    self.report.obligations.retain(|item| {
+                        item.rule != "model_alphabet"
+                            || item.pointer != path(&node.pointer, "x-ess-alphabet")
+                    });
+                    self.output.insert(name.to_owned(), output);
+                    return;
+                }
                 output.push_str(DERIVE);
                 writeln!(
                     output,
@@ -535,4 +549,44 @@ fn accessors(
         output.push_str("        }\n    }\n");
     }
     output.push_str("}\n");
+}
+
+/// A string newtype `name` that its source schema at `pointer` constrains (beyond10x/ess#579):
+/// serialized as the plain string, decoded only when every character is in its alphabet and its
+/// length within its bounds, and refused otherwise with the pointer and the constraint it breaks.
+fn checked_text(
+    output: &mut String,
+    name: &str,
+    pointer: &str,
+    constraint: &super::TextConstraint,
+) {
+    let mut checks = Vec::new();
+    if let Some(alphabet) = &constraint.alphabet {
+        checks.push((
+            format!("!self.0.chars().all(|c| {alphabet:?}.contains(c))"),
+            format!("a value whose every character is one of `{alphabet}`"),
+        ));
+    }
+    let count = "<i64 as ::std::convert::TryFrom<usize>>::try_from(self.0.chars().count()).unwrap_or(i64::MAX)";
+    if let Some(minimum) = constraint.minimum {
+        checks.push((
+            format!("{count} < {minimum}"),
+            format!("a value at least {minimum} characters long"),
+        ));
+    }
+    if let Some(maximum) = constraint.maximum {
+        checks.push((
+            format!("{count} > {maximum}"),
+            format!("a value at most {maximum} characters long"),
+        ));
+    }
+    writeln!(output, "#[derive(Debug, Clone, PartialEq, ::serde::Serialize)]\n#[serde(transparent)]\npub struct {name}(pub ::std::string::String);\n\nimpl {name} {{\n    /// The first constraint the source schema declares that this value breaks (its alphabet,\n    /// then its length) as what a decoder expected instead, or `None` when it breaks none.\n    pub fn broken_constraint(&self) -> Option<&'static str> {{").expect("String write");
+    for (check, expected) in &checks {
+        writeln!(
+            output,
+            "        if {check} {{\n            return Some({expected:?});\n        }}"
+        )
+        .expect("String write");
+    }
+    writeln!(output, "        None\n    }}\n}}\n\nimpl<'de> ::serde::Deserialize<'de> for {name} {{\n    fn deserialize<D: ::serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {{\n        let value = Self(<::std::string::String as ::serde::Deserialize>::deserialize(deserializer)?);\n        match value.broken_constraint() {{\n            Some(expected) => Err(::serde::de::Error::custom(::std::format_args!(\"{}: expected {{expected}}\"))),\n            None => Ok(value),\n        }}\n    }}\n}}", pointer.escape_debug().to_string().replace('{', "{{").replace('}', "}}")).expect("String write");
 }
