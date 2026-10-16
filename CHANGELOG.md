@@ -4,6 +4,12 @@
 
 ### Added
 
+- The generated Rust decoder of a newtype enforces what the newtype declares: its alphabet, its
+  prefix and its invariants. A value that breaks one is refused with the path and the constraint
+  (`broken_constraint` on the type), so a served route no longer admits it
+  (beyond10x/ess#579, decoder half). A constraint the emitter cannot check refuses the target by
+  name.
+
 - The generated Go and TypeScript sequential explorers (`Explore`) draw a `Timestamp` input, as
   the concurrent ones already did, and decide a guard over `now` against a clock,
   `ExploreOptions.Now` (TypeScript `now`), the wall clock by default. Where a guard compares a

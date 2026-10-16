@@ -188,6 +188,29 @@ fn type_encoder(
     out.push_str("}\n");
 }
 
+/// The body of a newtype's decoder: the inner value, and when the declaration constrains it, the
+/// declared alphabet, prefix and invariants held here, because this decoder is what a served
+/// route reads a request with (beyond10x/ess#579).
+fn newtype_body(
+    out: &mut String,
+    surface: &dyn Surface,
+    path: &str,
+    of: &ResolvedTypeRef,
+    constrained: bool,
+) {
+    let read = decode_value(surface, "value", "at", of, 0);
+    if constrained {
+        let _ = writeln!(
+            out,
+            "    let decoded = {path}({read});\n    match decoded.broken_constraint() {{\n        \
+             Some(expected) => Err(json::DecodeError::of(at, expected, value)),\n        \
+             None => Ok(decoded),\n    }}"
+        );
+    } else {
+        let _ = writeln!(out, "    Ok({path}({read}))");
+    }
+}
+
 /// One declared type, read.
 fn type_decoder(
     out: &mut String,
@@ -207,11 +230,7 @@ fn type_decoder(
     );
     match &declared.body {
         ResolvedBody::Newtype { of, .. } => {
-            let _ = writeln!(
-                out,
-                "    Ok({path}({}))",
-                decode_value(surface, "value", "at", of, 0)
-            );
+            newtype_body(out, surface, &path, of, declared.body.is_constrained())
         }
         ResolvedBody::Struct { fields, .. } => {
             let _ = writeln!(out, "    Ok({path} {{");
