@@ -1167,6 +1167,26 @@ pub(super) fn drive(
     let names_subject = driver.outcome.subject.as_ref().is_some_and(|subject| {
         matches!(&subject.instance, ResolvedInstance::Supplied { field: named } if named.name == field)
     });
+    // A related row bound to the row a search is advancing — the incident a review is filed under,
+    // while the incident is arranged — is decided on that row as the steps so far leave it
+    // (beyond10x/ess#553).
+    if !names_subject && !is_absent(driver.outcome) {
+        if let Some(row) = bound
+            .get(field)
+            .and_then(|named| subject_fact::held(ir, entity, named))
+        {
+            return on_held(
+                ir,
+                driver,
+                instance,
+                actors,
+                distinction,
+                bound,
+                input,
+                &row,
+            );
+        }
+    }
     // Below `ess/20` a related row of an entity already being arranged stops the run, before
     // any branch is looked at, as it always did: a document without an `ess/20` construct
     // synthesizes the suite it did (beyond10x/ess#229, adversary pass 2).
@@ -1289,7 +1309,7 @@ fn drive_several(
                 return Err(beside_refused(
                     (driver.command, driver.outcome),
                     (other, entity),
-                ))
+                ));
             }
         }
     }
@@ -1558,6 +1578,63 @@ fn nested(
     invocation.steps = steps;
     invocation.source.extend(row.source);
     Ok(invocation)
+}
+
+/// [`drive`] where the input the guards read is bound to a row a search is advancing
+/// ([`subject_fact::held`], beyond10x/ess#553): no row is arranged, and the run is sent only with an
+/// input on which that row, as the steps so far leave it, selects the branch.
+// One argument per thing an arranging run is told, as [`drive`] takes them.
+#[allow(clippy::too_many_arguments)]
+fn on_held(
+    ir: &EssIr,
+    driver: &super::Driver<'_>,
+    instance: Option<&crate::scenario::InstanceName>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    bound: &BTreeMap<String, crate::scenario::InstanceName>,
+    chosen: Option<&BTreeMap<String, Node>>,
+    row: &Arrangement,
+) -> Result<super::Invocation, RefusalCause> {
+    let (via, entity) = read(driver.command).ok_or_else(unarranged)?;
+    let inputs = held_inputs(ir, driver.command, entity, row, chosen, distinction)?;
+    let tried = inputs.len();
+    let input = inputs
+        .into_iter()
+        .find(|input| chooses(ir, driver.command, driver.outcome, entity, row, input))
+        .ok_or_else(|| RefusalCause::GuardUnsatisfiable {
+            predicate: format!(
+                "the row of `{}` the arrangement is advancing, named by `input.{}` of `{}`, does \
+                 not select `{}` as the steps so far leave it",
+                entity.name(),
+                via.field(),
+                driver.command.name,
+                driver.outcome.name
+            ),
+            tried,
+        })?;
+    Ok(super::invoke_with(
+        ir, driver, instance, actors, bound, &input,
+    ))
+}
+
+/// The inputs a run deciding its related guards on the arranged `row` is tried with: the caller's,
+/// where it chose one, or those its input guards and the predicates grounded on `row` ask for.
+fn held_inputs(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    entity: &EntityHandle,
+    row: &Arrangement,
+    chosen: Option<&BTreeMap<String, Node>>,
+    distinction: Distinction,
+) -> Result<Vec<BTreeMap<String, Node>>, RefusalCause> {
+    if let Some(chosen) = chosen {
+        return Ok(vec![chosen.clone()]);
+    }
+    let predicates = predicates(command);
+    let grounded = subject_fact::grounded(ir, entity, &row.settled, &predicates);
+    let mut searched: Vec<&Predicate> = command.outcomes.iter().filter_map(input_guard).collect();
+    searched.extend(grounded.iter());
+    candidates(ir, command, &searched, distinction).map_err(RefusalCause::NoWitness)
 }
 
 /// [`drive`] with the Optional input reference the command's related guards read left out (ess/22,
@@ -3108,16 +3185,41 @@ fn with_row(
     // link comparison where it names the row's own is reached only on a row filed under it: where
     // the row under an owner of its own selects no branch here, it is searched for there
     // (beyond10x/ess#271), and refused naming the first search's cause where that fails too.
+    //
+    // Where no pin speaks for one, a row of an owned entity is searched for under the row a search
+    // is advancing that owns it ([`subject_fact::holding`], beyond10x/ess#553): the review a seal
+    // stores, filed under the incident it seals, whose own commands read that incident.
     let (row, input) = match run(None) {
         Ok(found) => found,
-        Err(cause) => match pins.values().next() {
-            Some(held) => {
-                run(Some((held, super::holds_none(ir, entity, known, held)))).map_err(|_| cause)?
-            }
-            None => return Err(cause),
-        },
+        Err(cause) => retry_under(ir, entity, (pins, known), cause, run)?,
     };
     Ok((row, first, input))
+}
+
+/// The search of [`with_row`] again, filed under an owner, after the plain one found no row:
+/// under the owner a bound link input names, else under the row a search is advancing that owns
+/// the entity; refused naming `cause` where that fails too.
+fn retry_under<T>(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    (pins, known): (
+        &BTreeMap<String, crate::scenario::InstanceName>,
+        &[super::ScenarioStep],
+    ),
+    cause: RefusalCause,
+    run: impl Fn(subject_fact::Under<'_>) -> Result<T, RefusalCause>,
+) -> Result<T, RefusalCause> {
+    match (pins.values().next(), subject_fact::held_owner(ir, entity)) {
+        (Some(pinned), _) => {
+            run(Some((pinned, super::holds_none(ir, entity, known, pinned)))).map_err(|_| cause)
+        }
+        (None, Some(owner)) => run(Some((
+            &owner.instance,
+            super::holds_none(ir, entity, &owner.steps, &owner.instance),
+        )))
+        .map_err(|_| cause),
+        (None, None) => Err(cause),
+    }
 }
 
 fn entity_ref(entity: &EntityHandle) -> crate::scenario::EssSemanticRef {
