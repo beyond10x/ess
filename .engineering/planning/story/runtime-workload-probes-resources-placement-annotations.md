@@ -11,7 +11,7 @@ tags:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-15T03:06:49Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-10-15T03:06:50Z", actor: "human:timo", revision: 5}
@@ -60,3 +60,14 @@ Tests in an existing test binary of the crate, each naming its setting:
 - `an_image_is_pinned_by_digest`: an image reference by `@sha256:<64 hex>` renders verbatim; a
   malformed digest is refused by name.
 - `a_runtime_without_pod_settings_keeps_its_chart_bytes`.
+
+## Delivery notes
+
+- `readiness_tcp_port`, `liveness_tcp_port`, `annotations` and `affinity` join `ess-runtime/2`
+  (no release has read `/2` yet); `/1` refuses each by name and its digests are unchanged
+  (`docs/design/runtime-workload-kinds.md`).
+- Annotations render on the pod template only. `affinity` carries `node_labels`,
+  `spread_across` and `spread` (preferred by default, or required).
+- Not in this story: per-environment overrides of resources and placement; `/1` keeps accepting
+  `{{`, names outside the Kubernetes rules, `replicas` past int32 and `http_port: 0`; Secret keys
+  used as environment variables are not checked in either format. Each needs its own decision.
