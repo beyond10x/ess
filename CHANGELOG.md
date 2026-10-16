@@ -21,6 +21,13 @@
 
 ### Fixed
 
+- No generated document carries a `$serde_json::private::Number` map any more. In a build where
+  another crate turns on `serde_json`'s `arbitrary_precision`, an `Integer` enum attribute was
+  published in `x-ess-attributes` as `{"$serde_json::private::Number": "2"}` instead of `2`, in the
+  `OpenAPI` and `AsyncAPI` documents and the `/openapi.json` a generated server serves. Every YAML
+  write now writes such a number as the number, as a build without the feature does, and a corpus
+  test pins every projection of every example to the bytes of a build without it
+  (https://github.com/beyond10x/ess/issues/579).
 - The caller-swapped half of a synthesized scenario draws fresh values for every input a
   `when_related:` guard, a row-set selector or its `forall:` test reads, and for every input
   written into a field such a selector reads, whatever its type (#580). A key unique across

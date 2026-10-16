@@ -2570,9 +2570,9 @@ fn written(schema: Value) -> Fragment {
 /// Converts one hand-written JSON fragment without crossing serde's data-model bridge.
 ///
 /// `serde_json` represents a number through a private token when its `arbitrary_precision`
-/// feature is unified into a build. `ess_yaml::to_value` faithfully serialises that token as a
-/// mapping instead of as the number it denotes, so the generated schema depends on an adopter's
-/// dependency graph. Matching the two value models directly keeps the published bytes stable.
+/// feature is unified into a build. `ess_yaml::to_value` writes that token as the number it
+/// denotes (beyond10x/ess#579); matching the two value models directly does the same without the
+/// round trip through serde's data model.
 fn json_fragment(value: Value) -> Fragment {
     match value {
         Value::Null => Fragment::Null,
