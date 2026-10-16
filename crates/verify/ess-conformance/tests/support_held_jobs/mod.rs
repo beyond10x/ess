@@ -25,14 +25,19 @@ const JOBS: &str = include_str!("../fixtures/current-time-guard.yaml");
 pub const REFUSAL: &str = "demo.jobs.ScheduleJob/outcome/start-in-past";
 pub const SCHEDULED: &str = "demo.jobs.ScheduleJob/outcome/scheduled";
 
-/// The jobs suite with `hold_now 1` before the accepting scenario's `now - 59s` command.
-pub fn held_suite() -> ConformanceSuite {
+/// The jobs suite as synthesis writes it: its held scenario is the only one that holds `now`.
+pub fn synthesized_suite() -> ConformanceSuite {
     let raw = RawSpecFile::parse(JOBS).unwrap_or_else(|error| panic!("{error}"));
     let spec = Specification::assemble([(Source::new("jobs.yaml"), raw)])
         .unwrap_or_else(|errors| panic!("{errors}"));
     let synthesis = synthesize(&compile(&spec, &SourceMap::new()).unwrap());
     assert!(synthesis.refusals.is_empty(), "{:#?}", synthesis.refusals);
-    let mut suite = synthesis.suite;
+    synthesis.suite
+}
+
+/// The jobs suite with `hold_now 1` before the accepting scenario's `now - 59s` command.
+pub fn held_suite() -> ConformanceSuite {
+    let mut suite = synthesized_suite();
     let (_, scenario) = suite
         .scenarios
         .iter_mut()

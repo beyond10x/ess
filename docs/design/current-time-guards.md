@@ -180,7 +180,12 @@ under test is held at come from one reading.
 
 **The runner.** On `hold_now n` the runner resolves `n`, then either writes it into the command
 clock it handed out or calls `hold_now` on the target; `Unsupported` ends the scenario `unsupported`
-naming `hold_now`, any other error is the target's failure. A `hold_now` not followed by an
+naming `hold_now`, any other error is the target's failure. A synthesized held scenario
+(`<command>/outcome/<outcome>/held/<field>/<seconds>`) that ends `unsupported` for this reason
+alone stays reported, named and counted, but does not fail the run (`ConformanceReport::verdict`;
+the Go and TypeScript runtimes skip it under report/2 too): synthesis adds
+it to suites a target may have passed before it existed. Every other unsupported scenario fails
+the run as before. A `hold_now` not followed by an
 `execute_command` is refused at admission. The Go and TypeScript runtimes resolve the step the same
 way and expose the same optional capability: the Rust, Go and TypeScript runners give one step the
 same instant and the same verdict.

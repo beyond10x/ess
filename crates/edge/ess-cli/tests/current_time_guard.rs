@@ -106,12 +106,13 @@ fn issue_171_a_now_offset_suite_runs_through_the_cli_with_every_value_resolved()
             );
         }
     }
-    // The other scenarios end `error` (exit 3 alone), but an unsupported required scenario fails
-    // the run, and a failure is the headline (`ConformanceReport::verdict`).
+    // The other scenarios end `error`, which is exit 3. The held scenario is unsupported only for
+    // want of `hold_now`, which does not fail the run (`ConformanceReport::verdict`), so the
+    // exit status is the one this suite had before it held a scenario (beyond10x/ess#586).
     assert_eq!(
         code,
-        Some(1),
-        "the held scenario is unsupported, so the run fails: {stderr}"
+        Some(3),
+        "the held scenario's unsupported must not turn the run into a failure: {stderr}"
     );
 }
 

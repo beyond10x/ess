@@ -18,8 +18,9 @@
   `<command>/outcome/<outcome>/held/<field>/<seconds>`. The `guard-boundary` mutant (`<` to `<=`)
   answers apart there and is now killed. A model with such a guard therefore gets a suite in
   `ess-conformance/50` (`/51` with coverage); its off-boundary scenarios keep their bytes, and a
-  target without `hold_now` reports only the new scenario `unsupported`, which fails the run as
-  every unsupported scenario does
+  target without `hold_now` reports only the new scenario `unsupported`, named and counted; unlike
+  any other unsupported scenario it does not fail the run, so a target that passed before keeps
+  its verdict and exit status in the Rust, Go and TypeScript runners
   (https://github.com/beyond10x/ess/issues/586).
 - The generated Go and TypeScript sequential explorers (`Explore`) draw a `Timestamp` input, as
   the concurrent ones already did, and decide a guard over `now` against a clock,

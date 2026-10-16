@@ -1870,6 +1870,7 @@ func Run(t *testing.T, newTarget func() Target) {
 				assigned:            map[string][]int{},
 				preciseStatuses:     config.version == "2",
 				disclosure:          newOneTimeCaptures(suite.oneTime[id]),
+				heldScenario:        heldScenarioID(id),
 			}
 			returned := false
 			defer func() {
@@ -2109,6 +2110,9 @@ type run struct {
 	nowFixed map[int64]string
 	// held is the instant a `hold_now` step fixed for the command after it, and the offset it named.
 	held *heldNow
+	// heldScenario says this scenario is a held one (`<command>/outcome/<outcome>/held/<field>/<seconds>`):
+	// one the target lacking `hold_now` leaves unsupported without failing the run (beyond10x/ess#586).
+	heldScenario bool
 	// status is what this scenario has come to so far: passed until a step fails or skips.
 	status string
 	// callbacksComplete records returned callbacks, independently of a provisional skip/failure.
@@ -3424,6 +3428,30 @@ func (r *run) skip(format string, args ...any) {
 		return
 	}
 	r.t.Skipf(format, args...)
+}
+
+// skipHold is skip for a target that cannot hold its `now`. A held scenario it ends stays
+// unsupported in the report but does not fail the run, under either report format, as in the Rust
+// runner's verdict: synthesis adds the held scenario to suites a target may have passed before it
+// existed, and `hold_now` is optional (beyond10x/ess#586). Any other scenario is skip's.
+func (r *run) skipHold(format string, args ...any) {
+	if !r.heldScenario {
+		r.skip(format, args...)
+		return
+	}
+	r.recordStatus(statusUnsupported)
+	r.t.Skipf(format, args...)
+}
+
+// heldScenarioID reports whether id spells a held scenario,
+// `<command>/outcome/<outcome>/held/<field>/<seconds>`.
+func heldScenarioID(id string) bool {
+	parts := strings.Split(id, "/")
+	if len(parts) != 6 || parts[1] != "outcome" || parts[3] != "held" || parts[4] == "" {
+		return false
+	}
+	_, err := strconv.ParseInt(parts[5], 10, 64)
+	return err == nil
 }
 
 // resolveAll resolves every value a step carries against what this run has bound.
@@ -9124,12 +9152,12 @@ func (r *run) holdNow(index int, step Step) bool {
 	}
 	holder, implemented := r.target.(NowHolder)
 	if !implemented {
-		r.skip("step %d: the target cannot hold `now` (hold_now)", index)
+		r.skipHold("step %d: the target cannot hold `now` (hold_now)", index)
 		return false
 	}
 	if err := holder.HoldNow(NowHold{Instant: spelled, Correlation: r.correlation}); err != nil {
 		if errors.Is(err, ErrUnsupported) {
-			r.skip("step %d: the target cannot hold `now` (hold_now)", index)
+			r.skipHold("step %d: the target cannot hold `now` (hold_now)", index)
 			return false
 		}
 		return r.targetFailure(index, err, "target callback")

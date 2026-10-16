@@ -410,9 +410,10 @@ pub trait ConformanceTarget {
     /// mutant differ only when `expiry` equals the instant the command is decided at. Arranging,
     /// not asserting. The default body answers [`TargetError::Unsupported`] with the observation
     /// `hold_now`, so a target written before it keeps compiling and every scenario that needs it
-    /// is reported `unsupported`. A target deciding by the runner's
-    /// [command clock](crate::Runner::command_clock) is never asked: the runner holds that clock
-    /// itself.
+    /// is reported `unsupported`. A synthesized held scenario so reported does not fail the run
+    /// ([`ConformanceReport::verdict`](crate::ConformanceReport::verdict)). A target deciding by
+    /// the runner's [command clock](crate::Runner::command_clock) is never asked: the runner holds
+    /// that clock itself.
     fn hold_now(&self, _request: NowHold) -> Result<(), TargetError> {
         Err(TargetError::unsupported(
             "hold_now",

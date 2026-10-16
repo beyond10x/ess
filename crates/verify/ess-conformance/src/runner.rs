@@ -2405,12 +2405,6 @@ fn capture_instance(
     Flow::Stop
 }
 
-/// Names the instant a later claim measures from (§37).
-///
-/// An `error` rather than a `failed` when the target refuses, for the same reason
-/// [`capture_instance`] is: the scenario could not be *arranged*, and every window after it would be
-/// measured from nothing. `unsupported` when the target says it keeps no such clock, which §28 still
-/// makes a run fail — a target that cannot answer a question has not shown the answer.
 /// The wall reading a `now_offset` of `seconds` resolved to `instant` from: so every other offset the
 /// held command sends lies the same distance from the held instant as from the reading.
 fn held_reading<C: Clock>(
@@ -2443,7 +2437,7 @@ fn hold_now<T: ConformanceTarget>(seconds: i64, clocked: bool, run: &mut Run, ta
             correlation: run.context.correlation.clone(),
         };
         if let Err(error) = target.hold_now(request) {
-            run.record(target_failure(&run.id, "hold_now", &error));
+            run.record(target_failure(&run.id, crate::report::HOLD_NOW, &error));
             return Flow::Stop;
         }
     }
@@ -2451,6 +2445,12 @@ fn hold_now<T: ConformanceTarget>(seconds: i64, clocked: bool, run: &mut Run, ta
     Flow::Continue
 }
 
+/// Names the instant a later claim measures from (§37).
+///
+/// An `error` rather than a `failed` when the target refuses, for the same reason
+/// [`capture_instance`] is: the scenario could not be *arranged*, and every window after it would be
+/// measured from nothing. `unsupported` when the target says it keeps no such clock, which §28 still
+/// makes a run fail — a target that cannot answer a question has not shown the answer.
 fn mark_instant<T: ConformanceTarget>(instant: &InstantName, run: &mut Run, target: &T) -> Flow {
     let request = InstantMark {
         instant: instant.clone(),

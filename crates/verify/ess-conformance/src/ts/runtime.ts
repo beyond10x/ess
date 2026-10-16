@@ -2343,6 +2343,18 @@ export interface NowHolder {
   holdNow(hold: NowHold): Answer<void>;
 }
 
+/** heldScenarioId reports whether `id` spells a held scenario, `<command>/outcome/<outcome>/held/<field>/<seconds>`. */
+function heldScenarioId(id: string): boolean {
+  const parts = id.split('/');
+  return (
+    parts.length === 6 &&
+    parts[1] === 'outcome' &&
+    parts[3] === 'held' &&
+    parts[4] !== '' &&
+    /^[+-]?[0-9]+$/.test(parts[5]!)
+  );
+}
+
 /** isNowHolder reports whether a target can hold its `now` for one command. */
 export function isNowHolder(target: Target): target is Target & NowHolder {
   return method(target, 'holdNow');
@@ -2873,7 +2885,10 @@ export async function runWith(
         subtest.skip('required target observation is unsupported');
       }
       if (thrown instanceof SkipSignal) {
-        if (config.version === '2') throw new Error(thrown.message);
+        // A held scenario the target cannot hold `now` for stays unsupported in the report but
+        // does not fail the run, as in the Rust runner's verdict (beyond10x/ess#586).
+        const optional = scenarioRun.holdUnsupported && heldScenarioId(id);
+        if (config.version === '2' && !optional) throw new Error(thrown.message);
         subtest.skip(thrown.message);
       }
     });
@@ -3358,6 +3373,8 @@ export class ScenarioRun {
   readonly nowFixed = new Map<number, string>();
   /** The instant a `hold_now` step fixed for the command after it, in whole seconds since the epoch, and the offset it named. */
   held: { instant: number; seconds: number } | undefined = undefined;
+  /** Whether this scenario ended unsupported because the target cannot hold its `now` (beyond10x/ess#586). */
+  holdUnsupported = false;
   /** The token the last command returned, for a read_your_writes query. */
   consistency = '';
   /** A read-your-writes query suppressed because the preceding command returned no token. */
@@ -4983,12 +5000,14 @@ export class ScenarioRun {
       );
     }
     if (!isNowHolder(this.target)) {
+      this.holdUnsupported = true;
       this.unsupported(`step ${index}: the target cannot hold \`now\` (hold_now)`);
     }
     try {
       await this.target.holdNow({ instant: spelled, correlation: this.correlation });
     } catch (error) {
       if (isUnsupported(error)) {
+        this.holdUnsupported = true;
         this.unsupported(`step ${index}: the target cannot hold \`now\` (hold_now)`);
       }
       return this.targetError(index, `holding now: ${errorText(error)}`);
