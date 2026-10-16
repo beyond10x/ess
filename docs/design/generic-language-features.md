@@ -577,31 +577,39 @@ https://github.com/beyond10x/ess/issues/508, https://github.com/beyond10x/ess/is
 https://github.com/beyond10x/ess/issues/525, https://github.com/beyond10x/ess/issues/533,
 https://github.com/beyond10x/ess/issues/542, https://github.com/beyond10x/ess/issues/559).
 
-## Open questions
+## Open questions, answered
 
-1. **Input refusals first.** The rule keeps request-only refusals before existence, as today. An
-   alternative ordering puts existence and the held state before input guards; it would change the
-   answer of every validating command with an input refusal and reopen the disclosure that
-   `before_row` closed. This page keeps today's place; confirm.
-2. **A release in the middle of a decision.** If a release must ship while a feature's format is
-   open, does the format ship with what it holds (and the rest moves to a new format, counted as a
-   second decision), or does the release refuse the open format? I don't know which the release
-   process prefers.
-3. **`{expr: …}` or bare text in value positions.** Bare text would need a format that changes what
-   an existing spelling means; `{expr:}` does not. This page takes `{expr:}`.
-4. **Regular expressions.** Witness generation needs an automaton; the text-shape alternative
-   (`website/docs/reference/predicates.md`, "text shapes without patterns") keeps the check in the
-   specification. Out of this page; decide separately.
-5. **Enum order.** Declaration order of the variants, or an explicit `ordered: true`? The second
-   keeps every existing enum unordered.
-6. **Unicode.** ASCII-only case mapping and trimming matches today's ignore-case behaviour; a
-   Unicode version needs pinned tables in every runner.
-7. **Non-linear guards.** Admitted with a named synthesis refusal, or refused at validation? This
-   page admits them.
-8. **Navigation depth.** Any chain of declared references, or a bound? Cycles through references
-   need a rule either way.
-9. **Cross-row invariants.** Excluded from grid R here; https://github.com/beyond10x/ess/issues/75
-   asked for one. A separate design.
-10. **Entity Runtime.** Which of the new forms it lowers, and which it refuses by name. I don't know
-    its plans.
-11. **Retiring the mapping forms.** When, if ever, a format stops accepting the sugar.
+The record was approved as proposed on 2026-10-14. Its open questions are answered here, and each
+answer binds the wave that first needs it.
+
+1. **Input refusals first.** Kept. Request-only refusals answer before existence and the held state,
+   as today; moving them would change every validating command's answer and reopen the disclosure
+   `before_row` closed. Wave 1 pins it in the precedence table.
+2. **A release in the middle of a decision.** A release ships a format with what it holds at that
+   commit, and the format is frozen from then on. The rest of the feature moves to the next format
+   version and is counted under the same decision, not as a second one: the count measures decisions
+   an adopter has to make, and the second format adds constructs without changing the first's
+   meaning. A release never ships a format whose meaning a later commit of the same decision
+   changes.
+3. **`{expr: …}` or bare text.** `{expr: …}`. Bare text would change what an existing spelling
+   means.
+4. **Regular expressions.** Out. The text shapes without patterns stay the way to check a string's
+   form. A request that needs a pattern gets its own design with the witness automaton costed.
+5. **Enum order.** Explicit `ordered: true` on the enum. Every existing enum stays unordered, and
+   `min`/`max`/ordering over an unordered enum is a validation refusal naming the flag.
+6. **Unicode.** ASCII-only case mapping and trimming, as today's ignore-case. A non-ASCII operand is
+   compared byte for byte. A Unicode version needs pinned tables in every runner and is a separate
+   decision.
+7. **Non-linear guards.** Admitted. Synthesis refuses a branch it cannot witness by name
+   (`ESS-SYNTH-…`, naming the non-linear term), and an authored scenario can stand in.
+8. **Navigation depth.** Any chain of declared references, as written: a path is a finite sequence
+   of reference steps spelled in the specification, so a cycle in the reference graph is harmless.
+   There is no transitive closure and no recursion.
+9. **Cross-row invariants.** A separate design, outside grid R
+   (https://github.com/beyond10x/ess/issues/75).
+10. **Entity Runtime.** It lowers each form the shared evaluator evaluates, wave by wave; a form it
+    does not lower yet is refused by name at lowering, never silently dropped, and the
+    lowered-definitions table records which. Each wave's stories name the forms they lower.
+11. **Retiring the mapping forms.** Not planned. The mapping forms stay as spellings lowered to
+    expressions in every format; retiring one is a format decision of its own, taken only when no
+    adopter's specification uses it.
