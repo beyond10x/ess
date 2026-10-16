@@ -17,6 +17,9 @@ use ess_compiler::{resolve::compile, source::SourceMap, EssIr};
 use ess_domain::{spec::RawSpecFile, system::Source, Specification};
 use ess_synth::{synthesize_for, Synthesis, Target};
 
+#[path = "invariant_check/value_constraints.rs"]
+mod value_constraints;
+
 /// One entity whose invariants use every form: a constant, identity, integer, decimal, struct
 /// member, field against field, instant against instant and against a literal, text order, enum
 /// equality, `any_of`, `none_of`, the three string operators, both case-insensitive operators,
