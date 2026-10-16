@@ -230,7 +230,7 @@ fn type_decoder(
     );
     match &declared.body {
         ResolvedBody::Newtype { of, .. } => {
-            newtype_body(out, surface, &path, of, declared.body.is_constrained())
+            newtype_body(out, surface, &path, of, declared.body.is_constrained());
         }
         ResolvedBody::Struct { fields, .. } => {
             let _ = writeln!(out, "    Ok({path} {{");

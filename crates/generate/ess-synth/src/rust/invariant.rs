@@ -33,13 +33,18 @@ use crate::plan::{CapabilityKind, SynthesisPlan};
 const MAX_STEPS: usize = 64;
 
 /// Whether any entity or newtype of the model declares an invariant, which is what brings the
-/// evaluator in.
+/// evaluator in. A newtype's alphabet or prefix is checked in plain Rust and needs no evaluator,
+/// so this asks about invariants alone rather than `ResolvedBody::is_constrained`.
 pub(super) fn used(ir: &EssIr) -> bool {
     ir.entities()
         .values()
         .any(|entity| !entity.invariants.is_empty())
         || ir.types().values().any(|declared| {
-            matches!(&declared.body, ResolvedBody::Newtype { invariants, .. } if !invariants.is_empty())
+            if let ResolvedBody::Newtype { invariants, .. } = &declared.body {
+                !invariants.is_empty()
+            } else {
+                false
+            }
         })
 }
 
