@@ -437,3 +437,94 @@ fn issue_586_a_held_boundary_kills_the_strict_mutant_on_the_interpreted_target()
         Status::Failed
     );
 }
+
+// ---- adversary, beyond10x/ess#586 ------------------------------------------------------------
+
+/// Every scenario of `suite` against the interpreted target of `model` over the runner's command
+/// clock, under a wall that moves `step_ms` on every reading.
+fn statuses(
+    suite: &ConformanceSuite,
+    model: EssIr,
+    step_ms: u64,
+) -> std::collections::BTreeMap<String, Status> {
+    let admitted = AdmittedSuite::from_suite(suite).unwrap_or_else(|error| panic!("{error}"));
+    let mut runner = Runner::new(
+        RunnerConfig::default(),
+        WithWall::new(
+            AdvancingClock::default(),
+            wall(WALL_MS, step_ms, &Rc::new(Cell::new(0))),
+        ),
+        Ids::for_suite(suite),
+    );
+    let target = Interpreted::for_model(model).with_command_clock(runner.command_clock());
+    runner
+        .run_admitted(&admitted, &target)
+        .into_report()
+        .scenarios
+        .iter()
+        .map(|scenario| (scenario.scenario.to_string(), scenario.status))
+        .collect()
+}
+
+/// Acceptance `fixed_clock_kills_the_boundary_mutant`, on the issue's own reproduction: the suite
+/// *synthesis* writes for `expiry >= now` (stored by `Issue`, guarded by `Redeem`) — not one
+/// rewritten by hand — holds a scenario that puts `now` on the stored `expiry`, every one of its
+/// scenarios passes against the model's own interpreter, and the `>` mutant fails it.
+#[test]
+fn adversary_586_synthesis_holds_the_stored_boundary_of_the_reproduction() {
+    let suite = synthesize(&codes(">=")).suite;
+    let held: Vec<String> = suite
+        .scenarios
+        .keys()
+        .map(ToString::to_string)
+        .filter(|id| id.contains("/held/"))
+        .collect();
+    assert_eq!(
+        held.len(),
+        1,
+        "one scenario on the stored `expiry >= now` boundary: {:#?}",
+        suite.scenarios.keys().collect::<Vec<_>>()
+    );
+    let correct = statuses(&suite, codes(">="), 250);
+    assert!(
+        correct.values().all(|status| *status == Status::Passed),
+        "{correct:#?}"
+    );
+    let mutant = statuses(&suite, codes(">"), 250);
+    assert_eq!(mutant[&held[0]], Status::Failed, "{mutant:#?}");
+}
+
+/// Two `now` guards on one command's inputs: every held scenario synthesis writes is decided by
+/// the model's own interpreter the way the scenario requires, so moving one value onto its
+/// boundary never changes the other guard's decision.
+#[test]
+fn adversary_586_two_now_guards_on_one_command_hold_consistent_scenarios() {
+    let text = include_str!("fixtures/current-time-guard.yaml")
+        .replace(
+            "      - {name: starts_at, type: Timestamp}\n    outcomes:",
+            "      - {name: starts_at, type: Timestamp}\n      - {name: ends_at, type: Timestamp}\n    outcomes:\n      - name: ends-too-late\n        when: ends_at > now + 3600s\n        error: demo.jobs.StartInPast",
+        );
+    assert!(text.contains("ends-too-late"), "{text}");
+    let raw = RawSpecFile::parse(&text).unwrap_or_else(|error| panic!("{error}\n{text}"));
+    let specification = Specification::assemble([(Source::new("system.yaml"), raw)])
+        .unwrap_or_else(|errors| panic!("{errors}\n{text}"));
+    let model = compile(&specification, &SourceMap::new())
+        .unwrap_or_else(|diagnostics| panic!("{diagnostics}"));
+    let synthesis = synthesize(&model);
+    let held = synthesis
+        .suite
+        .scenarios
+        .keys()
+        .filter(|id| id.to_string().contains("/held/"))
+        .count();
+    assert!(
+        held >= 1,
+        "{:#?}",
+        synthesis.suite.scenarios.keys().collect::<Vec<_>>()
+    );
+    let verdicts = statuses(&synthesis.suite, model, 250);
+    assert!(
+        verdicts.values().all(|status| *status == Status::Passed),
+        "{verdicts:#?}"
+    );
+}

@@ -904,3 +904,51 @@ fn fixed_clock_kills_the_boundary_mutant() {
         "{mutant:#?}"
     );
 }
+
+// ---- adversary, beyond10x/ess#586 ------------------------------------------------------------
+
+/// Acceptance `target_without_the_capability`, at the level an adopter sees: a target without
+/// `hold_now` that passed this model's suite before the held scenario existed (the suite with
+/// every `/held/` scenario left out, which is what synthesis wrote before #586) keeps a passing
+/// run after the upgrade. The held scenario is reported `unsupported` naming the capability, and
+/// that report must not turn the adopter's green run red: §28 makes an unsupported *required*
+/// scenario fail the run, so the held scenario cannot be counted as required against a target
+/// that does not offer the capability.
+#[test]
+fn adversary_586_a_target_without_hold_now_keeps_its_passing_run() {
+    let jobs = Jobs::new(trailing, 60);
+    let run = |suite: &ConformanceSuite| {
+        let admitted = AdmittedSuite::from_suite(suite).unwrap();
+        Runner::new(
+            RunnerConfig::default(),
+            FixedWall {
+                steps: AdvancingClock::default(),
+                wall: Timestamp::from_epoch_millis(WALL_MS),
+            },
+            Ids::for_suite(suite),
+        )
+        .run_admitted(&admitted, &Unheld(&jobs))
+        .into_report()
+    };
+    let mut before = suite();
+    before
+        .scenarios
+        .retain(|id, _| !id.to_string().contains("/held/"));
+    before.select_fresh_format();
+    assert_eq!(
+        run(&before).status,
+        ConformanceStatus::Passed,
+        "the run was green before the held scenario existed"
+    );
+    let after = run(&suite());
+    assert_eq!(
+        after.status,
+        ConformanceStatus::Passed,
+        "upgrading ess alone turned a green run red: {:#?}",
+        after
+            .scenarios
+            .iter()
+            .map(|scenario| (scenario.scenario.to_string(), scenario.status))
+            .collect::<Vec<_>>()
+    );
+}
