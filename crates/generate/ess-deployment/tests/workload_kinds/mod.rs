@@ -712,3 +712,5 @@ mod scheduled_jobs {
         );
     }
 }
+
+mod adversary;
