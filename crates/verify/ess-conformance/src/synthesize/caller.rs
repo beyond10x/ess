@@ -771,7 +771,9 @@ fn sends_any(scenario: &ConformanceScenario, commands: &BTreeSet<QualifiedName>)
 /// Whether the scenario `id` names is about a branch of `command`.
 fn about(id: &ScenarioId, command: &QualifiedName) -> bool {
     let of = match id {
-        ScenarioId::Outcome { outcome } => &outcome.command,
+        ScenarioId::Outcome { outcome } | ScenarioId::HeldOutcome { outcome, .. } => {
+            &outcome.command
+        }
         ScenarioId::Transition { by, .. } => &by.command,
         ScenarioId::Refusal { command, .. } => command,
         ScenarioId::Invariant { after, .. } => &after.command,
@@ -923,7 +925,9 @@ fn one_row_acted_on(
 /// The command the scenario `id` names is about.
 pub(super) fn under_test(id: &ScenarioId) -> Option<String> {
     match id {
-        ScenarioId::Outcome { outcome } => Some(outcome.command.to_string()),
+        ScenarioId::Outcome { outcome } | ScenarioId::HeldOutcome { outcome, .. } => {
+            Some(outcome.command.to_string())
+        }
         ScenarioId::Transition { by, .. } => Some(by.command.to_string()),
         ScenarioId::Refusal { command, .. } => Some(command.to_string()),
         ScenarioId::Invariant { after, .. } => Some(after.command.to_string()),

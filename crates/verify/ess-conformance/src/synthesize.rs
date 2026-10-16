@@ -2446,6 +2446,8 @@ fn synthesize_invocations(models: &caller::InvocationModels<'_>, focus: Focus<'_
             }),
         ));
     }
+    // One scenario on each `now` boundary, decided at a held instant (beyond10x/ess#586).
+    crate::now_offset::hold_boundaries(ir, &mut suite);
     // A scenario of a command deciding by a calendar window over `now` that an earlier stage
     // already refused — its guard decided at the synthesis reference, where no target's clock is —
     // is refused for the reason that holds whatever the reference says
@@ -16300,7 +16302,9 @@ fn row_projections(ir: &EssIr) -> BTreeMap<&EntityHandle, Vec<&ResolvedView>> {
 fn subject_of(id: &ScenarioId) -> EssSemanticRef {
     match id {
         ScenarioId::Disclosure { cell } => cell.origin.clone().into(),
-        ScenarioId::Outcome { outcome } => outcome.clone().into(),
+        ScenarioId::Outcome { outcome } | ScenarioId::HeldOutcome { outcome, .. } => {
+            outcome.clone().into()
+        }
         ScenarioId::Transition { transition, .. } => transition.clone().into(),
         ScenarioId::Refusal { entity, .. } | ScenarioId::Invariant { entity, .. } => {
             entity.clone().into()

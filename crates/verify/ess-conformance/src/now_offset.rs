@@ -27,6 +27,7 @@
 //! value kind and refuses the suite by version; the Go and TypeScript runtimes execute both majors
 //! and resolve it (beyond10x/ess#188). A suite without one keeps its format and bytes.
 
+use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
 use ess_compiler::ir::{
@@ -35,7 +36,7 @@ use ess_compiler::ir::{
 };
 use ess_primitives::facts::{FactPath, FactValue};
 use ess_primitives::node::Node;
-use ess_primitives::predicate::{Operand, Predicate};
+use ess_primitives::predicate::{CompareOp, Operand, Predicate};
 use ess_primitives::time::{CurrentTime, Rfc3339Instant, Timestamp};
 
 use crate::admission::AdmissionError;
@@ -80,8 +81,14 @@ pub fn earliest_run() -> Rfc3339Instant {
 /// operand, or a comparison with a fixed RFC 3339 instant.
 #[derive(Clone, Copy)]
 enum Bound {
-    /// `now` moved by this many seconds.
-    Now(i64),
+    /// `now` moved by this many seconds, with the comparison the guard writes, read from the
+    /// path's side: `holds[o]` is whether it holds when the path lies `o` of the boundary.
+    Now {
+        /// The reference offset the guard names.
+        seconds: i64,
+        /// Whether the comparison holds with the path before, on and after the boundary.
+        holds: [bool; 3],
+    },
     /// A fixed instant, and whether the path is ordered against it (`<`, `<=`, `>`, `>=`) rather
     /// than equated with it (`==`, `!=`).
     Fixed {
@@ -130,33 +137,7 @@ impl Orderings {
     fn stored(&mut self, ir: &EssIr, command: &ResolvedCommand) {
         // A stored row's predicate may order the command's own input, read under `input.`,
         // against the current time: that input is sent relative to the moment of sending too.
-        for (entity, predicate) in command.outcomes.iter().flat_map(|outcome| {
-            let mut read: Vec<(&EntityHandle, &Predicate)> = Vec::new();
-            match &outcome.condition {
-                ResolvedCondition::SubjectPredicate { predicate, .. } => {
-                    if let Some(subject) = command.selection_subject(outcome) {
-                        read.push((&subject.entity, predicate));
-                    }
-                }
-                ResolvedCondition::Related {
-                    entity,
-                    test: ResolvedRelatedTest::Holds { predicate },
-                    ..
-                } => read.push((entity, predicate)),
-                // A row set's selector and `forall` (ess/22, beyond10x/ess#228, #299).
-                ResolvedCondition::RelatedSet {
-                    selection, test, ..
-                } => {
-                    read.push((&selection.entity, &selection.filter));
-                    read.extend(
-                        test.predicate()
-                            .map(|predicate| (&selection.entity, predicate)),
-                    );
-                }
-                _ => {}
-            }
-            read
-        }) {
+        for (entity, predicate) in row_reads(command) {
             let namespace = ess_domain::command::subject_fact::INPUT_NAMESPACE;
             if ir
                 .entity(entity)
@@ -202,7 +183,9 @@ impl Orderings {
                 over_row.walk(predicate, &mut Vec::new());
                 for (path, bounds) in over_row.bounds {
                     if path.segments().len() != 1
-                        || !bounds.iter().any(|bound| matches!(bound, Bound::Now(_)))
+                        || !bounds
+                            .iter()
+                            .any(|bound| matches!(bound, Bound::Now { .. }))
                     {
                         continue;
                     }
@@ -236,7 +219,9 @@ impl Orderings {
                     continue;
                 };
                 let now = self.bounds.get(&input).is_some_and(|bounds| {
-                    bounds.iter().any(|bound| matches!(bound, Bound::Now(_)))
+                    bounds
+                        .iter()
+                        .any(|bound| matches!(bound, Bound::Now { .. }))
                 });
                 if !now {
                     continue;
@@ -275,7 +260,7 @@ impl Orderings {
                 left, op, right, ..
             } => {
                 let ordered = op.needs_ordering();
-                for (fact, literal) in [(left, right), (right, left)] {
+                for (fact, literal, fact_left) in [(left, right, true), (right, left, false)] {
                     let (Operand::Fact(path), Operand::Literal(FactValue::Text(text))) =
                         (fact, literal)
                     else {
@@ -286,7 +271,14 @@ impl Orderings {
                             self.quantified.push(path.clone());
                             continue;
                         }
-                        Bound::Now(now.offset_seconds())
+                        let holds =
+                            [Ordering::Less, Ordering::Equal, Ordering::Greater].map(|side| {
+                                accepts(*op, if fact_left { side } else { side.reverse() })
+                            });
+                        Bound::Now {
+                            seconds: now.offset_seconds(),
+                            holds,
+                        }
                     } else if let Some(instant) = Rfc3339Instant::parse_rfc3339(text) {
                         Bound::Fixed { instant, ordered }
                     } else {
@@ -319,7 +311,11 @@ impl Orderings {
     fn now_paths(&self) -> impl Iterator<Item = &FactPath> {
         self.bounds
             .iter()
-            .filter(|(_, bounds)| bounds.iter().any(|bound| matches!(bound, Bound::Now(_))))
+            .filter(|(_, bounds)| {
+                bounds
+                    .iter()
+                    .any(|bound| matches!(bound, Bound::Now { .. }))
+            })
             .map(|(path, _)| path)
     }
 
@@ -389,7 +385,7 @@ impl Orderings {
         let mut fixed = false;
         for bound in bounds {
             match bound {
-                Bound::Now(seconds) => {
+                Bound::Now { seconds, .. } => {
                     now = true;
                     if let Some(boundary) = reference().plus_seconds(*seconds) {
                         if [-1, 1]
@@ -404,6 +400,50 @@ impl Orderings {
             }
         }
         now && !fixed
+    }
+}
+
+/// Every predicate over a stored row `command` decides by, with the row's entity: its
+/// `when_subject:` predicates, its identity-addressed `when_related:` predicates, and a row set's
+/// selector and `forall` (ess/22, beyond10x/ess#228, #299).
+fn row_reads(command: &ResolvedCommand) -> Vec<(&EntityHandle, &Predicate)> {
+    let mut read: Vec<(&EntityHandle, &Predicate)> = Vec::new();
+    for outcome in &command.outcomes {
+        match &outcome.condition {
+            ResolvedCondition::SubjectPredicate { predicate, .. } => {
+                if let Some(subject) = command.selection_subject(outcome) {
+                    read.push((&subject.entity, predicate));
+                }
+            }
+            ResolvedCondition::Related {
+                entity,
+                test: ResolvedRelatedTest::Holds { predicate },
+                ..
+            } => read.push((entity, predicate)),
+            ResolvedCondition::RelatedSet {
+                selection, test, ..
+            } => {
+                read.push((&selection.entity, &selection.filter));
+                read.extend(
+                    test.predicate()
+                        .map(|predicate| (&selection.entity, predicate)),
+                );
+            }
+            _ => {}
+        }
+    }
+    read
+}
+
+/// Whether `op` holds of two operands that compare as `ordering`, left against right.
+fn accepts(op: CompareOp, ordering: Ordering) -> bool {
+    match op {
+        CompareOp::Eq => ordering == Ordering::Equal,
+        CompareOp::Ne => ordering != Ordering::Equal,
+        CompareOp::Lt => ordering == Ordering::Less,
+        CompareOp::Le => ordering != Ordering::Greater,
+        CompareOp::Gt => ordering == Ordering::Greater,
+        CompareOp::Ge => ordering != Ordering::Less,
     }
 }
 
@@ -652,6 +692,296 @@ pub(crate) fn install(
     refused
 }
 
+// ---- the held boundary ----------------------------------------------------------------------
+
+/// Where a scenario sends the value an ordering against the current time reads.
+#[derive(Clone, PartialEq)]
+enum Decided {
+    /// The command's own input field.
+    Input(String),
+    /// A stored field of a row of this entity, which an earlier command writes from its input.
+    Row(EntityHandle, String),
+}
+
+/// Every ordering against the current time `command` itself decides by, with the reference
+/// offset its guard names: an input guard, and a `when_subject:` or `when_related:` predicate over
+/// a whole stored field or a whole input field read under `input.`.
+fn decided_by(ir: &EssIr, command: &ResolvedCommand) -> Vec<(Decided, i64)> {
+    let mut found: Vec<(Decided, i64)> = Vec::new();
+    let mut push = |decided: Decided, bounds: Vec<Bound>| {
+        for bound in bounds {
+            if let Bound::Now { seconds, .. } = bound {
+                if !found.contains(&(decided.clone(), seconds)) {
+                    found.push((decided.clone(), seconds));
+                }
+            }
+        }
+    };
+    let mut input = Orderings::default();
+    for outcome in &command.outcomes {
+        if let Some(predicate) = input_predicate(&outcome.condition) {
+            input.walk(predicate, &mut Vec::new());
+        }
+    }
+    for (path, bounds) in input.bounds {
+        if let [field] = path.segments() {
+            push(Decided::Input(field.clone()), bounds);
+        }
+    }
+    let namespace = ess_domain::command::subject_fact::INPUT_NAMESPACE;
+    for (entity, predicate) in row_reads(command) {
+        let shadowed = ir
+            .entity(entity)
+            .fields
+            .iter()
+            .any(|field| field.name == namespace);
+        let mut over_row = Orderings::default();
+        over_row.walk(predicate, &mut Vec::new());
+        for (path, bounds) in over_row.bounds {
+            let decided = match path.segments() {
+                [root, field] if root == namespace && !shadowed => Decided::Input(field.clone()),
+                [field] => Decided::Row(entity.clone(), field.clone()),
+                _ => continue,
+            };
+            push(decided, bounds);
+        }
+    }
+    found
+}
+
+/// The step of `steps` that sends the value `decided` reads to the command under test at `act`,
+/// and the input field it sends it in: the command itself for an input, and the nearest earlier
+/// command writing the stored field whole from an input field for a row.
+fn carrier(
+    ir: &EssIr,
+    steps: &[ScenarioStep],
+    act: usize,
+    decided: &Decided,
+) -> Option<(usize, String)> {
+    let (entity, stored) = match decided {
+        Decided::Input(field) => return Some((act, field.clone())),
+        Decided::Row(entity, stored) => (entity, stored),
+    };
+    steps[..act]
+        .iter()
+        .enumerate()
+        .rev()
+        .find_map(|(at, step)| {
+            let ScenarioStep::ExecuteCommand { command, .. } = step else {
+                return None;
+            };
+            let declared = ir.commands().get(command.name())?;
+            declared.outcomes.iter().find_map(|outcome| {
+                let subject = outcome.subject.as_ref()?;
+                if subject.entity != *entity {
+                    return None;
+                }
+                outcome.sets.iter().find_map(|set| match &set.value {
+                    ResolvedPayloadValue::InputField { field, .. }
+                        if set.conversion.is_none() && set.target == *stored =>
+                    {
+                        Some((at, field.clone()))
+                    }
+                    _ => None,
+                })
+            })
+        })
+}
+
+/// The steps an at-boundary scenario takes, from an off-boundary scenario's `steps` whose
+/// command under test is at `act` and whose `carrier` step sends `field` a second from the
+/// boundary `seconds` names, on the side whose verdict the boundary shares: that value moved onto
+/// the boundary, and `hold_now 0` before the command under test.
+///
+/// `None` where the move could change another decision: a field also compared with a fixed
+/// instant, with another `now` boundary on the value it is moved from, or with comparisons at this
+/// boundary that disagree about the side; or where the scenario names either offset elsewhere.
+/// Everything after the command under test's own expectations is left out.
+fn at_boundary(
+    ir: &EssIr,
+    steps: &[ScenarioStep],
+    act: usize,
+    carrier: usize,
+    field: &str,
+    seconds: i64,
+) -> Option<Vec<ScenarioStep>> {
+    let ScenarioStep::ExecuteCommand { command, input, .. } = &steps[carrier] else {
+        return None;
+    };
+    let Some(ScenarioValue::NowOffset { seconds: sent }) = input.get(field) else {
+        return None;
+    };
+    let sent = *sent;
+    let declared = ir.commands().get(command.name())?;
+    let bounds = Orderings::of(ir, declared)
+        .bounds
+        .remove(&FactPath::new(field).ok()?)?;
+    let mut side = None;
+    for bound in bounds {
+        match bound {
+            Bound::Fixed { .. } => return None,
+            Bound::Now {
+                seconds: at,
+                holds: [before, on, after],
+            } if at == seconds => {
+                let shares = match (before == on, after == on) {
+                    (true, false) => -1,
+                    (false, true) => 1,
+                    _ => return None,
+                };
+                if side.is_some_and(|side| side != shares) {
+                    return None;
+                }
+                side = Some(shares);
+            }
+            Bound::Now { seconds: at, .. } if at == sent => return None,
+            Bound::Now { .. } => {}
+        }
+    }
+    if side
+        != Some(match sent.cmp(&seconds) {
+            Ordering::Less => -1,
+            Ordering::Equal => 0,
+            Ordering::Greater => 1,
+        })
+    {
+        return None;
+    }
+    let end = steps
+        .iter()
+        .enumerate()
+        .skip(act + 1)
+        .find(|(_, step)| acts(step))
+        .map_or(steps.len(), |(at, _)| at);
+    let mut kept = steps[..end].to_vec();
+    let names = |step: &ScenarioStep, offset: i64| {
+        let mut found = false;
+        visit(step, &mut |value| {
+            found |= *value == ScenarioValue::NowOffset { seconds: offset };
+        });
+        found |= matches!(step, ScenarioStep::HoldNow { .. });
+        found
+    };
+    if kept[..carrier].iter().any(|step| names(step, sent))
+        || kept.iter().any(|step| names(step, seconds))
+    {
+        return None;
+    }
+    if let ScenarioStep::ExecuteCommand { input, .. } = &mut kept[carrier] {
+        input.insert(field.to_owned(), ScenarioValue::NowOffset { seconds });
+    }
+    for step in &kept[carrier..] {
+        if matches!(step, ScenarioStep::ExecuteCommand { .. }) && names(step, sent) {
+            return None;
+        }
+    }
+    for step in &mut kept[carrier + 1..] {
+        visit_mut(step, &mut |value| {
+            if *value == (ScenarioValue::NowOffset { seconds: sent }) {
+                *value = ScenarioValue::NowOffset { seconds };
+            }
+        });
+    }
+    kept.insert(act, ScenarioStep::HoldNow { seconds: 0 });
+    // A row written before the command under test reads its instant from the held reading too,
+    // so the two name one instant whatever the offset the guard writes.
+    if carrier != act && seconds != 0 {
+        kept.insert(carrier, ScenarioStep::HoldNow { seconds: 0 });
+    }
+    Some(kept)
+}
+
+/// Whether `step` does something to the target rather than asserting what an earlier one did:
+/// where the expectations of the command before it end.
+fn acts(step: &ScenarioStep) -> bool {
+    matches!(
+        step,
+        ScenarioStep::ExecuteCommand { .. }
+            | ScenarioStep::ExecuteCommandWithoutInput { .. }
+            | ScenarioStep::ConfigureExternalOutcome { .. }
+            | ScenarioStep::EstablishEntity { .. }
+            | ScenarioStep::DeliverEvent { .. }
+            | ScenarioStep::RedeliverEvent { .. }
+            | ScenarioStep::SnapshotSubject { .. }
+            | ScenarioStep::SnapshotCompleteSubject { .. }
+            | ScenarioStep::SnapshotView { .. }
+            | ScenarioStep::MarkInstant { .. }
+            | ScenarioStep::HoldNow { .. }
+    )
+}
+
+/// Adds, for every ordering against the current time a command decides by, one scenario on its
+/// boundary (beyond10x/ess#586, `docs/design/current-time-guards.md`): the off-boundary scenario
+/// of the branch the boundary value takes, with the value moved onto the boundary and the command
+/// under test held at the instant it is compared with. A `<` and its `<=` mutant answer apart
+/// there and nowhere else. Run after [`install`], which writes the values this reads.
+///
+/// Each is filed as [`ScenarioId::HeldOutcome`] beside the scenario it was taken from, which keeps
+/// its bytes; a target without [`hold_now`](crate::ConformanceTarget::hold_now) reports only the
+/// new one `unsupported`.
+pub(crate) fn hold_boundaries(ir: &EssIr, suite: &mut ConformanceSuite) {
+    let mut held = BTreeMap::new();
+    for (id, scenario) in &suite.scenarios {
+        let ScenarioId::Outcome { outcome } = id else {
+            continue;
+        };
+        if scenario.one_time_response.is_some() {
+            continue;
+        }
+        let Some(command) = ir.commands().get(outcome.command.name()) else {
+            continue;
+        };
+        let Some(expected) = scenario.steps.iter().position(|step| {
+            matches!(step, ScenarioStep::ExpectOutcome { outcome: taken } if taken == outcome)
+        }) else {
+            continue;
+        };
+        let Some(act) = scenario.steps[..expected].iter().rposition(|step| {
+            matches!(step, ScenarioStep::ExecuteCommand { command, .. } if *command == outcome.command)
+        }) else {
+            continue;
+        };
+        for (decided, seconds) in decided_by(ir, command) {
+            let Some((carrier, field)) = carrier(ir, &scenario.steps, act, &decided) else {
+                continue;
+            };
+            let Some(steps) = at_boundary(ir, &scenario.steps, act, carrier, &field, seconds)
+            else {
+                continue;
+            };
+            let id = ScenarioId::HeldOutcome {
+                outcome: outcome.clone(),
+                field: field.clone(),
+                seconds,
+            };
+            if suite.scenarios.contains_key(&id) || held.contains_key(&id) {
+                continue;
+            }
+            let text = format!(
+                "{} takes {} with {field} on its now boundary, decided at a held instant",
+                outcome.command, outcome.outcome
+            );
+            let Ok(purpose) = crate::ScenarioPurpose::new(
+                text.chars()
+                    .take(crate::ScenarioPurpose::MAX_LENGTH)
+                    .collect::<String>(),
+            ) else {
+                continue;
+            };
+            held.insert(
+                id,
+                crate::ConformanceScenario {
+                    one_time_response: None,
+                    purpose,
+                    steps,
+                    source: scenario.source.clone(),
+                },
+            );
+        }
+    }
+    suite.scenarios.extend(held);
+}
+
 // ---- the suite format -----------------------------------------------------------------------
 
 /// Whether one step carries a `now_offset` value anywhere it carries scenario values.
@@ -832,6 +1162,55 @@ pub(crate) fn visit(step: &ScenarioStep, each: &mut dyn FnMut(&ScenarioValue)) {
             expectation_values(expectation, &mut map);
         }
         ScenarioStep::ExpectView { expectation, .. } => expectation_values(expectation, &mut map),
+        _ => {}
+    }
+}
+
+/// [`visit`], handing each value out to be changed.
+fn visit_mut(step: &mut ScenarioStep, each: &mut dyn FnMut(&mut ScenarioValue)) {
+    let mut map =
+        |values: &mut BTreeMap<String, ScenarioValue>| values.values_mut().for_each(&mut *each);
+    match step {
+        ScenarioStep::ExecuteCommand { input, .. }
+        | ScenarioStep::ExpectInvocation { input, .. } => {
+            map(input);
+        }
+        ScenarioStep::ExpectEventValues { payload, .. } => map(payload),
+        ScenarioStep::ExpectEveryInvocation {
+            selecting, input, ..
+        } => {
+            map(selecting);
+            map(input);
+        }
+        ScenarioStep::SnapshotCompleteSubject { subject, .. }
+        | ScenarioStep::SnapshotSubject { subject, .. }
+        | ScenarioStep::ExpectSubjectAbsent { subject, .. } => map(subject),
+        ScenarioStep::QueryView { params, .. }
+        | ScenarioStep::ExpectHalt { params, .. }
+        | ScenarioStep::EventuallyHalt { params, .. } => map(params),
+        ScenarioStep::EventuallyView {
+            params,
+            expectation,
+            ..
+        } => {
+            map(params);
+            expectation_values_mut(expectation, &mut map);
+        }
+        ScenarioStep::ExpectView { expectation, .. } => {
+            expectation_values_mut(expectation, &mut map);
+        }
+        _ => {}
+    }
+}
+
+fn expectation_values_mut(
+    expectation: &mut ViewExpectation,
+    map: &mut dyn FnMut(&mut BTreeMap<String, ScenarioValue>),
+) {
+    match expectation {
+        ViewExpectation::Contains { fields }
+        | ViewExpectation::Excludes { fields }
+        | ViewExpectation::At { fields, .. } => map(fields),
         _ => {}
     }
 }

@@ -65,14 +65,18 @@ fn issue_510_the_reproducer_passes_every_scenario_against_the_interpreted_target
     let report: serde_json::Value = serde_json::from_slice(&output.stdout)
         .unwrap_or_else(|error| panic!("a JSON report: {error}\n{stdout}"));
     let scenarios = report["scenarios"].as_array().expect("scenarios");
-    assert_eq!(scenarios.len(), 2, "one scenario per branch: {report:#}");
+    assert_eq!(
+        scenarios.len(),
+        3,
+        "one scenario per branch, and one on the boundary (#586): {report:#}"
+    );
     for scenario in scenarios {
         assert_eq!(
             scenario["status"], "passed",
             "the guard is decided at the step's instant: {scenario:#}"
         );
     }
-    assert_eq!(report["summary"]["counts"]["passed"], 2, "{report:#}");
+    assert_eq!(report["summary"]["counts"]["passed"], 3, "{report:#}");
     assert_eq!(report["summary"]["counts"]["unsupported"], 0, "{report:#}");
     assert_eq!(
         output.status.code(),
@@ -88,7 +92,7 @@ fn issue_510_the_text_report_passes_too() {
     let output = run(&model, &suite, "text");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("2 scenarios: 2 passed, 0 failed, 0 error, 0 unsupported"),
+        stdout.contains("3 scenarios: 3 passed, 0 failed, 0 error, 0 unsupported"),
         "{stdout}"
     );
     assert_eq!(output.status.code(), Some(0), "{stdout}");

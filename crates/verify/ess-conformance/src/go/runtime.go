@@ -4342,6 +4342,10 @@ func scenarioIdentity(id string) error {
 	switch {
 	case len(p) == 3 && p[1] == "outcome":
 		valid = q(p[0]) && k(p[2])
+	case len(p) == 6 && p[1] == "outcome" && p[3] == "held":
+		// The at-boundary scenario of a `now` guard, decided at a held instant (beyond10x/ess#586).
+		_, err := strconv.ParseInt(p[5], 10, 64)
+		valid = q(p[0]) && k(p[2]) && p[4] != "" && err == nil
 	case len(p) == 3 && p[1] == "authored":
 		valid = q(p[0]) && k(p[2])
 	case len(p) == 3 && p[1] == "binding":

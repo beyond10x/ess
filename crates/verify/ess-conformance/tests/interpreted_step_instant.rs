@@ -38,7 +38,12 @@ fn ir() -> EssIr {
 }
 
 fn suite(ir: &EssIr) -> (ConformanceSuite, AdmittedSuite) {
-    let synthesis = synthesize(ir);
+    let mut synthesis = synthesize(ir);
+    // The scenario on the boundary is exercised by the tests of `hold_now` below.
+    synthesis
+        .suite
+        .scenarios
+        .retain(|id, _| !id.to_string().contains("/held/"));
     assert_eq!(
         synthesis.suite.scenarios.len(),
         2,

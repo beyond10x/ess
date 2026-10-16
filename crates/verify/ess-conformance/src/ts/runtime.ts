@@ -6434,6 +6434,10 @@ export function scenarioIdentity(id: string, major = 21): void {
   const k = (value: string): boolean => kebabName.test(value);
   if (parts.length === 3 && segment(1) === 'outcome') {
     valid = q(segment(0)) && k(segment(2));
+  } else if (parts.length === 6 && segment(1) === 'outcome' && segment(3) === 'held') {
+    // The at-boundary scenario of a `now` guard, decided at a held instant (beyond10x/ess#586).
+    valid =
+      q(segment(0)) && k(segment(2)) && segment(4) !== '' && /^-?(0|[1-9][0-9]*)$/.test(segment(5));
   } else if (parts.length === 3 && segment(1) === 'authored') {
     valid = q(segment(0)) && k(segment(2));
   } else if (parts.length === 3 && segment(1) === 'binding') {

@@ -652,6 +652,22 @@ pub enum ScenarioId {
         /// The branch this scenario proves.
         outcome: OutcomeRef,
     },
+    /// One declared outcome taken with an input on a boundary against the current time, the
+    /// command decided at a held instant (suite/50 and /51, beyond10x/ess#586):
+    /// `demo.jobs.ScheduleJob/outcome/scheduled/held/starts_at/-60`.
+    ///
+    /// The field is the input field the scenario sends on the boundary, and the seconds are the
+    /// reference offset the guard names, so each ordering a command decides by is its own scenario.
+    /// Filed apart from [`Outcome`](Self::Outcome), whose scenario keeps its bytes: a target that
+    /// cannot hold its `now` reports only this one `unsupported`.
+    HeldOutcome {
+        /// The branch the boundary value takes.
+        outcome: OutcomeRef,
+        /// The input field sent on the boundary.
+        field: String,
+        /// The reference offset of the boundary.
+        seconds: i64,
+    },
     /// One declared transition, taken by the outcome that drives it.
     ///
     /// `billing.invoice.Invoice/transition/settle/by/billing.invoice.PayInvoice/settled`. The driver
@@ -887,6 +903,23 @@ impl ScenarioId {
                         .map_err(|_| reject("has a malformed outcome name"))?,
                 ),
             }),
+            [command, Self::OUTCOME, outcome, "held", field, seconds] => {
+                let seconds: i64 = seconds
+                    .parse()
+                    .map_err(|_| reject("has a malformed held offset"))?;
+                if field.is_empty() {
+                    return Err(reject("names no held input field"));
+                }
+                Ok(Self::HeldOutcome {
+                    outcome: OutcomeRef::new(
+                        CommandRef::new(name(command)?),
+                        OutcomeName::new(outcome)
+                            .map_err(|_| reject("has a malformed outcome name"))?,
+                    ),
+                    field: (*field).to_owned(),
+                    seconds,
+                })
+            }
             [entity, Self::TRANSITION, transition, "by", command, outcome] => {
                 Ok(Self::Transition {
                     transition: TransitionRef::new(EntityRef::new(name(entity)?), transition)
@@ -969,6 +1002,7 @@ impl ScenarioId {
             }),
             _ => Err(reject(
                 "is not a scenario name; expected `<command>/outcome/<name>`, \
+                 `<command>/outcome/<name>/held/<field>/<seconds>`, \
                  `<entity>/transition/<name>/by/<command>/<outcome>`, \
                  `<entity>/state/<state>/refuses/<command>`, \
                  `<entity>/invariant/after/<command>/<outcome>`, \
@@ -989,6 +1023,17 @@ impl fmt::Display for ScenarioId {
             Self::Outcome { outcome } => write!(
                 f,
                 "{}/{}/{}",
+                outcome.command,
+                Self::OUTCOME,
+                outcome.outcome
+            ),
+            Self::HeldOutcome {
+                outcome,
+                field,
+                seconds,
+            } => write!(
+                f,
+                "{}/{}/{}/held/{field}/{seconds}",
                 outcome.command,
                 Self::OUTCOME,
                 outcome.outcome

@@ -44,7 +44,13 @@ fn suite() -> ConformanceSuite {
     let synthesis = synthesize(&ir(JOBS));
     assert!(synthesis.refusals.is_empty(), "{:#?}", synthesis.refusals);
     assert!(ess_conformance::now_offset::used_by(&synthesis.suite));
-    synthesis.suite
+    // The scenario on the boundary needs a target that holds the clock; the Go transcript target
+    // here does not, and `runners_agree_on_the_fixed_instant` covers that scenario.
+    let mut suite = synthesis.suite;
+    suite
+        .scenarios
+        .retain(|id, _| !id.to_string().contains("/held/"));
+    suite
 }
 
 type Row = BTreeMap<String, Node>;

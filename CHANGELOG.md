@@ -12,6 +12,15 @@
   `NowHolder`, the TypeScript runtime's `holdNow`); a target without it reports the scenario
   `unsupported`, naming `hold_now`. A suite without the step keeps its format and
   bytes (https://github.com/beyond10x/ess/issues/586).
+- Synthesis adds one scenario on each `now` boundary a command decides by — an input guard, or a
+  `when_subject:`/`when_related:` predicate over a stored field written from an input — with the
+  value sent exactly on the boundary and a `hold_now 0` before the command under test, filed as
+  `<command>/outcome/<outcome>/held/<field>/<seconds>`. The `guard-boundary` mutant (`<` to `<=`)
+  answers apart there and is now killed. A model with such a guard therefore gets a suite in
+  `ess-conformance/50` (`/51` with coverage); its off-boundary scenarios keep their bytes, and a
+  target without `hold_now` reports only the new scenario `unsupported`, which fails the run as
+  every unsupported scenario does
+  (https://github.com/beyond10x/ess/issues/586).
 - The generated Go and TypeScript sequential explorers (`Explore`) draw a `Timestamp` input, as
   the concurrent ones already did, and decide a guard over `now` against a clock,
   `ExploreOptions.Now` (TypeScript `now`), the wall clock by default. Where a guard compares a

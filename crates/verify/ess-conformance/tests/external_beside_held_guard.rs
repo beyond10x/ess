@@ -852,7 +852,9 @@ fn unclaimed_external_witnesses_keep_their_bytes() {
 /// The digests of every model of the base of beyond10x/ess#464, written by this file with
 /// `EXTERNAL_WITNESS_BASE_WRITE=<path>` before the change: one line per model, as [`model_line`]
 /// writes it. Re-pinned at 463722028, the integration tree with #462/#463 merged and #464 not,
-/// whose row-set decoy order moved five suites (beyond10x/ess#463).
+/// whose row-set decoy order moved five suites (beyond10x/ess#463). The rows of
+/// `current-time-guard.yaml`, `now-stored-rows.yaml` and `occurrence-clock-offers.yaml` were
+/// re-pinned when synthesis began to hold the clock on a `now` boundary (beyond10x/ess#586).
 const BASE: &str = include_str!("fixtures/external-beside-held-guard-base.tsv");
 
 fn root() -> PathBuf {

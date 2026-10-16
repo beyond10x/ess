@@ -46,7 +46,13 @@ fn suite() -> ConformanceSuite {
             "{refusal:#?}"
         );
     }
-    synthesis.suite
+    // The scenarios on a boundary need a target that holds the clock; these staged targets do not,
+    // and `runners_agree_on_the_fixed_instant` covers them.
+    let mut suite = synthesis.suite;
+    suite
+        .scenarios
+        .retain(|id, _| !id.to_string().contains("/held/"));
+    suite
 }
 
 /// What each wiring of the clock fails: none for the healthy target, and for each fault at least

@@ -164,6 +164,20 @@ test. The scenario requires the branch that value takes at that instant: the acc
 off-boundary scenarios stay as they are, with their bytes; the at-boundary scenario is one more.
 A path a `now_offset` cannot carry, and a field `straddled` refuses, get no held scenario either.
 
+How the held scenario is built: it is the off-boundary scenario of the branch the boundary takes —
+the one sending the value a second from the boundary on the side whose verdict the boundary
+shares (`now - 59s` for `< now - 60s`, `now - 61s` for `<= now - 60s`) — with that value moved
+onto the boundary, wherever the scenario asserts it, and everything after the command under test's
+own expectations left out. It is filed as `<command>/outcome/<outcome>/held/<field>/<seconds>`
+(`ScenarioId::HeldOutcome`), the field being the input field sent on the boundary and the seconds
+the reference offset, beside the scenario it was taken from. None is added where moving the value
+could change another decision: a field also compared with a fixed instant, another `now` boundary
+on the value moved from, comparisons at the boundary that disagree about the side, or a scenario
+naming either offset elsewhere. A stored field written with an offset other than `0` gets a
+`hold_now 0` before the writing command too, so the value it writes and the instant the command
+under test is held at come from one reading.
+
+
 **The runner.** On `hold_now n` the runner resolves `n`, then either writes it into the command
 clock it handed out or calls `hold_now` on the target; `Unsupported` ends the scenario `unsupported`
 naming `hold_now`, any other error is the target's failure. A `hold_now` not followed by an

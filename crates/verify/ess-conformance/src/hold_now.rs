@@ -24,13 +24,15 @@ pub const COVERAGE: u32 = 51;
 /// The suite majors this module introduces.
 pub const ADMITTED: [u32; 2] = [ORDINARY, COVERAGE];
 
-/// Whether a suite carries a `hold_now` step.
+/// Whether a suite carries a `hold_now` step, or a scenario filed as held
+/// ([`ScenarioId::HeldOutcome`](crate::ScenarioId::HeldOutcome)).
 pub fn used_by(suite: &ConformanceSuite) -> bool {
-    suite.scenarios.values().any(|scenario| {
-        scenario
-            .steps
-            .iter()
-            .any(|step| matches!(step, ScenarioStep::HoldNow { .. }))
+    suite.scenarios.iter().any(|(id, scenario)| {
+        matches!(id, crate::ScenarioId::HeldOutcome { .. })
+            || scenario
+                .steps
+                .iter()
+                .any(|step| matches!(step, ScenarioStep::HoldNow { .. }))
     })
 }
 

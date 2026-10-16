@@ -2,11 +2,13 @@
 //! `docs/design/current-time-guards.md`).
 //!
 //! The suite is synthesized from the #171 repro through the CLI's own path, admitted as
-//! `ess-conformance/26`, and run. Against the billing target, which does not implement the jobs
-//! model, what is observable is the run itself: every `now_offset` resolves against the wall clock
-//! the CLI supplies before the command reaches the target — which then answers that it does not
-//! know the command — and nothing in the run is about the value. The interpreted target executes
-//! the model and passes every scenario.
+//! `ess-conformance/50` (one scenario holds the clock on the guard's boundary, beyond10x/ess#586),
+//! and run. Against the billing target, which does not implement the jobs model, what is
+//! observable is the run itself: every `now_offset` resolves against the wall clock the CLI
+//! supplies before the command reaches the target — which then answers that it does not know the
+//! command — and nothing in the run is about the value; the held scenario stops at `hold_now`,
+//! which that target cannot do. The interpreted target executes the model and passes every
+//! scenario.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -65,11 +67,14 @@ fn scenarios(report: &serde_json::Value) -> &Vec<serde_json::Value> {
     let scenarios = report["scenarios"].as_array().expect("scenarios");
     assert_eq!(
         scenarios.len(),
-        2,
-        "one scenario per branch of #171: {report:#}"
+        3,
+        "one scenario per branch of #171, and one on its boundary (#586): {report:#}"
     );
     scenarios
 }
+
+/// The scenario on the guard's boundary, which holds the target's clock (beyond10x/ess#586).
+const HELD: &str = "demo.jobs.ScheduleJob/outcome/scheduled/held/starts_at/-60";
 
 /// A target that executes steps: each `now_offset` is resolved before the command is handed over.
 /// A value the runner could not resolve would be reported about the value; here every check is the
@@ -78,10 +83,17 @@ fn scenarios(report: &serde_json::Value) -> &Vec<serde_json::Value> {
 fn issue_171_a_now_offset_suite_runs_through_the_cli_with_every_value_resolved() {
     let (code, report, stderr) = run("billing");
     assert_eq!(
-        report["summary"]["suite"]["version"], "ess-conformance/34",
+        report["summary"]["suite"]["version"], "ess-conformance/50",
         "{report:#}"
     );
     for scenario in scenarios(&report) {
+        if scenario["scenario"] == HELD {
+            // The billing target cannot hold its clock, so the held scenario stops before its
+            // command, as unsupported rather than as a failure.
+            assert_eq!(scenario["status"], "unsupported", "{scenario:#}");
+            assert_eq!(scenario["checks"][0]["about"], "hold_now", "{scenario:#}");
+            continue;
+        }
         for check in scenario["checks"].as_array().expect("checks") {
             let observed = check["diagnostic"]["observed"].to_string();
             assert!(
@@ -94,10 +106,12 @@ fn issue_171_a_now_offset_suite_runs_through_the_cli_with_every_value_resolved()
             );
         }
     }
+    // The other scenarios end `error` (exit 3 alone), but an unsupported required scenario fails
+    // the run, and a failure is the headline (`ConformanceReport::verdict`).
     assert_eq!(
         code,
-        Some(3),
-        "the target could not carry the command out: {stderr}"
+        Some(1),
+        "the held scenario is unsupported, so the run fails: {stderr}"
     );
 }
 
