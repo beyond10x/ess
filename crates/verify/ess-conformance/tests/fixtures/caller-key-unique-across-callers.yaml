@@ -1,0 +1,66 @@
+# A key unique across every caller (beyond10x/ess#580): one entity whose `name` no two rows share,
+# whoever holds them, a command refused when any row already holds the name, and two actors whose
+# credential carries `id`. The caller-swapped half of each scenario must send names the first half
+# did not write, or the model's own `taken` branch answers the swapped `took`.
+format: ess/25
+system: repro
+version: v1
+domain: repro.names
+summary: A name unique across callers.
+types:
+  - {name: repro.names.CallerId, kind: newtype, of: String}
+entities:
+  - name: repro.names.Claim
+    identity: {name: claim_id, type: Uuid}
+    fields:
+      - {name: name, type: String}
+      - {name: holder, type: repro.names.CallerId}
+    lifecycle:
+      initial: Held
+      states: [Held]
+      terminal: [Held]
+actors:
+  - name: repro.names.Alice
+    attributes:
+      - {name: id, type: repro.names.CallerId}
+    may: [repro.names.TakeName]
+  - name: repro.names.Bob
+    attributes:
+      - {name: id, type: repro.names.CallerId}
+    may: [repro.names.TakeName]
+errors:
+  - name: repro.names.Taken
+    fields:
+      - {name: name, type: String}
+commands:
+  - name: repro.names.TakeName
+    input:
+      - {name: name, type: String}
+    outcomes:
+      - name: taken
+        when_related: {entity: repro.names.Claim, where: name == input.name, exists: true}
+        error: repro.names.Taken
+        payload:
+          repro.names.Taken: {name: input.name}
+      - name: took
+        creates: repro.names.Claim
+        instance: claim_id
+        sets: {name: input.name, holder: {caller: id}}
+        emits: [repro.names.NameTaken]
+        payload:
+          repro.names.NameTaken: {claim_id: {generated: true}, name: input.name, holder: {caller: id}}
+events:
+  - name: repro.names.NameTaken
+    fields:
+      - {name: claim_id, type: Uuid}
+      - {name: name, type: String}
+      - {name: holder, type: repro.names.CallerId}
+views:
+  - name: repro.names.Claims
+    source: repro.names.Claim
+    consistency: read_your_writes
+    fields:
+      - {name: claim_id, type: Uuid}
+      - {name: state, type: repro.names.Claim.State}
+      - {name: name, type: String}
+      - {name: holder, type: repro.names.CallerId}

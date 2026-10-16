@@ -31,7 +31,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use ess_compiler::ir::{
     EssIr, ResolvedCommand, ResolvedCondition, ResolvedField, ResolvedInstance,
-    ResolvedPayloadField, ResolvedPayloadValue,
+    ResolvedPayloadField, ResolvedPayloadValue, ResolvedRelatedTest, ResolvedRelatedVia,
+    ResolvedRowSetTest,
 };
 use ess_domain::command::caller_value::CALLER_NAMESPACE;
 use ess_domain::name::QualifiedName;
@@ -1113,13 +1114,20 @@ fn replace_observed(value: &mut serde_json::Value, captured: &BTreeMap<(String, 
 /// (beyond10x/ess#465): a target may arrange the addressed record itself — under an external
 /// control, whose means it chooses — and the first run's literal would name a record the first run
 /// already had arranged.
+///
+/// So is every input a guard compares with stored rows (beyond10x/ess#580): a row-set selector, a
+/// `when_related:` row and its test read the rows the first run left, so a name unique across
+/// callers, sent again, finds the first run's row and takes the refusal. One rule holds every
+/// input a swapped run sends that a guard, a selector or an identity reads; the caller's own
+/// attributes, which the swap already exchanges, are not inputs.
 struct Identities<'a> {
     ir: &'a EssIr,
     /// Every command creating an identity from input, by name, with the inputs that become it.
     creating: BTreeMap<String, (&'a ResolvedCommand, BTreeSet<String>)>,
     /// Every command taking an identity from input, by name, with those inputs: the ones that
     /// become a created identity ([`Self::creating`]) and the ones a branch names as the instance
-    /// it acts on ([`supplied_instances`]).
+    /// it acts on ([`supplied_instances`]), and the ones a guard compares with stored rows
+    /// ([`selected`]).
     inputs: BTreeMap<String, (&'a ResolvedCommand, BTreeSet<String>)>,
     /// Every declared field, input, event field and view column of an identity input's type, and
     /// every name the model copies an identity under whatever its type ([`derived`]): where a
@@ -1144,6 +1152,8 @@ impl<'a> Identities<'a> {
         let mut creating = BTreeMap::new();
         let mut inputs = BTreeMap::new();
         let mut types = BTreeSet::new();
+        let selected_fields = row_fields_read(ir);
+        let mut guarded_names = BTreeSet::new();
         for command in ir.commands().values() {
             let created: BTreeSet<String> = command
                 .outcomes
@@ -1153,9 +1163,6 @@ impl<'a> Identities<'a> {
                 .collect();
             let mut fields = created.clone();
             fields.extend(supplied_instances(command));
-            if fields.is_empty() {
-                continue;
-            }
             types.extend(
                 command
                     .input
@@ -1163,6 +1170,15 @@ impl<'a> Identities<'a> {
                     .filter(|input| fields.contains(&input.name))
                     .map(|input| input.type_ref.to_string()),
             );
+            // Every input a guard compares with the rows the first run left, and every input
+            // written where such a guard reads (beyond10x/ess#580): drawn afresh like an identity,
+            // and redrawn under its own name, not under every name its type is declared at.
+            let compared = selected(command, &selected_fields);
+            guarded_names.extend(compared.iter().cloned());
+            fields.extend(compared);
+            if fields.is_empty() {
+                continue;
+            }
             if !created.is_empty() {
                 creating.insert(command.name.to_string(), (command, created));
             }
@@ -1187,6 +1203,7 @@ impl<'a> Identities<'a> {
             .filter(|field| types.contains(&field.type_ref.to_string()))
             .map(|field| field.name.clone())
             .collect();
+        keys.extend(guarded_names);
         keys.extend(derived(ir, &inputs));
         keys.extend(member_parameters(ir, &types));
         let mut identities = Self {
@@ -1443,6 +1460,89 @@ fn supplied_instances(command: &ResolvedCommand) -> impl Iterator<Item = String>
             ResolvedInstance::Supplied { field } => Some(field.name.clone()),
             ResolvedInstance::Observed { .. } => None,
         })
+}
+
+/// Every stored field a row-set selector or its `forall:` test reads, by the selected entity's
+/// name (beyond10x/ess#580): a value written there by the first run is one a swapped run's guard
+/// may find.
+fn row_fields_read(ir: &EssIr) -> BTreeMap<String, BTreeSet<String>> {
+    let mut read: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for outcome in ir.commands().values().flat_map(|command| &command.outcomes) {
+        let ResolvedCondition::RelatedSet {
+            selection, test, ..
+        } = &outcome.condition
+        else {
+            continue;
+        };
+        let forall = match test {
+            ResolvedRowSetTest::Forall(predicate) => Some(predicate),
+            _ => None,
+        };
+        let fields = std::iter::once(&selection.filter)
+            .chain(forall)
+            .flat_map(Predicate::fact_paths)
+            .filter_map(|path| match path.segments() {
+                [field] => Some(field.clone()),
+                _ => None,
+            });
+        read.entry(selection.entity.name().to_string())
+            .or_default()
+            .extend(fields);
+    }
+    read
+}
+
+/// Every input of `command` a swapped run must draw afresh because a guard compares it with stored
+/// rows that do not belong to the run (beyond10x/ess#580), whatever its type: the inputs a row-set
+/// selector or its `forall:` test reads, the input a `when_related:` guard names its row by and the
+/// inputs its test reads, and every input a branch writes into a field a row-set selector reads
+/// (`selected`, [`row_fields_read`]), so a row a run arranges is still the row its guard finds. A
+/// guard reading the caller is not among them: its value is the swapped caller's already.
+fn selected(
+    command: &ResolvedCommand,
+    selected: &BTreeMap<String, BTreeSet<String>>,
+) -> BTreeSet<String> {
+    let declared = |name: &str| command.input.iter().any(|input| input.name == name);
+    let mut fields = BTreeSet::new();
+    for outcome in &command.outcomes {
+        match &outcome.condition {
+            ResolvedCondition::RelatedSet {
+                selection, test, ..
+            } => {
+                fields.extend(super::row_set::input_reads(&selection.filter).map(str::to_owned));
+                if let ResolvedRowSetTest::Forall(predicate) = test {
+                    fields.extend(super::row_set::input_reads(predicate).map(str::to_owned));
+                }
+            }
+            ResolvedCondition::Related { via, test, .. } => {
+                if let ResolvedRelatedVia::Input { field, .. } = via {
+                    fields.insert(field.clone());
+                }
+                if let ResolvedRelatedTest::Holds { predicate } = test {
+                    fields.extend(super::row_set::input_reads(predicate).map(str::to_owned));
+                }
+            }
+            _ => {}
+        }
+        let Some(subject) = &outcome.subject else {
+            continue;
+        };
+        let Some(read) = selected.get(&subject.entity.name().to_string()) else {
+            continue;
+        };
+        for entry in &outcome.sets {
+            if !read.contains(&entry.target) {
+                continue;
+            }
+            if let ResolvedPayloadValue::InputField { field, .. }
+            | ResolvedPayloadValue::InputOrGenerated { field, .. } = &entry.value
+            {
+                fields.insert(field.split('.').next().unwrap_or(field).to_owned());
+            }
+        }
+    }
+    fields.retain(|field| declared(field));
+    fields
 }
 
 /// Every view parameter the filter compares with a member of its row's identity, where that

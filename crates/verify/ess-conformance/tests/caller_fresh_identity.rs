@@ -24,6 +24,9 @@ use ess_conformance::{
 use ess_domain::{command::OutcomeName, spec::RawSpecFile, system::Source, Specification};
 use ess_primitives::node::Node;
 
+#[path = "caller_fresh_identity/key_unique_across_callers.rs"]
+mod key_unique_across_callers;
+
 /// A record whose identity the caller supplies, refused when it is already stored, and stamped
 /// with the account of the caller that records it.
 const RECORDS: &str = "format: ess/16
