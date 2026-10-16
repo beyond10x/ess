@@ -270,3 +270,165 @@ fn issue_510_every_clock_taken_from_one_runner_reads_the_same_instant() {
     assert_eq!(reads.lock().unwrap().len(), commands(&suite));
     assert_eq!(second.read(), Some(ceil(WALL_MS)));
 }
+
+// ---- a held `now` (beyond10x/ess#586) ------------------------------------------------------
+
+/// The issue's reproducer: `Issue` stores a code's `expiry`, and `Redeem` takes it while
+/// `expiry >= now`, else refuses it as expired. `{strict}` is the guard's comparison, so `>` is the
+/// boundary mutant that refuses a code expiring exactly now.
+const CODES: &str = r"format: ess/23
+system: demo
+version: v1
+domain: demo.codes
+types:
+  - {name: demo.codes.CodeId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.codes.Code
+    identity: {name: code_id, type: demo.codes.CodeId}
+    fields:
+      - {name: expiry, type: Timestamp}
+    lifecycle:
+      initial: Issued
+      states: [Issued, Redeemed]
+      terminal: [Redeemed]
+      transitions:
+        - {name: redeem, from: [Issued], to: Redeemed}
+errors:
+  - {name: demo.codes.Expired, summary: The code expired., fields: []}
+  - {name: demo.codes.Spent, summary: The code was redeemed already., fields: []}
+  - {name: demo.codes.UnknownCode, summary: No code carries the identity., fields: []}
+events:
+  - name: demo.codes.Issued
+    fields:
+      - {name: code_id, type: demo.codes.CodeId}
+  - name: demo.codes.Redeemed
+    fields:
+      - {name: code_id, type: demo.codes.CodeId}
+commands:
+  - name: demo.codes.Issue
+    input:
+      - {name: expiry, type: Timestamp}
+    outcomes:
+      - name: issued
+        creates: demo.codes.Code
+        instance: code_id
+        sets: {expiry: input.expiry}
+        emits: [demo.codes.Issued]
+        payload:
+          demo.codes.Issued: {code_id: {generated: true}}
+  - name: demo.codes.Redeem
+    input:
+      - {name: code_id, type: demo.codes.CodeId}
+    outcomes:
+      - name: redeemed
+        when_subject: {predicate: expiry {strict} now}
+        moves: demo.codes.Code.redeem
+        instance: code_id
+        emits: [demo.codes.Redeemed]
+        payload:
+          demo.codes.Redeemed: {code_id: input.code_id}
+      - name: expired
+        error: demo.codes.Expired
+      - name: spent
+        wrong_state: true
+        error: demo.codes.Spent
+      - name: unknown-code
+        unknown_instance: true
+        error: demo.codes.UnknownCode
+";
+
+const REDEEMED: &str = "demo.codes.Redeem/outcome/redeemed";
+
+fn codes(comparison: &str) -> EssIr {
+    let text = CODES.replace("{strict}", comparison);
+    let raw = RawSpecFile::parse(&text).unwrap_or_else(|error| panic!("{error}"));
+    let specification = Specification::assemble([(Source::new("system.yaml"), raw)])
+        .unwrap_or_else(|errors| panic!("the reproducer validates:\n{errors}"));
+    compile(&specification, &SourceMap::new())
+        .unwrap_or_else(|diagnostics| panic!("the reproducer resolves:\n{diagnostics}"))
+}
+
+/// The suite of the correct model with its accepting scenario rewritten to the boundary: `Issue`
+/// sends `expiry` as `now_offset 0`, and, when `held`, a `hold_now 0` stands before `Redeem`.
+fn redeem_at_the_boundary(held: bool) -> ConformanceSuite {
+    let mut suite = synthesize(&codes(">=")).suite;
+    let (_, scenario) = suite
+        .scenarios
+        .iter_mut()
+        .find(|(id, _)| id.to_string() == REDEEMED)
+        .unwrap_or_else(|| panic!("a redeemed scenario"));
+    for step in &mut scenario.steps {
+        if let ScenarioStep::ExecuteCommand { command, input, .. } = step {
+            if command.to_string() == "demo.codes.Issue" {
+                input.insert("expiry".to_owned(), ScenarioValue::NowOffset { seconds: 0 });
+            }
+        }
+    }
+    if held {
+        let at = scenario
+            .steps
+            .iter()
+            .position(|step| {
+                matches!(step, ScenarioStep::ExecuteCommand { command, .. }
+                    if command.to_string() == "demo.codes.Redeem")
+            })
+            .expect("the command under test");
+        scenario
+            .steps
+            .insert(at, ScenarioStep::HoldNow { seconds: 0 });
+    }
+    suite.select_fresh_format();
+    suite
+}
+
+/// The redeemed scenario's verdict for `model` on the interpreted target over the runner's command
+/// clock, under a wall that moves a day on every reading: unheld, `Redeem` is decided a day after
+/// the `expiry` `Issue` stored.
+fn redeemed(suite: &ConformanceSuite, model: EssIr) -> Status {
+    const DAY_MS: u64 = 86_400_000;
+    let admitted = AdmittedSuite::from_suite(suite).unwrap_or_else(|error| panic!("{error}"));
+    let mut runner = Runner::new(
+        RunnerConfig::default(),
+        WithWall::new(
+            AdvancingClock::default(),
+            wall(WALL_MS, DAY_MS, &Rc::new(Cell::new(0))),
+        ),
+        Ids::for_suite(suite),
+    );
+    let target = Interpreted::for_model(model).with_command_clock(runner.command_clock());
+    let report = runner.run_admitted(&admitted, &target).into_report();
+    report
+        .scenarios
+        .iter()
+        .find(|scenario| scenario.scenario.to_string() == REDEEMED)
+        .map(|scenario| scenario.status)
+        .expect("the redeemed scenario ran")
+}
+
+/// The interpreted target offers `hold_now` by construction: the runner writes the held instant into
+/// the command clock it handed out, so `Redeem` is decided at the instant `Issue`'s `expiry` was
+/// sent relative to, however far the wall has moved, and passes on the boundary.
+#[test]
+fn issue_586_the_interpreted_target_decides_a_held_command_at_the_held_instant() {
+    let held = redeem_at_the_boundary(true);
+    assert_eq!(
+        held.provenance.suite_version.to_string(),
+        "ess-conformance/50"
+    );
+    assert_eq!(redeemed(&held, codes(">=")), Status::Passed);
+    // Unheld, the same boundary value is decided at the next step's instant, a day later.
+    assert_eq!(
+        redeemed(&redeem_at_the_boundary(false), codes(">=")),
+        Status::Failed
+    );
+}
+
+/// The held boundary kills the guard-boundary mutant, `expiry > now`, which refuses a code that
+/// expires exactly now.
+#[test]
+fn issue_586_a_held_boundary_kills_the_strict_mutant_on_the_interpreted_target() {
+    assert_eq!(
+        redeemed(&redeem_at_the_boundary(true), codes(">")),
+        Status::Failed
+    );
+}
