@@ -14,7 +14,7 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:generic-expression-language
-revision: 2
+revision: 3
 ---
 ## Outcome
 
@@ -76,3 +76,9 @@ the `from`/`to` idiom in its hint.
   witnessed on a tie and a zero denominator.
 - `now_relative_view_filter`: admitted with a suite-set read clock and witnessed either side of the
   bound, or refused naming the `from`/`to` idiom (whichever the binding design decides).
+
+## Intake 2026-10-16
+
+The suite-set clock `now_relative_view_filter` depends on is
+`story:a-suite-fixes-the-targets-clock` (https://github.com/beyond10x/ess/issues/586), one clock
+capability for command guards, stored `Timestamp` guards and view filters.

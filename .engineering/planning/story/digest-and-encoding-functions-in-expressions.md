@@ -7,7 +7,7 @@ title: Predicates and value expressions apply sha256, base64url and ascii
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 1
+revision: 2
 ---
 ## Outcome
 
@@ -45,3 +45,27 @@ stored `challenge` not equal to the `S256` transform of `input.verifier`.
 `crates/specify/ess-primitives` (expression and predicate evaluation), `ess-domain` and
 `ess-compiler` (parsing, typing), `crates/verify/ess-conformance` (interpreter, synthesis, Go and
 TypeScript runtimes), `website/docs/reference/predicates.md`.
+
+## Intake 2026-10-16: https://github.com/beyond10x/ess/issues/584
+
+A second downstream report (ess 0.60.0, `ess/25`, an authorization-code redemption audit) asks for
+exactly this story's functions: `challenge != base64url(sha256(input.verifier))` as an ordinary
+held-row predicate, so PKCE `S256` is witnessed like the plain method, which it already states as
+`when_subject: {predicate: {all: ['challenge != ""', challenge != input.verifier]}}`. The report
+also shows why the `external:` stand-in fails twice: beside `when_subject:` it is refused
+`conflicting_declaration` ("a subject fact has one selection authority"), and without it the
+held-state refusal `redirect-mismatch` answers first (G4: held state is step 3, `external:` step 5,
+`docs/design/generic-language-features.md`, G4), so a request with a wrong verifier and a wrong
+redirect gets the other error. With the functions, the check is a held-state predicate at step 3
+and declaration order decides between it and `redirect-mismatch`, as the implementation does.
+
+Decision for #584: covered here (the requester's option 1). Its option 2 (an `external:` refusal
+narrowed by `when_subject:`) is `story:external-branch-narrowed-by-subject-guard`. These functions
+are not in G1's operation table yet; they join it as a fourth text/bytes family under format B, and
+this story's format line follows that decision.
+
+Added acceptance:
+
+- `s256_digest_guard_witnessed_beside_a_held_state_refusal`: the reproduction gains a
+  `redirect-mismatch` held-state refusal declared after `mismatch`; synthesis writes a scenario
+  where both hold and requires `mismatch`'s error, and the targets agree.
