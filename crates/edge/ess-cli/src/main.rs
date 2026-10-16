@@ -882,8 +882,9 @@ enum ConformCommand {
     /// input is unknown); otherwise unwitnessed (ESS-MUTATE-004) when its suite gained synthesis refusals
     /// the baseline does not have, when it is on an outcome whose scenario the baseline refused,
     /// or when it is a from-drop or transition-to mutant on a transition only such outcomes
-    /// perform. It survives when every scored scenario passed and each scenario it left unscored
-    /// is the baseline's own, unchanged.
+    /// perform, or when its synthesized suite asks what the baseline's asks (the suite does not
+    /// change), unless authored scenarios ran. It survives when every scored scenario passed and
+    /// each scenario it left unscored is the baseline's own, unchanged.
     ///
     /// emit-swap replaces an outcome's only event with another declared event of exactly the same
     /// fields that every component accepting the command publishes. A site with no such event is

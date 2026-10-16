@@ -77,9 +77,20 @@ fn every_mutant_that_ran_killed_exits_zero() {
     );
 }
 
+/// A survivor's suite differs from the baseline's and still passes: `score >= 50` to `score > 50`
+/// writes a witness at 50 that the target answers as the baseline does.
+const EXPLORE: &str = "crates/verify/ess-conformance/tests/fixtures/explore.yaml";
+
 #[test]
 fn a_survivor_exits_one_and_is_listed_first() {
-    let output = mutate(&["--path", SURVIVOR, "--target", "billing"]);
+    let output = mutate(&[
+        "--path",
+        EXPLORE,
+        "--target",
+        "interpreted",
+        "--class",
+        "guard-boundary",
+    ]);
     let stdout = text(&output.stdout);
     assert_eq!(
         output.status.code(),
@@ -90,8 +101,30 @@ fn a_survivor_exits_one_and_is_listed_first() {
     let second = stdout.lines().nth(1).expect("a survivor line");
     assert_eq!(
         second,
-        "survived sets-retarget/billing.invoice.CreateInvoice/accepted/contact: `contact: \
-         input.customer_email` becomes `contact: input.billing_email`"
+        "survived guard-boundary/explore.desk.Grade/high/0: `score >= 50` becomes `score > 50`"
+    );
+}
+
+/// The P1-10 fixture's `sets-retarget` of a field nothing reads has a suite that asks what the
+/// baseline's asks, so it is unwitnessed, not a survivor, and the audit exits 3
+/// (<https://github.com/beyond10x/ess/issues/586>).
+#[test]
+fn a_mutant_whose_suite_does_not_change_exits_three_unwitnessed() {
+    let output = mutate(&["--path", SURVIVOR, "--target", "billing"]);
+    let stdout = text(&output.stdout);
+    assert_eq!(
+        output.status.code(),
+        Some(3),
+        "{stdout}{}",
+        text(&output.stderr)
+    );
+    assert!(stdout.contains(" 0 survived, "), "{stdout}");
+    let second = stdout.lines().nth(1).expect("an unwitnessed line");
+    assert_eq!(
+        second,
+        "unwitnessed sets-retarget/billing.invoice.CreateInvoice/accepted/contact: `contact: \
+         input.customer_email` becomes `contact: input.billing_email` — ESS-MUTATE-004: the suite \
+         does not change"
     );
 }
 

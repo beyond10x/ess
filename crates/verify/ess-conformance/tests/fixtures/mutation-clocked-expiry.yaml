@@ -1,0 +1,64 @@
+format: ess/23
+system: demo
+version: v1
+domain: demo.codes
+summary: >-
+  A code redeemable until its stored expiry, refused once the expiry lies before `now`
+  (https://github.com/beyond10x/ess/issues/586). The `<` to `<=` mutant answers differently only
+  where the expiry equals the target's `now`, which no synthesized scenario places, so its suite is
+  the baseline's.
+types:
+  - {name: demo.codes.CodeId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.codes.Code
+    identity: {name: code_id, type: demo.codes.CodeId}
+    fields:
+      - {name: expiry, type: Timestamp}
+      - {name: note, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+actors:
+  - name: demo.codes.Holder
+    may: [demo.codes.Issue, demo.codes.Redeem]
+errors:
+  - {name: demo.codes.CodeNotFound, summary: No such code., fields: []}
+  - {name: demo.codes.Expired, summary: The code expired., fields: []}
+events:
+  - name: demo.codes.Issued
+    fields: [{name: code_id, type: demo.codes.CodeId}]
+  - name: demo.codes.Redeemed
+    fields: [{name: code_id, type: demo.codes.CodeId}]
+commands:
+  - name: demo.codes.Issue
+    input:
+      - {name: expiry, type: Timestamp}
+      - {name: note, type: String}
+    outcomes:
+      - name: issued
+        creates: demo.codes.Code
+        instance: code_id
+        sets: {expiry: input.expiry, note: input.note}
+        emits: [demo.codes.Issued]
+        payload: {demo.codes.Issued: {code_id: {generated: true}}}
+  - name: demo.codes.Redeem
+    input:
+      - {name: code_id, type: demo.codes.CodeId}
+      - {name: note, type: String}
+    outcomes:
+      - name: expired
+        when_subject:
+          predicate: expiry < now
+        error: demo.codes.Expired
+      - name: redeemed
+        updates: demo.codes.Code
+        instance: code_id
+        sets: {note: input.note}
+        emits: [demo.codes.Redeemed]
+        payload: {demo.codes.Redeemed: {code_id: input.code_id}}
+      - {name: not-found, unknown_instance: true, error: demo.codes.CodeNotFound}
+views:
+  - name: demo.codes.Codes
+    source: demo.codes.Code
+    consistency: read_your_writes
+    fields:
+      - {name: code_id, type: demo.codes.CodeId}
+      - {name: expiry, type: Timestamp}

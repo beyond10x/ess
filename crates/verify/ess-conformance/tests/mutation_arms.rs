@@ -285,9 +285,13 @@ fn each_new_arm_is_killed_where_a_witness_tells_it_apart_and_not_where_none_can(
         // Killed: the view reads `title` back, and the edited title was sent apart from the stored
         // one, so the row the target shows is not the row the mutant keeps.
         ("sets-drop/notes.core.Edit/edited/title", Verdict::Killed),
-        // Survived: nothing reads `memo`, so a dropped write of it is not observable, and the
-        // mutant's suite is the baseline's.
-        ("sets-drop/notes.core.Edit/edited/memo", Verdict::Survived),
+        // Unwitnessed: nothing reads `memo`, so a dropped write of it is not observable, and the
+        // mutant's suite is the baseline's, which cannot kill it
+        // (https://github.com/beyond10x/ess/issues/586).
+        (
+            "sets-drop/notes.core.Edit/edited/memo",
+            Verdict::Unwitnessed,
+        ),
     ] {
         assert_eq!(found.get(id), Some(&verdict), "{id}\n{text}");
     }

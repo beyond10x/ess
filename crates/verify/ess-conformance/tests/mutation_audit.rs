@@ -88,7 +88,7 @@ fn audit<T: ConformanceTarget>(
 /// Why a mutant survives, from a closed set.
 ///
 /// Read by a person, not by the assertions: the list is pinned by id, and the reason is what a
-/// change to it has to argue with. Two of the three are pinned nowhere today, so the lint that
+/// change to it has to argue with. None of the three is pinned today, so the lint that
 /// would otherwise say so is allowed rather than the set being narrowed to what is in use.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -790,21 +790,16 @@ fn a_class_with_no_site_is_refused_with_mutate_003() {
 // ---- P1-10: a sets field nothing reads ----------------------------------------------------------
 
 #[test]
-fn a_sets_field_no_view_reads_is_the_one_survivor() {
+fn a_sets_field_no_view_reads_is_the_one_unwitnessed_mutant() {
     let report = audit(
         &fixture("mutation-survivor.yaml"),
         MutantClass::ALL,
         Billing::new,
     );
     // No view projects `contact` and no event carries it, so nothing a target publishes can tell
-    // `customer_email` from `billing_email` there.
-    pinned_survivors(
-        &report,
-        &[(
-            "sets-retarget/billing.invoice.CreateInvoice/accepted/contact",
-            Why::Equivalent,
-        )],
-    );
+    // `customer_email` from `billing_email` there: the mutant's suite is the baseline's, so it is
+    // unwitnessed rather than a survivor (https://github.com/beyond10x/ess/issues/586).
+    pinned_survivors(&report, &[]);
     let killed: Vec<&MutantEntry> = report
         .mutants
         .iter()
@@ -818,12 +813,15 @@ fn a_sets_field_no_view_reads_is_the_one_survivor() {
             entry.id
         );
     }
-    assert_eq!(report.counts.survived, 1);
+    assert_eq!(report.counts.survived, 0);
+    assert_eq!(report.counts.unwitnessed, 1, "{}", report.render_text());
     let entry = report
         .mutants
         .iter()
         .find(|entry| entry.class == MutantClass::SetsRetarget)
         .unwrap();
+    assert_eq!(entry.verdict, Verdict::Unwitnessed);
+    assert!(entry.unchanged_suite, "{}", report.render_text());
     assert_eq!(
         entry.change,
         "`contact: input.customer_email` becomes `contact: input.billing_email`"

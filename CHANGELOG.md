@@ -40,6 +40,13 @@
   guard over the subject's owned rows in a moved state now get scenarios instead of
   `ESS-SYNTH-003`/`ESS-SYNTH-001`. A field written by another command's `affects:` is not yet
   arranged (https://github.com/beyond10x/ess/issues/553).
+- `ess verify conform mutate` scores a mutant whose synthesized suite asks what the baseline's
+  asks (the same scenarios and steps, digests aside) as `unwitnessed` (`ESS-MUTATE-004`, "the
+  suite does not change") rather than `survived` or `inconclusive`, so a survivor always has a
+  suite that differs and still passes. The `guard-boundary` mutant of `expiry < now` is one; so is
+  a `precedence-swap` of two refusals with the same error whose payloads no scenario tells apart.
+  Such a report is `ess-mutation-report/7`, with `unchanged_suite` on the mutant; every other
+  report keeps its version and bytes (https://github.com/beyond10x/ess/issues/586).
 
 ## [0.61.0] — 2026-10-15
 
