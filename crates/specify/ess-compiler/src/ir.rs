@@ -890,8 +890,10 @@ pub struct ResolvedOutcome {
     /// Compiler-minted source/7 requirement: observe the complete held subject and zero direct
     /// events for an ordinary named wrong-state refusal, and from source/23 for a named refusal
     /// selected by `when_subject: {predicate: …}` that names no subject of its own
-    /// (beyond10x/ess#461); validation admits no such refusal in the `{field, equals}` shape. This
-    /// grants no product effect authority.
+    /// (beyond10x/ess#461); validation admits no such refusal in the `{field, equals}` shape. From
+    /// source/26 also for a named `external:` refusal naming no subject on a command that addresses
+    /// an existing row through its input (beyond10x/ess#587). This grants no product effect
+    /// authority.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub complete_refusal: bool,
     /// How a generated test reaches this branch.

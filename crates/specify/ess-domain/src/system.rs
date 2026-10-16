@@ -51,7 +51,7 @@ use crate::types::{NamedType, TypeBody, TypeRef, TypeRegistry};
 
 /// Specification format major versions this build implements.
 pub const SUPPORTED_FORMATS: &[u32] = &[
-    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
 ];
 
 /// What one specification format admits that the format before it did not.
@@ -258,6 +258,14 @@ pub const FORMAT_HISTORY: &[FormatHistoryEntry] = &[
         ],
         stricter: &[],
     },
+    FormatHistoryEntry {
+        major: 26,
+        release: None,
+        added: &[
+            "A named `external:` refusal of a command that addresses an existing row, `before_row: true` included, changes nothing on that row: its scenario snapshots the complete row before forcing the branch and requires it unchanged afterwards, as a held-state refusal's does, so a target that deletes or rewrites the row on the forced branch fails; a `compensates: true` refusal keeps its read-back of the declared change, and below `ess/26` the scenario keeps its bytes (beyond10x/ess#587).",
+        ],
+        stricter: &[],
+    },
 ];
 
 // `FORMAT_HISTORY` and `SUPPORTED_FORMATS` name the same majors in the same order, and every row
@@ -356,6 +364,9 @@ impl FormatVersion {
     /// A create-or-update command selects among its update branches by the stored row's fields,
     /// `when_subject:` beside a creating `unknown_instance:` branch (beyond10x/ess#530).
     pub const V25: Self = Self(25);
+    /// A named refusal that addresses an existing row is witnessed on the whole row: an `external:`
+    /// refusal's scenario reads the row back and requires it unchanged (beyond10x/ess#587).
+    pub const V26: Self = Self(26);
 
     /// How a format version is written.
     pub const PREFIX: &'static str = "ess/";

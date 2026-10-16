@@ -21,6 +21,10 @@
 
 ### Fixed
 
+- Format `ess/26`: an external refusal (`external:` or `external_when:`) beside an existing-row
+  branch reads the addressed row back and requires it unchanged, so a witness of the refusal can
+  no longer pass while the command deletes or rewrites the row (#587). Models below `ess/26`
+  keep their suite bytes.
 - The caller-swapped half of a synthesized scenario draws fresh values for every input a
   `when_related:` guard, a row-set selector or its `forall:` test reads, and for every input
   written into a field such a selector reads, whatever its type (#580). A key unique across

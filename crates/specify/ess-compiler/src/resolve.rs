@@ -2293,7 +2293,11 @@ impl<'a> Resolver<'a> {
                 condition: condition_of(outcome, subject.as_ref(), related),
                 subject,
                 replays: None,
-                complete_refusal: complete_refusal(self.spec.system().format.major(), outcome),
+                complete_refusal: complete_refusal(
+                    self.spec.system().format.major(),
+                    command,
+                    outcome,
+                ),
                 retains_result: outcome.replays.is_some()
                     || command
                         .outcomes
@@ -5423,13 +5427,30 @@ fn names(values: impl IntoIterator<Item = String>) -> String {
 /// reads either `when_subject:` shape, but only the predicate form reaches it: validation refuses
 /// a `{field, equals}` branch that names no subject (`a subject-state guard requires an existing
 /// moves or updates subject`), so that shape never selects a refusal.
-fn complete_refusal(major: u32, outcome: &Outcome) -> bool {
+///
+/// From `ess/26` so does an `external:` refusal, `before_row: true` included, that names no
+/// subject of its own on a command whose other branches address an existing row through the input
+/// (beyond10x/ess#587): forcing the branch changes nothing on that row, which its scenario reads
+/// back. A `compensates: true` refusal names its subject and keeps its own read-back.
+fn complete_refusal(major: u32, command: &CommandSpec, outcome: &Outcome) -> bool {
     let named = outcome.error.is_some();
     let wrong_state = major >= 7 && outcome.condition == OutcomeCondition::WrongState;
     let stored = major >= ess_domain::system::FormatVersion::V23.major()
         && outcome.condition.reads_subject_fact()
         && outcome.subject.is_none();
-    named && (wrong_state || stored)
+    let external = major >= ess_domain::system::FormatVersion::V26.major()
+        && matches!(
+            outcome.condition,
+            OutcomeCondition::External { .. } | OutcomeCondition::ExternalWhen { .. }
+        )
+        && outcome.subject.is_none()
+        && command.outcomes.iter().any(|branch| {
+            branch.subject.as_ref().is_some_and(|subject| {
+                subject.effect != Effect::Creates
+                    && subject.surface() == InstanceSurface::CommandInput
+            })
+        });
+    named && (wrong_state || stored || external)
 }
 
 /// The IR's spelling of an outcome's condition.
