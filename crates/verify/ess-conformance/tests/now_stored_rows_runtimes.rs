@@ -9,6 +9,7 @@
 //! replay compares.
 
 mod support_go;
+mod support_held_jobs;
 mod support_now_stored;
 mod support_occurrence_clock;
 
@@ -181,6 +182,7 @@ const target = () => {
     observeEvents: async request => next('observe_events', request.event, request)
       .map(event => ({event: event.event, payload: event.payload})),
     establishEntity: async request => next('establish_entity', request.entity, request),
+    holdNow: async hold => { next('hold_now', hold.instant, hold); },
     configureExternalOutcome: async () => { throw unsupported('none is external'); },
     redeliverEvent: async () => { throw unsupported('not needed'); },
     observeInvocations: async () => { throw unsupported('not needed'); },
@@ -314,5 +316,71 @@ fn a3_typescript_gives_the_reference_verdicts_for_the_healthy_and_each_faulty_cl
         for id in *killed {
             assert!(failed.contains(id), "{label}: {id} passed: {verdicts:#?}");
         }
+    }
+}
+
+// ---- a held `now` (beyond10x/ess#586) ------------------------------------------------------
+
+/// The three runners agree on a held `now`: each holds the target's `now` at the same instant
+/// before the accepting command, so the boundary value passes against the strict guard and fails
+/// against its `<=` mutant in every runner, and a target that cannot hold is unsupported in each.
+#[test]
+fn runners_agree_on_the_fixed_instant() {
+    use support_held_jobs::{held_suite, Jobs, REFUSAL, SCHEDULED};
+    let suite = held_suite();
+    let options = support_go::Options {
+        wall_millis: Some(WALL_MS),
+        ..support_go::Options::default()
+    };
+    let mutant = || {
+        let mut jobs = Jobs::new(WALL_MS);
+        jobs.inclusive = true;
+        jobs
+    };
+    let unheld = || {
+        let mut jobs = Jobs::new(WALL_MS);
+        jobs.holding = false;
+        jobs
+    };
+    for (label, verdicts) in [
+        (
+            "go-held",
+            support_go::assert_parity_with("go-held", &suite, Jobs::new(WALL_MS), &options),
+        ),
+        (
+            "ts-held",
+            typescript_parity("ts-held", &suite, Jobs::new(WALL_MS)),
+        ),
+    ] {
+        assert_eq!(
+            support_go::not_passed(&verdicts),
+            Vec::<&str>::new(),
+            "{label}"
+        );
+    }
+    for (label, verdicts) in [
+        (
+            "go-inclusive",
+            support_go::assert_parity_with("go-inclusive", &suite, mutant(), &options),
+        ),
+        (
+            "ts-inclusive",
+            typescript_parity("ts-inclusive", &suite, mutant()),
+        ),
+    ] {
+        assert_eq!(verdicts[SCHEDULED], "failed", "{label}: {verdicts:#?}");
+        assert_eq!(verdicts[REFUSAL], "passed", "{label}: {verdicts:#?}");
+    }
+    for (label, verdicts) in [
+        (
+            "go-unheld",
+            support_go::assert_parity_with("go-unheld", &suite, unheld(), &options),
+        ),
+        (
+            "ts-unheld",
+            typescript_parity("ts-unheld", &suite, unheld()),
+        ),
+    ] {
+        assert_eq!(verdicts[SCHEDULED], "unsupported", "{label}: {verdicts:#?}");
     }
 }
