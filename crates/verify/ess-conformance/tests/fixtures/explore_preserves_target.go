@@ -21,6 +21,7 @@ type exploreKeepSession struct {
 type exploreKeepTarget struct {
 	mode     string
 	sessions []*exploreKeepSession
+	created  int
 	version  int
 }
 
@@ -30,6 +31,7 @@ func newExploreKeepTarget(mode string) *exploreKeepTarget {
 
 func (t *exploreKeepTarget) reset() {
 	t.sessions = nil
+	t.created = 0
 	t.version = 0
 }
 
@@ -71,7 +73,8 @@ func (t *exploreKeepTarget) ExecuteCommand(request CommandRequest) (CommandResul
 	session := t.find(input["session_id"])
 	switch request.Command {
 	case "explorekeep.desk.Start":
-		id := fmt.Sprintf("00000000-0000-4000-8000-%012d", len(t.sessions)+1)
+		t.created++
+		id := fmt.Sprintf("00000000-0000-4000-8000-%012d", t.created)
 		t.sessions = append(t.sessions, &exploreKeepSession{id: id, state: "Active", label: input["label"]})
 		return t.answered("started", "explorekeep.desk.Started", id), nil
 	case "explorekeep.desk.Pause":
@@ -106,6 +109,18 @@ func (t *exploreKeepTarget) ExecuteCommand(request CommandRequest) (CommandResul
 		}
 		session.state = "Active"
 		return t.answered("resumed", "explorekeep.desk.Resumed", session.id), nil
+	case "explorekeep.desk.Purge":
+		if session == nil {
+			return CommandResult{}, fmt.Errorf("no session %v", input["session_id"])
+		}
+		kept := []*exploreKeepSession{}
+		for _, other := range t.sessions {
+			if other != session {
+				kept = append(kept, other)
+			}
+		}
+		t.sessions = kept
+		return t.answered("purged", "explorekeep.desk.Purged", session.id), nil
 	default:
 		return CommandResult{}, exploreKeepUnsupported{request.Command + " is not a command of explore-preserves.yaml"}
 	}

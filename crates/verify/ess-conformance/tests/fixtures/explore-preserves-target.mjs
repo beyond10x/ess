@@ -66,6 +66,11 @@ export function newTarget(mode = '') {
           session.state = 'Active';
           return answered('resumed', 'explorekeep.desk.Resumed', input.session_id);
         }
+        case 'explorekeep.desk.Purge': {
+          if (session === undefined) throw new Error(`no session ${input.session_id}`);
+          sessions.delete(input.session_id);
+          return answered('purged', 'explorekeep.desk.Purged', input.session_id);
+        }
         default:
           throw unsupported(`${command} is not a command of explore-preserves.yaml`);
       }

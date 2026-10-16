@@ -1,0 +1,93 @@
+# The sequential explorer draws a `Timestamp` input, decides a guard over `now` against a clock,
+# and performs an outcome that `deletes:` its supplied subject (beyond10x/ess#582, #583).
+#
+# `StoreCode` creates a single-use code with an `expiry`. `RedeemCode` refuses an expired code and
+# otherwise deletes it, so a second redemption of the same code is answered as an unknown code.
+# `PlanCode` refuses an instant more than a minute in the past. Before #582 every `Timestamp` input
+# put its command out of every sequence; before #583 `RedeemCode` was left out for its delete.
+#
+# The targets beside it are `explore-codes-target.mjs` and `explore_codes_target.go`.
+
+format: ess/22
+system: explorecodes
+version: v1
+domain: explorecodes.auth
+
+summary: Single-use codes that are stored, redeemed once and expire.
+
+types:
+  - {name: explorecodes.auth.CodeId, kind: newtype, of: Uuid}
+
+entities:
+  - name: explorecodes.auth.Code
+    identity: {name: code_id, type: explorecodes.auth.CodeId}
+    fields:
+      - {name: expiry, type: Timestamp}
+    lifecycle: {initial: Stored, states: [Stored], terminal: [Stored], transitions: []}
+
+actors:
+  - name: explorecodes.auth.Issuer
+    may:
+      - explorecodes.auth.StoreCode
+      - explorecodes.auth.RedeemCode
+      - explorecodes.auth.PlanCode
+
+errors:
+  - {name: explorecodes.auth.Expired, fields: []}
+  - {name: explorecodes.auth.UnknownCode, fields: []}
+  - {name: explorecodes.auth.InThePast, fields: []}
+
+events:
+  - name: explorecodes.auth.Stored
+    fields: [{name: code_id, type: explorecodes.auth.CodeId}]
+  - name: explorecodes.auth.Redeemed
+    fields: [{name: code_id, type: explorecodes.auth.CodeId}]
+  - name: explorecodes.auth.Planned
+    fields: [{name: at, type: Timestamp}]
+
+commands:
+  - name: explorecodes.auth.StoreCode
+    input: [{name: expiry, type: Timestamp}]
+    outcomes:
+      - name: stored
+        creates: explorecodes.auth.Code
+        instance: code_id
+        sets: {expiry: input.expiry}
+        emits: [explorecodes.auth.Stored]
+        payload:
+          explorecodes.auth.Stored: {code_id: {generated: true}}
+
+  - name: explorecodes.auth.RedeemCode
+    input: [{name: code, type: explorecodes.auth.CodeId}]
+    outcomes:
+      - name: expired
+        when_subject: {predicate: 'expiry < now'}
+        error: explorecodes.auth.Expired
+      - name: redeemed
+        deletes: explorecodes.auth.Code
+        instance: code
+        emits: [explorecodes.auth.Redeemed]
+        payload:
+          explorecodes.auth.Redeemed: {code_id: input.code}
+      - name: unknown-code
+        unknown_instance: true
+        error: explorecodes.auth.UnknownCode
+
+  - name: explorecodes.auth.PlanCode
+    input: [{name: at, type: Timestamp}]
+    outcomes:
+      - name: in-the-past
+        when: at < now - 60s
+        error: explorecodes.auth.InThePast
+      - name: planned
+        emits: [explorecodes.auth.Planned]
+        payload:
+          explorecodes.auth.Planned: {at: input.at}
+
+views:
+  - name: explorecodes.auth.Codes
+    source: explorecodes.auth.Code
+    consistency: read_your_writes
+    fields:
+      - {name: code_id, type: explorecodes.auth.CodeId}
+      - {name: expiry, type: Timestamp}

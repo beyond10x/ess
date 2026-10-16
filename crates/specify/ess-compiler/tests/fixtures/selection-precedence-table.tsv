@@ -1,4 +1,4 @@
-#	models=251	commands=473
+#	models=254	commands=485
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -236,6 +236,15 @@ crates/verify/ess-conformance/tests/fixtures/arrangement-paid-route.yaml	shop.or
 crates/verify/ess-conformance/tests/fixtures/arrangement-paid-route.yaml	shop.order.PayOrder	default: paid
 crates/verify/ess-conformance/tests/fixtures/arrangement-paid-route.yaml	shop.order.PlaceUnpaidOrder	default: placed
 crates/verify/ess-conformance/tests/fixtures/arrangement-paid-route.yaml	shop.order.ShipOrder	held_state: not-paid, wrong-state | default: shipped
+crates/verify/ess-conformance/tests/fixtures/arrangement-through-writers.yaml	ir=676f880709184f75b4a0d2421c38de2afce7615d124a877652c0afd03d8a0f94:34203
+crates/verify/ess-conformance/tests/fixtures/arrangement-through-writers.yaml	ledger.lock.AddReview	default: added
+crates/verify/ess-conformance/tests/fixtures/arrangement-through-writers.yaml	ledger.lock.Annotate	related_row: no-incident | accepting: locked | default: annotated
+crates/verify/ess-conformance/tests/fixtures/arrangement-through-writers.yaml	ledger.lock.Approve	held_state: wrong-state | present_related: no-incident, locked | default: approved
+crates/verify/ess-conformance/tests/fixtures/arrangement-through-writers.yaml	ledger.lock.Open	default: opened
+crates/verify/ess-conformance/tests/fixtures/arrangement-through-writers.yaml	ledger.lock.Reopen	present_related: approved-review | default: reopened
+crates/verify/ess-conformance/tests/fixtures/arrangement-through-writers.yaml	ledger.lock.Retitle	existence: not-found | held_state: locked | default: retitled
+crates/verify/ess-conformance/tests/fixtures/arrangement-through-writers.yaml	ledger.lock.Seal	related_row: no-review | accepting: not-approved | default: sealed
+crates/verify/ess-conformance/tests/fixtures/arrangement-through-writers.yaml	ledger.lock.Unseal	present_related: unsealed-none, review-pending | default: unsealed
 crates/verify/ess-conformance/tests/fixtures/arrangement-two-creators.yaml	ir=4a198eb2e776e280388fdcecab3028798247b0ff2b4d3f1df61b1c6b3c795825:12951
 crates/verify/ess-conformance/tests/fixtures/arrangement-two-creators.yaml	shop.order.CloseOrder	held_state: wrong-state | default: closed
 crates/verify/ess-conformance/tests/fixtures/arrangement-two-creators.yaml	shop.order.PlaceOrderA	default: placed
@@ -270,6 +279,8 @@ crates/verify/ess-conformance/tests/fixtures/caller-addressed-identity.yaml	ir=1
 crates/verify/ess-conformance/tests/fixtures/caller-addressed-identity.yaml	demo.ledger.CommitTransaction	held_state: wrong-state | accepting: invalid-reference, malformed-reference, delete-target-missing | default: committed
 crates/verify/ess-conformance/tests/fixtures/caller-addressed-identity.yaml	demo.ledger.PrepareBatch	default: prepared
 crates/verify/ess-conformance/tests/fixtures/caller-addressed-identity.yaml	demo.ledger.ReviewTransaction	held_state: not-reviewable | accepting: flagged | default: held
+crates/verify/ess-conformance/tests/fixtures/caller-key-unique-across-callers.yaml	ir=328505cc98c48ad1707bc4f5e74cd54f26dda488b976dcdd8c60435db8a670a2:9222
+crates/verify/ess-conformance/tests/fixtures/caller-key-unique-across-callers.yaml	repro.names.TakeName	present_related: taken | default: took
 crates/verify/ess-conformance/tests/fixtures/caller-struct-identity.yaml	ir=56f60d673823ca2ea0d4e35e6e9ef58dbc50b1652db15ae13a4ecf3d4a285c24:6381
 crates/verify/ess-conformance/tests/fixtures/caller-struct-identity.yaml	demo.box.OpenBox	existence: exists | default: opened
 crates/verify/ess-conformance/tests/fixtures/captured-identities.yaml	ir=07dc89923f3a63619ad008f3ccfc2c8d133245b1521e09bc3e9911c830bc3a1a:14165
@@ -356,6 +367,10 @@ crates/verify/ess-conformance/tests/fixtures/explore-adv-overlap.yaml	exploreadv
 crates/verify/ess-conformance/tests/fixtures/explore-before-row.yaml	ir=c81e875ba02b953e4e69bcab256ce9a4e6fa238c32cf3de92c7dfc6e162f58e2:11367
 crates/verify/ess-conformance/tests/fixtures/explore-before-row.yaml	exploreext.desk.OpenSeat	default: opened
 crates/verify/ess-conformance/tests/fixtures/explore-before-row.yaml	exploreext.desk.SignIn	input_refusal: bad-credential | existence: no-seat | held_state: taken, released
+crates/verify/ess-conformance/tests/fixtures/explore-codes.yaml	ir=b2f040cbf0cd169335ae5330e6335b745ee7ccc72c86e5f79401eaf9e2ff3394:10701
+crates/verify/ess-conformance/tests/fixtures/explore-codes.yaml	explorecodes.auth.PlanCode	input_refusal: in-the-past | default: planned
+crates/verify/ess-conformance/tests/fixtures/explore-codes.yaml	explorecodes.auth.RedeemCode	existence: unknown-code | held_state: expired | default: redeemed
+crates/verify/ess-conformance/tests/fixtures/explore-codes.yaml	explorecodes.auth.StoreCode	default: stored
 crates/verify/ess-conformance/tests/fixtures/explore-external-adversary.yaml	ir=686e90bf6a1d9b0c069fd1316ebc33ca67b2d9fd080255b4339551bb6e970bf6:12561
 crates/verify/ess-conformance/tests/fixtures/explore-external-adversary.yaml	exploreadv.desk.Close	held_state: wrong-state | accepting: overridden | default: closed
 crates/verify/ess-conformance/tests/fixtures/explore-external-adversary.yaml	exploreadv.desk.Hold	held_state: wrong-state | default: held

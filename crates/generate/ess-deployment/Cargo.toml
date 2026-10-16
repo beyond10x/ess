@@ -15,6 +15,7 @@ semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 ess-yaml.workspace = true
+jiff-tzdb = "0.1.9"
 sha2 = "0.11"
 thiserror.workspace = true
 

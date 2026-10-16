@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:refusal-above-held-state-branch-validates
 kind: story
-status: draft
+status: implemented
 title: An external branch can be declared to answer before held-state selection
 tags:
 - adopter-report
@@ -12,7 +12,11 @@ relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
 - depends_on: story:create-or-update-selects-update-branches-by-stored-fields
-revision: 4
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-16T07:15:03Z", actor: "human:timo", revision: 5}
+- {from: "proposed", to: "active", at: "2026-10-16T07:15:03Z", actor: "human:timo", revision: 6}
+- {from: "active", to: "implemented", at: "2026-10-16T07:15:17Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

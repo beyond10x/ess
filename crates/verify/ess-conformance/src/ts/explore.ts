@@ -53,8 +53,17 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { refusePrivateExploration } from './one_time_response.js';
 import { join } from 'node:path';
 
-import { facts, fromNode, present, TruthFalse, TruthTrue, TruthUnknown } from './predicate.js';
-import type { FactSource, Operand, Predicate, Truth } from './predicate.js';
+import {
+  facts,
+  fromNode,
+  Operand,
+  Predicate,
+  present,
+  TruthFalse,
+  TruthTrue,
+  TruthUnknown,
+} from './predicate.js';
+import type { FactSource, Truth } from './predicate.js';
 import {
   asNumber,
   byteCompare,
@@ -95,6 +104,13 @@ export interface ExploreOptions {
    * before restarts existed.
    */
   restartEvery?: number;
+  /**
+   * The clock a guard over `now` is decided against (beyond10x/ess#582); absent reads the wall
+   * clock. A `Timestamp` input of a specification whose guards compare one with `now` is drawn an
+   * hour to a day either side of an instant they compare it with, so a target that reads its own
+   * clock moments later decides the step the same way.
+   */
+  now?: () => Date;
 }
 
 /**
@@ -340,11 +356,11 @@ function identityOwner(ir: Node, type: string): string | null {
 }
 
 /**
- * The kind of values an input of type `ref` is drawn from. With `concurrent` it also draws a
- * `timestamp` and a type whose values are constrained: concurrent exploration does not judge an
- * answer by this model, `ess` does, so a drawn value outside the constraint is a question the target
- * answers and the checker judges. A `decimal` is drawn either way, as an `integer` is
- * (beyond10x/ess#538).
+ * The kind of values an input of type `ref` is drawn from. With `concurrent` it also draws a type
+ * whose values are constrained: concurrent exploration does not judge an answer by this model, `ess`
+ * does, so a drawn value outside the constraint is a question the target answers and the checker
+ * judges. A `decimal` is drawn either way, as an `integer` is (beyond10x/ess#538), and so is a
+ * `timestamp` (beyond10x/ess#582).
  */
 function resolveKind(ir: Node, ref: Node, depth = 0, concurrent = false): Kind {
   if (depth > 32) return { kind: 'unsupported', why: 'nested too deeply' };
@@ -359,10 +375,8 @@ function resolveKind(ir: Node, ref: Node, depth = 0, concurrent = false): Kind {
       case 'string':
       case 'uuid':
       case 'decimal':
-        return { kind: ref.name };
       case 'timestamp':
-        if (concurrent) return { kind: ref.name };
-        return { kind: 'unsupported', why: `a \`${ref.name}\`` };
+        return { kind: ref.name };
       default:
         return { kind: 'unsupported', why: `a \`${ref.name}\`` };
     }
@@ -651,6 +665,14 @@ interface Command {
   /** Every branch selected by the stored row (beyond10x/ess#221), by outcome name. */
   rows: Map<string, RowGuard>;
   pools: Pools;
+  /**
+   * Whether a path a guard over the input, and one over the stored row (and the input under
+   * `input.`), reads names a `Timestamp`; and whether one of its guards compares such a path with
+   * `now` (beyond10x/ess#582).
+   */
+  inputTimestamp: (path: string) => boolean;
+  storedTimestamp: (path: string) => boolean;
+  clocked: boolean;
 }
 
 /**
@@ -694,6 +716,13 @@ interface Plan {
    * sequence draws it.
    */
   sendable: Map<string, Command>;
+  /**
+   * Every offset from `now`, in seconds and sorted, that a guard compares a `Timestamp` with; and
+   * what a sequential exploration reads the current time from, null in a concurrent one
+   * (beyond10x/ess#582).
+   */
+  offsets: number[];
+  clock: Clock | null;
 }
 
 /** True for an outcome an external cause decides. */
@@ -709,12 +738,18 @@ function isExternal(outcome: Node): boolean {
  * commands it always drew.
  *
  * A selected-rows outcome (`instances: {where: …}`, beyond10x/ess#538) carries no subject. Its move
- * or update is modelled on every row the filter selects; its bulk deletion is left out by name, as a
- * single `deletes:` is, and so is a filter the model cannot read. An event published once per
+ * or update is modelled on every row the filter selects; its bulk deletion is left out by name, and
+ * so is a filter the model cannot read. An event published once per
  * changed row (ess/25, beyond10x/ess#531) is left out by name too: the model expects each listed
  * event once. An `affects:` entry writes rows the
  * model does not apply, so its outcome is left out by name too. Concurrent exploration keeps the
  * commands it always drew.
+ *
+ * A `deletes:` of a supplied subject takes the row out of the model, so every view read after the
+ * step must lose it and a later step naming it is the unknown instance (beyond10x/ess#583).
+ * Concurrent exploration leaves it out by name: its workload is drawn before any call runs, so a
+ * call drawn after the delete can still name the deleted row, and a command without an
+ * unknown-instance answer then has none the specification declares.
  */
 function effectRefusal(outcome: Node, concurrent: boolean): string | null {
   if (list(outcome.affects).length > 0 && !concurrent) {
@@ -735,10 +770,14 @@ function effectRefusal(outcome: Node, concurrent: boolean): string | null {
   const allowed =
     (subject.effect === 'creates' && from === 'observed') ||
     ((subject.effect === 'moves' || subject.effect === 'updates') && from === 'supplied') ||
-    (subject.effect === 'preserves' && from === 'supplied' && !concurrent);
-  return allowed
-    ? null
-    : `outcome \`${outcome.name}\` ${subject.effect} its subject from \`${from}\``;
+    ((subject.effect === 'preserves' || subject.effect === 'deletes') &&
+      from === 'supplied' &&
+      !concurrent);
+  if (allowed) return null;
+  if (subject.effect === 'deletes' && from === 'supplied') {
+    return `outcome \`${outcome.name}\` deletes its subject from \`supplied\`, and a concurrent workload is drawn before any call runs, so a later call can name the deleted row`;
+  }
+  return `outcome \`${outcome.name}\` ${subject.effect} its subject from \`${from}\``;
 }
 
 /** A stored-row condition as the explorer evaluates it, or why it cannot. */
@@ -852,6 +891,7 @@ function plan(ir: Node, concurrent = false): Plan {
   }
 
   const commands: Command[] = [];
+  const offsets = new Set<number>();
   for (const node of sortedValues(ir.commands)) {
     const outcomes = list(node.outcomes);
     declared.set(
@@ -955,6 +995,7 @@ function plan(ir: Node, concurrent = false): Plan {
     if (later === null && actor === undefined) later = 'no actor may invoke it';
     const drawn = pools(ordered);
     fieldPools(drawn, inputs, node.examples, counts(inputGuards, storedGuards));
+    const entityFields = storedFields(ir, node);
     const command: Command = {
       name: node.name,
       actor: actor ?? '',
@@ -963,7 +1004,15 @@ function plan(ir: Node, concurrent = false): Plan {
       guards,
       rows,
       pools: drawn,
+      inputTimestamp: (path) => timestampAt(inputs, path),
+      storedTimestamp: (path) =>
+        path.startsWith('input.')
+          ? timestampAt(inputs, path.slice('input.'.length))
+          : timestampAt(entityFields, path),
+      clocked: false,
     };
+    const clockedAt = nowOffsets(command);
+    command.clocked = clockedAt.length > 0;
     if (reason === null && later === null && undrawable !== null) sendable.set(node.name, command);
     reason ??= undrawable ?? later;
     if (reason !== null || actor === undefined) {
@@ -972,6 +1021,7 @@ function plan(ir: Node, concurrent = false): Plan {
       continue;
     }
     commands.push(command);
+    for (const offset of clockedAt) offsets.add(offset);
   }
 
   const views: Node[] = [];
@@ -1005,6 +1055,8 @@ function plan(ir: Node, concurrent = false): Plan {
     externals,
     unarrangeable: new Map(),
     sendable,
+    offsets: [...offsets].sort((a, b) => a - b),
+    clock: null,
   };
 }
 
@@ -1043,6 +1095,10 @@ function unwrittenOf(ir: Node, entity: Node): Set<string> {
 
 class Model {
   readonly records = new Map<string, Rec[]>();
+  /** The identity of every row a step deleted, by entity, in the order deleted (beyond10x/ess#583). */
+  readonly deleted = new Map<string, Node[]>();
+  /** The plan's clock, null where no clock is read. */
+  clock: Clock | null = null;
 
   of(entity: string): Rec[] {
     let found = this.records.get(entity);
@@ -1056,6 +1112,216 @@ class Model {
   find(entity: string, id: Node): Rec | undefined {
     return this.of(entity).find((record) => equal(record.id, id));
   }
+
+  /**
+   * Takes `record` out of the rows of `entity`, keeping the order of the others, and keeps its
+   * identity among the deleted ones, which a later step may name again (beyond10x/ess#583).
+   */
+  remove(entity: string, record: Rec): void {
+    this.records.set(
+      entity,
+      this.of(entity).filter((other) => other !== record),
+    );
+    this.deleted.set(entity, [...(this.deleted.get(entity) ?? []), record.id]);
+  }
+}
+
+// ---- the clock: a guard over `now` (beyond10x/ess#582) -----------------------------------------
+
+/**
+ * What a sequential exploration reads the current time from, and every offset from it, in seconds,
+ * that the plan's guards compare a `Timestamp` with.
+ */
+interface Clock {
+  read: () => Date;
+  offsets: number[];
+}
+
+/** The clock's current time, in milliseconds since the epoch, to the whole second. */
+function clockNow(clock: Clock): number {
+  return Math.floor(clock.read().getTime() / 1000) * 1000;
+}
+
+/** `at`, in milliseconds since the epoch, as a canonical RFC 3339 `date-time` at UTC. */
+function instantText(at: number): string {
+  return new Date(at).toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
+/**
+ * The offset, in seconds, of the current-time operand `text` spells — `now`, `now - 60s`,
+ * `now + 5m`, `now - 1h` — as Rust's `CurrentTime::parse` reads it, or null where `text` is none.
+ */
+function currentTime(text: string): number | null {
+  if (!text.startsWith('now')) return null;
+  let rest = text.slice('now'.length);
+  if (rest === '') return 0;
+  rest = rest.replace(/^ +/, '');
+  const sign = rest.startsWith('+') ? 1 : rest.startsWith('-') ? -1 : 0;
+  if (sign === 0) return null;
+  rest = rest.slice(1).replace(/^ +/, '');
+  const unit = ({ s: 1, m: 60, h: 3600 } as Record<string, number>)[rest.slice(-1)];
+  const digits = rest.slice(0, -1);
+  if (
+    unit === undefined ||
+    !/^[0-9]{1,10}$/.test(digits) ||
+    (digits.length > 1 && digits.startsWith('0'))
+  ) {
+    return null;
+  }
+  const seconds = Number(digits) * unit;
+  return seconds > 3155760000 ? null : sign * seconds;
+}
+
+/** Whether `path` names a `Timestamp` among `fields`, through structs, optionals and identities. */
+function timestampAt(fields: InputField[], path: string): boolean {
+  const parts = path.split('.');
+  let within = fields;
+  for (const [index, part] of parts.entries()) {
+    let kind = within.find(([name]) => name === part)?.[1];
+    if (kind === undefined) return false;
+    while (kind.kind === 'optional' || kind.kind === 'identity') kind = kind.base;
+    if (index === parts.length - 1) return kind.kind === 'timestamp';
+    if (kind.kind !== 'struct') return false;
+    within = kind.fields;
+  }
+  return false;
+}
+
+/**
+ * Every stored field of the entity a command's supplied subject names, as a stored-row guard reads
+ * it, or none.
+ */
+function storedFields(ir: Node, node: Node): InputField[] {
+  for (const outcome of list(node.outcomes)) {
+    if (outcome.subject?.instance?.from !== 'supplied') continue;
+    return list(ir.entities?.[outcome.subject.entity]?.fields).map(
+      (declared: Node): InputField => [
+        String(declared.name),
+        resolveKind(ir, declared.type_ref, 0, true),
+      ],
+    );
+  }
+  return [];
+}
+
+/**
+ * The offset of the current-time operand `node` compares a `Timestamp` with, read by `typed`, or
+ * null where `node` is no such comparison. Only a literal is read as `now`, as Rust's
+ * `instant_operand` reads it: a fact holding the text `now` holds no instant.
+ */
+function nowOf(node: Predicate, typed: (path: string) => boolean): number | null {
+  if (
+    node.kind !== 'compare' ||
+    !node.left.isFact ||
+    node.right.isFact ||
+    node.right.offset !== null ||
+    node.left.utf8Bytes ||
+    node.right.utf8Bytes ||
+    !typed(node.left.path) ||
+    typeof node.right.literal !== 'string'
+  ) {
+    return null;
+  }
+  return currentTime(node.right.literal);
+}
+
+/** Every offset from `now` the guards of `command` compare a `Timestamp` with, sorted, once each. */
+function nowOffsets(command: Command): number[] {
+  const found = new Set<number>();
+  const visit = (predicate: Predicate, typed: (path: string) => boolean): void =>
+    walk(predicate, (node) => {
+      const offset = nowOf(node, typed);
+      if (offset !== null) found.add(offset);
+    });
+  for (const guard of command.guards.values()) visit(guard, command.inputTimestamp);
+  for (const row of command.rows.values()) {
+    if (row.stored !== null) visit(row.stored, command.storedTimestamp);
+    if (row.input !== null) visit(row.input, command.inputTimestamp);
+  }
+  return [...found].sort((a, b) => a - b);
+}
+
+/**
+ * `predicate` with every comparison of a `Timestamp` with `now` decided at the instant `at`: the
+ * operand is the RFC 3339 text of `at` moved by its offset, compared as an instant. `spelled` maps
+ * the text of each comparison it rewrote to the text it was written as.
+ */
+function decidedAt(
+  predicate: Predicate,
+  typed: (path: string) => boolean,
+  at: number,
+  spelled: Map<string, string>,
+): Predicate {
+  const offset = nowOf(predicate, typed);
+  if (offset !== null) {
+    const moved = new Predicate({
+      ...predicate,
+      right: new Operand({ literal: instantText(at + offset * 1000) }),
+      instant: true,
+    });
+    spelled.set(moved.toString(), predicate.toString());
+    return moved;
+  }
+  return new Predicate({
+    ...predicate,
+    children: predicate.children.map((child) => decidedAt(child, typed, at, spelled)),
+    body: predicate.body === null ? null : decidedAt(predicate.body, typed, at, spelled),
+  });
+}
+
+/** `command` with every guard over `now` decided at the instant `at`. */
+function commandAt(command: Command, at: number, spelled: Map<string, string>): Command {
+  const guards = new Map<string, Predicate>();
+  for (const [name, guard] of command.guards) {
+    guards.set(name, decidedAt(guard, command.inputTimestamp, at, spelled));
+  }
+  const rows = new Map<string, RowGuard>();
+  for (const [name, row] of command.rows) {
+    rows.set(name, {
+      ...row,
+      stored:
+        row.stored === null ? null : decidedAt(row.stored, command.storedTimestamp, at, spelled),
+      input: row.input === null ? null : decidedAt(row.input, command.inputTimestamp, at, spelled),
+    });
+  }
+  return { ...command, guards, rows };
+}
+
+/** What two decisions of one step must share to be the same answer. */
+function decisionKey(decision: Decision): string {
+  const outcome = decision.kind === 'take' ? String(decision.outcome?.name ?? '') : '';
+  const externals =
+    decision.kind === 'take' ? decision.externals.map((it: Node) => String(it.name)) : [];
+  const names = decision.kind === 'take' || decision.kind === 'ambiguous' ? decision.names : [];
+  return [decision.kind, outcome, externals.join(','), (names ?? []).join(',')].join('\u0000');
+}
+
+/**
+ * `decide` with every guard over `now` decided against the model's clock (beyond10x/ess#582), read
+ * now and a minute later: a target reads its own clock after the explorer has read this one, so a
+ * step whose answer differs between the two is undetermined and is not sent. Without a clock, or a
+ * guard over `now`, it is `decide`.
+ */
+function decideNow(command: Command, input: Row, model: Model): Decision {
+  if (model.clock === null || !command.clocked) return decide(command, input, model);
+  const at = clockNow(model.clock);
+  const spelled = new Map<string, string>();
+  const first = decide(commandAt(command, at, spelled), input, model);
+  const later = decide(commandAt(command, at + 60_000, spelled), input, model);
+  if (decisionKey(first) !== decisionKey(later)) {
+    return {
+      kind: 'undetermined',
+      reason: `${command.name}: its answer turns on when the target reads its clock`,
+    };
+  }
+  if (first.kind !== 'unknown' && first.kind !== 'undetermined') return first;
+  // A reason names each guard as it is written, never the instant this step read.
+  const texts = [...spelled.keys()].sort((a, b) =>
+    a.length !== b.length ? b.length - a.length : byteCompare(a, b),
+  );
+  let reason = first.reason;
+  for (const text of texts) reason = reason.split(text).join(spelled.get(text) as string);
+  return { ...first, reason };
 }
 
 /** A value an outcome gives a field, or `undefined` where the model does not know it. */
@@ -1722,6 +1988,11 @@ interface Step {
   external: string;
   /** Identities deliberately absent in the serial draw/replay model. */
   fresh?: [string, string][];
+  /**
+   * Every input naming a row an earlier step deleted, as (path, entity, deletion index), so a
+   * shorter trace re-resolves it (beyond10x/ess#583).
+   */
+  gone?: [string, string, number][];
   /** A restart of the target rather than a command. */
   restart?: true;
 }
@@ -1766,7 +2037,17 @@ function drawValue(
     case 'string':
       return rng.pick(textsAt(command.pools, path));
     case 'timestamp': {
-      // One seeded draw selects a UTC second on a fixed date, never a target clock.
+      // Around the clock, where a guard compares one with `now` (beyond10x/ess#582): an hour to a
+      // day either side of an instant a guard compares it with, so a target reading its own clock
+      // moments later decides the step as the model does. Otherwise one seeded draw selects a UTC
+      // second on a fixed date, never a target clock.
+      const clock = model.clock;
+      if (clock !== null && clock.offsets.length > 0) {
+        const offset = rng.pick(clock.offsets);
+        let away = rng.int(3600, 86400);
+        if (rng.chance(0.5)) away = -away;
+        return instantText(clockNow(clock) + (offset + away) * 1000);
+      }
       const second = rng.int(0, 86399);
       const part = (value: number): string => String(value).padStart(2, '0');
       return `2020-01-01T${part(Math.floor(second / 3600))}:${part(Math.floor(second / 60) % 60)}:${part(second % 60)}Z`;
@@ -1809,6 +2090,7 @@ function draw(command: Command, rng: Mulberry32, model: Model): Step | null {
   const input: Row = {};
   const refs: [string, string, number][] = [];
   const fresh: [string, string][] = [];
+  const gone: [string, string, number][] = [];
   for (const [name, declared, presence] of command.inputs) {
     let kind = declared;
     if (name === instance && kind.kind !== 'identity') {
@@ -1831,7 +2113,18 @@ function draw(command: Command, rng: Mulberry32, model: Model): Step | null {
         value = drawValue(kind, rng, command, model, name, true, refs);
       } else {
         value = NO_RECORD;
-        for (let attempt = 0; attempt < ATTEMPTS_PER_STEP; attempt += 1) {
+        // A supplied instance with an unknown-instance answer names a row an earlier step deleted
+        // with even chance, where there is one: the model answers it as the unknown instance it
+        // now is (beyond10x/ess#583).
+        const deleted = model.deleted.get(probed) ?? [];
+        if (probesUnknown && deleted.length > 0 && rng.chance(0.5)) {
+          const index = rng.int(0, deleted.length - 1);
+          if (model.find(probed, deleted[index]) === undefined) {
+            value = deleted[index];
+            gone.push([name, probed, index]);
+          }
+        }
+        for (let attempt = 0; value === NO_RECORD && attempt < ATTEMPTS_PER_STEP; attempt += 1) {
           const drawn = drawValue(
             kind.kind === 'identity' ? kind.base : kind,
             rng,
@@ -1855,7 +2148,7 @@ function draw(command: Command, rng: Mulberry32, model: Model): Step | null {
     if (value !== ABSENT) input[name] = value;
     else if (presence !== 'omitted_when_absent') input[name] = null;
   }
-  return { command: command.name, input, refs, external: '', fresh };
+  return { command: command.name, input, refs, external: '', fresh, gone };
 }
 
 // ---- one step against the target ----------------------------------------------------------------
@@ -1992,6 +2285,12 @@ async function perform(
       record = s.model.find(subject.entity, readPath(step.input, subject.instance.field.name));
       if (record !== undefined && subject.effect === 'moves')
         record.fields.state = subject.transition.to;
+      // A delete takes the row out of the model, so every view read below must lose it, and a
+      // later step naming it is answered as an unknown instance (beyond10x/ess#583).
+      if (record !== undefined && subject.effect === 'deletes') {
+        s.model.remove(subject.entity, record);
+        record = undefined;
+      }
     }
     // A preserving outcome leaves the row exactly as it was: its state and every field, so the views
     // read below hold the target to an unchanged subject (beyond10x/ess#536).
@@ -2199,10 +2498,12 @@ async function open(
   const target = await newTarget();
   const correlation = newHarness(p.system).correlation();
   await target.beginScenario({ scenario, correlation });
+  const model = new Model();
+  model.clock = p.clock;
   const session = {
     p,
     target,
-    model: new Model(),
+    model,
     correlation,
     undetermined: new Set<string>(),
     forced: new Set<string>(),
@@ -2235,7 +2536,7 @@ async function preconditions(s: Session): Promise<void> {
     const command: Command = { ...planned, actor: pre.actor ?? planned.actor };
     const input: Row = { ...(pre.input ?? {}) };
     const step: Step = { command: name, input, refs: [], external: '' };
-    const decision = decide(command, input, s.model);
+    const decision = decideNow(command, input, s.model);
     // The model must take the branch the specification requires of it, as synthesis does: a
     // precondition the model decides as a refusal, or as anything else, fails as setup.
     const wanted = String(pre.outcome);
@@ -2301,14 +2602,22 @@ async function replay(
         )
       )
         continue;
+      for (const [path, entity, index] of recorded.gone ?? []) {
+        const deleted = s.model.deleted.get(entity) ?? [];
+        if (index >= deleted.length || s.model.find(entity, deleted[index]) !== undefined) {
+          resolvable = false;
+        } else setPath(input, path, deleted[index]);
+      }
+      if (!resolvable) continue;
       const step: Step = {
         command: recorded.command,
         input,
         refs: recorded.refs,
         external: recorded.external,
         fresh: recorded.fresh ?? [],
+        gone: recorded.gone ?? [],
       };
-      const decision = decide(command, input, s.model);
+      const decision = decideNow(command, input, s.model);
       if (decision.kind !== 'take') continue;
       const outcome = choices(s, command, decision, input).find(
         (choice) => choice.arrangement === step.external,
@@ -2360,6 +2669,7 @@ export async function explore(
     throw new Error('the restart interval must be a whole number of steps, zero or more');
   }
   const p = plan(loadModel());
+  p.clock = { read: options.now ?? (() => new Date()), offsets: p.offsets };
   const steps = options.steps ?? DEFAULT_STEPS;
   const seeds: number[] = [];
   if (options.seed !== undefined) seeds.push(options.seed);
@@ -2410,7 +2720,7 @@ export async function explore(
         const command = rng.pick(drawable);
         const step = draw(command, rng, s.model);
         if (step === null) continue;
-        const decision = decide(command, step.input, s.model);
+        const decision = decideNow(command, step.input, s.model);
         if (decision.kind === 'ambiguous') {
           ambiguous.add(`${command.name}: ${decision.names.join(', ')}`);
           continue;

@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "config": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "endpoints": {
+      "additionalProperties": {
+        "format": "uri",
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "images": {
+      "type": "object"
+    },
+    "secrets": {
+      "additionalProperties": false,
+      "properties": {
+        "credentials": {
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "credentials"
+      ],
+      "type": "object"
+    },
+    "serviceAccount": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "workloads": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "serviceAccount",
+    "images",
+    "config",
+    "secrets",
+    "endpoints",
+    "workloads"
+  ],
+  "type": "object"
+}

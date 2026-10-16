@@ -2,6 +2,38 @@
 
 ## [Unreleased]
 
+### Added
+
+- The generated Go and TypeScript sequential explorers (`Explore`) draw a `Timestamp` input, as
+  the concurrent ones already did, and decide a guard over `now` against a clock,
+  `ExploreOptions.Now` (TypeScript `now`), the wall clock by default. Where a guard compares a
+  `Timestamp` with `now`, a drawn instant lies an hour to a day either side of an instant it
+  compares with, so a target reading its own clock decides the step as the model does, and a step
+  whose answer would still turn on when the target reads its clock is reported in `Undetermined`
+  rather than sent. Before, every command with a `Timestamp` input was excluded
+  (https://github.com/beyond10x/ess/issues/582).
+- The sequential explorers perform an outcome that `deletes:` its supplied subject: the row leaves
+  the model, every view must lose it, and a later step may name the deleted identity, which the
+  model answers as an unknown instance, so a single-use resource is explored through its
+  redemption. Concurrent exploration still leaves such a command out and now says why: its
+  workload is drawn before any call runs, so a later call can name the deleted row
+  (https://github.com/beyond10x/ess/issues/583).
+
+### Fixed
+
+- The caller-swapped half of a synthesized scenario draws fresh values for every input a
+  `when_related:` guard, a row-set selector or its `forall:` test reads, and for every input
+  written into a field such a selector reads, whatever its type (#580). A key unique across
+  callers, such as a `name` refused when any row already holds it, no longer makes a correct model
+  fail its own suite on `--target interpreted`. Suites of models without such guards keep their
+  bytes.
+- Synthesis arranges a guarded stored value or a related row's state through the declared command
+  that reaches it: a `when_subject: defined(field)` branch whose field only a later `updates:`
+  writes, a `when_related` branch over an owned row moved to the state it reads, and a row-set
+  guard over the subject's owned rows in a moved state now get scenarios instead of
+  `ESS-SYNTH-003`/`ESS-SYNTH-001`. A field written by another command's `affects:` is not yet
+  arranged (https://github.com/beyond10x/ess/issues/553).
+
 ## [0.61.0] — 2026-10-15
 
 ### Added
@@ -16,6 +48,30 @@
   `one_time_response` field, the scenario id shape, how the count grows with actors, outcomes,
   commands and views, and worked counts for three minimal models
   (https://github.com/beyond10x/ess/issues/573).
+- Runtime format `ess-runtime/2`, compiled to `ess-runtime-ir/2`, beside `/1`. A workload may
+  declare `schedule:` (a cron expression, an optional IANA `time_zone`, `overlap:` forbid, replace
+  or allow, history limits, `suspended`, start and run deadlines, a retry limit and a restart
+  policy), and `ess generate project helm` renders it as a `batch/v1` `CronJob` whose job template
+  carries the pod a Deployment would, with a `PersistentVolumeClaim` per named volume that every
+  run mounts. A scheduled workload without `run_deadline_seconds` is refused as unbounded; an
+  invalid cron expression, an unknown time zone, `replicas`, legacy `storage`, a provided endpoint
+  or a readiness probe beside a schedule, a deadline below one and a negative retry limit are
+  refused naming the workload. Every workload kind also takes pod settings: container `resources`
+  (cpu and memory requests and limits) and `read_only_root_filesystem`, workload `security`
+  (`run_as_user`, `run_as_group`, `fs_group`, `run_as_non_root`) and `service_account_token`, a
+  secret slot `mount:` rendered as a read-only `secret` volume with `items` and an octal `mode`,
+  and a process `image` given as a reference pinned by digest, rendered verbatim. An
+  `ess-runtime/1` document keeps its compiled bytes, digest and chart, and refuses the new keys
+  naming `ess-runtime/2` (`docs/design/runtime-workload-kinds.md`).
+- `ess-runtime/2` containers take TCP probes (`readiness_tcp_port`, `liveness_tcp_port`, rendered as
+  `tcpSocket`), and workloads take pod `annotations` and `affinity` (`node_labels` as required node
+  affinity, `spread_across` as pod anti-affinity against the workload's own pods, preferred unless
+  `spread: required`). An `ess-runtime/2` document is refused, naming the field, where the chart
+  would not install or not say what the document says: a day of week of 7, an `int32` count or a
+  pod security id above 2147483647, a container, workload, volume or mounted secret slot whose pod
+  name is not a DNS-1123 label, a secret item key Kubernetes refuses or an item path starting with
+  `..`, a request above its limit, and `{{` in any string the chart renders as written, which Helm
+  would evaluate at install time. `ess-runtime/1` documents compile as before.
 
 - History format `ess-history/3`: an operation may record `input` (the command's input as sent),
   `events` (each event a returned answer published, in order, with its payload) and `arranged`
@@ -53,6 +109,10 @@
 
 ### Changed
 
+- `ess-deployment`: `Process::image` is a `ProcessImage`, `Workload::replicas` an `Option<u32>`,
+  and `SecretSlot::environment` and `SecretSlot::key` are `Option<String>`, for `ess-runtime/2`;
+  `ContainerRole` gains `readiness_tcp_port` and `liveness_tcp_port`, and `Workload` gains
+  `annotations` and `affinity` (`Affinity`, `Spread`).
 - CI: each test shard gets three 30-minute attempts per nextest archive download, the last one
   failing the job, so a slow artifact download no longer fails shards whose tests pass.
 

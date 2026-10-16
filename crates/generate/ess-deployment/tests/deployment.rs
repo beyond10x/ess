@@ -15,6 +15,8 @@ use ess_deployment::{
 use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
 
+mod workload_kinds;
+
 fn fixture() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../../examples/oracle-fixture")
@@ -1314,8 +1316,8 @@ fn declared_settings_derive_the_runtime_slots() {
             .collect::<Vec<_>>(),
         vec![(
             "carrier-token".to_owned(),
-            "CARRIER_TOKEN".to_owned(),
-            "carrier-token".to_owned()
+            Some("CARRIER_TOKEN".to_owned()),
+            Some("carrier-token".to_owned())
         )],
         "a secret setting becomes a secret slot whose key is the setting's own name"
     );
@@ -1435,7 +1437,7 @@ fn a_component_declaring_no_settings_keeps_its_hand_authored_slots() {
             .iter()
             .map(|slot| slot.environment.clone())
             .collect::<Vec<_>>(),
-        vec!["DATABASE_PASSWORD".to_owned()]
+        vec![Some("DATABASE_PASSWORD".to_owned())]
     );
 }
 

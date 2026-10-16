@@ -50,7 +50,7 @@ use super::identity;
 use super::precedence;
 use super::set_effects::{input_value, misses, subject_value, written_in};
 use super::{
-    absorb, arrange_toward_filter, candidates, flatten, instance_name, prepare_in, settled,
+    absorb, arrange_toward_owned, candidates, flatten, instance_name, prepare_in, settled,
     still_unwritten, subject_fact, supply, unwritten_by, ActorRef, Arrangement, ConformanceSuite,
     Decision, Determined, Distinction, EntityRef, InstanceName, Refusal, RefusalCause,
     ScenarioStep, ScenarioValue, Setup, WitnessGap,
@@ -575,13 +575,14 @@ impl<'a> Reading<'a> {
                     type_ref: identity.type_ref.clone(),
                 });
         }
+        let predicate = instances_decided(predicate, &settled, &self.supplied);
         subject_fact::row_truth_with(
             self.ir,
             &row.entity,
             &settled,
             &row.unwritten,
             Some(&row.state),
-            predicate,
+            &predicate,
             Some((self.command, &self.input)),
         )
     }
@@ -1070,7 +1071,7 @@ fn arrange_rows(
     copied: &[&str],
     actors: &BTreeMap<QualifiedName, ActorRef>,
     taken: &mut BTreeSet<InstanceName>,
-    before: &[ScenarioStep],
+    (before, owner): (&[ScenarioStep], Option<&InstanceName>),
 ) -> Option<Vec<Arrangement>> {
     // Whether the steps so far, and `row`'s after them, leave every row-set command they send
     // taking the branch it is required to: a row arranged through such a command is kept only
@@ -1130,7 +1131,8 @@ fn arrange_rows(
             let distinction = next(ir, entity, taken);
             // A decoy no creating command arranges with the rows before it decided is left out:
             // it would catch a target ignoring that conjunct, and the scenario stands without it.
-            if let Some(row) = arrange_row(ir, entity, &miss, actors, distinction, &accept) {
+            if let Some(row) = arrange_row(ir, entity, &miss, actors, (distinction, owner), &accept)
+            {
                 if follows(arranged, &row) {
                     arranged.push(row);
                 }
@@ -1159,7 +1161,7 @@ fn arrange_rows(
                 })
         };
         let distinction = next(ir, entity, taken);
-        let row = arrange_row(ir, entity, &goal, actors, distinction, &accept)?;
+        let row = arrange_row(ir, entity, &goal, actors, (distinction, owner), &accept)?;
         if !follows(&arranged, &row) {
             return None;
         }
@@ -1184,7 +1186,7 @@ fn arrange_row(
     entity: &EntityHandle,
     goal: &Predicate,
     actors: &BTreeMap<QualifiedName, ActorRef>,
-    distinction: Distinction,
+    (distinction, owner): (Distinction, Option<&InstanceName>),
     accept: &dyn Fn(&Arrangement) -> bool,
 ) -> Option<Arrangement> {
     let optional: BTreeSet<&str> = ir
@@ -1213,7 +1215,9 @@ fn arrange_row(
     };
     [goal.clone(), relaxed, Predicate::Always]
         .iter()
-        .find_map(|steer| arrange_toward_filter(ir, entity, steer, actors, distinction, accept))
+        .find_map(|steer| {
+            arrange_toward_owned(ir, entity, steer, actors, distinction, owner, accept)
+        })
 }
 
 /// Why no scenario can decide the rows `selection` selects, where none can: it is unscoped, or it
@@ -1265,7 +1269,18 @@ pub(super) fn prepare(
             input_value(path, &input).or_else(|| subject_value(path, &setup.settled))
         })
     };
-    let filter = closed(&selection.filter);
+    // Rows the selector reads under the addressed subject, by their owner link, are arranged under
+    // that subject, which their own commands then read as the steps leave it (beyond10x/ess#553):
+    // the reviews a reopen counts, filed under the incident it reopens and approved there.
+    let under = under_subject(ir, command, selection, &setup, &supplied);
+    let filter = closed(&under.as_ref().map_or_else(
+        || selection.filter.clone(),
+        |(link, _)| without_link(&selection.filter, link),
+    ));
+    let _held = under
+        .as_ref()
+        .and_then(|(_, row)| addressed(command, &supplied).map(|(entity, _)| (entity, row)))
+        .map(|(entity, row)| subject_fact::holding(ir, entity, row));
     let foralls: Vec<Predicate> = command
         .outcomes
         .iter()
@@ -1294,7 +1309,7 @@ pub(super) fn prepare(
                 &copied,
                 actors,
                 &mut taken,
-                &setup.steps,
+                (&setup.steps, under.as_ref().map(|(_, row)| &row.instance)),
             ) else {
                 continue;
             };
@@ -1332,6 +1347,135 @@ pub(super) fn prepare(
         "has no arrangement of rows the declared commands produce on which the rows its selector \
          selects take this branch",
     ))
+}
+
+/// The conjunct of a selector comparing its rows' owner link with the input naming the subject the
+/// send addresses (beyond10x/ess#553), and that subject as the setup arranged it: the selected
+/// entity is owned by the subject's, and the input names the arranged row. `None` for every other
+/// selector, which is arranged as it was.
+fn under_subject(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    selection: &ResolvedRowSelection,
+    setup: &Setup,
+    supplied: &BTreeMap<String, ScenarioValue>,
+) -> Option<(Predicate, Arrangement)> {
+    let instance = setup.instance.as_ref()?;
+    let (entity, named) = addressed(command, supplied)?;
+    let owned = ir.owner_of(&selection.entity)?;
+    if owned.owner != *entity
+        || !matches!(named, ScenarioValue::Instance { instance: held } if held == instance)
+    {
+        return None;
+    }
+    let conjuncts = match &selection.filter {
+        Predicate::All(children) => children.as_slice(),
+        other => std::slice::from_ref(other),
+    };
+    let link = conjuncts.iter().find(|conjunct| {
+        let Predicate::Compare {
+            left: Operand::Fact(left),
+            op: CompareOp::Eq,
+            right: Operand::Fact(right),
+            ..
+        } = conjunct
+        else {
+            return false;
+        };
+        let matches = |row: &FactPath, sent: &FactPath| {
+            row.segments() == [owned.via.to_owned()]
+                && input_field(sent).is_some_and(|field| supplied.get(field) == Some(named))
+        };
+        matches(left, right) || matches(right, left)
+    })?;
+    // The subject as the setup's steps leave it, its unwritten `Optional` fields included.
+    let walked = walk(ir, &setup.steps, false).ok()?;
+    let left = walked
+        .held
+        .iter()
+        .find(|row| row.entity == *entity && row.instance.as_ref() == Some(instance))?;
+    let row = Arrangement {
+        instance: instance.clone(),
+        state: left.state.clone(),
+        steps: setup.steps.clone(),
+        source: setup.source.clone(),
+        settled: left.settled.clone(),
+        unwritten: left.unwritten.clone(),
+        unobserved: BTreeSet::new(),
+    };
+    Some((link.clone(), row))
+}
+
+/// `filter` without the conjunct `link`, which arranging the rows under the subject holds.
+fn without_link(filter: &Predicate, link: &Predicate) -> Predicate {
+    match filter {
+        Predicate::All(children) => {
+            let kept: Vec<Predicate> = children
+                .iter()
+                .filter(|child| *child != link)
+                .cloned()
+                .collect();
+            match <[Predicate; 1]>::try_from(kept) {
+                Ok([only]) => only,
+                Err(kept) => Predicate::All(kept),
+            }
+        }
+        other if other == link => Predicate::Always,
+        other => other.clone(),
+    }
+}
+
+/// The top-level input field `path` names, as `input.<field>`.
+fn input_field(path: &FactPath) -> Option<&str> {
+    match path.segments() {
+        [root, field] if root == ess_domain::command::subject_fact::INPUT_NAMESPACE => {
+            Some(field.as_str())
+        }
+        _ => None,
+    }
+}
+
+/// `predicate` with each equality between a row's field and an input field decided where both name
+/// an arranged instance (beyond10x/ess#553): a review filed under the incident a reopen names. Every
+/// other leaf is left as it is.
+fn instances_decided(
+    predicate: &Predicate,
+    settled: &BTreeMap<String, Determined>,
+    supplied: &BTreeMap<String, ScenarioValue>,
+) -> Predicate {
+    let decide = |child: &Predicate| instances_decided(child, settled, supplied);
+    match predicate {
+        Predicate::All(children) => Predicate::All(children.iter().map(decide).collect()),
+        Predicate::Any(children) => Predicate::Any(children.iter().map(decide).collect()),
+        Predicate::Not(inner) => Predicate::Not(Box::new(decide(inner))),
+        Predicate::Compare {
+            left: Operand::Fact(left),
+            op: op @ (CompareOp::Eq | CompareOp::Ne),
+            right: Operand::Fact(right),
+            ..
+        } => {
+            let instance = |row: &FactPath, sent: &FactPath| {
+                let [field] = row.segments() else {
+                    return None;
+                };
+                let ScenarioValue::Instance { instance: held } = &settled.get(field)?.value else {
+                    return None;
+                };
+                let ScenarioValue::Instance { instance: named } =
+                    supplied.get(input_field(sent)?)?
+                else {
+                    return None;
+                };
+                Some(held == named)
+            };
+            match instance(left, right).or_else(|| instance(right, left)) {
+                Some(same) if same == (*op == CompareOp::Eq) => Predicate::Always,
+                Some(_) => Predicate::Never,
+                None => predicate.clone(),
+            }
+        }
+        other => other.clone(),
+    }
 }
 
 /// Every scenario of `suite` sending a row-set command whose required branch the rows its steps
