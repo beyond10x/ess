@@ -8,7 +8,9 @@ use crate::identity::{canonical_json, Digest, Identifier};
 use crate::release::{Artifact, ArtifactKind};
 use crate::runtime::{ConfigKind, ContainerRole, RuntimeIr, Workload};
 use crate::stack::StackLock;
-use crate::workload_kind::{secret_volume_name, JobRestart, Overlap, ProcessImage, Schedule};
+use crate::workload_kind::{
+    secret_volume_name, Affinity, JobRestart, Overlap, ProcessImage, Schedule, Spread,
+};
 
 /// Private environment-binding format.
 pub const ENVIRONMENT_FORMAT: &str = "ess-environment/1";
@@ -914,6 +916,12 @@ fn render_pod_template(
         workload.name
     )
     .unwrap();
+    if let Some(annotations) = &workload.annotations {
+        output.push_str("      annotations:\n");
+        for (key, value) in annotations {
+            writeln!(&mut output, "        {}: {}", quoted(key), quoted(value)).unwrap();
+        }
+    }
     output.push_str("    spec:\n");
     if let Some(restart) = restart {
         writeln!(
@@ -941,6 +949,9 @@ fn render_pod_template(
         if let Some(non_root) = security.run_as_non_root {
             writeln!(&mut output, "        runAsNonRoot: {non_root}").unwrap();
         }
+    }
+    if let Some(affinity) = &workload.affinity {
+        render_affinity(&mut output, workload, affinity);
     }
     output.push_str("      containers:\n");
     let mut secret_volumes = BTreeMap::new();
@@ -998,6 +1009,49 @@ fn render_pod_template(
     output
 }
 
+/// The pod's `affinity`: node labels as required node affinity, and `spread_across` as pod
+/// anti-affinity against the workload's own pods.
+fn render_affinity(output: &mut String, workload: &Workload, affinity: &Affinity) {
+    output.push_str("      affinity:\n");
+    if !affinity.node_labels.is_empty() {
+        output.push_str(
+            "        nodeAffinity:\n          requiredDuringSchedulingIgnoredDuringExecution:\n            nodeSelectorTerms:\n              - matchExpressions:\n",
+        );
+        for (key, value) in &affinity.node_labels {
+            writeln!(
+                output,
+                "                  - key: {}\n                    operator: In\n                    values: [{}]",
+                quoted(key),
+                quoted(value)
+            )
+            .unwrap();
+        }
+    }
+    let Some(topology) = &affinity.spread_across else {
+        return;
+    };
+    let selector = format!(
+        "labelSelector:\n  matchLabels:\n    app.kubernetes.io/instance: {{{{ .Release.Name }}}}\n    app.kubernetes.io/component: {}\ntopologyKey: {}\n",
+        workload.name,
+        quoted(topology)
+    );
+    output.push_str("        podAntiAffinity:\n");
+    match affinity.spread.unwrap_or(Spread::Preferred) {
+        Spread::Preferred => {
+            output.push_str(
+                "          preferredDuringSchedulingIgnoredDuringExecution:\n            - weight: 100\n              podAffinityTerm:\n",
+            );
+            output.push_str(&indented(&selector, 16));
+        }
+        Spread::Required => {
+            output.push_str("          requiredDuringSchedulingIgnoredDuringExecution:\n");
+            let mut term = indented(&selector, 14);
+            term.replace_range(12..14, "- ");
+            output.push_str(&term);
+        }
+    }
+}
+
 #[allow(clippy::too_many_lines)]
 fn render_container(output: &mut String, realization: &RuntimeIr, container: &ContainerRole) {
     let process = realization
@@ -1038,8 +1092,22 @@ fn render_container(output: &mut String, realization: &RuntimeIr, container: &Co
     if let Some(path) = &container.readiness_path {
         writeln!(output, "          readinessProbe:\n            httpGet:\n              path: {path}\n              port: http").unwrap();
     }
+    if let Some(port) = container.readiness_tcp_port {
+        writeln!(
+            output,
+            "          readinessProbe:\n            tcpSocket:\n              port: {port}"
+        )
+        .unwrap();
+    }
     if let Some(path) = &container.liveness_path {
         writeln!(output, "          livenessProbe:\n            httpGet:\n              path: {path}\n              port: http").unwrap();
+    }
+    if let Some(port) = container.liveness_tcp_port {
+        writeln!(
+            output,
+            "          livenessProbe:\n            tcpSocket:\n              port: {port}"
+        )
+        .unwrap();
     }
     if let Some(resources) = &container.resources {
         output.push_str("          resources:\n");

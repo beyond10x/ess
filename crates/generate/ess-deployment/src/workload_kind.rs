@@ -220,9 +220,94 @@ pub struct Schedule {
     pub restart: Option<JobRestart>,
 }
 
+/// Whether spreading a workload's pods is a scheduling requirement or a preference.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Spread {
+    /// The scheduler spreads the pods where it can, and places them together where it cannot.
+    Preferred,
+    /// A pod that cannot be placed apart from the others stays pending.
+    Required,
+}
+
+/// Where a workload's pods run.
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Affinity {
+    /// A node label key, such as `kubernetes.io/hostname`: no two pods of the workload share a
+    /// value of it (pod anti-affinity against the workload's own pods).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spread_across: Option<String>,
+    /// Whether `spread_across` is required or preferred; absent prefers it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spread: Option<Spread>,
+    /// Labels the node of every pod must carry, each with exactly this value (node affinity).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub node_labels: BTreeMap<String, String>,
+}
+
 /// The pod volume a mounted secret slot occupies.
 pub(crate) fn secret_volume_name(slot: &Identifier) -> String {
     format!("secret-{slot}")
+}
+
+/// The largest value of a Kubernetes `int32` field.
+const INT32_MAX: i64 = 2_147_483_647;
+
+/// Kubernetes caps the total size of one object's annotations at 256 KiB.
+const ANNOTATIONS_LIMIT: usize = 256 * 1024;
+
+/// A DNS-1123 label: the name of a container, a pod volume or a port.
+pub(crate) fn is_dns_label(name: &str) -> bool {
+    let alphanumeric = |byte: u8| byte.is_ascii_lowercase() || byte.is_ascii_digit();
+    (1..=63).contains(&name.len())
+        && name.bytes().all(|byte| alphanumeric(byte) || byte == b'-')
+        && name.bytes().next().is_some_and(alphanumeric)
+        && name.bytes().last().is_some_and(alphanumeric)
+}
+
+/// A DNS-1123 subdomain: dot-separated labels, at most 253 characters.
+fn is_dns_subdomain(name: &str) -> bool {
+    name.len() <= 253 && name.split('.').all(is_dns_label)
+}
+
+/// The name half of a qualified name, and a non-empty label value.
+fn is_qualified_segment(text: &str) -> bool {
+    let alphanumeric = |byte: u8| byte.is_ascii_alphanumeric();
+    (1..=63).contains(&text.len())
+        && text
+            .bytes()
+            .all(|byte| alphanumeric(byte) || matches!(byte, b'-' | b'_' | b'.'))
+        && text.bytes().next().is_some_and(alphanumeric)
+        && text.bytes().last().is_some_and(alphanumeric)
+}
+
+/// A label or annotation key: an optional DNS subdomain prefix and `/`, then a name.
+fn is_qualified_name(key: &str) -> bool {
+    match key.split_once('/') {
+        Some((prefix, name)) => is_dns_subdomain(prefix) && is_qualified_segment(name),
+        None => is_qualified_segment(key),
+    }
+}
+
+/// A label value: empty, or a qualified-name segment.
+fn is_label_value(value: &str) -> bool {
+    value.is_empty() || is_qualified_segment(value)
+}
+
+/// A key of a Secret or `ConfigMap` (`IsConfigMapKey`).
+fn is_secret_key(key: &str) -> bool {
+    (1..=253).contains(&key.len())
+        && key
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+        && !key.starts_with("..")
+        && key != "."
+}
+
+/// Whether Helm would read `text` as a template action rather than as text.
+pub(crate) fn has_template_action(text: &str) -> bool {
+    text.contains("{{")
 }
 
 /// Four octal digits from `0000` to `0777`.
@@ -278,10 +363,74 @@ fn is_quantity(text: &str) -> bool {
     })
 }
 
-/// A relative path that stays below its mount.
+/// An exact quantity: `numerator / 10^scale`, or `None` when it is not one or does not fit.
+fn quantity_value(text: &str) -> Option<(u128, u32)> {
+    const SUFFIXES: [(&str, i32, u32); 16] = [
+        ("Ki", 0, 10),
+        ("Mi", 0, 20),
+        ("Gi", 0, 30),
+        ("Ti", 0, 40),
+        ("Pi", 0, 50),
+        ("Ei", 0, 60),
+        ("n", -9, 0),
+        ("u", -6, 0),
+        ("m", -3, 0),
+        ("k", 3, 0),
+        ("M", 6, 0),
+        ("G", 9, 0),
+        ("T", 12, 0),
+        ("P", 15, 0),
+        ("E", 18, 0),
+        ("", 0, 0),
+    ];
+    if !is_quantity(text) {
+        return None;
+    }
+    SUFFIXES.iter().find_map(|(suffix, decimal, binary)| {
+        let number = text.strip_suffix(suffix)?;
+        let (whole, fraction) = number.split_once('.').unwrap_or((number, ""));
+        if !whole
+            .bytes()
+            .chain(fraction.bytes())
+            .all(|b| b.is_ascii_digit())
+            || (whole.is_empty() && fraction.is_empty())
+        {
+            return None;
+        }
+        let digits: String = whole.chars().chain(fraction.chars()).collect();
+        let significant = digits.trim_start_matches('0');
+        let mantissa: u128 = if significant.is_empty() {
+            0
+        } else {
+            significant.parse().ok()?
+        };
+        let scale = u32::try_from(fraction.len()).ok()?;
+        let mut numerator = mantissa.checked_mul(1u128.checked_shl(*binary)?)?;
+        let scale = if *decimal >= 0 {
+            numerator = numerator.checked_mul(10u128.checked_pow(decimal.unsigned_abs())?)?;
+            scale
+        } else {
+            scale.checked_add(decimal.unsigned_abs())?
+        };
+        Some((numerator, scale))
+    })
+}
+
+/// Whether quantity `left` is greater than quantity `right`, when both are exact.
+fn exceeds(left: &str, right: &str) -> Option<bool> {
+    let (left, left_scale) = quantity_value(left)?;
+    let (right, right_scale) = quantity_value(right)?;
+    let left = left.checked_mul(10u128.checked_pow(right_scale)?)?;
+    let right = right.checked_mul(10u128.checked_pow(left_scale)?)?;
+    Some(left > right)
+}
+
+/// A relative path that stays below its mount, and does not start with `..`, which the
+/// kubelet's atomic writer reserves.
 fn is_contained(path: &str) -> bool {
     !path.is_empty()
         && !path.starts_with('/')
+        && !path.starts_with("..")
         && path
             .split('/')
             .all(|segment| !segment.is_empty() && segment != "." && segment != "..")
@@ -329,7 +478,7 @@ fn cron_error(expression: &str) -> Option<String> {
         ("hour", 0, 23, &[], 0),
         ("day of month", 1, 31, &[], 0),
         ("month", 1, 12, &MONTHS, 1),
-        ("day of week", 0, 7, &DAYS, 0),
+        ("day of week", 0, 6, &DAYS, 0),
     ];
     for (field, (name, low, high, names, first)) in fields.iter().zip(shapes) {
         let wildcard_question = matches!(name, "day of month" | "day of week");
@@ -405,6 +554,12 @@ pub(crate) fn container_v2_keys(container: &ContainerRole) -> Vec<String> {
     if container.read_only_root_filesystem.is_some() {
         keys.push("read_only_root_filesystem".to_owned());
     }
+    if container.readiness_tcp_port.is_some() {
+        keys.push("readiness_tcp_port".to_owned());
+    }
+    if container.liveness_tcp_port.is_some() {
+        keys.push("liveness_tcp_port".to_owned());
+    }
     for slot in &container.secrets {
         if slot.mount.is_some() {
             keys.push(format!("secrets.{}.mount", slot.name));
@@ -427,6 +582,12 @@ pub(crate) fn workload_v2_keys(workload: &Workload) -> Vec<&'static str> {
     }
     if workload.service_account_token.is_some() {
         keys.push("service_account_token");
+    }
+    if workload.annotations.is_some() {
+        keys.push("annotations");
+    }
+    if workload.affinity.is_some() {
+        keys.push("affinity");
     }
     if workload.replicas.is_none() {
         keys.push("a workload without replicas");
@@ -479,7 +640,28 @@ pub(crate) fn validate_container_settings(
                 }
             }
         }
+        if let (Some(requests), Some(limits)) = (&resources.requests, &resources.limits) {
+            for (resource, request, limit) in [
+                ("cpu", &requests.cpu, &limits.cpu),
+                ("memory", &requests.memory, &limits.memory),
+            ] {
+                let (Some(request), Some(limit)) = (request, limit) else {
+                    continue;
+                };
+                if exceeds(request, limit) == Some(true) {
+                    refuse(
+                        diagnostics,
+                        name,
+                        format!(
+                            "container {name} resource requests {resource} {request:?} exceeds \
+                             its limit {limit:?}; a request may not be above its limit"
+                        ),
+                    );
+                }
+            }
+        }
     }
+    validate_tcp_probes(container, diagnostics);
     let mut paths: BTreeSet<&str> = container
         .volume_mounts
         .iter()
@@ -487,6 +669,43 @@ pub(crate) fn validate_container_settings(
         .collect();
     for slot in &container.secrets {
         validate_secret_slot(container, slot, &mut paths, diagnostics);
+    }
+}
+
+fn validate_tcp_probes(container: &ContainerRole, diagnostics: &mut Vec<Diagnostic>) {
+    let name = &container.name;
+    for (probe, port, path) in [
+        (
+            "readiness",
+            container.readiness_tcp_port,
+            &container.readiness_path,
+        ),
+        (
+            "liveness",
+            container.liveness_tcp_port,
+            &container.liveness_path,
+        ),
+    ] {
+        let Some(port) = port else {
+            continue;
+        };
+        if port == 0 {
+            refuse(
+                diagnostics,
+                name,
+                format!("container {name} {probe}_tcp_port 0 is not a port; use 1-65535"),
+            );
+        }
+        if path.is_some() {
+            refuse(
+                diagnostics,
+                name,
+                format!(
+                    "container {name} declares both {probe}_path and {probe}_tcp_port; a \
+                     container has one {probe} probe"
+                ),
+            );
+        }
     }
 }
 
@@ -544,6 +763,26 @@ fn validate_secret_slot<'a>(
             ),
         );
     }
+    let volume = secret_volume_name(name);
+    if !is_dns_label(&volume) {
+        refuse(
+            diagnostics,
+            name,
+            format!(
+                "secret slot {name} is mounted as the pod volume {volume:?}, which is not a \
+                 DNS-1123 label (lowercase letters, digits and '-', at most 63 characters); \
+                 rename the slot"
+            ),
+        );
+    }
+    validate_secret_items(name, mount, diagnostics);
+}
+
+fn validate_secret_items(
+    name: &Identifier,
+    mount: &SecretMount,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
     let mut item_paths = BTreeSet::new();
     for item in &mount.items {
         if item.key.is_empty() {
@@ -552,13 +791,24 @@ fn validate_secret_slot<'a>(
                 name,
                 format!("secret slot {name} projects an item with an empty key"),
             );
+        } else if !is_secret_key(&item.key) {
+            refuse(
+                diagnostics,
+                name,
+                format!(
+                    "secret slot {name} item key {:?} is not a Secret key: at most 253 letters, \
+                     digits, '-', '_' and '.', not '.' and not starting with '..'",
+                    item.key
+                ),
+            );
         }
         if !is_contained(&item.path) {
             refuse(
                 diagnostics,
                 name,
                 format!(
-                    "secret slot {name} item path {:?} must be relative and stay below the mount",
+                    "secret slot {name} item path {:?} must be relative, stay below the mount \
+                     and not start with '..'",
                     item.path
                 ),
             );
@@ -595,6 +845,30 @@ pub(crate) fn validate_workload_settings(
             format!("workload {name} declares security with no setting in it"),
         );
     }
+    if let Some(security) = &workload.security {
+        for (key, id) in [
+            ("run_as_user", security.run_as_user),
+            ("run_as_group", security.run_as_group),
+            ("fs_group", security.fs_group),
+        ] {
+            if let Some(id) = id.filter(|id| i64::from(*id) > INT32_MAX) {
+                refuse(
+                    diagnostics,
+                    name,
+                    format!(
+                        "workload {name} security {key} {id} is above {INT32_MAX}, the largest \
+                         id Kubernetes accepts"
+                    ),
+                );
+            }
+        }
+    }
+    if let Some(annotations) = &workload.annotations {
+        validate_annotations(name, annotations, diagnostics);
+    }
+    if let Some(affinity) = &workload.affinity {
+        validate_affinity(name, affinity, diagnostics);
+    }
     validate_secret_volumes(workload, containers, diagnostics);
     let Some(schedule) = &workload.schedule else {
         if workload.replicas.is_none() {
@@ -630,7 +904,7 @@ pub(crate) fn validate_workload_settings(
     for container in &workload.containers {
         if containers
             .get(container)
-            .is_some_and(|role| role.readiness_path.is_some())
+            .is_some_and(|role| role.readiness_path.is_some() || role.readiness_tcp_port.is_some())
         {
             refuse(
                 diagnostics,
@@ -713,6 +987,294 @@ fn validate_schedule(name: &Identifier, schedule: &Schedule, diagnostics: &mut V
             format!("scheduled workload {name} retry_limit {retries} must not be negative"),
         );
     }
+    for (key, count) in [
+        ("retry_limit", schedule.retry_limit),
+        ("successful_runs", schedule.successful_runs.map(i64::from)),
+        ("failed_runs", schedule.failed_runs.map(i64::from)),
+    ] {
+        if let Some(count) = count.filter(|count| *count > INT32_MAX) {
+            refuse(
+                diagnostics,
+                name,
+                format!(
+                    "scheduled workload {name} {key} {count} is above {INT32_MAX}, the largest \
+                     value Kubernetes reads"
+                ),
+            );
+        }
+    }
+}
+
+fn validate_annotations(
+    name: &Identifier,
+    annotations: &BTreeMap<String, String>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if annotations.is_empty() {
+        refuse(
+            diagnostics,
+            name,
+            format!("workload {name} declares annotations with none in them"),
+        );
+    }
+    let mut size = 0usize;
+    for (key, value) in annotations {
+        size = size.saturating_add(key.len()).saturating_add(value.len());
+        if !is_qualified_name(key) {
+            refuse(
+                diagnostics,
+                name,
+                format!(
+                    "workload {name} annotation key {key:?} is not a qualified name: an optional \
+                     DNS subdomain and '/', then at most 63 letters, digits, '-', '_' and '.', \
+                     beginning and ending alphanumeric"
+                ),
+            );
+        }
+    }
+    if size > ANNOTATIONS_LIMIT {
+        refuse(
+            diagnostics,
+            name,
+            format!(
+                "workload {name} annotations total {size} bytes, above the {ANNOTATIONS_LIMIT} \
+                 Kubernetes accepts"
+            ),
+        );
+    }
+}
+
+fn validate_affinity(name: &Identifier, affinity: &Affinity, diagnostics: &mut Vec<Diagnostic>) {
+    if affinity.spread_across.is_none() && affinity.node_labels.is_empty() {
+        refuse(
+            diagnostics,
+            name,
+            format!("workload {name} declares affinity with neither spread_across nor node_labels"),
+        );
+    }
+    if affinity.spread.is_some() && affinity.spread_across.is_none() {
+        refuse(
+            diagnostics,
+            name,
+            format!("workload {name} affinity declares spread without spread_across"),
+        );
+    }
+    if let Some(key) = affinity
+        .spread_across
+        .as_deref()
+        .filter(|key| !is_qualified_name(key))
+    {
+        refuse(
+            diagnostics,
+            name,
+            format!(
+                "workload {name} affinity spread_across {key:?} is not a node label key, such as \
+                 kubernetes.io/hostname"
+            ),
+        );
+    }
+    for (key, value) in &affinity.node_labels {
+        if !is_qualified_name(key) {
+            refuse(
+                diagnostics,
+                name,
+                format!("workload {name} affinity node_labels key {key:?} is not a label key"),
+            );
+        }
+        if !is_label_value(value) {
+            refuse(
+                diagnostics,
+                name,
+                format!(
+                    "workload {name} affinity node_labels {key:?} value {value:?} is not a label \
+                     value: at most 63 letters, digits, '-', '_' and '.', beginning and ending \
+                     alphanumeric"
+                ),
+            );
+        }
+    }
+}
+
+/// The `ess-runtime/2` rules for keys `ess-runtime/1` already reads: an `/1` document compiles
+/// exactly as it did, and a `/2` document is held to what Kubernetes and Helm accept.
+pub(crate) fn validate_version_2(
+    processes: &BTreeMap<Identifier, crate::runtime::Process>,
+    containers: &BTreeMap<Identifier, ContainerRole>,
+    workloads: &BTreeMap<Identifier, Workload>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    for process in processes.values() {
+        let name = &process.name;
+        if let ProcessImage::Reference(reference) = &process.image {
+            template(diagnostics, "process", name, "image", reference);
+        }
+        for argument in &process.entrypoint {
+            template(diagnostics, "process", name, "entrypoint", argument);
+        }
+        for argument in &process.arguments {
+            template(diagnostics, "process", name, "arguments", argument);
+        }
+    }
+    for container in containers.values() {
+        validate_version_2_container(container, diagnostics);
+    }
+    for workload in workloads.values() {
+        validate_version_2_workload(workload, diagnostics);
+    }
+}
+
+/// Refuses `text`, a string the chart renders as written, when Helm would evaluate it.
+fn template(
+    diagnostics: &mut Vec<Diagnostic>,
+    owner: &str,
+    subject: &Identifier,
+    field: &str,
+    text: &str,
+) {
+    if has_template_action(text) {
+        refuse(
+            diagnostics,
+            subject,
+            format!(
+                "{owner} {subject} {field} {text:?} carries a Helm template action \"{{{{\", \
+                 which the chart would evaluate at install time instead of stating it"
+            ),
+        );
+    }
+}
+
+fn validate_version_2_container(container: &ContainerRole, diagnostics: &mut Vec<Diagnostic>) {
+    let name = &container.name;
+    if !is_dns_label(name.as_str()) {
+        refuse(
+            diagnostics,
+            name,
+            format!(
+                "container {name} is not a DNS-1123 label (lowercase letters, digits and '-', \
+                     at most 63 characters), which Kubernetes requires of a container name"
+            ),
+        );
+    }
+    if container.http_port == Some(0) {
+        refuse(
+            diagnostics,
+            name,
+            format!("container {name} http_port 0 is not a port; use 1-65535"),
+        );
+    }
+    for (field, text) in [
+        ("readiness_path", &container.readiness_path),
+        ("liveness_path", &container.liveness_path),
+    ] {
+        if let Some(text) = text {
+            template(diagnostics, "container", name, field, text);
+        }
+    }
+    for slot in &container.config {
+        template(
+            diagnostics,
+            "container",
+            name,
+            "config environment",
+            &slot.environment,
+        );
+        if let Some(value) = &slot.value {
+            template(diagnostics, "container", name, "config value", value);
+        }
+    }
+    for slot in &container.endpoints {
+        template(
+            diagnostics,
+            "container",
+            name,
+            "endpoint environment",
+            &slot.environment,
+        );
+    }
+    for mount in &container.volume_mounts {
+        template(
+            diagnostics,
+            "container",
+            name,
+            "volume mount_path",
+            &mount.mount_path,
+        );
+    }
+    for slot in &container.secrets {
+        let slot_name = &slot.name;
+        if let Some(environment) = &slot.environment {
+            template(
+                diagnostics,
+                "secret slot",
+                slot_name,
+                "environment",
+                environment,
+            );
+        }
+        if let Some(mount) = &slot.mount {
+            template(
+                diagnostics,
+                "secret slot",
+                slot_name,
+                "mount path",
+                &mount.path,
+            );
+            for item in &mount.items {
+                template(diagnostics, "secret slot", slot_name, "item key", &item.key);
+                template(
+                    diagnostics,
+                    "secret slot",
+                    slot_name,
+                    "item path",
+                    &item.path,
+                );
+            }
+        }
+    }
+}
+
+fn validate_version_2_workload(workload: &Workload, diagnostics: &mut Vec<Diagnostic>) {
+    let name = &workload.name;
+    if !is_dns_label(name.as_str()) {
+        refuse(
+            diagnostics,
+            name,
+            format!(
+                "workload {name} is not a DNS-1123 label (lowercase letters, digits and '-', \
+                     at most 63 characters); its objects and Services are named after it"
+            ),
+        );
+    }
+    if let Some(replicas) = workload
+        .replicas
+        .filter(|replicas| i64::from(*replicas) > INT32_MAX)
+    {
+        refuse(
+            diagnostics,
+            name,
+            format!(
+                "workload {name} replicas {replicas} is above {INT32_MAX}, the largest value \
+                     Kubernetes reads"
+            ),
+        );
+    }
+    for volume in &workload.volumes {
+        if !is_dns_label(volume.name.as_str()) {
+            refuse(
+                diagnostics,
+                name,
+                format!(
+                    "workload {name} volume {} is not a DNS-1123 label (lowercase letters, \
+                         digits and '-', at most 63 characters), which Kubernetes requires of a \
+                         pod volume name",
+                    volume.name
+                ),
+            );
+        }
+    }
+    for value in workload.annotations.iter().flat_map(BTreeMap::values) {
+        template(diagnostics, "workload", name, "annotation", value);
+    }
 }
 
 /// One pod volume per mounted secret slot: two containers mounting one slot agree on it, and no
@@ -786,7 +1348,10 @@ pub(crate) fn validate_image(
 
 #[cfg(test)]
 mod tests {
-    use super::{cron_error, is_quantity, is_time_zone, octal_mode, unpinned};
+    use super::{
+        cron_error, exceeds, is_contained, is_dns_label, is_qualified_name, is_quantity,
+        is_secret_key, is_time_zone, octal_mode, unpinned,
+    };
 
     #[test]
     fn cron_expressions_kubernetes_reads_are_admitted() {
@@ -794,7 +1359,7 @@ mod tests {
             "2-59/10 * * * *",
             "0 0 * * *",
             "*/5 1,2,3 1-15 JAN-jun mon-FRI",
-            "0 0 ? * 7",
+            "0 0 ? * 6",
             "5/10 * * * *",
             "@hourly",
         ] {
@@ -805,7 +1370,8 @@ mod tests {
             "* 24 * * *",
             "* * 0 * *",
             "* * * 13 *",
-            "* * * * 8",
+            "* * * * 7",
+            "0 0 * * 5-7",
             "*/0 * * * *",
             "5-1 * * * *",
             "? * * * *",
@@ -842,5 +1408,53 @@ mod tests {
         assert!(is_time_zone("UTC"));
         assert!(!is_time_zone("europe/berlin"));
         assert!(!is_time_zone("Europe/Atlantis"));
+    }
+
+    #[test]
+    fn quantities_compare_exactly_across_suffixes() {
+        for (request, limit, above) in [
+            ("1500m", "1.5", false),
+            ("1.5", "1499m", true),
+            ("1Gi", "1024Mi", false),
+            ("1025Mi", "1Gi", true),
+            ("1G", "1Gi", false),
+            ("1Gi", "1G", true),
+            ("0.5n", "1n", false),
+            ("100m", "0.1", false),
+        ] {
+            assert_eq!(exceeds(request, limit), Some(above), "{request} > {limit}");
+        }
+        assert_eq!(exceeds("lots", "1"), None);
+    }
+
+    #[test]
+    fn names_keys_and_paths_kubernetes_accepts() {
+        for label in ["a", "secret-db", &"a".repeat(63)] {
+            assert!(is_dns_label(label), "{label}");
+        }
+        for label in ["", "-a", "a-", "a_b", "a.b", "A", &"a".repeat(64)] {
+            assert!(!is_dns_label(label), "{label}");
+        }
+        for key in [
+            "team",
+            "example.invalid/team",
+            "app.kubernetes.io/name",
+            "A_b.c",
+        ] {
+            assert!(is_qualified_name(key), "{key}");
+        }
+        for key in ["", "-team", "Example/team", "a/b/c", "a b", "/team"] {
+            assert!(!is_qualified_name(key), "{key}");
+        }
+        for key in ["token", "token.json", "a-b_c", ".hidden"] {
+            assert!(is_secret_key(key), "{key}");
+        }
+        for key in ["", ".", "..", "..data", "a/b", "a b"] {
+            assert!(!is_secret_key(key), "{key}");
+        }
+        assert!(is_contained("a/b"));
+        for path in ["..data", "..token", "a/../b", "/a", "a//b"] {
+            assert!(!is_contained(path), "{path}");
+        }
     }
 }

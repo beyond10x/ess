@@ -7,8 +7,9 @@ use crate::build::{BuildIr, BuildOutputKind};
 use crate::diagnostic::{Diagnostic, DiagnosticCode, Diagnostics, Stage};
 use crate::identity::{canonical_json, Digest, Identifier};
 use crate::workload_kind::{
-    container_v2_keys, validate_container_settings, validate_image, validate_workload_settings,
-    workload_v2_keys, PodSecurity, ProcessImage, Resources, Schedule, SecretMount,
+    container_v2_keys, validate_container_settings, validate_image, validate_version_2,
+    validate_workload_settings, workload_v2_keys, Affinity, PodSecurity, ProcessImage, Resources,
+    Schedule, SecretMount,
 };
 
 /// Human-authored deployable-runtime format.
@@ -159,6 +160,12 @@ pub struct ContainerRole {
     /// HTTP liveness path, when applicable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub liveness_path: Option<String>,
+    /// TCP readiness probe port (`ess-runtime/2`); a container takes this or `readiness_path`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub readiness_tcp_port: Option<u16>,
+    /// TCP liveness probe port (`ess-runtime/2`); a container takes this or `liveness_path`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub liveness_tcp_port: Option<u16>,
     /// Non-secret configuration interface.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub config: Vec<ConfigSlot>,
@@ -222,6 +229,12 @@ pub struct Workload {
     /// Whether the pod mounts its service-account token (`ess-runtime/2`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub service_account_token: Option<bool>,
+    /// Annotations on the pod (`ess-runtime/2`), keyed by qualified name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<BTreeMap<String, String>>,
+    /// Where the pods run (`ess-runtime/2`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub affinity: Option<Affinity>,
 }
 
 /// Human-authored mapping from semantic ESS to built runtime artifacts.
@@ -1258,5 +1271,8 @@ fn validate_format_keys(
     }
     for workload in workloads.values() {
         validate_workload_settings(workload, containers, provided_endpoints, diagnostics);
+    }
+    if version_1.is_none() {
+        validate_version_2(processes, containers, workloads, diagnostics);
     }
 }

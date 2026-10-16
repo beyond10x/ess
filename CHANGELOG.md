@@ -29,6 +29,15 @@
   and a process `image` given as a reference pinned by digest, rendered verbatim. An
   `ess-runtime/1` document keeps its compiled bytes, digest and chart, and refuses the new keys
   naming `ess-runtime/2` (`docs/design/runtime-workload-kinds.md`).
+- `ess-runtime/2` containers take TCP probes (`readiness_tcp_port`, `liveness_tcp_port`, rendered as
+  `tcpSocket`), and workloads take pod `annotations` and `affinity` (`node_labels` as required node
+  affinity, `spread_across` as pod anti-affinity against the workload's own pods, preferred unless
+  `spread: required`). An `ess-runtime/2` document is refused, naming the field, where the chart
+  would not install or not say what the document says: a day of week of 7, an `int32` count or a
+  pod security id above 2147483647, a container, workload, volume or mounted secret slot whose pod
+  name is not a DNS-1123 label, a secret item key Kubernetes refuses or an item path starting with
+  `..`, a request above its limit, and `{{` in any string the chart renders as written, which Helm
+  would evaluate at install time. `ess-runtime/1` documents compile as before.
 
 ### Fixed
 
@@ -48,7 +57,9 @@
 ### Changed
 
 - `ess-deployment`: `Process::image` is a `ProcessImage`, `Workload::replicas` an `Option<u32>`,
-  and `SecretSlot::environment` and `SecretSlot::key` are `Option<String>`, for `ess-runtime/2`.
+  and `SecretSlot::environment` and `SecretSlot::key` are `Option<String>`, for `ess-runtime/2`;
+  `ContainerRole` gains `readiness_tcp_port` and `liveness_tcp_port`, and `Workload` gains
+  `annotations` and `affinity` (`Affinity`, `Spread`).
 - CI: each test shard gets three 30-minute attempts per nextest archive download, the last one
   failing the job, so a slow artifact download no longer fails shards whose tests pass.
 

@@ -42,6 +42,9 @@ when meaning changes, so:
 | `read_only_root_filesystem` | `ContainerRole` | container `securityContext.readOnlyRootFilesystem` |
 | `mount: {path, items, mode}` | `SecretSlot` | a read-only `secret` volume with `items` and `defaultMode`, and its `volumeMount` |
 | `image: <repository>@sha256:<64 hex>` | `Process` | the reference verbatim, instead of the values-filled build output |
+| `readiness_tcp_port`, `liveness_tcp_port` | `ContainerRole` | a `tcpSocket` readiness or liveness probe; a container takes a path or a TCP port for each probe, not both |
+| `annotations: {<qualified name>: <text>}` | `Workload` | the pod template's `metadata.annotations` |
+| `affinity: {spread_across, spread, node_labels}` | `Workload` | the pod `affinity`: `node_labels` as required node affinity (`In` one value per label), `spread_across` (a node label key) as pod anti-affinity against the workload's own pods, preferred with weight 100 unless `spread: required` |
 
 Pod settings sit on the workload because a pod has one security context and one token mount;
 resources and the root filesystem sit on the container role because Kubernetes sets them per
@@ -58,6 +61,34 @@ declares at least one of them or a mount. The values file and its schema still t
 `Process.image` is one string: an identifier names a build output, as in `/1`; anything else is a
 reference that must be pinned by digest, and is refused by name otherwise. A pinned reference is
 not a build output, so it takes no `images:` entry in the values file.
+
+### What the API server and Helm accept
+
+A `/2` document is refused, by name, wherever the chart it renders would not install or would not
+say what the document says:
+
+- an integer past the Kubernetes field's type: `retry_limit`, `successful_runs`, `failed_runs` and
+  `replicas` (`int32`), and `run_as_user`, `run_as_group` and `fs_group` above 2147483647;
+- a day of week of 7: Kubernetes reads a schedule with `robfig/cron` v3, whose day of week is 0-6;
+- a pod volume, container or workload name that is not a DNS-1123 label, including the
+  `secret-<slot>` volume of a mounted secret slot;
+- a secret item key outside `[-._a-zA-Z0-9]`, or one that starts with `..`, and an item path that
+  starts with `..` (the kubelet's atomic writer reserves `..data`);
+- a cpu or memory request above its limit, compared exactly over the quantity's suffix;
+- a TCP probe port of 0, or a path and a TCP port for the same probe;
+- an annotation key that is not a qualified name, annotations above 256 KiB, an affinity label key
+  or value Kubernetes refuses, an empty `annotations:` or `affinity:`;
+- `{{` in any string the chart renders as written (an image reference, an entrypoint or argument,
+  a probe path, a config literal or environment name, a volume or secret mount path, a secret item
+  key or path, an annotation value). Every chart file is a Helm template, so `{{` would be evaluated
+  at install time, and an action such as `lookup` could read a cluster object into the manifest.
+
+The rules that bear on keys `/1` already reads (`replicas`, container and volume names, probe paths,
+config literals, mount paths) apply to `/2` documents only: a `/1` document compiles exactly as it
+did. The keys added after the first `/2` change (`readiness_tcp_port`, `liveness_tcp_port`,
+`annotations`, `affinity`) join `/2` rather than a `/3`, because no `ess` release has read `/2` yet;
+`/1` refuses each of them naming `ess-runtime/2`, and every compiled `/1` and `/2` IR without them
+keeps its bytes.
 
 ## The scheduled workload
 
@@ -112,13 +143,14 @@ it is visible in the document by the `schedule:` key.
 ## What the deployment-chain gaps share
 
 Resources, probes, placement and annotations are all pod-template statements. They share the
-renderer the scheduled job uses, so each lands once for every workload kind. This change adds
-resources, security, the token opt-out, secret volumes and digest-pinned images. TCP probes,
-affinity and annotations are not part of it.
+renderer the scheduled job uses, so each lands once for every workload kind. All of them are
+part of this change: resources, security, the token opt-out, secret volumes, digest-pinned images,
+TCP probes, affinity and annotations. Annotations are pod annotations (what admission
+controllers, sidecar injectors and scrapers read), not controller annotations.
 
 ### Per-environment overrides
 
-Resources (and placement, when it lands) are fixed in the runtime document and not overridden per
+Resources and placement are fixed in the runtime document and not overridden per
 environment. The runtime IR is pinned by digest into every release, and an environment binds only
 configuration, secrets, endpoints and the service account (`ess-environment/1`); a per-environment
 resource value would need a new environment key and a values path the projection reads. That is a

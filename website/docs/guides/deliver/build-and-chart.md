@@ -260,8 +260,28 @@ A scheduled workload takes no `replicas`, no legacy `storage`, no provided endpo
 readiness probe; each is refused naming the workload. Its named volumes become standalone
 `PersistentVolumeClaim`s, sized and classed in the values file like a StatefulSet's. The pod
 settings (`security`, `service_account_token`, `resources`, `read_only_root_filesystem`, secret
-mounts and pinned images) are taken by Deployments and StatefulSets too. Resources are not
-overridden per environment.
+mounts and pinned images) are taken by Deployments and StatefulSets too, and so are these:
+
+```yaml
+containers:
+  - name: runner
+    process: runner
+    readiness_tcp_port: 5432          # a tcpSocket probe; or readiness_path, not both
+    liveness_tcp_port: 5432
+workloads:
+  - name: ingest-a
+    annotations:                      # pod annotations
+      example.invalid/team: ingest
+    affinity:
+      spread_across: kubernetes.io/hostname   # no two pods of this workload on one node
+      spread: preferred               # preferred (default) or required
+      node_labels:                    # every pod's node carries these labels
+        example.invalid/pool: batch
+```
+
+Resources and placement are not overridden per environment. A string the chart renders as written
+(an image reference, a path, a literal, an annotation) may not carry `{{`, which Helm would
+evaluate at install time.
 
 The output directory also holds `.ess-output/state.json`, which records the files the projection
 owns, so running the same command again rewrites them in place

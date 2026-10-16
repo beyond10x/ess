@@ -155,6 +155,45 @@ mod old_reader {
     }
 
     #[test]
+    fn an_ess_runtime_1_document_refuses_probes_placement_and_annotations_by_name() {
+        let workload = "  - name: oracle\n    components: [order-service, dispatch-service]\n    containers: [runner]\n    replicas: 1\n";
+        for (containers, workloads, key) in [
+            (
+                format!("{RUNNER_CONTAINER}    readiness_tcp_port: 8080\n"),
+                workload.to_owned(),
+                "readiness_tcp_port",
+            ),
+            (
+                format!("{RUNNER_CONTAINER}    liveness_tcp_port: 8080\n"),
+                workload.to_owned(),
+                "liveness_tcp_port",
+            ),
+            (
+                RUNNER_CONTAINER.to_owned(),
+                format!("{workload}    annotations:\n      team: ingest\n"),
+                "annotations",
+            ),
+            (
+                RUNNER_CONTAINER.to_owned(),
+                format!("{workload}    affinity:\n      spread_across: kubernetes.io/hostname\n"),
+                "affinity",
+            ),
+        ] {
+            let text = refused(compile(
+                "ess-runtime/1",
+                RUNNER_PROCESS,
+                &containers,
+                &workloads,
+                "",
+            ));
+            assert!(
+                text.contains(key) && text.contains("ess-runtime/2"),
+                "{key}: {text}"
+            );
+        }
+    }
+
+    #[test]
     fn an_ess_runtime_2_document_compiles_to_runtime_ir_2() {
         let compiled = scheduled_ok(BOUNDED, "");
         let canonical = compiled.to_canonical_json();
@@ -363,6 +402,132 @@ mod pod_settings {
         reader_refuses(&runtime, |value| {
             value["processes"]["runner"]["image"] = serde_json::json!("example.invalid/runner");
         });
+    }
+
+    #[test]
+    fn a_workload_declares_its_pod_annotations() {
+        let runtime = service_ok(
+            "",
+            "    annotations:\n      example.invalid/team: ingest\n      prometheus.io/scrape: \"true\"\n",
+        );
+        let workloads = workloads_of(&runtime);
+        assert!(
+            workloads.contains(
+                "        app.kubernetes.io/component: oracle\n      annotations:\n        \"example.invalid/team\": \"ingest\"\n        \"prometheus.io/scrape\": \"true\"\n    spec:\n"
+            ),
+            "{workloads}"
+        );
+        let scheduled = scheduled_ok(BOUNDED, "    annotations:\n      team: ingest\n");
+        assert!(
+            workloads_of(&scheduled).contains(
+                "          annotations:\n            \"team\": \"ingest\"\n        spec:\n"
+            ),
+            "{}",
+            workloads_of(&scheduled)
+        );
+        for (bad, named) in [
+            ("    annotations: {}\n", "annotations"),
+            ("    annotations:\n      \"-team\": ingest\n", "-team"),
+            (
+                "    annotations:\n      \"Example/team\": ingest\n",
+                "Example/team",
+            ),
+            (
+                "    annotations:\n      team: \"{{ .Release.Name }}\"\n",
+                "annotation",
+            ),
+        ] {
+            let text = refused(service("", bad));
+            assert!(
+                text.contains("oracle") && text.contains(named),
+                "{bad}: {text}"
+            );
+        }
+        reader_refuses(&runtime, |value| {
+            value["workloads"]["oracle"]["annotations"] = serde_json::json!({"a b": "c"});
+        });
+    }
+
+    #[test]
+    fn a_container_declares_tcp_probes() {
+        let runtime = service_ok(
+            "    readiness_tcp_port: 5432\n    liveness_tcp_port: 5433\n",
+            "",
+        );
+        let workloads = workloads_of(&runtime);
+        assert!(
+            workloads.contains(
+                "          readinessProbe:\n            tcpSocket:\n              port: 5432\n          livenessProbe:\n            tcpSocket:\n              port: 5433\n"
+            ),
+            "{workloads}"
+        );
+        assert!(!workloads.contains("httpGet"), "{workloads}");
+        for (bad, named) in [
+            ("    readiness_tcp_port: 0\n", "readiness_tcp_port"),
+            (
+                "    http_port: 8080\n    liveness_path: /live\n    liveness_tcp_port: 8080\n",
+                "liveness_tcp_port",
+            ),
+        ] {
+            let text = refused(service(bad, ""));
+            assert!(
+                text.contains("runner") && text.contains(named),
+                "{bad}: {text}"
+            );
+        }
+        let text = refused(compile_v2(
+            &format!("{RUNNER_CONTAINER}    readiness_tcp_port: 8080\n"),
+            &scheduled(BOUNDED, ""),
+        ));
+        assert!(
+            text.contains("ingest-a") && text.contains("readiness"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn a_workload_declares_its_affinity() {
+        let runtime = service_ok(
+            "",
+            "    affinity:\n      spread_across: kubernetes.io/hostname\n      node_labels:\n        example.invalid/pool: batch\n",
+        );
+        let workloads = workloads_of(&runtime);
+        assert!(
+            workloads.contains(
+                "      affinity:\n        nodeAffinity:\n          requiredDuringSchedulingIgnoredDuringExecution:\n            nodeSelectorTerms:\n              - matchExpressions:\n                  - key: \"example.invalid/pool\"\n                    operator: In\n                    values: [\"batch\"]\n        podAntiAffinity:\n          preferredDuringSchedulingIgnoredDuringExecution:\n            - weight: 100\n              podAffinityTerm:\n                labelSelector:\n                  matchLabels:\n                    app.kubernetes.io/instance: {{ .Release.Name }}\n                    app.kubernetes.io/component: oracle\n                topologyKey: \"kubernetes.io/hostname\"\n      containers:\n"
+            ),
+            "{workloads}"
+        );
+        let required = service_ok(
+            "",
+            "    affinity:\n      spread_across: topology.kubernetes.io/zone\n      spread: required\n",
+        );
+        let workloads = workloads_of(&required);
+        assert!(
+            workloads.contains(
+                "        podAntiAffinity:\n          requiredDuringSchedulingIgnoredDuringExecution:\n            - labelSelector:\n                matchLabels:\n                  app.kubernetes.io/instance: {{ .Release.Name }}\n                  app.kubernetes.io/component: oracle\n              topologyKey: \"topology.kubernetes.io/zone\"\n      containers:\n"
+            ),
+            "{workloads}"
+        );
+        assert!(!workloads.contains("nodeAffinity"), "{workloads}");
+        for (bad, named) in [
+            ("    affinity: {}\n", "affinity"),
+            ("    affinity:\n      spread: required\n", "spread"),
+            (
+                "    affinity:\n      spread_across: \"not a key\"\n",
+                "not a key",
+            ),
+            (
+                "    affinity:\n      node_labels:\n        pool: \"-batch\"\n",
+                "-batch",
+            ),
+        ] {
+            let text = refused(service("", bad));
+            assert!(
+                text.contains("oracle") && text.contains(named),
+                "{bad}: {text}"
+            );
+        }
     }
 
     #[test]
