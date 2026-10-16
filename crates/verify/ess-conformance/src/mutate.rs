@@ -85,6 +85,11 @@ pub const REPORT_FORMAT_5: &str = "ess-mutation-report/5";
 /// `/5` that 0.57.0 and later releases wrote does not have. A report none of whose mutants carries
 /// it is `/5`, `/4` or `/3` exactly as before.
 pub const REPORT_FORMAT_6: &str = "ess-mutation-report/6";
+/// The report wherever a mutant carries `unchanged_suite`
+/// (<https://github.com/beyond10x/ess/issues/586>): [`REPORT_FORMAT_6`] with that member, which the
+/// `/6` that 0.60.0 and later releases wrote does not have. A report none of whose mutants carries
+/// it is `/6`, `/5`, `/4` or `/3` exactly as before.
+pub const REPORT_FORMAT_7: &str = "ess-mutation-report/7";
 
 // ---- the classes --------------------------------------------------------------------------------
 
@@ -206,7 +211,8 @@ pub enum MutateCode {
     /// scenario failed: what the mutant changed has no scenario in its suite, so passing what is
     /// left says nothing about it. Also a mutant on an outcome whose scenario the baseline's suite
     /// already refused, or on a transition only such outcomes perform: neither suite can witness
-    /// what it changed.
+    /// what it changed. Also a mutant whose synthesized suite asks the target exactly what the
+    /// baseline's asks: no scenario of it could kill the mutant.
     Unwitnessed,
     /// A guard mutant left its outcome's guard satisfied by no input, and no scored scenario
     /// failed and none it changed went unscored: the rule it wrote is dead, not missed.
@@ -246,10 +252,11 @@ crate::authored::diagnostic_catalogue! {
             "select classes that apply to the specification, or leave `--class` out to run \
              every class";
         Self::Unwitnessed => 4,
-            "A mutant's suite gained synthesis refusals the baseline's does not have and no \
-             scored scenario failed, so passing what is left says nothing about the mutant.",
-            "repair the synthesis refusal the verdict names, so the suite has a scenario for \
-             what the mutant changed";
+            "A mutant's suite gained synthesis refusals the baseline's does not have, or asks \
+             exactly what the baseline's asks, and no scored scenario failed, so passing it says \
+             nothing about the mutant.",
+            "repair the synthesis refusal the verdict names, or declare what makes the change \
+             observable, so the suite has a scenario for what the mutant changed";
         Self::Equivalent => 5,
             "A guard mutant left its outcome's guard satisfied by no input: the rule it wrote is \
              dead, not missed.",
@@ -2956,6 +2963,9 @@ pub enum Verdict {
     /// refusals the baseline's does not have, or the mutant is on an outcome whose scenario the
     /// baseline's suite refused, or on a transition only such outcomes perform. What the mutant
     /// changed has no scenario, so what is left passing is not a finding that the suite misses it.
+    /// Also a mutant otherwise `survived` or `inconclusive` whose synthesized suite asks the target
+    /// exactly what the baseline's asks ([`MutantEntry::unchanged_suite`],
+    /// <https://github.com/beyond10x/ess/issues/586>).
     Unwitnessed,
     /// `ESS-MUTATE-005`: no scored scenario failed, and the mutant left its outcome's guard
     /// satisfied by no input — beside a `when_subject:` guard, by no input on any row — and no
@@ -3213,6 +3223,13 @@ pub struct MutantEntry {
     /// Why it never ran; only on `stillborn`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stillborn: Option<Stillborn>,
+    /// Whether its synthesized suite is the baseline's, scenario for scenario and step for step,
+    /// on a mutant that is `unwitnessed` for that alone
+    /// (<https://github.com/beyond10x/ess/issues/586>): run on the target, that suite asks exactly
+    /// what the baseline asked, so nothing of it could kill the mutant. Written only where it is
+    /// so, and only in `ess-mutation-report/7`.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub unchanged_suite: bool,
     /// The guard the mutant left its outcome, as written, where no input satisfies it while some
     /// input satisfies the baseline's guard there; absent where that is not so or cannot be
     /// decided, and in a report collected from an `ess-mutation-manifest/1` or `/2` emission.
@@ -3365,7 +3382,9 @@ impl MutationReport {
     fn write_reasons(&self, tail: &mut String, entry: &MutantEntry) {
         if entry.verdict == Verdict::Unwitnessed {
             let _ = write!(tail, " — {}", MutateCode::Unwitnessed.code());
-            if entry.added_refusals.is_none() && entry.baseline_refusals.is_none() {
+            if entry.unchanged_suite {
+                tail.push_str(": the suite does not change");
+            } else if entry.added_refusals.is_none() && entry.baseline_refusals.is_none() {
                 let _ = write!(
                     tail,
                     ": {} refusal(s) against the baseline's {}",
@@ -3894,6 +3913,9 @@ struct Ruler {
     unexecuted: BTreeSet<String>,
     /// The baseline's own copy of each scenario in `unexecuted`.
     unexecuted_bodies: Bodies,
+    /// Every baseline scenario, by id: a mutant whose synthesized suite asks what this one asks is
+    /// `unwitnessed` rather than `survived` (<https://github.com/beyond10x/ess/issues/586>).
+    bodies: Bodies,
     not_scored: Vec<NotScored>,
     refused: Refused,
     /// Every outcome, as `<command>/<outcome>`, some baseline scenario requires a command to take.
@@ -4087,12 +4109,28 @@ impl Ruler {
         Ok(Self {
             unexecuted,
             unexecuted_bodies,
+            bodies: observed.bodies.clone(),
             not_scored,
             refused,
             witnessed,
             performers,
             known,
         })
+    }
+
+    /// Whether the mutant's run `observed` asks the target exactly what the baseline's asked: the
+    /// same scenario ids, each with the same steps and one-time trace (a purpose, a source list
+    /// and the suite's digests ask nothing). Never where an authored scenario ran, because that
+    /// runs on the interpreter of the mutant, so an unchanged one still asks something new.
+    fn asks_as_baseline(&self, observed: &Observed) -> bool {
+        observed.authored.is_empty()
+            && observed.bodies.len() == self.bodies.len()
+            && observed.bodies.iter().all(|(id, scenario)| {
+                self.bodies.get(id).is_some_and(|baseline| {
+                    baseline.steps == scenario.steps
+                        && baseline.one_time_response == scenario.one_time_response
+                })
+            })
     }
 
     /// Whether `id`, a scenario of a mutant's suite, may witness it: the baseline executed it,
@@ -4194,26 +4232,7 @@ impl Ruler {
             .cloned()
             .collect();
         excluded.sort();
-        let (gained, added) = match (&self.refused.keys, &refused.keys) {
-            (Some(baseline), Some(mutant)) => {
-                // Per-key counts: a second refusal with a key the baseline holds once is gained.
-                let mut held: std::collections::BTreeMap<&RefusalKey, usize> =
-                    std::collections::BTreeMap::new();
-                for key in baseline {
-                    *held.entry(key).or_default() += 1;
-                }
-                let mut added: Vec<RefusalKey> = Vec::new();
-                for key in mutant {
-                    match held.get_mut(key) {
-                        Some(count) if *count > 0 => *count -= 1,
-                        _ => added.push(key.clone()),
-                    }
-                }
-                added.sort();
-                (!added.is_empty(), (!added.is_empty()).then_some(added))
-            }
-            _ => (refused.count > self.refused.count, None),
-        };
+        let (gained, added) = self.gained_refusals(refused);
         // Under a declaration: each scenario that is not a baseline-passing control, and why. A
         // declared scenario the mutant changed, or one new to its suite, could have killed it had
         // the baseline passed it, so either hides a kill as an unexecuted changed scenario does.
@@ -4269,6 +4288,15 @@ impl Ruler {
         if witnessless && !(gained || at_baseline.is_some()) {
             entry.verdict = Verdict::Inconclusive;
         }
+        // A suite that asks the target exactly what the baseline's asked cannot kill the mutant,
+        // so what is left passing is not a scenario the suite misses: `killed` and `equivalent`
+        // stand, `survived` and `inconclusive` do not (https://github.com/beyond10x/ess/issues/586).
+        if matches!(entry.verdict, Verdict::Survived | Verdict::Inconclusive)
+            && self.asks_as_baseline(observed)
+        {
+            entry.verdict = Verdict::Unwitnessed;
+            entry.unchanged_suite = true;
+        }
         entry.baseline_refusals = at_baseline;
         entry.unsatisfiable_guard = dead;
         entry.identical_answer = identical;
@@ -4290,6 +4318,31 @@ impl Ruler {
         entry.exclusions = exclusions.filter(|found| !found.is_empty());
         entry.refusals = Some(refused.count);
         entry.scenarios = Some(observed.scenarios.len());
+    }
+
+    /// Whether the mutant's suite gained synthesis refusals the baseline's does not have, and, where
+    /// both suites key their refusals, the gained keys in order.
+    fn gained_refusals(&self, refused: &Refused) -> (bool, Option<Vec<RefusalKey>>) {
+        match (&self.refused.keys, &refused.keys) {
+            (Some(baseline), Some(mutant)) => {
+                // Per-key counts: a second refusal with a key the baseline holds once is gained.
+                let mut held: std::collections::BTreeMap<&RefusalKey, usize> =
+                    std::collections::BTreeMap::new();
+                for key in baseline {
+                    *held.entry(key).or_default() += 1;
+                }
+                let mut added: Vec<RefusalKey> = Vec::new();
+                for key in mutant {
+                    match held.get_mut(key) {
+                        Some(count) if *count > 0 => *count -= 1,
+                        _ => added.push(key.clone()),
+                    }
+                }
+                added.sort();
+                (!added.is_empty(), (!added.is_empty()).then_some(added))
+            }
+            _ => (refused.count > self.refused.count, None),
+        }
     }
 
     fn size(&self, scenarios: usize) -> SuiteSize {
@@ -4393,6 +4446,7 @@ fn blank_entry(mutant: &Mutant) -> MutantEntry {
         refusals: None,
         scenarios: None,
         stillborn: None,
+        unchanged_suite: false,
         unsatisfiable_guard: None,
         unscored: None,
         verdict: Verdict::Stillborn,
@@ -4662,12 +4716,15 @@ fn manifest_format(entries: &[EmittedMutant], version4: bool) -> &'static str {
     }
 }
 
+/// [`REPORT_FORMAT_7`] where a mutant carries `unchanged_suite`, which `/6` does not have; else
 /// [`REPORT_FORMAT_6`] where a mutant carries `overlap_taken_by`, which `/5` does not have; else
 /// [`REPORT_FORMAT_5`] where a mutant carries `identical_answer`, which `/4` does not have; else
 /// [`REPORT_FORMAT_4`] where `fourth` (a component, a declaration or an unavailable site) asks for
 /// it; else [`REPORT_FORMAT`].
 fn report_format(entries: &[MutantEntry], fourth: bool) -> String {
-    if entries.iter().any(|entry| entry.overlap_taken_by.is_some()) {
+    if entries.iter().any(|entry| entry.unchanged_suite) {
+        REPORT_FORMAT_7
+    } else if entries.iter().any(|entry| entry.overlap_taken_by.is_some()) {
         REPORT_FORMAT_6
     } else if entries.iter().any(|entry| entry.identical_answer.is_some()) {
         REPORT_FORMAT_5
@@ -4847,6 +4904,7 @@ impl EmittedMutant {
             refusals: None,
             scenarios: None,
             stillborn: self.stillborn.clone(),
+            unchanged_suite: false,
             // Named whatever the report scores it; only a scored run can make it `equivalent`.
             unsatisfiable_guard: self.unsatisfiable_guard.clone(),
             unscored: None,

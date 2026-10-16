@@ -695,6 +695,12 @@ does not have. An emission or a report is `/6` only where some mutant carries it
 one keeps `/5`, `/4` or `/3` and its earlier bytes. `--collect` still reads `/5` and earlier,
 and refuses any of them that carries `overlap_taken_by`, naming `/6`.
 
+`ess-mutation-report/7` is unreleased. It is `/6` with `unchanged_suite` on a mutant that is
+`unwitnessed` because its synthesized suite asks what the baseline's asks (beyond10x/ess#586),
+which the `/6` that 0.60.0 and later releases wrote does not have. A report is `/7` only where
+some mutant carries it; every other one keeps `/6`, `/5`, `/4` or `/3` and its earlier bytes. No
+manifest version moves: `--collect` decides it from the suites themselves.
+
 ## Every other family
 
 Each family below is read by a build that admits only the versions listed, and refuses a document

@@ -815,8 +815,11 @@ And defects the explorer itself could have:
   (the last two since beyond10x/ess#212).
 - **P1-9.** A class with no site gives `ESS-MUTATE-003` and exit 3.
 - **P1-10.** A fixture `tests/fixtures/mutation-survivor.yaml`, where a `sets` field has a
-  same-typed sibling and no view reads it, has exactly one survivor: that `sets-retarget`.
-- **CLI.** Exit 0 (`--class transition-to` on billing), exit 1 (the P1-10 fixture), exit 3 (P1-9),
+  same-typed sibling and no view reads it, has exactly one survivor: that `sets-retarget`. Since
+  beyond10x/ess#586 it is `unwitnessed` instead, with no survivor: its suite is the baseline's.
+- **CLI.** Exit 0 (`--class transition-to` on billing), exit 1 (the P1-10 fixture;
+  since beyond10x/ess#586 the `explore.yaml` `guard-boundary` survivor, the P1-10 fixture exiting
+  3), exit 3 (P1-9),
   the `--format json` bytes equal `--report-out`, and every code is named in `formats.md`.
 
 **Part 2**: `crates/verify/ess-conformance/tests/explore.rs`, which drives a TS lane (compiled

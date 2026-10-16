@@ -122,8 +122,9 @@ fn a_swap_of_two_refusals_answering_alike_is_equivalent_naming_the_shared_answer
          overlap: {open:#}"
     );
     assert_eq!(
-        json["format"], "ess-mutation-report/5",
-        "`ess-mutation-report/4`, which 0.53.0 to 0.56.0 wrote, has no `identical_answer`"
+        json["format"], "ess-mutation-report/7",
+        "`ess-mutation-report/4`, which 0.53.0 to 0.56.0 wrote, has no `identical_answer`; `/7`, \
+         because `CHECK` carries `unchanged_suite`"
     );
     assert!(
         text.lines()
@@ -139,8 +140,9 @@ fn refusals_differing_in_error_or_payload_keep_their_scoring() {
     let text = report.render_text();
     let json: Value = serde_json::from_str(&report.to_canonical_json()).unwrap();
     for (id, verdict) in [
-        // The same error, a payload read from different inputs.
-        (CHECK, "survived"),
+        // The same error, a payload read from different inputs that no synthesized scenario tells
+        // apart: its suite is the baseline's (https://github.com/beyond10x/ess/issues/586).
+        (CHECK, "unwitnessed"),
         // Different errors, overlapping below 10 (https://github.com/beyond10x/ess/issues/472).
         (GRADE, "killed"),
     ] {
@@ -171,12 +173,13 @@ fn the_manifest_and_the_collected_report_name_the_shared_answer_apart_from_a_dea
     let report =
         mutate::collect(|path| written.get(path).cloned()).unwrap_or_else(|it| panic!("{it}"));
     let json: Value = serde_json::from_str(&report.to_canonical_json()).unwrap();
-    assert_eq!(json["format"], "ess-mutation-report/5");
+    assert_eq!(json["format"], "ess-mutation-report/7");
     let open = mutant(&json, OPEN);
     assert_eq!(open["verdict"], "equivalent", "{}", report.render_text());
     assert_eq!(open["identical_answer"], SHARED);
     let check = mutant(&json, CHECK);
-    assert_eq!(check["verdict"], "survived", "{}", report.render_text());
+    assert_eq!(check["verdict"], "unwitnessed", "{}", report.render_text());
+    assert_eq!(check["unchanged_suite"], true, "{check:#}");
 }
 
 #[test]
@@ -872,4 +875,170 @@ fn a_swap_of_branches_addressing_the_same_row_names_the_overlap_taken() {
         "{swap:#}\n{text}"
     );
     assert_eq!(swap["verdict"], "equivalent", "{swap:#}\n{text}");
+}
+
+/// A mutant whose synthesized suite is the baseline's, scenario for scenario and step for step, is
+/// `unwitnessed` (`ESS-MUTATE-004`) with `unchanged_suite`, not `survived`: run on the target, that
+/// suite asks exactly what the baseline asked, so no scenario of it could kill the mutant
+/// (<https://github.com/beyond10x/ess/issues/586>). A class-specific equivalence still wins.
+mod identical_suite {
+    use super::*;
+
+    /// `expiry < now` to `expiry <= now`: the two differ only where the stored expiry is the
+    /// target's `now`, which synthesis never places.
+    const BOUNDARY: &str = "guard-boundary/demo.codes.Redeem/expired/when_subject/0";
+    const UNCHANGED: &str = " — ESS-MUTATE-004: the suite does not change";
+
+    /// `explore.yaml`'s `score >= 50` to `score > 50`: its suite writes a witness at 50, so it
+    /// differs from the baseline's, and still passes.
+    const DIFFERING: &str = "guard-boundary/explore.desk.Grade/high/0";
+
+    fn clocked() -> (Vec<Document>, SourceMap) {
+        loaded("mutation-clocked-expiry.yaml")
+    }
+
+    fn loaded(name: &str) -> (Vec<Document>, SourceMap) {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures")
+            .join(name);
+        let text = std::fs::read_to_string(&path).expect("the fixture is readable");
+        let label = name.to_owned();
+        let raw = RawSpecFile::parse(&text).expect("the fixture is well formed");
+        let mut texts = SourceMap::new();
+        texts.insert(label.clone(), text);
+        (vec![(Source::new(label), raw)], texts)
+    }
+
+    /// The emission of `classes` over `files`, with the report the interpreter of the unchanged
+    /// model writes beside every suite, as the project's runner would.
+    fn emitted_and_run(
+        (files, texts): (Vec<Document>, SourceMap),
+        classes: &[MutantClass],
+    ) -> BTreeMap<String, String> {
+        let ir = mutate::compile(files.clone(), &texts).expect("the model compiles");
+        let emission = mutate::emit_for(&files, &texts, classes, None).expect("the model emits");
+        let mut written = emission.files.clone();
+        let mut dirs = vec![BASELINE_DIR.to_owned()];
+        dirs.extend(
+            emission
+                .manifest
+                .mutants
+                .iter()
+                .filter_map(|it| it.dir.clone()),
+        );
+        for dir in dirs {
+            let admitted =
+                AdmittedSuite::from_json(&emission.files[&format!("{dir}/{SUITE_FILE}")])
+                    .expect("an emitted suite is admitted");
+            let run = Runner::for_suite(admitted.suite())
+                .run_admitted(&admitted, &Interpreted::for_model(ir.clone()));
+            let text = CountReport::from_run(&run, &admitted)
+                .unwrap()
+                .to_canonical_json()
+                .unwrap();
+            written.insert(format!("{dir}/{REPORT_FILE}"), text);
+        }
+        written
+    }
+
+    /// The scenarios of the suite emitted for `dir`, as JSON.
+    fn scenarios(written: &BTreeMap<String, String>, dir: &str) -> Value {
+        let suite: Value = serde_json::from_str(&written[&format!("{dir}/{SUITE_FILE}")]).unwrap();
+        suite["scenarios"].clone()
+    }
+
+    fn assert_unwitnessed(json: &Value, text: &str) {
+        let entry = mutant(json, BOUNDARY);
+        assert_eq!(entry["verdict"], "unwitnessed", "{entry:#}\n{text}");
+        assert_eq!(entry["unchanged_suite"], true, "{entry:#}");
+        assert_eq!(json["counts"]["survived"], 0, "{text}");
+        assert_eq!(json["counts"]["unwitnessed"], 1, "{text}");
+        assert_eq!(
+            json["format"], "ess-mutation-report/7",
+            "`ess-mutation-report/6`, which 0.60.0 wrote, has no `unchanged_suite`"
+        );
+        assert!(
+            text.lines().any(
+                |line| line.starts_with(&format!("unwitnessed {BOUNDARY}: "))
+                    && line.contains(UNCHANGED)
+            ),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn identical_suite_mutant_is_unwitnessed() {
+        let (files, texts) = clocked();
+        let ir = mutate::compile(files.clone(), &texts).expect("the fixture compiles");
+        let report = mutate::audit(&files, &texts, &[MutantClass::GuardBoundary], || {
+            Interpreted::for_model(ir.clone())
+        })
+        .unwrap_or_else(|refusal| panic!("{refusal}"));
+        let text = report.render_text();
+        let json: Value = serde_json::from_str(&report.to_canonical_json()).unwrap();
+        assert_unwitnessed(&json, &text);
+
+        // `--emit`, then `--collect`: the manifest carries nothing new, the collector decides it.
+        let written = emitted_and_run(clocked(), &[MutantClass::GuardBoundary]);
+        assert_eq!(
+            scenarios(&written, BASELINE_DIR),
+            scenarios(&written, BOUNDARY),
+            "the reproduction's mutant suite is the baseline's"
+        );
+        let manifest: Value = serde_json::from_str(&written[MANIFEST_FILE]).unwrap();
+        assert_eq!(
+            manifest["format"], "ess-mutation-manifest/3",
+            "{manifest:#}"
+        );
+        assert!(mutant(&manifest, BOUNDARY).get("unchanged_suite").is_none());
+        let collected =
+            mutate::collect(|path| written.get(path).cloned()).unwrap_or_else(|it| panic!("{it}"));
+        let text = collected.render_text();
+        let json: Value = serde_json::from_str(&collected.to_canonical_json()).unwrap();
+        assert_unwitnessed(&json, &text);
+    }
+
+    #[test]
+    fn differing_suite_mutant_still_survives() {
+        let written = emitted_and_run(loaded("explore.yaml"), &[MutantClass::GuardBoundary]);
+        assert_ne!(
+            scenarios(&written, BASELINE_DIR),
+            scenarios(&written, DIFFERING),
+            "the boundary mutant's suite differs from the baseline's"
+        );
+        let (files, texts) = loaded("explore.yaml");
+        let ir = mutate::compile(files.clone(), &texts).expect("the fixture compiles");
+        let report = mutate::audit(&files, &texts, &[MutantClass::GuardBoundary], || {
+            Interpreted::for_model(ir.clone())
+        })
+        .unwrap_or_else(|refusal| panic!("{refusal}"));
+        let collected =
+            mutate::collect(|path| written.get(path).cloned()).unwrap_or_else(|it| panic!("{it}"));
+        for report in [report, collected] {
+            let text = report.render_text();
+            let json: Value = serde_json::from_str(&report.to_canonical_json()).unwrap();
+            let survivor = mutant(&json, DIFFERING);
+            assert_eq!(survivor["verdict"], "survived", "{survivor:#}\n{text}");
+            assert!(survivor.get("unchanged_suite").is_none(), "{survivor:#}");
+        }
+    }
+
+    #[test]
+    fn class_specific_equivalence_wins() {
+        let report = audit(&[MutantClass::PrecedenceSwap]);
+        let json: Value = serde_json::from_str(&report.to_canonical_json()).unwrap();
+        let open = mutant(&json, OPEN);
+        assert_eq!(open["verdict"], "equivalent", "{open:#}");
+        assert!(open.get("unchanged_suite").is_none(), "{open:#}");
+        assert_eq!(
+            json["format"], "ess-mutation-report/7",
+            "`CHECK` carries `unchanged_suite`"
+        );
+
+        let (json, text) = job_audit(COVERING);
+        let swap = mutant(&json, SWAP);
+        assert_eq!(swap["verdict"], "equivalent", "{swap:#}\n{text}");
+        assert!(swap.get("unchanged_suite").is_none(), "{swap:#}");
+        assert_eq!(json["format"], "ess-mutation-report/6", "{text}");
+    }
 }
