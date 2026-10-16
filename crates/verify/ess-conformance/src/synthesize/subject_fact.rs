@@ -474,6 +474,18 @@ fn evaluate_row(
                 .map(|value| (name.clone(), value.clone())),
         })
         .collect();
+    // A field holding a row the arrangement made — the review a later `updates:` stored — holds a
+    // value, whichever identity that row is given: `defined()` is decided on it, and every other
+    // reading stays undecided (beyond10x/ess#553).
+    for (name, determined) in settled {
+        if let ScenarioValue::Instance { instance } = &determined.value {
+            if !values.contains_key(name) && only_defined(predicate, name) {
+                if let Some(token) = row_token(ir, &declared.fields, name, instance) {
+                    values.insert(name.clone(), token);
+                }
+            }
+        }
+    }
     // An `Optional` field no step of the arrangement wrote holds nothing (beyond10x/ess#239): the
     // row as its creator left it, which `{exists: false}` and `not defined()` select.
     for field in unwritten {
@@ -785,6 +797,40 @@ fn link_facts(
         }
     }
     out
+}
+
+/// Whether every leaf of `predicate` reading the row's `field` is `defined(field)`
+/// (beyond10x/ess#553).
+fn only_defined(predicate: &Predicate, field: &str) -> bool {
+    let mut found = Vec::new();
+    leaves(predicate, &mut found);
+    found.iter().all(|leaf| match leaf {
+        Predicate::Defined(path) if path.namespace() == field => path.segments().len() == 1,
+        other => !other
+            .fact_paths()
+            .into_iter()
+            .any(|path| path.namespace() == field),
+    })
+}
+
+/// A value of the stored `field` standing for the arranged row `instance`, as [`token`] gives one
+/// for an input field.
+fn row_token(
+    ir: &EssIr,
+    fields: &[ess_compiler::ir::ResolvedField],
+    field: &str,
+    instance: &super::InstanceName,
+) -> Option<Node> {
+    let path = FactPath::new(field).ok()?;
+    let declared = |primitive| crate::input::declared_as(ir, fields, &path, primitive);
+    let text = format!("instance:{instance}");
+    if declared(ess_domain::types::Primitive::Uuid) {
+        Some(Node::Text(crate::witness::uuid_of(&text)))
+    } else if declared(ess_domain::types::Primitive::String) {
+        Some(Node::Text(text))
+    } else {
+        None
+    }
 }
 
 /// Whether every leaf of `predicate` reading the row's `field` or `input.<sent>` is an `==` or `!=`
@@ -4633,6 +4679,67 @@ fn search_from<T>(
     )
 }
 
+thread_local! {
+    /// The rows a search on this thread is advancing, innermost last ([`holding`]).
+    static HELD: std::cell::RefCell<Vec<(*const EssIr, EntityHandle, Arrangement)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// One row held for the arranging runs advancing it, until dropped ([`holding`]).
+pub(super) struct Holding;
+
+impl Drop for Holding {
+    fn drop(&mut self) {
+        HELD.with(|held| {
+            held.borrow_mut().pop();
+        });
+    }
+}
+
+/// Holds `row`, of `entity`, for the runs that advance it (beyond10x/ess#553).
+///
+/// A run arranging a row can need a related row the scenario does not hold yet — the review a
+/// seal stores, moved to `Approved` first — whose own commands read the row being advanced: the
+/// review is filed under the incident, and its approval refuses a locked one. That row is no
+/// further row to arrange but this one, as the steps so far leave it, so those commands are decided
+/// on it ([`held`], [`held_owner`]) instead of stopping at the cycle.
+pub(super) fn holding(ir: &EssIr, entity: &EntityHandle, row: &Arrangement) -> Holding {
+    HELD.with(|held| {
+        held.borrow_mut()
+            .push((std::ptr::from_ref(ir), entity.clone(), row.clone()));
+    });
+    Holding
+}
+
+/// The held row of `entity` named `instance` ([`holding`]), as the steps so far leave it.
+pub(super) fn held(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    instance: &super::InstanceName,
+) -> Option<Arrangement> {
+    HELD.with(|held| {
+        held.borrow()
+            .iter()
+            .rev()
+            .find(|(model, of, row)| {
+                std::ptr::eq(*model, ir) && of == entity && row.instance == *instance
+            })
+            .map(|(_, _, row)| row.clone())
+    })
+}
+
+/// The innermost held row ([`holding`]) of the entity that owns `entity`, where `entity` is owned.
+pub(super) fn held_owner(ir: &EssIr, entity: &EntityHandle) -> Option<Arrangement> {
+    let owner = ir.owner_of(entity)?.owner;
+    HELD.with(|held| {
+        held.borrow()
+            .iter()
+            .rev()
+            .find(|(model, of, _)| std::ptr::eq(*model, ir) && *of == owner)
+            .map(|(_, _, row)| row.clone())
+    })
+}
+
 /// The bounded search shared by fresh creations and an already observed row.
 #[allow(clippy::too_many_arguments)]
 fn search_rows<T>(
@@ -4705,6 +4812,7 @@ fn search_rows<T>(
         }
         let mut next = Vec::new();
         for node in &fresh {
+            let _held = holding(ir, entity, node);
             for driver in drivers {
                 if matches!(
                     driver.effect,

@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Synthesis arranges a guarded stored value or a related row's state through the declared command
+  that reaches it: a `when_subject: defined(field)` branch whose field only a later `updates:`
+  writes, a `when_related` branch over an owned row moved to the state it reads, and a row-set
+  guard over the subject's owned rows in a moved state now get scenarios instead of
+  `ESS-SYNTH-003`/`ESS-SYNTH-001`. A field written by another command's `affects:` is not yet
+  arranged (https://github.com/beyond10x/ess/issues/553).
+
 ## [0.61.0] — 2026-10-15
 
 ### Added

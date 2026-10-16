@@ -473,6 +473,16 @@ pub(in crate::synthesize) fn step(
     arranging: &[&EntityHandle],
 ) -> Result<Arrangement, RefusalCause> {
     let (field, related) = field(driver.command).ok_or_else(unarranged)?;
+    // A reference naming the row a search is advancing — the incident a review is filed under,
+    // while the incident is arranged — is decided on that row, and left as it is
+    // (beyond10x/ess#553).
+    if let Some(ScenarioValue::Instance { instance }) =
+        arrangement.settled.get(field).map(|held| &held.value)
+    {
+        if let Some(row) = super::super::subject_fact::held(ir, related, instance) {
+            return on_held(ir, driver, arrangement, actors, distinction, related, &row);
+        }
+    }
     let absent = without(ir, driver, arrangement, actors, distinction, field);
     let Err(absent) = absent else {
         return absent;
@@ -500,6 +510,40 @@ pub(in crate::synthesize) fn step(
             ),
         )
     })
+}
+
+/// [`step`] on the row a search is advancing, which the stored reference already names: sent with
+/// an input on which that row selects the branch.
+fn on_held(
+    ir: &EssIr,
+    driver: &super::super::Driver<'_>,
+    arrangement: &Arrangement,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    related: &EntityHandle,
+    row: &Arrangement,
+) -> Result<Arrangement, RefusalCause> {
+    let inputs = super::held_inputs(ir, driver.command, related, row, None, distinction)?;
+    let tried = inputs.len();
+    let input = inputs
+        .into_iter()
+        .find(|input| {
+            selects(ir, driver.command, related, Some(row), input)
+                .ok()
+                .flatten()
+                .is_some_and(|branch| branch.name == driver.outcome.name)
+        })
+        .ok_or_else(|| RefusalCause::GuardUnsatisfiable {
+            predicate: format!(
+                "the row of `{}` the arrangement is advancing, which the stored reference of the \
+                 addressed subject names, does not select `{}/{}` as the steps so far leave it",
+                related.name(),
+                driver.command.name,
+                driver.outcome.name
+            ),
+            tried,
+        })?;
+    Ok(advanced(ir, driver, arrangement.clone(), actors, &input))
 }
 
 /// A refusal's reason, without its code.
