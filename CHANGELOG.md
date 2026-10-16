@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.62.0] — 2026-10-16
+
 ### Added
 
 - The generated Rust decoder of a newtype enforces what the newtype declares: its alphabet, its

@@ -260,7 +260,7 @@ pub const FORMAT_HISTORY: &[FormatHistoryEntry] = &[
     },
     FormatHistoryEntry {
         major: 26,
-        release: None,
+        release: Some("0.62.0"),
         added: &[
             "A named `external:` refusal of a command that addresses an existing row, `before_row: true` included, changes nothing on that row: its scenario snapshots the complete row before forcing the branch and requires it unchanged afterwards, as a held-state refusal's does, so a target that deletes or rewrites the row on the forced branch fails; a `compensates: true` refusal keeps its read-back of the declared change, and below `ess/26` the scenario keeps its bytes (beyond10x/ess#587).",
         ],

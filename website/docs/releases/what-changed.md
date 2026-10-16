@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.62.0 — 2026-10-16
+
+### A suite holds a command at a fixed now, so a guard on a time boundary is tested exactly there
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.62.0)
+
+A conformance suite can hold the instant a target reads as `now` for one command, and synthesis adds a scenario on each `now` boundary a command decides by. Format `ess/26` holds an external refusal beside an existing row to leave it unchanged. Generated Rust decoders enforce a newtype's alphabet and length; the Go and TypeScript explorers draw timestamps.
+
 ## 0.61.0 — 2026-10-15
 
 ### Concurrent histories record each call's input and events, and check-history holds them

@@ -217,8 +217,8 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-conformance", 48, Some("0.58.0")),
     ("ess-conformance", 49, Some("0.58.0")),
     // A held `now` for one command (beyond10x/ess#586).
-    ("ess-conformance", 50, None),
-    ("ess-conformance", 51, None),
+    ("ess-conformance", 50, Some("0.62.0")),
+    ("ess-conformance", 51, Some("0.62.0")),
     ("ess-composition", 1, Some("0.4.0")),
     ("ess-composition", 2, Some("0.38.0")),
     ("ess-composition", 3, Some("0.40.0")),
@@ -273,7 +273,7 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-mutation-report", 5, Some("0.57.0")),
     ("ess-mutation-report", 6, Some("0.60.0")),
     // A mutant whose suite asks what the baseline's asks (https://github.com/beyond10x/ess/issues/586).
-    ("ess-mutation-report", 7, None),
+    ("ess-mutation-report", 7, Some("0.62.0")),
     ("ess-mutation-manifest", 1, Some("0.37.0")),
     ("ess-mutation-manifest", 2, Some("0.41.0")),
     ("ess-mutation-manifest", 3, Some("0.42.0")),
