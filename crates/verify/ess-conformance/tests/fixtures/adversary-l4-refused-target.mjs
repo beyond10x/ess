@@ -15,12 +15,12 @@
 
 import { unsupported } from './dist/index.js';
 
-const sent = new Map();
-
 export function newTarget(mode = '') {
   let calls = new Map();
   let created = 0;
   let version = 0;
+  // The `Answer` steps sent for a ringing call to this target, which serves one explored sequence.
+  let sent = 0;
 
   const reset = () => {
     calls = new Map();
@@ -65,8 +65,8 @@ export function newTarget(mode = '') {
           if (call === undefined) throw new Error(`no call ${input.call_id}`);
           if (call.state === 'Ringing') {
             if (mode === 'ringing-once') {
-              const count = (sent.get(mode) ?? 0) + 1;
-              sent.set(mode, count);
+              sent += 1;
+              const count = sent;
               if (count === 1) throw unsupported('Answer has no callback while the call rings');
               throw new Error(
                 `Answer was sent again in Ringing after the target refused it there (send ${count})`,

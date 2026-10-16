@@ -272,10 +272,12 @@ fn a_refusal_in_one_state_still_fails_the_strict_assertion() {
     }
 }
 
-/// The refused (command, held state) is never sent again: the target answers a second `Answer` in
-/// `Ringing` with a plain error, which would be a failure.
+/// The refused (command, held state) is never sent again in the sequence that found it: the target,
+/// which serves one sequence, answers a second `Answer` in `Ringing` with a plain error, which would
+/// be a failure. Each seed keeps its own refusals (beyond10x/ess#576), so another seed may send it
+/// again to its own target.
 #[test]
-fn a_refused_state_is_never_sent_again_across_seeds() {
+fn a_refused_state_is_never_sent_again_in_its_sequence() {
     for (language, lane) in each_lane() {
         let found = &lane.results["ringing-once"];
         assert!(

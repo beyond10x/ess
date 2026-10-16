@@ -222,7 +222,7 @@ refusal[ESS-SYNTH-011]: entity billing.invoice.Invoice has no scenario `…`
 
 ## Recorded histories: `history.*`
 
-`ess verify conform check-history` and `ess verify conform import-history` refuse an `ess-history/1` or `ess-history/2` document they cannot admit under one of these names, before any operation is checked. The message is the name, a colon and the detail:
+`ess verify conform check-history` and `ess verify conform import-history` refuse an `ess-history/1`, `ess-history/2` or `ess-history/3` document they cannot admit under one of these names, before any operation is checked. The message is the name, a colon and the detail:
 
 ```text
 history.no-clients: `clients` is 0
@@ -230,8 +230,8 @@ history.no-clients: `clients` is 0
 
 | Name | Meaning | Repair |
 |---|---|---|
-| `history.malformed` | The bytes are not an `ess-history/1` or `ess-history/2` document: not JSON, an unknown or missing field, a value outside its declared type, or a `decision_time` that is `null`, not the one spelling of an instant, or in an `ess-history/1` document. | Write the document as `schemas/ess-history.schema.json` describes; the detail names the field or the position. |
-| `history.unsupported-format` | The `format` is absent, or names a format this build does not read. | Write `format: ess-history/1`, or `ess-history/2` where an operation records a `decision_time`. |
+| `history.malformed` | The bytes are not an `ess-history/1`, `ess-history/2` or `ess-history/3` document: not JSON, an unknown or missing field, a value outside its declared type, a `decision_time` that is `null`, not the one spelling of an instant, or in an `ess-history/1` document, an `input`, `events` or `arranged` that is `null` or in a document below `ess-history/3`, a key written twice inside an `input` or a `payload`, or a number there in another spelling than its one. | Write the document as `schemas/ess-history.schema.json` describes; the detail names the field or the position. |
+| `history.unsupported-format` | The `format` is absent, or names a format this build does not read. | Write `format: ess-history/1`, `ess-history/2` where an operation records a `decision_time`, or `ess-history/3` where one records its `input`, `events` or `arranged`. |
 | `history.spec-digest-mismatch` | The history was recorded against another specification. | Check the history against the specification it was recorded against, or record it again against this one. |
 | `history.no-clients` | The history counts no clients. | Set `clients` to the number of clients that sent operations. |
 | `history.duplicate-operation` | Two operations carry one identity. | Give every operation its own identity. |
@@ -241,6 +241,7 @@ history.no-clients: `clients` is 0
 | `history.indeterminate-with-return-instant` | An operation is `Indeterminate` and carries a return instant. | Drop `returned_at`, or mark the operation `Returned` if it did return. |
 | `history.indeterminate-with-outcome` | An operation is `Indeterminate` and carries an outcome. | Drop `outcome`, or mark the operation `Returned` if it did return. |
 | `history.indeterminate-with-rows` | An operation is `Indeterminate` and carries `rows`: a read that never answered answered no rows. | Drop `rows`, or mark the operation `Returned` if it did return. |
+| `history.indeterminate-with-events` | An operation is `Indeterminate` and carries `events`: a call that never answered published nothing anyone saw. | Drop `events`, or mark the operation `Returned` if it did return. |
 | `history.returned-without-outcome` | An operation is `Returned` and carries no outcome. | Record the outcome the operation returned. |
 | `history.non-canonical-uuid` | A UUID is written with upper-case hexadecimal; its one spelling is lower case. | Write the UUID in lower case. |
 | `history.integer-out-of-range` | An integer is above the largest integer a history admits. | Keep the value at or below the bound the message states. |

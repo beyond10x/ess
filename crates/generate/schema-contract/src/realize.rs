@@ -101,6 +101,11 @@ pub struct Plan {
     obligations: BTreeSet<Finding>,
     patterns: BTreeMap<String, String>,
     binary64: BTreeSet<String>,
+    /// Schema pointers of `Json` values the Rust target keeps as their exact JSON text
+    /// (`--rust-raw-json`, beyond10x/ess#577). Empty unless asked for.
+    raw_json: BTreeSet<String>,
+    /// A model field's declared name, by the pointer of its property, where its wire key differs.
+    declared_fields: BTreeMap<String, String>,
     /// Model integers fixed to one value, by the pointer of the node that fixes them
     /// (beyond10x/ess#408).
     constants: BTreeMap<String, i64>,
@@ -240,6 +245,7 @@ struct Builder {
     patterns: BTreeMap<String, String>,
     constants: BTreeMap<String, i64>,
     attributes: BTreeMap<String, Vec<EnumAttribute>>,
+    declared_fields: BTreeMap<String, String>,
 }
 
 impl Plan {
@@ -392,6 +398,8 @@ impl Plan {
             obligations: builder.obligations,
             patterns: builder.patterns,
             binary64: BTreeSet::new(),
+            raw_json: BTreeSet::new(),
+            declared_fields: builder.declared_fields,
             constants: builder.constants,
             attributes: builder.attributes,
         })
@@ -503,6 +511,91 @@ impl Plan {
         &self.names
     }
 
+    /// Keep the `Json` values `locations` name as their exact JSON text in the Rust target
+    /// (`--rust-raw-json`, beyond10x/ess#577), so their bytes round-trip with or without
+    /// `serde_json/arbitrary_precision`. Other targets ignore the selection.
+    ///
+    /// A location is a selected component's source name, which covers the component when it is
+    /// itself `Json` and otherwise each of its own `Json` fields, or `<component>.<field>`, which
+    /// covers that one field, named by its wire key or, for a model, its declared name. An
+    /// `Optional<Json>` value counts as `Json`. A location naming no selected component or field,
+    /// or one holding no `Json` value of its own, is refused, the finding naming it.
+    pub fn with_raw_json<I, S>(mut self, locations: I) -> Result<Self, Refused>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let mut errors = BTreeSet::new();
+        for location in locations {
+            let location = location.as_ref();
+            match self.raw_json_location(location) {
+                Ok(pointers) => self.raw_json.extend(pointers),
+                Err((pointer, detail)) => {
+                    errors.insert(finding(
+                        &pointer,
+                        RAW_JSON_RULE,
+                        &format!("{location:?} {detail}"),
+                    ));
+                }
+            }
+        }
+        if errors.is_empty() {
+            Ok(self)
+        } else {
+            Err(Refused(errors.into_iter().collect()))
+        }
+    }
+
+    /// The pointers of the `Json` values one `--rust-raw-json` location covers.
+    fn raw_json_location(&self, location: &str) -> Result<Vec<String>, (String, &'static str)> {
+        let unknown = || ("/".to_owned(), "names no selected type or field");
+        if let Some(node) = self.definitions.get(location) {
+            if let Some(json) = json_value(node) {
+                return Ok(vec![json.pointer.clone()]);
+            }
+            let covered = match &node.shape {
+                Shape::Object { fields, .. } => fields
+                    .values()
+                    .filter_map(|field| json_value(&field.value))
+                    .map(|json| json.pointer.clone())
+                    .collect(),
+                _ => Vec::new(),
+            };
+            if covered.is_empty() {
+                return Err((node.pointer.clone(), "names a type with no Json field"));
+            }
+            return Ok(covered);
+        }
+        let (component, name) = location.rsplit_once('.').ok_or_else(unknown)?;
+        let Some(Node {
+            shape: Shape::Object { fields, .. },
+            ..
+        }) = self.definitions.get(component)
+        else {
+            return Err(unknown());
+        };
+        let field = fields.get(name).or_else(|| {
+            fields.values().find(|field| {
+                self.declared_fields
+                    .get(&field.value.pointer)
+                    .is_some_and(|declared| declared == name)
+            })
+        });
+        let field = field.ok_or_else(unknown)?;
+        json_value(&field.value)
+            .map(|json| vec![json.pointer.clone()])
+            .ok_or_else(|| {
+                (
+                    field.value.pointer.clone(),
+                    "names a field that is not Json",
+                )
+            })
+    }
+
+    fn reaches_raw_json(&self, node: &Node) -> bool {
+        self.reaches_marked(&self.raw_json, node)
+    }
+
     fn binary64_codec(&self) -> Result<(), Refused> {
         let mut numeric = BTreeSet::new();
         let mut pending = self.definitions.values().collect::<Vec<_>>();
@@ -533,10 +626,15 @@ impl Plan {
     // Follow references as well as inline shapes. Per-query visitation avoids caching an
     // incomplete answer for a recursive component before its other edges are explored.
     fn reaches_binary64(&self, node: &Node) -> bool {
+        self.reaches_marked(&self.binary64, node)
+    }
+
+    /// Whether `node`, or a node it contains or references, is at one of `marked`.
+    fn reaches_marked(&self, marked: &BTreeSet<String>, node: &Node) -> bool {
         let mut pending = vec![node];
         let mut visited = BTreeSet::new();
         while let Some(node) = pending.pop() {
-            if self.binary64.contains(&node.pointer) {
+            if marked.contains(&node.pointer) {
                 return true;
             }
             if !visited.insert(&node.pointer) {
@@ -580,6 +678,9 @@ impl Plan {
             if matches!(configuration, TargetConfiguration::Rust { .. }) {
                 for at in &self.binary64 {
                     obligations.insert(finding(at, "rust_binary64_source", "original-token decoding requires serde_json text/slice/reader or an equivalent raw-capable JSON deserializer; prior Value conversion cannot restore lost sign or token kind and other deserializers may refuse"));
+                }
+                for at in &self.raw_json {
+                    obligations.insert(finding(at, RAW_JSON_RULE, "kept as its exact JSON text in EssRawJson, a serde_json RawValue, whatever serde_json features the build unifies; decoding requires serde_json text/slice/reader or an equivalent raw-capable JSON deserializer, and the text is not validated beyond JSON syntax"));
                 }
             }
         }
@@ -658,7 +759,17 @@ impl Builder {
         let shape = match schema {
             Value::Bool(true) => Shape::Json,
             Value::Bool(false) => Shape::Never,
-            Value::Object(object) => self.object_schema(object, pointer),
+            Value::Object(object) => {
+                if let Some(declared) = object
+                    .get("x-ess-field")
+                    .and_then(Value::as_str)
+                    .filter(|_| self.model)
+                {
+                    self.declared_fields
+                        .insert(pointer.to_owned(), declared.to_owned());
+                }
+                self.object_schema(object, pointer)
+            }
             _ => {
                 self.errors.insert(finding(
                     pointer,
@@ -1039,6 +1150,21 @@ fn check_references(node: &Node, names: &BTreeMap<String, String>, errors: &mut 
     }
     for child in children(node) {
         check_references(child, names, errors);
+    }
+}
+
+/// The finding rule for a `--rust-raw-json` location: its refusal and, in a Rust report, the
+/// obligation each kept value carries (beyond10x/ess#577).
+const RAW_JSON_RULE: &str = "rust_raw_json";
+
+/// The `Json` value `node` holds itself: the node, or the non-null branch of a nullable one.
+fn json_value(node: &Node) -> Option<&Node> {
+    match &node.shape {
+        Shape::Json => Some(node),
+        Shape::Union { variants, .. } => {
+            native::nullable(variants).filter(|value| matches!(value.shape, Shape::Json))
+        }
+        _ => None,
     }
 }
 

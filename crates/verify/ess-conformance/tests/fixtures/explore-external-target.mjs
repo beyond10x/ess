@@ -6,6 +6,9 @@
 //   (empty)              arranges every external branch it is asked to
 //   cannot-arrange       `configureExternalOutcome` is not supported
 //   ignores-arrangement  accepts every arrangement and then takes the ordinary branch anyway
+//   fail-keeps-pending   arranges every external branch, and answers an arranged capture failure
+//                        without failing the payment, which stays pending
+//   declines-unasked     declines every authorization from 1000 up, arranged or not
 //
 // `explore_external_target.go` is the same target in Go, line for line.
 
@@ -40,7 +43,7 @@ export function newTarget(mode = '') {
     executeCommand({ command, input }) {
       switch (command) {
         case 'exploreext.pay.Authorize': {
-          if (input.amount >= 1000 && arranged(command, 'declined')) {
+          if (input.amount >= 1000 && (arranged(command, 'declined') || mode === 'declines-unasked')) {
             return { outcome: 'declined', error: 'exploreext.pay.Declined', directEvents: [] };
           }
           if (!(input.amount >= 1)) {
@@ -64,7 +67,7 @@ export function newTarget(mode = '') {
             };
           }
           if (arranged(command, 'failed')) {
-            payment.state = 'Failed';
+            if (mode !== 'fail-keeps-pending') payment.state = 'Failed';
             return answered('failed', 'exploreext.pay.CaptureFailed', {
               payment_id: payment.payment_id,
             });

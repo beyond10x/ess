@@ -98,13 +98,13 @@ func (f advFlaky) ExecuteCommand(request CommandRequest) (CommandResult, error) 
 func advTarget(name string) func() Target {
 	switch name {
 	case "failing":
-		return func() Target { return advFailing{newExploreFixtureTarget("", "low")} }
+		return func() Target { return advFailing{newExploreFixtureTarget("", "high")} }
 	case "flaky":
-		return func() Target { n := 0; return advFlaky{newExploreFixtureTarget("", "low"), &n} }
+		return func() Target { n := 0; return advFlaky{newExploreFixtureTarget("", "high"), &n} }
 	case "close-unsupported", "lost-update":
-		return func() Target { return newExploreFixtureTarget(name, "low") }
+		return func() Target { return newExploreFixtureTarget(name, "high") }
 	default:
-		return func() Target { return newExploreFixtureTarget("", "low") }
+		return func() Target { return newExploreFixtureTarget("", "high") }
 	}
 }
 
@@ -182,7 +182,7 @@ function advTarget(name) {
   switch (name) {
     case 'failing':
       return () => {
-        const target = newTarget('', 'low');
+        const target = newTarget('', 'high');
         target.invokeCommand = undefined;
         target.executeCommand = () => {
           throw new Error('adversary: the call timed out');
@@ -191,7 +191,7 @@ function advTarget(name) {
       };
     case 'flaky':
       return () => {
-        const target = newTarget('', 'low');
+        const target = newTarget('', 'high');
         const original = target.executeCommand.bind(target);
         let calls = 0;
         target.invokeCommand = undefined;
@@ -204,9 +204,9 @@ function advTarget(name) {
       };
     case 'close-unsupported':
     case 'lost-update':
-      return () => newTarget(name, 'low');
+      return () => newTarget(name, 'high');
     default:
-      return () => newTarget('', 'low');
+      return () => newTarget('', 'high');
   }
 }
 

@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-15T08:45:06Z",
+  "actor": "human:timo",
+  "artifact": "story:rust-json-keeps-raw-text",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "package gate: cargo test -p schema-contract, ess-gen, ess-cli; clippy schema-contract, ess-gen, ess-cli; task test-xtask; task ci-lint, all exit 0",
+    "reference": "0b163851de"
+  }
+}

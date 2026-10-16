@@ -2,8 +2,8 @@
 format: aep.planning-md/3
 id: story:runtime-workload-probes-resources-placement-annotations
 kind: story
-status: draft
-title: A runtime states TCP probes, resources, affinity and annotations, and the chart renders them
+status: active
+title: A workload states its pod settings (probes, resources, security, secret volumes, image digest, placement, annotations), and the chart renders them
 tags:
 - adopter-report
 - deployment-chain
@@ -11,7 +11,10 @@ tags:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 1
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-15T03:06:49Z", actor: "human:timo", revision: 4}
+- {from: "proposed", to: "active", at: "2026-10-15T03:06:50Z", actor: "human:timo", revision: 5}
 ---
 ## Outcome
 
@@ -38,3 +41,22 @@ An adopter on ess 0.55.0 found none of these in the runtime or chart. On main:
   a chart projection test; an unset setting changes no chart bytes.
 - Resources and placement can be overridden per environment, or the story records why not.
 - The runtime format consequence is decided and recorded.
+
+### Pod settings every workload kind takes (Deployment, StatefulSet and the scheduled job)
+
+Tests in an existing test binary of the crate, each naming its setting:
+
+- `a_container_declares_requests_and_limits`: cpu and memory requests and limits render the
+  container's `resources`.
+- `a_workload_declares_its_pod_security`: `run_as_user`, `run_as_group`, `fs_group` and
+  `run_as_non_root` render the pod `securityContext`; `read_only_root_filesystem` per container
+  renders the container `securityContext`.
+- `a_workload_opts_out_of_the_service_account_token`: `service_account_token: false` renders
+  `automountServiceAccountToken: false`.
+- `a_secret_slot_is_mounted_as_a_volume`: a secret slot mounted at a path, read-only, with items
+  mapping a key to a relative path and a `mode` (octal, 0400) renders a `secret` volume with
+  `items` and `defaultMode` and a read-only `volumeMount`; a path that escapes the mount, a
+  duplicate item path or a mode outside 0000-0777 is refused by name.
+- `an_image_is_pinned_by_digest`: an image reference by `@sha256:<64 hex>` renders verbatim; a
+  malformed digest is refused by name.
+- `a_runtime_without_pod_settings_keeps_its_chart_bytes`.

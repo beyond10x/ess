@@ -184,9 +184,9 @@ fn sections() -> Vec<Section> {
         Section {
             heading: "Recorded histories: `history.*`",
             intro: "`ess verify conform check-history` and `ess verify conform import-history` \
-                    refuse an `ess-history/1` or `ess-history/2` document they cannot admit \
-                    under one of these names, before any operation is checked. The message is the \
-                    name, a colon and the detail:\n\n\
+                    refuse an `ess-history/1`, `ess-history/2` or `ess-history/3` document they \
+                    cannot admit under one of these names, before any operation is checked. The \
+                    message is the name, a colon and the detail:\n\n\
                     ```text\n\
                     history.no-clients: `clients` is 0\n\
                     ```",
@@ -431,9 +431,10 @@ mod tests {
         for family in codes::family::ALL {
             assert!(page.contains(&format!("| `{family}` |")), "family {family}");
         }
+        // One row per refusal the reader can name, whatever a format adds.
         assert_eq!(
             page.matches("| `history.").count(),
-            15,
+            HistoryRefusal::CATALOGUE.len(),
             "the dotted refusals"
         );
         for code in ValidationCode::ALL {

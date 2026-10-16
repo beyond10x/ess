@@ -8,7 +8,6 @@ package essconform
 
 import (
 	"fmt"
-	"sync"
 )
 
 type advL4Unsupported struct{ reason string }
@@ -26,14 +25,10 @@ type advL4Target struct {
 	mode    string
 	calls   []*advL4Call
 	version int
+	// sent counts the `Answer` steps sent for a ringing call to this target, which serves one
+	// explored sequence, so `ringing-once` can tell a resend from the first refusal.
+	sent int
 }
-
-// advL4Sent counts, per mode, the `Answer` steps sent for a ringing call across every target of
-// the process, so `ringing-once` can tell a resend from the first refusal.
-var (
-	advL4Mu   sync.Mutex
-	advL4Sent = map[string]int{}
-)
 
 func newAdversaryL4RefusedTarget(mode string) *advL4Target {
 	return &advL4Target{mode: mode}
@@ -103,10 +98,8 @@ func (t *advL4Target) ExecuteCommand(request CommandRequest) (CommandResult, err
 		if call.state == "Ringing" {
 			switch t.mode {
 			case "ringing-once":
-				advL4Mu.Lock()
-				advL4Sent[t.mode]++
-				sent := advL4Sent[t.mode]
-				advL4Mu.Unlock()
+				t.sent++
+				sent := t.sent
 				if sent == 1 {
 					return CommandResult{}, advL4Unsupported{"Answer has no callback while the call rings"}
 				}

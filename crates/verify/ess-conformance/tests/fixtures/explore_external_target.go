@@ -72,7 +72,7 @@ func (t *exploreExtTarget) ExecuteCommand(request CommandRequest) (CommandResult
 	switch request.Command {
 	case "exploreext.pay.Authorize":
 		amount := exploreExtNumber(input["amount"])
-		if amount >= 1000 && t.arranged(request.Command, "declined") {
+		if amount >= 1000 && (t.arranged(request.Command, "declined") || t.mode == "declines-unasked") {
 			return CommandResult{Outcome: "declined", Error: "exploreext.pay.Declined", DirectEvents: []ObservedEvent{}}, nil
 		}
 		if !(amount >= 1) {
@@ -90,7 +90,11 @@ func (t *exploreExtTarget) ExecuteCommand(request CommandRequest) (CommandResult
 			return CommandResult{Outcome: "wrong-state", Error: "exploreext.pay.PaymentStateConflict", DirectEvents: []ObservedEvent{}}, nil
 		}
 		if t.arranged(request.Command, "failed") {
-			payment.state = "Failed"
+			// `fail-keeps-pending` answers the failure and leaves the payment pending, so a later
+			// capture of it settles a payment the specification failed.
+			if t.mode != "fail-keeps-pending" {
+				payment.state = "Failed"
+			}
 			return t.answered("failed", "exploreext.pay.CaptureFailed", map[string]Node{"payment_id": payment.id}), nil
 		}
 		payment.state = "Settled"

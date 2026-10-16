@@ -704,9 +704,9 @@ enum ConformCommand {
         /// Ordinary (4) or declared coverage (5); coverage emits the complete coverage input.
         #[arg(long, default_value = "4", value_parser = ["4", "5"])]
         suite_format: String,
-        /// An `ess-history/1` or `ess-history/2` document: draw it, checked against the
-        /// specification, as one lane per client in a single self-contained `index.html`, printed
-        /// when `--out` is absent.
+        /// An `ess-history/1`, `ess-history/2` or `ess-history/3` document: draw it, checked
+        /// against the specification, as one lane per client in a single self-contained
+        /// `index.html`, printed when `--out` is absent.
         /// `--out` replaces the files `ess` owns in that directory, the player's included, so
         /// write history pages and the player to different directories.
         #[arg(long, conflicts_with_all = ["scenarios", "suite_format"])]
@@ -967,13 +967,17 @@ enum ConformCommand {
     },
     /// Check a recorded concurrent history for linearizability against the specification's model.
     ///
-    /// Reads an `ess-history/1` or `ess-history/2` document recorded against the specification at
-    /// `--path`, and searches for an order of its operations the interpreter accepts, answer for
-    /// answer, reading an operation's recorded `decision_time` as the current time. The
-    /// history records no inputs, so an operation is explained by any candidate input synthesis
-    /// would submit for its command. Reads of views are not judged and are listed. A violation is
-    /// reported with the longest partial linearization found and a shrunk history that is still a
-    /// violation.
+    /// Reads an `ess-history/1`, `ess-history/2` or `ess-history/3` document recorded against the
+    /// specification at `--path`, and searches for an order of its operations the interpreter
+    /// accepts, answer for answer, reading an operation's recorded `decision_time` as the current
+    /// time. An operation that records its `input` (`ess-history/3`) is stepped with exactly that
+    /// input, and one that records its `events` takes only a branch publishing those events, in
+    /// order, with the payload values the model computes from the recorded input; one that records
+    /// `arranged` takes an `external:` branch only where a call of its command arranged it before
+    /// this one returned. An operation that records no input is explained by any candidate input
+    /// synthesis would submit for its command. Reads of views are not judged and are listed. A
+    /// violation is reported with the longest partial linearization found and a shrunk history
+    /// that is still a violation.
     ///
     /// Exit 0: linearizable. Exit 1: violation. Exit 3: unknown — the search spent `--budget`
     /// before it finished, which is never a pass. Exit 2: the specification or the history could
@@ -983,7 +987,7 @@ enum ConformCommand {
         /// One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml`.
         #[arg(long, default_value = ".")]
         path: PathBuf,
-        /// The `ess-history/1` or `ess-history/2` document.
+        /// The `ess-history/1`, `ess-history/2` or `ess-history/3` document.
         #[arg(long)]
         history: PathBuf,
         /// How many executions of the model the search may spend; the same history and budget

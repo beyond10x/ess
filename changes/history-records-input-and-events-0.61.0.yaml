@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/history-records-input-and-events-0.61.0
+repository: ess
+publishedAt: 2026-10-15T00:00:00Z
+title: Concurrent histories record each call's input and events, and check-history holds them
+summary: >-
+  `ess-history/3` records each operation's input and published events, and `check-history` holds a
+  target to both. Concurrent exploration arranges `external:` causes and replays a failing seed
+  alone. Synthesis arranges period-bounded views, Rust types take raw JSON values, and the
+  one-time response guide counts disclosure cells.
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.61.0
+  version: 0.61.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

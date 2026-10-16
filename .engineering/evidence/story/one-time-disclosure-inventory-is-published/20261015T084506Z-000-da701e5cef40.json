@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-15T08:45:06Z",
+  "actor": "human:timo",
+  "artifact": "story:one-time-disclosure-inventory-is-published",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "package gate: cargo test -p ess-conformance (one_time_guide_lists_the_cells and the disclosure retry tests), clippy, exit 0",
+    "reference": "8c59d8766e"
+  }
+}

@@ -62,12 +62,12 @@ fn mutate_codes_run_from_001_to_005_and_match_every_mutate_code() {
 }
 
 #[test]
-fn the_fifteen_dotted_history_refusals_are_catalogued_once_each() {
+fn the_sixteen_dotted_history_refusals_are_catalogued_once_each() {
     let names: BTreeSet<&str> = HistoryRefusal::CATALOGUE
         .iter()
         .map(|entry| entry.key)
         .collect();
-    assert_eq!(names.len(), 15, "{names:?}");
+    assert_eq!(names.len(), 16, "{names:?}");
     assert_eq!(names.len(), HistoryRefusal::CATALOGUE.len(), "a name twice");
     for name in &names {
         assert!(name.starts_with("history."), "{name}");

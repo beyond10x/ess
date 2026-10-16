@@ -21,8 +21,15 @@
 //! - `Timestamp` is `DecisionInstant`, a `$ref` to its definition; `Optional<Timestamp>` (an
 //!   operation's `decision_time`, `ess-history/2`) is absent or an instant and never `null`, so its
 //!   schema property adds no `null`;
+//! - `Json` is `Node` and `Map<String, T>` is `BTreeMap<String, T>`, in the schema an `object`
+//!   whose members the schema does not constrain; an operation's `input` (`Optional<Map<String,
+//!   Json>>`), `events` (`Optional<List<PublishedEvent>>`) and `arranged`
+//!   (`Optional<List<QualifiedName>>`, all `ess-history/3`) are, like `decision_time`, absent or a
+//!   value and never `null`, so their schema properties add no `null`;
 //! - an enum `concurrent.history.T` is `enum T`, compared by wire name;
-//! - a newtype `concurrent.history.T` is a `struct T` or a `pub use …::T`.
+//! - a newtype `concurrent.history.T` is a `struct T` or a `pub use …::T`;
+//! - a struct `concurrent.history.T` is an entity without an identity: `struct T`, `struct TWire`
+//!   and `definitions/T`, each with exactly its fields.
 //!
 //! A wire name is the field's identifier, or its `#[serde(rename = "…")]`, and every
 //! `#[serde(alias = "…")]` is one more wire name the reader admits — so an alias the model does not
@@ -123,8 +130,17 @@ fn rust_spelling(model_type: &str) -> String {
     {
         return format!("Vec<{}>", rust_spelling(inner));
     }
+    if let Some((key, value)) = model_type
+        .strip_prefix("Map<")
+        .and_then(|rest| rest.strip_suffix('>'))
+        .and_then(|rest| rest.split_once(", "))
+    {
+        // `render` spells generic arguments joined by `,` alone.
+        return format!("BTreeMap<{},{}>", rust_spelling(key), rust_spelling(value));
+    }
     match model_type {
         "Integer" => "u64".to_owned(),
+        "Json" => "Node".to_owned(),
         "String" => "String".to_owned(),
         "Uuid" => "Uuid".to_owned(),
         "Timestamp" => "DecisionInstant".to_owned(),
@@ -133,10 +149,28 @@ fn rust_spelling(model_type: &str) -> String {
     }
 }
 
+/// A declared struct's fields, in the shape the document carries them.
+fn struct_fields(declaration: &Yaml) -> Fields {
+    sequence(declaration, "fields")
+        .iter()
+        .map(|field| {
+            let field_type = text(field, "type").expect("a field has a type");
+            (
+                text(field, "name").expect("a field has a name").to_owned(),
+                Field {
+                    rust: rust_spelling(field_type),
+                    optional: field_type.starts_with("Optional<"),
+                },
+            )
+        })
+        .collect()
+}
+
 fn model() -> Model {
     let document: Yaml = ess_yaml::from_str(&source(MODEL)).expect("the domain is YAML");
     let mut enums = BTreeMap::new();
     let mut newtypes = BTreeSet::new();
+    let mut structs = BTreeMap::new();
     for declaration in sequence(&document, "types") {
         let name = local(text(declaration, "name").expect("a type has a name"));
         match text(declaration, "kind") {
@@ -150,11 +184,16 @@ fn model() -> Model {
             Some("newtype") => {
                 newtypes.insert(name);
             }
+            Some("struct") => {
+                structs.insert(name, struct_fields(declaration));
+            }
             other => panic!("`{name}` has a kind this test does not map: {other:?}"),
         }
     }
 
-    let mut entities = BTreeMap::new();
+    // A struct is carried as an entity without an identity: a type, its wire twin and a schema
+    // definition, each with exactly its fields.
+    let mut entities = structs;
     let mut integers: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let mut nested: Vec<(String, String)> = Vec::new();
     for entity in sequence(&document, "entities") {
@@ -247,6 +286,9 @@ struct Serde {
 /// `skip_serializing_if` changes only what a writer emits for an absent `Option`, which the reader
 /// admits either way. `deserialize_with = "objects"` is the one reader hook: it refuses an
 /// operation written as a JSON array and otherwise defers to the derived visitor.
+/// `serialize_with = "canonical_numbers"` is the one writer hook: it writes an operation's `input`
+/// and an event's `payload` (`ess-history/3`) with every number in the one spelling the reader
+/// admits, the same values in the same shape.
 const ALLOWED_KEYS: &[&str] = &[
     "rename",
     "alias",
@@ -254,6 +296,7 @@ const ALLOWED_KEYS: &[&str] = &[
     "skip_serializing_if",
 ];
 const ALLOWED_DESERIALIZE_WITH: &str = "objects";
+const ALLOWED_SERIALIZE_WITH: &str = "canonical_numbers";
 
 fn serde_attributes(attributes: &[syn::Attribute]) -> Serde {
     let mut found = Serde {
@@ -308,6 +351,7 @@ fn serde_attributes(attributes: &[syn::Attribute]) -> Serde {
                     "rename" => found.rename = literal,
                     "alias" => found.aliases.extend(literal),
                     "deserialize_with" if literal.as_deref() == Some(ALLOWED_DESERIALIZE_WITH) => {}
+                    "serialize_with" if literal.as_deref() == Some(ALLOWED_SERIALIZE_WITH) => {}
                     allowed if ALLOWED_KEYS.contains(&allowed) => {}
                     _ => found.refused.push(key),
                 }
@@ -537,9 +581,14 @@ fn rust_drift(model: &Model, text: &str) -> Vec<String> {
 /// A model field's Rust spelling in the vocabulary [`schema_kind`] reads a schema property into.
 fn expected_kind(rust: &str) -> String {
     // A decision time is absent where no decision was observed and never `null`
-    // (`ess-history/2`): its schema property is the bare reference, not the reference or null.
-    if rust == "Option<DecisionInstant>" {
-        return "ref:DecisionInstant".to_owned();
+    // (`ess-history/2`), and so are an operation's input, events and arrangements where none was
+    // recorded (`ess-history/3`): each schema property is the bare value, not the value or null.
+    if let Some(inner) = rust
+        .strip_prefix("Option<")
+        .and_then(|rest| rest.strip_suffix('>'))
+        .filter(|_| NEVER_NULL.contains(&rust))
+    {
+        return expected_kind(inner);
     }
     if let Some(inner) = rust
         .strip_prefix("Option<")
@@ -556,9 +605,18 @@ fn expected_kind(rust: &str) -> String {
     match rust {
         "u64" => "integer".to_owned(),
         "String" => "string".to_owned(),
+        "BTreeMap<String,Node>" => "object".to_owned(),
         named => format!("ref:{named}"),
     }
 }
+
+/// The optional fields whose schema property admits no `null`: absent, or a value.
+const NEVER_NULL: &[&str] = &[
+    "Option<DecisionInstant>",
+    "Option<BTreeMap<String,Node>>",
+    "Option<Vec<QualifiedName>>",
+    "Option<Vec<PublishedEvent>>",
+];
 
 /// One schema property as `integer`, `string`, `ref:<Definition>`, `array:<kind>` or
 /// `opt:<kind>`; anything else is spelled out as its JSON and so matches nothing expected.
@@ -586,6 +644,14 @@ fn schema_kind(property: &serde_json::Value) -> String {
                 .map_or_else(|| "?".to_owned(), schema_kind)
         ),
         Some(serde_json::Value::String(kind)) if kind == "integer" || kind == "string" => {
+            kind.clone()
+        }
+        // An object whose members the schema does not constrain: a `Map<String, Json>`.
+        Some(serde_json::Value::String(kind))
+            if kind == "object"
+                && property.get("properties").is_none()
+                && property.get("additionalProperties").is_none() =>
+        {
             kind.clone()
         }
         Some(serde_json::Value::Array(kinds))

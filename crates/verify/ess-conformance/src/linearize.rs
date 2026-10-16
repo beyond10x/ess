@@ -65,9 +65,37 @@
 //! never a pass by trying instants nobody recorded. `invoked_at` and `returned_at` are ordering
 //! coordinates and are never read as `now`.
 //!
-//! # What `ess-history/1` does not record, and how the search reads it
+//! # The input and the events an operation records
 //!
-//! An operation records its command, its subject and its outcome, and **not its input**. So the
+//! An `ess-history/3` operation records the input its client sent ([`Operation::input`]) and, where
+//! it answered, every event the answer published with its payload ([`Operation::events`]). The
+//! search steps such an operation with exactly that input, and holds it to the events: an order
+//! whose step takes a branch publishing other events, or the same events in another order, explains
+//! nothing (beyond10x/ess#576). Where the operation records its input too, every payload field the
+//! branch maps from `input.<field>` or from a literal must carry the value the model computes for
+//! that input, as the sequential walk requires; a value the model leaves to the implementation is
+//! not compared, nor a field no mapping names, and an absent optional value agrees with an absent
+//! or `null` field. The answer, the input and the events together are what the sequential walk
+//! holds one step to; on a model without entities they are all a history says about a command.
+//!
+//! # The external causes a client arranged
+//!
+//! An `ess-history/3` operation may record the `external:` branches its client arranged before
+//! sending it ([`Operation::arranged`], `[]` for none). A target keeps an arrangement for its
+//! command until the scenario ends, and the clients run concurrently, so an arrangement may answer
+//! another client's call as well. For an operation recording it, the search admits an external
+//! branch other than a `replays:` one only where an operation of the same command recorded
+//! arranging that branch and was invoked before this one returned (itself included; any operation
+//! where this one never answered). The ordinary branch stays admitted, because an arrangement may
+//! already have been used. An answer nobody arranged is then a violation, as the sequential walk
+//! fails it. An operation recording no `arranged` keeps every eligible external branch open
+//! ([`Externals::Open`](crate::interpret::execute::Externals::Open)), as every history written
+//! before the field did.
+//!
+//! # What an operation without its input does not record, and how the search reads it
+//!
+//! An `ess-history/1` or `ess-history/2` operation, and an `ess-history/3` one whose writer recorded
+//! none, records its command, its subject and its outcome, and **not its input**. So the
 //! search asks whether *some* input explains it: the candidate inputs [`witness::candidates`] builds
 //! for the command from its declared input types and the literals its guards write — the same ones
 //! synthesis submits — with the field that names the subject set to the recorded `subject_key`.
@@ -78,13 +106,13 @@
 //! is discarded and cannot decide a later guard. Public native generated-value policies retain
 //! their concrete semantics.
 //!
-//! Because `ess-history/1` records no inputs, neither verdict is exact. A `Violation` says no
+//! Without a recorded input, neither verdict is exact. A `Violation` says no
 //! candidate input explains the history, and an input outside the candidates might have. A
 //! `Linearizable` says some candidate input explains every answer — not that the input the client
 //! actually sent does, so a fault that shows only in how an answer depends on its input (an amount
 //! refused that should have been accepted, say) can be judged `Linearizable`. The witness strategy
-//! is the same bounded one the synthesized suite already stands on; recording inputs is a change
-//! to the format, not to this checker.
+//! is the same bounded one the synthesized suite already stands on; recording inputs
+//! (`ess-history/3`) is what makes the verdict exact for an operation.
 //!
 //! # Views
 //!
@@ -155,7 +183,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Write as _};
 
 use ess_compiler::ir::{EssIr, ResolvedCommand, ResolvedEffect, ResolvedInstance, ResolvedView};
-use ess_compiler::ir::{ResolvedBody, ResolvedTypeRef};
+use ess_compiler::ir::{ResolvedBody, ResolvedPayloadValue, ResolvedTypeRef};
 use ess_domain::entity::StateName;
 use ess_domain::name::QualifiedName as ModelName;
 use ess_domain::types::Primitive;
@@ -165,7 +193,9 @@ use ess_primitives::node::Node;
 use ess_primitives::predicate::Truth;
 use serde::Serialize;
 
-use crate::history::{Completion, History, HistoryFormat, Operation, ReturnBound, Verdict};
+use crate::history::{
+    Completion, History, HistoryFormat, Operation, PublishedEvent, ReturnBound, Verdict,
+};
 use crate::input::TypedFacts;
 use crate::interpret::execute::history::{self as history_execution, State};
 use crate::interpret::execute::{Generated, GeneratedSlot, Undetermined};
@@ -334,6 +364,10 @@ struct Prepared<'h> {
     generated: Generated,
     /// For an operation of a command declaring `replays:`, the request it sends ([`RequestPlan`]).
     request: Option<Request>,
+    /// The `external:` branches, other than `replays:` ones, this operation may not take: every
+    /// one no arrangement it can have met names, where it records `arranged` (`ess-history/3`).
+    /// Empty where it records none, which leaves every eligible external branch open.
+    unarranged: BTreeSet<String>,
 }
 
 /// One read of a view the checker judges, with everything judging it needs.
@@ -545,31 +579,37 @@ fn split<'h>(ir: &'h EssIr, history: &'h History) -> Result<Split<'h>, CheckRefu
                 why: "ess-history/1 records text subject identities; this command requires nontext identities".into(),
             });
         }
-        if !inputs.contains_key(key) {
-            inputs.insert(key, candidates(ir, command)?);
-        }
         let subject = Node::Text(operation.subject_key.clone());
-        let inputs = inputs[key]
-            .iter()
-            .map(|input| {
-                let mut input = input.clone();
-                for field in supplied(command) {
-                    input.insert(field.to_owned(), subject.clone());
-                }
-                input
-            })
-            .fold(Vec::new(), |mut distinct, input| {
-                if !distinct.contains(&input) {
-                    distinct.push(input);
-                }
-                distinct
-            });
+        let inputs = if let Some(recorded) = &operation.input {
+            // `ess-history/3`: the input the client sent, and no other.
+            vec![recorded.clone()]
+        } else {
+            if !inputs.contains_key(key) {
+                inputs.insert(key, candidates(ir, command)?);
+            }
+            inputs[key]
+                .iter()
+                .map(|input| {
+                    let mut input = input.clone();
+                    for field in supplied(command) {
+                        input.insert(field.to_owned(), subject.clone());
+                    }
+                    input
+                })
+                .fold(Vec::new(), |mut distinct, input| {
+                    if !distinct.contains(&input) {
+                        distinct.push(input);
+                    }
+                    distinct
+                })
+        };
         let generated = Generated::Recorded(
             observed(command)
                 .map(|slot| (slot, subject.clone()))
                 .collect(),
         );
         let id = operation.operation_id.as_str();
+        let unarranged = unarranged(command, operation, history);
         partitions
             .entry(if shared {
                 Partition::Shared
@@ -588,12 +628,97 @@ fn split<'h>(ir: &'h EssIr, history: &'h History) -> Result<Split<'h>, CheckRefu
                 inputs,
                 generated,
                 request: plan.requests.remove(id),
+                unarranged,
             });
     }
     Ok(Split {
         partitions,
         reads,
         not_judged,
+    })
+}
+
+/// The `external:` branches of `command`, other than `replays:` ones, that `operation` may not
+/// take: where it records `arranged` (`ess-history/3`), every one that no operation of the
+/// command recorded arranging and invoked before `operation` returned — itself included, and any
+/// operation at all where it never answered. A target keeps an arrangement for its command until
+/// the scenario ends, so one client's arrangement may answer another's call; the ordinary branch
+/// stays open beside it, because the arrangement may already have been used. Empty where the
+/// operation records no `arranged`, which leaves every eligible external branch open, as before.
+fn unarranged(
+    command: &ResolvedCommand,
+    operation: &Operation,
+    history: &History,
+) -> BTreeSet<String> {
+    if operation.arranged.is_none() {
+        return BTreeSet::new();
+    }
+    let met = |earlier: &Operation| match operation.return_bound() {
+        ReturnBound::At(returned) => earlier.invoked_at <= returned,
+        ReturnBound::AfterEveryOther => true,
+    };
+    let arranged: BTreeSet<&str> = history
+        .operations
+        .iter()
+        .filter(|earlier| earlier.command == operation.command && met(earlier))
+        .flat_map(|earlier| earlier.arranged.iter().flatten())
+        .map(crate::history::QualifiedName::as_str)
+        .collect();
+    command
+        .outcomes
+        .iter()
+        .filter(|outcome| {
+            outcome.replays.is_none()
+                && matches!(
+                    outcome.condition,
+                    ess_compiler::ir::ResolvedCondition::External { .. }
+                        | ess_compiler::ir::ResolvedCondition::ExternalWhen { .. }
+                )
+                && !arranged.contains(outcome.name.as_str())
+        })
+        .map(|outcome| outcome.name.as_str().to_owned())
+        .collect()
+}
+
+/// Whether every payload field of the events `taken` publishes, that its branch maps from the
+/// command's input or from a literal, carries in `recorded` the value the model computes: what the
+/// sequential walk holds a published payload to. A value the model leaves to the implementation is
+/// not compared, nor a field no mapping names; an absent optional value agrees with an absent or
+/// `null` field. Only an operation recording its input is held to it, because only then is the
+/// computed value the one the target was asked for.
+fn payload_agrees(
+    command: &ResolvedCommand,
+    taken: &history_execution::Transition,
+    recorded: &[PublishedEvent],
+) -> bool {
+    let Some(branch) = taken.outcome.as_ref().and_then(|answered| {
+        command
+            .outcomes
+            .iter()
+            .find(|outcome| outcome.name.as_str() == answered.outcome.as_str())
+    }) else {
+        return true;
+    };
+    recorded.iter().enumerate().all(|(index, event)| {
+        branch
+            .payload
+            .iter()
+            .filter(|payload| payload.event.name().to_string() == event.event.as_str())
+            .flat_map(|payload| &payload.fields)
+            .filter(|field| {
+                matches!(
+                    field.value,
+                    ResolvedPayloadValue::InputField { .. } | ResolvedPayloadValue::Literal { .. }
+                )
+            })
+            .all(|field| {
+                let published = event.payload.get(&field.target);
+                match taken.payload_value(index, &field.target) {
+                    Err(()) => true,
+                    Ok(None) => published.is_none_or(|value| *value == Node::Null),
+                    Ok(Some(expected)) => published == Some(&expected),
+                }
+            })
     })
 }
 
@@ -630,7 +755,21 @@ fn candidates(
     ir: &EssIr,
     command: &ResolvedCommand,
 ) -> Result<Vec<BTreeMap<String, Node>>, CheckRefusal> {
-    let guards: Vec<_> = command.outcomes.iter().filter_map(crate::when).collect();
+    // An `external:` branch's eligibility guard is not a verdict, so `when` leaves it out; but an
+    // answer a target was asked to arrange is explained only by an input the guard admits, so its
+    // literals are candidates too (beyond10x/ess#576).
+    let guards: Vec<_> = command
+        .outcomes
+        .iter()
+        .filter_map(|outcome| {
+            crate::when(outcome).or(match &outcome.condition {
+                ess_compiler::ir::ResolvedCondition::ExternalWhen { predicate, .. } => {
+                    Some(predicate)
+                }
+                _ => None,
+            })
+        })
+        .collect();
     let built = witness::candidates(ir, command, &guards, Distinction::PLAIN).map_err(|gap| {
         CheckRefusal::NoInput {
             command: command.name.to_string(),
@@ -707,6 +846,7 @@ fn step(
     prepared: &Prepared<'_>,
 ) -> Result<Alternatives<Held>, CheckRefusal> {
     let operation = prepared.operation;
+    let command = ir.commands().get(&prepared.name);
     let store = &held.store;
     let mut next: Vec<Held> = Vec::new();
     let mut unresolved = None;
@@ -751,6 +891,31 @@ fn step(
             };
             if !answers {
                 continue;
+            }
+            if taken
+                .outcome
+                .as_ref()
+                .is_some_and(|outcome| prepared.unarranged.contains(outcome.outcome.as_str()))
+            {
+                // `ess-history/3`: an external branch no arrangement this call met names.
+                continue;
+            }
+            if let (Completion::Returned, Some(recorded)) =
+                (&operation.completion, &operation.events)
+            {
+                // `ess-history/3`: the branch publishes what the answer published, in order, and
+                // with the input recorded, the payloads the model computes from it.
+                if !taken
+                    .published()
+                    .eq(recorded.iter().map(|event| event.event.as_str().to_owned()))
+                {
+                    continue;
+                }
+                if operation.input.is_some()
+                    && command.is_some_and(|command| !payload_agrees(command, &taken, recorded))
+                {
+                    continue;
+                }
             }
             let mut taken_now = held.taken.clone();
             if let Some(request) = &prepared.request {
@@ -1680,9 +1845,9 @@ fn judge(
 fn only(history: &History, keep: impl Fn(&Operation) -> bool) -> History {
     let mut kept = history.clone();
     kept.operations.retain(|operation| keep(operation));
-    // A part of a history written as `ess-history/2` is written as format 2 only while one of its
-    // operations still records a decision time.
-    if kept.format == HistoryFormat::EssHistory2 {
+    // A part of a history written as `ess-history/2` or `ess-history/3` is written in that format
+    // only while one of its operations still records what only that format carries.
+    if kept.format != HistoryFormat::EssHistory1 {
         kept.format = HistoryFormat::for_operations(&kept.operations);
     }
     kept

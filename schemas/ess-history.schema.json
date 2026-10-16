@@ -1,21 +1,49 @@
 {
   "$schema": "http://json-schema.org/draft-04/schema#",
   "id": "https://github.com/beyond10x/ess/schemas/ess-history.schema.json",
-  "title": "ess-history/1 and ess-history/2",
-  "description": "One recorded concurrent run, as declared by models/concurrent-history/. An ess-history/2 document is an ess-history/1 document whose operations may carry decision_time; a writer selects ess-history/2 exactly when one does, and the reader refuses decision_time in an ess-history/1 document. A Returned operation carries returned_at and outcome; an Indeterminate operation carries neither and is read as returning after every other operation. Draft 04 is used because it is the draft in which a number written with a decimal point or an exponent (7.0, 7e0, 1e1) is not an integer, which is what the reader admits.",
+  "title": "ess-history/1, ess-history/2 and ess-history/3",
+  "description": "One recorded concurrent run, as declared by models/concurrent-history/. An ess-history/2 document is an ess-history/1 document whose operations may carry decision_time; a writer selects ess-history/2 exactly when one does, and the reader refuses decision_time in an ess-history/1 document. An ess-history/3 document is an ess-history/2 document whose operations may also carry input, events and arranged; a writer selects ess-history/3 exactly when one does, and the reader refuses each in an ess-history/1 or ess-history/2 document. A number inside input or an event payload has one spelling, the ECMAScript spelling of its binary64 value that JSON.stringify and Go encoding/json write (100, never 100.0 or 1e2; 1e+21; 0, never -0), and an object there repeats no key; the reader refuses either otherwise. A Returned operation carries returned_at and outcome; an Indeterminate operation carries neither and is read as returning after every other operation. Draft 04 is used because it is the draft in which a number written with a decimal point or an exponent (7.0, 7e0, 1e1) is not an integer, which is what the reader admits.",
   "type": "object",
   "additionalProperties": false,
   "required": ["format", "history_id", "spec_digest", "seed", "clients", "operations"],
   "anyOf": [
     {
-      "description": "An ess-history/2 document: an operation may carry decision_time.",
-      "properties": { "format": { "enum": ["ess-history/2"] } }
+      "description": "An ess-history/3 document: an operation may carry decision_time, input, events and arranged.",
+      "properties": { "format": { "enum": ["ess-history/3"] } }
     },
     {
-      "description": "An ess-history/1 document: no operation carries decision_time.",
+      "description": "An ess-history/2 document: an operation may carry decision_time, and no operation carries input, events or arranged.",
+      "properties": {
+        "format": { "enum": ["ess-history/2"] },
+        "operations": {
+          "items": {
+            "not": {
+              "anyOf": [
+                { "required": ["input"] },
+                { "required": ["events"] },
+                { "required": ["arranged"] }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "An ess-history/1 document: no operation carries decision_time, input, events or arranged.",
       "properties": {
         "format": { "enum": ["ess-history/1"] },
-        "operations": { "items": { "not": { "required": ["decision_time"] } } }
+        "operations": {
+          "items": {
+            "not": {
+              "anyOf": [
+                { "required": ["decision_time"] },
+                { "required": ["input"] },
+                { "required": ["events"] },
+                { "required": ["arranged"] }
+              ]
+            }
+          }
+        }
       }
     }
   ],
@@ -43,7 +71,7 @@
   "definitions": {
     "HistoryFormat": {
       "type": "string",
-      "enum": ["ess-history/1", "ess-history/2"]
+      "enum": ["ess-history/1", "ess-history/2", "ess-history/3"]
     },
     "SpecDigest": {
       "type": "string",
@@ -70,6 +98,19 @@
     "Verdict": {
       "type": "string",
       "enum": ["Linearizable", "Violation", "Unknown"]
+    },
+    "PublishedEvent": {
+      "description": "One event an answer published (ess-history/3), as the target published it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["event", "payload"],
+      "properties": {
+        "event": { "$ref": "#/definitions/QualifiedName" },
+        "payload": {
+          "description": "The event's payload, every field by name as published.",
+          "type": "object"
+        }
+      }
     },
     "Operation": {
       "type": "object",
@@ -109,7 +150,21 @@
           "description": "For a client retry: the operation_id of an earlier operation of the same client and command whose request this one sent again, unchanged. Written only when a runner injects the faults a specification declares, for a command declaring a replays branch. Absent on every other operation.",
           "anyOf": [{ "$ref": "#/definitions/Uuid" }, { "type": "null" }]
         },
-        "decision_time": { "$ref": "#/definitions/DecisionInstant" }
+        "decision_time": { "$ref": "#/definitions/DecisionInstant" },
+        "input": {
+          "description": "ess-history/3: the command's input as the client sent it, every input field by name with its value as sent, the field naming the subject included. Absent on a read and where the writer recorded none; never null.",
+          "type": "object"
+        },
+        "events": {
+          "description": "ess-history/3: every event a Returned command's answer published, in the order published, with its payload. Absent on a read, on an Indeterminate operation and where the writer recorded none; never null.",
+          "type": "array",
+          "items": { "$ref": "#/definitions/PublishedEvent" }
+        },
+        "arranged": {
+          "description": "ess-history/3: the external branches the client asked the target to arrange through ConfigureExternalOutcome before sending this call; [] where it arranged none. Absent where the writer recorded none, which leaves every eligible external branch open to the checker; never null.",
+          "type": "array",
+          "items": { "$ref": "#/definitions/QualifiedName" }
+        }
       },
       "oneOf": [
         {
@@ -125,7 +180,8 @@
             "completion": { "enum": ["Indeterminate"] },
             "returned_at": { "type": "null" },
             "outcome": { "type": "null" },
-            "rows": { "type": "null" }
+            "rows": { "type": "null" },
+            "events": { "type": "null" }
           }
         }
       ]

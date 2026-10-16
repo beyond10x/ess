@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-15T08:45:05Z",
+  "actor": "human:timo",
+  "artifact": "story:period-bounded-views-are-arranged",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "package gate: cargo test -p ess-conformance --test view_param_binding, synthesis_suite_bytes_table, aggregate tests; cargo test -p ess-cli; task test-xtask; clippy ess-conformance and ess-cli, all exit 0",
+    "reference": "ce8f1d0efb"
+  }
+}

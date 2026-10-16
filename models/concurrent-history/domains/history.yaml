@@ -3,7 +3,7 @@ domain: concurrent.history
 types:
   - name: concurrent.history.HistoryFormat
     kind: enum
-    variants: ["ess-history/1", "ess-history/2"]
+    variants: ["ess-history/1", "ess-history/2", "ess-history/3"]
 
   - name: concurrent.history.SpecDigest
     kind: newtype
@@ -23,6 +23,14 @@ types:
   - name: concurrent.history.Verdict
     kind: enum
     variants: [Linearizable, Violation, Unknown]
+
+  - name: concurrent.history.PublishedEvent
+    kind: struct
+    fields:
+      - name: event
+        type: concurrent.history.QualifiedName
+      - name: payload
+        type: Map<String, Json>
 
 entities:
   - name: concurrent.history.History
@@ -83,6 +91,12 @@ entities:
         type: Optional<Uuid>
       - name: decision_time
         type: Optional<Timestamp>
+      - name: input
+        type: Optional<Map<String, Json>>
+      - name: events
+        type: Optional<List<concurrent.history.PublishedEvent>>
+      - name: arranged
+        type: Optional<List<concurrent.history.QualifiedName>>
     lifecycle:
       initial: Recorded
       states: [Recorded]

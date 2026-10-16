@@ -835,6 +835,7 @@ ess generate types [OPTIONS] --target <TARGET> --out <OUT> <--root <ROOT>|--all-
 | `--target` | `<TARGET>` | yes |  | Data library target. Unsupported language targets are not silently substituted. One of `typescript`, `rust`, `go`. |
 | `--package` | `<PACKAGE>` | no |  | Native package identity, required for Rust and Go |
 | `--module` | `<MODULE>` | no |  | Go module identity, required only for Go |
+| `--rust-raw-json` | `<TYPE[.FIELD]>`… | no |  | Rust only: keep `Json` values as their exact JSON text (`Box<serde_json::value::RawValue>`), so their bytes round-trip without `exact-numbers`. A type, by its qualified model or component name, covers each of its `Json` fields, `<type>.<field>` that one field. Repeatable |
 | `--names` | `<NAMES>` | no | `qualified` | How declarations are named: the qualified model name, or its last segment. One of `qualified`, `short`. |
 | `--out` | `<OUT>` | yes |  | Library destination, outside the specification input tree |
 
@@ -1009,6 +1010,7 @@ ess generate schema types-bundle [OPTIONS] --bundle <BUNDLE> --root <ROOT> --tar
 | `--target` | `<TARGET>` | yes |  | Data library target. Unsupported language targets are not silently substituted. One of `typescript`, `rust`, `go`. |
 | `--package` | `<PACKAGE>` | no |  | Native package identity, required for Rust and Go |
 | `--module` | `<MODULE>` | no |  | Go module identity, required only for Go |
+| `--rust-raw-json` | `<TYPE[.FIELD]>`… | no |  | Rust only: keep `Json` values as their exact JSON text (`Box<serde_json::value::RawValue>`), so their bytes round-trip without `exact-numbers`. A type, by its qualified model or component name, covers each of its `Json` fields, `<type>.<field>` that one field. Repeatable |
 | `--out` | `<OUT>` | yes |  | Directory for declarations, target accounting and the retained source bundle |
 
 #### `ess generate schema normalize-check`
@@ -1469,7 +1471,7 @@ ess verify conform web [OPTIONS]
 | `--scenarios` | `<SCENARIOS>` | no |  | One scenario file, or a directory using `ess-inputs.yaml` or shallow `.yaml`/`.yml` selection |
 | `--out` | `<OUT>` | no |  | Where to write the product |
 | `--suite-format` | `<SUITE_FORMAT>` | no | `4` | Ordinary (4) or declared coverage (5); coverage emits the complete coverage input. One of `4`, `5`. |
-| `--history` | `<HISTORY>` | no |  | An `ess-history/1` or `ess-history/2` document: draw it, checked against the specification, as one lane per client in a single self-contained `index.html`, printed when `--out` is absent. `--out` replaces the files `ess` owns in that directory, the player's included, so write history pages and the player to different directories |
+| `--history` | `<HISTORY>` | no |  | An `ess-history/1`, `ess-history/2` or `ess-history/3` document: draw it, checked against the specification, as one lane per client in a single self-contained `index.html`, printed when `--out` is absent. `--out` replaces the files `ess` owns in that directory, the player's included, so write history pages and the player to different directories |
 
 #### `ess verify conform select`
 
@@ -1579,7 +1581,7 @@ ess verify conform mutate [OPTIONS] <--target <TARGET>|--emit <EMIT>|--collect <
 
 Check a recorded concurrent history for linearizability against the specification's model.
 
-Reads an `ess-history/1` or `ess-history/2` document recorded against the specification at `--path`, and searches for an order of its operations the interpreter accepts, answer for answer, reading an operation's recorded `decision_time` as the current time. The history records no inputs, so an operation is explained by any candidate input synthesis would submit for its command. Reads of views are not judged and are listed. A violation is reported with the longest partial linearization found and a shrunk history that is still a violation.
+Reads an `ess-history/1`, `ess-history/2` or `ess-history/3` document recorded against the specification at `--path`, and searches for an order of its operations the interpreter accepts, answer for answer, reading an operation's recorded `decision_time` as the current time. An operation that records its `input` (`ess-history/3`) is stepped with exactly that input, and one that records its `events` takes only a branch publishing those events, in order, with the payload values the model computes from the recorded input; one that records `arranged` takes an `external:` branch only where a call of its command arranged it before this one returned. An operation that records no input is explained by any candidate input synthesis would submit for its command. Reads of views are not judged and are listed. A violation is reported with the longest partial linearization found and a shrunk history that is still a violation.
 
 Exit 0: linearizable. Exit 1: violation. Exit 3: unknown — the search spent `--budget` before it finished, which is never a pass. Exit 2: the specification or the history could not be read, the specification did not load, or the history or one of its operations was refused.
 
@@ -1590,7 +1592,7 @@ ess verify conform check-history [OPTIONS] --history <HISTORY>
 | Argument | Value | Required | Default | Description |
 |---|---|---|---|---|
 | `--path` | `<PATH>` | no | `.` | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
-| `--history` | `<HISTORY>` | yes |  | The `ess-history/1` or `ess-history/2` document |
+| `--history` | `<HISTORY>` | yes |  | The `ess-history/1`, `ess-history/2` or `ess-history/3` document |
 | `--budget` | `<BUDGET>` | no | `1000000` | How many executions of the model the search may spend; the same history and budget always give the same verdict |
 | `--settle` | `<READS>` | no | `4` | How many of a session's reads of an `eventual` view, invoked after the writes stop, may still be behind; every later read is judged converged. A count of reads, not of instants, so the clock a history was written on changes no verdict |
 | `--format` | `<FORMAT>` | no | `text` | One of `text`, `json`. |
