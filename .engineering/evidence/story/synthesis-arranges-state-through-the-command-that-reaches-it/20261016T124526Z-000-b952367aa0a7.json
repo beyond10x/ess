@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-16T12:45:26Z",
+  "actor": "human:timo",
+  "artifact": "story:synthesis-arranges-state-through-the-command-that-reaches-it",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "https://github.com/beyond10x/ess/actions/runs/38897849877 (PR 589 Gate green at 8dde9260b)"
+  }
+}

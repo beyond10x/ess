@@ -2,16 +2,17 @@
 format: aep.planning-md/3
 id: story:runtime-realizes-a-scheduled-job
 kind: story
-status: active
+status: implemented
 title: A runtime workload can be realized as a scheduled job (Kubernetes CronJob)
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
 - depends_on: story:runtime-workload-probes-resources-placement-annotations
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-15T03:05:53Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-10-15T03:05:53Z", actor: "human:timo", revision: 5}
+- {from: "active", to: "implemented", at: "2026-10-16T12:45:25Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 
