@@ -1,0 +1,10 @@
+serviceAccount:
+  name: default
+images: {}
+config: {}
+secrets:
+  credentials:
+    name: ""
+endpoints: {}
+workloads:
+  ingest-a: {}

@@ -1,0 +1,51 @@
+{{- $root := . -}}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ .Release.Name }}-ingest-a
+spec:
+  schedule: "2-59/10 * * * *"
+  concurrencyPolicy: Forbid
+  suspend: true
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 540
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/instance: {{ .Release.Name }}
+            app.kubernetes.io/component: ingest-a
+        spec:
+          restartPolicy: Never
+          serviceAccountName: {{ .Values.serviceAccount.name }}
+          automountServiceAccountToken: false
+          securityContext:
+            runAsUser: 10001
+            runAsGroup: 10001
+            fsGroup: 10001
+            runAsNonRoot: true
+          containers:
+            - name: runner
+              image: "example.invalid/runner@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+              imagePullPolicy: IfNotPresent
+              args: ["ingest","--once"]
+              resources:
+                requests:
+                  cpu: "50m"
+                  memory: "64Mi"
+                limits:
+                  memory: "128Mi"
+              securityContext:
+                readOnlyRootFilesystem: true
+              volumeMounts:
+                - name: secret-credentials
+                  mountPath: "/etc/ingest"
+                  readOnly: true
+          volumes:
+            - name: secret-credentials
+              secret:
+                secretName: {{ index .Values.secrets "credentials" "name" }}
+                defaultMode: 256
+                items:
+                  - key: "credentials.json"
+                    path: "credentials.json"
