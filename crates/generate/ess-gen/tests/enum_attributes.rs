@@ -142,3 +142,96 @@ fn enum_attributes_projected() {
         assert!(docs.contains(row), "the docs table has `{row}`:\n{docs}");
     }
 }
+
+/// The reproduction of beyond10x/ess#579: an `Integer` attribute, projected to `OpenAPI`.
+const LEVELS: &str = "format: ess/23
+system: demo
+version: v1
+domain: demo.levels
+types:
+  - name: demo.levels.Level
+    kind: enum
+    attributes:
+      - {name: rank, type: Integer}
+    variants:
+      - {name: Low, attributes: {rank: 1}}
+      - {name: High, attributes: {rank: 2}}
+events:
+  - name: demo.levels.LevelSet
+    fields:
+      - {name: level, type: demo.levels.Level}
+commands:
+  - name: demo.levels.SetLevel
+    input:
+      - {name: level, type: demo.levels.Level}
+    outcomes:
+      - name: set
+        emits: [demo.levels.LevelSet]
+        payload:
+          demo.levels.LevelSet: {level: input.level}
+components:
+  - component: levels-service
+    summary: Keeps the level.
+    owns:
+      domains: [demo.levels]
+    accepts:
+      commands: [demo.levels.SetLevel]
+    publishes:
+      events: [demo.levels.LevelSet]
+    reached_by: network
+";
+
+/// `serde_json`'s private number token. With `arbitrary_precision` unified into a build, a
+/// `serde_json::Number` handed to any serializer but `serde_json`'s own is written as a one-key
+/// map under it; reading the bytes back through `serde_json` turns the map into a number again,
+/// which is why this looks at the text and not only at the parsed value.
+const NUMBER_WRAPPER: &str = "$serde_json::private::Number";
+
+/// beyond10x/ess#579: the values of an `Integer` attribute are plain numbers in every `OpenAPI`
+/// document, with `arbitrary_precision` on and off (`cargo test -p ess-gen` builds it off;
+/// `--features serde_json/arbitrary_precision` and the workspace run build it on).
+#[test]
+fn integer_enum_attribute_is_a_plain_number() {
+    let raw = RawSpecFile::parse(LEVELS).unwrap();
+    let spec = Specification::assemble([(Source::new("levels.yaml"), raw)])
+        .unwrap_or_else(|errors| panic!("{errors}"));
+    let ir = compile(&spec, &SourceMap::new()).unwrap();
+    let generator = ess_gen::generator("openapi").expect("the generator exists");
+    let expected = serde_json::json!([
+        {"name": "rank", "type": "Integer", "kind": "integer", "values": {"Low": 1, "High": 2}},
+    ]);
+    let mut documents: Vec<(String, String)> = ess_gen::artifact::run(generator.as_ref(), &ir)
+        .expect("generates")
+        .into_iter()
+        .map(|(path, artifact)| (path, artifact.contents))
+        .collect();
+    // The document a synthesised server serves at `/openapi.json`, where the report saw it.
+    for component in ir.components().values() {
+        documents.push((
+            format!("{}.openapi.json", component.name),
+            ess_gen::openapi::json(&ir, component),
+        ));
+    }
+    let mut seen = 0;
+    for (path, contents) in documents {
+        assert!(
+            !contents.contains(NUMBER_WRAPPER),
+            "{path} carries a serde_json number wrapper:\n{contents}"
+        );
+        let document: serde_json::Value = if std::path::Path::new(&path)
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("json"))
+        {
+            serde_json::from_str(&contents).expect("JSON")
+        } else {
+            ess_yaml::from_str(&contents).expect("YAML")
+        };
+        let mut levels = Vec::new();
+        declarations(&document, "demo.levels.Level", &mut levels);
+        for level in levels {
+            assert_eq!(level["x-ess-attributes"], expected, "{path}");
+            seen += 1;
+        }
+    }
+    assert!(seen > 0, "openapi projects the attributed enum");
+}

@@ -173,6 +173,7 @@ dependencies = [
 name = "ess-yaml"
 version = "0.61.0"
 dependencies = [
+ "serde",
  "serde_norway",
 ]
 
