@@ -26,7 +26,7 @@
 //!    that is not the one spelling of an instant, written `null`, or carried by an
 //!    `ess-history/1` document, an `input`, `events` or `arranged` written `null` or carried by a
 //!    document below `ess-history/3`, a key written twice in an object inside an `input` or an
-//!    event's `payload`, or a number there in any spelling but its one ([`canonical_numbers`])
+//!    event's `payload`, or a number there in any spelling but its one (`canonical_numbers`)
 //!    ([`HistoryRefusal::Malformed`], the detail naming which) — or another
 //!    `format`, a future major included. [`read_format1`] is the retained format 1 reader: it
 //!    refuses `ess-history/2` and `ess-history/3` by their format, before any operation is read;
@@ -334,7 +334,7 @@ pub struct Operation {
     /// some candidate input explains the answer ([`crate::linearize`]). Absent on a read and on an
     /// operation whose writer recorded none; never `null`. A retry carries the input its request
     /// sent, which is its original's. Every number in it has one spelling, the one the Go and
-    /// TypeScript writers write ([`canonical_numbers`]).
+    /// TypeScript writers write (`canonical_numbers`).
     #[serde(
         skip_serializing_if = "Option::is_none",
         serialize_with = "canonical_numbers"
@@ -367,7 +367,7 @@ pub struct Operation {
 ///
 /// Read only through [`read`], which refuses a JSON array in its place, an unknown, missing or
 /// repeated field, a key written twice inside `payload` and a number there in any spelling but its
-/// one ([`canonical_numbers`]).
+/// one (`canonical_numbers`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct PublishedEvent {
@@ -1018,7 +1018,7 @@ fn never_null(bytes: &[u8]) -> Result<(), HistoryRefusal> {
 }
 
 /// Refuses a key written twice in any object inside an operation's `input` or an event's
-/// `payload`, and a number there in any spelling but its one ([`canonical_numbers`]).
+/// `payload`, and a number there in any spelling but its one (`canonical_numbers`).
 ///
 /// serde keeps the last of two values under one key, and another reader the first; the input
 /// decides which branch the checker steps, so both readings must be the same one. A number's
