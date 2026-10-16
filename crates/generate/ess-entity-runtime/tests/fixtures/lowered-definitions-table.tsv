@@ -1,4 +1,4 @@
-#	models=291	lines=425
+#	models=295	lines=429
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	REFUSED	95eb461796949834a9d78ef0c04afcab1acfa13dbf2dfd6da3af2f3c93549630:687
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing/system.yaml	ASSEMBLE
@@ -181,13 +181,17 @@ crates/verify/ess-conformance/tests/fixtures/now-guard-interpreted.yaml	componen
 crates/verify/ess-conformance/tests/fixtures/now-stored-rows.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/occurrence-clock-claims.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/occurrence-clock-offers.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/one-time-caller/existing-key.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/one-time-caller/two-commands.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/one-time-caller/with-caller.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/one-time-caller/with-view.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/one-time-caller/without-caller.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/one-time-coverage/model.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/optional-input-narrowed.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/orders-without-a-view.yaml	components=1
 crates/verify/ess-conformance/tests/fixtures/orders-without-a-view.yaml	orders-server	REFUSED	61a2a96c940475ba9db78e903eade6f2ec6c9e62f644201717a7bb5db4d1b7b9:204
 crates/verify/ess-conformance/tests/fixtures/owned-subject.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/period-bounded-views.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/pre-execution-fixtures.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/recursive-fixtures/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/refusal-beside-state.yaml	components=0

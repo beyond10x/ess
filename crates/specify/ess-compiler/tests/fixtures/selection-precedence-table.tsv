@@ -1,4 +1,4 @@
-#	models=247	commands=466
+#	models=251	commands=473
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -491,8 +491,16 @@ crates/verify/ess-conformance/tests/fixtures/occurrence-clock-offers.yaml	ir=100
 crates/verify/ess-conformance/tests/fixtures/occurrence-clock-offers.yaml	demo.offers.AcceptOffer	input_refusal: malformed | existence: unknown | held_state: accepted | default: lapsed
 crates/verify/ess-conformance/tests/fixtures/occurrence-clock-offers.yaml	demo.offers.ArchiveOffer	held_state: not-accepted | default: archived
 crates/verify/ess-conformance/tests/fixtures/occurrence-clock-offers.yaml	demo.offers.OpenOffer	accepting: opened | default: too-late-to-open
+crates/verify/ess-conformance/tests/fixtures/one-time-caller/existing-key.yaml	ir=4eca711e99fe3ebe50e82d485e20d3aed8509bd2cbadda3907dd8766bcb76214:5450
+crates/verify/ess-conformance/tests/fixtures/one-time-caller/existing-key.yaml	keys.api.IssueKey	existence: already-issued | default: issued
+crates/verify/ess-conformance/tests/fixtures/one-time-caller/two-commands.yaml	ir=a3628e656a4782d748a811ea40a9ecd3b7b9fab8fd7368c31c0db3aefcfc1b80:8355
+crates/verify/ess-conformance/tests/fixtures/one-time-caller/two-commands.yaml	keys.api.IssueKey	default: issued
+crates/verify/ess-conformance/tests/fixtures/one-time-caller/two-commands.yaml	keys.api.LabelKey	default: labelled
 crates/verify/ess-conformance/tests/fixtures/one-time-caller/with-caller.yaml	ir=7389f54b8b3b798a8a3a8b1dc9d3b35511eda77aba663036c2fadc00288cfcec:5002
 crates/verify/ess-conformance/tests/fixtures/one-time-caller/with-caller.yaml	keys.api.IssueKey	default: issued
+crates/verify/ess-conformance/tests/fixtures/one-time-caller/with-view.yaml	ir=dc70351d9cce6efba8b5347c96ab013651d24f50b969632c44efb9472b595343:8976
+crates/verify/ess-conformance/tests/fixtures/one-time-caller/with-view.yaml	keys.api.IssueKey	default: issued
+crates/verify/ess-conformance/tests/fixtures/one-time-caller/with-view.yaml	keys.api.LabelKey	default: labelled
 crates/verify/ess-conformance/tests/fixtures/one-time-caller/without-caller.yaml	ir=ec6e7e1b7343e80ce61f39be08b6e7ac19a056ac035841d884d69a7a357d7de1:5163
 crates/verify/ess-conformance/tests/fixtures/one-time-caller/without-caller.yaml	keys.api.IssueKey	default: issued
 crates/verify/ess-conformance/tests/fixtures/one-time-coverage/model.yaml	ir=e1adf075661567026afe7fd1544929ec38dfc636c00f623acaff407892846f00:1197
@@ -505,6 +513,9 @@ crates/verify/ess-conformance/tests/fixtures/orders-without-a-view.yaml	catalog.
 crates/verify/ess-conformance/tests/fixtures/owned-subject.yaml	ir=20e2c40b8b612f0a6cad7482da7e4db1ca21c182e93131d98daa5476738a4a52:9612
 crates/verify/ess-conformance/tests/fixtures/owned-subject.yaml	ledger.book.OpenAccount	default: opened
 crates/verify/ess-conformance/tests/fixtures/owned-subject.yaml	ledger.book.PostEntry	default: posted
+crates/verify/ess-conformance/tests/fixtures/period-bounded-views.yaml	ir=b1df2741021ef94725da32db76e4b80135476f7587934d4c782727422db616b5:12314
+crates/verify/ess-conformance/tests/fixtures/period-bounded-views.yaml	demo.ledger.RecordIncident	default: recorded
+crates/verify/ess-conformance/tests/fixtures/period-bounded-views.yaml	demo.ledger.ResolveIncident	held_state: wrong-state | default: resolved
 crates/verify/ess-conformance/tests/fixtures/pre-execution-fixtures.yaml	ir=a72e2b9589365db395dd0b717d7122a2b48082857d07d87ae657595c9b4d58d2:4387
 crates/verify/ess-conformance/tests/fixtures/pre-execution-fixtures.yaml	fixturetest.session.Open	default: opened
 crates/verify/ess-conformance/tests/fixtures/recursive-fixtures/system.yaml	ASSEMBLE

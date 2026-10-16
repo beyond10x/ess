@@ -1062,7 +1062,7 @@ errors:
         assert_eq!(judged(&ir, &[unrecorded]), Verdict::Linearizable);
     }
 
-    fn paid(index: u64, input: Option<Value>, payload: Value) -> Call {
+    fn paid(index: u64, input: Option<Value>, payload: &Value) -> Call {
         Call {
             input,
             events: Some(json!([{"event": "arrange.core.Paid", "payload": payload}])),
@@ -1112,7 +1112,11 @@ errors:
                 "a field no mapping names is not compared",
             ),
         ] {
-            assert_eq!(judged(&ir, &[paid(0, input(), payload)]), expected, "{why}");
+            assert_eq!(
+                judged(&ir, &[paid(0, input(), &payload)]),
+                expected,
+                "{why}"
+            );
         }
         assert_eq!(
             judged(
@@ -1120,14 +1124,14 @@ errors:
                 &[paid(
                     0,
                     Some(json!({"amount": 5, "note": "x"})),
-                    json!({"amount": 5, "note": "x", "version": 2})
+                    &json!({"amount": 5, "note": "x", "version": 2})
                 )]
             ),
             Verdict::Linearizable
         );
         // Without its input, an operation is held to the names of its events only.
         assert_eq!(
-            judged(&ir, &[paid(0, None, json!({"amount": 999_999}))]),
+            judged(&ir, &[paid(0, None, &json!({"amount": 999_999}))]),
             Verdict::Linearizable
         );
     }
@@ -1138,7 +1142,7 @@ errors:
         let written = history::read(
             &bytes(
                 ir,
-                &[paid(0, Some(json!({"amount": 1})), json!({"amount": 1}))],
+                &[paid(0, Some(json!({"amount": 1})), &json!({"amount": 1}))],
             ),
             &SuiteProvenance::of(ir).spec_digest,
         )
