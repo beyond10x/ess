@@ -270,6 +270,11 @@ func (b *transcriptTarget) ObserveEvents(r EventObservationRequest) ([]ObservedE
 	}
 	return seen, nil
 }
+// HoldNow replays a held `now` (suite/50, beyond10x/ess#586).
+func (b *transcriptTarget) HoldNow(h NowHold) error {
+	_, err := b.next("hold_now", h.Instant, map[string]any{})
+	return err
+}
 func (b *transcriptTarget) ConfigureExternalOutcome(c ExternalOutcomeControl) error {
 	_, err := b.next("configure_external_outcome", c.Command+"/"+c.Outcome, map[string]any{})
 	return err

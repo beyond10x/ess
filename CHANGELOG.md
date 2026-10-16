@@ -10,6 +10,24 @@
   (beyond10x/ess#579, decoder half). A constraint the emitter cannot check refuses the target by
   name.
 
+- A suite can fix the instant a target reads as `now` for one command: the `hold_now` step
+  (`{step: hold_now, seconds: <n>}`, suite `ess-conformance/50`, or `/51` with coverage) stands
+  before the `execute_command` it holds and names a `now_offset`, so a value sent as a `now_offset`
+  can sit exactly on a `now` boundary. The runner holds its command clock at that instant, or asks
+  the target through the new optional `ConformanceTarget::hold_now` (the generated Go runtime's
+  `NowHolder`, the TypeScript runtime's `holdNow`); a target without it reports the scenario
+  `unsupported`, naming `hold_now`. A suite without the step keeps its format and
+  bytes (https://github.com/beyond10x/ess/issues/586).
+- Synthesis adds one scenario on each `now` boundary a command decides by — an input guard, or a
+  `when_subject:`/`when_related:` predicate over a stored field written from an input — with the
+  value sent exactly on the boundary and a `hold_now 0` before the command under test, filed as
+  `<command>/outcome/<outcome>/held/<field>/<seconds>`. The `guard-boundary` mutant (`<` to `<=`)
+  answers apart there and is now killed. A model with such a guard therefore gets a suite in
+  `ess-conformance/50` (`/51` with coverage); its off-boundary scenarios keep their bytes, and a
+  target without `hold_now` reports only the new scenario `unsupported`, named and counted; unlike
+  any other unsupported scenario it does not fail the run, so a target that passed before keeps
+  its verdict and exit status in the Rust, Go and TypeScript runners
+  (https://github.com/beyond10x/ess/issues/586).
 - The generated Go and TypeScript sequential explorers (`Explore`) draw a `Timestamp` input, as
   the concurrent ones already did, and decide a guard over `now` against a clock,
   `ExploreOptions.Now` (TypeScript `now`), the wall clock by default. Where a guard compares a

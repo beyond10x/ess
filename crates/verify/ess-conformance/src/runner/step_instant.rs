@@ -29,6 +29,12 @@ impl StepInstant {
             .and_then(DecisionInstant::checked);
         *self.0.lock().unwrap_or_else(PoisonError::into_inner) = instant;
     }
+
+    /// Records `instant` itself as the step's instant: the one a `hold_now` step fixed for the command
+    /// after it (beyond10x/ess#586).
+    pub(super) fn hold(&self, instant: Rfc3339Instant) {
+        *self.0.lock().unwrap_or_else(PoisonError::into_inner) = DecisionInstant::checked(instant);
+    }
 }
 
 impl CommandClock for StepInstant {

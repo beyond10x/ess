@@ -534,6 +534,13 @@ impl ConformanceTarget for JsTarget {
         )?;
         Ok(events(&result))
     }
+    fn hold_now(&self, request: NowHold) -> Result<(), TargetError> {
+        self.required(
+            "holdNow",
+            json!({"instant": request.instant.to_rfc3339(), "correlation": request.correlation.to_string()}),
+        )
+        .map(drop)
+    }
     fn configure_external_outcome(
         &self,
         request: ExternalOutcomeControl,
@@ -1175,7 +1182,7 @@ const CURRENT_TIME_CASE: Case<'static> = Case {
 #[test]
 fn now_offset_values_fresh_suite_34_run_in_typescript_with_the_rust_verdicts() {
     Case {
-        version: "ess-conformance/34",
+        version: "ess-conformance/50",
         ..CURRENT_TIME_CASE
     }
     .ordinary(&ir(CURRENT_TIME));
@@ -1184,7 +1191,7 @@ fn now_offset_values_fresh_suite_34_run_in_typescript_with_the_rust_verdicts() {
 #[test]
 fn now_offset_values_fresh_coverage_suite_35_run_in_typescript_with_the_rust_verdicts() {
     Case {
-        version: "ess-conformance/35",
+        version: "ess-conformance/51",
         ..CURRENT_TIME_CASE
     }
     .coverage(&ir(CURRENT_TIME));

@@ -151,7 +151,11 @@ fn a3_every_stored_now_branch_is_witnessed() {
     assert!(now_offset::used_by(&suite));
     // A3 adds no persisted predicate: the suite takes the `now_offset` pair, never 40/41.
     let major = suite.provenance.suite_version.major();
-    assert!((now_offset::ORDINARY..40).contains(&major), "suite/{major}");
+    // The scenario on a boundary holds the clock and is written in suite/50 (beyond10x/ess#586).
+    assert!(
+        (now_offset::ORDINARY..40).contains(&major) || major == ess_conformance::hold_now::ORDINARY,
+        "suite/{major}"
+    );
 }
 
 /// A witness a second either side of its boundary, never on it, or the plain witness — or a further
@@ -326,7 +330,12 @@ fn a3_a_stored_instant_no_creator_input_carries_is_refused_by_name() {
 /// Every scenario's status against the interpreter wired as `clocking`, with the runner's wall at
 /// [`WALL_MS`]; and the provider's reads and the decisions it was read for.
 fn run(clocking: Clocking) -> (BTreeMap<String, Status>, (usize, usize)) {
-    let suite = suite();
+    // The scenarios on a boundary need a target that holds the clock; this one does not
+    // (`runners_agree_on_the_fixed_instant` and `current_time_guard` run them).
+    let mut suite = suite();
+    suite
+        .scenarios
+        .retain(|id, _| !id.to_string().contains("/held/"));
     let admitted = AdmittedSuite::from_suite(&suite).unwrap();
     let target = Staged::new(model(LEASES), &suite, clocking);
     let runner = Runner::new(

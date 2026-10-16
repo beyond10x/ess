@@ -171,11 +171,13 @@ impl ConformanceSuite {
 
     /// Raises the format to suite/44 when an act claims one event more than once
     /// (beyond10x/ess#427), to suite/46 when a response observation carries String-newtype
-    /// constraints (beyond10x/ess#499), and to suite/48 when a response observation ignores
-    /// undeclared fields (beyond10x/ess#500). Each pair is cumulative over every major below it, so
+    /// constraints (beyond10x/ess#499), to suite/48 when a response observation ignores
+    /// undeclared fields (beyond10x/ess#500), and to suite/50 when a scenario holds `now` for a
+    /// command (beyond10x/ess#586). Each pair is cumulative over every major below it, so
     /// nothing may lower it.
     fn raise_for_counted_claims(&mut self) {
-        let floor = crate::undeclared_fields::ordinary_floor(self)
+        let floor = crate::hold_now::ordinary_floor(self)
+            .or_else(|| crate::undeclared_fields::ordinary_floor(self))
             .or_else(|| crate::direct_response::constrained_ordinary_floor(self))
             .or_else(|| crate::event_multiplicity::ordinary_floor(self));
         if let Some(floor) = floor {
@@ -470,7 +472,8 @@ impl SuiteProvenance {
 /// refuse a suite it understands perfectly.
 pub const SUPPORTED_SUITE_FORMATS: &[u32] = &[
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
-    27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49,
+    27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50,
+    51,
 ];
 
 /// The version of the *document shape* a suite is written in — `ess-conformance/1`.
@@ -648,6 +651,22 @@ pub enum ScenarioId {
     Outcome {
         /// The branch this scenario proves.
         outcome: OutcomeRef,
+    },
+    /// One declared outcome taken with an input on a boundary against the current time, the
+    /// command decided at a held instant (suite/50 and /51, beyond10x/ess#586):
+    /// `demo.jobs.ScheduleJob/outcome/scheduled/held/starts_at/-60`.
+    ///
+    /// The field is the input field the scenario sends on the boundary, and the seconds are the
+    /// reference offset the guard names, so each ordering a command decides by is its own scenario.
+    /// Filed apart from [`Outcome`](Self::Outcome), whose scenario keeps its bytes: a target that
+    /// cannot hold its `now` reports only this one `unsupported`.
+    HeldOutcome {
+        /// The branch the boundary value takes.
+        outcome: OutcomeRef,
+        /// The input field sent on the boundary.
+        field: String,
+        /// The reference offset of the boundary.
+        seconds: i64,
     },
     /// One declared transition, taken by the outcome that drives it.
     ///
@@ -884,6 +903,23 @@ impl ScenarioId {
                         .map_err(|_| reject("has a malformed outcome name"))?,
                 ),
             }),
+            [command, Self::OUTCOME, outcome, "held", field, seconds] => {
+                let seconds: i64 = seconds
+                    .parse()
+                    .map_err(|_| reject("has a malformed held offset"))?;
+                if field.is_empty() {
+                    return Err(reject("names no held input field"));
+                }
+                Ok(Self::HeldOutcome {
+                    outcome: OutcomeRef::new(
+                        CommandRef::new(name(command)?),
+                        OutcomeName::new(outcome)
+                            .map_err(|_| reject("has a malformed outcome name"))?,
+                    ),
+                    field: (*field).to_owned(),
+                    seconds,
+                })
+            }
             [entity, Self::TRANSITION, transition, "by", command, outcome] => {
                 Ok(Self::Transition {
                     transition: TransitionRef::new(EntityRef::new(name(entity)?), transition)
@@ -966,6 +1002,7 @@ impl ScenarioId {
             }),
             _ => Err(reject(
                 "is not a scenario name; expected `<command>/outcome/<name>`, \
+                 `<command>/outcome/<name>/held/<field>/<seconds>`, \
                  `<entity>/transition/<name>/by/<command>/<outcome>`, \
                  `<entity>/state/<state>/refuses/<command>`, \
                  `<entity>/invariant/after/<command>/<outcome>`, \
@@ -986,6 +1023,17 @@ impl fmt::Display for ScenarioId {
             Self::Outcome { outcome } => write!(
                 f,
                 "{}/{}/{}",
+                outcome.command,
+                Self::OUTCOME,
+                outcome.outcome
+            ),
+            Self::HeldOutcome {
+                outcome,
+                field,
+                seconds,
+            } => write!(
+                f,
+                "{}/{}/{}/held/{field}/{seconds}",
                 outcome.command,
                 Self::OUTCOME,
                 outcome.outcome
@@ -2534,6 +2582,16 @@ pub enum ScenarioStep {
         /// What later claims call it.
         instant: InstantName,
     },
+    /// Ask the target to decide the next command, and only that one, at the instant the
+    /// scenario's `now_offset` of `seconds` names (suite/50, beyond10x/ess#586).
+    ///
+    /// It stands immediately before the [`ExecuteCommand`](Self::ExecuteCommand) it holds; any
+    /// other position is refused at admission. Arranging, not asserting: a target without
+    /// [`hold_now`](crate::ConformanceTarget::hold_now) reports the scenario `unsupported`.
+    HoldNow {
+        /// A `now_offset` number, resolved through the scenario's one table of them.
+        seconds: i64,
+    },
     /// Require that this point of the scenario is not reached before a length of time has passed.
     ///
     /// The **hold**: the claim that a consequence does not arrive early, which is the half of
@@ -3312,12 +3370,14 @@ mod tests {
             "ess-conformance/47",
             "ess-conformance/48",
             "ess-conformance/49",
+            "ess-conformance/50",
+            "ess-conformance/51",
         ] {
             let earlier = SuiteFormat::parse(earlier).expect("well formed");
             assert!(earlier.is_supported());
         }
 
-        let later = SuiteFormat::parse("ess-conformance/50").expect("well formed");
+        let later = SuiteFormat::parse("ess-conformance/52").expect("well formed");
         assert!(
             !later.is_supported(),
             "a later format may mean something different by the same words"

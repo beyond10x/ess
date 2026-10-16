@@ -153,7 +153,12 @@ const WALL_MS: u64 = 1_790_510_400_250;
 /// that do not pass, with their reports.
 fn failing(text: &str, rule: Box<Rule>, handling_ms: u64) -> (BTreeSet<String>, String) {
     let synthesis = synthesize(&ir(text));
-    let suite: ConformanceSuite = synthesis.suite;
+    let mut suite: ConformanceSuite = synthesis.suite;
+    // The scenarios on a boundary need a target that holds the clock; this one does not
+    // (`runners_agree_on_the_fixed_instant` and `current_time_guard` run them).
+    suite
+        .scenarios
+        .retain(|id, _| !id.to_string().contains("/held/"));
     assert!(
         !suite.scenarios.is_empty(),
         "synthesis emitted scenarios: {:#?}",
