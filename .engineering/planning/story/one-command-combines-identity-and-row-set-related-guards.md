@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:one-command-combines-identity-and-row-set-related-guards
 kind: story
-status: draft
+status: archived
 title: One command may guard on an identity-addressed related row and on a row set, and a related guard may sit beside when_subject
 tags:
 - feature-request
@@ -12,7 +12,9 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:generic-guard-precedence
-revision: 3
+revision: 4
+transitions:
+- {from: "draft", to: "archived", at: "2026-10-16T07:15:03Z", actor: "human:timo", revision: 4}
 ---
 ## Outcome
 
