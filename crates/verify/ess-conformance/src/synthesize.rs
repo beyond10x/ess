@@ -3795,6 +3795,13 @@ fn run_as(
         invoke.extend(preservation.after);
         setup.source.extend(preservation.source);
     }
+    unobserved.extend(external_read_back(
+        ir,
+        command,
+        outcome,
+        &mut setup,
+        &mut after_steps,
+    )?);
 
     let mut source = setup.source;
     if has_subject_guards(command) {
@@ -3865,6 +3872,15 @@ fn arranged(
     Ok((setup, input))
 }
 
+/// The first subject a branch of `command` names that is addressed by a supplied input.
+fn supplied_sibling_subject(command: &ResolvedCommand) -> Option<&ResolvedSubject> {
+    command
+        .outcomes
+        .iter()
+        .filter_map(|branch| branch.subject.as_ref())
+        .find(|subject| matches!(subject.instance, ResolvedInstance::Supplied { .. }))
+}
+
 /// An external branch's witness that no sibling selected by the held row claims
 /// (beyond10x/ess#464): a branch guarded by the stored row (`when_subject`) or by the held state
 /// (`when_subject_state`) answers before an external one in the precedence order
@@ -3886,18 +3902,15 @@ fn unclaimed_external(
         return subject_fact::external_witness(ir, command, outcome, actors, setup, input);
     }
     if !has_subject_guards(command) {
+        if outcome.complete_refusal && outcome.subject.is_none() {
+            return Ok((addressed_row(ir, command, actors, setup), input));
+        }
         return Ok((setup, input));
     }
     // A branch naming no subject of its own — an external refusal — reads the row its siblings
     // act on, which the held state of selects them by (beyond10x/ess#464).
     let own = outcome.subject.as_ref();
-    let Some(subject) = own.or_else(|| {
-        command
-            .outcomes
-            .iter()
-            .filter_map(|branch| branch.subject.as_ref())
-            .find(|subject| matches!(subject.instance, ResolvedInstance::Supplied { .. }))
-    }) else {
+    let Some(subject) = own.or_else(|| supplied_sibling_subject(command)) else {
         return Ok((setup, input));
     };
     // The plain witness is kept where its row rests in a held state no sibling claims it in. One
@@ -3941,7 +3954,7 @@ fn unclaimed_external(
         let arranged = match plain.take_if(|_| held.as_ref() == Some(&state)) {
             Some(plain) => Ok(plain),
             None if own.is_some() => prepare(ir, outcome, actors, Some(&state)),
-            None => held_row(ir, subject, &state, actors),
+            None => held_row(ir, subject, &state, actors, outcome.complete_refusal),
         };
         let Ok(mut setup) = arranged else {
             tried += 1;
@@ -4056,6 +4069,107 @@ fn freshened_external(
     }
 }
 
+/// The existing row `command`'s other branches address through the input, where one does: the
+/// subject a `moves:`, `updates:`, `preserves:` or `deletes:` branch names by an input field.
+fn addressed(command: &ResolvedCommand) -> Option<&ResolvedSubject> {
+    command
+        .outcomes
+        .iter()
+        .filter_map(|branch| branch.subject.as_ref())
+        .find(|subject| {
+            subject.effect != ResolvedEffect::Creates
+                && matches!(subject.instance, ResolvedInstance::Supplied { .. })
+        })
+}
+
+/// The read-back of a complete external refusal (ess/26, beyond10x/ess#587): the row the branch is
+/// forced on is snapshot completely before the provider is forced, into `setup`, and required
+/// unchanged after the refusal, into `after`, as a held-state refusal's is; where the views cover
+/// only part of it, what they publish is compared, and the rest is returned as unobserved. Nothing
+/// for any other branch, and nothing where the scenario sends no arranged row.
+fn external_read_back(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    setup: &mut Setup,
+    after: &mut Vec<ScenarioStep>,
+) -> Result<BTreeSet<String>, RefusalCause> {
+    let external = matches!(
+        outcome.condition,
+        ResolvedCondition::External { .. } | ResolvedCondition::ExternalWhen { .. }
+    );
+    if !outcome.complete_refusal || !external || outcome.subject.is_some() {
+        return Ok(BTreeSet::new());
+    }
+    let Some(subject) = addressed(command) else {
+        return Ok(BTreeSet::new());
+    };
+    let ResolvedInstance::Supplied { field } = &subject.instance else {
+        return Ok(BTreeSet::new());
+    };
+    let (Some(instance), Some(state)) = (setup.bound.get(&field.name), setup.before.as_ref())
+    else {
+        return Ok(BTreeSet::new());
+    };
+    let preservation = subject_fact::preserve_selected_subject(
+        ir,
+        subject,
+        &Setup {
+            instance: Some(instance.clone()),
+            after: Some(state.clone()),
+            settled: setup.settled.clone(),
+            ..Setup::none()
+        },
+    )?;
+    setup.steps.extend(preservation.before);
+    setup.source.extend(preservation.source);
+    after.extend(preservation.after);
+    Ok(preservation.unobserved.into_iter().collect())
+}
+
+/// `setup` with a row of the entity `command` addresses arranged and named by the input field
+/// that addresses it, for a complete external refusal naming no subject of its own (ess/26,
+/// beyond10x/ess#587) that no sibling guard decides: its scenario reads that row back, so the
+/// branch is forced on a row that exists. The row rests in the lifecycle's initial state where
+/// that is reachable, else in the first declared state that is. Where no row can be arranged, or
+/// the input already names one, `setup` is kept as it was and the scenario observes no row.
+fn addressed_row(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    setup: Setup,
+) -> Setup {
+    let Some(subject) = addressed(command) else {
+        return setup;
+    };
+    let ResolvedInstance::Supplied { field } = &subject.instance else {
+        return setup;
+    };
+    if setup.bound.contains_key(&field.name) {
+        return setup;
+    }
+    let lifecycle = &ir.entity(&subject.entity).lifecycle;
+    let states = std::iter::once(&lifecycle.initial).chain(
+        lifecycle
+            .states
+            .iter()
+            .filter(|state| **state != lifecycle.initial),
+    );
+    for state in states {
+        let Ok(mut arranged) = held_row(ir, subject, state, actors, true) else {
+            continue;
+        };
+        arranged.steps.extend(setup.steps);
+        arranged.source.extend(setup.source);
+        for (name, instance) in setup.bound {
+            arranged.bound.entry(name).or_insert(instance);
+        }
+        arranged.unobserved.extend(setup.unobserved);
+        return arranged;
+    }
+    setup
+}
+
 /// A row of `subject`'s entity resting in `held`, for a branch naming no subject of its own: sent
 /// naming it through the field the subject is supplied by, and left as it was.
 fn held_row(
@@ -4063,6 +4177,7 @@ fn held_row(
     subject: &ResolvedSubject,
     held: &StateName,
     actors: &BTreeMap<QualifiedName, ActorRef>,
+    complete: bool,
 ) -> Result<Setup, RefusalCause> {
     let ResolvedInstance::Supplied { field } = &subject.instance else {
         return Err(RefusalCause::StrategyWithoutGuard {
@@ -4086,6 +4201,14 @@ fn held_row(
         steps: arrangement.steps,
         bound: BTreeMap::from([(field.name.clone(), arrangement.instance)]),
         source: arrangement.source,
+        // A complete refusal (ess/26, beyond10x/ess#587) reads the row back, so the state and
+        // fields it was left in are kept for its snapshot; every other branch keeps what it had.
+        before: complete.then_some(arrangement.state),
+        settled: if complete {
+            arrangement.settled
+        } else {
+            BTreeMap::new()
+        },
         ..Setup::none()
     })
 }

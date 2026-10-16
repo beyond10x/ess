@@ -1263,3 +1263,374 @@ fn before_row_external_is_witnessed_on_a_row_held_state_would_also_select() {
     );
     assert_ne!(faulty.get(id), Some(&Status::Passed), "{faulty:#?}");
 }
+
+/// An `external:` refusal changes nothing on the row its command addresses (beyond10x/ess#587).
+///
+/// From `ess/26` such a refusal compiles with `complete_refusal`, so its scenario snapshots the
+/// complete row before it forces the branch and requires it unchanged afterwards, as a held-state
+/// refusal's does: `Redeem` forces `store-unavailable` (`before_row: true`) on an issued ticket,
+/// `Reissue` forces `signer-unavailable` on one. Below `ess/26` the scenario keeps the steps it had.
+mod external_refusal_read_back {
+    use std::cell::RefCell;
+    use std::collections::{BTreeMap, BTreeSet};
+
+    use ess_conformance::interpret::Interpreted;
+    use ess_conformance::report::Status;
+    use ess_conformance::scenario::ConformanceSuite;
+    use ess_conformance::target::{
+        AbsentInputRequest, ConformanceTarget, EventObservationRequest, ExternalOutcomeControl,
+        ImplementationIdentity, InvocationObservationRequest, ObservedEvent, ObservedInvocation,
+        RedeliveryRequest, ScenarioContext, SemanticCommandRequest, SemanticCommandResult,
+        SemanticViewRequest, SemanticViewResult, TargetError,
+    };
+    use ess_conformance::{AdmittedSuite, ConformanceScenario, Runner, ScenarioStep};
+    use ess_primitives::node::Node;
+
+    use super::{forced_before, ir, not_passed, run, scenario, sends, synthesis};
+
+    const TICKETS: &str = r"format: ess/26
+system: demo
+version: v1
+domain: demo.tickets
+summary: Tickets issued with a secret and redeemed once with a matching proof.
+types:
+  - {name: demo.tickets.TicketId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.tickets.Ticket
+    identity: {name: ticket_id, type: demo.tickets.TicketId}
+    fields:
+      - {name: secret, type: String}
+    lifecycle: {initial: Issued, states: [Issued], terminal: [Issued]}
+actors:
+  - name: demo.tickets.Holder
+    may: [demo.tickets.Issue, demo.tickets.Redeem, demo.tickets.Reissue]
+errors:
+  - {name: demo.tickets.StoreUnavailable, summary: The store could not be read.}
+  - {name: demo.tickets.SignerUnavailable, summary: The signer did not answer.}
+  - {name: demo.tickets.NoTicket, summary: No ticket carries the identity.}
+  - {name: demo.tickets.WrongProof, summary: The proof is not the ticket's secret.}
+commands:
+  - name: demo.tickets.Issue
+    input:
+      - {name: secret, type: String}
+    outcomes:
+      - name: issued
+        creates: demo.tickets.Ticket
+        instance: ticket_id
+        sets: {secret: input.secret}
+        emits: [demo.tickets.Issued]
+        payload:
+          demo.tickets.Issued: {ticket_id: {generated: true}}
+  - name: demo.tickets.Redeem
+    input:
+      - {name: ticket_id, type: demo.tickets.TicketId}
+      - {name: proof, type: String}
+    outcomes:
+      - name: store-unavailable
+        external: the store read of the ticket fails
+        before_row: true
+        error: demo.tickets.StoreUnavailable
+      - name: no-ticket
+        unknown_instance: true
+        error: demo.tickets.NoTicket
+      - name: wrong-proof
+        when_subject:
+          predicate: secret != input.proof
+        error: demo.tickets.WrongProof
+      - name: redeemed
+        deletes: demo.tickets.Ticket
+        instance: ticket_id
+        emits: [demo.tickets.Redeemed]
+        payload:
+          demo.tickets.Redeemed: {ticket_id: input.ticket_id}
+  - name: demo.tickets.Reissue
+    input:
+      - {name: ticket_id, type: demo.tickets.TicketId}
+      - {name: secret, type: String}
+    outcomes:
+      - name: signer-unavailable
+        external: the signer does not answer
+        error: demo.tickets.SignerUnavailable
+      - name: reissued
+        updates: demo.tickets.Ticket
+        instance: ticket_id
+        sets: {secret: input.secret}
+        emits: [demo.tickets.Reissued]
+        payload:
+          demo.tickets.Reissued: {ticket_id: input.ticket_id}
+events:
+  - name: demo.tickets.Issued
+    fields: [{name: ticket_id, type: demo.tickets.TicketId}]
+  - name: demo.tickets.Redeemed
+    fields: [{name: ticket_id, type: demo.tickets.TicketId}]
+  - name: demo.tickets.Reissued
+    fields: [{name: ticket_id, type: demo.tickets.TicketId}]
+views:
+  - name: demo.tickets.Tickets
+    source: demo.tickets.Ticket
+    consistency: read_your_writes
+    fields:
+      - {name: ticket_id, type: demo.tickets.TicketId}
+      - {name: secret, type: String}
+      - {name: state, type: demo.tickets.Ticket.State}
+";
+
+    const REDEEM: &str = "demo.tickets.Redeem";
+    const REISSUE: &str = "demo.tickets.Reissue";
+    const STORE_UNAVAILABLE: &str = "demo.tickets.Redeem/outcome/store-unavailable";
+    const SIGNER_UNAVAILABLE: &str = "demo.tickets.Reissue/outcome/signer-unavailable";
+
+    /// The two external refusals, each with its command.
+    const FORCED: [(&str, &str, &str); 2] = [
+        (STORE_UNAVAILABLE, REDEEM, "store-unavailable"),
+        (SIGNER_UNAVAILABLE, REISSUE, "signer-unavailable"),
+    ];
+
+    fn at(format: &str) -> String {
+        let out = TICKETS.replacen("format: ess/26\n", &format!("format: {format}\n"), 1);
+        assert!(out.starts_with(&format!("format: {format}\n")), "{format}");
+        out
+    }
+
+    /// For each forced send of `command` naming an arranged ticket: whether a complete snapshot
+    /// precedes it since the previous send, and whether a complete comparison follows it before
+    /// the next one.
+    fn read_back(
+        scenario: &ConformanceScenario,
+        command: &str,
+        outcome: &str,
+    ) -> Vec<(bool, bool)> {
+        let steps = &scenario.steps;
+        let commands: Vec<usize> = steps
+            .iter()
+            .enumerate()
+            .filter(|(_, step)| matches!(step, ScenarioStep::ExecuteCommand { .. }))
+            .map(|(at, _)| at)
+            .collect();
+        sends(scenario, command)
+            .into_iter()
+            .filter(|(at, input)| {
+                forced_before(scenario, *at, command, outcome)
+                    && matches!(
+                        input.get("ticket_id"),
+                        Some(ess_conformance::ScenarioValue::Instance { .. })
+                    )
+            })
+            .map(|(at, _)| {
+                let previous = commands
+                    .iter()
+                    .rev()
+                    .find(|&&other| other < at)
+                    .map_or(0, |found| found + 1);
+                let next = commands
+                    .iter()
+                    .find(|&&other| other > at)
+                    .copied()
+                    .unwrap_or(steps.len());
+                let snapshot = steps[previous..at]
+                    .iter()
+                    .any(|step| matches!(step, ScenarioStep::SnapshotCompleteSubject { .. }));
+                let compared = steps[at..next].iter().any(|step| {
+                    matches!(step, ScenarioStep::ExpectCompleteSubjectUnchanged { .. })
+                });
+                (snapshot, compared)
+            })
+            .collect()
+    }
+
+    /// What a planted defect does to the addressed ticket on a forced external branch.
+    #[derive(Clone, Copy)]
+    enum Fault {
+        None,
+        Deletes,
+        Rewrites,
+    }
+
+    /// The model interpreter, with the fault applied to the ticket an external refusal is answered
+    /// for: the views stop listing it, or list it with another secret.
+    struct Target {
+        inner: Interpreted,
+        fault: Fault,
+        forced: RefCell<Option<String>>,
+        touched: RefCell<BTreeSet<Node>>,
+    }
+
+    impl Target {
+        fn new(model: &str, fault: Fault) -> Self {
+            Self {
+                inner: Interpreted::for_model(ir(model)),
+                fault,
+                forced: RefCell::new(None),
+                touched: RefCell::new(BTreeSet::new()),
+            }
+        }
+    }
+
+    impl ConformanceTarget for Target {
+        fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
+            self.inner.identity()
+        }
+        fn begin_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
+            self.forced.borrow_mut().take();
+            self.touched.borrow_mut().clear();
+            self.inner.begin_scenario(scenario)
+        }
+        fn end_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
+            self.inner.end_scenario(scenario)
+        }
+        fn execute_command(
+            &self,
+            request: SemanticCommandRequest,
+        ) -> Result<SemanticCommandResult, TargetError> {
+            let ticket = request.input.get("ticket_id").cloned();
+            let result = self.inner.execute_command(request)?;
+            let forced = self.forced.borrow_mut().take();
+            let taken = result
+                .outcome
+                .as_ref()
+                .map(|taken| taken.outcome.to_string());
+            if let (Some(ticket), Some(forced)) = (ticket, forced) {
+                if taken.as_deref() == Some(forced.as_str()) {
+                    self.touched.borrow_mut().insert(ticket);
+                }
+            }
+            Ok(result)
+        }
+        fn execute_command_without_input(
+            &self,
+            request: AbsentInputRequest,
+        ) -> Result<SemanticCommandResult, TargetError> {
+            self.inner.execute_command_without_input(request)
+        }
+        fn query_view(
+            &self,
+            request: SemanticViewRequest,
+        ) -> Result<SemanticViewResult, TargetError> {
+            let mut result = self.inner.query_view(request)?;
+            let touched = self.touched.borrow();
+            let hit = |row: &BTreeMap<String, Node>| {
+                row.get("ticket_id").is_some_and(|id| touched.contains(id))
+            };
+            match self.fault {
+                Fault::None => {}
+                Fault::Deletes => result.rows.retain(|row| !hit(row)),
+                Fault::Rewrites => {
+                    for row in result.rows.iter_mut().filter(|row| hit(row)) {
+                        row.insert("secret".to_owned(), Node::from("rewritten"));
+                    }
+                }
+            }
+            Ok(result)
+        }
+        fn observe_events(
+            &self,
+            request: EventObservationRequest,
+        ) -> Result<Vec<ObservedEvent>, TargetError> {
+            self.inner.observe_events(request)
+        }
+        fn configure_external_outcome(
+            &self,
+            request: ExternalOutcomeControl,
+        ) -> Result<(), TargetError> {
+            *self.forced.borrow_mut() = Some(request.force.outcome.to_string());
+            self.inner.configure_external_outcome(request)
+        }
+        fn redeliver_event(&self, request: RedeliveryRequest) -> Result<(), TargetError> {
+            self.inner.redeliver_event(request)
+        }
+        fn observe_invocations(
+            &self,
+            request: InvocationObservationRequest,
+        ) -> Result<Vec<ObservedInvocation>, TargetError> {
+            self.inner.observe_invocations(request)
+        }
+    }
+
+    fn run_against(suite: &ConformanceSuite, target: &Target) -> BTreeMap<String, Status> {
+        let admitted = AdmittedSuite::from_suite(suite).unwrap_or_else(|error| panic!("{error}"));
+        Runner::for_suite(admitted.suite())
+            .run_admitted(&admitted, target)
+            .into_report()
+            .scenarios
+            .into_iter()
+            .map(|result| (result.scenario.to_string(), result.status))
+            .collect()
+    }
+
+    /// The acceptance `external_refusal_requires_the_row_unchanged`.
+    #[test]
+    fn external_refusal_requires_the_row_unchanged() {
+        let result = synthesis(TICKETS);
+        for (id, command, outcome) in FORCED {
+            let found = read_back(scenario(&result, id), command, outcome);
+            assert!(
+                !found.is_empty(),
+                "{id} forces the branch on an issued ticket"
+            );
+            assert!(
+                found
+                    .iter()
+                    .all(|&(snapshot, compared)| snapshot && compared),
+                "{id}: the ticket is snapshot completely before the branch is forced and compared \
+                 completely after it: {found:?}\n{:#?}",
+                scenario(&result, id)
+            );
+        }
+        let honest = run(TICKETS, &result.suite);
+        assert_eq!(not_passed(&honest), Vec::<String>::new());
+        for fault in [Fault::Deletes, Fault::Rewrites] {
+            let statuses = run_against(&result.suite, &Target::new(TICKETS, fault));
+            for (id, _, _) in FORCED {
+                assert_ne!(
+                    statuses.get(id),
+                    Some(&Status::Passed),
+                    "a target that deletes or rewrites the ticket on the forced branch fails {id}: \
+                     {statuses:#?}"
+                );
+            }
+        }
+        let control = run_against(&result.suite, &Target::new(TICKETS, Fault::None));
+        assert_eq!(not_passed(&control), Vec::<String>::new());
+    }
+
+    /// The flag is minted from `ess/26` only, and below it the external scenarios read nothing back.
+    #[test]
+    fn external_refusal_read_back_from_ess26_only() {
+        for (format, expected) in [("ess/25", false), ("ess/26", true)] {
+            let model = ir(&at(format));
+            for (_, command, outcome) in FORCED {
+                let resolved = model
+                    .commands()
+                    .values()
+                    .find(|resolved| resolved.name.to_string() == command)
+                    .unwrap_or_else(|| panic!("{command}"));
+                let branch = resolved
+                    .outcomes
+                    .iter()
+                    .find(|branch| branch.name.as_str() == outcome)
+                    .unwrap_or_else(|| panic!("{outcome}"));
+                assert_eq!(
+                    branch.complete_refusal, expected,
+                    "{format}: {command}/{outcome}"
+                );
+            }
+            let result = synthesis(&at(format));
+            for (id, command, outcome) in FORCED {
+                let found = read_back(scenario(&result, id), command, outcome);
+                // Below ess/26 a plain external witness (`Reissue`) arranges no row at all; from
+                // ess/26 every one is forced on an arranged ticket.
+                assert!(
+                    !expected || !found.is_empty(),
+                    "{format}: {id}: {:#?}",
+                    scenario(&result, id).steps
+                );
+                assert!(
+                    found
+                        .iter()
+                        .all(|&(snapshot, compared)| snapshot == expected && compared == expected),
+                    "{format}: {id}: {found:?}"
+                );
+            }
+        }
+    }
+}
