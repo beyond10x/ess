@@ -746,7 +746,7 @@ claiming a higher number. [Formats and digests](./formats.md) says what each doc
 | `ess-prototrace/1` | [0.53.0][r53] (experimental) | Ordered protocol actions and observations bound to a model digest, with explicit model or target origin and capture completeness. |
 | `ess-build/1`, `ess-build-ir/1` | [0.9.0][r9] | An authored build and its compiled form. |
 | `ess-runtime/1`, `ess-runtime-ir/1` | [0.9.0][r9] | An authored runtime mapping and its compiled form. |
-| `ess-runtime/2`, `ess-runtime-ir/2` | Unreleased | Adds scheduled workloads, rendered as a Kubernetes `CronJob`, and pod settings (resources, security context, service-account token, secret volumes, images pinned by digest). A reader of the previous version refuses it; a version 1 document keeps its bytes and digest. |
+| `ess-runtime/2`, `ess-runtime-ir/2` | [0.62.0][r62] | Adds scheduled workloads, rendered as a Kubernetes `CronJob`, and pod settings (resources, security context, service-account token, secret volumes, images pinned by digest). A reader of the previous version refuses it; a version 1 document keeps its bytes and digest. |
 | `ess-release/1`, `ess-release-catalog/1` | [0.9.0][r9] | A release manifest, and the catalog of candidate releases. |
 | `ess-stack/1`, `ess-stack-lock/1` | [0.9.0][r9] | Stack constraints, and the exact releases a resolution selected. |
 | `ess-environment/1`, `ess-deployment/1`, `ess-deployment-diff/1` | [0.9.0][r9] | An environment, the deployment compiled for it, and the difference between two deployments. |
