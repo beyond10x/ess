@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- The caller-swapped half of a synthesized scenario draws fresh values for every input a
+  `when_related:` guard, a row-set selector or its `forall:` test reads, and for every input
+  written into a field such a selector reads, whatever its type (#580). A key unique across
+  callers, such as a `name` refused when any row already holds it, no longer makes a correct model
+  fail its own suite on `--target interpreted`. Suites of models without such guards keep their
+  bytes.
+
 ## [0.61.0] — 2026-10-15
 
 ### Added
