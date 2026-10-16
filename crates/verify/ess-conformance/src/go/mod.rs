@@ -184,6 +184,14 @@ reason and the steps not sent; an outcome only those steps would have taken coun
 `AssertExplored` fails on a refusal unless `AllowExcluded` accepts it. A command refused in every
 state it was drawn in is in `Excluded`, as is a view the target refuses.
 
+A guard over `now` is decided against `ExploreOptions.Now`, or the wall clock where it is nil.
+Where a guard compares a `Timestamp` with `now`, every `Timestamp` input is drawn an hour to a day
+either side of an instant such a guard compares it with, so a target that reads its own clock
+moments later decides the step as the model does; a step whose answer differs between the clock's
+reading and a minute later is not sent, and `Undetermined` names its command. An outcome that
+`deletes:` its subject takes the row out of the model, so every view must lose it, and a later step
+may name the deleted identity, which the model answers as the unknown instance it now is.
+
 An outcome declared `external:` is a choice the explorer may take: where it is eligible, a seeded
 draw picks it or the ordinary branch, `ConfigureExternalOutcome` arranges it, and the step expects
 it. Once a command has had a branch arranged in a sequence, the explorer stops expecting that
@@ -236,6 +244,8 @@ return. A call that returns `ErrIndeterminate` (or wraps it, or `context.Deadlin
 `ErrUnsupported` is left out, and `AssertConcurrent` fails on it unless
 `ConcurrentOptions{AllowExcluded: true}` accepts it. `Clients` outside 2 to 4 is refused. `Unknown`
 fails `AssertConcurrent` as a violation does.
+A command with an outcome that `deletes:` its subject is not drawn: the workload is drawn before
+any call runs, so a call drawn after the delete could still name the deleted row.
 
 A client's call may also be a read of one of the specification's views, drawn from the seed beside
 the commands. A read of a `read_your_writes` view demands the token the client's own last answered

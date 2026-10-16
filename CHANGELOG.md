@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Added
+
+- The generated Go and TypeScript sequential explorers (`Explore`) draw a `Timestamp` input, as
+  the concurrent ones already did, and decide a guard over `now` against a clock,
+  `ExploreOptions.Now` (TypeScript `now`), the wall clock by default. Where a guard compares a
+  `Timestamp` with `now`, a drawn instant lies an hour to a day either side of an instant it
+  compares with, so a target reading its own clock decides the step as the model does, and a step
+  whose answer would still turn on when the target reads its clock is reported in `Undetermined`
+  rather than sent. Before, every command with a `Timestamp` input was excluded
+  (https://github.com/beyond10x/ess/issues/582).
+- The sequential explorers perform an outcome that `deletes:` its supplied subject: the row leaves
+  the model, every view must lose it, and a later step may name the deleted identity, which the
+  model answers as an unknown instance, so a single-use resource is explored through its
+  redemption. Concurrent exploration still leaves such a command out and now says why: its
+  workload is drawn before any call runs, so a later call can name the deleted row
+  (https://github.com/beyond10x/ess/issues/583).
+
 ### Fixed
 
 - The caller-swapped half of a synthesized scenario draws fresh values for every input a

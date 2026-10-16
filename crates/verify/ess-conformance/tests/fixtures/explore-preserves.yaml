@@ -5,7 +5,7 @@
 # refusal of a session that is not paused. `Resume` moves a paused session back. Before #536 a
 # `preserves:` outcome put its whole command out of every sequence, so a target that changed the
 # row on the no-op answer was never caught. `Purge` `deletes:` its subject, which the explorer
-# still leaves out by name.
+# performs (beyond10x/ess#583): the row leaves the model and every view.
 #
 # The targets beside it are `explore-preserves-target.mjs` and `explore_preserves_target.go`.
 

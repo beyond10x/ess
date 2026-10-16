@@ -773,7 +773,7 @@ fn driven_go(root: &Path, ir: &EssIr, cases: &Value, target: &str, constructor: 
 }
 
 /// Every mode of the preserving target, run once per lane: `(typescript, go)`. `Purge` deletes its
-/// subject and stays excluded, so every case accepts excluded outcomes.
+/// subject and is drawn too (beyond10x/ess#583); every case still accepts excluded outcomes.
 fn keep_lanes() -> &'static (KeepLane, KeepLane) {
     static LANES: OnceLock<(KeepLane, KeepLane)> = OnceLock::new();
     LANES.get_or_init(|| {
@@ -797,12 +797,13 @@ fn keep_each_lane() -> [(&'static str, &'static KeepLane); 2] {
     [("typescript", &keep_lanes().0), ("go", &keep_lanes().1)]
 }
 
-/// Every declared outcome of `explore-preserves.yaml` but `Purge`'s.
+/// Every declared outcome of `explore-preserves.yaml`, `Purge`'s delete among them.
 const KEPT_REACHED: &[&str] = &[
     "explorekeep.desk.Pause/already-paused",
     "explorekeep.desk.Pause/paused",
     "explorekeep.desk.PauseAgain/not-paused",
     "explorekeep.desk.PauseAgain/still-paused",
+    "explorekeep.desk.Purge/purged",
     "explorekeep.desk.Resume/not-active",
     "explorekeep.desk.Resume/resumed",
     "explorekeep.desk.Start/started",
@@ -816,18 +817,14 @@ fn assert_preserving_commands_drawn(language: &str, lane: &KeepLane) {
         lane.log
     );
     assert!(found.get("failure").is_none(), "{language}: {found}");
-    // `Excluded` names neither `Pause` nor `PauseAgain`: only `Purge`, with today's reason.
+    // `Excluded` names neither `Pause` nor `PauseAgain`, nor `Purge`, whose delete is performed.
     assert_eq!(
         found["excluded"],
-        serde_json::json!([{
-            "reason": "outcome `purged` deletes its subject from `supplied`",
-            "subject": "explorekeep.desk.Purge"
-        }]),
+        serde_json::json!([]),
         "{language}: {found}"
     );
-    assert_eq!(
-        strings(&found["excludedOutcomes"]),
-        ["explorekeep.desk.Purge/purged"],
+    assert!(
+        strings(&found["excludedOutcomes"]).is_empty(),
         "{language}: {found}"
     );
     assert_eq!(
@@ -1449,4 +1446,180 @@ fn a_refusal_has_its_own_lines_in_the_assertion_in_both_languages() {
         go.messages.keys().collect::<Vec<_>>(),
         typescript.messages.keys().collect::<Vec<_>>()
     );
+}
+
+// ---- beyond10x/ess#582, #583: a `Timestamp` input, a guard over `now`, and a deleting outcome ---
+
+const CODES_FIXTURE: &str = include_str!("fixtures/explore-codes.yaml");
+
+fn codes_ir() -> EssIr {
+    let mut sources = SourceMap::new();
+    sources.insert("explore-codes.yaml", CODES_FIXTURE);
+    let raw = RawSpecFile::parse(CODES_FIXTURE).expect("the fixture parses");
+    let specification = Specification::assemble(vec![(Source::new("explore-codes.yaml"), raw)])
+        .unwrap_or_else(|errors| panic!("the fixture validates:\n{errors}"));
+    compile(&specification, &sources).unwrap_or_else(|diagnostics| panic!("{diagnostics}"))
+}
+
+/// Every mode of the codes target, run once per lane: `(typescript, go)`. The targets read their
+/// own wall clock, and the explorer its default one.
+fn codes_lanes() -> &'static (KeepLane, KeepLane) {
+    static LANES: OnceLock<(KeepLane, KeepLane)> = OnceLock::new();
+    LANES.get_or_init(|| {
+        let ir = codes_ir();
+        let cases = serde_json::json!([
+            {"name": "correct"},
+            {"name": "keeps-row", "mode": "keeps-row"},
+            {"name": "redeems-again", "mode": "redeems-again"},
+        ]);
+        let root = scratch("codes");
+        let lanes = (
+            driven_typescript(&root, &ir, &cases, "explore-codes-target.mjs"),
+            driven_go(
+                &root,
+                &ir,
+                &cases,
+                "explore_codes_target.go",
+                "newExploreCodesTarget",
+            ),
+        );
+        std::fs::remove_dir_all(&root).ok();
+        lanes
+    })
+}
+
+fn codes_each_lane() -> [(&'static str, &'static KeepLane); 2] {
+    [("typescript", &codes_lanes().0), ("go", &codes_lanes().1)]
+}
+
+/// Every declared outcome of `explore-codes.yaml`.
+const CODES_DECLARED: &[&str] = &[
+    "explorecodes.auth.PlanCode/in-the-past",
+    "explorecodes.auth.PlanCode/planned",
+    "explorecodes.auth.RedeemCode/expired",
+    "explorecodes.auth.RedeemCode/redeemed",
+    "explorecodes.auth.RedeemCode/unknown-code",
+    "explorecodes.auth.StoreCode/stored",
+];
+
+/// The correct target passes with nothing excluded, nothing left to the clock, and every declared
+/// outcome reached: both answers of `expiry < now` and of `at < now - 60s`, the delete, and the
+/// unknown code.
+fn assert_codes_correct(language: &str, lane: &KeepLane) {
+    let found = &lane.results["correct"];
+    assert_eq!(
+        lane.asserts["correct"], "ok",
+        "{language}: {found}\n{}",
+        lane.log
+    );
+    assert!(found.get("failure").is_none(), "{language}: {found}");
+    assert_eq!(
+        found["excluded"],
+        serde_json::json!([]),
+        "{language}: {found}"
+    );
+    assert_eq!(
+        strings(&found["reached"]),
+        CODES_DECLARED,
+        "{language}: {found}"
+    );
+    assert!(
+        strings(&found["undetermined"]).is_empty(),
+        "{language}: {found}"
+    );
+}
+
+/// The `field` of every `command` step of `trace`, as the instant it names.
+fn drawn_instants(trace: &[&str], command: &str, field: &str) -> Vec<i64> {
+    trace
+        .iter()
+        .filter_map(|step| {
+            let (name, input) = step.split_once(' ')?;
+            (name == command).then(|| {
+                let input: Value = serde_json::from_str(input).expect("the input is JSON");
+                let text = input[field].as_str().expect("a drawn instant is text");
+                ess_primitives::time::Rfc3339Instant::parse_rfc3339(text)
+                    .unwrap_or_else(|| panic!("{command}.{field} drew {text}"))
+                    .epoch_seconds()
+            })
+        })
+        .collect()
+}
+
+#[test]
+fn the_sequential_explorer_draws_a_timestamp_input() {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("after the epoch")
+        .as_secs();
+    let now = i64::try_from(now).expect("a second within i64");
+    for (language, lane) in codes_each_lane() {
+        assert_codes_correct(language, lane);
+        // The drawn expiries sit around the explorer's clock, a whole hour or more either side of
+        // it, never on the fixed date a target's clock has long passed.
+        let trace = strings(&lane.results["keeps-row"]["failure"]["trace"]);
+        let drawn = drawn_instants(&trace, "explorecodes.auth.StoreCode", "expiry");
+        assert!(!drawn.is_empty(), "{language}: no expiry drawn: {trace:?}");
+        for at in drawn {
+            let away = (at - now).abs();
+            assert!(
+                (3_000..=2 * 86_400).contains(&away),
+                "{language}: an expiry {away} s from now: {trace:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_deleting_outcome_is_explored_and_its_row_is_gone() {
+    for (language, lane) in codes_each_lane() {
+        assert_codes_correct(language, lane);
+        // The row stays in the view after the delete: the step that deleted it fails.
+        assert_rows_fail(
+            language,
+            lane,
+            "keeps-row",
+            "explorecodes.auth.RedeemCode",
+            "explorecodes.auth.Codes",
+        );
+        // A second redemption of a deleted code is the model's unknown instance.
+        let trace = assert_rows_fail(
+            language,
+            lane,
+            "redeems-again",
+            "explorecodes.auth.RedeemCode",
+            "the target answered `redeemed`, the specification says `unknown-code`",
+        );
+        let code = |step: &str| -> Value {
+            let (_, input) = step.split_once(' ').expect("a step names its input");
+            serde_json::from_str::<Value>(input).expect("JSON")["code"].clone()
+        };
+        let last = code(trace.last().expect("a trace"));
+        assert!(
+            trace[..trace.len() - 1]
+                .iter()
+                .any(|step| step.starts_with("explorecodes.auth.RedeemCode ") && code(step) == last),
+            "{language}: the failing redemption names no code redeemed before it: {trace:?}"
+        );
+    }
+    // The two languages draw the same commands and decide them alike; only the drawn instants,
+    // read from two clocks, differ.
+    let (typescript, go) = codes_lanes();
+    for name in ["correct", "keeps-row", "redeems-again"] {
+        for key in ["excluded", "reached", "unreached", "undetermined"] {
+            assert_eq!(
+                typescript.results[name][key], go.results[name][key],
+                "`{name}`.{key} differs between TypeScript and Go"
+            );
+        }
+        assert_eq!(
+            typescript.results[name]["failure"]["trace"]
+                .as_array()
+                .map(Vec::len),
+            go.results[name]["failure"]["trace"]
+                .as_array()
+                .map(Vec::len),
+            "`{name}`"
+        );
+    }
 }

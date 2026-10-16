@@ -89,6 +89,11 @@ type ExploreOptions struct {
 	// commands of a sequence and checks every view again. Zero means no restart, which is what an
 	// exploration did before restarts existed.
 	RestartEvery int `json:"restartEvery,omitempty"`
+	// Now is the clock a guard over `now` is decided against (beyond10x/ess#582); nil reads the
+	// wall clock. A `Timestamp` input of a specification whose guards compare one with `now` is
+	// drawn an hour to a day either side of an instant they compare it with, so a target that reads
+	// its own clock moments later decides the step the same way.
+	Now func() time.Time `json:"-"`
 }
 
 // RestartTarget is what a durable implementation offers so that exploration can restart it.
@@ -382,10 +387,11 @@ func exploreResolve(ir map[string]any, ref map[string]any, depth int) exploreKin
 	return exploreResolveAs(ir, ref, depth, false)
 }
 
-// exploreResolveAs is exploreResolve, and with `concurrent` it also draws a `timestamp` and a type
-// whose values are constrained: concurrent exploration does not judge an answer by this model,
-// `ess` does, so a drawn value outside the constraint is a question the target answers and the
-// checker judges. A `decimal` is drawn either way, as an `integer` is (beyond10x/ess#538).
+// exploreResolveAs is exploreResolve, and with `concurrent` it also draws a type whose values are
+// constrained: concurrent exploration does not judge an answer by this model, `ess` does, so a
+// drawn value outside the constraint is a question the target answers and the checker judges. A
+// `decimal` is drawn either way, as an `integer` is (beyond10x/ess#538), and so is a `timestamp`
+// (beyond10x/ess#582).
 func exploreResolveAs(ir map[string]any, ref map[string]any, depth int, concurrent bool) exploreKind {
 	if depth > 32 {
 		return exploreKind{kind: "unsupported", why: "nested too deeply"}
@@ -400,13 +406,8 @@ func exploreResolveAs(ir map[string]any, ref map[string]any, depth int, concurre
 	if ref["kind"] == "primitive" {
 		name := exploreString(ref["name"])
 		switch name {
-		case "integer", "boolean", "string", "uuid", "decimal":
+		case "integer", "boolean", "string", "uuid", "decimal", "timestamp":
 			return exploreKind{kind: name}
-		case "timestamp":
-			if concurrent {
-				return exploreKind{kind: name}
-			}
-			return exploreKind{kind: "unsupported", why: fmt.Sprintf("a `%s`", name)}
 		default:
 			return exploreKind{kind: "unsupported", why: fmt.Sprintf("a `%s`", name)}
 		}
@@ -816,6 +817,12 @@ type exploreCommand struct {
 	// rows is every branch selected by the stored row (beyond10x/ess#221), by outcome name.
 	rows  map[string]exploreRowGuard
 	pools explorePools
+	// inputTimestamp and storedTimestamp are whether a path a guard over the input, and one over
+	// the stored row (and the input under `input.`), reads names a `Timestamp`; clocked is whether
+	// one of its guards compares such a path with `now` (beyond10x/ess#582).
+	inputTimestamp  func(string) bool
+	storedTimestamp func(string) bool
+	clocked         bool
 }
 
 // exploreRowGuard is a condition read from the subject's stored row: its held state
@@ -865,6 +872,11 @@ type explorePlan struct {
 	// (a list, say): a precondition supplies its input as a literal, so it may still send one
 	// (beyond10x/ess#205). No sequence draws it.
 	sendable map[string]*exploreCommand
+	// offsets is every offset from `now`, in seconds and sorted, that a guard compares a `Timestamp`
+	// with; clock is what a sequential exploration reads the current time from, nil in a concurrent
+	// one (beyond10x/ess#582).
+	offsets []int64
+	clock   *exploreClock
 }
 
 // exploreIsExternal is true for an outcome an external cause decides.
@@ -880,11 +892,17 @@ func exploreIsExternal(outcome map[string]any) bool {
 //
 // A selected-rows outcome (`instances: {where: …}`, beyond10x/ess#538) carries no subject. Its
 // move or update is modelled on every row the filter selects; its bulk deletion is left out by
-// name, as a single `deletes:` is, and so is a filter the model cannot read. An event published
+// name, and so is a filter the model cannot read. An event published
 // once per changed row (ess/25, beyond10x/ess#531) is left out by name too: the model expects each
 // listed event once. An `affects:` entry
 // writes rows the model does not apply, so its outcome is left out by name too. Concurrent
 // exploration keeps the commands it always drew.
+//
+// A `deletes:` of a supplied subject takes the row out of the model, so every view read after the
+// step must lose it and a later step naming it is the unknown instance (beyond10x/ess#583).
+// Concurrent exploration leaves it out by name: its workload is drawn before any call runs, so a
+// call drawn after the delete can still name the deleted row, and a command without an
+// unknown-instance answer then has none the specification declares.
 func exploreEffectRefusal(outcome map[string]any, concurrent bool) string {
 	if len(exploreList(outcome["affects"])) > 0 && !concurrent {
 		return fmt.Sprintf("outcome `%v` writes the rows its `affects:` selects, which the model does not apply", outcome["name"])
@@ -908,9 +926,12 @@ func exploreEffectRefusal(outcome map[string]any, concurrent bool) string {
 	effect := subject["effect"]
 	allowed := (effect == "creates" && from == "observed") ||
 		((effect == "moves" || effect == "updates") && from == "supplied") ||
-		(effect == "preserves" && from == "supplied" && !concurrent)
+		((effect == "preserves" || effect == "deletes") && from == "supplied" && !concurrent)
 	if allowed {
 		return ""
+	}
+	if effect == "deletes" && from == "supplied" {
+		return fmt.Sprintf("outcome `%v` deletes its subject from `supplied`, and a concurrent workload is drawn before any call runs, so a later call can name the deleted row", outcome["name"])
 	}
 	return fmt.Sprintf("outcome `%v` %v its subject from `%v`", outcome["name"], exploreUndefined(effect), exploreUndefined(from))
 }
@@ -1021,6 +1042,7 @@ func explorePlanOf(ir map[string]any) *explorePlan {
 // keeps a command no actor may invoke, which is then sent with no actor.
 func explorePlanAs(ir map[string]any, concurrent bool) *explorePlan {
 	p := &explorePlan{ir: ir, system: fmt.Sprint(ir["system"]), excluded: []Exclusion{}, excludedCommands: map[string]bool{}, unarrangeable: map[string]string{}, sendable: map[string]*exploreCommand{}}
+	offsets := map[int64]bool{}
 	actorFor := map[string]string{}
 	for _, actor := range exploreSorted(ir["actors"]) {
 		for _, command := range exploreStrings(actor["may"]) {
@@ -1134,6 +1156,16 @@ func explorePlanAs(ir map[string]any, concurrent bool) *explorePlan {
 		command := &exploreCommand{
 			name: name, actor: actor, node: node, inputs: inputs, guards: guards, rows: rows, pools: pools,
 		}
+		entityFields := exploreStoredFields(ir, node)
+		command.inputTimestamp = func(path string) bool { return exploreTimestampAt(inputs, path) }
+		command.storedTimestamp = func(path string) bool {
+			if rest, ok := strings.CutPrefix(path, "input."); ok {
+				return exploreTimestampAt(inputs, rest)
+			}
+			return exploreTimestampAt(entityFields, path)
+		}
+		clockedAt := exploreNowOffsets(command)
+		command.clocked = len(clockedAt) > 0
 		if reason == "" && later == "" && undrawable != "" {
 			p.sendable[name] = command
 		}
@@ -1148,7 +1180,14 @@ func explorePlanAs(ir map[string]any, concurrent bool) *explorePlan {
 			continue
 		}
 		p.commands = append(p.commands, command)
+		for _, offset := range clockedAt {
+			offsets[offset] = true
+		}
 	}
+	for offset := range offsets {
+		p.offsets = append(p.offsets, offset)
+	}
+	sort.Slice(p.offsets, func(i, j int) bool { return p.offsets[i] < p.offsets[j] })
 
 	for _, view := range exploreSorted(ir["views"]) {
 		reason := ""
@@ -1238,6 +1277,11 @@ func exploreUnwritten(ir, entity map[string]any) map[string]bool {
 
 type exploreModel struct {
 	records map[string][]*exploreRecord
+	// deleted is the identity of every row a step deleted, by entity, in the order deleted
+	// (beyond10x/ess#583).
+	deleted map[string][]Node
+	// clock is the plan's clock, nil where no clock is read.
+	clock *exploreClock
 }
 
 func (m *exploreModel) of(entity string) []*exploreRecord {
@@ -1251,6 +1295,269 @@ func (m *exploreModel) find(entity string, id Node) *exploreRecord {
 		}
 	}
 	return nil
+}
+
+// remove takes record out of the rows of entity, keeping the order of the others, and keeps its
+// identity among the deleted ones, which a later step may name again (beyond10x/ess#583).
+func (m *exploreModel) remove(entity string, record *exploreRecord) {
+	kept := []*exploreRecord{}
+	for _, other := range m.records[entity] {
+		if other != record {
+			kept = append(kept, other)
+		}
+	}
+	m.records[entity] = kept
+	if m.deleted == nil {
+		m.deleted = map[string][]Node{}
+	}
+	m.deleted[entity] = append(m.deleted[entity], record.id)
+}
+
+// ---- the clock: a guard over `now` (beyond10x/ess#582) -----------------------------------------
+
+// exploreClock is what a sequential exploration reads the current time from, and every offset from
+// it, in seconds, that the plan's guards compare a `Timestamp` with.
+type exploreClock struct {
+	read    func() time.Time
+	offsets []int64
+}
+
+// now is the clock's current time, to the whole second.
+func (c *exploreClock) now() time.Time {
+	return c.read().UTC().Truncate(time.Second)
+}
+
+// exploreInstantText is at as a canonical RFC 3339 `date-time` at UTC, to the whole second.
+func exploreInstantText(at time.Time) string {
+	return at.UTC().Format("2006-01-02T15:04:05Z")
+}
+
+// exploreCurrentTime is the offset, in seconds, of the current-time operand text spells — `now`,
+// `now - 60s`, `now + 5m`, `now - 1h` — as Rust's `CurrentTime::parse` reads it, or false where
+// text is none.
+func exploreCurrentTime(text string) (int64, bool) {
+	rest, ok := strings.CutPrefix(text, "now")
+	if !ok {
+		return 0, false
+	}
+	if rest == "" {
+		return 0, true
+	}
+	rest = strings.TrimLeft(rest, " ")
+	sign := int64(1)
+	switch {
+	case strings.HasPrefix(rest, "+"):
+	case strings.HasPrefix(rest, "-"):
+		sign = -1
+	default:
+		return 0, false
+	}
+	rest = strings.TrimLeft(rest[1:], " ")
+	units := map[byte]int64{'s': 1, 'm': 60, 'h': 3600}
+	if len(rest) < 2 || units[rest[len(rest)-1]] == 0 {
+		return 0, false
+	}
+	digits := rest[:len(rest)-1]
+	if len(digits) > 10 || (len(digits) > 1 && digits[0] == '0') {
+		return 0, false
+	}
+	for _, digit := range digits {
+		if digit < '0' || digit > '9' {
+			return 0, false
+		}
+	}
+	magnitude, err := strconv.ParseInt(digits, 10, 64)
+	seconds := magnitude * units[rest[len(rest)-1]]
+	if err != nil || seconds > 3155760000 {
+		return 0, false
+	}
+	return sign * seconds, true
+}
+
+// exploreTimestampAt is whether path names a `Timestamp` among fields, through structs, optionals
+// and identities.
+func exploreTimestampAt(fields []exploreField, path string) bool {
+	parts := strings.Split(path, ".")
+	for index, part := range parts {
+		var kind *exploreKind
+		for _, field := range fields {
+			if field.name == part {
+				found := field.kind
+				kind = &found
+			}
+		}
+		if kind == nil {
+			return false
+		}
+		for (kind.kind == "optional" || kind.kind == "identity") && kind.base != nil {
+			kind = kind.base
+		}
+		if index == len(parts)-1 {
+			return kind.kind == "timestamp"
+		}
+		if kind.kind != "struct" {
+			return false
+		}
+		fields = kind.fields
+	}
+	return false
+}
+
+// exploreStoredFields is every stored field of the entity a command's supplied subject names, as
+// a stored-row guard reads it, or none.
+func exploreStoredFields(ir, node map[string]any) []exploreField {
+	fields := []exploreField{}
+	for _, item := range exploreList(node["outcomes"]) {
+		subject := exploreObject(exploreObject(item)["subject"])
+		if exploreObject(subject["instance"])["from"] != "supplied" {
+			continue
+		}
+		entity := exploreObject(exploreObject(ir["entities"])[exploreString(subject["entity"])])
+		for _, declared := range exploreList(entity["fields"]) {
+			declared := exploreObject(declared)
+			kind := exploreResolveAs(ir, exploreObject(declared["type_ref"]), 0, true)
+			fields = append(fields, exploreField{name: exploreString(declared["name"]), kind: kind})
+		}
+		return fields
+	}
+	return fields
+}
+
+// exploreNowOf is the offset of the current-time operand node compares a `Timestamp` with, read by
+// typed, or false where node is no such comparison. Only a literal is read as `now`, as Rust's
+// `instant_operand` reads it: a fact holding the text `now` holds no instant.
+func exploreNowOf(node predicate, typed func(string) bool) (int64, bool) {
+	if node.kind != "compare" || !node.left.isFact || node.right.isFact || node.right.offset != nil ||
+		node.left.utf8Bytes || node.right.utf8Bytes || !typed(node.left.path) {
+		return 0, false
+	}
+	text, ok := node.right.literal.(string)
+	if !ok {
+		return 0, false
+	}
+	return exploreCurrentTime(text)
+}
+
+// exploreNowOffsets is every offset from `now` the guards of command compare a `Timestamp` with,
+// sorted, without repeats.
+func exploreNowOffsets(command *exploreCommand) []int64 {
+	found := map[int64]bool{}
+	visit := func(p predicate, typed func(string) bool) {
+		exploreWalk(p, func(node predicate) {
+			if offset, ok := exploreNowOf(node, typed); ok {
+				found[offset] = true
+			}
+		})
+	}
+	for _, guard := range command.guards {
+		visit(guard, command.inputTimestamp)
+	}
+	for _, row := range command.rows {
+		if row.stored != nil {
+			visit(*row.stored, command.storedTimestamp)
+		}
+		if row.input != nil {
+			visit(*row.input, command.inputTimestamp)
+		}
+	}
+	offsets := []int64{}
+	for offset := range found {
+		offsets = append(offsets, offset)
+	}
+	sort.Slice(offsets, func(i, j int) bool { return offsets[i] < offsets[j] })
+	return offsets
+}
+
+// exploreAt is p with every comparison of a `Timestamp` with `now` decided at the instant at: the
+// operand is the RFC 3339 text of at moved by its offset, compared as an instant. spelled maps the
+// text of each comparison it rewrote to the text it was written as.
+func exploreAt(p predicate, typed func(string) bool, at time.Time, spelled map[string]string) predicate {
+	if offset, ok := exploreNowOf(p, typed); ok {
+		moved := p
+		moved.right = operand{literal: exploreInstantText(at.Add(time.Duration(offset) * time.Second))}
+		moved.instant = true
+		spelled[moved.String()] = p.String()
+		return moved
+	}
+	out := p
+	if len(p.children) > 0 {
+		out.children = make([]predicate, len(p.children))
+		for index, child := range p.children {
+			out.children[index] = exploreAt(child, typed, at, spelled)
+		}
+	}
+	if p.body != nil {
+		body := exploreAt(*p.body, typed, at, spelled)
+		out.body = &body
+	}
+	return out
+}
+
+// exploreCommandAt is command with every guard over `now` decided at the instant at.
+func exploreCommandAt(command *exploreCommand, at time.Time, spelled map[string]string) *exploreCommand {
+	moved := *command
+	moved.guards = map[string]predicate{}
+	for name, guard := range command.guards {
+		moved.guards[name] = exploreAt(guard, command.inputTimestamp, at, spelled)
+	}
+	moved.rows = map[string]exploreRowGuard{}
+	for name, row := range command.rows {
+		if row.stored != nil {
+			stored := exploreAt(*row.stored, command.storedTimestamp, at, spelled)
+			row.stored = &stored
+		}
+		if row.input != nil {
+			input := exploreAt(*row.input, command.inputTimestamp, at, spelled)
+			row.input = &input
+		}
+		moved.rows[name] = row
+	}
+	return &moved
+}
+
+// exploreDecisionKey is what two decisions of one step must share to be the same answer.
+func exploreDecisionKey(decision exploreDecision) string {
+	externals := []string{}
+	for _, outcome := range decision.externals {
+		externals = append(externals, fmt.Sprint(outcome["name"]))
+	}
+	name := ""
+	if decision.outcome != nil {
+		name = fmt.Sprint(decision.outcome["name"])
+	}
+	return strings.Join([]string{decision.kind, name, strings.Join(externals, ","), strings.Join(decision.names, ",")}, "\x00")
+}
+
+// exploreDecideNow is exploreDecide with every guard over `now` decided against the model's clock
+// (beyond10x/ess#582), read now and a minute later: a target reads its own clock after the
+// explorer has read this one, so a step whose answer differs between the two is undetermined and
+// is not sent. Without a clock, or a guard over `now`, it is exploreDecide.
+func exploreDecideNow(command *exploreCommand, input Row, model *exploreModel) exploreDecision {
+	if model.clock == nil || !command.clocked {
+		return exploreDecide(command, input, model)
+	}
+	at := model.clock.now()
+	spelled := map[string]string{}
+	first := exploreDecide(exploreCommandAt(command, at, spelled), input, model)
+	later := exploreDecide(exploreCommandAt(command, at.Add(time.Minute), spelled), input, model)
+	if exploreDecisionKey(first) != exploreDecisionKey(later) {
+		return exploreDecision{kind: "undetermined", reason: fmt.Sprintf("%s: its answer turns on when the target reads its clock", command.name)}
+	}
+	// A reason names each guard as it is written, never the instant this step read.
+	texts := []string{}
+	for text := range spelled {
+		texts = append(texts, text)
+	}
+	sort.Slice(texts, func(i, j int) bool {
+		if len(texts[i]) != len(texts[j]) {
+			return len(texts[i]) > len(texts[j])
+		}
+		return texts[i] < texts[j]
+	})
+	for _, text := range texts {
+		first.reason = strings.ReplaceAll(first.reason, text, spelled[text])
+	}
+	return first
 }
 
 // A value an outcome gives a field: determined, undetermined, or cleared.
@@ -2037,6 +2344,9 @@ type exploreStep struct {
 	// external is the external branch arranged for this step, or empty for the ordinary branch.
 	external string
 	fresh    []exploreRef
+	// gone is every input naming a row an earlier step deleted, as (entity, deletion index), so a
+	// shorter trace re-resolves it (beyond10x/ess#583).
+	gone []exploreRef
 	// restart marks a restart of the target rather than a command.
 	restart bool
 }
@@ -2080,7 +2390,18 @@ func exploreDraw(kind exploreKind, r *Mulberry32, command *exploreCommand, model
 	case "string":
 		return explorePick(r, command.pools.textsAt(path)), nil
 	case "timestamp":
-		// One seeded draw selects a UTC second on a fixed date, never a target clock.
+		// Around the clock, where a guard compares one with `now` (beyond10x/ess#582): an hour to a
+		// day either side of an instant a guard compares it with, so a target reading its own clock
+		// moments later decides the step as the model does. Otherwise one seeded draw selects a UTC
+		// second on a fixed date, never a target clock.
+		if clock := model.clock; clock != nil && len(clock.offsets) > 0 {
+			offset := explorePick(r, clock.offsets)
+			away := int64(r.Int(3600, 86400))
+			if r.Chance(0.5) {
+				away = -away
+			}
+			return exploreInstantText(clock.now().Add(time.Duration(offset+away) * time.Second)), nil
+		}
 		second := r.Int(0, 86399)
 		return fmt.Sprintf("2020-01-01T%02d:%02d:%02dZ", second/3600, second/60%60, second%60), nil
 	case "uuid":
@@ -2129,6 +2450,7 @@ func exploreDrawStep(command *exploreCommand, r *Mulberry32, model *exploreModel
 	input := Row{}
 	refs := []exploreRef{}
 	fresh := []exploreRef{}
+	gone := []exploreRef{}
 	for _, field := range command.inputs {
 		kind := field.kind
 		if field.name == instance && kind.kind != "identity" {
@@ -2155,7 +2477,17 @@ func exploreDrawStep(command *exploreCommand, r *Mulberry32, model *exploreModel
 					base = *kind.base
 				}
 				err = errExploreNoRecord
-				for attempt := 0; attempt < exploreAttempts; attempt++ {
+				// A supplied instance with an unknown-instance answer names a row an earlier step
+				// deleted with even chance, where there is one: the model answers it as the unknown
+				// instance it now is (beyond10x/ess#583).
+				if deleted := model.deleted[probed]; field.name == instance && exploreUnknown(command) != nil && len(deleted) > 0 && r.Chance(0.5) {
+					index := r.Int(0, len(deleted)-1)
+					if model.find(probed, deleted[index]) == nil {
+						value, err = deleted[index], nil
+						gone = append(gone, exploreRef{path: field.name, entity: probed, index: index})
+					}
+				}
+				for attempt := 0; err != nil && attempt < exploreAttempts; attempt++ {
 					ignored := []exploreRef{}
 					drawn, problem := exploreDraw(base, r, command, model, field.name, false, &ignored)
 					_, absent := drawn.(exploreAbsentValue)
@@ -2178,7 +2510,7 @@ func exploreDrawStep(command *exploreCommand, r *Mulberry32, model *exploreModel
 			input[field.name] = nil
 		}
 	}
-	return &exploreStep{command: command.name, input: input, refs: refs, fresh: fresh}
+	return &exploreStep{command: command.name, input: input, refs: refs, fresh: fresh, gone: gone}
 }
 
 // ---- one step against the target ----------------------------------------------------------------
@@ -2312,6 +2644,12 @@ func explorePerform(s *exploreSession, command *exploreCommand, step *exploreSte
 			record = s.model.find(entityName, id)
 			if record != nil && subject["effect"] == "moves" {
 				record.fields["state"] = exploreObject(subject["transition"])["to"]
+			}
+			// A delete takes the row out of the model, so every view read below must lose it, and a
+			// later step naming it is answered as an unknown instance (beyond10x/ess#583).
+			if record != nil && subject["effect"] == "deletes" {
+				s.model.remove(entityName, record)
+				record = nil
 			}
 		}
 		// A preserving outcome leaves the row exactly as it was: its state and every field, so the
@@ -2577,7 +2915,7 @@ func exploreOpen(p *explorePlan, newTarget func() Target, scenario string) (*exp
 		return nil, err
 	}
 	s := &exploreSession{
-		p: p, target: target, model: &exploreModel{records: map[string][]*exploreRecord{}},
+		p: p, target: target, model: &exploreModel{records: map[string][]*exploreRecord{}, deleted: map[string][]Node{}, clock: p.clock},
 		correlation: correlation, scenario: scenario, undetermined: map[string]bool{}, forced: map[string]bool{}, unarrangeable: map[string]bool{},
 	}
 	if err := explorePreconditions(s); err != nil {
@@ -2613,7 +2951,7 @@ func explorePreconditions(s *exploreSession) error {
 			input[key] = value
 		}
 		step := &exploreStep{command: name, input: input}
-		decision := exploreDecide(&command, input, s.model)
+		decision := exploreDecideNow(&command, input, s.model)
 		// The model must take the branch the specification requires of it, as synthesis does: a
 		// precondition the model decides as a refusal, or as anything else, fails as setup.
 		wanted := exploreString(pre["outcome"])
@@ -2682,8 +3020,19 @@ func exploreReplay(p *explorePlan, newTarget func() Target, trace []*exploreStep
 		if !resolvable {
 			continue
 		}
-		step := &exploreStep{command: recorded.command, input: Row(input), refs: recorded.refs, external: recorded.external, fresh: recorded.fresh}
-		decision := exploreDecide(command, step.input, s.model)
+		for _, ref := range recorded.gone {
+			deleted := s.model.deleted[ref.entity]
+			if ref.index >= len(deleted) || s.model.find(ref.entity, deleted[ref.index]) != nil {
+				resolvable = false
+			} else {
+				exploreSetPath(input, ref.path, deleted[ref.index])
+			}
+		}
+		if !resolvable {
+			continue
+		}
+		step := &exploreStep{command: recorded.command, input: Row(input), refs: recorded.refs, external: recorded.external, fresh: recorded.fresh, gone: recorded.gone}
+		decision := exploreDecideNow(command, step.input, s.model)
 		if decision.kind != "take" {
 			continue
 		}
@@ -2735,6 +3084,11 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 		return ExploreResult{}, errors.New("the restart interval must be a whole number of steps, zero or more")
 	}
 	p := explorePlanOf(ir)
+	read := options.Now
+	if read == nil {
+		read = time.Now
+	}
+	p.clock = &exploreClock{read: read, offsets: p.offsets}
 	steps := options.Steps
 	if steps == 0 {
 		steps = exploreDefaultSteps
@@ -2804,7 +3158,7 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 			if step == nil {
 				continue
 			}
-			decision := exploreDecide(command, step.input, s.model)
+			decision := exploreDecideNow(command, step.input, s.model)
 			if decision.kind == "ambiguous" {
 				ambiguous[command.name+": "+strings.Join(decision.names, ", ")] = true
 				continue
