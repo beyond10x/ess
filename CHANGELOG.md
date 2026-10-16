@@ -9,7 +9,6 @@
   (`broken_constraint` on the type), so a served route no longer admits it
   (beyond10x/ess#579, decoder half). A constraint the emitter cannot check refuses the target by
   name.
-
 - A suite can fix the instant a target reads as `now` for one command: the `hold_now` step
   (`{step: hold_now, seconds: <n>}`, suite `ess-conformance/50`, or `/51` with coverage) stands
   before the `execute_command` it holds and names a `now_offset`, so a value sent as a `now_offset`
