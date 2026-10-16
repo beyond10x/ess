@@ -557,10 +557,14 @@ fn coverage_version(
     // every pair below, the counted one included.
     // Ignored undeclared response fields (beyond10x/ess#500) are cumulative over every pair below,
     // the constrained one included.
+    // A held `now` (beyond10x/ess#586) is cumulative over every pair below, the opened one included.
+    let held = crate::hold_now::coverage_floor(suite).is_some();
     let opened = crate::undeclared_fields::coverage_floor(suite).is_some();
     let constrained = crate::direct_response::constrained_coverage_floor(suite).is_some();
     let counted = crate::event_multiplicity::coverage_floor(suite).is_some();
-    crate::scenario::SuiteFormat::parse(if opened {
+    crate::scenario::SuiteFormat::parse(if held {
+        "ess-conformance/51"
+    } else if opened {
         "ess-conformance/49"
     } else if constrained {
         "ess-conformance/47"

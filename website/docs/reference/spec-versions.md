@@ -533,6 +533,18 @@ below it, the constrained pair included. Rust, Go and TypeScript execute both wi
 by version, every reader refuses either member under a lower major, and a suite with no opened
 object keeps its earlier format and bytes.
 
+`ess-conformance/50` and `ess-conformance/51`, unreleased, carry the `hold_now` step
+(beyond10x/ess#586): `{step: hold_now, seconds: <n>}`, immediately before the `execute_command` it
+holds, asks the target to decide that one command at the instant the scenario's `now_offset` of
+`n` names, so a value sent as a `now_offset` can sit exactly on a `now` boundary. The runner writes
+the instant into the command clock it handed out, or calls the target's optional `hold_now`; a
+target without it reports the scenario `unsupported`, naming `hold_now`. A `hold_now` anywhere but
+before an `execute_command` is refused at admission. A suite carrying one is written at 50
+(ordinary) or 51 (declared coverage); each implies every major below it, the opened pair included.
+Rust, Go and TypeScript execute both with report/2: the generated Go runtime asks a target
+implementing `NowHolder`, the TypeScript one a target with `holdNow`. Older readers refuse these
+envelopes by version. A suite without the step keeps its earlier format and bytes.
+
 For `ess/7`, generated held-state refusals include ordinary `wrong_state` outcomes:
 they compare the complete subject before and after the call and refuse every
 direct event, including undeclared names. Incomplete subject views cause a named

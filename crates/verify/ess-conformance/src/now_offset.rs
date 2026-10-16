@@ -763,6 +763,13 @@ impl Resolved {
                 }
             }
         });
+        // A held step names its offset too, so it and the values compared with it read one instant
+        // (beyond10x/ess#586).
+        if let ScenarioStep::HoldNow { seconds } = step {
+            if !self.fixed.contains_key(seconds) && !pending.contains(seconds) {
+                pending.push(*seconds);
+            }
+        }
         if pending.is_empty() {
             return;
         }
@@ -776,6 +783,11 @@ impl Resolved {
                 self.fixed.insert(seconds, instant);
             }
         }
+    }
+
+    /// The instant a `now_offset` of `seconds` resolved to in this scenario, if one did.
+    pub(crate) fn instant(&self, seconds: i64) -> Option<Rfc3339Instant> {
+        self.fixed.get(&seconds).copied()
     }
 
     /// The instant a `now_offset` of `seconds` resolved to in this scenario, as the RFC 3339 text

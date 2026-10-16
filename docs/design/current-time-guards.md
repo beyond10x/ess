@@ -145,8 +145,9 @@ interpreted target and the interpreters `mutate` runs offer the capability by co
 **The step.** `{step: hold_now, seconds: <n>}` stands immediately before the `execute_command` it
 holds. `seconds` is a `now_offset` number, resolved through the same per-scenario table: the first
 step naming `n` fixes it against one wall reading rounded up to a whole second, and every later
-`now_offset` of `n` reads that instant. So a held step and the values it is compared with refer to
-one instant exactly, with no latency between them:
+`now_offset` of `n` reads that instant. The held command's own `now_offset` values that no earlier step
+fixed resolve against the reading the held instant was fixed from, not a fresh one, so a held step
+and the values it is compared with refer to one instant exactly, with no latency between them:
 
 | guard | arrangement | held step |
 |---|---|---|

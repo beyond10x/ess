@@ -4,6 +4,14 @@
 
 ### Added
 
+- A suite can fix the instant a target reads as `now` for one command: the `hold_now` step
+  (`{step: hold_now, seconds: <n>}`, suite `ess-conformance/50`, or `/51` with coverage) stands
+  before the `execute_command` it holds and names a `now_offset`, so a value sent as a `now_offset`
+  can sit exactly on a `now` boundary. The runner holds its command clock at that instant, or asks
+  the target through the new optional `ConformanceTarget::hold_now` (the generated Go runtime's
+  `NowHolder`, the TypeScript runtime's `holdNow`); a target without it reports the scenario
+  `unsupported`, naming `hold_now`. A suite without the step keeps its format and
+  bytes (https://github.com/beyond10x/ess/issues/586).
 - The generated Go and TypeScript sequential explorers (`Explore`) draw a `Timestamp` input, as
   the concurrent ones already did, and decide a guard over `now` against a clock,
   `ExploreOptions.Now` (TypeScript `now`), the wall clock by default. Where a guard compares a

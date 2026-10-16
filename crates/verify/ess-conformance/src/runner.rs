@@ -82,7 +82,7 @@ use crate::scenario::{
 use crate::target::{
     AbsentInputRequest, ConformanceTarget, Deadline, ElapsedObservation, ElapsedObservationRequest,
     EventObservationRequest, ExternalOutcomeControl, ImplementationIdentity, InstantMark,
-    InvocationObservationRequest, ObservedEvent, OrderedScanRequest, RedeliveryRequest,
+    InvocationObservationRequest, NowHold, ObservedEvent, OrderedScanRequest, RedeliveryRequest,
     ScenarioContext, SemanticCommandRequest, SemanticCommandResult, SemanticViewRequest,
     SemanticViewResult, TargetError, ViewRow,
 };
@@ -571,15 +571,25 @@ impl<C: Clock> Runner<C> {
         target: &T,
     ) -> Flow {
         let wall = &mut self.clock;
-        match &self.step_instant {
+        // The command after a `hold_now` is decided at the held instant, and the values it sends
+        // resolve against the reading that instant was fixed from (beyond10x/ess#586).
+        let held = run.held.take();
+        match (&self.step_instant, held) {
+            (Some(cell), Some((instant, seconds))) => {
+                cell.hold(instant);
+                run.now.fix(step, || held_reading(instant, seconds, wall));
+            }
+            (None, Some((instant, seconds))) => {
+                run.now.fix(step, || held_reading(instant, seconds, wall));
+            }
             // One wall reading per step, shared by its `now_offset` values and every command
             // decision the step causes (https://github.com/beyond10x/ess/issues/510).
-            Some(cell) => {
+            (Some(cell), None) => {
                 let reading = wall.wall();
                 cell.write(reading);
                 run.now.fix(step, || reading);
             }
-            None => run.now.fix(step, || wall.wall()),
+            (None, None) => run.now.fix(step, || wall.wall()),
         }
         match step {
             ScenarioStep::ResolveFixtures { .. } | ScenarioStep::ExpectEventValues { .. } => {
@@ -715,6 +725,9 @@ impl<C: Clock> Runner<C> {
                 expectation,
             } => self.eventually_view(view, params, expectation, run, target),
             ScenarioStep::MarkInstant { instant } => mark_instant(instant, run, target),
+            ScenarioStep::HoldNow { seconds } => {
+                hold_now(*seconds, self.step_instant.is_some(), run, target)
+            }
             ScenarioStep::ExpectNotBefore { instant, elapsed } => {
                 elapsed_bound(instant, *elapsed, Bound::NotBefore, run, target)
             }
@@ -2398,6 +2411,46 @@ fn capture_instance(
 /// [`capture_instance`] is: the scenario could not be *arranged*, and every window after it would be
 /// measured from nothing. `unsupported` when the target says it keeps no such clock, which §28 still
 /// makes a run fail — a target that cannot answer a question has not shown the answer.
+/// The wall reading a `now_offset` of `seconds` resolved to `instant` from: so every other offset the
+/// held command sends lies the same distance from the held instant as from the reading.
+fn held_reading<C: Clock>(
+    instant: ess_primitives::time::Rfc3339Instant,
+    seconds: i64,
+    wall: &mut C,
+) -> Timestamp {
+    instant
+        .plus_seconds(-seconds)
+        .and_then(|base| u64::try_from(base.epoch_seconds()).ok())
+        .and_then(|base| base.checked_mul(1000))
+        .map_or_else(|| wall.wall(), Timestamp::from_epoch_millis)
+}
+
+/// Fixes the instant the next command is decided at (beyond10x/ess#586): into the command clock
+/// the runner handed out when one was taken, else through the target's `hold_now`.
+fn hold_now<T: ConformanceTarget>(seconds: i64, clocked: bool, run: &mut Run, target: &T) -> Flow {
+    let Some(instant) = run.now.instant(seconds) else {
+        run.record(CheckResult::errored(
+            "hold_now".to_owned(),
+            Diagnostic::new(CheckCode::Suite, run.id.clone())
+                .expected(format!("now_offset {seconds} names an instant"))
+                .observed("the runner's wall clock spells no such instant".to_owned()),
+        ));
+        return Flow::Stop;
+    };
+    if !clocked {
+        let request = NowHold {
+            instant,
+            correlation: run.context.correlation.clone(),
+        };
+        if let Err(error) = target.hold_now(request) {
+            run.record(target_failure(&run.id, "hold_now", &error));
+            return Flow::Stop;
+        }
+    }
+    run.held = Some((instant, seconds));
+    Flow::Continue
+}
+
 fn mark_instant<T: ConformanceTarget>(instant: &InstantName, run: &mut Run, target: &T) -> Flow {
     let request = InstantMark {
         instant: instant.clone(),
@@ -3059,6 +3112,9 @@ struct Run {
     marked: BTreeSet<InstantName>,
     /// The instant each `now_offset` resolved to in this scenario (beyond10x/ess#171).
     now: crate::now_offset::Resolved,
+    /// The instant a `hold_now` step fixed for the command after it, and the offset it named
+    /// (beyond10x/ess#586). Taken by the next step.
+    held: Option<(ess_primitives::time::Rfc3339Instant, i64)>,
     seen: Vec<ObservedEvent>,
     /// How many occurrences of each event a refused send must not add were in the target's log just
     /// before that send (beyond10x/ess#265).
@@ -3103,6 +3159,7 @@ impl Run {
             established: Vec::new(),
             marked: BTreeSet::new(),
             now: crate::now_offset::Resolved::default(),
+            held: None,
             seen: Vec::new(),
             log_before: BTreeMap::new(),
             reader: None,

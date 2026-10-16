@@ -2724,6 +2724,7 @@ pub(crate) fn needs_of(
             | ScenarioStep::ExpectNoPublication { .. }
             | ScenarioStep::ExpectPublicationCount { .. }
             | ScenarioStep::MarkInstant { .. }
+            | ScenarioStep::HoldNow { .. }
             | ScenarioStep::ExpectNotBefore { .. }
             | ScenarioStep::ExpectWithin { .. }
             | ScenarioStep::ExpectQuiet { .. } => {}
