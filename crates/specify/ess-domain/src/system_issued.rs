@@ -1,4 +1,4 @@
-//! A command the system issues itself (`ess/25`, beyond10x/ess#542,
+//! A command the system issues itself (`ess/27`, beyond10x/ess#542,
 //! `docs/design/system-issued-commands.md`).
 //!
 //! An actor may be declared the system itself, `system: true`. A command is **system-issued**
@@ -12,9 +12,9 @@
 //!
 //! | rule | code |
 //! |---|---|
-//! | `system: true` below `ess/25` | `unsupported_format_version` |
+//! | `system: true` below `ess/27` | `unsupported_format_version` |
 //! | `system: true` beside `attributes:` | `conflicting_declaration` |
-//! | `await_within:` below `ess/25` | `unsupported_format_version` |
+//! | `await_within:` below `ess/27` | `unsupported_format_version` |
 //! | `await_within:` on a command that is not system-issued | `conflicting_declaration`, naming the grants that make it driven |
 //! | a binding whose `invoke:` names a system-issued command | `conflicting_declaration` |
 
@@ -59,14 +59,14 @@ pub(crate) fn validate_specification(spec: &crate::Specification) -> ValidationE
         }
         let site =
             ConstructRef::new(ConstructKind::Command, command.name.to_string()).key("await_within");
-        if format.major() < FormatVersion::V25.major() {
+        if format.major() < FormatVersion::V27.major() {
             errors.push(
                 ValidationError::at(
                     site,
                     ValidationCode::UnsupportedFormatVersion,
-                    "`await_within:` on a command requires specification format ess/25",
+                    "`await_within:` on a command requires specification format ess/27",
                 )
-                .with_hint("write `format: ess/25` on the source that declares the system"),
+                .with_hint("write `format: ess/27` on the source that declares the system"),
             );
             continue;
         }

@@ -3,7 +3,7 @@
 //! `ResolvedPayloadValue::RelatedHead` (`kind: related_head`) with the selector a filtered read
 //! carries, the ranking keys written as a view writes them, the field read and its type. A model
 //! without the source carries none, and a nested mapping that only looks like the source keeps the
-//! IR it compiled to before `ess/25`.
+//! IR it compiled to before `ess/27`.
 
 use ess_compiler::resolve::compile;
 use ess_compiler::source::SourceMap;
@@ -79,10 +79,10 @@ fn a_model_without_the_head_keeps_its_ir_bytes() {
 }
 
 /// A struct target whose fields are `related: {entity, where, order_by, first}`, all texts, is the
-/// nested mapping it always was: it compiles to the same IR at `ess/24` and at `ess/25`, the
+/// nested mapping it always was: it compiles to the same IR at `ess/26` and at `ess/27`, the
 /// recorded format aside.
 #[test]
-fn a_text_order_by_compiles_to_the_same_nested_mapping_at_ess_24_and_ess_25() {
+fn a_text_order_by_compiles_to_the_same_nested_mapping_at_ess_26_and_ess_27() {
     let nested = edit(
         &edit(
             HEAD,
@@ -97,9 +97,9 @@ fn a_text_order_by_compiles_to_the_same_nested_mapping_at_ess_24_and_ess_25() {
         "          slot_id: input.slot_id\n          element_key:\n            related:",
         "          slot_id: input.slot_id\n          reference:\n            related:\n              entity: demo.ranked.Membership\n              where: slot_id\n              order_by: element_score desc\n              first: element_key\n          element_key:\n            related:",
     );
-    // Below `ess/25` the head itself is refused, so both formats compile the model without it.
+    // Below `ess/27` the head itself is refused, so both formats compile the model without it.
     let plain = |format: &str| {
-        let text = edit(&nested, "format: ess/25", &format!("format: {format}"));
+        let text = edit(&nested, "format: ess/27", &format!("format: {format}"));
         let text = text
             .replace(
                 "            related:\n              entity: demo.ranked.Membership\n              where: {all: [slot_id == input.slot_id, state == Present]}\n              order_by: [element_score desc, membership_id]\n              first: element_key\n",
@@ -116,13 +116,13 @@ fn a_text_order_by_compiles_to_the_same_nested_mapping_at_ess_24_and_ess_25() {
         assert!(!text.contains("order_by: ["), "{text}");
         ir(&text).replace(&format!(r#""format":"{format}""#), "")
     };
-    let at_24 = plain("ess/24");
-    let at_25 = plain("ess/25");
+    let at_26 = plain("ess/26");
+    let at_27 = plain("ess/27");
     assert!(
-        at_25.contains(r#""target":"order_by""#),
-        "the text order_by is a nested leaf: {at_25}"
+        at_27.contains(r#""target":"order_by""#),
+        "the text order_by is a nested leaf: {at_27}"
     );
-    assert_eq!(at_24, at_25);
+    assert_eq!(at_26, at_27);
 }
 
 /// `ties: unordered` is recorded beside the keys, and only there: a total order's head keeps the

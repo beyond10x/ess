@@ -3,7 +3,7 @@
 //!
 //! # What changes meaning
 //!
-//! From `ess/25` an actor may be the system itself, and a command every grant of which is such an
+//! From `ess/27` an actor may be the system itself, and a command every grant of which is such an
 //! actor is system-issued. Conformance never asks a target to invoke it. Three constructs carry
 //! that:
 //!

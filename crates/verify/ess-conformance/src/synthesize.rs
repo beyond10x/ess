@@ -3690,7 +3690,7 @@ fn run_as(
     // is arranged with the rows its selector selects, for every branch they decide.
     let rows = row_set::routes(command, outcome);
     let mut related_at = Distinction::PLAIN;
-    // ess/25 (beyond10x/ess#543): the ties of a ranked head no creating input steers, each a gap
+    // ess/27 (beyond10x/ess#543): the ties of a ranked head no creating input steers, each a gap
     // the scenario stands with.
     let mut row_gaps: Vec<RefusalCause> = Vec::new();
     let (setup, input) =
@@ -7624,7 +7624,7 @@ fn determined_fields(
             ResolvedPayloadValue::ResponseField { .. }
             | ResolvedPayloadValue::Generated { .. }
             | ResolvedPayloadValue::Cleared
-            // ess/25 (#545): a `sets:` source only, refused in a payload by `ess-domain`.
+            // ess/27 (#545): a `sets:` source only, refused in a payload by `ess-domain`.
             | ResolvedPayloadValue::PayloadRead { .. }
             // ess/16 (#167): the rows one scenario changed, asserted by `set_effects` alone.
             | ResolvedPayloadValue::ChangedCount
@@ -7998,7 +7998,7 @@ fn view_expectations(
         out.source.extend(companion.source.iter().cloned());
     }
 
-    // ess/25 (#545): the events a step before the branch under test may already have published,
+    // ess/27 (#545): the events a step before the branch under test may already have published,
     // which a row claim reading the published value must not name.
     let earlier = earlier_events(
         ir,
@@ -8815,7 +8815,7 @@ fn expression_value_at(
         } => before
             .get(&row_set::key(selection, read))
             .map(|held| held.value.clone()),
-        // ess/25 (#543): the head's value, which `row_set` settled where the rows it arranged rank
+        // ess/27 (#543): the head's value, which `row_set` settled where the rows it arranged rank
         // one row first.
         ResolvedPayloadValue::RelatedHead {
             selection,
@@ -8876,7 +8876,7 @@ fn expression_value_at(
         | ResolvedPayloadValue::ResponseField { .. }
         | ResolvedPayloadValue::Generated { .. }
         | ResolvedPayloadValue::Cleared
-        // ess/25 (#545): the published value, which `subject_row` claims where it is safe to.
+        // ess/27 (#545): the published value, which `subject_row` claims where it is safe to.
         | ResolvedPayloadValue::PayloadRead { .. }
         // ess/16 (#168): read only through `caller::synthesize`, which writes the caller's value in.
         | ResolvedPayloadValue::CallerAttribute { .. }
@@ -9559,7 +9559,7 @@ fn reads<'a>(target: &'a ess_compiler::ir::ResolvedPayloadField, out: &mut Vec<(
         | ResolvedPayloadValue::Increment { .. }
         | ResolvedPayloadValue::SubjectState { .. }
         | ResolvedPayloadValue::CallerAttribute { .. }
-        // ess/25 (#545): what the payload field reads is collected from the payload itself.
+        // ess/27 (#545): what the payload field reads is collected from the payload itself.
         | ResolvedPayloadValue::PayloadRead { .. }
         | ResolvedPayloadValue::ChangedField { .. }
         | ResolvedPayloadValue::ChangedState { .. }
@@ -9900,7 +9900,7 @@ fn subject_row(
     expectations
 }
 
-/// What a branch under test that mints into its row claims of a view showing it (ess/25,
+/// What a branch under test that mints into its row claims of a view showing it (ess/27,
 /// beyond10x/ess#545, `docs/design/minted-value-sources.md`):
 ///
 /// * a `{payload: <Event>.<field>}` entry: the row holds the value the event published, an
@@ -9949,7 +9949,7 @@ fn minted_row(
 }
 
 /// The events the commands these steps send may publish, and every event a binding's command may
-/// publish, since a binding may run on any of them (ess/25, #545).
+/// publish, since a binding may run on any of them (ess/27, #545).
 fn earlier_events<'s>(
     ir: &EssIr,
     steps: impl Iterator<Item = &'s ScenarioStep>,
@@ -10097,7 +10097,7 @@ fn settled(
                     None => continue,
                 }
             }
-            // ess/25 (#545): the published value is a reference to an observation, which
+            // ess/27 (#545): the published value is a reference to an observation, which
             // `subject_row` claims for the branch under test alone; carried forward as a settled
             // value it would name another act's occurrence of the event.
             ResolvedPayloadValue::Generated { .. }

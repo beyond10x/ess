@@ -104,8 +104,8 @@ fn an_outcome_declaring_neither_keeps_its_bytes() {
 }
 
 /// A call and a queue entry storing the call's identity; expiring the entry ends the call it names
-/// (ess/25, beyond10x/ess#547, `docs/design/set-effect-identity-filters.md`).
-const IDENTITY: &str = "format: ess/25
+/// (ess/27, beyond10x/ess#547, `docs/design/set-effect-identity-filters.md`).
+const IDENTITY: &str = "format: ess/27
 system: demo
 version: v1
 domain: demo.q
@@ -218,8 +218,8 @@ fn an_identity_filter_compiles_into_the_filter() {
     assert_eq!(json["instances"]["filter"], "entry_id == input.entry_id");
 }
 
-/// At `ess/25` a document reading no identity in a set effect's filter compiles to the canonical
-/// IR it compiled to at `ess/24`, byte for byte.
+/// At `ess/27` a document reading no identity in a set effect's filter compiles to the canonical
+/// IR it compiled to at `ess/26`, byte for byte.
 #[test]
 fn a_model_without_an_identity_filter_keeps_its_ir_bytes() {
     for fixture in [
@@ -233,6 +233,6 @@ fn a_model_without_an_identity_filter_keeps_its_ir_bytes() {
             compiled(&fixture.replacen(&written, &format!("format: {format}"), 1))
                 .to_canonical_json()
         };
-        assert_eq!(at("ess/24"), at("ess/25"));
+        assert_eq!(at("ess/26"), at("ess/27"));
     }
 }

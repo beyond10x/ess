@@ -40,7 +40,7 @@ const CALLER: &str = "queueing.entry.Caller";
 #[allow(clippy::too_many_lines)] // One model, read top to bottom.
 fn model(system: &str, bound: &str) -> String {
     format!(
-        "format: ess/25
+        "format: ess/27
 system: queueing
 version: v1
 domain: queueing.entry
@@ -444,7 +444,7 @@ fn synthesis_awaits_a_system_issued_command_instead_of_driving_it() {
     assert_eq!(
         synthesis.suite.provenance.suite_version.major(),
         ess_conformance::system_issued::ORDINARY,
-        "a suite that awaits is suite/50"
+        "a suite that awaits is suite/52"
     );
 
     // An external refusal is an outcome the system reached: it tried, and the dialler refused.
@@ -737,7 +737,7 @@ fn covered(text: &str) -> (BTreeSet<String>, u32, bool) {
     )
 }
 
-/// The coverage inventory carries both refusals beside the awaited scenarios, as coverage suite/51,
+/// The coverage inventory carries both refusals beside the awaited scenarios, as coverage suite/53,
 /// and carries them there even where nothing is awaited.
 #[test]
 fn the_coverage_inventory_carries_the_awaits_and_both_refusals() {

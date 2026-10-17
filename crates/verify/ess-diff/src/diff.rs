@@ -930,7 +930,7 @@ fn actor_changes(before: &EssIr, after: &EssIr, changes: &mut Vec<SemanticChange
                         command: command.clone(),
                     });
                 }
-                // Whether the actor is the system itself (ess/25, beyond10x/ess#542). A command
+                // Whether the actor is the system itself (ess/27, beyond10x/ess#542). A command
                 // becoming system-issued follows from this and the grants, and is not compared.
                 if was.system != is.system {
                     push(ActorChange::SystemChanged {
@@ -1228,7 +1228,7 @@ fn written_fields(owner: &str, fields: &[ess_compiler::ir::ResolvedPayloadField]
                 | ess_compiler::ir::ResolvedPayloadValue::RelatedSelection { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::RelatedHead { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::CallerAttribute { .. }
-                // `implementation-generated`, and `…, present` for an ess/25 present mint.
+                // `implementation-generated`, and `…, present` for an ess/27 present mint.
                 | ess_compiler::ir::ResolvedPayloadValue::Generated { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::PayloadRead { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::ChangedField { .. }
@@ -2276,7 +2276,7 @@ fn written_sets(
                 | ess_compiler::ir::ResolvedPayloadValue::RelatedSelection { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::RelatedHead { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::CallerAttribute { .. }
-                // `implementation-generated`, and `…, present` for an ess/25 present mint.
+                // `implementation-generated`, and `…, present` for an ess/27 present mint.
                 | ess_compiler::ir::ResolvedPayloadValue::Generated { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::PayloadRead { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::ChangedField { .. }
@@ -2667,7 +2667,7 @@ fn residual_construct(declaration: &mut serde_json::Value, family: &str) {
                 ],
             );
         }
-        // `system` is `system-changed` (ess/25, beyond10x/ess#542).
+        // `system` is `system-changed` (ess/27, beyond10x/ess#542).
         "actors" => remove_keys(declaration, &["may", "system"]),
         "bindings" => {
             remove_keys(
@@ -2726,7 +2726,7 @@ fn residual_command(declaration: &mut serde_json::Value) {
     // Compared as `ResponseUndeclaredFieldsChanged` (`ess/24`).
     remove_keys(declaration, &["undeclared_fields"]);
     // `await_within` is `await-within-changed`; `system_issued` is a pure function of the grants
-    // and the actors' `system`, both compared on the actor (ess/25, beyond10x/ess#542).
+    // and the actors' `system`, both compared on the actor (ess/27, beyond10x/ess#542).
     remove_keys(declaration, &["await_within", "system_issued"]);
     // Compared as `InputExampleChanged`, input by input.
     remove_keys(declaration, &["examples"]);

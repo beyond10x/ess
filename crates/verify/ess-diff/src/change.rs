@@ -812,7 +812,7 @@ pub const UNDECLARED_FIELDS_DELTA_FORMAT: u32 = 18;
 /// that carries one is classified even when nobody asked.
 pub const ABSENT_DELTA_FORMAT: u32 = 19;
 /// The first delta format whose vocabulary has `system-changed` on an actor and
-/// `await-within-changed` on a command (`ess/25`, beyond10x/ess#542,
+/// `await-within-changed` on a command (`ess/27`, beyond10x/ess#542,
 /// `docs/design/system-issued-commands.md`).
 ///
 /// Above [`CLASSIFIED_DELTA_FORMAT`](crate::compatibility::CLASSIFIED_DELTA_FORMAT) too, so a delta
@@ -1725,7 +1725,7 @@ pub enum ActorChange {
         /// What it says.
         after: Option<String>,
     },
-    /// The actor became the system itself, or stopped being it (`system:`, `ess/25`,
+    /// The actor became the system itself, or stopped being it (`system:`, `ess/27`,
     /// beyond10x/ess#542). Only an `ess-diff/20` delta carries it.
     ///
     /// An actor that becomes the system stops being a caller of every command it is granted, as a
@@ -2357,7 +2357,7 @@ pub enum CommandChange {
         after: ess_domain::types::UndeclaredFields,
     },
     /// How soon the system claims to take a step it issues itself moved, `await_within:` declared,
-    /// dropped or changed (`ess/25`, beyond10x/ess#542). Only an `ess-diff/20` delta carries it.
+    /// dropped or changed (`ess/27`, beyond10x/ess#542). Only an `ess-diff/20` delta carries it.
     AwaitWithinChanged {
         /// The bound it declared, if any.
         before: Option<ess_domain::binding::periodic::Period>,
@@ -2834,7 +2834,7 @@ impl CommandChange {
                 after.join(", "),
                 before.join(", ")
             ),
-            // `await-within-changed` (ess/25) shares the clause of the other response-side bound.
+            // `await-within-changed` (ess/27) shares the clause of the other response-side bound.
             _ => self.undeclared_fields_clause(),
         }
     }

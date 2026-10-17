@@ -43,9 +43,9 @@ before the run, so the implementation cannot have chosen it. A reference (`{$ins
 
 A field is marked minted by:
 
-- `{generated: true}`, and from `ess/25` `{generated: true, present: true}` (beyond10x/ess#545),
+- `{generated: true}`, and from `ess/27` `{generated: true, present: true}` (beyond10x/ess#545),
   whose value is present but still the implementation's;
-- from `ess/25`, `{payload: <Event>.<field>}` in `sets:`, where the same branch fills that payload
+- from `ess/27`, `{payload: <Event>.<field>}` in `sets:`, where the same branch fills that payload
   field in a way this list marks minted: the row stores the value the event published, so it is
   the same mint;
 - `{input: f, else: {generated: true}}`, on a branch of the act's own command, when the act sends

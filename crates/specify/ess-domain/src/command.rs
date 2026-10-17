@@ -1077,7 +1077,7 @@ pub enum PayloadSource {
         field: String,
     },
     /// The implementation chooses this field, subject to its declared type: `{generated: true}`,
-    /// or from `ess/25` `{generated: true, present: true}` over an `Optional` field, which requires
+    /// or from `ess/27` `{generated: true, present: true}` over an `Optional` field, which requires
     /// the value present ([`minted_value`], beyond10x/ess#545).
     Generated {
         /// Whether the minted value of an `Optional` field is present. Serialized only when set.
@@ -1085,7 +1085,7 @@ pub enum PayloadSource {
         present: bool,
     },
     /// The value this outcome publishes in `field` of `event`: `{payload: <Event>.<field>}`
-    /// (`ess/25`, beyond10x/ess#545, [`minted_value`]). A `sets:` source only, so one mint feeds
+    /// (`ess/27`, beyond10x/ess#545, [`minted_value`]). A `sets:` source only, so one mint feeds
     /// the event and the row.
     PayloadRead {
         /// An event this outcome emits and fills under `payload:`.
@@ -1214,7 +1214,7 @@ pub enum PayloadSource {
         legacy: row_set::Legacy,
     },
     /// A field of the first row a selector selects, ranked by an order, as the store held it
-    /// before this outcome: `{related: {entity, where, order_by, first}}` (ess/25,
+    /// before this outcome: `{related: {entity, where, order_by, first}}` (ess/27,
     /// beyond10x/ess#543, [`ordered_head`]).
     ///
     /// The order is total, ending in the entity's identity, so exactly one selected row is first;
@@ -1424,9 +1424,9 @@ enum RawPayloadSource {
     Related(RawRelatedSource),
     Caller(caller_value::RawCallerSource),
     Count(set_effects::RawCountSource),
-    /// `{generated: true, present: true}` (ess/25, beyond10x/ess#545).
+    /// `{generated: true, present: true}` (ess/27, beyond10x/ess#545).
     PresentMint(minted_value::RawPresentMint),
-    /// `{payload: <Event>.<field>}` (ess/25, beyond10x/ess#545).
+    /// `{payload: <Event>.<field>}` (ess/27, beyond10x/ess#545).
     PayloadRead(minted_value::RawPayloadRead),
     /// `{changed: <field>}` (ess/25, beyond10x/ess#531).
     Changed(set_effects::RawChangedSource),
@@ -1437,7 +1437,7 @@ enum RawPayloadSource {
     Texts(Vec<String>),
     /// `{related: {entity, where, field}}` (ess/22, beyond10x/ess#299).
     Selection(RawRelatedSelection),
-    /// `{related: {entity, where, order_by, first}}` (ess/25, beyond10x/ess#543).
+    /// `{related: {entity, where, order_by, first}}` (ess/27, beyond10x/ess#543).
     Head(ordered_head::RawRelatedHead),
     /// The `where:` of a `related:` mapping, kept as written until the shape around it says whether
     /// it is a selector; never left in a source once read.
@@ -2678,7 +2678,7 @@ pub struct CommandSpec {
     #[serde(default, skip_serializing_if = "crate::refs::is_empty")]
     pub refs: Refs,
     /// How soon the system takes this step, where the command is system-issued and says so
-    /// (`ess/25`, beyond10x/ess#542, `docs/design/system-issued-commands.md`).
+    /// (`ess/27`, beyond10x/ess#542, `docs/design/system-issued-commands.md`).
     ///
     /// A property of the system, not of the machine, as an elapsed claim is. `None` where the
     /// command declares no bound.
@@ -3309,7 +3309,7 @@ impl CommandSpec {
                 {
                     continue;
                 }
-                // `payload.<Event>.<field>` is a published value from `ess/25` (#549), which a
+                // `payload.<Event>.<field>` is a published value from `ess/27` (#549), which a
                 // guard refuses by name; the typed pass knows the format and refuses it either way.
                 if READS_INPUT_NAMESPACE.with(std::cell::Cell::get)
                     && root == published_operand::ROOT
@@ -3394,7 +3394,7 @@ impl CommandSpec {
             {
                 continue;
             }
-            // A published value (ess/25, #549) is refused by name: nothing is published before
+            // A published value (ess/27, #549) is refused by name: nothing is published before
             // the branch is chosen.
             if let Some(refused) = error.path.as_ref().and_then(|path| {
                 published_operand::guard_refusal(types, path, error.segment.as_deref(), &owner)
@@ -4292,25 +4292,27 @@ fn marker_formats(
 }
 
 /// Whether a payload source reads a stored row: the addressed one (`{subject: …}`, an increment),
-/// a related one (`{related: …}`) or a changed one (`{changed: …}`). What a refusal answered
-/// before the row cannot fill.
+/// a related one (`{related: …}`, an ordered head included) or a changed one (`{changed: …}`).
+/// What a refusal answered before the row cannot fill.
 fn reads_row(source: &PayloadSource) -> bool {
     match source {
         PayloadSource::SubjectField { .. }
         | PayloadSource::Increment { .. }
         | PayloadSource::RelatedField { .. }
         | PayloadSource::RelatedSelection { .. }
+        | PayloadSource::RelatedHead { .. }
         | PayloadSource::ChangedField { .. } => true,
         PayloadSource::Struct { fields } => fields.iter().any(|field| reads_row(&field.source)),
         PayloadSource::InputOrGenerated { otherwise, .. } => {
             otherwise.as_deref().is_some_and(reads_row)
         }
         PayloadSource::ResponseField { .. }
-        | PayloadSource::Generated
+        | PayloadSource::Generated { .. }
         | PayloadSource::InputField { .. }
         | PayloadSource::Literal { .. }
         | PayloadSource::Scalar { .. }
         | PayloadSource::Cleared
+        | PayloadSource::PayloadRead { .. }
         | PayloadSource::CallerAttribute { .. }
         | PayloadSource::ChangedCount => false,
     }
@@ -6016,7 +6018,7 @@ pub struct RawCommandSpec {
     #[serde(default, skip_serializing_if = "crate::refs::is_empty")]
     pub refs: Refs,
     /// How soon the system takes this step: positive whole seconds, `PT<seconds>S`, on a command
-    /// every grant of which is a system actor (`ess/25`, beyond10x/ess#542).
+    /// every grant of which is a system actor (`ess/27`, beyond10x/ess#542).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub await_within: Option<crate::binding::periodic::Period>,
 }

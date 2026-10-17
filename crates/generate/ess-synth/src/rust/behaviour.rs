@@ -2211,7 +2211,7 @@ impl<'a> Writer<'a> {
         out
     }
 
-    /// The rows `outcome`'s `affects:` entries pin (ess/25, beyond10x/ess#547, D5), each read by
+    /// The rows `outcome`'s `affects:` entries pin (ess/27, beyond10x/ess#547, D5), each read by
     /// identity through its entity's storage port as `affected_<n>`: an `Option` of the identity
     /// and the row, read from the subject `held` as it was before the outcome, or from the input,
     /// and read before anything is written. An absent reference, an identity no row carries and,
@@ -2736,7 +2736,7 @@ impl<'a> Writer<'a> {
             ResolvedPayloadValue::Literal { value } => literal(self.ir, self.layout, target, value),
             // The implementation supplies the value, an optional one included: its port answers
             // `Option<T>`, `None` where there is nothing to report (beyond10x/ess#467).
-            // A present mint (ess/25, beyond10x/ess#545) asks the required port and wraps its
+            // A present mint (ess/27, beyond10x/ess#545) asks the required port and wraps its
             // answer present.
             ResolvedPayloadValue::Generated { present: true } if target.is_optional() => {
                 format!("Some({})", self.generate(target.required()))

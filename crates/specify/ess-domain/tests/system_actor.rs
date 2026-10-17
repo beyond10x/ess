@@ -1,11 +1,11 @@
 //! An actor that is the system itself, `system: true`, and the bound a system-issued command
-//! declares, `await_within:` (`ess/25`, beyond10x/ess#542,
+//! declares, `await_within:` (`ess/27`, beyond10x/ess#542,
 //! `docs/design/system-issued-commands.md`).
 //!
 //! What validation decides: a command is system-issued exactly when it has at least one grant and
 //! every actor granting it is a system actor; `await_within:` only on such a command; a system
-//! actor carries no `attributes:`; no binding invokes a system-issued command; and below `ess/25`
-//! both keys are refused naming `ess/25`.
+//! actor carries no `attributes:`; no binding invokes a system-issued command; and below `ess/27`
+//! both keys are refused naming `ess/27`.
 
 use ess_domain::QualifiedName;
 
@@ -98,8 +98,8 @@ const SCHEDULER: &str = "  - name: queueing.entry.Scheduler
 const WITHIN: &str = "    await_within: PT5S\n";
 
 #[test]
-fn a_system_actor_validates_at_ess_25() {
-    let body = model("ess/25", &format!("{CALLER}{SCHEDULER}"), WITHIN, "");
+fn a_system_actor_validates_at_ess_27() {
+    let body = model("ess/27", &format!("{CALLER}{SCHEDULER}"), WITHIN, "");
     let spec = spec(&body).unwrap_or_else(|errors| panic!("{errors}"));
     let scheduler = &spec.actors()[&name("queueing.entry.Scheduler")];
     assert!(scheduler.system, "the actor is the system itself");
@@ -116,7 +116,7 @@ fn a_system_actor_validates_at_ess_25() {
 
 #[test]
 fn a_command_granted_only_to_system_actors_is_system_issued() {
-    let body = model("ess/25", &format!("{CALLER}{SCHEDULER}"), "", "");
+    let body = model("ess/27", &format!("{CALLER}{SCHEDULER}"), "", "");
     let spec = spec(&body).unwrap_or_else(|errors| panic!("{errors}"));
     assert!(spec.is_system_issued(&name("queueing.entry.Assign")));
     assert!(
@@ -128,7 +128,7 @@ fn a_command_granted_only_to_system_actors_is_system_issued() {
 #[test]
 fn a_command_granted_to_no_actor_is_unchanged() {
     let body = model(
-        "ess/25",
+        "ess/27",
         "  - name: queueing.entry.Scheduler\n    system: true\n",
         "",
         "",
@@ -148,14 +148,14 @@ fn mixed_grants_stay_driven() {
     may: [queueing.entry.Assign]
 ";
     let actors = format!("{CALLER}{SCHEDULER}{operator}");
-    let body = model("ess/25", &actors, "", "");
+    let body = model("ess/27", &actors, "", "");
     let spec = spec(&body).unwrap_or_else(|errors| panic!("{errors}"));
     assert!(
         !spec.is_system_issued(&name("queueing.entry.Assign")),
         "granted to the system and to an operator, so an ordinary, driven command"
     );
 
-    let errors = refused(&model("ess/25", &actors, WITHIN, ""));
+    let errors = refused(&model("ess/27", &actors, WITHIN, ""));
     assert!(errors.contains("conflicting_declaration"), "{errors}");
     assert!(errors.contains("await_within"), "{errors}");
     assert!(
@@ -166,7 +166,7 @@ fn mixed_grants_stay_driven() {
 
 #[test]
 fn await_within_on_a_command_no_actor_grants_is_refused() {
-    let errors = refused(&model("ess/25", CALLER, WITHIN, ""));
+    let errors = refused(&model("ess/27", CALLER, WITHIN, ""));
     assert!(errors.contains("conflicting_declaration"), "{errors}");
     assert!(
         errors.contains("command.queueing.entry.Assign.await_within"),
@@ -183,9 +183,9 @@ fn system_false_is_the_same_document_as_leaving_it_out() {
     let left_out = "  - name: queueing.entry.Scheduler
     may: [queueing.entry.Assign]
 ";
-    let written = spec(&model("ess/25", &format!("{CALLER}{written}"), "", ""))
+    let written = spec(&model("ess/27", &format!("{CALLER}{written}"), "", ""))
         .unwrap_or_else(|errors| panic!("{errors}"));
-    let left_out = spec(&model("ess/25", &format!("{CALLER}{left_out}"), "", ""))
+    let left_out = spec(&model("ess/27", &format!("{CALLER}{left_out}"), "", ""))
         .unwrap_or_else(|errors| panic!("{errors}"));
     assert_eq!(written.actors(), left_out.actors());
     assert!(!written.is_system_issued(&name("queueing.entry.Assign")));
@@ -195,28 +195,28 @@ fn system_false_is_the_same_document_as_leaving_it_out() {
 }
 
 #[test]
-fn system_below_ess_25_is_refused_naming_ess_25() {
-    let errors = refused(&model("ess/24", &format!("{CALLER}{SCHEDULER}"), "", ""));
+fn system_below_ess_27_is_refused_naming_ess_27() {
+    let errors = refused(&model("ess/26", &format!("{CALLER}{SCHEDULER}"), "", ""));
     assert!(errors.contains("unsupported_format_version"), "{errors}");
     assert!(
         errors.contains("actor.queueing.entry.Scheduler.system"),
         "{errors}"
     );
-    assert!(errors.contains("ess/25"), "{errors}");
+    assert!(errors.contains("ess/27"), "{errors}");
 }
 
 #[test]
-fn await_within_below_ess_25_is_refused_naming_ess_25() {
+fn await_within_below_ess_27_is_refused_naming_ess_27() {
     let actors = "  - name: queueing.entry.Scheduler
     may: [queueing.entry.Assign]
 ";
-    let errors = refused(&model("ess/24", &format!("{CALLER}{actors}"), WITHIN, ""));
+    let errors = refused(&model("ess/26", &format!("{CALLER}{actors}"), WITHIN, ""));
     assert!(errors.contains("unsupported_format_version"), "{errors}");
     assert!(
         errors.contains("command.queueing.entry.Assign.await_within"),
         "{errors}"
     );
-    assert!(errors.contains("ess/25"), "{errors}");
+    assert!(errors.contains("ess/27"), "{errors}");
 }
 
 #[test]
@@ -227,7 +227,7 @@ fn a_system_actor_carries_no_attributes() {
     attributes:
       - {name: tenant, type: String}
 ";
-    let errors = refused(&model("ess/25", &format!("{CALLER}{actors}"), "", ""));
+    let errors = refused(&model("ess/27", &format!("{CALLER}{actors}"), "", ""));
     assert!(errors.contains("conflicting_declaration"), "{errors}");
     assert!(
         errors.contains("actor.queueing.entry.Scheduler.attributes"),
@@ -238,14 +238,14 @@ fn a_system_actor_carries_no_attributes() {
 #[test]
 fn a_zero_bound_keeps_the_period_refusal() {
     let errors = refused(&model(
-        "ess/25",
+        "ess/27",
         &format!("{CALLER}{SCHEDULER}"),
         "    await_within: PT0S\n",
         "",
     ));
     assert!(errors.contains("PT0S"), "{errors}");
     let errors = refused(&model(
-        "ess/25",
+        "ess/27",
         &format!("{CALLER}{SCHEDULER}"),
         "    await_within: 5s\n",
         "",
@@ -269,7 +269,7 @@ fn a_binding_invoking_a_system_issued_command_is_refused() {
     on_failure: drop
 ";
     let errors = refused(&model(
-        "ess/25",
+        "ess/27",
         &format!("{CALLER}{SCHEDULER}"),
         "",
         binding,
@@ -285,7 +285,7 @@ fn a_binding_invoking_a_system_issued_command_is_refused() {
     may: [queueing.entry.Assign]
 ";
     spec(&model(
-        "ess/25",
+        "ess/27",
         &format!("{CALLER}{operator}"),
         "",
         binding,
@@ -306,7 +306,7 @@ fn a_system_actor_may_name_a_view_only_the_system_reads() {
     fields:
       - {name: entry_id, type: queueing.entry.EntryId}
 ";
-    let spec = spec(&model("ess/25", &format!("{CALLER}{actors}"), "", view))
+    let spec = spec(&model("ess/27", &format!("{CALLER}{actors}"), "", view))
         .unwrap_or_else(|errors| panic!("{errors}"));
     assert!(spec.is_system_issued(&name("queueing.entry.Assign")));
 }

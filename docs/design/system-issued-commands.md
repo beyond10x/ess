@@ -1,4 +1,4 @@
-# A command the system issues itself is awaited, not driven (`system: true`, ess/25, suite /50–/51)
+# A command the system issues itself is awaited, not driven (`system: true`, ess/27, suite /52–/53)
 
 Status: designed, not implemented (https://github.com/beyond10x/ess/issues/542). Stage 1 is
 `story:system-issued-command-is-awaited-not-driven`: the declaration, validation, synthesis, the
@@ -69,7 +69,7 @@ unsupported for this reason, on five such commands. The happy path is one of the
 ## Source syntax
 
 ```yaml
-format: ess/25
+format: ess/27
 
 actors:
   - name: queueing.entry.Scheduler
@@ -101,9 +101,9 @@ answer who issues a command.
 
 | rule | code | location |
 |---|---|---|
-| `system: true` in a source below `ess/25` | `unsupported_format_version` | `actor.<a>.system` |
+| `system: true` in a source below `ess/27` | `unsupported_format_version` | `actor.<a>.system` |
 | `system: true` beside `attributes:` | `conflicting_declaration`. The system carries no credential, and a `{caller: …}` read on its commands has nothing to read | `actor.<a>.attributes` |
-| `await_within:` below `ess/25` | `unsupported_format_version` | `command.<c>.await_within` |
+| `await_within:` below `ess/27` | `unsupported_format_version` | `command.<c>.await_within` |
 | `await_within:` on a command that is not system-issued | `conflicting_declaration`, naming the grants that make it driven | `command.<c>.await_within` |
 | `await_within: PT0S`, or another spelling | the `Period` parse refusal, unchanged | `command.<c>.await_within` |
 | a binding whose `invoke:` names a system-issued command | `conflicting_declaration` (stage 1). A binding's invocation is already the system acting, and conformance observes it through `expect_invocation`. Two causes of one command need their own design | `binding.<id>.invoke` |
@@ -376,34 +376,34 @@ merge order. Each entry gets a row in `website/docs/reference/diagnostics.md`.
 | interpreter | issues only when awaited. The identity input is the instance. Every other input is decided by candidates in a fixed order: for an input a `when_related:` guard reads, the identities of held rows of that entity in canonical order; otherwise the value its mint counter gives (`interpret.rs`, *Where the identifiers come from*); for an `Optional` input, absent first. The first candidate under which `execute` selects one accepting branch, or a forced external one, is reached. No candidate reached means `NotIssued`. Candidates reaching different accepting branches mean unsupported ("nothing is chosen here", `interpret.rs`). A `compared` name that the model does not determine also means unsupported. `within` is answered as `observe_elapsed` is | `interpret.rs`, `interpret/await_outcome.rs` (new) |
 | authored | an act naming a system-issued command, with no actor, compiles to `await_outcome` (an accepting or external outcome) or `expect_not_issued` (a refusal outcome). Its `input:` is the stated, partial input, and the identity input is required. `events:` compile as after any act; on a refusal act, which nothing issues, `no_events:` joins `unpublished` and the claims only an issued command answers are refused (`ESS-AUTHOR-046`) | `authored.rs` |
 | Go runner, TypeScript runner | stage 2: the same steps, value, bound and codes; `AwaitTarget` / `awaitOutcome?`; the majors tables; the explorers skip system-issued commands | `go/{runtime,prerequisites,replay,explore}.go`, `go/mod.rs`; `ts/{runtime,explore}.ts`, `ts/mod.rs` |
-| browser replay | refuses suites `/50`–`/51` by version, as it refuses every major it does not run | `web_replay.rs`, `web_execution.rs` (test only, where the version table already refuses) |
-| diff | `ess-diff/19`: `actor/<a>/system-changed {before, after}`, classified `[B, C, C]` when the actor becomes the system (it stops being a caller, as `grant-removed` is, `compatibility.rs:684-685`) and `[C, C, C]` when it stops being the system; `command/<c>/await-within-changed {before, after}`, `[C, C, C]`, narrowed or expanded. A command becoming system-issued is reported through those and the grant changes, never twice | `ess-diff/src/{change,compatibility,delta,impact}.rs` |
+| browser replay | refuses suites `/52`–`/53` by version, as it refuses every major it does not run | `web_replay.rs`, `web_execution.rs` (test only, where the version table already refuses) |
+| diff | `ess-diff/20`: `actor/<a>/system-changed {before, after}`, classified `[B, C, C]` when the actor becomes the system (it stops being a caller, as `grant-removed` is, `compatibility.rs:684-685`) and `[C, C, C]` when it stops being the system; `command/<c>/await-within-changed {before, after}`, `[C, C, C]`, narrowed or expanded. A command becoming system-issued is reported through those and the grant changes, never twice | `ess-diff/src/{change,compatibility,delta,impact}.rs` |
 | generated docs | an actor renders as "the system itself"; a system-issued command renders "issued by the system", with its bound | `ess-gen/src/docs.rs` |
 | `OpenAPI`, generated Rust and Go servers, entity runtime, CLI binding | unchanged, by decision: the owning component still accepts the command, because that is where the system's own scheduler sends it. The flag says who issues the command, not whether it is served | — |
 | mutation | no new class. A mutant of a system-issued command is scored through the interpreter's answer to the await steps | `mutate.rs` unchanged |
-| docs | `spec-versions.md` `ess/25` row, `formats.md` suite `/50`–`/51` and `ess-diff/19` rows, the actors section of `website/docs/guides/specify/commands-and-outcomes.md`, `website/docs/guides/verify/runners.md`, `website/docs/start/runners/{rust,go,typescript}.md`, `CHANGELOG.md` | `website/docs`, `CHANGELOG.md` |
+| docs | `spec-versions.md` `ess/27` row, `formats.md` suite `/52`–`/53` and `ess-diff/20` rows, the actors section of `website/docs/guides/specify/commands-and-outcomes.md`, `website/docs/guides/verify/runners.md`, `website/docs/start/runners/{rust,go,typescript}.md`, `CHANGELOG.md` | `website/docs`, `CHANGELOG.md` |
 
 ## Format versions
 
-- **Source `ess/25`**, shared with the other `ess/25` constructs. The unit that opens `ess/25`
-  (`FormatVersion::V25`, its `FORMAT_HISTORY` row) is a dependency here and is not part of this
-  design. `ess/24` documents keep their meaning. `system:` and `await_within:` below `ess/25` are
-  refused naming `ess/25`.
-- **Suite `ess-conformance/50` (ordinary) and `/51` (coverage)**. A suite gets one of them exactly
+- **Source `ess/27`**, shared with the other `ess/27` constructs. The unit that opens `ess/27`
+  (`FormatVersion::V27`, its `FORMAT_HISTORY` row) is a dependency here and is not part of this
+  design. `ess/26` documents keep their meaning. `system:` and `await_within:` below `ess/27` are
+  refused naming `ess/27`.
+- **Suite `ess-conformance/52` (ordinary) and `/53` (coverage)**. A suite gets one of them exactly
   when it carries `await_outcome`, `expect_not_issued` or a `{kind: awaited}` value. They are
   cumulative over every major below. Older readers refuse them by version before any target
   callback. A suite without them keeps its earlier number and bytes. The pattern is
   `undeclared_fields.rs` (`ORDINARY`, `COVERAGE`, `ADMITTED`, floors, `admit`) in a new
-  `src/system_issued.rs`. If another unit in this wave claims `/50` first, this pair takes the next
+  `src/system_issued.rs`. `/50`–`/51` shipped first for a held `now` (beyond10x/ess#586), so this pair took the next
   one, in merge order.
-- **`ess-diff/19`** for the two diff changes.
+- **`ess-diff/20`** for the two diff changes.
 - **No new `ess-scenario/N`.** An authored act's keys do not change. What an act naming a
   system-issued command compiles to follows from the model, and an older `ess` refuses the
-  `ess/25` model before it reads the act.
+  `ess/27` model before it reads the act.
 - `report/2` is unchanged. `ESS-CF-AWAIT` is a new value of a field the report already carries.
 
 **Ship stage 1 and stage 2 in one release.** Until stage 2 lands, the Go and TypeScript runtimes
-refuse a `/50` suite by version, and `--target go` / `--target typescript` refuse to emit one, so
+refuse a `/52` suite by version, and `--target go` / `--target typescript` refuse to emit one, so
 a specification with a system actor gets no Go or TypeScript package. That is honest, but a
 release that shipped only stage 1 would take those packages away from such a specification.
 
@@ -413,7 +413,7 @@ release that shipped only stage 1 would take those packages away from such a spe
   suite bytes. Each implementing unit carries a test for its part. The suite half is a probe over
   every example and fixture model, like `adversary_e_u6_bytes`
   (`docs/design/refusal-with-effect.md`).
-- An adopter moves an internal actor over by writing `format: ess/25` and `system: true`, and
+- An adopter moves an internal actor over by writing `format: ess/27` and `system: true`, and
   optionally `await_within:`. It moves a value the system mints from the input to a
   `{generated: true}` source. After #543, it moves "which row" from the input to a selection
   source. Its target implements `await_outcome`, `AwaitTarget` or `awaitOutcome?`, with the hold.
@@ -461,13 +461,13 @@ in parallel never edit the same file.
 
 | unit | stage | depends_on | does | files |
 |---|---|---|---|---|
-| U-1 declaration | 1 | the `ess/25` opener | `system:`, `await_within:`, the validation table, the IR fields, schema regeneration | `crates/specify/ess-domain/src/{actor.rs,command.rs,binding.rs}`, `crates/specify/ess-compiler/src/{ir.rs,resolve.rs}`, `schemas/generated/ess.schema.json`, `crates/specify/ess-domain/tests/system_actor.rs` (new) |
-| U-2 suite vocabulary | 1 | U-1 | the two steps, `{kind: awaited}`, majors `/50`–`/51`, admission and floors, coverage carriage, browser version refusal test, the tests that pin the newest major | `crates/verify/ess-conformance/src/{scenario.rs,system_issued.rs (new),lib.rs,admission.rs,coverage.rs,coverage_build.rs,count_json.rs,synthesis_seeds.rs}`, `crates/edge/ess-cli/tests/support/coverage_producer.rs`, `crates/edge/ess-xtask/src/docs.rs`, the latest-major pins in `crates/verify/ess-conformance/tests/{count_reports,field_presence,leaf_payloads,subject_guard_input,event_multiplicity,adversary_generated_docs_pass2}.rs` and `tests/support_seeds/mod.rs`, `crates/verify/ess-conformance/tests/system_issued_vocabulary.rs` (new) |
+| U-1 declaration | 1 | the `ess/27` opener | `system:`, `await_within:`, the validation table, the IR fields, schema regeneration | `crates/specify/ess-domain/src/{actor.rs,command.rs,binding.rs}`, `crates/specify/ess-compiler/src/{ir.rs,resolve.rs}`, `schemas/generated/ess.schema.json`, `crates/specify/ess-domain/tests/system_actor.rs` (new) |
+| U-2 suite vocabulary | 1 | U-1 | the two steps, `{kind: awaited}`, majors `/52`–`/53`, admission and floors, coverage carriage, browser version refusal test, the tests that pin the newest major | `crates/verify/ess-conformance/src/{scenario.rs,system_issued.rs (new),lib.rs,admission.rs,coverage.rs,coverage_build.rs,count_json.rs,synthesis_seeds.rs}`, `crates/edge/ess-cli/tests/support/coverage_producer.rs`, `crates/edge/ess-xtask/src/docs.rs`, the latest-major pins in `crates/verify/ess-conformance/tests/{count_reports,field_presence,leaf_payloads,subject_guard_input,event_multiplicity,adversary_generated_docs_pass2}.rs` and `tests/support_seeds/mod.rs`, `crates/verify/ess-conformance/tests/system_issued_vocabulary.rs` (new) |
 | U-3 Rust target and runner | 1 | U-2 | `await_outcome`, `AwaitRequest`/`AwaitAnswer`, the bound loop, `ESS-CF-AWAIT`, forwarding wrappers, `Faulty` modes | `crates/verify/ess-conformance/src/{target.rs,runner.rs,runner/await_outcome.rs (new),report.rs,reference.rs,faulty.rs}`, `crates/verify/ess-conformance/tests/system_issued_command.rs` (`await_outcome_unsupported_by_default_keeps_old_targets_green`, the faulty-target table) |
 | U-4 synthesis | 1 | U-1, U-2 | the rewrite pass, `ESS-SYNTH-023`/`024`, the grant rule | `crates/verify/ess-conformance/src/synthesize/system_issued.rs` (new), `crates/verify/ess-conformance/src/synthesize.rs` (call site and catalogue entries), `crates/verify/ess-conformance/src/synthesize/grant.rs`, `crates/verify/ess-conformance/tests/system_issued_synthesis.rs` (new: `synthesis_awaits_a_system_issued_command_instead_of_driving_it`, `a_refusal_of_a_system_issued_command_expects_nothing_within_the_bound`, `an_old_suite_keeps_its_bytes`) |
 | U-5 interpreter | 1 | U-1, U-3 | the interpreter's await answer and candidate order | `crates/verify/ess-conformance/src/interpret.rs`, `crates/verify/ess-conformance/src/interpret/await_outcome.rs` (new), `crates/verify/ess-conformance/tests/system_issued_interpreter.rs` (new: `the_interpreter_answers_an_await_step`) |
 | U-6 authored | 1 | U-1, U-2; after u544 merges (`authored.rs`) | act compilation, `ESS-AUTHOR-044` to `046` | `crates/verify/ess-conformance/src/authored.rs`, `crates/verify/ess-conformance/tests/system_issued_authored.rs` (new) |
-| U-7 diff | 1 | U-1 | `ess-diff/19` and both changes | `crates/verify/ess-diff/src/{change.rs,compatibility.rs,delta.rs,impact.rs}`, `crates/verify/ess-diff/tests/system_issued.rs` (new) |
+| U-7 diff | 1 | U-1 | `ess-diff/20` and both changes | `crates/verify/ess-diff/src/{change.rs,compatibility.rs,delta.rs,impact.rs}`, `crates/verify/ess-diff/tests/system_issued.rs` (new) |
 | U-8 generated docs and site | 1 | U-1…U-7 | rendering, guides, reference rows, changelog | `crates/generate/ess-gen/src/docs.rs`, `website/docs/reference/{spec-versions,formats,diagnostics}.md`, `website/docs/guides/specify/commands-and-outcomes.md`, `website/docs/guides/verify/{runners,author-scenarios}.md`, `website/docs/start/runners/rust.md`, `CHANGELOG.md` |
 | U-9 Go runner | 2 | U-3, U-5 | `AwaitTarget`, the steps, the value, majors, transcript replay, explorer exclusion, emitted README | `crates/verify/ess-conformance/src/go/{runtime.go,prerequisites.go,replay.go,explore.go,mod.rs}`, `crates/verify/ess-conformance/tests/system_issued_go.rs` (new: `the_go_runner_awaits_a_system_issued_command`), `website/docs/start/runners/go.md` |
 | U-10 TypeScript runner | 2 | U-3, U-5 | the same for TypeScript | `crates/verify/ess-conformance/src/ts/{runtime.ts,runtime.test.ts,explore.ts,mod.rs}`, `crates/verify/ess-conformance/tests/system_issued_typescript.rs` (new: `the_typescript_runner_awaits_a_system_issued_command`), `website/docs/start/runners/typescript.md` |

@@ -135,7 +135,7 @@ fn a_row_set_guard_and_a_filtered_read_are_refused_by_name() {
     }
 }
 
-/// `Run` stores the memo of the first `Child` of the owner by identity (ess/25, beyond10x/ess#543).
+/// `Run` stores the memo of the first `Child` of the owner by identity (ess/27, beyond10x/ess#543).
 const HEAD: (&str, &str, &str) = (
     "domains/local.yaml",
     "          note: input.note\n        summary: The child is stored",
@@ -146,7 +146,7 @@ const HEAD: (&str, &str, &str) = (
 /// the same row-set limitation, by name (`docs/design/ordered-related-head.md`, "Targets").
 #[test]
 fn a_head_read_is_refused_with_the_row_set_limitation() {
-    let diagnostics = refused(&contract_at("format: ess/25", &[HEAD]));
+    let diagnostics = refused(&contract_at("format: ess/27", &[HEAD]));
     let found = named(&diagnostics);
     assert_eq!(found.len(), 1, "{diagnostics:#?}");
     assert_eq!(

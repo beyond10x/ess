@@ -187,9 +187,9 @@ fn adv_integer_member_alone_is_refused_as_unscoped() {
 // ---- the `instances: {where:}` sibling ----------------------------------------------------------
 
 /// `SealRegion {region}` seals every shelf of a region: a bulk update whose `where:` reads a member
-/// of the struct identity (the sibling the story names). Below ess/25 validate refuses it, naming
+/// of the struct identity (the sibling the story names). Below ess/27 validate refuses it, naming
 /// the format a set effect's filter reads the identity from (beyond10x/ess#547), so no synthesis
-/// gate is reached; from ess/25 it is admitted and witnessed decisively.
+/// gate is reached; from ess/27 it is admitted and witnessed decisively.
 #[test]
 fn adv_bulk_update_where_on_identity_member() {
     let bulk = |filter: &str| {
@@ -216,15 +216,15 @@ fn adv_bulk_update_where_on_identity_member() {
         .expect_err("a bulk `where:` reading a member of the identity is refused at validate");
     assert!(
         errors.to_string().contains("unsupported_format_version")
-            && errors.to_string().contains("ess/25")
+            && errors.to_string().contains("ess/27")
             && !errors.to_string().contains("unobservable_fact"),
         "{errors}"
     );
-    // From ess/25 a set effect's filter reads the identity (beyond10x/ess#547, D1). The identity
+    // From ess/27 a set effect's filter reads the identity (beyond10x/ess#547, D1). The identity
     // is supplied by `OpenShelf`'s input, so rows are arranged on both sides of the member filter,
     // and a target sealing every shelf, or none, fails the branch.
-    let at_25 = |filter: &str| bulk(filter).replacen("format: ess/23", "format: ess/25", 1);
-    let suite = passing_suite(&at_25("at.region == input.region"));
+    let at_27 = |filter: &str| bulk(filter).replacen("format: ess/23", "format: ess/27", 1);
+    let suite = passing_suite(&at_27("at.region == input.region"));
     let sealed_all = "demo.vault.SealRegion/outcome/sealed-all";
     assert!(
         suite
@@ -235,7 +235,7 @@ fn adv_bulk_update_where_on_identity_member() {
     );
     for mutant in ["at.shelf == input.region", "at.region != input.region"] {
         assert!(
-            failed_by(&suite, &at_25(mutant))
+            failed_by(&suite, &at_27(mutant))
                 .iter()
                 .any(|id| id == sealed_all),
             "a target selecting by `{mutant}` fails the branch"

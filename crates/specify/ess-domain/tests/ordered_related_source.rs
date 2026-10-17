@@ -1,8 +1,8 @@
 //! The head of an ordered selection as a value source, `{related: {entity, where, order_by,
-//! first}}` (`ess/25`, beyond10x/ess#543, `docs/design/ordered-related-head.md`).
+//! first}}` (`ess/27`, beyond10x/ess#543, `docs/design/ordered-related-head.md`).
 //!
 //! What validation decides: the shape is recognised by its list-valued `order_by:` and admitted
-//! from `ess/25`; the order is total, ending in the entity's identity and nothing after it; every
+//! from `ess/27`; the order is total, ending in the entity's identity and nothing after it; every
 //! key is a bare, required, orderable field of the entity; `first:` replaces `field:`, never stands
 //! beside it, and is never written without an order.
 
@@ -197,10 +197,10 @@ fn sets_only(format: &str, order_by: &str) -> String {
 }
 
 #[test]
-fn an_ordered_head_source_validates_at_ess_25() {
+fn an_ordered_head_source_validates_at_ess_27() {
     let order = "[element_score desc, membership_id]";
     let body = model(
-        "ess/25",
+        "ess/27",
         &head_in_sets("element_key", order, "element_key"),
         &head_in_payload(order, "element_key"),
     );
@@ -214,12 +214,12 @@ fn an_ordered_head_source_validates_at_ess_25() {
         "[element_score descending, joined_seq ascending, membership_id asc]",
         "[state, slot_id, membership_id]",
     ] {
-        spec(&sets_only("ess/25", order)).unwrap_or_else(|errors| panic!("{order}: {errors}"));
+        spec(&sets_only("ess/27", order)).unwrap_or_else(|errors| panic!("{order}: {errors}"));
     }
 
     // `first:` reads the identity, or a field into an `Optional<…>` target.
     let body = model(
-        "ess/25",
+        "ess/27",
         &(head_in_sets("element_key", order, "element_key")
             + &head_in_sets("element_score", order, "element_score")),
         GENERATED_KEY,
@@ -229,7 +229,7 @@ fn an_ordered_head_source_validates_at_ess_25() {
 
 #[test]
 fn an_order_without_a_unique_tie_break_is_refused() {
-    let errors = refused(&sets_only("ess/25", "[element_score desc, joined_seq]"));
+    let errors = refused(&sets_only("ess/27", "[element_score desc, joined_seq]"));
     assert!(errors.contains("missing_declaration"), "{errors}");
     assert!(errors.contains("sets.element_key"), "{errors}");
     assert!(
@@ -237,7 +237,7 @@ fn an_order_without_a_unique_tie_break_is_refused() {
         "{errors}"
     );
 
-    let errors = refused(&sets_only("ess/25", "[element_score desc]"));
+    let errors = refused(&sets_only("ess/27", "[element_score desc]"));
     assert!(
         errors.contains("append `membership_id` as the last key"),
         "{errors}"
@@ -247,7 +247,7 @@ fn an_order_without_a_unique_tie_break_is_refused() {
 #[test]
 fn first_beside_field_is_refused() {
     let body = model(
-        "ess/25",
+        "ess/27",
         "          element_key:
             related:
               entity: demo.ranked.Membership
@@ -266,7 +266,7 @@ fn first_beside_field_is_refused() {
 
     // An order read with `field:` says which contract it wants by the key it lacks.
     let body = model(
-        "ess/25",
+        "ess/27",
         "          element_key:
             related:
               entity: demo.ranked.Membership
@@ -282,10 +282,10 @@ fn first_beside_field_is_refused() {
 }
 
 #[test]
-fn the_head_shape_below_ess_25_is_refused_naming_ess_25() {
-    let errors = refused(&sets_only("ess/24", "[element_score desc, membership_id]"));
+fn the_head_shape_below_ess_27_is_refused_naming_ess_27() {
+    let errors = refused(&sets_only("ess/26", "[element_score desc, membership_id]"));
     assert!(errors.contains("unsupported_format_version"), "{errors}");
-    assert!(errors.contains("ess/25"), "{errors}");
+    assert!(errors.contains("ess/27"), "{errors}");
     assert!(errors.contains("sets.element_key"), "{errors}");
 
     // Below `ess/22` the selector itself is no source; the shape stays refused.
@@ -293,10 +293,10 @@ fn the_head_shape_below_ess_25_is_refused_naming_ess_25() {
 }
 
 /// A text `order_by:` is not the shape: the mapping stays the nested one it always was, at every
-/// format, including `ess/25`.
+/// format, including `ess/27`.
 #[test]
 fn a_text_order_by_keeps_its_nested_mapping_meaning() {
-    for format in ["ess/24", "ess/25"] {
+    for format in ["ess/26", "ess/27"] {
         let body = model(
             format,
             "          reference:
@@ -314,7 +314,7 @@ fn a_text_order_by_keeps_its_nested_mapping_meaning() {
 
 #[test]
 fn an_optional_order_key_is_refused() {
-    let errors = refused(&sets_only("ess/25", "[note, membership_id]"));
+    let errors = refused(&sets_only("ess/27", "[note, membership_id]"));
     assert!(errors.contains("type_mismatch"), "{errors}");
     assert!(errors.contains("order_by[0]"), "{errors}");
     assert!(errors.contains("absence has no rank"), "{errors}");
@@ -322,7 +322,7 @@ fn an_optional_order_key_is_refused() {
 
 #[test]
 fn an_unorderable_key_is_refused() {
-    let errors = refused(&sets_only("ess/25", "[waited, membership_id]"));
+    let errors = refused(&sets_only("ess/27", "[waited, membership_id]"));
     assert!(errors.contains("type_mismatch"), "{errors}");
     assert!(errors.contains("order_by[0]"), "{errors}");
     assert!(errors.contains("Duration"), "{errors}");
@@ -330,7 +330,7 @@ fn an_unorderable_key_is_refused() {
 
 #[test]
 fn a_key_after_the_identity_is_refused() {
-    let errors = refused(&sets_only("ess/25", "[membership_id, element_score]"));
+    let errors = refused(&sets_only("ess/27", "[membership_id, element_score]"));
     assert!(errors.contains("unsupported_construct"), "{errors}");
     assert!(errors.contains("order_by[1]"), "{errors}");
     assert!(errors.contains("never decide"), "{errors}");
@@ -339,7 +339,7 @@ fn a_key_after_the_identity_is_refused() {
 #[test]
 fn first_without_order_by_is_refused() {
     let body = model(
-        "ess/25",
+        "ess/27",
         "          element_key:
             related:
               entity: demo.ranked.Membership
@@ -356,20 +356,20 @@ fn first_without_order_by_is_refused() {
 
 #[test]
 fn an_order_key_the_entity_does_not_hold_is_refused() {
-    let errors = refused(&sets_only("ess/25", "[priority desc, membership_id]"));
+    let errors = refused(&sets_only("ess/27", "[priority desc, membership_id]"));
     assert!(errors.contains("undeclared_reference"), "{errors}");
     assert!(errors.contains("order_by[0]"), "{errors}");
     assert!(errors.contains("priority"), "{errors}");
     assert!(errors.contains("membership_id"), "{errors}");
 
-    let errors = refused(&sets_only("ess/25", "[slot_id.length, membership_id]"));
+    let errors = refused(&sets_only("ess/27", "[slot_id.length, membership_id]"));
     assert!(errors.contains("undeclared_reference"), "{errors}");
     assert!(errors.contains("order_by[0]"), "{errors}");
 }
 
 #[test]
 fn an_empty_order_is_refused() {
-    let errors = refused(&sets_only("ess/25", "[]"));
+    let errors = refused(&sets_only("ess/27", "[]"));
     assert!(errors.contains("empty_declaration"), "{errors}");
     assert!(errors.contains("sets.element_key"), "{errors}");
 }
@@ -377,14 +377,14 @@ fn an_empty_order_is_refused() {
 #[test]
 fn a_key_that_does_not_parse_is_refused() {
     let errors = refused(&sets_only(
-        "ess/25",
+        "ess/27",
         "[element_score upward, membership_id]",
     ));
     assert!(errors.contains("type_mismatch"), "{errors}");
     assert!(errors.contains("order_by[0]"), "{errors}");
 
     let errors = refused(&sets_only(
-        "ess/25",
+        "ess/27",
         "[element_score desc first, membership_id]",
     ));
     assert!(errors.contains("type_mismatch"), "{errors}");
@@ -393,7 +393,7 @@ fn a_key_that_does_not_parse_is_refused() {
 #[test]
 fn a_key_written_twice_is_refused() {
     let errors = refused(&sets_only(
-        "ess/25",
+        "ess/27",
         "[element_score, element_score desc, membership_id]",
     ));
     assert!(errors.contains("duplicate_declaration"), "{errors}");
@@ -403,7 +403,7 @@ fn a_key_written_twice_is_refused() {
 #[test]
 fn first_naming_no_field_or_the_wrong_type_is_refused() {
     let body = model(
-        "ess/25",
+        "ess/27",
         &head_in_sets("element_key", "[membership_id]", "label"),
         GENERATED_KEY,
     );
@@ -412,7 +412,7 @@ fn first_naming_no_field_or_the_wrong_type_is_refused() {
     assert!(errors.contains("label"), "{errors}");
 
     let body = model(
-        "ess/25",
+        "ess/27",
         &head_in_sets("element_key", "[membership_id]", "joined_seq"),
         GENERATED_KEY,
     );
@@ -425,7 +425,7 @@ fn first_naming_no_field_or_the_wrong_type_is_refused() {
 fn the_selector_rules_of_a_filtered_read_apply() {
     // A selector over no declared entity.
     let body = model(
-        "ess/25",
+        "ess/27",
         "          element_key:
             related:
               entity: demo.ranked.Nothing
@@ -441,7 +441,7 @@ fn the_selector_rules_of_a_filtered_read_apply() {
 
     // A selector reading a field the row does not hold.
     let body = model(
-        "ess/25",
+        "ess/27",
         "          element_key:
             related:
               entity: demo.ranked.Membership
@@ -458,7 +458,7 @@ fn the_selector_rules_of_a_filtered_read_apply() {
 #[test]
 fn order_by_beside_via_is_refused() {
     let body = model(
-        "ess/25",
+        "ess/27",
         "          element_key:
             related:
               via: input.slot_id
@@ -477,7 +477,7 @@ fn order_by_beside_via_is_refused() {
 /// [`MODEL`]'s membership identified by a struct, `{slot_id, seq}`: `@MEMBER@` marks a further
 /// member of it.
 fn struct_identity(order_by: &str, member: &str) -> String {
-    let body = sets_only("ess/25", order_by)
+    let body = sets_only("ess/27", order_by)
         .replace(
             "  - {name: demo.ranked.MembershipId, kind: newtype, of: Uuid}\n",
             &format!(
@@ -533,7 +533,7 @@ fn a_struct_identity_member_without_a_rank_is_refused() {
 /// total, and states that rows tying on every key are in no order the model fixes.
 fn unordered(order_by: &str, ties: &str) -> String {
     model(
-        "ess/25",
+        "ess/27",
         &format!(
             "          element_key:
             related:
@@ -589,9 +589,9 @@ fn a_ties_value_other_than_unordered_is_refused() {
 }
 
 #[test]
-fn ties_unordered_below_ess_25_is_refused_naming_ess_25() {
+fn ties_unordered_below_ess_27_is_refused_naming_ess_27() {
     let errors =
-        refused(&unordered("[element_score desc]", "unordered").replace("ess/25", "ess/24"));
+        refused(&unordered("[element_score desc]", "unordered").replace("ess/27", "ess/26"));
     assert!(errors.contains("unsupported_format_version"), "{errors}");
-    assert!(errors.contains("ess/25"), "{errors}");
+    assert!(errors.contains("ess/27"), "{errors}");
 }

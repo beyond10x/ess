@@ -1,7 +1,7 @@
-# The head of an ordered selection as a value source (`ess/25`)
+# The head of an ordered selection as a value source (`ess/27`)
 
 Status: design, not implemented (https://github.com/beyond10x/ess/issues/543,
-`story:payload-source-reads-the-head-of-an-ordered-selection`). Source format `ess/25`, which
+`story:payload-source-reads-the-head-of-an-ordered-selection`). Source format `ess/27`, which
 another unit opens; this construct does not open a format of its own. No new suite format, no new
 `ValidationCode`. It builds on `filtered-related-reads.md` (the selector and its snapshot) and on a
 view's `order_by:` (`crates/specify/ess-domain/src/view.rs:195-273`, `:963`).
@@ -43,7 +43,7 @@ direction}, …], first: <field>}}`, with the order required to be total.
 ## The construct
 
 ```yaml
-format: ess/25
+format: ess/27
 # …
       - name: picked
         creates: demo.ranked.Pair
@@ -90,7 +90,7 @@ format (`command.rs:1507-1513` reads it; `:1851-1854` refuses it outside `via:`)
 any `ess` release accepted holds this shape, and recognising it changes no accepted document's
 meaning. A text-valued `order_by: element_score desc` is not the shape: a `related:` mapping holding
 `entity`, `where`, `order_by` and `first` as texts stays the nested mapping it always was, at every
-format, including `ess/25`.
+format, including `ess/27`.
 
 ### Spelling: the view's, not the requester's
 
@@ -165,7 +165,7 @@ takes one value. Without it the total-order rule above stands.
 
 | layer | rule |
 | --- | --- |
-| validation | the order need not end in the identity; every other key rule holds. A key naming the identity is refused (`conflicting_declaration` at `related.ties`): the identity breaks every tie. A value other than `unordered` is refused (`type_mismatch` at `related.ties`). Below `ess/25` the shape is refused naming `ess/25`, as without the flag |
+| validation | the order need not end in the identity; every other key rule holds. A key naming the identity is refused (`conflicting_declaration` at `related.ties`): the identity breaks every tie. A value other than `unordered` is refused (`type_mismatch` at `related.ties`). Below `ess/27` the shape is refused naming `ess/27`, as without the flag |
 | IR | `RelatedHead` carries `"ties": "unordered"` after `order_by`; a total order writes no `ties` key, so its bytes are unchanged. `describe` adds "rows tying on every key in no order the model fixes" |
 | interpreter | rank as before. Where the first two selected rows tie on every key, the answer is `Undetermined::UnorderedTie`, a capability gap the target reports `unsupported`, and no row is picked. A tie behind a head that ranks first alone decides nothing, and the head is read |
 | synthesis | the arrangement is unchanged (S2 the head, neither first nor last inserted), and the reading refuses an arrangement in which two selected rows tie on every key, so no scenario states an order for tying rows |
@@ -216,7 +216,7 @@ are. A key refusal is reported at `….related.order_by[<i>]`.
 
 | condition | code | message names |
 | --- | --- | --- |
-| the shape below `ess/25` | `unsupported_format_version` | `ess/25`; hint `declare \`format: ess/25\`` |
+| the shape below `ess/27` | `unsupported_format_version` | `ess/27`; hint `declare \`format: ess/27\`` |
 | `first:` beside `field:` | `conflicting_declaration` | that `field:` reads exactly one row and `first:` the head; write one |
 | `order_by:` with `field:` and no `first:` | `conflicting_declaration` | that an ordered selection is read with `first:` |
 | `first:` with no `order_by:` | `missing_declaration` | that the first of an unordered selection is no particular row |
@@ -245,16 +245,16 @@ cannot change their answer.
 
 ## Format and compatibility
 
-- **Source format `ess/25`.** Below it the shape is refused naming `ess/25`. Before `ess/25` no
+- **Source format `ess/27`.** Below it the shape is refused naming `ess/27`. Before `ess/27` no
   reading of the shape was ever accepted (above), so the change is to a refusal's message, not to a
   document's meaning. A document below `ess/22`, read with filtered reads off
   (`row_set.rs:540-555`), may keep the refusal it has today, provided it stays refused.
 - **Old-reader controls.**
-  - The `ess/25` example, rewritten `format: ess/24`, is refused with `unsupported_format_version`
-    naming `ess/25`.
+  - The `ess/27` example, rewritten `format: ess/26`, is refused with `unsupported_format_version`
+    naming `ess/27`.
   - Rewritten `format: ess/21`, it is still refused (any code).
   - A struct target whose fields are `related: {entity, where, order_by, first}`, all texts,
-    compiles to the same IR bytes at `ess/24` and at `ess/25`.
+    compiles to the same IR bytes at `ess/26` and at `ess/27`.
 - **IR.** A new `ResolvedPayloadValue::RelatedHead`, tag `related_head`:
   `{selection: {entity, where}, order_by: ["element_score desc", "membership_id asc"], field,
   type_ref}`. `order_by` reuses `Ranking`, written as a view's is. `RelatedSelection` and its bytes
@@ -430,7 +430,7 @@ The story carries questions 1-4. All seven are answered here so the store can ta
    ticket of the highest priority writes `order_by: [priority desc, opened_seq, ticket_id], first:
    ticket_id`.
 6. **Cost.**
-   - Format: no bump of its own; it rides `ess/25`.
+   - Format: no bump of its own; it rides `ess/27`.
    - Keys: `order_by` (already a view keyword) and `first`, both inside `related:` only.
    - Diagnostics: no new `ValidationCode`, about twelve new messages.
    - IR: one additive variant, `related_head`, and old bytes stay unchanged. Suite: no new version.
@@ -464,9 +464,9 @@ The story carries questions 1-4. All seven are answered here so the store can ta
 Each test is written first and seen red.
 
 - `crates/specify/ess-domain/tests/ordered_related_source.rs`:
-  - `an_ordered_head_source_validates_at_ess_25`, `an_order_without_a_unique_tie_break_is_refused`
+  - `an_ordered_head_source_validates_at_ess_27`, `an_order_without_a_unique_tie_break_is_refused`
     and `first_beside_field_is_refused` (the story's three);
-  - `the_head_shape_below_ess_25_is_refused_naming_ess_25`,
+  - `the_head_shape_below_ess_27_is_refused_naming_ess_27`,
     `a_text_order_by_keeps_its_nested_mapping_meaning`, `an_optional_order_key_is_refused`,
     `a_key_after_the_identity_is_refused`, `first_without_order_by_is_refused` and
     `an_order_key_the_entity_does_not_hold_is_refused`.
@@ -492,7 +492,7 @@ Each test is written first and seen red.
     `a_struct_identity_member_without_a_rank_is_refused`,
     `ties_unordered_admits_an_order_without_the_identity`,
     `ties_unordered_beside_the_identity_is_refused`, `a_ties_value_other_than_unordered_is_refused`,
-    `ties_unordered_below_ess_25_is_refused_naming_ess_25`;
+    `ties_unordered_below_ess_27_is_refused_naming_ess_27`;
   - `ess-compiler/tests/ordered_head_ir.rs`: `ties_unordered_is_recorded_beside_the_rankings`;
   - `ess-conformance/tests/ordered_related_source.rs`:
     `a_struct_identity_breaks_a_tie_by_its_members_in_declaration_order`,
@@ -509,13 +509,13 @@ Each unit is one agent and one branch. "Overlap with u545" is the value-expressi
 
 | unit | what | files | depends on | overlap with u545 |
 | --- | --- | --- | --- | --- |
-| U0 | open `ess/25` | `ess-domain/src/system.rs` (`V25`), format list, CHANGELOG stub | — | **shared**: one unit opens it for #542, #543 and #545 |
+| U0 | open `ess/27` | `ess-domain/src/system.rs` (`V27`), format list, CHANGELOG stub | — | **shared**: one unit opens it for #542, #543 and #545 |
 | U1 | shape, recognition, validation | `ess-domain/src/command.rs` (`PayloadSource::RelatedHead`, `RawPayloadSource::Head`, the visitor, `TryFrom`, the raw back-conversion near `:2072`, the arms at `:1250`, `:1295`, `:3846`); new `ess-domain/src/command/ordered_head.rs` (key, totality and type rules); `ess-domain/src/command/value_expression.rs` (dispatch, labels `:406`, `:455`, `:746`); `ess-domain/src/view.rs` (`Ranking::parse` visibility only); `schemas/generated/ess.schema.json` (`cargo xtask schema`); new test `ess-domain/tests/ordered_related_source.rs` | U0 | **high**: `command.rs` raw source, visitor and `TryFrom` and `value_expression.rs` are u545's surfaces too; `ess.schema.json` regenerated by both |
 | U2 | IR variant, resolver, every consumer's named arm | `ess-compiler/src/ir.rs` (variant, `describe`); `ess-compiler/src/resolve.rs` (`head_field`, arms `:3029`, `:5440`); `ess-diff/src/diff.rs`; `ess-conformance/src/{web.rs,linearize.rs,synthesize.rs,synthesize/aggregate.rs,synthesize/set_effects.rs}` (named gap until U4); `ess-conformance/src/interpret/execute.rs` (a named `Undetermined` until U3); `ess-service-contract/src/lib.rs`; `ess-entity-runtime/src/{lib.rs,subset.rs}`; `ess-synth/src/{determined.rs,rust/behaviour.rs,go/behaviour.rs}`; new tests `ess-compiler/tests/ordered_head_ir.rs`, `ess-synth/tests/ordered_head_owed.rs`, a case in `ess-entity-runtime/tests/row_sets.rs` | U1 | **high**: `ir.rs` `ResolvedPayloadValue` and `describe`, `resolve.rs`, and every exhaustive-arm file above if u545 adds a variant (likely, for `{payload: …}`); `determined.rs` and the behaviour emitters, which u545 edits for the present mint |
 | U3 | interpreter | `ess-conformance/src/interpret/execute.rs` (the real `value_at` arm); `interpret/execute/row_set.rs` (`Reader::head`); `interpret/execute/values.rs` (`selected` for both variants); `interpret/views.rs` (`compare` visibility); new fixture `ess-conformance/tests/fixtures/ordered-related-head.yaml`; new test `ess-conformance/tests/ordered_related_source.rs` (interpreter cases) | U2 | **medium**: `value_at` in `execute.rs` sits beside the `Generated` arm u545 changes; `values.rs` low |
 | U4 | synthesis of the head | `ess-conformance/src/synthesize/row_set.rs` (`reads`, `selected_values`, counts for head branches, `selection_of` including the head); new `ess-conformance/src/synthesize/ordered_head.rs` (arrangement, tie rows, gaps); `ess-conformance/src/synthesize.rs` (replaces U2's gap arm); the synthesis cases in `ordered_related_source.rs` | U3, U5 | **low**: one arm in `synthesize.rs` |
 | U5 | synthesis: several selectors in one command, every form | `ess-conformance/src/synthesize/row_set.rs` (`selection_of` to a list, arrangement per selector, joint consistency); new test `ess-conformance/tests/row_set_several_selectors.rs` | — (works on `ess/22`) | none |
-| U6 | documentation | `website/docs/guides/specify/values-and-views.md`; `website/docs/reference/spec-versions.md` (the `ess/25` row); `website/docs/reference/entity-runtime-lowering.md`; `CHANGELOG.md`; this page's status | U4 | **medium**: the same `ess/25` row and CHANGELOG section |
+| U6 | documentation | `website/docs/guides/specify/values-and-views.md`; `website/docs/reference/spec-versions.md` (the `ess/27` row); `website/docs/reference/entity-runtime-lowering.md`; `CHANGELOG.md`; this page's status | U4 | **medium**: the same `ess/27` row and CHANGELOG section |
 
 Order:
 

@@ -26,7 +26,7 @@
 //!   actor synthesis chose, because its scenarios' expectations are read for that actor's values;
 //!   a [`Note::GrantRotationSkipped`] names each such command.
 //!
-//! A command the system issues itself (ess/25, beyond10x/ess#542) is awaited rather than sent, so
+//! A command the system issues itself (ess/27, beyond10x/ess#542) is awaited rather than sent, so
 //! its system actors get no `grant/admitted` scenario and no rotation: the await is their witness.
 //! Its refusal is still sent, as the lowest-named actor lacking the grant that is not the system
 //! itself where there is one, because an outside caller must not be able to issue the system's

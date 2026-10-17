@@ -1,7 +1,7 @@
-# A selector reads a value its own outcome publishes (`ess/25`)
+# A selector reads a value its own outcome publishes (`ess/27`)
 
 Status: design, not implemented (https://github.com/beyond10x/ess/issues/549). Source format
-`ess/25`, unreleased at the time of writing (`CHANGELOG.md` `[Unreleased]`, `FormatVersion::V25`,
+`ess/27`, unreleased at the time of writing (`CHANGELOG.md` `[Unreleased]`, `FormatVersion::V27`,
 `crates/specify/ess-domain/src/system.rs:355`). This page opens no format of its own. No new suite
 format, no new `ValidationCode` and no new source keyword. It builds on `ordered-related-head.md`
 (https://github.com/beyond10x/ess/issues/543, the head of an ordered selection) and on
@@ -18,7 +18,7 @@ row bare, the input under `input.`, the addressed subject under `subject.` and `
 (`crates/specify/ess-domain/src/command/row_set.rs:12-16`). It cannot read another value of the
 same outcome. `ordered-related-head.md` lists this under "Not in this design" (`:336-339`).
 
-Minimal reproduction, the binary built at `3fdd9479e` (`ess 0.59.0`, `format: ess/25`), a
+Minimal reproduction, the binary built at `3fdd9479e` (`ess 0.59.0`, `format: ess/27`), a
 specification written for this page with entities `Slot`, `Membership` and `Pair`:
 
 ```yaml
@@ -58,7 +58,7 @@ written as a mapping entry `where: {slot_id: <operand>}`, "or a named intermedia
 ## The construct
 
 ```yaml
-format: ess/25
+format: ess/27
 # …
         where: {all: [slot_id == payload.demo.nested.PairMade.slot_id, side == Left, state == Present]}
 ```
@@ -145,8 +145,8 @@ Each refusal is reported at the source site (`….payload.<Event>.<field>`, `…
 
 | condition | code | message names |
 | --- | --- | --- |
-| below `ess/25`, where the path after `payload` names an event this outcome fills and one of its fields | `unsupported_format_version` | the operand; hint `declare \`format: ess/25\`` (today: `unobservable_fact`, measured above) |
-| below `ess/25`, any other `payload.` path | `unobservable_fact` | unchanged |
+| below `ess/27`, where the path after `payload` names an event this outcome fills and one of its fields | `unsupported_format_version` | the operand; hint `declare \`format: ess/27\`` (today: `unobservable_fact`, measured above) |
+| below `ess/27`, any other `payload.` path | `unobservable_fact` | unchanged |
 | the operand in a guard | `unsupported_construct` | that a guard decides the branch before anything is published |
 | the operand in `affects[].where` or `instances:` | `unsupported_construct` | that an effect selecting by a published value is not admitted in this cut |
 | the operand in an error payload source | `unsupported_construct` | as `{payload: …}` is refused there |
@@ -163,16 +163,16 @@ Every code exists already. The new messages move the string-located diagnostic c
 
 ## Format and compatibility
 
-- **Rides `ess/25`**, while that format is unreleased. If `ess/25` ships in a release before this
+- **Rides `ess/27`**, while that format is unreleased. If `ess/27` ships in a release before this
   lands, this construct needs the next format. That is the coordinator's call at that point.
-- **No document changes meaning.** Below `ess/25` a `payload.` path is either the candidate's own
-  `payload` field, unchanged, or refused. At `ess/25` it is the candidate's field wherever the entity
+- **No document changes meaning.** Below `ess/27` a `payload.` path is either the candidate's own
+  `payload` field, unchanged, or refused. At `ess/27` it is the candidate's field wherever the entity
   declares one.
 - **Old-reader controls:**
-  - the nested example rewritten `format: ess/24` is refused with `unsupported_format_version`
-    naming `ess/25`;
+  - the nested example rewritten `format: ess/26` is refused with `unsupported_format_version`
+    naming `ess/27`;
   - a selector over an entity with a struct field `payload`, reading `payload.<member>`, compiles
-    to the same IR bytes at `ess/24` and at `ess/25`.
+    to the same IR bytes at `ess/26` and at `ess/27`.
 - **IR.** `ResolvedRowSelection` (`crates/specify/ess-compiler/src/ir.rs:1379-1385`) gains
   `reads: Vec<ResolvedPublishedRead>`, each `{event, field, type_ref}`, in dependency order. It is
   omitted when empty (`skip_serializing_if = "Vec::is_empty"`), so every existing model keeps its
@@ -342,7 +342,7 @@ measured).
    first: ticket_id}}`. A warehouse picks the bin holding most of a product, then the oldest lot in
    that bin (FIFO).
 6. **Cost.**
-   - Format: none of its own; it rides `ess/25`.
+   - Format: none of its own; it rides `ess/27`.
    - Keywords: none new. `payload` is already a source key (#545), and it becomes a predicate root.
    - Diagnostics: no new code, about 9 new messages.
    - IR: one optional field, and old bytes are unchanged.
@@ -370,8 +370,8 @@ measured).
 Each test is written first and seen red.
 
 - `crates/specify/ess-domain/tests/published_value_operand.rs`:
-  - `a_nested_head_reading_the_published_slot_validates_at_ess_25`;
-  - `the_operand_below_ess_25_is_refused_naming_ess_25`;
+  - `a_nested_head_reading_the_published_slot_validates_at_ess_27`;
+  - `the_operand_below_ess_27_is_refused_naming_ess_27`;
   - `a_selector_over_an_entity_with_a_payload_field_keeps_its_meaning`;
   - `the_operand_in_a_row_set_guard_is_refused`;
   - `the_operand_in_an_affects_where_is_refused`;
@@ -402,7 +402,7 @@ Each unit is one agent and one branch, based on the integration head **after #54
 | U2 | IR field, resolver | `ess-compiler/src/ir.rs` (`ResolvedRowSelection.reads`, `ResolvedPublishedRead`); `ess-compiler/src/resolve.rs` (`:3152`, `:3207`, `:5469`); new test `ess-compiler/tests/published_value_operand_ir.rs` | U1 | `ess-compiler`, `ess-diff`, `ess-cli` |
 | U3 | interpreter | `ess-conformance/src/interpret/execute.rs` (`payload_reads`, `publish_reads` in dependency order); `interpret/execute/row_set.rs` (`Reader::new`); `interpret/execute/set_effects.rs` (`Facts.published`); U7's author tie check, where it does not go through `Reader` (inferred); new fixture and the interpreter cases of `tests/nested_ordered_heads.rs` | U2 | `ess-conformance`, one `--test`, plus `ess-cli` (about 10G, the #543 story's estimate) |
 | U4 | synthesis | `ess-conformance/src/synthesize/row_set.rs` (`selections_of`, `scoped`, `closed`); `ess-conformance/src/synthesize/ordered_head.rs` (cross decoys, gaps); the synthesis and mutant-target cases of `tests/nested_ordered_heads.rs` | U3 | as U3 |
-| U5 | documentation | `website/docs/guides/specify/values-and-views.md`; `website/docs/reference/spec-versions.md` (`ess/25` row); `CHANGELOG.md` `[Unreleased]`; `docs/design/ordered-related-head.md` ("Not in this design" points here); this page's status | U4 | `task test-xtask`; `task site-build` |
+| U5 | documentation | `website/docs/guides/specify/values-and-views.md`; `website/docs/reference/spec-versions.md` (`ess/27` row); `CHANGELOG.md` `[Unreleased]`; `docs/design/ordered-related-head.md` ("Not in this design" points here); this page's status | U4 | `task test-xtask`; `task site-build` |
 
 Order: strictly U1 → U2 → U3 → U4 → U5. Each needs the previous one's types, and U3 and U4 share
 the fixture.

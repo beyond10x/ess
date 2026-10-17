@@ -1,10 +1,10 @@
 //! A minted value stored present, `{generated: true, present: true}`, and a `sets:` value read from
-//! the outcome's own payload, `{payload: <Event>.<field>}` (`ess/25`, beyond10x/ess#545,
+//! the outcome's own payload, `{payload: <Event>.<field>}` (`ess/27`, beyond10x/ess#545,
 //! `docs/design/minted-value-sources.md`).
 //!
 //! What validation decides: `present` only over an `Optional` target, the payload source only in
 //! `sets:`, naming an event this outcome's `payload:` fills and a field it gives a source, at a
-//! type assignable to the stored field; and below `ess/25` both shapes keep the nested-mapping
+//! type assignable to the stored field; and below `ess/27` both shapes keep the nested-mapping
 //! reading they always had.
 
 fn spec(body: &str) -> Result<ess_domain::Specification, String> {
@@ -103,9 +103,9 @@ fn refused(body: &str) -> String {
 }
 
 #[test]
-fn present_generated_into_an_optional_field_validates_at_ess_25() {
+fn present_generated_into_an_optional_field_validates_at_ess_27() {
     let body = model(
-        "ess/25",
+        "ess/27",
         "          connect_seq: {generated: true, present: true}\n",
         AUDITED,
     );
@@ -115,7 +115,7 @@ fn present_generated_into_an_optional_field_validates_at_ess_25() {
 #[test]
 fn present_on_a_required_field_is_refused() {
     let body = model(
-        "ess/25",
+        "ess/27",
         "          rank: {generated: true, present: true}\n",
         AUDITED,
     );
@@ -128,7 +128,7 @@ fn present_on_a_required_field_is_refused() {
 #[test]
 fn present_false_is_refused() {
     let body = model(
-        "ess/25",
+        "ess/27",
         "          connect_seq: {generated: true, present: false}\n",
         AUDITED,
     );
@@ -138,13 +138,13 @@ fn present_false_is_refused() {
 }
 
 #[test]
-fn a_payload_source_reading_this_outcomes_mint_validates_at_ess_25() {
+fn a_payload_source_reading_this_outcomes_mint_validates_at_ess_27() {
     for sets in [
         "          connect_seq: {payload: demo.routing.EntryAgentSelected.connect_seq}\n",
         "          rank: {payload: demo.routing.EntryAudited.connect_seq}\n",
         "          label: {payload: demo.routing.EntryAgentSelected.label}\n",
     ] {
-        spec(&model("ess/25", sets, AUDITED)).unwrap_or_else(|errors| panic!("{sets}{errors}"));
+        spec(&model("ess/27", sets, AUDITED)).unwrap_or_else(|errors| panic!("{sets}{errors}"));
     }
 }
 
@@ -152,7 +152,7 @@ fn a_payload_source_reading_this_outcomes_mint_validates_at_ess_25() {
 fn a_payload_source_naming_another_outcomes_event_is_refused() {
     // `EntryQueued` is emitted by `QueueEntry`, not by this outcome.
     let body = model(
-        "ess/25",
+        "ess/27",
         "          connect_seq: {payload: demo.routing.EntryQueued.entry_id}\n",
         AUDITED,
     );
@@ -163,7 +163,7 @@ fn a_payload_source_naming_another_outcomes_event_is_refused() {
 
     // Emitted, but with no `payload:` entry giving the field a source.
     let body = model(
-        "ess/25",
+        "ess/27",
         "          connect_seq: {payload: demo.routing.EntryAudited.connect_seq}\n",
         "",
     );
@@ -173,7 +173,7 @@ fn a_payload_source_naming_another_outcomes_event_is_refused() {
 
     // A field the event does not declare.
     let body = model(
-        "ess/25",
+        "ess/27",
         "          connect_seq: {payload: demo.routing.EntryAgentSelected.seq}\n",
         AUDITED,
     );
@@ -185,7 +185,7 @@ fn a_payload_source_naming_another_outcomes_event_is_refused() {
 #[test]
 fn a_payload_source_with_a_mismatched_type_is_refused() {
     let body = model(
-        "ess/25",
+        "ess/27",
         "          connect_seq: {payload: demo.routing.EntryAgentSelected.label}\n",
         AUDITED,
     );
@@ -200,7 +200,7 @@ fn a_payload_source_with_a_mismatched_type_is_refused() {
 #[test]
 fn a_payload_source_inside_a_payload_is_refused() {
     let body = model(
-        "ess/25",
+        "ess/27",
         "          connect_seq: {generated: true, present: true}\n",
         "          demo.routing.EntryAudited:
             entry_id: input.entry_id
@@ -215,13 +215,13 @@ fn a_payload_source_inside_a_payload_is_refused() {
     assert!(errors.contains("sets:"), "{errors}");
 }
 
-/// Below `ess/25` neither shape is a source: each reads as the nested mapping it always was, so a
+/// Below `ess/27` neither shape is a source: each reads as the nested mapping it always was, so a
 /// struct with fields of those names keeps its meaning, and an `Optional` scalar is refused as a
-/// nested mapping was, with a hint naming `ess/25`.
+/// nested mapping was, with a hint naming `ess/27`.
 #[test]
-fn below_ess_25_both_shapes_keep_their_nested_reading() {
+fn below_ess_27_both_shapes_keep_their_nested_reading() {
     let body = model(
-        "ess/24",
+        "ess/26",
         "          flags: {generated: true, present: true}\n          note: {payload: input.entry_id}\n",
         AUDITED,
     );
@@ -231,7 +231,7 @@ fn below_ess_25_both_shapes_keep_their_nested_reading() {
     assert!(!errors.contains("sets.flags"), "{errors}");
 
     let body = model(
-        "ess/24",
+        "ess/26",
         "          flags: {generated: true, present: true}\n",
         AUDITED,
     );
@@ -241,8 +241,8 @@ fn below_ess_25_both_shapes_keep_their_nested_reading() {
         "          connect_seq: {generated: true, present: true}\n",
         "          connect_seq: {payload: demo.routing.EntryAgentSelected.connect_seq}\n",
     ] {
-        let errors = refused(&model("ess/24", sets, AUDITED));
+        let errors = refused(&model("ess/26", sets, AUDITED));
         assert!(errors.contains("sets.connect_seq"), "{errors}");
-        assert!(errors.contains("ess/25"), "{errors}");
+        assert!(errors.contains("ess/27"), "{errors}");
     }
 }

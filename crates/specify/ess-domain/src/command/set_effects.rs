@@ -423,7 +423,7 @@ pub(crate) fn refuse_per_row_events(
                     }
                     for field in &mut table.0 {
                         if matches!(field.source, PayloadSource::ChangedField { .. }) {
-                            field.source = PayloadSource::Generated;
+                            field.source = PayloadSource::Generated { present: false };
                         }
                     }
                 }
@@ -805,7 +805,7 @@ fn instance_without_each(name: &str, index: usize, at: String, below_23: bool) -
             ),
             "drop `instance:`, or declare `format: ess/23` and write one row per element with \
              `each:` and `instance:`; to change one existing row by its identity, write `where: \
-             <identity> == subject.<field>` (ess/25)",
+             <identity> == subject.<field>` (ess/27)",
         )
     } else {
         (
@@ -815,7 +815,7 @@ fn instance_without_each(name: &str, index: usize, at: String, below_23: bool) -
             ),
             "drop `instance:`, or write one row per element with `each: {in: input.<list>, as: \
              <name>}` and `instance: <name>.<member>` in place of `where:`; to change one existing \
-             row by its identity, write `where: <identity> == subject.<field>` (ess/25)",
+             row by its identity, write `where: <identity> == subject.<field>` (ess/27)",
         )
     };
     ValidationError::new(ValidationCode::ConflictingDeclaration, at, message).with_hint(hint)
@@ -1332,8 +1332,8 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
                         errors.extend(check_filter(
                             spec, command, entity, subject, types, filter, &at, &at, format,
                         ));
-                        // A pin is read from ess/25; below it the read is refused alone, above.
-                        if format.major() >= FormatVersion::V25.major() {
+                        // A pin is read from ess/27; below it the read is refused alone, above.
+                        if format.major() >= FormatVersion::V27.major() {
                             if let Some(refused) = outcome.subject.as_ref().and_then(|written| {
                                 pins_the_subject(entity, written, filter, &outcome.name, index, &at)
                             }) {
@@ -1754,9 +1754,9 @@ pub(super) fn count_elsewhere(at: &ConstructRef) -> ValidationError {
 /// The filter, checked over `entity`'s fields and its identity, the command's input under
 /// `input.`, and — for an `affects:` entry — the subject's fields under `subject.`.
 ///
-/// The identity is read from `ess/25` (beyond10x/ess#547, `docs/design/set-effect-identity-filters.md`,
+/// The identity is read from `ess/27` (beyond10x/ess#547, `docs/design/set-effect-identity-filters.md`,
 /// D1), as a row-set selector reads it (`super::row_set::candidate_fields`). Below it a read of the
-/// identity is refused at `gate` as `unsupported_format_version` naming `ess/25`; the check runs
+/// identity is refused at `gate` as `unsupported_format_version` naming `ess/27`; the check runs
 /// over the identity either way, so that refusal comes alone rather than beside an
 /// `unobservable_fact` for the same read. `state` stays unreadable.
 #[allow(clippy::too_many_arguments)]
@@ -1782,7 +1782,7 @@ fn check_filter(
         (at, super::published_operand::Site::Effect),
         false,
     );
-    if format.major() < FormatVersion::V25.major() && reads_identity(entity, filter) {
+    if format.major() < FormatVersion::V27.major() && reads_identity(entity, filter) {
         let identity = &entity.identity.name;
         errors.push(
             ValidationError::at(
@@ -1790,18 +1790,18 @@ fn check_filter(
                 ValidationCode::UnsupportedFormatVersion,
                 format!(
                     "`{identity}` is the identity of `{}`; a set effect's filter reads it from \
-                     ess/25",
+                     ess/27",
                     entity.name
                 ),
             )
-            .with_hint("declare `format: ess/25`"),
+            .with_hint("declare `format: ess/27`"),
         );
     }
     errors
 }
 
 /// `entity`'s stored fields and its identity: what a set effect's filter reads of a candidate row
-/// (from `ess/25`, beyond10x/ess#547).
+/// (from `ess/27`, beyond10x/ess#547).
 pub(crate) fn with_identity(entity: &EntitySpec) -> Vec<Field> {
     let mut fields = entity.fields.clone();
     if !fields
@@ -1917,7 +1917,7 @@ fn pins_the_subject(
 /// `current_time`, `now` reads the decision's one instant, as over a stored row (ess/22, A3): the
 /// environment a row set's selector and `forall` are checked in (`super::row_set`).
 ///
-/// From `ess/25` (beyond10x/ess#549) `site` decides `payload.<Event>.<field>`: a value source
+/// From `ess/27` (beyond10x/ess#549) `site` decides `payload.<Event>.<field>`: a value source
 /// reads what its outcome publishes there ([`super::published_operand`]), and every other site
 /// refuses it by name. A candidate field named `payload` keeps being read as itself.
 #[allow(clippy::too_many_arguments)]
@@ -1980,7 +1980,7 @@ pub(super) fn check_row_predicate(
 }
 
 /// A type the filter environment reads: one of the specification's, the subject row, or a step of
-/// a published read (`payload.<Event>.<field>`, ess/25).
+/// a published read (`payload.<Event>.<field>`, ess/27).
 #[derive(Clone)]
 enum Read {
     Declared(TypeRef),
@@ -2019,7 +2019,7 @@ struct WithSubject<'a> {
     identity: Option<&'a Field>,
     /// Whether `now` is admitted, as over a stored row: a row set's selector (ess/22).
     current_time: bool,
-    /// The published reads admitted, where there are any (ess/25, beyond10x/ess#549).
+    /// The published reads admitted, where there are any (ess/27, beyond10x/ess#549).
     published: Option<&'a super::published_operand::Admitted>,
 }
 

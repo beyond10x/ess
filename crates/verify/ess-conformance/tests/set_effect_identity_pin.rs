@@ -1,4 +1,4 @@
-//! A set effect's filter pins the row's identity (ess/25, beyond10x/ess#547,
+//! A set effect's filter pins the row's identity (ess/27, beyond10x/ess#547,
 //! `docs/design/set-effect-identity-filters.md`, U2).
 //!
 //! `ExpireEntry` expires a queue entry and ends the one call the entry names by its stored

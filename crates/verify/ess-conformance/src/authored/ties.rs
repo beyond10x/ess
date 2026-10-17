@@ -1,4 +1,4 @@
-//! A head an authored scenario leaves tied under `ties: unordered` (ess/25, beyond10x/ess#543,
+//! A head an authored scenario leaves tied under `ties: unordered` (ess/27, beyond10x/ess#543,
 //! `docs/design/ordered-related-head.md`, "Declared-unordered ties").
 //!
 //! An order declaring `ties: unordered` leaves rows tying on every key in no order the model fixes,

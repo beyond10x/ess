@@ -2,6 +2,69 @@
 
 ## [Unreleased]
 
+### Added
+
+- `ess/27`, a specification format no release has shipped yet. A model below it keeps its meaning,
+  its IR bytes and its compiled digest; each construct below is refused under an earlier header as
+  `unsupported_format_version` naming `ess/27`, or keeps the reading it had there
+  (`ess specify formats` prints the row).
+- A minted value may be required present, `{generated: true, present: true}` in an `Optional`
+  field: the implementation must supply a value, and the interpreted target and synthesis treat it
+  as present. A `sets:` entry may store the value its own outcome publishes,
+  `{payload: <Event>.<field>}`, so the stored row and the event carry one minted value; synthesis
+  requires the minted row value from the view that shows it. Below `ess/27` both shapes keep their
+  nested-mapping reading (https://github.com/beyond10x/ess/issues/545,
+  `docs/design/minted-value-sources.md`).
+- A command the system issues itself: an actor may declare `system: true`, and a command every grant
+  of which is such an actor is system-issued, with an optional `await_within: PT<seconds>S`.
+  Conformance awaits its outcome rather than invoking it: synthesis writes `await_outcome` and
+  `expect_not_issued` steps and `{kind: awaited}` values, authored acts may await it, and the
+  interpreter, the Rust runner and the generated Go (`AwaitTarget`) and TypeScript (`awaitOutcome`)
+  runtimes answer them. A suite carrying them is `ess-conformance/52` (ordinary) or `/53`
+  (coverage), cumulative over every major below; older readers refuse both by version. A binding
+  invoking a system-issued command is refused. `ess verify diff` reports an actor becoming or
+  ceasing to be the system as `actor/<name>/system-changed` and a moved bound as
+  `command/<name>/await-within-changed`, `ess-diff/20` vocabulary: the first is `breaking` for
+  callers, the reverse and every bound move `compatible`
+  (https://github.com/beyond10x/ess/issues/542, `docs/design/system-issued-commands.md`).
+- A value may read the head of an ordered selection, `{related: {entity, where, order_by, first}}`:
+  the first row the selector selects by `order_by`, the identity the last key, struct identities
+  included, with ties declared unordered where the model says so. It compiles to its own IR arm,
+  the interpreter publishes it, and synthesis witnesses it with several selected rows in order and
+  with commands reading several selectors (https://github.com/beyond10x/ess/issues/543,
+  `docs/design/ordered-related-head.md`).
+- A set effect's `instances:` or `affects:` filter may read the candidate row's identity, as a
+  row-set selector reads it, so an `affects:` entry can pin the one row its subject names
+  (`where: call_id == subject.call_id` over the call). Synthesis witnesses the pin, and the
+  generated Rust and Go servers execute such an entry; every code target now owes a set effect as
+  an obligation instead of refusing the workspace (https://github.com/beyond10x/ess/issues/547,
+  `docs/design/set-effect-identity-filters.md`).
+- A selector's `where:` may read a value its own outcome publishes, `payload.<Event>.<field>`, so
+  one selector scopes another's rows, the IR row selection listing the published values it reads.
+  The interpreter resolves them in dependency order and refuses values that read each other, and
+  synthesis arranges nested heads with cross decoys in the other outer rows
+  (https://github.com/beyond10x/ess/issues/549, `docs/design/published-value-operand.md`).
+
+### Fixed
+
+- `ess verify conform author` refuses an act that claims an exact value for a field the model
+  leaves to the implementation, as `ESS-AUTHOR-042` naming the field, the value and the branch
+  that mints it. Such an act was accepted, and its suite then passed only where the
+  implementation happened to mint that value. It covers an event's payload and an error's fields
+  where every branch that can publish them marks the field `{generated: true}` (or
+  `{generated: true, present: true}`, or `{input: f, else: {generated: true}}` where the act sends
+  no `f`, or a struct leaf marked so), and a view row's stored field where every branch the
+  scenario reaches writes it so, including through `{payload: <Event>.<field>}`, and no `setup:`
+  states it. A reference (`{$observed: …}`, `{$instance: …}`) is still accepted, and so is the
+  field left out, whose presence and type the suite still checks. The Rust, Go, TypeScript and
+  browser coverage readers admit the new code (https://github.com/beyond10x/ess/issues/544,
+  `docs/design/authored-generated-values.md`).
+- Synthesis sends an `Optional` input absent unless the command reads it, and present in the
+  branch scenario that copies it, instead of filling every optional input
+  (https://github.com/beyond10x/ess/issues/546).
+- A minted ordered head refuses only its own branch, naming it, instead of every sibling branch of
+  the command (https://github.com/beyond10x/ess/issues/552).
+
 ## [0.62.0] — 2026-10-16
 
 ### Added

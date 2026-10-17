@@ -780,11 +780,11 @@ pub(crate) fn resolutions(
             )
         }
     };
-    // What a set effect's filter reads of a candidate row: its stored fields, and from ess/25 its
+    // What a set effect's filter reads of a candidate row: its stored fields, and from ess/27 its
     // identity (beyond10x/ess#547), so a bare identity on the right of a comparison is the row's
-    // and not text. Below ess/25 the word keeps the meaning it had.
+    // and not text. Below ess/27 the word keeps the meaning it had.
     let set_effect_fields = |entity: &EntitySpec| {
-        if spec.system().format.major() >= FormatVersion::V25.major() {
+        if spec.system().format.major() >= FormatVersion::V27.major() {
             crate::command::set_effects::with_identity(entity)
         } else {
             entity.fields.clone()
@@ -1197,7 +1197,7 @@ fn selections(outcome: &ess_yaml::Value) -> Vec<(Vec<String>, ess_yaml::Value)> 
                 && ["entity", "where", "field"]
                     .iter()
                     .all(|key| keys.contains(key));
-            // The head of an ordered selection (ess/25, beyond10x/ess#543): a list `order_by`.
+            // The head of an ordered selection (ess/27, beyond10x/ess#543): a list `order_by`.
             let ordered = keys.contains(&"entity")
                 && keys.contains(&"where")
                 && matches!(related.get("order_by"), Some(Value::Sequence(_)));

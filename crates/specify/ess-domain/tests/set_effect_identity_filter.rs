@@ -1,9 +1,9 @@
-//! A set effect's filter reads the candidate row's identity from `ess/25` (beyond10x/ess#547,
+//! A set effect's filter reads the candidate row's identity from `ess/27` (beyond10x/ess#547,
 //! `docs/design/set-effect-identity-filters.md`, D1 and D2).
 //!
 //! * The filter of `instances:` and of an `affects:` entry reads the identity bare, as a row-set
 //!   selector already does; `state` stays unreadable there.
-//! * Below `ess/25` such a read is refused as `unsupported_format_version` naming `ess/25`, alone.
+//! * Below `ess/27` such a read is refused as `unsupported_format_version` naming `ess/27`, alone.
 //! * A pin over the subject's own entity whose operand is the subject's identity selects only the
 //!   subject, which every entry excepts: `conflicting_declaration`.
 //! * `instance:` without `each:` stays refused; its hint names the identity filter.
@@ -13,7 +13,7 @@ use ess_primitives::error::{ValidationCode, ValidationErrors};
 
 /// Two entities, a call and a queue entry storing the call's identity in `call_id`; expiring the
 /// entry ends the call it names.
-const MODEL: &str = "format: ess/25
+const MODEL: &str = "format: ess/27
 system: demo
 version: v1
 domain: demo.q
@@ -152,7 +152,7 @@ fn reads_root(predicate: &ess_primitives::predicate::Predicate, root: &str) -> b
 }
 
 #[test]
-fn an_affects_filter_pinning_the_identity_to_a_subject_field_validates_at_ess_25() {
+fn an_affects_filter_pinning_the_identity_to_a_subject_field_validates_at_ess_27() {
     let spec = admitted(MODEL);
     let filter = affect_filter(&spec, "demo.q.ExpireEntry");
     assert_eq!(filter.to_string(), "call_id == subject.call_id");
@@ -172,7 +172,7 @@ fn an_affects_filter_pinning_the_identity_to_a_subject_field_validates_at_ess_25
 }
 
 #[test]
-fn an_affects_filter_pinning_the_identity_to_an_input_validates_at_ess_25() {
+fn an_affects_filter_pinning_the_identity_to_an_input_validates_at_ess_27() {
     let model = edited(
         MODEL,
         "    input: [{name: entry_id, type: demo.q.EntryId}]\n    outcomes:\n      - name: expired",
@@ -199,7 +199,7 @@ const FORGET: &str = "  - name: demo.q.ForgetEntry
 ";
 
 #[test]
-fn an_instances_filter_reading_the_identity_validates_at_ess_25() {
+fn an_instances_filter_reading_the_identity_validates_at_ess_27() {
     let spec = admitted(&format!("{MODEL}{FORGET}"));
     let command = spec
         .commands()
@@ -216,8 +216,8 @@ fn an_instances_filter_reading_the_identity_validates_at_ess_25() {
 }
 
 #[test]
-fn the_identity_in_a_set_effect_filter_below_ess_25_is_refused_alone_naming_ess_25() {
-    let below = MODEL.replacen("format: ess/25", "format: ess/24", 1);
+fn the_identity_in_a_set_effect_filter_below_ess_27_is_refused_alone_naming_ess_27() {
+    let below = MODEL.replacen("format: ess/27", "format: ess/26", 1);
     let errors = refused(&below);
     let only = alone(&errors);
     assert_eq!(
@@ -232,18 +232,18 @@ fn the_identity_in_a_set_effect_filter_below_ess_25_is_refused_alone_naming_ess_
     assert!(
         only.message.contains("`call_id`")
             && only.message.contains("identity of `demo.q.Call`")
-            && only.message.contains("ess/25"),
+            && only.message.contains("ess/27"),
         "{errors}"
     );
     assert!(
         only.hint
             .as_deref()
-            .is_some_and(|hint| hint.contains("format: ess/25")),
+            .is_some_and(|hint| hint.contains("format: ess/27")),
         "{errors}"
     );
 
     let below = format!("{MODEL}{FORGET}")
-        .replacen("format: ess/25", "format: ess/24", 1)
+        .replacen("format: ess/27", "format: ess/26", 1)
         .replacen(
             "        affects:\n          - entity: demo.q.Call\n            where: call_id == \
              subject.call_id\n            moves: demo.q.Call.end\n",
@@ -262,7 +262,7 @@ fn the_identity_in_a_set_effect_filter_below_ess_25_is_refused_alone_naming_ess_
         "{errors}"
     );
     assert!(
-        only.message.contains("`entry_id`") && only.message.contains("ess/25"),
+        only.message.contains("`entry_id`") && only.message.contains("ess/27"),
         "{errors}"
     );
 }
@@ -342,7 +342,7 @@ fn instance_without_each_hints_the_identity_filter() {
     assert!(
         refusal.hint.as_deref().is_some_and(|hint| hint
             .contains("to change one existing row by its identity, write `where: <identity> == subject.<field>`")
-            && hint.contains("ess/25")),
+            && hint.contains("ess/27")),
         "{errors}"
     );
 }

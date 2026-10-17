@@ -1630,7 +1630,7 @@ fn minted_leaves(
             };
             found.insert(path.to_owned(), marked.to_owned());
         }
-        // `ess/25` (beyond10x/ess#545): the row stores what this branch publishes, so a mint there
+        // `ess/27` (beyond10x/ess#545): the row stores what this branch publishes, so a mint there
         // is the same mint here.
         ResolvedPayloadValue::PayloadRead { event, field, .. } => {
             let read = published

@@ -1,5 +1,5 @@
 //! The head of an ordered selection as a value source, `{related: {entity, where, order_by,
-//! first}}` (source format `ess/25`, beyond10x/ess#543, `docs/design/ordered-related-head.md`).
+//! first}}` (source format `ess/27`, beyond10x/ess#543, `docs/design/ordered-related-head.md`).
 //!
 //! ```yaml
 //! element_key:
@@ -125,7 +125,7 @@ struct RawHead {
     /// How the document wrote `where`, where it was read from one.
     #[serde(skip)]
     #[schemars(skip)]
-    written: Option<Box<serde_yaml::Value>>,
+    written: Option<Box<ess_yaml::Value>>,
     /// What the keys say is wrong with the shape.
     #[serde(skip)]
     #[schemars(skip)]
@@ -302,7 +302,7 @@ pub(super) fn beside_via(entries: &[(String, RawPayloadSource)]) -> Option<Strin
         && matches!(entry(inner, ORDER_BY), Some(RawPayloadSource::Texts(_))))
     .then(|| {
         "`order_by:` ranks the rows a selector selects, `{related: {entity, where, order_by, \
-         first}}` (format ess/25); `via:` reads the one row an identity names, \
+         first}}` (format ess/27); `via:` reads the one row an identity names, \
          `{related: {via, field}}`, where an order decides nothing; write one of the two"
             .to_owned()
     })
@@ -346,20 +346,20 @@ pub(super) fn first_without_order(at: &ConstructRef) -> ValidationError {
          selection is no particular row",
     )
     .with_hint(
-        "write `order_by: [<field> desc, <identity>]` (format ess/25), or read the one selected \
+        "write `order_by: [<field> desc, <identity>]` (format ess/27), or read the one selected \
          row with `field:`",
     )
 }
 
-/// The refusal of the shape below `ess/25`.
-pub(super) fn below_ess_25(at: &ConstructRef) -> ValidationError {
+/// The refusal of the shape below `ess/27`.
+pub(super) fn below_ess_27(at: &ConstructRef) -> ValidationError {
     ValidationError::at(
         at.clone(),
         ValidationCode::UnsupportedFormatVersion,
         "the head of an ordered selection — `{related: {entity, where, order_by, first}}` — \
-         requires specification format ess/25",
+         requires specification format ess/27",
     )
-    .with_hint("declare `format: ess/25`")
+    .with_hint("declare `format: ess/27`")
 }
 
 /// Why a nested mapping refused over a field that is no struct is a head read written without its

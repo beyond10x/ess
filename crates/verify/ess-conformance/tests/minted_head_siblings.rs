@@ -26,7 +26,7 @@ use ess_domain::{spec::RawSpecFile, system::Source, Specification};
 /// The slot, with the score written as `score` on the creating command.
 fn model(score: &str, input: &str) -> String {
     format!(
-        "format: ess/25
+        "format: ess/27
 system: demo
 version: v1
 domain: demo.slots

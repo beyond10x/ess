@@ -240,7 +240,7 @@ fn rank(ir: &EssIr, view: &ResolvedView, left: &ViewRow, right: &ViewRow) -> Ord
 
 /// How two values of `ty` rank, ascending: a `Timestamp` by its instant, a struct by its members
 /// in declaration order, each by its own type's order, and anything else by its node. A view's
-/// order and the head of an ordered selection (ess/25, beyond10x/ess#543) both rank with this, so
+/// order and the head of an ordered selection (ess/27, beyond10x/ess#543) both rank with this, so
 /// the two cannot disagree; only the head ranks a struct, its identity's
 /// (`docs/design/ordered-related-head.md`, "Struct identities").
 pub(crate) fn compare(

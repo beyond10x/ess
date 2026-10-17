@@ -28,7 +28,7 @@ const WORKER: &str = "00000000-0000-4000-8000-0000000000aa";
 /// A queue whose scheduler is the system itself; `await_within:` on `Assign` where `bound`.
 fn model(bound: &str) -> String {
     format!(
-        "format: ess/25
+        "format: ess/27
 system: queueing
 version: v1
 domain: queueing.entry
@@ -413,7 +413,7 @@ fn an_authored_await_passes_on_the_interpreted_model() {
         suite.select_fresh_format();
         assert_eq!(
             suite.provenance.suite_version.to_string(),
-            "ess-conformance/50"
+            "ess-conformance/52"
         );
         let admitted = AdmittedSuite::from_suite(&suite).unwrap_or_else(|error| panic!("{error}"));
         let report = Runner::for_suite(admitted.suite())

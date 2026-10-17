@@ -303,7 +303,7 @@ pub enum Undetermined {
         invariant: String,
     },
     /// Two rows a head read selects tie on every key of an order declaring `ties: unordered`, and
-    /// rank first: the model leaves which is the head to the implementation (ess/25,
+    /// rank first: the model leaves which is the head to the implementation (ess/27,
     /// beyond10x/ess#543, `docs/design/ordered-related-head.md`, "Declared-unordered ties").
     UnorderedTie {
         /// The entity whose rows tie.
@@ -1938,7 +1938,7 @@ struct Work<'g> {
     /// The field location being written, independent of history-generation provenance.
     target_location: Vec<String>,
     /// The values this outcome's payload publishes that a `sets:` entry stores, `{payload:
-    /// <Event>.<field>}` (ess/25, beyond10x/ess#545), or a selector reads,
+    /// <Event>.<field>}` (ess/27, beyond10x/ess#545), or a selector reads,
     /// `payload.<Event>.<field>` (beyond10x/ess#549): resolved once by [`publish_reads`] and read
     /// again by [`emit`], so the row, the selectors and the event hold one value.
     published: Published,
@@ -2403,7 +2403,7 @@ fn value(
 }
 
 /// The value `field` reads from the first row its ordered selection ranks, in the store as it was
-/// before the outcome (ess/25, beyond10x/ess#543); none selected supplies no value, and a head tying
+/// before the outcome (ess/27, beyond10x/ess#543); none selected supplies no value, and a head tying
 /// under `ties: unordered` is [`Undetermined::UnorderedTie`].
 fn related_head(
     ir: &EssIr,
@@ -2445,7 +2445,7 @@ fn value_at(
             let (key, row) = reader.one(selection)?;
             values::selected(ir, field, ir.entity(&selection.entity), key, row)
         }
-        // The first row the selector selects by the order, in the same store (ess/25,
+        // The first row the selector selects by the order, in the same store (ess/27,
         // beyond10x/ess#543); none supplies no value.
         ResolvedPayloadValue::RelatedHead { .. } => related_head(ir, field, input, work),
         // ess/25 (beyond10x/ess#531): `emit` holds the changed row one occurrence is for as the
@@ -2491,7 +2491,7 @@ fn value_at(
         ResolvedPayloadValue::Literal { value } => {
             literal(ir, &field.target_type, value).map(|value| Some(Value::Known(value)))
         }
-        // A present mint (ess/25, beyond10x/ess#545): a value of the required type, never absent.
+        // A present mint (ess/27, beyond10x/ess#545): a value of the required type, never absent.
         ResolvedPayloadValue::Generated { present } => {
             mint(ir, minted_type(&field.target_type, *present), work)
         }
@@ -2710,7 +2710,7 @@ fn representation(ir: &EssIr, target: &ResolvedTypeRef) -> Representation {
     Representation::Other
 }
 
-/// The type a mint into `target` draws: its required type where the mint is present (ess/25,
+/// The type a mint into `target` draws: its required type where the mint is present (ess/27,
 /// beyond10x/ess#545), so an `Optional` field is never left absent.
 fn minted_type(target: &ResolvedTypeRef, present: bool) -> &ResolvedTypeRef {
     if present {
@@ -2722,7 +2722,7 @@ fn minted_type(target: &ResolvedTypeRef, present: bool) -> &ResolvedTypeRef {
 
 /// Every published value `fields` read, in the order written, nested leaves included: each
 /// `{payload: <Event>.<field>}` a stored field copies, and each `payload.<Event>.<field>` a
-/// selector lists (ess/25, beyond10x/ess#549).
+/// selector lists (ess/27, beyond10x/ess#549).
 fn reads_of(fields: &[ResolvedPayloadField], out: &mut Vec<(QualifiedName, String)>) {
     for field in fields {
         reads_in(&field.value, out);
@@ -2760,7 +2760,7 @@ fn payload_reads(outcome: &ResolvedOutcome) -> Vec<(QualifiedName, String)> {
     out
 }
 
-/// Resolves, before anything is written, each payload value a `sets:` entry stores (ess/25,
+/// Resolves, before anything is written, each payload value a `sets:` entry stores (ess/27,
 /// beyond10x/ess#545) or a selector reads (beyond10x/ess#549): minted, given or recorded exactly as
 /// [`emit`] would, and kept in [`Work::published`] so the event carries the same value. A value is
 /// resolved after every value its own selectors read, against the store as it was before the
@@ -2933,7 +2933,7 @@ fn emit(
                 ];
                 let source = determined
                     .and_then(|payload| payload.fields.iter().find(|it| it.target == field.name));
-                // A value a `sets:` entry already stored (ess/25): the one this event publishes.
+                // A value a `sets:` entry already stored (ess/27): the one this event publishes.
                 let published = if identity == Some(field.name.as_str()) {
                     None
                 } else {

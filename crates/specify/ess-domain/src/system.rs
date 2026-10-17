@@ -273,6 +273,9 @@ pub const FORMAT_HISTORY: &[FormatHistoryEntry] = &[
         added: &[
             "A minted value may be required present in an `Optional` field, `{generated: true, present: true}`, wherever `{generated: true}` is admitted: the implementation must supply a value, and the interpreted target and synthesis treat it as present; it is refused over a required target and with `present: false` (`type_mismatch`). A `sets:` entry may store the value this outcome publishes, `{payload: <Event>.<field>}`, naming an event this outcome fills under `payload:` and a field given a source there, at a type assignable to the stored field without a conversion; it is refused in a payload, an error payload and after `else:`. Below `ess/27` both shapes keep the nested-mapping reading they had, and a refusal of that reading names `ess/27` (beyond10x/ess#545).",
             "An actor may declare `system: true`, the system itself; a command granted to at least one actor, every one of them a system actor, is system-issued, and conformance awaits its outcome rather than invoking it. A system-issued command may declare `await_within: PT<seconds>S`, how soon the system takes its step. `system: true` beside `attributes:`, `await_within:` on a command that is not system-issued and a binding invoking a system-issued command are refused (`conflicting_declaration`), and below `ess/27` both keys are refused naming `ess/27` (beyond10x/ess#542).",
+            "A value may read the head of an ordered selection, `{related: {entity, where, order_by, first}}`: the first row the selector selects by `order_by: [<field> [desc], …, <identity>]`, the identity last as the tie-break, and no value where it selects none; below `ess/27` the shape is refused naming `ess/27` and keeps no other meaning (beyond10x/ess#543).",
+            "A set effect's `instances:` or `affects:` filter may read the candidate row's identity, `<identity> == input.<field>` or, in an `affects:` entry, `<identity> == subject.<field>`, as a row-set selector reads it, while `state` stays unreadable; below `ess/27` the read is refused alone, naming `ess/27`, and a filter not reading the identity keeps its meaning (beyond10x/ess#547).",
+            "A selector's `where:` may read a value its own outcome publishes, `payload.<Event>.<field>`, naming an event the outcome fills and a field given a source there, so one selector scopes another's rows; values that read each other are refused, and below `ess/27`, or over an entity declaring a field `payload`, the path keeps the meaning it had (beyond10x/ess#549).",
         ],
         stricter: &[],
     },
@@ -377,8 +380,10 @@ impl FormatVersion {
     /// A named refusal that addresses an existing row is witnessed on the whole row: an `external:`
     /// refusal's scenario reads the row back and requires it unchanged (beyond10x/ess#587).
     pub const V26: Self = Self(26);
-    /// A minted value stored present, `{generated: true, present: true}`, and a `sets:` value read
-    /// from the outcome's own payload, `{payload: <Event>.<field>}` (beyond10x/ess#545).
+    /// A minted value stored present and a `sets:` value read from the outcome's own payload
+    /// (beyond10x/ess#545), system actors and the await bound (beyond10x/ess#542), the head of an
+    /// ordered selection (beyond10x/ess#543), set-effect filters reading the row's identity
+    /// (beyond10x/ess#547) and a selector reading a published value (beyond10x/ess#549).
     pub const V27: Self = Self(27);
 
     /// How a format version is written.

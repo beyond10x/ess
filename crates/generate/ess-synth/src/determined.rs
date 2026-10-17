@@ -524,7 +524,7 @@ fn value(
                 field.target
             ));
         }
-        // Nor does it rank them (ess/25, beyond10x/ess#543): the head is owed, as the filtered
+        // Nor does it rank them (ess/27, beyond10x/ess#543): the head is owed, as the filtered
         // read is, until generated storage enumerates a selector's rows.
         ResolvedPayloadValue::RelatedHead { .. } => {
             return Err(format!(
@@ -537,7 +537,7 @@ fn value(
             return Err(format!("a response field for `{}`", field.target));
         }
         // Generated code would have to order the payload's value before the row; owed in this cut
-        // (ess/25, beyond10x/ess#545, `docs/design/minted-value-sources.md`).
+        // (ess/27, beyond10x/ess#545, `docs/design/minted-value-sources.md`).
         ResolvedPayloadValue::PayloadRead {
             event, field: read, ..
         } => {
@@ -1588,7 +1588,7 @@ fn related_composition(ir: &EssIr, command: &ResolvedCommand) -> Result<(), Stri
     Ok(())
 }
 
-// ---- a set effect pinning the row's identity (ess/25, beyond10x/ess#547) ------------------------
+// ---- a set effect pinning the row's identity (ess/27, beyond10x/ess#547) ------------------------
 
 /// Where a pinned filter reads the identity it compares the row's with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

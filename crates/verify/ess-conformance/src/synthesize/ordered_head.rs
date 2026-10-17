@@ -1,5 +1,5 @@
 //! The head of an ordered selection, arranged (`docs/design/ordered-related-head.md`, "Synthesis";
-//! source format `ess/25`, beyond10x/ess#543).
+//! source format `ess/27`, beyond10x/ess#543).
 //!
 //! A branch reading `{related: {entity, where, order_by, first}}` is witnessed on rows
 //! [`super::row_set`] arranges: three selected rows S1, S2 and S3, created in that order, the first

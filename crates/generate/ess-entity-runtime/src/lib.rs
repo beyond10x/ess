@@ -4052,7 +4052,7 @@ fn is_value_expression(value: &ResolvedPayloadValue) -> bool {
             | ResolvedPayloadValue::RelatedField { .. }
             | ResolvedPayloadValue::RelatedSelection { .. }
             | ResolvedPayloadValue::RelatedHead { .. }
-            // ess/25 (beyond10x/ess#545): entity-core has no present mint and no read of the
+            // ess/27 (beyond10x/ess#545): entity-core has no present mint and no read of the
             // value a payload publishes.
             | ResolvedPayloadValue::Generated { present: true }
             | ResolvedPayloadValue::PayloadRead { .. }
@@ -4068,7 +4068,7 @@ fn is_input_path(value: &ResolvedPayloadValue) -> bool {
 }
 
 /// Whether any value of `outcome` reads the one row a selector selects (ess/22), or the first row
-/// it ranks (ess/25, beyond10x/ess#543).
+/// it ranks (ess/27, beyond10x/ess#543).
 fn outcome_reads_selection(outcome: &ResolvedOutcome) -> bool {
     fn reads(value: &ResolvedPayloadValue) -> bool {
         match value {

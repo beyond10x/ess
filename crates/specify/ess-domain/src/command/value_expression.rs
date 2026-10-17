@@ -42,7 +42,7 @@ struct Context<'a> {
     /// The entity the outcome acts on, and whether it existed before the outcome ran.
     subject: Option<(&'a crate::entity::EntitySpec, bool)>,
     /// Whether the sources are an error outcome's payload, which publishes no event payload for
-    /// a selector to read (ess/25, beyond10x/ess#549).
+    /// a selector to read (ess/27, beyond10x/ess#549).
     error_payload: bool,
 }
 
@@ -160,7 +160,7 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
     errors.extend(super::caller_value::validate(spec));
     // Set effects (ess/16, #167, #175): `instances:`, `affects:` and `{count: changed}`.
     errors.extend(super::set_effects::validate(spec));
-    // Published values read by selectors (ess/25, #549): no field reads itself through others.
+    // Published values read by selectors (ess/27, #549): no field reads itself through others.
     errors.extend(super::published_operand::validate(spec));
     errors
 }
@@ -460,7 +460,7 @@ fn check(
         PayloadSource::ChangedCount if depth > 0 || place == Place::Sets => {
             errors.push(super::set_effects::count_elsewhere(at));
         }
-        // ess/25 (beyond10x/ess#545): below it both are read back as nested mappings.
+        // ess/27 (beyond10x/ess#545): below it both are read back as nested mappings.
         PayloadSource::Generated { present: true } => {
             if let Some(refusal) = super::minted_value::check_present(at, target) {
                 errors.push(refusal);
@@ -1546,7 +1546,7 @@ fn check_struct(
     }
     let Some(declared) = context.resolved.types.struct_fields(&target.type_ref) else {
         // `{related: {entity, where, first}}` with no list: a head read missing its order
-        // (ess/25, beyond10x/ess#543), where a nested mapping cannot fill the target anyway.
+        // (ess/27, beyond10x/ess#543), where a nested mapping cannot fill the target anyway.
         if let Some(refusal) = super::ordered_head::misread_mapping(at, fields) {
             errors.push(refusal);
             return;
@@ -1846,7 +1846,7 @@ fn check_selection(
     }
 }
 
-/// `{related: {entity, where, order_by, first}}` (ess/25, beyond10x/ess#543): the selector exactly
+/// `{related: {entity, where, order_by, first}}` (ess/27, beyond10x/ess#543): the selector exactly
 /// as a filtered read's ([`check_selection`]), a total order over its rows
 /// ([`super::ordered_head::check_order`]), and `first` read as `field:` is.
 fn check_head(
@@ -1868,8 +1868,8 @@ fn check_head(
         return;
     };
     let spec = context.spec;
-    if spec.system().format.major() < FormatVersion::V25.major() {
-        errors.push(ordered_head::below_ess_25(at));
+    if spec.system().format.major() < FormatVersion::V27.major() {
+        errors.push(ordered_head::below_ess_27(at));
         return;
     }
     let refused = ordered_head::written_refusals(at, written);

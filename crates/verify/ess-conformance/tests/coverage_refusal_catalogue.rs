@@ -71,13 +71,13 @@ fn authored(number: u16) -> Value {
 }
 
 /// Every vector, by file name: each generated code of the catalogue and one past it under both
-/// effects, and each file refusal code, `036` and one past the catalogue, at suites /35 and /51.
+/// effects, and each file refusal code, `036` and one past the catalogue, at suites /35 and /53.
 fn vectors() -> BTreeMap<String, String> {
     let synth: Vec<u16> = RefusalCause::CATALOGUE.iter().map(|e| e.key).collect();
     let author: Vec<u16> = Cause::CATALOGUE.iter().map(|e| e.key).collect();
     let past = |keys: &[u16]| keys.iter().max().unwrap() + 1;
     let mut vectors = BTreeMap::new();
-    for major in [35, 51] {
+    for major in [35, 53] {
         for number in synth.iter().copied().chain([past(&synth)]) {
             for effect in EFFECTS {
                 vectors.insert(
@@ -139,9 +139,9 @@ fn the_rust_reader_admits_every_catalogued_refusal_code_and_nothing_past_it() {
     let gated = |number: u16| ess_conformance::system_issued::REFUSALS.contains(&number);
     for entry in RefusalCause::CATALOGUE {
         assert_eq!(
-            effects(51, entry.key),
+            effects(53, entry.key),
             1,
-            "ESS-SYNTH-{:03} at /51",
+            "ESS-SYNTH-{:03} at /53",
             entry.key
         );
         let at_35 = usize::from(!gated(entry.key));
@@ -153,9 +153,9 @@ fn the_rust_reader_admits_every_catalogued_refusal_code_and_nothing_past_it() {
         );
     }
     let past = u16::try_from(RefusalCause::CATALOGUE.len()).unwrap() + 1;
-    assert_eq!(effects(51, past), 0, "one past the generated catalogue");
+    assert_eq!(effects(53, past), 0, "one past the generated catalogue");
     for entry in Cause::CATALOGUE {
-        for major in [35, 51] {
+        for major in [35, 53] {
             assert_eq!(
                 admitted(&format!("{major}-author-{:03}.json", entry.key)),
                 entry.key != 36,
@@ -165,7 +165,7 @@ fn the_rust_reader_admits_every_catalogued_refusal_code_and_nothing_past_it() {
         }
     }
     let past = u16::try_from(Cause::CATALOGUE.len()).unwrap() + 1;
-    assert!(!admitted(&format!("51-author-{past:03}.json")));
+    assert!(!admitted(&format!("53-author-{past:03}.json")));
 }
 
 const GO_DRIVER: &str = r#"package essconform

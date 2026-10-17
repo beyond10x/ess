@@ -1,4 +1,4 @@
-//! The interpreted model answering an await of a command the system issues itself (ess/25,
+//! The interpreted model answering an await of a command the system issues itself (ess/27,
 //! beyond10x/ess#542, `docs/design/system-issued-commands.md`, *Every lane*).
 //!
 //! # The hold

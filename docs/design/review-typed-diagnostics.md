@@ -290,9 +290,9 @@ is no struct, on any other declaration, on a command without `response:` and bel
 from one `ConstructRef` helper, so it adds no head literal below.
 
 `system_issued.rs` is new with beyond10x/ess#542, three typed sites and no string-located one:
-`await_within:` below `ess/25` and on a command that is not system-issued, at
+`await_within:` below `ess/27` and on a command that is not system-issued, at
 `command.<name>.await_within`, and a binding invoking a system-issued command, at
-`binding.<id>.invoke`. `actor.rs` gains two typed sites with it, `system: true` below `ess/25`
+`binding.<id>.invoke`. `actor.rs` gains two typed sites with it, `system: true` below `ess/27`
 at `actor.<name>.system` and beside `attributes:` at `actor.<name>.attributes`. None adds a head
 literal below.
 

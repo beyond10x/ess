@@ -1119,7 +1119,7 @@ pub enum ResolvedPayloadValue {
         type_ref: ResolvedTypeRef,
     },
     /// Explicit implementation ownership, retaining ordinary type assertions: `{generated: true}`,
-    /// or from `ess/25` `{generated: true, present: true}` over an `Optional` field, whose minted
+    /// or from `ess/27` `{generated: true, present: true}` over an `Optional` field, whose minted
     /// value is present (beyond10x/ess#545, `docs/design/minted-value-sources.md`).
     Generated {
         /// Whether the minted value of an `Optional` target is present. Serialized only when set,
@@ -1127,7 +1127,7 @@ pub enum ResolvedPayloadValue {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         present: bool,
     },
-    /// The value this outcome publishes in `field` of `event` (`ess/25`, beyond10x/ess#545):
+    /// The value this outcome publishes in `field` of `event` (`ess/27`, beyond10x/ess#545):
     /// `{payload: <Event>.<field>}` in `sets:`, so one mint feeds the event and the row.
     /// `ess-domain` admitted it only where this outcome fills that field under `payload:`, at a type
     /// assignable to the target's without a conversion.
@@ -1265,7 +1265,7 @@ pub enum ResolvedPayloadValue {
         type_ref: ResolvedTypeRef,
     },
     /// A field of the first row a selector selects, ranked by `order_by`, as the store held it
-    /// before this outcome (ess/25, beyond10x/ess#543, `docs/design/ordered-related-head.md`):
+    /// before this outcome (ess/27, beyond10x/ess#543, `docs/design/ordered-related-head.md`):
     /// `{related: {entity, where, order_by, first}}`.
     ///
     /// `ess-domain` admitted the order only where it is total — the last key is the entity's
@@ -1424,7 +1424,7 @@ pub fn related_sentence(
 /// outcome, under `subject.`; `now` is the decision's one instant. The rows are the store as it was
 /// immediately before the branch is selected.
 ///
-/// From `ess/25` (beyond10x/ess#549, `docs/design/published-value-operand.md`) the selector of a
+/// From `ess/27` (beyond10x/ess#549, `docs/design/published-value-operand.md`) the selector of a
 /// value source may also read what its outcome publishes, `payload.<Event>.<field>`. Those reads
 /// are listed in [`reads`](Self::reads), so an evaluator routes the `payload` namespace by the list
 /// and never by the candidate entity's fields. A guard's selection reads none.
@@ -1443,7 +1443,7 @@ pub struct ResolvedRowSelection {
 }
 
 /// A value of its own outcome's payload that a selector reads: `payload.<event>.<field>` in its
-/// predicate, where the path may continue into the members of a struct field (ess/25,
+/// predicate, where the path may continue into the members of a struct field (ess/27,
 /// beyond10x/ess#549). The value is the one the outcome publishes, resolved before the field
 /// whose selector reads it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -1873,7 +1873,7 @@ pub struct ResolvedCommand {
     #[serde(default, skip_serializing_if = "ess_domain::refs::is_empty")]
     pub refs: Refs,
     /// Whether the system issues this command itself: it has at least one grant and every actor
-    /// granting it is declared `system: true` (ess/25, beyond10x/ess#542,
+    /// granting it is declared `system: true` (ess/27, beyond10x/ess#542,
     /// `docs/design/system-issued-commands.md`).
     ///
     /// A pure function of the grants, written anyway so a consumer can refuse it by name without
@@ -1881,7 +1881,7 @@ pub struct ResolvedCommand {
     /// `false`, so a model without a system actor keeps its IR bytes.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub system_issued: bool,
-    /// How soon the system takes this step, where it declares a bound (ess/25). Omitted when
+    /// How soon the system takes this step, where it declares a bound (ess/27). Omitted when
     /// absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub await_within: Option<ess_domain::binding::periodic::Period>,
@@ -2406,7 +2406,7 @@ pub struct ResolvedActor {
     /// Left out of the document when empty, so a model without them keeps its bytes.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub attributes: Vec<ResolvedField>,
-    /// Whether this actor is the system itself (ess/25, beyond10x/ess#542). Omitted when
+    /// Whether this actor is the system itself (ess/27, beyond10x/ess#542). Omitted when
     /// `false`, so a model without a system actor keeps its IR bytes.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub system: bool,

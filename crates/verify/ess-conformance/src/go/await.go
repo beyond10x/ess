@@ -1,4 +1,4 @@
-// Suite/50 and /51: a command the system issues itself is awaited, never invoked
+// Suite/52 and /53: a command the system issues itself is awaited, never invoked
 // (beyond10x/ess#542, docs/design/system-issued-commands.md). The same checks, in the same order,
 // as ess_conformance's runner/await_outcome.rs:
 //

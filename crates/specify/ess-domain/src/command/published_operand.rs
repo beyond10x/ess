@@ -1,6 +1,6 @@
 //! A selector reads a value its own outcome publishes: `payload.<Event>.<field>[.<member>…]` in the
 //! `where:` of `{related: {entity, where, field}}` and of `{related: {entity, where, order_by,
-//! first}}` (source format `ess/25`, beyond10x/ess#549, `docs/design/published-value-operand.md`).
+//! first}}` (source format `ess/27`, beyond10x/ess#549, `docs/design/published-value-operand.md`).
 //!
 //! ```yaml
 //! left_key:
@@ -163,8 +163,8 @@ fn filled_hint(outcome: &Outcome) -> String {
     }
 }
 
-fn at_least_25(format: FormatVersion) -> bool {
-    format.major() >= FormatVersion::V25.major()
+fn at_least_27(format: FormatVersion) -> bool {
+    format.major() >= FormatVersion::V27.major()
 }
 
 /// The refusal of the operand in a guard, at `at`.
@@ -181,14 +181,14 @@ fn in_a_guard(at: &ConstructRef, path: &FactPath) -> ValidationError {
 }
 
 /// The refusal of `path` under [`ROOT`] in a guard's predicate whose environment does not resolve
-/// it, from `ess/25`: `None` where `path` is another root, or the format has no operand.
+/// it, from `ess/27`: `None` where `path` is another root, or the format has no operand.
 pub(super) fn guard_refusal(
     types: &TypeRegistry,
     path: &FactPath,
     segment: Option<&str>,
     at: &ConstructRef,
 ) -> Option<ValidationError> {
-    let admits = types.format().is_none_or(at_least_25);
+    let admits = types.format().is_none_or(at_least_27);
     (admits && path.namespace() == ROOT && segment == Some(ROOT) && path.segments().len() > 2)
         .then(|| in_a_guard(at, path))
 }
@@ -215,7 +215,7 @@ pub(super) fn classify<'p>(
         if path.namespace() != ROOT || path.segments().len() < 2 {
             continue;
         }
-        let refusal = if at_least_25(format) {
+        let refusal = if at_least_27(format) {
             match site {
                 Site::Guard => (path.segments().len() > 2).then(|| in_a_guard(at, path)),
                 Site::Effect => (path.segments().len() > 2).then(|| {
@@ -254,7 +254,7 @@ pub(super) fn classify<'p>(
                 },
             }
         } else {
-            below_ess_25(spec, site, at, path)
+            below_ess_27(spec, site, at, path)
         };
         if let Some(refusal) = refusal {
             classified.errors.push(refusal);
@@ -264,9 +264,9 @@ pub(super) fn classify<'p>(
     classified
 }
 
-/// Below `ess/25`, the refusal of a value read's `path` naming an event the outcome fills and one
+/// Below `ess/27`, the refusal of a value read's `path` naming an event the outcome fills and one
 /// of its fields; every other path keeps the refusal the typed check gives it.
-fn below_ess_25(
+fn below_ess_27(
     spec: &Specification,
     site: Site<'_>,
     at: &ConstructRef,
@@ -288,10 +288,10 @@ fn below_ess_25(
             ValidationCode::UnsupportedFormatVersion,
             format!(
                 "`{path}` reads the value this outcome publishes in `{event}.{field}`, a selector \
-                 operand from specification format ess/25"
+                 operand from specification format ess/27"
             ),
         )
-        .with_hint("declare `format: ess/25`")
+        .with_hint("declare `format: ess/27`")
     })
 }
 
@@ -403,6 +403,9 @@ fn not_a_snapshot(source: &PayloadSource, members: &[String]) -> Option<&'static
         PayloadSource::ChangedCount => {
             Some("the number of rows the outcome changed, known only after its effects")
         }
+        PayloadSource::ChangedField { .. } => {
+            Some("a field of one changed row, known only once per changed row after its effects")
+        }
         PayloadSource::Increment { .. } => Some("a value the outcome's own change computes"),
         PayloadSource::Struct { fields } => match members.split_first() {
             Some((member, rest)) => fields
@@ -447,13 +450,13 @@ fn selections(source: &PayloadSource) -> Vec<&super::row_set::RowSelection> {
 }
 
 /// The payload fields of `outcome` that `selection` reads, as written, first appearance first;
-/// below `ess/25`, over an entity declaring a field `payload`, or naming no filled field, none.
+/// below `ess/27`, over an entity declaring a field `payload`, or naming no filled field, none.
 fn read_nodes(
     spec: &Specification,
     outcome: &Outcome,
     selection: &super::row_set::RowSelection,
 ) -> Vec<Node> {
-    if !at_least_25(spec.system().format) {
+    if !at_least_27(spec.system().format) {
         return Vec::new();
     }
     let Some(entity) = spec.entities().get(&selection.entity) else {
@@ -505,7 +508,7 @@ fn graph(spec: &Specification, outcome: &Outcome) -> Vec<(Node, Vec<Node>)> {
 
 /// The published reads of `selection`, a value source of `outcome`, in dependency order: a read
 /// whose field's selectors read another read of the list comes after it, and reads that depend on
-/// none of the others keep their first appearance. Empty below `ess/25`, over an entity declaring
+/// none of the others keep their first appearance. Empty below `ess/27`, over an entity declaring
 /// a field `payload`, and for a guard's selection, which reads none.
 pub fn reads(
     spec: &Specification,
@@ -602,7 +605,7 @@ fn chain(edges: &BTreeMap<Node, Vec<Node>>, node: &Node, within: &BTreeSet<Node>
 /// at its first field in the payload's order as `self_reference`, naming the chain.
 pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
-    if !at_least_25(spec.system().format) {
+    if !at_least_27(spec.system().format) {
         return errors;
     }
     for command in spec.commands().values() {

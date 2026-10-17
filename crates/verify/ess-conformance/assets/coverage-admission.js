@@ -515,7 +515,7 @@ function inventory(suite) {
       require(number !== undefined && r.subject !== null && r.source === null, 'invalid generated refusal')
       require(number !== 15 || major >= 7, 'accessor observation refusals require suite/7')
       require(![16, 17].includes(number) || major >= 17, 'aggregate view refusals require suite/17')
-      require(![23, 24].includes(number) || major >= 51, 'system-issued command refusals require suite/51')
+      require(![23, 24].includes(number) || major >= 53, 'system-issued command refusals require suite/53')
       require(r.effect === (CHECK_NOT_EMITTED.includes(number) ? 'check_not_emitted' : 'candidate_not_emitted'), 'refusal effect differs from code')
     } else {
       require(Array.from({ length: NEWEST_AUTHORED_REFUSAL }, (_, i) => `ESS-AUTHOR-${String(i + 1).padStart(3, '0')}`).filter(c => c !== 'ESS-AUTHOR-036').includes(r.code) && r.effect === 'candidate_not_emitted', 'invalid authored refusal')

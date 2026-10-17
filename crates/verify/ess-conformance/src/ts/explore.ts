@@ -907,7 +907,7 @@ function plan(ir: Node, concurrent = false): Plan {
         });
       }
     }
-    // A command the system issues itself is no client's operation (ess/25, beyond10x/ess#542): the
+    // A command the system issues itself is no client's operation (ess/27, beyond10x/ess#542): the
     // suite awaits it, and the explorer never sends it.
     let reason: string | null =
       node.system_issued === true

@@ -1738,7 +1738,7 @@ impl Locals {
     }
 }
 
-/// The locals one pinned `affects:` entry's read and change use (ess/25, beyond10x/ess#547),
+/// The locals one pinned `affects:` entry's read and change use (ess/27, beyond10x/ess#547),
 /// numbered by the entry's position so the read and the change name the same ones.
 struct Affected {
     row: String,
@@ -3002,7 +3002,7 @@ impl<'a> Writer<'a> {
         }
     }
 
-    /// The rows `outcome`'s `affects:` entries pin (ess/25, beyond10x/ess#547, D5), each read by
+    /// The rows `outcome`'s `affects:` entries pin (ess/27, beyond10x/ess#547, D5), each read by
     /// identity through its entity's storage port into `affected<n>`, a pointer nil where no row is
     /// read: from the subject `held` as it was before the outcome, or from the input, before
     /// anything is written. An absent reference, an identity no row carries and, over the
@@ -3558,7 +3558,7 @@ impl<'a> Writer<'a> {
             ResolvedPayloadValue::Literal { value } => self.literal(target, value),
             // The implementation supplies the value, an optional one included: its port answers
             // a pointer, nil where there is nothing to report (beyond10x/ess#467).
-            // A present mint (ess/25, beyond10x/ess#545) asks the required port and wraps its
+            // A present mint (ess/27, beyond10x/ess#545) asks the required port and wraps its
             // answer present.
             ResolvedPayloadValue::Generated { present: true } if target.is_optional() => {
                 let minted = self.generate(&target.required().clone());

@@ -2,7 +2,7 @@
 
 Design for [issue 545](https://github.com/beyond10x/ess/issues/545), 2026-10-13, planned as
 `story:minted-value-present-and-shared-with-its-payload`. Status: implemented in source format
-`ess/25`; both shapes keep their earlier nested-mapping reading below it.
+`ess/27`; both shapes keep their earlier nested-mapping reading below it.
 
 ## The need
 
@@ -17,7 +17,7 @@ invariants:
   - any: [{not: "state == Bridged"}, "defined(connect_seq)"]
 ```
 
-Up to `ess/24` the model can say neither half:
+Up to `ess/26` the model can say neither half:
 
 1. `{generated: true}` into an `Optional` field lets the implementation choose absence. The
    interpreted target chooses it (absence claims least), so the model's own next transition into
@@ -41,7 +41,7 @@ The implementation mints the value, and the value is present. Written exactly as
 | the target is `Optional<…>` | `type_mismatch` on a required target, which is present already: write `{generated: true}` |
 | `present` is `true` | `type_mismatch` on `present: false`, which says nothing `{generated: true}` does not |
 | not after `else:` | the fallback refusal `else:` always gave: the fallback of `{input: …, else: …}` already fills a present value |
-| from `ess/25` | below it, the reading the shape always had (below) |
+| from `ess/27` | below it, the reading the shape always had (below) |
 
 ### `{payload: <Event>.<field>}`
 
@@ -54,19 +54,19 @@ both the event and the row. `<Event>` is the qualified event name and `<field>` 
 | `<Event>` is one this outcome emits **and** fills under `payload:` | `undeclared_reference`, naming the events the outcome fills |
 | `<field>` is a declared top-level field of that event, given a source there | `undeclared_reference` |
 | the event field's type is assignable to the stored field's without a declared conversion (the stored value is the published value); `T` into `Optional<T>` is present | `type_mismatch` |
-| from `ess/25` | below it, the reading the shape always had (below) |
+| from `ess/27` | below it, the reading the shape always had (below) |
 
 The payload field's own source may be anything a payload admits; reading a mint is the need, and
 reading `input.<field>` through the payload says the same as reading the input. Where the payload
 leaves the value absent (an `Optional` event field), the stored field is absent; a required stored
 field over an `Optional` event field is refused by the type rule.
 
-### Below `ess/25`
+### Below `ess/27`
 
-Neither shape is a source before `ess/25`, because neither is all source keywords: each is read as
+Neither shape is a source before `ess/27`, because neither is all source keywords: each is read as
 the nested mapping it always was, so a struct with fields named `generated` and `present`, or one
 named `payload`, keeps its meaning (the `{caller: …}` precedent, `ess/16`). Where that nested
-reading is refused because the target is not a struct, the refusal's hint names `ess/25`.
+reading is refused because the target is not a struct, the refusal's hint names `ess/27`.
 
 ## Lowering
 

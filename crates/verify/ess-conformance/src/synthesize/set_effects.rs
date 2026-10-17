@@ -79,7 +79,7 @@ pub(super) fn set_effects(
                 ),
             };
             if let Some(set) = &outcome.instances {
-                // A filter pinning the row's identity (ess/25, beyond10x/ess#547) is witnessed one
+                // A filter pinning the row's identity (ess/27, beyond10x/ess#547) is witnessed one
                 // named row per send.
                 let built = match pinned::pin_of(models.arrangement, &set.entity, &set.filter) {
                     Ok(None) => set_scenario(models, command, outcome, set, actors),
@@ -1491,7 +1491,7 @@ fn affect_inputs(
     })
 }
 
-/// The branch's `affects:` entry whose filter pins the row's identity (ess/25, beyond10x/ess#547),
+/// The branch's `affects:` entry whose filter pins the row's identity (ess/27, beyond10x/ess#547),
 /// with its position and the pin; `None` where no entry's filter reads the identity. A refusal
 /// where a filter reads it other than by a pin, or where the pinned entry stands beside another
 /// entry: one send names one row, and this cut witnesses a pinned entry as the branch's only one.

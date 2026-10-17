@@ -1,8 +1,8 @@
-# A set effect's filter reads the row's identity (`ess/25`); code targets owe set effects instead of refusing them
+# A set effect's filter reads the row's identity (`ess/27`); code targets owe set effects instead of refusing them
 
 Status: design, not implemented (https://github.com/beyond10x/ess/issues/547). Source format
-`ess/25`, which another unit opens (`FormatVersion::V25`,
-`crates/specify/ess-domain/src/system.rs:355` at `3fdd9479e`); this design opens no format of its
+`ess/27`, which another unit opens (`FormatVersion::V27`,
+`crates/specify/ess-domain/src/system.rs`; `V25` when written, before `ess/25` shipped); this design opens no format of its
 own. No new keyword, no IR shape change, no new `ValidationCode`, no new suite step, no suite or
 `ess-diff` version. It builds on `set-effects-over-filtered-instances.md` (the constructs and their
 witness) and `filtered-related-reads.md` (the row-set selector, whose grammar it aligns with).
@@ -38,7 +38,7 @@ a-identity-where.yaml was refused:
   - error[ESS-COMMAND-003]: `call_id` reads `call_id`, which is not a declared observable root
 ```
 
-The same text with `== input.call_id` gives the same refusal, at `ess/24` and at `ess/25`.
+The same text with `== input.call_id` gives the same refusal, at `ess/26` and at `ess/27`.
 `instance: subject.call_id` without `where:` is `ESS-COMMAND-004` (`instance:` names the row an
 element of `each:` writes) and `ESS-COMMAND-005` (neither `where:` nor `each:`).
 
@@ -55,7 +55,7 @@ commands.demo.q.EndCall.outcomes.ended.affects: this target cannot change the ro
 
 The specifications named here (`a-…` to `j-….yaml`) were written for this design and are not
 committed; every one is a variation of the two entities above, and U2's fixture is the
-reproduction at `ess/25`.
+reproduction at `ess/27`.
 
 The requester's proposals, labelled as theirs: (1) `where: <identity> == subject.<field>`, or
 `instance: subject.<field>` without `each:`; (2) Rust and web generation of `affects:` over a
@@ -104,7 +104,7 @@ Go, Web and Clap seams write the row in place) and stays.
 
 | # | decision | why |
 | --- | --- | --- |
-| D1 | From `ess/25` the filter of `instances:` and of an `affects:` entry reads the candidate row's identity, bare, as a row-set selector does. `state` stays unreadable there. | One grammar for "the rows of E where …" (`filtered-related-reads.md`); no new key; the requester's first proposal. `state` is not asked for and its witness interacts with a move's `from` states; it is named under "Not in this design". |
+| D1 | From `ess/27` the filter of `instances:` and of an `affects:` entry reads the candidate row's identity, bare, as a row-set selector does. `state` stays unreadable there. | One grammar for "the rows of E where …" (`filtered-related-reads.md`); no new key; the requester's first proposal. `state` is not asked for and its witness interacts with a move's `from` states; it is named under "Not in this design". |
 | D2 | `instance:` without `each:` stays refused; its hint names the identity filter. | `instance:` in `affects:` means create-or-update per element (`set-effects-over-filtered-instances.md`, #459). Reusing the key for "an existing row by reference" gives one key two meanings. |
 | D3 | No `via:` in `affects:`. | It would be a third selection form next to `where:` and `each:`, an IR variant every consumer must learn, and about nine new refusals, and the filter grammar would still disagree with the row-set selector. |
 | D4 | Rust, Go, Web and Clap emit a workspace for a specification with set effects; the command is an owed behaviour whose contract states the rows it changes. The re-key refusal stays. | Above: the refusal predates owed behaviour and contradicts `determined.rs` and the Clap and web designs. On its own this unblocks the reproduction's reverse direction on every target, at any format. |
@@ -112,10 +112,10 @@ Go, Web and Clap seams write the row in place) and stays.
 
 ## The construct
 
-No new syntax. From `ess/25`:
+No new syntax. From `ess/27`:
 
 ```yaml
-format: ess/25
+format: ess/27
 # …
   - name: demo.q.ExpireEntry
     input:
@@ -160,12 +160,12 @@ identity as any other field.
 
 | case | code | at | message (hint) |
 | --- | --- | --- | --- |
-| the identity read in a set effect's filter below `ess/25` | `unsupported_format_version` | `…affects[<n>].where`, `…instances.where` | "`call_id` is the identity of `demo.q.Call`; a set effect's filter reads it from `ess/25`" (declare `format: ess/25`) |
+| the identity read in a set effect's filter below `ess/27` | `unsupported_format_version` | `…affects[<n>].where`, `…instances.where` | "`call_id` is the identity of `demo.q.Call`; a set effect's filter reads it from `ess/27`" (declare `format: ess/27`) |
 | a pin over the subject's own entity whose operand is the subject's identity (`subject.<identity>`, or the input field the outcome's `instance:` names) | `conflicting_declaration` | `…affects[<n>].where` | the entry selects only the subject, which every `affects:` entry excepts (drop the entry, or write the change in the outcome's own `sets:`) |
-| `instance:` without `each:` (existing) | `conflicting_declaration` (ESS-COMMAND-004) | `…affects[<n>].instance` | unchanged message; the hint adds: to change one existing row by its identity, write `where: <identity> == subject.<field>` (`ess/25`) |
+| `instance:` without `each:` (existing) | `conflicting_declaration` (ESS-COMMAND-004) | `…affects[<n>].instance` | unchanged message; the hint adds: to change one existing row by its identity, write `where: <identity> == subject.<field>` (`ess/27`) |
 | `state` in a set effect's filter (existing) | `unobservable_fact` (ESS-COMMAND-003) | `…where` | unchanged |
 
-Below `ess/25` the refusal comes alone: the format check runs over the fields plus the identity, so
+Below `ess/27` the refusal comes alone: the format check runs over the fields plus the identity, so
 no `unobservable_fact` is reported beside it. This follows the gate `state` got in a related
 predicate, refused below `ess/20` as `unsupported_format_version` rather than `unobservable_fact`
 (`cross-record-and-stored-field-guards.md`, "Held state"). A message or hint change on an existing
@@ -176,7 +176,7 @@ typed_diagnostics`).
 
 - **IR.** No shape change. `ResolvedAffect::filter` and `ResolvedSetSubject`'s filter are
   `Predicate`s (`crates/specify/ess-compiler/src/ir.rs:1024-1048`) and may now name the identity.
-  A model without such a filter keeps its bytes; `EssIr::format` records `ess/25`.
+  A model without such a filter keeps its bytes; `EssIr::format` records `ess/27`.
 - **Schema.** `where:` is a written predicate string, so `schemas/generated/ess.schema.json` does not
   change.
 - **`ess verify diff`.** `outcome-set-effect-changed` already prints the filter
@@ -235,7 +235,7 @@ Steps used: `execute_command`, `expect_outcome`, `capture_instance`, `query_view
 
 | target | disposition |
 | --- | --- |
-| validation, compiler | admits the identity from `ess/25` (above) |
+| validation, compiler | admits the identity from `ess/27` (above) |
 | interpreter, history checker | unchanged (above) |
 | synthesis | pinned arrangement, or a named `NoWitness` (above) |
 | Go and TypeScript suite runtimes | none: no new step |
@@ -250,12 +250,12 @@ Steps used: `execute_command`, `expect_outcome`, `capture_instance`, `query_view
 
 ## Format and compatibility
 
-- **Source `ess/25`.** Below it the identity in a set effect's filter is refused naming `ess/25`.
-  At `ess/25` every `ess/24` document keeps its meaning and IR bytes: no document that validated
+- **Source `ess/27`.** Below it the identity in a set effect's filter is refused naming `ess/27`.
+  At `ess/27` every `ess/26` document keeps its meaning and IR bytes: no document that validated
   before reads the identity there.
 - **D4 changes generated output, not a format.** A specification that a target refused now emits a
   workspace and one obligation more. Nothing that emitted before changes.
-- **Migration.** None. An adopter writes `format: ess/25` and the filter.
+- **Migration.** None. An adopter writes `format: ess/27` and the filter.
 
 ## Fit review
 
@@ -278,7 +278,7 @@ Steps used: `execute_command`, `expect_outcome`, `capture_instance`, `query_view
    - *Vocabulary.* No new key; the row-set selector's reading of a candidate row, already in use
      (`ess/23` collision answer).
    - *Composition.* Guards: `when_related: {via}` refusals on the same command validate at
-     `ess/24` (`j-related-guards.yaml`); beside the entry at `ess/25` is a U1 acceptance case.
+     `ess/26` (`j-related-guards.yaml`); beside the entry at `ess/27` is a U1 acceptance case.
      Moves, deletes, `sets:`, subject exception and the zero-row rule are unchanged. `each:` is
      untouched. `{count: changed}` keeps its `instances:`-only rule.
    - *Siblings.* Set-effect filters and row-set selectors then differ only by `state` (named
@@ -288,7 +288,7 @@ Steps used: `execute_command`, `expect_outcome`, `capture_instance`, `query_view
    [{entity: Seat, where: seat_id == subject.seat_id, moves: Seat.release}]`. A device registry:
    forgetting a token is idempotent, `deletes: Token` with `instances: {where: token_id ==
    input.token_id}`, zero rows accepted.
-6. **Cost.** Format: rides `ess/25`. Keywords: none. Diagnostics: one new refusal site
+6. **Cost.** Format: rides `ess/27`. Keywords: none. Diagnostics: one new refusal site
    (`conflicting_declaration`), one format gate, one hint; no new `ValidationCode`. IR, schema,
    suite, `ess-diff`: none. Generated API: no breaking change; D4 turns a refused workspace into an
    emitted one. Synthesis: one arrangement path.
@@ -330,10 +330,10 @@ instead.
 Each test is written first and seen red.
 
 - `crates/specify/ess-domain/tests/set_effect_identity_filter.rs`:
-  `an_affects_filter_pinning_the_identity_to_a_subject_field_validates_at_ess_25`,
-  `an_affects_filter_pinning_the_identity_to_an_input_validates_at_ess_25`,
-  `an_instances_filter_reading_the_identity_validates_at_ess_25`,
-  `the_identity_in_a_set_effect_filter_below_ess_25_is_refused_alone_naming_ess_25`,
+  `an_affects_filter_pinning_the_identity_to_a_subject_field_validates_at_ess_27`,
+  `an_affects_filter_pinning_the_identity_to_an_input_validates_at_ess_27`,
+  `an_instances_filter_reading_the_identity_validates_at_ess_27`,
+  `the_identity_in_a_set_effect_filter_below_ess_27_is_refused_alone_naming_ess_27`,
   `a_pin_naming_the_subject_on_its_own_entity_is_refused`,
   `state_in_a_set_effect_filter_stays_unobservable`,
   `instance_without_each_hints_the_identity_filter`,
@@ -341,7 +341,7 @@ Each test is written first and seen red.
 - `crates/specify/ess-compiler/tests/set_effects_ir.rs`: `an_identity_filter_compiles_into_the_filter`,
   `a_model_without_an_identity_filter_keeps_its_ir_bytes`.
 - `crates/verify/ess-conformance/tests/set_effect_identity_pin.rs` (fixture
-  `tests/fixtures/set-effect-identity-pin.yaml`, the reproduction at `ess/25`):
+  `tests/fixtures/set-effect-identity-pin.yaml`, the reproduction at `ess/27`):
   `the_interpreter_moves_only_the_row_the_subject_names`,
   `a_reference_naming_no_row_changes_nothing`, `an_absent_optional_reference_changes_nothing`,
   `synthesis_witnesses_a_pinned_affects_entry`, `a_pinned_instances_filter_counts_one_then_zero`,
@@ -368,11 +368,11 @@ measured 2026-10-07), `ordered-related-head.md` estimates 10 GiB per `ess-confor
 | unit | what | files | depends on | build footprint (estimate) |
 | --- | --- | --- | --- | --- |
 | U3 | D4: owed, not refused | `crates/generate/ess-synth/src/set_effects.rs`, `crates/generate/ess-synth/src/plan.rs` (`behavior_contract`), `crates/generate/ess-synth/tests/set_effects.rs`, the comment at `crates/generate/ess-synth/tests/declared_behaviour.rs:551`, `docs/design/set-effects-over-filtered-instances.md` (the target paragraphs) | none (works at every format) | `ess-synth` tests, about 4-5 GiB |
-| U1 | D1, D2: validation and the format gate | `crates/specify/ess-domain/src/command/set_effects.rs` (`check_filter`, the gate, the self-pin refusal, the `instance:` hint); new `crates/specify/ess-domain/tests/set_effect_identity_filter.rs`; `crates/specify/ess-compiler/tests/set_effects_ir.rs` | `ess/25` open (done) | `ess-domain`, `ess-compiler`, `ess-cli` tests plus `task test-xtask`, about 6-8 GiB |
+| U1 | D1, D2: validation and the format gate | `crates/specify/ess-domain/src/command/set_effects.rs` (`check_filter`, the gate, the self-pin refusal, the `instance:` hint); new `crates/specify/ess-domain/tests/set_effect_identity_filter.rs`; `crates/specify/ess-compiler/tests/set_effects_ir.rs` | `ess/27` open (done) | `ess-domain`, `ess-compiler`, `ess-cli` tests plus `task test-xtask`, about 6-8 GiB |
 | U2 | interpreter confirmation, synthesis of a pin | `crates/verify/ess-conformance/src/synthesize/set_effects.rs` (pin detection, reversed arrangement, pairs); possibly visibility of a helper in `crates/verify/ess-conformance/src/synthesize/related_guard.rs`; new `crates/verify/ess-conformance/tests/set_effect_identity_pin.rs` and its fixture | U1 | one `ess-conformance --test` binary plus `ess-cli`, about 10 GiB |
 | U4 | D5 in Rust | `crates/generate/ess-synth/src/determined.rs` (admit a pinned entry); `crates/generate/ess-synth/src/rust/behaviour.rs`; new `crates/generate/ess-synth/tests/set_effect_identity_pin_behaviour.rs`, which builds the generated server and compares its answers and rows with the interpreter's, as `tests/adversary_related_guard_behaviour_pass1.rs` does | U1, U3 | `ess-synth` tests plus the generated workspace built inside the test, about 6 GiB |
 | U5 | D5 in Go | `crates/generate/ess-synth/src/go/behaviour.rs`; the Go cases in U4's test file | U4 | `ess-synth` tests and `go`, about 4-5 GiB |
-| U6 | documentation | `website/docs/guides/specify/selection-effects.md`; `website/docs/reference/spec-versions.md` (the `ess/25` row); `CHANGELOG.md`; `docs/design/filtered-related-reads.md` (the "same grammar" sentence, minus `state`); optionally `crates/generate/ess-gen/src/set_effects.rs` (pinned phrasing); this page's status | U2, U5 | `task test-xtask`, about 2-3 GiB; `task site-build` if the website changed |
+| U6 | documentation | `website/docs/guides/specify/selection-effects.md`; `website/docs/reference/spec-versions.md` (the `ess/27` row); `CHANGELOG.md`; `docs/design/filtered-related-reads.md` (the "same grammar" sentence, minus `state`); optionally `crates/generate/ess-gen/src/set_effects.rs` (pinned phrasing); this page's status | U2, U5 | `task test-xtask`, about 2-3 GiB; `task site-build` if the website changed |
 
 Order: U3 can start at once and on its own unblocks the reverse direction on every target. U1 then
 U2 and U4 in parallel (U2 is `ess-conformance`, U4 is `ess-synth`); U5 after U4; U6 last.
@@ -385,7 +385,7 @@ Overlap with the other units of this wave:
 - **u543** (https://github.com/beyond10x/ess/issues/543) listed `synthesize/set_effects.rs` for a
   named gap (`ordered-related-head.md`, U2): U2 overlaps (low, one arm).
 - **u546** edits synthesis input witness selection (`witness.rs`); U2 is not planned to touch it.
-- U1 and every `ess/25` unit share the `ess/25` row and the CHANGELOG section with U6 (medium).
+- U1 and every `ess/27` unit share the `ess/27` row and the CHANGELOG section with U6 (medium).
 
 Gates per unit (no full gate), from `AGENTS.md`:
 

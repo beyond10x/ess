@@ -1,4 +1,4 @@
-//! An actor becoming the system, and a system-issued command's `await_within:` moving (`ess/25`,
+//! An actor becoming the system, and a system-issued command's `await_within:` moving (`ess/27`,
 //! beyond10x/ess#542, `docs/design/system-issued-commands.md`, *Every lane*, the diff row), are
 //! typed changes, never `system/<name>/unclassified-changed`.
 //!
@@ -16,7 +16,7 @@ use ess_domain::{spec::RawSpecFile, system::Source, Specification};
 
 /// `{system}` is written on the scheduler, `{await}` on the command it issues.
 const MODEL: &str = "\
-format: ess/25
+format: ess/27
 system: queueing
 version: v1
 domain: queueing.entry

@@ -1,5 +1,5 @@
 //! A minted value stored present, and a stored value read from the outcome's own payload
-//! (`ess/25`, beyond10x/ess#545, `docs/design/minted-value-sources.md`).
+//! (`ess/27`, beyond10x/ess#545, `docs/design/minted-value-sources.md`).
 //!
 //! `SelectAgent` mints a `connect_seq`, publishes it and stores it on an `Optional` field; an
 //! invariant requires the field present once the entry is `Bridged`. With `{generated: true}` the

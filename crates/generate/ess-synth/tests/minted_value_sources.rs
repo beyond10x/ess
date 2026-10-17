@@ -1,5 +1,5 @@
 //! A present mint, `{generated: true, present: true}`, into an `Optional` field calls the required
-//! generator in the generated Rust and Go behaviours and wraps its answer present (`ess/25`,
+//! generator in the generated Rust and Go behaviours and wraps its answer present (`ess/27`,
 //! beyond10x/ess#545, `docs/design/minted-value-sources.md`).
 //!
 //! `RATES` emits `RateQuoted.rate: Optional<Decimal>` as a present mint: the context port is
@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 const RATES: &str = r"
-format: ess/25
+format: ess/27
 system: demo
 version: v1
 domain: demo.rates
@@ -45,7 +45,7 @@ components:
 
 /// A quote stored on a row, its `sets:` reading the rate the payload minted.
 const STORED: &str = r"
-format: ess/25
+format: ess/27
 system: demo
 version: v1
 domain: demo.rates

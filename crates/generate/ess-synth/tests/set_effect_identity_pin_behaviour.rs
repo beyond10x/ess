@@ -1,4 +1,4 @@
-//! Generated behaviour executes an `affects:` entry whose filter pins the row's identity (ess/25,
+//! Generated behaviour executes an `affects:` entry whose filter pins the row's identity (ess/27,
 //! beyond10x/ess#547, `docs/design/set-effect-identity-filters.md`, D5).
 //!
 //! `ExpireEntry` expires a queue entry and ends the call the entry names by its stored `call_id`:

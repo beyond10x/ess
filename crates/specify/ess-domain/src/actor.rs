@@ -68,7 +68,7 @@ pub struct ActorSpec {
     /// caller is not the authority on them, the credential is.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub attributes: Vec<Field>,
-    /// Whether this actor is the system itself (ess/25, beyond10x/ess#542,
+    /// Whether this actor is the system itself (ess/27, beyond10x/ess#542,
     /// `docs/design/system-issued-commands.md`).
     ///
     /// A command granted to at least one actor, every one of them the system, is system-issued:
@@ -80,21 +80,21 @@ pub struct ActorSpec {
 
 impl ActorSpec {
     /// Checks the `system:` key: the format that admits it, and that a system actor carries no
-    /// credential (ess/25, beyond10x/ess#542).
+    /// credential (ess/27, beyond10x/ess#542).
     pub fn validate_system(&self, format: FormatVersion) -> ValidationErrors {
         let mut errors = ValidationErrors::new();
         if !self.system {
             return errors;
         }
         let site = ConstructRef::new(ConstructKind::Actor, self.name.to_string());
-        if format.major() < FormatVersion::V25.major() {
+        if format.major() < FormatVersion::V27.major() {
             errors.push(
                 ValidationError::at(
                     site.key("system"),
                     ValidationCode::UnsupportedFormatVersion,
-                    "`system: true` on an actor requires specification format ess/25",
+                    "`system: true` on an actor requires specification format ess/27",
                 )
-                .with_hint("write `format: ess/25` on the source that declares the system"),
+                .with_hint("write `format: ess/27` on the source that declares the system"),
             );
             return errors;
         }
@@ -322,7 +322,7 @@ pub struct RawActorSpec {
     /// What its credential carries about it (ess/16).
     #[serde(default)]
     pub attributes: Vec<Field>,
-    /// Whether this actor is the system itself (ess/25). `false` is the same as leaving it out.
+    /// Whether this actor is the system itself (ess/27). `false` is the same as leaving it out.
     #[serde(default)]
     pub system: bool,
 }

@@ -1,4 +1,4 @@
-//! A set effect whose filter **pins** the row's identity (ess/25, beyond10x/ess#547,
+//! A set effect whose filter **pins** the row's identity (ess/27, beyond10x/ess#547,
 //! `docs/design/set-effect-identity-filters.md`, "A pin" and "Synthesis").
 //!
 //! A filter pins the identity where it is `<identity> == subject.<field>` or `== input.<field>`
@@ -784,7 +784,11 @@ pub(super) fn set_scenario(
             command,
             outcome,
             request,
-            *changed,
+            if *changed == 0 {
+                &[]
+            } else {
+                std::slice::from_ref(&rows.target)
+            },
             &mut steps,
             &mut source,
         )?;

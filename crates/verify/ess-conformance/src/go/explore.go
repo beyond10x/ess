@@ -1068,7 +1068,7 @@ func explorePlanAs(ir map[string]any, concurrent bool) *explorePlan {
 		}
 		p.declared = append(p.declared, exploreDeclared{command: name, outcomes: names})
 		reason := ""
-		// A command the system issues itself is no client's operation (ess/25, beyond10x/ess#542):
+		// A command the system issues itself is no client's operation (ess/27, beyond10x/ess#542):
 		// the suite awaits it, and the explorer never sends it.
 		if node["system_issued"] == true {
 			reason = "the system issues it itself, so no client sends it; the suite awaits it"

@@ -22,7 +22,7 @@
 //! | [`mark_instant`](ConformanceTarget::mark_instant) | none — it names the instant a duration claim is measured from, which the suite may not invent | [`MarkInstant`](crate::scenario::ScenarioStep::MarkInstant) |
 //! | [`observe_elapsed`](ConformanceTarget::observe_elapsed) | a timer, a wrap-up window, a TTL: a length of time the system's own behaviour turns on | [`ExpectNotBefore`](crate::scenario::ScenarioStep::ExpectNotBefore), [`ExpectWithin`](crate::scenario::ScenarioStep::ExpectWithin), [`ExpectQuiet`](crate::scenario::ScenarioStep::ExpectQuiet) |
 //! | [`scan_view`](ConformanceTarget::scan_view) | a view's `order_by:` read one row at a time: whether a consumer can stop the producer | [`ExpectHalt`](crate::scenario::ScenarioStep::ExpectHalt), [`EventuallyHalt`](crate::scenario::ScenarioStep::EventuallyHalt) |
-//! | [`await_outcome`](ConformanceTarget::await_outcome) | an actor declared `system: true`: a command the system issues itself, which no caller can invoke (ess/25, beyond10x/ess#542) | [`AwaitOutcome`](crate::scenario::ScenarioStep::AwaitOutcome), [`ExpectNotIssued`](crate::scenario::ScenarioStep::ExpectNotIssued) |
+//! | [`await_outcome`](ConformanceTarget::await_outcome) | an actor declared `system: true`: a command the system issues itself, which no caller can invoke (ess/27, beyond10x/ess#542) | [`AwaitOutcome`](crate::scenario::ScenarioStep::AwaitOutcome), [`ExpectNotIssued`](crate::scenario::ScenarioStep::ExpectNotIssued) |
 //!
 //! Seven of these methods are §7's. The others were added because a step in the closed
 //! vocabulary could not otherwise be executed at all, and each is argued on its own method. None is
@@ -529,7 +529,7 @@ pub trait ConformanceTarget {
     }
 
     /// Reports the outcome the system itself reached for a command it issues, on one instance,
-    /// within a bound (ess/25, beyond10x/ess#542, `docs/design/system-issued-commands.md`).
+    /// within a bound (ess/27, beyond10x/ess#542, `docs/design/system-issued-commands.md`).
     ///
     /// A command every grant of which is the system is never invoked by the runner: no caller can
     /// be the system. The target answers what its system did on

@@ -2174,7 +2174,7 @@ impl<'a> Resolver<'a> {
                 &needles,
             );
             let domain = self.owner(code, &command.name, "command");
-            // ess/25 (#542): a pure function of the grants, carried so no consumer derives it.
+            // ess/27 (#542): a pure function of the grants, carried so no consumer derives it.
             let system_issued = self.spec.is_system_issued(&command.name);
             if let (Some(input), Some(response), Some(outcomes), Some(domain)) =
                 (input, response, outcomes, domain)
@@ -2949,7 +2949,7 @@ impl<'a> Resolver<'a> {
         })
     }
 
-    /// `{payload: <event>.<field>}` (`ess/25`, beyond10x/ess#545): the event field this outcome
+    /// `{payload: <event>.<field>}` (`ess/27`, beyond10x/ess#545): the event field this outcome
     /// publishes, at its declared type. `ess-domain` refused a read outside `sets:`, of an event
     /// this outcome does not fill and of a field it does not declare; the refusals here are the
     /// backstop for a specification built field by field.
@@ -3243,7 +3243,7 @@ impl<'a> Resolver<'a> {
         ))
     }
 
-    /// `{related: {entity, where, order_by, first}}` (ess/25, beyond10x/ess#543): the selector
+    /// `{related: {entity, where, order_by, first}}` (ess/27, beyond10x/ess#543): the selector
     /// resolved as a filtered read's, the order as written, and `first` read from the head row at
     /// its declared type. `ess-domain` refused an order that is not total and a field the entity
     /// does not hold; the refusal here is the backstop for a specification built field by field.
@@ -3527,7 +3527,7 @@ impl<'a> Resolver<'a> {
     }
 
     /// The values of `outcome`'s payload that `selection`, one of its value sources, reads under
-    /// `payload.` (ess/25, beyond10x/ess#549), in the dependency order `ess-domain` gives them,
+    /// `payload.` (ess/27, beyond10x/ess#549), in the dependency order `ess-domain` gives them,
     /// each at its event field's resolved type. `ess-domain` refused a read of no declared field.
     fn published_reads(
         &mut self,

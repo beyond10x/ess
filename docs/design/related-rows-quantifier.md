@@ -1,7 +1,7 @@
-# A selector tests each candidate's related rows (`ess/25`)
+# A selector tests each candidate's related rows (`ess/27`)
 
 Status: design, not implemented (https://github.com/beyond10x/ess/issues/551). Source format
-`ess/25`, unreleased at the time of writing (`FormatVersion::V25`,
+`ess/27`, unreleased at the time of writing (`FormatVersion::V27`,
 `crates/specify/ess-domain/src/system.rs:355`). This page opens no format of its own. No new
 keyword, no new `ValidationCode`, no IR shape change, no suite or `ess-diff` version. It builds on
 `filtered-related-reads.md` (the selector and its snapshot), `ordered-related-head.md`
@@ -21,7 +21,7 @@ outer selector's `where:` needs a test on each **candidate's** related rows. The
 reads the candidate's own fields bare, `input.`, `subject.` and `now`
 (`crates/specify/ess-domain/src/command/row_set.rs:12-16`). Nothing in it ranges over other rows.
 
-Minimal reproduction, the binary built at `3fdd9479e` (`ess 0.59.0`, `format: ess/25`). The
+Minimal reproduction, the binary built at `3fdd9479e` (`ess 0.59.0`, `format: ess/27`). The
 specifications were written for this page and are not committed: entities `demo.slots.Slot
 {slot_id, group_id, score}`, `demo.slots.Membership {membership_id, slot_id, side, element_key,
 element_score}` (lifecycle `Present → Removed`) and `demo.slots.Pair`; `MatchInGroup` publishes
@@ -57,7 +57,7 @@ test; or a maintained aggregate on the candidate (a count of related rows) that 
 The quantifier `exists:` takes, as its collection, **the rows of an entity**:
 
 ```yaml
-format: ess/25
+format: ess/27
 # …
 slot_id:
   related:
@@ -211,7 +211,7 @@ Each refusal is reported at the selector's site (`….when_related`, `….payloa
 | condition | code | message names |
 | --- | --- | --- |
 | `in:` a mapping other than exactly `{entity: <text>}` | `unparsable_predicate` / `type_mismatch` (as today, by site) | that `in:` takes a fact path or `{entity: <Entity>}` |
-| a rows collection below `ess/25` | `unsupported_format_version` | the construct; hint `declare \`format: ess/25\`` (today: the parse refusal above) |
+| a rows collection below `ess/27` | `unsupported_format_version` | the construct; hint `declare \`format: ess/27\`` (today: the parse refusal above) |
 | a rows collection at a site that does not admit it | `unsupported_construct` | the site, and the two sites that admit it; at `when_subject:` the `when_related` idiom |
 | `E` is no declared entity | `undeclared_reference` | the declared entities (`row_set::undeclared`, `row_set.rs:518-533`) |
 | `forall:` over rows | `unsupported_construct` | the `not: {exists: …}` rewrite |
@@ -242,17 +242,17 @@ asserts the refusal or the admission the table states.
 
 ## Format and compatibility
 
-- **Rides `ess/25`** while it is unreleased. If `ess/25` ships first, this needs the next format.
+- **Rides `ess/27`** while it is unreleased. If `ess/27` ships first, this needs the next format.
   That is the coordinator's call.
 - **No document changes meaning.** The shape was a parse refusal at every format (measured above).
-  Below `ess/25` it stays refused, with `unsupported_format_version` instead of the parse message:
+  Below `ess/27` it stays refused, with `unsupported_format_version` instead of the parse message:
   a change to a refusal's message, as #543's was.
 - **Old-reader controls:**
-  - the issue's model at `ess/25` rewritten `format: ess/24` is refused with
-    `unsupported_format_version` naming `ess/25`;
+  - the issue's model at `ess/27` rewritten `format: ess/26` is refused with
+    `unsupported_format_version` naming `ess/27`;
   - the same rows quantifier in an `ess/21` `when_related:` selector stays refused (any code);
   - a selector with an ordinary quantifier over a `List` field of the candidate compiles to the same
-    IR bytes at `ess/24` and at `ess/25`.
+    IR bytes at `ess/26` and at `ess/27`.
 - **`ess-primitives` API.** `Quantified::over` changes from `FactPath` to a two-variant
   `Collection { Fact(FactPath), Rows { entity: String } }`. Every crate that reads `.over` has to
   decide what a rows collection means to it. That is about 85 sites in 17 files of this workspace
@@ -443,7 +443,7 @@ for the selected slots, mostly shared with the inner heads' rows; 3 or 4 members
    enrolment service refuses a section with a non-empty waiting list
    (`not: {exists: …}`).
 6. **Cost.**
-   - Format: none of its own; it rides `ess/25`.
+   - Format: none of its own; it rides `ess/27`.
    - Keywords: none. `in:` gains a mapping value, `{entity: <Entity>}`.
    - Diagnostics: no new code, about 9 new messages.
    - IR: no shape change, and old bytes are unchanged.
@@ -491,7 +491,7 @@ for the selected slots, mostly shared with the inner heads' rows; 3 or 4 members
 - `exists` only: `forall` is refused with its rewrite. One level, no nesting.
 - `Quantified::over` becomes a `Collection` enum, so every arm decides. `FactSource::rows`
   defaults to `None`, which evaluates to `Unknown`.
-- No IR shape change, no new code, no suite or diff version. It rides `ess/25`.
+- No IR shape change, no new code, no suite or diff version. It rides `ess/27`.
 - Generated Rust and Go stay owed under the existing selector obligation.
 - Reversible: the shape was refused at every format before.
 
@@ -506,9 +506,9 @@ Each test is written first and seen red.
   `exists_over_rows_is_the_kleene_disjunction` (a `True` row, all `False`, none, one `Unknown`),
   `the_binder_reads_the_row_and_bare_paths_the_enclosing_source`.
 - `crates/specify/ess-domain/tests/related_rows_quantifier.rs`:
-  `a_head_over_matchable_slots_validates_at_ess_25`,
+  `a_head_over_matchable_slots_validates_at_ess_27`,
   `a_row_set_guard_refusing_no_matchable_slot_validates`,
-  `the_rows_test_below_ess_25_is_refused_naming_ess_25`,
+  `the_rows_test_below_ess_27_is_refused_naming_ess_27`,
   `an_untied_rows_test_is_refused`,
   `a_tie_inside_any_is_no_tie`,
   `a_binder_naming_a_candidate_field_is_refused`,
@@ -553,7 +553,7 @@ about 2 GiB for an `ess-u544`-sized partial build.
 | R2 | the domain: sites, format, tie, binder, `forall`, nesting; IR pin | `ess-domain/src/expression.rs` (`TypeEnvironment::related_rows`, the checker's `quantified`, a row type for the binder); `ess-domain/src/command/set_effects.rs` (`WithSubject` answers rows for selectors, `check_row_predicate` flag); `ess-domain/src/command/row_set.rs` (`check` passes the flag, calls the rules); `ess-domain/src/command/value_expression.rs` (the selector and head checks pass the flag); new `ess-domain/src/command/related_rows.rs`; new tests `ess-domain/tests/related_rows_quantifier.rs`, `ess-compiler/tests/related_rows_ir.rs` | R1, #549 U1 | `ess-domain`, `ess-compiler` (`typed_diagnostics`), `ess-cli`, `task test-xtask`; about 6 to 8 GiB |
 | R3 | interpreter | `ess-conformance/src/interpret/execute/row_set.rs` (`Reader::members` collects the related rows); `interpret/execute/set_effects.rs` (`Facts` forwards and supplies `rows`); `interpret/execute/caller.rs`, `interpret/execute/history/facts.rs` (forward `rows`); new fixture `tests/fixtures/related-rows-quantifier.yaml`; interpreter cases of new `tests/related_rows_quantifier.rs` | R2, #549 U3 | one `ess-conformance --test` plus `ess-cli`; about 10 GiB |
 | R4 | synthesis | `ess-conformance/src/synthesize/row_set.rs` (`decidable` for ties, related rows per selected candidate, failing candidates, `consistent` with rows); new `ess-conformance/src/synthesize/related_rows.rs` (tie detection, per-conjunct related decoys, the gaps); `synthesize/ordered_head.rs` (ranking a failing candidate above the head, visibility only); the synthesis and faulty-target cases of `tests/related_rows_quantifier.rs` | R3, #549 U4 | as R3 |
-| R5 | documentation | `website/docs/guides/specify/guards-and-predicates.md` (the rows collection); `website/docs/guides/specify/values-and-views.md` (the matchable-slot example); `website/docs/reference/spec-versions.md` (`ess/25` row); `CHANGELOG.md` `[Unreleased]`; `docs/design/published-value-operand.md` ("Not in this design" points here); the scope line in `story:generated-behaviour-reads-several-related-rows` (coordinator, store); this page's status | R4 | `task test-xtask`; `task site-build` |
+| R5 | documentation | `website/docs/guides/specify/guards-and-predicates.md` (the rows collection); `website/docs/guides/specify/values-and-views.md` (the matchable-slot example); `website/docs/reference/spec-versions.md` (`ess/27` row); `CHANGELOG.md` `[Unreleased]`; `docs/design/published-value-operand.md` ("Not in this design" points here); the scope line in `story:generated-behaviour-reads-several-related-rows` (coordinator, store); this page's status | R4 | `task test-xtask`; `task site-build` |
 
 Order: R1 → R2 → R3 → R4 → R5, strictly. Each needs the previous one's types, and R3 and R4 share
 the fixture. R1 may start beside #549 U1/U2 only if it rebases before R2. R1's arms touch
@@ -569,7 +569,7 @@ Overlap with the units of this wave:
   and `value_expression.rs` (medium).
 - **#547**: U1 edits `check_filter`/`check_row_predicate` in `set_effects.rs` (medium for R1 and
   R2). U2 is in `synthesize/set_effects.rs` (none).
-- R5 shares the `ess/25` row and the CHANGELOG section with every `ess/25` unit (medium).
+- R5 shares the `ess/27` row and the CHANGELOG section with every `ess/27` unit (medium).
 
 Gates per unit (no full gate; `AGENTS.md`, the package-gate subset):
 

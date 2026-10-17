@@ -14,7 +14,7 @@
 //! and, on a command whose branches address one existing subject through the input, that subject
 //! as it was before the outcome under `subject.`. A creation has no prior subject, so a `subject.`
 //! read on a command that only creates is refused. `now` reads the decision's one instant (A3).
-//! From `ess/25` the selector of a value read also reads what its own outcome publishes, as
+//! From `ess/27` the selector of a value read also reads what its own outcome publishes, as
 //! `payload.<Event>.<field>` ([`super::published_operand`], beyond10x/ess#549); a guard refuses
 //! that, because nothing is published before the branch is selected.
 //!
@@ -266,7 +266,7 @@ pub fn subject_entity<'a>(
 
 /// `predicate` checked over a candidate row of `entity`, the input under `input.` and, where the
 /// command addresses one, the subject under `subject.`; `now` reads the decision's instant. At
-/// `site` a value source also reads what its outcome publishes under `payload.` (ess/25,
+/// `site` a value source also reads what its outcome publishes under `payload.` (ess/27,
 /// beyond10x/ess#549), and a guard refuses that by name: nothing is published before the branch.
 pub(super) fn check(
     spec: &Specification,

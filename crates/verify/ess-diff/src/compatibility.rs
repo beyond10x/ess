@@ -684,7 +684,7 @@ fn dimensions(change: &SemanticChange, uses: &BTreeSet<TypeUse>) -> Dimensions {
         },
         SemanticChange::Type { changed, .. } => type_dimensions(changed, change.relation(), uses),
         SemanticChange::Actor { changed, .. } => match changed {
-            // An actor that becomes the system (ess/25, beyond10x/ess#542) can no longer be sent
+            // An actor that becomes the system (ess/27, beyond10x/ess#542) can no longer be sent
             // as a caller of what it is granted, as a grant removed; one that stops being the
             // system can again, as a grant added.
             ActorChange::Added
@@ -696,7 +696,7 @@ fn dimensions(change: &SemanticChange, uses: &BTreeSet<TypeUse>) -> Dimensions {
             _ => [U, C, C],
         },
         SemanticChange::Command { changed, .. } => match changed {
-            // How soon the system claims to take its own step (ess/25, beyond10x/ess#542): no
+            // How soon the system claims to take its own step (ess/27, beyond10x/ess#542): no
             // caller sends it, no reader's shape moves, and nothing stored reads it.
             CommandChange::Added | CommandChange::AwaitWithinChanged { .. } => [C, C, C],
             CommandChange::Removed => [B, C, C],

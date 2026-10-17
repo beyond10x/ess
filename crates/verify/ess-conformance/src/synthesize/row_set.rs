@@ -70,7 +70,7 @@ use super::{
 const COUNTS: [usize; 4] = [1, 2, 0, 3];
 
 /// How many rows a selector whose head the branch reads selects, in the order they are tried
-/// (ess/25, beyond10x/ess#543): three, so the head is the middle one inserted, then two.
+/// (ess/27, beyond10x/ess#543): three, so the head is the middle one inserted, then two.
 const HEAD_COUNTS: [usize; 2] = [3, 2];
 
 /// The key a selected row's value is settled under in the arrangement's fields: not a field name
@@ -83,7 +83,7 @@ pub(super) fn key(selection: &ResolvedRowSelection, field: &str) -> String {
     )
 }
 
-/// Every filtered read of `outcome`, and every read of the head of an ordered selection (ess/25,
+/// Every filtered read of `outcome`, and every read of the head of an ordered selection (ess/27,
 /// beyond10x/ess#543), in `sets:`, `payload:` and an error payload, at any depth.
 fn reads(outcome: &ResolvedOutcome) -> Vec<&ResolvedPayloadField> {
     fn walk<'a>(field: &'a ResolvedPayloadField, out: &mut Vec<&'a ResolvedPayloadField>) {
@@ -196,7 +196,7 @@ fn source_of<'o>(
 }
 
 /// The selectors whose head or one row supply the published values `selection` reads, in any
-/// branch of `command` (ess/25, beyond10x/ess#549).
+/// branch of `command` (ess/27, beyond10x/ess#549).
 fn producers<'c>(
     command: &'c ResolvedCommand,
     selection: &ResolvedRowSelection,
@@ -221,7 +221,7 @@ fn publishes(outcome: &ResolvedOutcome, selection: &ResolvedRowSelection) -> boo
 }
 
 /// The listed read `path` names, `payload.<event>.<field>[.<member>…]`, by its index in `reads`,
-/// and the member path below it; `None` for any other path (ess/25, beyond10x/ess#549).
+/// and the member path below it; `None` for any other path (ess/27, beyond10x/ess#549).
 fn published_route<'p>(
     reads: &[ResolvedPublishedRead],
     path: &'p FactPath,
@@ -326,7 +326,7 @@ fn scopable(ir: &EssIr, type_ref: &ResolvedTypeRef) -> bool {
 /// Whether the selector selects only rows the scenario's own values name: a top-level equality
 /// between a `String` or `Uuid` field of the row and the input or the addressed subject. From
 /// `ess/23` a `String` or `Uuid` member of a struct identity counts as such a field
-/// (beyond10x/ess#463). From `ess/25` a value the outcome publishes counts as the input does where
+/// (beyond10x/ess#463). From `ess/27` a value the outcome publishes counts as the input does where
 /// it is the head or the one row of a selector that is itself scoped, transitively: it then names a
 /// row the scenario arranged (beyond10x/ess#549).
 fn scoped(ir: &EssIr, command: &ResolvedCommand, selection: &ResolvedRowSelection) -> bool {
@@ -655,7 +655,7 @@ struct Reading<'a> {
     input: BTreeMap<String, Node>,
     subject: Option<BTreeMap<String, Determined>>,
     rows: &'a Rows,
-    /// The branch whose values a selector reading a published value reads (ess/25,
+    /// The branch whose values a selector reading a published value reads (ess/27,
     /// beyond10x/ess#549); `None` where only guards are read.
     outcome: Option<&'a ResolvedOutcome>,
     /// How many published values are being resolved around the current one.
@@ -900,7 +900,7 @@ impl<'a> Reading<'a> {
         }
     }
 
-    /// The first row `selection` selects by `order_by` (ess/25, beyond10x/ess#543), or why there is
+    /// The first row `selection` selects by `order_by` (ess/27, beyond10x/ess#543), or why there is
     /// none to read: no row selected, a row whose membership is unknown, or a ranking the rows'
     /// known values leave undecided. Under `ties: unordered` no two selected rows may tie on every
     /// key, so a scenario never states an order the model leaves to the implementation.
@@ -1534,7 +1534,7 @@ fn arrange_rows(
     };
     // Every copied value of `row` differs from zero, from every decoy's, from every row a sibling
     // selector arranged, and from every row of `chosen`.
-    // A head read (ess/25) also reads the identity the arrangement sent, which no settled field
+    // A head read (ess/27) also reads the identity the arrangement sent, which no settled field
     // holds; a filtered read keeps reading what it read.
     let order_by = head.order_by;
     let copy = |row: &Arrangement, field: &str| {
@@ -1598,7 +1598,7 @@ fn arrange_rows(
     Some(arranged)
 }
 
-/// The order of the head a branch reads from a selector, where it reads one (ess/25,
+/// The order of the head a branch reads from a selector, where it reads one (ess/27,
 /// beyond10x/ess#543), and where the witness gaps the arrangement could not close are recorded.
 struct Head<'h> {
     order_by: Option<&'h [Ranking]>,
@@ -1879,7 +1879,7 @@ struct Plan<'p> {
     owners: Vec<Option<&'p InstanceName>>,
     foralls: Vec<Vec<Predicate>>,
     copied: Vec<Vec<&'p str>>,
-    /// The order of the head the branch reads from each selector, where it reads one (ess/25).
+    /// The order of the head the branch reads from each selector, where it reads one (ess/27).
     heads: Vec<Option<&'p [Ranking]>>,
 }
 
@@ -1974,7 +1974,7 @@ impl<'p> Plan<'p> {
             if !publishes(self.outcome, selection) {
                 continue;
             }
-            // Its published operands, as the rows arranged so far supply them (ess/25,
+            // Its published operands, as the rows arranged so far supply them (ess/27,
             // beyond10x/ess#549): the selectors supplying them come first.
             let filters = self.resolved(ir, supplied, &steps);
             if reads_published(&filters[at], &selection.reads) {
@@ -2337,7 +2337,7 @@ pub(super) fn prepare(
         .collect();
     let plan = Plan::new(command, outcome, (&selections, &unders), &closed);
     // A head is arranged only where a creating command steers its first key: a field set from the
-    // input, or an identity the input names (ess/25, beyond10x/ess#543).
+    // input, or an identity the input names (ess/27, beyond10x/ess#543).
     for (selection, order_by) in selections.iter().zip(&plan.heads) {
         let Some(first) = order_by.and_then(|order_by| order_by.first()) else {
             continue;
@@ -2354,7 +2354,7 @@ pub(super) fn prepare(
         }
     }
     // A selector scoped by a value the target mints reads rows no scenario can arrange against it
-    // (ess/25, beyond10x/ess#549): the branch alone is refused.
+    // (ess/27, beyond10x/ess#549): the branch alone is refused.
     for selection in selections
         .iter()
         .filter(|selection| publishes(outcome, selection))

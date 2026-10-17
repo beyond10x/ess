@@ -459,12 +459,12 @@ fn an_optional_input_sent_keeps_its_exact_value() {
     );
 }
 
-/// The `ess/25` shapes (beyond10x/ess#545): a seat whose `connect_seq` is a present mint on the
+/// The `ess/27` shapes (beyond10x/ess#545): a seat whose `connect_seq` is a present mint on the
 /// event and on the row, and whose `bridge_seq` the row reads from the payload's mint with
 /// `{payload: relay.desk.SeatBridged.bridge_seq}`. `TakeSeat` reads the same payload field from
 /// its input, so the row holds a value the act sent.
 const SEATS: &str = r"
-format: ess/25
+format: ess/27
 system: relay
 version: v1
 domain: relay.desk

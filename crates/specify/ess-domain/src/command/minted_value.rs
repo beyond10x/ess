@@ -1,12 +1,12 @@
 //! A minted value stored present, `{generated: true, present: true}`, and a `sets:` value read
-//! from the outcome's own payload, `{payload: <Event>.<field>}` (source format `ess/25`,
+//! from the outcome's own payload, `{payload: <Event>.<field>}` (source format `ess/27`,
 //! beyond10x/ess#545, `docs/design/minted-value-sources.md`).
 //!
 //! Neither shape is all source keywords, so each is recognised by its exact shape, as
 //! `{caller: …}` is: `present` and `payload` are no source keywords, and any other mapping using
-//! those keys is a nested mapping, as it was before `ess/25`. A document below `ess/25` whose struct
+//! those keys is a nested mapping, as it was before `ess/27`. A document below `ess/27` whose struct
 //! happens to have one of these shapes is read back as that nested mapping by
-//! [`read_below_ess_25`], so no earlier document changes meaning.
+//! [`read_below_ess_27`], so no earlier document changes meaning.
 
 use std::collections::BTreeMap;
 
@@ -101,13 +101,13 @@ fn split(text: &str) -> Option<(QualifiedName, String)> {
     crate::binding::is_field_name(field).then(|| (event, field.to_owned()))
 }
 
-/// Reads every present mint and payload read of a document below `ess/25` back as the nested
+/// Reads every present mint and payload read of a document below `ess/27` back as the nested
 /// mapping it was before that format existed.
-pub fn read_below_ess_25(
+pub fn read_below_ess_27(
     format: FormatVersion,
     commands: &mut BTreeMap<QualifiedName, CommandSpec>,
 ) {
-    if format.major() >= FormatVersion::V25.major() {
+    if format.major() >= FormatVersion::V27.major() {
         return;
     }
     for outcome in commands
@@ -187,7 +187,7 @@ pub(super) fn check_present(at: &ConstructRef, target: &Field) -> Option<Validat
 }
 
 /// Why a nested mapping refused over a field that is no struct is one of this module's shapes
-/// written where it is not one: below `ess/25`, or with `present:` other than `true`.
+/// written where it is not one: below `ess/27`, or with `present:` other than `true`.
 pub(super) fn misread_mapping(
     format: FormatVersion,
     at: &ConstructRef,
@@ -208,18 +208,18 @@ pub(super) fn misread_mapping(
     } else {
         "`{payload: <Event>.<field>}`"
     };
-    if format.major() < FormatVersion::V25.major() {
+    if format.major() < FormatVersion::V27.major() {
         return Some(
             ValidationError::at(
                 at.clone(),
                 ValidationCode::UnsupportedFormatVersion,
                 format!(
-                    "{shape} is a source from specification format ess/25; below it this mapping \
+                    "{shape} is a source from specification format ess/27; below it this mapping \
                      fills a struct's fields, and `{}` is `{}`",
                     target.name, target.type_ref
                 ),
             )
-            .with_hint("declare `format: ess/25`"),
+            .with_hint("declare `format: ess/27`"),
         );
     }
     Some(

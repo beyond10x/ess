@@ -1700,7 +1700,7 @@
           ]
         },
         "system": {
-          "description": "Whether this actor is the system itself (ess/25). `false` is the same as leaving it out.",
+          "description": "Whether this actor is the system itself (ess/27). `false` is the same as leaving it out.",
           "default": false,
           "type": "boolean"
         }
@@ -2121,7 +2121,7 @@
       ],
       "properties": {
         "await_within": {
-          "description": "How soon the system takes this step: positive whole seconds, `PT<seconds>S`, on a command every grant of which is a system actor (`ess/25`, beyond10x/ess#542).",
+          "description": "How soon the system takes this step: positive whole seconds, `PT<seconds>S`, on a command every grant of which is a system actor (`ess/27`, beyond10x/ess#542).",
           "anyOf": [
             {
               "$ref": "#/definitions/Period"
@@ -3145,7 +3145,7 @@
           "$ref": "#/definitions/RawCountSource"
         },
         {
-          "description": "`{generated: true, present: true}` (ess/25, beyond10x/ess#545).",
+          "description": "`{generated: true, present: true}` (ess/27, beyond10x/ess#545).",
           "allOf": [
             {
               "$ref": "#/definitions/RawPresentMint"
@@ -3153,10 +3153,14 @@
           ]
         },
         {
-          "description": "`{payload: <Event>.<field>}` (ess/25, beyond10x/ess#545).",
+          "description": "`{payload: <Event>.<field>}` (ess/27, beyond10x/ess#545).",
           "allOf": [
             {
               "$ref": "#/definitions/RawPayloadRead"
+            }
+          ]
+        },
+        {
           "description": "`{changed: <field>}` (ess/25, beyond10x/ess#531).",
           "allOf": [
             {
@@ -3176,7 +3180,7 @@
           ]
         },
         {
-          "description": "`{related: {entity, where, order_by, first}}` (ess/25, beyond10x/ess#543).",
+          "description": "`{related: {entity, where, order_by, first}}` (ess/27, beyond10x/ess#543).",
           "allOf": [
             {
               "$ref": "#/definitions/RawRelatedHead"
@@ -3185,21 +3189,6 @@
         }
       ]
     },
-    "RawPresentMint": {
-      "description": "`{generated: true, present: true}`, written as exactly these two keys.",
-      "type": "object",
-      "required": [
-        "generated",
-        "present"
-      ],
-      "properties": {
-        "generated": {
-          "description": "`true`: the implementation mints the value.",
-          "type": "boolean"
-        },
-        "present": {
-          "description": "`true`: the minted value is present.",
-          "type": "boolean"
     "RawPerRowEmit": {
       "description": "`{event: <name>, each: changed, when_state: <states>}` as written (ess/25, beyond10x/ess#531).",
       "type": "object",
@@ -3234,6 +3223,25 @@
               "type": "null"
             }
           ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "RawPresentMint": {
+      "description": "`{generated: true, present: true}`, written as exactly these two keys.",
+      "type": "object",
+      "required": [
+        "generated",
+        "present"
+      ],
+      "properties": {
+        "generated": {
+          "description": "`true`: the implementation mints the value.",
+          "type": "boolean"
+        },
+        "present": {
+          "description": "`true`: the minted value is present.",
+          "type": "boolean"
         }
       },
       "additionalProperties": false

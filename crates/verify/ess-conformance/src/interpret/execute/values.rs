@@ -579,7 +579,7 @@ fn stored_reference(
 }
 
 /// The field a filtered read takes from the one row its selector selected (ess/22,
-/// beyond10x/ess#299), or a head read from the first row it ranks (ess/25, beyond10x/ess#543): the
+/// beyond10x/ess#299), or a head read from the first row it ranks (ess/27, beyond10x/ess#543): the
 /// identity, or the stored field as the row held it before the outcome.
 pub(super) fn selected(
     ir: &EssIr,

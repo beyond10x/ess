@@ -2,8 +2,8 @@
 //! (`docs/design/published-value-operand.md`, "Format and compatibility", beyond10x/ess#549):
 //! `ResolvedRowSelection.reads`, each `{event, field, type_ref}`, in dependency order, omitted when
 //! empty. The predicate keeps the path as written. A model without the operand keeps its bytes,
-//! and a selector over an entity with a field named `payload` compiles to the same IR at `ess/24`
-//! and at `ess/25`.
+//! and a selector over an entity with a field named `payload` compiles to the same IR at `ess/26`
+//! and at `ess/27`.
 
 use ess_compiler::resolve::compile;
 use ess_compiler::source::SourceMap;
@@ -17,7 +17,7 @@ const READS: &str =
 
 /// The best open slot of a group, then the best element on each side of it; the right side also
 /// requires an element key other than the left one, so its selector reads two published values.
-const NESTED: &str = "format: ess/25
+const NESTED: &str = "format: ess/27
 system: demo
 version: v1
 domain: demo.nested
@@ -335,12 +335,12 @@ commands:
 }
 
 #[test]
-fn a_selector_over_an_entity_with_a_payload_field_compiles_alike_at_ess_24_and_ess_25() {
+fn a_selector_over_an_entity_with_a_payload_field_compiles_alike_at_ess_26_and_ess_27() {
     let plain =
         |format: &str| ir(&enveloped(format)).replace(&format!(r#""format":"{format}""#), "");
-    let at_24 = plain("ess/24");
-    let at_25 = plain("ess/25");
-    assert!(at_25.contains("payload.topic==input.topic"), "{at_25}");
-    assert!(!at_25.contains(r#""reads":"#), "{at_25}");
-    assert_eq!(at_24, at_25);
+    let at_26 = plain("ess/26");
+    let at_27 = plain("ess/27");
+    assert!(at_27.contains("payload.topic==input.topic"), "{at_27}");
+    assert!(!at_27.contains(r#""reads":"#), "{at_27}");
+    assert_eq!(at_26, at_27);
 }

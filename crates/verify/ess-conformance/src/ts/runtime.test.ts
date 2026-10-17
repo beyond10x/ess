@@ -691,7 +691,7 @@ test('a suite admits only what the format declares', () => {
   withCoverage.coverage = { knowledge: 'unknown' };
   assert.throws(
     () => admitSuiteDocument(JSON.stringify(withCoverage), false),
-    /coverage is required exactly for odd suite majors from \/5 through \/51/,
+    /coverage is required exactly for odd suite majors from \/5 through \/53/,
   );
 
   const unknownStep = JSON.parse(suiteText()) as any;
@@ -1135,9 +1135,9 @@ test('a unit variant is read as unavailable, and a payload beside its tag is mal
   }
 });
 
-// ---- a command the system issues itself (suite/50 and /51, beyond10x/ess#542) ---------------------
+// ---- a command the system issues itself (suite/52 and /53, beyond10x/ess#542) ---------------------
 
-test('the await steps and value are admitted from suite/50, with a bound spelled as a Period', () => {
+test('the await steps and value are admitted from suite/52, with a bound spelled as a Period', () => {
   const awaited = {
     step: 'await_outcome',
     command: 'queueing.entry.Assign',
@@ -1158,14 +1158,14 @@ test('the await steps and value are admitted from suite/50, with a bound spelled
     payload: { worker: { kind: 'awaited', field: 'worker' } },
   };
   for (const step of [awaited, notIssued, reads]) {
-    admitStep(step, 50);
-    assert.throws(() => admitStep(step, 49), /requires suite\/50 or \/51/, step.step);
+    admitStep(step, 52);
+    assert.throws(() => admitStep(step, 51), /requires suite\/52 or \/53/, step.step);
   }
   for (const within of ['PT0S', 'PT05S', 'P5S', 'PT5.0S', 'PT']) {
-    assert.throws(() => admitStep({ ...awaited, within }, 50), /PT<seconds>S/, within);
+    assert.throws(() => admitStep({ ...awaited, within }, 52), /PT<seconds>S/, within);
   }
   assert.throws(
-    () => admitStep({ ...awaited, instance: { kind: 'observed', event: 'x.y.Z', field: 'f' } }, 50),
+    () => admitStep({ ...awaited, instance: { kind: 'observed', event: 'x.y.Z', field: 'f' } }, 52),
     /captured instance or a literal identity/,
   );
   assert.equal(awaitSeconds('PT4294967295S'), 4294967295);

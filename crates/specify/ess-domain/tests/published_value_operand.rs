@@ -1,10 +1,10 @@
 //! A selector reads a value its own outcome publishes: `payload.<Event>.<field>[.<member>…]` in the
-//! `where:` of a value read (`ess/25`, beyond10x/ess#549, `docs/design/published-value-operand.md`).
+//! `where:` of a value read (`ess/27`, beyond10x/ess#549, `docs/design/published-value-operand.md`).
 //!
 //! What validation decides:
 //! * the operand is admitted in the selector of `{related: {entity, where, field}}` and of
 //!   `{related: {entity, where, order_by, first}}`, typed at the event field's declared type;
-//! * below `ess/25` it is refused naming `ess/25`, where it names an event the outcome fills;
+//! * below `ess/27` it is refused naming `ess/27`, where it names an event the outcome fills;
 //! * an entity declaring a field `payload` keeps reading `payload.<member>` as that field;
 //! * a guard, `affects[].where`, `instances:` and an error payload refuse it by name;
 //! * the read field is one the outcome emits and fills, with a snapshot-value source;
@@ -211,7 +211,7 @@ struct Edit<'a> {
 impl Default for Edit<'_> {
     fn default() -> Self {
         Self {
-            format: "ess/25",
+            format: "ess/27",
             slot: SLOT_HEAD,
             left: OPERAND,
             right: OPERAND,
@@ -271,7 +271,7 @@ fn rendered(error: &ValidationError) -> String {
 }
 
 #[test]
-fn a_nested_head_reading_the_published_slot_validates_at_ess_25() {
+fn a_nested_head_reading_the_published_slot_validates_at_ess_27() {
     admitted(&model(Edit::default()));
 
     // The operand stands on either side of the comparison.
@@ -303,7 +303,7 @@ fn a_nested_head_reading_the_published_slot_validates_at_ess_25() {
     }));
 }
 
-/// The nested example without ordered heads, which `ess/25` introduced: every read is a one-row
+/// The nested example without ordered heads, which `ess/27` introduced: every read is a one-row
 /// read (`ess/22`), and the inner ones are scoped by `scope`.
 fn flat(format: &str, scope: &str) -> String {
     model(Edit {
@@ -330,17 +330,17 @@ fn flat(format: &str, scope: &str) -> String {
 }
 
 #[test]
-fn the_operand_below_ess_25_is_refused_naming_ess_25() {
-    admitted(&flat("ess/25", OPERAND));
-    admitted(&flat("ess/24", "slot_id"));
+fn the_operand_below_ess_27_is_refused_naming_ess_27() {
+    admitted(&flat("ess/27", OPERAND));
+    admitted(&flat("ess/26", "slot_id"));
 
-    let errors = refused(&flat("ess/24", OPERAND));
+    let errors = refused(&flat("ess/26", OPERAND));
     let refusals = with_code(&errors, ValidationCode::UnsupportedFormatVersion);
     assert_eq!(refusals.len(), 2, "one per reading field:\n{errors}");
     assert_eq!(errors.as_slice().len(), 2, "{errors}");
     let text = errors.to_string();
     assert!(text.contains(OPERAND), "{text}");
-    assert!(text.contains("ess/25"), "{text}");
+    assert!(text.contains("ess/27"), "{text}");
     assert!(
         text.contains("payload.demo.nested.PairMade.left_key"),
         "{text}"
@@ -352,12 +352,12 @@ fn the_operand_below_ess_25_is_refused_naming_ess_25() {
     assert!(
         refusals
             .iter()
-            .all(|error| error.hint.as_deref() == Some("declare `format: ess/25`")),
+            .all(|error| error.hint.as_deref() == Some("declare `format: ess/27`")),
         "{text}"
     );
 
     // Any other `payload.` path keeps the refusal it always had.
-    let errors = refused(&flat("ess/24", "payload.demo.nested.Nothing.slot_id"));
+    let errors = refused(&flat("ess/26", "payload.demo.nested.Nothing.slot_id"));
     assert!(
         errors
             .as_slice()
@@ -447,14 +447,14 @@ commands:
 #[test]
 fn a_selector_over_an_entity_with_a_payload_field_keeps_its_meaning() {
     // `payload.topic` is the note's own field, at either format, and never the published value.
-    for format in ["ess/24", "ess/25"] {
+    for format in ["ess/26", "ess/27"] {
         let errors = refused(&enveloped(format, "topic"));
         // `field: payload` reads the struct into an `Optional<String>`: the type is the one
         // refusal, which proves the selector itself typed `payload.topic` as the note's field.
         let only = alone(&errors, ValidationCode::TypeMismatch);
         assert!(rendered(only).contains("demo.env.Note.payload"), "{errors}");
     }
-    for format in ["ess/24", "ess/25"] {
+    for format in ["ess/26", "ess/27"] {
         let body = enveloped(format, "topic").replace("field: payload", "field: note_id");
         let body = body.replace(
             "{name: body, type: Optional<String>}",
@@ -464,7 +464,7 @@ fn a_selector_over_an_entity_with_a_payload_field_keeps_its_meaning() {
     }
     // A member the struct does not declare is the predicate checker's own refusal, naming the
     // envelope, not a published-value refusal.
-    let body = enveloped("ess/25", "Read.topic")
+    let body = enveloped("ess/27", "Read.topic")
         .replace("field: payload", "field: note_id")
         .replace(
             "{name: body, type: Optional<String>}",
@@ -534,8 +534,8 @@ fn the_operand_in_an_input_guard_is_refused() {
     assert!(text.contains("outcomes.empty.when"), "{text}");
     assert!(text.contains("guard"), "{text}");
 
-    // Below `ess/25` there is no operand: the root stays unknown, as it always was.
-    let errors = refused(&guarded(flat("ess/24", "slot_id")));
+    // Below `ess/27` there is no operand: the root stays unknown, as it always was.
+    let errors = refused(&guarded(flat("ess/26", "slot_id")));
     assert_eq!(
         naming(&errors).code,
         ValidationCode::UnobservableFact,

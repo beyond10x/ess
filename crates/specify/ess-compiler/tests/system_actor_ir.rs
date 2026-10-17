@@ -1,4 +1,4 @@
-//! A system actor and a system-issued command in the IR (`ess/25`, beyond10x/ess#542,
+//! A system actor and a system-issued command in the IR (`ess/27`, beyond10x/ess#542,
 //! `docs/design/system-issued-commands.md`, *IR shape*): `ResolvedActor.system`,
 //! `ResolvedCommand.system_issued` and `ResolvedCommand.await_within`, each omitted when unset, and
 //! where each refusal of the validation table is located.
@@ -10,7 +10,7 @@ use ess_domain::system::Source;
 
 fn model(actors: &str, assign: &str) -> String {
     format!(
-        "format: ess/25
+        "format: ess/27
 system: queueing
 version: v1
 domain: queueing.entry
@@ -174,7 +174,7 @@ fn each_refusal_is_located_at_its_key() {
         vec!["command.queueing.entry.Assign.await_within".to_owned()]
     );
     assert_eq!(
-        at(model(SCHEDULER, "    await_within: PT5S\n").replace("ess/25", "ess/24")),
+        at(model(SCHEDULER, "    await_within: PT5S\n").replace("ess/27", "ess/26")),
         vec![
             "actor.queueing.entry.Scheduler.system".to_owned(),
             "command.queueing.entry.Assign.await_within".to_owned()

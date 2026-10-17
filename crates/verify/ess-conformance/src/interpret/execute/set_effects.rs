@@ -475,7 +475,7 @@ pub(super) struct Facts<'a> {
     pub(super) row: &'a dyn FactSource,
     pub(super) input: &'a dyn FactSource,
     pub(super) subject: Option<&'a dyn FactSource>,
-    /// The values of its own outcome's payload a value read's selector reads (ess/25,
+    /// The values of its own outcome's payload a value read's selector reads (ess/27,
     /// beyond10x/ess#549); `None` for every other predicate.
     pub(super) published: Option<Published<'a>>,
 }

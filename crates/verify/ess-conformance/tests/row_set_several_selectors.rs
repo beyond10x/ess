@@ -43,10 +43,10 @@ fn model(text: &str) -> EssIr {
         .unwrap_or_else(|diagnostics| panic!("the fixture resolves:\n{diagnostics}"))
 }
 
-/// The ranked form at `ess/25`: each membership carries a score, and each side's key is read from
+/// The ranked form at `ess/27`: each membership carries a score, and each side's key is read from
 /// the first membership by `[element_score desc, membership_id]`, not from the one membership.
 fn ranked() -> String {
-    let mut text = MODEL.replacen("format: ess/22", "format: ess/25", 1);
+    let mut text = MODEL.replacen("format: ess/22", "format: ess/27", 1);
     text = text.replacen(
         "      - {name: element_key, type: String}\n    lifecycle:",
         "      - {name: element_key, type: String}\n      - {name: element_score, type: Integer}\n    lifecycle:",

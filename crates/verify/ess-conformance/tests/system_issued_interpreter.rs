@@ -47,7 +47,7 @@ const WORKER_ADDED: &str = "queueing.entry.WorkerAdded";
 /// dialler upstream may refuse an assignment, which only a scenario forcing it reaches.
 fn model(await_within: &str) -> String {
     format!(
-        "format: ess/25
+        "format: ess/27
 system: queueing
 version: v1
 domain: queueing.entry

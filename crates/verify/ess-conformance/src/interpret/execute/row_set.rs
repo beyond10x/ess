@@ -37,7 +37,7 @@ pub(super) struct Reader<'a> {
     facts: input::InputFacts<'a>,
     now: Option<crate::occurrence_clock::DecisionInstant>,
     subject: Subject<'a>,
-    /// The values the outcome publishes that its selectors read (ess/25, beyond10x/ess#549),
+    /// The values the outcome publishes that its selectors read (ess/27, beyond10x/ess#549),
     /// resolved before any of them is read; `None` for a guard, which reads none.
     published: Option<&'a super::Published>,
 }
@@ -76,7 +76,7 @@ impl<'a> Reader<'a> {
     }
 
     /// The same reader, its selectors reading the values `published` holds for their listed
-    /// `payload.<Event>.<field>` operands (ess/25, beyond10x/ess#549).
+    /// `payload.<Event>.<field>` operands (ess/27, beyond10x/ess#549).
     pub(super) fn with_published(mut self, published: &'a super::Published) -> Self {
         self.published = Some(published);
         self
@@ -236,7 +236,7 @@ impl<'a> Reader<'a> {
         }
     }
 
-    /// The first row `selection` selects, ranked by `order_by` (ess/25, beyond10x/ess#543,
+    /// The first row `selection` selects, ranked by `order_by` (ess/27, beyond10x/ess#543,
     /// `docs/design/ordered-related-head.md`), or why there is none to read.
     ///
     /// The rows are ranked with the comparator a view's order uses, so the two cannot disagree.
