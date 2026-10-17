@@ -20,7 +20,7 @@ pub(crate) enum SchemaCommand {
     ImportDocument(crate::schema_bundle::DocumentArgs),
     /// Revalidate a qualified import and project one selected root as standalone JSON Schema.
     ProjectBundle(crate::schema_bundle::ProjectArgs),
-    /// Validate unmodified JSON instances against one selected component root.
+    /// Validate unmodified JSON or YAML instances against one selected component root.
     ValidateBundle(crate::schema_bundle::ValidateArgs),
     /// Realize selected structural roots with source provenance and target accounting.
     TypesBundle(crate::schema_bundle::TypesArgs),
@@ -30,7 +30,7 @@ pub(crate) enum SchemaCommand {
     NormalizeRun(crate::normalize::RunArgs),
     /// Emit a source-pinned normalization library, or check its generated file bytes.
     NormalizeGenerate(crate::normalize::GenerateArgs),
-    /// Validate JSON instances against schemas selected by their `schema` property.
+    /// Validate JSON or YAML instances against schemas selected by their `schema` property.
     Validate(ValidateArgs),
     /// Project a schema's structural types into a deterministic TypeScript module.
     Typescript(TypeScriptArgs),
@@ -39,7 +39,8 @@ pub(crate) enum SchemaCommand {
 /// Inputs for offline schema-contract validation.
 #[derive(Debug, Args)]
 pub(crate) struct ValidateArgs {
-    /// JSON files or directories to validate. Directories are searched recursively.
+    /// Instance files or directories to validate. Directories are searched recursively. A file
+    /// ending `.yaml` or `.yml` is read as the JSON value its YAML denotes, one ending `.json` as JSON.
     #[arg(required = true)]
     paths: Vec<PathBuf>,
     /// Directory containing the authoritative `*.schema.json` registry.
@@ -91,11 +92,14 @@ fn validate_instances(args: &ValidateArgs) -> Result<ExitCode> {
     }
     let instance_paths = json_files(&args.paths, false)?;
     if instance_paths.is_empty() {
-        bail!("the supplied paths contain no JSON instance files");
+        bail!("the supplied paths contain no JSON or YAML instance files");
     }
 
     let schemas = read_json(&schema_paths)?;
-    let instances = read_json(&instance_paths)?;
+    let instances = instance_paths
+        .iter()
+        .map(|path| read_instance(path))
+        .collect::<Result<Vec<_>>>()?;
     let schema_documents = documents(&schema_paths, &schemas);
     let instance_documents = documents(&instance_paths, &instances);
     let report = validate::validate(&schema_documents, &instance_documents);
@@ -219,11 +223,13 @@ fn collect_json(path: &Path, schemas: bool, output: &mut Vec<PathBuf>) -> Result
         .extension()
         .and_then(|extension| extension.to_str())
         .is_some_and(|extension| extension.eq_ignore_ascii_case("json"));
+    // Instances only: a registry holds the `*.schema.json` documents ESS projects.
+    let is_yaml = !schemas && is_yaml(path);
     let is_schema = path
         .file_stem()
         .and_then(|stem| stem.to_str())
         .is_some_and(|stem| stem.to_ascii_lowercase().ends_with(".schema"));
-    let selected = is_json && (schemas == is_schema);
+    let selected = (is_json || is_yaml) && (schemas == is_schema);
     if selected {
         output.push(path.to_path_buf());
     }
@@ -241,6 +247,95 @@ fn read_json(paths: &[PathBuf]) -> Result<Vec<Value>> {
                 .with_context(|| format!("parsing {}", path.display()))
         })
         .collect()
+}
+
+fn is_yaml(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            extension.eq_ignore_ascii_case("yaml") || extension.eq_ignore_ascii_case("yml")
+        })
+}
+
+/// One instance file as the JSON value it denotes (beyond10x/ess#591).
+///
+/// A `.yaml` or `.yml` file is read through `ess-yaml`, the reader ESS sources are read with, as
+/// exactly one document. A YAML document that has no JSON value is refused rather than coerced:
+/// a tag, a key that is not a string, a number that is not finite, and a key written twice, each
+/// named by its pointer. A number is held as ESS holds a JSON number ([`read_json`]), so `1.50`
+/// in YAML and in JSON are one value. Every other file is JSON.
+///
+/// # Errors
+///
+/// When the file cannot be read, does not parse, or holds a YAML value outside JSON.
+pub(crate) fn read_instance(path: &Path) -> Result<Value> {
+    if !is_yaml(path) {
+        return read_json(std::slice::from_ref(&path.to_path_buf()))
+            .map(|mut values| values.remove(0));
+    }
+    let text = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    let document: ess_yaml::Value =
+        ess_yaml::from_str(&text).with_context(|| format!("parsing {} as YAML", path.display()))?;
+    yaml_json(&document, "").map_err(|message| anyhow::anyhow!("{}: {message}", path.display()))
+}
+
+fn yaml_json(value: &ess_yaml::Value, pointer: &str) -> std::result::Result<Value, String> {
+    Ok(match value {
+        ess_yaml::Value::Null => Value::Null,
+        ess_yaml::Value::Bool(value) => Value::Bool(*value),
+        ess_yaml::Value::String(text) => Value::String(text.clone()),
+        ess_yaml::Value::Number(number) => {
+            if number.as_f64().is_some_and(|value| !value.is_finite()) {
+                return Err(format!(
+                    "{}: a number that is not finite has no JSON value",
+                    at(pointer)
+                ));
+            }
+            Value::Number(
+                ess_primitives::json::number(&number.to_string())
+                    .map_err(|error| format!("{}: {error}", at(pointer)))?,
+            )
+        }
+        ess_yaml::Value::Sequence(items) => Value::Array(
+            items
+                .iter()
+                .enumerate()
+                .map(|(index, item)| yaml_json(item, &format!("{pointer}/{index}")))
+                .collect::<std::result::Result<_, _>>()?,
+        ),
+        ess_yaml::Value::Mapping(entries) => {
+            let mut object = serde_json::Map::new();
+            for (key, item) in entries {
+                let Some(key) = key.as_str() else {
+                    return Err(format!(
+                        "{}: a key that is not a string has no JSON value",
+                        at(pointer)
+                    ));
+                };
+                let escaped = key.replace('~', "~0").replace('/', "~1");
+                let item = yaml_json(item, &format!("{pointer}/{escaped}"))?;
+                if object.insert(key.to_owned(), item).is_some() {
+                    return Err(format!("{}: the key `{key}` is written twice", at(pointer)));
+                }
+            }
+            Value::Object(object)
+        }
+        ess_yaml::Value::Tagged(tagged) => {
+            return Err(format!(
+                "{}: the tag `{}` has no JSON value",
+                at(pointer),
+                tagged.tag
+            ));
+        }
+    })
+}
+
+fn at(pointer: &str) -> &str {
+    if pointer.is_empty() {
+        "/"
+    } else {
+        pointer
+    }
 }
 
 fn documents<'a>(paths: &'a [PathBuf], values: &'a [Value]) -> Vec<JsonDocument<'a>> {

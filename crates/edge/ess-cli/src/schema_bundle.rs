@@ -90,7 +90,8 @@ pub struct ValidateArgs {
     /// One root explicitly selected by that import.
     #[arg(long)]
     root: String,
-    /// JSON instance files. No schema selector field is added to their data.
+    /// Instance files: `.yaml` or `.yml` read as the JSON value their YAML denotes, any other as
+    /// JSON. No schema selector field is added to their data.
     #[arg(required = true)]
     instances: Vec<PathBuf>,
 }
@@ -242,8 +243,7 @@ pub fn validate(args: &ValidateArgs) -> Result<ExitCode> {
     let imported = read(&args.bundle)?;
     let mut valid = 0;
     for path in &args.instances {
-        let instance = serde_json::from_slice(&fs::read(path)?)
-            .with_context(|| format!("parsing {}", path.display()))?;
+        let instance = crate::schema::read_instance(path)?;
         let errors = imported.validate(&args.root, &instance)?;
         if errors.is_empty() {
             valid += 1;

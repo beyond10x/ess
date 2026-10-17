@@ -561,3 +561,226 @@ fn accepted_instances_can_coexist_with_later_selector_failures() {
     assert_eq!(value["issues"].as_array().unwrap().len(), 1);
     assert_eq!(value["issues"][0]["code"], "unknown_schema");
 }
+
+/// ESS's own schema tools accept what `ess generate --kind schema` writes: an identified
+/// projection is a registry resource, a YAML instance validates as the JSON it denotes, and the
+/// importer takes a projected document as it stands (beyond10x/ess#590, #591, #593).
+mod projected {
+    use std::fs;
+    use std::process::Output;
+
+    use serde_json::json;
+
+    use super::{report, repository, Fixture};
+
+    const BASE: &str = "https://schemas.example.org/billing/";
+    const MONEY: &str =
+        "https://schemas.example.org/billing/types/billing.invoice.Money.schema.json";
+    const ENVELOPE: &str = "urn:example:money-submission:1";
+
+    fn generate(fixture: &Fixture, extra: &[&str]) -> Output {
+        let billing = repository().join("examples/billing");
+        let mut args = vec![
+            "generate",
+            "--path",
+            billing.to_str().unwrap(),
+            "--kind",
+            "schema",
+            "--out",
+            "gen",
+        ];
+        args.extend_from_slice(extra);
+        fixture.run(&args)
+    }
+
+    /// Every projected type document, as written, beside an adopter's envelope that selects one by
+    /// the identity the projection minted.
+    fn registry(fixture: &Fixture) {
+        let generated = generate(fixture, &["--schema-id-base", BASE]);
+        assert_eq!(generated.status.code(), Some(0), "{generated:?}");
+        for entry in fs::read_dir(fixture.root.join("gen/schema/types")).unwrap() {
+            let entry = entry.unwrap();
+            fixture.write(
+                &format!("registry/{}", entry.file_name().to_str().unwrap()),
+                fs::read(entry.path()).unwrap(),
+            );
+        }
+        fixture.json(
+            "registry/envelope.schema.json",
+            &json!({
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "$id": ENVELOPE,
+                "type": "object",
+                "required": ["schema", "payload"],
+                "properties": {"schema": {"const": ENVELOPE}, "payload": {"$ref": MONEY}},
+                "additionalProperties": false
+            }),
+        );
+    }
+
+    #[test]
+    fn issue_590_the_registry_validates_against_identified_projections() {
+        let fixture = Fixture::new("projected-ids");
+        registry(&fixture);
+        let money: serde_json::Value = serde_json::from_slice(
+            &fs::read(
+                fixture
+                    .root
+                    .join("gen/schema/types/billing.invoice.Money.schema.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(money["$id"], MONEY);
+
+        fixture.json(
+            "valid.json",
+            &json!({"schema": ENVELOPE, "payload": {"amount": "12.5", "currency": "EUR"}}),
+        );
+        let accepted = report(&fixture.validate("valid.json"), 0);
+        assert_eq!(accepted["valid"][0]["schema_id"], ENVELOPE, "{accepted}");
+        assert_eq!(accepted["issues"], json!([]));
+
+        fixture.json(
+            "invalid.json",
+            &json!({"schema": ENVELOPE, "payload": {"amount": 12.5, "currency": "EUR"}}),
+        );
+        let refused = report(&fixture.validate("invalid.json"), 1);
+        assert_eq!(
+            refused["issues"][0]["code"], "invalid_instance",
+            "{refused}"
+        );
+        assert_eq!(refused["issues"][0]["instance_path"], "/payload/amount");
+
+        let same = generate(&fixture, &["--schema-id-base", BASE, "--check"]);
+        assert_eq!(same.status.code(), Some(0), "{same:?}");
+        let unidentified = generate(&fixture, &["--check"]);
+        assert_eq!(
+            unidentified.status.code(),
+            Some(1),
+            "the identities are part of the projected bytes: {unidentified:?}"
+        );
+    }
+
+    #[test]
+    fn issue_590_a_schema_id_base_needs_kind_schema() {
+        let fixture = Fixture::new("projected-id-refusals");
+        let billing = repository().join("examples/billing");
+        let billing = billing.to_str().unwrap();
+        for (args, says) in [
+            (
+                vec![
+                    "generate", "--path", billing, "--kind", "openapi", "--out", "gen",
+                ],
+                "requires --kind schema",
+            ),
+            (
+                vec!["generate", "--path", billing, "--out", "gen"],
+                "requires --kind schema",
+            ),
+            (
+                vec![
+                    "generate", "--path", billing, "--kind", "schema", "--out", "gen",
+                ],
+                "does not end in",
+            ),
+        ] {
+            let base = if says == "does not end in" {
+                "https://schemas.example.org/billing"
+            } else {
+                BASE
+            };
+            let mut args = args;
+            args.extend(["--schema-id-base", base]);
+            let output = fixture.run(&args);
+            assert_ne!(output.status.code(), Some(0), "{output:?}");
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(stderr.contains(says), "{args:?}: {stderr}");
+            assert!(!fixture.root.join("gen").exists(), "{args:?} wrote nothing");
+        }
+    }
+
+    #[test]
+    fn issue_591_a_yaml_instance_validates_as_the_json_it_denotes() {
+        let fixture = Fixture::new("projected-yaml");
+        registry(&fixture);
+        fixture.write(
+            "instances/valid.yaml",
+            format!("schema: {ENVELOPE}\npayload:\n  amount: \"12.5\"\n  currency: EUR\n"),
+        );
+        fixture.write(
+            "instances/invalid.yml",
+            format!("schema: {ENVELOPE}\npayload:\n  amount: 12.5\n  currency: EUR\n"),
+        );
+        let value = report(&fixture.validate("instances"), 1);
+        assert_eq!(value["valid"].as_array().unwrap().len(), 1, "{value}");
+        assert_eq!(value["valid"][0]["instance"], "instances/valid.yaml");
+        assert_eq!(value["issues"][0]["document"], "instances/invalid.yml");
+        assert_eq!(value["issues"][0]["code"], "invalid_instance");
+        assert_eq!(value["issues"][0]["instance_path"], "/payload/amount");
+    }
+
+    #[test]
+    fn issue_591_a_yaml_instance_outside_json_is_refused_by_file() {
+        let fixture = Fixture::new("projected-yaml-refusals");
+        registry(&fixture);
+        for (name, text, says) in [
+            ("tagged.yaml", "schema: !thing x\n", "tag"),
+            ("keyed.yaml", "1: one\n", "not a string"),
+            ("infinite.yaml", "amount: .inf\n", "not finite"),
+            ("twice.yaml", "schema: a\nschema: b\n", "schema"),
+            ("two.yaml", "a: 1\n---\na: 2\n", "two.yaml"),
+        ] {
+            fixture.write(name, text);
+            let output = fixture.validate(name);
+            assert_ne!(output.status.code(), Some(0), "{name}: {output:?}");
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(
+                stderr.contains(name) && stderr.contains(says),
+                "{name}: {stderr}"
+            );
+        }
+    }
+
+    #[test]
+    fn issue_593_a_projected_document_imports_and_validates_a_yaml_instance() {
+        let fixture = Fixture::new("projected-bundle");
+        let generated = generate(&fixture, &[]);
+        assert_eq!(generated.status.code(), Some(0), "{generated:?}");
+        let imported = fixture.run(&[
+            "generate",
+            "schema",
+            "import-document",
+            "--path",
+            "gen/schema/types/billing.invoice.Money.schema.json",
+            "--root",
+            "Money",
+            "--dialect",
+            "draft-2020-12",
+            "--out",
+            "bundle.json",
+        ]);
+        assert_eq!(imported.status.code(), Some(0), "{imported:?}");
+        fixture.write("money.yaml", "amount: \"12.5\"\ncurrency: EUR\n");
+        fixture.write(
+            "loose.yaml",
+            "amount: \"12.5\"\ncurrency: EUR\nextra: true\n",
+        );
+        let validated = fixture.run(&[
+            "generate",
+            "schema",
+            "validate-bundle",
+            "--bundle",
+            "bundle.json",
+            "--root",
+            "Money",
+            "money.yaml",
+            "loose.yaml",
+        ]);
+        assert_eq!(validated.status.code(), Some(1), "{validated:?}");
+        let stdout = String::from_utf8_lossy(&validated.stdout);
+        assert!(stdout.contains("2 instance(s), 1 valid"), "{stdout}");
+        assert!(stdout.contains("loose.yaml"), "{stdout}");
+        assert!(!stdout.contains("money.yaml"), "{stdout}");
+    }
+}

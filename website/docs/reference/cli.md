@@ -733,6 +733,7 @@ ess generate <COMMAND>
 | `--transport` | `<TRANSPORT>` | no |  | An `ess-transport/1` or `ess-transport/2` document binding events to brokers, subjects and streams; only with `--kind asyncapi` |
 | `--http` | `<HTTP>` | no |  | An `ess-http/1` document binding commands and views to methods and paths; only with `--kind openapi`. Compiled as `ess specify http compile` compiles it, and refused when a route it projects has no path |
 | `--refines` | `<REFINES>` | no |  | The `ess-http/1` binding the `--http` document refines, whose bytes its `refines:` digest pins |
+| `--schema-id-base` | `<URI>` | no |  | Give every document `--kind schema` writes a root `$id`: this absolute URI, ending in `/` or `:`, followed by the document's path under `schema/` (beyond10x/ess#590). Only with `--kind schema`; without it no document carries an `$id` |
 
 #### `ess generate generate`
 
@@ -759,6 +760,7 @@ ess generate generate [OPTIONS]
 | `--transport` | `<TRANSPORT>` | no |  | An `ess-transport/1` or `ess-transport/2` document binding events to brokers, subjects and streams; only with `--kind asyncapi` |
 | `--http` | `<HTTP>` | no |  | An `ess-http/1` document binding commands and views to methods and paths; only with `--kind openapi`. Compiled as `ess specify http compile` compiles it, and refused when a route it projects has no path |
 | `--refines` | `<REFINES>` | no |  | The `ess-http/1` binding the `--http` document refines, whose bytes its `refines:` digest pins |
+| `--schema-id-base` | `<URI>` | no |  | Give every document `--kind schema` writes a root `$id`: this absolute URI, ending in `/` or `:`, followed by the document's path under `schema/` (beyond10x/ess#590). Only with `--kind schema`; without it no document carries an `$id` |
 
 #### `ess generate cli`
 
@@ -983,7 +985,7 @@ ess generate schema project-bundle [OPTIONS] --bundle <BUNDLE> --root <ROOT> --s
 
 #### `ess generate schema validate-bundle`
 
-Validate unmodified JSON instances against one selected component root
+Validate unmodified JSON or YAML instances against one selected component root
 
 ```text
 ess generate schema validate-bundle [OPTIONS] --bundle <BUNDLE> --root <ROOT> <INSTANCES>...
@@ -991,7 +993,7 @@ ess generate schema validate-bundle [OPTIONS] --bundle <BUNDLE> --root <ROOT> <I
 
 | Argument | Value | Required | Default | Description |
 |---|---|---|---|---|
-| `<INSTANCES>`… |  | yes |  | JSON instance files. No schema selector field is added to their data |
+| `<INSTANCES>`… |  | yes |  | Instance files: `.yaml` or `.yml` read as the JSON value their YAML denotes, any other as JSON. No schema selector field is added to their data |
 | `--bundle` | `<BUNDLE>` | yes |  | Persisted component (/1) or document-root (/2) bundle to revalidate |
 | `--root` | `<ROOT>` | yes |  | One root explicitly selected by that import |
 
@@ -1066,7 +1068,7 @@ ess generate schema normalize-generate [OPTIONS] --recipe <RECIPE> --target <TAR
 
 #### `ess generate schema validate`
 
-Validate JSON instances against schemas selected by their `schema` property
+Validate JSON or YAML instances against schemas selected by their `schema` property
 
 ```text
 ess generate schema validate [OPTIONS] --schemas <DIR> <PATHS>...
@@ -1074,7 +1076,7 @@ ess generate schema validate [OPTIONS] --schemas <DIR> <PATHS>...
 
 | Argument | Value | Required | Default | Description |
 |---|---|---|---|---|
-| `<PATHS>`… |  | yes |  | JSON files or directories to validate. Directories are searched recursively |
+| `<PATHS>`… |  | yes |  | Instance files or directories to validate. Directories are searched recursively. A file ending `.yaml` or `.yml` is read as the JSON value its YAML denotes, one ending `.json` as JSON |
 | `--schemas` | `<DIR>` | yes |  | Directory containing the authoritative `*.schema.json` registry |
 | `--format` | `<FORMAT>` | no | `text` | How to render the validation report. One of `text`, `yaml`, `json`. |
 

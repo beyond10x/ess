@@ -98,3 +98,10 @@ The source inspection supporting this decision is the refreshed story-scoper rep
 4777c1de3a80ea7645a255e4e229ad30a8a5cc8e, retained with wave9 preparation. Its decisive
 producer, registry and frozen-schema hashes still match the wave10 opening source. It is
 preparation evidence, not an executed registry result.
+
+## Later: an opt-in identity from the projector (2026-10-17)
+
+story:schema-tools-accept-projection (beyond10x/ess#590) adds `ess generate --kind schema
+--schema-id-base <URI>`: the adopter still chooses the namespace, and the projector writes
+`$id = <base><path under schema/>` into each document. Without the option nothing above changes:
+the documents carry no `$id`, and this page's local representation and negative cases stand.
