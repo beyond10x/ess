@@ -39,7 +39,7 @@
 //! | `List<T>` | `{"type": "array", "items": T}` | the same |
 //! | `Map<K, V>` | `{"type": "object", "propertyNames": K-as-text, "additionalProperties": V}` | the same |
 //! | `Newtype` | a definition of its own, `$ref`d, `x-ess-kind: newtype` | the representation's assertions |
-//! | `Struct` | `{"type": "object", "properties": …, "required": …, "additionalProperties": false}`, or `true` when it declares `undeclared_fields: ignored` (`ess/24`) | the same |
+//! | `Struct` | `{"type": "object", "properties": …, "required": …, "additionalProperties": false}`, or `true` when it declares `undeclared_fields: ignored` (`ess/24`); when it declares `shorthand: <field>` (`ess/27`), `{"oneOf": [<the field's schema>, <that object>], "x-ess-shorthand": <the field's wire name>}` | the same: the two branches differ by JSON type, so exactly one matches |
 //! | `Enum` | `{"type": "string", "enum": […]}` | the same |
 //! | `Union` | `{"oneOf": [{…"kind": {"const": "person"}, "value": …}]}` | the tag, so the branch is decidable |
 //!
@@ -299,6 +299,11 @@ pub(crate) struct Node {
     /// The field a union's variant is named in.
     #[serde(rename = "x-ess-union-tag", skip_serializing_if = "Option::is_none")]
     pub(crate) ess_union_tag: Option<String>,
+    /// The wire name of the field a struct may be written as alone, on a struct declaring
+    /// `shorthand:` (`ess/27`, beyond10x/ess#594). Its `oneOf` asserts both forms; this names
+    /// which property the short one fills.
+    #[serde(rename = "x-ess-shorthand", skip_serializing_if = "Option::is_none")]
+    pub(crate) ess_shorthand: Option<String>,
     /// Conditions every value satisfies, as the author wrote them. An annotation, not an assertion.
     #[serde(rename = "x-ess-invariants", skip_serializing_if = "Vec::is_empty")]
     pub(crate) invariants: Vec<String>,
@@ -814,6 +819,18 @@ pub(crate) fn body(ir: &EssIr, declared: &ResolvedType) -> Node {
                 ..object(fields)
             };
             integer_bounds(&mut node, fields, invariants);
+            // A struct with a shorthand (`ess/27`) is either its one field's value or the object:
+            // the two differ by JSON type, a scalar against an object, so exactly one branch matches.
+            if let Some(short) = ir
+                .shorthand(&declared.name)
+                .and_then(|name| fields.iter().find(|field| field.name == name))
+            {
+                node = Node {
+                    one_of: vec![type_ref(short.type_ref.required()), node],
+                    ess_shorthand: Some(wire_name(short).to_owned()),
+                    ..Node::default()
+                };
+            }
             node
         }
         // The wire spellings: a generated schema describes the document on the wire, and for a

@@ -22,6 +22,7 @@ fn registry() -> TypeRegistry {
                 ],
                 invariants: vec![],
                 undeclared_fields: None,
+                shorthand: None,
             },
         ),
         (
@@ -72,6 +73,7 @@ fn registry() -> TypeRegistry {
                 ],
                 invariants: vec![],
                 undeclared_fields: None,
+                shorthand: None,
             },
         ),
         (

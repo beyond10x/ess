@@ -80,3 +80,6 @@ fn a_universal_policy_is_not_refused_for_being_selected() {
         }
     }
 }
+
+#[path = "refusal_policy/shorthand.rs"]
+mod shorthand;

@@ -311,6 +311,18 @@ marks such a refusal `complete_refusal`. A `compensates: true` refusal keeps its
 the declared change. Under `ess/25` and earlier the scenario keeps its steps and its bytes; no key
 is added.
 
+From `ess/27` a `kind: struct` type may name one field as its shorthand, `shorthand: <field>`
+(beyond10x/ess#594). A value of the struct may then be written as that field alone: with
+`shorthand: op`, the scalar `getIssue` is the value `{op: getIssue}`, and the struct's invariants
+apply to that value. The field must be declared, required and a scalar on the wire — a primitive
+other than `Json`, an enum, or a newtype over one of those — and every other field `Optional`,
+because the short form fills nothing else; each breach is refused by name at `<type>.shorthand`.
+The key is refused as `unsupported_construct` on a newtype, an enum, a union and every declaration
+that is not a type, and below `ess/27` as `unsupported_format_version` naming `ess/27`. The JSON
+Schema of such a struct is `oneOf` the field's schema and the closed object, annotated
+`x-ess-shorthand` with the field's wire name; the two branches differ by JSON type. A document
+without the key keeps its meaning, its IR bytes and its compiled digest.
+
 ## `ess-diff/` — what moved between two revisions
 
 | Version | Released in | What changed | An older reader |
@@ -332,6 +344,7 @@ is added.
 | `ess-diff/17` | [0.57.0][r57] | `narrows` beside a command change's `compatibility`: `required-input` on an added input whose type is not `Optional`, `refusal-added` on an added refusal and `refusal-widened` on a refusal whose `when:` guard changed, each recorded only where the change refuses an input the earlier revision accepted (the refusals only where plain `when:` and `otherwise` branches decide it; an input the earlier revision already refused does not count). Such a change is `breaking` for callers, `unknown` for readers and `compatible` for history, where it was `unknown` for callers. Anything else records nothing and keeps its earlier answer and format. | Refuses a delta carrying it. |
 | `ess-diff/18` | [0.58.0][r58] | `UndeclaredFieldsChanged` on `TypeChange` and `ResponseUndeclaredFieldsChanged` on `CommandChange`, each `{before, after}` of `refused` and `ignored`: an `ess/24` struct's, or a command response's, `undeclared_fields:` moved (beyond10x/ess#500), which the residual reported as `unclassified-changed` before. Opening is `expanded` and closing `narrowed`; a struct is answered through its uses like any widened or narrowed type, an opened response is `breaking` for readers and a closed one `compatible`. | Refuses a delta carrying it. |
 | `ess-diff/19` | [0.60.0][r60] | `AbsentChanged` on `ViewChange`, `{before, after}`, each side the default row (field to literal text) or `null`: an `ess/25` view's `absent:` gained, lost or changed (beyond10x/ess#533), which the residual would report as `unclassified-changed`. Relation `changed`; `breaking` for readers, `compatible` for callers and history. | Refuses a delta carrying it. |
+| `ess-diff/20` | Unreleased | `ShorthandChanged` on `TypeChange`, `{before, after}`, each side the field's declared name or `null`: an `ess/27` struct's `shorthand:` declared, dropped or moved to another field (beyond10x/ess#594), which the residual would report as `unclassified-changed`. Declaring one is `expanded`, dropping or moving one `narrowed`, answered through the struct's uses like any widened or narrowed type. | Refuses a delta carrying it. |
 
 `ess-diff/5` exists because a variant's own name does not move when its wire spelling does. Before
 it, the variant set and the variant order both said nothing, and the comparison returned an empty

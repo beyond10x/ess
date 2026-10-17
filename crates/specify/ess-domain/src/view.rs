@@ -1993,6 +1993,7 @@ mod tests {
                     ],
                     invariants: Vec::new(),
                     undeclared_fields: None,
+                    shorthand: None,
                 },
             ),
             (
@@ -2007,6 +2008,7 @@ mod tests {
                     ],
                     invariants: Vec::new(),
                     undeclared_fields: None,
+                    shorthand: None,
                 },
             ),
             (
@@ -2409,6 +2411,7 @@ fields:
                     )],
                     invariants: Vec::new(),
                     undeclared_fields: None,
+                    shorthand: None,
                 },
                 naming: Naming::default(),
             })

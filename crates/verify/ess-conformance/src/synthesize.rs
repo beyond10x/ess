@@ -197,6 +197,7 @@ mod repeated_identity;
 mod row_set;
 mod seeds;
 mod set_effects;
+mod shorthand;
 mod singleton;
 mod subject_fact;
 mod view_grant;
@@ -1135,6 +1136,11 @@ impl RefusalCause {
             // selection no longer refuses for want of a view: it observes what the views publish
             // and notes the rest (beyond10x/ess#496), so these remain for the observations that
             // still need one, such as the replay family's.
+            // A struct a target may answer in its short form (beyond10x/ess#594).
+            Self::NoWitness(gap) if gap.reason == shorthand::OBSERVED => {
+                "observe the struct through a field of its own type, or drop `shorthand:` until \
+                 the runners decode the short form"
+            }
             Self::NoWitness(gap) if gap.reason.contains("or an `eventual` one") => {
                 "declare a view of the entity, `read_your_writes` or `eventual`, with no filter and \
                  no parameters, that projects its identity, its state and the fields named at the \
@@ -2247,6 +2253,8 @@ fn synthesize_in(ir: &EssIr, seeds: &AdmittedSeeds) -> Synthesis {
     // Nor any other row created twice under one literal identity, which a target answers as
     // existing (beyond10x/ess#480).
     repeated_identity::withdraw_repeated_identities(ir, &mut synthesis);
+    // Nor any scenario observing a struct a target may answer in its short form (beyond10x/ess#594).
+    shorthand::withdraw_observed(ir, &mut synthesis);
     // A scenario requiring a branch for an input an input-guarded refusal answers first fails every
     // target that honours the specification, so it is withdrawn and refused (beyond10x/ess#280).
     for refusal in precedence_contradictions(ir, &synthesis.suite) {

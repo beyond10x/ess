@@ -326,3 +326,39 @@ pub(crate) fn retry_bound(
         Err(TargetFailure::new(ir, target, plan, causes))
     }
 }
+
+/// A struct with a shorthand (`ess/27`, beyond10x/ess#594) is refused by the Rust and Go servers
+/// and the web app.
+///
+/// Their codecs decode a struct from its object only, so a request or a row written in the short
+/// form — a value the specification admits — would be refused at run time as malformed. Each struct
+/// is named, so the short-form decoder is owed rather than silently missing. The command-line
+/// target is outside the story's list and keeps its output.
+pub(crate) fn shorthand(
+    ir: &ess_compiler::EssIr,
+    plan: &SynthesisPlan,
+    target: Target,
+) -> Result<(), TargetFailure> {
+    if target == Target::Clap {
+        return Ok(());
+    }
+    let causes = ir
+        .shorthands()
+        .iter()
+        .map(|(name, field)| {
+            TargetFailureCause::new(
+                TargetFailureCode::MissingRepresentation,
+                vec![format!("types.{name}.shorthand")],
+                format!(
+                    "`{name}` declares `shorthand: {field}`, and this target decodes the struct \
+                     from its object only, not from the field's value alone"
+                ),
+            )
+        })
+        .collect::<Vec<_>>();
+    if causes.is_empty() {
+        Ok(())
+    } else {
+        Err(TargetFailure::new(ir, target, plan, causes))
+    }
+}

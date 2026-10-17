@@ -62,7 +62,7 @@ pub(crate) enum Section {
 
 impl Section {
     /// Every list, in the order a document is read.
-    const ALL: [Self; 6] = [
+    pub(crate) const ALL: [Self; 6] = [
         Self::Types,
         Self::Entities,
         Self::Events,
@@ -72,7 +72,7 @@ impl Section {
     ];
 
     /// The key the list is written under.
-    fn key(self) -> &'static str {
+    pub(crate) fn key(self) -> &'static str {
         match self {
             Self::Types => "types",
             Self::Entities => "entities",
@@ -84,7 +84,7 @@ impl Section {
     }
 
     /// The construct a declaration of this list is.
-    fn kind(self) -> ConstructKind {
+    pub(crate) fn kind(self) -> ConstructKind {
         match self {
             Self::Types => ConstructKind::Type,
             Self::Entities => ConstructKind::Entity,
@@ -96,7 +96,7 @@ impl Section {
     }
 
     /// What a declaration of this list is called in a refusal.
-    fn noun(self) -> &'static str {
+    pub(crate) fn noun(self) -> &'static str {
         match self {
             Self::Types => "type",
             Self::Entities => "entity",

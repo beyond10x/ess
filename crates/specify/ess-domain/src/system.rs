@@ -52,6 +52,7 @@ use crate::types::{NamedType, TypeBody, TypeRef, TypeRegistry};
 /// Specification format major versions this build implements.
 pub const SUPPORTED_FORMATS: &[u32] = &[
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
+    27,
 ];
 
 /// What one specification format admits that the format before it did not.
@@ -266,6 +267,14 @@ pub const FORMAT_HISTORY: &[FormatHistoryEntry] = &[
         ],
         stricter: &[],
     },
+    FormatHistoryEntry {
+        major: 27,
+        release: None,
+        added: &[
+            "`shorthand: <field>` on a `kind: struct` type: a value of the struct may be written as that field alone, so with `shorthand: op` the scalar `getIssue` is the value `{op: getIssue}`, every writer the model generates writing the long form; the field must be declared, required and a scalar on the wire (a primitive other than `Json`, an enum, or a newtype over one of those), and every other field `Optional`, each breach refused by name at `<type>.shorthand`; the key is refused as `unsupported_construct` on a newtype, an enum, a union and every declaration that is not a type, and below `ess/27` as `unsupported_format_version` naming `ess/27`; a model without it keeps its IR bytes and digest, and the JSON Schema of such a struct is `oneOf` the field's schema and the closed object, annotated `x-ess-shorthand` (beyond10x/ess#594).",
+        ],
+        stricter: &[],
+    },
 ];
 
 // `FORMAT_HISTORY` and `SUPPORTED_FORMATS` name the same majors in the same order, and every row
@@ -367,6 +376,9 @@ impl FormatVersion {
     /// A named refusal that addresses an existing row is witnessed on the whole row: an `external:`
     /// refusal's scenario reads the row back and requires it unchanged (beyond10x/ess#587).
     pub const V26: Self = Self(26);
+    /// A struct may name one field as its shorthand, a value written as that field alone,
+    /// `shorthand: <field>` (beyond10x/ess#594).
+    pub const V27: Self = Self(27);
 
     /// How a format version is written.
     pub const PREFIX: &'static str = "ess/";
