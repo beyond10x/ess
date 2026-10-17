@@ -23,7 +23,9 @@
   `when_subject:`/`when_related:` predicate over a stored field written from an input — with the
   value sent exactly on the boundary and a `hold_now 0` before the command under test, filed as
   `<command>/outcome/<outcome>/held/<field>/<seconds>`. The `guard-boundary` mutant (`<` to `<=`)
-  answers apart there and is now killed. A model with such a guard therefore gets a suite in
+  answers apart there, so a target that holds `now` kills it; the interpreted target of
+  `ess verify conform mutate` is given no clock and reports it `inconclusive`, not `survived`.
+  A model with such a guard therefore gets a suite in
   `ess-conformance/50` (`/51` with coverage); its off-boundary scenarios keep their bytes, and a
   target without `hold_now` reports only the new scenario `unsupported`, named and counted; unlike
   any other unsupported scenario it does not fail the run, so a target that passed before keeps
@@ -102,8 +104,8 @@
 - `ess verify conform mutate` scores a mutant whose synthesized suite asks what the baseline's
   asks (the same scenarios and steps, digests aside) as `unwitnessed` (`ESS-MUTATE-004`, "the
   suite does not change") rather than `survived` or `inconclusive`, so a survivor always has a
-  suite that differs and still passes. The `guard-boundary` mutant of `expiry < now` is one; so is
-  a `precedence-swap` of two refusals with the same error whose payloads no scenario tells apart.
+  suite that differs and still passes. One is a `precedence-swap` of two refusals with the same
+  error whose payloads no scenario tells apart.
   Such a report is `ess-mutation-report/7`, with `unchanged_suite` on the mutant; every other
   report keeps its version and bytes (https://github.com/beyond10x/ess/issues/586).
 
