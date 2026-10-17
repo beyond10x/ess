@@ -794,7 +794,8 @@ fn carrier(
 /// the boundary, and `hold_now 0` before the command under test.
 ///
 /// `None` where the move could change another decision: a field also compared with a fixed
-/// instant, with another `now` boundary on the value it is moved from, or with comparisons at this
+/// instant, with another `now` boundary on the value it is moved from or between that value and
+/// this boundary, or with comparisons at this
 /// boundary that disagree about the side; or where the scenario names either offset elsewhere.
 /// Everything after the command under test's own expectations is left out.
 fn at_boundary(
@@ -834,7 +835,14 @@ fn at_boundary(
                 }
                 side = Some(shares);
             }
-            Bound::Now { seconds: at, .. } if at == sent => return None,
+            // Another boundary on the value it is moved from, or between it and this one: the
+            // move would cross it and change that comparison, and with it the rows a
+            // `when_related:` selection counts.
+            Bound::Now { seconds: at, .. }
+                if (sent.min(seconds)..=sent.max(seconds)).contains(&at) =>
+            {
+                return None
+            }
             Bound::Now { .. } => {}
         }
     }

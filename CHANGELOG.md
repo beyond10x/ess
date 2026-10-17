@@ -22,7 +22,9 @@
 - Synthesis adds one scenario on each `now` boundary a command decides by — an input guard, or a
   `when_subject:`/`when_related:` predicate over a stored field written from an input — with the
   value sent exactly on the boundary and a `hold_now 0` before the command under test, filed as
-  `<command>/outcome/<outcome>/held/<field>/<seconds>`. The `guard-boundary` mutant (`<` to `<=`)
+  `<command>/outcome/<outcome>/held/<field>/<seconds>`. A value is not moved onto a boundary across
+  another `now` boundary on the same field, so every other comparison, and every row set a
+  decision counts, stays as it was. The `guard-boundary` mutant (`<` to `<=`)
   answers apart there, so a target that holds `now` kills it; the interpreted target of
   `ess verify conform mutate` is given no clock and reports it `inconclusive`, not `survived`.
   A model with such a guard therefore gets a suite in

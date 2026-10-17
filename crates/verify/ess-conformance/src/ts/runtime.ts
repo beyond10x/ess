@@ -6648,7 +6648,7 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
   }
   const carriesCoverage = Object.prototype.hasOwnProperty.call(root, 'coverage');
   if (carriesCoverage !== coverageMajor(major)) {
-    throw new Error('coverage is required exactly for suite/5, suite/7, suite/9 and suite/11');
+    throw new Error('coverage is required exactly for odd suite majors from /5 through /51');
   }
   for (const key of ['system', 'specification_version', 'spec_digest', 'contract_digest']) {
     const held = text(provenance[key]);
