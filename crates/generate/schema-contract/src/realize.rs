@@ -436,6 +436,7 @@ impl Plan {
         Ok(plan)
     }
 
+    #[allow(clippy::too_many_lines)] // One pass from the walked schema to the plan, in order.
     fn build(
         mut builder: Builder,
         sources: BTreeMap<&str, &Value>,
@@ -1132,6 +1133,7 @@ impl Builder {
             .shape
     }
 
+    #[allow(clippy::too_many_lines)] // Every keyword of an object schema, read in one place.
     fn object_schema(&mut self, object: &Map<String, Value>, pointer: &str) -> Shape {
         if self.model && object.contains_key("x-ess-shorthand") {
             return self.shorthand(object, pointer);

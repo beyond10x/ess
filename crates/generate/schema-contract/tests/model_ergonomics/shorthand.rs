@@ -8,7 +8,6 @@ use std::path::Path;
 use std::process::Command;
 
 use schema_contract::realize::Plan;
-use serde_json::Value;
 
 use super::{model, scratch};
 
@@ -237,8 +236,7 @@ fn typescript_types_declare_the_wire_union() {
         assert!(
             obligations
                 .iter()
-                .any(|item| item["rule"] == "typescript_shorthand"
-                    && item["pointer"] == Value::from(at)),
+                .any(|item| item["rule"] == "typescript_shorthand" && item["pointer"] == at),
             "{at}: {report}"
         );
     }
