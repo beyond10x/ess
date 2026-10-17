@@ -62,13 +62,13 @@ use probe_ops::*;
 #[test]
 fn the_short_form_decodes_and_the_long_form_is_written() {
     let short: ProbeOpsOperation = serde_json::from_str("\"getIssue\"").unwrap();
-    assert_eq!(short.op, "getIssue");
+    assert_eq!(short.operation, "getIssue");
     assert!(short.paging.is_absent());
     assert_eq!(serde_json::to_string(&short).unwrap(), r#"{"operation":"getIssue"}"#);
 
     let long: ProbeOpsOperation =
         serde_json::from_str(r#"{"operation":"getIssue","paging":"token"}"#).unwrap();
-    assert_eq!(long.op, "getIssue");
+    assert_eq!(long.operation, "getIssue");
     assert_eq!(
         serde_json::to_string(&long).unwrap(),
         r#"{"operation":"getIssue","paging":"token"}"#
@@ -85,7 +85,7 @@ fn the_short_form_decodes_and_the_long_form_is_written() {
     let batch: ProbeOpsBatch =
         serde_json::from_str(r#"{"operations":["getIssue",{"operation":"list"}],"step":"careful"}"#)
             .unwrap();
-    assert_eq!(batch.operations[1].op, "list");
+    assert_eq!(batch.operations[1].operation, "list");
     assert_eq!(*batch.step.mode, ProbeOpsMode::V0);
     assert!(serde_json::from_str::<ProbeOpsStep>("\"reckless\"").is_err());
     assert_eq!(
