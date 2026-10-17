@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-15T21:17:18Z",
+  "actor": "human:timo",
+  "artifact": "story:concurrent-exploration-checks-what-the-walk-checks",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "package gate: ess-conformance history and linearizability binaries, ess-cli explore_concurrent 30 passed 0 ignored, test-xtask",
+    "reference": "c5ef2ede2"
+  }
+}

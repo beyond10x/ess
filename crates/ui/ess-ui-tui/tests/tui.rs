@@ -9,7 +9,7 @@ use ess_ui_tui::live::Script;
 use ess_ui_tui::{
     App, DataAdapter, FixtureAdapter, Lifecycle, Options, ReadRequest, ReadResult, TuiError,
 };
-use serde_yaml::Value;
+use ess_yaml::Value;
 
 const WIDTH: u16 = 120;
 const HEIGHT: u16 = 48;
@@ -56,7 +56,7 @@ fn scratch(name: &str, text: &str) {
     }
 }
 
-fn field<'a>(row: &'a serde_yaml::Value, key: &str) -> &'a str {
+fn field<'a>(row: &'a ess_yaml::Value, key: &str) -> &'a str {
     row[key].as_str().unwrap_or_default()
 }
 
@@ -217,7 +217,7 @@ fn stale_after_alone_marks_a_reconnecting_channels_metric() {
         FixtureAdapter::load(&document, &example_dir(), None).expect("the fixtures load");
     let script = Script::parse(
         "metrics",
-        &serde_yaml::from_str(
+        &ess_yaml::from_str(
             "{channel: metrics, events: [\
              {at: 0s, event: metrics.Live, payload: {revenue_mtd: 1, open_deals: 2, overdue_invoices: 3}},\
              {at: 1s, lifecycle: reconnecting}]}",
@@ -765,7 +765,7 @@ fn overlay_form_preserves_typed_parameters() {
     assert_eq!(
         input.get("metadata"),
         Some(
-            &serde_yaml::from_str::<Value>("{owner: Ada, labels: [urgent, review]}")
+            &ess_yaml::from_str::<Value>("{owner: Ada, labels: [urgent, review]}")
                 .expect("metadata")
         )
     );
@@ -780,7 +780,7 @@ fn overlay_form_draft_overrides_matching_parameter() {
     );
     assert_eq!(
         input.get("budget"),
-        Some(&serde_yaml::from_str::<Value>("{limit_cents: 7500}").expect("budget"))
+        Some(&ess_yaml::from_str::<Value>("{limit_cents: 7500}").expect("budget"))
     );
 }
 
@@ -804,7 +804,7 @@ impl DataAdapter for Budgeted {
                     "in-07" => 3707,
                     _ => 8808,
                 };
-                row["budget"] = serde_yaml::from_str(&format!("{{limit_cents: {cents}}}"))
+                row["budget"] = ess_yaml::from_str(&format!("{{limit_cents: {cents}}}"))
                     .expect("a budget parses");
             }
         }
@@ -882,7 +882,7 @@ fn a_form_sends_dotted_fields_nested_and_typed_by_their_as() {
     let commands = commands.borrow();
     let (command, input) = commands.last().expect("the form ran its command");
     assert_eq!(command, "partners.CreatePartner");
-    let expected: BTreeMap<String, Value> = serde_yaml::from_str(
+    let expected: BTreeMap<String, Value> = ess_yaml::from_str(
         "{name: Cedar, budget: {limit_cents: 7500, runtime_minutes: 90, labels: [gold, silver]}}",
     )
     .expect("the expected input parses");

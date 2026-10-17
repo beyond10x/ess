@@ -1,0 +1,150 @@
+# Adversary pass 1 on beyond10x/ess#536: a `preserves:` branch under each condition the explorer
+# now draws it beside, where `explore-preserves.yaml` uses only the held state.
+#
+# `Retitle` preserves a document whose stored title already equals the input (a `when_subject`
+# predicate reading the row and the input) and otherwise updates it. `Publish` preserves a published
+# document, moves a draft and refuses an archived one. `Touch` preserves the row
+# under an input guard (`when: dry == true`), the one condition concurrent exploration admits, so
+# its `preserves:` is the reason a concurrent plan leaves it out.
+#
+# The targets beside it are `adversary-l2-preserves-target.mjs` and
+# `adversary_l2_preserves_target.go`.
+
+format: ess/18
+system: advkeep
+version: v1
+domain: advkeep.docs
+
+summary: Documents that are created, retitled, touched, published and archived.
+
+types:
+  - {name: advkeep.docs.DocId, kind: newtype, of: Uuid}
+
+entities:
+  - name: advkeep.docs.Doc
+    identity: {name: doc_id, type: advkeep.docs.DocId}
+    fields:
+      - {name: title, type: String}
+    lifecycle:
+      initial: Draft
+      states: [Draft, Published, Archived]
+      terminal: [Archived]
+      transitions:
+        - {name: publish, from: [Draft], to: Published}
+        - {name: archive, from: [Published], to: Archived}
+
+actors:
+  - name: advkeep.docs.Editor
+    may:
+      - advkeep.docs.Create
+      - advkeep.docs.Retitle
+      - advkeep.docs.Touch
+      - advkeep.docs.Publish
+      - advkeep.docs.Archive
+
+
+
+
+
+errors:
+  - {name: advkeep.docs.NotDraft, fields: []}
+
+events:
+  - name: advkeep.docs.Created
+    fields: [{name: doc_id, type: advkeep.docs.DocId}]
+  - name: advkeep.docs.Retitled
+    fields: [{name: doc_id, type: advkeep.docs.DocId}]
+  - name: advkeep.docs.Touched
+    fields: [{name: doc_id, type: advkeep.docs.DocId}]
+  - name: advkeep.docs.Published
+    fields: [{name: doc_id, type: advkeep.docs.DocId}]
+  - name: advkeep.docs.Archived
+    fields: [{name: doc_id, type: advkeep.docs.DocId}]
+
+commands:
+  - name: advkeep.docs.Create
+    input:
+      - {name: title, type: String}
+    outcomes:
+      - name: created
+        creates: advkeep.docs.Doc
+        instance: doc_id
+        sets: {title: input.title}
+        emits: [advkeep.docs.Created]
+        payload: {advkeep.docs.Created: {doc_id: {generated: true}}}
+
+  - name: advkeep.docs.Retitle
+    input:
+      - {name: doc_id, type: advkeep.docs.DocId}
+      - {name: title, type: String}
+    outcomes:
+      - name: same-title
+        when_subject:
+          predicate: title == input.title
+        preserves: advkeep.docs.Doc
+        instance: doc_id
+      - name: retitled
+        updates: advkeep.docs.Doc
+        instance: doc_id
+        sets: {title: input.title}
+        emits: [advkeep.docs.Retitled]
+        payload: {advkeep.docs.Retitled: {doc_id: input.doc_id}}
+
+  - name: advkeep.docs.Touch
+    input:
+      - {name: doc_id, type: advkeep.docs.DocId}
+      - {name: dry, type: Boolean}
+      - {name: title, type: String}
+    outcomes:
+      - name: dry-run
+        when: dry == true
+        preserves: advkeep.docs.Doc
+        instance: doc_id
+      - name: touched
+        updates: advkeep.docs.Doc
+        instance: doc_id
+        sets: {title: input.title}
+        emits: [advkeep.docs.Touched]
+        payload: {advkeep.docs.Touched: {doc_id: input.doc_id}}
+
+  - name: advkeep.docs.Publish
+    input:
+      - {name: doc_id, type: advkeep.docs.DocId}
+    outcomes:
+      - name: already-published
+        when_subject_state: Published
+        preserves: advkeep.docs.Doc
+        instance: doc_id
+      - name: published
+        when_subject_state: Draft
+        moves: advkeep.docs.Doc.publish
+        instance: doc_id
+        emits: [advkeep.docs.Published]
+        payload: {advkeep.docs.Published: {doc_id: input.doc_id}}
+      - {name: not-draft, when_subject_state: Archived, error: advkeep.docs.NotDraft}
+
+  - name: advkeep.docs.Archive
+    input:
+      - {name: doc_id, type: advkeep.docs.DocId}
+    outcomes:
+      - name: archived
+        moves: advkeep.docs.Doc.archive
+        instance: doc_id
+        emits: [advkeep.docs.Archived]
+        payload: {advkeep.docs.Archived: {doc_id: input.doc_id}}
+
+views:
+  - name: advkeep.docs.Docs
+    source: advkeep.docs.Doc
+    consistency: read_your_writes
+    fields:
+      - {name: doc_id, type: advkeep.docs.DocId}
+      - {name: state, type: advkeep.docs.Doc.State}
+      - {name: title, type: String}
+  - name: advkeep.docs.PublishedDocs
+    source: advkeep.docs.Doc
+    consistency: read_your_writes
+    filter: state == Published
+    fields:
+      - {name: doc_id, type: advkeep.docs.DocId}
+      - {name: title, type: String}

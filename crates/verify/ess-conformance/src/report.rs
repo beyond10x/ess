@@ -544,7 +544,26 @@ impl ScenarioResult {
             .iter()
             .filter_map(|check| check.diagnostic.as_ref())
     }
+
+    /// Whether this is a held scenario that ended `unsupported` for one reason only: the target
+    /// cannot hold its `now` (its `hold_now` answered unsupported). Such a scenario does not fail
+    /// the run ([`ConformanceReport::verdict`], beyond10x/ess#586).
+    pub fn wants_only_hold_now(&self) -> bool {
+        let mut unsupported = self
+            .checks
+            .iter()
+            .filter(|check| check.status == Status::Unsupported)
+            .peekable();
+        matches!(self.scenario, ScenarioId::HeldOutcome { .. })
+            && self.status == Status::Unsupported
+            && unsupported.peek().is_some()
+            && unsupported.all(|check| check.code == CheckCode::Target && check.about == HOLD_NOW)
+    }
 }
+
+/// What a check about the target's `hold_now` is `about`, so the runner that records one and the
+/// verdict that recognises one spell it alike.
+pub(crate) const HOLD_NOW: &str = "hold_now";
 
 impl fmt::Display for ScenarioResult {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -577,13 +596,18 @@ impl ConformanceReport {
     /// The verdict a set of scenario results comes to (§28, §30).
     ///
     /// An unsupported required scenario fails the run. Every scenario a suite holds is required —
-    /// the IR has no way to mark one optional — so there is no exception to apply here, and adding
-    /// one would be adding the silent skip §28 forbids.
+    /// the IR has no way to mark one optional — with one exception: a held scenario
+    /// (`<command>/outcome/<outcome>/held/<field>/<seconds>`) that ended unsupported only because
+    /// the target cannot hold its `now` ([`ScenarioResult::wants_only_hold_now`]). Synthesis adds
+    /// that scenario to a suite a target may have passed before it existed, and the capability it
+    /// needs is optional (beyond10x/ess#586), so it stays reported, named and counted
+    /// `unsupported` without turning that run red. Every other unsupported scenario fails it.
     pub fn verdict(scenarios: &[ScenarioResult]) -> ConformanceStatus {
-        if scenarios
-            .iter()
-            .any(|result| matches!(result.status, Status::Failed | Status::Unsupported))
-        {
+        if scenarios.iter().any(|result| match result.status {
+            Status::Failed => true,
+            Status::Unsupported => !result.wants_only_hold_now(),
+            Status::Passed | Status::Error => false,
+        }) {
             ConformanceStatus::Failed
         } else if scenarios
             .iter()

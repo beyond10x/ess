@@ -78,7 +78,7 @@ fn artifacts(ir: &EssIr) -> Vec<(String, Value)> {
     }
     all.into_iter()
         .filter_map(|(path, contents)| {
-            serde_yaml::from_str::<Value>(&contents)
+            ess_yaml::from_str::<Value>(&contents)
                 .ok()
                 .map(|value| (path, value))
         })

@@ -4,6 +4,8 @@
 const mode = process.env.ESS_TARGET_MODE ?? 'correct';
 const tolerance = mode === 'tolerates-120s' ? 120 : mode === 'tolerates-0s' ? 0 : 60;
 const now = () => (mode === 'reads-a-fixed-clock' ? 1_700_000_000_000 : Date.now());
+// The instant the next command is decided at, when the suite holds `now` (`hold_now`).
+let held = null;
 let minted = 0;
 
 class Jobs {
@@ -13,6 +15,9 @@ class Jobs {
   }
   beginScenario() {}
   endScenario() {}
+  holdNow({ instant }) {
+    held = Date.parse(instant);
+  }
   executeCommand({ command, input }) {
     minted += 1;
     const consistency = `seq:${minted}`;
@@ -23,7 +28,9 @@ class Jobs {
     if (Number.isNaN(startsAt)) {
       throw new Error(`${input.starts_at} is no instant`);
     }
-    if (startsAt < now() - tolerance * 1000) {
+    const decidedAt = mode === 'reads-a-fixed-clock' ? now() : (held ?? now());
+    held = null;
+    if (startsAt < decidedAt - tolerance * 1000) {
       return { outcome: 'start-in-past', error: 'demo.jobs.StartInPast', consistency };
     }
     const id = `00000000-0000-4000-8000-${String(minted).padStart(12, '0')}`;

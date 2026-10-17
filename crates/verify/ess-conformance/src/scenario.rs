@@ -172,11 +172,13 @@ impl ConformanceSuite {
     /// Raises the format to suite/44 when an act claims one event more than once
     /// (beyond10x/ess#427), to suite/46 when a response observation carries String-newtype
     /// constraints (beyond10x/ess#499), to suite/48 when a response observation ignores
-    /// undeclared fields (beyond10x/ess#500), and to suite/50 when a scenario awaits a
-    /// system-issued command (beyond10x/ess#542). Each pair is cumulative over every major below
-    /// it, so nothing may lower it.
+    /// undeclared fields (beyond10x/ess#500), to suite/50 when a scenario holds `now` for a command
+    /// (beyond10x/ess#586), and to suite/52 when a scenario awaits a system-issued command
+    /// (beyond10x/ess#542). Each pair is cumulative over every major below it, so nothing may
+    /// lower it.
     fn raise_for_counted_claims(&mut self) {
         let floor = crate::system_issued::ordinary_floor(self)
+            .or_else(|| crate::hold_now::ordinary_floor(self))
             .or_else(|| crate::undeclared_fields::ordinary_floor(self))
             .or_else(|| crate::direct_response::constrained_ordinary_floor(self))
             .or_else(|| crate::event_multiplicity::ordinary_floor(self));
@@ -301,7 +303,7 @@ impl ConformanceSuite {
     /// It is **parseable by every future runner** — design §22's whole promise is a suite an HTTP
     /// runner or a certification runner in another language can read, and JSON is the format that
     /// needs no library nobody has. And it has **one canonical spelling here**, where YAML does not:
-    /// `serde_yaml` decides quoting, folding and block style by heuristics on the value, so two
+    /// `ess-yaml` decides quoting, folding and block style by heuristics on the value, so two
     /// versions of one suite can differ in bytes without differing in meaning — which is exactly what
     /// a byte-comparison drift check cannot tolerate.
     ///
@@ -473,7 +475,7 @@ impl SuiteProvenance {
 pub const SUPPORTED_SUITE_FORMATS: &[u32] = &[
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
     27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50,
-    51,
+    51, 52, 53,
 ];
 
 /// The version of the *document shape* a suite is written in — `ess-conformance/1`.
@@ -651,6 +653,22 @@ pub enum ScenarioId {
     Outcome {
         /// The branch this scenario proves.
         outcome: OutcomeRef,
+    },
+    /// One declared outcome taken with an input on a boundary against the current time, the
+    /// command decided at a held instant (suite/50 and /51, beyond10x/ess#586):
+    /// `demo.jobs.ScheduleJob/outcome/scheduled/held/starts_at/-60`.
+    ///
+    /// The field is the input field the scenario sends on the boundary, and the seconds are the
+    /// reference offset the guard names, so each ordering a command decides by is its own scenario.
+    /// Filed apart from [`Outcome`](Self::Outcome), whose scenario keeps its bytes: a target that
+    /// cannot hold its `now` reports only this one `unsupported`.
+    HeldOutcome {
+        /// The branch the boundary value takes.
+        outcome: OutcomeRef,
+        /// The input field sent on the boundary.
+        field: String,
+        /// The reference offset of the boundary.
+        seconds: i64,
     },
     /// One declared transition, taken by the outcome that drives it.
     ///
@@ -887,6 +905,23 @@ impl ScenarioId {
                         .map_err(|_| reject("has a malformed outcome name"))?,
                 ),
             }),
+            [command, Self::OUTCOME, outcome, "held", field, seconds] => {
+                let seconds: i64 = seconds
+                    .parse()
+                    .map_err(|_| reject("has a malformed held offset"))?;
+                if field.is_empty() {
+                    return Err(reject("names no held input field"));
+                }
+                Ok(Self::HeldOutcome {
+                    outcome: OutcomeRef::new(
+                        CommandRef::new(name(command)?),
+                        OutcomeName::new(outcome)
+                            .map_err(|_| reject("has a malformed outcome name"))?,
+                    ),
+                    field: (*field).to_owned(),
+                    seconds,
+                })
+            }
             [entity, Self::TRANSITION, transition, "by", command, outcome] => {
                 Ok(Self::Transition {
                     transition: TransitionRef::new(EntityRef::new(name(entity)?), transition)
@@ -969,6 +1004,7 @@ impl ScenarioId {
             }),
             _ => Err(reject(
                 "is not a scenario name; expected `<command>/outcome/<name>`, \
+                 `<command>/outcome/<name>/held/<field>/<seconds>`, \
                  `<entity>/transition/<name>/by/<command>/<outcome>`, \
                  `<entity>/state/<state>/refuses/<command>`, \
                  `<entity>/invariant/after/<command>/<outcome>`, \
@@ -989,6 +1025,17 @@ impl fmt::Display for ScenarioId {
             Self::Outcome { outcome } => write!(
                 f,
                 "{}/{}/{}",
+                outcome.command,
+                Self::OUTCOME,
+                outcome.outcome
+            ),
+            Self::HeldOutcome {
+                outcome,
+                field,
+                seconds,
+            } => write!(
+                f,
+                "{}/{}/{}/held/{field}/{seconds}",
                 outcome.command,
                 Self::OUTCOME,
                 outcome.outcome
@@ -2596,6 +2643,16 @@ pub enum ScenarioStep {
     MarkInstant {
         /// What later claims call it.
         instant: InstantName,
+    },
+    /// Ask the target to decide the next command, and only that one, at the instant the
+    /// scenario's `now_offset` of `seconds` names (suite/50, beyond10x/ess#586).
+    ///
+    /// It stands immediately before the [`ExecuteCommand`](Self::ExecuteCommand) it holds; any
+    /// other position is refused at admission. Arranging, not asserting: a target without
+    /// [`hold_now`](crate::ConformanceTarget::hold_now) reports the scenario `unsupported`.
+    HoldNow {
+        /// A `now_offset` number, resolved through the scenario's one table of them.
+        seconds: i64,
     },
     /// Require that this point of the scenario is not reached before a length of time has passed.
     ///

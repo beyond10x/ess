@@ -6,7 +6,7 @@
 
 use std::fmt::Write as _;
 
-use serde_yaml::{Mapping, Value};
+use ess_yaml::{Mapping, Value};
 
 /// What a token is, for colouring.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -211,10 +211,10 @@ fn needs_quotes(s: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{block_text, flow};
-    use serde_yaml::Value;
+    use ess_yaml::Value;
 
     fn schema() -> Value {
-        serde_yaml::from_str(ess_ui::SCHEMA).expect("the schema is YAML")
+        ess_yaml::from_str(ess_ui::SCHEMA).expect("the schema is YAML")
     }
 
     #[test]
@@ -224,9 +224,9 @@ mod tests {
         for (name, construct) in schema["constructs"].as_mapping().expect("constructs") {
             for value in [&construct["example"], &construct["fields"]] {
                 let block: Value =
-                    serde_yaml::from_str(&block_text(value)).expect("the block is YAML");
+                    ess_yaml::from_str(&block_text(value)).expect("the block is YAML");
                 assert_eq!(&block, value, "{name:?} in block style");
-                let flowed: Value = serde_yaml::from_str(&flow(value)).expect("the flow is YAML");
+                let flowed: Value = ess_yaml::from_str(&flow(value)).expect("the flow is YAML");
                 assert_eq!(&flowed, value, "{name:?} in flow style");
                 checked += 1;
             }
@@ -241,7 +241,7 @@ mod tests {
         ] {
             let text = flow(&Value::from(s));
             assert!(text.starts_with('"'), "{s:?} is written {text}");
-            let back: Value = serde_yaml::from_str(&text).expect("YAML");
+            let back: Value = ess_yaml::from_str(&text).expect("YAML");
             assert_eq!(back, Value::from(s));
         }
         assert_eq!(

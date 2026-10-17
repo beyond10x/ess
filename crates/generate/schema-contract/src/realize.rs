@@ -101,12 +101,20 @@ pub struct Plan {
     obligations: BTreeSet<Finding>,
     patterns: BTreeMap<String, String>,
     binary64: BTreeSet<String>,
+    /// Schema pointers of `Json` values the Rust target keeps as their exact JSON text
+    /// (`--rust-raw-json`, beyond10x/ess#577). Empty unless asked for.
+    raw_json: BTreeSet<String>,
+    /// A model field's declared name, by the pointer of its property, where its wire key differs.
+    declared_fields: BTreeMap<String, String>,
     /// Model integers fixed to one value, by the pointer of the node that fixes them
     /// (beyond10x/ess#408).
     constants: BTreeMap<String, i64>,
     /// A model enum's typed variant attributes, by the pointer of the enum (`ess/23`,
     /// beyond10x/ess#450): each output gives the enum one accessor per attribute.
     attributes: BTreeMap<String, Vec<EnumAttribute>>,
+    /// A model string's declared alphabet and text length, by the pointer of the string
+    /// (beyond10x/ess#579): what the Rust decoder refuses a value outside of.
+    text: BTreeMap<String, TextConstraint>,
 }
 
 /// One typed attribute of a model enum, read from its `x-ess-attributes` annotation.
@@ -145,6 +153,92 @@ impl EnumAttribute {
     }
 }
 
+/// A model string's declared alphabet and text length (beyond10x/ess#579): the `x-ess-alphabet`
+/// of its newtype, and the bounds its `x-ess-invariants` state about `value.count`, counted in
+/// Unicode scalar values as the conformance interpreter counts them. Any other invariant stays an
+/// obligation of the report.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct TextConstraint {
+    /// Every character a value may hold.
+    pub(crate) alphabet: Option<String>,
+    /// The fewest characters a value holds.
+    pub(crate) minimum: Option<i64>,
+    /// The most characters a value holds.
+    pub(crate) maximum: Option<i64>,
+}
+
+impl TextConstraint {
+    /// The constraint a model string schema declares; `None` where it declares none.
+    fn read(object: &Map<String, Value>) -> Option<Self> {
+        use ess_primitives::predicate::CompareOp;
+        let mut constraint = Self {
+            alphabet: object
+                .get("x-ess-alphabet")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+            minimum: None,
+            maximum: None,
+        };
+        let statements = object
+            .get("x-ess-invariants")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str);
+        for (op, bound) in statements.filter_map(length_comparison) {
+            let (lower, upper) = match op {
+                CompareOp::Eq => (Some(bound), Some(bound)),
+                CompareOp::Ge => (Some(bound), None),
+                CompareOp::Gt => (bound.checked_add(1), None),
+                CompareOp::Le => (None, Some(bound)),
+                CompareOp::Lt => (None, bound.checked_sub(1)),
+                CompareOp::Ne => (None, None),
+            };
+            if let Some(lower) = lower {
+                constraint.minimum = Some(constraint.minimum.map_or(lower, |at| at.max(lower)));
+            }
+            if let Some(upper) = upper {
+                constraint.maximum = Some(constraint.maximum.map_or(upper, |at| at.min(upper)));
+            }
+        }
+        (constraint.alphabet.is_some()
+            || constraint.minimum.is_some()
+            || constraint.maximum.is_some())
+        .then_some(constraint)
+    }
+}
+
+/// `value.count <op> <integer>`, or the same with the literal on the left, as the comparison of
+/// the count with the literal.
+fn length_comparison(statement: &str) -> Option<(ess_primitives::predicate::CompareOp, i64)> {
+    use ess_primitives::predicate::{CompareOp, Operand, Predicate};
+    use ess_primitives::FactValue;
+    let Ok(Predicate::Compare {
+        left, op, right, ..
+    }) = Predicate::parse_expression(statement)
+    else {
+        return None;
+    };
+    let count = |operand: &Operand| matches!(operand, Operand::Fact(path) if path.segments() == ["value", "count"]);
+    let literal = |operand: &Operand| match operand {
+        Operand::Literal(FactValue::Number(number)) => number.as_i64(),
+        _ => None,
+    };
+    if count(&left) {
+        Some((op, literal(&right)?))
+    } else if count(&right) {
+        let flipped = match op {
+            CompareOp::Lt => CompareOp::Gt,
+            CompareOp::Le => CompareOp::Ge,
+            CompareOp::Gt => CompareOp::Lt,
+            CompareOp::Ge => CompareOp::Le,
+            other => other,
+        };
+        Some((flipped, literal(&left)?))
+    } else {
+        None
+    }
+}
 #[derive(Debug, Clone)]
 struct Node {
     pointer: String,
@@ -240,6 +334,8 @@ struct Builder {
     patterns: BTreeMap<String, String>,
     constants: BTreeMap<String, i64>,
     attributes: BTreeMap<String, Vec<EnumAttribute>>,
+    declared_fields: BTreeMap<String, String>,
+    text: BTreeMap<String, TextConstraint>,
 }
 
 impl Plan {
@@ -392,8 +488,11 @@ impl Plan {
             obligations: builder.obligations,
             patterns: builder.patterns,
             binary64: BTreeSet::new(),
+            raw_json: BTreeSet::new(),
+            declared_fields: builder.declared_fields,
             constants: builder.constants,
             attributes: builder.attributes,
+            text: builder.text,
         })
     }
 
@@ -503,6 +602,91 @@ impl Plan {
         &self.names
     }
 
+    /// Keep the `Json` values `locations` name as their exact JSON text in the Rust target
+    /// (`--rust-raw-json`, beyond10x/ess#577), so their bytes round-trip with or without
+    /// `serde_json/arbitrary_precision`. Other targets ignore the selection.
+    ///
+    /// A location is a selected component's source name, which covers the component when it is
+    /// itself `Json` and otherwise each of its own `Json` fields, or `<component>.<field>`, which
+    /// covers that one field, named by its wire key or, for a model, its declared name. An
+    /// `Optional<Json>` value counts as `Json`. A location naming no selected component or field,
+    /// or one holding no `Json` value of its own, is refused, the finding naming it.
+    pub fn with_raw_json<I, S>(mut self, locations: I) -> Result<Self, Refused>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let mut errors = BTreeSet::new();
+        for location in locations {
+            let location = location.as_ref();
+            match self.raw_json_location(location) {
+                Ok(pointers) => self.raw_json.extend(pointers),
+                Err((pointer, detail)) => {
+                    errors.insert(finding(
+                        &pointer,
+                        RAW_JSON_RULE,
+                        &format!("{location:?} {detail}"),
+                    ));
+                }
+            }
+        }
+        if errors.is_empty() {
+            Ok(self)
+        } else {
+            Err(Refused(errors.into_iter().collect()))
+        }
+    }
+
+    /// The pointers of the `Json` values one `--rust-raw-json` location covers.
+    fn raw_json_location(&self, location: &str) -> Result<Vec<String>, (String, &'static str)> {
+        let unknown = || ("/".to_owned(), "names no selected type or field");
+        if let Some(node) = self.definitions.get(location) {
+            if let Some(json) = json_value(node) {
+                return Ok(vec![json.pointer.clone()]);
+            }
+            let covered = match &node.shape {
+                Shape::Object { fields, .. } => fields
+                    .values()
+                    .filter_map(|field| json_value(&field.value))
+                    .map(|json| json.pointer.clone())
+                    .collect(),
+                _ => Vec::new(),
+            };
+            if covered.is_empty() {
+                return Err((node.pointer.clone(), "names a type with no Json field"));
+            }
+            return Ok(covered);
+        }
+        let (component, name) = location.rsplit_once('.').ok_or_else(unknown)?;
+        let Some(Node {
+            shape: Shape::Object { fields, .. },
+            ..
+        }) = self.definitions.get(component)
+        else {
+            return Err(unknown());
+        };
+        let field = fields.get(name).or_else(|| {
+            fields.values().find(|field| {
+                self.declared_fields
+                    .get(&field.value.pointer)
+                    .is_some_and(|declared| declared == name)
+            })
+        });
+        let field = field.ok_or_else(unknown)?;
+        json_value(&field.value)
+            .map(|json| vec![json.pointer.clone()])
+            .ok_or_else(|| {
+                (
+                    field.value.pointer.clone(),
+                    "names a field that is not Json",
+                )
+            })
+    }
+
+    fn reaches_raw_json(&self, node: &Node) -> bool {
+        self.reaches_marked(&self.raw_json, node)
+    }
+
     fn binary64_codec(&self) -> Result<(), Refused> {
         let mut numeric = BTreeSet::new();
         let mut pending = self.definitions.values().collect::<Vec<_>>();
@@ -533,10 +717,15 @@ impl Plan {
     // Follow references as well as inline shapes. Per-query visitation avoids caching an
     // incomplete answer for a recursive component before its other edges are explored.
     fn reaches_binary64(&self, node: &Node) -> bool {
+        self.reaches_marked(&self.binary64, node)
+    }
+
+    /// Whether `node`, or a node it contains or references, is at one of `marked`.
+    fn reaches_marked(&self, marked: &BTreeSet<String>, node: &Node) -> bool {
         let mut pending = vec![node];
         let mut visited = BTreeSet::new();
         while let Some(node) = pending.pop() {
-            if self.binary64.contains(&node.pointer) {
+            if marked.contains(&node.pointer) {
                 return true;
             }
             if !visited.insert(&node.pointer) {
@@ -580,6 +769,9 @@ impl Plan {
             if matches!(configuration, TargetConfiguration::Rust { .. }) {
                 for at in &self.binary64 {
                     obligations.insert(finding(at, "rust_binary64_source", "original-token decoding requires serde_json text/slice/reader or an equivalent raw-capable JSON deserializer; prior Value conversion cannot restore lost sign or token kind and other deserializers may refuse"));
+                }
+                for at in &self.raw_json {
+                    obligations.insert(finding(at, RAW_JSON_RULE, "kept as its exact JSON text in EssRawJson, a serde_json RawValue, whatever serde_json features the build unifies; decoding requires serde_json text/slice/reader or an equivalent raw-capable JSON deserializer, and the text is not validated beyond JSON syntax"));
                 }
             }
         }
@@ -658,7 +850,17 @@ impl Builder {
         let shape = match schema {
             Value::Bool(true) => Shape::Json,
             Value::Bool(false) => Shape::Never,
-            Value::Object(object) => self.object_schema(object, pointer),
+            Value::Object(object) => {
+                if let Some(declared) = object
+                    .get("x-ess-field")
+                    .and_then(Value::as_str)
+                    .filter(|_| self.model)
+                {
+                    self.declared_fields
+                        .insert(pointer.to_owned(), declared.to_owned());
+                }
+                self.object_schema(object, pointer)
+            }
             _ => {
                 self.errors.insert(finding(
                     pointer,
@@ -902,11 +1104,17 @@ impl Builder {
                 shape,
             });
         }
-        match terms.len() {
+        let shape = match terms.len() {
             0 => Shape::Json,
             1 => terms.pop().expect("one term").shape,
             _ => Shape::Intersection(terms),
+        };
+        if self.model && matches!(shape, Shape::String) {
+            if let Some(constraint) = TextConstraint::read(object) {
+                self.text.insert(pointer.to_owned(), constraint);
+            }
         }
+        shape
     }
 
     fn kind(&mut self, kind: &str, object: &Map<String, Value>, pointer: &str) -> Shape {
@@ -1039,6 +1247,21 @@ fn check_references(node: &Node, names: &BTreeMap<String, String>, errors: &mut 
     }
     for child in children(node) {
         check_references(child, names, errors);
+    }
+}
+
+/// The finding rule for a `--rust-raw-json` location: its refusal and, in a Rust report, the
+/// obligation each kept value carries (beyond10x/ess#577).
+const RAW_JSON_RULE: &str = "rust_raw_json";
+
+/// The `Json` value `node` holds itself: the node, or the non-null branch of a nullable one.
+fn json_value(node: &Node) -> Option<&Node> {
+    match &node.shape {
+        Shape::Json => Some(node),
+        Shape::Union { variants, .. } => {
+            native::nullable(variants).filter(|value| matches!(value.shape, Shape::Json))
+        }
+        _ => None,
     }
 }
 

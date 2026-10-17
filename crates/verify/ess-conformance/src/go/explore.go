@@ -89,6 +89,11 @@ type ExploreOptions struct {
 	// commands of a sequence and checks every view again. Zero means no restart, which is what an
 	// exploration did before restarts existed.
 	RestartEvery int `json:"restartEvery,omitempty"`
+	// Now is the clock a guard over `now` is decided against (beyond10x/ess#582); nil reads the
+	// wall clock. A `Timestamp` input of a specification whose guards compare one with `now` is
+	// drawn an hour to a day either side of an instant they compare it with, so a target that reads
+	// its own clock moments later decides the step the same way.
+	Now func() time.Time `json:"-"`
 }
 
 // RestartTarget is what a durable implementation offers so that exploration can restart it.
@@ -120,6 +125,21 @@ type Exclusion struct {
 	Reason  string `json:"reason"`
 }
 
+// Refusal is a command the target answered ErrUnsupported to in one held state of the row a step
+// addressed, while it drove the command elsewhere (beyond10x/ess#537). No later step draws the
+// command in that state; a command refused in every state it was drawn in, and driven in none, is
+// in Excluded instead.
+type Refusal struct {
+	Command string `json:"command"`
+	// State is the held state of the row the step addressed: `(no row)` where it addressed none (a
+	// creation, or an identity no row carries), `(no state)` for a row without a lifecycle.
+	State  string `json:"state"`
+	Reason string `json:"reason"`
+	// Count is the steps drawn in that state and not sent: the one the target refused and every
+	// later one.
+	Count int `json:"count"`
+}
+
 // ExploreFailure is a disagreement: its seed, what disagreed, and the shortest trace found that
 // still shows it.
 type ExploreFailure struct {
@@ -142,8 +162,13 @@ type ExploreResult struct {
 	// Unreached is every declared outcome of an included command that no step took.
 	Unreached []string    `json:"unreached"`
 	Excluded  []Exclusion `json:"excluded"`
-	// ExcludedOutcomes is every declared outcome of an excluded command.
+	// ExcludedOutcomes is every declared outcome of an excluded command, and every outcome no step
+	// took that a refused step would have.
 	ExcludedOutcomes []string `json:"excludedOutcomes"`
+	// Refused is every (command, held state) the target answered ErrUnsupported to, of a command it
+	// drove in another state, in order of Command and State. Absent when there is none, so a result
+	// without one keeps its bytes.
+	Refused []Refusal `json:"refused,omitempty"`
 	// Undetermined is what the model could not place, such as a view filter over a field no
 	// command set.
 	Undetermined []string `json:"undetermined"`
@@ -175,8 +200,8 @@ type ExternalReach struct {
 
 // AssertOptions is what AssertExplored accepts.
 type AssertOptions struct {
-	// AllowExcluded accepts outcomes of excluded commands, and external outcomes the target could
-	// not arrange. An explicit, reviewable opt-out.
+	// AllowExcluded accepts outcomes of excluded commands, the (command, held state) pairs the target
+	// refused, and external outcomes the target could not arrange. An explicit, reviewable opt-out.
 	AllowExcluded bool
 }
 
@@ -362,10 +387,11 @@ func exploreResolve(ir map[string]any, ref map[string]any, depth int) exploreKin
 	return exploreResolveAs(ir, ref, depth, false)
 }
 
-// exploreResolveAs is exploreResolve, and with `concurrent` it also draws a `decimal`, a `timestamp`
-// and a type whose values are constrained: concurrent exploration does not judge an answer by this
-// model, `ess` does, so a drawn value outside the constraint is a question the target answers and
-// the checker judges.
+// exploreResolveAs is exploreResolve, and with `concurrent` it also draws a type whose values are
+// constrained: concurrent exploration does not judge an answer by this model, `ess` does, so a
+// drawn value outside the constraint is a question the target answers and the checker judges. A
+// `decimal` is drawn either way, as an `integer` is (beyond10x/ess#538), and so is a `timestamp`
+// (beyond10x/ess#582).
 func exploreResolveAs(ir map[string]any, ref map[string]any, depth int, concurrent bool) exploreKind {
 	if depth > 32 {
 		return exploreKind{kind: "unsupported", why: "nested too deeply"}
@@ -380,13 +406,8 @@ func exploreResolveAs(ir map[string]any, ref map[string]any, depth int, concurre
 	if ref["kind"] == "primitive" {
 		name := exploreString(ref["name"])
 		switch name {
-		case "integer", "boolean", "string", "uuid":
+		case "integer", "boolean", "string", "uuid", "decimal", "timestamp":
 			return exploreKind{kind: name}
-		case "decimal", "timestamp":
-			if concurrent {
-				return exploreKind{kind: name}
-			}
-			return exploreKind{kind: "unsupported", why: fmt.Sprintf("a `%s`", name)}
 		default:
 			return exploreKind{kind: "unsupported", why: fmt.Sprintf("a `%s`", name)}
 		}
@@ -796,6 +817,12 @@ type exploreCommand struct {
 	// rows is every branch selected by the stored row (beyond10x/ess#221), by outcome name.
 	rows  map[string]exploreRowGuard
 	pools explorePools
+	// inputTimestamp and storedTimestamp are whether a path a guard over the input, and one over
+	// the stored row (and the input under `input.`), reads names a `Timestamp`; clocked is whether
+	// one of its guards compares such a path with `now` (beyond10x/ess#582).
+	inputTimestamp  func(string) bool
+	storedTimestamp func(string) bool
+	clocked         bool
 }
 
 // exploreRowGuard is a condition read from the subject's stored row: its held state
@@ -825,9 +852,13 @@ type exploreExternal struct {
 }
 
 type explorePlan struct {
-	ir               map[string]any
-	system           string
-	commands         []*exploreCommand
+	ir       map[string]any
+	system   string
+	commands []*exploreCommand
+	// drawn is every command the plan admitted, fixed once it is made: every sequence draws from it,
+	// so what an earlier seed of a run excluded never changes what a later seed draws, and a seed
+	// replays alone the sequence it drew inside the run (beyond10x/ess#576).
+	drawn            []*exploreCommand
 	views            []map[string]any
 	excluded         []Exclusion
 	excludedCommands map[string]bool
@@ -841,6 +872,11 @@ type explorePlan struct {
 	// (a list, say): a precondition supplies its input as a literal, so it may still send one
 	// (beyond10x/ess#205). No sequence draws it.
 	sendable map[string]*exploreCommand
+	// offsets is every offset from `now`, in seconds and sorted, that a guard compares a `Timestamp`
+	// with; clock is what a sequential exploration reads the current time from, nil in a concurrent
+	// one (beyond10x/ess#582).
+	offsets []int64
+	clock   *exploreClock
 }
 
 // exploreIsExternal is true for an outcome an external cause decides.
@@ -849,7 +885,39 @@ func exploreIsExternal(outcome map[string]any) bool {
 	return kind == "external" || kind == "external_when"
 }
 
-func exploreEffectRefusal(outcome map[string]any) string {
+// exploreEffectRefusal is why the explorer cannot model what outcome does to its subject, or "".
+// A `preserves:` of a supplied subject is modelled as leaving the row as it is, so every view
+// read after the step must still agree with it (beyond10x/ess#536); concurrent exploration does
+// not draw it and keeps the commands it always drew.
+//
+// A selected-rows outcome (`instances: {where: …}`, beyond10x/ess#538) carries no subject. Its
+// move or update is modelled on every row the filter selects; its bulk deletion is left out by
+// name, and so is a filter the model cannot read. An event published
+// once per changed row (ess/25, beyond10x/ess#531) is left out by name too: the model expects each
+// listed event once. An `affects:` entry
+// writes rows the model does not apply, so its outcome is left out by name too. Concurrent
+// exploration keeps the commands it always drew.
+//
+// A `deletes:` of a supplied subject takes the row out of the model, so every view read after the
+// step must lose it and a later step naming it is the unknown instance (beyond10x/ess#583).
+// Concurrent exploration leaves it out by name: its workload is drawn before any call runs, so a
+// call drawn after the delete can still name the deleted row, and a command without an
+// unknown-instance answer then has none the specification declares.
+func exploreEffectRefusal(outcome map[string]any, concurrent bool) string {
+	if len(exploreList(outcome["affects"])) > 0 && !concurrent {
+		return fmt.Sprintf("outcome `%v` writes the rows its `affects:` selects, which the model does not apply", outcome["name"])
+	}
+	if set := exploreObject(outcome["instances"]); set != nil && !concurrent {
+		if set["effect"] == "deletes" {
+			return fmt.Sprintf("outcome `%v` deletes the rows it selects", outcome["name"])
+		}
+		if len(exploreList(set["events"])) > 0 {
+			return fmt.Sprintf("outcome `%v` publishes an event once per changed row, which the model does not apply", outcome["name"])
+		}
+		if _, refusal := exploreParse(set["filter"]); refusal != "" {
+			return fmt.Sprintf("the filter of `%v`: %s", outcome["name"], refusal)
+		}
+	}
 	subject := exploreObject(outcome["subject"])
 	if subject == nil {
 		return ""
@@ -857,9 +925,13 @@ func exploreEffectRefusal(outcome map[string]any) string {
 	from := exploreObject(subject["instance"])["from"]
 	effect := subject["effect"]
 	allowed := (effect == "creates" && from == "observed") ||
-		((effect == "moves" || effect == "updates") && from == "supplied")
+		((effect == "moves" || effect == "updates") && from == "supplied") ||
+		((effect == "preserves" || effect == "deletes") && from == "supplied" && !concurrent)
 	if allowed {
 		return ""
+	}
+	if effect == "deletes" && from == "supplied" {
+		return fmt.Sprintf("outcome `%v` deletes its subject from `supplied`, and a concurrent workload is drawn before any call runs, so a later call can name the deleted row", outcome["name"])
 	}
 	return fmt.Sprintf("outcome `%v` %v its subject from `%v`", outcome["name"], exploreUndefined(effect), exploreUndefined(from))
 }
@@ -970,6 +1042,7 @@ func explorePlanOf(ir map[string]any) *explorePlan {
 // keeps a command no actor may invoke, which is then sent with no actor.
 func explorePlanAs(ir map[string]any, concurrent bool) *explorePlan {
 	p := &explorePlan{ir: ir, system: fmt.Sprint(ir["system"]), excluded: []Exclusion{}, excludedCommands: map[string]bool{}, unarrangeable: map[string]string{}, sendable: map[string]*exploreCommand{}}
+	offsets := map[int64]bool{}
 	actorFor := map[string]string{}
 	for _, actor := range exploreSorted(ir["actors"]) {
 		for _, command := range exploreStrings(actor["may"]) {
@@ -1016,7 +1089,7 @@ func explorePlanAs(ir map[string]any, concurrent bool) *explorePlan {
 		}
 		for _, outcome := range outcomes {
 			if reason == "" {
-				reason = exploreEffectRefusal(exploreObject(outcome))
+				reason = exploreEffectRefusal(exploreObject(outcome), concurrent)
 			}
 		}
 		for _, outcome := range outcomes {
@@ -1088,6 +1161,16 @@ func explorePlanAs(ir map[string]any, concurrent bool) *explorePlan {
 		command := &exploreCommand{
 			name: name, actor: actor, node: node, inputs: inputs, guards: guards, rows: rows, pools: pools,
 		}
+		entityFields := exploreStoredFields(ir, node)
+		command.inputTimestamp = func(path string) bool { return exploreTimestampAt(inputs, path) }
+		command.storedTimestamp = func(path string) bool {
+			if rest, ok := strings.CutPrefix(path, "input."); ok {
+				return exploreTimestampAt(inputs, rest)
+			}
+			return exploreTimestampAt(entityFields, path)
+		}
+		clockedAt := exploreNowOffsets(command)
+		command.clocked = len(clockedAt) > 0
 		if reason == "" && later == "" && undrawable != "" {
 			p.sendable[name] = command
 		}
@@ -1102,7 +1185,14 @@ func explorePlanAs(ir map[string]any, concurrent bool) *explorePlan {
 			continue
 		}
 		p.commands = append(p.commands, command)
+		for _, offset := range clockedAt {
+			offsets[offset] = true
+		}
 	}
+	for offset := range offsets {
+		p.offsets = append(p.offsets, offset)
+	}
+	sort.Slice(p.offsets, func(i, j int) bool { return p.offsets[i] < p.offsets[j] })
 
 	for _, view := range exploreSorted(ir["views"]) {
 		reason := ""
@@ -1132,6 +1222,7 @@ func explorePlanAs(ir map[string]any, concurrent bool) *explorePlan {
 			p.views = append(p.views, view)
 		}
 	}
+	p.drawn = append([]*exploreCommand{}, p.commands...)
 	return p
 }
 
@@ -1155,8 +1246,10 @@ func (p *explorePlan) exclude(subject, reason string) {
 	p.views = views
 }
 
+// command is the admitted command named name, excluded during a run or not: a precondition, a
+// replayed trace and a shrink look it up in every seed alike.
 func (p *explorePlan) command(name string) *exploreCommand {
-	for _, command := range p.commands {
+	for _, command := range p.drawn {
 		if command.name == name {
 			return command
 		}
@@ -1169,10 +1262,31 @@ func (p *explorePlan) command(name string) *exploreCommand {
 type exploreRecord struct {
 	id     Node
 	fields Row
+	// unwritten is every `Optional` field of the record no outcome has written, which the
+	// interpreter reads as absent. A field the model forgot, its value undetermined, is not in it.
+	unwritten map[string]bool
+}
+
+// exploreUnwritten is every `Optional` field of entity, by name: what a new record holds as absent
+// until an outcome writes it.
+func exploreUnwritten(ir, entity map[string]any) map[string]bool {
+	unwritten := map[string]bool{}
+	for _, item := range exploreList(entity["fields"]) {
+		declared := exploreObject(item)
+		if exploreOptionalType(ir, exploreObject(declared["type_ref"])) {
+			unwritten[exploreString(declared["name"])] = true
+		}
+	}
+	return unwritten
 }
 
 type exploreModel struct {
 	records map[string][]*exploreRecord
+	// deleted is the identity of every row a step deleted, by entity, in the order deleted
+	// (beyond10x/ess#583).
+	deleted map[string][]Node
+	// clock is the plan's clock, nil where no clock is read.
+	clock *exploreClock
 }
 
 func (m *exploreModel) of(entity string) []*exploreRecord {
@@ -1186,6 +1300,269 @@ func (m *exploreModel) find(entity string, id Node) *exploreRecord {
 		}
 	}
 	return nil
+}
+
+// remove takes record out of the rows of entity, keeping the order of the others, and keeps its
+// identity among the deleted ones, which a later step may name again (beyond10x/ess#583).
+func (m *exploreModel) remove(entity string, record *exploreRecord) {
+	kept := []*exploreRecord{}
+	for _, other := range m.records[entity] {
+		if other != record {
+			kept = append(kept, other)
+		}
+	}
+	m.records[entity] = kept
+	if m.deleted == nil {
+		m.deleted = map[string][]Node{}
+	}
+	m.deleted[entity] = append(m.deleted[entity], record.id)
+}
+
+// ---- the clock: a guard over `now` (beyond10x/ess#582) -----------------------------------------
+
+// exploreClock is what a sequential exploration reads the current time from, and every offset from
+// it, in seconds, that the plan's guards compare a `Timestamp` with.
+type exploreClock struct {
+	read    func() time.Time
+	offsets []int64
+}
+
+// now is the clock's current time, to the whole second.
+func (c *exploreClock) now() time.Time {
+	return c.read().UTC().Truncate(time.Second)
+}
+
+// exploreInstantText is at as a canonical RFC 3339 `date-time` at UTC, to the whole second.
+func exploreInstantText(at time.Time) string {
+	return at.UTC().Format("2006-01-02T15:04:05Z")
+}
+
+// exploreCurrentTime is the offset, in seconds, of the current-time operand text spells — `now`,
+// `now - 60s`, `now + 5m`, `now - 1h` — as Rust's `CurrentTime::parse` reads it, or false where
+// text is none.
+func exploreCurrentTime(text string) (int64, bool) {
+	rest, ok := strings.CutPrefix(text, "now")
+	if !ok {
+		return 0, false
+	}
+	if rest == "" {
+		return 0, true
+	}
+	rest = strings.TrimLeft(rest, " ")
+	sign := int64(1)
+	switch {
+	case strings.HasPrefix(rest, "+"):
+	case strings.HasPrefix(rest, "-"):
+		sign = -1
+	default:
+		return 0, false
+	}
+	rest = strings.TrimLeft(rest[1:], " ")
+	units := map[byte]int64{'s': 1, 'm': 60, 'h': 3600}
+	if len(rest) < 2 || units[rest[len(rest)-1]] == 0 {
+		return 0, false
+	}
+	digits := rest[:len(rest)-1]
+	if len(digits) > 10 || (len(digits) > 1 && digits[0] == '0') {
+		return 0, false
+	}
+	for _, digit := range digits {
+		if digit < '0' || digit > '9' {
+			return 0, false
+		}
+	}
+	magnitude, err := strconv.ParseInt(digits, 10, 64)
+	seconds := magnitude * units[rest[len(rest)-1]]
+	if err != nil || seconds > 3155760000 {
+		return 0, false
+	}
+	return sign * seconds, true
+}
+
+// exploreTimestampAt is whether path names a `Timestamp` among fields, through structs, optionals
+// and identities.
+func exploreTimestampAt(fields []exploreField, path string) bool {
+	parts := strings.Split(path, ".")
+	for index, part := range parts {
+		var kind *exploreKind
+		for _, field := range fields {
+			if field.name == part {
+				found := field.kind
+				kind = &found
+			}
+		}
+		if kind == nil {
+			return false
+		}
+		for (kind.kind == "optional" || kind.kind == "identity") && kind.base != nil {
+			kind = kind.base
+		}
+		if index == len(parts)-1 {
+			return kind.kind == "timestamp"
+		}
+		if kind.kind != "struct" {
+			return false
+		}
+		fields = kind.fields
+	}
+	return false
+}
+
+// exploreStoredFields is every stored field of the entity a command's supplied subject names, as
+// a stored-row guard reads it, or none.
+func exploreStoredFields(ir, node map[string]any) []exploreField {
+	fields := []exploreField{}
+	for _, item := range exploreList(node["outcomes"]) {
+		subject := exploreObject(exploreObject(item)["subject"])
+		if exploreObject(subject["instance"])["from"] != "supplied" {
+			continue
+		}
+		entity := exploreObject(exploreObject(ir["entities"])[exploreString(subject["entity"])])
+		for _, declared := range exploreList(entity["fields"]) {
+			declared := exploreObject(declared)
+			kind := exploreResolveAs(ir, exploreObject(declared["type_ref"]), 0, true)
+			fields = append(fields, exploreField{name: exploreString(declared["name"]), kind: kind})
+		}
+		return fields
+	}
+	return fields
+}
+
+// exploreNowOf is the offset of the current-time operand node compares a `Timestamp` with, read by
+// typed, or false where node is no such comparison. Only a literal is read as `now`, as Rust's
+// `instant_operand` reads it: a fact holding the text `now` holds no instant.
+func exploreNowOf(node predicate, typed func(string) bool) (int64, bool) {
+	if node.kind != "compare" || !node.left.isFact || node.right.isFact || node.right.offset != nil ||
+		node.left.utf8Bytes || node.right.utf8Bytes || !typed(node.left.path) {
+		return 0, false
+	}
+	text, ok := node.right.literal.(string)
+	if !ok {
+		return 0, false
+	}
+	return exploreCurrentTime(text)
+}
+
+// exploreNowOffsets is every offset from `now` the guards of command compare a `Timestamp` with,
+// sorted, without repeats.
+func exploreNowOffsets(command *exploreCommand) []int64 {
+	found := map[int64]bool{}
+	visit := func(p predicate, typed func(string) bool) {
+		exploreWalk(p, func(node predicate) {
+			if offset, ok := exploreNowOf(node, typed); ok {
+				found[offset] = true
+			}
+		})
+	}
+	for _, guard := range command.guards {
+		visit(guard, command.inputTimestamp)
+	}
+	for _, row := range command.rows {
+		if row.stored != nil {
+			visit(*row.stored, command.storedTimestamp)
+		}
+		if row.input != nil {
+			visit(*row.input, command.inputTimestamp)
+		}
+	}
+	offsets := []int64{}
+	for offset := range found {
+		offsets = append(offsets, offset)
+	}
+	sort.Slice(offsets, func(i, j int) bool { return offsets[i] < offsets[j] })
+	return offsets
+}
+
+// exploreAt is p with every comparison of a `Timestamp` with `now` decided at the instant at: the
+// operand is the RFC 3339 text of at moved by its offset, compared as an instant. spelled maps the
+// text of each comparison it rewrote to the text it was written as.
+func exploreAt(p predicate, typed func(string) bool, at time.Time, spelled map[string]string) predicate {
+	if offset, ok := exploreNowOf(p, typed); ok {
+		moved := p
+		moved.right = operand{literal: exploreInstantText(at.Add(time.Duration(offset) * time.Second))}
+		moved.instant = true
+		spelled[moved.String()] = p.String()
+		return moved
+	}
+	out := p
+	if len(p.children) > 0 {
+		out.children = make([]predicate, len(p.children))
+		for index, child := range p.children {
+			out.children[index] = exploreAt(child, typed, at, spelled)
+		}
+	}
+	if p.body != nil {
+		body := exploreAt(*p.body, typed, at, spelled)
+		out.body = &body
+	}
+	return out
+}
+
+// exploreCommandAt is command with every guard over `now` decided at the instant at.
+func exploreCommandAt(command *exploreCommand, at time.Time, spelled map[string]string) *exploreCommand {
+	moved := *command
+	moved.guards = map[string]predicate{}
+	for name, guard := range command.guards {
+		moved.guards[name] = exploreAt(guard, command.inputTimestamp, at, spelled)
+	}
+	moved.rows = map[string]exploreRowGuard{}
+	for name, row := range command.rows {
+		if row.stored != nil {
+			stored := exploreAt(*row.stored, command.storedTimestamp, at, spelled)
+			row.stored = &stored
+		}
+		if row.input != nil {
+			input := exploreAt(*row.input, command.inputTimestamp, at, spelled)
+			row.input = &input
+		}
+		moved.rows[name] = row
+	}
+	return &moved
+}
+
+// exploreDecisionKey is what two decisions of one step must share to be the same answer.
+func exploreDecisionKey(decision exploreDecision) string {
+	externals := []string{}
+	for _, outcome := range decision.externals {
+		externals = append(externals, fmt.Sprint(outcome["name"]))
+	}
+	name := ""
+	if decision.outcome != nil {
+		name = fmt.Sprint(decision.outcome["name"])
+	}
+	return strings.Join([]string{decision.kind, name, strings.Join(externals, ","), strings.Join(decision.names, ",")}, "\x00")
+}
+
+// exploreDecideNow is exploreDecide with every guard over `now` decided against the model's clock
+// (beyond10x/ess#582), read now and a minute later: a target reads its own clock after the
+// explorer has read this one, so a step whose answer differs between the two is undetermined and
+// is not sent. Without a clock, or a guard over `now`, it is exploreDecide.
+func exploreDecideNow(command *exploreCommand, input Row, model *exploreModel) exploreDecision {
+	if model.clock == nil || !command.clocked {
+		return exploreDecide(command, input, model)
+	}
+	at := model.clock.now()
+	spelled := map[string]string{}
+	first := exploreDecide(exploreCommandAt(command, at, spelled), input, model)
+	later := exploreDecide(exploreCommandAt(command, at.Add(time.Minute), spelled), input, model)
+	if exploreDecisionKey(first) != exploreDecisionKey(later) {
+		return exploreDecision{kind: "undetermined", reason: fmt.Sprintf("%s: its answer turns on when the target reads its clock", command.name)}
+	}
+	// A reason names each guard as it is written, never the instant this step read.
+	texts := []string{}
+	for text := range spelled {
+		texts = append(texts, text)
+	}
+	sort.Slice(texts, func(i, j int) bool {
+		if len(texts[i]) != len(texts[j]) {
+			return len(texts[i]) > len(texts[j])
+		}
+		return texts[i] < texts[j]
+	})
+	for _, text := range texts {
+		first.reason = strings.ReplaceAll(first.reason, text, spelled[text])
+	}
+	return first
 }
 
 // A value an outcome gives a field: determined, undetermined, or cleared.
@@ -1389,6 +1766,26 @@ func exploreSupplied(command *exploreCommand) map[string]any {
 	return nil
 }
 
+// exploreHeldState is the held state of the row a step of command addresses, which keys a refusal
+// (beyond10x/ess#537): `(no row)` where it addresses none, `(no state)` for a row without a
+// lifecycle.
+func exploreHeldState(command *exploreCommand, input Row, model *exploreModel) string {
+	supplied := exploreSupplied(command)
+	if supplied == nil {
+		return "(no row)"
+	}
+	subject := exploreObject(supplied["subject"])
+	id, _ := exploreReadPath(map[string]any(input), exploreString(exploreObject(exploreObject(subject["instance"])["field"])["name"]))
+	record := model.find(exploreString(subject["entity"]), id)
+	if record == nil {
+		return "(no row)"
+	}
+	if state, ok := record.fields["state"].(string); ok {
+		return state
+	}
+	return "(no state)"
+}
+
 func exploreUnknown(command *exploreCommand) map[string]any {
 	for _, item := range exploreList(command.node["outcomes"]) {
 		outcome := exploreObject(item)
@@ -1442,11 +1839,68 @@ func exploreAllMove(outcomes []map[string]any) bool {
 	return true
 }
 
-// exploreDecide is which branch a step takes, in Entity Runtime's order (beyond10x/ess#235): the
+// exploreDecide is which branch a step takes: exploreDecideRow's answer, with every external
+// refusal marked `before_row: true` (ess/25, beyond10x/ess#534) that answers before it offered
+// beside it. Such a branch answers among the input-guarded refusals, in declaration order, before
+// existence and the held state: one declared before the first input refusal whose guard holds is
+// eligible for every record, an identity no record carries included, and is offered even where
+// the rest of the order answers alone.
+func exploreDecide(command *exploreCommand, input Row, model *exploreModel) exploreDecision {
+	decision := exploreDecideRow(command, input, model)
+	if decision.kind != "take" && decision.kind != "ambiguous" {
+		return decision
+	}
+	source := facts(input)
+	early := []map[string]any{}
+	for _, item := range exploreList(command.node["outcomes"]) {
+		outcome := exploreObject(item)
+		guard := command.guards[fmt.Sprint(outcome["name"])]
+		if exploreIsInputRefusal(outcome) {
+			if guard.evaluate(source) == truthTrue {
+				break
+			}
+			continue
+		}
+		if !exploreIsExternal(outcome) || outcome["before_row"] != true {
+			continue
+		}
+		if exploreObject(outcome["condition"])["kind"] == "external_when" {
+			switch guard.evaluate(source) {
+			case truthUnknown:
+				return exploreDecision{kind: "unknown", reason: fmt.Sprintf("the guard of `%v` (%s) is unknown over a generated input", outcome["name"], guard)}
+			case truthFalse:
+				continue
+			}
+		}
+		early = append(early, outcome)
+	}
+	if len(early) == 0 {
+		return decision
+	}
+	externals := early
+	for _, outcome := range decision.externals {
+		offered := false
+		for _, before := range early {
+			if fmt.Sprint(before["name"]) == fmt.Sprint(outcome["name"]) {
+				offered = true
+			}
+		}
+		if !offered {
+			externals = append(externals, outcome)
+		}
+	}
+	if decision.kind == "ambiguous" {
+		return exploreDecision{kind: "take", externals: externals, names: decision.names}
+	}
+	decision.externals = externals
+	return decision
+}
+
+// exploreDecideRow is which branch a step takes, in Entity Runtime's order (beyond10x/ess#235): the
 // input-guarded refusals, the first declared whose guard holds; then the accepting guarded branch
 // that holds, or the default; then, where that branch moves from a state no move of the command
 // starts from, the wrong-state branch.
-func exploreDecide(command *exploreCommand, input Row, model *exploreModel) exploreDecision {
+func exploreDecideRow(command *exploreCommand, input Row, model *exploreModel) exploreDecision {
 	outcomes := []map[string]any{}
 	for _, outcome := range exploreList(command.node["outcomes"]) {
 		outcomes = append(outcomes, exploreObject(outcome))
@@ -1631,7 +2085,79 @@ func exploreDecide(command *exploreCommand, input Row, model *exploreModel) expl
 		}
 		return orExternal(exploreDecision{kind: "ambiguous", names: names})
 	}
-	return exploreDecision{kind: "take", outcome: exploreTerminal(command, selected, input, model), externals: externals}
+	taken := exploreTerminal(command, selected, input, model)
+	// A selected-rows branch whose filter reads a stored field whose value the model does not hold
+	// leaves it unable to say which rows change: the draw is redrawn and reported, the command kept. Only an
+	// accepting `when:` or default branch carries `instances:`, never an external one.
+	if _, undetermined := exploreSelectedRows(command.name, taken, input, model); undetermined != "" {
+		return exploreDecision{kind: "undetermined", reason: undetermined}
+	}
+	return exploreDecision{kind: "take", outcome: taken, externals: externals}
+}
+
+// exploreSelectedRows is the records a selected-rows outcome (`instances: {where: …}`) selects for
+// input, read before the outcome changes any of them, or why the model cannot say. A `moves:`
+// skips a row resting outside the transition's `from` states before its filter is read, as the
+// interpreter's `select` does. Only a filter that holds selects a row. One left Unknown by a
+// stored field held as null or an `Optional` field no outcome wrote (both absent), or by an input
+// path the draw left out, does not hold, so the row is not selected; one left Unknown by a field
+// whose value the model does not hold (a required field no outcome wrote, or a value it could not
+// determine) is undetermined, as in the interpreter's `only_absent`
+// (`docs/design/set-effects-over-filtered-instances.md`, "Selection").
+func exploreSelectedRows(command string, outcome map[string]any, input Row, model *exploreModel) ([]*exploreRecord, string) {
+	set := exploreObject(outcome["instances"])
+	if set == nil {
+		return nil, ""
+	}
+	filter, refusal := exploreParse(set["filter"])
+	if refusal != "" {
+		return nil, fmt.Sprintf("%s filter of `%v`: %s", command, outcome["name"], refusal)
+	}
+	from := exploreStrings(exploreObject(set["transition"])["from"])
+	selected := []*exploreRecord{}
+	for _, record := range model.of(exploreString(set["entity"])) {
+		if set["effect"] == "moves" && !exploreContains(from, fmt.Sprint(record.fields["state"])) {
+			continue
+		}
+		combined := Row{}
+		for field := range record.unwritten {
+			combined[field] = nil
+		}
+		for field, value := range record.fields {
+			combined[field] = value
+		}
+		combined["input"] = map[string]any(input)
+		source := facts(combined)
+		switch filter.evaluate(source) {
+		case truthTrue:
+			selected = append(selected, record)
+		case truthUnknown:
+			for _, path := range explorePaths(filter) {
+				if _, bound := source[path]; !bound && !strings.HasPrefix(path, "input.") {
+					return nil, fmt.Sprintf("%s filter of `%v` reads %s, whose value the model does not hold", command, outcome["name"], path)
+				}
+			}
+		}
+	}
+	return selected, ""
+}
+
+// exploreApplySets writes what outcome's `sets:` determine into record: a determined value, null
+// for a cleared one, and the field forgotten where the model cannot say.
+func exploreApplySets(ir map[string]any, outcome map[string]any, input Row, record *exploreRecord) {
+	for _, set := range exploreList(outcome["sets"]) {
+		set := exploreObject(set)
+		value, state := exploreValue(ir, exploreObject(set["value"]), input, exploreObject(set["target_type"]))
+		target := exploreString(set["target"])
+		delete(record.unwritten, target)
+		if state == exploreDetermined {
+			record.fields[target] = value
+		} else if state == exploreCleared {
+			record.fields[target] = nil
+		} else {
+			delete(record.fields, target)
+		}
+	}
 }
 
 // exploreRowHolds is whether a branch selected by the stored row holds for record and this input,
@@ -1772,7 +2298,7 @@ func exploreEligible(command *exploreCommand, outcomes []map[string]any, source 
 
 // exploreChoices is the branches a step may take: the ordinary one, unless an earlier arrangement
 // of this command may still hold and an external branch is eligible, then every eligible external
-// branch the target has not refused to arrange.
+// branch the target has not refused to arrange in this sequence.
 type exploreChoice struct {
 	arrangement string
 	expected    map[string]any
@@ -1784,7 +2310,7 @@ func exploreChoices(s *exploreSession, command *exploreCommand, decision explore
 		choices = append(choices, exploreChoice{expected: decision.outcome})
 	}
 	for _, outcome := range decision.externals {
-		if _, refused := s.p.unarrangeable[command.name+"/"+fmt.Sprint(outcome["name"])]; !refused {
+		if !s.unarrangeable[command.name+"/"+fmt.Sprint(outcome["name"])] {
 			choices = append(choices, exploreChoice{arrangement: fmt.Sprint(outcome["name"]), expected: exploreTerminal(command, outcome, input, s.model)})
 		}
 	}
@@ -1823,6 +2349,9 @@ type exploreStep struct {
 	// external is the external branch arranged for this step, or empty for the ordinary branch.
 	external string
 	fresh    []exploreRef
+	// gone is every input naming a row an earlier step deleted, as (entity, deletion index), so a
+	// shorter trace re-resolves it (beyond10x/ess#583).
+	gone []exploreRef
 	// restart marks a restart of the target rather than a command.
 	restart bool
 }
@@ -1866,7 +2395,18 @@ func exploreDraw(kind exploreKind, r *Mulberry32, command *exploreCommand, model
 	case "string":
 		return explorePick(r, command.pools.textsAt(path)), nil
 	case "timestamp":
-		// One seeded draw selects a UTC second on a fixed date, never a target clock.
+		// Around the clock, where a guard compares one with `now` (beyond10x/ess#582): an hour to a
+		// day either side of an instant a guard compares it with, so a target reading its own clock
+		// moments later decides the step as the model does. Otherwise one seeded draw selects a UTC
+		// second on a fixed date, never a target clock.
+		if clock := model.clock; clock != nil && len(clock.offsets) > 0 {
+			offset := explorePick(r, clock.offsets)
+			away := int64(r.Int(3600, 86400))
+			if r.Chance(0.5) {
+				away = -away
+			}
+			return exploreInstantText(clock.now().Add(time.Duration(offset+away) * time.Second)), nil
+		}
 		second := r.Int(0, 86399)
 		return fmt.Sprintf("2020-01-01T%02d:%02d:%02dZ", second/3600, second/60%60, second%60), nil
 	case "uuid":
@@ -1915,6 +2455,7 @@ func exploreDrawStep(command *exploreCommand, r *Mulberry32, model *exploreModel
 	input := Row{}
 	refs := []exploreRef{}
 	fresh := []exploreRef{}
+	gone := []exploreRef{}
 	for _, field := range command.inputs {
 		kind := field.kind
 		if field.name == instance && kind.kind != "identity" {
@@ -1941,7 +2482,17 @@ func exploreDrawStep(command *exploreCommand, r *Mulberry32, model *exploreModel
 					base = *kind.base
 				}
 				err = errExploreNoRecord
-				for attempt := 0; attempt < exploreAttempts; attempt++ {
+				// A supplied instance with an unknown-instance answer names a row an earlier step
+				// deleted with even chance, where there is one: the model answers it as the unknown
+				// instance it now is (beyond10x/ess#583).
+				if deleted := model.deleted[probed]; field.name == instance && exploreUnknown(command) != nil && len(deleted) > 0 && r.Chance(0.5) {
+					index := r.Int(0, len(deleted)-1)
+					if model.find(probed, deleted[index]) == nil {
+						value, err = deleted[index], nil
+						gone = append(gone, exploreRef{path: field.name, entity: probed, index: index})
+					}
+				}
+				for attempt := 0; err != nil && attempt < exploreAttempts; attempt++ {
 					ignored := []exploreRef{}
 					drawn, problem := exploreDraw(base, r, command, model, field.name, false, &ignored)
 					_, absent := drawn.(exploreAbsentValue)
@@ -1964,7 +2515,7 @@ func exploreDrawStep(command *exploreCommand, r *Mulberry32, model *exploreModel
 			input[field.name] = nil
 		}
 	}
-	return &exploreStep{command: command.name, input: input, refs: refs, fresh: fresh}
+	return &exploreStep{command: command.name, input: input, refs: refs, fresh: fresh, gone: gone}
 }
 
 // ---- one step against the target ----------------------------------------------------------------
@@ -1987,6 +2538,10 @@ type exploreSession struct {
 	undetermined map[string]bool
 	// forced is every command the target was asked to arrange a branch for in this sequence.
 	forced map[string]bool
+	// unarrangeable is `command/outcome` for every external branch the target refused to arrange in
+	// this sequence. It is the sequence's own, so a branch an earlier seed found unarrangeable does
+	// not change what a later seed draws (beyond10x/ess#576).
+	unarrangeable map[string]bool
 	// token is the consistency token the last command returned.
 	token string
 }
@@ -2087,7 +2642,7 @@ func explorePerform(s *exploreSession, command *exploreCommand, step *exploreSte
 			if into, ok := subject["into"]; ok && into != nil {
 				state = into
 			}
-			record = &exploreRecord{id: id, fields: Row{identity: id, "state": state}}
+			record = &exploreRecord{id: id, fields: Row{identity: id, "state": state}, unwritten: exploreUnwritten(ir, entity)}
 			s.model.records[entityName] = append(s.model.records[entityName], record)
 		} else {
 			id, _ := exploreReadPath(map[string]any(step.input), field)
@@ -2095,20 +2650,30 @@ func explorePerform(s *exploreSession, command *exploreCommand, step *exploreSte
 			if record != nil && subject["effect"] == "moves" {
 				record.fields["state"] = exploreObject(subject["transition"])["to"]
 			}
-		}
-		if record != nil {
-			for _, set := range exploreList(outcome["sets"]) {
-				set := exploreObject(set)
-				value, state := exploreValue(ir, exploreObject(set["value"]), step.input, exploreObject(set["target_type"]))
-				target := exploreString(set["target"])
-				if state == exploreDetermined {
-					record.fields[target] = value
-				} else if state == exploreCleared {
-					record.fields[target] = nil
-				} else {
-					delete(record.fields, target)
-				}
+			// A delete takes the row out of the model, so every view read below must lose it, and a
+			// later step naming it is answered as an unknown instance (beyond10x/ess#583).
+			if record != nil && subject["effect"] == "deletes" {
+				s.model.remove(entityName, record)
+				record = nil
 			}
+		}
+		// A preserving outcome leaves the row exactly as it was: its state and every field, so the
+		// views read below hold the target to an unchanged subject (beyond10x/ess#536).
+		if record != nil && subject["effect"] != "preserves" {
+			exploreApplySets(ir, outcome, step.input, record)
+		}
+	}
+	// A selected-rows outcome (beyond10x/ess#538) changes every row its filter selected before
+	// it ran: a `moves:` takes each selected row, none of which rests outside the transition's
+	// `from` states, an `updates:` changes each, and `sets:` applies to every changed row.
+	if set := exploreObject(outcome["instances"]); set != nil {
+		rows, _ := exploreSelectedRows(command.name, outcome, step.input, s.model)
+		transition := exploreObject(set["transition"])
+		for _, record := range rows {
+			if set["effect"] == "moves" {
+				record.fields["state"] = transition["to"]
+			}
+			exploreApplySets(ir, outcome, step.input, record)
 		}
 	}
 
@@ -2321,7 +2886,7 @@ func exploreSameFailure(p *explorePlan, original, replayed *exploreFound) bool {
 	last := original.executed[len(original.executed)-1]
 	next := replayed.executed[len(replayed.executed)-1]
 	strict := false
-	for _, command := range p.commands {
+	for _, command := range p.drawn {
 		if command.name != last.command {
 			continue
 		}
@@ -2355,8 +2920,8 @@ func exploreOpen(p *explorePlan, newTarget func() Target, scenario string) (*exp
 		return nil, err
 	}
 	s := &exploreSession{
-		p: p, target: target, model: &exploreModel{records: map[string][]*exploreRecord{}},
-		correlation: correlation, scenario: scenario, undetermined: map[string]bool{}, forced: map[string]bool{},
+		p: p, target: target, model: &exploreModel{records: map[string][]*exploreRecord{}, deleted: map[string][]Node{}, clock: p.clock},
+		correlation: correlation, scenario: scenario, undetermined: map[string]bool{}, forced: map[string]bool{}, unarrangeable: map[string]bool{},
 	}
 	if err := explorePreconditions(s); err != nil {
 		s.close()
@@ -2391,7 +2956,7 @@ func explorePreconditions(s *exploreSession) error {
 			input[key] = value
 		}
 		step := &exploreStep{command: name, input: input}
-		decision := exploreDecide(&command, input, s.model)
+		decision := exploreDecideNow(&command, input, s.model)
 		// The model must take the branch the specification requires of it, as synthesis does: a
 		// precondition the model decides as a refusal, or as anything else, fails as setup.
 		wanted := exploreString(pre["outcome"])
@@ -2460,8 +3025,19 @@ func exploreReplay(p *explorePlan, newTarget func() Target, trace []*exploreStep
 		if !resolvable {
 			continue
 		}
-		step := &exploreStep{command: recorded.command, input: Row(input), refs: recorded.refs, external: recorded.external, fresh: recorded.fresh}
-		decision := exploreDecide(command, step.input, s.model)
+		for _, ref := range recorded.gone {
+			deleted := s.model.deleted[ref.entity]
+			if ref.index >= len(deleted) || s.model.find(ref.entity, deleted[ref.index]) != nil {
+				resolvable = false
+			} else {
+				exploreSetPath(input, ref.path, deleted[ref.index])
+			}
+		}
+		if !resolvable {
+			continue
+		}
+		step := &exploreStep{command: recorded.command, input: Row(input), refs: recorded.refs, external: recorded.external, fresh: recorded.fresh, gone: recorded.gone}
+		decision := exploreDecideNow(command, step.input, s.model)
 		if decision.kind != "take" {
 			continue
 		}
@@ -2513,6 +3089,11 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 		return ExploreResult{}, errors.New("the restart interval must be a whole number of steps, zero or more")
 	}
 	p := explorePlanOf(ir)
+	read := options.Now
+	if read == nil {
+		read = time.Now
+	}
+	p.clock = &exploreClock{read: read, offsets: p.offsets}
 	steps := options.Steps
 	if steps == 0 {
 		steps = exploreDefaultSteps
@@ -2540,9 +3121,17 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 	// and stops every later restart.
 	performed := 0
 	refused := ""
+	// refusals is every (command, held state) the target answered ErrUnsupported to, under
+	// `command` NUL `state`, in the order refused; refusedOutcomes is every `command/outcome` a step
+	// left out for one would have taken; driven is every command a step was sent for
+	// (beyond10x/ess#537).
+	refusals := map[string]*Refusal{}
+	refusalOrder := []string{}
+	refusedOutcomes := map[string]bool{}
+	driven := map[string]bool{}
 
 	for _, seed := range seeds {
-		if len(p.commands) == 0 || failure != nil {
+		if len(p.drawn) == 0 || failure != nil {
 			break
 		}
 		sequences++
@@ -2559,22 +3148,37 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 		restarts := 0
 		pending := 0
 		var found *exploreFound
+		// drawable is what this sequence draws from: every admitted command, less those this sequence
+		// excluded; refusedHere is every (command, held state) the target refused in this sequence.
+		// Both are the sequence's own, as its unarrangeable branches are, so a seed draws inside a run
+		// what it draws alone (beyond10x/ess#576). What they find is still reported for the run.
+		drawable := append([]*exploreCommand{}, p.drawn...)
+		refusedHere := map[string]bool{}
 		for attempts := 0; (len(trace)-restarts < steps || pending > 0) && attempts < steps*exploreAttempts; attempts++ {
-			if len(p.commands) == 0 {
+			if len(drawable) == 0 {
 				break
 			}
-			command := explorePick(r, p.commands)
+			command := explorePick(r, drawable)
 			step := exploreDrawStep(command, r, s.model)
 			if step == nil {
 				continue
 			}
-			decision := exploreDecide(command, step.input, s.model)
+			decision := exploreDecideNow(command, step.input, s.model)
 			if decision.kind == "ambiguous" {
 				ambiguous[command.name+": "+strings.Join(decision.names, ", ")] = true
 				continue
 			}
 			if decision.kind == "unknown" {
-				p.exclude(command.name, decision.reason)
+				kept := []*exploreCommand{}
+				for _, other := range drawable {
+					if other != command {
+						kept = append(kept, other)
+					}
+				}
+				drawable = kept
+				if !p.excludedCommands[command.name] {
+					p.exclude(command.name, decision.reason)
+				}
 				continue
 			}
 			if decision.kind == "undetermined" {
@@ -2592,11 +3196,22 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 			if len(choices) > 1 {
 				outcome = explorePick(r, choices)
 			}
+			// A command the target refused in this held state is not sent in it again.
+			state := exploreHeldState(command, step.input, s.model)
+			held := command.name + "\x00" + state
+			if refusal := refusals[held]; refusal != nil && refusedHere[held] {
+				refusal.Count++
+				refusedOutcomes[command.name+"/"+fmt.Sprint(outcome.expected["name"])] = true
+				continue
+			}
 			if outcome.arrangement != "" {
 				step.external = outcome.arrangement
 				arranging, unsupported := exploreArrange(s, command, step.external)
 				if unsupported != nil {
-					p.unarrangeable[command.name+"/"+step.external] = "the target cannot arrange it: " + unsupported.reason
+					s.unarrangeable[command.name+"/"+step.external] = true
+					if _, known := p.unarrangeable[command.name+"/"+step.external]; !known {
+						p.unarrangeable[command.name+"/"+step.external] = "the target cannot arrange it: " + unsupported.reason
+					}
 					continue
 				}
 				if arranging != nil {
@@ -2607,9 +3222,17 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 			}
 			disagreement, unsupported := explorePerform(s, command, step, outcome.expected)
 			if unsupported != nil {
-				p.exclude(command.name, "the target does not expose it: "+unsupported.reason)
+				refusedHere[held] = true
+				if refusal := refusals[held]; refusal != nil {
+					refusal.Count++
+				} else {
+					refusals[held] = &Refusal{Command: command.name, State: state, Reason: "the target does not expose it: " + unsupported.reason, Count: 1}
+					refusalOrder = append(refusalOrder, held)
+				}
+				refusedOutcomes[command.name+"/"+fmt.Sprint(outcome.expected["name"])] = true
 				continue
 			}
+			driven[command.name] = true
 			executed++
 			trace = append(trace, step)
 			performed += pending
@@ -2646,12 +3269,31 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 		}
 	}
 
+	// A command refused in every state it was drawn in, and driven in none, is excluded with its
+	// first refusal's reason, as one refused step excluded it before beyond10x/ess#537.
+	narrowed := []Refusal{}
+	for _, key := range refusalOrder {
+		refusal := refusals[key]
+		switch {
+		case p.excludedCommands[refusal.Command]:
+		case driven[refusal.Command]:
+			narrowed = append(narrowed, *refusal)
+		default:
+			p.exclude(refusal.Command, refusal.Reason)
+		}
+	}
+	sort.SliceStable(narrowed, func(i, j int) bool {
+		if narrowed[i].Command != narrowed[j].Command {
+			return narrowed[i].Command < narrowed[j].Command
+		}
+		return narrowed[i].State < narrowed[j].State
+	})
 	unreached := map[string]bool{}
 	excludedOutcomes := map[string]bool{}
 	for _, declared := range p.declared {
 		for _, outcome := range declared.outcomes {
 			id := declared.command + "/" + outcome
-			if p.excludedCommands[declared.command] {
+			if p.excludedCommands[declared.command] || (refusedOutcomes[id] && !reached[id]) {
 				excludedOutcomes[id] = true
 			} else if _, refused := p.unarrangeable[id]; !reached[id] && !refused {
 				unreached[id] = true
@@ -2663,7 +3305,7 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 		reach := ExternalReach{Outcome: branch.id, Cause: branch.cause, Reach: "unreached"}
 		reason, refused := p.unarrangeable[branch.id]
 		switch {
-		case p.excludedCommands[branch.command]:
+		case p.excludedCommands[branch.command] || (refusedOutcomes[branch.id] && !reached[branch.id]):
 			reach.Reach = "excluded"
 		case reached[branch.id]:
 			reach.Reach = "reached"
@@ -2693,6 +3335,7 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 		Unreached:        exploreSet(unreached),
 		Excluded:         excluded,
 		ExcludedOutcomes: exploreSet(excludedOutcomes),
+		Refused:          narrowed,
 		Undetermined:     exploreSet(undetermined),
 		Ambiguous:        exploreSet(ambiguous),
 		External:         external,
@@ -2762,15 +3405,37 @@ func CheckExplored(result ExploreResult, options AssertOptions) error {
 		problems = append(problems, fmt.Sprintf("explore: %d declared outcome(s) no sequence reached:\n%s", len(result.Unreached), strings.Join(lines, "\n")))
 	}
 	if len(result.ExcludedOutcomes) > 0 && !options.AllowExcluded {
-		lines := []string{}
-		for _, outcome := range result.ExcludedOutcomes {
-			lines = append(lines, "  "+outcome)
-		}
+		excluded := map[string]bool{}
 		reasons := []string{}
 		for _, exclusion := range result.Excluded {
+			excluded[exclusion.Subject] = true
 			reasons = append(reasons, fmt.Sprintf("  %s: %s", exclusion.Subject, exclusion.Reason))
 		}
-		problems = append(problems, fmt.Sprintf("explore: %d declared outcome(s) of excluded commands were never tried:\n%s\nexcluded:\n%s\naccept them explicitly with AssertOptions{AllowExcluded: true}", len(result.ExcludedOutcomes), strings.Join(lines, "\n"), strings.Join(reasons, "\n")))
+		lines := []string{}
+		for _, outcome := range result.ExcludedOutcomes {
+			line, command := "  "+outcome, outcome
+			if slash := strings.LastIndex(outcome, "/"); slash >= 0 {
+				command = outcome[:slash]
+			}
+			if !excluded[command] {
+				line += " (only a step the target refused would have taken it)"
+			}
+			lines = append(lines, line)
+		}
+		listed := ""
+		if len(reasons) > 0 {
+			listed = "\nexcluded:\n" + strings.Join(reasons, "\n")
+		}
+		problems = append(problems, fmt.Sprintf("explore: %d declared outcome(s) of excluded commands were never tried:\n%s%s\naccept them explicitly with AssertOptions{AllowExcluded: true}", len(result.ExcludedOutcomes), strings.Join(lines, "\n"), listed))
+	}
+	// A refusal fails the strict assertion whether or not it left an outcome untried: the command
+	// was not sent in that state, and before beyond10x/ess#537 the refusal excluded it.
+	if len(result.Refused) > 0 && !options.AllowExcluded {
+		lines := []string{}
+		for _, refusal := range result.Refused {
+			lines = append(lines, fmt.Sprintf("  %s in %s: %s (%d step(s) not sent)", refusal.Command, refusal.State, refusal.Reason, refusal.Count))
+		}
+		problems = append(problems, fmt.Sprintf("explore: %d (command, held state) pair(s) the target refused were never tried again:\n%s\naccept them explicitly with AssertOptions{AllowExcluded: true}", len(result.Refused), strings.Join(lines, "\n")))
 	}
 	unarrangeable := []string{}
 	for _, branch := range result.External {
@@ -2797,8 +3462,9 @@ func CheckExplored(result ExploreResult, options AssertOptions) error {
 }
 
 // AssertExplored fails t when an exploration failed, when a declared outcome went unreached, or
-// when an excluded command's outcomes, or external outcomes the target could not arrange, were
-// never tried and AllowExcluded is not set, or when restarts were asked for and none was performed.
+// when an excluded command's outcomes, a refused (command, held state), or external outcomes the
+// target could not arrange, were never tried and AllowExcluded is not set, or when restarts were
+// asked for and none was performed.
 // What the model could not place, and the draws it would not decide, are logged and do not fail.
 func AssertExplored(t testing.TB, result ExploreResult, options AssertOptions) {
 	t.Helper()
@@ -2971,7 +3637,8 @@ type ConcurrentOptions struct {
 	// Calls is how many calls each client makes after the prefix. Zero means 3.
 	Calls int `json:"calls,omitempty"`
 	// AllowExcluded accepts commands the target does not expose (ErrUnsupported), whose calls are
-	// then not written to any history. An explicit, reviewable opt-out, as AssertOptions has.
+	// then not written to any history, and external branches it cannot arrange. An explicit,
+	// reviewable opt-out, as AssertOptions has.
 	AllowExcluded bool `json:"allowExcluded,omitempty"`
 	// Inject injects every fault the specification declares, and no other, each as one more move
 	// the seed schedules: a second delivery of an event only `delivery: at_least_once` bindings
@@ -3043,6 +3710,13 @@ type ConcurrentResult struct {
 	Failure  *ConcurrentFailure `json:"failure,omitempty"`
 	// Injected is what was injected across every history, all empty without Inject.
 	Injected ConcurrentInjected `json:"injected"`
+	// Arranged counts, by `command/outcome`, the calls whose external branch the target was asked
+	// to arrange through ConfigureExternalOutcome, as the sequential walk asks (beyond10x/ess#576).
+	// Absent when none was, so a result without one keeps its bytes.
+	Arranged map[string]int `json:"arranged,omitempty"`
+	// Unarrangeable is every external branch, as `command/outcome`, the target answered
+	// ErrUnsupported to arranging, and why, in the order found. Its calls are sent unarranged.
+	Unarrangeable []Exclusion `json:"unarrangeable,omitempty"`
 }
 
 // ErrNoEss is the refusal when `ess` is not on PATH.
@@ -3108,6 +3782,21 @@ type exploreOperation struct {
 	rows []string
 	// decisionTime is the instant the call's decision observed, or nil where none was observed.
 	decisionTime *DecisionInstant
+	// input is what a command's call sent, copied when it was invoked, written as `input`
+	// (`ess-history/3`); nil for a read.
+	input Row
+	// events is every event a returned command published, in the order published, with its
+	// payload, written as `events` (`ess-history/3`); nil where the call did not answer.
+	events []exploreRecordedEvent
+	// arranged is the external branch a command's call arranged before it was sent, written as
+	// `arranged` (`ess-history/3`): empty where it arranged none; nil for a read.
+	arranged []string
+}
+
+// exploreRecordedEvent is one event a call published, as `ess-history/3` records it.
+type exploreRecordedEvent struct {
+	event   string
+	payload map[string]any
 }
 
 type exploreFlight struct {
@@ -3166,6 +3855,10 @@ type exploreRecording struct {
 	injected     ConcurrentInjected
 	// tokens is each client's last consistency token, empty until one of its commands answers one.
 	tokens []string
+	// arranged counts each external branch arranged, by `command/outcome`; unarrangeable is every
+	// one the target cannot arrange, in the order found, which this history asks no more.
+	arranged      map[string]int
+	unarrangeable []Exclusion
 }
 
 // exploreKey is an identity as a subject key: its text, or empty when it is not text.
@@ -3196,6 +3889,54 @@ func exploreExternalOther(command *exploreCommand) bool {
 	return false
 }
 
+// exploreArrangeable is every external branch of command, other than a `replays:` one, a call with
+// input may take where the sequential walk offers it: an unguarded `external:`, or one beside a
+// `when:` that holds over input. A guard unknown over input offers none. Concurrent exploration
+// holds no model state, so a branch that moves its subject is offered whatever state the subject
+// is in, and the target answers from the state it holds.
+func exploreArrangeable(command *exploreCommand, input Row) []string {
+	names := []string{}
+	source := facts(input)
+	for _, node := range exploreList(command.node["outcomes"]) {
+		outcome := exploreObject(node)
+		if outcome["replays"] != nil || !exploreIsExternal(outcome) {
+			continue
+		}
+		if exploreObject(outcome["condition"])["kind"] == "external_when" {
+			guard, ok := command.guards[fmt.Sprint(outcome["name"])]
+			if !ok || guard.evaluate(source) != truthTrue {
+				continue
+			}
+		}
+		names = append(names, fmt.Sprint(outcome["name"]))
+	}
+	return names
+}
+
+// arrange asks the target to make command take the external branch outcome, as the sequential walk
+// does before the step it drew it for. A branch the target cannot arrange is recorded and its calls
+// are sent unarranged; any other refusal fails the exploration. It reports whether the target
+// arranged it.
+func (h *exploreRecording) arrange(command *exploreCommand, outcome string) (bool, error) {
+	id := command.name + "/" + outcome
+	for _, known := range h.unarrangeable {
+		if known.Subject == id {
+			return false, nil
+		}
+	}
+	err := h.target.ConfigureExternalOutcome(ExternalOutcomeControl{Command: command.name, Outcome: outcome, Correlation: h.correlation})
+	switch {
+	case err == nil:
+		h.arranged[id]++
+		return true, nil
+	case errors.Is(err, ErrUnsupported):
+		h.unarrangeable = append(h.unarrangeable, Exclusion{Subject: id, Reason: "the target cannot arrange it: " + err.Error()})
+		return false, nil
+	default:
+		return false, fmt.Errorf("arranging `%s`, the target threw %s", id, err.Error())
+	}
+}
+
 func (h *exploreRecording) request(command *exploreCommand, step *exploreStep) CommandRequest {
 	return CommandRequest{Command: command.name, Actor: command.actor, Input: map[string]Node(step.input), Correlation: h.correlation}
 }
@@ -3216,7 +3957,8 @@ func (h *exploreRecording) reserve(client int, command *exploreCommand, step *ex
 	}
 	h.clock++
 	index := len(h.operations)
-	h.operations = append(h.operations, exploreOperation{client: client, command: command.name, subjectKey: subject, invokedAt: h.clock, creates: creates})
+	input, _ := exploreCopy(map[string]any(step.input)).(map[string]any)
+	h.operations = append(h.operations, exploreOperation{client: client, command: command.name, subjectKey: subject, invokedAt: h.clock, creates: creates, input: Row(input), arranged: []string{}})
 	return index
 }
 
@@ -3305,9 +4047,19 @@ func (h *exploreRecording) send(request CommandRequest) PendingCommand {
 	return pending
 }
 
-func (h *exploreRecording) invoke(client int, command *exploreCommand, step *exploreStep) *exploreFlight {
+func (h *exploreRecording) invoke(client int, command *exploreCommand, step *exploreStep) (*exploreFlight, error) {
+	arranged := false
+	if step.external != "" {
+		var err error
+		if arranged, err = h.arrange(command, step.external); err != nil {
+			return nil, err
+		}
+	}
 	request := h.request(command, step)
 	index := h.reserve(client, command, step)
+	if arranged {
+		h.operations[index].arranged = []string{step.external}
+	}
 	// One call, one correlation: a retry sends it again under the same one, and a target tells a
 	// retry from a new call of the same input only by it — it never replays one call for another.
 	request.Correlation = fmt.Sprintf("%s-%d", h.correlation, index+1)
@@ -3325,7 +4077,7 @@ func (h *exploreRecording) invoke(client int, command *exploreCommand, step *exp
 			}
 		}
 	}
-	return &exploreFlight{pending: h.send(request), command: command, index: index, client: client, timeout: timeout}
+	return &exploreFlight{pending: h.send(request), command: command, index: index, client: client, timeout: timeout}, nil
 }
 
 // invokeRetry sends a client's retry: the request it sent, unchanged, as a new operation.
@@ -3472,6 +4224,21 @@ func (h *exploreRecording) complete(flight *exploreFlight) (Node, string, error)
 	if operation.outcome == "" {
 		operation.outcome = exploreUndeclared
 	}
+	// What it published, with each payload, for `check-history` to hold to the branch's `emits:`
+	// and `payload:`. A nameless event is written under a name no event can have, as a nameless
+	// outcome is.
+	operation.events = []exploreRecordedEvent{}
+	for _, event := range result.DirectEvents {
+		name := event.Event
+		if name == "" {
+			name = exploreUndeclared
+		}
+		payload := map[string]any{}
+		for field, value := range event.Payload {
+			payload[field] = value
+		}
+		operation.events = append(operation.events, exploreRecordedEvent{event: name, payload: payload})
+	}
 	if id == nil {
 		return nil, "", nil
 	}
@@ -3487,19 +4254,64 @@ func exploreUUID(n uint64) string {
 
 // exploreQuote is a JSON string as `ess` writes one: no HTML escaping.
 func exploreQuote(text string) string {
+	return exploreJSON(text)
+}
+
+// exploreJSON is a JSON value as `ess` writes one: compact, object keys sorted, no HTML escaping.
+func exploreJSON(value any) string {
 	var out strings.Builder
 	encoder := json.NewEncoder(&out)
 	encoder.SetEscapeHTML(false)
-	_ = encoder.Encode(text)
+	_ = encoder.Encode(value)
 	return strings.TrimSuffix(out.String(), "\n")
+}
+
+// exploreBinary64 is value with every number it holds turned into its float64 and every negative
+// zero into zero, so that encoding/json writes each in the one spelling `ess-history/3` admits:
+// the shortest digits of the binary64 value, as JSON.stringify writes them (`100`, never `100.0`;
+// `1e+21`). An integer a float64 does not carry exactly is recorded as the float64 nearest it.
+func exploreBinary64(value any) any {
+	text, err := json.Marshal(value)
+	if err != nil {
+		return value
+	}
+	var decoded any
+	if err := json.Unmarshal(text, &decoded); err != nil {
+		return value
+	}
+	var zero func(any) any
+	zero = func(node any) any {
+		switch typed := node.(type) {
+		case float64:
+			if typed == 0 {
+				return float64(0)
+			}
+			return typed
+		case []any:
+			for index, item := range typed {
+				typed[index] = zero(item)
+			}
+			return typed
+		case map[string]any:
+			for key, item := range typed {
+				typed[key] = zero(item)
+			}
+			return typed
+		default:
+			return node
+		}
+	}
+	return zero(decoded)
 }
 
 // exploreHistoryBytes is the history in the one spelling `ess` reads and writes: compact, keys in
 // declaration order, an absent `returned_at` and `outcome` for a call that never answered.
 func exploreHistoryBytes(digest string, seed, clients int, operations []exploreOperation) []byte {
 	written := []string{}
-	// format is `ess-history/2` exactly when a written operation records a decision time.
-	format := "ess-history/1"
+	// format is the lowest that carries what the written operations record: `ess-history/3` where
+	// one records its input, its events or what it arranged, `ess-history/2` where one records a
+	// decision time.
+	timed, inputs := false, false
 	kept := []exploreOperation{}
 	// position is where each written operation stands among the written ones, from 1, for a retry
 	// naming it.
@@ -3543,10 +4355,39 @@ func exploreHistoryBytes(digest string, seed, clients int, operations []exploreO
 			members = append(members, [2]string{"retry_of", exploreQuote(exploreUUID(uint64(original)))})
 		}
 		if operation.decisionTime != nil {
-			format = "ess-history/2"
+			timed = true
 			members = append(members, [2]string{"decision_time", exploreQuote(operation.decisionTime.String())})
 		}
+		if operation.input != nil {
+			inputs = true
+			members = append(members, [2]string{"input", exploreJSON(exploreBinary64(map[string]any(operation.input)))})
+		}
+		if operation.returned && operation.events != nil {
+			inputs = true
+			published := make([]string, 0, len(operation.events))
+			for _, event := range operation.events {
+				published = append(published, exploreJSONObject([][2]string{
+					{"event", exploreQuote(event.event)},
+					{"payload", exploreJSON(exploreBinary64(event.payload))},
+				}))
+			}
+			members = append(members, [2]string{"events", "[" + strings.Join(published, ",") + "]"})
+		}
+		if operation.arranged != nil {
+			inputs = true
+			quoted := make([]string, 0, len(operation.arranged))
+			for _, outcome := range operation.arranged {
+				quoted = append(quoted, exploreQuote(outcome))
+			}
+			members = append(members, [2]string{"arranged", "[" + strings.Join(quoted, ",") + "]"})
+		}
 		written = append(written, exploreJSONObject(members))
+	}
+	format := "ess-history/1"
+	if inputs {
+		format = "ess-history/3"
+	} else if timed {
+		format = "ess-history/2"
 	}
 	return []byte(exploreJSONObject([][2]string{
 		{"format", exploreQuote(format)},
@@ -3584,7 +4425,7 @@ func exploreRecordHistory(p *explorePlan, newTarget func() Target, digest string
 		return nil, nil, err
 	}
 	defer func() { _ = target.EndScenario(scenario) }()
-	h := &exploreRecording{target: target, correlation: scenario.Correlation, ir: p.ir, arranging: true, retries: make([]*exploreRetry, clients), injected: newConcurrentInjected(), tokens: make([]string, clients)}
+	h := &exploreRecording{target: target, correlation: scenario.Correlation, ir: p.ir, arranging: true, retries: make([]*exploreRetry, clients), injected: newConcurrentInjected(), tokens: make([]string, clients), arranged: map[string]int{}}
 	if options.Inject {
 		h.injection = NewSplitMix64(uint64(seed) ^ exploreInjectionStream)
 	}
@@ -3606,7 +4447,11 @@ func exploreRecordHistory(p *explorePlan, newTarget func() Target, digest string
 		if step == nil {
 			continue
 		}
-		id, entity, err := h.complete(h.invoke(0, command, step))
+		flight, err := h.invoke(0, command, step)
+		if err != nil {
+			return nil, nil, err
+		}
+		id, entity, err := h.complete(flight)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -3628,6 +4473,15 @@ func exploreRecordHistory(p *explorePlan, newTarget func() Target, digest string
 				}
 				command := p.commands[choice]
 				if step := exploreDrawStep(command, r, model); step != nil {
+					// An external branch the call may take is drawn beside its ordinary branch, as the
+					// sequential walk draws it, and arranged when the call is invoked. Nothing is drawn
+					// for a call no external branch is offered to, so its seed draws what it drew
+					// before arrangement existed. The prefix arranges nothing.
+					if names := exploreArrangeable(command, step.input); len(names) > 0 {
+						if choice := r.Int(0, len(names)); choice > 0 {
+							step.external = names[choice-1]
+						}
+					}
 					workload[client] = append(workload[client], exploreCall{command: command, step: step})
 					break
 				}
@@ -3684,7 +4538,11 @@ func exploreRecordHistory(p *explorePlan, newTarget func() Target, digest string
 			if call.view != nil {
 				flying[client] = h.invokeRead(client, call.view)
 			} else {
-				flying[client] = h.invoke(client, call.command, call.step)
+				flight, err := h.invoke(client, call.command, call.step)
+				if err != nil {
+					return nil, nil, err
+				}
+				flying[client] = flight
 			}
 		}
 	}
@@ -3750,7 +4608,7 @@ func ExploreConcurrent(newTarget func() Target, options ConcurrentOptions) (Conc
 			seeds = append(seeds, seed)
 		}
 	}
-	result := ConcurrentResult{Verdicts: []string{}, Excluded: []Exclusion{}, AllowExcluded: options.AllowExcluded, Injected: newConcurrentInjected()}
+	result := ConcurrentResult{Verdicts: []string{}, Excluded: []Exclusion{}, AllowExcluded: options.AllowExcluded, Injected: newConcurrentInjected(), Arranged: map[string]int{}}
 	for _, seed := range seeds {
 		if len(p.commands) == 0 {
 			break
@@ -3768,6 +4626,18 @@ func ExploreConcurrent(newTarget func() Target, options ConcurrentOptions) (Conc
 			}
 			if !known {
 				result.Excluded = append(result.Excluded, exclusion)
+			}
+		}
+		for id, count := range recording.arranged {
+			result.Arranged[id] += count
+		}
+		for _, branch := range recording.unarrangeable {
+			known := false
+			for _, earlier := range result.Unarrangeable {
+				known = known || earlier.Subject == branch.Subject
+			}
+			if !known {
+				result.Unarrangeable = append(result.Unarrangeable, branch)
 			}
 		}
 		name := fmt.Sprintf("history-%d.json", seed)
@@ -3827,6 +4697,13 @@ func CheckConcurrent(result ConcurrentResult) error {
 			lines = append(lines, fmt.Sprintf("  %s: %s", exclusion.Subject, exclusion.Reason))
 		}
 		problems = append(problems, fmt.Sprintf("explore: %d command(s) the target does not expose were left out of concurrent exploration:\n%s\naccept them explicitly with ConcurrentOptions{AllowExcluded: true}", len(result.Excluded), strings.Join(lines, "\n")))
+	}
+	if len(result.Unarrangeable) > 0 && !result.AllowExcluded {
+		lines := []string{}
+		for _, branch := range result.Unarrangeable {
+			lines = append(lines, fmt.Sprintf("  %s: %s", branch.Subject, branch.Reason))
+		}
+		problems = append(problems, fmt.Sprintf("explore: %d external outcome(s) the target could not arrange were never arranged in concurrent exploration:\n%s\naccept them explicitly with ConcurrentOptions{AllowExcluded: true}", len(result.Unarrangeable), strings.Join(lines, "\n")))
 	}
 	if len(problems) == 0 {
 		return nil

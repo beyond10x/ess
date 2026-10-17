@@ -692,7 +692,11 @@ export function admitDisclosureId(
     // So are String-newtype constraints on response observations (beyond10x/ess#499).
     !['ess-conformance/46', 'ess-conformance/47'].includes(version) &&
     // And ignored undeclared response fields (beyond10x/ess#500).
-    !['ess-conformance/48', 'ess-conformance/49'].includes(version)
+    !['ess-conformance/48', 'ess-conformance/49'].includes(version) &&
+    // And a held `now` (beyond10x/ess#586).
+    !['ess-conformance/50', 'ess-conformance/51'].includes(version) &&
+    // And awaiting a system-issued command (beyond10x/ess#542).
+    !['ess-conformance/52', 'ess-conformance/53'].includes(version)
   ) {
     return fail();
   }

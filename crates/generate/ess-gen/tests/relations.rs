@@ -138,9 +138,8 @@ fn the_entity_document_states_the_relation_on_the_property_that_carries_it() {
 fn the_openapi_document_states_the_relation_and_links_the_targets_schema() {
     let ir = billing();
     let published = artifacts(&OpenApi, &ir);
-    let document: Value =
-        serde_yaml::from_str(&contents(&published, "openapi/invoice-service.yaml"))
-            .expect("the document is YAML");
+    let document: Value = ess_yaml::from_str(&contents(&published, "openapi/invoice-service.yaml"))
+        .expect("the document is YAML");
     let model = &document["x-ess-entities"];
 
     let mut expected = declared();

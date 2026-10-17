@@ -14,10 +14,16 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use ess_compiler::ir::{ResolvedBody, ResolvedField, ResolvedTypeRef};
+use ess_compiler::ir::{
+    ResolvedBody, ResolvedCommand, ResolvedField, ResolvedOutcome, ResolvedTypeRef, ResolvedView,
+};
 use ess_compiler::EssIr;
 use ess_domain::component::Reach;
 use ess_domain::types::Primitive;
+use ess_primitives::facts::FactPath;
+use ess_primitives::predicate::{CompareKind, CompareOp, Operand, Predicate};
+
+pub mod status;
 
 /// The adopter-authored HTTP binding format.
 pub const HTTP_FORMAT: &str = "ess-http/1";
@@ -41,6 +47,18 @@ pub const CODES: &[&str] = &[
     "ESS-HTTP-012",
     "ESS-HTTP-013",
     "ESS-HTTP-014",
+    "ESS-HTTP-020",
+    "ESS-HTTP-021",
+    "ESS-HTTP-022",
+    "ESS-HTTP-023",
+    "ESS-HTTP-024",
+    "ESS-HTTP-025",
+    "ESS-HTTP-026",
+    "ESS-HTTP-027",
+    "ESS-HTTP-028",
+    "ESS-HTTP-029",
+    "ESS-HTTP-030",
+    "ESS-HTTP-031",
 ];
 
 /// The wording of a route collision, the same as the `OpenAPI` import's refusal of two operations
@@ -125,10 +143,1193 @@ impl fmt::Display for Method {
     }
 }
 
+/// How a command's request carries its input (`docs/design/http-presentation-binding.md`,
+/// "Request encoding").
+///
+/// Declared in the order the format lists them; `json` is the default.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    serde::Serialize,
+    serde::Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum Encoding {
+    /// An `application/json` body, ESS's own, less any field mapped to the path.
+    #[default]
+    Json,
+    /// An `application/x-www-form-urlencoded` body, UTF-8.
+    Form,
+    /// No body: every input field the path does not map is in the query string. The only
+    /// encoding a command on `get` may use.
+    Query,
+}
+
+impl Encoding {
+    /// Every encoding, in the order the format lists them.
+    pub const ALL: [Self; 3] = [Self::Json, Self::Form, Self::Query];
+
+    /// The encoding as a binding spells it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Json => "json",
+            Self::Form => "form",
+            Self::Query => "query",
+        }
+    }
+
+    /// The encoding a binding spells `text`, if it is one: exactly, in lower case.
+    pub fn parse(text: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|encoding| encoding.as_str() == text)
+    }
+
+    // `skip_serializing_if` passes the field by reference.
+    #[allow(clippy::trivially_copy_pass_by_ref)]
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+impl fmt::Display for Encoding {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+/// What a `form` or `query` request does with a parameter no input field names; `refuse` is the
+/// default, and the only answer a `json` body gives.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    serde::Serialize,
+    serde::Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum Unknown {
+    /// A parameter no field names makes the request malformed.
+    #[default]
+    Refuse,
+    /// A parameter no field names is ignored (RFC 6749 §3.1).
+    Ignore,
+}
+
+impl Unknown {
+    /// Every value, in the order the format lists them.
+    pub const ALL: [Self; 2] = [Self::Refuse, Self::Ignore];
+
+    /// The value as a binding spells it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Refuse => "refuse",
+            Self::Ignore => "ignore",
+        }
+    }
+
+    /// The value a binding spells `text`, if it is one: exactly, in lower case.
+    pub fn parse(text: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|unknown| unknown.as_str() == text)
+    }
+
+    // `skip_serializing_if` passes the field by reference.
+    #[allow(clippy::trivially_copy_pass_by_ref)]
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+impl fmt::Display for Unknown {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+/// A route's `request`, as written. Each value is read as text so that one outside its set is
+/// refused with a code and a path (`ESS-HTTP-020`) rather than as a parse error.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RequestSpec {
+    /// `json`, `form` or `query`; absent, `json`.
+    #[serde(default)]
+    pub encoding: Option<String>,
+    /// `refuse` or `ignore`; absent, `refuse`.
+    #[serde(default)]
+    pub unknown: Option<String>,
+}
+
+/// A compiled route's `request`. Each key whose value is its default is omitted from the IR, and
+/// a route whose request is all defaults carries none, so two documents that mean the same compile
+/// to the same bytes.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Request {
+    /// How the request carries the input.
+    #[serde(
+        default,
+        skip_serializing_if = "Encoding::is_default",
+        deserialize_with = "omitted_default"
+    )]
+    pub encoding: Encoding,
+    /// What a request parameter no field names does.
+    #[serde(
+        default,
+        skip_serializing_if = "Unknown::is_default",
+        deserialize_with = "omitted_default"
+    )]
+    pub unknown: Unknown,
+}
+
+/// A request key compiled IR writes only when it differs from its default.
+trait RequestKey: Default + PartialEq + fmt::Display + for<'de> serde::Deserialize<'de> {
+    const KEY: &'static str;
+}
+
+impl RequestKey for Encoding {
+    const KEY: &'static str = "encoding";
+}
+
+impl RequestKey for Unknown {
+    const KEY: &'static str = "unknown";
+}
+
+/// Reads a request key of compiled IR, refusing its default written out: compiled IR omits it, and
+/// a reader that took it would write back bytes it was not given.
+fn omitted_default<'de, D: serde::Deserializer<'de>, T: RequestKey>(
+    deserializer: D,
+) -> Result<T, D::Error> {
+    let value = T::deserialize(deserializer)?;
+    if value == T::default() {
+        return Err(serde::de::Error::custom(format!(
+            "`request.{}` is `{value}`, its default, which compiled IR omits",
+            T::KEY
+        )));
+    }
+    Ok(value)
+}
+
+/// The statuses a `3xx` outcome may answer: the redirects (decided for stage 2, answer 15).
+/// `300`, `304`, `305` and `306` name no answer an outcome gives.
+pub const REDIRECTS: [u16; 5] = [301, 302, 303, 307, 308];
+
+/// A response body as written (`docs/design/http-presentation-binding.md`, "Response body per
+/// outcome"): a word, `{<member>: error}` or `{<member>: {literal: <text>}}`. A word is read as
+/// text, whatever it is, so that one no body form spells is refused with a code and a path
+/// (`ESS-HTTP-024`, `ESS-HTTP-029`) rather than as a parse error; which forms a key admits is
+/// [`compile`]'s to check.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BodySpec {
+    /// `envelope`, `response`, `none`, `rows`, `single`, or a word that is none of them.
+    Word(String),
+    /// `{<member>: error}`: the error's wire name under `<member>`, beside the error's fields.
+    Error(String),
+    /// `{<member>: {literal: <text>}}`: one fixed member.
+    Literal {
+        /// The member's name.
+        member: String,
+        /// Its text.
+        text: String,
+    },
+}
+
+impl BodySpec {
+    /// The word, when it is one.
+    fn word(&self) -> Option<&str> {
+        match self {
+            Self::Word(word) => Some(word),
+            Self::Error(_) | Self::Literal { .. } => None,
+        }
+    }
+}
+
+impl fmt::Display for BodySpec {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Word(word) => formatter.write_str(word),
+            Self::Error(member) => write!(formatter, "{{{member}: error}}"),
+            Self::Literal { member, text } => {
+                write!(formatter, "{{{member}: {{literal: {text}}}}}")
+            }
+        }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for BodySpec {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Form;
+
+        impl<'de> serde::de::Visitor<'de> for Form {
+            type Value = BodySpec;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str(
+                    "a body: a word such as `envelope`, `{<member>: error}`, or \
+                     `{<member>: {literal: <text>}}`",
+                )
+            }
+
+            fn visit_str<E: serde::de::Error>(self, word: &str) -> Result<Self::Value, E> {
+                Ok(BodySpec::Word(word.to_owned()))
+            }
+
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> Result<Self::Value, A::Error> {
+                let one = "a body object holds exactly one member";
+                let Some((member, value)) = map.next_entry::<String, MemberValue>()? else {
+                    return Err(serde::de::Error::custom(one));
+                };
+                if map.next_key::<serde::de::IgnoredAny>()?.is_some() {
+                    return Err(serde::de::Error::custom(one));
+                }
+                Ok(match value {
+                    MemberValue::Error => BodySpec::Error(member),
+                    MemberValue::Literal(text) => BodySpec::Literal { member, text },
+                })
+            }
+        }
+
+        deserializer.deserialize_any(Form)
+    }
+}
+
+impl serde::Serialize for BodySpec {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap as _;
+        match self {
+            Self::Word(word) => serializer.serialize_str(word),
+            Self::Error(member) => {
+                let mut map = serializer.serialize_map(Some(1))?;
+                map.serialize_entry(member, "error")?;
+                map.end()
+            }
+            Self::Literal { member, text } => {
+                let mut map = serializer.serialize_map(Some(1))?;
+                map.serialize_entry(
+                    member,
+                    &Literal {
+                        literal: text.clone(),
+                    },
+                )?;
+                map.end()
+            }
+        }
+    }
+}
+
+/// The value of a body object's one member: `error` or `{literal: <text>}`.
+enum MemberValue {
+    Error,
+    Literal(String),
+}
+
+/// `{literal: <text>}`, closed.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Literal {
+    literal: String,
+}
+
+impl<'de> serde::Deserialize<'de> for MemberValue {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Value;
+
+        impl<'de> serde::de::Visitor<'de> for Value {
+            type Value = MemberValue;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("`error` or `{literal: <text>}`")
+            }
+
+            fn visit_str<E: serde::de::Error>(self, text: &str) -> Result<Self::Value, E> {
+                if text == "error" {
+                    Ok(MemberValue::Error)
+                } else {
+                    Err(E::custom(format!(
+                        "`{text}` is not what a body member holds: `error`, or \
+                         `{{literal: <text>}}`"
+                    )))
+                }
+            }
+
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                map: A,
+            ) -> Result<Self::Value, A::Error> {
+                let literal: Literal = serde::Deserialize::deserialize(
+                    serde::de::value::MapAccessDeserializer::new(map),
+                )?;
+                Ok(MemberValue::Literal(literal.literal))
+            }
+        }
+
+        deserializer.deserialize_any(Value)
+    }
+}
+
+/// What a command's outcome answers with (`docs/design/http-presentation-binding.md`, "Response
+/// body per outcome"). `envelope` is the default and compiled IR omits it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum Body {
+    /// ESS's own body: `outcome`, `error`, `payload`, `published`, `response`.
+    #[default]
+    Envelope,
+    /// The command's declared response object, bare.
+    Response,
+    /// No body.
+    None,
+    /// An object whose `member` is the error's wire name, beside the error's own fields under
+    /// their wire names.
+    Error {
+        /// The member that carries the error's wire name.
+        member: String,
+    },
+}
+
+impl Body {
+    fn spec(&self) -> BodySpec {
+        match self {
+            Self::Envelope => BodySpec::Word("envelope".into()),
+            Self::Response => BodySpec::Word("response".into()),
+            Self::None => BodySpec::Word("none".into()),
+            Self::Error { member } => BodySpec::Error(member.clone()),
+        }
+    }
+
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+impl fmt::Display for Body {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.spec().fmt(formatter)
+    }
+}
+
+impl serde::Serialize for Body {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.spec().serialize(serializer)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Body {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let written = <BodySpec as serde::Deserialize>::deserialize(deserializer)?;
+        match &written {
+            BodySpec::Word(word) => match word.as_str() {
+                "envelope" => Ok(Self::Envelope),
+                "response" => Ok(Self::Response),
+                "none" => Ok(Self::None),
+                _ => Err(serde::de::Error::custom(format!(
+                    "`{written}` is not an outcome's body: compiled IR writes `response`, `none` \
+                     or `{{<member>: error}}`"
+                ))),
+            },
+            BodySpec::Error(member) => Ok(Self::Error {
+                member: member.clone(),
+            }),
+            BodySpec::Literal { .. } => Err(serde::de::Error::custom(format!(
+                "`{written}` is a literal body, which only a standard refusal answers"
+            ))),
+        }
+    }
+}
+
+/// Reads an outcome's `body` of compiled IR, refusing `envelope` written out: compiled IR omits it.
+fn omitted_envelope<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Body, D::Error> {
+    let body = <Body as serde::Deserialize>::deserialize(deserializer)?;
+    if body.is_default() {
+        return Err(serde::de::Error::custom(
+            "an outcome's `body` is `envelope`, its default, which compiled IR omits",
+        ));
+    }
+    Ok(body)
+}
+
+/// What a view route answers with; `rows` is the default and compiled IR omits it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ViewBody {
+    /// `{rows: [...]}`, ESS's own.
+    #[default]
+    Rows,
+    /// The one row, bare, and the route's `empty` status when the view holds none.
+    Single,
+}
+
+impl ViewBody {
+    // `skip_serializing_if` passes the field by reference.
+    #[allow(clippy::trivially_copy_pass_by_ref)]
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+/// Reads a view route's `body` of compiled IR, refusing `rows` written out: compiled IR omits it.
+fn omitted_rows<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<ViewBody, D::Error> {
+    let body = <ViewBody as serde::Deserialize>::deserialize(deserializer)?;
+    if body.is_default() {
+        return Err(serde::de::Error::custom(
+            "a view route's `body` is `rows`, its default, which compiled IR omits",
+        ));
+    }
+    Ok(body)
+}
+
+/// One listed outcome, as written. `status` is read as any integer, so one outside `100..=599` is
+/// refused with a code (`ESS-HTTP-023`) rather than as a parse error.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OutcomeSpec {
+    /// The status the outcome answers; required.
+    pub status: i64,
+    /// The body; absent, `envelope`.
+    #[serde(default)]
+    pub body: Option<BodySpec>,
+    /// Response headers by name, as written; absent, none.
+    #[serde(default)]
+    pub headers: Option<Entries<HeaderSpec>>,
+    /// Where a `3xx` outcome sends the caller; required on one, refused on any other.
+    #[serde(default)]
+    pub redirect: Option<RedirectSpec>,
+}
+
+/// One listed outcome, compiled.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Outcome {
+    /// The status it answers, always written.
+    pub status: u16,
+    /// The body; omitted when it is `envelope`.
+    #[serde(
+        default,
+        skip_serializing_if = "Body::is_default",
+        deserialize_with = "omitted_envelope"
+    )]
+    pub body: Body,
+    /// Response headers by name, in name order, each name as authored. Omitted when empty.
+    #[serde(
+        default,
+        skip_serializing_if = "BTreeMap::is_empty",
+        deserialize_with = "canonical_headers"
+    )]
+    pub headers: BTreeMap<String, Header>,
+    /// Where the outcome sends the caller; present exactly on a `3xx` status.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub redirect: Option<Redirect>,
+}
+
+/// A `single` view route's answer for a view that holds no row, as written.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EmptySpec {
+    /// A `4xx` status; required, and the only key.
+    pub status: i64,
+}
+
+/// A `single` view route's answer for a view that holds no row, compiled: a `4xx` status and no
+/// body.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Empty {
+    /// The status.
+    pub status: u16,
+}
+
+/// A standard refusal the served surface answers without a declared outcome
+/// (`docs/design/http-presentation-binding.md`, "Standard refusals").
+///
+/// Declared in name order, the order compiled IR writes them in.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum RefusalKey {
+    /// A request whose input cannot be read; today `400`. Answered with a `4xx`.
+    Malformed,
+    /// A caller no grant admits; today `403`. Answered with a `4xx`.
+    NotGranted,
+    /// An unfinished realization; today `501`. Answered with a `5xx`.
+    Unfinished,
+}
+
+impl RefusalKey {
+    /// Every key, in name order.
+    pub const ALL: [Self; 3] = [Self::Malformed, Self::NotGranted, Self::Unfinished];
+
+    /// The key as a binding spells it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Malformed => "malformed",
+            Self::NotGranted => "not_granted",
+            Self::Unfinished => "unfinished",
+        }
+    }
+
+    /// The key a binding spells `text`, if it is one.
+    pub fn parse(text: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|key| key.as_str() == text)
+    }
+
+    /// The first digit of every status it may answer: `4` for a refusal of the request, `5` for
+    /// the unfinished realization.
+    fn class(self) -> u16 {
+        match self {
+            Self::Malformed | Self::NotGranted => 4,
+            Self::Unfinished => 5,
+        }
+    }
+}
+
+impl fmt::Display for RefusalKey {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+/// One standard refusal's override, as written.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RefusalSpec {
+    /// The status; required.
+    pub status: i64,
+    /// `{<member>: {literal: <text>}}` or `none`; required.
+    pub body: BodySpec,
+    /// Response headers by name, as written: literals and challenges whose params are literals,
+    /// since a standard refusal has no outcome to read a source from; absent, none.
+    #[serde(default)]
+    pub headers: Option<Entries<HeaderSpec>>,
+}
+
+/// A standard refusal's body: one literal member, or none.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RefusalBody {
+    /// No body.
+    None,
+    /// An object with one fixed member.
+    Literal {
+        /// The member's name.
+        member: String,
+        /// Its text.
+        text: String,
+    },
+}
+
+impl RefusalBody {
+    fn spec(&self) -> BodySpec {
+        match self {
+            Self::None => BodySpec::Word("none".into()),
+            Self::Literal { member, text } => BodySpec::Literal {
+                member: member.clone(),
+                text: text.clone(),
+            },
+        }
+    }
+}
+
+impl serde::Serialize for RefusalBody {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.spec().serialize(serializer)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for RefusalBody {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        match <BodySpec as serde::Deserialize>::deserialize(deserializer)? {
+            BodySpec::Word(word) if word == "none" => Ok(Self::None),
+            BodySpec::Literal { member, text } => Ok(Self::Literal { member, text }),
+            written => Err(serde::de::Error::custom(format!(
+                "`{written}` is not a refusal's body: compiled IR writes `none` or \
+                 `{{<member>: {{literal: <text>}}}}`"
+            ))),
+        }
+    }
+}
+
+/// One standard refusal's override, compiled: its status and body, both always written, and its
+/// headers.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Refusal {
+    /// The status.
+    pub status: u16,
+    /// The body.
+    pub body: RefusalBody,
+    /// Response headers by name, in name order, each name as authored; never a source. Omitted
+    /// when empty.
+    #[serde(
+        default,
+        skip_serializing_if = "BTreeMap::is_empty",
+        deserialize_with = "canonical_headers"
+    )]
+    pub headers: BTreeMap<String, Header>,
+}
+
+/// The one header a challenge is declared under (decided for stage 2, answer 18).
+pub const CHALLENGE_HEADER: &str = "WWW-Authenticate";
+
+/// The headers the server, the encoding and `redirect` write, which a binding does not declare
+/// (`ESS-HTTP-026`), each with what writes it. Compared ignoring case.
+const RESERVED_HEADERS: [(&str, &str); 6] = [
+    ("Connection", "the server"),
+    ("Content-Encoding", "the encoding"),
+    ("Content-Length", "the encoding"),
+    ("Content-Type", "the encoding"),
+    ("Location", "`redirect`"),
+    ("Transfer-Encoding", "the encoding"),
+];
+
+/// Whether `text` is an RFC 9110 token (§5.6.2): one or more letters, digits and
+/// ``!#$%&'*+-.^_`|~``.
+fn is_token(text: &str) -> bool {
+    !text.is_empty()
+        && text
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&byte))
+}
+
+/// Why `text` is not a field value a literal header may hold (RFC 9110 §5.5): visible US-ASCII,
+/// spaces and horizontal tabs, and no space or tab at either end.
+fn field_value_reason(text: &str) -> Option<String> {
+    let allowed = |c: char| c == ' ' || c == '\t' || c.is_ascii_graphic();
+    if let Some(c) = text.chars().find(|c| !allowed(*c)) {
+        return Some(format!(
+            "{text:?} is not a field value: it holds {c:?}, and a field value holds visible \
+             US-ASCII, spaces and horizontal tabs only, so a value cannot end its header line or \
+             start another"
+        ));
+    }
+    if text.starts_with([' ', '\t']) || text.ends_with([' ', '\t']) {
+        return Some(format!(
+            "{text:?} is not a field value: it starts or ends with a space or a tab, which a \
+             reader strips"
+        ));
+    }
+    None
+}
+
+/// Whether an RFC 9110 quoted string carries `text` (§5.6.4): horizontal tabs, spaces and visible
+/// US-ASCII, `"` and `\` escaped by the generator.
+fn quotable(text: &str) -> bool {
+    text.chars()
+        .all(|c| c == ' ' || c == '\t' || c.is_ascii_graphic())
+}
+
+/// Whether `name` is one or more RFC 3986 `unreserved` characters (§2.3): letters, digits and
+/// `-._~`, which a redirect writes into a query or fragment as they are.
+fn unreserved(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"-._~".contains(&byte))
+}
+
+/// Why `name` is no redirect parameter name ([`unreserved`]).
+fn unreserved_reason(name: &str) -> String {
+    format!(
+        "{name:?} is not a redirect parameter name: a parameter name is one or more RFC 3986 \
+         `unreserved` characters, letters, digits and `-._~`, which no encoding of the query or \
+         fragment changes"
+    )
+}
+
+/// The header `name` is, ignoring case, among `names`.
+fn same_header<'a>(name: &str, names: impl IntoIterator<Item = &'a str>) -> Option<&'a str> {
+    names
+        .into_iter()
+        .find(|other| other.eq_ignore_ascii_case(name))
+}
+
+/// One response header's value, as written: exactly one of `{literal: <text>}`,
+/// `{source: <path>}` and `{challenge: {scheme, params}}`. A source is read as text, so that one
+/// that names nothing is refused with a code (`ESS-HTTP-026`) rather than as a parse error.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(try_from = "HeaderFields")]
+pub enum HeaderSpec {
+    /// A fixed text.
+    Literal(String),
+    /// A field the outcome supplies, as written.
+    Source(String),
+    /// One RFC 9110 §11.6.1 challenge.
+    Challenge(ChallengeSpec),
+}
+
+/// A challenge param's value, as written: `{literal: <text>}` or `{source: <path>}`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(try_from = "ParamFields")]
+pub enum ParamSpec {
+    /// A fixed text.
+    Literal(String),
+    /// A field the outcome supplies, as written.
+    Source(String),
+}
+
+/// The keys of a header's value object, each optional so that exactly one can be required with a
+/// sentence rather than an enum's parse error.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HeaderFields {
+    #[serde(default)]
+    literal: Option<String>,
+    #[serde(default)]
+    source: Option<String>,
+    #[serde(default)]
+    challenge: Option<ChallengeSpec>,
+}
+
+/// The keys of a challenge param's value object, as [`HeaderFields`] without `challenge`.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ParamFields {
+    #[serde(default)]
+    literal: Option<String>,
+    #[serde(default)]
+    source: Option<String>,
+}
+
+impl TryFrom<HeaderFields> for HeaderSpec {
+    type Error = String;
+
+    fn try_from(fields: HeaderFields) -> Result<Self, Self::Error> {
+        match (fields.literal, fields.source, fields.challenge) {
+            (Some(text), None, None) => Ok(Self::Literal(text)),
+            (None, Some(text), None) => Ok(Self::Source(text)),
+            (None, None, Some(challenge)) => Ok(Self::Challenge(challenge)),
+            _ => Err(
+                "a header's value is exactly one of `{literal: <text>}`, `{source: <path>}` and \
+                 `{challenge: {scheme, params}}`"
+                    .to_owned(),
+            ),
+        }
+    }
+}
+
+impl TryFrom<ParamFields> for ParamSpec {
+    type Error = String;
+
+    fn try_from(fields: ParamFields) -> Result<Self, Self::Error> {
+        match (fields.literal, fields.source) {
+            (Some(text), None) => Ok(Self::Literal(text)),
+            (None, Some(text)) => Ok(Self::Source(text)),
+            _ => Err(
+                "a challenge param's value is exactly one of `{literal: <text>}` and \
+                 `{source: <path>}`"
+                    .to_owned(),
+            ),
+        }
+    }
+}
+
+impl HeaderSpec {
+    /// The value a refinement compares (`ESS-HTTP-012`): structure, never text, so that one
+    /// literal cannot spell another header.
+    fn compared(&self) -> serde_json::Value {
+        match self {
+            Self::Literal(text) => serde_json::json!({"literal": text}),
+            Self::Source(text) => serde_json::json!({"source": text}),
+            Self::Challenge(challenge) => {
+                let mut compared = serde_json::json!({"scheme": challenge.scheme});
+                if let Some(params) =
+                    compared_entries(challenge.params.as_ref(), ParamSpec::compared)
+                {
+                    compared["params"] = params;
+                }
+                serde_json::json!({"challenge": compared})
+            }
+        }
+    }
+}
+
+impl ParamSpec {
+    /// The value a refinement compares (`ESS-HTTP-012`).
+    fn compared(&self) -> serde_json::Value {
+        match self {
+            Self::Literal(text) => serde_json::json!({"literal": text}),
+            Self::Source(text) => serde_json::json!({"source": text}),
+        }
+    }
+}
+
+/// One challenge, as written.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChallengeSpec {
+    /// The auth scheme, a token; required.
+    pub scheme: String,
+    /// The auth params by name, as written; absent, none.
+    #[serde(default)]
+    pub params: Option<Entries<ParamSpec>>,
+}
+
+/// A redirect, as written. `mode` is read as text, so that one outside the set, or none, is
+/// refused with a code (`ESS-HTTP-028`) rather than as a parse error.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RedirectSpec {
+    /// The source holding the absolute URI the caller is sent to; required.
+    pub location: String,
+    /// `query` or `fragment`; required, and refused with a code when absent.
+    #[serde(default)]
+    pub mode: Option<String>,
+    /// The parameters written into the URI, by name, each a source; absent, none.
+    #[serde(default)]
+    pub parameters: Option<Entries<String>>,
+}
+
+impl RedirectSpec {
+    /// The value a refinement compares (`ESS-HTTP-012`).
+    fn compared(&self) -> serde_json::Value {
+        let mut compared = serde_json::json!({"location": self.location});
+        if let Some(mode) = &self.mode {
+            compared["mode"] = serde_json::json!(mode);
+        }
+        if let Some(parameters) = compared_entries(self.parameters.as_ref(), |source: &String| {
+            serde_json::json!(source)
+        }) {
+            compared["parameters"] = parameters;
+        }
+        compared
+    }
+}
+
+/// Written entries as one object, each value by `value`, the first of a name written twice;
+/// `None` when there are none. What a refinement compares (`ESS-HTTP-012`): an object compares
+/// by name, whatever the authored order, and an empty map is none.
+fn compared_entries<T>(
+    entries: Option<&Entries<T>>,
+    value: impl Fn(&T) -> serde_json::Value,
+) -> Option<serde_json::Value> {
+    let mut object = serde_json::Map::new();
+    for (name, written) in entries.iter().flat_map(|entries| &entries.0) {
+        if !object.contains_key(name) {
+            object.insert(name.clone(), value(written));
+        }
+    }
+    (!object.is_empty()).then_some(serde_json::Value::Object(object))
+}
+
+/// What a header, a challenge param or a redirect reads: a field of the command's input, of its
+/// response, of the outcome's error, or the error's wire name. Written `input.<field>`,
+/// `response.<field>`, `error.<field>` and `error.wire`, in the authored binding and in the IR
+/// alike; `error.wire` always names the wire name (decided for stage 2, answer 19).
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[serde(into = "String", try_from = "String")]
+pub enum AnswerSource {
+    /// `input.<field>`.
+    Input(String),
+    /// `response.<field>`: the outcome declares `returns: true`.
+    Response(String),
+    /// `error.<field>`: the outcome reports an error.
+    Error(String),
+    /// `error.wire`: the wire name of the outcome's error.
+    ErrorWire,
+}
+
+impl AnswerSource {
+    /// The source `text` spells, if it is one: a namespace, one `.`, and one non-empty name.
+    pub fn parse(text: &str) -> Option<Self> {
+        let (namespace, field) = text.split_once('.')?;
+        if field.is_empty() || field.contains('.') {
+            return None;
+        }
+        match (namespace, field) {
+            ("error", "wire") => Some(Self::ErrorWire),
+            ("input", _) => Some(Self::Input(field.to_owned())),
+            ("response", _) => Some(Self::Response(field.to_owned())),
+            ("error", _) => Some(Self::Error(field.to_owned())),
+            _ => None,
+        }
+    }
+}
+
+impl fmt::Display for AnswerSource {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Input(field) => write!(formatter, "input.{field}"),
+            Self::Response(field) => write!(formatter, "response.{field}"),
+            Self::Error(field) => write!(formatter, "error.{field}"),
+            Self::ErrorWire => formatter.write_str("error.wire"),
+        }
+    }
+}
+
+impl From<AnswerSource> for String {
+    fn from(source: AnswerSource) -> Self {
+        source.to_string()
+    }
+}
+
+impl TryFrom<String> for AnswerSource {
+    type Error = String;
+
+    fn try_from(text: String) -> Result<Self, String> {
+        Self::parse(&text).ok_or_else(|| {
+            format!(
+                "`{text}` is not a source an answer reads: `input.<field>`, `response.<field>`, \
+                 `error.<field>` or `error.wire`"
+            )
+        })
+    }
+}
+
+/// One response header's value, compiled.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Header {
+    /// A fixed field value.
+    Literal(String),
+    /// A scalar the outcome supplies, written as text; an absent optional omits the header.
+    Source(AnswerSource),
+    /// One challenge, under `WWW-Authenticate`.
+    Challenge(Challenge),
+}
+
+/// One RFC 9110 §11.6.1 challenge, compiled: the generator writes each param as a quoted string.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Challenge {
+    /// The auth scheme, as authored.
+    pub scheme: String,
+    /// The auth params by name, in name order, each name as authored. Omitted when empty.
+    #[serde(
+        default,
+        skip_serializing_if = "BTreeMap::is_empty",
+        deserialize_with = "canonical_params"
+    )]
+    pub params: BTreeMap<String, Param>,
+}
+
+/// A challenge param's value, compiled.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Param {
+    /// A fixed text a quoted string carries.
+    Literal(String),
+    /// A scalar the outcome supplies; an absent optional omits the param.
+    Source(AnswerSource),
+}
+
+/// Where a redirect writes its parameters into the location.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RedirectMode {
+    /// Appended to the location's query, keeping a query it already has.
+    Query,
+    /// Written as the location's fragment.
+    Fragment,
+}
+
+impl RedirectMode {
+    /// The mode `text` spells, if it is one.
+    pub fn parse(text: &str) -> Option<Self> {
+        match text {
+            "query" => Some(Self::Query),
+            "fragment" => Some(Self::Fragment),
+            _ => None,
+        }
+    }
+}
+
+/// A redirect, compiled.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Redirect {
+    /// The `String` source holding the absolute URI the caller is sent to.
+    pub location: AnswerSource,
+    /// Where the parameters go.
+    pub mode: RedirectMode,
+    /// The parameters by name, in name order, each a scalar source. Omitted when empty.
+    #[serde(
+        default,
+        skip_serializing_if = "BTreeMap::is_empty",
+        deserialize_with = "canonical_redirect_parameters"
+    )]
+    pub parameters: BTreeMap<String, AnswerSource>,
+}
+
+/// A map as written: every entry in document order, a key written twice kept twice, so that
+/// [`compile`] refuses the second with a code rather than one entry silently replacing the other.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Entries<T>(pub Vec<(String, T)>);
+
+impl<T> Default for Entries<T> {
+    fn default() -> Self {
+        Self(Vec::new())
+    }
+}
+
+impl<'de, T: serde::Deserialize<'de>> serde::Deserialize<'de> for Entries<T> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Visitor<T>(std::marker::PhantomData<T>);
+
+        impl<'de, T: serde::Deserialize<'de>> serde::de::Visitor<'de> for Visitor<T> {
+            type Value = Entries<T>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a map")
+            }
+
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> Result<Self::Value, A::Error> {
+                let mut entries = Vec::new();
+                while let Some(entry) = map.next_entry::<String, T>()? {
+                    entries.push(entry);
+                }
+                Ok(Entries(entries))
+            }
+        }
+
+        deserializer.deserialize_map(Visitor(std::marker::PhantomData))
+    }
+}
+
+/// Reads a map of compiled IR, refusing a key that does not sort strictly after the one before it,
+/// and an empty map: compiled IR orders `what` by key, each once, and omits it when empty, and a
+/// reader that sorted the keys or read `{}` silently would write back bytes it was not given.
+fn canonical_map<'de, D, K, V>(
+    deserializer: D,
+    what: &'static str,
+) -> Result<BTreeMap<K, V>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    K: Ord + fmt::Display + serde::Deserialize<'de>,
+    V: serde::Deserialize<'de>,
+{
+    struct Visitor<K, V>(&'static str, std::marker::PhantomData<(K, V)>);
+
+    impl<'de, K, V> serde::de::Visitor<'de> for Visitor<K, V>
+    where
+        K: Ord + fmt::Display + serde::Deserialize<'de>,
+        V: serde::Deserialize<'de>,
+    {
+        type Value = BTreeMap<K, V>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(formatter, "`{}`, ordered by key", self.0)
+        }
+
+        fn visit_map<A: serde::de::MapAccess<'de>>(
+            self,
+            mut map: A,
+        ) -> Result<Self::Value, A::Error> {
+            let mut entries: BTreeMap<K, V> = BTreeMap::new();
+            while let Some((key, value)) = map.next_entry::<K, V>()? {
+                if let Some((last, _)) = entries.last_key_value() {
+                    if *last >= key {
+                        return Err(serde::de::Error::custom(format!(
+                            "`{}` is out of canonical order: `{key}` follows `{last}`; compiled IR \
+                             orders `{}` by key, each once",
+                            self.0, self.0
+                        )));
+                    }
+                }
+                entries.insert(key, value);
+            }
+            if entries.is_empty() {
+                return Err(serde::de::Error::custom(format!(
+                    "`{}` is empty; compiled IR omits an empty `{}`",
+                    self.0, self.0
+                )));
+            }
+            Ok(entries)
+        }
+    }
+
+    deserializer.deserialize_map(Visitor(what, std::marker::PhantomData))
+}
+
+fn canonical_outcomes<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<BTreeMap<String, Outcome>, D::Error> {
+    canonical_map(deserializer, "outcomes")
+}
+
+fn canonical_refusals<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<BTreeMap<RefusalKey, Refusal>, D::Error> {
+    canonical_map(deserializer, "refusals")
+}
+
+fn canonical_headers<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<BTreeMap<String, Header>, D::Error> {
+    canonical_map(deserializer, "headers")
+}
+
+fn canonical_params<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<BTreeMap<String, Param>, D::Error> {
+    canonical_map(deserializer, "params")
+}
+
+fn canonical_redirect_parameters<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<BTreeMap<String, AnswerSource>, D::Error> {
+    canonical_map(deserializer, "parameters")
+}
+
+/// Why `status` is no status any outcome may answer, whatever it reports: outside `100..=599`, a
+/// `1xx`, or a `3xx` other than the [`REDIRECTS`].
+fn status_reason(status: i64) -> Option<String> {
+    if !(100..=599).contains(&status) {
+        return Some(format!(
+            "`{status}` is not an HTTP status, an integer from 100 to 599"
+        ));
+    }
+    if status < 200 {
+        return Some(format!(
+            "`{status}` is a `1xx` status, an interim answer no outcome gives"
+        ));
+    }
+    let redirect = u16::try_from(status).is_ok_and(|status| REDIRECTS.contains(&status));
+    if (300..400).contains(&status) && !redirect {
+        return Some(format!(
+            "`{status}` is a `3xx` status that is not a redirect; an outcome answers `3xx` with \
+             `301`, `302`, `303`, `307` or `308` only"
+        ));
+    }
+    None
+}
+
+/// Why `status` is in a class an outcome that does (`error`) or does not report an error may not
+/// answer: `2xx` says the request succeeded, `4xx` and `5xx` that it failed; `3xx` is admitted for
+/// both.
+fn class_reason(status: i64, error: bool) -> Option<String> {
+    match (status / 100, error) {
+        (2, true) => Some(format!(
+            "`{status}` is a `2xx` status, which says the request succeeded, and the outcome \
+             reports an error; an outcome with an error answers `3xx`, `4xx` or `5xx`"
+        )),
+        (class @ (4 | 5), false) => Some(format!(
+            "`{status}` is a `{class}xx` status, which says the request failed, and the outcome \
+             reports no error; an outcome without an error answers `2xx` or `3xx`"
+        )),
+        _ => None,
+    }
+}
+
 /// One route, before resolution.
 ///
-/// Every key is closed: a key of a later stage of the format (`request`, `outcomes`, `headers`,
-/// `redirect` and the rest) is refused by name as an unknown field, never read and dropped.
+/// Every key is closed: a key the format does not have is refused by name as an unknown field,
+/// never read and dropped.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RouteSpec {
@@ -147,6 +1348,19 @@ pub struct RouteSpec {
     /// Path template variable to the source it reads: `input.<field>` or `param.<name>`.
     #[serde(default)]
     pub parameters: Parameters,
+    /// How a command's request is encoded; absent, a `json` body that refuses an unknown key.
+    #[serde(default)]
+    pub request: Option<RequestSpec>,
+    /// A command's answer per outcome, keyed by the outcome's local name; an outcome not listed
+    /// keeps its derived status and the envelope.
+    #[serde(default)]
+    pub outcomes: Option<Entries<OutcomeSpec>>,
+    /// A view route's body, `rows` or `single`; absent, `rows`.
+    #[serde(default)]
+    pub body: Option<BodySpec>,
+    /// A `single` view route's answer for a view that holds no row.
+    #[serde(default)]
+    pub empty: Option<EmptySpec>,
 }
 
 /// A route's `parameters`, as written: every entry in document order, a key written twice kept
@@ -395,6 +1609,10 @@ pub struct HttpSpec {
     /// `sha256:<hex>` of the bytes of the binding this one refines; absent, it refines nothing.
     #[serde(default)]
     pub refines: Option<String>,
+    /// The standard refusals this binding answers its own way, keyed `malformed`, `not_granted`
+    /// or `unfinished`; one not listed keeps today's answer.
+    #[serde(default)]
+    pub refusals: Option<Entries<RefusalSpec>>,
     /// One route per bound command or view, in document order.
     pub routes: Vec<RouteSpec>,
 }
@@ -419,6 +1637,45 @@ fn is_digest(text: &str) -> bool {
     })
 }
 
+/// The path of the first key or element where `given` and `written` differ, under `at`; `None` when
+/// they are equal. Object keys are compared as sets, in key order, so it reports the first by name.
+fn first_difference(
+    given: &serde_json::Value,
+    written: &serde_json::Value,
+    at: &str,
+) -> Option<String> {
+    use serde_json::Value;
+    let under = |key: &str| {
+        if at.is_empty() {
+            key.to_owned()
+        } else {
+            format!("{at}.{key}")
+        }
+    };
+    match (given, written) {
+        (Value::Object(given), Value::Object(written)) => {
+            let keys: std::collections::BTreeSet<&String> =
+                given.keys().chain(written.keys()).collect();
+            keys.into_iter()
+                .find_map(|key| match (given.get(key), written.get(key)) {
+                    (Some(one), Some(other)) => first_difference(one, other, &under(key)),
+                    _ => Some(under(key)),
+                })
+        }
+        (Value::Array(given), Value::Array(written)) => {
+            let found = given
+                .iter()
+                .zip(written)
+                .enumerate()
+                .find_map(|(index, (one, other))| {
+                    first_difference(one, other, &format!("{at}[{index}]"))
+                });
+            found.or_else(|| (given.len() != written.len()).then(|| at.to_owned()))
+        }
+        _ => (given != written).then(|| at.to_owned()),
+    }
+}
+
 /// A binding another one refines: the document as read, and the digest of the exact bytes it was
 /// read from, which is what the refining document's `refines:` pins. Reformatting the file changes
 /// the digest, so it is a deliberate re-pin.
@@ -430,10 +1687,10 @@ pub struct Refined {
 
 impl Refined {
     /// Reads a refined binding's file bytes as strict YAML.
-    pub fn from_yaml(bytes: &[u8]) -> Result<Self, serde_yaml::Error> {
+    pub fn from_yaml(bytes: &[u8]) -> Result<Self, ess_yaml::Error> {
         Ok(Self {
             digest: digest(bytes),
-            spec: serde_yaml::from_slice(bytes)?,
+            spec: ess_yaml::from_slice(bytes)?,
         })
     }
 
@@ -458,8 +1715,8 @@ impl Refined {
 
 impl HttpSpec {
     /// Reads strict YAML. Semantic validation happens in [`compile`].
-    pub fn from_yaml(text: &str) -> Result<Self, serde_yaml::Error> {
-        serde_yaml::from_str(text)
+    pub fn from_yaml(text: &str) -> Result<Self, ess_yaml::Error> {
+        ess_yaml::from_str(text)
     }
 
     /// Reads strict JSON. Semantic validation happens in [`compile`].
@@ -523,6 +1780,29 @@ pub struct Route {
         deserialize_with = "canonical_parameters"
     )]
     pub parameters: BTreeMap<String, Source>,
+    /// How a command's request is encoded. Absent when it is a `json` body that refuses an unknown
+    /// key, ESS's own, and always absent on a view.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request: Option<Request>,
+    /// A command's answer for each outcome the binding lists, keyed by the outcome's local name in
+    /// name order. Absent when empty, and always absent on a view; an outcome not listed keeps its
+    /// derived status and the envelope.
+    #[serde(
+        default,
+        skip_serializing_if = "BTreeMap::is_empty",
+        deserialize_with = "canonical_outcomes"
+    )]
+    pub outcomes: BTreeMap<String, Outcome>,
+    /// A view route's body. Absent when it is `rows`, and always absent on a command.
+    #[serde(
+        default,
+        skip_serializing_if = "ViewBody::is_default",
+        deserialize_with = "omitted_rows"
+    )]
+    pub body: ViewBody,
+    /// A `single` view route's answer for a view that holds no row; present exactly with `single`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub empty: Option<Empty>,
 }
 
 impl Route {
@@ -565,6 +1845,13 @@ pub struct HttpIr {
     /// The digest of the refined binding's bytes. Absent when the binding refines nothing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     refines: Option<String>,
+    /// The standard refusals the binding overrides, in key order. Absent when empty.
+    #[serde(
+        default,
+        skip_serializing_if = "BTreeMap::is_empty",
+        deserialize_with = "canonical_refusals"
+    )]
+    refusals: BTreeMap<RefusalKey, Refusal>,
     routes: Vec<Route>,
     /// Ordered by component, then path, then method, then operation. Absent when empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -580,6 +1867,11 @@ impl HttpIr {
     /// `sha256:<hex>` of the bytes of the binding this one refines, if it refines one.
     pub fn refines(&self) -> Option<&str> {
         self.refines.as_deref()
+    }
+
+    /// The standard refusals the binding answers its own way, in key order.
+    pub fn refusals(&self) -> &BTreeMap<RefusalKey, Refusal> {
+        &self.refusals
     }
 
     /// Every route, ordered by path (an open route first), then method, then operation.
@@ -617,12 +1909,35 @@ impl HttpIr {
     /// routed twice; a method not admitted for the kind of operation; a route path that breaks the
     /// template grammar, or whose `parameters` leave a variable unmapped, map one the path does
     /// not have, or read one source from two variables; a source outside the operation's
-    /// namespace; a derived route for an operation the IR routes; and a derived path that is not a
-    /// grammar-valid path without variables.
+    /// namespace; a `request` on a view, holding only defaults or writing a default out, encoded
+    /// `query` on any method but `get` or `json` or `form` on `get`, or `ignore` beside `json`;
+    /// `outcomes` on a view, or `body` or `empty` on a command; `outcomes` or `refusals` out of key
+    /// order or empty; an outcome status outside `100..=599`, a `1xx` or a `3xx` other than the
+    /// [`REDIRECTS`]; an outcome body that is `envelope` written out, a literal, a view's body, an
+    /// error object under an empty member, or anything but `none` on `204`; a view body `rows`
+    /// written out, `single` without `empty` or `empty` without `single`, or an `empty` status
+    /// outside `4xx`; a refusal key outside `malformed`, `not_granted` and `unfinished`, a refusal
+    /// status outside its class (`4xx`, `4xx`, `5xx`), or a refusal body other than `none` or one
+    /// literal member with a name; `headers`, challenge `params` or redirect `parameters` out of
+    /// name order or empty; a header name that is not a token, one the server, the encoding or
+    /// `redirect` writes, or one declared twice ignoring case; a literal header that is not a field
+    /// value; a challenge under any header but `WWW-Authenticate`, with a scheme or param name
+    /// that is not a token, a param twice ignoring case or a literal param a quoted string cannot
+    /// carry; a `401` without a `WWW-Authenticate` challenge; a source in a refusal's header; a
+    /// `redirect` on any status but the [`REDIRECTS`], a redirect status without one, or a body
+    /// other than `none` beside one; a redirect `mode` outside `query` and `fragment`, a
+    /// `location` reading `error.wire`, a parameter name outside RFC 3986 `unreserved`, and any
+    /// source outside the four forms; a derived route for an operation the IR routes; and a derived path that is
+    /// not a grammar-valid path without variables. Beyond these, it refuses, naming
+    /// the key, any IR that would not write back what it was given: a key compiled IR omits,
+    /// written as an empty map or list, a `null` or a default.
     ///
-    /// What needs the specification is not checked: that each operation and field exists, its
-    /// type, the `get` input, and collisions on each component's surface. A reader that needs those
-    /// compiles the authored binding instead.
+    /// What needs the specification is not checked: that each operation, field and outcome exists,
+    /// its type, the `get` input, an outcome's status class and body against its error and
+    /// `returns`, the distinguishability of outcomes and overridden refusals on one status, a
+    /// `single` view's identity selection and paging, whether the outcome supplies each header,
+    /// param and redirect source and its type, and collisions on each component's surface.
+    /// A reader that needs those compiles the authored binding instead.
     pub fn from_json(text: &str) -> Result<Self, serde_json::Error> {
         let ir: Self = serde_json::from_str(text)?;
         if ir.format != HTTP_IR_FORMAT {
@@ -632,6 +1947,16 @@ impl HttpIr {
             )));
         }
         ir.invariants().map_err(serde::de::Error::custom)?;
+        // Whatever a field's reader admits, the IR read writes back exactly what it was given: a
+        // key compiled IR omits (an empty map or list, a `null`, a default) is refused by name.
+        let given: serde_json::Value = serde_json::from_str(text)?;
+        let written = serde_json::to_value(&ir)?;
+        if let Some(at) = first_difference(&given, &written, "") {
+            return Err(serde::de::Error::custom(format!(
+                "`{at}` is not as compiled IR writes it: compiled IR omits an empty map or list, a \
+                 `null` and a default, and a reader writes back only the bytes it was given"
+            )));
+        }
         Ok(ir)
     }
 
@@ -644,6 +1969,9 @@ impl HttpIr {
                      digest compiled IR records of the refined binding's bytes"
                 ));
             }
+        }
+        for (key, refusal) in &self.refusals {
+            refusal_invariants(*key, refusal)?;
         }
         let route_key = |route: &Route| (route.path.clone(), route.method, route.operation.clone());
         if let Some(at) = out_of_order(&self.routes, |left, right| {
@@ -769,6 +2097,285 @@ fn route_invariants(route: &Route, at: &str) -> Result<(), String> {
         }
         read.push((source, name));
     }
+    if let Some(request) = &route.request {
+        request_invariants(route, *request, at)?;
+    }
+    answer_invariants(route, at)
+}
+
+/// The invariants of one compiled route's answers (see [`HttpIr::from_json`]): `outcomes` on a
+/// command, each with a status an outcome may answer and a body admitted beside it; `body` and
+/// `empty` on a view, `single` exactly with an `empty` holding a `4xx`.
+fn answer_invariants(route: &Route, at: &str) -> Result<(), String> {
+    match route.operation {
+        Operation::View(_) => {
+            if !route.outcomes.is_empty() {
+                return Err(format!(
+                    "`{at}.outcomes` is on {}; a view answers rows, or one row, not outcomes",
+                    route.operation
+                ));
+            }
+            match (route.body, route.empty) {
+                (ViewBody::Single, None) => Err(format!(
+                    "`{at}.body` is `single`, and `{at}.empty` is missing; compiled IR writes \
+                     the empty answer of every `single` route"
+                )),
+                (ViewBody::Rows, Some(_)) => Err(format!(
+                    "`{at}.empty` is on a route that answers `rows`; only a `single` route has \
+                     an empty answer"
+                )),
+                (_, Some(empty)) if !(400..500).contains(&empty.status) => Err(format!(
+                    "`{at}.empty.status` `{}` is not a `4xx` status",
+                    empty.status
+                )),
+                _ => Ok(()),
+            }
+        }
+        Operation::Command(_) => {
+            if route.body != ViewBody::Rows {
+                return Err(format!(
+                    "`{at}.body` is on {}; a command answers per outcome, under `outcomes`",
+                    route.operation
+                ));
+            }
+            if route.empty.is_some() {
+                return Err(format!(
+                    "`{at}.empty` is on {}; only a `single` view route has an empty answer",
+                    route.operation
+                ));
+            }
+            for (name, outcome) in &route.outcomes {
+                let key = format!("{at}.outcomes.{name}");
+                if let Some(reason) = status_reason(i64::from(outcome.status)) {
+                    return Err(format!("`{key}.status`: {reason}"));
+                }
+                if let Body::Error { member } = &outcome.body {
+                    if member.is_empty() {
+                        return Err(format!(
+                            "`{key}.body` names an empty member; the error object carries the \
+                             error's wire name under a named member"
+                        ));
+                    }
+                }
+                if outcome.status == 204 && outcome.body != Body::None {
+                    return Err(format!(
+                        "`{key}.body` is `{}` on `204`, which carries no content; compiled IR \
+                         writes `none` there",
+                        outcome.body
+                    ));
+                }
+                let redirects = REDIRECTS.contains(&outcome.status);
+                match (&outcome.redirect, redirects) {
+                    (Some(_), false) => {
+                        return Err(format!(
+                            "`{key}.redirect` is on `{}`, which is not a redirect status; compiled \
+                             IR writes a `redirect` on `301`, `302`, `303`, `307` and `308` only",
+                            outcome.status
+                        ));
+                    }
+                    (None, true) => {
+                        return Err(format!(
+                            "`{key}` answers `{}`, a redirect status, without a `redirect`; \
+                             compiled IR writes the `redirect` of every redirect status",
+                            outcome.status
+                        ));
+                    }
+                    _ => {}
+                }
+                if outcome.redirect.is_some() && outcome.body != Body::None {
+                    return Err(format!(
+                        "`{key}.body` is `{}` beside a `redirect`; compiled IR writes `none` \
+                         there",
+                        outcome.body
+                    ));
+                }
+                if let Some(redirect) = &outcome.redirect {
+                    redirect_invariants(redirect, &key)?;
+                }
+                headers_invariants(&outcome.headers, outcome.status, &key, false)?;
+            }
+            Ok(())
+        }
+    }
+}
+
+/// The invariants of one compiled standard refusal (see [`HttpIr::from_json`]): a status of its
+/// key's class, and a literal body under a named member when it has one.
+fn refusal_invariants(key: RefusalKey, refusal: &Refusal) -> Result<(), String> {
+    if refusal.status / 100 != key.class() {
+        return Err(format!(
+            "`refusals.{key}.status` `{}` is not a `{}xx` status, the class of `{key}`",
+            refusal.status,
+            key.class()
+        ));
+    }
+    if let RefusalBody::Literal { member, .. } = &refusal.body {
+        if member.is_empty() {
+            return Err(format!(
+                "`refusals.{key}.body` names an empty member; a literal body has one named member"
+            ));
+        }
+    }
+    headers_invariants(
+        &refusal.headers,
+        refusal.status,
+        &format!("refusals.{key}"),
+        true,
+    )
+}
+
+/// The invariants of one compiled outcome's `redirect` that need no specification (see
+/// [`HttpIr::from_json`]), under the outcome's `key`: a `location` other than `error.wire`, and
+/// parameter names in RFC 3986 `unreserved` characters.
+fn redirect_invariants(redirect: &Redirect, key: &str) -> Result<(), String> {
+    if redirect.location == AnswerSource::ErrorWire {
+        return Err(format!(
+            "`{key}.redirect.location` reads `error.wire`, the error's wire name; compiled IR \
+             reads a location holding an absolute URI"
+        ));
+    }
+    if let Some(name) = redirect.parameters.keys().find(|name| !unreserved(name)) {
+        return Err(format!(
+            "`{key}.redirect.parameters.{name}`: {}",
+            unreserved_reason(name)
+        ));
+    }
+    Ok(())
+}
+
+/// The invariants of one compiled answer's `headers` (see [`HttpIr::from_json`]), under `at`:
+/// token names, none the server, the encoding or `redirect` writes, none twice ignoring case,
+/// literals that are field values, challenges under `WWW-Authenticate` only with a token scheme
+/// and token params once each whose literals a quoted string carries, a `WWW-Authenticate`
+/// challenge on `401`, and, on a standard refusal (`refusal`), no source.
+fn headers_invariants(
+    headers: &BTreeMap<String, Header>,
+    status: u16,
+    at: &str,
+    refusal: bool,
+) -> Result<(), String> {
+    let mut challenged = false;
+    for (index, (name, header)) in headers.iter().enumerate() {
+        let key = format!("{at}.headers.{name}");
+        if !is_token(name) {
+            return Err(format!(
+                "`{key}`: `{name}` is not a header name, an RFC 9110 token"
+            ));
+        }
+        if let Some((owned, owner)) = RESERVED_HEADERS
+            .iter()
+            .find(|(owned, _)| owned.eq_ignore_ascii_case(name))
+        {
+            return Err(format!(
+                "`{key}`: `{owned}` is written by {owner}, and compiled IR declares no header it \
+                 writes"
+            ));
+        }
+        if let Some(first) = same_header(name, headers.keys().take(index).map(String::as_str)) {
+            return Err(format!(
+                "`{key}` is `{first}` declared twice, ignoring case; compiled IR declares each \
+                 header once"
+            ));
+        }
+        match header {
+            Header::Literal(text) => {
+                if let Some(reason) = field_value_reason(text) {
+                    return Err(format!("`{key}`: {reason}"));
+                }
+            }
+            Header::Source(source) => {
+                if refusal {
+                    return Err(format!(
+                        "`{key}` reads `{source}`, and a standard refusal has no outcome to read a \
+                         source from"
+                    ));
+                }
+            }
+            Header::Challenge(challenge) => {
+                if !name.eq_ignore_ascii_case(CHALLENGE_HEADER) {
+                    return Err(format!(
+                        "`{key}` holds a challenge, which compiled IR writes under \
+                         `{CHALLENGE_HEADER}` only"
+                    ));
+                }
+                challenged = true;
+                if !is_token(&challenge.scheme) {
+                    return Err(format!(
+                        "`{key}.challenge.scheme` `{}` is not a token",
+                        challenge.scheme
+                    ));
+                }
+                for (position, (param, value)) in challenge.params.iter().enumerate() {
+                    let at = format!("{key}.challenge.params.{param}");
+                    if !is_token(param) {
+                        return Err(format!("`{at}`: `{param}` is not a token"));
+                    }
+                    let earlier = challenge.params.keys().take(position).map(String::as_str);
+                    if let Some(first) = same_header(param, earlier) {
+                        return Err(format!(
+                            "`{at}` is `{first}` declared twice, ignoring case; a challenge names \
+                             each param once"
+                        ));
+                    }
+                    match value {
+                        Param::Literal(text) if !quotable(text) => {
+                            return Err(format!(
+                                "`{at}`: {text:?} is not text a quoted string carries"
+                            ));
+                        }
+                        Param::Source(source) if refusal => {
+                            return Err(format!(
+                                "`{at}` reads `{source}`, and a standard refusal has no outcome to \
+                                 read a source from"
+                            ));
+                        }
+                        Param::Literal(_) | Param::Source(_) => {}
+                    }
+                }
+            }
+        }
+    }
+    if status == 401 && !challenged {
+        return Err(format!(
+            "`{at}` answers `401` without a `{CHALLENGE_HEADER}` challenge, which compiled IR \
+             writes on every `401` (RFC 9110 §15.5.2)"
+        ));
+    }
+    Ok(())
+}
+
+/// The invariants of one compiled route's `request` (see [`HttpIr::from_json`]): it is on a
+/// command, not all defaults, and admitted for the route's method, with `ignore` beside `form` or
+/// `query` only.
+fn request_invariants(route: &Route, request: Request, at: &str) -> Result<(), String> {
+    if let Operation::View(_) = route.operation {
+        return Err(format!(
+            "`{at}.request` is on {}; a view takes no request",
+            route.operation
+        ));
+    }
+    if request == Request::default() {
+        return Err(format!(
+            "`{at}.request` holds only defaults; compiled IR omits a request that is a `json` body \
+             refusing an unknown key"
+        ));
+    }
+    let admitted = match request.encoding {
+        Encoding::Query => route.method == Method::Get,
+        Encoding::Json | Encoding::Form => route.method != Method::Get,
+    };
+    if !admitted {
+        return Err(format!(
+            "`{at}.request.encoding` `{}` is not admitted on `{}`: `query` is the encoding of a \
+             command on `get`, and of no other",
+            request.encoding, route.method
+        ));
+    }
+    if request.encoding == Encoding::Json && request.unknown == Unknown::Ignore {
+        return Err(format!(
+            "`{at}.request.unknown` is `ignore` on a `json` body, which stays closed"
+        ));
+    }
     Ok(())
 }
 
@@ -878,8 +2485,9 @@ impl Refusals {
 /// An operation the binding names replaces its derived route on every component that serves it;
 /// every other derived route stays, and the compiled IR records it.
 ///
-/// Every stage-1 check of `docs/design/http-presentation-binding.md` this build implements runs,
-/// and every refusal is returned at once rather than the first:
+/// Every check of `docs/design/http-presentation-binding.md` this build implements runs, stage 1's
+/// and stage 2's request encoding, statuses, bodies, headers and redirects, and every refusal is
+/// returned at once rather than the first:
 ///
 /// | code | refused |
 /// |---|---|
@@ -894,7 +2502,24 @@ impl Refusals {
 /// | `ESS-HTTP-010` | two operations of one component on one method and template, variable names ignored, declared or derived |
 /// | `ESS-HTTP-011` | two templates of one component and method that a request path can both match, with a literal beside a variable at the first position they differ: a literal takes no precedence |
 /// | `ESS-HTTP-013` | an operation with no HTTP surface: a command no component accepts, a view no `reached_by: network` component serves |
-/// | `ESS-HTTP-014` | a command on `get` with an input field no variable of the path maps |
+/// | `ESS-HTTP-014` | a command on `get` with an input field no variable of the path maps, unless its request is encoded `query` |
+/// | `ESS-HTTP-020` | at `routes[i].request.encoding`: an encoding outside `json`, `form` and `query`, `json` or `form` written on a `get` command, or `query` on any other method; at `routes[i].request.unknown`: a value outside `refuse` and `ignore`, or `ignore` with a `json` body; at `routes[i].request`: `request` on a view |
+/// | `ESS-HTTP-021` | at `routes[i].request.encoding`: a `form` or `query` request carrying an input field whose type has no flat spelling, naming the field and its type. A flat field is a scalar (a primitive other than `Json`, an enum, or a newtype of a scalar), an `Optional` scalar or a `List` of scalars; a field mapped to the path is not carried |
+/// | `ESS-HTTP-022` | at `routes[i].outcomes.<name>`: a key that is not the local name of an outcome of the command, or one listed twice; at `routes[i].outcomes`: `outcomes` on a view |
+/// | `ESS-HTTP-023` | at `routes[i].outcomes.<name>.status`: a status outside `100..=599`, a `1xx`, a `3xx` other than `301`, `302`, `303`, `307` and `308`, a `2xx` on an outcome with an error, or a `4xx` or `5xx` on one without |
+/// | `ESS-HTTP-024` | at `routes[i].outcomes.<name>.body`: a word no body form spells, `response` on an outcome without `returns: true` or with an error, `{<member>: error}` on one without an error, under an empty `<member>` or one equal to the wire name of a field of the error, a literal body, `rows` or `single`, or any body but `none` on `204` when that status compiled, or beside a `redirect` on a redirect status; at `routes[i].body`: `body` on a command, a body other than `rows` and `single` on a view, or `single` on a paged view |
+/// | `ESS-HTTP-025` | at `routes[i].outcomes.<name>`: two outcomes of the command on one status whose bodies do not tell them apart (both `envelope`, or both `{<member>: error}` on one member with distinct error wire names, do) and whose redirects do not either (both declare one and one always writes a parameter, its source not `Optional`, the other never writes, do), an outcome the route does not list counted at its derived status ([`status::outcome_status`]) with `envelope`. Reported once, at the first listed outcome in document order, naming the others and the status; a pair already named together is not reported again, and an outcome left with none is not reported; at `refusals.<key>`: an override on a route the binding names, on the status of an outcome of its command, whose body does not tell the two apart (only `{<member>: {literal: <text>}}` beside `{<member>: error}` on one member, the text differing from the error's wire name, does), once per route, naming the route, the outcomes and the status |
+/// | `ESS-HTTP-026` | at `routes[i].outcomes.<name>.headers.<Name>` or `refusals.<key>.headers.<Name>`: a name that is not an RFC 9110 token; `Content-Type`, `Content-Length`, `Transfer-Encoding` or `Location` in any case, which the encoding and `redirect` write; a name declared again ignoring case; a literal that is not a field value (visible US-ASCII, spaces and tabs, no space or tab at either end); a source outside `input.<field>`, `response.<field>`, `error.<field>` and `error.wire`, naming no field, naming one of a type other than a scalar or an `Optional` scalar, or one the outcome cannot supply (`response.` without `returns: true`, `error.` without an error), or `error.wire` where the error declares a field named `wire`; any source in a standard refusal's header. At `….challenge.params.<param>`: the same source refusals for a sourced challenge param |
+/// | `ESS-HTTP-027` | at `….headers.<Name>`: a challenge under any header but `WWW-Authenticate`; at `….challenge.scheme`: a scheme that is not a token; at `….challenge.params.<param>`: a param name that is not a token, one declared again ignoring case, or a literal a quoted string cannot carry; at `….headers`: an outcome or standard refusal on `401` without a `WWW-Authenticate` challenge (one refused for its scheme or params counts as declared) |
+/// | `ESS-HTTP-028` | at `routes[i].outcomes.<name>.redirect`: a `redirect` on a compiled status other than `301`, `302`, `303`, `307` and `308`, or one of those without a `redirect`; at `….redirect.location`: a source the outcome cannot supply (as for `ESS-HTTP-026`), or of a type other than `String` or a newtype of `String`, `Optional` included; at `….redirect.mode`: none, or one outside `query` and `fragment`; at `….redirect.parameters.<name>`: a parameter written twice, or a source refused as a header source is |
+/// | `ESS-HTTP-029` | at `refusals.<key>`: a key outside `malformed`, `not_granted` and `unfinished`, or one written twice; at `refusals.<key>.status`: a status outside its class, `4xx` for `malformed` and `not_granted`, `5xx` for `unfinished`; at `refusals.<key>.body`: a body other than `none` or `{<member>: {literal: <text>}}` under a non-empty member |
+/// | `ESS-HTTP-030` | at `routes[i]`: `body: single` without `empty`, `empty` without `single` (on a command too), or an `empty` status outside `4xx`, unless the route answers `rows`, where `empty` is refused once, for itself |
+/// | `ESS-HTTP-031` | at `routes[i].body`: `body: single` on a view whose filter does not select by its source entity's identity: neither the filter nor a member of a top-level `all` (nested `all` included) is `<identity field> == param.<name>`, compared by value, in either operand order; naming the view, its entity and the identity field |
+///
+/// A listed outcome, a `single` view and a standard refusal are written into the IR with every
+/// default omitted: an outcome's `envelope`, a view's `rows`, an empty `outcomes`, `refusals`,
+/// `headers`, challenge `params` or redirect `parameters`. Header, param and parameter maps are
+/// written in name order, each name as authored.
 ///
 /// A route without a path is open, and valid: the artifacts that need a path refuse it. It takes
 /// no part in collision checks, because no path is claimed.
@@ -919,7 +2544,7 @@ pub fn compile(
 /// | code | refused |
 /// |---|---|
 /// | `ESS-HTTP-003` | at `refines`: a value that is not `sha256:` and 64 lower-case hex digits; `refines` given and no refined binding supplied; the supplied binding's byte digest differs; the refined binding itself refines (a refinement of a refinement is refused in `/1`); or a refined binding supplied to a document that refines nothing |
-/// | `ESS-HTTP-012` | at `routes[i].method` or `routes[i].path`: a method or path the refined binding fixed is changed, or a fixed path left open; at `routes`: a route of the refined binding is dropped |
+/// | `ESS-HTTP-012` | at `routes[i].method` or `routes[i].path`: a method or path the refined binding fixed is changed, or a fixed path left open; at `routes[i].request.encoding` or `routes[i].request.unknown`: a refined route's request restated with another value, a default written out or left out counting as that default; at `routes[i].outcomes.<name>`, `routes[i].body` or `routes[i].empty`: a refined route's outcome, view body or empty answer added, dropped or restated with another status or body, by the same counting; at `routes[i].outcomes.<name>.headers` or `….redirect`: an outcome both list whose headers or redirect differ, compared in name order with an empty map counting as none; at `refusals.<key>`: a standard refusal added, dropped or changed; at `refusals.<key>.headers`: one both declare whose headers differ; at `routes`: a route of the refined binding is dropped |
 ///
 /// The refined binding is checked against the same specification and derived routes, and its own
 /// refusals are reported with their path under `refined.` (`refined.routes[0].method`). It is
@@ -933,9 +2558,9 @@ pub fn compile_refining(
     derived: &[DerivedRoute],
 ) -> Result<HttpIr, HttpDiagnostics> {
     let mut refusals = Refusals(Vec::new());
-    envelope(spec, ir, &mut refusals);
+    let standard = envelope(spec, ir, &mut refusals);
     let compared = refinement(spec, refined, ir, derived, &mut refusals);
-    let (routes, derived_routes) = body(spec, ir, derived, &mut refusals);
+    let (routes, derived_routes) = body(spec, ir, derived, &standard, &mut refusals);
     if let Some(refined) = compared {
         changes(spec, refined, &mut refusals);
     }
@@ -944,6 +2569,7 @@ pub fn compile_refining(
             format: HTTP_IR_FORMAT.to_owned(),
             specification: spec.specification.clone(),
             refines: spec.refines.clone(),
+            refusals: standard,
             routes,
             derived_routes,
         })
@@ -952,8 +2578,9 @@ pub fn compile_refining(
     }
 }
 
-/// `type` (`ESS-HTTP-001`) and `specification` (`ESS-HTTP-002`).
-fn envelope(spec: &HttpSpec, ir: &EssIr, refusals: &mut Refusals) {
+/// `type` (`ESS-HTTP-001`), `specification` (`ESS-HTTP-002`) and `refusals` (`ESS-HTTP-029`),
+/// returning the standard refusals compiled.
+fn envelope(spec: &HttpSpec, ir: &EssIr, refusals: &mut Refusals) -> BTreeMap<RefusalKey, Refusal> {
     if spec.format != HTTP_FORMAT {
         refusals.refuse(
             "ESS-HTTP-001",
@@ -962,6 +2589,87 @@ fn envelope(spec: &HttpSpec, ir: &EssIr, refusals: &mut Refusals) {
         );
     }
     specification(&spec.specification, ir, refusals);
+    standard(spec.refusals.as_ref(), refusals)
+}
+
+/// Holds each `refusals:` entry to its rules (`ESS-HTTP-029`): a key of the set, written once, a
+/// status of the key's class and a body that is `none` or one literal member with a name.
+fn standard(
+    written: Option<&Entries<RefusalSpec>>,
+    refusals: &mut Refusals,
+) -> BTreeMap<RefusalKey, Refusal> {
+    let mut compiled = BTreeMap::new();
+    let mut seen = std::collections::BTreeSet::new();
+    for (name, spec) in written.map_or(&[][..], |entries| &entries.0[..]) {
+        let at = format!("refusals.{name}");
+        if !seen.insert(name.as_str()) {
+            refusals.refuse(
+                "ESS-HTTP-029",
+                at,
+                format!("`{name}` is written twice; each standard refusal is overridden once"),
+            );
+            continue;
+        }
+        let Some(key) = RefusalKey::parse(name) else {
+            refusals.refuse(
+                "ESS-HTTP-029",
+                at,
+                format!(
+                    "`{name}` is not a standard refusal; `refusals:` takes `malformed`, \
+                     `not_granted` and `unfinished`"
+                ),
+            );
+            continue;
+        };
+        let class = i64::from(key.class());
+        let status = u16::try_from(spec.status)
+            .ok()
+            .filter(|_| spec.status / 100 == class);
+        if status.is_none() {
+            refusals.refuse(
+                "ESS-HTTP-029",
+                format!("{at}.status"),
+                format!(
+                    "`{}` is not a `{class}xx` status, and `{key}` answers a `{class}xx`: \
+                     `malformed` and `not_granted` refuse the request (`4xx`), `unfinished` is \
+                     the server's (`5xx`)",
+                    spec.status
+                ),
+            );
+        }
+        let body = match &spec.body {
+            BodySpec::Word(word) if word == "none" => Some(RefusalBody::None),
+            BodySpec::Literal { member, text } if !member.is_empty() => {
+                Some(RefusalBody::Literal {
+                    member: member.clone(),
+                    text: text.clone(),
+                })
+            }
+            written => {
+                refusals.refuse(
+                    "ESS-HTTP-029",
+                    format!("{at}.body"),
+                    format!(
+                        "`{written}` is not a standard refusal's body: it is `none`, or \
+                         `{{<member>: {{literal: <text>}}}}` under a member with a name"
+                    ),
+                );
+                None
+            }
+        };
+        let headers = answer_headers(spec.headers.as_ref(), None, status, &at, refusals);
+        if let (Some(status), Some(body), Ok(headers)) = (status, body, headers) {
+            compiled.insert(
+                key,
+                Refusal {
+                    status,
+                    body,
+                    headers,
+                },
+            );
+        }
+    }
+    compiled
 }
 
 /// Every route checked and resolved, ordered by path, then method, then operation, with the
@@ -970,9 +2678,10 @@ fn body(
     spec: &HttpSpec,
     ir: &EssIr,
     derived: &[DerivedRoute],
+    standard: &BTreeMap<RefusalKey, Refusal>,
     refusals: &mut Refusals,
 ) -> (Vec<Route>, Vec<DerivedRoute>) {
-    let resolved = routes(&spec.routes, ir, refusals);
+    let resolved = routes(&spec.routes, ir, standard, refusals);
     let derived_routes = surface(&resolved, derived, refusals);
     let mut routes: Vec<Route> = resolved
         .into_iter()
@@ -1058,8 +2767,8 @@ fn refinement<'a>(
         );
     }
     let mut own = Refusals(Vec::new());
-    envelope(&refined.spec, ir, &mut own);
-    body(&refined.spec, ir, derived, &mut own);
+    let standard = envelope(&refined.spec, ir, &mut own);
+    body(&refined.spec, ir, derived, &standard, &mut own);
     for diagnostic in own.0 {
         refusals.refuse(
             diagnostic.code,
@@ -1079,10 +2788,12 @@ fn named(route: &RouteSpec) -> Option<Operation> {
     }
 }
 
-/// Refuses a refinement that changes a method or path the refined binding fixed, leaves a fixed
-/// path open, or drops a route of the refined binding (`ESS-HTTP-012`). Each operation is compared
-/// at the first route that names it in each document; a second one is `ESS-HTTP-005` already.
+/// Refuses a refinement that changes `refusals:`, a method or path the refined binding fixed,
+/// leaves a fixed path open, restates a route's `request` or answers with another value, or drops
+/// a route of the refined binding (`ESS-HTTP-012`). Each operation is compared at the first route
+/// that names it in each document; a second one is `ESS-HTTP-005` already.
 fn changes(spec: &HttpSpec, refined: &HttpSpec, refusals: &mut Refusals) {
+    refusal_changes(spec, refined, refusals);
     let mut routed: BTreeMap<Operation, usize> = BTreeMap::new();
     for (index, route) in spec.routes.iter().enumerate() {
         if let Some(operation) = named(route) {
@@ -1125,21 +2836,274 @@ fn changes(spec: &HttpSpec, refined: &HttpSpec, refusals: &mut Refusals) {
         }
         if let Some(fixed_path) = fixed_path {
             let found = match route.path.as_deref() {
-                Some(path) if path == fixed_path => continue,
-                Some(path) => format!("is on `{path}` here"),
-                None => "is left open here".to_owned(),
+                Some(path) if path == fixed_path => None,
+                Some(path) => Some(format!("is on `{path}` here")),
+                None => Some("is left open here".to_owned()),
+            };
+            if let Some(found) = found {
+                refusals.refuse(
+                    "ESS-HTTP-012",
+                    format!("routes[{index}].path"),
+                    format!(
+                        "{operation} {found}, and the refined binding fixes `{fixed_path}` at \
+                         `routes[{at}]`; a refinement fills in only a path the refined binding \
+                         left open"
+                    ),
+                );
+            }
+        }
+        let fixed_request = written_request(fixed);
+        for ((key, new), (_, old)) in written_request(route).into_iter().zip(fixed_request) {
+            if new != old {
+                refusals.refuse(
+                    "ESS-HTTP-012",
+                    format!("routes[{index}].request.{key}"),
+                    format!(
+                        "{operation} has `request.{key}` `{new}` here, and the refined binding \
+                         fixes `{old}` at `routes[{at}]`; a refinement restates the request of \
+                         every route it restates"
+                    ),
+                );
+            }
+        }
+        answer_changes(route, fixed, &operation, index, at, refusals);
+    }
+}
+
+/// Refuses a refining document whose `refusals:` differs from the refined binding's
+/// (`ESS-HTTP-012`), entry by entry, at `refusals.<key>`: an entry added, dropped, or restated with
+/// another status or body. The first entry of each key is compared; a second is `ESS-HTTP-029`.
+/// Bodies are compared as written values, never as text, so that one literal cannot spell another.
+fn refusal_changes(spec: &HttpSpec, refined: &HttpSpec, refusals: &mut Refusals) {
+    let entries = |document: &HttpSpec| -> BTreeMap<String, (i64, BodySpec)> {
+        let mut entries = BTreeMap::new();
+        for (key, refusal) in document.refusals.iter().flat_map(|entries| &entries.0) {
+            entries
+                .entry(key.clone())
+                .or_insert_with(|| (refusal.status, refusal.body.clone()));
+        }
+        entries
+    };
+    let (new, old) = (entries(spec), entries(refined));
+    let headers = |document: &HttpSpec| -> BTreeMap<String, Option<serde_json::Value>> {
+        let mut headers = BTreeMap::new();
+        for (key, refusal) in document.refusals.iter().flat_map(|entries| &entries.0) {
+            headers.entry(key.clone()).or_insert_with(|| {
+                compared_entries(refusal.headers.as_ref(), HeaderSpec::compared)
+            });
+        }
+        headers
+    };
+    let (new_headers, old_headers) = (headers(spec), headers(refined));
+    let keys: std::collections::BTreeSet<&String> = new.keys().chain(old.keys()).collect();
+    for key in keys {
+        let shown = |entry: Option<&(i64, BodySpec)>| {
+            entry.map_or_else(
+                || "nothing".to_owned(),
+                |(status, body)| format!("`{status}` with `{body}`"),
+            )
+        };
+        let (here, there) = (new.get(key), old.get(key));
+        if here != there {
+            refusals.refuse(
+                "ESS-HTTP-012",
+                format!("refusals.{key}"),
+                format!(
+                    "`refusals.{key}` answers {} here, and the refined binding fixes {}; a \
+                     refinement restates the refined binding's `refusals:` exactly",
+                    shown(here),
+                    shown(there)
+                ),
+            );
+        }
+        // A refusal added or dropped is refused above, as a whole.
+        let (Some(here), Some(there)) = (new_headers.get(key), old_headers.get(key)) else {
+            continue;
+        };
+        if here != there {
+            let shown = |headers: &Option<serde_json::Value>| {
+                headers.as_ref().map_or_else(
+                    || "no `headers`".to_owned(),
+                    |headers| format!("`{headers}`"),
+                )
             };
             refusals.refuse(
                 "ESS-HTTP-012",
-                format!("routes[{index}].path"),
+                format!("refusals.{key}.headers"),
                 format!(
-                    "{operation} {found}, and the refined binding fixes `{fixed_path}` at \
-                     `routes[{at}]`; a refinement fills in only a path the refined binding left \
-                     open"
+                    "`refusals.{key}` declares {} here, and the refined binding fixes {}; a \
+                     refinement restates the refined binding's `refusals:` exactly",
+                    shown(here),
+                    shown(there)
                 ),
             );
         }
     }
+}
+
+/// Refuses a refined route whose answers are restated with another value (`ESS-HTTP-012`): each
+/// listed outcome at `routes[i].outcomes.<name>`, the view body at `routes[i].body` and the empty
+/// answer at `routes[i].empty`. A default written out or left out counts as that default, so the
+/// comparison is over what compiles. Bodies are compared as written values, never as text, so that
+/// a word cannot spell another form.
+fn answer_changes(
+    route: &RouteSpec,
+    fixed: &RouteSpec,
+    operation: &Operation,
+    index: usize,
+    at: usize,
+    refusals: &mut Refusals,
+) {
+    let listed = |route: &RouteSpec| -> BTreeMap<String, (i64, BodySpec)> {
+        let mut listed = BTreeMap::new();
+        for (name, outcome) in route.outcomes.iter().flat_map(|entries| &entries.0) {
+            listed.entry(name.clone()).or_insert_with(|| {
+                let body = outcome
+                    .body
+                    .clone()
+                    .unwrap_or_else(|| Body::Envelope.spec());
+                (outcome.status, body)
+            });
+        }
+        listed
+    };
+    let (new, old) = (listed(route), listed(fixed));
+    let names: std::collections::BTreeSet<&String> = new.keys().chain(old.keys()).collect();
+    let shown = |entry: Option<&(i64, BodySpec)>| {
+        entry.map_or_else(
+            || "is not listed".to_owned(),
+            |(status, body)| format!("answers `{status}` with `{body}`"),
+        )
+    };
+    let (new_extras, old_extras) = (outcome_extras(route), outcome_extras(fixed));
+    for name in names {
+        let (here, there) = (new.get(name), old.get(name));
+        if here != there {
+            refusals.refuse(
+                "ESS-HTTP-012",
+                format!("routes[{index}].outcomes.{name}"),
+                format!(
+                    "outcome `{name}` of {operation} {} here, and at `routes[{at}]` of the \
+                     refined binding it {}; a refinement restates the answers of every route it \
+                     restates",
+                    shown(here),
+                    shown(there)
+                ),
+            );
+        }
+        // An outcome added or dropped is refused above, as a whole.
+        let (Some(here), Some(there)) = (new_extras.get(name), old_extras.get(name)) else {
+            continue;
+        };
+        extras_changes(name, here, there, operation, [index, at], refusals);
+    }
+    let body = |route: &RouteSpec| {
+        route
+            .body
+            .clone()
+            .unwrap_or_else(|| BodySpec::Word("rows".to_owned()))
+    };
+    let (new_body, old_body) = (body(route), body(fixed));
+    if new_body != old_body {
+        refusals.refuse(
+            "ESS-HTTP-012",
+            format!("routes[{index}].body"),
+            format!(
+                "{operation} answers `{new_body}` here, and the refined binding fixes \
+                 `{old_body}` at `routes[{at}]`"
+            ),
+        );
+    }
+    let shown_empty = |empty: Option<i64>| {
+        empty.map_or_else(
+            || "no empty answer".to_owned(),
+            |status| format!("`{status}`"),
+        )
+    };
+    let (new_empty, old_empty) = (
+        route.empty.map(|empty| empty.status),
+        fixed.empty.map(|empty| empty.status),
+    );
+    if new_empty != old_empty {
+        let (new_empty, old_empty) = (shown_empty(new_empty), shown_empty(old_empty));
+        refusals.refuse(
+            "ESS-HTTP-012",
+            format!("routes[{index}].empty"),
+            format!(
+                "{operation} has {new_empty} for a view that holds no row here, and the refined \
+                 binding fixes {old_empty} at `routes[{at}]`"
+            ),
+        );
+    }
+}
+
+/// Each listed outcome's headers and redirect as a refinement compares them (`ESS-HTTP-012`), the
+/// first listing of a name counted.
+fn outcome_extras(route: &RouteSpec) -> BTreeMap<String, [Option<serde_json::Value>; 2]> {
+    let mut extras = BTreeMap::new();
+    for (name, outcome) in route.outcomes.iter().flat_map(|entries| &entries.0) {
+        extras.entry(name.clone()).or_insert([
+            compared_entries(outcome.headers.as_ref(), HeaderSpec::compared),
+            outcome.redirect.as_ref().map(RedirectSpec::compared),
+        ]);
+    }
+    extras
+}
+
+/// Refuses outcome `name`, listed by a refined route and its refinement, whose headers or redirect
+/// (`here` and `there`, as [`outcome_extras`] has them) differ (`ESS-HTTP-012`).
+fn extras_changes(
+    name: &str,
+    here: &[Option<serde_json::Value>; 2],
+    there: &[Option<serde_json::Value>; 2],
+    operation: &Operation,
+    [index, at]: [usize; 2],
+    refusals: &mut Refusals,
+) {
+    for (key, (new, old)) in ["headers", "redirect"]
+        .into_iter()
+        .zip(here.iter().zip(there))
+    {
+        if new == old {
+            continue;
+        }
+        let shown = |value: &Option<serde_json::Value>| {
+            value
+                .as_ref()
+                .map_or_else(|| format!("no `{key}`"), |value| format!("`{value}`"))
+        };
+        refusals.refuse(
+            "ESS-HTTP-012",
+            format!("routes[{index}].outcomes.{name}.{key}"),
+            format!(
+                "outcome `{name}` of {operation} declares {} here, and at `routes[{at}]` of the \
+                 refined binding {}; a refinement restates the `{key}` of every outcome it \
+                 restates",
+                shown(new),
+                shown(old)
+            ),
+        );
+    }
+}
+
+/// A route's `request` keys as written, each absent one as its default, so that writing a default
+/// out is not a change.
+fn written_request(route: &RouteSpec) -> [(&'static str, &str); 2] {
+    let request = route.request.as_ref();
+    [
+        (
+            Encoding::KEY,
+            request
+                .and_then(|request| request.encoding.as_deref())
+                .unwrap_or(Encoding::default().as_str()),
+        ),
+        (
+            Unknown::KEY,
+            request
+                .and_then(|request| request.unknown.as_deref())
+                .unwrap_or(Unknown::default().as_str()),
+        ),
+    ]
 }
 
 fn specification(identity: &SpecificationIdentity, ir: &EssIr, refusals: &mut Refusals) {
@@ -1171,8 +3135,8 @@ struct Bound {
     /// The method, path and segments it claims on the surface, when its method is admitted and its
     /// path parsed, whatever else it was refused for; `None` for an open route or either refusal.
     claim: Option<(Method, String, Vec<Segment>)>,
-    /// The resolved route, when its operation, method, path, sources and `get` input resolved; it
-    /// reaches the IR only when the binding earned no refusal at all.
+    /// The resolved route, when its operation, method, path, sources, request and `get` input
+    /// resolved; it reaches the IR only when the binding earned no refusal at all.
     route: Option<Route>,
 }
 
@@ -1180,7 +3144,20 @@ struct Bound {
 struct Target<'a> {
     ir: &'a EssIr,
     fields: &'a [ResolvedField],
-    command: bool,
+    served: Served<'a>,
+}
+
+/// The operation a route serves, resolved.
+#[derive(Clone, Copy)]
+enum Served<'a> {
+    Command(&'a ResolvedCommand),
+    View(&'a ResolvedView),
+}
+
+impl Target<'_> {
+    fn is_command(&self) -> bool {
+        matches!(self.served, Served::Command(_))
+    }
 }
 
 /// Every route that names an operation, in document order. A route that earned a refusal is still
@@ -1189,9 +3166,17 @@ struct Target<'a> {
 ///
 /// Within one route the refusals come in this order: the operation's shape (`004`), the method
 /// (`006`), the path's grammar (`007`), the operation's existence and surface (`004`, `013`), the
-/// mapping of variables (`008`), the sources (`009`), the unmapped `get` input (`014`), and the
-/// operation routed twice (`005`).
-fn routes(specs: &[RouteSpec], ir: &EssIr, refusals: &mut Refusals) -> Vec<Bound> {
+/// mapping of variables (`008`), the sources (`009`), the request (`020`), the spelling of each
+/// field it carries (`021`), the unmapped `get` input (`014`), the answers (each listed outcome's
+/// name `022`, status `023`, body `024`, headers `026` and `027` and redirect `028` in document
+/// order, then `025`; a view's `outcomes`
+/// `022`, `body` `024`, `empty` `030` and identity `031`), and the operation routed twice (`005`).
+fn routes(
+    specs: &[RouteSpec],
+    ir: &EssIr,
+    standard: &BTreeMap<RefusalKey, Refusal>,
+    refusals: &mut Refusals,
+) -> Vec<Bound> {
     let mut first_route: BTreeMap<Operation, usize> = BTreeMap::new();
     let mut routes = Vec::new();
     for (index, spec) in specs.iter().enumerate() {
@@ -1242,12 +3227,16 @@ fn routes(specs: &[RouteSpec], ir: &EssIr, refusals: &mut Refusals) -> Vec<Bound
         let sources = target
             .as_ref()
             .and_then(|target| sources(spec, target, &path, refusals));
-        let unmapped = match (&target, method) {
-            (Some(target), Some(Method::Get)) if target.command => {
-                get_input(&operation, target, &mapped, &path, refusals)
-            }
-            _ => false,
-        };
+        let request = carried(
+            spec,
+            &operation,
+            target.as_ref(),
+            method,
+            &mapped,
+            &path,
+            refusals,
+        );
+        let answers = answers(spec, &operation, target.as_ref(), &path, standard, refusals);
         if let Some(first) = first_route.get(&operation) {
             refusals.refuse(
                 "ESS-HTTP-005",
@@ -1263,13 +3252,19 @@ fn routes(specs: &[RouteSpec], ir: &EssIr, refusals: &mut Refusals) -> Vec<Bound
             }
             _ => None,
         };
-        let route = match (target, method, segments, sources, unmapped) {
-            (Some(_), Some(method), Some(_), Some(sources), false) => Some(Route {
-                operation: operation.clone(),
-                method,
-                path: spec.path.clone(),
-                parameters: sources,
-            }),
+        let route = match (target, method, segments, sources, request, answers) {
+            (Some(_), Some(method), Some(_), Some(sources), Ok(request), Ok(answers)) => {
+                Some(Route {
+                    operation: operation.clone(),
+                    method,
+                    path: spec.path.clone(),
+                    parameters: sources,
+                    request,
+                    outcomes: answers.outcomes,
+                    body: answers.body,
+                    empty: answers.empty,
+                })
+            }
             _ => None,
         };
         routes.push(Bound {
@@ -1319,7 +3314,7 @@ fn method(
             Some(Operation::View(_)) => "a view is bound to `get` only",
             _ => {
                 "a command is bound to `post`, `put`, `patch` or `delete`, or to `get` when every \
-                 input field is mapped to the path"
+                 input field is mapped to the path or its request is encoded `query`"
             }
         };
         let kind = operation.map_or("operation", Operation::kind);
@@ -1370,7 +3365,7 @@ fn command<'a>(
     Some(Target {
         ir,
         fields: &command.input,
-        command: true,
+        served: Served::Command(command),
     })
 }
 
@@ -1406,7 +3401,7 @@ fn view<'a>(name: &str, ir: &'a EssIr, path: &str, refusals: &mut Refusals) -> O
     Some(Target {
         ir,
         fields: &view.params,
-        command: false,
+        served: Served::View(view),
     })
 }
 
@@ -1516,7 +3511,7 @@ fn sources(
     path: &str,
     refusals: &mut Refusals,
 ) -> Option<BTreeMap<String, Source>> {
-    let (namespace, kind, what) = if target.command {
+    let (namespace, kind, what) = if target.is_command() {
         ("input", "command", "input field")
     } else {
         ("param", "view", "parameter")
@@ -1573,8 +3568,224 @@ fn sources(
     (!refused).then_some(resolved)
 }
 
+/// A route's request or the input it carries earned a refusal, already reported.
+struct Refused;
+
+/// The route's compiled request, `None` when it is all defaults, once the request (`ESS-HTTP-020`),
+/// the spelling of each field a `form` or `query` request carries (`ESS-HTTP-021`) and a `get`
+/// command's unmapped input (`ESS-HTTP-014`) are checked.
+fn carried(
+    spec: &RouteSpec,
+    operation: &Operation,
+    target: Option<&Target<'_>>,
+    method: Option<Method>,
+    mapped: &[String],
+    path: &str,
+    refusals: &mut Refusals,
+) -> Result<Option<Request>, Refused> {
+    let checked = request(spec, operation, method, path, refusals);
+    let flat = match (target, checked.encoding) {
+        (Some(target), Some(encoding @ (Encoding::Form | Encoding::Query))) => {
+            flat_input(target, encoding, mapped, path, refusals)
+        }
+        _ => true,
+    };
+    let unmapped = match (target, method, checked.encoding) {
+        (Some(target), Some(Method::Get), Some(Encoding::Json)) if target.is_command() => {
+            get_input(operation, target, mapped, path, refusals)
+        }
+        _ => false,
+    };
+    if checked.refused || !flat || unmapped {
+        Err(Refused)
+    } else {
+        Ok(checked.request)
+    }
+}
+
+/// What a route's `request` resolved to.
+struct Checked {
+    /// Whether it earned a refusal (`ESS-HTTP-020`).
+    refused: bool,
+    /// The compiled request when it earned none; `None` when it is all defaults.
+    request: Option<Request>,
+    /// The encoding, when it is one of the set and admitted for the route's method; `None` when it
+    /// was refused, which leaves the input it would carry unchecked.
+    encoding: Option<Encoding>,
+}
+
+/// Holds a route's `request` to its rules (`ESS-HTTP-020`): no `request` on a view, an encoding of
+/// the set that the method admits when one is written (`query` on `get` only, and on `get` nothing
+/// else written), and an `unknown` of the set, `ignore` only beside `form` or `query`. An absent
+/// `request` is a `json` body refusing an unknown key, which a `get` command is in stage 1.
+fn request(
+    spec: &RouteSpec,
+    operation: &Operation,
+    method: Option<Method>,
+    path: &str,
+    refusals: &mut Refusals,
+) -> Checked {
+    let Some(written) = &spec.request else {
+        return Checked {
+            refused: false,
+            request: None,
+            encoding: Some(Encoding::Json),
+        };
+    };
+    if let Operation::View(_) = operation {
+        refusals.refuse(
+            "ESS-HTTP-020",
+            format!("{path}.request"),
+            format!(
+                "{operation} takes no `request`: a view reads its parameters from the path and the \
+                 query string"
+            ),
+        );
+        return Checked {
+            refused: true,
+            request: None,
+            encoding: None,
+        };
+    }
+    let mut refused = false;
+    let parsed = match written.encoding.as_deref() {
+        None => Some(Encoding::default()),
+        Some(text) => {
+            let parsed = Encoding::parse(text);
+            if parsed.is_none() {
+                refusals.refuse(
+                    "ESS-HTTP-020",
+                    format!("{path}.request.encoding"),
+                    format!(
+                        "`{text}` is not an encoding; a request is encoded `json`, `form` or \
+                         `query`"
+                    ),
+                );
+                refused = true;
+            }
+            parsed
+        }
+    };
+    let encoding = parsed.filter(|&encoding| {
+        let rule = match (method, encoding) {
+            (Some(Method::Get), Encoding::Json | Encoding::Form) if written.encoding.is_some() => {
+                format!(
+                    "`{encoding}` carries the input in a body, and `get` carries none; a command \
+                     on `get` is encoded `query`, or leaves `encoding` out and maps every input \
+                     field to the path"
+                )
+            }
+            (Some(method), Encoding::Query) if method != Method::Get => format!(
+                "`query` carries the input in the query string, the encoding of a command on \
+                 `get` only; a command on `{method}` is encoded `json` or `form`"
+            ),
+            _ => return true,
+        };
+        refusals.refuse("ESS-HTTP-020", format!("{path}.request.encoding"), rule);
+        refused = true;
+        false
+    });
+    let unknown = match written.unknown.as_deref() {
+        None => Some(Unknown::default()),
+        Some(text) => {
+            let unknown = Unknown::parse(text);
+            if unknown.is_none() {
+                refusals.refuse(
+                    "ESS-HTTP-020",
+                    format!("{path}.request.unknown"),
+                    format!(
+                        "`{text}` is not what a request does with an unknown parameter; it is \
+                         `refuse` or `ignore`"
+                    ),
+                );
+                refused = true;
+            }
+            unknown
+        }
+    };
+    if parsed == Some(Encoding::Json) && unknown == Some(Unknown::Ignore) {
+        refusals.refuse(
+            "ESS-HTTP-020",
+            format!("{path}.request.unknown"),
+            "`ignore` admits a request parameter no field names, which only a `form` or `query` \
+             request has; a `json` body stays closed, so `unknown` is `refuse` beside `json`",
+        );
+        refused = true;
+    }
+    let request = match (refused, encoding, unknown) {
+        (false, Some(encoding), Some(unknown)) => {
+            Some(Request { encoding, unknown }).filter(|request| *request != Request::default())
+        }
+        _ => None,
+    };
+    Checked {
+        refused,
+        request,
+        encoding,
+    }
+}
+
+/// Refuses each input field a `form` or `query` request carries, every one the path does not map,
+/// whose type has no flat spelling (`ESS-HTTP-021`), and says whether every field has one.
+fn flat_input(
+    target: &Target<'_>,
+    encoding: Encoding,
+    mapped: &[String],
+    path: &str,
+    refusals: &mut Refusals,
+) -> bool {
+    let mut flat = true;
+    for field in target.fields {
+        if mapped.contains(&format!("input.{}", field.name))
+            || flat_type(&field.type_ref, target.ir)
+        {
+            continue;
+        }
+        refusals.refuse(
+            "ESS-HTTP-021",
+            format!("{path}.request.encoding"),
+            format!(
+                "input field `{}` has type `{}`, which has no flat spelling in a `{encoding}` \
+                 request: a `form` or `query` field is a scalar, an `Optional` scalar or a `List` \
+                 of scalars, a scalar being a primitive other than `Json`, an enum, or a newtype \
+                 of a scalar",
+                field.name, field.type_ref
+            ),
+        );
+        flat = false;
+    }
+    flat
+}
+
+/// Whether a value of `type_ref` is spelled as `form` and `query` parameters: one key per value, a
+/// `List` repeating its key, an absent `Optional` leaving it out. Never a struct, a union, a map,
+/// `Json`, an `Optional` or `List` of anything but a scalar.
+fn flat_type(type_ref: &ResolvedTypeRef, ir: &EssIr) -> bool {
+    match type_ref {
+        ResolvedTypeRef::Optional { of } | ResolvedTypeRef::List { of } => scalar(of, ir),
+        _ => scalar(type_ref, ir),
+    }
+}
+
+/// Whether `type_ref` is one scalar value: a primitive other than `Json`, an enum, or a newtype of
+/// a scalar, constrained or not.
+fn scalar(type_ref: &ResolvedTypeRef, ir: &EssIr) -> bool {
+    match type_ref {
+        ResolvedTypeRef::Primitive { name } => *name != Primitive::Json,
+        ResolvedTypeRef::Declared { name } => match &ir.named_type(name).body {
+            ResolvedBody::Enum { .. } => true,
+            ResolvedBody::Newtype { of, .. } => scalar(of, ir),
+            ResolvedBody::Struct { .. } | ResolvedBody::Union { .. } => false,
+        },
+        ResolvedTypeRef::Optional { .. }
+        | ResolvedTypeRef::List { .. }
+        | ResolvedTypeRef::Map { .. } => false,
+    }
+}
+
 /// Refuses each input field of a command on `get` that no variable of the path maps
-/// (`ESS-HTTP-014`), and says whether any was.
+/// (`ESS-HTTP-014`), and says whether any was. A `get` command whose request is encoded `query`
+/// carries its other fields in the query string and is not checked here.
 fn get_input(
     operation: &Operation,
     target: &Target<'_>,
@@ -1591,7 +3802,7 @@ fn get_input(
                 path,
                 format!(
                     "command `{}` is bound to `get`, which carries no body, and its input field \
-                     `{}` is not mapped to the path",
+                     `{}` is not mapped to the path; map it, or encode the request `query`",
                     operation.name(),
                     field.name
                 ),
@@ -1600,6 +3811,1156 @@ fn get_input(
         }
     }
     unmapped
+}
+
+/// What a route answers, compiled: a command's listed outcomes, a view's body and empty answer.
+struct Answers {
+    outcomes: BTreeMap<String, Outcome>,
+    body: ViewBody,
+    empty: Option<Empty>,
+}
+
+/// The route's answers once every key of them is checked: a command's `outcomes` (`ESS-HTTP-022`
+/// to `-025`) and the view keys it may not carry (`ESS-HTTP-024`, `-030`), or a view's
+/// `outcomes`, `body` and `empty` (`ESS-HTTP-022`, `-024`, `-030`, `-031`).
+fn answers(
+    spec: &RouteSpec,
+    operation: &Operation,
+    target: Option<&Target<'_>>,
+    path: &str,
+    standard: &BTreeMap<RefusalKey, Refusal>,
+    refusals: &mut Refusals,
+) -> Result<Answers, Refused> {
+    let before = refusals.0.len();
+    let answers = match operation {
+        Operation::Command(_) => {
+            let command = target.and_then(|target| match target.served {
+                Served::Command(command) => Some((target.ir, command)),
+                Served::View(_) => None,
+            });
+            let outcomes = outcomes(spec, operation, command, path, standard, refusals);
+            if let Some(body) = &spec.body {
+                refusals.refuse(
+                    "ESS-HTTP-024",
+                    format!("{path}.body"),
+                    format!(
+                        "`body: {body}` is a view route's key, and {operation} answers per \
+                         outcome, under `outcomes`"
+                    ),
+                );
+            }
+            if spec.empty.is_some() {
+                refusals.refuse(
+                    "ESS-HTTP-030",
+                    path,
+                    format!(
+                        "`empty` answers a `single` view that holds no row, and {operation} has \
+                         no `single` body"
+                    ),
+                );
+            }
+            Answers {
+                outcomes,
+                body: ViewBody::Rows,
+                empty: None,
+            }
+        }
+        Operation::View(_) => {
+            let view = target.and_then(|target| match target.served {
+                Served::View(view) => Some((target.ir, view)),
+                Served::Command(_) => None,
+            });
+            view_answers(spec, operation, view, path, refusals)
+        }
+    };
+    if refusals.0.len() == before {
+        Ok(answers)
+    } else {
+        Err(Refused)
+    }
+}
+
+/// A command's listed outcomes, each checked: a key naming an outcome of the command, once
+/// (`ESS-HTTP-022`), a status it may answer (`ESS-HTTP-023`) and a body it admits
+/// (`ESS-HTTP-024`); then the outcomes no body tells apart on one status (`ESS-HTTP-025`). Without
+/// the command, only the shape of each key is known, and nothing is checked against it.
+fn outcomes(
+    spec: &RouteSpec,
+    operation: &Operation,
+    command: Option<(&EssIr, &ResolvedCommand)>,
+    path: &str,
+    standard: &BTreeMap<RefusalKey, Refusal>,
+    refusals: &mut Refusals,
+) -> BTreeMap<String, Outcome> {
+    let mut compiled = BTreeMap::new();
+    let Some((ir, command)) = command else {
+        return compiled;
+    };
+    // No `outcomes` lists none: every outcome keeps its derived answer, which a `refusals:`
+    // override is still held apart from.
+    let none = Entries::default();
+    let written = spec.outcomes.as_ref().unwrap_or(&none);
+    // Each listed outcome that compiled, in document order.
+    let mut listed: Vec<&str> = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+    for (name, outcome_spec) in &written.0 {
+        let at = format!("{path}.outcomes.{name}");
+        if !seen.insert(name.as_str()) {
+            refusals.refuse(
+                "ESS-HTTP-022",
+                at,
+                format!("outcome `{name}` is listed twice; each outcome is listed once"),
+            );
+            continue;
+        }
+        let Some(outcome) = command
+            .outcomes
+            .iter()
+            .find(|outcome| outcome.name.as_str() == name)
+        else {
+            let declared: Vec<String> = command
+                .outcomes
+                .iter()
+                .map(|outcome| format!("`{}`", outcome.name))
+                .collect();
+            refusals.refuse(
+                "ESS-HTTP-022",
+                at,
+                format!(
+                    "`{name}` is not an outcome of {operation}, whose outcomes are {}",
+                    declared.join(", ")
+                ),
+            );
+            continue;
+        };
+        let status = outcome_status_checked(outcome_spec.status, outcome, &at, refusals);
+        // A body beside a redirect is refused only where the redirect itself is not, on a redirect
+        // status, so that one mistake is one refusal.
+        let redirects = outcome_spec.redirect.is_some()
+            && status.is_some_and(|status| REDIRECTS.contains(&status));
+        let body = outcome_body(
+            outcome_spec.body.as_ref(),
+            status,
+            redirects,
+            outcome,
+            ir,
+            &at,
+            refusals,
+        );
+        let reader = Reader {
+            ir,
+            command,
+            outcome,
+        };
+        let headers = answer_headers(
+            outcome_spec.headers.as_ref(),
+            Some(&reader),
+            status,
+            &at,
+            refusals,
+        );
+        let redirect = outcome_redirect(
+            outcome_spec.redirect.as_ref(),
+            status,
+            &reader,
+            &at,
+            refusals,
+        );
+        if let (Some(status), Some(body), Ok(headers), Ok(redirect)) =
+            (status, body, headers, redirect)
+        {
+            compiled.insert(
+                name.clone(),
+                Outcome {
+                    status,
+                    body,
+                    headers,
+                    redirect,
+                },
+            );
+            listed.push(name);
+        }
+    }
+    distinguishable(
+        operation, ir, command, &compiled, &listed, written, path, standard, refusals,
+    );
+    compiled
+}
+
+/// The outcome's status, unless it is refused (`ESS-HTTP-023`): no status at all, a `1xx`, a `3xx`
+/// other than the [`REDIRECTS`], or one of the class the outcome may not answer.
+fn outcome_status_checked(
+    status: i64,
+    outcome: &ResolvedOutcome,
+    at: &str,
+    refusals: &mut Refusals,
+) -> Option<u16> {
+    let reason = status_reason(status).or_else(|| class_reason(status, outcome.error.is_some()));
+    if let Some(reason) = reason {
+        refusals.refuse(
+            "ESS-HTTP-023",
+            format!("{at}.status"),
+            format!("outcome `{}` answers {reason}", outcome.name),
+        );
+        return None;
+    }
+    u16::try_from(status).ok()
+}
+
+/// The outcome's body, unless it is refused (`ESS-HTTP-024`): a word no outcome body spells, a
+/// view's body, a literal, `response` where the outcome returns none, an error object where it
+/// reports no error or under a member it cannot hold, or any body but `none` on `204` or beside a
+/// redirect. `status` is the outcome's compiled status: one refused (`ESS-HTTP-023`) holds the body
+/// to no `204`; `redirects` says the outcome declares a `redirect` on a redirect status.
+fn outcome_body(
+    written: Option<&BodySpec>,
+    status: Option<u16>,
+    redirects: bool,
+    outcome: &ResolvedOutcome,
+    ir: &EssIr,
+    at: &str,
+    refusals: &mut Refusals,
+) -> Option<Body> {
+    let name = &outcome.name;
+    let error = outcome.error.as_ref().map(|handle| ir.error(handle));
+    let resolved = match written {
+        None => Ok(Body::Envelope),
+        Some(BodySpec::Word(word)) => match word.as_str() {
+            "envelope" => Ok(Body::Envelope),
+            "none" => Ok(Body::None),
+            "response" => match (outcome.returns, error) {
+                (_, Some(error)) => Err(format!(
+                    "`response` is the command's response, and outcome `{name}` reports error \
+                     `{}`, which answers no response",
+                    error.name
+                )),
+                (false, None) => Err(format!(
+                    "`response` is the command's response, and outcome `{name}` does not \
+                     declare `returns: true`, so it answers none"
+                )),
+                (true, None) => Ok(Body::Response),
+            },
+            "rows" | "single" => Err(format!(
+                "`{word}` is a view's body; an outcome answers `envelope`, `response`, `none` or \
+                 `{{<member>: error}}`"
+            )),
+            _ => Err(format!(
+                "`{word}` is not a body; an outcome answers `envelope`, `response`, `none` or \
+                 `{{<member>: error}}`"
+            )),
+        },
+        Some(BodySpec::Error(member)) => match error {
+            None => Err(format!(
+                "outcome `{name}` reports no error, so it has no error object for \
+                 `{{{member}: error}}` to answer"
+            )),
+            Some(_) if member.is_empty() => Err(
+                "the member of `{'': error}` is empty; the error object carries the error's \
+                 wire name under a named member"
+                    .to_owned(),
+            ),
+            Some(error) => match error
+                .fields
+                .iter()
+                .find(|field| field.naming.wire.as_deref().unwrap_or(&field.name) == member)
+            {
+                Some(field) => Err(format!(
+                    "error `{}` carries field `{}` under the wire name `{member}`, so \
+                     `{{{member}: error}}` would hold `{member}` twice",
+                    error.name, field.name
+                )),
+                None => Ok(Body::Error {
+                    member: member.clone(),
+                }),
+            },
+        },
+        Some(literal @ BodySpec::Literal { .. }) => Err(format!(
+            "`{literal}` is a literal body, which only a standard refusal under `refusals:` \
+             answers"
+        )),
+    };
+    let checked = resolved.and_then(|body| {
+        if status == Some(204) && body != Body::None {
+            Err(format!(
+                "outcome `{name}` answers `204`, which carries no content, and its body is \
+                 `{body}`; a `204` answers `body: none`"
+            ))
+        } else if redirects && body != Body::None {
+            Err(format!(
+                "outcome `{name}` declares a `redirect`, and its body is `{body}`; a redirect \
+                 answers `body: none`"
+            ))
+        } else {
+            Ok(body)
+        }
+    });
+    match checked {
+        Ok(body) => Some(body),
+        Err(reason) => {
+            refusals.refuse("ESS-HTTP-024", format!("{at}.body"), reason);
+            None
+        }
+    }
+}
+
+/// What an outcome's headers and redirect read from: the command, the outcome and its error.
+struct Reader<'a> {
+    ir: &'a EssIr,
+    command: &'a ResolvedCommand,
+    outcome: &'a ResolvedOutcome,
+}
+
+impl<'a> Reader<'a> {
+    /// The wire name of the outcome's error, which `error.wire` writes, known when the binding
+    /// compiles; `None` when the outcome reports no error.
+    fn wire(&self) -> Option<&'a str> {
+        self.outcome.error.as_ref().map(|handle| {
+            let error = self.ir.error(handle);
+            error.naming.wire_or(&error.name)
+        })
+    }
+
+    /// The source `text` names and its type, `None` for `error.wire`, which is always a `String`;
+    /// or why the outcome cannot supply it: a source outside the four forms, `response.` on an
+    /// outcome without `returns: true`, `error.` on one without an error, `error.wire` where the
+    /// error declares a field named `wire`, or a field the command, its response or the error does
+    /// not declare.
+    fn read(&self, text: &str) -> Result<(AnswerSource, Option<&ResolvedTypeRef>), String> {
+        let Some(source) = AnswerSource::parse(text) else {
+            return Err(format!(
+                "`{text}` is not a source an answer reads: `input.<field>`, `response.<field>`, \
+                 `error.<field>` or `error.wire`"
+            ));
+        };
+        let outcome = &self.outcome.name;
+        let command = &self.command.name;
+        let error = self
+            .outcome
+            .error
+            .as_ref()
+            .map(|handle| self.ir.error(handle));
+        let found = match (&source, error) {
+            (AnswerSource::Input(name), _) => declared_type(&self.command.input, name).ok_or_else(|| {
+                format!("`{text}` names no field: command `{command}` declares no input field `{name}`")
+            })?,
+            (AnswerSource::Response(_), _) if !self.outcome.returns => {
+                return Err(format!(
+                    "`{text}` reads the response, and outcome `{outcome}` does not declare \
+                     `returns: true`, so it answers none"
+                ));
+            }
+            (AnswerSource::Response(name), _) => declared_type(&self.command.response, name)
+                .ok_or_else(|| {
+                    format!(
+                        "`{text}` names no field: command `{command}` declares no response field \
+                         `{name}`"
+                    )
+                })?,
+            (AnswerSource::Error(_) | AnswerSource::ErrorWire, None) => {
+                return Err(format!(
+                    "`{text}` reads the error, and outcome `{outcome}` reports no error"
+                ));
+            }
+            (AnswerSource::ErrorWire, Some(error)) => {
+                if error.fields.iter().any(|declared| declared.name == "wire") {
+                    return Err(format!(
+                        "`error.wire` is ambiguous on outcome `{outcome}`: error `{}` declares a \
+                         field named `wire`, and `error.wire` names the error's wire name",
+                        error.name
+                    ));
+                }
+                return Ok((source, None));
+            }
+            (AnswerSource::Error(name), Some(error)) => declared_type(&error.fields, name)
+                .ok_or_else(|| {
+                    format!(
+                        "`{text}` names no field: error `{}` declares no field `{name}`",
+                        error.name
+                    )
+                })?,
+        };
+        Ok((source, Some(found)))
+    }
+
+    /// [`Reader::read`], held to what a redirect's `location` reads: a `String` or a newtype of
+    /// one, never `Optional`, and never `error.wire`, a wire name and no absolute URI.
+    fn location(&self, text: &str) -> Result<AnswerSource, String> {
+        match self.read(text) {
+            Err(reason) => Err(format!("`location`: {reason}")),
+            Ok((AnswerSource::ErrorWire, _)) => Err(
+                "`location` reads `error.wire`, the error's wire name, and a redirect's \
+                 `location` holds the absolute URI the caller is sent to, which a wire name never \
+                 is"
+                .to_owned(),
+            ),
+            Ok((_, Some(type_ref @ ResolvedTypeRef::Optional { .. }))) => Err(format!(
+                "`location` reads `{text}`, of type `{type_ref}`, and a redirect's `location` is \
+                 always present: a `String` or a newtype of `String`, never `Optional`"
+            )),
+            Ok((_, Some(type_ref))) if !string_type(type_ref, self.ir) => Err(format!(
+                "`location` reads `{text}`, of type `{type_ref}`, and a redirect's `location` is \
+                 a `String` or a newtype of `String`, holding an absolute URI"
+            )),
+            Ok((source, _)) => Ok(source),
+        }
+    }
+
+    /// [`Reader::read`], held to a scalar or an `Optional` scalar, which is written as text and
+    /// omitted when absent.
+    fn read_text(&self, text: &str) -> Result<AnswerSource, String> {
+        let (source, type_ref) = self.read(text)?;
+        match type_ref {
+            Some(type_ref) if !optional_scalar(type_ref, self.ir) => Err(format!(
+                "`{text}` has type `{type_ref}`, which is not written as text: a header value, a \
+                 challenge param and a redirect parameter read a scalar or an `Optional` scalar, a \
+                 scalar being a primitive other than `Json`, an enum, or a newtype of a scalar"
+            )),
+            _ => Ok(source),
+        }
+    }
+}
+
+/// The type of the field of `fields` named `name`, if one is.
+fn declared_type<'f>(fields: &'f [ResolvedField], name: &str) -> Option<&'f ResolvedTypeRef> {
+    fields
+        .iter()
+        .find(|declared| declared.name == name)
+        .map(|declared| &declared.type_ref)
+}
+
+/// A redirect's `mode`, or why it is none (`ESS-HTTP-028`): absent, or outside `query` and
+/// `fragment`.
+fn redirect_mode(written: Option<&str>) -> Result<RedirectMode, String> {
+    let Some(text) = written else {
+        return Err(
+            "a redirect declares its `mode`, `query` or `fragment`: where its parameters go is \
+             the author's to choose"
+                .to_owned(),
+        );
+    };
+    RedirectMode::parse(text).ok_or_else(|| {
+        format!(
+            "`{text}` is not a redirect mode: `query` appends the parameters to the location's \
+             query, `fragment` writes them as its fragment"
+        )
+    })
+}
+
+/// Whether `type_ref` is a scalar or an `Optional` scalar ([`scalar`]).
+fn optional_scalar(type_ref: &ResolvedTypeRef, ir: &EssIr) -> bool {
+    match type_ref {
+        ResolvedTypeRef::Optional { of } => scalar(of, ir),
+        _ => scalar(type_ref, ir),
+    }
+}
+
+/// Whether `type_ref` is `String` or a newtype of one, at any depth.
+fn string_type(type_ref: &ResolvedTypeRef, ir: &EssIr) -> bool {
+    match type_ref {
+        ResolvedTypeRef::Primitive { name } => *name == Primitive::String,
+        ResolvedTypeRef::Declared { name } => match &ir.named_type(name).body {
+            ResolvedBody::Newtype { of, .. } => string_type(of, ir),
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+/// An answer's headers under `at` (an outcome, or `refusals.<key>`), each checked in document
+/// order (`ESS-HTTP-026`, `-027`), and a `401` held to a `WWW-Authenticate` challenge
+/// (`ESS-HTTP-027`). `reader` is the outcome a source reads from; a standard refusal has none, so
+/// every source in its headers is refused. `status` is the answer's compiled status, `None` when it
+/// was refused, which holds it to no `401`.
+fn answer_headers(
+    written: Option<&Entries<HeaderSpec>>,
+    reader: Option<&Reader<'_>>,
+    status: Option<u16>,
+    at: &str,
+    refusals: &mut Refusals,
+) -> Result<BTreeMap<String, Header>, Refused> {
+    let before = refusals.0.len();
+    let mut compiled = BTreeMap::new();
+    let mut declared: Vec<&str> = Vec::new();
+    // A challenge under `WWW-Authenticate`, whatever else it was refused for: a challenge refused
+    // for its scheme is not refused again as missing.
+    let mut challenged = false;
+    for (name, header) in written.map_or(&[][..], |entries| &entries.0[..]) {
+        let key = format!("{at}.headers.{name}");
+        if matches!(header, HeaderSpec::Challenge(_)) && name.eq_ignore_ascii_case(CHALLENGE_HEADER)
+        {
+            challenged = true;
+        }
+        if !is_token(name) {
+            refusals.refuse(
+                "ESS-HTTP-026",
+                key,
+                format!(
+                    "`{name}` is not a header name: a header name is an RFC 9110 token, one or \
+                     more letters, digits and ``!#$%&'*+-.^_`|~``"
+                ),
+            );
+            continue;
+        }
+        if let Some((owned, owner)) = RESERVED_HEADERS
+            .iter()
+            .find(|(owned, _)| owned.eq_ignore_ascii_case(name))
+        {
+            refusals.refuse(
+                "ESS-HTTP-026",
+                key,
+                format!(
+                    "header `{name}` is `{owned}`, which {owner} writes; a binding declares no \
+                     header the server, the encoding or `redirect` writes"
+                ),
+            );
+            continue;
+        }
+        if let Some(first) = same_header(name, declared.iter().copied()) {
+            refusals.refuse(
+                "ESS-HTTP-026",
+                key,
+                format!(
+                    "header `{name}` is `{first}` again: header names are compared ignoring case, \
+                     and each header is declared once"
+                ),
+            );
+            continue;
+        }
+        declared.push(name);
+        if let Some(value) = header_value(name, header, reader, &key, refusals) {
+            compiled.insert(name.clone(), value);
+        }
+    }
+    if status == Some(401) && !challenged {
+        refusals.refuse(
+            "ESS-HTTP-027",
+            format!("{at}.headers"),
+            format!(
+                "`{at}` answers `401`, and declares no `{CHALLENGE_HEADER}` challenge; every `401` \
+                 carries one (RFC 9110 §15.5.2), as `{CHALLENGE_HEADER}: {{challenge: {{scheme, \
+                 params}}}}`"
+            ),
+        );
+    }
+    if refusals.0.len() == before {
+        Ok(compiled)
+    } else {
+        Err(Refused)
+    }
+}
+
+/// One header's value under `key`, compiled, or `None` once it is refused: a literal that is not a
+/// field value, a source the reader cannot supply (`ESS-HTTP-026`, every source when there is no
+/// reader) or `error.wire` whose wire name is not a field value (`ESS-HTTP-026`), a challenge
+/// under any header but `WWW-Authenticate` or one [`challenge`] refuses (`ESS-HTTP-027`).
+fn header_value(
+    name: &str,
+    header: &HeaderSpec,
+    reader: Option<&Reader<'_>>,
+    key: &str,
+    refusals: &mut Refusals,
+) -> Option<Header> {
+    let value = match header {
+        HeaderSpec::Literal(text) => match field_value_reason(text) {
+            Some(reason) => Err(("ESS-HTTP-026", format!("header `{name}`: {reason}"))),
+            None => Ok(Header::Literal(text.clone())),
+        },
+        HeaderSpec::Source(text) => match reader {
+            None => Err((
+                "ESS-HTTP-026",
+                format!(
+                    "header `{name}` reads `{text}`, and a standard refusal has no outcome to \
+                     read a source from; its headers are literals and challenges whose params \
+                     are literals"
+                ),
+            )),
+            Some(reader) => reader
+                .read_text(text)
+                .and_then(|source| match (&source, reader.wire()) {
+                    // The wire name is known now, and held to what a literal is.
+                    (AnswerSource::ErrorWire, Some(wire)) => match field_value_reason(wire) {
+                        Some(reason) => Err(format!(
+                            "`error.wire` reads the error's wire name, known when the binding \
+                             compiles, and {reason}"
+                        )),
+                        None => Ok(source),
+                    },
+                    _ => Ok(source),
+                })
+                .map(Header::Source)
+                .map_err(|reason| ("ESS-HTTP-026", format!("header `{name}`: {reason}"))),
+        },
+        HeaderSpec::Challenge(_) if !name.eq_ignore_ascii_case(CHALLENGE_HEADER) => Err((
+            "ESS-HTTP-027",
+            format!(
+                "header `{name}` holds a challenge, and a challenge is declared under \
+                 `{CHALLENGE_HEADER}` only (RFC 9110 §11.6.1)"
+            ),
+        )),
+        HeaderSpec::Challenge(written) => {
+            return challenge(written, reader, key, refusals).map(Header::Challenge);
+        }
+    };
+    value
+        .map_err(|(code, message)| refusals.refuse(code, key, message))
+        .ok()
+}
+
+/// One challenge under `key`, checked (`ESS-HTTP-027`): a token scheme, token param names each
+/// once ignoring case, and literal params a quoted string carries. A sourced param is read as a
+/// header source is (`ESS-HTTP-026`), and one reading `error.wire` is held to a quoted string as a
+/// literal is (`ESS-HTTP-027`). `None` when anything was refused.
+fn challenge(
+    written: &ChallengeSpec,
+    reader: Option<&Reader<'_>>,
+    key: &str,
+    refusals: &mut Refusals,
+) -> Option<Challenge> {
+    let before = refusals.0.len();
+    if !is_token(&written.scheme) {
+        refusals.refuse(
+            "ESS-HTTP-027",
+            format!("{key}.challenge.scheme"),
+            format!(
+                "`{}` is not a token: an auth scheme is an RFC 9110 token, one or more letters, \
+                 digits and ``!#$%&'*+-.^_`|~``",
+                written.scheme
+            ),
+        );
+    }
+    let mut params = BTreeMap::new();
+    let mut declared: Vec<&str> = Vec::new();
+    for (name, param) in written
+        .params
+        .as_ref()
+        .map_or(&[][..], |entries| &entries.0[..])
+    {
+        let at = format!("{key}.challenge.params.{name}");
+        if !is_token(name) {
+            refusals.refuse(
+                "ESS-HTTP-027",
+                at,
+                format!("`{name}` is not a token: an auth param's name is an RFC 9110 token"),
+            );
+            continue;
+        }
+        if let Some(first) = same_header(name, declared.iter().copied()) {
+            refusals.refuse(
+                "ESS-HTTP-027",
+                at,
+                format!(
+                    "param `{name}` is `{first}` again: param names are compared ignoring case, \
+                     and a challenge names each once (RFC 9110 §11.2)"
+                ),
+            );
+            continue;
+        }
+        declared.push(name);
+        let value = match param {
+            ParamSpec::Literal(text) if !quotable(text) => Err((
+                "ESS-HTTP-027",
+                format!(
+                    "param `{name}`: {text:?} is not text a quoted string carries, which holds \
+                     visible US-ASCII, spaces and horizontal tabs"
+                ),
+            )),
+            ParamSpec::Literal(text) => Ok(Param::Literal(text.clone())),
+            ParamSpec::Source(text) => match reader {
+                None => Err((
+                    "ESS-HTTP-026",
+                    format!(
+                        "param `{name}` reads `{text}`, and a standard refusal has no outcome to \
+                         read a source from; its challenge params are literals"
+                    ),
+                )),
+                Some(reader) => match reader.read_text(text) {
+                    Err(reason) => Err(("ESS-HTTP-026", format!("param `{name}`: {reason}"))),
+                    // The wire name is known now, and held to what a literal param is.
+                    Ok(AnswerSource::ErrorWire) => match reader.wire() {
+                        Some(wire) if !quotable(wire) => Err((
+                            "ESS-HTTP-027",
+                            format!(
+                                "param `{name}`: `error.wire` reads the error's wire name, known \
+                                 when the binding compiles, and {wire:?} is not text a quoted \
+                                 string carries, which holds visible US-ASCII, spaces and \
+                                 horizontal tabs"
+                            ),
+                        )),
+                        _ => Ok(Param::Source(AnswerSource::ErrorWire)),
+                    },
+                    Ok(source) => Ok(Param::Source(source)),
+                },
+            },
+        };
+        match value {
+            Ok(value) => {
+                params.insert(name.clone(), value);
+            }
+            Err((code, message)) => refusals.refuse(code, at, message),
+        }
+    }
+    (refusals.0.len() == before).then(|| Challenge {
+        scheme: written.scheme.clone(),
+        params,
+    })
+}
+
+/// The outcome's redirect under `at`, checked (`ESS-HTTP-028`): on a redirect status and on every
+/// one, a `location` reading a `String` or a newtype of one that the outcome supplies and that is
+/// never `Optional` and never `error.wire`, a `mode` of the set, and parameters each named in RFC
+/// 3986 `unreserved` characters, written once, reading a scalar the outcome supplies. `status`
+/// is the compiled status: one refused (`ESS-HTTP-023`) is not judged against the redirect again.
+fn outcome_redirect(
+    written: Option<&RedirectSpec>,
+    status: Option<u16>,
+    reader: &Reader<'_>,
+    at: &str,
+    refusals: &mut Refusals,
+) -> Result<Option<Redirect>, Refused> {
+    let before = refusals.0.len();
+    let outcome = &reader.outcome.name;
+    let redirects = status.map(|status| REDIRECTS.contains(&status));
+    let Some(written) = written else {
+        if let (Some(true), Some(status)) = (redirects, status) {
+            refusals.refuse(
+                "ESS-HTTP-028",
+                format!("{at}.redirect"),
+                format!(
+                    "outcome `{outcome}` answers `{status}`, a redirect, and declares no \
+                     `redirect`; each of `301`, `302`, `303`, `307` and `308` names the \
+                     `location` it sends the caller to"
+                ),
+            );
+            return Err(Refused);
+        }
+        return Ok(None);
+    };
+    if let (Some(false), Some(status)) = (redirects, status) {
+        refusals.refuse(
+            "ESS-HTTP-028",
+            format!("{at}.redirect"),
+            format!(
+                "outcome `{outcome}` answers `{status}`, which is not a redirect, and declares a \
+                 `redirect`; a `redirect` belongs to `301`, `302`, `303`, `307` and `308`"
+            ),
+        );
+    }
+    let location = reader
+        .location(&written.location)
+        .map_err(|reason| {
+            refusals.refuse("ESS-HTTP-028", format!("{at}.redirect.location"), reason);
+        })
+        .ok();
+    let mode = redirect_mode(written.mode.as_deref())
+        .map_err(|reason| refusals.refuse("ESS-HTTP-028", format!("{at}.redirect.mode"), reason))
+        .ok();
+    let mut parameters = BTreeMap::new();
+    let mut seen = std::collections::BTreeSet::new();
+    for (name, text) in written
+        .parameters
+        .as_ref()
+        .map_or(&[][..], |entries| &entries.0[..])
+    {
+        let key = format!("{at}.redirect.parameters.{name}");
+        if !unreserved(name) {
+            refusals.refuse("ESS-HTTP-028", key, unreserved_reason(name));
+            continue;
+        }
+        if !seen.insert(name.as_str()) {
+            refusals.refuse(
+                "ESS-HTTP-028",
+                key,
+                format!(
+                    "parameter `{name}` is declared twice; a redirect names each parameter once"
+                ),
+            );
+            continue;
+        }
+        match reader.read_text(text) {
+            Ok(source) => {
+                parameters.insert(name.clone(), source);
+            }
+            Err(reason) => {
+                refusals.refuse("ESS-HTTP-028", key, format!("parameter `{name}`: {reason}"));
+            }
+        }
+    }
+    match (location, mode) {
+        (Some(location), Some(mode)) if refusals.0.len() == before => Ok(Some(Redirect {
+            location,
+            mode,
+            parameters,
+        })),
+        _ => Err(Refused),
+    }
+}
+
+/// An outcome as `ESS-HTTP-025` counts it: its name, status, body, error wire name, and the
+/// parameter names its redirect writes, if it declares one.
+type Counted<'a> = (&'a str, u16, Body, Option<&'a str>, Option<Written<'a>>);
+
+/// The parameter names a redirect writes (`ESS-HTTP-025`): `always` those whose source is never
+/// absent, `all` every one, an `Optional` source being omitted when absent, and `wired` those
+/// written from `error.wire`, which are always written.
+struct Written<'a> {
+    always: std::collections::BTreeSet<&'a str>,
+    all: std::collections::BTreeSet<&'a str>,
+    wired: std::collections::BTreeSet<&'a str>,
+}
+
+impl<'a> Written<'a> {
+    /// The names `redirect` writes for `outcome`. A source whose type is `Optional` may be absent;
+    /// `error.wire` never is. A source that no longer reads is counted as possibly absent, which
+    /// can only refuse more.
+    fn of(redirect: &'a Redirect, reader: &Reader<'_>) -> Self {
+        let mut always = std::collections::BTreeSet::new();
+        let mut wired = std::collections::BTreeSet::new();
+        for (name, source) in &redirect.parameters {
+            let present = match reader.read(&source.to_string()) {
+                Ok((AnswerSource::ErrorWire, _)) => {
+                    wired.insert(name.as_str());
+                    true
+                }
+                Ok((_, type_ref)) => !matches!(type_ref, Some(ResolvedTypeRef::Optional { .. })),
+                Err(_) => false,
+            };
+            if present {
+                always.insert(name.as_str());
+            }
+        }
+        Self {
+            always,
+            all: redirect.parameters.keys().map(String::as_str).collect(),
+            wired,
+        }
+    }
+
+    /// Whether a reader of the parameters can tell these, written for an outcome whose error wire
+    /// name is `wire`, from `other`'s, written for one whose is `other_wire`: one side always
+    /// writes a name the other never writes, or both write one name from `error.wire` and the wire
+    /// names differ (RFC 6749 §4.1.2.1: each authorization error redirects with its own `error`).
+    /// Otherwise some answer carries a set of names, and values, both could write.
+    fn apart(&self, wire: Option<&str>, other: &Self, other_wire: Option<&str>) -> bool {
+        !self.always.is_subset(&other.all)
+            || !other.always.is_subset(&self.all)
+            || matches!((wire, other_wire), (Some(one), Some(two)) if one != two)
+                && !self.wired.is_disjoint(&other.wired)
+    }
+}
+
+/// Refuses outcomes of one command on one status that the bodies cannot tell apart
+/// (`ESS-HTTP-025`): every outcome counts, a listed one at its status and body, one the route does
+/// not list at its derived status ([`status::outcome_status`]) with `envelope`. Two bodies tell two
+/// outcomes apart when both are `envelope`, whose `outcome` member names the branch, or both
+/// `{<member>: error}` on one member with distinct error wire names. Two redirects on one status,
+/// both `body: none`, are told apart by their parameters when one always writes a name the other
+/// never writes (RFC 6749 §4.1.2 and §4.1.2.1: `code` and `error` on one `302`), or when both
+/// always write one name from `error.wire` and their error wire names differ (§4.1.2.1:
+/// `access_denied` and `invalid_scope` on one `302`); a redirect beside an outcome without one is
+/// not. A listed outcome that was refused is not counted. Each listed
+/// outcome, in document order, is refused naming every outcome it cannot be told apart from, but a
+/// pair an earlier refusal already named together; one with nothing left to name is not refused,
+/// so outcomes no body tells apart are one refusal.
+///
+/// Each standard refusal the binding overrides (`standard`) is held to the same rule against every
+/// counted outcome, and refused at `refusals.<key>`, once per route, naming the route and the
+/// outcomes on its status.
+#[allow(clippy::too_many_arguments)]
+fn distinguishable(
+    operation: &Operation,
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    compiled: &BTreeMap<String, Outcome>,
+    listed: &[&str],
+    written: &Entries<OutcomeSpec>,
+    path: &str,
+    standard: &BTreeMap<RefusalKey, Refusal>,
+    refusals: &mut Refusals,
+) {
+    let listed_names: std::collections::BTreeSet<&str> =
+        written.0.iter().map(|(name, _)| name.as_str()).collect();
+    // Every counted outcome: its name, status, body, error wire name and redirect parameters.
+    let mut counted: Vec<Counted<'_>> = Vec::new();
+    for outcome in &command.outcomes {
+        let name = outcome.name.as_str();
+        let wire = outcome.error.as_ref().map(|handle| {
+            let error = ir.error(handle);
+            error.naming.wire_or(&error.name)
+        });
+        if let Some(answer) = compiled.get(name) {
+            let reader = Reader {
+                ir,
+                command,
+                outcome,
+            };
+            let redirect = answer
+                .redirect
+                .as_ref()
+                .map(|redirect| Written::of(redirect, &reader));
+            counted.push((name, answer.status, answer.body.clone(), wire, redirect));
+        } else if !listed_names.contains(name) {
+            let derived = status::outcome_status(ir, outcome)
+                .parse::<u16>()
+                .unwrap_or_else(|error| panic!("a derived status is a number: {error}"));
+            counted.push((name, derived, Body::Envelope, wire, None));
+        }
+    }
+    let apart = |left: &Counted<'_>, right: &Counted<'_>| {
+        left.1 != right.1
+            || match (&left.2, &right.2) {
+                (Body::Envelope, Body::Envelope) => true,
+                (Body::Error { member: one }, Body::Error { member: other }) => {
+                    one == other && left.3 != right.3
+                }
+                _ => false,
+            }
+            || match (&left.4, &right.4) {
+                (Some(one), Some(other)) => one.apart(left.3, other, right.3),
+                _ => false,
+            }
+    };
+    // The outcomes each earlier refusal named, the refused one included: a pair named together in
+    // one refusal is not reported again.
+    let mut reported: Vec<Vec<&str>> = Vec::new();
+    for name in listed {
+        let Some(this) = counted.iter().find(|counted| counted.0 == *name) else {
+            continue;
+        };
+        let others: Vec<&Counted<'_>> = counted
+            .iter()
+            .filter(|other| other.0 != *name && !apart(this, other))
+            .filter(|other| {
+                !reported
+                    .iter()
+                    .any(|group| group.contains(name) && group.contains(&other.0))
+            })
+            .collect();
+        let mut group = vec![*name];
+        group.extend(others.iter().map(|other| other.0));
+        reported.push(group);
+        let clashing: Vec<String> = others
+            .into_iter()
+            .map(|other| {
+                let how = if compiled.contains_key(other.0) {
+                    format!("`{}`", other.2)
+                } else {
+                    "`envelope`, at its derived status, as it is not listed".to_owned()
+                };
+                format!("`{}` ({how})", other.0)
+            })
+            .collect();
+        if clashing.is_empty() {
+            continue;
+        }
+        refusals.refuse(
+            "ESS-HTTP-025",
+            format!("{path}.outcomes.{name}"),
+            format!(
+                "outcome `{name}` of {operation} answers `{}` with `{}`, and so does {}, with a \
+                 body a reader cannot tell apart; two outcomes on one status are told apart by \
+                 two `envelope` bodies, by `{{<member>: error}}` on one member with distinct \
+                 error wire names, or by two redirects, one always writing a parameter the other \
+                 never writes or both writing one parameter from `error.wire` with distinct error \
+                 wire names",
+                this.1,
+                this.2,
+                clashing.join(", ")
+            ),
+        );
+    }
+    overridden(operation, compiled, &counted, standard, path, refusals);
+}
+
+/// A standard refusal the binding overrides answers on this route too (`ESS-HTTP-025`): on the
+/// status of a counted outcome, its body must tell the two apart, which only a literal beside an
+/// error object on one member, the error's wire name differing from the text, does. Refused at
+/// `refusals.<key>`, naming the route and every outcome on its status.
+fn overridden(
+    operation: &Operation,
+    compiled: &BTreeMap<String, Outcome>,
+    counted: &[Counted<'_>],
+    standard: &BTreeMap<RefusalKey, Refusal>,
+    path: &str,
+    refusals: &mut Refusals,
+) {
+    for (key, refusal) in standard {
+        let body = refusal.body.spec();
+        let clashing: Vec<String> = counted
+            .iter()
+            .filter(|outcome| outcome.1 == refusal.status)
+            .filter(|outcome| match (&outcome.2, &refusal.body) {
+                (
+                    Body::Error { member },
+                    RefusalBody::Literal {
+                        member: other,
+                        text,
+                    },
+                ) => member != other || outcome.3 == Some(text.as_str()),
+                _ => true,
+            })
+            .map(|outcome| {
+                let how = if compiled.contains_key(outcome.0) {
+                    format!("`{}`", outcome.2)
+                } else {
+                    "`envelope`, at its derived status, as it is not listed".to_owned()
+                };
+                format!("`{}` ({how})", outcome.0)
+            })
+            .collect();
+        if clashing.is_empty() {
+            continue;
+        }
+        refusals.refuse(
+            "ESS-HTTP-025",
+            format!("refusals.{key}"),
+            format!(
+                "standard refusal `{key}` answers `{}` with `{body}` on `{path}`, and so does \
+                 outcome {} of {operation}, with a body a reader cannot tell apart; a refusal and \
+                 an outcome on one status are told apart by `{{<member>: {{literal: <text>}}}}` \
+                 beside `{{<member>: error}}` on one member, the error's wire name differing \
+                 from the text",
+                refusal.status,
+                clashing.join(", ")
+            ),
+        );
+    }
+}
+
+/// A view route's body and empty answer, checked: no `outcomes` (`ESS-HTTP-022`), `rows` or
+/// `single`, never `single` on a paged view (`ESS-HTTP-024`), `single` exactly with an `empty`
+/// holding a `4xx` (`ESS-HTTP-030`), and `single` only where the filter selects by identity
+/// (`ESS-HTTP-031`).
+fn view_answers(
+    spec: &RouteSpec,
+    operation: &Operation,
+    view: Option<(&EssIr, &ResolvedView)>,
+    path: &str,
+    refusals: &mut Refusals,
+) -> Answers {
+    if spec.outcomes.is_some() {
+        refusals.refuse(
+            "ESS-HTTP-022",
+            format!("{path}.outcomes"),
+            format!(
+                "{operation} has no outcomes to list: a view answers its rows, or one row with \
+                 `body: single`"
+            ),
+        );
+    }
+    // `None` when the body is refused, which leaves `empty` unchecked against it.
+    let body = match &spec.body {
+        None => Some(ViewBody::Rows),
+        Some(written) => match written.word() {
+            Some("rows") => Some(ViewBody::Rows),
+            Some("single") => Some(ViewBody::Single),
+            _ => {
+                refusals.refuse(
+                    "ESS-HTTP-024",
+                    format!("{path}.body"),
+                    format!(
+                        "{operation} answers `rows` or `single`, and `{written}` is not a view's \
+                         body"
+                    ),
+                );
+                None
+            }
+        },
+    };
+    if body == Some(ViewBody::Single) {
+        if let Some((_, view)) = view.filter(|(_, view)| view.paging.is_some()) {
+            refusals.refuse(
+                "ESS-HTTP-024",
+                format!("{path}.body"),
+                format!(
+                    "view `{}` is paged: its answer carries a page, which one bare row cannot",
+                    view.name
+                ),
+            );
+        }
+    }
+    match (body, &spec.empty) {
+        (Some(ViewBody::Single), None) => refusals.refuse(
+            "ESS-HTTP-030",
+            path,
+            "`body: single` answers one row, and needs `empty` (`{status: <4xx>}`), the answer \
+             for a view that holds none",
+        ),
+        (Some(ViewBody::Rows), Some(_)) => refusals.refuse(
+            "ESS-HTTP-030",
+            path,
+            "`empty` answers a `single` view that holds no row, and this route answers `rows`",
+        ),
+        _ => {}
+    }
+    // An `empty` beside `rows` is refused above as a whole, so its status is not refused again.
+    let empty = spec.empty.and_then(|empty| {
+        let status = u16::try_from(empty.status)
+            .ok()
+            .filter(|status| (400..500).contains(status));
+        if status.is_none() && body != Some(ViewBody::Rows) {
+            refusals.refuse(
+                "ESS-HTTP-030",
+                path,
+                format!(
+                    "`empty` answers `{}`; the answer of a `single` view that holds no row is a \
+                     `4xx` status, without a body",
+                    empty.status
+                ),
+            );
+        }
+        status.map(|status| Empty { status })
+    });
+    if body == Some(ViewBody::Single) {
+        if let Some((ir, view)) = view {
+            let entity = ir.entity(&view.source);
+            let identity = entity.identity.name.as_str();
+            if !view
+                .filter
+                .as_ref()
+                .is_some_and(|filter| selects_identity(filter, identity))
+            {
+                refusals.refuse(
+                    "ESS-HTTP-031",
+                    format!("{path}.body"),
+                    format!(
+                        "`body: single` answers one row, and view `{}` does not select its source \
+                         entity `{}` by its identity field `{identity}`: neither its filter nor a \
+                         member of a top-level `all` is `{identity} == param.<name>`, so it can \
+                         hold more than one row",
+                        view.name, entity.name
+                    ),
+                );
+            }
+        }
+    }
+    Answers {
+        outcomes: BTreeMap::new(),
+        body: body.unwrap_or_default(),
+        empty,
+    }
+}
+
+/// Whether `filter` holds only of the row whose `identity` equals a view parameter: it is
+/// `<identity> == param.<name>`, compared by value, in either operand order, or an `all` one of
+/// whose members does, `all` nested in `all` included.
+fn selects_identity(filter: &Predicate, identity: &str) -> bool {
+    match filter {
+        Predicate::All(members) => members
+            .iter()
+            .any(|member| selects_identity(member, identity)),
+        Predicate::Compare {
+            left: Operand::Fact(left),
+            op: CompareOp::Eq,
+            right: Operand::Fact(right),
+            kind: CompareKind::Value,
+        } => {
+            let is_identity = |path: &FactPath| path.segments() == [identity.to_owned()];
+            let is_param =
+                |path: &FactPath| matches!(path.segments(), [namespace, _] if namespace == "param");
+            (is_identity(left) && is_param(right)) || (is_param(left) && is_identity(right))
+        }
+        _ => false,
+    }
 }
 
 /// Whether a value of `type_ref` fits one path segment: always present and one value, so `String`,

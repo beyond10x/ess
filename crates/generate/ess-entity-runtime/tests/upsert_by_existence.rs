@@ -153,3 +153,52 @@ fn a_plain_creation_from_input_is_not_refused_for_it() {
     let ir = with_command("Make", CREATE);
     assert!(!refused_codes(&ir).contains(&LoweringCode::ExistenceSelectionUnsupported));
 }
+
+/// beyond10x/ess#530 (ess/25): the create-or-update `SignIn` selecting its update branches by
+/// stored fields is still a branch chosen by existence, refused by name at the command whatever
+/// selects among the update branches.
+#[test]
+fn create_or_update_selected_by_stored_fields_is_refused_by_name() {
+    let text = format!(
+        "{}\ncomponents:\n  - component: desk\n    reached_by: network\n    owns: {{domains: \
+         [demo.desk]}}\n    accepts: {{commands: [demo.desk.SignIn, demo.desk.Take, \
+         demo.desk.Close]}}\n    publishes: {{events: [demo.desk.Taken, demo.desk.Closed, \
+         demo.desk.SignedIn, demo.desk.Left]}}\n",
+        include_str!(
+            "../../../specify/ess-compiler/tests/fixtures/create-or-update-stored-fields.yaml"
+        )
+        .trim_end()
+    );
+    let mut sources = SourceMap::new();
+    sources.insert("desk.yaml".to_owned(), text.clone());
+    let specification =
+        Specification::assemble([(Source::new("desk.yaml"), RawSpecFile::parse(&text).unwrap())])
+            .unwrap_or_else(|errors| panic!("{errors}"));
+    let ir = compile_locating(&specification, &sources, &["desk.yaml".to_owned()])
+        .expect("fixture compiles");
+    let plan = SynthesisPlan::of(&ir);
+    let service = extract(&ir, &plan, &ComponentName::new("desk").unwrap()).unwrap();
+    let options = LoweringOptions {
+        definition_versions: [(
+            QualifiedName::new("demo.desk.Seat").unwrap(),
+            NonZeroU32::new(1).unwrap(),
+        )]
+        .into_iter()
+        .collect(),
+        scales: BTreeMap::new(),
+    };
+    let Err(diagnostics) = lower(&service, &options) else {
+        panic!("SignIn lowers although entity-core selects no branch by existence");
+    };
+    let sign_in: Vec<_> = diagnostics
+        .as_slice()
+        .iter()
+        .filter(|diagnostic| diagnostic.path.contains("demo.desk.SignIn"))
+        .map(|diagnostic| diagnostic.code)
+        .collect();
+    assert_eq!(
+        sign_in,
+        [LoweringCode::ExistenceSelectionUnsupported],
+        "{diagnostics:#?}"
+    );
+}

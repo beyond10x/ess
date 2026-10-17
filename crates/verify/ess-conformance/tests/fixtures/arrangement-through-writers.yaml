@@ -1,0 +1,184 @@
+format: ess/24
+system: ledger
+version: v1
+domain: ledger.lock
+summary: An incident locked once a later command stores the approved review it owns; every change to it or its reviews refuses while locked.
+types:
+  - {name: ledger.lock.IncidentId, kind: newtype, of: Uuid}
+  - {name: ledger.lock.ReviewId, kind: newtype, of: Uuid}
+entities:
+  - name: ledger.lock.Incident
+    identity: {name: incident_id, type: ledger.lock.IncidentId}
+    fields:
+      - {name: title, type: String}
+      - {name: approved_by, type: Optional<ledger.lock.ReviewId>}
+    relations:
+      - {name: reviews, kind: owns, target: ledger.lock.Review, cardinality: many, via: incident_id}
+      - {name: approved_by, kind: references, target: ledger.lock.Review, cardinality: one, via: approved_by}
+    lifecycle: {initial: Drafted, states: [Drafted], terminal: [Drafted]}
+  - name: ledger.lock.Review
+    identity: {name: review_id, type: ledger.lock.ReviewId}
+    fields:
+      - {name: incident_id, type: ledger.lock.IncidentId}
+      - {name: note, type: String}
+    lifecycle:
+      initial: Pending
+      states: [Pending, Approved]
+      terminal: [Approved]
+      transitions:
+        - {name: approve, from: [Pending], to: Approved}
+errors:
+  - {name: ledger.lock.Locked, summary: The incident is approved and cannot change., fields: []}
+  - {name: ledger.lock.NotFound, summary: No such row., fields: []}
+  - {name: ledger.lock.NotApproved, summary: The review is not approved., fields: []}
+  - {name: ledger.lock.Conflict, summary: The review cannot move from its held state., fields: []}
+events:
+  - name: ledger.lock.Opened
+    fields: [{name: incident_id, type: ledger.lock.IncidentId}]
+  - name: ledger.lock.Changed
+    fields: [{name: incident_id, type: ledger.lock.IncidentId}]
+  - name: ledger.lock.ReviewAdded
+    fields: [{name: review_id, type: ledger.lock.ReviewId}]
+  - name: ledger.lock.ReviewChanged
+    fields: [{name: review_id, type: ledger.lock.ReviewId}]
+actors:
+  - name: ledger.lock.Clerk
+    may: [ledger.lock.Unseal, ledger.lock.Retitle, ledger.lock.Open, ledger.lock.AddReview, ledger.lock.Approve, ledger.lock.Seal, ledger.lock.Annotate, ledger.lock.Reopen]
+commands:
+  - name: ledger.lock.Unseal
+    input:
+      - {name: incident_id, type: ledger.lock.IncidentId}
+      - {name: title, type: String}
+    outcomes:
+      - name: unsealed-none
+        when_related: {via: approved_by, exists: false}
+        error: ledger.lock.NotFound
+      - name: review-pending
+        when_related: {via: approved_by, predicate: state != Approved}
+        error: ledger.lock.NotApproved
+      - name: unsealed
+        updates: ledger.lock.Incident
+        instance: incident_id
+        sets: {title: input.title}
+        emits: [ledger.lock.Changed]
+        payload: {ledger.lock.Changed: {incident_id: input.incident_id}}
+  - name: ledger.lock.Retitle
+    input:
+      - {name: incident_id, type: ledger.lock.IncidentId}
+      - {name: title, type: String}
+    outcomes:
+      - name: locked
+        when_subject: {predicate: defined(approved_by)}
+        error: ledger.lock.Locked
+      - name: retitled
+        updates: ledger.lock.Incident
+        instance: incident_id
+        sets: {title: input.title}
+        emits: [ledger.lock.Changed]
+        payload: {ledger.lock.Changed: {incident_id: input.incident_id}}
+      - {name: not-found, unknown_instance: true, error: ledger.lock.NotFound}
+  - name: ledger.lock.Open
+    input:
+      - {name: title, type: String}
+    outcomes:
+      - name: opened
+        creates: ledger.lock.Incident
+        instance: incident_id
+        sets: {title: input.title}
+        emits: [ledger.lock.Opened]
+        payload: {ledger.lock.Opened: {incident_id: {generated: true}}}
+  - name: ledger.lock.AddReview
+    input:
+      - {name: incident_id, type: ledger.lock.IncidentId}
+      - {name: note, type: String}
+    outcomes:
+      - name: added
+        creates: ledger.lock.Review
+        instance: review_id
+        sets: {incident_id: input.incident_id, note: input.note}
+        emits: [ledger.lock.ReviewAdded]
+        payload: {ledger.lock.ReviewAdded: {review_id: {generated: true}}}
+  - name: ledger.lock.Approve
+    input:
+      - {name: review_id, type: ledger.lock.ReviewId}
+    outcomes:
+      - name: no-incident
+        when_related: {via: incident_id, exists: false}
+        error: ledger.lock.NotFound
+      - name: locked
+        when_related: {via: incident_id, predicate: defined(approved_by)}
+        error: ledger.lock.Locked
+      - name: approved
+        moves: ledger.lock.Review.approve
+        instance: review_id
+        emits: [ledger.lock.ReviewChanged]
+        payload: {ledger.lock.ReviewChanged: {review_id: input.review_id}}
+      - {name: wrong-state, wrong_state: true, error: ledger.lock.Conflict}
+  - name: ledger.lock.Seal
+    input:
+      - {name: incident_id, type: ledger.lock.IncidentId}
+      - {name: review_id, type: ledger.lock.ReviewId}
+    outcomes:
+      - name: no-review
+        when_related: {via: input.review_id, exists: false}
+        error: ledger.lock.NotFound
+      - name: not-approved
+        when_related: {via: input.review_id, predicate: state != Approved}
+        error: ledger.lock.NotApproved
+      - name: sealed
+        updates: ledger.lock.Incident
+        instance: incident_id
+        sets: {approved_by: input.review_id}
+        emits: [ledger.lock.Changed]
+        payload: {ledger.lock.Changed: {incident_id: input.incident_id}}
+  - name: ledger.lock.Annotate
+    input:
+      - {name: review_id, type: ledger.lock.ReviewId}
+      - {name: incident_id, type: ledger.lock.IncidentId}
+      - {name: note, type: String}
+    outcomes:
+      - name: no-incident
+        when_related: {via: input.incident_id, exists: false}
+        error: ledger.lock.NotFound
+      - name: locked
+        when_related: {via: input.incident_id, predicate: defined(approved_by)}
+        error: ledger.lock.Locked
+      - name: annotated
+        updates: ledger.lock.Review
+        instance: review_id
+        sets: {note: input.note}
+        emits: [ledger.lock.ReviewChanged]
+        payload: {ledger.lock.ReviewChanged: {review_id: input.review_id}}
+  - name: ledger.lock.Reopen
+    input:
+      - {name: incident_id, type: ledger.lock.IncidentId}
+      - {name: title, type: String}
+    outcomes:
+      - name: approved-review
+        when_related:
+          entity: ledger.lock.Review
+          where: {all: [incident_id == input.incident_id, state == Approved]}
+          exists: true
+        error: ledger.lock.Locked
+      - name: reopened
+        updates: ledger.lock.Incident
+        instance: incident_id
+        sets: {title: input.title}
+        emits: [ledger.lock.Changed]
+        payload: {ledger.lock.Changed: {incident_id: input.incident_id}}
+views:
+  - name: ledger.lock.Incidents
+    source: ledger.lock.Incident
+    consistency: read_your_writes
+    fields:
+      - {name: incident_id, type: ledger.lock.IncidentId}
+      - {name: title, type: String}
+      - {name: approved_by, type: Optional<ledger.lock.ReviewId>}
+  - name: ledger.lock.Reviews
+    source: ledger.lock.Review
+    consistency: read_your_writes
+    fields:
+      - {name: review_id, type: ledger.lock.ReviewId}
+      - {name: incident_id, type: ledger.lock.IncidentId}
+      - {name: note, type: String}
+      - {name: state, type: ledger.lock.Review.State}

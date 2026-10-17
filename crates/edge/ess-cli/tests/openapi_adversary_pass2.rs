@@ -23,7 +23,7 @@ fn same_path_projection_refusal_preserves_the_unadmitted_input() {
     wire["interface"]["types"]["A"]["items"]["extra~/"] = json!(null);
     for (encoding, bytes) in [
         ("json", wire.to_string()),
-        ("yaml", serde_yaml::to_string(&wire).unwrap()),
+        ("yaml", ess_yaml::to_string(&wire).unwrap()),
     ] {
         for (spelling, arguments) in [
             ("flat", &["project", "openapi"][..]),

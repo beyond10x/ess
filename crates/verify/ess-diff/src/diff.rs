@@ -1064,6 +1064,18 @@ fn component_changes(before: &EssIr, after: &EssIr, changes: &mut Vec<SemanticCh
 /// resolved operand, not the source word: a one-segment fact on the right reads `{fact: …}`, so a
 /// literal that became a fact renders differently from the literal it was
 /// (`docs/design/expression-family-source22.md`, A1, decision 7).
+/// What decides `outcome`, rendered as [`written_condition`] renders its condition, with `; before
+/// the row` after an external refusal marked `before_row: true` (ess/25, beyond10x/ess#534). A
+/// model without the key renders as it always did.
+fn written_outcome_condition(outcome: &ResolvedOutcome) -> String {
+    let written = written_condition(&outcome.condition);
+    if outcome.before_row {
+        format!("{written}; before the row")
+    } else {
+        written
+    }
+}
+
 fn written_condition(condition: &ResolvedCondition) -> String {
     match condition {
         ResolvedCondition::When { predicate } => format!("when {predicate}"),
@@ -1219,6 +1231,8 @@ fn written_fields(owner: &str, fields: &[ess_compiler::ir::ResolvedPayloadField]
                 // `implementation-generated`, and `…, present` for an ess/25 present mint.
                 | ess_compiler::ir::ResolvedPayloadValue::Generated { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::PayloadRead { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::ChangedField { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::ChangedState { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::ChangedCount) => other.describe(),
             };
             let conversion = field
@@ -1672,11 +1686,13 @@ fn outcome_changes(
                 // to the same predicate and is silent here; anything canonically different is
                 // *changed*, and nothing below reads a predicate's content beyond `==`.
                 outcome_observations(old, new, name, push);
-                if old.condition != new.condition {
+                // An external refusal marked `before_row:` (ess/25, beyond10x/ess#534) answers at
+                // step 2 rather than step 6: which requests it answers moved, as a condition's do.
+                if old.condition != new.condition || old.before_row != new.before_row {
                     push(CommandChange::OutcomeConditionChanged {
                         outcome: (*name).to_owned(),
-                        before: written_condition(&old.condition),
-                        after: written_condition(&new.condition),
+                        before: written_outcome_condition(old),
+                        after: written_outcome_condition(new),
                     });
                 }
                 if old.subject != new.subject {
@@ -1846,6 +1862,7 @@ fn compare_views(
             after: is.paging.as_ref().map(paging_contract),
         });
     }
+    compare_absent(was, is, push);
 
     // Canonical equality over the parsed filters, `None` meaning every instance. D-1's rule again:
     // equal is silence, different is *changed*, and nothing reads the predicates further.
@@ -1889,6 +1906,22 @@ fn computes<'v>(
     view.aggregation
         .as_ref()
         .and_then(|aggregation| aggregation.functions.get(field))
+}
+
+/// A view's answer for an identity no row carries (`absent:`, ess/25): the default row only, since
+/// its parameter is read off the filter, whose change is reported on its own. A view with
+/// `absent:` on neither side reports nothing here, so its delta keeps its format.
+fn compare_absent(was: &ResolvedView, is: &ResolvedView, push: &mut impl FnMut(ViewChange)) {
+    let (was_absent, is_absent) = (
+        was.absent.as_ref().map(|absent| absent.row.clone()),
+        is.absent.as_ref().map(|absent| absent.row.clone()),
+    );
+    if was_absent != is_absent {
+        push(ViewChange::AbsentChanged {
+            before: was_absent,
+            after: is_absent,
+        });
+    }
 }
 
 /// Aggregate views (`docs/design/aggregate-views.md`): the grouping, then what each field
@@ -2246,6 +2279,8 @@ fn written_sets(
                 // `implementation-generated`, and `…, present` for an ess/25 present mint.
                 | ess_compiler::ir::ResolvedPayloadValue::Generated { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::PayloadRead { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::ChangedField { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::ChangedState { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::ChangedCount) => other.describe(),
             };
             let conversion = field
@@ -2625,6 +2660,7 @@ fn residual_construct(declaration: &mut serde_json::Value, family: &str) {
                     "filter",
                     "order_by",
                     "paging",
+                    "absent",
                     "consistency",
                     "assertion_style",
                     "aggregation",
@@ -2710,7 +2746,7 @@ fn residual_command(declaration: &mut serde_json::Value) {
 /// they are a pure function of one that does. `refs` is deliberately absent: it stays residual.
 ///
 /// [`outcome_keys_accounted`] names every field of the struct, so the two cannot drift silently.
-const OUTCOME_KEYS_ACCOUNTED: [&str; 21] = [
+const OUTCOME_KEYS_ACCOUNTED: [&str; 22] = [
     "name",
     "condition",
     "subject",
@@ -2726,6 +2762,7 @@ const OUTCOME_KEYS_ACCOUNTED: [&str; 21] = [
     "accepts_nothing",
     "returns",
     "compensates",
+    "before_row",
     "one_time_response",
     "summary",
     "sets",
@@ -2757,6 +2794,7 @@ fn outcome_keys_accounted(outcome: &ResolvedOutcome) -> &'static [&'static str] 
         accepts_nothing: _, // OutcomeAcceptsNothingChanged
         returns: _,        // OutcomeReturnsChanged
         compensates: _,    // OutcomeCompensatesChanged
+        before_row: _,     // OutcomeConditionChanged: the step the branch answers at
         one_time_response: _, // Accounted by the one-time contract comparison below.
         summary: _,        // OutcomeSummaryChanged
         refs: _,           // residual, deliberately
@@ -2886,6 +2924,24 @@ fn written_set_effects(outcome: &ResolvedOutcome) -> Vec<String> {
             set.entity.name(),
             set.filter
         ));
+        // From ess/25 an event may be published once per changed row, for the rows that were in
+        // named states (beyond10x/ess#531); a set effect without one reads as it always did.
+        for entry in &set.events {
+            let states = entry
+                .when_state
+                .iter()
+                .map(|state| format!("`{state}`"))
+                .collect::<Vec<_>>();
+            let filter = if states.is_empty() {
+                String::new()
+            } else {
+                format!(" that was {}", states.join(" or "))
+            };
+            lines.push(format!(
+                "publishes `{}` once per changed row{filter}",
+                entry.event.name()
+            ));
+        }
     }
     for affect in &outcome.affects {
         let filter = affect
@@ -2947,12 +3003,14 @@ mod tests {
     use std::collections::BTreeSet;
 
     /// Specifications whose outcomes, together, write every optional `ResolvedOutcome` key.
-    const MODELS: [&str; 8] = [
+    const MODELS: [&str; 9] = [
         include_str!("../../../../docs/design/one-time-response-values.example.yaml"),
         include_str!("../../../specify/ess-compiler/tests/fixtures/outcome-shapes.yaml"),
         include_str!("../../../specify/ess-compiler/tests/fixtures/set-effects.yaml"),
         // `compensates` (ess/22, beyond10x/ess#197).
         include_str!("../../../specify/ess-compiler/tests/fixtures/refusal-with-effect.yaml"),
+        // `before_row` (ess/25, beyond10x/ess#534).
+        include_str!("../../../specify/ess-compiler/tests/fixtures/external-before-row.yaml"),
         include_str!("../../ess-conformance/tests/fixtures/error-payload-sources.yaml"),
         include_str!("../../ess-conformance/tests/fixtures/retained-replay.yaml"),
         "format: ess/17\nsystem: library\nversion: v1\ndomain: library.api\ncommands:\n  \

@@ -115,7 +115,7 @@ fn count_cli_preserves_default_bytes_and_standalone_detailed_pairing() {
         let detailed: serde_json::Value = if format == "json" {
             serde_json::from_slice(&result.stdout).unwrap()
         } else {
-            serde_yaml::from_slice(&result.stdout).unwrap()
+            ess_yaml::from_slice(&result.stdout).unwrap()
         };
         assert_eq!(detailed.as_object().unwrap().len(), 4);
         assert_eq!(detailed["format"], "ess-conformance-run/2");

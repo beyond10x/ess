@@ -128,7 +128,7 @@ fn fields() -> Vec<Field> {
     ]
 }
 fn predicate(text: &str) -> Predicate {
-    serde_yaml::from_str(text).unwrap()
+    ess_yaml::from_str(text).unwrap()
 }
 fn path(text: &str) -> FactPath {
     FactPath::new(text).unwrap()
@@ -516,6 +516,10 @@ predicate_forms! {
     // The same for the case-insensitive operators (beyond10x/ess#140): refused over an enum as a
     // type mismatch whatever the literal. `tests/subject_guard_input.rs` asserts that refusal.
     FoldMatch => false,
+    // `trimmed:` (`ess/25`, beyond10x/ess#532) wraps a text operator and is refused over a fact that
+    // is not a `String` as a type mismatch whatever its literal, outside a command guard as an
+    // unsupported construct. `tests/string_operators/trimmed_text_guard.rs` asserts both.
+    Trimmed => false,
     // Distinct list members (`ess/22`, beyond10x/ess#237) compare keys with each other and carry no
     // literal at all.
     Distinct => false,
@@ -544,6 +548,7 @@ fn form_of(predicate: &Predicate) -> Form {
         Predicate::Exists(_) => Form::Exists,
         Predicate::TextMatch { .. } => Form::TextMatch,
         Predicate::FoldMatch { .. } => Form::FoldMatch,
+        Predicate::Trimmed(_) => Form::Trimmed,
         Predicate::Distinct(_) => Form::Distinct,
         Predicate::Window(_) => Form::Window,
     }
@@ -570,7 +575,7 @@ fn carries_a_literal(predicate: &Predicate) -> bool {
         Predicate::All(children) | Predicate::Any(children) => {
             children.iter().any(carries_a_literal)
         }
-        Predicate::Not(inner) => carries_a_literal(inner),
+        Predicate::Not(inner) | Predicate::Trimmed(inner) => carries_a_literal(inner),
         Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
             carries_a_literal(&quantified.body)
         }

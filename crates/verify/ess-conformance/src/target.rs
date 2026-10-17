@@ -403,6 +403,25 @@ pub trait ConformanceTarget {
         ))
     }
 
+    /// Decides the **next** command this scenario executes, and only that one, at `request.instant`
+    /// rather than at the target's own `now` (beyond10x/ess#586,
+    /// `docs/design/current-time-guards.md`).
+    ///
+    /// The one way a suite can place a value *on* a `now` boundary: `expiry < now` and its `<=`
+    /// mutant differ only when `expiry` equals the instant the command is decided at. Arranging,
+    /// not asserting. The default body answers [`TargetError::Unsupported`] with the observation
+    /// `hold_now`, so a target written before it keeps compiling and every scenario that needs it
+    /// is reported `unsupported`. A synthesized held scenario so reported does not fail the run
+    /// ([`ConformanceReport::verdict`](crate::ConformanceReport::verdict)). A target deciding by
+    /// the runner's [command clock](crate::Runner::command_clock) is never asked: the runner holds
+    /// that clock itself.
+    fn hold_now(&self, _request: NowHold) -> Result<(), TargetError> {
+        Err(TargetError::unsupported(
+            "hold_now",
+            "this target cannot decide a command at an instant the suite names",
+        ))
+    }
+
     /// Lets a window close and reports what its clock read, and what it published on the way.
     ///
     /// The eleventh method, and the one the whole elapsed-time feature rests on. §7's rule holds
@@ -895,6 +914,15 @@ pub struct EventObservationRequest {
 pub struct InstantMark {
     /// What later claims call it.
     pub instant: InstantName,
+    /// The scenario this belongs to.
+    pub correlation: CorrelationId,
+}
+
+/// The instant the next command of a scenario is decided at ([`ConformanceTarget::hold_now`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NowHold {
+    /// The instant to read as `now`, at whole-second precision.
+    pub instant: ess_primitives::time::Rfc3339Instant,
     /// The scenario this belongs to.
     pub correlation: CorrelationId,
 }

@@ -217,7 +217,12 @@ fn a_malformed_instant_is_refused() {
 
 #[test]
 fn an_unknown_future_major_is_refused() {
-    for format in ["ess-history/3", "ess-history/20", "ess-history/2.1"] {
+    for format in [
+        "ess-history/4",
+        "ess-history/20",
+        "ess-history/2.1",
+        "ess-history/3.1",
+    ] {
         let mut value = written();
         value["format"] = json!(format);
         assert_eq!(

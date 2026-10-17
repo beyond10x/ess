@@ -138,13 +138,13 @@ fn digests(source: &str, contract: &str) -> Option<ArtifactDigests> {
     })
 }
 
-/// `serde_yaml`'s mapping visitor rejects duplicate keys, including in JSON input. JSON's generic
+/// `ess-yaml`'s mapping visitor rejects duplicate keys, including in JSON input. JSON's generic
 /// Value visitor overwrites them, so it cannot establish this envelope's uniqueness guarantee.
 fn structured(text: &str) -> Option<Envelope> {
-    let document: serde_yaml::Value = serde_yaml::from_str(text).ok()?;
+    let document: ess_yaml::Value = ess_yaml::from_str(text).ok()?;
     let root = document.as_mapping()?;
     // A docs document has per-page stamps and no single artifact stamp. Do not pick its first page.
-    if root.get("format").and_then(serde_yaml::Value::as_str) == Some("ess-docs/1") {
+    if root.get("format").and_then(ess_yaml::Value::as_str) == Some("ess-docs/1") {
         return None;
     }
     let mut candidates = Vec::new();
@@ -161,7 +161,7 @@ fn structured(text: &str) -> Option<Envelope> {
     }
     if let Some(value) = root
         .get("info")
-        .and_then(serde_yaml::Value::as_mapping)
+        .and_then(ess_yaml::Value::as_mapping)
         .and_then(|info| info.get("x-ess-provenance"))
     {
         candidates.push((value, false));
@@ -189,7 +189,7 @@ fn structured(text: &str) -> Option<Envelope> {
     })
 }
 
-fn required_text<'a>(stamp: &'a serde_yaml::Mapping, key: &str) -> Option<&'a str> {
+fn required_text<'a>(stamp: &'a ess_yaml::Mapping, key: &str) -> Option<&'a str> {
     let value = stamp.get(key)?.as_str()?;
     (!value.trim().is_empty()).then_some(value)
 }

@@ -146,17 +146,17 @@ func (t *adv2Target) InvokeCommand(request CommandRequest) PendingCommand {
 func adv2New(name string) func() Target {
 	switch name {
 	case "late-close":
-		return func() Target { return &adv2Target{exploreFixtureTarget: newExploreFixtureTarget("", "low"), closeFrom: 5} }
+		return func() Target { return &adv2Target{exploreFixtureTarget: newExploreFixtureTarget("", "high"), closeFrom: 5} }
 	case "lost-close":
 		return func() Target {
-			return &adv2Target{exploreFixtureTarget: newExploreFixtureTarget("lost-update", "low"), closeFrom: 1}
+			return &adv2Target{exploreFixtureTarget: newExploreFixtureTarget("lost-update", "high"), closeFrom: 1}
 		}
 	case "join-indeterminate":
-		return func() Target { return &adv2Target{exploreFixtureTarget: newExploreFixtureTarget("", "low"), mode: "join"} }
+		return func() Target { return &adv2Target{exploreFixtureTarget: newExploreFixtureTarget("", "high"), mode: "join"} }
 	case "plain-error":
-		return func() Target { return &adv2Target{exploreFixtureTarget: newExploreFixtureTarget("", "low"), mode: "plain"} }
+		return func() Target { return &adv2Target{exploreFixtureTarget: newExploreFixtureTarget("", "high"), mode: "plain"} }
 	default:
-		return func() Target { return newExploreFixtureTarget("", "low") }
+		return func() Target { return newExploreFixtureTarget("", "high") }
 	}
 }
 
@@ -225,7 +225,7 @@ const CLOSE = 'explore.desk.CloseTicket';
 // under `mode`, every third call answered with a throw, at its invoke or at its completion.
 function wrapped(mutant, { closeFrom = 0, mode = '' } = {}) {
   return () => {
-    const target = newTarget(mutant, 'low');
+    const target = newTarget(mutant, 'high');
     let seed = 0;
     let calls = 0;
     let invokes = 0;
@@ -294,7 +294,7 @@ function adv2New(name) {
     case 'invoke-unsupported':
       return wrapped('', { mode: 'invoke-unsupported' });
     default:
-      return () => newTarget('', 'low');
+      return () => newTarget('', 'high');
   }
 }
 

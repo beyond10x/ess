@@ -113,7 +113,7 @@ checksum = "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
 
 [[package]]
 name = "billing-realization"
-version = "0.59.0"
+version = "0.62.0"
 dependencies = [
  "billing-system",
  "billing-types",
@@ -464,7 +464,7 @@ dependencies = [
 
 [[package]]
 name = "ess-cli"
-version = "0.59.0"
+version = "0.62.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -491,6 +491,7 @@ dependencies = [
  "ess-ui-react",
  "ess-ui-test",
  "ess-ui-tui",
+ "ess-yaml",
  "flate2",
  "fluent-uri",
  "getrandom 0.3.4",
@@ -504,7 +505,6 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
- "serde_yaml",
  "sha2",
  "tar",
  "tempfile",
@@ -513,19 +513,19 @@ dependencies = [
 
 [[package]]
 name = "ess-cli-contract"
-version = "0.59.0"
+version = "0.62.0"
 dependencies = [
  "ess-compiler",
  "ess-domain",
+ "ess-yaml",
  "serde",
  "serde_json",
- "serde_yaml",
  "thiserror",
 ]
 
 [[package]]
 name = "ess-cli-project"
-version = "0.59.0"
+version = "0.62.0"
 dependencies = [
  "clap",
  "clap_complete",
@@ -542,60 +542,61 @@ dependencies = [
 
 [[package]]
 name = "ess-compiler"
-version = "0.59.0"
+version = "0.62.0"
 dependencies = [
  "ess-domain",
  "ess-primitives",
+ "ess-yaml",
  "proptest",
  "serde",
  "serde_json",
- "serde_yaml",
  "sha2",
 ]
 
 [[package]]
 name = "ess-composition"
-version = "0.59.0"
+version = "0.62.0"
 dependencies = [
  "ess-compiler",
  "ess-domain",
+ "ess-yaml",
  "serde",
  "serde_json",
- "serde_yaml",
 ]
 
 [[package]]
 name = "ess-conformance"
-version = "0.59.0"
+version = "0.62.0"
 dependencies = [
  "ess-compiler",
  "ess-domain",
  "ess-gen",
  "ess-primitives",
+ "ess-yaml",
  "serde",
  "serde_json",
- "serde_yaml",
  "sha2",
 ]
 
 [[package]]
 name = "ess-deployment"
-version = "0.59.0"
+version = "0.62.0"
 dependencies = [
  "ess-compiler",
  "ess-domain",
  "ess-realization",
+ "ess-yaml",
+ "jiff-tzdb",
  "semver",
  "serde",
  "serde_json",
- "serde_yaml",
  "sha2",
  "thiserror",
 ]
 
 [[package]]
 name = "ess-diff"
-version = "0.59.0"
+version = "0.62.0"
 dependencies = [
  "ess-compiler",
  "ess-conformance",
@@ -608,20 +609,20 @@ dependencies = [
 
 [[package]]
 name = "ess-domain"
-version = "0.59.0"
+version = "0.62.0"
 dependencies = [
  "ess-primitives",
+ "ess-yaml",
  "jsonschema",
  "schemars",
  "serde",
  "serde_json",
- "serde_yaml",
  "thiserror",
 ]
 
 [[package]]
 name = "ess-entity-runtime"
-version = "0.59.0"
+version = "0.62.0"
 dependencies = [
  "entity-core",
  "ess-compiler",
@@ -629,43 +630,44 @@ dependencies = [
  "ess-primitives",
  "ess-service-contract",
  "ess-synth",
+ "ess-yaml",
  "serde_json",
- "serde_yaml",
  "sha2",
 ]
 
 [[package]]
 name = "ess-gen"
-version = "0.59.0"
+version = "0.62.0"
 dependencies = [
  "ess-compiler",
  "ess-domain",
  "ess-http",
  "ess-primitives",
  "ess-transport",
+ "ess-yaml",
  "jsonschema",
  "pulldown-cmark",
  "serde",
  "serde_json",
- "serde_yaml",
  "sha2",
 ]
 
 [[package]]
 name = "ess-http"
-version = "0.59.0"
+version = "0.62.0"
 dependencies = [
  "ess-compiler",
  "ess-domain",
+ "ess-primitives",
+ "ess-yaml",
  "serde",
  "serde_json",
- "serde_yaml",
  "sha2",
 ]
 
 [[package]]
 name = "ess-kubernetes"
-version = "0.59.0"
+version = "0.62.0"
 dependencies = [
  "clap",
  "ess-primitives",
@@ -680,28 +682,28 @@ dependencies = [
 
 [[package]]
 name = "ess-openapi"
-version = "0.59.0"
+version = "0.62.0"
 dependencies = [
+ "ess-yaml",
  "serde",
  "serde_json",
- "serde_yaml",
  "sha2",
 ]
 
 [[package]]
 name = "ess-primitives"
-version = "0.59.0"
+version = "0.62.0"
 dependencies = [
+ "ess-yaml",
  "schemars",
  "serde",
  "serde_json",
- "serde_yaml",
  "thiserror",
 ]
 
 [[package]]
 name = "ess-publisher"
-version = "0.59.0"
+version = "0.62.0"
 dependencies = [
  "ess-compiler",
  "ess-domain",
@@ -715,20 +717,20 @@ dependencies = [
 
 [[package]]
 name = "ess-realization"
-version = "0.59.0"
+version = "0.62.0"
 dependencies = [
  "ess-compiler",
  "ess-domain",
  "ess-primitives",
+ "ess-yaml",
  "serde",
  "serde_json",
- "serde_yaml",
  "sha2",
 ]
 
 [[package]]
 name = "ess-service-contract"
-version = "0.59.0"
+version = "0.62.0"
 dependencies = [
  "ess-compiler",
  "ess-domain",
@@ -737,7 +739,7 @@ dependencies = [
 
 [[package]]
 name = "ess-synth"
-version = "0.59.0"
+version = "0.62.0"
 dependencies = [
  "clap",
  "ess-compiler",
@@ -756,28 +758,28 @@ dependencies = [
 
 [[package]]
 name = "ess-transport"
-version = "0.59.0"
+version = "0.62.0"
 dependencies = [
  "ess-compiler",
  "ess-domain",
+ "ess-yaml",
  "serde",
  "serde_json",
- "serde_yaml",
 ]
 
 [[package]]
 name = "ess-ui"
-version = "0.59.0"
+version = "0.62.0"
 dependencies = [
+ "ess-yaml",
  "ryu-js",
  "serde",
  "serde_json",
- "serde_yaml",
 ]
 
 [[package]]
 name = "ess-ui-check"
-version = "0.59.0"
+version = "0.62.0"
 dependencies = [
  "clap",
  "ess-compiler",
@@ -785,64 +787,64 @@ dependencies = [
  "ess-gen",
  "ess-primitives",
  "ess-ui",
+ "ess-yaml",
  "serde",
  "serde_json",
- "serde_yaml",
 ]
 
 [[package]]
 name = "ess-ui-docs"
-version = "0.59.0"
+version = "0.62.0"
 dependencies = [
  "clap",
  "ess-ui",
- "serde_yaml",
+ "ess-yaml",
 ]
 
 [[package]]
 name = "ess-ui-react"
-version = "0.59.0"
+version = "0.62.0"
 dependencies = [
  "clap",
  "ess-ui",
  "ess-ui-check",
+ "ess-yaml",
  "serde_json",
- "serde_yaml",
 ]
 
 [[package]]
 name = "ess-ui-test"
-version = "0.59.0"
+version = "0.62.0"
 dependencies = [
  "clap",
  "ess-ui",
  "ess-ui-react",
  "ess-ui-tui",
+ "ess-yaml",
  "ratatui",
  "serde",
  "serde_json",
- "serde_yaml",
  "tempfile",
 ]
 
 [[package]]
 name = "ess-ui-tui"
-version = "0.59.0"
+version = "0.62.0"
 dependencies = [
  "clap",
  "crossterm",
  "ess-ui",
  "ess-ui-check",
+ "ess-yaml",
  "ratatui",
  "serde",
  "serde_json",
- "serde_yaml",
  "unicode-width 0.2.0",
 ]
 
 [[package]]
 name = "ess-xtask"
-version = "0.59.0"
+version = "0.62.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -854,15 +856,23 @@ dependencies = [
  "ess-gen",
  "ess-primitives",
  "ess-realization",
+ "ess-yaml",
  "proc-macro2",
  "quote",
  "rustix 1.1.4",
  "schemars",
  "serde",
  "serde_json",
- "serde_yaml",
  "sha2",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "ess-yaml"
+version = "0.62.0"
+dependencies = [
+ "serde",
+ "serde_norway",
 ]
 
 [[package]]
@@ -967,7 +977,7 @@ dependencies = [
 
 [[package]]
 name = "gatepass-realization"
-version = "0.59.0"
+version = "0.62.0"
 dependencies = [
  "ess-conformance",
  "ess-primitives",
@@ -1118,7 +1128,7 @@ dependencies = [
 
 [[package]]
 name = "infra-analyze"
-version = "0.59.0"
+version = "0.62.0"
 dependencies = [
  "infra-compiler",
  "infra-domain",
@@ -1128,7 +1138,7 @@ dependencies = [
 
 [[package]]
 name = "infra-compiler"
-version = "0.59.0"
+version = "0.62.0"
 dependencies = [
  "infra-domain",
  "serde",
@@ -1138,7 +1148,7 @@ dependencies = [
 
 [[package]]
 name = "infra-domain"
-version = "0.59.0"
+version = "0.62.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1147,7 +1157,7 @@ dependencies = [
 
 [[package]]
 name = "infra-project"
-version = "0.59.0"
+version = "0.62.0"
 dependencies = [
  "infra-analyze",
  "infra-compiler",
@@ -1159,7 +1169,7 @@ dependencies = [
 
 [[package]]
 name = "infra-spec"
-version = "0.59.0"
+version = "0.62.0"
 dependencies = [
  "ess-primitives",
  "infra-analyze",
@@ -1167,7 +1177,6 @@ dependencies = [
  "infra-domain",
  "serde",
  "serde_json",
- "serde_yaml",
 ]
 
 [[package]]
@@ -1210,6 +1219,12 @@ name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
+
+[[package]]
+name = "jiff-tzdb"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fa8377070c6bae868759445e5a77f66d84f0b72f3a054bfb00e6d038b8282da7"
 
 [[package]]
 name = "js-sys"
@@ -1798,9 +1813,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.45"
+version = "0.23.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634"
+checksum = "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf"
 dependencies = [
  "log",
  "once_cell",
@@ -1860,7 +1875,7 @@ checksum = "6518fc26bced4d53678a22d6e423e9d8716377def84545fe328236e3af070e7f"
 
 [[package]]
 name = "schema-contract"
-version = "0.59.0"
+version = "0.62.0"
 dependencies = [
  "base64 0.22.1",
  "ess-compiler",
@@ -1971,16 +1986,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "serde_yaml"
-version = "0.9.34+deprecated"
+name = "serde_norway"
+version = "0.9.42"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a8b1a1a2ebf674015cc02edccce75287f1a0130d394307b36743c2f5d504b47"
+checksum = "e408f29489b5fd500fab51ff1484fc859bb655f32c671f307dcd733b72e8168c"
 dependencies = [
  "indexmap",
  "itoa",
  "ryu",
  "serde",
- "unsafe-libyaml",
+ "unsafe-libyaml-norway",
 ]
 
 [[package]]
@@ -2266,10 +2281,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fc81956842c57dac11422a97c3b8195a1ff727f06e85c84ed2e8aa277c9a0fd"
 
 [[package]]
-name = "unsafe-libyaml"
-version = "0.2.11"
+name = "unsafe-libyaml-norway"
+version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
+checksum = "b39abd59bf32521c7f2301b52d05a6a2c975b6003521cbd0c6dc1582f0a22104"
 
 [[package]]
 name = "untrusted"

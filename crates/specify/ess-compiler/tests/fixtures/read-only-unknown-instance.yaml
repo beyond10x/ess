@@ -1,0 +1,69 @@
+format: ess/24
+system: demo
+version: v1
+domain: demo.desk
+# beyond10x/ess#535: a read-only command — every branch preserves or refuses — declares its answer
+# for an identity no seat carries with `unknown_instance:`.
+entities:
+  - name: demo.desk.Seat
+    identity: {name: user_id, type: String}
+    fields: []
+    lifecycle:
+      initial: Open
+      states: [Open, Closed]
+      terminal: [Closed]
+      transitions:
+        - {name: close, from: [Open], to: Closed}
+events:
+  - name: demo.desk.SeatTaken
+    fields: [{name: user_id, type: String}]
+  - name: demo.desk.SeatClosed
+    fields: [{name: user_id, type: String}]
+errors:
+  - name: demo.desk.NoSeat
+    summary: No open seat carries the identity.
+actors:
+  - name: demo.desk.Agent
+    may: [demo.desk.TakeSeat, demo.desk.CloseSeat, demo.desk.Ring]
+commands:
+  - name: demo.desk.TakeSeat
+    input:
+      - {name: user_id, type: String}
+    outcomes:
+      - name: taken
+        creates: demo.desk.Seat
+        instance: user_id
+        emits: [demo.desk.SeatTaken]
+        payload:
+          demo.desk.SeatTaken: {user_id: input.user_id}
+  - name: demo.desk.CloseSeat
+    input:
+      - {name: user_id, type: String}
+    outcomes:
+      - name: closed
+        moves: demo.desk.Seat.close
+        instance: user_id
+        emits: [demo.desk.SeatClosed]
+        payload:
+          demo.desk.SeatClosed: {user_id: input.user_id}
+      - {name: no-seat, unknown_instance: true, error: demo.desk.NoSeat}
+      - {name: already-closed, wrong_state: true, error: demo.desk.NoSeat}
+  - name: demo.desk.Ring
+    input: [{name: user_id, type: String}]
+    outcomes:
+      - name: no-seat
+        unknown_instance: true
+        error: demo.desk.NoSeat
+      - name: closed
+        when_subject: {predicate: state == Closed}
+        error: demo.desk.NoSeat
+      - name: rung
+        preserves: demo.desk.Seat
+        instance: user_id
+views:
+  - name: demo.desk.Seats
+    source: demo.desk.Seat
+    consistency: read_your_writes
+    fields:
+      - {name: user_id, type: String}
+      - {name: state, type: demo.desk.Seat.State}

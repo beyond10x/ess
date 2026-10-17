@@ -150,8 +150,8 @@ fn both_emitted_planners_draw_exact_seeded_timestamps_through_newtypes() {
     for kind in &go["results"].as_array().unwrap()[..2] {
         assert_eq!(kind["kind"], "timestamp");
         assert_eq!(
-            kind["serial"], "unsupported",
-            "serial temporal predicate semantics remain bounded"
+            kind["serial"], "timestamp",
+            "the sequential explorer draws a Timestamp as the concurrent one does"
         );
         for (case, seed) in kind["seeds"]
             .as_array()
@@ -193,4 +193,147 @@ fn next(state: &mut u32) -> u32 {
     value = (value ^ (value >> 15)).wrapping_mul(value | 1);
     value ^= value.wrapping_add((value ^ (value >> 7)).wrapping_mul(value | 0x3d));
     value ^ (value >> 14)
+}
+
+const REASONS_MODEL: &str = r"format: ess/22
+system: reasons
+version: v1
+domain: reasons.auth
+types:
+  - {name: reasons.auth.CodeId, kind: newtype, of: Uuid}
+entities:
+  - name: reasons.auth.Code
+    identity: {name: code_id, type: reasons.auth.CodeId}
+    fields:
+      - {name: expiry, type: Timestamp}
+    lifecycle: {initial: Stored, states: [Stored], terminal: [Stored], transitions: []}
+actors:
+  - {name: reasons.auth.Issuer, may: [reasons.auth.StoreCode, reasons.auth.RevokeCode]}
+errors:
+  - {name: reasons.auth.UnknownCode, fields: []}
+events:
+  - name: reasons.auth.Stored
+    fields: [{name: code_id, type: reasons.auth.CodeId}]
+commands:
+  - name: reasons.auth.StoreCode
+    input: [{name: expiry, type: Timestamp}]
+    outcomes:
+      - name: stored
+        creates: reasons.auth.Code
+        instance: code_id
+        sets: {expiry: input.expiry}
+        emits: [reasons.auth.Stored]
+        payload:
+          reasons.auth.Stored: {code_id: {generated: true}}
+  - name: reasons.auth.RevokeCode
+    input: [{name: code, type: reasons.auth.CodeId}]
+    outcomes:
+      - name: revoked
+        deletes: reasons.auth.Code
+        instance: code
+      - name: unknown-code
+        unknown_instance: true
+        error: reasons.auth.UnknownCode
+";
+
+const REASONS_GO: &str = r#"package essconform
+import ("encoding/json"; "os"; "testing")
+func TestExplorerReasons(t *testing.T) {
+  ir, err := exploreLoad(exploreIR, exploreSuite); if err != nil { t.Fatal(err) }
+  out := map[string]any{}
+  for name, concurrent := range map[string]bool{"sequential": false, "concurrent": true} {
+    plan := explorePlanAs(ir, concurrent)
+    admitted := []string{}; for _, command := range plan.commands { admitted = append(admitted, command.name) }
+    excluded := []any{}; for _, one := range plan.excluded { excluded = append(excluded, map[string]any{"subject": one.Subject, "reason": one.Reason}) }
+    out[name] = map[string]any{"admitted": admitted, "excluded": excluded}
+  }
+  bytes, err := json.Marshal(out); if err != nil { t.Fatal(err) }
+  if err = os.WriteFile("reasons-result.json", bytes, 0600); err != nil { t.Fatal(err) }
+}
+"#;
+
+// This test-only export invokes the private production planner unchanged.
+const REASONS_TS: &str = r"
+export function reasonsProbe(ir: any): any {
+  const one = (concurrent: boolean) => { const p = plan(ir, concurrent); return {admitted: p.commands.map(c => c.name), excluded: p.excluded.map(e => ({subject: e.subject, reason: e.reason}))}; };
+  return {sequential: one(false), concurrent: one(true)};
+}
+";
+
+/// A command with a `Timestamp` input is admitted by both explorers; a deleting outcome is drawn by
+/// the sequential one, and the concurrent one names why it is not: its workload is drawn before
+/// any call runs, so a call drawn after the delete can still name the deleted row.
+#[test]
+fn the_explorers_name_one_reason_for_a_timestamp_input_and_a_delete() {
+    let specification = Specification::assemble([(
+        Source::new("reasons.yaml"),
+        RawSpecFile::parse(REASONS_MODEL).unwrap(),
+    )])
+    .unwrap();
+    let ir = compile(&specification, &SourceMap::new()).unwrap();
+    let suite = ess_conformance::synthesize(&ir).suite;
+    let root = support_scratch::Scratch::adopt(
+        std::env::temp_dir().join(format!("ess-explorer-reasons-{}", std::process::id())),
+    );
+    let go = root.join("go");
+    let ts = root.join("ts");
+    for artifact in ess_conformance::go::emit_with_model(&suite, &ir).unwrap() {
+        write(&go, &artifact.path, artifact.contents);
+    }
+    for artifact in ess_conformance::ts::emit_with_model(&suite, &ir).unwrap() {
+        write(&ts, &artifact.path, artifact.contents);
+    }
+    write(&go, "go.mod", "module example.invalid/reasons\n\ngo 1.24\n");
+    write(&go, "essconform/reasons_test.go", REASONS_GO);
+    run(Command::new("go")
+        .args([
+            "test",
+            "./essconform",
+            "-run",
+            "^TestExplorerReasons$",
+            "-count=1",
+        ])
+        .env("GOWORK", "off")
+        .current_dir(&go));
+    let package = ts.join("essconform");
+    let source = package.join("src/explore.ts");
+    fs::write(
+        &source,
+        format!("{}{REASONS_TS}", fs::read_to_string(&source).unwrap()),
+    )
+    .unwrap();
+    write(
+        &package,
+        "reasons.tsconfig.json",
+        r#"{"extends":"./tsconfig.json","compilerOptions":{"types":[],"noCheck":true}}"#,
+    );
+    run(Command::new("tsc")
+        .args(["--project", "reasons.tsconfig.json"])
+        .current_dir(&package));
+    run(Command::new("node").args(["--input-type=module", "-e", "import {reasonsProbe} from './dist/explore.js';import fs from 'node:fs';fs.writeFileSync('reasons-result.json',JSON.stringify(reasonsProbe(JSON.parse(fs.readFileSync('ir.json','utf8')))));"]).current_dir(&package));
+    let go: Value =
+        serde_json::from_slice(&fs::read(go.join("essconform/reasons-result.json")).unwrap())
+            .unwrap();
+    let ts: Value =
+        serde_json::from_slice(&fs::read(package.join("reasons-result.json")).unwrap()).unwrap();
+    assert_eq!(go, ts, "both languages plan alike");
+    assert_eq!(
+        go["sequential"],
+        serde_json::json!({
+            "admitted": ["reasons.auth.RevokeCode", "reasons.auth.StoreCode"],
+            "excluded": [],
+        })
+    );
+    assert_eq!(
+        go["concurrent"],
+        serde_json::json!({
+            "admitted": ["reasons.auth.StoreCode"],
+            "excluded": [{
+                "subject": "reasons.auth.RevokeCode",
+                "reason": "outcome `revoked` deletes its subject from `supplied`, and a concurrent \
+                           workload is drawn before any call runs, so a later call can name the \
+                           deleted row",
+            }],
+        })
+    );
 }

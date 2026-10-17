@@ -393,7 +393,7 @@ fn failure_schema() -> jsonschema::Validator {
 }
 
 fn on_failure(yaml: &str) -> serde_json::Value {
-    serde_yaml::from_str(yaml).expect("YAML")
+    ess_yaml::from_str(yaml).expect("YAML")
 }
 
 #[test]

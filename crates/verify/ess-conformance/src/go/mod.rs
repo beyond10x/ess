@@ -170,10 +170,27 @@ func TestExplore(t *testing.T) {
 ```
 
 `Seeds` sequences are seeded `1…Seeds`; `Seed` runs exactly one of them, which is how a reported
-failure is replayed. `AssertExplored` fails on a disagreement, on a declared outcome no sequence
+failure is replayed: a seed draws alone the sequence it drew inside the run. What a sequence finds
+it cannot use — a command whose guard a draw leaves unknown, an external branch the target cannot
+arrange, a state the target refused a command in — it finds again for itself, so nothing an earlier
+seed found changes a later seed's draws, and the result reports each for the whole run. `AssertExplored` fails on a disagreement, on a declared outcome no sequence
 reached, and on the outcomes of a command the explorer left out (`Excluded` says why) unless
 `AssertOptions{AllowExcluded: true}` accepts them. A view field is compared with the entity field
 of the same name. `ir.json` must hash to `suite.json`'s `spec_digest`; regenerate both together.
+
+A command the target returns `ErrUnsupported` for is not sent again in that sequence in the state
+of the row that step addressed, and is drawn in every other. `Refused` lists each such state with the target's
+reason and the steps not sent; an outcome only those steps would have taken counts as excluded, and
+`AssertExplored` fails on a refusal unless `AllowExcluded` accepts it. A command refused in every
+state it was drawn in is in `Excluded`, as is a view the target refuses.
+
+A guard over `now` is decided against `ExploreOptions.Now`, or the wall clock where it is nil.
+Where a guard compares a `Timestamp` with `now`, every `Timestamp` input is drawn an hour to a day
+either side of an instant such a guard compares it with, so a target that reads its own clock
+moments later decides the step as the model does; a step whose answer differs between the clock's
+reading and a minute later is not sent, and `Undetermined` names its command. An outcome that
+`deletes:` its subject takes the row out of the model, so every view must lose it, and a later step
+may name the deleted identity, which the model answers as the unknown instance it now is.
 
 An outcome declared `external:` is a choice the explorer may take: where it is eligible, a seeded
 draw picks it or the ordinary branch, `ConfigureExternalOutcome` arranges it, and the step expects
@@ -198,7 +215,11 @@ Restarts are sequential-only: `ConcurrentOptions` has none.
 ## Concurrent histories
 
 `ExploreConcurrent` drives fresh targets from two to four clients at once and writes each run as
-an `ess-history/1` document, one per seed, into `Out`. It does not judge them itself: it runs
+an `ess-history/3` document, one per seed, into `Out`: every command call with the input it
+sent and the external branch it arranged, and every answered one with every event its answer
+published, in order, with its payload, so `ess` holds an answer to its input, to the events and
+payloads its branch declares and to the external causes somebody arranged, on a model without
+entities too. It does not judge them itself: it runs
 `ess verify conform check-history --path <Path>` on each and reports the verdict, and for a
 violation the checker's report with its shrunk history. `ess` must be on `PATH`; without it the
 call fails with `ErrNoEss`, and nothing is skipped.
@@ -223,6 +244,8 @@ return. A call that returns `ErrIndeterminate` (or wraps it, or `context.Deadlin
 `ErrUnsupported` is left out, and `AssertConcurrent` fails on it unless
 `ConcurrentOptions{AllowExcluded: true}` accepts it. `Clients` outside 2 to 4 is refused. `Unknown`
 fails `AssertConcurrent` as a violation does.
+A command with an outcome that `deletes:` its subject is not drawn: the workload is drawn before
+any call runs, so a call drawn after the delete could still name the deleted row.
 
 A client's call may also be a read of one of the specification's views, drawn from the seed beside
 the commands. A read of a `read_your_writes` view demands the token the client's own last answered
@@ -230,6 +253,16 @@ command returned (`ViewRequest.AtLeast`); a read of an `eventual` view demands n
 asked at the read's return instant, and the identity of each row it answered is written as `rows`,
 so `ess` holds the target to each view's declared consistency. A view answered with
 `ErrUnsupported` is left out as a command is.
+
+A call of a command declaring an `external:` branch draws it beside the ordinary branch, as
+`Explore` does, wherever the call's input makes it eligible: an unguarded `external:`, or one whose
+`when:` holds over the input (a `replays:` branch is the retry `Inject` sends instead). A drawn
+branch is arranged through `ConfigureExternalOutcome` when the call is invoked, and the arrangement
+may hold for later calls of the command, which `ess` reads as that branch or another the model
+admits. Nothing is arranged in the prefix, and a call no external branch is offered to draws
+nothing more. `ConcurrentResult.Arranged` counts the arrangements by `command/outcome`. A branch the
+target answers `ErrUnsupported` to arranging is in `Unarrangeable`, its calls are sent unarranged,
+and `AssertConcurrent` fails on it unless `ConcurrentOptions{AllowExcluded: true}` accepts it.
 
 `ConcurrentOptions{Inject: true}` injects every fault the specification declares, and no other: a
 second delivery (`RedeliverEvent`) of an event only `delivery: at_least_once` bindings react to; the
@@ -391,14 +424,14 @@ ESS_REPORT_OUT=$PWD/report.json go test ./...
 
 /// The newest suite major the generated Go runtime admits and executes.
 /// Keep this with `newestSuiteMajor` in the embedded runtime; TypeScript owns its admission cap.
-pub(crate) const NEWEST_ADMITTED_SUITE_MAJOR: u32 = 51;
+pub(crate) const NEWEST_ADMITTED_SUITE_MAJOR: u32 = 53;
 
 /// Whether the generated runtimes admit `major`: `/1` through `/37`, the conditional aggregate
 /// measure pair `/38` and `/39` (beyond10x/ess#363), the expression pair `/40` and `/41`, the
 /// seed-bearing pair `/42` and `/43` (beyond10x/ess#413), the counted event-claim pair `/44` and
 /// `/45` (beyond10x/ess#427), the constrained-response pair `/46` and `/47` (beyond10x/ess#499),
-/// the opened-response pair `/48` and `/49` (beyond10x/ess#500), and the await pair `/50` and `/51`
-/// (beyond10x/ess#542).
+/// the opened-response pair `/48` and `/49` (beyond10x/ess#500), the held-now pair `/50` and `/51`
+/// (beyond10x/ess#586), and the await pair `/52` and `/53` (beyond10x/ess#542).
 pub(crate) fn admitted_major(major: u32) -> bool {
     (1..=37).contains(&major)
         || crate::conditional_measures::ADMITTED.contains(&major)
@@ -407,13 +440,14 @@ pub(crate) fn admitted_major(major: u32) -> bool {
         || crate::event_multiplicity::ADMITTED.contains(&major)
         || crate::direct_response::CONSTRAINED_ADMITTED.contains(&major)
         || crate::undeclared_fields::ADMITTED.contains(&major)
+        || crate::hold_now::ADMITTED.contains(&major)
         || crate::system_issued::ADMITTED.contains(&major)
 }
 
 /// The refusal both emitters write for a suite major their runtime does not admit.
 pub(crate) fn unadmitted_message(target: &str, version: crate::scenario::SuiteFormat) -> String {
     format!(
-        "the generated {target} runner admits suite versions up to `ess-conformance/51`, and \
+        "the generated {target} runner admits suite versions up to `ess-conformance/53`, and \
          would refuse `{version}`; regenerate using a supported suite version"
     )
 }

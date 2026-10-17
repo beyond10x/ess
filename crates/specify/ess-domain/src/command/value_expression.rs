@@ -480,7 +480,21 @@ fn check(
                 errors.push(super::minted_value::read_elsewhere(at));
             }
         }
-        PayloadSource::ChangedCount
+        PayloadSource::ChangedField { .. } if depth > 0 => {
+            errors.push(super::set_effects::changed_elsewhere(
+                at,
+                "a nested mapping",
+            ));
+        }
+        PayloadSource::ChangedField { .. } if place == Place::Sets => {
+            errors.push(super::set_effects::changed_elsewhere(
+                at,
+                "a row, in `sets:`",
+            ));
+        }
+        // A whole payload field: checked with the changed rows in hand by `set_effects`.
+        PayloadSource::ChangedField { .. }
+        | PayloadSource::ChangedCount
         | PayloadSource::Scalar { .. }
         | PayloadSource::InputField { .. }
         | PayloadSource::ResponseField { .. }
@@ -500,6 +514,7 @@ fn kind(source: &PayloadSource) -> &'static str {
         PayloadSource::RelatedHead { .. } => "`{related: {entity, where, order_by, first}}`",
         PayloadSource::CallerAttribute { .. } => "`{caller: …}`",
         PayloadSource::ChangedCount => "`{count: changed}`",
+        PayloadSource::ChangedField { .. } => "`{changed: …}`",
         _ => "payload",
     }
 }

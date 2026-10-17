@@ -149,6 +149,7 @@ pub mod fixtures;
 pub mod go;
 pub mod grant;
 pub mod history;
+pub mod hold_now;
 pub mod input;
 pub mod interpret;
 pub mod known_failures;
@@ -220,8 +221,8 @@ pub use synthesize::{
 pub use target::{
     ConformanceTarget, Deadline, DeclaredErrorValue, ElapsedObservation, ElapsedObservationRequest,
     EventDeliveryRequest, EventObservationRequest, ExternalOutcomeControl, ImplementationIdentity,
-    InstantMark, InvocationObservationRequest, ObservedEvent, ObservedInvocation, OrderedScan,
-    OrderedScanRequest, RedeliveryRequest, ScenarioContext, SemanticCommandRequest,
+    InstantMark, InvocationObservationRequest, NowHold, ObservedEvent, ObservedInvocation,
+    OrderedScan, OrderedScanRequest, RedeliveryRequest, ScenarioContext, SemanticCommandRequest,
     SemanticCommandResult, SemanticViewRequest, SemanticViewResult, TargetError, ViewRow,
 };
 pub use witness::WitnessGap;

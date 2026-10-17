@@ -63,12 +63,21 @@ fn newtype(
     alphabet_doc(out, text[0]);
     prefix_doc(out, text[1]);
     invariant_doc(out, invariants);
+    if declared.body.is_constrained() {
+        let _ = writeln!(
+            out,
+            "///\n/// Checked by [`{}::broken_constraint`]; the generated decoder refuses a value that \
+             breaks one.",
+            emit.layout.type_name(&declared.name)
+        );
+    }
     let _ = writeln!(
         out,
         "#[derive(Debug, Clone, PartialEq, Eq)]\npub struct {}(pub {});",
         emit.layout.type_name(&declared.name),
         emit.rust_type(of)
     );
+    super::invariant::newtype_check(out, emit, declared);
     super::reading::wrapper(out, emit, declared);
 }
 

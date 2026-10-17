@@ -314,9 +314,9 @@ fn below_ess_15_an_optional_group_key_is_refused_as_a_format_the_document_does_n
 fn skip_absent_round_trips_and_is_not_written_where_absent() {
     let spec = assemble(ORDERS).unwrap();
     for view in spec.views().values() {
-        let written = serde_yaml::to_string(view).unwrap();
+        let written = ess_yaml::to_string(view).unwrap();
         let reread =
-            ViewSpec::try_from(serde_yaml::from_str::<RawViewSpec>(&written).unwrap()).unwrap();
+            ViewSpec::try_from(ess_yaml::from_str::<RawViewSpec>(&written).unwrap()).unwrap();
         assert_eq!(&reread, view, "{written}");
     }
     let total = serde_json::to_string(&spec.views()[&name("demo.orders.DurationTotal")]).unwrap();

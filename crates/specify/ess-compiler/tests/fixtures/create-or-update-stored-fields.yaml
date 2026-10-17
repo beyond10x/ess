@@ -1,0 +1,93 @@
+format: ess/25
+system: demo
+version: v1
+domain: demo.desk
+# beyond10x/ess#530: a create-or-update command selects among its update branches by the stored
+# row's fields and held state (`when_subject:`), while `unknown_instance:` creates the row for an
+# identity no row carries. From `ess/25`; below it the pairing is refused.
+entities:
+  - name: demo.desk.Seat
+    identity: {name: user_id, type: String}
+    fields:
+      - {name: call_ref, type: String}
+    lifecycle:
+      initial: Open
+      states: [Open, Busy, Closed]
+      transitions:
+        - {name: open, from: [Closed], to: Open}
+        - {name: reopen, from: [Open, Busy], to: Open}
+        - {name: take, from: [Open], to: Busy}
+        - {name: close, from: [Open, Busy], to: Closed}
+actors:
+  - {name: demo.desk.Client, may: [demo.desk.SignIn, demo.desk.Take, demo.desk.Close]}
+commands:
+  - name: demo.desk.SignIn
+    input:
+      - {name: user_id, type: String}
+      - {name: secret, type: String}
+    outcomes:
+      - name: reopened-busy
+        when_subject: {predicate: {all: [state == Busy, call_ref != ""]}}
+        moves: demo.desk.Seat.reopen
+        instance: user_id
+        emits: [demo.desk.Left]
+        payload: {demo.desk.Left: {user_id: input.user_id}}
+      - name: opened
+        when_subject: {predicate: state == Closed}
+        moves: demo.desk.Seat.open
+        instance: user_id
+        emits: [demo.desk.SignedIn]
+        payload: {demo.desk.SignedIn: {user_id: input.user_id}}
+      # Every other stored seat: Open, or Busy with no call. `call_ref` is a text, which the
+      # finite prover does not enumerate, so the branch answering the rest is the default.
+      - name: reopened
+        moves: demo.desk.Seat.reopen
+        instance: user_id
+        emits: [demo.desk.SignedIn]
+        payload: {demo.desk.SignedIn: {user_id: input.user_id}}
+      - name: first
+        unknown_instance: true
+        creates: demo.desk.Seat
+        instance: user_id
+        sets: {call_ref: ""}
+        emits: [demo.desk.SignedIn]
+        payload: {demo.desk.SignedIn: {user_id: input.user_id}}
+  - name: demo.desk.Take
+    input:
+      - {name: user_id, type: String}
+      - {name: call_ref, type: String}
+    outcomes:
+      - name: taken
+        moves: demo.desk.Seat.take
+        instance: user_id
+        sets: {call_ref: input.call_ref}
+        emits: [demo.desk.Taken]
+        payload: {demo.desk.Taken: {user_id: input.user_id}}
+      - {name: no-seat, unknown_instance: true, error: demo.desk.NoSeat}
+      - {name: not-open, wrong_state: true, error: demo.desk.NoSeat}
+  - name: demo.desk.Close
+    input: [{name: user_id, type: String}]
+    outcomes:
+      - name: closed
+        moves: demo.desk.Seat.close
+        instance: user_id
+        emits: [demo.desk.Closed]
+        payload: {demo.desk.Closed: {user_id: input.user_id}}
+      - {name: no-seat, unknown_instance: true, error: demo.desk.NoSeat}
+      - {name: already-closed, wrong_state: true, error: demo.desk.NoSeat}
+errors:
+  - name: demo.desk.NoSeat
+    summary: No seat in a state the move starts from carries the identity.
+events:
+  - {name: demo.desk.Taken, fields: [{name: user_id, type: String}]}
+  - {name: demo.desk.Closed, fields: [{name: user_id, type: String}]}
+  - {name: demo.desk.SignedIn, fields: [{name: user_id, type: String}]}
+  - {name: demo.desk.Left, fields: [{name: user_id, type: String}]}
+views:
+  - name: demo.desk.Seats
+    source: demo.desk.Seat
+    consistency: read_your_writes
+    fields:
+      - {name: user_id, type: String}
+      - {name: call_ref, type: String}
+      - {name: state, type: demo.desk.Seat.State}

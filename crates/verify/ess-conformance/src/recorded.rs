@@ -685,18 +685,17 @@ fn first_list_or_null(value: &Value, path: &str) -> Option<(String, &'static str
 /// The adapter a YAML document means, refusing any tag the YAML reader keeps (every tag but YAML's
 /// own core-schema tags, which it resolves to the plain value) with its path.
 fn yaml_adapter(text: &str) -> Result<Adapter, String> {
-    let document: serde_yaml::Value =
-        serde_yaml::from_str(text).map_err(|error| error.to_string())?;
+    let document: ess_yaml::Value = ess_yaml::from_str(text).map_err(|error| error.to_string())?;
     if let Some((path, tag)) = first_tag(&document, "") {
         return Err(format!(
             "`{path}`: the YAML tag `{tag}` is not part of {ADAPTER_FORMAT}"
         ));
     }
-    serde_yaml::from_str(text).map_err(|error| error.to_string())
+    ess_yaml::from_str(text).map_err(|error| error.to_string())
 }
 
 /// The path and tag of the first YAML tag in `value`, on a key or a value.
-fn first_tag(value: &serde_yaml::Value, path: &str) -> Option<(String, String)> {
+fn first_tag(value: &ess_yaml::Value, path: &str) -> Option<(String, String)> {
     let here = |segment: &str| {
         if path.is_empty() {
             segment.to_owned()
@@ -705,7 +704,7 @@ fn first_tag(value: &serde_yaml::Value, path: &str) -> Option<(String, String)> 
         }
     };
     match value {
-        serde_yaml::Value::Tagged(tagged) => Some((
+        ess_yaml::Value::Tagged(tagged) => Some((
             if path.is_empty() {
                 "the document".to_owned()
             } else {
@@ -713,18 +712,18 @@ fn first_tag(value: &serde_yaml::Value, path: &str) -> Option<(String, String)> 
             },
             tagged.tag.to_string(),
         )),
-        serde_yaml::Value::Mapping(members) => members.iter().find_map(|(key, member)| {
+        ess_yaml::Value::Mapping(members) => members.iter().find_map(|(key, member)| {
             let segment = match key {
-                serde_yaml::Value::String(text) => text.clone(),
-                serde_yaml::Value::Number(number) => number.to_string(),
-                serde_yaml::Value::Tagged(tagged) => {
+                ess_yaml::Value::String(text) => text.clone(),
+                ess_yaml::Value::Number(number) => number.to_string(),
+                ess_yaml::Value::Tagged(tagged) => {
                     return Some((here("<key>"), tagged.tag.to_string()));
                 }
                 other => format!("{other:?}"),
             };
             first_tag(member, &here(&segment))
         }),
-        serde_yaml::Value::Sequence(items) => items
+        ess_yaml::Value::Sequence(items) => items
             .iter()
             .enumerate()
             .find_map(|(index, item)| first_tag(item, &format!("{path}[{index}]"))),
@@ -1137,6 +1136,11 @@ fn located(refusal: HistoryRefusal, origins: &[(usize, String)]) -> ImportRefusa
         }
         HistoryRefusal::IndeterminateWithRows { operation_id } => {
             (by_id(operation_id), Some("rows"))
+        }
+        // An adapter maps no `events` (`ess-history/3`), so an imported operation never carries
+        // one; named here so the match stays total.
+        HistoryRefusal::IndeterminateWithEvents { operation_id } => {
+            (by_id(operation_id), Some("events"))
         }
         HistoryRefusal::RetryOfUnknown { operation_id, .. } => {
             (by_id(operation_id), Some("retry_of"))

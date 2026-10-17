@@ -10,7 +10,7 @@
 //!
 //! | fact | read from |
 //! |---|---|
-//! | which outcome the input selects | the command's precedence plan ([`PrecedencePlan`], `docs/design/selection-plan.md`), read phase by phase: a missing related row's `exists: false` branch, the first declared of several rows read through the input (ess/22, `related_absent`; an absent Optional reference, ess/22, reads no row and selects no related branch), then the first declared input-guarded refusal whose `when:` holds (`refused_by_input`); addressed-row existence and held state; a related row named by a stored field of the addressed subject (ess/22, `stored_reference`): absent, none; missing, its `exists: false` branch; for the ess/22 `wrong_state` composition, several related rows and every stored reference, the first declared present-related predicate refusal whose predicate holds; then the first accepting or external branch declared whose guard holds, over [`input::flatten`], then the one `Otherwise` branch |
+//! | which outcome the input selects | the command's precedence plan ([`PrecedencePlan`], `docs/design/selection-plan.md`), read phase by phase: a missing related row's `exists: false` branch, the first declared of several rows read through the input (ess/22, `related_absent`; an absent Optional reference, ess/22, reads no row and selects no related branch), then the first declared input-guarded refusal whose `when:` holds, or external refusal marked `before_row: true` (ess/25) its provider takes (`refused_by_input`); addressed-row existence and held state; a related row named by a stored field of the addressed subject (ess/22, `stored_reference`): absent, none; missing, its `exists: false` branch; for the ess/22 `wrong_state` composition, several related rows and every stored reference, the first declared present-related predicate refusal whose predicate holds; then the first accepting or external branch declared whose guard holds, over [`input::flatten`], then the one `Otherwise` branch |
 //! | whether an external branch is taken | [`Externals`] — never the input, never this module |
 //! | whether the subject may move | the transition's own `from` set against the state held in the [`Store`] |
 //! | what a refused move answers | the command's `wrong_state:` branch; for an identity nobody holds, its `unknown_instance:` branch, else its one declared not-found refusal, else `wrong_state:` |
@@ -516,10 +516,6 @@ pub(super) fn responding(
     .collect()
 }
 
-#[allow(
-    clippy::too_many_lines,
-    reason = "command execution keeps its ordered selection and response authorities together"
-)]
 fn responding_core(
     ir: &EssIr,
     store: &State,
@@ -528,6 +524,52 @@ fn responding_core(
     externals: &Externals,
     generated: &Generated,
     responses: &mut super::response::Authority,
+) -> Result<Vec<Transition>, Undetermined> {
+    // An external refusal answered at step 2 (`before_row: true`, ess/25, beyond10x/ess#534) that
+    // an open provider may take is one possible answer beside whatever the rest of the order
+    // selects, and is never the only one read.
+    let mut possible = Vec::new();
+    let steps = responding_phases(
+        ir,
+        store,
+        command,
+        input,
+        externals,
+        generated,
+        responses,
+        &mut possible,
+    );
+    if possible.is_empty() {
+        return steps;
+    }
+    let steps = match steps {
+        Ok(steps) => steps,
+        // No other branch is described by the given values: the provider's refusal still is.
+        Err(Undetermined::Request(_)) => Vec::new(),
+        Err(why) => return Err(why),
+    };
+    for step in steps {
+        if !possible.contains(&step) {
+            possible.push(step);
+        }
+    }
+    Ok(possible)
+}
+
+#[allow(
+    clippy::too_many_lines,
+    clippy::too_many_arguments,
+    reason = "command execution keeps its ordered selection and response authorities together"
+)]
+fn responding_phases(
+    ir: &EssIr,
+    store: &State,
+    command: &QualifiedName,
+    input: &Context<'_>,
+    externals: &Externals,
+    generated: &Generated,
+    responses: &mut super::response::Authority,
+    possible: &mut Vec<Transition>,
 ) -> Result<Vec<Transition>, Undetermined> {
     let spec = ir
         .commands()
@@ -586,7 +628,14 @@ fn responding_core(
                 }
             }
             Phase::InputRefusal => {
-                if let Some(steps) = refused_by_input(ir, spec, &planned.branches, store, input)? {
+                if let Some(steps) = refused_by_input(
+                    ir,
+                    spec,
+                    &planned.branches,
+                    store,
+                    input,
+                    (externals, possible),
+                )? {
                     return Ok(steps);
                 }
             }
@@ -1592,18 +1641,33 @@ fn stored_reference<'s>(
 /// refusal declared before it still answers. A request that does not decode is left to the
 /// ordinary path, which reports it in the order it always has.
 ///
-/// `refusals` is the plan's [`Phase::InputRefusal`], in its order.
+/// `refusals` is the plan's [`Phase::InputRefusal`], in its order. From ess/25 it also holds the
+/// external refusals marked `before_row: true` (beyond10x/ess#534), read in the same declaration
+/// order: one `externals` forces is taken where its own `when:`, if any, holds; one an open
+/// provider may take is pushed to `possible`, an answer beside whatever is read after it.
 fn refused_by_input(
     ir: &EssIr,
     spec: &ResolvedCommand,
     refusals: &[&ResolvedOutcome],
     store: &State,
     input: &Context<'_>,
+    (externals, possible): (&Externals, &mut Vec<Transition>),
 ) -> Result<Option<Vec<Transition>>, Undetermined> {
-    let refusals: Vec<(&ResolvedOutcome, &Predicate)> = refusals
+    /// What one step-2 branch reads before it answers.
+    enum Step2<'o> {
+        /// An input-guarded refusal: its guard.
+        Guarded(&'o Predicate),
+        /// An external refusal: its input eligibility, where it declares one.
+        External(Option<&'o Predicate>),
+    }
+    let refusals: Vec<(&ResolvedOutcome, Step2<'_>)> = refusals
         .iter()
         .filter_map(|outcome| match &outcome.condition {
-            ResolvedCondition::When { predicate } => Some((*outcome, predicate)),
+            ResolvedCondition::When { predicate } => Some((*outcome, Step2::Guarded(predicate))),
+            ResolvedCondition::External { .. } => Some((*outcome, Step2::External(None))),
+            ResolvedCondition::ExternalWhen { predicate, .. } => {
+                Some((*outcome, Step2::External(Some(predicate))))
+            }
             _ => None,
         })
         .collect();
@@ -1614,15 +1678,37 @@ fn refused_by_input(
         return Ok(None);
     };
     let facts = caller::Facts::new(&facts, input.caller, &spec.input, input.now);
-    for (outcome, guard) in refusals {
-        match guard.evaluate(&facts) {
-            Truth::True => return Ok(Some(vec![refusal(ir, spec, outcome, store, input, None)?])),
-            Truth::False => {}
-            Truth::Unknown => {
-                return Err(Undetermined::Undecidable {
-                    outcome: branch(spec, outcome),
-                    guard: format!("{guard:?}"),
-                })
+    let holds = |outcome: &ResolvedOutcome, guard: &Predicate| match guard.evaluate(&facts) {
+        Truth::True => Ok(true),
+        Truth::False => Ok(false),
+        Truth::Unknown => Err(Undetermined::Undecidable {
+            outcome: branch(spec, outcome),
+            guard: format!("{guard:?}"),
+        }),
+    };
+    for (outcome, read) in refusals {
+        match read {
+            Step2::Guarded(guard) => {
+                if holds(outcome, guard)? {
+                    return Ok(Some(vec![refusal(ir, spec, outcome, store, input, None)?]));
+                }
+            }
+            Step2::External(eligible) => {
+                let provider = match externals {
+                    Externals::Withheld => continue,
+                    Externals::Forced(name) if *name != outcome.name => continue,
+                    Externals::Forced(_) => true,
+                    Externals::Open => false,
+                };
+                if eligible.map_or(Ok(true), |guard| holds(outcome, guard))? {
+                    let step = refusal(ir, spec, outcome, store, input, None)?;
+                    if provider {
+                        return Ok(Some(vec![step]));
+                    }
+                    if !possible.contains(&step) {
+                        possible.push(step);
+                    }
+                }
             }
         }
     }
@@ -2102,7 +2188,7 @@ fn take(
         outcome,
         input,
         created.as_ref(),
-        changed,
+        changed.as_ref(),
         &mut work
     ));
 
@@ -2362,8 +2448,16 @@ fn value_at(
         // The first row the selector selects by the order, in the same store (ess/25,
         // beyond10x/ess#543); none supplies no value.
         ResolvedPayloadValue::RelatedHead { .. } => related_head(ir, field, input, work),
-        ResolvedPayloadValue::SubjectState { .. } => values::held_state(work.before.as_ref()),
+        // ess/25 (beyond10x/ess#531): `emit` holds the changed row one occurrence is for as the
+        // row before the outcome.
+        ResolvedPayloadValue::SubjectState { .. } | ResolvedPayloadValue::ChangedState { .. } => {
+            values::held_state(work.before.as_ref())
+        }
         ResolvedPayloadValue::SubjectField {
+            field: read,
+            type_ref,
+        }
+        | ResolvedPayloadValue::ChangedField {
             field: read,
             type_ref,
         } => values::subject(
@@ -2451,7 +2545,11 @@ fn value_at(
 }
 
 /// The typed value a literal written in the model denotes, read against the field it fills.
-fn literal(ir: &EssIr, target: &ResolvedTypeRef, text: &str) -> Result<Node, Undetermined> {
+pub(super) fn literal(
+    ir: &EssIr,
+    target: &ResolvedTypeRef,
+    text: &str,
+) -> Result<Node, Undetermined> {
     let gap = || Undetermined::NotInterpreted {
         construct: format!("the literal `{text}` over `{target}`"),
     };
@@ -2774,14 +2872,18 @@ fn publish(
     Ok(Ok(()))
 }
 
-/// The events `outcome` emits, each carrying what the model determines of it.
+/// The events `outcome` emits, each carrying what the model determines of it. An event published
+/// once per changed row (ess/25, beyond10x/ess#531) is published at its place once for each changed
+/// row its state filter admits, in ascending order of identity, read with that row as the one held
+/// before the outcome.
+#[allow(clippy::too_many_lines)] // One payload walk, now once per occurrence.
 fn emit(
     ir: &EssIr,
     spec: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     input: &Context<'_>,
     created: Option<&(String, Node)>,
-    changed: Option<usize>,
+    changed: Option<&set_effects::Changed>,
     work: &mut Work<'_>,
 ) -> Result<Result<Vec<history::Event>, Unmatched>, Undetermined> {
     let mut events = Vec::with_capacity(outcome.emits.len());
@@ -2800,80 +2902,105 @@ fn emit(
                 }
                 _ => None,
             });
-        let mut event = history::Event::new(EventRef::from(handle));
-        for field in &declared.fields {
-            work.location = vec![
-                "event".into(),
-                index.to_string(),
-                declared.name.to_string(),
-                field.name.clone(),
-            ];
-            let source = determined
-                .and_then(|payload| payload.fields.iter().find(|it| it.target == field.name));
-            // A value a `sets:` entry already stored (ess/25): the one this event publishes.
-            let published = if identity == Some(field.name.as_str()) {
-                None
-            } else {
-                work.published
-                    .get(&(declared.name.clone(), field.name.clone()))
-                    .cloned()
-            };
-            // The field `instance:` names publishes the created identity, whatever source the
-            // payload declares for it: `{generated: true}` there says only that the implementation
-            // assigns it, and it assigned it once, when the instance was created.
-            let value = match (identity == Some(field.name.as_str()), source) {
-                _ if published.is_some() => published.flatten(),
-                (true, _) => created.map(|(_, identity)| Value::Known(identity.clone())),
-                (
-                    false,
-                    Some(ResolvedPayloadField {
-                        value: ResolvedPayloadValue::Generated { present },
-                        ..
-                    }),
-                ) => or_no_step!(assign(
-                    ir,
-                    &declared.name,
-                    &field.name,
-                    minted_type(&field.type_ref, *present),
-                    work
-                )),
-                (
-                    false,
-                    Some(ResolvedPayloadField {
-                        value: ResolvedPayloadValue::ChangedCount,
-                        ..
-                    }),
-                ) => {
-                    let count = changed.ok_or_else(|| {
-                        Undetermined::Request("changed count without a set subject".into())
-                    })?;
-                    Some(Value::Known(Node::Number(Number::from(count))))
-                }
-                (false, Some(source)) => value(ir, source, input, work)?,
+        let per_row = outcome
+            .instances
+            .as_ref()
+            .and_then(|set| set.events.iter().find(|entry| &entry.event == handle));
+        let occurrences: Vec<Option<&Row>> = match per_row {
+            None => vec![None],
+            Some(entry) => changed
+                .map_or(&[][..], |changed| changed.rows.as_slice())
+                .iter()
+                .filter(|(_, row)| {
+                    entry.when_state.is_empty()
+                        || entry
+                            .when_state
+                            .iter()
+                            .any(|state| *state == row.state.to_string())
+                })
+                .map(|(_, row)| Some(row))
+                .collect(),
+        };
+        for row in occurrences {
+            let held = row.map(|row| work.before.replace(row.clone()));
+            let mut event = history::Event::new(EventRef::from(handle));
+            for field in &declared.fields {
+                work.location = vec![
+                    "event".into(),
+                    index.to_string(),
+                    declared.name.to_string(),
+                    field.name.clone(),
+                ];
+                let source = determined
+                    .and_then(|payload| payload.fields.iter().find(|it| it.target == field.name));
+                // A value a `sets:` entry already stored (ess/25): the one this event publishes.
+                let published = if identity == Some(field.name.as_str()) {
+                    None
+                } else {
+                    work.published
+                        .get(&(declared.name.clone(), field.name.clone()))
+                        .cloned()
+                };
+                // The field `instance:` names publishes the created identity, whatever source the
+                // payload declares for it: `{generated: true}` there says only that the implementation
+                // assigns it, and it assigned it once, when the instance was created.
+                let value = match (identity == Some(field.name.as_str()), source) {
+                    _ if published.is_some() => published.flatten(),
+                    (true, _) => created.map(|(_, identity)| Value::Known(identity.clone())),
+                    (
+                        false,
+                        Some(ResolvedPayloadField {
+                            value: ResolvedPayloadValue::Generated { present },
+                            ..
+                        }),
+                    ) => or_no_step!(assign(
+                        ir,
+                        &declared.name,
+                        &field.name,
+                        minted_type(&field.type_ref, *present),
+                        work
+                    )),
+                    (
+                        false,
+                        Some(ResolvedPayloadField {
+                            value: ResolvedPayloadValue::ChangedCount,
+                            ..
+                        }),
+                    ) => {
+                        let count = changed.map(|changed| changed.count).ok_or_else(|| {
+                            Undetermined::Request("changed count without a set subject".into())
+                        })?;
+                        Some(Value::Known(Node::Number(Number::from(count))))
+                    }
+                    (false, Some(source)) => value(ir, source, input, work)?,
 
-                (false, None) => {
-                    or_no_step!(
-                        assign(ir, &declared.name, &field.name, &field.type_ref, work).map_err(
-                            |error| match error {
-                                Undetermined::NoValue { .. } => Undetermined::NoValue {
-                                    what: format!(
-                                        "`{}.{}`, emitted by `{}`",
-                                        declared.name,
-                                        field.name,
-                                        branch(spec, outcome)
-                                    ),
-                                },
-                                other => other,
-                            }
+                    (false, None) => {
+                        or_no_step!(
+                            assign(ir, &declared.name, &field.name, &field.type_ref, work).map_err(
+                                |error| match error {
+                                    Undetermined::NoValue { .. } => Undetermined::NoValue {
+                                        what: format!(
+                                            "`{}.{}`, emitted by `{}`",
+                                            declared.name,
+                                            field.name,
+                                            branch(spec, outcome)
+                                        ),
+                                    },
+                                    other => other,
+                                }
+                            )
                         )
-                    )
+                    }
+                };
+                if let Some(value) = value {
+                    event = event.with(field.name.clone(), value);
                 }
-            };
-            if let Some(value) = value {
-                event = event.with(field.name.clone(), value);
+            }
+            events.push(event);
+            if let Some(held) = held {
+                work.before = held;
             }
         }
-        events.push(event);
     }
     Ok(Ok(events))
 }

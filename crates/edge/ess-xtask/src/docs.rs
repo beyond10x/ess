@@ -110,7 +110,7 @@ const SUPPORTED: &[(&str, &str, &str)] = &[
 /// | `9746c09f` | `ess/5`, `ess-diff/5` | 0.27.0 |
 ///
 /// `ess-composition` gained `SUPPORTED_COMPOSITION_FORMATS` with `/2`; its `/1` row is read the way
-/// the rows below are, `/2` shipped in 0.38.0 and `/3` is unreleased.
+/// the rows below are, `/2` shipped in 0.38.0, `/3` in 0.40.0 and `/4` is unreleased.
 ///
 /// The families after `ess-composition` have no `SUPPORTED_*` constant to read. Their rows are the
 /// ones the version history gives a release (`HISTORY`), each read as the earliest version tag
@@ -160,6 +160,8 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-diff", 16, Some("0.57.0")),
     ("ess-diff", 17, Some("0.57.0")),
     ("ess-diff", 18, Some("0.58.0")),
+    ("ess-diff", 19, Some("0.60.0")),
+    ("ess-diff", 20, None),
     ("ess-diff-acknowledgements", 1, Some("0.53.0")),
     ("ess-conformance", 1, Some("0.1.0")),
     ("ess-conformance", 2, Some("0.7.0")),
@@ -215,12 +217,16 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     // Ignored undeclared fields on response observations (beyond10x/ess#500).
     ("ess-conformance", 48, Some("0.58.0")),
     ("ess-conformance", 49, Some("0.58.0")),
+    // A held `now` for one command (beyond10x/ess#586).
+    ("ess-conformance", 50, Some("0.62.0")),
+    ("ess-conformance", 51, Some("0.62.0")),
     // Awaiting a command the system issues itself (beyond10x/ess#542).
-    ("ess-conformance", 50, None),
-    ("ess-conformance", 51, None),
+    ("ess-conformance", 52, None),
+    ("ess-conformance", 53, None),
     ("ess-composition", 1, Some("0.4.0")),
     ("ess-composition", 2, Some("0.38.0")),
     ("ess-composition", 3, Some("0.40.0")),
+    ("ess-composition", 4, Some("0.60.0")),
     ("ess-scenario", 1, Some("0.16.0")),
     ("ess-scenario", 2, Some("0.23.0")),
     ("ess-scenario", 3, Some("0.35.0")),
@@ -262,17 +268,22 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-observed-bindings", 2, Some("0.33.0")),
     ("ess-history", 1, Some("0.39.0")),
     ("ess-history", 2, Some("0.53.0")),
+    ("ess-history", 3, Some("0.61.0")),
     ("ess-history-adapter", 1, Some("0.39.0")),
     ("ess-mutation-report", 1, Some("0.34.0")),
     ("ess-mutation-report", 2, Some("0.41.0")),
     ("ess-mutation-report", 3, Some("0.42.0")),
     ("ess-mutation-report", 4, Some("0.53.0")),
     ("ess-mutation-report", 5, Some("0.57.0")),
+    ("ess-mutation-report", 6, Some("0.60.0")),
+    // A mutant whose suite asks what the baseline's asks (https://github.com/beyond10x/ess/issues/586).
+    ("ess-mutation-report", 7, Some("0.62.0")),
     ("ess-mutation-manifest", 1, Some("0.37.0")),
     ("ess-mutation-manifest", 2, Some("0.41.0")),
     ("ess-mutation-manifest", 3, Some("0.42.0")),
     ("ess-mutation-manifest", 4, Some("0.53.0")),
     ("ess-mutation-manifest", 5, Some("0.57.0")),
+    ("ess-mutation-manifest", 6, Some("0.60.0")),
     ("ess-service-interface", 1, Some("0.1.0")),
     ("infra-spec", 1, Some("0.1.0")),
     ("infra-graph", 1, Some("0.1.0")),
@@ -294,14 +305,17 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-transport-ir", 2, Some("0.53.0")),
     ("ess-client-report", 2, Some("0.53.0")),
     // The HTTP presentation binding, stage 1 (https://github.com/beyond10x/ess/issues/493).
-    ("ess-http", 1, None),
-    ("ess-http-ir", 1, None),
+    ("ess-http", 1, Some("0.60.0")),
+    ("ess-http-ir", 1, Some("0.60.0")),
     ("ess-protospec", 1, Some("0.53.0")),
     ("ess-prototrace", 1, Some("0.53.0")),
     ("ess-build", 1, Some("0.9.0")),
     ("ess-build-ir", 1, Some("0.9.0")),
     ("ess-runtime", 1, Some("0.9.0")),
     ("ess-runtime-ir", 1, Some("0.9.0")),
+    // Scheduled workloads and pod settings (`docs/design/runtime-workload-kinds.md`).
+    ("ess-runtime", 2, Some("0.62.0")),
+    ("ess-runtime-ir", 2, Some("0.62.0")),
     ("ess-release", 1, Some("0.9.0")),
     ("ess-release-catalog", 1, Some("0.9.0")),
     ("ess-stack", 1, Some("0.9.0")),

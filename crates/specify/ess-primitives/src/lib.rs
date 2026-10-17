@@ -19,6 +19,10 @@ pub mod time;
 pub mod verification;
 pub mod window;
 
+/// YAML, as ESS reads and writes it: the `ess-yaml` crate, re-exported so that a crate whose only
+/// ESS dependency is this one (the `infra-*` crates) reads YAML the way the rest of ESS does.
+pub use ess_yaml as yaml;
+
 pub use entity::{EntityLocator, EntityType};
 pub use error::{ParseError, ValidationCode, ValidationError, ValidationErrors};
 pub use evidence::SpecDigest;

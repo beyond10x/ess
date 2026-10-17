@@ -1325,9 +1325,31 @@ impl<'a> Writer<'a> {
     /// does not hold (its guard always holds), read where selection begins.
     fn input_refusal(&mut self, outcome: &ResolvedOutcome, says: &str) -> String {
         let command = self.command;
+        // An external refusal answered before the row is read (`before_row: true`, ess/25,
+        // beyond10x/ess#534): the context decides it here, among the input refusals.
+        if let ResolvedCondition::External { .. } | ResolvedCondition::ExternalWhen { .. } =
+            &outcome.condition
+        {
+            let ask = self.external(outcome);
+            let guard = match &outcome.condition {
+                ResolvedCondition::ExternalWhen { predicate, .. } => {
+                    let truth = self.guards().predicate(&Env::Input(command), predicate);
+                    format!(" && {}", self.decided(&truth))
+                }
+                _ => String::new(),
+            };
+            let answer = self.variant(outcome, Held::None, None);
+            return format!(
+                "        // `{}`: an external refusal answered before the row is read, where the \
+                 context takes it.\n        if {ask}{guard} {{\n            return \
+                 Ok({answer});\n        }}\n",
+                outcome.name
+            );
+        }
         let ResolvedCondition::When { predicate } = &outcome.condition else {
             unreachable!(
-                "a refusal read from the input is a `when:` branch, not `{}`",
+                "a refusal read from the input is a `when:` or a `before_row` external branch, \
+                 not `{}`",
                 outcome.name
             )
         };
@@ -2813,6 +2835,8 @@ impl<'a> Writer<'a> {
             | ResolvedPayloadValue::RelatedHead { .. }
             | ResolvedPayloadValue::ChangedCount
             | ResolvedPayloadValue::PayloadRead { .. }
+            | ResolvedPayloadValue::ChangedField { .. }
+            | ResolvedPayloadValue::ChangedState { .. }
             | ResolvedPayloadValue::ResponseField { .. } => {
                 unreachable!("the plan keeps this source's command an obligation")
             }

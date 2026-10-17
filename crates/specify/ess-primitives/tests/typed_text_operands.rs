@@ -12,7 +12,7 @@ use ess_primitives::node::Node;
 use ess_primitives::predicate::{reading_source22_operands, Predicate, Truth};
 
 fn node(text: &str) -> Node {
-    serde_yaml::from_str(text).expect("the fixture is YAML")
+    ess_yaml::from_str(text).expect("the fixture is YAML")
 }
 
 fn read(text: &str) -> Predicate {

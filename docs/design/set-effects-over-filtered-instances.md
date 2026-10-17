@@ -289,6 +289,105 @@ the command, as for every `affects:` (below, "Targets"). `ess-diff`'s `outcome-s
 names the entry and its list, and the generated documentation says it writes one row per element of
 the list.
 
+## One event per changed row (ess/25, beyond10x/ess#531)
+
+Logging a team out moves every selected seat to `Closed`; for each seat that was `Busy` the service
+also publishes `Left {user_id, call_ref}` for that seat. An entry of `emits:` may be published once
+per row the outcome changed, with a payload read from that row:
+
+```yaml
+- name: closed-all
+  moves: demo.desk.Seat.close
+  instances: {where: team == input.team}
+  emits:
+    - demo.desk.TeamClosed
+    - {event: demo.desk.Left, each: changed, when_state: Busy}
+  payload:
+    demo.desk.TeamClosed: {team: input.team, closed: {count: changed}}
+    demo.desk.Left: {user_id: {changed: user_id}, call_ref: {changed: call_ref}, was: {changed: state}}
+```
+
+**The key.** An `emits:` entry is the event's name, as before, or the mapping `{event: <name>, each:
+changed}`. `each:` takes the one word `changed`. The event is still the outcome's: it is named in
+the command's events, a binding on it is caused by the command, and its `payload:` block is keyed by
+its name like any other.
+
+**The state filter.** `when_state:` names one state of the set subject's entity, or a list of them,
+spelled as `when_subject_state:` spells them. The event is published only for a changed row that
+held one of those states **before** the outcome. Without the key every changed row publishes it. A
+state the entity does not declare is `undeclared_reference`; under a `moves:` a state outside the
+transition's `from` is `conflicting_declaration`, since a row resting there is skipped and never
+changed; an empty list or a state named twice is `conflicting_declaration`.
+
+**Which rows.** The rows the outcome changed, the rows `{count: changed}` counts: under a `moves:`
+the selected rows resting in the transition's `from` states, under an `updates:` every selected row,
+under a `deletes:` every removed row. `{count: changed}` keeps counting all of them, whatever a
+state filter leaves out.
+
+**The value source.** In the payload block of such an event, `{changed: <field>}` reads a field of
+the row the occurrence is for — its identity or any declared field — and `{changed: state}` the
+lifecycle state it held, both **as the row was immediately before the outcome**, the reading
+`{subject: …}` and `{subject: state}` make of one subject; a removed row is read as it was before
+removal. The field's type must be the event field's, or `Optional` into `Optional`, as for
+`{subject: …}` (`type_mismatch` otherwise); `{changed: state}` is the entity's `State` type. Every
+other source an event payload takes is admitted beside it and is the same in every occurrence.
+`{changed: …}` is admitted only as a whole payload field of an event the outcome publishes per
+changed row: on any other event, in `sets:`, in an error's payload or inside a nested mapping it is
+`unsupported_construct`, and a field the entity does not hold is `undeclared_reference`.
+
+**Order.** The outcome's events are published in the order `emits:` lists them; a per-row entry
+contributes, at its place, one occurrence per row, in ascending order of the rows' identities (the
+order in which rows change stays out of scope, so the identity is the one order every target can
+state). A conformance suite does not assert that order: the claims of one event after one command
+are met as a set from suite `/44` (`event_multiplicity`), so a target publishing the same
+occurrences in another order passes.
+
+**Refusals.** Below `ess/25` the mapping entry is `unsupported_format_version` at
+`outcomes.<name>.emits[<n>]`, naming `ess/25`, and `{changed: …}` reads as the nested mapping it
+always was. The entry is admitted only on an outcome with `instances:`: on any other outcome — one
+subject, `affects:`, or none — it is `unsupported_construct` at the entry. Either refusal is made
+before the outcome is converted, the entry read as the plain event it names and the `{changed: …}`
+fields of its payload block read as `{generated: true}`, as a refused `{count: changed}` is, so the
+refusal comes alone. An event listed per changed row may be listed once in its outcome's `emits:`
+(`conflicting_declaration` at the second entry): its one payload block cannot say which listing a
+field is for. A per-row event over an `affects:` entry's rows is not in this cut.
+
+**Format consequences.** A new key shape under `emits:` and a new value source, both in source
+format `ess/25`. The compiled set subject carries the per-row events as `events` (each the event
+and, where written, `when_state`), and the payload values `changed_field` and `changed_state`; a
+model using neither keeps its IR bytes and digest. No conformance step and no suite major is new:
+a suite claiming one event more than once after one command is `/44` (or `/45`) by the existing
+rule.
+
+**Conformance.** The `instances:` scenario arranges its three changed rows so that, where the
+arranging commands reach them, two rest in a state the filter admits and one in a state the outcome
+changes from and the filter leaves out. With several filtered per-row events each row rests where it
+meets the most of those wants still open across them, so two filters admitting no state in common
+are each witnessed on a changed row they publish for and one they do not. After the command it claims
+each per-row event once for each changed row its filter admits, with every value the scenario
+determines: the row's identity as the instance captured for it, its fields as arranged, its state
+before the move. Each arranged row is a further instance, so its fields carry their own values as far
+as their type and the filter allow. An `Optional` field the arrangement left absent (cleared) is
+claimed absent, left out or `null`. A target omitting one of those rows fails a claim
+(`ESS-CF-EVENT`). A target reading another row's values, or a value the outcome wrote, fails
+`ESS-CF-PAYLOAD`. The zero-match call claims the event not at all (`expect_no_event`). Then, where
+the search finds an input selecting none of the rows written so far, the scenario arranges, under
+it, the rows the filter selects and no event is due for — one resting in a state the outcome changes
+from and every state filter leaves out, and under a `moves:` one resting outside the `from` states —
+sends the command, requires `{count: changed}` equal to the rows it changed and `expect_no_event`
+for the per-row event, and reads the rows back. Each filtered event that segment did not witness on
+a row it leaves out gets one more segment of its own, under a further such input: one changed row
+its filter leaves out, the other per-row events claimed for it where theirs publish, and
+`expect_no_event` for this one. A target publishing an event for a row its filter leaves out fails
+there. Where no such row is reached the segment is left out, as the zero-match call is. Where no
+changed row can rest in a state a filter admits, the scenario is refused by name (`NoWitness`).
+
+**Targets.** The interpreter publishes the events. Entity Runtime refuses the outcome with
+`SetEffectUnsupported`, and Rust, Go, Web and Clap synthesis as `MissingRepresentation`, as for
+every set effect. The generated explorers leave the outcome out by name: their reference model
+expects each listed event once. `ess-diff`'s `outcome-set-effect-changed` line for `instances:`
+names each per-row event and its state filter.
+
 ## Targets
 
 Entity Runtime refuses both with `SetEffectUnsupported`: an entity-core operation acts on the one
@@ -300,6 +399,13 @@ generated seam already takes only the input, so nothing in it confines the behav
 (`docs/design/set-effect-identity-filters.md`, D4). OpenAPI and AsyncAPI change nothing on the wire; the generated
 documentation says which rows a branch changes. `ess-diff/9` adds `outcome-set-effect-changed`,
 carrying one line per construct on each side.
+
+The generated explorers' reference model (Go `Explore`, TypeScript `explore`) applies a `moves:` or
+`updates:` under `instances:` as above: the selection read before any row changes, a selected row
+outside the `from` states skipped, `sets:` on every changed row (beyond10x/ess#538,
+[the model runner](mutation-audit-and-model-runner.md), "Selected rows"). A bulk `deletes:` is left
+out of exploration by name, and so is an outcome carrying an `affects:` entry, which the model does
+not apply; modelling `affects:` is later work.
 
 ## Out of scope
 

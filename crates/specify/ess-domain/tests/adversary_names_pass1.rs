@@ -38,11 +38,11 @@ const RELATION: &str =
 #[test]
 fn a_relation_the_parser_reads_with_underscore_names_is_one_the_published_schema_admits() {
     let parsed: RelationSpec =
-        serde_yaml::from_str(RELATION).expect("the parser admits `_clients` and `_parent`");
+        ess_yaml::from_str(RELATION).expect("the parser admits `_clients` and `_parent`");
     assert_eq!(parsed.name, "_clients");
     assert_eq!(parsed.via, "_parent");
 
-    let document: Value = serde_yaml::from_str(RELATION).unwrap();
+    let document: Value = ess_yaml::from_str(RELATION).unwrap();
     let validator = validator("RelationSpec");
     let errors = validator
         .iter_errors(&document)

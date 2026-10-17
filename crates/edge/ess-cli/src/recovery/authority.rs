@@ -72,8 +72,8 @@ pub fn read_kubeconfig(host: &dyn Host, path: &Path) -> Admitted<KubeconfigFacts
     if text.len() as u64 > RECORD_LIMIT {
         return Err(mismatch("the kubeconfig is past the admitted bound"));
     }
-    let document: serde_yaml::Value = serde_yaml::from_str(&text)
-        .map_err(|_| mismatch("the kubeconfig is not a YAML document"))?;
+    let document: ess_yaml::Value =
+        ess_yaml::from_str(&text).map_err(|_| mismatch("the kubeconfig is not a YAML document"))?;
 
     for unsupported in [
         "exec",
@@ -94,7 +94,7 @@ pub fn read_kubeconfig(host: &dyn Host, path: &Path) -> Admitted<KubeconfigFacts
 
     let clusters = document
         .get("clusters")
-        .and_then(serde_yaml::Value::as_sequence)
+        .and_then(ess_yaml::Value::as_sequence)
         .ok_or_else(|| mismatch("the kubeconfig defines no cluster"))?;
     if clusters.len() != 1 {
         return Err(mismatch(
@@ -106,23 +106,23 @@ pub fn read_kubeconfig(host: &dyn Host, path: &Path) -> Admitted<KubeconfigFacts
         .ok_or_else(|| mismatch("a kubeconfig cluster entry has no cluster"))?;
     let server = cluster
         .get("server")
-        .and_then(serde_yaml::Value::as_str)
+        .and_then(ess_yaml::Value::as_str)
         .ok_or_else(|| mismatch("a kubeconfig cluster names no server"))?;
     let endpoint = canonical_endpoint(server)?;
     let authority = cluster
         .get("certificate-authority-data")
-        .and_then(serde_yaml::Value::as_str)
+        .and_then(ess_yaml::Value::as_str)
         .ok_or_else(|| mismatch("a kubeconfig cluster embeds no certificate authority"))?;
 
     let contexts = document
         .get("contexts")
-        .and_then(serde_yaml::Value::as_sequence)
+        .and_then(ess_yaml::Value::as_sequence)
         .ok_or_else(|| mismatch("the kubeconfig defines no context"))?
         .iter()
         .map(|entry| {
             entry
                 .get("name")
-                .and_then(serde_yaml::Value::as_str)
+                .and_then(ess_yaml::Value::as_str)
                 .map(str::to_owned)
                 .ok_or_else(|| mismatch("a kubeconfig context has no name"))
         })
@@ -135,12 +135,12 @@ pub fn read_kubeconfig(host: &dyn Host, path: &Path) -> Admitted<KubeconfigFacts
     })
 }
 
-fn contains_key(value: &serde_yaml::Value, key: &str) -> bool {
+fn contains_key(value: &ess_yaml::Value, key: &str) -> bool {
     match value {
-        serde_yaml::Value::Mapping(mapping) => mapping
+        ess_yaml::Value::Mapping(mapping) => mapping
             .iter()
             .any(|(name, nested)| name.as_str() == Some(key) || contains_key(nested, key)),
-        serde_yaml::Value::Sequence(items) => items.iter().any(|item| contains_key(item, key)),
+        ess_yaml::Value::Sequence(items) => items.iter().any(|item| contains_key(item, key)),
         _ => false,
     }
 }

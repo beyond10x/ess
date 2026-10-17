@@ -110,10 +110,33 @@ differently: a failure policy that drops one and escalates the other, or a bound
 names only one of them `final`, since the binding then publishes or retries differently whichever
 branch answers.
 
+A `precedence-swap` whose overlap is already taken is equivalent as well, unless a scenario still
+kills it: where every input both branches select also selects a branch answered before both, the
+two never answer the same request. With `done-paused-default` (`pause == true` and `code` absent or
+`""`) declared before `done-paused` (`pause == true`) and `done-default` (`code` absent or `""`),
+swapping the last two decides nothing. Only branches selected by their input guard alone are
+counted, decided as a dead guard is; a branch the held state, a stored or related row, a provider
+or a replay also decides is not, and a swap whose overlap is partly left keeps its scoring. Two
+branches acting on different stored rows, or one on a stored row and the other on none, keep their
+scoring too: on a command that reads a row set, their order decides which row a request neither
+of them takes reads. The entry names those branches as `overlap_taken_by`, apart from `unsatisfiable_guard` and
+`identical_answer`.
+
 A mutant on an outcome whose scenario the baseline suite already refuses, such as a branch no
 arrangement reaches (`ESS-SYNTH-003`), cannot be killed by either suite. It is *unwitnessed* as
 well, and its entry names the baseline refusal as `baseline_refusals`. So is a `from-drop` or
 `transition-to` mutant on a transition that only such outcomes perform.
+
+A mutant whose synthesized suite is the baseline's, scenario for scenario and step for step (the
+digests aside), is *unwitnessed* too, where it would otherwise have survived or been inconclusive:
+run on the target, that suite asks exactly what the baseline asked, so no scenario of it could kill
+the mutant. Turning `expiry < now` into `expiry <= now` is one: the two differ only where the
+stored expiry is the target's `now`, and synthesis keeps its witnesses a second from that
+boundary. Its entry carries `unchanged_suite: true` and its text line ends `— ESS-MUTATE-004: the
+suite does not change`. A killed or equivalent mutant keeps its verdict, and a run with authored
+`--scenarios` never makes one, since those run on the mutant's own interpreter. So a survivor
+always has a suite that differs from the baseline's and still passes
+(beyond10x/ess#586).
 
 The baseline is red only when a scenario failed or ended `error`. A scenario the target reports
 `unsupported`, or the runner `skipped`, is listed as not scored, and every mutant is scored on the
@@ -124,7 +147,8 @@ scenario might have killed it. An excluded scenario the mutant holds exactly as 
 asks the target what the baseline asked, so it cannot, and the mutant can still survive. A
 scenario new to a mutant's suite is scored. A baseline that executed nothing scores nothing.
 
-**A survivor is first answered in the specification.** Declare what makes the rule observable,
+**A survivor, or a mutant whose suite does not change, is first answered in the specification.**
+Declare what makes the rule observable,
 such as a view projecting the field a `sets` entry writes, or file a synthesis gap. An authored
 scenario put in a mutant's suite could not answer it: its expectations are its author's, not the
 model's, so against the unchanged target it runs identically in every mutant's suite.

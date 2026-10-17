@@ -126,7 +126,25 @@ impl Emit<'_> {
 /// If what was emitted is not exactly what the plan marks generated — a defect in this crate, and
 /// the one lie the plan document must never be allowed to tell.
 pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Vec<Artifact>, crate::TargetFailure> {
-    Ok(emitted(ir, plan, false)?.1)
+    workspace_bound(ir, plan, None)
+}
+
+/// [`workspace`], its server serving an `ess-http/1` binding's routes where one is given
+/// ([`crate::synthesize_bound`]). Without one it is [`workspace`], byte for byte.
+///
+/// # Errors
+///
+/// As [`workspace`].
+///
+/// # Panics
+///
+/// As [`workspace`].
+pub fn workspace_bound(
+    ir: &EssIr,
+    plan: &SynthesisPlan,
+    http: Option<&ess_gen::http::Binding>,
+) -> Result<Vec<Artifact>, crate::TargetFailure> {
+    Ok(emitted(ir, plan, false, http)?.1)
 }
 
 /// The same code as [`workspace`], laid out as one crate at the generated root
@@ -143,7 +161,24 @@ pub fn single_crate(
     ir: &EssIr,
     plan: &SynthesisPlan,
 ) -> Result<Vec<Artifact>, crate::TargetFailure> {
-    let (layout, artifacts) = emitted(ir, plan, true)?;
+    single_crate_bound(ir, plan, None)
+}
+
+/// [`single_crate`], its server serving an `ess-http/1` binding's routes where one is given.
+///
+/// # Errors
+///
+/// As [`workspace`].
+///
+/// # Panics
+///
+/// As [`single_crate`].
+pub fn single_crate_bound(
+    ir: &EssIr,
+    plan: &SynthesisPlan,
+    http: Option<&ess_gen::http::Binding>,
+) -> Result<Vec<Artifact>, crate::TargetFailure> {
+    let (layout, artifacts) = emitted(ir, plan, true, http)?;
     Ok(single::relayout(ir, plan, &layout, artifacts))
 }
 
@@ -152,6 +187,7 @@ fn emitted(
     ir: &EssIr,
     plan: &SynthesisPlan,
     single_crate: bool,
+    http: Option<&ess_gen::http::Binding>,
 ) -> Result<(Layout, Vec<Artifact>), crate::TargetFailure> {
     crate::failure::binary64(ir, plan, crate::Target::Rust)?;
     crate::failure::input_absent(ir, plan, crate::Target::Rust)?;
@@ -223,7 +259,7 @@ fn emitted(
         &mut covered,
         &mut stubbed,
     ));
-    artifacts.extend(http::server_crate(ir, plan, &layout, &mut covered));
+    artifacts.extend(http::server_crate(ir, plan, &layout, http, &mut covered));
 
     let planned: BTreeSet<Capability> = plan.generated().cloned().collect();
     assert_eq!(

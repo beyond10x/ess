@@ -48,13 +48,21 @@ command that no sequence reached, and on the outcomes of an excluded command. Th
 subset: `when`, `otherwise`, `wrong_state`, `unknown_instance`, `existing_instance` and external
 conditions, and the conditions read from the stored row — `when_subject_state`,
 `when_state_changes` and `when_subject` (a stored field or a predicate over the stored fields);
-`creates` with an observed identity and `moves`/`updates` of a supplied subject; integer, boolean,
-string and UUID inputs, their newtypes, enums and structs of them. Anything else is excluded with
+`creates` with an observed identity, `moves`/`updates`/`preserves` of a supplied subject, and
+`moves`/`updates` of the rows an `instances: {where: …}` filter selects, applied with their `sets:`
+to every selected row; integer, decimal, boolean, string and UUID inputs (a decimal is drawn as an
+integer is), their newtypes, enums and structs of them. Anything else is excluded with
 the reason in `excluded` — `when_related`, which reads another entity's row, among them — and
-accepting that is an explicit `allowExcluded`. Where two guards both hold — which the model admits
-over an infinite domain — the draw is reported in `ambiguous` and redrawn rather than decided; a
-view filter, invariant or stored-row guard over a field no command set, or one the row holds as
-null, is reported in `undetermined` and the command stays in exploration. Neither fails.
+accepting that is an explicit `allowExcluded`. A command the target answers `unsupported`
+(`ErrUnsupported`) is left out only in the state of the row that step addressed, and drawn in every
+other: each such (command, state) is listed in `refused` with the target's reason and the number of
+steps not sent, and an outcome only those steps would have taken is in `excludedOutcomes`; the
+assertion fails on a refusal unless `allowExcluded` accepts it. A command refused in every state it
+was drawn in is in `excluded`, as is a view the target refuses. Where two guards both hold — which
+the model admits over an infinite domain — the draw is reported in `ambiguous` and redrawn rather
+than decided; a view filter, invariant or stored-row guard over a field no command set, or one the
+row holds as null, is reported in `undetermined` and the command stays in exploration. Neither
+fails.
 
 A text input is drawn from `""`, `"a"`, `"b"`, the text literals of the command's guards and its
 own `example:`; for every `.count` a guard compares it with, say `secret.count < 12`, it is also

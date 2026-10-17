@@ -56,7 +56,9 @@ func TestExploreConcurrent(t *testing.T) {
 			options := one.Options
 			options.Path = os.Getenv("ESS_CONCURRENT_SPEC")
 			options.Out = filepath.Join(out, one.Name)
-			newTarget := func() Target { return newExploreFixtureTarget(one.Mutant, "low") }
+			// `high`: a score from 50 to 60 takes the branch declared first, as `ess check-history`
+			// decides it once a history records the score (`ess-history/3`).
+			newTarget := func() Target { return newExploreFixtureTarget(one.Mutant, "high") }
 			if one.Target == "billing" {
 				newTarget = func() Target { return newExploreBillingTarget(one.Mutant) }
 			}

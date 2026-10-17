@@ -1313,7 +1313,7 @@ fn bearer(kubeconfig: &Path) -> Admitted<String> {
             format!("the protected kubeconfig is unreadable: {error}"),
         )
     })?;
-    let document: serde_yaml::Value = serde_yaml::from_str(&text).map_err(|_| {
+    let document: ess_yaml::Value = ess_yaml::from_str(&text).map_err(|_| {
         Refusal::new(
             RefusalCode::PrincipalMismatch,
             "the protected kubeconfig is not a YAML document",
@@ -1321,7 +1321,7 @@ fn bearer(kubeconfig: &Path) -> Admitted<String> {
     })?;
     let user = document
         .get("users")
-        .and_then(serde_yaml::Value::as_sequence)
+        .and_then(ess_yaml::Value::as_sequence)
         .and_then(|users| users.first())
         .and_then(|user| user.get("user"))
         .ok_or_else(|| {
@@ -1330,12 +1330,12 @@ fn bearer(kubeconfig: &Path) -> Admitted<String> {
                 "the protected kubeconfig defines no executing user",
             )
         })?;
-    if let Some(token) = user.get("token").and_then(serde_yaml::Value::as_str) {
+    if let Some(token) = user.get("token").and_then(ess_yaml::Value::as_str) {
         return Ok(token.to_owned());
     }
     let path = user
         .get("token-file")
-        .and_then(serde_yaml::Value::as_str)
+        .and_then(ess_yaml::Value::as_str)
         .ok_or_else(|| {
             Refusal::new(
                 RefusalCode::PrincipalMismatch,
@@ -1360,7 +1360,7 @@ fn trust_anchor(kubeconfig: &Path) -> Admitted<Vec<u8>> {
             format!("the protected kubeconfig is unreadable: {error}"),
         )
     })?;
-    let document: serde_yaml::Value = serde_yaml::from_str(&text).map_err(|_| {
+    let document: ess_yaml::Value = ess_yaml::from_str(&text).map_err(|_| {
         Refusal::new(
             RefusalCode::TargetMismatch,
             "the protected kubeconfig is not a YAML document",
@@ -1368,11 +1368,11 @@ fn trust_anchor(kubeconfig: &Path) -> Admitted<Vec<u8>> {
     })?;
     let encoded = document
         .get("clusters")
-        .and_then(serde_yaml::Value::as_sequence)
+        .and_then(ess_yaml::Value::as_sequence)
         .and_then(|clusters| clusters.first())
         .and_then(|cluster| cluster.get("cluster"))
         .and_then(|cluster| cluster.get("certificate-authority-data"))
-        .and_then(serde_yaml::Value::as_str)
+        .and_then(ess_yaml::Value::as_str)
         .ok_or_else(|| {
             Refusal::new(
                 RefusalCode::TargetMismatch,

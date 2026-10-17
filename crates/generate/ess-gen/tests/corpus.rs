@@ -157,3 +157,105 @@ fn the_gatepass_documentation_is_byte_for_byte_what_is_pinned() {
 fn the_oracle_fixture_documentation_is_byte_for_byte_what_is_pinned() {
     assert_pinned("oracle-fixture");
 }
+
+/// No projection carries a `serde_json` number wrapper, and none depends on `arbitrary_precision`
+/// (beyond10x/ess#579).
+///
+/// With that feature unified into a build, a `serde_json::Number` handed to a serializer that is not
+/// `serde_json`'s own is written as a one-key map under `$serde_json::private::Number`. Whether the
+/// feature is on is a property of the adopter's dependency graph, not of the specification, so every
+/// projection of every example is pinned by digest here, and the pin is written only from a build
+/// with the feature off: a build with it on that matches the pin wrote the same bytes.
+mod number_wrapper {
+    use super::{compiled, root};
+    use sha2::{Digest, Sha256};
+    use std::fmt::Write as _;
+    use std::path::{Path, PathBuf};
+
+    const NUMBER_WRAPPER: &str = "$serde_json::private::Number";
+    const WRITE: &str = "ESS_WRITE_PROJECTION_DIGESTS";
+
+    fn pin() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/corpus/projection-digests.txt")
+    }
+
+    /// Every example directory that holds a system, as a path under `examples/`.
+    fn examples() -> Vec<String> {
+        let base = root().join("examples");
+        let mut found = Vec::new();
+        let mut pending = vec![base.clone()];
+        while let Some(next) = pending.pop() {
+            if next.join("system.yaml").is_file() {
+                let relative = next.strip_prefix(&base).expect("inside examples");
+                found.push(relative.to_string_lossy().replace('\\', "/"));
+                continue;
+            }
+            for entry in std::fs::read_dir(&next).expect("examples is readable") {
+                let path = entry.expect("an entry").path();
+                if path.is_dir() {
+                    pending.push(path);
+                }
+            }
+        }
+        found.sort();
+        found
+    }
+
+    #[test]
+    fn no_projection_carries_a_number_wrapper() {
+        let examples = examples();
+        assert!(examples.len() >= 3, "the examples were found: {examples:?}");
+        let mut table = String::new();
+        for example in &examples {
+            let ir = compiled(&root().join("examples").join(example));
+            let mut documents: Vec<(String, String)> = ess_gen::generate_all(&ir)
+                .expect("the projections claim no path twice")
+                .into_iter()
+                .map(|(path, artifact)| (path, artifact.contents))
+                .collect();
+            for component in ir.components().values() {
+                documents.push((
+                    format!("served/{}.openapi.json", component.name),
+                    ess_gen::openapi::json(&ir, component),
+                ));
+            }
+            for (path, contents) in documents {
+                assert!(
+                    !contents.contains(NUMBER_WRAPPER),
+                    "`{path}` of `{example}` carries a serde_json number wrapper"
+                );
+                let digest = Sha256::digest(contents.as_bytes());
+                let hex = digest.iter().fold(String::new(), |mut out, byte| {
+                    let _ = write!(out, "{byte:02x}");
+                    out
+                });
+                let _ = writeln!(table, "{example} {path} {hex}");
+            }
+        }
+
+        let arbitrary_precision = ess_primitives::json::arbitrary_precision();
+        if std::env::var_os(WRITE).is_some() {
+            assert!(
+                !arbitrary_precision,
+                "the pin is the bytes of a build without `arbitrary_precision`: write it with \
+                 `{WRITE}=1 cargo test -p ess-gen --test corpus`"
+            );
+            std::fs::write(pin(), &table).expect("the pin is writable");
+            return;
+        }
+        let pinned = std::fs::read_to_string(pin()).unwrap_or_default();
+        assert!(
+            table == pinned,
+            "the projections of the examples are not the pinned bytes (arbitrary_precision \
+             {arbitrary_precision}). A change that is not about number semantics moves this pin \
+             too: rewrite it with `{WRITE}=1 cargo test -p ess-gen --test corpus` in the commit \
+             that changed the bytes. First difference: {:?}; {} lines generated, {} pinned",
+            table
+                .lines()
+                .zip(pinned.lines())
+                .find(|(generated, recorded)| generated != recorded),
+            table.lines().count(),
+            pinned.lines().count(),
+        );
+    }
+}

@@ -57,6 +57,50 @@ new check catches and no earlier check catches.
    ([Restarts](mutation-audit-and-model-runner.md#restarts-beyond10xess297)); concurrent
    exploration still has none.
 
+## What an `ess-history/3` operation records (beyond10x/ess#576)
+
+A concurrent history held a target to less than the sequential walk: an operation recorded its
+answer but not what produced it. `ess-history/3` records it. The format is unreleased, so the
+decisions below extend it; no format number is added.
+
+7. **The input as sent.** An operation records `input`, every input field by name as its client
+   sent it, and `check-history` steps it with exactly that input instead of asking whether some
+   candidate input explains the answer.
+8. **Every event with its payload.** `events` lists each event a `Returned` answer published, in
+   order, as `{event, payload}`. The branch the step takes must publish the same names in the same
+   order. Where the operation also records its input, each payload field the branch maps from
+   `input.<field>` or from a literal is held to the value the model computes for that input. That
+   is the set of fields the sequential walk compares. A value the model leaves to the
+   implementation (generated values, `else:` fallbacks, values read from stored rows) is not
+   compared, and neither is a field the mapping does not name. An absent optional value agrees with
+   an absent or `null` field; the walk's `null_when_absent` and `omitted_when_absent` distinction is
+   not drawn. One shape only: nothing outside this repository writes the format, so a names-only
+   `events` is not kept beside it.
+9. **The external branches a call arranged.** `arranged` lists the `external:` branches the client
+   asked the target to arrange through `ConfigureExternalOutcome` before sending the call. `[]`
+   records that it arranged none; an absent `arranged` records nothing. A target keeps an
+   arrangement for its command until the scenario ends. Clients run concurrently, so one client's
+   arrangement can also answer another client's call. For that reason `check-history` admits an
+   external branch (other than a `replays:` branch, which the retry rules govern) for an operation
+   that records `arranged` only where some operation of the same command recorded arranging that
+   branch and was invoked before this one returned. That includes the operation itself, and any
+   time at all for an operation that never answered. The ordinary branch stays admitted beside it,
+   because an arrangement may already have been used. A rule admitting an external branch only on
+   the operation that recorded the arrangement would report a correct target as a violation as
+   soon as an arrangement answered a later call. An operation without `arranged`, and so every
+   history without the field, keeps every eligible external branch open, as before.
+10. **One spelling for a number in `input` and in a payload.** It is the ECMAScript spelling of
+    the binary64 value (`JSON.stringify`, which Go's `encoding/json` matches): `100`, never `100.0`,
+    `1e2` or `100.00`; `1e+21`; `9.313225746154785e-10`; `0`, never `-0`. Any other spelling is
+    refused by name, and so is an integer that binary64 does not carry exactly. A history's other
+    integers already refuse a decimal point and an exponent, and this applies the same rule. The
+    writers write that spelling, so a history `ess` reads writes back byte for byte. The Go and
+    TypeScript explorers turn every number they record into its binary64 value first.
+11. **A key written twice is refused** in any object inside `input` or a payload, as a repeated
+    operation field is refused. serde would keep the last value and another reader the first.
+    Since the input decides which branch the step takes, the two readings could give different
+    verdicts.
+
 ## Prior art
 
 Web research, 2026-09-27. Versions and dates are read from the named page or registry on that

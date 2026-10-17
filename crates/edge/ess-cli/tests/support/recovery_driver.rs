@@ -297,7 +297,7 @@ fn cache_lane(job: &Job) -> Result<String, String> {
         serde_json::from_str(&bytes)
             .map_err(|error| format!("parsing {} as JSON: {error}", plan.display()))?
     } else {
-        serde_yaml::from_str(&bytes)
+        ess_yaml::from_str(&bytes)
             .map_err(|error| format!("parsing {} as YAML: {error}", plan.display()))?
     };
     desired

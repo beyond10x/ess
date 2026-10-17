@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 use std::sync::OnceLock;
 
-use serde_yaml::{Mapping, Value};
+use ess_yaml::{Mapping, Value};
 
 /// The parsed schema.
 pub(crate) struct Schema {
@@ -15,7 +15,7 @@ impl Schema {
     pub(crate) fn embedded() -> Self {
         static PARSED: OnceLock<Value> = OnceLock::new();
         let value = PARSED.get_or_init(|| {
-            serde_yaml::from_str(crate::SCHEMA).expect("the embedded schema is YAML")
+            ess_yaml::from_str(crate::SCHEMA).expect("the embedded schema is YAML")
         });
         Self { value }
     }
@@ -48,7 +48,7 @@ impl Schema {
 
     /// The built-in token table (`constructs.Tokens.builtins`).
     pub(crate) fn builtin_tokens(&self) -> crate::model::Tokens {
-        serde_yaml::from_value(self.value["constructs"]["Tokens"]["builtins"].clone())
+        ess_yaml::from_value(self.value["constructs"]["Tokens"]["builtins"].clone())
             .expect("the schema declares a built-in token table")
     }
 

@@ -263,6 +263,8 @@ fn set_source(set: &ess_compiler::ir::ResolvedPayloadField) -> Option<String> {
         | ess_compiler::ir::ResolvedPayloadValue::RelatedHead { .. }
         | ess_compiler::ir::ResolvedPayloadValue::CallerAttribute { .. }
         | ess_compiler::ir::ResolvedPayloadValue::PayloadRead { .. }
+        | ess_compiler::ir::ResolvedPayloadValue::ChangedField { .. }
+        | ess_compiler::ir::ResolvedPayloadValue::ChangedState { .. }
         | ess_compiler::ir::ResolvedPayloadValue::ChangedCount => None,
     }
 }

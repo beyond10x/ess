@@ -2008,7 +2008,7 @@ export interface Target {
   executeCommand(request: CommandRequest): Answer<CommandResult>;
 
   /**
-   * awaitOutcome reports a step the system takes itself (suite/50 and /51, ess/25 `system: true`,
+   * awaitOutcome reports a step the system takes itself (suite/52 and /53, ess/27 `system: true`,
    * beyond10x/ess#542): the outcome it reached on `request.instance` after the scenario's preceding
    * steps, with the input it issued the command with and what it published, or that nothing was
    * reached.
@@ -2372,6 +2372,40 @@ export interface ScanObservation {
   halted?: boolean | undefined;
 }
 
+/** NowHold is the instant the next command of a scenario is decided at (suite/50, beyond10x/ess#586). */
+export interface NowHold {
+  /** The moment to read as `now`, RFC 3339 at whole-second precision. */
+  instant: string;
+  correlation: string;
+}
+
+/**
+ * NowHolder is what a target offers so that a suite can fix its `now` for one command: `holdNow`
+ * decides the **next** command the scenario executes, and only that one, at the instant named.
+ * Optional, like Clock; a target without it is reported unsupported on the scenarios that need it,
+ * naming `hold_now`.
+ */
+export interface NowHolder {
+  holdNow(hold: NowHold): Answer<void>;
+}
+
+/** heldScenarioId reports whether `id` spells a held scenario, `<command>/outcome/<outcome>/held/<field>/<seconds>`. */
+function heldScenarioId(id: string): boolean {
+  const parts = id.split('/');
+  return (
+    parts.length === 6 &&
+    parts[1] === 'outcome' &&
+    parts[3] === 'held' &&
+    parts[4] !== '' &&
+    /^[+-]?[0-9]+$/.test(parts[5]!)
+  );
+}
+
+/** isNowHolder reports whether a target can hold its `now` for one command. */
+export function isNowHolder(target: Target): target is Target & NowHolder {
+  return method(target, 'holdNow');
+}
+
 /** InstantMark names the instant a scenario has reached. */
 export interface InstantMark {
   instant: string;
@@ -2625,11 +2659,13 @@ export interface Step {
   instant: string;
   /** A length of time in whole seconds. */
   elapsed: number;
+  /** A `hold_now` step's `now_offset` number (suite/50, beyond10x/ess#586). */
+  seconds?: number;
   /** How many rows a reader takes from an ordered view before it says stop. Never zero. */
   after: number;
   /**
    * A system-issued command's declared bound, `PT<seconds>S`, absent where it declares none
-   * (`await_outcome`, `expect_not_issued`, suite/50, beyond10x/ess#542).
+   * (`await_outcome`, `expect_not_issued`, suite/52, beyond10x/ess#542).
    */
   within?: string;
   /**
@@ -2792,7 +2828,7 @@ export async function runWith(
   }
   const version = suite.provenance.suite_version;
   if ((SUITE_MAJORS[version] ?? 0) >= 8 && config.version !== '2') {
-    throw new Error('suite/8 through /51 require explicit ESS_REPORT_FORMAT=2 before execution');
+    throw new Error('suite/8 through /53 require explicit ESS_REPORT_FORMAT=2 before execution');
   }
   if (
     (version === 'ess-conformance/5' ||
@@ -2905,7 +2941,10 @@ export async function runWith(
         subtest.skip('required target observation is unsupported');
       }
       if (thrown instanceof SkipSignal) {
-        if (config.version === '2') throw new Error(thrown.message);
+        // A held scenario the target cannot hold `now` for stays unsupported in the report but
+        // does not fail the run, as in the Rust runner's verdict (beyond10x/ess#586).
+        const optional = scenarioRun.holdUnsupported && heldScenarioId(id);
+        if (config.version === '2' && !optional) throw new Error(thrown.message);
         subtest.skip(thrown.message);
       }
     });
@@ -3345,7 +3384,7 @@ export class ScenarioRun {
   readonly instances: { [instance: string]: Node } = {};
   /**
    * The input the most recent `await_outcome` answer carried, undefined before one: what a
-   * `{kind: awaited}` value reads (suite/50, beyond10x/ess#542).
+   * `{kind: awaited}` value reads (suite/52, beyond10x/ess#542).
    */
   awaited: Record<string, Node> | undefined;
   readonly established: EntitySetupRequest[] = [];
@@ -3393,6 +3432,10 @@ export class ScenarioRun {
   viewSnapshots = new Map<string, Row[]>();
   /** The instant each `now_offset` of this scenario resolved to, by its seconds (suite/26). */
   readonly nowFixed = new Map<number, string>();
+  /** The instant a `hold_now` step fixed for the command after it, in whole seconds since the epoch, and the offset it named. */
+  held: { instant: number; seconds: number } | undefined = undefined;
+  /** Whether this scenario ended unsupported because the target cannot hold its `now` (beyond10x/ess#586). */
+  holdUnsupported = false;
   /** The token the last command returned, for a read_your_writes query. */
   consistency = '';
   /** A read-your-writes query suppressed because the preceding command returned no token. */
@@ -3684,8 +3727,12 @@ export class ScenarioRun {
    * and running them produces a second failure about the first one's cause.
    */
   async step(index: number, step: Step): Promise<boolean> {
-    this.fixNow(step);
+    const held = this.held;
+    this.held = undefined;
+    this.fixNow(step, held === undefined ? undefined : held.instant - held.seconds);
     switch (step.step) {
+      case 'hold_now':
+        return this.holdNow(index, step);
       case 'resolve_fixtures':
         return this.fail(index, 'fixture resolution must precede scenario activity');
       case 'expect_event_values': {
@@ -3917,7 +3964,7 @@ export class ScenarioRun {
     return true;
   }
 
-  // ---- a command the system issues itself (suite/50 and /51, beyond10x/ess#542) ----------------
+  // ---- a command the system issues itself (suite/52 and /53, beyond10x/ess#542) ----------------
   //
   // The same checks, in the same order, as ess_conformance's runner/await_outcome.rs:
   //
@@ -5236,6 +5283,33 @@ export class ScenarioRun {
     return this.target as Target & Clock;
   }
 
+  /** holdNow fixes the instant the next command is decided at, through the target's optional NowHolder. */
+  async holdNow(index: number, step: Step): Promise<boolean> {
+    const seconds = step.seconds ?? 0;
+    const spelled = this.nowFixed.get(seconds);
+    if (spelled === undefined) {
+      return this.fail(
+        index,
+        `now_offset ${seconds} names no instant the runner's wall clock can spell`,
+      );
+    }
+    if (!isNowHolder(this.target)) {
+      this.holdUnsupported = true;
+      this.unsupported(`step ${index}: the target cannot hold \`now\` (hold_now)`);
+    }
+    try {
+      await this.target.holdNow({ instant: spelled, correlation: this.correlation });
+    } catch (error) {
+      if (isUnsupported(error)) {
+        this.holdUnsupported = true;
+        this.unsupported(`step ${index}: the target cannot hold \`now\` (hold_now)`);
+      }
+      return this.targetError(index, `holding now: ${errorText(error)}`);
+    }
+    this.held = { instant: Date.parse(spelled) / 1000, seconds };
+    return true;
+  }
+
   /** markInstant names the instant a later claim measures from. */
   async markInstant(index: number, step: Step): Promise<boolean> {
     const clock = this.clock(index);
@@ -5616,8 +5690,18 @@ export class ScenarioRun {
    * against one reading of the wall clock rounded up to a whole second (suite/26,
    * beyond10x/ess#171) — the Rust runner's `Resolved::fix`, over the same places in a step.
    */
-  fixNow(step: Step): void {
+  fixNow(step: Step, base?: number): void {
     const pending: number[] = [];
+    // A held step names its offset too, so it and the values compared with it read one instant
+    // (beyond10x/ess#586); the command after it resolves against `base`, the reading that held
+    // instant was fixed from, in whole seconds.
+    if (
+      step.step === 'hold_now' &&
+      step.seconds !== undefined &&
+      !this.nowFixed.has(step.seconds)
+    ) {
+      pending.push(step.seconds);
+    }
     const visit = (values: { [field: string]: Value } | undefined): void => {
       for (const value of Object.values(values ?? {})) {
         const seconds = value.seconds ?? 0;
@@ -5665,7 +5749,7 @@ export class ScenarioRun {
     if (pending.length === 0) {
       return;
     }
-    const now = Math.ceil(wallNow() / 1000);
+    const now = base ?? Math.ceil(wallNow() / 1000);
     for (const seconds of pending) {
       const spelled = rfc3339Seconds(now + seconds);
       if (spelled !== undefined) {
@@ -6675,6 +6759,10 @@ export function scenarioIdentity(id: string, major = 21): void {
   const k = (value: string): boolean => kebabName.test(value);
   if (parts.length === 3 && segment(1) === 'outcome') {
     valid = q(segment(0)) && k(segment(2));
+  } else if (parts.length === 6 && segment(1) === 'outcome' && segment(3) === 'held') {
+    // The at-boundary scenario of a `now` guard, decided at a held instant (beyond10x/ess#586).
+    valid =
+      q(segment(0)) && k(segment(2)) && segment(4) !== '' && /^-?(0|[1-9][0-9]*)$/.test(segment(5));
   } else if (parts.length === 3 && segment(1) === 'authored') {
     valid = q(segment(0)) && k(segment(2));
   } else if (parts.length === 3 && segment(1) === 'binding') {
@@ -6816,18 +6904,24 @@ const SUITE_MAJORS: { [version: string]: number } = {
   // constrained-response pair included.
   'ess-conformance/48': 48,
   'ess-conformance/49': 49,
-  // Awaiting a command the system issues itself (beyond10x/ess#542): await_outcome,
-  // expect_not_issued and {kind: awaited}. Cumulative over every major below.
+  // A held `now` for one command (beyond10x/ess#586). Cumulative over every major below, the
+  // opened-response pair included.
   'ess-conformance/50': 50,
   'ess-conformance/51': 51,
+  // Awaiting a command the system issues itself (beyond10x/ess#542): await_outcome,
+  // expect_not_issued and {kind: awaited}. Cumulative over every major below, the held-now pair
+  // included.
+  'ess-conformance/52': 52,
+  'ess-conformance/53': 53,
 };
 
 /** The suite majors that carry a coverage inventory, each beside the ordinary major below it. */
 const COVERAGE_MAJORS = new Set([
   5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 33, 35, 37,
   // The coverage majors of the conditional measure, expression, seed-bearing and counted-claim
-  // pairs, and of the constrained-response, opened-response and await pairs.
-  39, 41, 43, 45, 47, 49, 51,
+  // pairs, of the constrained-response and opened-response pairs, and of the held-now and await
+  // pairs.
+  39, 41, 43, 45, 47, 49, 51, 53,
 ]);
 
 /** coverageMajor reports whether a suite major carries a coverage inventory. */
@@ -6866,7 +6960,7 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
   }
   const carriesCoverage = Object.prototype.hasOwnProperty.call(root, 'coverage');
   if (carriesCoverage !== coverageMajor(major)) {
-    throw new Error('coverage is required exactly for suite/5, suite/7, suite/9 and suite/11');
+    throw new Error('coverage is required exactly for odd suite majors from /5 through /53');
   }
   for (const key of ['system', 'specification_version', 'spec_digest', 'contract_digest']) {
     const held = text(provenance[key]);
@@ -6923,6 +7017,7 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
     }
     if (!Object.prototype.hasOwnProperty.call(refused, id)) {
       try {
+        admitHoldSteps(steps);
         admitEntitySetups(steps);
         admitFixtureSteps(steps);
         let called: string | undefined;
@@ -6973,9 +7068,9 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
         if (
           isObject(item) &&
           (item.code === 'ESS-SYNTH-023' || item.code === 'ESS-SYNTH-024') &&
-          major < 51
+          major < 53
         ) {
-          throw new Error('system-issued command refusals require suite/51');
+          throw new Error('system-issued command refusals require suite/53');
         }
       }
     }
@@ -7278,6 +7373,9 @@ function decodeStep(value: Node): Step {
     elapsed: decodeNumber(written.elapsed),
     after: decodeNumber(written.after),
   };
+  if (step.step === 'hold_now') {
+    step.seconds = decodeNumber(written.seconds);
+  }
   if (Object.prototype.hasOwnProperty.call(written, 'fields')) {
     step.fields = exactNumbers(written.fields) as { [field: string]: Node };
   }
@@ -7364,7 +7462,7 @@ function decodeStep(value: Node): Step {
   if (Object.prototype.hasOwnProperty.call(written, 'right')) {
     step.right = plainNumbers(written.right) as ReadingReference;
   }
-  // The record an await addresses and its declared bound (suite/50, beyond10x/ess#542).
+  // The record an await addresses and its declared bound (suite/52, beyond10x/ess#542).
   if (step.step === 'await_outcome' || step.step === 'expect_not_issued') {
     const awaited = decodeValues({ instance: written.instance })?.instance;
     if (awaited !== undefined) step.awaited = awaited;
@@ -7476,9 +7574,9 @@ export function admitValues(value: Node, major: number, accessors: boolean): voi
         text(written.field);
         break;
       case 'awaited':
-        // The input an awaited answer carried (suite/50, beyond10x/ess#542).
-        if (major < 50) {
-          throw new Error('awaiting a system-issued command requires suite/50 or /51');
+        // The input an awaited answer carried (suite/52, beyond10x/ess#542).
+        if (major < 52) {
+          throw new Error('awaiting a system-issued command requires suite/52 or /53');
         }
         closed(written, 'kind field', '');
         text(written.field);
@@ -7994,6 +8092,11 @@ export function admitPredicateConstraint(value: Node): void {
           // A string operator (beyond10x/ess#95): one scalar, kept verbatim, as Rust parses it.
           admitPredicateScalar(operand);
           break;
+        case 'trimmed':
+          // Decided at synthesis, in a command guard only (beyond10x/ess#532): no suite carries one.
+          throw new Error(
+            '`trimmed` text operators are decided at synthesis, and no suite format carries one',
+          );
         case 'in_ignore_case':
           // A JSON list of strings; a scalar is not a one-element list here.
           if (!Array.isArray(operand) || !operand.every((item) => typeof item === 'string')) {
@@ -8109,15 +8212,15 @@ export function admitStep(value: Node, major: number): void {
       required += ' outcome';
       break;
     case 'await_outcome':
-      if (major < 50) {
-        throw new Error('awaiting a system-issued command requires suite/50 or /51');
+      if (major < 52) {
+        throw new Error('awaiting a system-issued command requires suite/52 or /53');
       }
       required += ' command instance identity';
       optional = 'within input shape';
       break;
     case 'expect_not_issued':
-      if (major < 50) {
-        throw new Error('awaiting a system-issued command requires suite/50 or /51');
+      if (major < 52) {
+        throw new Error('awaiting a system-issued command requires suite/52 or /53');
       }
       required += ' command instance';
       optional = 'within unpublished';
@@ -8214,6 +8317,21 @@ export function admitStep(value: Node, major: number): void {
       required += ' view expectation';
       optional = 'params';
       break;
+    case 'hold_now': {
+      if (major < 50) {
+        throw new Error('hold_now steps require suite/50 or /51');
+      }
+      const seconds = value.seconds;
+      const digits = seconds instanceof JsonNumber ? seconds.raw : String(seconds);
+      if (!/^-?(0|[1-9][0-9]*)$/.test(digits)) {
+        throw new Error('hold_now seconds must be a whole number');
+      }
+      if (Math.abs(Number(digits)) > NOW_OFFSET_MAX_SECONDS) {
+        throw new Error(`hold_now exceeds ${NOW_OFFSET_MAX_SECONDS} seconds either way`);
+      }
+      required += ' seconds';
+      break;
+    }
     case 'mark_instant':
       if (major < 3) {
         throw new Error('step requires suite/3');
@@ -8257,7 +8375,7 @@ export function admitStep(value: Node, major: number): void {
   for (const key of Object.keys(value)) {
     const held = value[key];
     // The record an await addresses, the input naming it, the declared bound and what the window
-    // must not publish (suite/50, beyond10x/ess#542).
+    // must not publish (suite/52, beyond10x/ess#542).
     if (awaiting && ['instance', 'identity', 'within', 'unpublished'].includes(key)) {
       admitAwaitKey(key, held, major);
       continue;
@@ -8423,6 +8541,18 @@ function admitAwaitKey(key: string, held: Node, major: number): void {
 }
 
 /** Validate setup structure before any target callback. The adapter separately validates its model. */
+/** admitHoldSteps refuses a `hold_now` that does not stand immediately before an `execute_command`. */
+export function admitHoldSteps(steps: Node[]): void {
+  steps.forEach((step, index) => {
+    if ((step as { step?: Node }).step !== 'hold_now') {
+      return;
+    }
+    if ((steps[index + 1] as { step?: Node } | undefined)?.step !== 'execute_command') {
+      throw new Error('a hold_now step stands immediately before the execute_command it holds');
+    }
+  });
+}
+
 export function admitEntitySetups(steps: Node[]): void {
   let hasSetup = false;
   for (const raw of steps) {

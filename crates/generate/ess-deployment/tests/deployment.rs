@@ -15,6 +15,8 @@ use ess_deployment::{
 use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
 
+mod workload_kinds;
+
 fn fixture() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../../examples/oracle-fixture")
@@ -401,9 +403,9 @@ releases:
     runtime:
 {realization}
 ",
-        release = indent_yaml(&serde_yaml::to_string(&release).unwrap(), 6),
-        chart_release = indent_yaml(&serde_yaml::to_string(&chart_release).unwrap(), 6),
-        realization = indent_yaml(&serde_yaml::to_string(&realization).unwrap(), 6),
+        release = indent_yaml(&ess_yaml::to_string(&release).unwrap(), 6),
+        chart_release = indent_yaml(&ess_yaml::to_string(&chart_release).unwrap(), 6),
+        realization = indent_yaml(&ess_yaml::to_string(&realization).unwrap(), 6),
     ))
     .expect("catalog parses");
     let lock = resolve_stack(&stack, &catalog).expect("stack resolves");
@@ -579,9 +581,9 @@ fn assert_persisted_refused<T: serde::de::DeserializeOwned>(value: &serde_json::
         serde_json::from_value::<T>(value.clone()).is_err(),
         "JSON value admitted {json}"
     );
-    let yaml = serde_yaml::to_string(value).unwrap();
+    let yaml = ess_yaml::to_string(value).unwrap();
     assert!(
-        serde_yaml::from_str::<T>(&yaml).is_err(),
+        ess_yaml::from_str::<T>(&yaml).is_err(),
         "YAML admitted {json}"
     );
     assert!(
@@ -589,8 +591,7 @@ fn assert_persisted_refused<T: serde::de::DeserializeOwned>(value: &serde_json::
         "nested JSON admitted {json}"
     );
     assert!(
-        serde_yaml::from_str::<Vec<T>>(&format!("- {}", indent_yaml(&yaml, 2).trim_start()))
-            .is_err(),
+        ess_yaml::from_str::<Vec<T>>(&format!("- {}", indent_yaml(&yaml, 2).trim_start())).is_err(),
         "nested YAML admitted {json}"
     );
 }
@@ -846,7 +847,7 @@ fn persisted_documents_preserve_compiler_bytes_across_all_public_reader_routes()
         let json = serde_json::to_string_pretty(value).unwrap();
         let from_json: T = serde_json::from_str(&json).unwrap();
         assert_eq!(serde_json::to_string_pretty(&from_json).unwrap(), json);
-        let from_yaml: T = serde_yaml::from_str(&serde_yaml::to_string(value).unwrap()).unwrap();
+        let from_yaml: T = ess_yaml::from_str(&ess_yaml::to_string(value).unwrap()).unwrap();
         assert_eq!(serde_json::to_string_pretty(&from_yaml).unwrap(), json);
     }
     let bundle = persisted_bundle();
@@ -1055,7 +1056,7 @@ fn persisted_duplicate_keys_are_rejected_at_every_populated_nested_map() {
                 "JSON duplicate admitted at {pointer}"
             );
             assert!(
-                serde_yaml::from_str::<T>(&json).is_err(),
+                ess_yaml::from_str::<T>(&json).is_err(),
                 "YAML duplicate admitted at {pointer}"
             );
         }
@@ -1315,8 +1316,8 @@ fn declared_settings_derive_the_runtime_slots() {
             .collect::<Vec<_>>(),
         vec![(
             "carrier-token".to_owned(),
-            "CARRIER_TOKEN".to_owned(),
-            "carrier-token".to_owned()
+            Some("CARRIER_TOKEN".to_owned()),
+            Some("carrier-token".to_owned())
         )],
         "a secret setting becomes a secret slot whose key is the setting's own name"
     );
@@ -1436,7 +1437,7 @@ fn a_component_declaring_no_settings_keeps_its_hand_authored_slots() {
             .iter()
             .map(|slot| slot.environment.clone())
             .collect::<Vec<_>>(),
-        vec!["DATABASE_PASSWORD".to_owned()]
+        vec![Some("DATABASE_PASSWORD".to_owned())]
     );
 }
 

@@ -6,8 +6,8 @@ use std::fmt::Write as _;
 use super::native::{nullable, string_values};
 
 use super::{
-    children, finding, Field, Finding, IntegerWidth, Node, Plan, Realization, Refused, Report,
-    Shape, TargetConfiguration, UnionMode,
+    children, finding, path, Field, Finding, IntegerWidth, Node, Plan, Realization, Refused,
+    Report, Shape, TargetConfiguration, UnionMode,
 };
 
 const DERIVE: &str =
@@ -55,6 +55,11 @@ pub(super) fn emit(plan: &Plan, package: &str) -> Result<Realization, Refused> {
             }
         }
     }
+    if !plan.raw_json.is_empty() && !emitter.allocated.insert("EssRawJson".to_owned()) {
+        emitter
+            .errors
+            .insert(finding("/", "rust_helper_collision", "EssRawJson"));
+    }
     for (name, node) in &plan.definitions {
         emitter.account(node);
         emitter.named(&plan.names[name], node);
@@ -78,11 +83,15 @@ pub(super) fn emit(plan: &Plan, package: &str) -> Result<Realization, Refused> {
         output.push_str(include_str!("rust_binary64.rs.txt"));
         output.push('\n');
     }
+    if !plan.raw_json.is_empty() {
+        output.push_str(include_str!("rust_raw_json.rs.txt"));
+        output.push('\n');
+    }
     for declaration in emitter.output.values() {
         output.push_str(declaration);
         output.push('\n');
     }
-    let raw_feature = if plan.binary64.is_empty() {
+    let raw_feature = if plan.binary64.is_empty() && plan.raw_json.is_empty() {
         ""
     } else {
         ", features = [\"raw_value\"]"
@@ -203,6 +212,20 @@ impl Emitter<'_> {
             }
             _ => {
                 let ty = self.ty(node);
+                if let Some(constraint) = self
+                    .plan
+                    .text
+                    .get(&node.pointer)
+                    .filter(|_| ty == "::std::string::String")
+                {
+                    checked_text(&mut output, name, &node.pointer, constraint);
+                    self.report.obligations.retain(|item| {
+                        item.rule != "model_alphabet"
+                            || item.pointer != path(&node.pointer, "x-ess-alphabet")
+                    });
+                    self.output.insert(name.to_owned(), output);
+                    return;
+                }
                 output.push_str(DERIVE);
                 writeln!(
                     output,
@@ -234,6 +257,19 @@ impl Emitter<'_> {
         let raw_map = self.plan.reaches_binary64(additional);
         if raw_map && !fields.is_empty() {
             self.errors.insert(finding(&additional.pointer, "rust_binary64_open_record", "Binary64 additional values on a record with declared fields require raw-token object decoding, which this Rust target does not support"));
+            return;
+        }
+        // Raw JSON text decodes only straight from serde_json's own deserializer, never from the
+        // buffer `#[serde(flatten)]` collects a record with declared fields and extra values into.
+        let raw_map = raw_map || self.plan.reaches_raw_json(additional);
+        if !matches!(additional.shape, Shape::Never)
+            && !fields.is_empty()
+            && (raw_map
+                || fields
+                    .values()
+                    .any(|field| self.plan.reaches_raw_json(&field.value)))
+        {
+            self.errors.insert(finding(pointer, "rust_raw_json_open_record", "raw JSON text in a record with declared fields and additional values requires raw-token object decoding, which this Rust target does not support"));
             return;
         }
         out.push_str(if raw_map {
@@ -302,9 +338,9 @@ impl Emitter<'_> {
             writeln!(out, "    V{index}({ty}),").expect("String write");
         }
         out.push_str("}\n");
-        let raw = variants
-            .iter()
-            .any(|variant| self.plan.reaches_binary64(variant));
+        let raw = variants.iter().any(|variant| {
+            self.plan.reaches_binary64(variant) || self.plan.reaches_raw_json(variant)
+        });
         let value_type = if raw {
             "::std::boxed::Box<::serde_json::value::RawValue>"
         } else {
@@ -333,6 +369,9 @@ impl Emitter<'_> {
     fn ty(&mut self, node: &Node) -> String {
         if self.plan.binary64.contains(&node.pointer) {
             return "EssBinary64".to_owned();
+        }
+        if self.plan.raw_json.contains(&node.pointer) {
+            return "EssRawJson".to_owned();
         }
         match &node.shape {
             Shape::Json => {
@@ -510,4 +549,44 @@ fn accessors(
         output.push_str("        }\n    }\n");
     }
     output.push_str("}\n");
+}
+
+/// A string newtype `name` that its source schema at `pointer` constrains (beyond10x/ess#579):
+/// serialized as the plain string, decoded only when every character is in its alphabet and its
+/// length within its bounds, and refused otherwise with the pointer and the constraint it breaks.
+fn checked_text(
+    output: &mut String,
+    name: &str,
+    pointer: &str,
+    constraint: &super::TextConstraint,
+) {
+    let mut checks = Vec::new();
+    if let Some(alphabet) = &constraint.alphabet {
+        checks.push((
+            format!("!self.0.chars().all(|c| {alphabet:?}.contains(c))"),
+            format!("a value whose every character is one of `{alphabet}`"),
+        ));
+    }
+    let count = "<i64 as ::std::convert::TryFrom<usize>>::try_from(self.0.chars().count()).unwrap_or(i64::MAX)";
+    if let Some(minimum) = constraint.minimum {
+        checks.push((
+            format!("{count} < {minimum}"),
+            format!("a value at least {minimum} characters long"),
+        ));
+    }
+    if let Some(maximum) = constraint.maximum {
+        checks.push((
+            format!("{count} > {maximum}"),
+            format!("a value at most {maximum} characters long"),
+        ));
+    }
+    writeln!(output, "#[derive(Debug, Clone, PartialEq, ::serde::Serialize)]\n#[serde(transparent)]\npub struct {name}(pub ::std::string::String);\n\nimpl {name} {{\n    /// The first constraint the source schema declares that this value breaks (its alphabet,\n    /// then its length) as what a decoder expected instead, or `None` when it breaks none.\n    pub fn broken_constraint(&self) -> Option<&'static str> {{").expect("String write");
+    for (check, expected) in &checks {
+        writeln!(
+            output,
+            "        if {check} {{\n            return Some({expected:?});\n        }}"
+        )
+        .expect("String write");
+    }
+    writeln!(output, "        None\n    }}\n}}\n\nimpl<'de> ::serde::Deserialize<'de> for {name} {{\n    fn deserialize<D: ::serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {{\n        let value = Self(<::std::string::String as ::serde::Deserialize>::deserialize(deserializer)?);\n        match value.broken_constraint() {{\n            Some(expected) => Err(::serde::de::Error::custom(::std::format_args!(\"{}: expected {{expected}}\"))),\n            None => Ok(value),\n        }}\n    }}\n}}", pointer.escape_debug().to_string().replace('{', "{{").replace('}', "}}")).expect("String write");
 }

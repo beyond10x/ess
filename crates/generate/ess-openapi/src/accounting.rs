@@ -143,7 +143,7 @@ pub fn read_import(text: &str) -> Result<ImportReport, Vec<Refusal>> {
     // YAML's Value/Mapping visitor refuses duplicate keys recursively, including JSON input.
     // Do this before any typed BTreeMap or JSON Value could erase a repeated map entry.
     let value = strict_value(text)?;
-    if value.get("format").and_then(serde_yaml::Value::as_str) == Some(INTERFACE_FORMAT) {
+    if value.get("format").and_then(ess_yaml::Value::as_str) == Some(INTERFACE_FORMAT) {
         return Err(vec![Refusal::new(
             "/format",
             "legacy service-interface accounting unavailable; reimport the original OpenAPI source",
@@ -152,7 +152,7 @@ pub fn read_import(text: &str) -> Result<ImportReport, Vec<Refusal>> {
     if let Some(interface) = value.get("interface") {
         check_unit_schema_fields(interface, "/interface")?;
     }
-    let wire: WireImport = serde_yaml::from_value(value).map_err(|error| {
+    let wire: WireImport = ess_yaml::from_value(value).map_err(|error| {
         vec![Refusal::new(
             "/",
             format!("malformed import envelope: {error}"),
@@ -192,11 +192,11 @@ pub fn read_import(text: &str) -> Result<ImportReport, Vec<Refusal>> {
 // In the closed interface, only schema nodes have a string-valued `kind`; named schema maps
 // contain schema objects instead. Walk every nested map before typed decoding loses these fields.
 // Nonunit variants and other records retain their existing deny_unknown_fields admission.
-fn check_unit_schema_fields(value: &serde_yaml::Value, pointer: &str) -> Result<(), Vec<Refusal>> {
+fn check_unit_schema_fields(value: &ess_yaml::Value, pointer: &str) -> Result<(), Vec<Refusal>> {
     match value {
-        serde_yaml::Value::Mapping(mapping) => {
+        ess_yaml::Value::Mapping(mapping) => {
             let unit = matches!(
-                value.get("kind").and_then(serde_yaml::Value::as_str),
+                value.get("kind").and_then(ess_yaml::Value::as_str),
                 Some("integer" | "number" | "boolean")
             );
             for (key, child) in mapping {
@@ -211,7 +211,7 @@ fn check_unit_schema_fields(value: &serde_yaml::Value, pointer: &str) -> Result<
                 check_unit_schema_fields(child, &child_pointer)?;
             }
         }
-        serde_yaml::Value::Sequence(values) => {
+        ess_yaml::Value::Sequence(values) => {
             for (index, child) in values.iter().enumerate() {
                 check_unit_schema_fields(child, &format!("{pointer}/{index}"))?;
             }
@@ -253,16 +253,16 @@ pub fn project_import(report: &ImportReport) -> Result<String, Vec<Refusal>> {
     project(report.interface())
 }
 
-pub(crate) fn strict_value(text: &str) -> Result<serde_yaml::Value, Vec<Refusal>> {
-    let value: serde_yaml::Value = serde_yaml::from_str(text)
+pub(crate) fn strict_value(text: &str) -> Result<ess_yaml::Value, Vec<Refusal>> {
+    let value: ess_yaml::Value = ess_yaml::from_str(text)
         .map_err(|error| vec![Refusal::new("/", format!("malformed document: {error}"))])?;
     check_json_shape(&value, "")?;
     Ok(value)
 }
 
-fn check_json_shape(value: &serde_yaml::Value, pointer: &str) -> Result<(), Vec<Refusal>> {
+fn check_json_shape(value: &ess_yaml::Value, pointer: &str) -> Result<(), Vec<Refusal>> {
     match value {
-        serde_yaml::Value::Mapping(mapping) => {
+        ess_yaml::Value::Mapping(mapping) => {
             for (key, child) in mapping {
                 let key = key
                     .as_str()
@@ -270,12 +270,12 @@ fn check_json_shape(value: &serde_yaml::Value, pointer: &str) -> Result<(), Vec<
                 check_json_shape(child, &format!("{pointer}/{}", crate::pointer_escape(key)))?;
             }
         }
-        serde_yaml::Value::Sequence(values) => {
+        ess_yaml::Value::Sequence(values) => {
             for (index, child) in values.iter().enumerate() {
                 check_json_shape(child, &format!("{pointer}/{index}"))?;
             }
         }
-        serde_yaml::Value::Number(number)
+        ess_yaml::Value::Number(number)
             if number.as_f64().is_some_and(|value| !value.is_finite()) =>
         {
             return Err(vec![Refusal::new(
@@ -283,7 +283,7 @@ fn check_json_shape(value: &serde_yaml::Value, pointer: &str) -> Result<(), Vec<
                 "non-finite numbers are outside JSON",
             )]);
         }
-        serde_yaml::Value::Tagged(_) => {
+        ess_yaml::Value::Tagged(_) => {
             return Err(vec![Refusal::new(
                 pointer,
                 "YAML tags are outside the JSON document shape",

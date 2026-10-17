@@ -25,6 +25,11 @@
 //! `deny_unknown_fields`) do not, so a consumer reading through them must not use `reader` for a
 //! field subset.
 //!
+//! Under [`ROLE_COMPOSITION_FORMAT`] `roles` says that the component one imported service selects
+//! plays the component another selects (a contract role), and which local command stands where in
+//! that contract: `implements`, whose inputs are compared field by field, or `gates`, recorded and
+//! not executed. See [`ContractRole`].
+//!
 //! The persisted input formats are [`SUPPORTED_COMPOSITION_FORMATS`]. Generated clients consume
 //! the derived [`EssClientPlan`] rather than reinterpreting multiple service models independently.
 //! The Rust client constrains operation descriptors to that selection, but forwards request and
@@ -44,6 +49,9 @@ use ess_compiler::EssIr;
 use ess_domain::name::{QualifiedName, Version};
 
 mod conformance;
+mod roles;
+
+pub use roles::{ContractRole, ResolvedRole, RoleCommand, RoleParty, Stands};
 
 /// The composition document format [`CompositionSpec::new`] writes: services and references only.
 pub const COMPOSITION_FORMAT: &str = "ess-composition/1";
@@ -54,8 +62,11 @@ pub const CONFORMANCE_COMPOSITION_FORMAT: &str = "ess-composition/2";
 /// The composition format that also admits `reader: true` on a `conformances` entry.
 pub const READER_COMPOSITION_FORMAT: &str = "ess-composition/3";
 
+/// The composition format that also admits `roles`: contract roles between imported services.
+pub const ROLE_COMPOSITION_FORMAT: &str = "ess-composition/4";
+
 /// Every `ess-composition/N` major this build reads; any other marker is refused.
-pub const SUPPORTED_COMPOSITION_FORMATS: &[u32] = &[1, 2, 3];
+pub const SUPPORTED_COMPOSITION_FORMATS: &[u32] = &[1, 2, 3, 4];
 
 /// The language-neutral client-plan format emitted from composition IR.
 pub const CLIENT_PLAN_FORMAT: &str = "ess-client-plan/1";
@@ -330,14 +341,14 @@ impl TypeBinding {
     }
 }
 
-/// An `ess-composition/2` or `/3` assertion that a consumer's local type has an imported type's
+/// An assertion (from `ess-composition/2`) that a consumer's local type has an imported type's
 /// shape.
 ///
 /// Both ends must be referenceable in their selected components. The shapes are compared field by
 /// field; a local value may be optional where the imported one is required, and nothing else may
 /// differ. A difference is refused as [`CompositionCode::TypeConformanceDrift`].
 ///
-/// A reader assertion (`reader: true`, `ess-composition/3` only) also admits the widening a
+/// A reader assertion (`reader: true`, from `ess-composition/3`) also admits the widening a
 /// consumer that only reads the imported type may do; see [`TypeConformance::for_reader`].
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
@@ -427,18 +438,97 @@ impl TypeConformance {
 }
 
 /// The human-authored persisted composition input.
+///
+/// Read through `RawCompositionSpec`, which rejects every unknown field, and then refuses
+/// `roles` under any marker but [`ROLE_COMPOSITION_FORMAT`] as an unknown field too: an earlier
+/// document carrying it reads exactly as it did before `/4` existed.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(try_from = "RawCompositionSpec")]
 pub struct CompositionSpec {
     format: String,
     composition: ServiceKey,
     services: Vec<ServiceImportSpec>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     references: Vec<CompositionRef>,
-    /// Present only from `ess-composition/2`; a `/1` document carrying the key, even empty, is
-    /// refused by [`compile`], as is a `/2` entry carrying `reader`.
+    /// Present only from `ess-composition/2`; a `/1` document carrying the key, even empty or
+    /// `null`, is refused by [`compile`], as is a `/2` entry carrying `reader`. From `/2` an
+    /// authored `null` reads as the absent key.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     conformances: Option<Vec<TypeConformance>>,
+    /// Present only under `ess-composition/4`; any other document carrying the key, even empty
+    /// or `null`, does not read. Under `/4` an authored `null` reads as the absent key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    roles: Option<Vec<ContractRole>>,
+}
+
+/// The closed shape every composition marker reads through, before `roles` is held to `/4`.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawCompositionSpec {
+    format: String,
+    composition: ServiceKey,
+    services: Vec<ServiceImportSpec>,
+    #[serde(default)]
+    references: Vec<CompositionRef>,
+    /// `None` when the key is absent, `Some(ConformancesKey(None))` for an authored `null`: a `/1`
+    /// document carrying the key is refused by [`compile`] whatever its value.
+    #[serde(default, deserialize_with = "present")]
+    conformances: Option<ConformancesKey>,
+    /// `None` when the key is absent, `Some(RolesKey(None))` for an authored `null`: an earlier
+    /// document carrying the key is refused whatever its value, and `/4` reads `null` as no roles.
+    #[serde(default, deserialize_with = "present")]
+    roles: Option<RolesKey>,
+}
+
+/// An authored `conformances:` value, `null` included; kept apart from absence by
+/// `Option<ConformancesKey>`.
+#[derive(serde::Deserialize)]
+#[serde(transparent)]
+struct ConformancesKey(Option<Vec<TypeConformance>>);
+
+/// An authored `roles:` value, `null` included; kept apart from absence by `Option<RolesKey>`.
+#[derive(serde::Deserialize)]
+#[serde(transparent)]
+struct RolesKey(Option<Vec<ContractRole>>);
+
+/// `roles` in a document whose marker is not [`ROLE_COMPOSITION_FORMAT`].
+#[derive(Debug)]
+struct RolesBeforeFour(String);
+
+impl fmt::Display for RolesBeforeFour {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "unknown field `roles`, expected one of `format`, `composition`, `services`, \
+             `references`, `conformances`: `roles` is an {ROLE_COMPOSITION_FORMAT} construct, \
+             and this document is {:?}",
+            self.0
+        )
+    }
+}
+
+impl TryFrom<RawCompositionSpec> for CompositionSpec {
+    type Error = RolesBeforeFour;
+
+    fn try_from(raw: RawCompositionSpec) -> Result<Self, Self::Error> {
+        if raw.roles.is_some() && raw.format != ROLE_COMPOSITION_FORMAT {
+            return Err(RolesBeforeFour(raw.format));
+        }
+        // From `/2` an authored `null` is the absent key. `/1` admits the key under no value,
+        // so its `null` is held as `[]` and refused by `compile` exactly as `[]` is.
+        let conformances = match raw.conformances {
+            Some(ConformancesKey(None)) if raw.format == COMPOSITION_FORMAT => Some(Vec::new()),
+            key => key.and_then(|ConformancesKey(conformances)| conformances),
+        };
+        Ok(Self {
+            format: raw.format,
+            composition: raw.composition,
+            services: raw.services,
+            references: raw.references,
+            conformances,
+            roles: raw.roles.and_then(|RolesKey(roles)| roles),
+        })
+    }
 }
 
 impl CompositionSpec {
@@ -454,6 +544,7 @@ impl CompositionSpec {
             services,
             references,
             conformances: None,
+            roles: None,
         }
     }
 
@@ -471,6 +562,7 @@ impl CompositionSpec {
             services,
             references,
             conformances: (!conformances.is_empty()).then_some(conformances),
+            roles: None,
         }
     }
 
@@ -488,14 +580,30 @@ impl CompositionSpec {
         }
     }
 
+    /// Creates an `ess-composition/4` input, which may also assert contract roles
+    /// ([`ContractRole`]). Semantic validation happens in [`compile`].
+    pub fn with_roles(
+        composition: ServiceKey,
+        services: Vec<ServiceImportSpec>,
+        references: Vec<CompositionRef>,
+        conformances: Vec<TypeConformance>,
+        roles: Vec<ContractRole>,
+    ) -> Self {
+        Self {
+            format: ROLE_COMPOSITION_FORMAT.to_owned(),
+            roles: (!roles.is_empty()).then_some(roles),
+            ..Self::with_conformances(composition, services, references, conformances)
+        }
+    }
+
     /// Reads a JSON composition and rejects every unknown field.
     pub fn from_json(text: &str) -> Result<Self, serde_json::Error> {
         serde_json::from_str(text)
     }
 
     /// Reads a YAML composition and rejects every unknown field.
-    pub fn from_yaml(text: &str) -> Result<Self, serde_yaml::Error> {
-        serde_yaml::from_str(text)
+    pub fn from_yaml(text: &str) -> Result<Self, ess_yaml::Error> {
+        ess_yaml::from_str(text)
     }
 
     /// The format marker found in the input.
@@ -521,6 +629,11 @@ impl CompositionSpec {
     /// Type conformance assertions, before resolution. Empty when the key is absent.
     pub fn conformances(&self) -> &[TypeConformance] {
         self.conformances.as_deref().unwrap_or_default()
+    }
+
+    /// Contract roles, before resolution, in document order. Empty when the key is absent.
+    pub fn roles(&self) -> &[ContractRole] {
+        self.roles.as_deref().unwrap_or_default()
     }
 
     /// Canonical JSON with a trailing newline.
@@ -576,6 +689,15 @@ pub enum CompositionCode {
     /// A local type asserted to conform to an imported type differs from it in a field's name,
     /// presence or type (from `ess-composition/2`).
     TypeConformanceDrift,
+    /// A role's `service` or `plays` names a key the composition does not import (from
+    /// `ess-composition/4`).
+    UnknownRoleService,
+    /// A role plays its own service, or repeats a role or a command entry already declared (from
+    /// `ess-composition/4`).
+    ConflictingRole,
+    /// An `implements` role entry's local command does not accept the contract command's input
+    /// (from `ess-composition/4`).
+    RoleInputDrift,
 }
 
 impl CompositionCode {
@@ -658,6 +780,28 @@ impl CompositionCode {
                       field's name, presence or type.",
             repair: "Change the local type to match the imported one field for field.",
         },
+        ess_compiler::diagnostic::CatalogueEntry {
+            key: Self::UnknownRoleService,
+            meaning: "A role's `service` or `plays` names a service the composition does not \
+                      import.",
+            repair: "Import the service, or correct the key in the role.",
+        },
+        ess_compiler::diagnostic::CatalogueEntry {
+            key: Self::ConflictingRole,
+            meaning: "A role plays its own service, repeats a role already declared for the same \
+                      two services, or repeats a command entry.",
+            repair: "Name another imported service in `plays`, and write each role and each \
+                     command entry once.",
+        },
+        ess_compiler::diagnostic::CatalogueEntry {
+            key: Self::RoleInputDrift,
+            meaning: "A local command said to implement a contract command lacks one of its \
+                      input fields, reads one as another type, or requires an input the \
+                      contract's caller never sends.",
+            repair: "Give the local command every contract input field with a conforming type, \
+                     make its other inputs optional, or say `gates` if it only decides before \
+                     the contract command.",
+        },
     ];
 
     /// This category's entry in [`Self::CATALOGUE`].
@@ -686,6 +830,9 @@ impl fmt::Display for CompositionCode {
             Self::UnknownComponent => "unknown_component",
             Self::ReferenceOutsideComponent => "reference_outside_component",
             Self::TypeConformanceDrift => "type_conformance_drift",
+            Self::UnknownRoleService => "unknown_role_service",
+            Self::ConflictingRole => "conflicting_role",
+            Self::RoleInputDrift => "role_input_drift",
         };
         formatter.write_str(code)
     }
@@ -772,7 +919,7 @@ pub struct ResolvedService {
     errors: BTreeSet<ErrorRef>,
     types: BTreeSet<DeclaredTypeRef>,
     /// Every type declared in a domain the component owns. Referenceable under
-    /// `ess-composition/2` and `/3`; never serialised, so neither IR nor client-plan bytes move.
+    /// `ess-composition/2` and later; never serialised, so neither IR nor client-plan bytes move.
     #[serde(skip)]
     declared_types: BTreeSet<DeclaredTypeRef>,
 }
@@ -825,7 +972,7 @@ impl ResolvedService {
     }
 
     /// Every type declared in a domain the selected component owns, whether or not the client
-    /// surface reaches it. `ess-composition/2` and `/3` references and conformances may name these.
+    /// surface reaches it. From `ess-composition/2`, references and conformances may name these.
     pub fn declared_types(&self) -> &BTreeSet<DeclaredTypeRef> {
         &self.declared_types
     }
@@ -860,6 +1007,10 @@ pub struct EssCompositionIr {
     references: BTreeSet<CompositionRef>,
     #[serde(skip_serializing_if = "BTreeSet::is_empty")]
     conformances: BTreeSet<TypeConformance>,
+    /// Checked contract roles (`ess-composition/4`), in document order; omitted when empty, so an
+    /// earlier composition's bytes do not move.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    roles: Vec<ResolvedRole>,
 }
 
 impl EssCompositionIr {
@@ -883,9 +1034,14 @@ impl EssCompositionIr {
         &self.references
     }
 
-    /// Every checked type conformance assertion (`ess-composition/2` and `/3`).
+    /// Every checked type conformance assertion (from `ess-composition/2`).
     pub fn conformances(&self) -> &BTreeSet<TypeConformance> {
         &self.conformances
+    }
+
+    /// Every checked contract role (`ess-composition/4`), in document order.
+    pub fn roles(&self) -> &[ResolvedRole] {
+        &self.roles
     }
 
     /// Canonical JSON with a trailing newline.
@@ -1441,6 +1597,7 @@ pub fn compile<'a>(
     let references = resolve_references(specification, &admission, &mut diagnostics);
     let conformances =
         conformance::resolve_conformances(specification, &admission, &mut diagnostics);
+    let roles = roles::resolve_roles(specification, &admission, &mut diagnostics);
 
     if diagnostics.is_empty() {
         Ok(EssCompositionIr {
@@ -1449,6 +1606,7 @@ pub fn compile<'a>(
             services: resolved,
             references,
             conformances,
+            roles,
         })
     } else {
         Err(CompositionDiagnostics(diagnostics))
@@ -1464,18 +1622,31 @@ fn validate_format(
         COMPOSITION_FORMAT => COMPOSITION_FORMAT,
         CONFORMANCE_COMPOSITION_FORMAT => CONFORMANCE_COMPOSITION_FORMAT,
         READER_COMPOSITION_FORMAT => READER_COMPOSITION_FORMAT,
+        ROLE_COMPOSITION_FORMAT => ROLE_COMPOSITION_FORMAT,
         other => {
             diagnostics.push(CompositionDiagnostic::new(
                 CompositionCode::UnsupportedFormat,
                 None,
                 format!(
                     "format {other:?} is unsupported; expected {COMPOSITION_FORMAT}, \
-                     {CONFORMANCE_COMPOSITION_FORMAT} or {READER_COMPOSITION_FORMAT}"
+                     {CONFORMANCE_COMPOSITION_FORMAT}, {READER_COMPOSITION_FORMAT} or \
+                     {ROLE_COMPOSITION_FORMAT}"
                 ),
             ));
             return COMPOSITION_FORMAT;
         }
     };
+    // The reader refuses `roles` outside `/4`; this holds the same line for a document built
+    // some other way.
+    if format != ROLE_COMPOSITION_FORMAT && specification.roles.is_some() {
+        diagnostics.push(CompositionDiagnostic::new(
+            CompositionCode::UnsupportedFormat,
+            None,
+            format!(
+                "`roles` is an {ROLE_COMPOSITION_FORMAT} construct; {format} does not admit it"
+            ),
+        ));
+    }
     if format == COMPOSITION_FORMAT && specification.conformances.is_some() {
         diagnostics.push(CompositionDiagnostic::new(
             CompositionCode::UnsupportedFormat,
@@ -1486,7 +1657,7 @@ fn validate_format(
             ),
         ));
     }
-    if format != READER_COMPOSITION_FORMAT
+    if !matches!(format, READER_COMPOSITION_FORMAT | ROLE_COMPOSITION_FORMAT)
         && specification
             .conformances()
             .iter()

@@ -64,7 +64,7 @@ fn generated_filter_matches_the_rust_predicate_and_preserves_raw_rows() {
         "row.group in [one,]",
         "row.count == 1e0",
     ];
-    let scope: serde_yaml::Value = serde_yaml::from_str(
+    let scope: ess_yaml::Value = ess_yaml::from_str(
         "{row: {group: one, count: 1, text: 'false'}, state: {pick: null, groups: [one]}}",
     )
     .unwrap();
@@ -461,7 +461,7 @@ fn numeric_filter_equality_matches_ecmascript_text_and_canonical_values() {
         .map(|case| {
             // Decode JSON-shaped fixture bytes. Direct Value serialization exposes serde_json's
             // private number envelope when arbitrary_precision is unified on.
-            let scope = serde_yaml::from_str(&format!(
+            let scope = ess_yaml::from_str(&format!(
                 r#"{{"row":{{"number":{}}},"state":{{"value":{}}}}}"#,
                 case[0], case[1]
             ))

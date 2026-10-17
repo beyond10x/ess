@@ -479,6 +479,8 @@ export class Predicate {
       }
       case 'not':
         return `not (${this.body})`;
+      case 'trimmed':
+        return `trimmed(${this.body})`;
       case 'compare':
         return this.instant
           ? `${this.left} ${this.op} ${this.right} as timestamp`
@@ -556,6 +558,8 @@ export class Predicate {
       case 'equals_ignore_case':
       case 'in_ignore_case':
         return this.foldMatch(source);
+      case 'trimmed':
+        return this.body!.evaluate(trimmedSource(source, this.path));
       case 'starts_with':
       case 'ends_with':
       case 'contains':
@@ -1220,6 +1224,7 @@ export function parseConstraint(
       right: new Operand({ literal: value }),
     });
   }
+  if (Object.hasOwn(value, 'trimmed')) return parseTrimmed(path, value['trimmed'] ?? null, binders);
   for (const key of ['any_of', 'none_of']) {
     if (Object.hasOwn(value, key)) {
       const listed = value[key];
@@ -1610,6 +1615,75 @@ const runeEscapes: Record<string, string> = {
   '\t': '\\t',
   '\v': '\\v',
 };
+
+/**
+ * The ASCII whitespace a `trimmed` operator removes from either end of a text (beyond10x/ess#532,
+ * `docs/design/value-expressions.md` § E10): space, tab, LF, VT, FF and CR. Not `trim()`, which also
+ * removes Unicode spaces such as U+00A0, which every lane compares as themselves.
+ */
+const TRIMMED_WHITESPACE = /^[ \t\n\v\f\r]+|[ \t\n\v\f\r]+$/g;
+
+/** `text` with `TRIMMED_WHITESPACE` removed from either end. */
+export function trimAsciiWhitespace(text: string): string {
+  return text.replace(TRIMMED_WHITESPACE, '');
+}
+
+/**
+ * `source` with the text at `path` trimmed and every other fact as it was: only the wrapped
+ * operator's own fact is trimmed (beyond10x/ess#532).
+ */
+function trimmedSource(source: FactSource, path: string): FactSource {
+  const value = source.get(path);
+  if (typeof value !== 'string') return source;
+  const trimmed: FactSource = new Map(source);
+  trimmed.set(path, trimAsciiWhitespace(value));
+  const held = aggregates.get(source);
+  if (held !== undefined) aggregates.set(trimmed, held);
+  return trimmed;
+}
+
+/**
+ * Reads `trimmed:` as Rust's `Predicate::trimmed` does: a mapping of exactly one text operator over
+ * the same fact. `equals` and `in` (and their aliases) read as `any_of` over JSON strings, the
+ * wrapped string and case-insensitive operators as they read unwrapped.
+ */
+function parseTrimmed(path: string, value: Node, binders: readonly string[]): Predicate {
+  const shape = new Error(
+    `\`${path}: {trimmed: …}\` takes a mapping of exactly one text operator: equals, in, equals_ignore_case, in_ignore_case, starts_with, ends_with or contains`,
+  );
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) throw shape;
+  const keys = Object.keys(value);
+  if (keys.length !== 1) throw shape;
+  const key = keys[0]!;
+  const operand = value[key] ?? null;
+  let inner: Predicate;
+  switch (key) {
+    case 'eq':
+    case 'equals':
+    case '==':
+      if (typeof operand !== 'string') throw shape;
+      inner = new Predicate({ kind: 'any_of', path, values: [operand] });
+      break;
+    case 'in':
+    case 'any_of':
+    case 'one_of':
+      if (!Array.isArray(operand) || !operand.every((item) => typeof item === 'string')) {
+        throw shape;
+      }
+      inner = new Predicate({ kind: 'any_of', path, values: operand });
+      break;
+    case 'starts_with':
+    case 'ends_with':
+    case 'contains':
+    case 'equals_ignore_case':
+    case 'in_ignore_case':
+      inner = parseConstraint(path, { [key]: operand }, binders);
+      break;
+    default:
+      throw shape;
+  }
+  return new Predicate({ kind: 'trimmed', path, body: inner });
+}
 
 /** Two texts equal code unit for code unit after mapping `A`–`Z` to `a`–`z` (beyond10x/ess#140). */
 export function asciiEqualFold(left: string, right: string): boolean {

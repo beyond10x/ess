@@ -17,7 +17,7 @@ use ess_conformance::target::ConformanceTarget;
 use ess_conformance::target::{
     AbsentInputRequest, AwaitAnswer, AwaitRequest, ElapsedObservation, ElapsedObservationRequest,
     EntitySetupRequest, EventDeliveryRequest, EventObservationRequest, ExternalOutcomeControl,
-    ImplementationIdentity, InstantMark, InvocationObservationRequest, ObservedEvent,
+    ImplementationIdentity, InstantMark, InvocationObservationRequest, NowHold, ObservedEvent,
     ObservedInvocation, RedeliveryRequest, ScenarioContext, SemanticCommandRequest,
     SemanticCommandResult, SemanticViewRequest, SemanticViewResult, TargetError,
 };
@@ -419,6 +419,11 @@ impl<T: ConformanceTarget> ConformanceTarget for Recorder<T> {
         let key = request.instant.to_string();
         let answer = self.inner.mark_instant(request);
         self.record("mark_instant", key, json!({}), answer, |()| Value::Null)
+    }
+    fn hold_now(&self, request: NowHold) -> Result<(), TargetError> {
+        let key = request.instant.to_rfc3339();
+        let answer = self.inner.hold_now(request);
+        self.record("hold_now", key, json!({}), answer, |()| Value::Null)
     }
     fn observe_elapsed(
         &self,

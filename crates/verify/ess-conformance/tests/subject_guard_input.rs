@@ -193,7 +193,7 @@ fn command(ir: &EssIr) -> &ResolvedCommand {
 }
 
 fn guard(yaml: &str) -> Predicate {
-    Predicate::from_node(&serde_yaml::from_str(yaml).expect("yaml")).expect("a predicate")
+    Predicate::from_node(&ess_yaml::from_str(yaml).expect("yaml")).expect("a predicate")
 }
 
 /// The texts candidates give `field`, in the order they are tried.

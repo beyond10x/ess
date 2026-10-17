@@ -227,7 +227,7 @@ fn binding_mapping_scalar_type_mismatch_named() {
 fn binding_mapping_scalar_round_trips_typed() {
     // The authored mapping table writes each constant back as the scalar it was read as.
     let table: ess_domain::binding::MappingTable =
-        serde_yaml::from_str("{flag: true, weight: 3, share: 0.5, text: '3'}").expect("parses");
+        ess_yaml::from_str("{flag: true, weight: 3, share: 0.5, text: '3'}").expect("parses");
     assert_eq!(
         serde_json::to_string(&table).expect("serialises"),
         r#"{"flag":true,"weight":3,"share":0.5,"text":"3"}"#

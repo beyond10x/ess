@@ -6,7 +6,15 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.62.0](#a-suite-holds-a-command-at-a-fixed-now-so-a-guard-on-a-time-boundary-is-tested-exactly-there) | A suite holds a command at a fixed now, so a guard on a time boundary is tested exactly there | capability | notable |
+| [0.61.0](#concurrent-histories-record-each-calls-input-and-events-and-check-history-holds-them) | Concurrent histories record each call's input and events, and check-history holds them | capability | notable |
+| [0.60.0](#a-composition-states-which-component-plays-anothers-role-and-which-command-implements-or-gates-it) | A composition states which component plays another's role, and which command implements or gates it | capability | notable |
+| [0.60.0](#source-format-ess25-and-an-http-binding-that-generates-rust-and-go-servers) | Source format ess/25, and an HTTP binding that generates Rust and Go servers | capability | significant |
+| [0.60.0](#commands-and-views-bind-to-http-routes-and-mutation-testing-covers-more-of-a-model) | Commands and views bind to HTTP routes, and mutation testing covers more of a model | capability | notable |
+| [0.60.0](#http-bindings-declare-encodings-statuses-headers-and-redirects-and-synthesis-writes-rust-and-go-servers) | HTTP bindings declare encodings, statuses, headers and redirects, and synthesis writes Rust and Go servers | capability | significant |
+| [0.60.0](#source-format-ess25-selects-an-upserts-update-by-the-stored-row-and-adds-per-row-events-and-default-view-rows) | Source format ess/25 selects an upsert's update by the stored row and adds per-row events and default view rows | capability | significant |
 | [0.59.0](#an-authored-act-states-the-caller-its-command-is-sent-as-and-synthesis-fixes-two-guard-cases) | An authored act states the caller its command is sent as, and synthesis fixes two guard cases | capability | notable |
+| [0.59.0](#an-authored-scenario-states-the-caller-its-command-is-sent-as) | An authored scenario states the caller its command is sent as | capability | notable |
 | [0.58.0](#a-struct-or-a-command-response-may-ignore-undeclared-fields-and-generation-verify-diff-and-runners-follow) | A struct or a command response may ignore undeclared fields, and generation, verify diff and runners follow | capability | notable |
 | [0.57.0](#cli-bindings-may-omit-globals-verify-diff-flags-caller-breaking-changes-runners-check-constrained-responses) | CLI bindings may omit globals, verify diff flags caller-breaking changes, runners check constrained responses | capability | notable |
 | [0.56.0](#a-held-state-branch-must-be-declared-before-an-overlapping-accepting-or-external-branch) | A held-state branch must be declared before an overlapping accepting or external branch | breaking | notable |
@@ -64,6 +72,54 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
 
+## 0.62.0 — 2026-10-16
+
+### A suite holds a command at a fixed now, so a guard on a time boundary is tested exactly there
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.62.0)
+
+A conformance suite can hold the instant a target reads as `now` for one command, and synthesis adds a scenario on each `now` boundary a command decides by. Format `ess/26` holds an external refusal beside an existing row to leave it unchanged. Generated Rust decoders enforce a newtype's alphabet and length; the Go and TypeScript explorers draw timestamps.
+
+## 0.61.0 — 2026-10-15
+
+### Concurrent histories record each call's input and events, and check-history holds them
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.61.0)
+
+`ess-history/3` records each operation's input and published events, and `check-history` holds a target to both. Concurrent exploration arranges `external:` causes and replays a failing seed alone. Synthesis arranges period-bounded views, Rust types take raw JSON values, and the one-time response guide counts disclosure cells.
+
+## 0.60.0 — 2026-10-14
+
+### A composition states which component plays another's role, and which command implements or gates it
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.60.0)
+
+`ess-composition/4` adds `roles:`: one imported component plays another's, and each local command `implements` or `gates` a contract command, checked for input drift by `ess specify compose` ([#525](https://github.com/beyond10x/ess/issues/525)).
+
+### Source format ess/25, and an HTTP binding that generates Rust and Go servers
+
+capability · significant impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.60.0)
+
+`ess/25` adds create-or-update selection by stored fields, trimmed text guards, one event per changed row and refusals ahead of held state. `ess-http/1` binds commands and views to HTTP; `ess generate` projects it to OpenAPI and emits Rust and Go servers. `ess-composition/4` adds roles.
+
+### Commands and views bind to HTTP routes, and mutation testing covers more of a model
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.60.0)
+
+`ess-http/1` binds commands and views to HTTP routes, projected into OpenAPI by `--http` ([#493](https://github.com/beyond10x/ess/issues/493)). `mutate` covers `when_subject:`/`when_related:` guards and authored scenarios ([#515](https://github.com/beyond10x/ess/issues/515)). Go synthesis builds when bounded contexts reference each other in a loop.
+
+### HTTP bindings declare encodings, statuses, headers and redirects, and synthesis writes Rust and Go servers
+
+capability · significant impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.60.0)
+
+An `ess-http/1` route declares its request encoding, each outcome's status, body, headers and redirect, and the standard refusals. `--http` projects them into OpenAPI, and `ess generate synthesize --target rust` or `go` writes a server that serves the binding ([#493](https://github.com/beyond10x/ess/issues/493)).
+
+### Source format ess/25 selects an upsert's update by the stored row and adds per-row events and default view rows
+
+capability · significant impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.60.0)
+
+`ess/25` lets a create-or-update command pick its update with `when_subject:` ([#530](https://github.com/beyond10x/ess/issues/530)), publish an event per changed row, answer an `external:` refusal before the row is read, compare `trimmed:` text, and give a view an `absent:` row. `ess-diff/19` classifies the view change.
+
 ## 0.59.0 — 2026-10-11
 
 ### An authored act states the caller its command is sent as, and synthesis fixes two guard cases
@@ -71,6 +127,12 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.59.0)
 
 `ess-scenario/5` lets an act state its caller under `caller:`, so a command that records `{caller: …}` runs from an authored scenario. Synthesis decides a related guard on a captured struct key ([#521](https://github.com/beyond10x/ess/issues/521)) and writes stored-field guard scenarios no view observes ([#496](https://github.com/beyond10x/ess/issues/496)).
+
+### An authored scenario states the caller its command is sent as
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.59.0)
+
+`ess-scenario/5` adds `caller:` to an authored act, so a command that records caller attributes runs from an authored scenario on every target. Synthesis covers `when_subject:` commands whose guarded field no view observes, and picks a related row against the subject's real key.
 
 ## 0.58.0 — 2026-10-10
 

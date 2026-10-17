@@ -2043,7 +2043,7 @@ invariants:
 ";
 
     fn entity(yaml: &str) -> Result<EntitySpec, ValidationErrors> {
-        let raw: RawEntitySpec = serde_yaml::from_str(yaml).expect("the document is well formed");
+        let raw: RawEntitySpec = ess_yaml::from_str(yaml).expect("the document is well formed");
         EntitySpec::try_from(raw)
     }
 
@@ -2566,7 +2566,7 @@ lifecycle:
         );
 
         let round_tripped: RawEntitySpec =
-            serde_yaml::from_str(&serde_yaml::to_string(&invoice).expect("serialises"))
+            ess_yaml::from_str(&ess_yaml::to_string(&invoice).expect("serialises"))
                 .expect("parses");
         let round_tripped = EntitySpec::try_from(round_tripped).expect("valid");
         assert_eq!(
@@ -2650,26 +2650,26 @@ lifecycle:
     #[test]
     fn an_entity_round_trips_through_yaml() {
         let invoice = entity(INVOICE).expect("valid");
-        let rendered = serde_yaml::to_string(&invoice).expect("serialises");
+        let rendered = ess_yaml::to_string(&invoice).expect("serialises");
         assert!(
             rendered.contains("lifecycle:") && rendered.contains("initial: Draft"),
             "the lifecycle round-trips whole: {rendered}"
         );
 
-        let raw: RawEntitySpec = serde_yaml::from_str(&rendered).expect("parses back");
+        let raw: RawEntitySpec = ess_yaml::from_str(&rendered).expect("parses back");
         let again = EntitySpec::try_from(raw).expect("still valid");
         assert_eq!(again, invoice);
     }
 
     #[test]
     fn a_malformed_transition_name_is_refused_when_the_document_is_read() {
-        let error = serde_yaml::from_str::<RawEntitySpec>(
+        let error = ess_yaml::from_str::<RawEntitySpec>(
             &INVOICE.replace("name: PayInvoice", "name: Pay Invoice"),
         )
         .expect_err("a transition name is one qualified-name segment");
         assert!(error.to_string().contains("Pay Invoice"), "{error}");
 
-        let dotted = serde_yaml::from_str::<RawEntitySpec>(
+        let dotted = ess_yaml::from_str::<RawEntitySpec>(
             &INVOICE.replace("name: PayInvoice", "name: invoice.PayInvoice"),
         )
         .expect_err("already qualified");
@@ -2681,7 +2681,7 @@ lifecycle:
 
     #[test]
     fn a_key_the_model_does_not_know_is_refused() {
-        let error = serde_yaml::from_str::<RawEntitySpec>(&format!("{INVOICE}stats: [Draft]\n"))
+        let error = ess_yaml::from_str::<RawEntitySpec>(&format!("{INVOICE}stats: [Draft]\n"))
             .expect_err("`stats` is nothing");
         assert!(error.to_string().contains("stats"), "{error}");
     }
@@ -2725,6 +2725,7 @@ lifecycle:
                 accepts_nothing: false,
                 returns: false,
                 compensates: false,
+                before_row: false,
                 one_time_response: Vec::new(),
                 set_effects: crate::command::SetEffects::default(),
                 summary: None,
@@ -3356,7 +3357,7 @@ lifecycle:
         // `on_delete` is the one a reader is most likely to try, because it is what every ORM has
         // and what the design page decided against for v0.1. It has to fail as a *parse* error:
         // accepting and ignoring it would publish a deletion policy nothing enforces.
-        let error = serde_yaml::from_str::<RawEntitySpec>(&ACCOUNT.replace(
+        let error = ess_yaml::from_str::<RawEntitySpec>(&ACCOUNT.replace(
             "    via: account_id",
             "    via: account_id\n    on_delete: cascade",
         ))

@@ -8,7 +8,7 @@
 //! - `command/<c>/await-within-changed {before, after}`: how soon the system claims to take its own
 //!   step, narrowed or widened, breaks nobody.
 //! - A command becoming system-issued is reported through those and the grant changes, never twice.
-//! - Both kinds are `ess-diff/19` vocabulary.
+//! - Both kinds are `ess-diff/20` vocabulary.
 
 use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
 use ess_diff::{classified, diff, Compatibility, EssDelta, RawEssDelta};
@@ -200,25 +200,25 @@ fn becoming_the_system_with_a_bound_is_two_changes_and_no_residual() {
 fn the_default_delta_carries_them_as_ess_diff_19_and_earlier_formats_refuse_them() {
     let delta = diff(&driven(), &ir(Some(true), Some("PT5S"))).unwrap();
     let json = delta.to_canonical_json();
-    assert_eq!(delta.format.to_string(), "ess-diff/19", "{json}");
+    assert_eq!(delta.format.to_string(), "ess-diff/20", "{json}");
     assert!(
         delta.compatibility().is_some(),
-        "an ess-diff/19 delta is classified: {json}"
+        "an ess-diff/20 delta is classified: {json}"
     );
     let raw: RawEssDelta = serde_json::from_str(&json).unwrap();
     assert_eq!(EssDelta::try_from(raw).unwrap(), delta, "it reads back");
 
     let refused = delta
-        .to_canonical_json_for("ess-diff/18".parse().unwrap())
-        .expect_err("ess-diff/18 cannot write it");
+        .to_canonical_json_for("ess-diff/19".parse().unwrap())
+        .expect_err("ess-diff/19 cannot write it");
     assert!(
         refused.to_string().contains("not representable"),
         "{refused}"
     );
     let mut older: serde_json::Value = serde_json::from_str(&json).unwrap();
-    older["format"] = serde_json::Value::from("ess-diff/18");
+    older["format"] = serde_json::Value::from("ess-diff/19");
     let raw: RawEssDelta = serde_json::from_value(older).unwrap();
-    let refused = EssDelta::try_from(raw).expect_err("an `ess-diff/18` reader refuses it");
+    let refused = EssDelta::try_from(raw).expect_err("an `ess-diff/19` reader refuses it");
     assert!(
         refused.to_string().contains("outside the vocabulary"),
         "{refused}"

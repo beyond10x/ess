@@ -218,6 +218,40 @@ fn a_paged_view_is_an_obligation_in_the_plan() {
     }
 }
 
+/// A view declaring its answer for an identity no row carries (`absent:`, ess/25,
+/// beyond10x/ess#533) keeps its query owed, naming the key: no generated query answers the default
+/// row.
+#[test]
+fn a_view_with_a_default_row_for_an_unknown_identity_is_an_obligation_in_the_plan() {
+    let text = with_view(
+        "  - name: ledger.work.TaskById
+    source: ledger.work.Task
+    params: [{name: task_id, type: ledger.work.TaskId}]
+    filter: task_id == param.task_id
+    absent:
+      row: {owner: nobody}
+    fields:
+      - {name: task_id, type: ledger.work.TaskId}
+      - {name: owner, type: String}
+",
+    )
+    .replacen("format: ess/18", "format: ess/25", 1);
+    let ir = compile_text(&text);
+    let plan = SynthesisPlan::of(&ir);
+    match plan.disposition_of(CapabilityKind::ViewQuery, "ledger.work.TaskById") {
+        Some(SynthesisDisposition::Obligation(obligation)) => {
+            assert!(
+                obligation
+                    .reason
+                    .describes()
+                    .contains("a view's answer for an identity no row carries (`absent:`)"),
+                "{obligation:?}"
+            );
+        }
+        other => panic!("a view with a default row stays owed, not {other:?}"),
+    }
+}
+
 // ---- the generated tree, built and run against its own suite ----------------------------------
 
 /// A scratch directory under this test binary's target, removed when dropped.

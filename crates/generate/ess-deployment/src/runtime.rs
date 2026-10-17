@@ -6,11 +6,20 @@ use ess_realization::RealizationIr as PhysicalRealizationIr;
 use crate::build::{BuildIr, BuildOutputKind};
 use crate::diagnostic::{Diagnostic, DiagnosticCode, Diagnostics, Stage};
 use crate::identity::{canonical_json, Digest, Identifier};
+use crate::workload_kind::{
+    container_v2_keys, validate_container_settings, validate_image, validate_version_2,
+    validate_workload_settings, workload_v2_keys, Affinity, PodSecurity, ProcessImage, Resources,
+    Schedule, SecretMount,
+};
 
 /// Human-authored deployable-runtime format.
 pub const RUNTIME_FORMAT: &str = "ess-runtime/1";
 /// Compiler-owned deployable-runtime format.
 pub const RUNTIME_IR_FORMAT: &str = "ess-runtime-ir/1";
+/// Human-authored deployable-runtime format with scheduled workloads and pod settings.
+pub const RUNTIME_FORMAT_V2: &str = "ess-runtime/2";
+/// Compiler-owned deployable-runtime format compiled from [`RUNTIME_FORMAT_V2`].
+pub const RUNTIME_IR_FORMAT_V2: &str = "ess-runtime-ir/2";
 
 /// Classification of a non-secret runtime setting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -45,10 +54,16 @@ pub struct ConfigSlot {
 pub struct SecretSlot {
     /// Stable secret requirement identity.
     pub name: Identifier,
-    /// Environment variable consumed by the process.
-    pub environment: String,
-    /// Key expected inside the environment-owned secret object.
-    pub key: String,
+    /// Environment variable consumed by the process. Required in `ess-runtime/1`; from
+    /// `ess-runtime/2` a slot with a [`SecretSlot::mount`] may omit it together with `key`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub environment: Option<String>,
+    /// Key expected inside the environment-owned secret object, read into `environment`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+    /// The secret mounted read-only as a volume (`ess-runtime/2`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mount: Option<SecretMount>,
 }
 
 /// One external or composed service endpoint required at runtime.
@@ -117,8 +132,9 @@ pub struct VolumeMount {
 pub struct Process {
     /// Stable process identity.
     pub name: Identifier,
-    /// OCI image output in the compiled build.
-    pub image: Identifier,
+    /// OCI image output in the compiled build, or (`ess-runtime/2`) an image reference pinned by
+    /// digest.
+    pub image: ProcessImage,
     /// Optional runtime entrypoint override.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub entrypoint: Vec<String>,
@@ -144,6 +160,12 @@ pub struct ContainerRole {
     /// HTTP liveness path, when applicable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub liveness_path: Option<String>,
+    /// TCP readiness probe port (`ess-runtime/2`); a container takes this or `readiness_path`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub readiness_tcp_port: Option<u16>,
+    /// TCP liveness probe port (`ess-runtime/2`); a container takes this or `liveness_path`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub liveness_tcp_port: Option<u16>,
     /// Non-secret configuration interface.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub config: Vec<ConfigSlot>,
@@ -159,6 +181,12 @@ pub struct ContainerRole {
     /// Required workload-token audiences.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub audiences: BTreeSet<String>,
+    /// CPU and memory requests and limits (`ess-runtime/2`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resources: Option<Resources>,
+    /// Whether the container's root filesystem is read-only (`ess-runtime/2`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub read_only_root_filesystem: Option<bool>,
 }
 
 /// One named persistent volume owned by a stateful workload.
@@ -181,14 +209,32 @@ pub struct Workload {
     pub components: BTreeSet<Identifier>,
     /// Container roles in the pod.
     pub containers: BTreeSet<Identifier>,
-    /// Desired instance count; must satisfy every semantic floor and ceiling.
-    pub replicas: u32,
+    /// Desired instance count; must satisfy every semantic floor and ceiling. Required on every
+    /// workload that is not scheduled, and refused on one that is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replicas: Option<u32>,
     /// Persistent volume size, when the workload is stateful.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub storage: Option<String>,
     /// Named persistent volumes. This supersedes the legacy single `storage` marker.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub volumes: Vec<PersistentVolume>,
+    /// Runs the workload on a schedule, as a `CronJob`, instead of continuously
+    /// (`ess-runtime/2`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schedule: Option<Schedule>,
+    /// The pod's security context (`ess-runtime/2`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub security: Option<PodSecurity>,
+    /// Whether the pod mounts its service-account token (`ess-runtime/2`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub service_account_token: Option<bool>,
+    /// Annotations on the pod (`ess-runtime/2`), keyed by qualified name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<BTreeMap<String, String>>,
+    /// Where the pods run (`ess-runtime/2`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub affinity: Option<Affinity>,
 }
 
 /// Human-authored mapping from semantic ESS to built runtime artifacts.
@@ -222,8 +268,8 @@ impl RuntimeSpec {
     }
 
     /// Reads a strict YAML runtime.
-    pub fn from_yaml(text: &str) -> Result<Self, serde_yaml::Error> {
-        serde_yaml::from_str(text)
+    pub fn from_yaml(text: &str) -> Result<Self, ess_yaml::Error> {
+        ess_yaml::from_str(text)
     }
 }
 
@@ -265,16 +311,17 @@ crate::validation::checked_deserialize!(RuntimeIr {
 impl RuntimeIr {
     /// Validate relationships and compiler rules recoverable from these bytes alone.
     /// Semantic coverage, replica bounds and statefulness need the original compiler inputs.
+    #[allow(clippy::too_many_lines)]
     pub fn validate(&self) -> Result<(), Diagnostics> {
         use crate::validation::check;
         let mut diagnostics = Vec::new();
         check(
             &mut diagnostics,
-            self.format == RUNTIME_IR_FORMAT,
+            self.format == RUNTIME_IR_FORMAT || self.format == RUNTIME_IR_FORMAT_V2,
             Stage::Runtime,
             DiagnosticCode::UnsupportedFormat,
             &self.runtime,
-            format!("runtime IR format must be {RUNTIME_IR_FORMAT:?}"),
+            format!("runtime IR format must be {RUNTIME_IR_FORMAT:?} or {RUNTIME_IR_FORMAT_V2:?}"),
         );
         for (name, process) in &self.processes {
             check(
@@ -317,7 +364,7 @@ impl RuntimeIr {
             );
             check(
                 &mut diagnostics,
-                workload.replicas > 0,
+                workload.replicas != Some(0),
                 Stage::Runtime,
                 DiagnosticCode::InvalidValue,
                 name,
@@ -354,7 +401,24 @@ impl RuntimeIr {
             validate_workload_volumes(workload, &self.containers, &mut diagnostics);
         }
         self.validate_endpoints(&mut diagnostics);
+        validate_format_keys(
+            if self.format == RUNTIME_IR_FORMAT_V2 {
+                None
+            } else {
+                Some((RUNTIME_IR_FORMAT, RUNTIME_IR_FORMAT_V2))
+            },
+            &self.processes,
+            &self.containers,
+            &self.workloads,
+            &self.provided_endpoints,
+            &mut diagnostics,
+        );
         crate::validation::finish(diagnostics)
+    }
+
+    /// The persisted format marker: [`RUNTIME_IR_FORMAT`] or [`RUNTIME_IR_FORMAT_V2`].
+    pub fn format(&self) -> &str {
+        &self.format
     }
 
     fn validate_endpoints(&self, diagnostics: &mut Vec<Diagnostic>) {
@@ -406,11 +470,14 @@ impl RuntimeIr {
             "runtime build_digest does not match the supplied build IR",
         );
         for process in self.processes.values() {
+            let Some(image) = process.image.output() else {
+                continue;
+            };
             crate::validation::check(
                 &mut diagnostics,
                 build
                     .outputs()
-                    .get(&process.image)
+                    .get(image)
                     .is_some_and(|output| output.kind == BuildOutputKind::OciImage),
                 Stage::Runtime,
                 DiagnosticCode::MissingOutput,
@@ -486,13 +553,15 @@ pub fn compile_runtime(
     build: &BuildIr,
 ) -> Result<RuntimeIr, Diagnostics> {
     let mut diagnostics = Vec::new();
-    if specification.format != RUNTIME_FORMAT {
+    let version_2 = specification.format == RUNTIME_FORMAT_V2;
+    if specification.format != RUNTIME_FORMAT && !version_2 {
         diagnostics.push(Diagnostic::new(
             Stage::Runtime,
             DiagnosticCode::UnsupportedFormat,
             Some(specification.runtime.clone()),
             format!(
-                "runtime format {:?} is unsupported; expected {RUNTIME_FORMAT:?}",
+                "runtime format {:?} is unsupported; expected {RUNTIME_FORMAT:?} or \
+                 {RUNTIME_FORMAT_V2:?}",
                 specification.format
             ),
         ));
@@ -539,7 +608,10 @@ pub fn compile_runtime(
         &mut diagnostics,
     );
     for process in processes.values() {
-        match build.outputs().get(&process.image) {
+        let Some(image) = process.image.output() else {
+            continue;
+        };
+        match build.outputs().get(image) {
             Some(output) if output.kind == BuildOutputKind::OciImage => {}
             Some(_) => diagnostics.push(Diagnostic::new(
                 Stage::Runtime,
@@ -600,7 +672,7 @@ pub fn compile_runtime(
         .collect();
     let mut realized_components = BTreeSet::new();
     for workload in workloads.values() {
-        if workload.replicas == 0 {
+        if workload.replicas == Some(0) {
             diagnostics.push(Diagnostic::new(
                 Stage::Runtime,
                 DiagnosticCode::InvalidValue,
@@ -646,19 +718,19 @@ pub fn compile_runtime(
             if let Some(requirement) = semantic.workloads().iter().find_map(|(name, workload)| {
                 (name.as_str() == component.as_str()).then_some(workload)
             }) {
-                if workload.replicas < requirement.replicas.min
-                    || requirement
-                        .replicas
-                        .max
-                        .is_some_and(|max| workload.replicas > max)
-                {
+                // A scheduled workload declares no replicas, and has no standing instances for the
+                // range to count (`docs/design/runtime-workload-kinds.md`).
+                if let Some(replicas) = workload.replicas.filter(|replicas| {
+                    *replicas < requirement.replicas.min
+                        || requirement.replicas.max.is_some_and(|max| *replicas > max)
+                }) {
                     diagnostics.push(Diagnostic::new(
                         Stage::Runtime,
                         DiagnosticCode::InvalidValue,
                         Some(workload.name.clone()),
                         format!(
                             "{} replicas do not satisfy semantic range {}..{} for component {}",
-                            workload.replicas,
+                            replicas,
                             requirement.replicas.min,
                             requirement
                                 .replicas
@@ -739,9 +811,23 @@ pub fn compile_runtime(
         }
     }
 
+    validate_format_keys(
+        (!version_2).then_some((RUNTIME_FORMAT, RUNTIME_FORMAT_V2)),
+        &processes,
+        &containers,
+        &workloads,
+        &provided_endpoints,
+        &mut diagnostics,
+    );
+
     if diagnostics.is_empty() {
         Ok(RuntimeIr {
-            format: RUNTIME_IR_FORMAT.to_owned(),
+            format: if version_2 {
+                RUNTIME_IR_FORMAT_V2
+            } else {
+                RUNTIME_IR_FORMAT
+            }
+            .to_owned(),
             runtime: specification.runtime.clone(),
             semantic_digest: specification.semantic_digest.clone(),
             realization_digest: specification.realization_digest.clone(),
@@ -955,8 +1041,9 @@ fn derive_into_container(
             if setting.secret {
                 container.secrets.push(SecretSlot {
                     name,
-                    environment: setting.environment(),
-                    key: setting.name.to_string(),
+                    environment: Some(setting.environment()),
+                    key: Some(setting.name.to_string()),
+                    mount: None,
                 });
             } else {
                 container.config.push(ConfigSlot {
@@ -1023,7 +1110,11 @@ fn validate_container(container: &ContainerRole, diagnostics: &mut Vec<Diagnosti
         }
     }
     for slot in &container.secrets {
-        if !names.insert(slot.name.clone()) || !variables.insert(slot.environment.clone()) {
+        let variable_taken = slot
+            .environment
+            .as_ref()
+            .is_some_and(|environment| !variables.insert(environment.clone()));
+        if !names.insert(slot.name.clone()) || variable_taken {
             diagnostics.push(Diagnostic::new(
                 Stage::Runtime,
                 DiagnosticCode::DuplicateIdentifier,
@@ -1128,5 +1219,60 @@ fn validate_workload_volumes(
                 ));
             }
         }
+    }
+}
+
+/// Refuses the `ess-runtime/2` keys in a `/1` document, and validates them wherever they appear.
+///
+/// `version_1` is `Some((this format, the format that reads the keys))` for a `/1` document, and
+/// `None` for a `/2` one. Shared by [`compile_runtime`] and [`RuntimeIr::validate`], so the
+/// compiled-IR reader refuses what the compiler refuses.
+fn validate_format_keys(
+    version_1: Option<(&str, &str)>,
+    processes: &BTreeMap<Identifier, Process>,
+    containers: &BTreeMap<Identifier, ContainerRole>,
+    workloads: &BTreeMap<Identifier, Workload>,
+    provided_endpoints: &BTreeMap<Identifier, ProvidedEndpoint>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let mut unread = |subject: &Identifier, owner: &str, key: &str| {
+        if let Some((format, successor)) = version_1 {
+            diagnostics.push(Diagnostic::new(
+                Stage::Runtime,
+                DiagnosticCode::UnsupportedFormat,
+                Some(subject.clone()),
+                format!(
+                    "{owner} {subject} declares {key}, which {format:?} does not read; declare \
+                     format {successor:?}"
+                ),
+            ));
+        }
+    };
+    for process in processes.values() {
+        if matches!(process.image, ProcessImage::Reference(_)) {
+            unread(&process.name, "process", "an image reference");
+        }
+    }
+    for container in containers.values() {
+        for key in container_v2_keys(container) {
+            unread(&container.name, "container", &key);
+        }
+    }
+    for workload in workloads.values() {
+        for key in workload_v2_keys(workload) {
+            unread(&workload.name, "workload", key);
+        }
+    }
+    for process in processes.values() {
+        validate_image(&process.name, &process.image, diagnostics);
+    }
+    for container in containers.values() {
+        validate_container_settings(container, diagnostics);
+    }
+    for workload in workloads.values() {
+        validate_workload_settings(workload, containers, provided_endpoints, diagnostics);
+    }
+    if version_1.is_none() {
+        validate_version_2(processes, containers, workloads, diagnostics);
     }
 }

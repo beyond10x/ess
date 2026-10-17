@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use ess_ui::{Body, Composite, Document, NodeRef, Reads};
-use serde_yaml::{Mapping, Value};
+use ess_yaml::{Mapping, Value};
 
 use crate::ts::{self, Writer};
 use crate::GenerateError;
@@ -20,7 +20,7 @@ fn read_yaml(path: &Path) -> Result<Value, GenerateError> {
     let text = std::fs::read_to_string(path).map_err(|error| {
         GenerateError::new(format!("cannot read fixture {}: {error}", path.display()))
     })?;
-    serde_yaml::from_str(&text).map_err(|error| {
+    ess_yaml::from_str(&text).map_err(|error| {
         GenerateError::new(format!("fixture {} is not YAML: {error}", path.display()))
     })
 }

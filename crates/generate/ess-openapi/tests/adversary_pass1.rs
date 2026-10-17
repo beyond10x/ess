@@ -72,7 +72,7 @@ fn assert_closed_unit(kind: &str) {
         wire.pointer_mut(wire_pointer).unwrap()["unexpected_constraint"] = json!({"const": 7});
         for (encoding, bytes) in [
             ("json", wire.to_string()),
-            ("yaml", serde_yaml::to_string(&wire).unwrap()),
+            ("yaml", ess_yaml::to_string(&wire).unwrap()),
         ] {
             match read_import(&bytes) {
                 Err(refusals) => println!("refused {encoding} {wire_pointer}: {refusals:?}"),
@@ -179,7 +179,7 @@ fn contradictory_string_enum_and_const_survive_both_boundaries() {
         let report = import(&source.to_string()).unwrap();
         let checked = read_import(&report.to_canonical_json()).unwrap();
         let projected = project_import(&checked).unwrap();
-        let value: Value = serde_yaml::from_str(&projected).unwrap();
+        let value: Value = ess_yaml::from_str(&projected).unwrap();
         let schema = value.pointer(source_pointer).unwrap();
         assert_eq!(schema["enum"], json!(["a"]));
         assert_eq!(schema["const"], "b");

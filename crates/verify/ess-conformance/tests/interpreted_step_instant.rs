@@ -38,7 +38,12 @@ fn ir() -> EssIr {
 }
 
 fn suite(ir: &EssIr) -> (ConformanceSuite, AdmittedSuite) {
-    let synthesis = synthesize(ir);
+    let mut synthesis = synthesize(ir);
+    // The scenario on the boundary is exercised by the tests of `hold_now` below.
+    synthesis
+        .suite
+        .scenarios
+        .retain(|id, _| !id.to_string().contains("/held/"));
     assert_eq!(
         synthesis.suite.scenarios.len(),
         2,
@@ -269,4 +274,257 @@ fn issue_510_every_clock_taken_from_one_runner_reads_the_same_instant() {
         .all(|scenario| scenario.status == Status::Passed));
     assert_eq!(reads.lock().unwrap().len(), commands(&suite));
     assert_eq!(second.read(), Some(ceil(WALL_MS)));
+}
+
+// ---- a held `now` (beyond10x/ess#586) ------------------------------------------------------
+
+/// The issue's reproducer: `Issue` stores a code's `expiry`, and `Redeem` takes it while
+/// `expiry >= now`, else refuses it as expired. `{strict}` is the guard's comparison, so `>` is the
+/// boundary mutant that refuses a code expiring exactly now.
+const CODES: &str = r"format: ess/23
+system: demo
+version: v1
+domain: demo.codes
+types:
+  - {name: demo.codes.CodeId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.codes.Code
+    identity: {name: code_id, type: demo.codes.CodeId}
+    fields:
+      - {name: expiry, type: Timestamp}
+    lifecycle:
+      initial: Issued
+      states: [Issued, Redeemed]
+      terminal: [Redeemed]
+      transitions:
+        - {name: redeem, from: [Issued], to: Redeemed}
+errors:
+  - {name: demo.codes.Expired, summary: The code expired., fields: []}
+  - {name: demo.codes.Spent, summary: The code was redeemed already., fields: []}
+  - {name: demo.codes.UnknownCode, summary: No code carries the identity., fields: []}
+events:
+  - name: demo.codes.Issued
+    fields:
+      - {name: code_id, type: demo.codes.CodeId}
+  - name: demo.codes.Redeemed
+    fields:
+      - {name: code_id, type: demo.codes.CodeId}
+commands:
+  - name: demo.codes.Issue
+    input:
+      - {name: expiry, type: Timestamp}
+    outcomes:
+      - name: issued
+        creates: demo.codes.Code
+        instance: code_id
+        sets: {expiry: input.expiry}
+        emits: [demo.codes.Issued]
+        payload:
+          demo.codes.Issued: {code_id: {generated: true}}
+  - name: demo.codes.Redeem
+    input:
+      - {name: code_id, type: demo.codes.CodeId}
+    outcomes:
+      - name: redeemed
+        when_subject: {predicate: expiry {strict} now}
+        moves: demo.codes.Code.redeem
+        instance: code_id
+        emits: [demo.codes.Redeemed]
+        payload:
+          demo.codes.Redeemed: {code_id: input.code_id}
+      - name: expired
+        error: demo.codes.Expired
+      - name: spent
+        wrong_state: true
+        error: demo.codes.Spent
+      - name: unknown-code
+        unknown_instance: true
+        error: demo.codes.UnknownCode
+";
+
+const REDEEMED: &str = "demo.codes.Redeem/outcome/redeemed";
+
+fn codes(comparison: &str) -> EssIr {
+    let text = CODES.replace("{strict}", comparison);
+    let raw = RawSpecFile::parse(&text).unwrap_or_else(|error| panic!("{error}"));
+    let specification = Specification::assemble([(Source::new("system.yaml"), raw)])
+        .unwrap_or_else(|errors| panic!("the reproducer validates:\n{errors}"));
+    compile(&specification, &SourceMap::new())
+        .unwrap_or_else(|diagnostics| panic!("the reproducer resolves:\n{diagnostics}"))
+}
+
+/// The suite of the correct model with its accepting scenario rewritten to the boundary: `Issue`
+/// sends `expiry` as `now_offset 0`, and, when `held`, a `hold_now 0` stands before `Redeem`.
+fn redeem_at_the_boundary(held: bool) -> ConformanceSuite {
+    let mut suite = synthesize(&codes(">=")).suite;
+    let (_, scenario) = suite
+        .scenarios
+        .iter_mut()
+        .find(|(id, _)| id.to_string() == REDEEMED)
+        .unwrap_or_else(|| panic!("a redeemed scenario"));
+    for step in &mut scenario.steps {
+        if let ScenarioStep::ExecuteCommand { command, input, .. } = step {
+            if command.to_string() == "demo.codes.Issue" {
+                input.insert("expiry".to_owned(), ScenarioValue::NowOffset { seconds: 0 });
+            }
+        }
+    }
+    if held {
+        let at = scenario
+            .steps
+            .iter()
+            .position(|step| {
+                matches!(step, ScenarioStep::ExecuteCommand { command, .. }
+                    if command.to_string() == "demo.codes.Redeem")
+            })
+            .expect("the command under test");
+        scenario
+            .steps
+            .insert(at, ScenarioStep::HoldNow { seconds: 0 });
+    }
+    suite.select_fresh_format();
+    suite
+}
+
+/// The redeemed scenario's verdict for `model` on the interpreted target over the runner's command
+/// clock, under a wall that moves a day on every reading: unheld, `Redeem` is decided a day after
+/// the `expiry` `Issue` stored.
+fn redeemed(suite: &ConformanceSuite, model: EssIr) -> Status {
+    const DAY_MS: u64 = 86_400_000;
+    let admitted = AdmittedSuite::from_suite(suite).unwrap_or_else(|error| panic!("{error}"));
+    let mut runner = Runner::new(
+        RunnerConfig::default(),
+        WithWall::new(
+            AdvancingClock::default(),
+            wall(WALL_MS, DAY_MS, &Rc::new(Cell::new(0))),
+        ),
+        Ids::for_suite(suite),
+    );
+    let target = Interpreted::for_model(model).with_command_clock(runner.command_clock());
+    let report = runner.run_admitted(&admitted, &target).into_report();
+    report
+        .scenarios
+        .iter()
+        .find(|scenario| scenario.scenario.to_string() == REDEEMED)
+        .map(|scenario| scenario.status)
+        .expect("the redeemed scenario ran")
+}
+
+/// The interpreted target offers `hold_now` by construction: the runner writes the held instant into
+/// the command clock it handed out, so `Redeem` is decided at the instant `Issue`'s `expiry` was
+/// sent relative to, however far the wall has moved, and passes on the boundary.
+#[test]
+fn issue_586_the_interpreted_target_decides_a_held_command_at_the_held_instant() {
+    let held = redeem_at_the_boundary(true);
+    assert_eq!(
+        held.provenance.suite_version.to_string(),
+        "ess-conformance/50"
+    );
+    assert_eq!(redeemed(&held, codes(">=")), Status::Passed);
+    // Unheld, the same boundary value is decided at the next step's instant, a day later.
+    assert_eq!(
+        redeemed(&redeem_at_the_boundary(false), codes(">=")),
+        Status::Failed
+    );
+}
+
+/// The held boundary kills the guard-boundary mutant, `expiry > now`, which refuses a code that
+/// expires exactly now.
+#[test]
+fn issue_586_a_held_boundary_kills_the_strict_mutant_on_the_interpreted_target() {
+    assert_eq!(
+        redeemed(&redeem_at_the_boundary(true), codes(">")),
+        Status::Failed
+    );
+}
+
+// ---- adversary, beyond10x/ess#586 ------------------------------------------------------------
+
+/// Every scenario of `suite` against the interpreted target of `model` over the runner's command
+/// clock, under a wall that moves `step_ms` on every reading.
+fn statuses(
+    suite: &ConformanceSuite,
+    model: EssIr,
+    step_ms: u64,
+) -> std::collections::BTreeMap<String, Status> {
+    let admitted = AdmittedSuite::from_suite(suite).unwrap_or_else(|error| panic!("{error}"));
+    let mut runner = Runner::new(
+        RunnerConfig::default(),
+        WithWall::new(
+            AdvancingClock::default(),
+            wall(WALL_MS, step_ms, &Rc::new(Cell::new(0))),
+        ),
+        Ids::for_suite(suite),
+    );
+    let target = Interpreted::for_model(model).with_command_clock(runner.command_clock());
+    runner
+        .run_admitted(&admitted, &target)
+        .into_report()
+        .scenarios
+        .iter()
+        .map(|scenario| (scenario.scenario.to_string(), scenario.status))
+        .collect()
+}
+
+/// Acceptance `fixed_clock_kills_the_boundary_mutant`, on the issue's own reproduction: the suite
+/// *synthesis* writes for `expiry >= now` (stored by `Issue`, guarded by `Redeem`) — not one
+/// rewritten by hand — holds a scenario that puts `now` on the stored `expiry`, every one of its
+/// scenarios passes against the model's own interpreter, and the `>` mutant fails it.
+#[test]
+fn adversary_586_synthesis_holds_the_stored_boundary_of_the_reproduction() {
+    let suite = synthesize(&codes(">=")).suite;
+    let held: Vec<String> = suite
+        .scenarios
+        .keys()
+        .map(ToString::to_string)
+        .filter(|id| id.contains("/held/"))
+        .collect();
+    assert_eq!(
+        held.len(),
+        1,
+        "one scenario on the stored `expiry >= now` boundary: {:#?}",
+        suite.scenarios.keys().collect::<Vec<_>>()
+    );
+    let correct = statuses(&suite, codes(">="), 250);
+    assert!(
+        correct.values().all(|status| *status == Status::Passed),
+        "{correct:#?}"
+    );
+    let mutant = statuses(&suite, codes(">"), 250);
+    assert_eq!(mutant[&held[0]], Status::Failed, "{mutant:#?}");
+}
+
+/// Two `now` guards on one command's inputs: every held scenario synthesis writes is decided by
+/// the model's own interpreter the way the scenario requires, so moving one value onto its
+/// boundary never changes the other guard's decision.
+#[test]
+fn adversary_586_two_now_guards_on_one_command_hold_consistent_scenarios() {
+    let text = include_str!("fixtures/current-time-guard.yaml")
+        .replace(
+            "      - {name: starts_at, type: Timestamp}\n    outcomes:",
+            "      - {name: starts_at, type: Timestamp}\n      - {name: ends_at, type: Timestamp}\n    outcomes:\n      - name: ends-too-late\n        when: ends_at > now + 3600s\n        error: demo.jobs.StartInPast",
+        );
+    assert!(text.contains("ends-too-late"), "{text}");
+    let raw = RawSpecFile::parse(&text).unwrap_or_else(|error| panic!("{error}\n{text}"));
+    let specification = Specification::assemble([(Source::new("system.yaml"), raw)])
+        .unwrap_or_else(|errors| panic!("{errors}\n{text}"));
+    let model = compile(&specification, &SourceMap::new())
+        .unwrap_or_else(|diagnostics| panic!("{diagnostics}"));
+    let synthesis = synthesize(&model);
+    let held = synthesis
+        .suite
+        .scenarios
+        .keys()
+        .filter(|id| id.to_string().contains("/held/"))
+        .count();
+    assert!(
+        held >= 1,
+        "{:#?}",
+        synthesis.suite.scenarios.keys().collect::<Vec<_>>()
+    );
+    let verdicts = statuses(&synthesis.suite, model, 250);
+    assert!(
+        verdicts.values().all(|status| *status == Status::Passed),
+        "{verdicts:#?}"
+    );
 }

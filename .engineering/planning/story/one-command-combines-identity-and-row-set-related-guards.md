@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:one-command-combines-identity-and-row-set-related-guards
 kind: story
-status: draft
+status: archived
 title: One command may guard on an identity-addressed related row and on a row set, and a related guard may sit beside when_subject
 tags:
 - feature-request
@@ -11,7 +11,10 @@ refs:
   reference: beyond10x/ess#473
 relations:
 - serves: vision:O2
-revision: 2
+- decomposes: epic:generic-guard-precedence
+revision: 4
+transitions:
+- {from: "draft", to: "archived", at: "2026-10-16T07:15:03Z", actor: "human:timo", revision: 4}
 ---
 ## Outcome
 
@@ -64,3 +67,29 @@ Reproduced on ess 0.56.0 (domain `shop.orders`, `ess/23`): identity `when_relate
 | U3 interpreter | `ess-conformance/src/interpret/execute.rs`, `execute/row_set.rs`, `execute/related.rs` |
 | U4 synthesis | `ess-conformance/src/synthesize/row_set.rs`, `synthesize/related_guard.rs` |
 | U5 generation | `ess-synth/src/determined.rs` (`related_composition`), `tests/declared_behaviour.rs` |
+
+## Reports of 2026-10-13
+
+Reports of 2026-10-13, from a downstream incident-ledger specification (ess 0.59.0, `ess/24`). This
+story did not ship in 0.59.0 (still draft); both reproduce there.
+
+- https://github.com/beyond10x/ess/issues/554: `ESS-COMMAND-004 conflicting_declaration` on 5
+  commands, "selects on a related row (`when_related`) and on an `unknown_instance` branch; which of
+  the two answers first is not stated" and "… and on a `when_subject` guard …". The workaround drops
+  guards: 3 commands declare no answer for an unknown id, 2 answer it with `wrong_state`, 2 subject
+  checks are lost. Requester's proposal (theirs): existence first, then held state and `when_subject`,
+  then related rows, "as stored `via:` is already read". Note for the design: for a related row
+  addressed by an **input**, that differs from the current plan, where `exists: false` over an
+  input-named row is phase `RelatedRow`, before `Existence` (`docs/design/selection-plan.md`, "The
+  phases"); for a stored `via:` it agrees (`PresentRelated`). The binding design decides it once.
+- Comment on https://github.com/beyond10x/ess/issues/473: a row-set guard (`when_related: {entity:
+  review.Review, where: …, exists: true}`) beside identity-addressed guards still refuses
+  `ESS-COMMAND-009`. Its synthesis half (the row set needs a review moved to Approved) is
+  `story:synthesis-arranges-state-through-the-command-that-reaches-it`.
+
+Parent: `epic:generic-guard-precedence`. Binding design: `docs/design/generic-language-features.md`
+(being drafted), feature 4; it supersedes this story's per-pair admission where they differ.
+
+Added acceptance: `incident_ledger_guard_combinations_validate`: a neutral command with
+`unknown_instance`, `when_subject` and an input-addressed `when_related` validates, and the
+interpreter answers in the rule's order on each branch.

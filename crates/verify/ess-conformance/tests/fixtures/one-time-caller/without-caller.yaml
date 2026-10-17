@@ -1,0 +1,43 @@
+format: ess/22
+system: keys
+version: v1
+domain: keys.api
+entities:
+  - name: keys.api.ApiKey
+    identity: {name: key_id, type: Uuid}
+    fields:
+      - {name: issued_by, type: String}
+    lifecycle:
+      initial: Active
+      states: [Active]
+      terminal: [Active]
+actors:
+  - name: keys.api.Admin
+    attributes:
+      - {name: user_id, type: String}
+    may: [keys.api.IssueKey]
+  - name: keys.api.Viewer
+    attributes:
+      - {name: user_id, type: String}
+    may: []
+commands:
+  - name: keys.api.IssueKey
+    input:
+      - {name: key_id, type: Uuid}
+      - {name: issuer, type: String}
+    response:
+      - {name: secret, type: String}
+    outcomes:
+      - name: issued
+        creates: keys.api.ApiKey
+        instance: key_id
+        sets: {issued_by: input.issuer}
+        returns: true
+        one_time_response: [secret]
+        emits: [keys.api.KeyIssued]
+        payload:
+          keys.api.KeyIssued: {key_id: input.key_id}
+events:
+  - name: keys.api.KeyIssued
+    fields:
+      - {name: key_id, type: Uuid}

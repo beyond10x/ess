@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use ess_ui::{Document, Located, NodePath, NodeRef, Profile, State, StateClass, Store};
-use serde_yaml::{Mapping, Value};
+use ess_yaml::{Mapping, Value};
 
 use crate::data::DataAdapter;
 use crate::profile::Refusal;
@@ -142,15 +142,13 @@ pub fn class_default(document: &Document, class: &StateClass) -> Option<Store> {
 fn profile_default(profile: &str, class: &StateClass) -> Option<Store> {
     static TABLES: OnceLock<BTreeMap<String, BTreeMap<StateClass, Store>>> = OnceLock::new();
     let tables = TABLES.get_or_init(|| {
-        let schema: Value = serde_yaml::from_str(ess_ui::SCHEMA).expect("the schema is YAML");
+        let schema: Value = ess_yaml::from_str(ess_ui::SCHEMA).expect("the schema is YAML");
         let mut tables = BTreeMap::new();
         if let Some(profiles) = schema["constructs"]["PlacementProfile"]["profiles"].as_mapping() {
             for (name, entry) in profiles {
                 if let (Some(name), Ok(defaults)) = (
                     name.as_str(),
-                    serde_yaml::from_value::<BTreeMap<StateClass, Store>>(
-                        entry["defaults"].clone(),
-                    ),
+                    ess_yaml::from_value::<BTreeMap<StateClass, Store>>(entry["defaults"].clone()),
                 ) {
                     tables.insert(name.to_owned(), defaults);
                 }
@@ -334,13 +332,13 @@ impl StateStore {
     fn file(&self, store: &Store) -> Mapping {
         std::fs::read_to_string(self.file_path(store))
             .ok()
-            .and_then(|text| serde_yaml::from_str(&text).ok())
+            .and_then(|text| ess_yaml::from_str(&text).ok())
             .unwrap_or_default()
     }
 
     fn write_file(&self, store: &Store, content: &Mapping) {
         if std::fs::create_dir_all(&self.dir).is_ok() {
-            if let Ok(text) = serde_yaml::to_string(content) {
+            if let Ok(text) = ess_yaml::to_string(content) {
                 let _ = std::fs::write(self.file_path(store), text);
             }
         }

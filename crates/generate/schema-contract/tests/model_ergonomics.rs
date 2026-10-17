@@ -278,3 +278,118 @@ fn bundle_input_keeps_its_hash_names_and_refuses_short_names() {
     );
     assert!(plan.with_short_names().is_err());
 }
+
+/// A newtype's declared alphabet and text length, held by the realized Rust type's decoder
+/// (beyond10x/ess#579): the report's unit, drawn from printable ASCII without the space and at
+/// most eight characters long. A newtype that declares neither stays a plain transparent string.
+const UNITS: &str = r##"format: ess/20
+system: probe
+version: v1
+domains: [probe.units]
+domain: probe.units
+types:
+  - name: probe.units.Unit
+    kind: newtype
+    of: String
+    alphabet: "!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
+    invariants: [value.count >= 1, value.count <= 8]
+  - name: probe.units.Label
+    kind: newtype
+    of: String
+  - name: probe.units.Reading
+    kind: struct
+    fields:
+      - {name: unit, type: probe.units.Unit}
+      - {name: label, type: probe.units.Label}
+"##;
+
+#[test]
+fn rust_refuses_a_value_outside_a_declared_alphabet_or_length() {
+    let plan = Plan::from_model(&model::selection(UNITS, &["probe.units.Reading"])).expect("plan");
+    let realization = plan.rust("probe-units").expect("rust");
+    let types = &realization.declarations;
+    assert!(
+        types.contains(&format!(
+            "{}#[serde(transparent)]\npub struct ProbeUnitsLabel(pub ::std::string::String);\n",
+            "#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]\n"
+        )),
+        "an unconstrained newtype keeps its bytes: {types}"
+    );
+    assert!(
+        types.contains("pub fn broken_constraint(&self) -> Option<&'static str>"),
+        "{types}"
+    );
+    assert!(
+        !serde_json::to_string(&realization.report)
+            .expect("report")
+            .contains("model_alphabet"),
+        "the Rust decoder checks the alphabet, so it is no obligation left to the consumer"
+    );
+
+    let root = scratch("units-rust");
+    fs::create_dir_all(root.join("tests")).expect("tests dir");
+    fs::write(
+        root.join("Cargo.toml"),
+        &realization.supporting["Cargo.toml"],
+    )
+    .expect("manifest");
+    fs::write(root.join("types.rs"), types).expect("types");
+    fs::write(
+        root.join("tests/units.rs"),
+        r#"
+use probe_units::*;
+
+fn reading(unit: &str) -> String {
+    serde_json::json!({"unit": unit, "label": "anything at all"}).to_string()
+}
+
+#[test]
+fn a_unit_outside_its_alphabet_or_length_is_refused_naming_the_constraint() {
+    for unit in ["m", "kg/m2", "12345678", "{x}~"] {
+        let decoded: ProbeUnitsReading = serde_json::from_str(&reading(unit)).expect(unit);
+        assert_eq!(decoded.unit.0, unit);
+        assert_eq!(serde_json::to_string(&decoded.unit).unwrap(), serde_json::to_string(unit).unwrap());
+        assert_eq!(decoded.unit.broken_constraint(), None);
+    }
+    for (unit, constraint) in [
+        ("m s", "one of"),
+        ("m\t s", "one of"),
+        ("m\u{0}", "one of"),
+        ("m\u{7f}", "one of"),
+        ("\u{b5}m", "one of"),
+        (" ", "one of"),
+        ("", "at least 1"),
+        ("123456789", "at most 8"),
+    ] {
+        let error = serde_json::from_str::<ProbeUnitsReading>(&reading(unit))
+            .expect_err(&format!("{unit:?} decodes"))
+            .to_string();
+        assert!(error.contains("probe.units.Unit") && error.contains(constraint), "{unit:?}: {error}");
+        let direct = serde_json::from_value::<ProbeUnitsUnit>(serde_json::json!(unit))
+            .expect_err(&format!("{unit:?} decodes directly"))
+            .to_string();
+        assert!(direct.contains(constraint), "{unit:?}: {direct}");
+        assert!(ProbeUnitsUnit(unit.to_owned()).broken_constraint().unwrap().contains(constraint));
+    }
+    let label: ProbeUnitsLabel = serde_json::from_str("\" \"").unwrap();
+    assert_eq!(label.0, " ");
+}
+"#,
+    )
+    .expect("test");
+    let output = Command::new(env!("CARGO"))
+        .args(["test", "--offline", "--quiet", "--manifest-path"])
+        .arg(root.join("Cargo.toml"))
+        .env(
+            "CARGO_TARGET_DIR",
+            Path::new(env!("CARGO_TARGET_TMPDIR")).join("ergonomics-target"),
+        )
+        .output()
+        .expect("cargo runs");
+    assert!(
+        output.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}

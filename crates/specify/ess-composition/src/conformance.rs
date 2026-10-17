@@ -1,4 +1,5 @@
-//! `ess-composition/2` and `/3` type conformance: a consumer's local type against an imported one.
+//! Type conformance (from `ess-composition/2`): a consumer's local type against an imported one,
+//! and the input comparison of an `implements` contract role (`ess-composition/4`).
 //!
 //! The comparison is structural, because the two ends live in different compiled models and share
 //! no handle. Two named types conform when they have the same kind and:
@@ -89,6 +90,58 @@ pub(crate) fn resolve_conformances(
         }
     }
     conformances
+}
+
+/// Compares a local command's input with a contract command's for an `implements` role entry,
+/// returning every drift, each naming its field.
+///
+/// Every contract input field must be a local input field of the same name, with the same wire
+/// name, a conforming type and, where both are `Optional`, the same `presence`: the comparison a
+/// type conformance applies to a struct's fields, without reader widening. A local input field the
+/// contract does not declare must be `Optional` and not `null_when_absent`, since the contract's
+/// caller never sends it.
+pub(crate) fn compare_inputs(
+    (local, local_command, mine): (&EssIr, &QualifiedName, &[ResolvedField]),
+    (contract, contract_command, theirs): (&EssIr, &QualifiedName, &[ResolvedField]),
+) -> Vec<String> {
+    let mut comparison = Comparison {
+        local,
+        imported: contract,
+        reader: false,
+        visiting: BTreeSet::new(),
+        drifts: Vec::new(),
+    };
+    for field in theirs {
+        match mine.iter().find(|candidate| candidate.name == field.name) {
+            None => comparison.drifts.push(format!(
+                "field `{}`: `{contract_command}` sends it and `{local_command}` does not declare it",
+                field.name
+            )),
+            Some(own) => {
+                comparison.field_naming(&field.name, own, field, contract_command);
+                comparison.references(&field.name, &own.type_ref, &field.type_ref);
+            }
+        }
+    }
+    for field in mine {
+        if theirs.iter().any(|candidate| candidate.name == field.name) {
+            continue;
+        }
+        if !matches!(field.type_ref, ResolvedTypeRef::Optional { .. }) {
+            comparison.drifts.push(format!(
+                "field `{}`: `{local_command}` requires it and `{contract_command}` never sends it",
+                field.name
+            ));
+        } else if field.naming.presence == Some(Presence::NullWhenAbsent) {
+            comparison.drifts.push(format!(
+                "field `{}`: `{local_command}` reads it as {} and `{contract_command}` never \
+                 sends it",
+                field.name,
+                presence(field.naming.presence)
+            ));
+        }
+    }
+    comparison.drifts
 }
 
 /// One structural walk over a local and an imported model.

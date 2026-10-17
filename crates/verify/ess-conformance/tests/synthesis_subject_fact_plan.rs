@@ -537,3 +537,81 @@ fn exchanging_held_state_and_accepting_moves_the_first_declared_pick() {
         "the interpreter, reading the same exchanged order, passes the suite"
     );
 }
+
+/// beyond10x/ess#530 (ess/25): `SignIn` creates the seat for an identity no seat carries (`first`,
+/// `unknown_instance:` with `creates:`) and otherwise selects its move by the stored row: `Busy`
+/// with a call reference (`reopened-busy`), `Closed` (`opened`), every other seat (`reopened`).
+const CREATE_OR_UPDATE: &str = include_str!(
+    "../../../specify/ess-compiler/tests/fixtures/create-or-update-stored-fields.yaml"
+);
+
+const SIGN_IN: &str = "demo.desk.SignIn";
+
+/// Whether `scenario` sends `SignIn` the identity a seat it arranged carries.
+fn signs_in_to_an_arranged_seat(scenario: &ConformanceScenario) -> bool {
+    scenario.steps.iter().any(|step| {
+        matches!(step, ScenarioStep::ExecuteCommand { command, input, .. }
+            if command.name().to_string() == SIGN_IN
+                && matches!(input.get("user_id"), Some(ScenarioValue::Instance { .. })))
+    })
+}
+
+#[test]
+fn create_or_update_synthesizes_creation_on_an_unknown_identity_and_each_stored_field_branch() {
+    let model = ir(CREATE_OR_UPDATE);
+    let synthesis = ess_conformance::synthesize::synthesize(&model);
+    let about_sign_in: Vec<String> = refusals(&synthesis)
+        .into_iter()
+        .filter(|text| text.contains(SIGN_IN))
+        .collect();
+    assert_eq!(
+        about_sign_in,
+        Vec::<String>::new(),
+        "no SignIn branch is refused"
+    );
+    let noted: Vec<String> = synthesis
+        .notes
+        .iter()
+        .map(ToString::to_string)
+        .filter(|text| text.contains(SIGN_IN))
+        .collect();
+    assert_eq!(
+        noted,
+        Vec::<String>::new(),
+        "no SignIn branch is left unwitnessed"
+    );
+
+    // `first`: the identity is a literal no scenario arranges a seat under, sent first.
+    let first = scenario(&synthesis, "demo.desk.SignIn/outcome/first");
+    let ScenarioStep::ExecuteCommand { command, input, .. } = &first.steps[0] else {
+        panic!("SignIn is the first step:\n{:#?}", first.steps);
+    };
+    assert_eq!(command.name().to_string(), SIGN_IN);
+    assert!(
+        matches!(input.get("user_id"), Some(ScenarioValue::Literal { .. })),
+        "the unknown identity is a literal: {input:#?}"
+    );
+    assert!(
+        first.steps.iter().any(|step| matches!(step,
+            ScenarioStep::ExpectOutcome { outcome } if outcome.to_string() == "demo.desk.SignIn/first")),
+        "{:#?}",
+        first.steps
+    );
+
+    // Each stored-field branch: on a seat the scenario arranged.
+    for branch in ["reopened-busy", "opened", "reopened"] {
+        let id = format!("demo.desk.SignIn/outcome/{branch}");
+        let found = scenario(&synthesis, &id);
+        assert!(
+            signs_in_to_an_arranged_seat(found),
+            "{id} is sent to an arranged seat:\n{:#?}",
+            found.steps
+        );
+    }
+
+    assert_eq!(
+        not_passed(model, &synthesis.suite),
+        Vec::<String>::new(),
+        "the interpreted target passes every scenario"
+    );
+}

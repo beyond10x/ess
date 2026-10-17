@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-15T08:45:13Z",
+  "actor": "human:timo",
+  "artifact": "story:disclosure-scenarios-bind-the-caller",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "shipped in 0.60.0 (PR 575, Fixes #550); its CI Gate and the 0.60.0 tag run were green",
+    "reference": "19d601013b"
+  }
+}

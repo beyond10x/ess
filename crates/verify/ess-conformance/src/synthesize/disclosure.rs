@@ -2,8 +2,8 @@
 use super::{
     exercise, granted_actors, has_subject_guards, purpose, related_guard, run, subject_fact,
     ActorRef, BTreeMap, CommandRef, ConformanceScenario, Distinction, EssIr, EventRef, OutcomeRef,
-    QualifiedName, Refusal, RefusalCause, ResolvedCommand, ResolvedOutcome, ScenarioId,
-    ScenarioStep, ScenarioValue, Synthesis, ViewRef, WitnessGap,
+    QualifiedName, Refusal, RefusalCause, ResolvedCommand, ResolvedCondition, ResolvedOutcome,
+    ScenarioId, ScenarioStep, ScenarioValue, Synthesis, ViewRef, WitnessGap,
 };
 use crate::one_time_response::{Aspect, Cell};
 
@@ -65,7 +65,9 @@ pub(super) fn augment(ir: &EssIr, synthesis: &mut Synthesis) {
                                 scenario.steps.extend(steps);
                                 scenario.source.extend(source);
                                 insert(ir, synthesis, id, scenario);
-                            } else if repeat_exact(ir, &mut scenario, &origin_run) {
+                            } else if supplied_identity(outcome, &origin_run).is_none()
+                                && repeat_exact(ir, &mut scenario, &origin_run)
+                            {
                                 insert(ir, synthesis, id, scenario);
                             } else {
                                 synthesis.refusals.extend(retry_refusals);
@@ -146,6 +148,9 @@ fn retry(
     std::collections::BTreeSet<super::EssSemanticRef>,
     super::Run,
 )> {
+    if let Some(field) = supplied_identity(outcome, origin) {
+        return supplied_retry(ir, command, field, origin, actors, id, refusals);
+    }
     let (Some(subject), Some(instance), Some(_)) = (
         command.selection_subject(outcome),
         origin.instance.as_ref(),
@@ -226,6 +231,79 @@ fn retry(
         after_steps: Vec::new(),
         before_settled: origin.settled.clone(),
         settled,
+        refused: Vec::new(),
+        unclaimed: Vec::new(),
+        unobserved: std::collections::BTreeSet::new(),
+    };
+    super::exercise_run(ir, command, branch, actors, id, refusals, run)
+}
+
+/// The input field a creation takes its identity from where the origin's caller supplied it,
+/// outside create-or-update, whose identical repeat updates the row instead. An identity the
+/// origin left to be generated is minted afresh by the repeat, as for any minted identity.
+fn supplied_identity<'a>(outcome: &'a ResolvedOutcome, origin: &super::Run) -> Option<&'a str> {
+    super::existence::identity_input(outcome).filter(|field| {
+        !super::existence::creates_unknown(outcome) && origin.input.contains_key(*field)
+    })
+}
+
+/// The retry of a creation whose identity the caller supplies (beyond10x/ess#574). Sent again
+/// unchanged, it names the row its origin created, so the command's `existing_instance:` refusal
+/// answers it over the origin's post-state. Without one the model declares no answer, and the cell
+/// is refused naming that declaration rather than redrawing the identity or inventing an outcome.
+fn supplied_retry(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    field: &str,
+    origin: &super::Run,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    id: &ScenarioId,
+    refusals: &mut Vec<Refusal>,
+) -> Option<(
+    Vec<ScenarioStep>,
+    std::collections::BTreeSet<super::EssSemanticRef>,
+    super::Run,
+)> {
+    let Some(branch) = command
+        .outcomes
+        .iter()
+        .find(|branch| branch.condition == ResolvedCondition::ExistingInstance)
+    else {
+        refusals.push(refusal(
+            id,
+            &format!(
+                "the identical retry sends again the caller-supplied identity `{field}` of the row \
+                 the origin created, and `{}` declares no `existing_instance:` outcome to answer \
+                 it; declare one to make this cell reachable",
+                command.name
+            ),
+        ));
+        return None;
+    };
+    let Some(mut invocation) = origin.invoke.iter().find(|step| matches!(step, ScenarioStep::ExecuteCommand { command: named, .. } if named.name() == &command.name)).cloned() else {
+        refusals.push(refusal(id, "the origin has no typed command invocation to repeat"));
+        return None;
+    };
+    let actor = actors.get(&command.name).cloned();
+    if let ScenarioStep::ExecuteCommand { actor: caller, .. } = &mut invocation {
+        caller.clone_from(&actor);
+    }
+    let selected = OutcomeRef::new(CommandRef::new(command.name.clone()), branch.name.clone());
+    let run = super::Run {
+        setup: Vec::new(),
+        invoke: vec![
+            invocation,
+            ScenarioStep::ExpectOutcome { outcome: selected },
+        ],
+        before: origin.after.clone(),
+        after: origin.after.clone(),
+        instance: origin.instance.clone(),
+        actor,
+        input: origin.input.clone(),
+        source: origin.source.clone(),
+        after_steps: Vec::new(),
+        before_settled: origin.settled.clone(),
+        settled: origin.settled.clone(),
         refused: Vec::new(),
         unclaimed: Vec::new(),
         unobserved: std::collections::BTreeSet::new(),
@@ -525,6 +603,10 @@ fn insert(
     id: ScenarioId,
     mut scenario: ConformanceScenario,
 ) {
+    // The cell is built from the model itself, outside the caller readings that mark every other
+    // scenario: a command it sends is sent as the suite's caller, whose attributes the outcome
+    // may read (`{caller: <attribute>}`, beyond10x/ess#550).
+    super::caller::send_as_first(ir, &mut scenario);
     if let Err(reason) = crate::one_time_response::produce::attach(ir, &mut scenario) {
         synthesis.refusals.push(refusal(&id, &reason));
         return;

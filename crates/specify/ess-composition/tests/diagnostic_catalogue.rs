@@ -26,7 +26,7 @@ fn declared_variants(source: &str, name: &str) -> BTreeSet<String> {
 #[test]
 fn every_composition_code_is_catalogued_once_with_a_meaning_and_a_repair() {
     let declared = declared_variants(include_str!("../src/lib.rs"), "CompositionCode");
-    assert_eq!(declared.len(), 14, "{declared:?}");
+    assert_eq!(declared.len(), 17, "{declared:?}");
     let catalogued: BTreeSet<String> = CompositionCode::CATALOGUE
         .iter()
         .map(|entry| format!("{:?}", entry.key))
@@ -41,5 +41,23 @@ fn every_composition_code_is_catalogued_once_with_a_meaning_and_a_repair() {
         assert_eq!(entry.key.catalogue_entry().key, entry.key);
         assert!(!entry.meaning.trim().is_empty(), "{}", entry.key);
         assert!(!entry.repair.trim().is_empty(), "{}", entry.key);
+    }
+}
+
+#[test]
+fn the_contract_role_categories_are_catalogued_under_their_wire_names() {
+    let spelled: BTreeSet<String> = CompositionCode::CATALOGUE
+        .iter()
+        .map(|entry| entry.key.to_string())
+        .collect();
+    for code in [
+        "unknown_role_service",
+        "conflicting_role",
+        "role_input_drift",
+    ] {
+        assert!(
+            spelled.contains(code),
+            "`{code}` is catalogued: {spelled:?}"
+        );
     }
 }

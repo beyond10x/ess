@@ -1,4 +1,4 @@
-//! Format authority for a command the system issues itself: suite `/50` ordinary and `/51`
+//! Format authority for a command the system issues itself: suite `/52` ordinary and `/53`
 //! coverage (beyond10x/ess#542, `docs/design/system-issued-commands.md`).
 //!
 //! # What changes meaning
@@ -16,12 +16,12 @@
 //! # What selects it
 //!
 //! A suite carrying any of the three ([`used_by`]). Every other suite keeps its bytes and its
-//! format. A reader that admits only through `/49` refuses a `/50` suite by version, before any
+//! format. A reader that admits only through `/51` refuses a `/52` suite by version, before any
 //! target callback; every reader refuses the vocabulary under a lower major.
 //!
 //! # Cumulative, in every runner
 //!
-//! `/50` and `/51` are cumulative over every major below them. The Rust runner and the generated
+//! `/52` and `/53` are cumulative over every major below them. The Rust runner and the generated
 //! Go and TypeScript runtimes execute them (stage 2: `AwaitTarget` in Go, `awaitOutcome?` in
 //! TypeScript). Browser replay replays only `/5`, `/9` and `/35`, and refuses both by version.
 
@@ -116,17 +116,17 @@ pub fn identity_input(command: &ResolvedCommand) -> Result<&str, Unaddressed> {
 }
 
 /// The ordinary suite major that carries the await vocabulary.
-pub const ORDINARY: u32 = 50;
+pub const ORDINARY: u32 = 52;
 
 /// Its coverage counterpart.
-pub const COVERAGE: u32 = 51;
+pub const COVERAGE: u32 = 53;
 
 /// The suite majors this module introduces.
 pub const ADMITTED: [u32; 2] = [ORDINARY, COVERAGE];
 
 /// What an older envelope reports for this vocabulary.
 pub const REQUIRES: &str =
-    "awaiting a system-issued command requires suite/50 or /51 (await_outcome, expect_not_issued, \
+    "awaiting a system-issued command requires suite/52 or /53 (await_outcome, expect_not_issued, \
      {kind: awaited})";
 
 /// The step tags this vocabulary adds.
@@ -178,7 +178,7 @@ fn expectation_reads(expectation: &crate::scenario::ViewExpectation) -> bool {
     }
 }
 
-/// Whether a suite carries an await step or an awaited value (suite/50 and /51).
+/// Whether a suite carries an await step or an awaited value (suite/52 and /53).
 pub fn used_by(suite: &ConformanceSuite) -> bool {
     suite
         .scenarios
@@ -236,7 +236,7 @@ pub(crate) fn step_keys(tag: &str) -> Option<(&'static [&'static str], &'static 
     }
 }
 
-/// Refuse an explicitly pinned suite below `/50` that carries the vocabulary.
+/// Refuse an explicitly pinned suite below `/52` that carries the vocabulary.
 pub(crate) fn admit(suite: &ConformanceSuite) -> Result<(), crate::AdmissionError> {
     if used_by(suite) && suite.provenance.suite_version.major() < ORDINARY {
         return Err(crate::AdmissionError::new(

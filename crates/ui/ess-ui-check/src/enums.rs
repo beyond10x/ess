@@ -6,7 +6,7 @@
 //! fails when the schema declares an enum this module neither checks nor names as typed.
 
 use ess_ui::{Body, ChartKind, Composite, Document, Located, NodePath, NodeRef, Primitive};
-use serde_yaml::Value;
+use ess_yaml::Value;
 
 use crate::schema::{self, is_unmapped_marker};
 use crate::walk::in_declaration;

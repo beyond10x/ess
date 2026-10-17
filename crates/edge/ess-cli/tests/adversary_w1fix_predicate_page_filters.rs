@@ -10,7 +10,7 @@ use std::{
     process::Command,
 };
 
-use serde_yaml::Value;
+use ess_yaml::Value;
 
 const PAGE: &str = "website/docs/reference/predicates.md";
 
@@ -26,11 +26,11 @@ fn page_model() -> Value {
     let body = &page[start..];
     let body = &body[body.find('\n').expect("fence line ends") + 1..];
     let body = &body[..body.find("\n```").expect("the model block closes")];
-    serde_yaml::from_str(body).expect("the page's model is YAML")
+    ess_yaml::from_str(body).expect("the page's model is YAML")
 }
 
 fn with_filter(mut model: Value, filter: &str) -> Value {
-    let filter: Value = serde_yaml::from_str(filter).expect("the filter is YAML");
+    let filter: Value = ess_yaml::from_str(filter).expect("the filter is YAML");
     model
         .get_mut("views")
         .and_then(Value::as_sequence_mut)
@@ -72,7 +72,7 @@ fn synthesizes(name: &str, filter: &str) {
     let path = directory.join("model.yaml");
     fs::write(
         &path,
-        serde_yaml::to_string(&with_filter(page_model(), filter)).expect("serialize"),
+        ess_yaml::to_string(&with_filter(page_model(), filter)).expect("serialize"),
     )
     .expect("write");
     let (code, validated) = ess(&["specify", "validate"], &path);

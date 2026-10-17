@@ -206,7 +206,9 @@ jobs:
       CARGO_PROFILE_TEST_DEBUG: "0"
       # A pull request's feature-off archive holds the number-semantics cases only
       # (`FEATURE_OFF_NUMBER_SEMANTICS` in the Taskfile); every other event archives all of them.
-      FEATURE_OFF: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || startsWith(github.ref, 'refs/heads/queue/')) && 'number-semantics' || 'full' }}
+      # A call from `release.yml` passes `checkout-ref` and always archives all of them, whatever
+      # branch a backfill was dispatched from: the tag run is the release gate.
+      FEATURE_OFF: ${{ inputs.checkout-ref == '' && (github.event_name == 'pull_request' || github.event_name == 'merge_group' || startsWith(github.ref, 'refs/heads/queue/')) && 'number-semantics' || 'full' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -258,7 +260,7 @@ jobs:
     name: Test ${{ matrix.shard }}
     needs: [build-tests, build-feature-off]
     runs-on: ubuntu-latest
-    timeout-minutes: 70
+    timeout-minutes: 225
     strategy:
       # Every shard reports, so one red run names every failing test rather than the first shard's.
       fail-fast: false
@@ -341,9 +343,14 @@ jobs:
       - name: Fetch locked dependencies
         run: cargo fetch --locked
 
+      # Each archive is several GiB, and artifact throughput varies by an order of magnitude: on
+      # 2026-10-14 (release run 38588707717, main run 38599096240) downloads outlasted two
+      # 12-minute attempts on 13 and 5 of 20 shards whose tests then passed. So each archive gets
+      # three 30-minute attempts, each run only when every earlier one failed. The first two may
+      # fail; the last may not, so a shard that never got its archive fails rather than skipping.
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         id: archives
-        timeout-minutes: 12
+        timeout-minutes: 30
         continue-on-error: true
         with:
           name: nextest-archive-workspace
@@ -352,7 +359,16 @@ jobs:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         id: archives-retry
         if: ${{ !cancelled() && steps.archives.outcome != 'success' }}
-        timeout-minutes: 12
+        timeout-minutes: 30
+        continue-on-error: true
+        with:
+          name: nextest-archive-workspace
+          path: target/nextest-archives
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        id: archives-retry-2
+        if: ${{ !cancelled() && steps.archives.outcome != 'success' && steps.archives-retry.outcome != 'success' }}
+        timeout-minutes: 30
         with:
           name: nextest-archive-workspace
           path: target/nextest-archives
@@ -360,7 +376,7 @@ jobs:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         id: feature-off-archive
         if: ${{ !cancelled() }}
-        timeout-minutes: 12
+        timeout-minutes: 30
         continue-on-error: true
         with:
           name: nextest-archive-feature-off
@@ -369,13 +385,22 @@ jobs:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         id: feature-off-archive-retry
         if: ${{ !cancelled() && steps.feature-off-archive.outcome != 'success' }}
-        timeout-minutes: 12
+        timeout-minutes: 30
+        continue-on-error: true
+        with:
+          name: nextest-archive-feature-off
+          path: target/nextest-archives
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        id: feature-off-archive-retry-2
+        if: ${{ !cancelled() && steps.feature-off-archive.outcome != 'success' && steps.feature-off-archive-retry.outcome != 'success' }}
+        timeout-minutes: 30
         with:
           name: nextest-archive-feature-off
           path: target/nextest-archives
 
       - name: Workspace tests ${{ matrix.shard }}
-        if: ${{ !cancelled() && (steps.archives.outcome == 'success' || steps.archives-retry.outcome == 'success') }}
+        if: ${{ !cancelled() && (steps.archives.outcome == 'success' || steps.archives-retry.outcome == 'success' || steps.archives-retry-2.outcome == 'success') }}
         env:
           ESS_TUTORIAL_NETWORK: "1"
         run: task test-shard SHARD=${{ matrix.shard }}
@@ -387,7 +412,7 @@ jobs:
           df -h /
 
       - name: Feature-off tests ${{ matrix.shard }}
-        if: ${{ !cancelled() && (steps.feature-off-archive.outcome == 'success' || steps.feature-off-archive-retry.outcome == 'success') }}
+        if: ${{ !cancelled() && (steps.feature-off-archive.outcome == 'success' || steps.feature-off-archive-retry.outcome == 'success' || steps.feature-off-archive-retry-2.outcome == 'success') }}
         run: task test-feature-off SHARD=${{ matrix.shard }}
 
   transport-network:
@@ -460,10 +485,11 @@ jobs:
 
   output-ownership-macos:
     name: Output ownership (${{ matrix.runner }})
-    # Branch/PR validation qualifies the new protocol on both shipped macOS architectures.
-    # A release backfill can ask this reusable workflow to gate an older source commit that
-    # predates this test target; its own Taskfile and native packaging remain authoritative.
-    if: ${{ inputs.checkout-ref == '' }}
+    # Branch/PR validation and every release tag qualify the protocol on both shipped macOS
+    # architectures. Only a release backfill (`workflow_dispatch`) skips it: it can ask this
+    # reusable workflow to gate an older source commit that predates this test target, and that
+    # commit's own Taskfile and native packaging remain authoritative.
+    if: ${{ inputs.checkout-ref == '' || github.event_name != 'workflow_dispatch' }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:

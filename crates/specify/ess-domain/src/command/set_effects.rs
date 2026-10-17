@@ -30,6 +30,12 @@
 //! `sets:` source may read `<name>.<member>`; the member is held distinct across the list by a
 //! declared `distinct:`. Below ess/23 `each:` is refused, naming ess/23.
 //!
+//! From ess/25 (beyond10x/ess#531) an outcome with `instances:` may publish an event once per row it
+//! changed: `emits:` lists it as `{event: <name>, each: changed}`, optionally with `when_state:`
+//! naming the states such a row held before the outcome, and its payload block reads that row with
+//! `{changed: <field>}` and `{changed: state}` ([`PerRowEvent`], `per_row_rules`). Below ess/25,
+//! and on any other outcome, the entry is refused at its place in `emits:`.
+//!
 //! `sets:` of either takes a literal, `input.<field>`, `{input: …, else: …}`, `{generated: true}`
 //! or `{cleared: true}`; a source that reads one row (`{subject: …}`, `{related: …}`,
 //! `{increment: …}`) or the caller is refused by name in this first cut. Below ess/22 a move inside
@@ -154,6 +160,276 @@ pub struct SetSubject {
     pub effect: Effect,
     /// The rows selected.
     pub filter: Predicate,
+    /// The events the outcome publishes once per row it changed (ess/25, beyond10x/ess#531), in
+    /// the order its `emits:` lists them. Each is also among the outcome's `emits`, at its place.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub events: Vec<PerRowEvent>,
+}
+
+/// An event an outcome with `instances:` publishes once per row it changed (ess/25,
+/// beyond10x/ess#531): `{event: <name>, each: changed, when_state: <states>}` in `emits:`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct PerRowEvent {
+    /// The event.
+    pub event: QualifiedName,
+    /// The states a changed row must have held before the outcome for the event to be published
+    /// for it; `None` publishes it for every changed row.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub when_state: Option<crate::entity::HeldStates>,
+}
+
+/// One `emits:` entry as written: the event's name, or from ess/25 (beyond10x/ess#531) the event
+/// published once per changed row.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, schemars::JsonSchema)]
+#[serde(untagged)]
+pub enum RawEmit {
+    /// The event, published once.
+    Event(QualifiedName),
+    /// The event, published once per row the outcome changed.
+    PerRow(RawPerRowEmit),
+}
+
+impl RawEmit {
+    /// The event the entry names.
+    pub fn event(&self) -> &QualifiedName {
+        match self {
+            Self::Event(event) => event,
+            Self::PerRow(per_row) => &per_row.event,
+        }
+    }
+
+    /// The entry naming `event` instead, in the form it was written in.
+    pub fn set_event(&mut self, event: QualifiedName) {
+        match self {
+            Self::Event(named) => *named = event,
+            Self::PerRow(per_row) => per_row.event = event,
+        }
+    }
+}
+
+impl fmt::Display for RawEmit {
+    /// The event's name, the entry's identity among the outcome's events.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.event().fmt(f)
+    }
+}
+
+impl From<QualifiedName> for RawEmit {
+    fn from(event: QualifiedName) -> Self {
+        Self::Event(event)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for RawEmit {
+    /// A text is the event's name, read as a name always was, so its refusal keeps its words; a
+    /// mapping is the per-row form.
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Visitor;
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = RawEmit;
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str(
+                    "an event's name, or `{event: <name>, each: changed}` for one event per \
+                     changed row",
+                )
+            }
+            fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<RawEmit, E> {
+                QualifiedName::new(value)
+                    .map(RawEmit::Event)
+                    .map_err(E::custom)
+            }
+            fn visit_map<A: serde::de::MapAccess<'de>>(self, map: A) -> Result<RawEmit, A::Error> {
+                serde::Deserialize::deserialize(serde::de::value::MapAccessDeserializer::new(map))
+                    .map(RawEmit::PerRow)
+            }
+        }
+        deserializer.deserialize_any(Visitor)
+    }
+}
+
+/// `{event: <name>, each: changed, when_state: <states>}` as written (ess/25, beyond10x/ess#531).
+#[derive(
+    Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
+)]
+#[serde(deny_unknown_fields)]
+pub struct RawPerRowEmit {
+    /// The event.
+    pub event: QualifiedName,
+    /// Which rows publish it: `changed`, every row the outcome changed.
+    pub each: EachRow,
+    /// The states a changed row held before the outcome for it to publish the event: one state or
+    /// a list, as `when_subject_state:` spells them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub when_state: Option<crate::entity::HeldStates>,
+}
+
+/// The rows a per-row `emits:` entry is published for.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum EachRow {
+    /// Every row the outcome changed.
+    Changed,
+}
+
+/// The events one outcome lists, by name, and its per-row entries with their index in `emits:`.
+pub(super) fn read_emits(written: Vec<RawEmit>) -> (Vec<QualifiedName>, Vec<(usize, PerRowEvent)>) {
+    let mut names = Vec::with_capacity(written.len());
+    let mut per_row = Vec::new();
+    for (index, entry) in written.into_iter().enumerate() {
+        match entry {
+            RawEmit::Event(event) => names.push(event),
+            RawEmit::PerRow(entry) => {
+                names.push(entry.event.clone());
+                per_row.push((
+                    index,
+                    PerRowEvent {
+                        event: entry.event,
+                        when_state: entry.when_state,
+                    },
+                ));
+            }
+        }
+    }
+    (names, per_row)
+}
+
+/// An outcome's `emits:` as written back: each event by name, and each its set subject publishes
+/// once per changed row in the per-row form.
+pub(super) fn written_emits(emits: Vec<QualifiedName>, effects: &SetEffects) -> Vec<RawEmit> {
+    let per_row = effects
+        .instances
+        .as_ref()
+        .map_or(&[][..], |set| set.events.as_slice());
+    emits
+        .into_iter()
+        .map(
+            |event| match per_row.iter().find(|entry| entry.event == event) {
+                Some(entry) => RawEmit::PerRow(RawPerRowEmit {
+                    event,
+                    each: EachRow::Changed,
+                    when_state: entry.when_state.clone(),
+                }),
+                None => RawEmit::Event(event),
+            },
+        )
+        .collect()
+}
+
+/// The per-row entries of an outcome given to its set subject; refused, at the entry, on an outcome
+/// without `instances:`. An assembled specification of one header reaches this with such an entry
+/// already refused and read as the plain event ([`refuse_per_row_events`]); the refusal here is the
+/// backstop for an outcome converted on its own.
+pub(super) fn per_row_events(
+    name: &OutcomeName,
+    instances: Option<&mut SetSubject>,
+    per_row: Vec<(usize, PerRowEvent)>,
+) -> Result<(), ValidationErrors> {
+    let Some(set) = instances else {
+        return match per_row.first() {
+            None => Ok(()),
+            Some((index, entry)) => Err(ValidationErrors::from(per_row_without_instances(
+                name.as_str(),
+                &entry.event,
+                format!("outcomes.{name}.emits[{index}]"),
+            ))),
+        };
+    };
+    set.events = per_row.into_iter().map(|(_, entry)| entry).collect();
+    Ok(())
+}
+
+/// The refusal of a per-row `emits:` entry on an outcome without `instances:`, at `at`.
+fn per_row_without_instances(name: &str, event: &QualifiedName, at: String) -> ValidationError {
+    ValidationError::new(
+        ValidationCode::UnsupportedConstruct,
+        at,
+        format!(
+            "outcome `{name}` publishes `{event}` once per changed row and declares no \
+             `instances:`; an event per changed row is admitted on an outcome that changes the \
+             rows a filter selects"
+        ),
+    )
+    .with_hint(format!(
+        "list `{event}` by name to publish it once, or select the rows with `instances: {{where: \
+         …}}`"
+    ))
+}
+
+/// The refusal of a per-row `emits:` entry below ess/25, at `at`.
+fn per_row_below_ess_25(event: &QualifiedName, at: String) -> ValidationError {
+    ValidationError::new(
+        ValidationCode::UnsupportedFormatVersion,
+        at,
+        format!(
+            "`{event}` published once per changed row — `{{event: …, each: changed}}` in \
+             `emits:` — requires specification format ess/25"
+        ),
+    )
+    .with_hint(format!(
+        "declare `format: ess/25`, or list `{event}` by name to publish it once"
+    ))
+}
+
+/// Refuses, before any outcome is converted, under one header, each per-row `emits:` entry the
+/// outcome cannot declare (beyond10x/ess#531), at the entry: below `ess/25` every one, naming
+/// `ess/25`; from `ess/25` one on an outcome without `instances:`.
+///
+/// The entry is read as the plain event it names and every `{changed: …}` field of that event's
+/// payload block as `{generated: true}`, so the branch converts and the refusal comes alone. A
+/// specification of several headers keeps the conversion's refusal and [`validate`]'s.
+pub(crate) fn refuse_per_row_events(
+    files: &mut [(crate::system::Source, crate::spec::RawSpecFile)],
+    errors: &mut ValidationErrors,
+) {
+    let headers: Vec<Option<FormatVersion>> = files
+        .iter()
+        .filter(|(_, file)| file.system.is_some())
+        .map(|(_, file)| file.format)
+        .collect();
+    let [format] = headers.as_slice() else {
+        return;
+    };
+    let below_25 = format.unwrap_or(FormatVersion::V1).major() < FormatVersion::V25.major();
+    for (_, file) in files.iter_mut() {
+        for command in &mut file.commands {
+            for outcome in &mut command.outcomes {
+                if !below_25 && outcome.instances.is_some() {
+                    continue;
+                }
+                let at = format!("command.{}.outcomes.{}", command.name, outcome.name);
+                let mut stripped = Vec::new();
+                for (index, entry) in outcome.emits.iter_mut().enumerate() {
+                    let RawEmit::PerRow(per_row) = entry else {
+                        continue;
+                    };
+                    let event = per_row.event.clone();
+                    errors.push(if below_25 {
+                        per_row_below_ess_25(&event, format!("{at}.emits[{index}]"))
+                    } else {
+                        per_row_without_instances(
+                            outcome.name.as_str(),
+                            &event,
+                            format!("{at}.emits[{index}]"),
+                        )
+                    });
+                    stripped.push(event.clone());
+                    *entry = RawEmit::Event(event);
+                }
+                for (event, table) in &mut outcome.payload.0 {
+                    if !stripped.contains(event) {
+                        continue;
+                    }
+                    for field in &mut table.0 {
+                        if matches!(field.source, PayloadSource::ChangedField { .. }) {
+                            field.source = PayloadSource::Generated;
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// A secondary effect of an outcome with one subject, on every row a filter selects.
@@ -277,6 +553,7 @@ pub(super) fn set_subject(
             entity,
             effect: Effect::Deletes,
             filter,
+            events: Vec::new(),
         }));
     }
     if let Some(entity) = verbs.updates.take() {
@@ -284,6 +561,7 @@ pub(super) fn set_subject(
             entity,
             effect: Effect::Updates,
             filter,
+            events: Vec::new(),
         }));
     }
     let Some(qualified) = verbs.moves.take() else {
@@ -317,6 +595,7 @@ pub(super) fn set_subject(
             transition: qualified.local().to_owned(),
         },
         filter,
+        events: Vec::new(),
     }))
 }
 
@@ -977,6 +1256,7 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
                 errors.extend(deletions_below_ess_23(outcome, &site));
             }
             errors.extend(deletion_shapes(spec, command, outcome, &site));
+            errors.extend(per_row_rules(spec, outcome, &site));
             if let Some(set) = &outcome.set_effects.instances {
                 let at = site.clone().key("instances");
                 errors.extend(set_branch(outcome, &at));
@@ -1081,6 +1361,242 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
         }
     }
     errors
+}
+
+/// The rules of the events an outcome publishes once per changed row and of `{changed: …}` (ess/25,
+/// beyond10x/ess#531): the format; each per-row event listed once in `emits:`; its state filter,
+/// declared states of the set subject's entity, each once, and under a `moves:` among the
+/// transition's `from`; `{changed: <field>}` a whole payload field of such an event, reading a field
+/// of the changed rows' entity, or `state`, of the field's type. Anywhere else `{changed: …}` is
+/// refused by name: here an event published once and an error's payload, in
+/// [`super::value_expression`] `sets:` and a nested mapping.
+#[allow(clippy::too_many_lines)] // One rule per paragraph of the design note's section.
+fn per_row_rules(spec: &Specification, outcome: &Outcome, site: &ConstructRef) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    let set = outcome.set_effects.instances.as_ref();
+    let per_row = set.map_or(&[][..], |set| set.events.as_slice());
+    let at_entry = |event: &QualifiedName, nth: usize| {
+        outcome
+            .emits
+            .iter()
+            .enumerate()
+            .filter(|(_, listed)| *listed == event)
+            .nth(nth)
+            .map_or_else(
+                || site.clone().key("emits"),
+                |(index, _)| site.clone().key("emits").index(index),
+            )
+    };
+    if !per_row.is_empty() && spec.system().format.major() < FormatVersion::V25.major() {
+        // A backstop for a specification assembled without the one header
+        // [`refuse_per_row_events`] reads.
+        for entry in per_row {
+            errors.push(per_row_below_ess_25(
+                &entry.event,
+                at_entry(&entry.event, 0).render(),
+            ));
+        }
+        return errors;
+    }
+    let entity = set.and_then(|set| spec.entities().get(&set.entity));
+    for entry in per_row {
+        if outcome
+            .emits
+            .iter()
+            .filter(|listed| **listed == entry.event)
+            .count()
+            > 1
+        {
+            errors.push(
+                ValidationError::at(
+                    at_entry(&entry.event, 1),
+                    ValidationCode::ConflictingDeclaration,
+                    format!(
+                        "outcome `{}` lists `{}` more than once in `emits:`, and publishes it once \
+                         per changed row; its one payload block cannot say which listing a field \
+                         is for",
+                        outcome.name, entry.event
+                    ),
+                )
+                .with_hint("list the event once"),
+            );
+        }
+        let (Some(set), Some(entity), Some(states)) = (set, entity, &entry.when_state) else {
+            continue;
+        };
+        let at = at_entry(&entry.event, 0).key("when_state");
+        let listed: Vec<&crate::entity::StateName> = states.iter().collect();
+        if listed.is_empty() {
+            errors.push(
+                ValidationError::at(
+                    at.clone(),
+                    ValidationCode::ConflictingDeclaration,
+                    format!(
+                        "`when_state:` of `{}` names no state, so the event is published for no \
+                         row",
+                        entry.event
+                    ),
+                )
+                .with_hint("name at least one state, or drop `when_state:`"),
+            );
+        }
+        let from = set
+            .effect
+            .transition()
+            .and_then(|transition| entity.states.transition(transition));
+        for (index, state) in listed.iter().enumerate() {
+            if listed[..index].contains(state) {
+                errors.push(
+                    ValidationError::at(
+                        at.clone(),
+                        ValidationCode::ConflictingDeclaration,
+                        format!(
+                            "`when_state:` of `{}` names `{state}` more than once",
+                            entry.event
+                        ),
+                    )
+                    .with_hint("name each state once"),
+                );
+                continue;
+            }
+            if !entity.states.states.contains(*state) {
+                errors.push(
+                    ValidationError::at(
+                        at.clone(),
+                        ValidationCode::UndeclaredReference,
+                        format!(
+                            "`when_state:` of `{}` names `{state}`, which `{}` does not declare",
+                            entry.event, entity.name
+                        ),
+                    )
+                    .with_hint(format!(
+                        "`{}` declares: {}",
+                        entity.name,
+                        super::join(entity.states.states.iter())
+                    )),
+                );
+                continue;
+            }
+            if let Some(transition) = from.filter(|transition| !transition.from.contains(*state)) {
+                errors.push(
+                    ValidationError::at(
+                        at.clone(),
+                        ValidationCode::ConflictingDeclaration,
+                        format!(
+                            "`when_state:` of `{}` names `{state}`, which `{}` does not start \
+                             from; a selected row resting there is skipped and never changed",
+                            entry.event, transition.name
+                        ),
+                    )
+                    .with_hint(format!(
+                        "name states `{}` starts from: {}",
+                        transition.name,
+                        super::join(transition.from.iter())
+                    )),
+                );
+            }
+        }
+    }
+    let conversions = spec.conversions();
+    for (event_name, fields) in &outcome.payload {
+        let per_row_event = per_row.iter().any(|entry| entry.event == *event_name);
+        let event = spec.events().get(event_name);
+        for (target, source) in fields {
+            let PayloadSource::ChangedField { field } = source else {
+                continue;
+            };
+            let at = site
+                .clone()
+                .key("payload")
+                .named(event_name.to_string())
+                .named(target);
+            if !per_row_event {
+                errors.push(changed_elsewhere(
+                    &at,
+                    &format!("`{event_name}`, published once"),
+                ));
+                continue;
+            }
+            let (Some(entity), Some(filled)) =
+                (entity, event.and_then(|event| event.field(target)))
+            else {
+                continue;
+            };
+            let read = if field == crate::entity::EntitySpec::STATE {
+                TypeRef::Named(entity.name.child(crate::entity::EntitySpec::STATE_TYPE))
+            } else if entity.identity.name == *field {
+                entity.identity.type_ref.clone()
+            } else if let Some(held) = entity.field(field) {
+                held.type_ref.clone()
+            } else {
+                errors.push(
+                    ValidationError::at(
+                        at,
+                        ValidationCode::UndeclaredReference,
+                        format!(
+                            "`{{changed: {field}}}` reads `{field}`, which is not a field of `{}`",
+                            entity.name
+                        ),
+                    )
+                    .with_hint(format!(
+                        "`{}` holds: {}, and `state`",
+                        entity.name,
+                        std::iter::once(entity.identity.name.as_str())
+                            .chain(entity.fields.iter().map(|field| field.name.as_str()))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )),
+                );
+                continue;
+            };
+            if !conversions.permits(&read, &filled.type_ref) {
+                errors.push(
+                    ValidationError::at(
+                        at,
+                        ValidationCode::TypeMismatch,
+                        format!(
+                            "the changed row's `{field}` has type `{read}`, and `{}` requires `{}`; \
+                             no conversion is declared",
+                            filled.name, filled.type_ref
+                        ),
+                    )
+                    .with_hint("read a field of the event field's own type"),
+                );
+            }
+        }
+    }
+    if let Some(error) = &outcome.error {
+        for (target, source) in &outcome.error_payload {
+            if matches!(source, PayloadSource::ChangedField { .. }) {
+                errors.push(changed_elsewhere(
+                    &site
+                        .clone()
+                        .key("payload")
+                        .named(error.to_string())
+                        .named(target),
+                    &format!("the error `{error}`"),
+                ));
+            }
+        }
+    }
+    errors
+}
+
+/// `{changed: …}` filling a field of `what`, which no changed row publishes, refused by name.
+pub(super) fn changed_elsewhere(at: &ConstructRef, what: &str) -> ValidationError {
+    ValidationError::at(
+        at.clone(),
+        ValidationCode::UnsupportedConstruct,
+        format!(
+            "`{{changed: …}}` fills a field of {what}; it reads the changed row an event published \
+             once per changed row is for, as a whole `payload:` field of that event, and nowhere \
+             else"
+        ),
+    )
+    .with_hint(
+        "list the event in `emits:` as `{event: <name>, each: changed}` on an outcome with \
+         `instances:`, or fill this field another way",
+    )
 }
 
 /// A set outcome accepts, and is selected by its input alone or as the default: a refusal changes
@@ -1572,6 +2088,9 @@ impl TypeEnvironment for WithSubject<'_> {
     }
     fn admits_aggregate_presence(&self) -> bool {
         self.inner.admits_aggregate_presence()
+    }
+    fn admits_trimmed(&self) -> bool {
+        self.inner.admits_trimmed()
     }
     fn current_time(&self) -> CurrentTimeAdmission {
         let inner = self.inner.current_time();
@@ -2144,6 +2663,98 @@ impl RawCountSource {
         Self {
             count: CHANGED.to_owned(),
         }
+    }
+}
+
+/// `{changed: <field>}` as written (ess/25, beyond10x/ess#531): a field of the changed row an event
+/// published once per changed row is for, or `state`, the state it held, as before the outcome.
+#[derive(serde::Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub(super) struct RawChangedSource {
+    /// The field read, or `state`.
+    changed: String,
+}
+
+impl RawChangedSource {
+    /// The mapping `{changed: <one field name>}`, and nothing else.
+    pub(super) fn recognise(entries: &[(String, super::RawPayloadSource)]) -> Option<Self> {
+        match entries {
+            [(key, super::RawPayloadSource::Text(field))]
+                if key == CHANGED && crate::binding::is_field_name(field) =>
+            {
+                Some(Self {
+                    changed: field.clone(),
+                })
+            }
+            _ => None,
+        }
+    }
+
+    /// The source it is.
+    pub(super) fn into_source(self) -> PayloadSource {
+        PayloadSource::ChangedField {
+            field: self.changed,
+        }
+    }
+
+    /// The written form of a read of `field`.
+    pub(super) fn of(field: &str) -> Self {
+        Self {
+            changed: field.to_owned(),
+        }
+    }
+}
+
+/// Reads `{changed: <field>}` back as the nested mapping it was below `ess/25`.
+pub fn read_below_ess_25(
+    format: FormatVersion,
+    commands: &mut BTreeMap<QualifiedName, CommandSpec>,
+) {
+    if format.major() >= FormatVersion::V25.major() {
+        return;
+    }
+    for outcome in commands
+        .values_mut()
+        .flat_map(|command| command.outcomes.iter_mut())
+    {
+        let affects = outcome
+            .set_effects
+            .affects
+            .iter_mut()
+            .flat_map(|affect| affect.sets.values_mut());
+        for source in outcome
+            .payload
+            .values_mut()
+            .flat_map(|fields| fields.values_mut())
+            .chain(outcome.error_payload.values_mut())
+            .chain(outcome.sets.values_mut())
+            .chain(affects)
+        {
+            nested_changed(source);
+        }
+    }
+}
+
+fn nested_changed(source: &mut PayloadSource) {
+    match source {
+        PayloadSource::ChangedField { field } => {
+            *source = PayloadSource::Struct {
+                fields: vec![super::PayloadField {
+                    target: CHANGED.to_owned(),
+                    source: PayloadSource::parse(field),
+                }],
+            };
+        }
+        PayloadSource::Struct { fields } => {
+            for leaf in fields {
+                nested_changed(&mut leaf.source);
+            }
+        }
+        PayloadSource::InputOrGenerated {
+            otherwise: Some(otherwise),
+            ..
+        } => nested_changed(otherwise),
+        _ => {}
     }
 }
 

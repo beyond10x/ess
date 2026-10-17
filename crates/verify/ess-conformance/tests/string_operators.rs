@@ -2,8 +2,15 @@
 //! candidates that decide both branches of a string guard, synthesis over them, the suite format
 //! pair that carries one, and the two readers that refuse a suite carrying one.
 //! `docs/design/string-predicate-operators.md` is the binding design.
+//!
+//! `trimmed:` (beyond10x/ess#532, ess/25) wraps one of these operators; its conformance cases live
+//! in the modules under `tests/string_operators/`, compiled into this binary.
 
+#[path = "string_operators/adversary_m3_pass1.rs"]
+mod adversary_m3_pass1;
 mod support_scratch;
+#[path = "string_operators/trimmed_text_guard.rs"]
+mod trimmed_text_guard;
 
 use std::collections::BTreeSet;
 use std::process::Command;
@@ -106,7 +113,7 @@ fn route<'ir>(ir: &'ir EssIr, guard: &Predicate) -> &'ir ResolvedCommand {
 }
 
 fn guard(yaml: &str) -> Predicate {
-    Predicate::from_node(&serde_yaml::from_str(yaml).expect("yaml")).expect("a predicate")
+    Predicate::from_node(&ess_yaml::from_str(yaml).expect("yaml")).expect("a predicate")
 }
 
 /// The admitted values candidates give `field`, in the order they are tried.

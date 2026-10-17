@@ -101,7 +101,7 @@ func suiteReference(value any) error {
 //
 // Keep this aligned with the emitter's capability boundary. New majors require admission,
 // execution and report parity; changing this number alone supplies none of those semantics.
-const newestSuiteMajor = 51
+const newestSuiteMajor = 53
 
 // suiteMajorsNotRead are the majors below newestSuiteMajor that other work has allocated and this
 // runtime has no reader for yet. A suite labelled with one is refused by version, never read as
@@ -1283,8 +1283,8 @@ type RepeatedOutcomeTarget interface {
 	ConfigureExternalOutcomeRepeatedly(control ExternalOutcomeControl, times int) error
 }
 
-// AwaitTarget is what a target implements to report a step its system takes itself (suite/50 and
-// /51, ess/25 `system: true`, beyond10x/ess#542). A command every grant of which is a system actor
+// AwaitTarget is what a target implements to report a step its system takes itself (suite/52 and
+// /53, ess/27 `system: true`, beyond10x/ess#542). A command every grant of which is a system actor
 // is never invoked: no caller can be the system. The runner asks for the outcome the system
 // reached on Instance after the scenario's preceding steps — the outcome with the input it issued
 // the command with and what it published, or that nothing was reached.
@@ -1436,6 +1436,23 @@ type InvocationObservationRequest struct {
 type Invocation struct {
 	Command string
 	Input   map[string]Node
+}
+
+// NowHold is the instant the next command of a scenario is decided at (suite/50, beyond10x/ess#586).
+type NowHold struct {
+	// Instant is the moment to read as `now`, RFC 3339 at whole-second precision.
+	Instant     string
+	Correlation string
+}
+
+// NowHolder is what a target offers so that a suite can fix its `now` for one command.
+//
+// Optional, like Clock: `HoldNow` asks the target to decide the **next** command the scenario
+// executes, and only that one, at the instant named, so a value can be sent exactly on a `now`
+// boundary. A target that does not implement it is skipped on the scenarios that need it, naming
+// `hold_now`; one returning ErrUnsupported is skipped the same way.
+type NowHolder interface {
+	HoldNow(hold NowHold) error
 }
 
 // ExternalOutcomeControl forces an external outcome to a branch.
@@ -1717,6 +1734,8 @@ type Step struct {
 	// scenario. Never inferred from the step before it — a window whose start moves when something
 	// is inserted above it is the defect these four steps were added to fix.
 	Instant string `json:"instant,omitempty"`
+	// HoldSeconds is a `hold_now` step's `now_offset` number (suite/50, beyond10x/ess#586).
+	HoldSeconds *int64 `json:"seconds,omitempty"`
 	// Elapsed is a length of time in whole seconds.
 	Elapsed int `json:"elapsed,omitempty"`
 	// After is how many rows a reader takes from an ordered view before it says stop.
@@ -1733,7 +1752,7 @@ type Step struct {
 	// for "at least one".
 	Count int `json:"count,omitempty"`
 	// Within is a system-issued command's declared bound, `PT<seconds>S`, empty where it declares
-	// none (`await_outcome`, `expect_not_issued`, suite/50, beyond10x/ess#542).
+	// none (`await_outcome`, `expect_not_issued`, suite/52, beyond10x/ess#542).
 	Within string `json:"within,omitempty"`
 	// Awaited is the record an await step addresses: a captured instance or a literal identity.
 	// The two await steps write it under `instance`, which every other step spells as a name, so
@@ -1870,7 +1889,7 @@ func Run(t *testing.T, newTarget func() Target) {
 		t.Fatalf("suite admission: %v", err)
 	}
 	if suiteMajor(suite.Provenance.SuiteVersion) >= 8 && config.version != "2" {
-		t.Fatalf("suite/8 through /51 require explicit ESS_REPORT_FORMAT=2 before execution")
+		t.Fatalf("suite/8 through /53 require explicit ESS_REPORT_FORMAT=2 before execution")
 	}
 	if (suite.Provenance.SuiteVersion == "ess-conformance/5" || suite.Provenance.SuiteVersion == "ess-conformance/6" || suite.Provenance.SuiteVersion == "ess-conformance/7") && config.version != "2" {
 		t.Fatalf("suite/5, /6 and /7 require explicit ESS_REPORT_FORMAT=2 before execution")
@@ -1940,6 +1959,7 @@ func Run(t *testing.T, newTarget func() Target) {
 				assigned:            map[string][]int{},
 				preciseStatuses:     config.version == "2",
 				disclosure:          newOneTimeCaptures(suite.oneTime[id]),
+				heldScenario:        heldScenarioID(id),
 			}
 			returned := false
 			defer func() {
@@ -2127,7 +2147,7 @@ type run struct {
 	readAnswer          *readAnswer
 
 	// awaited is the input the most recent `await_outcome` answer carried, nil before one: what a
-	// `{kind: awaited}` value reads (suite/50, beyond10x/ess#542).
+	// `{kind: awaited}` value reads (suite/52, beyond10x/ess#542).
 	awaited map[string]Node
 	// instances are what `capture_instance` bound, by name.
 	instances   map[string]Node
@@ -2180,6 +2200,11 @@ type run struct {
 	viewSnapshots map[string][]Row
 	// nowFixed is the instant each `now_offset` of this scenario resolved to, by its seconds.
 	nowFixed map[int64]string
+	// held is the instant a `hold_now` step fixed for the command after it, and the offset it named.
+	held *heldNow
+	// heldScenario says this scenario is a held one (`<command>/outcome/<outcome>/held/<field>/<seconds>`):
+	// one the target lacking `hold_now` leaves unsupported without failing the run (beyond10x/ess#586).
+	heldScenario bool
 	// status is what this scenario has come to so far: passed until a step fails or skips.
 	status string
 	// callbacksComplete records returned callbacks, independently of a provisional skip/failure.
@@ -2321,12 +2346,20 @@ func (r *run) countBefore(index int, unpublished []string) bool {
 // A failed assertion stops the scenario: the steps after it were written assuming this one held,
 // and running them produces a second failure about the first one's cause.
 func (r *run) step(index int, step Step) bool {
-	r.fixNowOffsets(step)
+	held := r.held
+	r.held = nil
+	if held != nil {
+		r.fixNowOffsetsAt(step, held.base())
+	} else {
+		r.fixNowOffsets(step)
+	}
 	switch step.Step {
 	case "await_outcome":
 		return r.awaitOutcome(index, step)
 	case "expect_not_issued":
 		return r.expectNotIssued(index, step)
+	case "hold_now":
+		return r.holdNow(index, step)
 	case "execute_command_without_input":
 		return r.executeCommandWithoutInput(index, step)
 	case "expect_subject_absent":
@@ -3494,6 +3527,30 @@ func (r *run) skip(format string, args ...any) {
 	r.t.Skipf(format, args...)
 }
 
+// skipHold is skip for a target that cannot hold its `now`. A held scenario it ends stays
+// unsupported in the report but does not fail the run, under either report format, as in the Rust
+// runner's verdict: synthesis adds the held scenario to suites a target may have passed before it
+// existed, and `hold_now` is optional (beyond10x/ess#586). Any other scenario is skip's.
+func (r *run) skipHold(format string, args ...any) {
+	if !r.heldScenario {
+		r.skip(format, args...)
+		return
+	}
+	r.recordStatus(statusUnsupported)
+	r.t.Skipf(format, args...)
+}
+
+// heldScenarioID reports whether id spells a held scenario,
+// `<command>/outcome/<outcome>/held/<field>/<seconds>`.
+func heldScenarioID(id string) bool {
+	parts := strings.Split(id, "/")
+	if len(parts) != 6 || parts[1] != "outcome" || parts[3] != "held" || parts[4] == "" {
+		return false
+	}
+	_, err := strconv.ParseInt(parts[5], 10, 64)
+	return err == nil
+}
+
 // resolveAll resolves every value a step carries against what this run has bound.
 func (r *run) resolveAll(index int, values map[string]Value) (map[string]Node, bool) {
 	resolved := make(map[string]Node, len(values))
@@ -4420,6 +4477,10 @@ func scenarioIdentity(id string) error {
 	switch {
 	case len(p) == 3 && p[1] == "outcome":
 		valid = q(p[0]) && k(p[2])
+	case len(p) == 6 && p[1] == "outcome" && p[3] == "held":
+		// The at-boundary scenario of a `now` guard, decided at a held instant (beyond10x/ess#586).
+		_, err := strconv.ParseInt(p[5], 10, 64)
+		valid = q(p[0]) && k(p[2]) && p[4] != "" && err == nil
 	case len(p) == 3 && p[1] == "authored":
 		valid = q(p[0]) && k(p[2])
 	case len(p) == 3 && p[1] == "binding":
@@ -4563,6 +4624,9 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 				return suite, fmt.Errorf("%s: %w", id, err)
 			}
 		}
+		if err := admitHoldSteps(steps); err != nil {
+			return suite, fmt.Errorf("%s: %w", id, err)
+		}
 		if err := admitEntitySetups(steps); err != nil {
 			return suite, fmt.Errorf("%s: %w", id, err)
 		}
@@ -4606,8 +4670,8 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 					return suite, fmt.Errorf("aggregate view refusals require suite/17")
 				}
 				// A refusal of a system-issued command (beyond10x/ess#542).
-				if row, ok := item.(map[string]any); ok && (row["code"] == "ESS-SYNTH-023" || row["code"] == "ESS-SYNTH-024") && major < 51 {
-					return suite, fmt.Errorf("system-issued command refusals require suite/51")
+				if row, ok := item.(map[string]any); ok && (row["code"] == "ESS-SYNTH-023" || row["code"] == "ESS-SYNTH-024") && major < 53 {
+					return suite, fmt.Errorf("system-issued command refusals require suite/53")
 				}
 			}
 		}
@@ -4855,9 +4919,9 @@ func admitValues(value any, major int, accessors bool) error {
 				return err
 			}
 		case "awaited":
-			// The input an awaited answer carried (suite/50, beyond10x/ess#542).
-			if major < 50 {
-				return fmt.Errorf("awaiting a system-issued command requires suite/50 or /51")
+			// The input an awaited answer carried (suite/52, beyond10x/ess#542).
+			if major < 52 {
+				return fmt.Errorf("awaiting a system-issued command requires suite/52 or /53")
 			}
 			if _, err := closed(v, "kind field", ""); err != nil {
 				return err
@@ -5276,6 +5340,9 @@ func admitPredicateConstraint(value any) error {
 				if _, ok := operand.(string); !ok {
 					return fmt.Errorf("predicate %s takes a string", operator)
 				}
+			case "trimmed":
+				// Decided at synthesis, in a command guard only (beyond10x/ess#532): no suite carries one.
+				return fmt.Errorf("`trimmed` text operators are decided at synthesis, and no suite format carries one")
 			case "in_ignore_case":
 				// A JSON list of strings: a scalar is not read as a one-element list here, because
 				// the Rust reader refuses it.
@@ -5412,14 +5479,14 @@ func admitStep(value any, major int) error {
 	case "expect_outcome":
 		required += " outcome"
 	case "await_outcome":
-		if major < 50 {
-			return fmt.Errorf("awaiting a system-issued command requires suite/50 or /51")
+		if major < 52 {
+			return fmt.Errorf("awaiting a system-issued command requires suite/52 or /53")
 		}
 		required += " command instance identity"
 		optional = "within input shape"
 	case "expect_not_issued":
-		if major < 50 {
-			return fmt.Errorf("awaiting a system-issued command requires suite/50 or /51")
+		if major < 52 {
+			return fmt.Errorf("awaiting a system-issued command requires suite/52 or /53")
 		}
 		required += " command instance"
 		optional = "within unpublished"
@@ -5487,6 +5554,14 @@ func admitStep(value any, major int) error {
 	case "eventually_view":
 		required += " view expectation"
 		optional = "params"
+	case "hold_now":
+		if major < 50 {
+			return fmt.Errorf("hold_now steps require suite/50 or /51")
+		}
+		if err := admitHoldSeconds(f["seconds"]); err != nil {
+			return err
+		}
+		required += " seconds"
 	case "mark_instant":
 		if major < 3 {
 			return fmt.Errorf("step requires suite/3")
@@ -5518,7 +5593,7 @@ func admitStep(value any, major int) error {
 	for key, v := range f {
 		switch {
 		// The record an await addresses, the input naming it, the declared bound and what the
-		// window must not publish (suite/50, beyond10x/ess#542).
+		// window must not publish (suite/52, beyond10x/ess#542).
 		case awaiting && key == "instance":
 			err = admitAwaitInstance(v, major)
 		case awaiting && key == "identity":
@@ -9143,6 +9218,13 @@ func (r *run) took(index int, command string, result CommandResult) bool {
 // witness across the boundary it sits a second from. Every later `now_offset` of the same number
 // in the scenario reads the same instant.
 func (r *run) fixNowOffsets(step Step) {
+	r.fixNowOffsetsAt(step, func() time.Time { return wallClock() })
+}
+
+// fixNowOffsetsAt is fixNowOffsets against the reading `wall` answers: the wall clock, or for the
+// command after a `hold_now` the reading the held instant was fixed from, so the held step and the
+// values that command sends name one instant (beyond10x/ess#586).
+func (r *run) fixNowOffsetsAt(step Step, wall func() time.Time) {
 	pending := []int64{}
 	visit := func(values map[string]Value) {
 		for _, value := range values {
@@ -9175,10 +9257,15 @@ func (r *run) fixNowOffsets(step Step) {
 			}
 		}
 	}
+	if step.Step == "hold_now" && step.HoldSeconds != nil {
+		if _, fixed := r.nowFixed[*step.HoldSeconds]; !fixed {
+			pending = append(pending, *step.HoldSeconds)
+		}
+	}
 	if len(pending) == 0 {
 		return
 	}
-	now := wallClock().UTC()
+	now := wall().UTC()
 	if now.Nanosecond() != 0 {
 		now = now.Truncate(time.Second).Add(time.Second)
 	}
@@ -9192,6 +9279,83 @@ func (r *run) fixNowOffsets(step Step) {
 		}
 		r.nowFixed[seconds] = instant.Format("2006-01-02T15:04:05Z")
 	}
+}
+
+// heldNow is the instant a `hold_now` step fixed, and the `now_offset` number it named.
+type heldNow struct {
+	instant time.Time
+	seconds int64
+}
+
+// base is the wall reading the held instant was fixed from: the held instant less its offset.
+func (h *heldNow) base() func() time.Time {
+	return func() time.Time { return h.instant.Add(-time.Duration(h.seconds) * time.Second) }
+}
+
+// holdNow fixes the instant the next command is decided at, through the target's optional
+// NowHolder (suite/50, beyond10x/ess#586).
+func (r *run) holdNow(index int, step Step) bool {
+	seconds := *step.HoldSeconds
+	spelled, ok := r.nowFixed[seconds]
+	if !ok {
+		r.fail(index, "now_offset %d names no instant the runner's wall clock can spell", seconds)
+		return false
+	}
+	instant, err := time.Parse(time.RFC3339, spelled)
+	if err != nil {
+		r.fail(index, "now_offset %d names no instant: %v", seconds, err)
+		return false
+	}
+	holder, implemented := r.target.(NowHolder)
+	if !implemented {
+		r.skipHold("step %d: the target cannot hold `now` (hold_now)", index)
+		return false
+	}
+	if err := holder.HoldNow(NowHold{Instant: spelled, Correlation: r.correlation}); err != nil {
+		if errors.Is(err, ErrUnsupported) {
+			r.skipHold("step %d: the target cannot hold `now` (hold_now)", index)
+			return false
+		}
+		return r.targetFailure(index, err, "target callback")
+	}
+	r.held = &heldNow{instant: instant, seconds: seconds}
+	return true
+}
+
+// admitHoldSeconds admits a `hold_now` step's `seconds`: a whole number of at most
+// nowOffsetLimit either way, as a `now_offset`'s.
+func admitHoldSeconds(value any) error {
+	number, ok := value.(json.Number)
+	if !ok {
+		return fmt.Errorf("hold_now seconds must be a whole number")
+	}
+	seconds, err := strconv.ParseInt(string(number), 10, 64)
+	if err != nil {
+		return fmt.Errorf("hold_now seconds must be a whole number: %w", err)
+	}
+	if seconds > nowOffsetLimit || seconds < -nowOffsetLimit {
+		return fmt.Errorf("hold_now exceeds %d seconds either way", nowOffsetLimit)
+	}
+	return nil
+}
+
+// admitHoldSteps refuses a `hold_now` that does not stand immediately before an
+// `execute_command`.
+func admitHoldSteps(steps []any) error {
+	for i, step := range steps {
+		f, _ := step.(map[string]any)
+		if f["step"] != "hold_now" {
+			continue
+		}
+		if i+1 >= len(steps) {
+			return fmt.Errorf("a hold_now step stands immediately before the execute_command it holds")
+		}
+		next, _ := steps[i+1].(map[string]any)
+		if next["step"] != "execute_command" {
+			return fmt.Errorf("a hold_now step stands immediately before the execute_command it holds")
+		}
+	}
+	return nil
 }
 
 // queriedRows is the rows of the last query, when it was a query of view.

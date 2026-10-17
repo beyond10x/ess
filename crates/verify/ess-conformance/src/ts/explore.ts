@@ -53,16 +53,27 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { refusePrivateExploration } from './one_time_response.js';
 import { join } from 'node:path';
 
-import { facts, fromNode, present, TruthFalse, TruthTrue, TruthUnknown } from './predicate.js';
-import type { FactSource, Operand, Predicate, Truth } from './predicate.js';
+import {
+  facts,
+  fromNode,
+  Operand,
+  Predicate,
+  present,
+  TruthFalse,
+  TruthTrue,
+  TruthUnknown,
+} from './predicate.js';
+import type { FactSource, Truth } from './predicate.js';
 import {
   asNumber,
   byteCompare,
   equal,
   errorText,
+  ExactNumber,
   goMarshal,
   isObject,
   isUnsupported,
+  JsonNumber,
   newHarness,
   ranked,
   sortStrings,
@@ -93,6 +104,13 @@ export interface ExploreOptions {
    * before restarts existed.
    */
   restartEvery?: number;
+  /**
+   * The clock a guard over `now` is decided against (beyond10x/ess#582); absent reads the wall
+   * clock. A `Timestamp` input of a specification whose guards compare one with `now` is drawn an
+   * hour to a day either side of an instant they compare it with, so a target that reads its own
+   * clock moments later decides the step the same way.
+   */
+  now?: () => Date;
 }
 
 /**
@@ -128,6 +146,23 @@ export interface Exclusion {
   reason: string;
 }
 
+/**
+ * A command the target answered unsupported to in one held state of the row a step addressed, while
+ * it drove the command elsewhere (beyond10x/ess#537). No later step draws the command in that state;
+ * a command refused in every state it was drawn in, and driven in none, is in `excluded` instead.
+ */
+export interface Refusal {
+  command: string;
+  /**
+   * The held state of the row the step addressed: `(no row)` where it addressed none (a creation,
+   * or an identity no row carries), `(no state)` for a row without a lifecycle.
+   */
+  state: string;
+  reason: string;
+  /** The steps drawn in that state and not sent: the one the target refused and every later one. */
+  count: number;
+}
+
 /** A disagreement: its seed, what disagreed, and the shortest trace found that still shows it. */
 export interface ExploreFailure {
   seed: number;
@@ -148,8 +183,17 @@ export interface ExploreResult {
   /** Declared outcomes of included commands that no step took. */
   unreached: string[];
   excluded: Exclusion[];
-  /** Every declared outcome of an excluded command. */
+  /**
+   * Every declared outcome of an excluded command, and every outcome no step took that a refused
+   * step would have.
+   */
   excludedOutcomes: string[];
+  /**
+   * Every (command, held state) the target answered unsupported to, of a command it drove in
+   * another state, in order of `command` and `state`. Absent when there is none, so a result
+   * without one keeps its bytes.
+   */
+  refused?: Refusal[];
   /** What the model could not place, such as a view filter over a field no command set. */
   undetermined: string[];
   /** Draws the specification does not decide, which were redrawn rather than executed. */
@@ -186,8 +230,8 @@ export interface ExternalReach {
 /** What `assertExplored` accepts. */
 export interface AssertOptions {
   /**
-   * Accept outcomes of excluded commands, and external outcomes the target could not arrange. An
-   * explicit, reviewable opt-out.
+   * Accept outcomes of excluded commands, the (command, held state) pairs the target refused, and
+   * external outcomes the target could not arrange. An explicit, reviewable opt-out.
    */
   allowExcluded?: boolean;
 }
@@ -312,10 +356,11 @@ function identityOwner(ir: Node, type: string): string | null {
 }
 
 /**
- * The kind of values an input of type `ref` is drawn from. With `concurrent` it also draws a `decimal`,
- * a `timestamp` and a type whose values are constrained: concurrent exploration does not judge an
- * answer by this model, `ess` does, so a drawn value outside the constraint is a question the target
- * answers and the checker judges.
+ * The kind of values an input of type `ref` is drawn from. With `concurrent` it also draws a type
+ * whose values are constrained: concurrent exploration does not judge an answer by this model, `ess`
+ * does, so a drawn value outside the constraint is a question the target answers and the checker
+ * judges. A `decimal` is drawn either way, as an `integer` is (beyond10x/ess#538), and so is a
+ * `timestamp` (beyond10x/ess#582).
  */
 function resolveKind(ir: Node, ref: Node, depth = 0, concurrent = false): Kind {
   if (depth > 32) return { kind: 'unsupported', why: 'nested too deeply' };
@@ -329,11 +374,9 @@ function resolveKind(ir: Node, ref: Node, depth = 0, concurrent = false): Kind {
       case 'boolean':
       case 'string':
       case 'uuid':
-        return { kind: ref.name };
       case 'decimal':
       case 'timestamp':
-        if (concurrent) return { kind: ref.name };
-        return { kind: 'unsupported', why: `a \`${ref.name}\`` };
+        return { kind: ref.name };
       default:
         return { kind: 'unsupported', why: `a \`${ref.name}\`` };
     }
@@ -622,6 +665,14 @@ interface Command {
   /** Every branch selected by the stored row (beyond10x/ess#221), by outcome name. */
   rows: Map<string, RowGuard>;
   pools: Pools;
+  /**
+   * Whether a path a guard over the input, and one over the stored row (and the input under
+   * `input.`), reads names a `Timestamp`; and whether one of its guards compares such a path with
+   * `now` (beyond10x/ess#582).
+   */
+  inputTimestamp: (path: string) => boolean;
+  storedTimestamp: (path: string) => boolean;
+  clocked: boolean;
 }
 
 /**
@@ -645,6 +696,12 @@ interface Plan {
   ir: Node;
   system: string;
   commands: Command[];
+  /**
+   * Every command the plan admitted, fixed once it is made: every sequence draws from it, so what an
+   * earlier seed of a run excluded never changes what a later seed draws, and a seed replays alone
+   * the sequence it drew inside the run (beyond10x/ess#576).
+   */
+  drawn: Command[];
   views: Node[];
   excluded: Exclusion[];
   excludedCommands: Set<string>;
@@ -659,6 +716,13 @@ interface Plan {
    * sequence draws it.
    */
   sendable: Map<string, Command>;
+  /**
+   * Every offset from `now`, in seconds and sorted, that a guard compares a `Timestamp` with; and
+   * what a sequential exploration reads the current time from, null in a concurrent one
+   * (beyond10x/ess#582).
+   */
+  offsets: number[];
+  clock: Clock | null;
 }
 
 /** True for an outcome an external cause decides. */
@@ -667,16 +731,53 @@ function isExternal(outcome: Node): boolean {
   return kind === 'external' || kind === 'external_when';
 }
 
-function effectRefusal(outcome: Node): string | null {
+/**
+ * Why the explorer cannot model what `outcome` does to its subject, or null. A `preserves:` of a
+ * supplied subject is modelled as leaving the row as it is, so every view read after the step must
+ * still agree with it (beyond10x/ess#536); concurrent exploration does not draw it and keeps the
+ * commands it always drew.
+ *
+ * A selected-rows outcome (`instances: {where: …}`, beyond10x/ess#538) carries no subject. Its move
+ * or update is modelled on every row the filter selects; its bulk deletion is left out by name, and
+ * so is a filter the model cannot read. An event published once per
+ * changed row (ess/25, beyond10x/ess#531) is left out by name too: the model expects each listed
+ * event once. An `affects:` entry writes rows the
+ * model does not apply, so its outcome is left out by name too. Concurrent exploration keeps the
+ * commands it always drew.
+ *
+ * A `deletes:` of a supplied subject takes the row out of the model, so every view read after the
+ * step must lose it and a later step naming it is the unknown instance (beyond10x/ess#583).
+ * Concurrent exploration leaves it out by name: its workload is drawn before any call runs, so a
+ * call drawn after the delete can still name the deleted row, and a command without an
+ * unknown-instance answer then has none the specification declares.
+ */
+function effectRefusal(outcome: Node, concurrent: boolean): string | null {
+  if (list(outcome.affects).length > 0 && !concurrent) {
+    return `outcome \`${outcome.name}\` writes the rows its \`affects:\` selects, which the model does not apply`;
+  }
+  const set = outcome.instances;
+  if (set !== null && set !== undefined && !concurrent) {
+    if (set.effect === 'deletes') return `outcome \`${outcome.name}\` deletes the rows it selects`;
+    if (list(set.events).length > 0) {
+      return `outcome \`${outcome.name}\` publishes an event once per changed row, which the model does not apply`;
+    }
+    const filter = parsed(set.filter);
+    if (typeof filter === 'string') return `the filter of \`${outcome.name}\`: ${filter}`;
+  }
   const subject = outcome.subject;
   if (subject === null || subject === undefined) return null;
   const from = subject.instance?.from;
   const allowed =
     (subject.effect === 'creates' && from === 'observed') ||
-    ((subject.effect === 'moves' || subject.effect === 'updates') && from === 'supplied');
-  return allowed
-    ? null
-    : `outcome \`${outcome.name}\` ${subject.effect} its subject from \`${from}\``;
+    ((subject.effect === 'moves' || subject.effect === 'updates') && from === 'supplied') ||
+    ((subject.effect === 'preserves' || subject.effect === 'deletes') &&
+      from === 'supplied' &&
+      !concurrent);
+  if (allowed) return null;
+  if (subject.effect === 'deletes' && from === 'supplied') {
+    return `outcome \`${outcome.name}\` deletes its subject from \`supplied\`, and a concurrent workload is drawn before any call runs, so a later call can name the deleted row`;
+  }
+  return `outcome \`${outcome.name}\` ${subject.effect} its subject from \`${from}\``;
 }
 
 /** A stored-row condition as the explorer evaluates it, or why it cannot. */
@@ -790,6 +891,7 @@ function plan(ir: Node, concurrent = false): Plan {
   }
 
   const commands: Command[] = [];
+  const offsets = new Set<number>();
   for (const node of sortedValues(ir.commands)) {
     const outcomes = list(node.outcomes);
     declared.set(
@@ -834,7 +936,7 @@ function plan(ir: Node, concurrent = false): Plan {
     if (reason === null && existing !== undefined && addresses(node).length > 1) {
       reason = `outcome \`${existing.name}\` answers an existing instance of creations that name it differently`;
     }
-    for (const outcome of outcomes) reason ??= effectRefusal(outcome);
+    for (const outcome of outcomes) reason ??= effectRefusal(outcome, concurrent);
     for (const outcome of outcomes) {
       if (
         reason === null &&
@@ -898,6 +1000,7 @@ function plan(ir: Node, concurrent = false): Plan {
     if (later === null && actor === undefined) later = 'no actor may invoke it';
     const drawn = pools(ordered);
     fieldPools(drawn, inputs, node.examples, counts(inputGuards, storedGuards));
+    const entityFields = storedFields(ir, node);
     const command: Command = {
       name: node.name,
       actor: actor ?? '',
@@ -906,7 +1009,15 @@ function plan(ir: Node, concurrent = false): Plan {
       guards,
       rows,
       pools: drawn,
+      inputTimestamp: (path) => timestampAt(inputs, path),
+      storedTimestamp: (path) =>
+        path.startsWith('input.')
+          ? timestampAt(inputs, path.slice('input.'.length))
+          : timestampAt(entityFields, path),
+      clocked: false,
     };
+    const clockedAt = nowOffsets(command);
+    command.clocked = clockedAt.length > 0;
     if (reason === null && later === null && undrawable !== null) sendable.set(node.name, command);
     reason ??= undrawable ?? later;
     if (reason !== null || actor === undefined) {
@@ -915,6 +1026,7 @@ function plan(ir: Node, concurrent = false): Plan {
       continue;
     }
     commands.push(command);
+    for (const offset of clockedAt) offsets.add(offset);
   }
 
   const views: Node[] = [];
@@ -940,6 +1052,7 @@ function plan(ir: Node, concurrent = false): Plan {
     ir,
     system: String(ir.system),
     commands,
+    drawn: [...commands],
     views,
     excluded,
     excludedCommands,
@@ -947,6 +1060,8 @@ function plan(ir: Node, concurrent = false): Plan {
     externals,
     unarrangeable: new Map(),
     sendable,
+    offsets: [...offsets].sort((a, b) => a - b),
+    clock: null,
   };
 }
 
@@ -964,10 +1079,31 @@ function exclude(p: Plan, subject: string, reason: string): void {
 interface Rec {
   id: Node;
   fields: Row;
+  /**
+   * Every `Optional` field of the record no outcome has written, which the interpreter reads as
+   * absent. A field the model forgot, its value undetermined, is not in it.
+   */
+  unwritten?: Set<string>;
+}
+
+/**
+ * Every `Optional` field of `entity`, by name: what a new record holds as absent until an outcome
+ * writes it.
+ */
+function unwrittenOf(ir: Node, entity: Node): Set<string> {
+  const unwritten = new Set<string>();
+  for (const declared of list(entity.fields)) {
+    if (optionalType(ir, declared.type_ref)) unwritten.add(String(declared.name));
+  }
+  return unwritten;
 }
 
 class Model {
   readonly records = new Map<string, Rec[]>();
+  /** The identity of every row a step deleted, by entity, in the order deleted (beyond10x/ess#583). */
+  readonly deleted = new Map<string, Node[]>();
+  /** The plan's clock, null where no clock is read. */
+  clock: Clock | null = null;
 
   of(entity: string): Rec[] {
     let found = this.records.get(entity);
@@ -981,6 +1117,216 @@ class Model {
   find(entity: string, id: Node): Rec | undefined {
     return this.of(entity).find((record) => equal(record.id, id));
   }
+
+  /**
+   * Takes `record` out of the rows of `entity`, keeping the order of the others, and keeps its
+   * identity among the deleted ones, which a later step may name again (beyond10x/ess#583).
+   */
+  remove(entity: string, record: Rec): void {
+    this.records.set(
+      entity,
+      this.of(entity).filter((other) => other !== record),
+    );
+    this.deleted.set(entity, [...(this.deleted.get(entity) ?? []), record.id]);
+  }
+}
+
+// ---- the clock: a guard over `now` (beyond10x/ess#582) -----------------------------------------
+
+/**
+ * What a sequential exploration reads the current time from, and every offset from it, in seconds,
+ * that the plan's guards compare a `Timestamp` with.
+ */
+interface Clock {
+  read: () => Date;
+  offsets: number[];
+}
+
+/** The clock's current time, in milliseconds since the epoch, to the whole second. */
+function clockNow(clock: Clock): number {
+  return Math.floor(clock.read().getTime() / 1000) * 1000;
+}
+
+/** `at`, in milliseconds since the epoch, as a canonical RFC 3339 `date-time` at UTC. */
+function instantText(at: number): string {
+  return new Date(at).toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
+/**
+ * The offset, in seconds, of the current-time operand `text` spells — `now`, `now - 60s`,
+ * `now + 5m`, `now - 1h` — as Rust's `CurrentTime::parse` reads it, or null where `text` is none.
+ */
+function currentTime(text: string): number | null {
+  if (!text.startsWith('now')) return null;
+  let rest = text.slice('now'.length);
+  if (rest === '') return 0;
+  rest = rest.replace(/^ +/, '');
+  const sign = rest.startsWith('+') ? 1 : rest.startsWith('-') ? -1 : 0;
+  if (sign === 0) return null;
+  rest = rest.slice(1).replace(/^ +/, '');
+  const unit = ({ s: 1, m: 60, h: 3600 } as Record<string, number>)[rest.slice(-1)];
+  const digits = rest.slice(0, -1);
+  if (
+    unit === undefined ||
+    !/^[0-9]{1,10}$/.test(digits) ||
+    (digits.length > 1 && digits.startsWith('0'))
+  ) {
+    return null;
+  }
+  const seconds = Number(digits) * unit;
+  return seconds > 3155760000 ? null : sign * seconds;
+}
+
+/** Whether `path` names a `Timestamp` among `fields`, through structs, optionals and identities. */
+function timestampAt(fields: InputField[], path: string): boolean {
+  const parts = path.split('.');
+  let within = fields;
+  for (const [index, part] of parts.entries()) {
+    let kind = within.find(([name]) => name === part)?.[1];
+    if (kind === undefined) return false;
+    while (kind.kind === 'optional' || kind.kind === 'identity') kind = kind.base;
+    if (index === parts.length - 1) return kind.kind === 'timestamp';
+    if (kind.kind !== 'struct') return false;
+    within = kind.fields;
+  }
+  return false;
+}
+
+/**
+ * Every stored field of the entity a command's supplied subject names, as a stored-row guard reads
+ * it, or none.
+ */
+function storedFields(ir: Node, node: Node): InputField[] {
+  for (const outcome of list(node.outcomes)) {
+    if (outcome.subject?.instance?.from !== 'supplied') continue;
+    return list(ir.entities?.[outcome.subject.entity]?.fields).map(
+      (declared: Node): InputField => [
+        String(declared.name),
+        resolveKind(ir, declared.type_ref, 0, true),
+      ],
+    );
+  }
+  return [];
+}
+
+/**
+ * The offset of the current-time operand `node` compares a `Timestamp` with, read by `typed`, or
+ * null where `node` is no such comparison. Only a literal is read as `now`, as Rust's
+ * `instant_operand` reads it: a fact holding the text `now` holds no instant.
+ */
+function nowOf(node: Predicate, typed: (path: string) => boolean): number | null {
+  if (
+    node.kind !== 'compare' ||
+    !node.left.isFact ||
+    node.right.isFact ||
+    node.right.offset !== null ||
+    node.left.utf8Bytes ||
+    node.right.utf8Bytes ||
+    !typed(node.left.path) ||
+    typeof node.right.literal !== 'string'
+  ) {
+    return null;
+  }
+  return currentTime(node.right.literal);
+}
+
+/** Every offset from `now` the guards of `command` compare a `Timestamp` with, sorted, once each. */
+function nowOffsets(command: Command): number[] {
+  const found = new Set<number>();
+  const visit = (predicate: Predicate, typed: (path: string) => boolean): void =>
+    walk(predicate, (node) => {
+      const offset = nowOf(node, typed);
+      if (offset !== null) found.add(offset);
+    });
+  for (const guard of command.guards.values()) visit(guard, command.inputTimestamp);
+  for (const row of command.rows.values()) {
+    if (row.stored !== null) visit(row.stored, command.storedTimestamp);
+    if (row.input !== null) visit(row.input, command.inputTimestamp);
+  }
+  return [...found].sort((a, b) => a - b);
+}
+
+/**
+ * `predicate` with every comparison of a `Timestamp` with `now` decided at the instant `at`: the
+ * operand is the RFC 3339 text of `at` moved by its offset, compared as an instant. `spelled` maps
+ * the text of each comparison it rewrote to the text it was written as.
+ */
+function decidedAt(
+  predicate: Predicate,
+  typed: (path: string) => boolean,
+  at: number,
+  spelled: Map<string, string>,
+): Predicate {
+  const offset = nowOf(predicate, typed);
+  if (offset !== null) {
+    const moved = new Predicate({
+      ...predicate,
+      right: new Operand({ literal: instantText(at + offset * 1000) }),
+      instant: true,
+    });
+    spelled.set(moved.toString(), predicate.toString());
+    return moved;
+  }
+  return new Predicate({
+    ...predicate,
+    children: predicate.children.map((child) => decidedAt(child, typed, at, spelled)),
+    body: predicate.body === null ? null : decidedAt(predicate.body, typed, at, spelled),
+  });
+}
+
+/** `command` with every guard over `now` decided at the instant `at`. */
+function commandAt(command: Command, at: number, spelled: Map<string, string>): Command {
+  const guards = new Map<string, Predicate>();
+  for (const [name, guard] of command.guards) {
+    guards.set(name, decidedAt(guard, command.inputTimestamp, at, spelled));
+  }
+  const rows = new Map<string, RowGuard>();
+  for (const [name, row] of command.rows) {
+    rows.set(name, {
+      ...row,
+      stored:
+        row.stored === null ? null : decidedAt(row.stored, command.storedTimestamp, at, spelled),
+      input: row.input === null ? null : decidedAt(row.input, command.inputTimestamp, at, spelled),
+    });
+  }
+  return { ...command, guards, rows };
+}
+
+/** What two decisions of one step must share to be the same answer. */
+function decisionKey(decision: Decision): string {
+  const outcome = decision.kind === 'take' ? String(decision.outcome?.name ?? '') : '';
+  const externals =
+    decision.kind === 'take' ? decision.externals.map((it: Node) => String(it.name)) : [];
+  const names = decision.kind === 'take' || decision.kind === 'ambiguous' ? decision.names : [];
+  return [decision.kind, outcome, externals.join(','), (names ?? []).join(',')].join('\u0000');
+}
+
+/**
+ * `decide` with every guard over `now` decided against the model's clock (beyond10x/ess#582), read
+ * now and a minute later: a target reads its own clock after the explorer has read this one, so a
+ * step whose answer differs between the two is undetermined and is not sent. Without a clock, or a
+ * guard over `now`, it is `decide`.
+ */
+function decideNow(command: Command, input: Row, model: Model): Decision {
+  if (model.clock === null || !command.clocked) return decide(command, input, model);
+  const at = clockNow(model.clock);
+  const spelled = new Map<string, string>();
+  const first = decide(commandAt(command, at, spelled), input, model);
+  const later = decide(commandAt(command, at + 60_000, spelled), input, model);
+  if (decisionKey(first) !== decisionKey(later)) {
+    return {
+      kind: 'undetermined',
+      reason: `${command.name}: its answer turns on when the target reads its clock`,
+    };
+  }
+  if (first.kind !== 'unknown' && first.kind !== 'undetermined') return first;
+  // A reason names each guard as it is written, never the instant this step read.
+  const texts = [...spelled.keys()].sort((a, b) =>
+    a.length !== b.length ? b.length - a.length : byteCompare(a, b),
+  );
+  let reason = first.reason;
+  for (const text of texts) reason = reason.split(text).join(spelled.get(text) as string);
+  return { ...first, reason };
 }
 
 /** A value an outcome gives a field, or `undefined` where the model does not know it. */
@@ -1118,6 +1464,23 @@ function suppliedOutcome(command: Command): Node | undefined {
   );
 }
 
+/**
+ * The held state of the row a step of `command` addresses, which keys a refusal
+ * (beyond10x/ess#537): `(no row)` where it addresses none, `(no state)` for a row without a
+ * lifecycle.
+ */
+function heldState(command: Command, input: Row, model: Model): string {
+  const supplied = suppliedOutcome(command);
+  if (supplied === undefined) return '(no row)';
+  const record = model.find(
+    supplied.subject.entity,
+    readPath(input, supplied.subject.instance.field.name),
+  );
+  if (record === undefined) return '(no row)';
+  const state = record.fields.state;
+  return typeof state === 'string' ? state : '(no state)';
+}
+
 function unknownOutcome(command: Command): Node | undefined {
   return list(command.node.outcomes).find(
     (outcome: Node) => outcome.condition?.kind === 'unknown_instance',
@@ -1146,12 +1509,58 @@ function isInputRefusal(outcome: Node): boolean {
 }
 
 /**
+ * Which branch a step takes: `decideRow`'s answer, with every external refusal marked
+ * `before_row: true` (ess/25, beyond10x/ess#534) that answers before it offered beside it. Such a
+ * branch answers among the input-guarded refusals, in declaration order, before existence and the
+ * held state: one declared before the first input refusal whose guard holds is eligible for every
+ * record, an identity no record carries included, and is offered even where the rest of the order
+ * answers alone.
+ */
+function decide(command: Command, input: Row, model: Model): Decision {
+  const decision = decideRow(command, input, model);
+  if (decision.kind !== 'take' && decision.kind !== 'ambiguous') return decision;
+  const source = facts(input);
+  const early: Node[] = [];
+  for (const outcome of list(command.node.outcomes)) {
+    const guard = command.guards.get(outcome.name) as Predicate;
+    if (isInputRefusal(outcome)) {
+      if (guard.evaluate(source) === TruthTrue) break;
+      continue;
+    }
+    if (!isExternal(outcome) || outcome.before_row !== true) continue;
+    if (outcome.condition.kind === 'external_when') {
+      const truth = guard.evaluate(source);
+      if (truth === TruthUnknown) {
+        return {
+          kind: 'unknown',
+          reason: `the guard of \`${outcome.name}\` (${guard}) is unknown over a generated input`,
+        };
+      }
+      if (truth === TruthFalse) continue;
+    }
+    early.push(outcome);
+  }
+  if (early.length === 0) return decision;
+  const offered = new Set(early.map((outcome: Node) => outcome.name));
+  if (decision.kind === 'ambiguous') {
+    return { kind: 'take', outcome: undefined, externals: early, names: decision.names };
+  }
+  return {
+    ...decision,
+    externals: [
+      ...early,
+      ...decision.externals.filter((outcome: Node) => !offered.has(outcome.name)),
+    ],
+  };
+}
+
+/**
  * Which branch a step takes, in Entity Runtime's order (beyond10x/ess#235): the input-guarded
  * refusals, the first declared whose guard holds; then the accepting guarded branch that holds, or
  * the default; then, where that branch moves from a state no move of the command starts from, the
  * wrong-state branch.
  */
-function decide(command: Command, input: Row, model: Model): Decision {
+function decideRow(command: Command, input: Row, model: Model): Decision {
   const outcomes = list(command.node.outcomes);
   const supplied = suppliedOutcome(command);
   const record =
@@ -1303,7 +1712,63 @@ function decide(command: Command, input: Row, model: Model): Decision {
     if (wrong !== undefined) names.push(String(wrong.name));
     return orExternal({ kind: 'ambiguous', names });
   }
-  return { kind: 'take', outcome: terminal(command, selected, input, model), externals };
+  const taken = terminal(command, selected, input, model);
+  // A selected-rows branch whose filter reads a stored field whose value the model does not hold
+  // leaves it unable to say which rows change: the draw is redrawn and reported, the command kept. Only an accepting
+  // `when:` or default branch carries `instances:`, never an external one.
+  const rows = selectedRows(command.name, taken, input, model);
+  if (typeof rows === 'string') return { kind: 'undetermined', reason: rows };
+  return { kind: 'take', outcome: taken, externals };
+}
+
+/**
+ * The records a selected-rows outcome (`instances: {where: …}`) selects for `input`, read before the
+ * outcome changes any of them, or why the model cannot say. A `moves:` skips a row resting outside
+ * the transition's `from` states before its filter is read, as the interpreter's `select` does.
+ * Only a filter that holds selects a row. One left Unknown by a stored field held as null or an
+ * `Optional` field no outcome wrote (both absent), or by an input path the draw left out, does not
+ * hold, so the row is not selected; one left Unknown by a field whose value the model does not hold
+ * (a required field no outcome wrote, or a value it could not determine) is undetermined, as in the
+ * interpreter's `only_absent` (`docs/design/set-effects-over-filtered-instances.md`, "Selection").
+ */
+function selectedRows(command: string, outcome: Node, input: Row, model: Model): Rec[] | string {
+  const set = outcome?.instances;
+  if (set === null || set === undefined) return [];
+  const filter = parsed(set.filter);
+  if (typeof filter === 'string') return `${command} filter of \`${outcome.name}\`: ${filter}`;
+  const from = list(set.transition?.from);
+  const selected: Rec[] = [];
+  for (const record of model.of(set.entity)) {
+    if (set.effect === 'moves' && !from.includes(record.fields.state)) continue;
+    const absent: Row = {};
+    for (const field of record.unwritten ?? []) absent[field] = null;
+    const source = facts({ ...absent, ...record.fields, input });
+    const truth = filter.evaluate(source);
+    if (truth === TruthTrue) {
+      selected.push(record);
+    } else if (truth === TruthUnknown) {
+      for (const path of paths(filter)) {
+        if (!source.has(path) && !path.startsWith('input.')) {
+          return `${command} filter of \`${outcome.name}\` reads ${path}, whose value the model does not hold`;
+        }
+      }
+    }
+  }
+  return selected;
+}
+
+/**
+ * Writes what `outcome`'s `sets:` determine into `record`: a determined value, null for a cleared
+ * one, and the field forgotten where the model cannot say.
+ */
+function applySets(ir: Node, outcome: Node, input: Row, record: Rec): void {
+  for (const set of list(outcome.sets)) {
+    const value = valueOf(ir, set.value, input, set.target_type);
+    record.unwritten?.delete(set.target);
+    if (value === undefined) delete record.fields[set.target];
+    else if (value === CLEARED) record.fields[set.target] = null;
+    else record.fields[set.target] = value;
+  }
 }
 
 /**
@@ -1463,7 +1928,7 @@ function eligibleExternals(
 /**
  * The branches a step may take: the ordinary one, unless an earlier arrangement of this command
  * may still hold and an external branch is eligible, then every eligible external branch the
- * target has not refused to arrange.
+ * target has not refused to arrange in this sequence.
  */
 interface Choice {
   arrangement: string;
@@ -1484,7 +1949,7 @@ function choices(
     out.push({ arrangement: '', expected: decision.outcome });
   }
   for (const outcome of decision.externals) {
-    if (!s.p.unarrangeable.has(`${command.name}/${outcome.name}`)) {
+    if (!s.unarrangeable.has(`${command.name}/${outcome.name}`)) {
       out.push({
         arrangement: String(outcome.name),
         expected: terminal(command, outcome, input, s.model),
@@ -1528,6 +1993,11 @@ interface Step {
   external: string;
   /** Identities deliberately absent in the serial draw/replay model. */
   fresh?: [string, string][];
+  /**
+   * Every input naming a row an earlier step deleted, as (path, entity, deletion index), so a
+   * shorter trace re-resolves it (beyond10x/ess#583).
+   */
+  gone?: [string, string, number][];
   /** A restart of the target rather than a command. */
   restart?: true;
 }
@@ -1572,7 +2042,17 @@ function drawValue(
     case 'string':
       return rng.pick(textsAt(command.pools, path));
     case 'timestamp': {
-      // One seeded draw selects a UTC second on a fixed date, never a target clock.
+      // Around the clock, where a guard compares one with `now` (beyond10x/ess#582): an hour to a
+      // day either side of an instant a guard compares it with, so a target reading its own clock
+      // moments later decides the step as the model does. Otherwise one seeded draw selects a UTC
+      // second on a fixed date, never a target clock.
+      const clock = model.clock;
+      if (clock !== null && clock.offsets.length > 0) {
+        const offset = rng.pick(clock.offsets);
+        let away = rng.int(3600, 86400);
+        if (rng.chance(0.5)) away = -away;
+        return instantText(clockNow(clock) + (offset + away) * 1000);
+      }
       const second = rng.int(0, 86399);
       const part = (value: number): string => String(value).padStart(2, '0');
       return `2020-01-01T${part(Math.floor(second / 3600))}:${part(Math.floor(second / 60) % 60)}:${part(second % 60)}Z`;
@@ -1615,6 +2095,7 @@ function draw(command: Command, rng: Mulberry32, model: Model): Step | null {
   const input: Row = {};
   const refs: [string, string, number][] = [];
   const fresh: [string, string][] = [];
+  const gone: [string, string, number][] = [];
   for (const [name, declared, presence] of command.inputs) {
     let kind = declared;
     if (name === instance && kind.kind !== 'identity') {
@@ -1637,7 +2118,18 @@ function draw(command: Command, rng: Mulberry32, model: Model): Step | null {
         value = drawValue(kind, rng, command, model, name, true, refs);
       } else {
         value = NO_RECORD;
-        for (let attempt = 0; attempt < ATTEMPTS_PER_STEP; attempt += 1) {
+        // A supplied instance with an unknown-instance answer names a row an earlier step deleted
+        // with even chance, where there is one: the model answers it as the unknown instance it
+        // now is (beyond10x/ess#583).
+        const deleted = model.deleted.get(probed) ?? [];
+        if (probesUnknown && deleted.length > 0 && rng.chance(0.5)) {
+          const index = rng.int(0, deleted.length - 1);
+          if (model.find(probed, deleted[index]) === undefined) {
+            value = deleted[index];
+            gone.push([name, probed, index]);
+          }
+        }
+        for (let attempt = 0; value === NO_RECORD && attempt < ATTEMPTS_PER_STEP; attempt += 1) {
           const drawn = drawValue(
             kind.kind === 'identity' ? kind.base : kind,
             rng,
@@ -1661,7 +2153,7 @@ function draw(command: Command, rng: Mulberry32, model: Model): Step | null {
     if (value !== ABSENT) input[name] = value;
     else if (presence !== 'omitted_when_absent') input[name] = null;
   }
-  return { command: command.name, input, refs, external: '', fresh };
+  return { command: command.name, input, refs, external: '', fresh, gone };
 }
 
 // ---- one step against the target ----------------------------------------------------------------
@@ -1681,6 +2173,12 @@ interface Session {
   undetermined: Set<string>;
   /** Every command the target was asked to arrange a branch for in this sequence. */
   forced: Set<string>;
+  /**
+   * `command/outcome` for every external branch the target refused to arrange in this sequence. It
+   * is the sequence's own, so a branch an earlier seed found unarrangeable does not change what a
+   * later seed draws (beyond10x/ess#576).
+   */
+  unarrangeable: Set<string>;
   /** The consistency token the last command returned. */
   token: string;
   scenario: string;
@@ -1785,20 +2283,37 @@ async function perform(
       record = {
         id,
         fields: { [entity.identity.name]: id, state: subject.into ?? entity.lifecycle?.initial },
+        unwritten: unwrittenOf(ir, entity),
       };
       s.model.of(subject.entity).push(record);
     } else {
       record = s.model.find(subject.entity, readPath(step.input, subject.instance.field.name));
       if (record !== undefined && subject.effect === 'moves')
         record.fields.state = subject.transition.to;
-    }
-    if (record !== undefined) {
-      for (const set of list(outcome.sets)) {
-        const value = valueOf(ir, set.value, step.input, set.target_type);
-        if (value === undefined) delete record.fields[set.target];
-        else if (value === CLEARED) record.fields[set.target] = null;
-        else record.fields[set.target] = value;
+      // A delete takes the row out of the model, so every view read below must lose it, and a
+      // later step naming it is answered as an unknown instance (beyond10x/ess#583).
+      if (record !== undefined && subject.effect === 'deletes') {
+        s.model.remove(subject.entity, record);
+        record = undefined;
       }
+    }
+    // A preserving outcome leaves the row exactly as it was: its state and every field, so the views
+    // read below hold the target to an unchanged subject (beyond10x/ess#536).
+    if (record !== undefined && subject.effect !== 'preserves') {
+      applySets(ir, outcome, step.input, record);
+    }
+  }
+  // A selected-rows outcome (beyond10x/ess#538) changes every row its filter selected before it
+  // ran: a `moves:` takes each selected row, none of which rests outside the transition's `from`
+  // states, an `updates:` changes each, and `sets:` applies to every changed row.
+  const set = outcome.instances;
+  if (set !== null && set !== undefined) {
+    const rows = selectedRows(command.name, outcome, step.input, s.model);
+    for (const record of typeof rows === 'string' ? [] : rows) {
+      if (set.effect === 'moves') {
+        record.fields.state = set.transition.to;
+      }
+      applySets(ir, outcome, step.input, record);
     }
   }
 
@@ -1988,13 +2503,16 @@ async function open(
   const target = await newTarget();
   const correlation = newHarness(p.system).correlation();
   await target.beginScenario({ scenario, correlation });
+  const model = new Model();
+  model.clock = p.clock;
   const session = {
     p,
     target,
-    model: new Model(),
+    model,
     correlation,
     undetermined: new Set<string>(),
     forced: new Set<string>(),
+    unarrangeable: new Set<string>(),
     token: '',
     scenario,
   };
@@ -2016,14 +2534,14 @@ async function preconditions(s: Session): Promise<void> {
       );
     }
     const planned =
-      s.p.commands.find((candidate) => candidate.name === name) ?? s.p.sendable.get(name);
+      s.p.drawn.find((candidate) => candidate.name === name) ?? s.p.sendable.get(name);
     if (planned === undefined) {
       throw new Error(`precondition \`${name}\` is a command exploration excludes`);
     }
     const command: Command = { ...planned, actor: pre.actor ?? planned.actor };
     const input: Row = { ...(pre.input ?? {}) };
     const step: Step = { command: name, input, refs: [], external: '' };
-    const decision = decide(command, input, s.model);
+    const decision = decideNow(command, input, s.model);
     // The model must take the branch the specification requires of it, as synthesis does: a
     // precondition the model decides as a refusal, or as anything else, fails as setup.
     const wanted = String(pre.outcome);
@@ -2073,7 +2591,7 @@ async function replay(
         }
         continue;
       }
-      const command = p.commands.find((candidate) => candidate.name === recorded.command);
+      const command = p.drawn.find((candidate) => candidate.name === recorded.command);
       if (command === undefined) continue;
       const input = JSON.parse(JSON.stringify(recorded.input)) as Row;
       let resolvable = true;
@@ -2089,14 +2607,22 @@ async function replay(
         )
       )
         continue;
+      for (const [path, entity, index] of recorded.gone ?? []) {
+        const deleted = s.model.deleted.get(entity) ?? [];
+        if (index >= deleted.length || s.model.find(entity, deleted[index]) !== undefined) {
+          resolvable = false;
+        } else setPath(input, path, deleted[index]);
+      }
+      if (!resolvable) continue;
       const step: Step = {
         command: recorded.command,
         input,
         refs: recorded.refs,
         external: recorded.external,
         fresh: recorded.fresh ?? [],
+        gone: recorded.gone ?? [],
       };
-      const decision = decide(command, input, s.model);
+      const decision = decideNow(command, input, s.model);
       if (decision.kind !== 'take') continue;
       const outcome = choices(s, command, decision, input).find(
         (choice) => choice.arrangement === step.external,
@@ -2148,6 +2674,7 @@ export async function explore(
     throw new Error('the restart interval must be a whole number of steps, zero or more');
   }
   const p = plan(loadModel());
+  p.clock = { read: options.now ?? (() => new Date()), offsets: p.offsets };
   const steps = options.steps ?? DEFAULT_STEPS;
   const seeds: number[] = [];
   if (options.seed !== undefined) seeds.push(options.seed);
@@ -2162,9 +2689,15 @@ export async function explore(
   // The restarts a command followed, and why the target cannot restart, which stops every later one.
   let performed = 0;
   let refused = '';
+  // Every (command, held state) the target answered unsupported to, under `command` NUL `state`, in
+  // the order refused; every `command/outcome` a step left out for one would have taken; every
+  // command a step was sent for (beyond10x/ess#537).
+  const refusals = new Map<string, Refusal>();
+  const refusedOutcomes = new Set<string>();
+  const driven = new Set<string>();
 
   for (const seed of seeds) {
-    if (p.commands.length === 0 || failure !== undefined) break;
+    if (p.drawn.length === 0 || failure !== undefined) break;
     sequences += 1;
     const rng = new Mulberry32(seed);
     const s = await open(p, newTarget, `explore/seed-${seed}`);
@@ -2176,23 +2709,30 @@ export async function explore(
     let restarts = 0;
     let pending = 0;
     let found: Found | null = null;
+    // What this sequence draws from: every admitted command, less those this sequence excluded; and
+    // every (command, held state) the target refused in this sequence. Both are the sequence's own,
+    // as its unarrangeable branches are, so a seed draws inside a run what it draws alone
+    // (beyond10x/ess#576). What they find is still reported for the run.
+    let drawable = [...p.drawn];
+    const refusedHere = new Set<string>();
     try {
       for (
         let attempts = 0;
         (trace.length - restarts < steps || pending > 0) && attempts < steps * ATTEMPTS_PER_STEP;
         attempts += 1
       ) {
-        if (p.commands.length === 0) break;
-        const command = rng.pick(p.commands);
+        if (drawable.length === 0) break;
+        const command = rng.pick(drawable);
         const step = draw(command, rng, s.model);
         if (step === null) continue;
-        const decision = decide(command, step.input, s.model);
+        const decision = decideNow(command, step.input, s.model);
         if (decision.kind === 'ambiguous') {
           ambiguous.add(`${command.name}: ${decision.names.join(', ')}`);
           continue;
         }
         if (decision.kind === 'unknown') {
-          exclude(p, command.name, decision.reason);
+          drawable = drawable.filter((other) => other !== command);
+          if (!p.excludedCommands.has(command.name)) exclude(p, command.name, decision.reason);
           continue;
         }
         if (decision.kind === 'undetermined') {
@@ -2207,6 +2747,15 @@ export async function explore(
           continue;
         }
         const outcome = available.length > 1 ? rng.pick(available) : (available[0] as Choice);
+        // A command the target refused in this held state is not sent in it again.
+        const state = heldState(command, step.input, s.model);
+        const held = `${command.name}\u0000${state}`;
+        const refusal = refusals.get(held);
+        if (refusal !== undefined && refusedHere.has(held)) {
+          refusal.count += 1;
+          refusedOutcomes.add(`${command.name}/${outcome.expected.name}`);
+          continue;
+        }
         if (outcome.arrangement !== '') {
           step.external = outcome.arrangement;
           let arranging: Disagreement | null;
@@ -2214,10 +2763,11 @@ export async function explore(
             arranging = await arrange(s, command, step.external);
           } catch (error) {
             if (error instanceof Unsupported) {
-              p.unarrangeable.set(
-                `${command.name}/${step.external}`,
-                `the target cannot arrange it: ${error.message}`,
-              );
+              const id = `${command.name}/${step.external}`;
+              s.unarrangeable.add(id);
+              if (!p.unarrangeable.has(id)) {
+                p.unarrangeable.set(id, `the target cannot arrange it: ${error.message}`);
+              }
               continue;
             }
             throw error;
@@ -2237,11 +2787,22 @@ export async function explore(
           disagreement = await perform(s, command, step, outcome.expected);
         } catch (error) {
           if (error instanceof Unsupported) {
-            exclude(p, command.name, `the target does not expose it: ${error.message}`);
+            refusedHere.add(held);
+            if (refusal !== undefined) refusal.count += 1;
+            else {
+              refusals.set(held, {
+                command: command.name,
+                state,
+                reason: `the target does not expose it: ${error.message}`,
+                count: 1,
+              });
+            }
+            refusedOutcomes.add(`${command.name}/${outcome.expected.name}`);
             continue;
           }
           throw error;
         }
+        driven.add(command.name);
         executed += 1;
         trace.push(step);
         performed += pending;
@@ -2287,19 +2848,34 @@ export async function explore(
     if (found !== null) failure = await shrink(p, newTarget, seed, trace, found);
   }
 
+  // A command refused in every state it was drawn in, and driven in none, is excluded with its
+  // first refusal's reason, as one refused step excluded it before beyond10x/ess#537.
+  const narrowed: Refusal[] = [];
+  for (const refusal of refusals.values()) {
+    if (p.excludedCommands.has(refusal.command)) continue;
+    if (driven.has(refusal.command)) narrowed.push(refusal);
+    else exclude(p, refusal.command, refusal.reason);
+  }
+  narrowed.sort(
+    (left, right) =>
+      byteCompare(left.command, right.command) || byteCompare(left.state, right.state),
+  );
   const unreached: string[] = [];
   const excludedOutcomes: string[] = [];
   for (const [command, outcomes] of p.declared) {
     for (const outcome of outcomes) {
       const id = `${command}/${outcome}`;
-      if (p.excludedCommands.has(command)) excludedOutcomes.push(id);
-      else if (!reached.has(id) && !p.unarrangeable.has(id)) unreached.push(id);
+      if (p.excludedCommands.has(command) || (refusedOutcomes.has(id) && !reached.has(id))) {
+        excludedOutcomes.push(id);
+      } else if (!reached.has(id) && !p.unarrangeable.has(id)) unreached.push(id);
     }
   }
   const external: ExternalReach[] = p.externals
     .map(({ command, id, cause }): ExternalReach => {
       const reason = p.unarrangeable.get(id);
-      if (p.excludedCommands.has(command)) return { outcome: id, cause, reach: 'excluded' };
+      if (p.excludedCommands.has(command) || (refusedOutcomes.has(id) && !reached.has(id))) {
+        return { outcome: id, cause, reach: 'excluded' };
+      }
       if (reached.has(id)) return { outcome: id, cause, reach: 'reached' };
       if (reason !== undefined) return { outcome: id, cause, reach: 'unarrangeable', reason };
       return { outcome: id, cause, reach: 'unreached' };
@@ -2319,6 +2895,7 @@ export async function explore(
     undetermined: sortStrings([...undetermined]),
     ambiguous: sortStrings([...ambiguous]),
   };
+  if (narrowed.length > 0) result.refused = narrowed;
   if (external.length > 0) result.external = external;
   if (every > 0) {
     result.restarts = { every, performed };
@@ -2333,7 +2910,7 @@ function sameFailure(p: Plan, original: Found, replayed: Found): boolean {
   if (original.kind !== replayed.kind) return false;
   const last = original.executed[original.executed.length - 1];
   const next = replayed.executed[replayed.executed.length - 1];
-  const command = p.commands.find((candidate) => candidate.name === last?.command);
+  const command = p.drawn.find((candidate) => candidate.name === last?.command);
   const optional = (kind: Kind): boolean =>
     kind.kind === 'optional' ||
     (kind.kind === 'struct' && kind.fields.some(([, member]) => optional(member))) ||
@@ -2410,12 +2987,37 @@ export function exploreProblem(result: ExploreResult, options: AssertOptions = {
     );
   }
   if (result.excludedOutcomes.length > 0 && options.allowExcluded !== true) {
+    const excluded = new Set(result.excluded.map((exclusion) => exclusion.subject));
+    const lines = result.excludedOutcomes.map((outcome) => {
+      const slash = outcome.lastIndexOf('/');
+      const command = slash >= 0 ? outcome.slice(0, slash) : outcome;
+      return excluded.has(command)
+        ? `  ${outcome}`
+        : `  ${outcome} (only a step the target refused would have taken it)`;
+    });
     problems.push(
       `explore: ${result.excludedOutcomes.length} declared outcome(s) of excluded commands were never tried:\n` +
-        result.excludedOutcomes.map((outcome) => `  ${outcome}`).join('\n') +
-        '\nexcluded:\n' +
-        result.excluded
-          .map((exclusion) => `  ${exclusion.subject}: ${exclusion.reason}`)
+        lines.join('\n') +
+        (result.excluded.length > 0
+          ? '\nexcluded:\n' +
+            result.excluded
+              .map((exclusion) => `  ${exclusion.subject}: ${exclusion.reason}`)
+              .join('\n')
+          : '') +
+        '\naccept them explicitly with { allowExcluded: true }',
+    );
+  }
+  // A refusal fails the strict assertion whether or not it left an outcome untried: the command
+  // was not sent in that state, and before beyond10x/ess#537 the refusal excluded it.
+  const refused = result.refused ?? [];
+  if (refused.length > 0 && options.allowExcluded !== true) {
+    problems.push(
+      `explore: ${refused.length} (command, held state) pair(s) the target refused were never tried again:\n` +
+        refused
+          .map(
+            (refusal) =>
+              `  ${refusal.command} in ${refusal.state}: ${refusal.reason} (${refusal.count} step(s) not sent)`,
+          )
           .join('\n') +
         '\naccept them explicitly with { allowExcluded: true }',
     );
@@ -2449,10 +3051,10 @@ export function exploreProblem(result: ExploreResult, options: AssertOptions = {
 
 /**
  * assertExplored throws when an exploration failed, when a declared outcome went unreached, or
- * when an excluded command's outcomes, or external outcomes the target could not arrange, were
- * never tried and `allowExcluded` is not set, or when restarts were asked for and none was
- * performed. What the model could not place, and the draws it would not decide, are printed and do
- * not fail.
+ * when an excluded command's outcomes, a refused (command, held state), or external outcomes the
+ * target could not arrange, were never tried and `allowExcluded` is not set, or when restarts were
+ * asked for and none was performed. What the model could not place, and the draws it would not
+ * decide, are printed and do not fail.
  */
 export function assertExplored(result: ExploreResult, options: AssertOptions = {}): void {
   for (const note of result.undetermined) console.log(`explore: undetermined: ${note}`);
@@ -2614,7 +3216,8 @@ export interface ConcurrentOptions {
   calls?: number;
   /**
    * Accept commands the target does not expose (it threw `unsupported`), whose calls are then not
-   * written to any history. An explicit, reviewable opt-out, as `assertExplored` has.
+   * written to any history, and external branches it cannot arrange. An explicit, reviewable
+   * opt-out, as `assertExplored` has.
    */
   allowExcluded?: boolean;
   /**
@@ -2679,6 +3282,17 @@ export interface ConcurrentResult {
   failure?: ConcurrentFailure;
   /** What was injected across every history, all empty without `inject`. */
   injected: ConcurrentInjected;
+  /**
+   * The calls whose external branch the target was asked to arrange through
+   * `configureExternalOutcome`, by `command/outcome`, as the sequential walk asks
+   * (beyond10x/ess#576). Absent when none was, so a result without one keeps its bytes.
+   */
+  arranged?: Record<string, number>;
+  /**
+   * Every external branch, as `command/outcome`, the target threw `unsupported` for arranging, and
+   * why, in the order found. Its calls are sent unarranged. Absent when there is none.
+   */
+  unarrangeable?: Exclusion[];
 }
 
 /** The refusal when `ess` is not on PATH. */
@@ -2764,6 +3378,21 @@ export interface HistoryOperation {
   rows?: string[];
   /** The instant the call's decision observed; absent where none was observed. */
   decisionTime?: string;
+  /**
+   * What a command's call sent, copied when it was invoked, written as `input` (`ess-history/3`);
+   * absent for a read.
+   */
+  input?: Row;
+  /**
+   * Every event a returned command published, in the order published, with its payload, written
+   * as `events` (`ess-history/3`); absent where the call did not answer.
+   */
+  events?: { event: string; payload: Row }[];
+  /**
+   * The external branch a command's call arranged before it was sent, written as `arranged`
+   * (`ess-history/3`): empty where it arranged none; absent for a read.
+   */
+  arranged?: string[];
 }
 
 type Operation = HistoryOperation;
@@ -2821,6 +3450,10 @@ interface Recording {
   injected: ConcurrentInjected;
   /** Each client's last consistency token, empty until one of its commands answers one. */
   tokens: string[];
+  /** Each external branch arranged, by `command/outcome`. */
+  arranged: Record<string, number>;
+  /** Every external branch the target cannot arrange, in the order found; this history asks no more. */
+  unarrangeable: Exclusion[];
 }
 
 /** Moves the injections' SplitMix64 sequence away from the schedule's, as `ess` does. */
@@ -2871,6 +3504,57 @@ function declaresOtherExternal(command: Command): boolean {
   );
 }
 
+/**
+ * Every external branch of `command`, other than a `replays:` one, a call with `input` may take where
+ * the sequential walk offers it: an unguarded `external:`, or one beside a `when:` that holds over
+ * `input`. A guard unknown over `input` offers none. Concurrent exploration holds no model state, so
+ * a branch that moves its subject is offered whatever state the subject is in, and the target
+ * answers from the state it holds.
+ */
+function arrangeable(command: Command, input: Row): string[] {
+  const source = facts(input);
+  const names: string[] = [];
+  for (const outcome of list(command.node.outcomes)) {
+    if ((outcome.replays !== undefined && outcome.replays !== null) || !isExternal(outcome))
+      continue;
+    if (outcome.condition.kind === 'external_when') {
+      const guard = command.guards.get(outcome.name);
+      if (guard === undefined || guard.evaluate(source) !== TruthTrue) continue;
+    }
+    names.push(String(outcome.name));
+  }
+  return names;
+}
+
+/**
+ * Asks the target to make `command` take the external branch `outcome`, as the sequential walk does
+ * before the step it drew it for. A branch the target cannot arrange is recorded and its calls are
+ * sent unarranged; any other refusal fails the exploration. Resolves to whether the target arranged
+ * it.
+ */
+async function arrangeCall(h: Recording, command: Command, outcome: string): Promise<boolean> {
+  const id = `${command.name}/${outcome}`;
+  if (h.unarrangeable.some((known) => known.subject === id)) return false;
+  try {
+    await h.target.configureExternalOutcome({
+      command: command.name,
+      outcome,
+      correlation: h.correlation,
+    });
+  } catch (error) {
+    if (isUnsupported(error)) {
+      h.unarrangeable.push({
+        subject: id,
+        reason: `the target cannot arrange it: ${errorText(error)}`,
+      });
+      return false;
+    }
+    throw new Error(`arranging \`${id}\`, the target threw ${errorText(error)}`);
+  }
+  bump(h.arranged, id);
+  return true;
+}
+
 function requestOf(h: Recording, command: Command, step: Step): CommandRequest {
   return {
     command: command.name,
@@ -2900,6 +3584,8 @@ function reserve(h: Recording, client: number, command: Command, step: Step): nu
     retryOf: 0,
     creates,
     source: '',
+    input: binary64(step.input) as Row,
+    arranged: [],
   });
   return index;
 }
@@ -3035,8 +3721,10 @@ async function invokeCall(
   command: Command,
   step: Step,
 ): Promise<Flight> {
+  const arranged = step.external !== '' && (await arrangeCall(h, command, step.external));
   const request = requestOf(h, command, step);
   const index = reserve(h, client, command, step);
+  if (arranged) (h.operations[index] as Operation).arranged = [step.external];
   // One call, one correlation: a retry sends it again under the same one, and a target tells a
   // retry from a new call of the same input only by it — it never replays one call for another.
   request.correlation = `${h.correlation}-${index + 1}`;
@@ -3195,9 +3883,33 @@ async function completeCall(
   }
   operation.returnedAt = h.clock;
   operation.outcome = taken === '' ? UNDECLARED : taken;
+  // What it published, with each payload, for `check-history` to hold to the branch's `emits:` and
+  // `payload:`. A nameless event is written under a name no event can have, as a nameless outcome
+  // is.
+  operation.events = (result.directEvents ?? []).map((event) => ({
+    event: typeof event.event === 'string' && event.event !== '' ? event.event : UNDECLARED,
+    payload: isObject(event.payload) ? (binary64(event.payload) as Row) : {},
+  }));
   if (created === null) return null;
   if (operation.subjectKey === '') operation.subjectKey = created.id;
   return created;
+}
+
+/**
+ * A copy of `value` with every number it holds as the binary64 it denotes, so `goMarshal` writes
+ * each in the one spelling `ess-history/3` admits, `JSON.stringify`'s (`100`, never `100.0`; `0`,
+ * never `-0`). An integer a binary64 does not carry exactly is recorded as the binary64 nearest it.
+ */
+function binary64(value: Node): Node {
+  const unsigned = (number: number): number => (Object.is(number, -0) ? 0 : number);
+  if (value instanceof ExactNumber) return unsigned(Number(value.digits));
+  if (typeof value === 'bigint' || value instanceof JsonNumber) return unsigned(asNumber(value)[0]);
+  if (typeof value === 'number') return unsigned(value);
+  if (Array.isArray(value)) return value.map(binary64);
+  if (isObject(value)) {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, binary64(item)]));
+  }
+  return value;
 }
 
 function uuidOf(n: bigint): string {
@@ -3216,8 +3928,9 @@ function jsonObject(members: [string, string][]): string {
 
 /**
  * The history in the one spelling `ess` reads and writes: compact, keys in declaration order, an
- * absent `returned_at` and `outcome` for a call that never answered, and `ess-history/2` exactly
- * when a written operation records a `decision_time`.
+ * absent `returned_at` and `outcome` for a call that never answered, and the lowest format that
+ * carries what the written operations record: `ess-history/3` where one records its `input`,
+ * `events` or `arranged`, `ess-history/2` where one records a `decision_time`.
  */
 export function historyText(
   digest: string,
@@ -3225,8 +3938,10 @@ export function historyText(
   clients: number,
   operations: HistoryOperation[],
 ): string {
-  // `ess-history/2` exactly when a written operation records a decision time.
-  let format = 'ess-history/1';
+  // Whether a written operation records a decision time, and whether one records its input or
+  // its events.
+  let timed = false;
+  let inputs = false;
   // Where each written operation stands among the written ones, from 1, for a retry naming it.
   const position = new Map<number, number>();
   let kept = 0;
@@ -3264,11 +3979,30 @@ export function historyText(
       members.push(['retry_of', quote(uuidOf(BigInt(original)))]);
     }
     if (operation.decisionTime !== undefined) {
-      format = 'ess-history/2';
+      timed = true;
       members.push(['decision_time', quote(operation.decisionTime)]);
+    }
+    if (operation.input !== undefined) {
+      inputs = true;
+      members.push(['input', goMarshal(operation.input, false)]);
+    }
+    if (operation.returnedAt !== undefined && operation.events !== undefined) {
+      inputs = true;
+      const published = operation.events.map((event) =>
+        jsonObject([
+          ['event', quote(event.event)],
+          ['payload', goMarshal(event.payload, false)],
+        ]),
+      );
+      members.push(['events', `[${published.join(',')}]`]);
+    }
+    if (operation.arranged !== undefined) {
+      inputs = true;
+      members.push(['arranged', `[${operation.arranged.map(quote).join(',')}]`]);
     }
     return jsonObject(members);
   });
+  const format = inputs ? 'ess-history/3' : timed ? 'ess-history/2' : 'ess-history/1';
   return jsonObject([
     ['format', quote(format)],
     ['history_id', quote(uuidOf(BigInt(seed) & 0xffffffffffffn))],
@@ -3311,6 +4045,8 @@ async function recordHistory(
       retries: Array.from({ length: clients }, () => null),
       injected: newInjected(),
       tokens: Array.from({ length: clients }, () => ''),
+      arranged: {},
+      unarrangeable: [],
     };
     const model = new Model();
 
@@ -3341,6 +4077,15 @@ async function recordHistory(
           const command = p.commands[choice] as Command;
           const step = draw(command, rng, model);
           if (step !== null) {
+            // An external branch the call may take is drawn beside its ordinary branch, as the
+            // sequential walk draws it, and arranged when the call is invoked. Nothing is drawn for
+            // a call no external branch is offered to, so its seed draws what it drew before
+            // arrangement existed. The prefix arranges nothing.
+            const names = arrangeable(command, step.input);
+            if (names.length > 0) {
+              const picked = rng.int(0, names.length);
+              if (picked > 0) step.external = names[picked - 1] as string;
+            }
             own.push({ command, step, view: null });
             break;
           }
@@ -3506,6 +4251,15 @@ export async function exploreConcurrent(
       if (!result.excluded.some((earlier) => earlier.subject === exclusion.subject))
         result.excluded.push(exclusion);
     }
+    for (const [id, count] of Object.entries(recording.arranged)) {
+      result.arranged ??= {};
+      result.arranged[id] = (result.arranged[id] ?? 0) + count;
+    }
+    for (const branch of recording.unarrangeable) {
+      result.unarrangeable ??= [];
+      if (!result.unarrangeable.some((earlier) => earlier.subject === branch.subject))
+        result.unarrangeable.push(branch);
+    }
     const name = `history-${seed}.json`;
     const file = join(out, name);
     try {
@@ -3564,6 +4318,13 @@ export function concurrentProblem(result: ConcurrentResult): string | null {
     const lines = result.excluded.map((exclusion) => `  ${exclusion.subject}: ${exclusion.reason}`);
     problems.push(
       `explore: ${result.excluded.length} command(s) the target does not expose were left out of concurrent exploration:\n${lines.join('\n')}\naccept them explicitly with { allowExcluded: true }`,
+    );
+  }
+  const unarrangeable = result.unarrangeable ?? [];
+  if (unarrangeable.length > 0 && !result.allowExcluded) {
+    const lines = unarrangeable.map((branch) => `  ${branch.subject}: ${branch.reason}`);
+    problems.push(
+      `explore: ${unarrangeable.length} external outcome(s) the target could not arrange were never arranged in concurrent exploration:\n${lines.join('\n')}\naccept them explicitly with { allowExcluded: true }`,
     );
   }
   return problems.length === 0 ? null : problems.join('\n');

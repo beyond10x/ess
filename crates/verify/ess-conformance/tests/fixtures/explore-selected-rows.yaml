@@ -1,0 +1,138 @@
+# The explorer's model applies a selected-rows effect and draws a `Decimal` input
+# (beyond10x/ess#538).
+#
+# `Close` moves every `Open` seat of a team to `Closed` and sets its `last_reason` to `hungup`
+# (`moves:` with `instances: {where: …}` and `sets:`); a selected seat already `Closed` is skipped,
+# not refused. `Note` writes one seat's `last_reason`, so a skipped seat can hold another reason
+# than `hungup`. `Reopen` moves a seat back. `Start` and `Dial` take a `Decimal` input, which the
+# sequential explorer once left out ("is a `decimal`"). Before #538 the model kept every selected
+# row as it was after `Close`, so the first read of `Seats` disagreed with a correct target.
+#
+# The targets beside it are `explore-selected-rows-target.mjs` and
+# `explore_selected_rows_target.go`.
+
+format: ess/18
+system: explorerows
+version: v1
+domain: explorerows.desk
+
+summary: Seats that are started, dialled, noted, closed by team and reopened.
+
+types:
+  - {name: explorerows.desk.SeatId, kind: newtype, of: Uuid}
+  - {name: explorerows.desk.Team, kind: enum, variants: [red, blue]}
+  - {name: explorerows.desk.Reason, kind: enum, variants: [none, hungup, dropped]}
+
+entities:
+  - name: explorerows.desk.Seat
+    identity: {name: seat_id, type: explorerows.desk.SeatId}
+    fields:
+      - {name: team, type: explorerows.desk.Team}
+      - {name: last_reason, type: explorerows.desk.Reason}
+      - {name: level, type: Decimal}
+    lifecycle:
+      initial: Open
+      states: [Open, Closed]
+      transitions:
+        - {name: close, from: [Open], to: Closed}
+        - {name: reopen, from: [Closed], to: Open}
+
+actors:
+  - name: explorerows.desk.Supervisor
+    may:
+      - explorerows.desk.Start
+      - explorerows.desk.Dial
+      - explorerows.desk.Note
+      - explorerows.desk.Close
+      - explorerows.desk.Reopen
+
+errors:
+  - {name: explorerows.desk.NotClosed, fields: []}
+
+events:
+  - name: explorerows.desk.Started
+    fields: [{name: seat_id, type: explorerows.desk.SeatId}]
+  - name: explorerows.desk.Dialled
+    fields:
+      - {name: seat_id, type: explorerows.desk.SeatId}
+      - {name: level, type: Decimal}
+  - name: explorerows.desk.Noted
+    fields: [{name: seat_id, type: explorerows.desk.SeatId}]
+  - name: explorerows.desk.Reopened
+    fields: [{name: seat_id, type: explorerows.desk.SeatId}]
+  - name: explorerows.desk.TeamClosed
+    fields:
+      - {name: team, type: explorerows.desk.Team}
+      - {name: closed, type: Integer}
+
+commands:
+  - name: explorerows.desk.Start
+    input:
+      - {name: team, type: explorerows.desk.Team}
+      - {name: level, type: Decimal}
+    outcomes:
+      - name: started
+        creates: explorerows.desk.Seat
+        instance: seat_id
+        sets: {team: input.team, last_reason: none, level: input.level}
+        emits: [explorerows.desk.Started]
+        payload: {explorerows.desk.Started: {seat_id: {generated: true}}}
+
+  - name: explorerows.desk.Dial
+    input:
+      - {name: seat_id, type: explorerows.desk.SeatId}
+      - {name: dial_level, type: Decimal}
+    outcomes:
+      - name: dialled
+        updates: explorerows.desk.Seat
+        instance: seat_id
+        sets: {level: input.dial_level}
+        emits: [explorerows.desk.Dialled]
+        payload:
+          explorerows.desk.Dialled: {seat_id: input.seat_id, level: input.dial_level}
+
+  - name: explorerows.desk.Note
+    input:
+      - {name: seat_id, type: explorerows.desk.SeatId}
+      - {name: reason, type: explorerows.desk.Reason}
+    outcomes:
+      - name: noted
+        updates: explorerows.desk.Seat
+        instance: seat_id
+        sets: {last_reason: input.reason}
+        emits: [explorerows.desk.Noted]
+        payload: {explorerows.desk.Noted: {seat_id: input.seat_id}}
+
+  - name: explorerows.desk.Close
+    input:
+      - {name: team, type: explorerows.desk.Team}
+    outcomes:
+      - name: closed
+        moves: explorerows.desk.Seat.close
+        instances: {where: team == input.team}
+        sets: {last_reason: hungup}
+        emits: [explorerows.desk.TeamClosed]
+        payload:
+          explorerows.desk.TeamClosed: {team: input.team, closed: {count: changed}}
+
+  - name: explorerows.desk.Reopen
+    input:
+      - {name: seat_id, type: explorerows.desk.SeatId}
+    outcomes:
+      - name: reopened
+        moves: explorerows.desk.Seat.reopen
+        instance: seat_id
+        emits: [explorerows.desk.Reopened]
+        payload: {explorerows.desk.Reopened: {seat_id: input.seat_id}}
+      - {name: not-closed, wrong_state: true, error: explorerows.desk.NotClosed}
+
+views:
+  - name: explorerows.desk.Seats
+    source: explorerows.desk.Seat
+    consistency: read_your_writes
+    fields:
+      - {name: seat_id, type: explorerows.desk.SeatId}
+      - {name: state, type: explorerows.desk.Seat.State}
+      - {name: team, type: explorerows.desk.Team}
+      - {name: last_reason, type: explorerows.desk.Reason}
+      - {name: level, type: Decimal}

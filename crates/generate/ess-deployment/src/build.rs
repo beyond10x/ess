@@ -261,8 +261,8 @@ impl BuildSpec {
     }
 
     /// Reads a strict YAML build specification.
-    pub fn from_yaml(text: &str) -> Result<Self, serde_yaml::Error> {
-        serde_yaml::from_str(text)
+    pub fn from_yaml(text: &str) -> Result<Self, ess_yaml::Error> {
+        ess_yaml::from_str(text)
     }
 }
 

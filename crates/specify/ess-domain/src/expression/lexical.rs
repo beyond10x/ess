@@ -434,8 +434,8 @@ impl Written {
     /// diagnostic, and a predicate left out keeps the meaning it had before `ess/22`.
     // One `put` per predicate site an outcome, a declaration or a view writes.
     #[allow(clippy::too_many_lines)]
-    pub(crate) fn from_document(document: &serde_yaml::Value) -> Self {
-        use serde_yaml::Value;
+    pub(crate) fn from_document(document: &ess_yaml::Value) -> Self {
+        use ess_yaml::Value;
         let mut written = Self::default();
         let items = |value: &Value, key: &str| -> Vec<Value> {
             value
@@ -447,7 +447,7 @@ impl Written {
         let named =
             |item: &Value| -> Option<QualifiedName> { item.get("name")?.as_str()?.parse().ok() };
         let lexical = |value: Option<&Value>| -> Option<LexicalPredicate> {
-            let node: Node = serde_yaml::from_value(value?.clone()).ok()?;
+            let node: Node = ess_yaml::from_value(value?.clone()).ok()?;
             LexicalPredicate::from_node(&node).ok()
         };
         let mut put = |site: Site, value: Option<&Value>| {
@@ -564,9 +564,9 @@ impl Written {
 }
 
 /// Each aggregate field of a written view that declares `where:`, with its name and the condition.
-fn conditions(view: &serde_yaml::Value) -> Vec<(String, &serde_yaml::Value)> {
+fn conditions(view: &ess_yaml::Value) -> Vec<(String, &ess_yaml::Value)> {
     view.get("fields")
-        .and_then(serde_yaml::Value::as_sequence)
+        .and_then(ess_yaml::Value::as_sequence)
         .into_iter()
         .flatten()
         .filter_map(|field| {
@@ -1185,8 +1185,8 @@ fn identity_orderings_in<E: crate::expression::TypeEnvironment>(
 /// Every filtered read an outcome of a source document writes, `{related: {entity, where,
 /// field}}` (ess/22), with its place — `sets`, or `payload` and the event or error, then the target
 /// and any nested struct members — and its `where` as written.
-fn selections(outcome: &serde_yaml::Value) -> Vec<(Vec<String>, serde_yaml::Value)> {
-    use serde_yaml::Value;
+fn selections(outcome: &ess_yaml::Value) -> Vec<(Vec<String>, ess_yaml::Value)> {
+    use ess_yaml::Value;
     fn walk(value: &Value, place: &mut Vec<String>, found: &mut Vec<(Vec<String>, Value)>) {
         let Some(mapping) = value.as_mapping() else {
             return;

@@ -6,8 +6,11 @@ use semver::Version;
 use crate::diagnostic::{Diagnostic, DiagnosticCode, Diagnostics, Stage};
 use crate::identity::{canonical_json, Digest, Identifier};
 use crate::release::{Artifact, ArtifactKind};
-use crate::runtime::{ConfigKind, RuntimeIr};
+use crate::runtime::{ConfigKind, ContainerRole, RuntimeIr, Workload};
 use crate::stack::StackLock;
+use crate::workload_kind::{
+    secret_volume_name, Affinity, JobRestart, Overlap, ProcessImage, Schedule, Spread,
+};
 
 /// Private environment-binding format.
 pub const ENVIRONMENT_FORMAT: &str = "ess-environment/1";
@@ -89,8 +92,8 @@ impl EnvironmentSpec {
     }
 
     /// Reads a strict YAML environment binding.
-    pub fn from_yaml(text: &str) -> Result<Self, serde_yaml::Error> {
-        serde_yaml::from_str(text)
+    pub fn from_yaml(text: &str) -> Result<Self, ess_yaml::Error> {
+        ess_yaml::from_str(text)
     }
 }
 
@@ -598,30 +601,40 @@ impl HelmProjection {
     }
 }
 
-fn helm_secret_slots(realization: &RuntimeIr) -> BTreeMap<Identifier, String> {
-    let mut slots = BTreeMap::new();
+/// Secret slots by name, with the key a variable reads, when one does. A slot that is only
+/// mounted reads no key of its own: its mount's items name them.
+fn helm_secret_slots(realization: &RuntimeIr) -> BTreeMap<Identifier, Option<String>> {
+    let mut slots: BTreeMap<Identifier, Option<String>> = BTreeMap::new();
     for container in realization.containers().values() {
         for slot in &container.secrets {
-            slots
+            let entry = slots
                 .entry(slot.name.clone())
                 .or_insert_with(|| slot.key.clone());
+            if entry.is_none() {
+                entry.clone_from(&slot.key);
+            }
         }
     }
     slots
 }
 
 fn helm_secret_schema(
-    slots: &BTreeMap<Identifier, String>,
+    slots: &BTreeMap<Identifier, Option<String>>,
 ) -> (serde_json::Map<String, serde_json::Value>, Vec<String>) {
     let properties = slots
-        .keys()
-        .map(|name| {
+        .iter()
+        .map(|(name, key)| {
+            let required = if key.is_some() {
+                serde_json::json!(["name", "key"])
+            } else {
+                serde_json::json!(["name"])
+            };
             (
                 name.to_string(),
                 serde_json::json!({
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["name", "key"],
+                    "required": required,
                     "properties": {
                         "name": {"type": "string"},
                         "key": {"type": "string", "minLength": 1}
@@ -644,11 +657,18 @@ pub fn project_helm(
         "apiVersion: v2\nname: {chart}\ndescription: Generated from {}\ntype: application\nversion: {version}\n",
         realization.runtime()
     );
-    let mut values = String::from("serviceAccount:\n  name: default\nimages:\n");
-    let mut image_names = BTreeSet::new();
-    for process in realization.processes().values() {
-        image_names.insert(process.image.clone());
+    let mut values = String::from("serviceAccount:\n  name: default\nimages:");
+    let image_names: BTreeSet<&Identifier> = realization
+        .processes()
+        .values()
+        .filter_map(|process| process.image.output())
+        .collect();
+    // Only a process pinned by digest names no build output, and only `ess-runtime/2` has one: a
+    // `/1` chart keeps its `images:` bytes, null when it has no process at all.
+    if image_names.is_empty() && !realization.processes().is_empty() {
+        values.push_str(" {}");
     }
+    values.push('\n');
     for image in &image_names {
         writeln!(
             &mut values,
@@ -663,34 +683,15 @@ pub fn project_helm(
     } else {
         values.push_str("secrets:\n");
         for (name, key) in &secret_slots {
-            writeln!(&mut values, "  {name}:\n    name: \"\"\n    key: {key:?}").unwrap();
+            writeln!(&mut values, "  {name}:\n    name: \"\"").unwrap();
+            if let Some(key) = key {
+                writeln!(&mut values, "    key: {key:?}").unwrap();
+            }
         }
     }
     values.push_str("endpoints: {}\nworkloads:\n");
     for workload in realization.workloads().values() {
-        writeln!(
-            &mut values,
-            "  {}:\n    replicas: {}",
-            workload.name, workload.replicas
-        )
-        .unwrap();
-        if let Some(storage) = &workload.storage {
-            writeln!(
-                &mut values,
-                "    storage:\n      class: \"\"\n      size: {storage:?}"
-            )
-            .unwrap();
-        } else if !workload.volumes.is_empty() {
-            values.push_str("    volumes:\n");
-            for volume in &workload.volumes {
-                writeln!(
-                    &mut values,
-                    "      {}:\n        class: \"\"\n        size: {:?}",
-                    volume.name, volume.size
-                )
-                .unwrap();
-            }
-        }
+        render_workload_values(&mut values, workload);
     }
 
     let (secret_properties, required_secrets) = helm_secret_schema(&secret_slots);
@@ -728,12 +729,60 @@ pub fn project_helm(
     HelmProjection { files }
 }
 
-#[allow(clippy::too_many_lines)]
+fn render_workload_values(values: &mut String, workload: &Workload) {
+    match workload.replicas {
+        Some(replicas) => {
+            writeln!(values, "  {}:\n    replicas: {replicas}", workload.name).unwrap();
+        }
+        None if workload.storage.is_none() && workload.volumes.is_empty() => {
+            writeln!(values, "  {}: {{}}", workload.name).unwrap();
+        }
+        None => writeln!(values, "  {}:", workload.name).unwrap(),
+    }
+    if let Some(storage) = &workload.storage {
+        writeln!(
+            values,
+            "    storage:\n      class: \"\"\n      size: {storage:?}"
+        )
+        .unwrap();
+    } else if !workload.volumes.is_empty() {
+        values.push_str("    volumes:\n");
+        for volume in &workload.volumes {
+            writeln!(
+                values,
+                "      {}:\n        class: \"\"\n        size: {:?}",
+                volume.name, volume.size
+            )
+            .unwrap();
+        }
+    }
+}
+
+/// A YAML double-quoted scalar: JSON string syntax, which YAML reads as written.
+fn quoted(text: &str) -> String {
+    serde_json::to_string(text).expect("a string serializes")
+}
+
+/// Every line of `text` indented by `spaces` more.
+fn indented(text: &str, spaces: usize) -> String {
+    let pad = " ".repeat(spaces);
+    text.lines().fold(String::new(), |mut output, line| {
+        output.push_str(&pad);
+        output.push_str(line);
+        output.push('\n');
+        output
+    })
+}
+
 fn render_workloads(realization: &RuntimeIr) -> String {
     let mut output = String::from("{{- $root := . -}}\n");
     for (index, workload) in realization.workloads().values().enumerate() {
         if index > 0 {
             output.push_str("---\n");
+        }
+        if let Some(schedule) = &workload.schedule {
+            render_cron_job(&mut output, realization, workload, schedule);
+            continue;
         }
         let stateful = workload.storage.is_some() || !workload.volumes.is_empty();
         writeln!(
@@ -773,92 +822,8 @@ fn render_workloads(realization: &RuntimeIr) -> String {
             workload.name
         )
         .unwrap();
-        output.push_str("  template:\n    metadata:\n      labels:\n        app.kubernetes.io/instance: {{ .Release.Name }}\n");
-        writeln!(
-            &mut output,
-            "        app.kubernetes.io/component: {}",
-            workload.name
-        )
-        .unwrap();
-        output.push_str("    spec:\n      serviceAccountName: {{ .Values.serviceAccount.name }}\n      containers:\n");
-        for container_name in &workload.containers {
-            let container = realization
-                .containers()
-                .get(container_name)
-                .expect("realization references are total");
-            let process = realization
-                .processes()
-                .get(&container.process)
-                .expect("realization references are total");
-            writeln!(&mut output, "        - name: {}", container.name).unwrap();
-            writeln!(&mut output, "          image: \"{{{{ index .Values.images \"{}\" \"repository\" }}}}@{{{{ index .Values.images \"{}\" \"digest\" }}}}\"", process.image, process.image).unwrap();
-            output.push_str("          imagePullPolicy: IfNotPresent\n");
-            if !process.entrypoint.is_empty() {
-                writeln!(
-                    &mut output,
-                    "          command: {}",
-                    serde_json::to_string(&process.entrypoint).unwrap()
-                )
-                .unwrap();
-            }
-            if !process.arguments.is_empty() {
-                writeln!(
-                    &mut output,
-                    "          args: {}",
-                    serde_json::to_string(&process.arguments).unwrap()
-                )
-                .unwrap();
-            }
-            if let Some(port) = container.http_port {
-                writeln!(&mut output, "          ports:\n            - name: http\n              containerPort: {port}").unwrap();
-            }
-            if let Some(path) = &container.readiness_path {
-                writeln!(&mut output, "          readinessProbe:\n            httpGet:\n              path: {path}\n              port: http").unwrap();
-            }
-            if let Some(path) = &container.liveness_path {
-                writeln!(&mut output, "          livenessProbe:\n            httpGet:\n              path: {path}\n              port: http").unwrap();
-            }
-            if !container.volume_mounts.is_empty() {
-                output.push_str("          volumeMounts:\n");
-                for mount in &container.volume_mounts {
-                    writeln!(
-                        &mut output,
-                        "            - name: {}\n              mountPath: {:?}",
-                        mount.volume, mount.mount_path
-                    )
-                    .unwrap();
-                }
-            }
-            let has_env = !container.config.is_empty()
-                || !container.secrets.is_empty()
-                || !container.endpoints.is_empty();
-            if has_env {
-                output.push_str("          env:\n");
-            }
-            for slot in &container.config {
-                writeln!(&mut output, "            - name: {}", slot.environment).unwrap();
-                match slot.kind {
-                    ConfigKind::Literal => writeln!(
-                        &mut output,
-                        "              value: {:?}",
-                        slot.value.as_deref().unwrap_or_default()
-                    )
-                    .unwrap(),
-                    ConfigKind::Required | ConfigKind::Optional => writeln!(
-                        &mut output,
-                        "              value: {{{{ index .Values.config \"{}\" | quote }}}}",
-                        slot.name
-                    )
-                    .unwrap(),
-                }
-            }
-            for slot in &container.endpoints {
-                writeln!(&mut output, "            - name: {}\n              value: {{{{ index .Values.endpoints \"{}\" | quote }}}}", slot.environment, slot.name).unwrap();
-            }
-            for slot in &container.secrets {
-                writeln!(&mut output, "            - name: {}\n              valueFrom:\n                secretKeyRef:\n                  name: {{{{ index .Values.secrets \"{}\" \"name\" }}}}\n                  key: {{{{ index .Values.secrets \"{}\" \"key\" }}}}", slot.environment, slot.name, slot.name).unwrap();
-            }
-        }
+        output.push_str("  template:\n");
+        output.push_str(&render_pod_template(realization, workload, None));
         if stateful {
             output.push_str("  volumeClaimTemplates:\n");
             if workload.storage.is_some() {
@@ -873,7 +838,367 @@ fn render_workloads(realization: &RuntimeIr) -> String {
     output
 }
 
-fn render_volume_claim(output: &mut String, workload: &crate::runtime::Workload, volume: &str) {
+/// A scheduled workload: one `CronJob`, and one claim per named volume, which every run mounts.
+fn render_cron_job(
+    output: &mut String,
+    realization: &RuntimeIr,
+    workload: &Workload,
+    schedule: &Schedule,
+) {
+    writeln!(
+        output,
+        "apiVersion: batch/v1\nkind: CronJob\nmetadata:\n  name: {{{{ .Release.Name }}}}-{}\nspec:\n  schedule: {}",
+        workload.name,
+        quoted(&schedule.cron)
+    )
+    .unwrap();
+    if let Some(zone) = &schedule.time_zone {
+        writeln!(output, "  timeZone: {}", quoted(zone)).unwrap();
+    }
+    writeln!(
+        output,
+        "  concurrencyPolicy: {}\n  suspend: {}",
+        schedule.overlap.unwrap_or(Overlap::Forbid).as_kubernetes(),
+        schedule.suspended
+    )
+    .unwrap();
+    if let Some(seconds) = schedule.start_deadline_seconds {
+        writeln!(output, "  startingDeadlineSeconds: {seconds}").unwrap();
+    }
+    if let Some(runs) = schedule.successful_runs {
+        writeln!(output, "  successfulJobsHistoryLimit: {runs}").unwrap();
+    }
+    if let Some(runs) = schedule.failed_runs {
+        writeln!(output, "  failedJobsHistoryLimit: {runs}").unwrap();
+    }
+    output.push_str("  jobTemplate:\n    spec:\n");
+    if let Some(seconds) = schedule.run_deadline_seconds {
+        writeln!(output, "      activeDeadlineSeconds: {seconds}").unwrap();
+    }
+    if let Some(retries) = schedule.retry_limit {
+        writeln!(output, "      backoffLimit: {retries}").unwrap();
+    }
+    output.push_str("      template:\n");
+    let restart = schedule.restart.unwrap_or(JobRestart::Never);
+    output.push_str(&indented(
+        &render_pod_template(realization, workload, Some(restart)),
+        4,
+    ));
+    for volume in &workload.volumes {
+        writeln!(
+            output,
+            "---\napiVersion: v1\nkind: PersistentVolumeClaim\nmetadata:\n  name: {{{{ .Release.Name }}}}-{}-{}\nspec:\n  accessModes: [\"ReadWriteOnce\"]\n  {{{{- with (index $root.Values.workloads {:?} \"volumes\" {:?} \"class\") }}}}\n  storageClassName: {{{{ . | quote }}}}\n  {{{{- end }}}}\n  resources:\n    requests:\n      storage: {{{{ index $root.Values.workloads {:?} \"volumes\" {:?} \"size\" | quote }}}}",
+            workload.name,
+            volume.name,
+            workload.name.as_str(),
+            volume.name.as_str(),
+            workload.name.as_str(),
+            volume.name.as_str(),
+        )
+        .unwrap();
+    }
+}
+
+/// The pod template under a controller's `template:` key, indented for a Deployment or
+/// `StatefulSet`. A scheduled run's template is the same text indented further, with its
+/// `restartPolicy`.
+fn render_pod_template(
+    realization: &RuntimeIr,
+    workload: &Workload,
+    restart: Option<JobRestart>,
+) -> String {
+    let mut output = String::from(
+        "    metadata:\n      labels:\n        app.kubernetes.io/instance: {{ .Release.Name }}\n",
+    );
+    writeln!(
+        &mut output,
+        "        app.kubernetes.io/component: {}",
+        workload.name
+    )
+    .unwrap();
+    if let Some(annotations) = &workload.annotations {
+        output.push_str("      annotations:\n");
+        for (key, value) in annotations {
+            writeln!(&mut output, "        {}: {}", quoted(key), quoted(value)).unwrap();
+        }
+    }
+    output.push_str("    spec:\n");
+    if let Some(restart) = restart {
+        writeln!(
+            &mut output,
+            "      restartPolicy: {}",
+            restart.as_kubernetes()
+        )
+        .unwrap();
+    }
+    output.push_str("      serviceAccountName: {{ .Values.serviceAccount.name }}\n");
+    if let Some(token) = workload.service_account_token {
+        writeln!(&mut output, "      automountServiceAccountToken: {token}").unwrap();
+    }
+    if let Some(security) = &workload.security {
+        output.push_str("      securityContext:\n");
+        for (key, value) in [
+            ("runAsUser", security.run_as_user),
+            ("runAsGroup", security.run_as_group),
+            ("fsGroup", security.fs_group),
+        ] {
+            if let Some(value) = value {
+                writeln!(&mut output, "        {key}: {value}").unwrap();
+            }
+        }
+        if let Some(non_root) = security.run_as_non_root {
+            writeln!(&mut output, "        runAsNonRoot: {non_root}").unwrap();
+        }
+    }
+    if let Some(affinity) = &workload.affinity {
+        render_affinity(&mut output, workload, affinity);
+    }
+    output.push_str("      containers:\n");
+    let mut secret_volumes = BTreeMap::new();
+    for container_name in &workload.containers {
+        let container = realization
+            .containers()
+            .get(container_name)
+            .expect("realization references are total");
+        render_container(&mut output, realization, container);
+        for slot in &container.secrets {
+            if let Some(mount) = &slot.mount {
+                secret_volumes.entry(&slot.name).or_insert(mount);
+            }
+        }
+    }
+    let claims = if restart.is_some() {
+        workload.volumes.as_slice()
+    } else {
+        &[]
+    };
+    if !claims.is_empty() || !secret_volumes.is_empty() {
+        output.push_str("      volumes:\n");
+    }
+    for volume in claims {
+        writeln!(
+            &mut output,
+            "        - name: {}\n          persistentVolumeClaim:\n            claimName: {{{{ .Release.Name }}}}-{}-{}",
+            volume.name, workload.name, volume.name
+        )
+        .unwrap();
+    }
+    for (slot, mount) in secret_volumes {
+        writeln!(
+            &mut output,
+            "        - name: {}\n          secret:\n            secretName: {{{{ index .Values.secrets \"{slot}\" \"name\" }}}}",
+            secret_volume_name(slot)
+        )
+        .unwrap();
+        if let Some(Some(mode)) = mount.mode_bits() {
+            writeln!(&mut output, "            defaultMode: {mode}").unwrap();
+        }
+        if !mount.items.is_empty() {
+            output.push_str("            items:\n");
+            for item in &mount.items {
+                writeln!(
+                    &mut output,
+                    "              - key: {}\n                path: {}",
+                    quoted(&item.key),
+                    quoted(&item.path)
+                )
+                .unwrap();
+            }
+        }
+    }
+    output
+}
+
+/// The pod's `affinity`: node labels as required node affinity, and `spread_across` as pod
+/// anti-affinity against the workload's own pods.
+fn render_affinity(output: &mut String, workload: &Workload, affinity: &Affinity) {
+    output.push_str("      affinity:\n");
+    if !affinity.node_labels.is_empty() {
+        output.push_str(
+            "        nodeAffinity:\n          requiredDuringSchedulingIgnoredDuringExecution:\n            nodeSelectorTerms:\n              - matchExpressions:\n",
+        );
+        for (key, value) in &affinity.node_labels {
+            writeln!(
+                output,
+                "                  - key: {}\n                    operator: In\n                    values: [{}]",
+                quoted(key),
+                quoted(value)
+            )
+            .unwrap();
+        }
+    }
+    let Some(topology) = &affinity.spread_across else {
+        return;
+    };
+    let selector = format!(
+        "labelSelector:\n  matchLabels:\n    app.kubernetes.io/instance: {{{{ .Release.Name }}}}\n    app.kubernetes.io/component: {}\ntopologyKey: {}\n",
+        workload.name,
+        quoted(topology)
+    );
+    output.push_str("        podAntiAffinity:\n");
+    match affinity.spread.unwrap_or(Spread::Preferred) {
+        Spread::Preferred => {
+            output.push_str(
+                "          preferredDuringSchedulingIgnoredDuringExecution:\n            - weight: 100\n              podAffinityTerm:\n",
+            );
+            output.push_str(&indented(&selector, 16));
+        }
+        Spread::Required => {
+            output.push_str("          requiredDuringSchedulingIgnoredDuringExecution:\n");
+            let mut term = indented(&selector, 14);
+            term.replace_range(12..14, "- ");
+            output.push_str(&term);
+        }
+    }
+}
+
+#[allow(clippy::too_many_lines)]
+fn render_container(output: &mut String, realization: &RuntimeIr, container: &ContainerRole) {
+    let process = realization
+        .processes()
+        .get(&container.process)
+        .expect("realization references are total");
+    writeln!(output, "        - name: {}", container.name).unwrap();
+    match &process.image {
+        ProcessImage::Output(image) => writeln!(output, "          image: \"{{{{ index .Values.images \"{image}\" \"repository\" }}}}@{{{{ index .Values.images \"{image}\" \"digest\" }}}}\"").unwrap(),
+        ProcessImage::Reference(reference) => {
+            writeln!(output, "          image: {}", quoted(reference)).unwrap();
+        }
+    }
+    output.push_str("          imagePullPolicy: IfNotPresent\n");
+    if !process.entrypoint.is_empty() {
+        writeln!(
+            output,
+            "          command: {}",
+            serde_json::to_string(&process.entrypoint).unwrap()
+        )
+        .unwrap();
+    }
+    if !process.arguments.is_empty() {
+        writeln!(
+            output,
+            "          args: {}",
+            serde_json::to_string(&process.arguments).unwrap()
+        )
+        .unwrap();
+    }
+    if let Some(port) = container.http_port {
+        writeln!(
+            output,
+            "          ports:\n            - name: http\n              containerPort: {port}"
+        )
+        .unwrap();
+    }
+    if let Some(path) = &container.readiness_path {
+        writeln!(output, "          readinessProbe:\n            httpGet:\n              path: {path}\n              port: http").unwrap();
+    }
+    if let Some(port) = container.readiness_tcp_port {
+        writeln!(
+            output,
+            "          readinessProbe:\n            tcpSocket:\n              port: {port}"
+        )
+        .unwrap();
+    }
+    if let Some(path) = &container.liveness_path {
+        writeln!(output, "          livenessProbe:\n            httpGet:\n              path: {path}\n              port: http").unwrap();
+    }
+    if let Some(port) = container.liveness_tcp_port {
+        writeln!(
+            output,
+            "          livenessProbe:\n            tcpSocket:\n              port: {port}"
+        )
+        .unwrap();
+    }
+    if let Some(resources) = &container.resources {
+        output.push_str("          resources:\n");
+        for (list, quantities) in [
+            ("requests", &resources.requests),
+            ("limits", &resources.limits),
+        ] {
+            let Some(quantities) = quantities else {
+                continue;
+            };
+            writeln!(output, "            {list}:").unwrap();
+            for (resource, quantity) in [("cpu", &quantities.cpu), ("memory", &quantities.memory)] {
+                if let Some(quantity) = quantity {
+                    writeln!(output, "              {resource}: {}", quoted(quantity)).unwrap();
+                }
+            }
+        }
+    }
+    if let Some(read_only) = container.read_only_root_filesystem {
+        writeln!(
+            output,
+            "          securityContext:\n            readOnlyRootFilesystem: {read_only}"
+        )
+        .unwrap();
+    }
+    let secret_mounts: Vec<_> = container
+        .secrets
+        .iter()
+        .filter_map(|slot| slot.mount.as_ref().map(|mount| (&slot.name, mount)))
+        .collect();
+    if !container.volume_mounts.is_empty() || !secret_mounts.is_empty() {
+        output.push_str("          volumeMounts:\n");
+        for mount in &container.volume_mounts {
+            writeln!(
+                output,
+                "            - name: {}\n              mountPath: {:?}",
+                mount.volume, mount.mount_path
+            )
+            .unwrap();
+        }
+        for (slot, mount) in secret_mounts {
+            writeln!(
+                output,
+                "            - name: {}\n              mountPath: {}\n              readOnly: true",
+                secret_volume_name(slot),
+                quoted(&mount.path)
+            )
+            .unwrap();
+        }
+    }
+    let secret_variables: Vec<_> = container
+        .secrets
+        .iter()
+        .filter_map(|slot| {
+            slot.environment
+                .as_ref()
+                .map(|environment| (slot, environment))
+        })
+        .collect();
+    let has_env = !container.config.is_empty()
+        || !secret_variables.is_empty()
+        || !container.endpoints.is_empty();
+    if has_env {
+        output.push_str("          env:\n");
+    }
+    for slot in &container.config {
+        writeln!(output, "            - name: {}", slot.environment).unwrap();
+        match slot.kind {
+            ConfigKind::Literal => writeln!(
+                output,
+                "              value: {:?}",
+                slot.value.as_deref().unwrap_or_default()
+            )
+            .unwrap(),
+            ConfigKind::Required | ConfigKind::Optional => writeln!(
+                output,
+                "              value: {{{{ index .Values.config \"{}\" | quote }}}}",
+                slot.name
+            )
+            .unwrap(),
+        }
+    }
+    for slot in &container.endpoints {
+        writeln!(output, "            - name: {}\n              value: {{{{ index .Values.endpoints \"{}\" | quote }}}}", slot.environment, slot.name).unwrap();
+    }
+    for (slot, environment) in secret_variables {
+        writeln!(output, "            - name: {}\n              valueFrom:\n                secretKeyRef:\n                  name: {{{{ index .Values.secrets \"{}\" \"name\" }}}}\n                  key: {{{{ index .Values.secrets \"{}\" \"key\" }}}}", environment, slot.name, slot.name).unwrap();
+    }
+}
+
+fn render_volume_claim(output: &mut String, workload: &Workload, volume: &str) {
     writeln!(
         output,
         "    - metadata:\n        name: {volume}\n      spec:\n        accessModes: [\"ReadWriteOnce\"]"
@@ -921,11 +1246,10 @@ fn render_services(realization: &RuntimeIr) -> String {
         )
         .unwrap();
     }
-    for workload in realization
-        .workloads()
-        .values()
-        .filter(|workload| workload.storage.is_some() || !workload.volumes.is_empty())
-    {
+    // A scheduled workload's claims are standalone and need no headless Service.
+    for workload in realization.workloads().values().filter(|workload| {
+        workload.schedule.is_none() && (workload.storage.is_some() || !workload.volumes.is_empty())
+    }) {
         if documents > 0 {
             output.push_str("---\n");
         }

@@ -216,21 +216,34 @@ pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors 
             continue;
         }
         let mut shared = true;
-        for subject in command
-            .outcomes
-            .iter()
-            .filter_map(|outcome| outcome.subject.as_ref())
-        {
-            if subject.effect == Effect::Creates
-                || subject.entity != common.entity
-                || subject.instance != common.instance
-            {
+        let creates_on_unknown = admits_create_or_update(types);
+        for outcome in &command.outcomes {
+            let Some(subject) = outcome.subject.as_ref() else {
+                continue;
+            };
+            let same_identity =
+                subject.entity == common.entity && subject.instance == common.instance;
+            // From ess/25 the row an `unknown_instance:` branch creates is the one the existence
+            // step found absent (step 3 of the precedence order), so it answers before any
+            // stored-field branch reads a row (beyond10x/ess#530).
+            if same_identity && creates_on_unknown && creates_on_unknown_identity(outcome) {
+                continue;
+            }
+            if subject.effect == Effect::Creates || !same_identity {
                 shared = false;
-                errors.push(ValidationError::at(
+                let mut error = ValidationError::at(
                     command.site().key("outcomes"),
                     ValidationCode::ConflictingDeclaration,
                     "subject fact selection requires one existing subject identity",
-                ));
+                );
+                if same_identity && creates_on_unknown_identity(outcome) {
+                    error = error.with_hint(
+                        "declare `format: ess/25`, where an `unknown_instance:` branch may create \
+                         the row beside `when_subject:` branches, or select the update branches \
+                         with `when_subject_state:`",
+                    );
+                }
+                errors.push(error);
             }
         }
         if let (true, Some(entity)) = (shared, spec.entities().get(&common.entity)) {
@@ -368,6 +381,22 @@ pub(crate) fn readable_fields(entity: &EntitySpec, admits_state: bool) -> Vec<cr
         ));
     }
     fields
+}
+
+/// Whether an `unknown_instance:` branch may create the row beside `when_subject:` branches at the
+/// document's format: from `ess/25` (beyond10x/ess#530).
+fn admits_create_or_update(types: &TypeRegistry) -> bool {
+    admits_state_from(types, crate::system::FormatVersion::V25)
+}
+
+/// Whether `outcome` is the creating half of a create-or-update pair: selected by the existence
+/// step on an identity no row carries, and creating the row under it.
+pub fn creates_on_unknown_identity(outcome: &Outcome) -> bool {
+    matches!(outcome.condition, OutcomeCondition::UnknownInstance)
+        && outcome
+            .subject
+            .as_ref()
+            .is_some_and(|subject| subject.effect == Effect::Creates)
 }
 
 /// Whether this build reads `state` in a `when_subject` predicate at the document's format.

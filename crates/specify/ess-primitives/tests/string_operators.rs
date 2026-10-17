@@ -4,6 +4,12 @@
 //! The evaluation cases are the shared `text_matches` table of
 //! `tests/vectors/primitive-semantics.json`, which `ess-conformance`'s corpus test hands to the Go
 //! runtime as well, so one table decides every lane that evaluates these operators.
+//!
+//! `trimmed:` (beyond10x/ess#532, ess/25), which wraps one of them, is evaluated in
+//! `tests/string_operators/trimmed_text.rs`, compiled into this binary.
+
+#[path = "string_operators/trimmed_text.rs"]
+mod trimmed_text;
 
 use ess_primitives::error::ParseError;
 use ess_primitives::facts::{FactPath, FactStore, FactValue, Number};
@@ -13,12 +19,12 @@ use ess_primitives::predicate::{Predicate, TextOp, Truth};
 const CORPUS: &str = include_str!("vectors/primitive-semantics.json");
 
 fn yaml(text: &str) -> Predicate {
-    let node: Node = serde_yaml::from_str(text).expect("the fixture is YAML");
+    let node: Node = ess_yaml::from_str(text).expect("the fixture is YAML");
     Predicate::from_node(&node).unwrap_or_else(|error| panic!("{text}: {error}"))
 }
 
 fn refused(text: &str) -> ParseError {
-    let node: Node = serde_yaml::from_str(text).expect("the fixture is YAML");
+    let node: Node = ess_yaml::from_str(text).expect("the fixture is YAML");
     Predicate::from_node(&node).expect_err(text)
 }
 

@@ -190,28 +190,38 @@ fn the_dependencys_own_construction_is_why_this_crate_ships_a_keyword() {
     // holds byte for byte.
     //
     // What is worth pinning instead is the reason the keyword exists at all, and the condition that
-    // would end it. Measured on the pinned dependency: `=0.52.1` accepts this instance, `0.53.0`
-    // refuses it. So this case goes red the day the pin moves, and the message says what to do then.
+    // would end it. Above 15 items `=0.52.1` checks `uniqueItems` through an `ahash` set, whose
+    // seed differs between builds, and it hashes `0` and `-0.0` apart, so the two are compared only
+    // when their hashes share a probe group: one length accepts this pair in one build and refuses
+    // it in another (main's scheduled run of 2026-10-15 refused the 16-item array that the push run of
+    // the same commit accepted). So this case asks whether ANY length from 16 to 80 is accepted:
+    // under `=0.52.1` every seed accepts most of them. `0.53.0` refuses them all, so this case
+    // still goes red the day the pin moves, and the message says what to do then.
     let schema = json!({"type": "array", "uniqueItems": true});
-    let instance = padded(&[json!(0), json!(-0.0)], 16);
-
     let reference = array_bundle();
-    assert!(
-        !reference.validate("Root", &instance).unwrap().is_empty(),
-        "the reference refuses {instance}"
-    );
-
     let dependency = jsonschema::options()
         .with_draft(jsonschema::Draft::Draft202012)
         .should_validate_formats(false)
         .build(&schema)
         .unwrap();
+
+    let mut accepted = Vec::new();
+    for length in 16..=80 {
+        let instance = padded(&[json!(0), json!(-0.0)], length);
+        assert!(
+            !reference.validate("Root", &instance).unwrap().is_empty(),
+            "the reference refuses {instance}"
+        );
+        if dependency.validate(&instance).is_ok() {
+            accepted.push(length);
+        }
+    }
     assert!(
-        dependency.validate(&instance).is_ok(),
-        "the pinned dependency now refuses {instance} on its own, so the keyword in \
-         `src/realize/normalize/unique_items.rs` is no longer the thing standing between this \
-         crate and the length-dependent algorithm; check whether it can be retired and whether the \
-         emitted runtimes should go back to the dependency's construction"
+        !accepted.is_empty(),
+        "the pinned dependency now refuses `[0, -0.0, …]` at every length from 16 to 80 on its own, \
+         so the keyword in `src/realize/normalize/unique_items.rs` is no longer the thing standing \
+         between this crate and the length-dependent algorithm; check whether it can be retired and \
+         whether the emitted runtimes should go back to the dependency's construction"
     );
 }
 

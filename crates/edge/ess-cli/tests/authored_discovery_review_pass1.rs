@@ -76,7 +76,7 @@ impl Fixture {
     }
 
     fn manifest(&self, value: &Value) {
-        self.write("ess-inputs.yaml", serde_yaml::to_string(value).unwrap());
+        self.write("ess-inputs.yaml", ess_yaml::to_string(value).unwrap());
     }
 
     fn command(&self, args: &[&str]) -> Command {

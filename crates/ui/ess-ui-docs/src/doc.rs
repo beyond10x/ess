@@ -3,7 +3,7 @@
 
 use std::collections::BTreeSet;
 
-use serde_yaml::Value;
+use ess_yaml::Value;
 
 use crate::model::{Construct, Schema};
 use crate::yaml::flow;

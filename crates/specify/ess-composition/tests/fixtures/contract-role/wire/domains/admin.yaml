@@ -1,0 +1,26 @@
+domain: wire.admin
+
+actors:
+  - name: wire.admin.Operator
+    may:
+      - wire.admin.Drain
+
+# Accepted by `wire-admin`, not by `wire-server`: outside the component a role plays.
+commands:
+  - name: wire.admin.Drain
+    input:
+      - name: channel
+        type: String
+    outcomes:
+      - name: drained
+        emits:
+          - wire.admin.Drained
+        payload:
+          wire.admin.Drained:
+            channel: input.channel
+
+events:
+  - name: wire.admin.Drained
+    fields:
+      - name: channel
+        type: String

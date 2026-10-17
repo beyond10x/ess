@@ -211,7 +211,7 @@ order of id. Where the site rule says "first", it means byte order of the name.
 | move a guard boundary outward (beyond10x/ess#212) | `guard-boundary` (`<leaf>-outward`) | ordering leaf `x >= L` or `x <= L` (either side) with an integer literal | `L` := `L - 1` for `>=`, `L + 1` for `<=`: the step the strictness swap does not take | the boundary witness of the mutant's own accepting side, which the target refuses |
 | flip an equality (beyond10x/ess#212) | `guard-boundary` (`equality-<n>`) | `==` or `!=` leaf, in pre-order, unless it, or its negation, is the whole guard | `==`↔`!=` | the outcome scenario |
 | drop a write on an existing row (beyond10x/ess#212) | `sets-drop` | `sets` entry whose source is `input.<f>`, on an outcome that `updates:` or `moves:` and does not `creates:`, whose field is not `Optional<…>` | remove the entry | the view scenario reading the field: synthesis sends each input no `sets:` entry reads apart from what the row holds in the field of the same name and type, where the branch leaves it alone (`unread_apart`), so the row the target shows differs from the one the mutant keeps |
-| declaration-order precedence (beyond10x/ess#212) | `precedence-swap` | two adjacent outcomes, both guarded by a `when:` alone (no `when_subject`, `when_subject_state`, `when_related`, `when_state_changes`, `external`, `replays` or existence flag), both accepting or both refusing | swap them | the overlap point synthesis sends the first-declared branch (`overlap_inputs`, #217); where no input satisfies both guards (decided as `ESS-MUTATE-005` decides a dead guard), the mutant is `equivalent` and names the overlap as `unsatisfiable_guard` |
+| declaration-order precedence (beyond10x/ess#212) | `precedence-swap` | two adjacent outcomes, both guarded by a `when:` alone (no `when_subject`, `when_subject_state`, `when_related`, `when_state_changes`, `external`, `replays` or existence flag), both accepting or both refusing | swap them | the overlap point synthesis sends the first-declared branch (`overlap_inputs`, #217); where no input satisfies both guards (decided as `ESS-MUTATE-005` decides a dead guard), the mutant is `equivalent` and names the overlap as `unsatisfiable_guard`; where every input of the overlap selects an input-guarded branch the precedence plan reads before both, it is `equivalent` and names those branches as `overlap_taken_by` (#539), only where both swapped branches address the same stored row through the same input field, or neither one (`addressed_row`) |
 
 Why the site rules are shaped this way:
 
@@ -436,7 +436,8 @@ essconform.AssertExplored(t, result, essconform.AssertOptions{})
   the result, not an exception, so a caller can inspect it.
 - **The result, the same in both languages** (the Go field names are the capitalised forms):
   `sequences`, `steps`, `executed` (the number of commands actually run), `reached`, `unreached`,
-  `excluded` (a list of `{subject, reason}`), `excludedOutcomes`, `undetermined`, `ambiguous`,
+  `excluded` (a list of `{subject, reason}`), `excludedOutcomes`, `refused?` (a list of
+  `{command, state, reason, count}`, beyond10x/ess#537), `undetermined`, `ambiguous`,
   `failure?` (`{seed, message, trace, originalLength, shrinkComplete}`). Every list is sorted.
 - **`assertExplored` fails when** there is a `failure`, or `unreached` is nonempty, or
   `excludedOutcomes` is nonempty and `allowExcluded` is not set. That is the brief's hard failure.
@@ -493,7 +494,7 @@ Go decodes it with `UseNumber`.
 
 | Type | Value |
 |---|---|
-| `Integer` (or a newtype of it) | with `chance(0.7)`, `pick` from the pool, where the pool is the sorted distinct `{L-1, L, L+1}` for every integer literal `L` in this command's guards, together with `{-1, 0, 1, 2, 3, 100}` and the input's own `example:` (beyond10x/ess#223). Otherwise `int(-10, 10000)`. |
+| `Integer` or `Decimal` (or a newtype of either) | with `chance(0.7)`, `pick` from the pool, where the pool is the sorted distinct `{L-1, L, L+1}` for every integer literal `L` in this command's guards, together with `{-1, 0, 1, 2, 3, 100}` and the input's own `example:` (beyond10x/ess#223). Otherwise `int(-10, 10000)`. |
 | `Boolean` | `chance(0.5)` |
 | `String` (or a newtype of it) | `pick` from the sorted distinct text literals of this command's guards, together with `{"", "a", "b"}`, the input's own `example:`, and, for every whole literal `n` a guard compares the input's `.count` with, that example (or, without one, the input's own path) cut or cycled to `n-1`, `n` and `n+1` characters, from 0 to 1,024 (beyond10x/ess#223). That is synthesis's rule (`witness.rs` `resize`, `count_lengths`), and characters are counted as the predicate counts them, in Unicode scalar values. The pool is the input's own: another input of the command does not draw its example or its lengths. |
 | `Uuid` (or a newtype of it) that is not an entity identity | `00000000-0000-4000-8000-` followed by `int(0, 999999)` zero-padded to 12 digits |
@@ -521,7 +522,10 @@ lifecycle `state`, plus the fields the model has determined. A field no outcome 
 - an `existing_instance` branch reads one address: every creation of the command puts its identity
   in the same entity, from the same input;
 - every effect is `creates` with instance `observed`, or `moves`/`updates` with instance `supplied`
-  (`ir.rs:690-728`);
+  (`ir.rs:690-728`), `preserves` with instance `supplied` (beyond10x/ess#536), or `moves`/`updates`
+  of the rows an `instances: {where: …}` filter selects (beyond10x/ess#538). A bulk `deletes:`
+  under `instances:` is excluded by name, as a single `deletes:` is, and so is a filter that does
+  not parse and an outcome with an `affects:` entry, which the model does not apply;
 - no outcome `replays`;
 - every input field's type is in the input table above, and no input type declares invariants;
 - some actor `may` invoke it. The first such actor, by byte order of name, is used.
@@ -597,7 +601,22 @@ table cannot fill) excludes the command, with the guard in the reason. Unknown i
 absent id (the target emitted no event field) and an id already present (identity reuse). The new
 record's state is the lifecycle's `initial`. `moves`: set `state` to `transition.to`. `updates`:
 no state change. After the effect, apply `sets`. A `wrong_state` outcome, and any outcome without a
-subject, has no effect.
+subject or a selected-rows effect, has no effect.
+
+**Selected rows** (beyond10x/ess#538). An outcome with `instances: {where: …}` changes every record
+of its entity the filter selects, the meaning [set effects over filtered
+instances](set-effects-over-filtered-instances.md) gives it. The filter is evaluated over each
+record's fields, with the drawn input under `input.`, before any record changes; under a `moves:`,
+a record resting outside `transition.from` is skipped before its filter is read, as the
+interpreter's `select` does. Only a filter that holds selects a record; one left Unknown by an
+absent field (one the record holds as null, or an `Optional` field no outcome has written) or by
+an input path the draw left out does not. A `moves:` sets `state` to `transition.to` on each
+selected record, an `updates:` changes each, and `sets` applies to every changed record. Where the
+filter is Unknown over a record because it reads a field whose value the model does not hold (a
+required field no outcome wrote, or one whose value it could not determine), the draw is reported
+in `undetermined` and redrawn, the command kept, as the interpreter's `only_absent` leaves it
+undecidable. A `{count:
+changed}` payload field is not compared: the model determines no value for it.
 
 **Events.** Expected direct events are the outcome's `emits`, in order. Each payload field with a
 determined source has an expected value. Binding-driven and later-observed events are not
@@ -628,8 +647,38 @@ In this order. The first disagreement ends the sequence.
    way as a filter.
 
 The runtime's `Harness` mints correlations (`runtime.ts:2088`), so ids follow the runner's own
-scheme. `ErrUnsupported` from a command or a view excludes that subject for the rest of the run,
-with the target's reason. Any other thrown error is a failure.
+scheme. `ErrUnsupported` from a view excludes that view for the rest of the run, with the target's
+reason. `ErrUnsupported` from a command excludes it only in the held state of the row the step
+addressed (beyond10x/ess#537): the key is (command, held state), where a step that addresses no row
+(a creation, or an identity no row carries) is the state `(no row)` and a row without a lifecycle is
+`(no state)`. No later step sends the command in that state; every one drawn there is counted and
+the outcome it would have taken recorded, and the command goes on being drawn in every other state.
+Before #537 one refusal excluded the command for the whole run, so a target that could not drive a
+command in one state lost every state reachable only through it. At the end of the run:
+
+- a command refused in every state it was drawn in, and sent in none, is in `excluded` with its
+  first refusal's reason and its outcomes in `excludedOutcomes`, as one refusal left it before;
+- a command the target drove in another state keeps its place, and each (command, held state) it
+  refused is in `refused` as `{command, state, reason, count}`, sorted by command and state, where
+  `count` is the steps drawn in that state and not sent. An outcome no step took that a refused step
+  would have taken is in `excludedOutcomes` (and an external branch's reach is `excluded`), so
+  `allowExcluded` accepts what it accepted before; one no refused step would have taken stays in
+  `unreached`. A result without a refusal has no `refused` key, so its bytes do not change.
+
+The strict assertion (`assertExplored` without `allowExcluded`) fails on a nonempty `refused`,
+whether or not a refusal left an outcome untried: before #537 every refusal excluded its command,
+which that assertion refused, so it goes on refusing what it refused then, and `allowExcluded`
+accepts it as it accepted the exclusion. The refusals are their own problem in its message, one line
+each naming the command, the held state, the target's reason and the steps not sent, under
+`explore: N (command, held state) pair(s) the target refused were never tried again:`. They are
+never listed as exclusions: the `excluded:` list under the excluded outcomes names only excluded
+subjects, and an excluded outcome that only a refused step would have taken is marked `(only a step
+the target refused would have taken it)`.
+
+The key is the held state rather than the input because the target's refusal is about what it can
+drive from a state (a callback that exists only while another request waits), and the held state is
+what the model knows before the step. Concurrent exploration keeps its per-command exclusion. Any
+other thrown error is a failure.
 
 ### Shrinking
 
@@ -647,7 +696,10 @@ same text in both languages. `originalLength` records the length before shrinkin
 
 - `reached` is `command/outcome` for every outcome a step took, across all sequences.
 - `unreached` is every declared outcome of an **included** command that is not in `reached`.
-- `excludedOutcomes` is every declared outcome of an excluded command.
+- `excludedOutcomes` is every declared outcome of an excluded command, and every outcome no step
+  took that a step refused `ErrUnsupported` would have taken (beyond10x/ess#537).
+- `refused`, present only when nonempty, is every (command, held state) the target refused for a
+  command it drove in another state.
 
 ### Restarts (beyond10x/ess#297)
 
@@ -763,8 +815,11 @@ And defects the explorer itself could have:
   (the last two since beyond10x/ess#212).
 - **P1-9.** A class with no site gives `ESS-MUTATE-003` and exit 3.
 - **P1-10.** A fixture `tests/fixtures/mutation-survivor.yaml`, where a `sets` field has a
-  same-typed sibling and no view reads it, has exactly one survivor: that `sets-retarget`.
-- **CLI.** Exit 0 (`--class transition-to` on billing), exit 1 (the P1-10 fixture), exit 3 (P1-9),
+  same-typed sibling and no view reads it, has exactly one survivor: that `sets-retarget`. Since
+  beyond10x/ess#586 it is `unwitnessed` instead, with no survivor: its suite is the baseline's.
+- **CLI.** Exit 0 (`--class transition-to` on billing), exit 1 (the P1-10 fixture;
+  since beyond10x/ess#586 the `explore.yaml` `guard-boundary` survivor, the P1-10 fixture exiting
+  3), exit 3 (P1-9),
   the `--format json` bytes equal `--report-out`, and every code is named in `formats.md`.
 
 **Part 2**: `crates/verify/ess-conformance/tests/explore.rs`, which drives a TS lane (compiled
@@ -840,7 +895,7 @@ Each of these is **inferred** and is confirmed with one measurement before it is
 | Coverage suites (`/5` and above) for `mutate` | parent chains and scope would have to be re-derived per mutant | `coverage_build` per mutant |
 | `sets-drop` of a literal or other non-input source, and of an `Optional<…>` field | a row nothing wrote holds an `Optional` absent, and no synthesized row expectation states an absence; a literal's prior value is arranged apart only while the literal is written | a row expectation for an absent field; an arrangement apart from a literal the mutant no longer names |
 | `precedence-swap` of `when_subject:` branches, and of an accepting branch beside an external one | two overlapping `when_subject` branches have no stated order (`cross-record-and-stored-field-guards.md:614`); the external pair needs a provider-arranged overlap | a stated order; an overlap witness through `ConfigureExternalOutcome` |
-| Explorer inputs: `Decimal`, lists, `Optional`, unions, maps, timestamps, and types with invariants | exact-number generation and invariant-respecting draws | a generator per type, the same in TS and Go |
+| Explorer inputs: fractional `Decimal` values (a `Decimal` is drawn as an `Integer` is since beyond10x/ess#538), lists, `Optional`, unions, maps, timestamps, and types with invariants | exact-number generation and invariant-respecting draws | a generator per type, the same in TS and Go |
 | Explorer conditions: replays, `preserves`, `related` and `input_absent`. Subject fields, subject state, state changes, stored predicates and `existing_instance` are drawn since beyond10x/ess#221, decided from the model's rows; external outcomes are taken since beyond10x/ess#156: a seeded choice, arranged through `ConfigureExternalOutcome`, reported per branch in `external` | each needs arranged state | the arranging steps synthesis already has |
 | Views with `params` or `group_by`; binding-driven events; a persisted exploration report; an explorer in Rust against the reference targets | out of the issue's measured scope | — |
 

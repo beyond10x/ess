@@ -148,9 +148,9 @@ fn the_construct_round_trips_through_the_document_it_was_written_in() {
         .values()
         .find(|command| command.name.to_string() == "demo.room.Report")
         .unwrap();
-    let encoded = serde_yaml::to_string(command).unwrap();
+    let encoded = ess_yaml::to_string(command).unwrap();
     assert!(encoded.contains("when_state_changes: true"), "{encoded}");
-    let raw: ess_domain::command::RawCommandSpec = serde_yaml::from_str(&encoded).unwrap();
+    let raw: ess_domain::command::RawCommandSpec = ess_yaml::from_str(&encoded).unwrap();
     let roundtrip = ess_domain::command::CommandSpec::try_from(raw).unwrap();
     assert_eq!(&roundtrip, command, "the construct survives a round trip");
 }

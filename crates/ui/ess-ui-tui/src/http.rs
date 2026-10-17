@@ -14,7 +14,7 @@ use std::net::{TcpStream, ToSocketAddrs};
 use std::time::{Duration, Instant};
 
 use ess_ui::binding::{classify, Answer, Binding, CommandRoute, ServedComponent};
-use serde_yaml::Value;
+use ess_yaml::Value;
 
 use crate::data::{DataAdapter, ReadRequest, ReadResult};
 use crate::expr::display;

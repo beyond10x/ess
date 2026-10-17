@@ -95,7 +95,7 @@ fn yaml_written_from_a_json_value_carries_plain_numbers() {
     let value = read(
         r#"{"count":18446744073709551615,"delta":-2,"ratio":1.50,"list":[1E2,1e300,-0],"name":"1.50"}"#,
     );
-    let expected = serde_yaml::to_string(&typed).expect("typed YAML");
+    let expected = ess_yaml::to_string(&typed).expect("typed YAML");
     assert_eq!(json::to_yaml_string(&value).expect("YAML"), expected);
     // Also where the JSON value is one field of a larger serialisable document.
     #[derive(serde::Serialize)]
@@ -108,7 +108,7 @@ fn yaml_written_from_a_json_value_carries_plain_numbers() {
     }
     assert_eq!(
         json::to_yaml_string(&Outer { inner: &value }).expect("YAML"),
-        serde_yaml::to_string(&TypedOuter { inner: &typed }).expect("typed YAML")
+        ess_yaml::to_string(&TypedOuter { inner: &typed }).expect("typed YAML")
     );
     // And a value built in-process rather than read.
     let built = serde_json::json!({"count": 3_u64, "ratio": 0.25});

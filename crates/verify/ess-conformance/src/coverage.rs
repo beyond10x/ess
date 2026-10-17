@@ -41,6 +41,7 @@ fn is_coverage_version(version: &str) -> bool {
             | "ess-conformance/47"
             | "ess-conformance/49"
             | "ess-conformance/51"
+            | "ess-conformance/53"
     )
 }
 /// Carrier retaining exact selected and parent documents.
@@ -435,7 +436,7 @@ impl Inventory {
             "aggregate view refusals require suite/17",
         )
     }
-    /// A refusal of a system-issued command (`ESS-SYNTH-023`, `-024`) needs coverage suite/51
+    /// A refusal of a system-issued command (`ESS-SYNTH-023`, `-024`) needs coverage suite/53
     /// (beyond10x/ess#542).
     fn system_issued_refusals(&self, suite: &ConformanceSuite) -> Result<(), AdmissionError> {
         require(
@@ -444,7 +445,7 @@ impl Inventory {
                     .refused
                     .iter()
                     .any(|r| crate::system_issued::is_refusal(&r.code)),
-            "system-issued command refusals require suite/51",
+            "system-issued command refusals require suite/53",
         )
     }
     pub(crate) fn validate(&self, suite: &ConformanceSuite) -> Result<(), AdmissionError> {

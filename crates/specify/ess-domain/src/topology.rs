@@ -353,7 +353,7 @@ impl Topology {
             // code rather than parsed can have them disagree — and then a projection that reads the
             // field runs a component under the name the index gave to a different one.
             //
-            // Two identical keys in a *document* are not caught here and cannot be: serde_yaml
+            // Two identical keys in a *document* are not caught here and cannot be: ess-yaml
             // keeps the last of them, so the first workload is gone before this type exists. That
             // one has to be refused where the text is read.
             if indexed_under != &workload.component {
@@ -474,12 +474,12 @@ workloads:
 ";
 
     fn accept(yaml: &str) -> Topology {
-        let raw: RawTopology = serde_yaml::from_str(yaml).expect("parses");
+        let raw: RawTopology = ess_yaml::from_str(yaml).expect("parses");
         Topology::try_from(raw).expect("a valid topology")
     }
 
     fn refuse(yaml: &str) -> ValidationErrors {
-        let raw: RawTopology = serde_yaml::from_str(yaml).expect("parses");
+        let raw: RawTopology = ess_yaml::from_str(yaml).expect("parses");
         Topology::try_from(raw).expect_err("expected a refusal")
     }
 

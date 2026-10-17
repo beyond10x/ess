@@ -285,9 +285,13 @@ fn each_new_arm_is_killed_where_a_witness_tells_it_apart_and_not_where_none_can(
         // Killed: the view reads `title` back, and the edited title was sent apart from the stored
         // one, so the row the target shows is not the row the mutant keeps.
         ("sets-drop/notes.core.Edit/edited/title", Verdict::Killed),
-        // Survived: nothing reads `memo`, so a dropped write of it is not observable, and the
-        // mutant's suite is the baseline's.
-        ("sets-drop/notes.core.Edit/edited/memo", Verdict::Survived),
+        // Unwitnessed: nothing reads `memo`, so a dropped write of it is not observable, and the
+        // mutant's suite is the baseline's, which cannot kill it
+        // (https://github.com/beyond10x/ess/issues/586).
+        (
+            "sets-drop/notes.core.Edit/edited/memo",
+            Verdict::Unwitnessed,
+        ),
     ] {
         assert_eq!(found.get(id), Some(&verdict), "{id}\n{text}");
     }
@@ -398,9 +402,10 @@ fn a_manifest_version_this_reader_does_not_know_is_refused_naming_the_ones_it_re
     let (files, texts) = arms();
     let emission = mutate::emit(&files, &texts, &[MutantClass::SetsDrop]).expect("emits");
     let manifest =
-        emission.files[MANIFEST_FILE].replace(MANIFEST_FORMAT_4, "ess-mutation-manifest/6");
-    let refusal = mutate::Manifest::from_json(&manifest).expect_err("/6 is not read");
+        emission.files[MANIFEST_FILE].replace(MANIFEST_FORMAT_4, "ess-mutation-manifest/7");
+    let refusal = mutate::Manifest::from_json(&manifest).expect_err("/7 is not read");
     for known in [
+        mutate::MANIFEST_FORMAT_6,
         mutate::MANIFEST_FORMAT_5,
         MANIFEST_FORMAT_4,
         MANIFEST_FORMAT,

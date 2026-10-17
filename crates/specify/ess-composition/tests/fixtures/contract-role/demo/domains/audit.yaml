@@ -1,0 +1,26 @@
+domain: demo.audit
+
+actors:
+  - name: demo.audit.Auditor
+    may:
+      - demo.audit.Record
+
+# Accepted by `auditor`, not by `relay`: outside the component a role selects.
+commands:
+  - name: demo.audit.Record
+    input:
+      - name: channel
+        type: String
+    outcomes:
+      - name: recorded
+        emits:
+          - demo.audit.Recorded
+        payload:
+          demo.audit.Recorded:
+            channel: input.channel
+
+events:
+  - name: demo.audit.Recorded
+    fields:
+      - name: channel
+        type: String

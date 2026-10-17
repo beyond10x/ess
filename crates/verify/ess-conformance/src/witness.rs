@@ -2175,6 +2175,7 @@ fn remapped(
                 .collect(),
         ),
         Predicate::Not(inner) => Predicate::Not(Box::new(remapped(inner, map, bound))),
+        Predicate::Trimmed(inner) => Predicate::Trimmed(Box::new(remapped(inner, map, bound))),
         Predicate::Compare {
             left,
             op,
@@ -2324,6 +2325,17 @@ fn collect_literals(predicate: &Predicate, path: &FactPath, found: &mut Vec<Fact
                     other => other.clone(),
                 }));
             }
+        }
+        // A literal padded with ASCII whitespace satisfies a `trimmed` operator as the literal does,
+        // and only an implementation that trims accepts it: tried in the literal's place
+        // (beyond10x/ess#532). Under a fold the literal is already in its other ASCII case.
+        Predicate::Trimmed(inner) => {
+            let mut wrapped = Vec::new();
+            collect_literals(inner, path, &mut wrapped);
+            found.extend(wrapped.into_iter().map(|value| match value {
+                FactValue::Text(text) => FactValue::Text(trim_padded(&text)),
+                other => other,
+            }));
         }
         // A calendar window over `path` decides at the boundaries of its days and hours: every
         // instant a second either side of each, on the reference week, spelled in UTC — so a
@@ -2621,6 +2633,15 @@ fn fold_refutations_at(guards: &[&Predicate]) -> Vec<(FactPath, String)> {
     found
 }
 
+/// The further witnesses a branch refuting `guard` is sent: [`unicode_refutations`], then the
+/// [`trim_witnesses`] of its `trimmed` literals, of which the inner-space and U+00A0 ones refute it
+/// (beyond10x/ess#532) and the caller keeps only the rows that still select the refuting branch.
+pub(crate) fn refutations(guard: &Predicate) -> Vec<(FactPath, Node)> {
+    let mut found = unicode_refutations(guard);
+    found.extend(trim_witnesses(guard));
+    found
+}
+
 /// Per fold-guarded path of `guard`, each literal in the case only Unicode folding equates with it
 /// ([`unicode_refuting`]) — the further witness a refuting branch is sent so that a target folding
 /// Unicode, not ASCII, fails the suite (beyond10x/ess#140).
@@ -2639,6 +2660,105 @@ pub(crate) fn unicode_refutations(guard: &Predicate) -> Vec<(FactPath, Node)> {
                 }
             }
         }
+    }
+    found
+}
+
+/// `text` padded the way a `trimmed` guard's accepting witness is (beyond10x/ess#532): a space
+/// and a tab before it, a space after it, so a target that trims nothing, or only spaces, refuses
+/// it.
+fn trim_padded(text: &str) -> String {
+    format!(" \t{text} ")
+}
+
+/// Per `trimmed`-guarded path of `guard`, the further witnesses each of its text literals gives
+/// (beyond10x/ess#532, `docs/design/value-expressions.md` § E10), for every branch the guard
+/// decides; the caller keeps only the rows that still select the branch it witnesses:
+///
+/// - the literal (in its other ASCII case, under a fold) between `\v\f` and `\r\n`, the ASCII
+///   whitespace a trim of spaces and tabs alone, or Rust's `trim_ascii` (no `\v`), leaves;
+/// - the literal with a space after its first character, which no trim removes;
+/// - the literal between two U+00A0 NO-BREAK SPACEs, which only a target trimming Unicode spaces
+///   (Go's `strings.TrimSpace`, TypeScript's `trim()`) removes.
+///
+/// A `trimmed` operator in a `forall` or `exists` body is reached through the body rebound onto the
+/// first element of what it walks. Where it reads the element itself, each witness is a list of
+/// that one text at the walked path, so a `forall` over a list its primary input leaves empty, and
+/// so holds vacuously, is still sent the padded text.
+pub(crate) fn trim_witnesses(guard: &Predicate) -> Vec<(FactPath, Node)> {
+    /// Where a witness text goes: the leaf at the path, or the path's whole list, as its one element.
+    #[derive(Clone)]
+    enum At {
+        Leaf(FactPath),
+        List(FactPath),
+    }
+    fn walk(predicate: &Predicate, found: &mut Vec<(At, String, bool)>) {
+        match predicate {
+            Predicate::All(children) | Predicate::Any(children) => {
+                for child in children {
+                    walk(child, found);
+                }
+            }
+            Predicate::Not(inner) => walk(inner, found),
+            Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
+                let element = quantified.over.child("0");
+                let body = rebind(&quantified.body, &quantified.bind, &element);
+                let mut inner = Vec::new();
+                walk(&body, &mut inner);
+                for (at, literal, fold) in inner {
+                    let at = match at {
+                        At::Leaf(path) if path == element => At::List(quantified.over.clone()),
+                        other => other,
+                    };
+                    found.push((at, literal, fold));
+                }
+            }
+            Predicate::Trimmed(inner) => {
+                let Some(path) = inner.trimmed_subject() else {
+                    return;
+                };
+                let (literals, fold): (Vec<&FactValue>, bool) = match &**inner {
+                    Predicate::AnyOf { values, .. } => (values.iter().collect(), false),
+                    Predicate::FoldMatch { values, .. } => (values.iter().collect(), true),
+                    Predicate::TextMatch { value, .. } => {
+                        (value.as_literal().into_iter().collect(), false)
+                    }
+                    _ => (Vec::new(), false),
+                };
+                for literal in literals.into_iter().filter_map(FactValue::as_text) {
+                    found.push((At::Leaf(path.clone()), literal.to_owned(), fold));
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut literals = Vec::new();
+    walk(guard, &mut literals);
+    let mut found = Vec::new();
+    let mut push = |at: &At, text: String| {
+        let row = match at {
+            At::Leaf(path) => (path.clone(), Node::Text(text)),
+            At::List(path) => (path.clone(), Node::Seq(vec![Node::Text(text)])),
+        };
+        if !found.contains(&row) {
+            found.push(row);
+        }
+    };
+    for (path, literal, fold) in &literals {
+        let cased = if *fold {
+            swap_ascii_case(literal)
+        } else {
+            literal.clone()
+        };
+        push(path, format!("\u{b}\u{c}{cased}\r\n"));
+        let mut characters = literal.chars();
+        if let Some(first) = characters.next() {
+            let rest: String = characters.collect();
+            if !rest.is_empty() {
+                push(path, format!("{first} {rest}"));
+            }
+        }
+        push(path, format!("\u{a0}{literal}\u{a0}"));
     }
     found
 }
@@ -2704,7 +2824,7 @@ fn fold_literals_at(guards: &[&Predicate], path: &FactPath) -> Vec<String> {
                     walk(child, path, found);
                 }
             }
-            Predicate::Not(inner) => walk(inner, path, found),
+            Predicate::Not(inner) | Predicate::Trimmed(inner) => walk(inner, path, found),
             Predicate::FoldMatch {
                 path: read, values, ..
             } if read == path => {
@@ -2746,6 +2866,7 @@ fn text_reads(predicate: &Predicate, path: &FactPath, positive: bool, found: &mu
             }
         }
         Predicate::Not(inner) => text_reads(inner, path, !positive, found),
+        Predicate::Trimmed(inner) => text_reads(inner, path, positive, found),
         Predicate::TextMatch {
             path: read,
             op,

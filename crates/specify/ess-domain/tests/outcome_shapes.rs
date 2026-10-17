@@ -291,6 +291,62 @@ fn unknown_instance_needs_a_branch_acting_on_an_input_named_instance() {
     assert_code(&errors, ValidationCode::UnreachableBranch, "no-such-call");
 }
 
+/// beyond10x/ess#535: the issue's read-only `Ring` — a `when_subject:` refusal and a `preserves:`
+/// branch addressing the seat its input names — beside the commands that make and close a seat.
+const READ_ONLY: &str =
+    include_str!("../../ess-compiler/tests/fixtures/read-only-unknown-instance.yaml");
+
+#[test]
+fn a_read_only_command_declares_an_unknown_instance_answer() {
+    let spec = admitted(READ_ONLY);
+    let outcome = answer_outcome(&spec, "demo.desk.Ring", "no-seat");
+    assert_eq!(outcome.condition, OutcomeCondition::UnknownInstance);
+    assert!(outcome.refuses);
+    assert_eq!(
+        outcome.error.as_ref().map(ToString::to_string).as_deref(),
+        Some("demo.desk.NoSeat")
+    );
+}
+
+#[test]
+fn a_command_naming_no_input_instance_still_refuses_unknown_instance() {
+    // No branch addresses an instance from input: an external refusal and an accepted no-op.
+    let errors = refused(&READ_ONLY.replace(
+        "      - name: closed
+        when_subject: {predicate: state == Closed}
+        error: demo.desk.NoSeat
+      - name: rung
+        preserves: demo.desk.Seat
+        instance: user_id
+",
+        "      - {name: closed, external: the desk is closed, error: demo.desk.NoSeat}
+      - {name: rung, accepts: nothing}
+",
+    ));
+    assert_code(&errors, ValidationCode::UnreachableBranch, "no-seat");
+}
+
+#[test]
+fn a_creating_unknown_instance_beside_only_a_preserving_branch_is_not_a_create_or_update() {
+    // The create-or-update pairing stays on `moves:` and `updates:`: a creation for an unknown
+    // identity beside a branch that only preserves the existing row is refused, as before.
+    let errors = refused(&READ_ONLY.replace(
+        "      - name: no-seat
+        unknown_instance: true
+        error: demo.desk.NoSeat
+",
+        "      - name: no-seat
+        unknown_instance: true
+        creates: demo.desk.Seat
+        instance: user_id
+        emits: [demo.desk.SeatTaken]
+        payload:
+          demo.desk.SeatTaken: {user_id: input.user_id}
+",
+    ));
+    assert_code(&errors, ValidationCode::ConflictingDeclaration, "no-seat");
+}
+
 // ---- #151: `deletes:` -----------------------------------------------------------------------
 
 const DELETES: &str = "  - name: example.call.EndCall

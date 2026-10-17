@@ -224,12 +224,12 @@ refusal[ESS-SYNTH-011]: entity billing.invoice.Invoice has no scenario `…`
 | `ESS-MUTATE-001` | A baseline scenario failed or ended `error` against the target, so no failure under a mutant can be shown to be because of the mutant. | Make the unmutated suite pass against the target first; a scenario reported `unsupported` or `skipped` is not scored and does not cause this. |
 | `ESS-MUTATE-002` | A mutant was refused by `assemble` or `compile`, so there was nothing to run. | Nothing to repair in the specification; the mutant is reported and not scored. |
 | `ESS-MUTATE-003` | The selected mutant classes found no site in this specification, so the audit would run nothing. | Select classes that apply to the specification, or leave `--class` out to run every class. |
-| `ESS-MUTATE-004` | A mutant's suite gained synthesis refusals the baseline's does not have and no scored scenario failed, so passing what is left says nothing about the mutant. | Repair the synthesis refusal the verdict names, so the suite has a scenario for what the mutant changed. |
+| `ESS-MUTATE-004` | A mutant's suite gained synthesis refusals the baseline's does not have, or asks exactly what the baseline's asks, and no scored scenario failed, so passing it says nothing about the mutant. | Repair the synthesis refusal the verdict names, or declare what makes the change observable, so the suite has a scenario for what the mutant changed. |
 | `ESS-MUTATE-005` | A guard mutant left its outcome's guard satisfied by no input: the rule it wrote is dead, not missed. | Nothing to repair in the implementation; read the named guard, which no input can satisfy under the mutation. |
 
 ## Recorded histories: `history.*`
 
-`ess verify conform check-history` and `ess verify conform import-history` refuse an `ess-history/1` or `ess-history/2` document they cannot admit under one of these names, before any operation is checked. The message is the name, a colon and the detail:
+`ess verify conform check-history` and `ess verify conform import-history` refuse an `ess-history/1`, `ess-history/2` or `ess-history/3` document they cannot admit under one of these names, before any operation is checked. The message is the name, a colon and the detail:
 
 ```text
 history.no-clients: `clients` is 0
@@ -237,8 +237,8 @@ history.no-clients: `clients` is 0
 
 | Name | Meaning | Repair |
 |---|---|---|
-| `history.malformed` | The bytes are not an `ess-history/1` or `ess-history/2` document: not JSON, an unknown or missing field, a value outside its declared type, or a `decision_time` that is `null`, not the one spelling of an instant, or in an `ess-history/1` document. | Write the document as `schemas/ess-history.schema.json` describes; the detail names the field or the position. |
-| `history.unsupported-format` | The `format` is absent, or names a format this build does not read. | Write `format: ess-history/1`, or `ess-history/2` where an operation records a `decision_time`. |
+| `history.malformed` | The bytes are not an `ess-history/1`, `ess-history/2` or `ess-history/3` document: not JSON, an unknown or missing field, a value outside its declared type, a `decision_time` that is `null`, not the one spelling of an instant, or in an `ess-history/1` document, an `input`, `events` or `arranged` that is `null` or in a document below `ess-history/3`, a key written twice inside an `input` or a `payload`, or a number there in another spelling than its one. | Write the document as `schemas/ess-history.schema.json` describes; the detail names the field or the position. |
+| `history.unsupported-format` | The `format` is absent, or names a format this build does not read. | Write `format: ess-history/1`, `ess-history/2` where an operation records a `decision_time`, or `ess-history/3` where one records its `input`, `events` or `arranged`. |
 | `history.spec-digest-mismatch` | The history was recorded against another specification. | Check the history against the specification it was recorded against, or record it again against this one. |
 | `history.no-clients` | The history counts no clients. | Set `clients` to the number of clients that sent operations. |
 | `history.duplicate-operation` | Two operations carry one identity. | Give every operation its own identity. |
@@ -248,6 +248,7 @@ history.no-clients: `clients` is 0
 | `history.indeterminate-with-return-instant` | An operation is `Indeterminate` and carries a return instant. | Drop `returned_at`, or mark the operation `Returned` if it did return. |
 | `history.indeterminate-with-outcome` | An operation is `Indeterminate` and carries an outcome. | Drop `outcome`, or mark the operation `Returned` if it did return. |
 | `history.indeterminate-with-rows` | An operation is `Indeterminate` and carries `rows`: a read that never answered answered no rows. | Drop `rows`, or mark the operation `Returned` if it did return. |
+| `history.indeterminate-with-events` | An operation is `Indeterminate` and carries `events`: a call that never answered published nothing anyone saw. | Drop `events`, or mark the operation `Returned` if it did return. |
 | `history.returned-without-outcome` | An operation is `Returned` and carries no outcome. | Record the outcome the operation returned. |
 | `history.non-canonical-uuid` | A UUID is written with upper-case hexadecimal; its one spelling is lower case. | Write the UUID in lower case. |
 | `history.integer-out-of-range` | An integer is above the largest integer a history admits. | Keep the value at or below the bound the message states. |
@@ -327,5 +328,8 @@ The build, component, release, stack and deployment commands under `ess generate
 | `unknown_component` | The imported specification does not declare the selected component. | Select a component the imported specification declares. |
 | `reference_outside_component` | A name exists in the imported specification but is outside the selected component. | Refer only to what the selected component exposes, or select the component that owns it. |
 | `type_conformance_drift` | A local type said to conform to an imported type differs from it in a field's name, presence or type. | Change the local type to match the imported one field for field. |
+| `unknown_role_service` | A role's `service` or `plays` names a service the composition does not import. | Import the service, or correct the key in the role. |
+| `conflicting_role` | A role plays its own service, repeats a role already declared for the same two services, or repeats a command entry. | Name another imported service in `plays`, and write each role and each command entry once. |
+| `role_input_drift` | A local command said to implement a contract command lacks one of its input fields, reads one as another type, or requires an input the contract's caller never sends. | Give the local command every contract input field with a conforming type, make its other inputs optional, or say `gates` if it only decides before the contract command. |
 
 [ess-diagnostics-end]: #

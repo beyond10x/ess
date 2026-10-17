@@ -389,6 +389,63 @@ stored field. Its binding design is [`caller-values.md`](caller-values.md): acto
 the every-actor rule, the `==`/`!=`-against-a-field restriction, the suite/26 `caller` field on
 command steps, and synthesis under two caller assignments.
 
+### E10 — surrounding whitespace (#532, `ess/25`)
+
+The story that asked for it named this section E9; E9 was already taken, so it is E10. A map
+key, `trimmed:`, wrapping exactly one text operator — `equals` (`eq`, `==`), `in` (`any_of`,
+`one_of`) over text literals, `equals_ignore_case`, `in_ignore_case`, `starts_with`, `ends_with`
+or `contains` — read as that operator over the same fact with its surrounding ASCII whitespace
+removed: `reason: {trimmed: {in_ignore_case: [NEW, HOLD, DONE]}}` holds for ` done\t`. One
+wrapper composes with every text operator, instead of a new name per combination.
+
+- **The set.** Space, `\t`, `\n`, `\v`, `\f` and `\r`, at either end, and nothing else; a Unicode
+  space such as U+00A0 compares as itself. Each evaluator answers it from its standard library:
+  Rust `trim_matches` over the six characters (not `trim_ascii`, which keeps `\v`, nor `trim`,
+  which removes Unicode spaces), Go `strings.Trim(s, " \t\n\v\f\r")` (not `TrimSpace`),
+  TypeScript one fixed character class (not `trim()`). The table
+  `crates/specify/ess-primitives/tests/vectors/trimmed-text.json` decides all three.
+- **What is trimmed.** Only the fact's value, never a literal, a parameter or an input it is
+  compared with. Unobserved is `unknown`; an observed value that is not text answers `false`.
+- **The predicate** is its own variant, `Predicate::Trimmed`, around the wrapped `AnyOf`,
+  `TextMatch` or `FoldMatch`. `uses_trim` asks whether one is present at any depth, and the
+  wrapped operator still answers `uses_text_match` or `uses_case_fold` as it would unwrapped. The
+  canonical form is `{<path>: {trimmed: {<operator>: <operand>}}}`, `equals` and `in` both written
+  as `any_of`, and reads back as the same predicate.
+- **Where.** From `ess/25`, in a command outcome's guards only: its `when:` over the input, and
+  its `when_subject:` and `when_related:` predicates over a stored row. An invariant, a view
+  filter, a selection and a set-effect filter refuse it as `unsupported_construct`. Below
+  `ess/25` it is `unsupported_format_version` naming `ess/25`, and nothing else is reported of it
+  (no `type_mismatch`), as a case-insensitive operator below `ess/15` is refused by format alone.
+- **Refusals.** A wrapped operator other than the seven (`gt`, `ne`, `none_of`, `exists`, a
+  second `trimmed`), two keys, a scalar or a list are refused by the reader, and so are `equals`
+  with a list and `in` with a scalar. Over a fact that is not a `String` or a newtype of one, and
+  with a literal that is not text, it is `type_mismatch`; an empty `in` is `empty_declaration`. A
+  literal that holds for no text is `empty_declaration` too, because a trimmed text never starts
+  or ends with one of the six characters: an `equals` or `in` literal, case-folded or not, with one
+  at either end, a `starts_with` literal with one at its start and an `ends_with` literal with one
+  at its end. `contains`, a `starts_with` literal ending in whitespace and an `ends_with` literal
+  starting with it can hold, and are admitted. No `ValidationCode` is added.
+- **Synthesis** witnesses the guarded branch on each literal padded with a space and a tab before
+  it and a space after it (in its other ASCII case under a fold), which a target that does not
+  trim refuses, and on the literal between `\v\f` and `\r\n`, which a target trimming spaces and
+  tabs alone, or with Rust's `trim_ascii`, refuses. The refuting branch is sent the literal with a
+  space after its first character, which no trim removes, and the literal between two U+00A0,
+  which a target trimming Unicode spaces accepts. A `trimmed` operator in a `forall` or `exists`
+  body gives the same witnesses for the first element; where it compares the element itself, each
+  is sent as a list of that one text, so a `forall` whose other witnesses leave the list empty, and
+  so hold vacuously, is still sent a padded element. A candidate is kept only where it still
+  selects the branch it witnesses. Like a fold, the finite partition declines it, so a command with one
+  needs a default.
+- **Suites.** A guard is decided at synthesis, so no suite carries `trimmed`: the Rust, Go and
+  TypeScript admissions refuse a suite or a predicate carrying it at every major, as
+  `UnsupportedVocabulary`. A view filter cannot carry it, so no `satisfies` expectation needs it
+  and no suite major moves.
+- **Lanes that do not evaluate it** refuse it by name: Entity Runtime lowering as
+  `TrimmedTextUnsupported` (entity-core has no condition that trims, as with
+  `CaseFoldUnsupported`), `infra-spec/1` as an invalid expectation naming `trimmed`, and the
+  `ess-synth` guard and invariant renderers as an obligation naming `trimmed`, never the wrapped
+  operator over the untrimmed text.
+
 ## Not in this design
 
 - Arbitrary arithmetic, string functions or conditionals beyond E4's one fallback.

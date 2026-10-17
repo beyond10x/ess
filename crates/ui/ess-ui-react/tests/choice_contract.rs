@@ -9,7 +9,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use serde_yaml::Value;
+use ess_yaml::Value;
 
 const DOCUMENT: &str = r"
 format: ess-ui/1
@@ -259,13 +259,13 @@ fn shown(value: &Value) -> String {
 fn react_and_row_option_offer_the_same_options_for_every_case() {
     let project = runtime();
     for (name, yaml, field, identity, rows) in CASES {
-        let choice: ess_ui::Choice = serde_yaml::from_str(&match *yaml {
+        let choice: ess_ui::Choice = ess_yaml::from_str(&match *yaml {
             "{}" => "{reads: {view: v}}".to_owned(),
             with_reads if with_reads.contains("reads") => with_reads.to_owned(),
             other => format!("{{reads: {{view: v}}, {}", &other[1..]),
         })
         .unwrap_or_else(|error| panic!("{name}: {error}"));
-        let rows: Vec<Value> = serde_yaml::from_str(rows).expect("the rows parse");
+        let rows: Vec<Value> = ess_yaml::from_str(rows).expect("the rows parse");
         let (values, labels): (Vec<serde_json::Value>, Vec<String>) = rows
             .iter()
             .filter_map(|row| choice.row_option(row, *field, *identity))

@@ -242,13 +242,13 @@ fn issue_229_the_written_form_round_trips() {
     let spec = admitted(MODEL);
     let outcome = deactivated(&spec);
     let written =
-        serde_yaml::to_string(&RawOutcome::from(outcome.clone())).expect("an outcome serializes");
+        ess_yaml::to_string(&RawOutcome::from(outcome.clone())).expect("an outcome serializes");
     assert!(
         written.contains("moves: demo.users.Session.end"),
         "{written}"
     );
     let read: RawOutcome =
-        serde_yaml::from_str(&written).unwrap_or_else(|error| panic!("{error}\n{written}"));
+        ess_yaml::from_str(&written).unwrap_or_else(|error| panic!("{error}\n{written}"));
     let back = ess_domain::command::Outcome::try_from(read)
         .unwrap_or_else(|errors| panic!("{errors}\n{written}"));
     assert_eq!(&back, outcome, "{written}");

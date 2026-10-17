@@ -1,0 +1,96 @@
+format: ess/25
+system: demo
+version: v1
+domain: demo.desk
+types:
+  - {name: demo.desk.UserId, kind: newtype, of: String}
+  - {name: demo.desk.Team, kind: newtype, of: String}
+  - {name: demo.desk.CallRef, kind: newtype, of: String}
+entities:
+  - name: demo.desk.Seat
+    identity: {name: user_id, type: demo.desk.UserId}
+    fields:
+      - {name: team, type: demo.desk.Team}
+      - {name: call_ref, type: Optional<demo.desk.CallRef>}
+    lifecycle:
+      initial: Open
+      states: [Open, Busy, Closed]
+      terminal: [Closed]
+      transitions:
+        - {name: take, from: [Open], to: Busy}
+        - {name: close, from: [Open, Busy], to: Closed}
+events:
+  - name: demo.desk.SeatOpened
+    fields:
+      - {name: user_id, type: demo.desk.UserId}
+      - {name: team, type: demo.desk.Team}
+  - name: demo.desk.CallTaken
+    fields:
+      - {name: user_id, type: demo.desk.UserId}
+      - {name: call_ref, type: demo.desk.CallRef}
+  - name: demo.desk.TeamClosed
+    fields:
+      - {name: team, type: demo.desk.Team}
+      - {name: closed, type: Integer}
+  - name: demo.desk.Left
+    fields:
+      - {name: user_id, type: demo.desk.UserId}
+      - {name: call_ref, type: Optional<demo.desk.CallRef>}
+      - {name: was, type: demo.desk.Seat.State}
+errors:
+  - name: demo.desk.NotOpen
+    summary: The seat is not open.
+    fields: []
+actors:
+  - name: demo.desk.Supervisor
+    may: [demo.desk.SitDown, demo.desk.Take, demo.desk.CloseAll]
+commands:
+  - name: demo.desk.SitDown
+    input:
+      - {name: user_id, type: demo.desk.UserId}
+      - {name: team, type: demo.desk.Team}
+    outcomes:
+      - name: seated
+        creates: demo.desk.Seat
+        instance: user_id
+        emits: [demo.desk.SeatOpened]
+        payload:
+          demo.desk.SeatOpened: {user_id: input.user_id, team: input.team}
+        sets:
+          team: input.team
+  - name: demo.desk.Take
+    input:
+      - {name: user_id, type: demo.desk.UserId}
+      - {name: call_ref, type: demo.desk.CallRef}
+    outcomes:
+      - name: taken
+        moves: demo.desk.Seat.take
+        instance: user_id
+        emits: [demo.desk.CallTaken]
+        payload:
+          demo.desk.CallTaken: {user_id: input.user_id, call_ref: input.call_ref}
+        sets:
+          call_ref: input.call_ref
+      - {name: not-open, wrong_state: true, error: demo.desk.NotOpen}
+  - name: demo.desk.CloseAll
+    input:
+      - {name: team, type: demo.desk.Team}
+    outcomes:
+      - name: closed-all
+        moves: demo.desk.Seat.close
+        instances: {where: team == input.team}
+        emits:
+          - demo.desk.TeamClosed
+          - {event: demo.desk.Left, each: changed, when_state: Busy}
+        payload:
+          demo.desk.TeamClosed: {team: input.team, closed: {count: changed}}
+          demo.desk.Left: {user_id: {changed: user_id}, call_ref: {changed: call_ref}, was: {changed: state}}
+views:
+  - name: demo.desk.SeatDetails
+    source: demo.desk.Seat
+    consistency: read_your_writes
+    fields:
+      - {name: user_id, type: demo.desk.UserId}
+      - {name: team, type: demo.desk.Team}
+      - {name: call_ref, type: Optional<demo.desk.CallRef>}
+      - {name: state, type: demo.desk.Seat.State}

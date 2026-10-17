@@ -232,3 +232,130 @@ fn a_refusal_reading_the_identity_stays_a_plain_send() {
         .count();
     assert_eq!(errors, commands.len(), "every send requires the refusal");
 }
+
+/// beyond10x/ess#553: a guarded stored value or related row's state is arranged through the
+/// declared command that reaches it — a later command's `updates:`, a move of a related row — for
+/// the subject and for owned rows alike. In the fixture an incident is locked once `Seal`, run
+/// after a review it owns has been moved to `Approved`, stores that review in `approved_by`; no
+/// creation writes the pointer.
+mod through_writers {
+    use super::{refusals, scenario, sent, synthesis, Synthesis};
+    use ess_conformance::{interpret::Interpreted, report::Status, AdmittedSuite, Runner};
+
+    const LOCK: &str = include_str!("fixtures/arrangement-through-writers.yaml");
+
+    fn arranged() -> Synthesis {
+        synthesis(LOCK)
+    }
+
+    /// The refusals naming `id`, so a failure says why the scenario is missing.
+    fn refused(result: &Synthesis, id: &str) -> Vec<String> {
+        refusals(result)
+            .into_iter()
+            .filter(|refusal| refusal.contains(id))
+            .collect()
+    }
+
+    /// The scenario `id` exists and sends `Seal` after `Approve`, before its last command.
+    fn sealed_before(result: &Synthesis, id: &str) {
+        let commands = sent(scenario(&result.suite, id));
+        let approve = commands.iter().position(|name| name == "Approve");
+        let seal = commands.iter().rposition(|name| name == "Seal");
+        assert!(
+            matches!((approve, seal), (Some(approve), Some(seal)) if approve < seal && seal + 1 < commands.len()),
+            "{id}: {commands:?}"
+        );
+    }
+
+    #[test]
+    fn stored_pointer_set_by_a_later_update_is_arranged() {
+        let result = arranged();
+        let id = "ledger.lock.Retitle/outcome/locked";
+        assert!(
+            result
+                .suite
+                .scenarios
+                .keys()
+                .any(|key| key.to_string() == id),
+            "{:#?}",
+            refused(&result, id)
+        );
+        sealed_before(&result, id);
+    }
+
+    #[test]
+    fn related_state_reached_by_a_move_is_arranged() {
+        let result = arranged();
+        // The review the seal stores is owned by the incident and moved to `Approved` first.
+        let commands = sent(scenario(&result.suite, "ledger.lock.Seal/outcome/sealed"));
+        let approve = commands.iter().position(|name| name == "Approve");
+        assert!(
+            matches!((approve, commands.last()), (Some(_), Some(last)) if last == "Seal"),
+            "{commands:?}"
+        );
+        // Commands on the owned review read the incident's pointer, which only the seal writes.
+        for id in [
+            "ledger.lock.Annotate/outcome/locked",
+            "ledger.lock.Approve/outcome/locked",
+        ] {
+            assert!(
+                result
+                    .suite
+                    .scenarios
+                    .keys()
+                    .any(|key| key.to_string() == id),
+                "{id}: {:#?}",
+                refused(&result, id)
+            );
+            sealed_before(&result, id);
+        }
+    }
+
+    #[test]
+    fn row_set_over_moved_rows_is_arranged() {
+        let result = arranged();
+        let id = "ledger.lock.Reopen/outcome/approved-review";
+        assert!(
+            result
+                .suite
+                .scenarios
+                .keys()
+                .any(|key| key.to_string() == id),
+            "{:#?}",
+            refused(&result, id)
+        );
+        let commands = sent(scenario(&result.suite, id));
+        assert!(
+            super::runs_through(&commands, &["Approve"])
+                && commands.last().map(String::as_str) == Some("Reopen"),
+            "{commands:?}"
+        );
+    }
+
+    #[test]
+    fn the_arranged_suite_passes_on_the_interpreted_target() {
+        let raw = ess_domain::spec::RawSpecFile::parse(LOCK).unwrap();
+        let spec = ess_domain::spec::Specification::assemble([(
+            ess_domain::system::Source::new("model.yaml"),
+            raw,
+        )])
+        .unwrap();
+        let ir =
+            ess_compiler::resolve::compile(&spec, &ess_compiler::source::SourceMap::new()).unwrap();
+        let suite = ess_conformance::synthesize::synthesize(&ir).suite;
+        let admitted = AdmittedSuite::from_suite(&suite).unwrap();
+        let report = Runner::for_suite(&suite)
+            .run_admitted(&admitted, &Interpreted::for_model(ir))
+            .into_report();
+        assert_ne!(report.scenarios.len(), 0);
+        for scenario in report.scenarios {
+            assert_eq!(
+                scenario.status,
+                Status::Passed,
+                "{}: {:?}",
+                scenario.scenario,
+                scenario.checks
+            );
+        }
+    }
+}

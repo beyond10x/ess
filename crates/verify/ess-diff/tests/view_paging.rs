@@ -93,3 +93,11 @@ fn a_delta_carrying_paging_changed_under_diff_8_is_refused_on_read() {
     let raw: RawEssDelta = serde_json::from_str(&json).unwrap();
     assert_eq!(EssDelta::try_from(raw).unwrap(), delta);
 }
+
+/// A view's answer for an identity no row carries (`absent:`, ess/25, beyond10x/ess#533).
+#[path = "view_paging/absent_answer.rs"]
+mod absent_answer;
+
+/// Adversary pass 1 for the absent-row view (beyond10x/ess#533).
+#[path = "view_paging/adversary_m5_pass1.rs"]
+mod adversary_m5_pass1;

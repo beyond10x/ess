@@ -109,8 +109,9 @@ fn adv236_a_survivor_on_a_command_the_component_accepts_is_scored_not_out_of_sco
     let whole = audit(&spec, &[MutantClass::SetsDrop]);
     assert_eq!(
         verdicts(&whole).get(memo),
-        Some(&Verdict::Survived),
-        "precondition: the whole-system audit finds the survivor\n{}",
+        Some(&Verdict::Unwitnessed),
+        "precondition: the whole-system audit scores the mutant; its suite asks what the \
+         baseline's asks, so it is unwitnessed rather than survived (#586)\n{}",
         whole.render_text()
     );
 
@@ -140,13 +141,19 @@ fn adv236_a_survivor_on_a_command_the_component_accepts_is_scored_not_out_of_sco
     assert!(
         !listed.contains(&memo),
         "`{memo}` is on `notes.core.Edit`, which `notes-service` accepts, yet the component \
-         audit lists it out of scope instead of scoring the survivor\n{}",
+         audit lists it out of scope instead of scoring it\n{}",
         scoped.render_text()
     );
     assert_eq!(
-        scoped.counts.survived,
-        whole.counts.survived,
-        "a component that is the whole system must find the whole system's survivors\n{}",
+        verdicts(&scoped).get(memo),
+        Some(&Verdict::Unwitnessed),
+        "the component audit must score `{memo}` as the whole-system audit does\n{}",
+        scoped.render_text()
+    );
+    assert_eq!(
+        (scoped.counts.survived, scoped.counts.unwitnessed),
+        (whole.counts.survived, whole.counts.unwitnessed),
+        "a component that is the whole system must find the whole system's verdicts\n{}",
         scoped.render_text()
     );
 }

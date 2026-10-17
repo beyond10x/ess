@@ -40,6 +40,9 @@ use ess_primitives::{
 const JOBS: &str = include_str!("fixtures/current-time-guard.yaml");
 const REFUSAL: &str = "demo.jobs.ScheduleJob/outcome/start-in-past";
 const SCHEDULED: &str = "demo.jobs.ScheduleJob/outcome/scheduled";
+/// The scenario synthesis puts on the boundary: `starts_at` sent as `now - 60s` exactly, the
+/// command decided at a held instant (beyond10x/ess#586).
+const HELD: &str = "demo.jobs.ScheduleJob/outcome/scheduled/held/starts_at/-60";
 
 fn ir(text: &str) -> EssIr {
     let raw = RawSpecFile::parse(text).unwrap_or_else(|error| panic!("{error}\n{text}"));
@@ -176,9 +179,11 @@ fn a_fresh_suite_carrying_now_offsets_declares_empty_state_and_preserves_round_t
 
     let suite = suite();
     assert!(now_offset::used_by(&suite));
+    // The scenario on the boundary carries a `hold_now`, so the suite is written in /50
+    // (beyond10x/ess#586).
     assert_eq!(
         suite.provenance.suite_version.to_string(),
-        "ess-conformance/34"
+        "ess-conformance/50"
     );
     assert_eq!(
         suite.provenance.scenario_initial_state,
@@ -191,7 +196,7 @@ fn a_fresh_suite_carrying_now_offsets_declares_empty_state_and_preserves_round_t
     assert!(json.contains("-61"), "{json}");
     AdmittedSuite::from_json(&json).expect("the suite it writes is admitted");
 
-    let legacy = support_versions::legacy_json(&json, now_offset::ORDINARY);
+    let legacy = support_versions::legacy_json(&unheld(&json), now_offset::ORDINARY);
     let admitted = AdmittedSuite::from_json(&legacy).expect("historical suite/26 is admitted");
     assert_eq!(admitted.suite().provenance.suite_version.major(), 26);
     assert_eq!(admitted.suite().provenance.scenario_initial_state, None);
@@ -201,7 +206,7 @@ fn a_fresh_suite_carrying_now_offsets_declares_empty_state_and_preserves_round_t
             .unwrap();
     assert_eq!(
         coverage.selected().suite().provenance.suite_version.major(),
-        35
+        51
     );
     assert_eq!(
         coverage
@@ -211,17 +216,47 @@ fn a_fresh_suite_carrying_now_offsets_declares_empty_state_and_preserves_round_t
             .scenario_initial_state,
         Some(ScenarioInitialState::Empty)
     );
-    let historical =
-        support_versions::legacy_json(coverage.selected().original_json(), now_offset::COVERAGE);
+    let historical = support_versions::legacy_json(
+        &unheld(coverage.selected().original_json()),
+        now_offset::COVERAGE,
+    );
     let admitted = AdmittedSuite::from_json(&historical).expect("historical suite/27 is admitted");
     assert_eq!(admitted.suite().provenance.suite_version.major(), 27);
     assert_eq!(admitted.suite().provenance.scenario_initial_state, None);
 }
 
+/// `json` without its scenarios on a `now` boundary, the suite synthesis wrote before
+/// beyond10x/ess#586: what an older format can still carry.
+fn unheld(json: &str) -> String {
+    fn strip(value: &mut serde_json::Value) {
+        match value {
+            serde_json::Value::Object(map) => {
+                map.retain(|id, _| !id.contains("/held/"));
+                map.values_mut().for_each(strip);
+                // An inventory counts its arrays.
+                for key in ["generated", "authored"] {
+                    let length = map.get(key).and_then(|ids| ids.as_array()).map(Vec::len);
+                    if let (Some(length), Some(counts)) = (length, map.get_mut("counts")) {
+                        counts[key] = serde_json::json!(length);
+                    }
+                }
+            }
+            serde_json::Value::Array(items) => {
+                items.retain(|item| !item.as_str().is_some_and(|id| id.contains("/held/")));
+                items.iter_mut().for_each(strip);
+            }
+            _ => {}
+        }
+    }
+    let mut document: serde_json::Value = serde_json::from_str(json).unwrap();
+    strip(&mut document);
+    serde_json::to_string(&document).unwrap()
+}
+
 #[test]
 fn an_older_suite_format_refuses_now_offsets() {
     let fresh = suite().to_canonical_json().unwrap();
-    let legacy = support_versions::legacy_json(&fresh, now_offset::ORDINARY);
+    let legacy = support_versions::legacy_json(&unheld(&fresh), now_offset::ORDINARY);
     AdmittedSuite::from_json(&legacy).expect("the compatibility fixture is valid suite/26");
     let older = support_versions::legacy_json(&legacy, 24);
     assert!(older.contains("\"suite_version\":\"ess-conformance/24\""));
@@ -347,6 +382,10 @@ type Row = BTreeMap<String, Node>;
 struct Jobs<F: Fn() -> Rfc3339Instant> {
     now: F,
     tolerance: i64,
+    /// Whether it refuses a start exactly `tolerance` seconds old too: the `<=` mutant of the guard.
+    inclusive: bool,
+    /// The instant `hold_now` fixed for the next command, if any.
+    held: Cell<Option<Rfc3339Instant>>,
     rows: RefCell<Vec<Row>>,
     minted: Cell<u64>,
 }
@@ -356,6 +395,8 @@ impl<F: Fn() -> Rfc3339Instant> Jobs<F> {
         Self {
             now,
             tolerance,
+            inclusive: false,
+            held: Cell::new(None),
             rows: RefCell::default(),
             minted: Cell::new(0),
         }
@@ -396,8 +437,14 @@ impl<F: Fn() -> Rfc3339Instant> ConformanceTarget for Jobs<F> {
         };
         let starts_at = Rfc3339Instant::parse_rfc3339(text)
             .ok_or_else(|| TargetError::unsupported("input", format!("{text} is no instant")))?;
-        let limit = (self.now)().plus_seconds(-self.tolerance).unwrap();
-        let result = if starts_at < limit {
+        let now = self.held.take().unwrap_or_else(|| (self.now)());
+        let limit = now.plus_seconds(-self.tolerance).unwrap();
+        let refused = if self.inclusive {
+            starts_at <= limit
+        } else {
+            starts_at < limit
+        };
+        let result = if refused {
             SemanticCommandResult::took(outcome(&command, "start-in-past")).with_error(
                 DeclaredErrorValue::new("demo.jobs.StartInPast".parse().unwrap()),
             )
@@ -432,6 +479,10 @@ impl<F: Fn() -> Rfc3339Instant> ConformanceTarget for Jobs<F> {
     }
     fn redeliver_event(&self, _: RedeliveryRequest) -> Result<(), TargetError> {
         panic!("no bindings")
+    }
+    fn hold_now(&self, request: NowHold) -> Result<(), TargetError> {
+        self.held.set(Some(request.instant));
+        Ok(())
     }
 }
 
@@ -501,7 +552,10 @@ fn a_service_handling_the_request_under_a_second_later_still_passes() {
 
 #[test]
 fn a_service_with_a_tighter_tolerance_fails_the_accepting_boundary() {
-    assert_eq!(failing(30, 0), BTreeSet::from([SCHEDULED.to_owned()]));
+    assert_eq!(
+        failing(30, 0),
+        BTreeSet::from([SCHEDULED.to_owned(), HELD.to_owned()])
+    );
 }
 
 #[test]
@@ -536,4 +590,365 @@ fn a_service_reading_the_real_clock_passes_its_own_suite() {
         .run_admitted(&admitted, &Jobs::new(service_now, 60))
         .into_report();
     assert_eq!(report.status, ConformanceStatus::Passed, "{report:#?}");
+}
+
+// ---- a held `now` (beyond10x/ess#586) ------------------------------------------------------
+
+/// [`suite`], with a `hold_now 1` before its accepting scenario's command: that command is decided
+/// a second after the instant its `now - 59s` is sent relative to, so `starts_at` lies exactly on
+/// the boundary, `now - 60s`, the one value the `<=` mutant answers differently.
+fn held_suite() -> ConformanceSuite {
+    let mut suite = suite();
+    let (_, scenario) = suite
+        .scenarios
+        .iter_mut()
+        .find(|(id, _)| id.to_string() == SCHEDULED)
+        .expect("the accepting scenario");
+    let at = scenario
+        .steps
+        .iter()
+        .position(|step| {
+            matches!(step, ScenarioStep::ExecuteCommand { input, .. }
+                if input.get("starts_at") == Some(&offset(-59)))
+        })
+        .expect("its command sent a second inside the boundary");
+    scenario
+        .steps
+        .insert(at, ScenarioStep::HoldNow { seconds: 1 });
+    suite.select_fresh_format();
+    suite
+}
+
+/// The verdict of every scenario of `suite` against `target`, under a wall a quarter second past
+/// a whole second.
+fn verdicts<T: ConformanceTarget>(
+    suite: &ConformanceSuite,
+    target: &T,
+) -> BTreeMap<String, Status> {
+    let admitted = AdmittedSuite::from_suite(suite).unwrap();
+    let runner = Runner::new(
+        RunnerConfig::default(),
+        FixedWall {
+            steps: AdvancingClock::default(),
+            wall: Timestamp::from_epoch_millis(WALL_MS),
+        },
+        Ids::for_suite(suite),
+    );
+    runner
+        .run_admitted(&admitted, target)
+        .into_report()
+        .scenarios
+        .iter()
+        .map(|scenario| (scenario.scenario.to_string(), scenario.status))
+        .collect()
+}
+
+/// The service's own clock trails the runner's by 900 ms: without the held instant the boundary
+/// value would be decided in the accepting branch's favour by luck alone.
+fn trailing() -> Rfc3339Instant {
+    Rfc3339Instant::from_epoch_millis(i64::try_from(WALL_MS + 900).unwrap()).unwrap()
+}
+
+#[test]
+fn a_held_step_is_written_in_suite_fifty_and_refused_below_it() {
+    let suite = held_suite();
+    assert_eq!(
+        suite.provenance.suite_version.to_string(),
+        "ess-conformance/50"
+    );
+    let json = suite.to_canonical_json().unwrap();
+    assert!(
+        json.contains("\"step\": \"hold_now\",\n          \"seconds\": 1\n"),
+        "{json}"
+    );
+    AdmittedSuite::from_json(&json).expect("the suite it writes is admitted");
+    let older = json.replace("\"ess-conformance/50\"", "\"ess-conformance/48\"");
+    let refused = AdmittedSuite::from_json(&older).expect_err("suite/48 has no hold_now");
+    assert!(refused.to_string().contains("hold_now"), "{refused}");
+}
+
+#[test]
+fn a_hold_now_not_followed_by_a_command_is_refused() {
+    let mut suite = held_suite();
+    let (_, scenario) = suite
+        .scenarios
+        .iter_mut()
+        .find(|(id, _)| id.to_string() == SCHEDULED)
+        .unwrap();
+    scenario.steps.push(ScenarioStep::HoldNow { seconds: 0 });
+    let refused = AdmittedSuite::from_suite(&suite).expect_err("a dangling hold");
+    assert!(
+        refused.to_string().contains("hold_now") && refused.to_string().contains("execute_command"),
+        "{refused}"
+    );
+}
+
+#[test]
+fn fixed_clock_decides_the_input_boundary_at_the_held_instant() {
+    let suite = held_suite();
+    let correct = verdicts(&suite, &Jobs::new(trailing, 60));
+    assert!(
+        correct.values().all(|status| *status == Status::Passed),
+        "{correct:#?}"
+    );
+    let mut mutant = Jobs::new(trailing, 60);
+    mutant.inclusive = true;
+    let killed = verdicts(&suite, &mutant);
+    assert_eq!(killed[SCHEDULED], Status::Failed, "{killed:#?}");
+    assert_eq!(killed[REFUSAL], Status::Passed, "{killed:#?}");
+}
+
+/// `Jobs` without `hold_now`: every other method delegated, so the trait's default body answers.
+struct Unheld<'a, F: Fn() -> Rfc3339Instant>(&'a Jobs<F>);
+
+impl<F: Fn() -> Rfc3339Instant> ConformanceTarget for Unheld<'_, F> {
+    fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
+        self.0.identity()
+    }
+    fn begin_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
+        self.0.begin_scenario(scenario)
+    }
+    fn end_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
+        self.0.end_scenario(scenario)
+    }
+    fn execute_command(
+        &self,
+        request: SemanticCommandRequest,
+    ) -> Result<SemanticCommandResult, TargetError> {
+        self.0.execute_command(request)
+    }
+    fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
+        self.0.query_view(request)
+    }
+    fn observe_events(
+        &self,
+        request: EventObservationRequest,
+    ) -> Result<Vec<ObservedEvent>, TargetError> {
+        self.0.observe_events(request)
+    }
+    fn configure_external_outcome(
+        &self,
+        control: ExternalOutcomeControl,
+    ) -> Result<(), TargetError> {
+        self.0.configure_external_outcome(control)
+    }
+    fn redeliver_event(&self, request: RedeliveryRequest) -> Result<(), TargetError> {
+        self.0.redeliver_event(request)
+    }
+}
+
+/// A target without `hold_now` runs the synthesized suite as before: the scenario on the boundary
+/// is reported `unsupported`, naming the capability, and every other scenario passes.
+#[test]
+fn target_without_the_capability() {
+    let jobs = Jobs::new(trailing, 60);
+    let suite = suite();
+    let admitted = AdmittedSuite::from_suite(&suite).unwrap();
+    let report = Runner::new(
+        RunnerConfig::default(),
+        FixedWall {
+            steps: AdvancingClock::default(),
+            wall: Timestamp::from_epoch_millis(WALL_MS),
+        },
+        Ids::for_suite(&suite),
+    )
+    .run_admitted(&admitted, &Unheld(&jobs))
+    .into_report();
+    let held = report
+        .scenarios
+        .iter()
+        .find(|scenario| scenario.scenario.to_string() == HELD)
+        .unwrap();
+    assert_eq!(held.status, Status::Unsupported, "{held:#?}");
+    assert!(format!("{held:?}").contains("hold_now"), "{held:#?}");
+    let others: BTreeMap<String, Status> = report
+        .scenarios
+        .iter()
+        .filter(|scenario| scenario.scenario.to_string() != HELD)
+        .map(|scenario| (scenario.scenario.to_string(), scenario.status))
+        .collect();
+    assert!(others.contains_key(SCHEDULED) && others.contains_key(REFUSAL));
+    assert!(
+        others.values().all(|status| *status == Status::Passed),
+        "{report:#?}"
+    );
+}
+
+/// Synthesis adds the boundary itself: `starts_at` sent exactly `now - 60s`, `hold_now 0` before
+/// the command, and the branch `<` takes there required. The off-boundary scenarios keep their
+/// values; a lower bound `>=` is held on the guarded branch's side.
+#[test]
+fn input_guard_boundary_on_now() {
+    let suite = suite();
+    let steps = scenario(&suite, HELD);
+    let at = steps
+        .iter()
+        .position(|step| matches!(step, ScenarioStep::HoldNow { .. }))
+        .expect("a held step");
+    assert!(
+        matches!(steps[at], ScenarioStep::HoldNow { seconds: 0 }),
+        "{steps:#?}"
+    );
+    assert!(
+        matches!(&steps[at + 1], ScenarioStep::ExecuteCommand { input, .. }
+            if input["starts_at"] == offset(-60)),
+        "{steps:#?}"
+    );
+    assert_eq!(
+        invocations(&suite, HELD),
+        [(offset(-60), "scheduled".to_owned())]
+    );
+    assert!(
+        invocations(&suite, SCHEDULED).contains(&(offset(-59), "scheduled".to_owned())),
+        "the off-boundary scenario keeps its witness"
+    );
+    assert_eq!(
+        invocations(&suite, REFUSAL),
+        [(offset(-61), "start-in-past".to_owned())]
+    );
+    assert_eq!(
+        suite
+            .scenarios
+            .keys()
+            .filter(|id| id.to_string().contains("/held/"))
+            .count(),
+        1
+    );
+
+    let lower =
+        suite_of(&JOBS.replace("when: starts_at < now - 60s", "when: starts_at >= now + 5m"));
+    assert_eq!(
+        invocations(
+            &lower,
+            "demo.jobs.ScheduleJob/outcome/start-in-past/held/starts_at/300"
+        ),
+        [(offset(300), "start-in-past".to_owned())]
+    );
+}
+
+/// `Jobs` with no clock of its own: a command it is not held for is `unsupported`, so only the
+/// scenarios on a boundary execute, decided at the instant they hold.
+struct HeldOnly<F: Fn() -> Rfc3339Instant>(Jobs<F>);
+
+impl<F: Fn() -> Rfc3339Instant> ConformanceTarget for HeldOnly<F> {
+    fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
+        self.0.identity()
+    }
+    fn begin_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
+        self.0.begin_scenario(scenario)
+    }
+    fn end_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
+        self.0.end_scenario(scenario)
+    }
+    fn execute_command(
+        &self,
+        request: SemanticCommandRequest,
+    ) -> Result<SemanticCommandResult, TargetError> {
+        if self.0.held.get().is_none() {
+            return Err(TargetError::unsupported(
+                "now",
+                "this service decides only a held command",
+            ));
+        }
+        self.0.execute_command(request)
+    }
+    fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
+        self.0.query_view(request)
+    }
+    fn observe_events(
+        &self,
+        request: EventObservationRequest,
+    ) -> Result<Vec<ObservedEvent>, TargetError> {
+        self.0.observe_events(request)
+    }
+    fn configure_external_outcome(
+        &self,
+        control: ExternalOutcomeControl,
+    ) -> Result<(), TargetError> {
+        self.0.configure_external_outcome(control)
+    }
+    fn redeliver_event(&self, request: RedeliveryRequest) -> Result<(), TargetError> {
+        self.0.redeliver_event(request)
+    }
+    fn hold_now(&self, request: NowHold) -> Result<(), TargetError> {
+        self.0.hold_now(request)
+    }
+}
+
+/// The mutation audit's `guard-boundary` mutant `starts_at <= now - 60s` answers apart from the
+/// guard only on the boundary. Its own suite holds that boundary and requires the refusal there,
+/// which the unchanged service, decided at the held instant, does not give: the mutant is killed by
+/// the held scenario.
+#[test]
+fn fixed_clock_kills_the_boundary_mutant() {
+    use ess_conformance::mutate::{self, MutantClass, Verdict};
+
+    let label = "jobs.yaml".to_owned();
+    let raw = RawSpecFile::parse(JOBS).unwrap_or_else(|error| panic!("{error}"));
+    let mut texts = SourceMap::new();
+    texts.insert(label.clone(), JOBS.to_owned());
+    let documents = vec![(Source::new(label), raw)];
+    let report = mutate::audit(&documents, &texts, &[MutantClass::GuardBoundary], || {
+        HeldOnly(Jobs::new(trailing, 60))
+    })
+    .unwrap_or_else(|refusal| panic!("{refusal}"));
+    let mutant = report
+        .mutants
+        .iter()
+        .find(|mutant| mutant.change.contains("starts_at <= now - 60s"))
+        .unwrap_or_else(|| panic!("the strictness mutant: {report:#?}"));
+    assert_eq!(mutant.verdict, Verdict::Killed, "{mutant:#?}");
+    assert_eq!(
+        mutant.killers.as_deref(),
+        Some(&["demo.jobs.ScheduleJob/outcome/start-in-past/held/starts_at/-60".to_owned()][..]),
+        "{mutant:#?}"
+    );
+}
+
+// ---- adversary, beyond10x/ess#586 ------------------------------------------------------------
+
+/// Acceptance `target_without_the_capability`, at the level an adopter sees: a target without
+/// `hold_now` that passed this model's suite before the held scenario existed (the suite with
+/// every `/held/` scenario left out, which is what synthesis wrote before #586) keeps a passing
+/// run after the upgrade. The held scenario is reported `unsupported` naming the capability, and
+/// that report must not turn the adopter's green run red: §28 makes an unsupported *required*
+/// scenario fail the run, so the held scenario cannot be counted as required against a target
+/// that does not offer the capability.
+#[test]
+fn adversary_586_a_target_without_hold_now_keeps_its_passing_run() {
+    let jobs = Jobs::new(trailing, 60);
+    let run = |suite: &ConformanceSuite| {
+        let admitted = AdmittedSuite::from_suite(suite).unwrap();
+        Runner::new(
+            RunnerConfig::default(),
+            FixedWall {
+                steps: AdvancingClock::default(),
+                wall: Timestamp::from_epoch_millis(WALL_MS),
+            },
+            Ids::for_suite(suite),
+        )
+        .run_admitted(&admitted, &Unheld(&jobs))
+        .into_report()
+    };
+    let mut before = suite();
+    before
+        .scenarios
+        .retain(|id, _| !id.to_string().contains("/held/"));
+    before.select_fresh_format();
+    assert_eq!(
+        run(&before).status,
+        ConformanceStatus::Passed,
+        "the run was green before the held scenario existed"
+    );
+    let after = run(&suite());
+    assert_eq!(
+        after.status,
+        ConformanceStatus::Passed,
+        "upgrading ess alone turned a green run red: {:#?}",
+        after
+            .scenarios
+            .iter()
+            .map(|scenario| (scenario.scenario.to_string(), scenario.status))
+            .collect::<Vec<_>>()
+    );
 }

@@ -180,3 +180,74 @@ fn required_group_key_is_not_invented_when_the_source_never_sets_it() {
         "{answer:?}"
     );
 }
+
+/// A view declaring `absent:` (ess/25, beyond10x/ess#533) answers its default row for an identity
+/// no row carries, and the stored row for one that a row carries: the identity is the requested
+/// value, each literal typed by its field, the `Optional` field left out of `row:` absent.
+#[test]
+fn interpreter_answers_the_declared_default_row_for_an_unstored_identity() {
+    use ess_conformance::target::{
+        ConformanceTarget, Deadline, EventObservationRequest, SemanticCommandRequest,
+        SemanticViewRequest,
+    };
+    use ess_primitives::{
+        consistency::QueryConsistency, facts::Number, ids::CorrelationId, node::Node,
+        time::Timestamp,
+    };
+    use std::collections::BTreeMap;
+    let spec = Specification::assemble([(
+        Source::new("view-absent-row.yaml"),
+        RawSpecFile::parse(include_str!("fixtures/view-absent-row.yaml")).unwrap(),
+    )])
+    .unwrap();
+    let target = Interpreted::for_model(compile(&spec, &SourceMap::new()).unwrap());
+    let correlation = CorrelationId::new("absent").unwrap();
+    let deadline = || Deadline::at(Timestamp::from_epoch_millis(0));
+    target
+        .execute_command(SemanticCommandRequest {
+            command: "demo.status.SetFlag".parse().unwrap(),
+            actor: None,
+            caller: None,
+            input: BTreeMap::from([("level".into(), Node::Number(Number::new(3.0).unwrap()))]),
+            correlation: correlation.clone(),
+        })
+        .unwrap();
+    let stored = target
+        .observe_events(EventObservationRequest {
+            event: "demo.status.FlagSet".parse().unwrap(),
+            correlation: correlation.clone(),
+            deadline: deadline(),
+        })
+        .unwrap()[0]
+        .payload["id"]
+        .clone();
+    let read = |id: Node| {
+        target
+            .query_view(SemanticViewRequest {
+                view: "demo.status.FlagById".parse().unwrap(),
+                params: BTreeMap::from([("id".into(), id)]),
+                consistency: QueryConsistency::Current,
+                correlation: correlation.clone(),
+                deadline: deadline(),
+            })
+            .unwrap()
+            .rows
+    };
+    let unstored = Node::Text("00000000-0000-4000-8000-0000000005aa".into());
+    assert_ne!(stored, unstored);
+    assert_eq!(
+        read(unstored.clone()),
+        [BTreeMap::from([
+            ("id".to_owned(), unstored),
+            ("paused".to_owned(), Node::Bool(false)),
+            ("level".to_owned(), Node::Number(Number::new(0.0).unwrap())),
+            ("state".to_owned(), Node::Text("Set".into())),
+            ("note".to_owned(), Node::Null),
+        ])],
+        "the default row"
+    );
+    let rows = read(stored.clone());
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert_eq!(rows[0]["id"], stored);
+    assert_eq!(rows[0]["level"], Node::Number(Number::new(3.0).unwrap()));
+}

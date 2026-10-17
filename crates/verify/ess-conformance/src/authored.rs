@@ -2494,7 +2494,7 @@ pub(crate) fn arrangements(
     source: &Source,
 ) -> Result<Vec<(InstanceName, bool)>, String> {
     let document: Document = map_key_newtypes(ir)
-        .scope(|| serde_yaml::from_str(&source.text))
+        .scope(|| ess_yaml::from_str(&source.text))
         .map_err(|error| error.to_string())?;
     Ok(document
         .arrange
@@ -2520,7 +2520,7 @@ pub(crate) fn compile_one(
     // A fixture is declared in the specification's own type spellings, so a map keyed by one of
     // the model's newtypes (beyond10x/ess#143) reads here exactly as it did there.
     let document: Document = map_key_newtypes(ir)
-        .scope(|| serde_yaml::from_str(&source.text))
+        .scope(|| ess_yaml::from_str(&source.text))
         .map_err(|error| {
             bare(Cause::Unreadable {
                 detail: error.to_string(),

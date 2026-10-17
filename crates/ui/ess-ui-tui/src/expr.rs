@@ -14,7 +14,7 @@
 use std::collections::BTreeSet;
 use std::sync::OnceLock;
 
-use serde_yaml::Value;
+use ess_yaml::Value;
 
 /// The roots a path may start from.
 pub(crate) const ROOTS: &[&str] = &[
@@ -109,7 +109,7 @@ fn forms() -> &'static (BTreeSet<String>, BTreeSet<String>) {
     static FORMS: OnceLock<(BTreeSet<String>, BTreeSet<String>)> = OnceLock::new();
     FORMS.get_or_init(|| {
         let schema: Value =
-            serde_yaml::from_str(ess_ui::SCHEMA).expect("the embedded schema is YAML");
+            ess_yaml::from_str(ess_ui::SCHEMA).expect("the embedded schema is YAML");
         let mut roots = BTreeSet::new();
         let mut functions = BTreeSet::new();
         for form in schema["expressions"]["forms"]
@@ -237,10 +237,9 @@ mod tests {
 
     #[test]
     fn paths_comparisons_and_negation_evaluate() {
-        let row = Row(serde_yaml::from_str(
-            "{status: overdue, amount: {amount: 5, currency: EUR}}",
-        )
-        .unwrap());
+        let row = Row(
+            ess_yaml::from_str("{status: overdue, amount: {amount: 5, currency: EUR}}").unwrap(),
+        );
         assert_eq!(eval("row.status == overdue", &row), Some(Value::Bool(true)));
         assert_eq!(
             eval("row.status != overdue", &row),
@@ -256,7 +255,7 @@ mod tests {
     /// literal keeps its value.
     #[test]
     fn a_string_reading_no_path_is_literal_text() {
-        let row = Row(serde_yaml::from_str("{stage: won}").unwrap());
+        let row = Row(ess_yaml::from_str("{stage: won}").unwrap());
         let text = |text: &str| Some(Value::String(text.into()));
         for literal in [
             "Limit in cents",

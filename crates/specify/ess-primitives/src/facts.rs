@@ -1462,10 +1462,10 @@ mod tests {
         // never calls `new`, so `.nan` in a document used to produce a `Number` this type says
         // cannot exist — and a NaN makes `Ord` a lie for every value it is compared against.
         for spelling in [".nan", ".inf", "-.inf"] {
-            serde_yaml::from_str::<Number>(spelling)
+            ess_yaml::from_str::<Number>(spelling)
                 .expect_err(&format!("`{spelling}` is not a finite number"));
         }
-        let ordinary: Number = serde_yaml::from_str("1.5").expect("a finite number still reads");
+        let ordinary: Number = ess_yaml::from_str("1.5").expect("a finite number still reads");
         assert!((ordinary.get() - 1.5).abs() < f64::EPSILON);
     }
 

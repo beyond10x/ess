@@ -472,6 +472,9 @@ pub enum LoweringCode {
     /// and entity-core has no condition that folds case; a case-sensitive one would decide a
     /// different rule.
     CaseFoldUnsupported,
+    /// A guard compares text with its surrounding ASCII whitespace removed (`trimmed:`, ess/25),
+    /// and entity-core has no condition that trims; an untrimmed one would decide a different rule.
+    TrimmedTextUnsupported,
     /// An outcome shape of ess/15 — an `unknown_instance:` branch, a `deletes:` effect, a creation
     /// `into:` a declared state, or `accepts: nothing` — which entity-core has no definition for.
     OutcomeShapeUnsupported,
@@ -702,6 +705,34 @@ impl Projector<'_> {
         });
     }
 
+    /// Refuse the text operators that compare a normalized text — `trimmed` (beyond10x/ess#532)
+    /// and the case-insensitive ones (beyond10x/ess#140) — for which entity-core has no condition.
+    /// A wrapped fold is refused as both, so the refusals accumulate.
+    fn refuse_text_normalizers(&mut self, predicate: &Predicate, at: &str) {
+        if predicate.uses_trim() {
+            self.diagnostic(
+                LoweringCode::TrimmedTextUnsupported,
+                at,
+                format!(
+                    "`{predicate}` compares text with `trimmed`, and Entity Runtime has no \
+                     condition that removes surrounding whitespace; an untrimmed one would decide \
+                     a different rule"
+                ),
+            );
+        }
+        if predicate.uses_case_fold() {
+            self.diagnostic(
+                LoweringCode::CaseFoldUnsupported,
+                at,
+                format!(
+                    "`{predicate}` compares text with `equals_ignore_case` or `in_ignore_case`, \
+                     and Entity Runtime has no condition that folds case; a case-sensitive one \
+                     would decide a different rule"
+                ),
+            );
+        }
+    }
+
     /// Refuse every text length `predicate` reads over `fields` that entity-core cannot address.
     /// entity-core 0.27.0 reads `<path>.count` on a declared `string` only along its run-time walk
     /// from a schema root, which carries each field's declaration through members and list
@@ -768,17 +799,7 @@ impl Projector<'_> {
                 ),
             );
         }
-        if predicate.uses_case_fold() {
-            self.diagnostic(
-                LoweringCode::CaseFoldUnsupported,
-                at,
-                format!(
-                    "`{predicate}` compares text with `equals_ignore_case` or `in_ignore_case`, \
-                     and Entity Runtime has no condition that folds case; a case-sensitive one \
-                     would decide a different rule"
-                ),
-            );
-        }
+        self.refuse_text_normalizers(predicate, at);
         let checked = ess_compiler::expression::check_predicate_with_input(
             self.service.source(),
             fields,
@@ -2338,6 +2359,8 @@ impl Projector<'_> {
                         | ResolvedPayloadValue::RelatedHead { .. }
                         | ResolvedPayloadValue::CallerAttribute { .. }
                         | ResolvedPayloadValue::PayloadRead { .. }
+                        | ResolvedPayloadValue::ChangedField { .. }
+                        | ResolvedPayloadValue::ChangedState { .. }
                         | ResolvedPayloadValue::ChangedCount => {
                             unreachable!(
                                 "literals, clears and value expressions were handled above"
@@ -2501,6 +2524,21 @@ impl Projector<'_> {
             ResolvedCondition::Otherwise
             | ResolvedCondition::Related { .. }
             | ResolvedCondition::RelatedSet { .. } => {}
+            // An external refusal answered before the row is loaded (`before_row: true`, ess/25,
+            // beyond10x/ess#534): entity-core reads external evidence beside the loaded row.
+            ResolvedCondition::External { .. } | ResolvedCondition::ExternalWhen { .. }
+                if outcome.before_row =>
+            {
+                self.diagnostic_naming(
+                    LoweringCode::OutcomeShapeUnsupported,
+                    subset::BEFORE_ROW_EXTERNAL,
+                    &path,
+                    "an external refusal marked `before_row: true` (ess/25) answers before the \
+                     row is loaded, and an Entity Runtime external branch is evidence read beside \
+                     the loaded row"
+                        .to_owned(),
+                );
+            }
             ResolvedCondition::External { cause } => {
                 when = Some(external_evidence(command, outcome, cause, slots));
             }
@@ -3057,6 +3095,17 @@ impl Projector<'_> {
                     LoweringCode::SetEffectUnsupported,
                     format!("{}.{}", command.name, outcome.name.as_str()),
                     "`{count: changed}` (ess/16) counts the rows a set outcome changed, which \
+                     entity-core does not",
+                );
+                None
+            }
+            // Admitted on a set outcome only (ess/25, beyond10x/ess#531), refused before this too.
+            ResolvedPayloadValue::ChangedField { .. }
+            | ResolvedPayloadValue::ChangedState { .. } => {
+                self.diagnostic(
+                    LoweringCode::SetEffectUnsupported,
+                    format!("{}.{}", command.name, outcome.name.as_str()),
+                    "`{changed: …}` (ess/25) reads the row a set outcome changed, which \
                      entity-core does not",
                 );
                 None
@@ -4232,6 +4281,7 @@ fn lower_typed(predicate: &Predicate, rewrite: &PathRewrite, typing: &Typing<'_>
         // `CalendarWindowUnsupported`.
         Predicate::Never
         | Predicate::FoldMatch { .. }
+        | Predicate::Trimmed(_)
         | Predicate::Distinct(_)
         | Predicate::Window(_) => Condition::Literal(false),
         Predicate::All(children) if children.is_empty() => Condition::Literal(true),

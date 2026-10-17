@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/source-25-0.60.0
+repository: ess
+publishedAt: 2026-10-14T00:00:00Z
+title: Source format ess/25 selects an upsert's update by the stored row and adds per-row events and default view rows
+summary: >-
+  `ess/25` lets a create-or-update command pick its update with `when_subject:`
+  ([#530](https://github.com/beyond10x/ess/issues/530)), publish an event per changed row, answer an
+  `external:` refusal before the row is read, compare `trimmed:` text, and give a view an `absent:`
+  row. `ess-diff/19` classifies the view change.
+kind: capability
+impact: significant
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.60.0
+  version: 0.60.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

@@ -10,7 +10,7 @@ use ess_ui::{
     ActionConfirm, Body, ChoiceOption, Columns, Composite, Document, Node, OverlayKind, Page,
     PageLayout, Section,
 };
-use serde_yaml::Value;
+use ess_yaml::Value;
 
 const DOCUMENT: &str = r"
 format: ess-ui/1
@@ -255,7 +255,7 @@ fn cases() -> Vec<((&'static str, &'static str), Case)> {
 }
 
 fn index_keys() -> BTreeSet<(String, String)> {
-    let schema: Value = serde_yaml::from_str(ess_ui::SCHEMA).expect("the schema is YAML");
+    let schema: Value = ess_yaml::from_str(ess_ui::SCHEMA).expect("the schema is YAML");
     schema["shorthands"]["index"]
         .as_sequence()
         .expect("the shorthand index is a list")

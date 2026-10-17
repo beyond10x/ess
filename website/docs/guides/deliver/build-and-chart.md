@@ -207,6 +207,82 @@ workloads:
         size: "1Gi"
 ```
 
+### Scheduled workloads and pod settings
+
+`format: ess-runtime/2` reads everything `ess-runtime/1` does and compiles to `ess-runtime-ir/2`; a
+`/1` document keeps its compiled bytes and digest, and refuses the keys below by name. A workload
+with a `schedule:` runs as a Kubernetes `CronJob` instead of a Deployment or StatefulSet:
+
+```yaml
+format: ess-runtime/2
+# …digests as above…
+processes:
+  - name: runner
+    image: example.invalid/runner@sha256:0123…cdef   # pinned by digest, rendered verbatim
+containers:
+  - name: runner
+    process: runner
+    read_only_root_filesystem: true
+    resources:
+      requests: {cpu: 50m, memory: 64Mi}
+      limits: {memory: 128Mi}
+    secrets:
+      - name: credentials
+        mount:                        # a read-only secret volume; no environment variable
+          path: /etc/ingest
+          mode: "0400"
+          items:
+            - key: credentials.json
+              path: credentials.json
+workloads:
+  - name: ingest-a
+    components: [ingest]
+    containers: [runner]
+    service_account_token: false
+    security: {run_as_user: 10001, run_as_group: 10001, fs_group: 10001, run_as_non_root: true}
+    schedule:
+      cron: "2-59/10 * * * *"
+      time_zone: Europe/Berlin        # optional
+      overlap: forbid                 # forbid (default), replace or allow
+      successful_runs: 3              # optional history limits
+      failed_runs: 1
+      suspended: true                 # optional
+      start_deadline_seconds: 120     # optional
+      run_deadline_seconds: 540       # required: a run without one is refused as unbounded
+      retry_limit: 2                  # optional
+      restart: never                  # never (default) or on_failure
+    volumes:                          # optional: a claim every run mounts
+      - name: state
+        size: 1Gi
+```
+
+A scheduled workload takes no `replicas`, no legacy `storage`, no provided endpoint and no
+readiness probe; each is refused naming the workload. Its named volumes become standalone
+`PersistentVolumeClaim`s, sized and classed in the values file like a StatefulSet's. The pod
+settings (`security`, `service_account_token`, `resources`, `read_only_root_filesystem`, secret
+mounts and pinned images) are taken by Deployments and StatefulSets too, and so are these:
+
+```yaml
+containers:
+  - name: runner
+    process: runner
+    readiness_tcp_port: 5432          # a tcpSocket probe; or readiness_path, not both
+    liveness_tcp_port: 5432
+workloads:
+  - name: ingest-a
+    annotations:                      # pod annotations
+      example.invalid/team: ingest
+    affinity:
+      spread_across: kubernetes.io/hostname   # no two pods of this workload on one node
+      spread: preferred               # preferred (default) or required
+      node_labels:                    # every pod's node carries these labels
+        example.invalid/pool: batch
+```
+
+Resources and placement are not overridden per environment. A string the chart renders as written
+(an image reference, a path, a literal, an annotation) may not carry `{{`, which Helm would
+evaluate at install time.
+
 The output directory also holds `.ess-output/state.json`, which records the files the projection
 owns, so running the same command again rewrites them in place
 ([repeated generation](../generate-artifacts.md#repeated-generation-and-recovery)).

@@ -173,13 +173,13 @@ enum SpecifyCommand {
     },
     /// Compile exact component surfaces into composition IR and generated clients.
     Compose {
-        /// An `ess-composition/1`, `/2` or `/3` JSON or YAML document.
+        /// An `ess-composition/1` to `/4` JSON or YAML document.
         #[arg(long)]
         path: PathBuf,
         /// A compiled ESS source, written `service-key=path`. Repeat for every import.
         #[arg(long = "service", value_name = "KEY=PATH", required = true)]
         services: Vec<ServiceInput>,
-        /// Where to write canonical composition IR; its format echoes the input's (`/1`–`/3`).
+        /// Where to write canonical composition IR; its format echoes the input's (`/1`–`/4`).
         #[arg(long)]
         out: Option<PathBuf>,
         /// Where to write canonical `ess-client-plan/1`.
@@ -323,6 +323,15 @@ enum GenerateCommand {
         out: Option<PathBuf>,
         #[arg(long, value_enum, default_value_t = Format::Text)]
         format: Format,
+        /// An `ess-http/1` document binding commands and views to methods, paths and answers;
+        /// only with `--target rust` or `go`. Compiled as `ess specify http compile` compiles it,
+        /// and refused when a route has no path or claims `/openapi.json` or `/docs`.
+        #[arg(long)]
+        http: Option<PathBuf>,
+        /// The `ess-http/1` binding the `--http` document refines, whose bytes its `refines:`
+        /// digest pins.
+        #[arg(long, requires = "http")]
+        refines: Option<PathBuf>,
     },
     /// Project typed IR into concrete artifacts; never apply them.
     Project {
@@ -643,8 +652,9 @@ enum ConformCommand {
         /// established only for a generated obligation no bounded arrangement reaches, and the
         /// real command and assertions follow it. Any seed selects suite/42 (or /43 with
         /// `--suite-format 5`), suite/44 (/45) where an act also claims one event more than once,
-        /// suite/46 (/47) where a response reaches a constrained String newtype, or suite/48 (/49)
-        /// where a response or a struct it reaches ignores undeclared fields, and records its
+        /// suite/46 (/47) where a response reaches a constrained String newtype, suite/48 (/49)
+        /// where a response or a struct it reaches ignores undeclared fields, or suite/50 (/51) where
+        /// a scenario holds `now` for a command, and records its
         /// source, row and uses.
         #[arg(
             long = "synthesis-seed",
@@ -695,9 +705,9 @@ enum ConformCommand {
         /// Ordinary (4) or declared coverage (5); coverage emits the complete coverage input.
         #[arg(long, default_value = "4", value_parser = ["4", "5"])]
         suite_format: String,
-        /// An `ess-history/1` or `ess-history/2` document: draw it, checked against the
-        /// specification, as one lane per client in a single self-contained `index.html`, printed
-        /// when `--out` is absent.
+        /// An `ess-history/1`, `ess-history/2` or `ess-history/3` document: draw it, checked
+        /// against the specification, as one lane per client in a single self-contained
+        /// `index.html`, printed when `--out` is absent.
         /// `--out` replaces the files `ess` owns in that directory, the player's included, so
         /// write history pages and the player to different directories.
         #[arg(long, conflicts_with_all = ["scenarios", "suite_format"])]
@@ -873,8 +883,9 @@ enum ConformCommand {
     /// input is unknown); otherwise unwitnessed (ESS-MUTATE-004) when its suite gained synthesis refusals
     /// the baseline does not have, when it is on an outcome whose scenario the baseline refused,
     /// or when it is a from-drop or transition-to mutant on a transition only such outcomes
-    /// perform. It survives when every scored scenario passed and each scenario it left unscored
-    /// is the baseline's own, unchanged.
+    /// perform, or when its synthesized suite asks what the baseline's asks (the suite does not
+    /// change), unless authored scenarios ran. It survives when every scored scenario passed and
+    /// each scenario it left unscored is the baseline's own, unchanged.
     ///
     /// emit-swap replaces an outcome's only event with another declared event of exactly the same
     /// fields that every component accepting the command publishes. A site with no such event is
@@ -898,8 +909,9 @@ enum ConformCommand {
     /// `report.json` beside it. `--collect DIR` scores those reports with the exit statuses above;
     /// a missing report makes its mutant inconclusive. `--emit` writes an ess-mutation-manifest/3,
     /// or /4 where it holds a sets-drop, precedence-swap or emit-swap mutant or an unavailable
-    /// site, or names a component, and /5 where a precedence-swap mutant's two branches give an
-    /// identical answer; `--collect` also reads the /2 and /1 manifests earlier releases wrote.
+    /// site, or names a component, /5 where a precedence-swap mutant's two branches give an
+    /// identical answer, and /6 where branches answered before both take their overlap;
+    /// `--collect` also reads the /2 and /1 manifests earlier releases wrote.
     ///
     /// For a repository that implements one component, `--emit --component NAME` writes the
     /// component's suites, as `synthesize --component` writes them, and marks out of scope every
@@ -932,7 +944,8 @@ enum ConformCommand {
         #[arg(long, conflicts_with = "target")]
         component: Option<String>,
         /// Where to write the `ess-mutation-report/3` document (`/4` for a component, a
-        /// declaration or unavailable sites, `/5` where a mutant's two branches answer alike).
+        /// declaration or unavailable sites, `/5` where a mutant's two branches answer alike, `/6`
+        /// where earlier branches take their overlap).
         #[arg(long)]
         report_out: Option<PathBuf>,
         /// An `ess-known-failures/1` declaration of baseline scenarios the target is known to fail.
@@ -956,13 +969,17 @@ enum ConformCommand {
     },
     /// Check a recorded concurrent history for linearizability against the specification's model.
     ///
-    /// Reads an `ess-history/1` or `ess-history/2` document recorded against the specification at
-    /// `--path`, and searches for an order of its operations the interpreter accepts, answer for
-    /// answer, reading an operation's recorded `decision_time` as the current time. The
-    /// history records no inputs, so an operation is explained by any candidate input synthesis
-    /// would submit for its command. Reads of views are not judged and are listed. A violation is
-    /// reported with the longest partial linearization found and a shrunk history that is still a
-    /// violation.
+    /// Reads an `ess-history/1`, `ess-history/2` or `ess-history/3` document recorded against the
+    /// specification at `--path`, and searches for an order of its operations the interpreter
+    /// accepts, answer for answer, reading an operation's recorded `decision_time` as the current
+    /// time. An operation that records its `input` (`ess-history/3`) is stepped with exactly that
+    /// input, and one that records its `events` takes only a branch publishing those events, in
+    /// order, with the payload values the model computes from the recorded input; one that records
+    /// `arranged` takes an `external:` branch only where a call of its command arranged it before
+    /// this one returned. An operation that records no input is explained by any candidate input
+    /// synthesis would submit for its command. Reads of views are not judged and are listed. A
+    /// violation is reported with the longest partial linearization found and a shrunk history
+    /// that is still a violation.
     ///
     /// Exit 0: linearizable. Exit 1: violation. Exit 3: unknown — the search spent `--budget`
     /// before it finished, which is never a pass. Exit 2: the specification or the history could
@@ -972,7 +989,7 @@ enum ConformCommand {
         /// One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml`.
         #[arg(long, default_value = ".")]
         path: PathBuf,
-        /// The `ess-history/1` or `ess-history/2` document.
+        /// The `ess-history/1`, `ess-history/2` or `ess-history/3` document.
         #[arg(long)]
         history: PathBuf,
         /// How many executions of the model the search may spend; the same history and budget
@@ -1642,7 +1659,16 @@ fn generate_area(command: GenerateCommand) -> Result<ExitCode> {
             layout,
             out,
             format,
-        } => synthesize(&input.path, target, layout, out.as_deref(), format),
+            http,
+            refines,
+        } => synthesize(
+            &input.path,
+            target,
+            layout,
+            out.as_deref(),
+            format,
+            http.as_deref().map(|binding| (binding, refines.as_deref())),
+        ),
         GenerateCommand::Project { adapter } => project(adapter),
         GenerateCommand::Schema { command } => schema::run(command),
         GenerateCommand::Build { command } => build(command),
@@ -1842,7 +1868,7 @@ where
     {
         serde_json::from_str(&text).with_context(|| format!("parsing {} as JSON", path.display()))
     } else {
-        serde_yaml::from_str(&text).with_context(|| format!("parsing {} as YAML", path.display()))
+        ess_yaml::from_str(&text).with_context(|| format!("parsing {} as YAML", path.display()))
     }
 }
 
@@ -3532,27 +3558,51 @@ fn synthesize(
     layout: SynthesisLayout,
     out: Option<&Path>,
     format: Format,
+    http: Option<(&Path, Option<&Path>)>,
 ) -> Result<ExitCode> {
+    // `--http` with a target that serves no binding is a usage error, refused by name before the
+    // model or the binding is read: only the `rust` and `go` servers serve one.
+    if http.is_some() && !matches!(target, SynthesisTarget::Rust | SynthesisTarget::Go) {
+        eprintln!(
+            "error: {}",
+            ess_synth::BindingRefusal::Target(target.target().name())
+        );
+        return Ok(ExitCode::from(2));
+    }
     let Ok((ir, _)) = resolved(path, format)? else {
         return Ok(ExitCode::from(1));
     };
-    let synthesis = match ess_synth::synthesize_laid_out(&ir, target.target(), layout.layout()) {
-        Ok(synthesis) => synthesis,
-        Err(ess_synth::SynthesisFailure::Layout(refusal)) => {
-            // A usage error, decided before anything is planned: no plan to render, nothing
-            // written, and the exit status clap gives any other flag it refuses.
-            eprintln!("error: {refusal}");
-            return Ok(ExitCode::from(2));
-        }
-        Err(ess_synth::SynthesisFailure::Target(failure)) => {
-            if matches!(format, Format::Text) {
-                println!("{failure}");
-            } else {
-                render(&failure, format)?;
-            }
-            return Ok(ExitCode::from(1));
-        }
+    let bound = match http {
+        None => None,
+        Some((binding, refines)) => match http::server(binding, refines, &ir, format)? {
+            Some(bound) => Some(bound),
+            None => return Ok(ExitCode::from(1)),
+        },
     };
+    let synthesis =
+        match ess_synth::synthesize_bound(&ir, target.target(), layout.layout(), bound.as_ref()) {
+            Ok(synthesis) => synthesis,
+            Err(ess_synth::SynthesisFailure::Binding(refusal)) => {
+                let named =
+                    http.map_or_else(String::new, |(binding, _)| binding.display().to_string());
+                eprintln!("{named} cannot be served:\n{refusal}");
+                return Ok(ExitCode::from(1));
+            }
+            Err(ess_synth::SynthesisFailure::Layout(refusal)) => {
+                // A usage error, decided before anything is planned: no plan to render, nothing
+                // written, and the exit status clap gives any other flag it refuses.
+                eprintln!("error: {refusal}");
+                return Ok(ExitCode::from(2));
+            }
+            Err(ess_synth::SynthesisFailure::Target(failure)) => {
+                if matches!(format, Format::Text) {
+                    println!("{failure}");
+                } else {
+                    render(&failure, format)?;
+                }
+                return Ok(ExitCode::from(1));
+            }
+        };
     write_owned_artifacts(out, "synthesis", &synthesis.artifacts)?;
     if matches!(format, Format::Text) {
         let counts = synthesis.plan.counts();
@@ -5668,7 +5718,7 @@ fn project_openapi_interface(
         (Some(_), _) => {}
         (None, Format::Text | Format::Yaml) => print!("{yaml}"),
         (None, Format::Json) => {
-            let value: serde_json::Value = serde_yaml::from_str(&yaml)?;
+            let value: serde_json::Value = ess_yaml::from_str(&yaml)?;
             let mut json = serde_json::to_string_pretty(&value)?;
             json.push('\n');
             print!("{json}");

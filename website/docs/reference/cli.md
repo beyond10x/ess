@@ -546,9 +546,9 @@ ess specify compose [OPTIONS] --path <PATH> --service <KEY=PATH>
 
 | Argument | Value | Required | Default | Description |
 |---|---|---|---|---|
-| `--path` | `<PATH>` | yes |  | An `ess-composition/1`, `/2` or `/3` JSON or YAML document |
+| `--path` | `<PATH>` | yes |  | An `ess-composition/1` to `/4` JSON or YAML document |
 | `--service` | `<KEY=PATH>`… | yes |  | A compiled ESS source, written `service-key=path`. Repeat for every import |
-| `--out` | `<OUT>` | no |  | Where to write canonical composition IR; its format echoes the input's (`/1`–`/3`) |
+| `--out` | `<OUT>` | no |  | Where to write canonical composition IR; its format echoes the input's (`/1`–`/4`) |
 | `--client-plan-out` | `<CLIENT_PLAN_OUT>` | no |  | Where to write canonical `ess-client-plan/1` |
 | `--client-rust-out` | `<CLIENT_RUST_OUT>` | no |  | Root for the generated dependency-free Rust composition client |
 | `--ownership-root` | `<OWNERSHIP_ROOT>` | no |  | One enclosing ownership anchor for every composition output |
@@ -835,6 +835,7 @@ ess generate types [OPTIONS] --target <TARGET> --out <OUT> <--root <ROOT>|--all-
 | `--target` | `<TARGET>` | yes |  | Data library target. Unsupported language targets are not silently substituted. One of `typescript`, `rust`, `go`. |
 | `--package` | `<PACKAGE>` | no |  | Native package identity, required for Rust and Go |
 | `--module` | `<MODULE>` | no |  | Go module identity, required only for Go |
+| `--rust-raw-json` | `<TYPE[.FIELD]>`… | no |  | Rust only: keep `Json` values as their exact JSON text (`Box<serde_json::value::RawValue>`), so their bytes round-trip without `exact-numbers`. A type, by its qualified model or component name, covers each of its `Json` fields, `<type>.<field>` that one field. Repeatable |
 | `--names` | `<NAMES>` | no | `qualified` | How declarations are named: the qualified model name, or its last segment. One of `qualified`, `short`. |
 | `--out` | `<OUT>` | yes |  | Library destination, outside the specification input tree |
 
@@ -872,6 +873,8 @@ ess generate synthesize [OPTIONS]
 | `--layout` | `<LAYOUT>` | no | `workspace` | How the `rust` target lays its output out: a workspace of crates, or one crate at `--out` with its HTTP surface behind a `server` Cargo feature. Other targets refuse `crate`. One of `workspace`, `crate`. |
 | `--out` | `<OUT>` | no |  |  |
 | `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
+| `--http` | `<HTTP>` | no |  | An `ess-http/1` document binding commands and views to methods, paths and answers; only with `--target rust` or `go`. Compiled as `ess specify http compile` compiles it, and refused when a route has no path or claims `/openapi.json` or `/docs` |
+| `--refines` | `<REFINES>` | no |  | The `ess-http/1` binding the `--http` document refines, whose bytes its `refines:` digest pins |
 
 #### `ess generate project buildkit`
 
@@ -1007,6 +1010,7 @@ ess generate schema types-bundle [OPTIONS] --bundle <BUNDLE> --root <ROOT> --tar
 | `--target` | `<TARGET>` | yes |  | Data library target. Unsupported language targets are not silently substituted. One of `typescript`, `rust`, `go`. |
 | `--package` | `<PACKAGE>` | no |  | Native package identity, required for Rust and Go |
 | `--module` | `<MODULE>` | no |  | Go module identity, required only for Go |
+| `--rust-raw-json` | `<TYPE[.FIELD]>`… | no |  | Rust only: keep `Json` values as their exact JSON text (`Box<serde_json::value::RawValue>`), so their bytes round-trip without `exact-numbers`. A type, by its qualified model or component name, covers each of its `Json` fields, `<type>.<field>` that one field. Repeatable |
 | `--out` | `<OUT>` | yes |  | Directory for declarations, target accounting and the retained source bundle |
 
 #### `ess generate schema normalize-check`
@@ -1428,7 +1432,7 @@ ess verify conform synthesize [OPTIONS]
 | `--scenarios` | `<SCENARIOS>` | no |  | The `ess-scenario/1` documents to compile beside the generated scenarios.<br /><br />One file or a directory. Immediate `ess-inputs.yaml` selects its exact scenarios list. Otherwise only immediate `.yaml`/`.yml` files are read; subdirectories are not searched. An empty selection is refused. When omitted, no authored scenarios are selected. |
 | `--suite-format` | `<SUITE_FORMAT>` | no | `4` | Ordinary (4) or declared coverage (5); admitted features select newer required versions. One of `4`, `5`. |
 | `--compact` |  | no |  | Write fresh IR as compact JSON with one trailing newline; requires --target ir |
-| `--synthesis-seed` | `<FILE>`… | no |  | Offer the `setup` row of arrangement INSTANCE in the authored document FILE as an explicit synthesis seed; repeatable.<br /><br />A seed supplies only that nominated initial row: never the document's timeline, assertions or any state its timeline reaches, and it appends no authored scenario (`--scenarios` does that, independently). Ordinary arrangement is tried first; a row is established only for a generated obligation no bounded arrangement reaches, and the real command and assertions follow it. Any seed selects suite/42 (or /43 with `--suite-format 5`), suite/44 (/45) where an act also claims one event more than once, suite/46 (/47) where a response reaches a constrained String newtype, or suite/48 (/49) where a response or a struct it reaches ignores undeclared fields, and records its source, row and uses. |
+| `--synthesis-seed` | `<FILE>`… | no |  | Offer the `setup` row of arrangement INSTANCE in the authored document FILE as an explicit synthesis seed; repeatable.<br /><br />A seed supplies only that nominated initial row: never the document's timeline, assertions or any state its timeline reaches, and it appends no authored scenario (`--scenarios` does that, independently). Ordinary arrangement is tried first; a row is established only for a generated obligation no bounded arrangement reaches, and the real command and assertions follow it. Any seed selects suite/42 (or /43 with `--suite-format 5`), suite/44 (/45) where an act also claims one event more than once, suite/46 (/47) where a response reaches a constrained String newtype, suite/48 (/49) where a response or a struct it reaches ignores undeclared fields, or suite/50 (/51) where a scenario holds `now` for a command, and records its source, row and uses. |
 
 #### `ess verify conform author`
 
@@ -1467,7 +1471,7 @@ ess verify conform web [OPTIONS]
 | `--scenarios` | `<SCENARIOS>` | no |  | One scenario file, or a directory using `ess-inputs.yaml` or shallow `.yaml`/`.yml` selection |
 | `--out` | `<OUT>` | no |  | Where to write the product |
 | `--suite-format` | `<SUITE_FORMAT>` | no | `4` | Ordinary (4) or declared coverage (5); coverage emits the complete coverage input. One of `4`, `5`. |
-| `--history` | `<HISTORY>` | no |  | An `ess-history/1` or `ess-history/2` document: draw it, checked against the specification, as one lane per client in a single self-contained `index.html`, printed when `--out` is absent. `--out` replaces the files `ess` owns in that directory, the player's included, so write history pages and the player to different directories |
+| `--history` | `<HISTORY>` | no |  | An `ess-history/1`, `ess-history/2` or `ess-history/3` document: draw it, checked against the specification, as one lane per client in a single self-contained `index.html`, printed when `--out` is absent. `--out` replaces the files `ess` owns in that directory, the player's included, so write history pages and the player to different directories |
 
 #### `ess verify conform select`
 
@@ -1546,13 +1550,13 @@ Derives mutants from the specification — one altering edit each — synthesize
 
 `--scenarios DIR --target interpreted` runs authored scenarios the other way: each runs against the interpreter of the specification as part of the baseline, and against the interpreter of each mutant beside that mutant's synthesized suite. One that fails against a mutant's interpreter kills it and is named among its killers; one the baseline fails refuses the audit with ESS-MUTATE-001. Without `--scenarios` no authored scenario is run.
 
-A baseline scenario the target reports unsupported or skipped did not execute: it is listed, not scored, and each mutant is scored on the scenarios the baseline executed. A mutant that no scored scenario killed is inconclusive when a scenario it changed was not scored; otherwise equivalent (ESS-MUTATE-005) when it left its outcome's guard satisfied by no input, decided only for equality, membership and truth tests of input fields against literals and presence tests of input fields, and beside a `when_subject:` predicate when no input it admits leaves that predicate able to hold on any row (a comparison with an absent input is unknown); otherwise unwitnessed (ESS-MUTATE-004) when its suite gained synthesis refusals the baseline does not have, when it is on an outcome whose scenario the baseline refused, or when it is a from-drop or transition-to mutant on a transition only such outcomes perform. It survives when every scored scenario passed and each scenario it left unscored is the baseline's own, unchanged.
+A baseline scenario the target reports unsupported or skipped did not execute: it is listed, not scored, and each mutant is scored on the scenarios the baseline executed. A mutant that no scored scenario killed is inconclusive when a scenario it changed was not scored; otherwise equivalent (ESS-MUTATE-005) when it left its outcome's guard satisfied by no input, decided only for equality, membership and truth tests of input fields against literals and presence tests of input fields, and beside a `when_subject:` predicate when no input it admits leaves that predicate able to hold on any row (a comparison with an absent input is unknown); otherwise unwitnessed (ESS-MUTATE-004) when its suite gained synthesis refusals the baseline does not have, when it is on an outcome whose scenario the baseline refused, or when it is a from-drop or transition-to mutant on a transition only such outcomes perform, or when its synthesized suite asks what the baseline's asks (the suite does not change), unless authored scenarios ran. It survives when every scored scenario passed and each scenario it left unscored is the baseline's own, unchanged.
 
 emit-swap replaces an outcome's only event with another declared event of exactly the same fields that every component accepting the command publishes. A site with no such event is listed as unavailable (`no_compatible_event_alternative`): single-event substitution was not audited there, which is neither a kill nor a stillborn mutant.
 
 Exit 0: no baseline scenario failed or ended error, at least one mutant ran and was not equivalent, every scored mutant was killed or equivalent, none is inconclusive or unwitnessed, and no selected in-scope site is unavailable. Exit 1: the specification did not load, or at least one mutant survived. Exit 3: a baseline scenario failed or ended error (ESS-MUTATE-001), the baseline executed nothing (nothing scored), the classes found no site (ESS-MUTATE-003), or no mutant survived and at least one was unwitnessed or inconclusive, a selected in-scope site was unavailable, or none ran that was not equivalent. Exit 2: the `--known-failing` declaration was refused. Known failures are listed first in the text and never count as a pass: the audit makes no conformance claim.
 
-For an implementation of your own, split the audit in two. `--emit DIR` writes the baseline suite to `DIR/baseline/suite.json`, every mutant's suite to `DIR/<mutant-id>/suite.json` and a manifest, and runs nothing (exit 0, or 3 on ESS-MUTATE-003). Run your runner over each suite and write its conformance report to `report.json` beside it. `--collect DIR` scores those reports with the exit statuses above; a missing report makes its mutant inconclusive. `--emit` writes an ess-mutation-manifest/3, or /4 where it holds a sets-drop, precedence-swap or emit-swap mutant or an unavailable site, or names a component, and /5 where a precedence-swap mutant's two branches give an identical answer; `--collect` also reads the /2 and /1 manifests earlier releases wrote.
+For an implementation of your own, split the audit in two. `--emit DIR` writes the baseline suite to `DIR/baseline/suite.json`, every mutant's suite to `DIR/<mutant-id>/suite.json` and a manifest, and runs nothing (exit 0, or 3 on ESS-MUTATE-003). Run your runner over each suite and write its conformance report to `report.json` beside it. `--collect DIR` scores those reports with the exit statuses above; a missing report makes its mutant inconclusive. `--emit` writes an ess-mutation-manifest/3, or /4 where it holds a sets-drop, precedence-swap or emit-swap mutant or an unavailable site, or names a component, /5 where a precedence-swap mutant's two branches give an identical answer, and /6 where branches answered before both take their overlap; `--collect` also reads the /2 and /1 manifests earlier releases wrote.
 
 For a repository that implements one component, `--emit --component NAME` writes the component's suites, as `synthesize --component` writes them, and marks out of scope every mutant whose site belongs to another component (a command that component handles, a view it owns, a transition its commands perform): it has no suite, and `--collect` lists it in an ess-mutation-report/4 naming the component rather than scoring it. A survivor on the component's own site is scored and counted. `--collect --component NAME` refuses an emission made for another component or for none. `--target` takes no `--component`: the built-in targets implement whole systems.
 
@@ -1568,7 +1572,7 @@ ess verify conform mutate [OPTIONS] <--target <TARGET>|--emit <EMIT>|--collect <
 | `--emit` | `<EMIT>` | no |  | Write the baseline's and every mutant's suite, and a manifest, into this new or empty directory; run nothing |
 | `--collect` | `<COLLECT>` | no |  | Score the `report.json` a runner wrote beside each suite of an emitted directory |
 | `--component` | `<COMPONENT>` | no |  | With `--emit`, scope every suite to this declared component; with `--collect`, require the emission to have been scoped to it |
-| `--report-out` | `<REPORT_OUT>` | no |  | Where to write the `ess-mutation-report/3` document (`/4` for a component, a declaration or unavailable sites, `/5` where a mutant's two branches answer alike) |
+| `--report-out` | `<REPORT_OUT>` | no |  | Where to write the `ess-mutation-report/3` document (`/4` for a component, a declaration or unavailable sites, `/5` where a mutant's two branches answer alike, `/6` where earlier branches take their overlap) |
 | `--known-failing` | `<KNOWN_FAILING>` | no |  | An `ess-known-failures/1` declaration of baseline scenarios the target is known to fail. They are excluded from scoring rather than refused, and each mutant is scored on the scenarios the baseline passed: a declared scenario, or one the baseline's suite does not hold, never kills. Every failure it does not name still refuses with ESS-MUTATE-001. With `--target` it binds the running `ess` executable's SHA-256 as the build; `--emit` copies it into the emission and binds it there (ess-mutation-manifest/4); `--collect` uses only the declaration the emission bound, and refuses any other. A refused declaration exits 2 |
 | `--scenarios` | `<SCENARIOS>` | no |  | The `ess-scenario/1` documents to run beside the synthesized scenarios, read and refused as `run --scenarios` reads them. Requires `--target interpreted`: each runs against the interpreter of the specification for the baseline and against the interpreter of each mutant, which it kills by failing there |
 | `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
@@ -1577,7 +1581,7 @@ ess verify conform mutate [OPTIONS] <--target <TARGET>|--emit <EMIT>|--collect <
 
 Check a recorded concurrent history for linearizability against the specification's model.
 
-Reads an `ess-history/1` or `ess-history/2` document recorded against the specification at `--path`, and searches for an order of its operations the interpreter accepts, answer for answer, reading an operation's recorded `decision_time` as the current time. The history records no inputs, so an operation is explained by any candidate input synthesis would submit for its command. Reads of views are not judged and are listed. A violation is reported with the longest partial linearization found and a shrunk history that is still a violation.
+Reads an `ess-history/1`, `ess-history/2` or `ess-history/3` document recorded against the specification at `--path`, and searches for an order of its operations the interpreter accepts, answer for answer, reading an operation's recorded `decision_time` as the current time. An operation that records its `input` (`ess-history/3`) is stepped with exactly that input, and one that records its `events` takes only a branch publishing those events, in order, with the payload values the model computes from the recorded input; one that records `arranged` takes an `external:` branch only where a call of its command arranged it before this one returned. An operation that records no input is explained by any candidate input synthesis would submit for its command. Reads of views are not judged and are listed. A violation is reported with the longest partial linearization found and a shrunk history that is still a violation.
 
 Exit 0: linearizable. Exit 1: violation. Exit 3: unknown — the search spent `--budget` before it finished, which is never a pass. Exit 2: the specification or the history could not be read, the specification did not load, or the history or one of its operations was refused.
 
@@ -1588,7 +1592,7 @@ ess verify conform check-history [OPTIONS] --history <HISTORY>
 | Argument | Value | Required | Default | Description |
 |---|---|---|---|---|
 | `--path` | `<PATH>` | no | `.` | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
-| `--history` | `<HISTORY>` | yes |  | The `ess-history/1` or `ess-history/2` document |
+| `--history` | `<HISTORY>` | yes |  | The `ess-history/1`, `ess-history/2` or `ess-history/3` document |
 | `--budget` | `<BUDGET>` | no | `1000000` | How many executions of the model the search may spend; the same history and budget always give the same verdict |
 | `--settle` | `<READS>` | no | `4` | How many of a session's reads of an `eventual` view, invoked after the writes stop, may still be behind; every later read is judged converged. A count of reads, not of instants, so the clock a history was written on changes no verdict |
 | `--format` | `<FORMAT>` | no | `text` | One of `text`, `json`. |

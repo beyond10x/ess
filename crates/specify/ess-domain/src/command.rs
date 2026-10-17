@@ -172,6 +172,7 @@
 //! | `compensates: true` on a refusal not decided by `external:`, or beside `creates:`, `deletes:` or `affects:` | [`RefusalMutatedState`](ValidationCode::RefusalMutatedState) |
 //! | `compensates: true` on a branch naming no error | [`ConflictingDeclaration`](ValidationCode::ConflictingDeclaration) |
 //! | `compensates: true` on a refusal declaring no change to its addressed row | [`MissingDeclaration`](ValidationCode::MissingDeclaration) |
+//! | `before_row: true` on a branch not decided by `external:`, naming no error, beside `compensates: true`, with an error payload reading a row, declared after a branch a later step answers, or on a command with a `when_related:` branch | [`ConflictingDeclaration`](ValidationCode::ConflictingDeclaration) |
 //! | an external outcome states no cause | [`UnexplainedDecision`](ValidationCode::UnexplainedDecision) |
 //! | a `wrong_state` outcome names no error | [`MissingDeclaration`](ValidationCode::MissingDeclaration) |
 //! | a command declares two `wrong_state` outcomes | [`ConflictingDeclaration`](ValidationCode::ConflictingDeclaration) |
@@ -1245,6 +1246,13 @@ pub enum PayloadSource {
     /// How many rows a set outcome changed: `{count: changed}` (ess/16, beyond10x/ess#167,
     /// [`set_effects`]). A `payload:` field of an outcome declaring `instances:`, into an `Integer`.
     ChangedCount,
+    /// A field of the changed row an event published once per changed row is for, as the row was
+    /// immediately before the outcome: `{changed: user_id}` (ess/25, beyond10x/ess#531,
+    /// [`set_effects`]). `state` reads the lifecycle state it held, as `{subject: state}` does.
+    ChangedField {
+        /// The entity field read, the identity included, or `state`.
+        field: String,
+    },
 }
 
 impl PayloadSource {
@@ -1318,6 +1326,7 @@ impl fmt::Display for PayloadSource {
                 selection.filter
             ),
             Self::ChangedCount => f.write_str("{count: changed}"),
+            Self::ChangedField { field } => write!(f, "{{changed: {field}}}"),
             Self::Increment { by, .. } => write!(f, "increment by {by}"),
             Self::InputOrGenerated {
                 field,
@@ -1358,7 +1367,8 @@ impl PayloadSource {
             | Self::RelatedSelection { .. }
             | Self::RelatedHead { .. }
             | Self::CallerAttribute { .. }
-            | Self::ChangedCount => true,
+            | Self::ChangedCount
+            | Self::ChangedField { .. } => true,
             Self::ResponseField { .. }
             | Self::Generated { .. }
             | Self::PayloadRead { .. }
@@ -1418,6 +1428,8 @@ enum RawPayloadSource {
     PresentMint(minted_value::RawPresentMint),
     /// `{payload: <Event>.<field>}` (ess/25, beyond10x/ess#545).
     PayloadRead(minted_value::RawPayloadRead),
+    /// `{changed: <field>}` (ess/25, beyond10x/ess#531).
+    Changed(set_effects::RawChangedSource),
     Nested(RawNestedSources),
     /// A list of texts, read only as the `via:` of `{related: …}` (ess/22, beyond10x/ess#285) and
     /// refused anywhere else; the schema gives it there and nowhere else.
@@ -1430,7 +1442,7 @@ enum RawPayloadSource {
     /// The `where:` of a `related:` mapping, kept as written until the shape around it says whether
     /// it is a selector; never left in a source once read.
     #[schemars(skip)]
-    Captured(Box<serde_yaml::Value>),
+    Captured(Box<ess_yaml::Value>),
 }
 
 /// `{related: {via: <field>, field: <field>}}` (ess/16, #166): written alone, because its value is
@@ -1591,7 +1603,7 @@ impl<'de> serde::de::Visitor<'de> for Source {
         let mut entries: Vec<(String, RawPayloadSource)> = Vec::new();
         while let Some(key) = map.next_key::<String>()? {
             let value = if self.related && key == "where" && row_set::filtered_reads() {
-                RawPayloadSource::Captured(Box::new(map.next_value::<serde_yaml::Value>()?))
+                RawPayloadSource::Captured(Box::new(map.next_value::<ess_yaml::Value>()?))
             } else {
                 map.next_value_seed(Source {
                     related: key == "related",
@@ -1637,6 +1649,9 @@ impl<'de> serde::de::Visitor<'de> for Source {
         if let Some(read) = minted_value::RawPayloadRead::recognise(&entries) {
             return Ok(RawPayloadSource::PayloadRead(read));
         }
+        if let Some(changed) = set_effects::RawChangedSource::recognise(&entries) {
+            return Ok(RawPayloadSource::Changed(changed));
+        }
         if !entries.is_empty()
             && entries
                 .iter()
@@ -1675,7 +1690,7 @@ impl RawPayloadSource {
 }
 
 /// `value` read as a payload source, the way a nested mapping's leaf always was.
-fn legacy_reading(value: &serde_yaml::Value) -> Result<RawPayloadSource, String> {
+fn legacy_reading(value: &ess_yaml::Value) -> Result<RawPayloadSource, String> {
     serde::de::Deserializer::deserialize_any(value.clone(), Source { related: false })
         .map_err(|error| error.to_string())
 }
@@ -1705,7 +1720,7 @@ struct RawSelected {
     /// How the document wrote `where`, where it was read from one.
     #[serde(skip)]
     #[schemars(skip)]
-    written: Option<Box<serde_yaml::Value>>,
+    written: Option<Box<ess_yaml::Value>>,
 }
 
 impl RawRelatedSelection {
@@ -1949,6 +1964,7 @@ impl TryFrom<RawPayloadSource> for PayloadSource {
             RawPayloadSource::Count(_) => Ok(Self::ChangedCount),
             RawPayloadSource::PresentMint(_) => Ok(Self::Generated { present: true }),
             RawPayloadSource::PayloadRead(read) => Ok(read.into_source()),
+            RawPayloadSource::Changed(changed) => Ok(changed.into_source()),
             RawPayloadSource::Nested(RawNestedSources(entries)) => entries
                 .into_iter()
                 .map(|(target, source)| {
@@ -2183,6 +2199,9 @@ impl From<&PayloadSource> for RawPayloadSource {
                 selection, order_by, *ties, first,
             )),
             PayloadSource::ChangedCount => Self::Count(set_effects::RawCountSource::changed()),
+            PayloadSource::ChangedField { field } => {
+                Self::Changed(set_effects::RawChangedSource::of(field))
+            }
             PayloadSource::Increment { by, scalar } => explicit(&|e| {
                 e.increment = Some(match scalar {
                     ScalarKind::Integer => by
@@ -2228,7 +2247,7 @@ impl From<&PayloadSource> for RawPayloadSource {
 /// One event's payload sources, as a document says them: one entry per line, in the order written.
 ///
 /// A `BTreeMap` here would repeat the defect [`MappingTable`](crate::binding::MappingTable) exists
-/// to catch: `serde_yaml` accepts a repeated key and keeps the last, so a document that filled one
+/// to catch: `ess-yaml` accepts a repeated key and keeps the last, so a document that filled one
 /// field two contradictory ways would parse clean and silently lose a line. The entries stay a list
 /// until [`TryFrom<RawOutcome>`] has reported any duplicate; past that point [`Outcome::payload`]
 /// is keyed by field, so a duplicate is unrepresentable.
@@ -2452,6 +2471,10 @@ pub struct Outcome {
     /// [`Self::subject`] both present, on an `external:` branch. `false` on every other outcome,
     /// where a refusal changes nothing ([`RefusalMutatedState`](ValidationCode::RefusalMutatedState)).
     pub compensates: bool,
+    /// An `external:` refusal answered at step 2 of the precedence order, before existence and the
+    /// held state (`before_row: true`, ess/25, beyond10x/ess#534): the implementation decides it
+    /// from the request alone, before it reads the addressed row. `false` on every other outcome.
+    pub before_row: bool,
     /// Response fields disclosed only by this successful invocation (ess/21).
     pub one_time_response: Vec<String>,
     /// One line for generated documentation and for the generated scenario's title.
@@ -2482,6 +2505,7 @@ impl Outcome {
             accepts_nothing: false,
             returns: false,
             compensates: false,
+            before_row: false,
             one_time_response: Vec::new(),
             set_effects: SetEffects::default(),
             summary: None,
@@ -2505,6 +2529,7 @@ impl Outcome {
             accepts_nothing: false,
             returns: false,
             compensates: false,
+            before_row: false,
             one_time_response: Vec::new(),
             set_effects: SetEffects::default(),
             summary: None,
@@ -2532,6 +2557,7 @@ impl Outcome {
             accepts_nothing: false,
             returns: false,
             compensates: false,
+            before_row: false,
             one_time_response: Vec::new(),
             set_effects: SetEffects::default(),
             summary: None,
@@ -2894,6 +2920,7 @@ impl CommandSpec {
         if let Some(types) = types {
             errors.extend(self.validate_held_state_order(types));
         }
+        errors.extend(self.validate_before_row_order(types));
         errors.extend(outcome_shapes::validate_command(self));
         errors.extend(absent_input::validate_command(self));
         errors
@@ -3049,6 +3076,7 @@ impl CommandSpec {
         }
 
         errors.extend(validate_compensation(outcome, &location));
+        errors.extend(validate_before_row(outcome, &location));
 
         // §19: "do not generate vague *operation fails* tests if the domain declares a specific
         // error". A wrong-state branch exists precisely to name that error, and the states it
@@ -3443,6 +3471,89 @@ impl CommandSpec {
                      it as the command's default refusal",
                 ),
             );
+        }
+        errors
+    }
+
+    /// Refuses an external refusal answered before the row (`before_row: true`, ess/25,
+    /// beyond10x/ess#534) declared after a branch a later step of the precedence order answers, and
+    /// on a command reading a related row (`when_related:`).
+    ///
+    /// The key places the branch at step 2. Declared after an `existing_instance:` or
+    /// `unknown_instance:` branch, a held-state branch, `wrong_state:`, a present-related refusal or
+    /// an accepting or external branch, a consumer reading branches in one declaration-order pass
+    /// would answer that branch first, so the order is refused, as the #486 rule refuses it for
+    /// steps 4 and 6. Step 1 reads a related row before step 2, and whether an external refusal
+    /// decided from the request alone should answer before it is not designed, so the pair is
+    /// refused until it is (`docs/design/cross-record-and-stored-field-guards.md`).
+    fn validate_before_row_order(&self, types: Option<&TypeRegistry>) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
+        if !self.outcomes.iter().any(|outcome| outcome.before_row) {
+            return errors;
+        }
+        let composition = self.composition(types);
+        let related = self.outcomes.iter().find(|outcome| {
+            matches!(
+                outcome.condition,
+                OutcomeCondition::Related { .. } | OutcomeCondition::RelatedSet { .. }
+            )
+        });
+        let mut later: Option<&Outcome> = None;
+        for outcome in &self.outcomes {
+            let place = precedence::place(&precedence::BranchShape::of(outcome), &composition);
+            if outcome.before_row && place.phase == precedence::Phase::InputRefusal {
+                let at = self
+                    .site()
+                    .key("outcomes")
+                    .named(outcome.name.as_str())
+                    .key("before_row");
+                if let Some(related) = related {
+                    errors.push(
+                        ValidationError::at(
+                            at,
+                            ValidationCode::ConflictingDeclaration,
+                            format!(
+                                "`{}` is answered before the row (`before_row: true`) on a command \
+                                 reading a related row through `when_related:` (`{}`), which \
+                                 answers before the input-guarded refusals; which of the two \
+                                 answers first is not designed",
+                                outcome.name, related.name
+                            ),
+                        )
+                        .with_hint("drop `before_row:`, or the `when_related:` guard"),
+                    );
+                } else if let Some(earlier) = later {
+                    errors.push(
+                        ValidationError::at(
+                            at,
+                            ValidationCode::ConflictingDeclaration,
+                            format!(
+                                "`{}` is answered before the row (`before_row: true`), at step 2 \
+                                 of the precedence order, but is declared after `{}`, which a \
+                                 later step answers; the declaration order and the precedence \
+                                 order disagree",
+                                outcome.name, earlier.name
+                            ),
+                        )
+                        .with_hint(format!(
+                            "declare `{}` before `{}`",
+                            outcome.name, earlier.name
+                        )),
+                    );
+                }
+                continue;
+            }
+            if later.is_none()
+                && matches!(
+                    place.phase,
+                    precedence::Phase::Existence
+                        | precedence::Phase::HeldState
+                        | precedence::Phase::PresentRelated
+                        | precedence::Phase::Accepting
+                )
+            {
+                later = Some(outcome);
+            }
         }
         errors
     }
@@ -3974,7 +4085,9 @@ fn check_payload_entry(
         | PayloadSource::RelatedField { .. }
         | PayloadSource::RelatedSelection { .. }
         | PayloadSource::RelatedHead { .. }
-        | PayloadSource::CallerAttribute { .. } => {}
+        | PayloadSource::CallerAttribute { .. }
+        // Checked with the changed rows' entity in hand by `set_effects::validate`.
+        | PayloadSource::ChangedField { .. } => {}
         PayloadSource::ChangedCount => {
             errors.extend(set_effects::check_count(at, outcome, filled));
         }
@@ -4148,6 +4261,128 @@ fn compensation_format(
     })
 }
 
+/// The format gate of an external refusal answered before the row (`before_row: true`, ess/25,
+/// beyond10x/ess#534). Its shape is held by `validate_before_row`, which reads no format.
+fn before_row_format(
+    format: crate::system::FormatVersion,
+    outcome: &Outcome,
+    at: &ConstructRef,
+) -> Option<ValidationError> {
+    (outcome.before_row && format.major() < crate::system::FormatVersion::V25.major()).then(|| {
+        ValidationError::at(
+            at.clone().key("before_row"),
+            ValidationCode::UnsupportedFormatVersion,
+            "an external refusal answered before the row — `before_row: true` beside \
+             `external:` — requires specification format ess/25",
+        )
+        .with_hint("declare `format: ess/25`, or drop `before_row:`")
+    })
+}
+
+/// The format gates of an outcome's refusal markers: `compensates:` (ess/22) and `before_row:`
+/// (ess/25).
+fn marker_formats(
+    format: crate::system::FormatVersion,
+    outcome: &Outcome,
+    at: &ConstructRef,
+) -> impl Iterator<Item = ValidationError> {
+    compensation_format(format, outcome, at)
+        .into_iter()
+        .chain(before_row_format(format, outcome, at))
+}
+
+/// Whether a payload source reads a stored row: the addressed one (`{subject: …}`, an increment),
+/// a related one (`{related: …}`) or a changed one (`{changed: …}`). What a refusal answered
+/// before the row cannot fill.
+fn reads_row(source: &PayloadSource) -> bool {
+    match source {
+        PayloadSource::SubjectField { .. }
+        | PayloadSource::Increment { .. }
+        | PayloadSource::RelatedField { .. }
+        | PayloadSource::RelatedSelection { .. }
+        | PayloadSource::ChangedField { .. } => true,
+        PayloadSource::Struct { fields } => fields.iter().any(|field| reads_row(&field.source)),
+        PayloadSource::InputOrGenerated { otherwise, .. } => {
+            otherwise.as_deref().is_some_and(reads_row)
+        }
+        PayloadSource::ResponseField { .. }
+        | PayloadSource::Generated
+        | PayloadSource::InputField { .. }
+        | PayloadSource::Literal { .. }
+        | PayloadSource::Scalar { .. }
+        | PayloadSource::Cleared
+        | PayloadSource::CallerAttribute { .. }
+        | PayloadSource::ChangedCount => false,
+    }
+}
+
+/// Holds a branch marked `before_row: true` (ess/25, beyond10x/ess#534,
+/// `docs/design/cross-record-and-stored-field-guards.md`) to the one shape the key admits: an
+/// `external:` refusal that reads no row. An accepting external branch acts on the row, a
+/// compensating refusal changes it, and an error payload reading a row reads it, so none of them is
+/// answered before the row is read. An unmarked branch earns nothing here.
+fn validate_before_row(outcome: &Outcome, at: &ConstructRef) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    if !outcome.before_row {
+        return errors;
+    }
+    let marker = at.clone().key("before_row");
+    let name = &outcome.name;
+    let mut refuse = |message: String, hint: &str| {
+        errors.push(
+            ValidationError::at(
+                marker.clone(),
+                ValidationCode::ConflictingDeclaration,
+                message,
+            )
+            .with_hint(hint.to_owned()),
+        );
+    };
+    if outcome.condition.cause().is_none() {
+        refuse(
+            format!(
+                "outcome `{name}` declares `before_row: true` and is not decided by `external:`; \
+                 the key places an external refusal among the input-guarded refusals, where an \
+                 input refusal already answers"
+            ),
+            "decide the branch with `external:`, or drop `before_row:`",
+        );
+        return errors;
+    }
+    if outcome.error.is_none() {
+        refuse(
+            format!(
+                "outcome `{name}` declares `before_row: true` and names no error; an accepting \
+                 external branch acts on the row, so it reads it"
+            ),
+            "name the error the branch refuses with, or drop `before_row:`",
+        );
+    }
+    if outcome.compensates {
+        refuse(
+            format!(
+                "outcome `{name}` declares `before_row: true` beside `compensates: true`; a \
+                 refusal that changes its addressed row reads it"
+            ),
+            "drop one of the two keys",
+        );
+    }
+    if let Some(field) = outcome
+        .error_payload
+        .iter()
+        .find_map(|(field, source)| reads_row(source).then_some(field))
+    {
+        refuse(
+            format!(
+                "outcome `{name}` declares `before_row: true`, and its error payload field \
+                 `{field}` reads a row; a refusal answered before the row has none to read"
+            ),
+            "fill the field from the input, a literal or the caller, or drop `before_row:`",
+        );
+    }
+    errors
+}
+
 /// Admit response vocabulary and the source-version-specific emitted payload completeness rule.
 pub(crate) fn validate_response_contracts(spec: &crate::Specification) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
@@ -4196,7 +4431,7 @@ pub(crate) fn validate_response_contracts(spec: &crate::Specification) -> Valida
                     "direct return outcomes require specification format ess/17",
                 ));
             }
-            if let Some(refused) = compensation_format(spec.system().format, outcome, &at) {
+            for refused in marker_formats(spec.system().format, outcome, &at) {
                 errors.push(refused);
             }
             for (field, source) in &outcome.sets {
@@ -4799,12 +5034,12 @@ fn literal_representation(
             reason,
             hint: format!(
                 "a literal may be text, a variant of an enum, `true` or `false`, a whole number \
-                 or a decimal; anything else has to come from an input of `{}`",
-                command.source_name()
+                 or a decimal; {}",
+                command.instead()
             ),
         })
     };
-    match representation(&held.type_ref, resolved.types, resolved.inhabitation) {
+    let refusal = match representation(&held.type_ref, resolved.types, resolved.inhabitation) {
         // Text is checked as far as text can be. The other two silences belong to other passes,
         // and each is a deferral to a refusal that is actually made about the type in hand: a name
         // nothing declares is reported where unresolved references are, and `Uninhabited` is
@@ -4881,7 +5116,12 @@ fn literal_representation(
         Resolution::Established(Representation::Structured) => refuse(format!(
             "`{owner}.{target}` has structure, and a literal in a {place} is one piece of text"
         )),
-    }
+    };
+    // A literal its representation admits is still a value of each newtype it is written through
+    // only inside that newtype's alphabet and invariants, which an `example:` is held to as well
+    // (beyond10x/ess#533). `0` over a newtype of `Integer` whose invariant is `value >= 1` spells an
+    // `Integer` and is not one of the newtype's values.
+    refusal.or_else(|| layered_literal(held, value, resolved.types))
 }
 
 /// What a value no literal spells has to come from instead, named in the literal rule's hint: the
@@ -4890,6 +5130,33 @@ fn literal_representation(
 pub(crate) trait LiteralSource {
     /// The name the hint gives.
     fn source_name(&self) -> &QualifiedName;
+
+    /// The hint's second half: where a value no literal spells comes from instead.
+    fn instead(&self) -> String {
+        format!(
+            "anything else has to come from an input of `{}`",
+            self.source_name()
+        )
+    }
+}
+
+/// A view's default row (`absent: {row: …}`, ess/25, beyond10x/ess#533): a view has no input, so
+/// a value no literal spells has no other source there, and the field is left out of `row:`
+/// instead, where it is `Optional`.
+pub(crate) struct DefaultRowOf<'a>(pub(crate) &'a QualifiedName);
+
+impl LiteralSource for DefaultRowOf<'_> {
+    fn source_name(&self) -> &QualifiedName {
+        self.0
+    }
+
+    fn instead(&self) -> String {
+        format!(
+            "anything else has no literal in the default row of `{}`: leave an `Optional` field \
+             out of `row:`, and it is absent there",
+            self.0
+        )
+    }
 }
 
 impl LiteralSource for CommandSpec {
@@ -4924,7 +5191,7 @@ pub(crate) fn mapping_literal(
         held,
         (value, scalar),
         "`mapping:` entry of a binding",
-        &command.name,
+        command,
         (types, conversions, inhabitation),
     )
 }
@@ -4939,7 +5206,7 @@ pub(crate) fn literal_refusal(
     held: &Field,
     (value, scalar): (&str, Option<ScalarKind>),
     place: &str,
-    source: &QualifiedName,
+    source: &dyn LiteralSource,
     (types, conversions, inhabitation): (
         &TypeRegistry,
         &crate::types::ConversionRegistry,
@@ -5180,7 +5447,7 @@ fn example_admitted(
             return mismatch(format!("`{declared}` is not a scalar"), SCALAR)
         }
     };
-    example_layers(&layers.newtypes, example, &value, instant)
+    example_layers(&layers.newtypes, example, &value, instant, Held::Example)
 }
 
 /// Whether `literal` is a value `declared` accepts as a precondition's literal input
@@ -5538,12 +5805,91 @@ impl ess_primitives::facts::FactSource for LiteralFacts {
     }
 }
 
+/// What [`example_layers`] holds to a type's newtype layers, which only the repair it names
+/// differs by: an input's `example:`, or a literal written as a field's value.
+#[derive(Clone, Copy)]
+enum Held {
+    /// An input's `example:` (ess/11).
+    Example,
+    /// A literal in `sets:`, `payload:`, a binding's `mapping:`, an enum variant's
+    /// `attributes:` or a view's default row (beyond10x/ess#533).
+    Literal,
+}
+
+impl Held {
+    /// The repair for a value outside the alphabet.
+    const fn alphabet(self) -> &'static str {
+        match self {
+            Self::Example => "write an example from the characters the type declares",
+            Self::Literal => "write a literal from the characters the type declares",
+        }
+    }
+
+    /// The repair for a value an invariant does not hold for.
+    const fn invariant(self) -> &'static str {
+        match self {
+            Self::Example => "write an example every invariant of the type holds for",
+            Self::Literal => "write a literal every invariant of the type holds for",
+        }
+    }
+
+    /// The repair for a value without the declared prefix.
+    const fn prefix(self) -> &'static str {
+        match self {
+            Self::Example => "write an example that starts with the prefix the type declares",
+            Self::Literal => "write a literal that starts with the prefix the type declares",
+        }
+    }
+}
+
+/// A literal already admitted as a value of `held`'s representation, held to every newtype layer
+/// of its type as an `example:` is: inside each alphabet, and true of each invariant
+/// (beyond10x/ess#533). `None` admits it.
+///
+/// Reached only after [`literal_representation`] admitted the text, so a `Boolean`, `Integer` or
+/// `Decimal` literal here reads as one; a terminal no literal spells has been refused already.
+fn layered_literal(held: &Field, value: &str, types: &TypeRegistry) -> Option<LiteralRefusal> {
+    let layers = types.newtype_layers(&held.type_ref);
+    if layers.newtypes.is_empty() {
+        return None;
+    }
+    let (node, fact) = match &layers.terminal {
+        TypeRef::Primitive(Primitive::Boolean) => {
+            let flag = value == "true";
+            (Node::Bool(flag), FactValue::Bool(flag))
+        }
+        TypeRef::Primitive(Primitive::Integer | Primitive::Decimal) => {
+            let number = ess_primitives::facts::Number::decimal_literal(value)?;
+            (Node::Number(number), FactValue::Number(number))
+        }
+        TypeRef::Primitive(Primitive::String) => {
+            (Node::Text(value.to_owned()), FactValue::text(value))
+        }
+        TypeRef::Named(name)
+            if matches!(
+                types.get(name).map(|named| &named.body),
+                Some(crate::types::TypeBody::Enum { .. })
+            ) =>
+        {
+            (Node::Text(value.to_owned()), FactValue::text(value))
+        }
+        _ => return None,
+    };
+    example_layers(&layers.newtypes, &node, &fact, false, Held::Literal)
+        .err()
+        .map(|(_, reason, hint)| LiteralRefusal {
+            reason,
+            hint: hint.to_owned(),
+        })
+}
+
 /// Every newtype layer's alphabet and invariants, held against one example read as `value`.
 fn example_layers(
     newtypes: &[&crate::types::NamedType],
     example: &Node,
     value: &FactValue,
     instant: bool,
+    held: Held,
 ) -> Result<(), ExampleRefusal> {
     for layer in newtypes {
         let crate::types::TypeBody::Newtype {
@@ -5563,7 +5909,7 @@ fn example_layers(
                         "`{example}` does not start with {prefix:?}, the prefix of `{}`",
                         layer.name
                     ),
-                    "write an example that starts with the prefix the type declares",
+                    held.prefix(),
                 ));
             }
         }
@@ -5579,7 +5925,7 @@ fn example_layers(
                          (\"{alphabet}\")",
                         layer.name
                     ),
-                    "write an example from the characters the type declares",
+                    held.alphabet(),
                 ));
             }
         }
@@ -5596,7 +5942,7 @@ fn example_layers(
                          hold for it",
                         layer.name
                     ),
-                    "write an example every invariant of the type holds for",
+                    held.invariant(),
                 ));
             }
         }
@@ -6020,6 +6366,13 @@ pub struct RawOutcome {
     /// the key.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub compensates: bool,
+    /// `true` marks an `external:` refusal the implementation decides from the request alone,
+    /// before it reads the addressed row: it answers at step 2 of the precedence order, among the
+    /// input-guarded refusals in declaration order, before existence and the held state (ess/25,
+    /// beyond10x/ess#534, `docs/design/cross-record-and-stored-field-guards.md`). `false` is the
+    /// document without the key.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub before_row: bool,
     /// Outcome-local names of required String response fields (ess/21).
     #[serde(
         default,
@@ -6045,9 +6398,10 @@ pub struct RawOutcome {
     /// existing subject only.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub affects: Vec<set_effects::RawAffect>,
-    /// The events it emits.
+    /// The events it emits: each by name, or from `ess/25` (beyond10x/ess#531) as
+    /// `{event: <name>, each: changed}`, published once per row the outcome changed.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub emits: Vec<QualifiedName>,
+    pub emits: Vec<set_effects::RawEmit>,
     /// Where the emitted events' payload fields come from, for the fields the author determines.
     ///
     /// Keyed by emitted event, then by that event's field, and sparse on both levels — see
@@ -6323,7 +6677,7 @@ impl TryFrom<RawOutcome> for Outcome {
     fn try_from(mut raw: RawOutcome) -> Result<Self, Self::Error> {
         // ess/16 (#167, #175): a set subject takes the verb it is written beside, before the one
         // subject is read; `deletes:` among them from ess/23 (#452).
-        let instances = set_effects::set_subject(
+        let mut instances = set_effects::set_subject(
             &raw.name,
             raw.instances.take(),
             &mut set_effects::Verbs {
@@ -6340,6 +6694,9 @@ impl TryFrom<RawOutcome> for Outcome {
                 deletes: &mut raw.deletes,
             },
         )?;
+        // ess/25 (#531): an event published once per changed row belongs to the set subject.
+        let (emits, per_row) = set_effects::read_emits(raw.emits.clone());
+        set_effects::per_row_events(&raw.name, instances.as_mut(), per_row)?;
         let affects = set_effects::affects(&raw.name, std::mem::take(&mut raw.affects))?;
         let conflict = |key: &str, message: String, hint: &str| {
             outcome_conflict(&raw.name, key, message, hint)
@@ -6529,7 +6886,7 @@ impl TryFrom<RawOutcome> for Outcome {
         let error_payload = raw
             .error
             .as_ref()
-            .filter(|error| !raw.emits.contains(error))
+            .filter(|error| !emits.contains(error))
             .and_then(|error| payload.remove(error))
             .unwrap_or_default();
         if raw.one_time_response.as_ref().is_some_and(Vec::is_empty) {
@@ -6547,12 +6904,13 @@ impl TryFrom<RawOutcome> for Outcome {
             condition,
             subject,
             replays: raw.replays,
-            emits: raw.emits,
+            emits,
             error: raw.error,
             refuses,
             accepts_nothing: raw.accepts.is_some(),
             returns: raw.returns,
             compensates: raw.compensates,
+            before_row: raw.before_row,
             one_time_response: raw.one_time_response.unwrap_or_default(),
             summary: raw.summary,
             refs: raw.refs,
@@ -6563,7 +6921,7 @@ impl TryFrom<RawOutcome> for Outcome {
 
 /// The `payload:` block keyed by event and field, or every duplicate the document wrote.
 ///
-/// The one check that has to happen while the entries are still a list: `serde_yaml` accepts a
+/// The one check that has to happen while the entries are still a list: `ess-yaml` accepts a
 /// repeated key, so two sources for one field — or two blocks for one event — reach this function
 /// as two entries, and keying them without looking would keep one and lose the author's conflict.
 /// Accumulating rather than stopping at the first (invariant 3): a document with three duplicated
@@ -6911,6 +7269,7 @@ impl From<Outcome> for RawOutcome {
                 ..
             }) => (None, None, None, Some(instance)),
         };
+        let emits = set_effects::written_emits(outcome.emits, &outcome.set_effects);
         let ((moves, updates, deletes), instances, affects) =
             set_effects::written(outcome.set_effects, (moves, updates, deletes));
         let payload = PayloadDeclaration(
@@ -6958,6 +7317,7 @@ impl From<Outcome> for RawOutcome {
             accepts: outcome.accepts_nothing.then_some(Accepts::Nothing),
             returns: outcome.returns,
             compensates: outcome.compensates,
+            before_row: outcome.before_row,
             one_time_response: (!outcome.one_time_response.is_empty())
                 .then_some(outcome.one_time_response),
             creates,
@@ -6968,7 +7328,7 @@ impl From<Outcome> for RawOutcome {
             instance,
             instances,
             affects,
-            emits: outcome.emits,
+            emits,
             payload,
             sets: PayloadTable(
                 outcome
@@ -7106,7 +7466,7 @@ outcomes:
 ";
 
     fn create_invoice() -> CommandSpec {
-        let raw: RawCommandSpec = serde_yaml::from_str(CREATE_INVOICE).expect("parses");
+        let raw: RawCommandSpec = ess_yaml::from_str(CREATE_INVOICE).expect("parses");
         CommandSpec::try_from(raw).expect("a valid command")
     }
 
@@ -7142,8 +7502,8 @@ outcomes:
             "the normative example must validate"
         );
 
-        let rendered = serde_yaml::to_string(&command).expect("serialises");
-        let reparsed: RawCommandSpec = serde_yaml::from_str(&rendered).expect("re-parses");
+        let rendered = ess_yaml::to_string(&command).expect("serialises");
+        let reparsed: RawCommandSpec = ess_yaml::from_str(&rendered).expect("re-parses");
         let round_tripped = CommandSpec::try_from(reparsed).expect("still valid");
 
         assert_eq!(
@@ -7256,6 +7616,7 @@ outcomes:
                 accepts_nothing: false,
                 returns: false,
                 compensates: false,
+                before_row: false,
                 one_time_response: Vec::new(),
                 set_effects: SetEffects::default(),
                 summary: None,
@@ -7307,6 +7668,7 @@ outcomes:
             accepts_nothing: false,
             returns: false,
             compensates: false,
+            before_row: false,
             one_time_response: Vec::new(),
             set_effects: SetEffects::default(),
             summary: None,
@@ -7348,6 +7710,7 @@ outcomes:
                 accepts_nothing: false,
                 returns: false,
                 compensates: false,
+                before_row: false,
                 one_time_response: Vec::new(),
                 set_effects: SetEffects::default(),
                 summary: None,
@@ -7382,6 +7745,7 @@ outcomes:
             accepts_nothing: false,
             returns: false,
             compensates: false,
+            before_row: false,
             one_time_response: Vec::new(),
             set_effects: SetEffects::default(),
             summary: None,
@@ -7403,7 +7767,7 @@ outcomes:
 
     #[test]
     fn guarded_external_retains_fault_strategy_and_eligibility() {
-        let raw: RawCommandSpec = serde_yaml::from_str(
+        let raw: RawCommandSpec = ess_yaml::from_str(
             r#"
 name: billing.email.SendEmail
 input:
@@ -7447,6 +7811,7 @@ outcomes:
             accepts_nothing: false,
             returns: false,
             compensates: false,
+            before_row: false,
             one_time_response: Vec::new(),
             set_effects: SetEffects::default(),
             summary: None,
@@ -7496,7 +7861,7 @@ outcomes:
         // `refuses:` answers a question only a wrong-state branch is asked. Anywhere else it reads
         // like a claim about the outcome and decides nothing, and a key nothing consults is one an
         // author will write expecting it to matter.
-        let raw: RawOutcome = serde_yaml::from_str(
+        let raw: RawOutcome = ess_yaml::from_str(
             "name: accepted\nrefuses: false\nemits: [billing.invoice.InvoiceCreated]\n",
         )
         .expect("the document parses");
@@ -7531,6 +7896,7 @@ outcomes:
             accepts_nothing: false,
             returns: false,
             compensates: false,
+            before_row: false,
             one_time_response: Vec::new(),
             set_effects: SetEffects::default(),
             summary: None,
@@ -7538,10 +7904,10 @@ outcomes:
             sets: BTreeMap::new(),
         };
         let written =
-            serde_yaml::to_string(&RawOutcome::from(accepting.clone())).expect("it renders");
+            ess_yaml::to_string(&RawOutcome::from(accepting.clone())).expect("it renders");
         assert!(written.contains("refuses: false"), "{written}");
         let again =
-            Outcome::try_from(serde_yaml::from_str::<RawOutcome>(&written).expect("it re-reads"))
+            Outcome::try_from(ess_yaml::from_str::<RawOutcome>(&written).expect("it re-reads"))
                 .expect("and it is still valid");
         assert_eq!(again.refuses, accepting.refuses);
 
@@ -7549,7 +7915,7 @@ outcomes:
             outcome_name("wrong-state"),
             name("billing.invoice.InvoiceStateConflict"),
         );
-        let written = serde_yaml::to_string(&RawOutcome::from(refusing)).expect("it renders");
+        let written = ess_yaml::to_string(&RawOutcome::from(refusing)).expect("it renders");
         assert!(
             !written.contains("refuses"),
             "the default is not written back: {written}"
@@ -7580,6 +7946,7 @@ outcomes:
                 accepts_nothing: false,
                 returns: false,
                 compensates: false,
+                before_row: false,
                 one_time_response: Vec::new(),
                 set_effects: SetEffects::default(),
                 summary: None,
@@ -7672,7 +8039,7 @@ outcomes:
                 "not something outside the system",
             ),
         ] {
-            let raw: RawCommandSpec = serde_yaml::from_str(&format!(
+            let raw: RawCommandSpec = ess_yaml::from_str(&format!(
                 r"
 name: billing.invoice.IssueInvoice
 input:
@@ -7701,7 +8068,7 @@ outcomes:
         // `false` means "this is not the wrong-state branch", which is what an absent key means, so
         // there is no third state to refuse. Asserted rather than assumed: a `bool` that silently
         // meant something else in one of its two values would be a trap in the parser.
-        let raw: RawCommandSpec = serde_yaml::from_str(
+        let raw: RawCommandSpec = ess_yaml::from_str(
             r"
 name: billing.invoice.IssueInvoice
 outcomes:
@@ -7734,12 +8101,12 @@ outcomes:
             ),
         ]);
 
-        let rendered = serde_yaml::to_string(&command).expect("serialises");
+        let rendered = ess_yaml::to_string(&command).expect("serialises");
         assert!(
             rendered.contains("wrong_state: true"),
             "the key has to be written back out, or a round trip loses the branch: {rendered}"
         );
-        let reparsed: RawCommandSpec = serde_yaml::from_str(&rendered).expect("re-parses");
+        let reparsed: RawCommandSpec = ess_yaml::from_str(&rendered).expect("re-parses");
         assert_eq!(
             CommandSpec::try_from(reparsed).expect("still valid"),
             command
@@ -7767,6 +8134,7 @@ outcomes:
                 accepts_nothing: false,
                 returns: false,
                 compensates: false,
+                before_row: false,
                 one_time_response: Vec::new(),
                 set_effects: SetEffects::default(),
                 summary: None,
@@ -7806,6 +8174,7 @@ outcomes:
                 accepts_nothing: false,
                 returns: false,
                 compensates: false,
+                before_row: false,
                 one_time_response: Vec::new(),
                 set_effects: SetEffects::default(),
                 summary: None,
@@ -7934,6 +8303,7 @@ outcomes:
             accepts_nothing: false,
             returns: false,
             compensates: false,
+            before_row: false,
             one_time_response: Vec::new(),
             set_effects: SetEffects::default(),
             summary: None,
@@ -7969,7 +8339,7 @@ outcomes:
 
     #[test]
     fn an_event_records_a_fact_and_nothing_about_how_it_travels() {
-        let raw: RawEventSpec = serde_yaml::from_str(
+        let raw: RawEventSpec = ess_yaml::from_str(
             r"
 name: billing.invoice.InvoiceCreated
 fields:
@@ -7983,7 +8353,7 @@ naming:
         let event = EventSpec::try_from(raw).expect("valid");
         assert!(event.validate(&registry()).is_ok());
 
-        let rendered = serde_yaml::to_string(&event).expect("serialises");
+        let rendered = ess_yaml::to_string(&event).expect("serialises");
         assert!(
             !rendered.contains("topic"),
             "a transport is a projection of the fact, not part of it: {rendered}"
@@ -8019,7 +8389,7 @@ naming:
 
     #[test]
     fn an_event_field_declared_twice_is_refused() {
-        let raw: RawEventSpec = serde_yaml::from_str(
+        let raw: RawEventSpec = ess_yaml::from_str(
             r"
 name: billing.invoice.InvoiceCreated
 fields:
@@ -8043,7 +8413,7 @@ fields:
 
     #[test]
     fn an_error_is_part_of_a_vocabulary_an_outcome_can_name() {
-        let raw: RawErrorSpec = serde_yaml::from_str(
+        let raw: RawErrorSpec = ess_yaml::from_str(
             r"
 name: billing.invoice.InvalidAmount
 summary: The requested amount is not positive.
@@ -8066,14 +8436,14 @@ summary: The requested amount is not positive.
             "the outcome names exactly this error"
         );
 
-        let rendered = serde_yaml::to_string(&declared).expect("serialises");
-        let reparsed: RawErrorSpec = serde_yaml::from_str(&rendered).expect("re-parses");
+        let rendered = ess_yaml::to_string(&declared).expect("serialises");
+        let reparsed: RawErrorSpec = ess_yaml::from_str(&rendered).expect("re-parses");
         assert_eq!(ErrorSpec::try_from(reparsed).expect("valid"), declared);
     }
 
     /// One outcome whose `sets:` block is written in a document, so the whole read path is used.
     fn outcome_setting(yaml: &str) -> Result<Outcome, ValidationErrors> {
-        let raw: RawOutcome = serde_yaml::from_str(yaml).expect("the document is well formed");
+        let raw: RawOutcome = ess_yaml::from_str(yaml).expect("the document is well formed");
         Outcome::try_from(raw)
     }
 
@@ -8180,7 +8550,7 @@ sets:
 
     #[test]
     fn an_outcome_names_the_entity_it_changes_and_the_move_it_takes() {
-        let command: RawCommandSpec = serde_yaml::from_str(
+        let command: RawCommandSpec = ess_yaml::from_str(
             r"
 name: billing.invoice.PayInvoice
 input:
@@ -8223,12 +8593,12 @@ outcomes:
         );
 
         // The written form survives a round trip: `moves:` back out as one qualified name.
-        let rendered = serde_yaml::to_string(&command).expect("serialises");
+        let rendered = ess_yaml::to_string(&command).expect("serialises");
         assert!(
             rendered.contains("moves: billing.invoice.Invoice.settle"),
             "{rendered}"
         );
-        let reparsed: RawCommandSpec = serde_yaml::from_str(&rendered).expect("re-parses");
+        let reparsed: RawCommandSpec = ess_yaml::from_str(&rendered).expect("re-parses");
         assert_eq!(CommandSpec::try_from(reparsed).expect("valid"), command);
     }
 
@@ -8259,6 +8629,7 @@ outcomes:
                 accepts_nothing: false,
                 returns: false,
                 compensates: false,
+                before_row: false,
                 one_time_response: Vec::new(),
                 set_effects: SetEffects::default(),
                 summary: None,
@@ -8282,7 +8653,7 @@ outcomes:
         //
         // The fixture is otherwise complete — a declared entity, a declared move, an emitted event —
         // so the refusal is about the missing key and not about the rest of it.
-        let raw: RawCommandSpec = serde_yaml::from_str(
+        let raw: RawCommandSpec = ess_yaml::from_str(
             r"
 name: billing.invoice.PayInvoice
 input:
@@ -8325,7 +8696,7 @@ outcomes:
         // The other half of the same rule. `instance:` alone names the identity of nothing — there
         // is no entity for it to identify — and reading it as harmless would let a `creates:` be
         // deleted without the link that depends on it being noticed.
-        let raw: RawCommandSpec = serde_yaml::from_str(
+        let raw: RawCommandSpec = ess_yaml::from_str(
             r"
 name: billing.invoice.PayInvoice
 input:
@@ -8394,6 +8765,7 @@ outcomes:
                     accepts_nothing: false,
                     returns: false,
                     compensates: false,
+                    before_row: false,
                     one_time_response: Vec::new(),
                     set_effects: SetEffects::default(),
                     summary: None,
@@ -8418,7 +8790,7 @@ outcomes:
 
     #[test]
     fn an_outcome_that_both_creates_and_moves_is_refused_naming_both_keys() {
-        let raw: RawCommandSpec = serde_yaml::from_str(
+        let raw: RawCommandSpec = ess_yaml::from_str(
             r"
 name: billing.invoice.CreateInvoice
 outcomes:
@@ -8443,7 +8815,7 @@ outcomes:
 
     #[test]
     fn a_move_written_without_an_entity_is_refused_rather_than_read_as_one() {
-        let raw: RawCommandSpec = serde_yaml::from_str(
+        let raw: RawCommandSpec = ess_yaml::from_str(
             r"
 name: billing.invoice.PayInvoice
 outcomes:
@@ -8464,7 +8836,7 @@ outcomes:
     fn an_outcome_that_changes_no_entity_says_so_by_saying_nothing() {
         // `SendEmail` changes nothing in the model, and the link is optional on this side for
         // exactly that reason: a required subject would make an author invent one.
-        let raw: RawCommandSpec = serde_yaml::from_str(
+        let raw: RawCommandSpec = ess_yaml::from_str(
             r"
 name: billing.invoice.CreateInvoice
 outcomes:
@@ -8503,7 +8875,7 @@ outcomes:
 
     /// `InvoiceCreated` as the fixture declares it, for the cross-declaration half.
     fn invoice_created() -> EventSpec {
-        let raw: RawEventSpec = serde_yaml::from_str(
+        let raw: RawEventSpec = ess_yaml::from_str(
             r"
 name: billing.invoice.InvoiceCreated
 fields:
@@ -8535,8 +8907,7 @@ fields:
 
     #[test]
     fn a_payload_mapping_parses_validates_and_round_trips() {
-        let raw: RawCommandSpec =
-            serde_yaml::from_str(CREATE_INVOICE_WITH_PAYLOAD).expect("parses");
+        let raw: RawCommandSpec = ess_yaml::from_str(CREATE_INVOICE_WITH_PAYLOAD).expect("parses");
         let command = CommandSpec::try_from(raw).expect("a valid command");
         assert!(
             command.validate(&registry(), &events(), &errors()).is_ok(),
@@ -8561,8 +8932,8 @@ fields:
         );
         assert!(cross.is_empty(), "{cross}");
 
-        let rendered = serde_yaml::to_string(&command).expect("serialises");
-        let reparsed: RawCommandSpec = serde_yaml::from_str(&rendered).expect("re-parses");
+        let rendered = ess_yaml::to_string(&command).expect("serialises");
+        let reparsed: RawCommandSpec = ess_yaml::from_str(&rendered).expect("re-parses");
         let round_tripped = CommandSpec::try_from(reparsed).expect("still valid");
         assert_eq!(round_tripped, command, "{rendered}");
     }
@@ -8573,8 +8944,7 @@ fields:
         // the implementation's to assign — and neither half of validation calls that incomplete.
         // A binding must fill every required input; a payload determines exactly what the author
         // says it determines.
-        let raw: RawCommandSpec =
-            serde_yaml::from_str(CREATE_INVOICE_WITH_PAYLOAD).expect("parses");
+        let raw: RawCommandSpec = ess_yaml::from_str(CREATE_INVOICE_WITH_PAYLOAD).expect("parses");
         let command = CommandSpec::try_from(raw).expect("a valid command");
         let determined = &command
             .outcome(&outcome_name("accepted"))
@@ -8589,7 +8959,7 @@ fields:
 
     #[test]
     fn a_payload_for_an_event_the_branch_does_not_emit_is_refused() {
-        let raw: RawCommandSpec = serde_yaml::from_str(
+        let raw: RawCommandSpec = ess_yaml::from_str(
             r"
 name: billing.invoice.CreateInvoice
 input:
@@ -8617,7 +8987,7 @@ outcomes:
     #[test]
     fn a_payload_reading_an_undeclared_input_accumulates_beside_its_neighbours() {
         // Invariant 3: two bad sources are two repairs, reported together.
-        let raw: RawCommandSpec = serde_yaml::from_str(
+        let raw: RawCommandSpec = ess_yaml::from_str(
             r"
 name: billing.invoice.CreateInvoice
 input:
@@ -8648,10 +9018,10 @@ outcomes:
 
     #[test]
     fn a_repeated_payload_line_is_refused_rather_than_silently_last_wins() {
-        // `serde_yaml` accepts both repeated keys below and would keep the last of each; the list
+        // `ess-yaml` accepts both repeated keys below and would keep the last of each; the list
         // representation is what lets this be reported instead. One duplicated field and one
         // duplicated event block are two repairs (invariant 3).
-        let raw: RawOutcome = serde_yaml::from_str(
+        let raw: RawOutcome = ess_yaml::from_str(
             r"
 name: accepted
 emits:

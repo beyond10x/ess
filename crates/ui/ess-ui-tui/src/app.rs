@@ -12,7 +12,7 @@ use ess_ui::{
     Action, ActionConfirm, Body, Columns, Composite, Document, Effect, Field, FilterBar, Form,
     GuardThen, Live, NavPages, NodePath, Overlay, Page, PagedAway, Reads, Section, TabFields,
 };
-use serde_yaml::{Mapping, Value};
+use ess_yaml::{Mapping, Value};
 
 use crate::data::{DataAdapter, FixtureAdapter, ReadRequest, ReadResult};
 use crate::expr::{self, display, field_path, truthy, Resolve, Resolved};
@@ -3413,7 +3413,7 @@ impl App {
             .filter_map(|region| region.props.get("actions"))
             .filter_map(Value::as_sequence)
             .flatten()
-            .filter_map(|action| serde_yaml::from_value::<Action>(action.clone()).ok())
+            .filter_map(|action| ess_yaml::from_value::<Action>(action.clone()).ok())
             .collect()
     }
 

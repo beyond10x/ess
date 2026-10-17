@@ -1,0 +1,271 @@
+# generated from catalog v1
+# model digest SOURCE_DIGEST
+# contract digest CONTRACT_DIGEST
+# do not edit: regenerate with `ess generate`
+openapi: 3.1.0
+info:
+  title: items-service
+  description: |-
+    The HTTP surface of `items-service`, one of the components of `catalog` v1.
+
+    Every path here is one semantic command, so the method is always POST and the path is the command's wire name under its domain's: a command is not a resource, and this document does not invent one. A status code is the outcome the specification declares — 202 for a branch that was taken, 422 for a refusal the input decides, 502 for a refusal decided outside the request — and the `outcome` property of every response body names the branch. Events emitted by a branch are published to consumers through the event transport, and the `published` property of every response body lists them too, in publication order.
+
+    This component declares `reached_by: network`, so its callers are not deployed with it and this contract is the surface they reach it through. That declaration is also why the views its domains declare have paths here: a GET under `views` per projection, answering every row it holds. There is no page size, no cursor, no ordering and no filter parameter, because the specification states none — a view's filter is part of the projection, not of the request. A view that declares `params:` is the exception: each is a query parameter, described on its operation, and a view that declares `paging:` takes its page and size there.
+
+    An `ess-http/1` binding declares the method and path of every operation marked `x-ess-route-source: binding`, so those are the protocol's and not derived from wire names. Each variable of such a path is a required path parameter carrying the input field or view parameter the binding maps to it, and a field carried in the path is not in the request body. Every other operation keeps the method and path described above.
+  version: v1
+  x-ess-provenance:
+    system: catalog
+    specification_version: v1
+    source_digest: SOURCE_DIGEST
+    contract_digest: CONTRACT_DIGEST
+  x-ess-reached-by: network
+tags:
+- name: items
+paths:
+  /items/{item_id}:
+    get:
+      operationId: catalog.items.ItemById
+      x-ess-route-source: binding
+      summary: ItemById
+      tags:
+      - items
+      x-ess-consistency: eventual
+      parameters:
+      - name: item_id
+        in: path
+        description: Read by the view's filter as `param.item_id`; carried in the path rather than the query.
+        required: true
+        schema:
+          $ref: '#/components/schemas/catalog.items.ItemId'
+      responses:
+        '200':
+          description: 'Every row of `catalog.items.ItemById`, a projection of `catalog.items.Item`. Contains the instances where `item_id == param.item_id` holds. Eventually consistent: a row may not yet reflect a command that has already returned.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/catalog.items.ItemById.Response'
+    put:
+      operationId: catalog.items.ListItem
+      x-ess-route-source: binding
+      summary: ListItem
+      tags:
+      - items
+      parameters:
+      - name: item_id
+        in: path
+        description: The input field `item_id`, carried in the path rather than the request body.
+        required: true
+        schema:
+          $ref: '#/components/schemas/catalog.items.ItemId'
+      requestBody:
+        description: The input `catalog.items.ListItem` declares.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/catalog.items.ListItem.Input'
+      responses:
+        '202':
+          description: 'Outcome `listed`: the branch the specification declares for this input. Events this branch emits are published to consumers and listed under `published`.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/catalog.items.ListItem.listed.Response'
+        '501':
+          description: 'No declared outcome: the realization is unfinished. Either a port this command runs reported an unmet obligation, and nothing was written: `committed` is `false`. Or the command''s effect was committed and delivering what this command published to a binding failed: `committed` is `true`, the effect and its events stand, and each binding whose delivery failed keeps its event and is attempted again on a later delivery, while no other binding receives it twice. Do not retry: after a failed delivery a retry performs the command a second time.'
+          content:
+            application/json:
+              schema:
+                additionalProperties: false
+                properties:
+                  committed:
+                    description: '`true` when the command''s effect and events were committed and delivering what it published failed; `false` when an unmet obligation stopped the command before anything was written.'
+                    type: boolean
+                  refused:
+                    description: What was left unfinished, in words.
+                    type: string
+                required:
+                - refused
+                - committed
+                type: object
+    delete:
+      operationId: catalog.items.TouchItem
+      x-ess-route-source: binding
+      summary: TouchItem
+      tags:
+      - items
+      parameters:
+      - name: item_id
+        in: path
+        description: The input field `item_id`, carried in the path rather than the request body.
+        required: true
+        schema:
+          $ref: '#/components/schemas/catalog.items.ItemId'
+      responses:
+        '202':
+          description: 'Outcome `touched`: the branch the specification declares for this input. Events this branch emits are published to consumers and listed under `published`.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/catalog.items.TouchItem.touched.Response'
+        '501':
+          description: 'No declared outcome: the realization is unfinished. Either a port this command runs reported an unmet obligation, and nothing was written: `committed` is `false`. Or the command''s effect was committed and delivering what this command published to a binding failed: `committed` is `true`, the effect and its events stand, and each binding whose delivery failed keeps its event and is attempted again on a later delivery, while no other binding receives it twice. Do not retry: after a failed delivery a retry performs the command a second time.'
+          content:
+            application/json:
+              schema:
+                additionalProperties: false
+                properties:
+                  committed:
+                    description: '`true` when the command''s effect and events were committed and delivering what it published failed; `false` when an unmet obligation stopped the command before anything was written.'
+                    type: boolean
+                  refused:
+                    description: What was left unfinished, in words.
+                    type: string
+                required:
+                - refused
+                - committed
+                type: object
+components:
+  schemas:
+    catalog.items.ItemById.Response:
+      additionalProperties: false
+      description: The rows of `catalog.items.ItemById`.
+      properties:
+        rows:
+          description: Every row the projection holds, in the order it holds them.
+          items:
+            $ref: '#/components/schemas/catalog.items.ItemById.Row'
+          type: array
+      required:
+      - rows
+      type: object
+    catalog.items.ItemById.Row:
+      title: ItemById row
+      x-ess-name: catalog.items.ItemById
+      x-ess-kind: view-row
+      type: object
+      properties:
+        item_id:
+          $ref: '#/components/schemas/catalog.items.ItemId'
+        title:
+          type: string
+      required:
+      - item_id
+      - title
+      additionalProperties: false
+    catalog.items.ItemId:
+      title: ItemId
+      x-ess-name: catalog.items.ItemId
+      x-ess-kind: newtype
+      type: string
+    catalog.items.ItemTouched.Event:
+      title: ItemTouched payload
+      x-ess-name: catalog.items.ItemTouched
+      x-ess-kind: event-payload
+      type: object
+      properties:
+        item_id:
+          $ref: '#/components/schemas/catalog.items.ItemId'
+      required:
+      - item_id
+      additionalProperties: false
+    catalog.items.ListItem.Input:
+      title: ListItem input
+      x-ess-name: catalog.items.ListItem
+      x-ess-kind: command-input
+      type: object
+      properties:
+        title:
+          type: string
+      required:
+      - title
+      additionalProperties: false
+    catalog.items.ListItem.listed.Response:
+      additionalProperties: false
+      description: Taken when no other outcome's condition matched. A `catalog.items.Item` now exists, in `Listed`. Its identity is published as `item_id` on `catalog.items.ItemTouched`. Emits `ItemTouched`, published to consumers and listed under `published`.
+      properties:
+        outcome:
+          const: listed
+          description: Which declared outcome the command took.
+        published:
+          description: 'Every event this branch published, in publication order: its qualified name and its payload.'
+          items: false
+          maxItems: 1
+          minItems: 1
+          prefixItems:
+          - additionalProperties: false
+            properties:
+              event:
+                const: catalog.items.ItemTouched
+                type: string
+              payload:
+                $ref: '#/components/schemas/catalog.items.ItemTouched.Event'
+            required:
+            - event
+            - payload
+            type: object
+          type: array
+      required:
+      - outcome
+      - published
+      type: object
+    catalog.items.TouchItem.touched.Response:
+      additionalProperties: false
+      description: Taken when no other outcome's condition matched. Emits `ItemTouched`, published to consumers and listed under `published`.
+      properties:
+        outcome:
+          const: touched
+          description: Which declared outcome the command took.
+        published:
+          description: 'Every event this branch published, in publication order: its qualified name and its payload.'
+          items: false
+          maxItems: 1
+          minItems: 1
+          prefixItems:
+          - additionalProperties: false
+            properties:
+              event:
+                const: catalog.items.ItemTouched
+                type: string
+              payload:
+                $ref: '#/components/schemas/catalog.items.ItemTouched.Event'
+            required:
+            - event
+            - payload
+            type: object
+          type: array
+      required:
+      - outcome
+      - published
+      type: object
+x-ess-entities:
+  catalog.items.Item:
+    title: Item
+    x-ess-name: catalog.items.Item
+    x-ess-kind: entity
+    type: object
+    properties:
+      item_id:
+        $ref: '#/x-ess-entities/catalog.items.ItemId'
+      title:
+        type: string
+      state:
+        $ref: '#/x-ess-entities/catalog.items.Item.State'
+    required:
+    - item_id
+    - title
+    - state
+    additionalProperties: false
+  catalog.items.Item.State:
+    title: State
+    x-ess-name: catalog.items.Item.State
+    x-ess-kind: enum
+    type: string
+    enum:
+    - Listed
+  catalog.items.ItemId:
+    title: ItemId
+    x-ess-name: catalog.items.ItemId
+    x-ess-kind: newtype
+    type: string
