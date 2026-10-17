@@ -126,6 +126,79 @@ refusing row, `⌈r⌉ + d + 1 >= r + δ + d`, because `δ <= 1`; and the `>` si
 whose clock trails the runner's, or which handles the request more than a second later, can fail
 a correct implementation: the suite's claim is bounded by that second, and it says so here.
 
+## A suite that fixes the target's `now` (beyond10x/ess#586)
+
+A guard `expiry < now` and its `guard-boundary` mutant `expiry <= now` answer differently only when
+`expiry` equals the instant the target decides at, and the off-boundary witnesses above never send
+that value. A target that can be told which instant to read as `now` closes that gap; one that
+cannot keeps today's suite claim.
+
+**The capability.** `ConformanceTarget::hold_now(NowHold)` asks the target to decide the **next**
+command the scenario executes — and only that one — at the instant the request names, an RFC 3339
+`Timestamp` at whole-second precision. Its default body answers `TargetError::Unsupported` with the
+observation `hold_now`, so a target written before it keeps compiling and every scenario that needs
+it is reported `unsupported`, naming `hold_now`, rather than wrong. A target that reads the runner's
+command clock (`Runner::command_clock`, beyond10x/ess#510) needs no method: the runner writes the
+held instant into that clock's cell for the held step instead of its rounded wall reading, so the
+interpreted target and the interpreters `mutate` runs offer the capability by construction.
+
+**The step.** `{step: hold_now, seconds: <n>}` stands immediately before the `execute_command` it
+holds. `seconds` is a `now_offset` number, resolved through the same per-scenario table: the first
+step naming `n` fixes it against one wall reading rounded up to a whole second, and every later
+`now_offset` of `n` reads that instant. The held command's own `now_offset` values that no earlier step
+fixed resolve against the reading the held instant was fixed from, not a fresh one, so a held step
+and the values it is compared with refer to one instant exactly, with no latency between them:
+
+| guard | arrangement | held step |
+|---|---|---|
+| `when_subject: {predicate: expiry < now}` | `Issue` sends `expiry: {kind: now_offset, seconds: 0}` | `hold_now 0`, then `Redeem` |
+| `when: starts_at < now - 60s` | — | `hold_now 0`, then `ScheduleJob` with `starts_at: {kind: now_offset, seconds: -60}` |
+
+**What synthesis adds.** For every ordering of a field against `now` that the off-boundary rule
+above witnesses — a command input guard, a `when_subject:` or `when_related:` predicate over a
+stored field written from a whole input field — synthesis adds one scenario **on** the boundary:
+the field at the reference offset the guard names, decided at the reference itself
+(`now_offset::reference`), and sent as `now_offset` with a `hold_now 0` before the command under
+test. The scenario requires the branch that value takes at that instant: the accepting branch for
+`expiry < now` at `expiry == now`, so the `<=` mutant, which refuses there, is killed. The
+off-boundary scenarios stay as they are, with their bytes; the at-boundary scenario is one more.
+A path a `now_offset` cannot carry, and a field `straddled` refuses, get no held scenario either.
+
+How the held scenario is built: it is the off-boundary scenario of the branch the boundary takes —
+the one sending the value a second from the boundary on the side whose verdict the boundary
+shares (`now - 59s` for `< now - 60s`, `now - 61s` for `<= now - 60s`) — with that value moved
+onto the boundary, wherever the scenario asserts it, and everything after the command under test's
+own expectations left out. It is filed as `<command>/outcome/<outcome>/held/<field>/<seconds>`
+(`ScenarioId::HeldOutcome`), the field being the input field sent on the boundary and the seconds
+the reference offset, beside the scenario it was taken from. None is added where moving the value
+could change another decision: a field also compared with a fixed instant, another `now` boundary
+on the value moved from, comparisons at the boundary that disagree about the side, or a scenario
+naming either offset elsewhere. A stored field written with an offset other than `0` gets a
+`hold_now 0` before the writing command too, so the value it writes and the instant the command
+under test is held at come from one reading.
+
+
+**The runner.** On `hold_now n` the runner resolves `n`, then either writes it into the command
+clock it handed out or calls `hold_now` on the target; `Unsupported` ends the scenario `unsupported`
+naming `hold_now`, any other error is the target's failure. A synthesized held scenario
+(`<command>/outcome/<outcome>/held/<field>/<seconds>`) that ends `unsupported` for this reason
+alone stays reported, named and counted, but does not fail the run (`ConformanceReport::verdict`;
+the Go and TypeScript runtimes skip it under report/2 too): synthesis adds
+it to suites a target may have passed before it existed. Every other unsupported scenario fails
+the run as before. A `hold_now` not followed by an
+`execute_command` is refused at admission. The Go and TypeScript runtimes resolve the step the same
+way and expose the same optional capability: the Rust, Go and TypeScript runners give one step the
+same instant and the same verdict.
+
+**Formats.** The step needs a suite format pair, `ess-conformance/50` (ordinary) and `/51`
+(coverage), for any suite carrying a `hold_now` step; a `/49` reader refuses it by version, and a
+suite without one keeps its format and bytes. A suite synthesized from a model with a now-guard the
+held rule witnesses carries one, so its format moves.
+
+**Not yet.** `now` in a view filter or field: `ess-domain` refuses the operand there, and the view
+request clock of `generic-language-features.md` (G1, wave 3) is this same instant set on a
+`query_view` step once the source admits it.
+
 ## Formats
 
 | surface | change |
@@ -150,4 +223,5 @@ plan, which `ess-domain` refuses it in.
 - `now` on the left of an ordering, or compared with another fact (`starts_at < ends_at - 60s`).
 - The operand in a stored-field predicate (`when_subject:`), an invariant, a filter or a selection.
 - A suite for a guard over a `Timestamp` inside a structure or a list element.
-- A suite claim at the boundary itself, or within less than a second of it.
+- A suite claim at the boundary itself, or within less than a second of it, against a target that
+  does not offer `hold_now` (above).

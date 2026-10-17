@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-mutant-whose-suite-equals-the-baseline-is-unwitnessed
 kind: story
-status: draft
+status: active
 title: A mutant whose suite equals the baseline's is unwitnessed, not survived
 tags:
 - adopter-report
@@ -13,7 +13,10 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-16T10:20:21Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-10-16T10:20:21Z", actor: "human:timo", revision: 3}
 ---
 ## Outcome
 

@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/guard-boundaries-are-held-at-a-fixed-now-0.62.0
+repository: ess
+publishedAt: 2026-10-16T00:00:00Z
+title: A suite holds a command at a fixed now, so a guard on a time boundary is tested exactly there
+summary: >-
+  A conformance suite can hold the instant a target reads as `now` for one command, and synthesis
+  adds a scenario on each `now` boundary a command decides by. Format `ess/26` holds an
+  external refusal beside an existing row to leave it unchanged. Generated Rust decoders
+  enforce a newtype's alphabet and length; the Go and TypeScript explorers draw timestamps.
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.62.0
+  version: 0.62.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

@@ -1,4 +1,4 @@
-#	models=254	commands=485
+#	models=255	commands=487
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -466,6 +466,9 @@ crates/verify/ess-conformance/tests/fixtures/mutation-arms.yaml	notes.core.Write
 crates/verify/ess-conformance/tests/fixtures/mutation-authored.yaml	ir=e71fef920ccb06ffa5f6872d7a5e306030c8a7a7751a5f4085adf8bd9748e40d:7644
 crates/verify/ess-conformance/tests/fixtures/mutation-authored.yaml	work.tasks.CreateTask	default: created
 crates/verify/ess-conformance/tests/fixtures/mutation-authored.yaml	work.tasks.RetryTask	held_state: at-limit | default: retried
+crates/verify/ess-conformance/tests/fixtures/mutation-clocked-expiry.yaml	ir=5b785e4a8da425f742f13717d8cba8fa9047eefb4ae1b35914944a4a48aef897:9986
+crates/verify/ess-conformance/tests/fixtures/mutation-clocked-expiry.yaml	demo.codes.Issue	default: issued
+crates/verify/ess-conformance/tests/fixtures/mutation-clocked-expiry.yaml	demo.codes.Redeem	existence: not-found | held_state: expired | default: redeemed
 crates/verify/ess-conformance/tests/fixtures/mutation-gained-refusal.yaml	ir=0f73968f58bc18fae3fc667940afe9eae0698000f19347e328d8c8c853a38e2a:8865
 crates/verify/ess-conformance/tests/fixtures/mutation-gained-refusal.yaml	shop.order.ReportStatus	accepting: settled, pending | default: noted
 crates/verify/ess-conformance/tests/fixtures/mutation-identical-answer.yaml	ir=b7835b0d5fdee67ccedab693b5fa9e4a341ce156b6bdee17fcad5b2aa15b8af9:6862

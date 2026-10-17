@@ -9,6 +9,7 @@
 //! replay compares.
 
 mod support_go;
+mod support_held_jobs;
 mod support_now_stored;
 mod support_occurrence_clock;
 
@@ -45,7 +46,13 @@ fn suite() -> ConformanceSuite {
             "{refusal:#?}"
         );
     }
-    synthesis.suite
+    // The scenarios on a boundary need a target that holds the clock; these staged targets do not,
+    // and `runners_agree_on_the_fixed_instant` covers them.
+    let mut suite = synthesis.suite;
+    suite
+        .scenarios
+        .retain(|id, _| !id.to_string().contains("/held/"));
+    suite
 }
 
 /// What each wiring of the clock fails: none for the healthy target, and for each fault at least
@@ -181,6 +188,7 @@ const target = () => {
     observeEvents: async request => next('observe_events', request.event, request)
       .map(event => ({event: event.event, payload: event.payload})),
     establishEntity: async request => next('establish_entity', request.entity, request),
+    holdNow: async hold => { next('hold_now', hold.instant, hold); },
     configureExternalOutcome: async () => { throw unsupported('none is external'); },
     redeliverEvent: async () => { throw unsupported('not needed'); },
     observeInvocations: async () => { throw unsupported('not needed'); },
@@ -231,6 +239,15 @@ fn typescript_parity<T: ess_conformance::target::ConformanceTarget>(
     suite: &ConformanceSuite,
     target: T,
 ) -> BTreeMap<String, String> {
+    typescript_run(label, suite, target).0
+}
+
+/// [`typescript_parity`], with whether the TypeScript run itself passed (its process exited 0).
+fn typescript_run<T: ess_conformance::target::ConformanceTarget>(
+    label: &str,
+    suite: &ConformanceSuite,
+    target: T,
+) -> (BTreeMap<String, String>, bool) {
     let admitted = AdmittedSuite::from_suite(suite).unwrap_or_else(|error| panic!("{error}"));
     let recorder = support_go::Recorder::new(target);
     let report = Runner::new(
@@ -295,7 +312,7 @@ fn typescript_parity<T: ess_conformance::target::ConformanceTarget>(
         typescript, rust,
         "{label}: per-scenario verdicts, TypeScript (left) and Rust (right)\n{log}"
     );
-    rust
+    (rust, output.status.success())
 }
 
 #[test]
@@ -314,5 +331,131 @@ fn a3_typescript_gives_the_reference_verdicts_for_the_healthy_and_each_faulty_cl
         for id in *killed {
             assert!(failed.contains(id), "{label}: {id} passed: {verdicts:#?}");
         }
+    }
+}
+
+// ---- a held `now` (beyond10x/ess#586) ------------------------------------------------------
+
+/// The three runners agree on a held `now`: each holds the target's `now` at the same instant
+/// before the accepting command, so the boundary value passes against the strict guard and fails
+/// against its `<=` mutant in every runner, and a target that cannot hold is unsupported in each.
+#[test]
+fn runners_agree_on_the_fixed_instant() {
+    use support_held_jobs::{held_suite, Jobs, REFUSAL, SCHEDULED};
+    let suite = held_suite();
+    let options = support_go::Options {
+        wall_millis: Some(WALL_MS),
+        ..support_go::Options::default()
+    };
+    let mutant = || {
+        let mut jobs = Jobs::new(WALL_MS);
+        jobs.inclusive = true;
+        jobs
+    };
+    let unheld = || {
+        let mut jobs = Jobs::new(WALL_MS);
+        jobs.holding = false;
+        jobs
+    };
+    for (label, verdicts) in [
+        (
+            "go-held",
+            support_go::assert_parity_with("go-held", &suite, Jobs::new(WALL_MS), &options),
+        ),
+        (
+            "ts-held",
+            typescript_parity("ts-held", &suite, Jobs::new(WALL_MS)),
+        ),
+    ] {
+        assert_eq!(
+            support_go::not_passed(&verdicts),
+            Vec::<&str>::new(),
+            "{label}"
+        );
+    }
+    for (label, verdicts) in [
+        (
+            "go-inclusive",
+            support_go::assert_parity_with("go-inclusive", &suite, mutant(), &options),
+        ),
+        (
+            "ts-inclusive",
+            typescript_parity("ts-inclusive", &suite, mutant()),
+        ),
+    ] {
+        assert_eq!(verdicts[SCHEDULED], "failed", "{label}: {verdicts:#?}");
+        assert_eq!(verdicts[REFUSAL], "passed", "{label}: {verdicts:#?}");
+    }
+    for (label, verdicts) in [
+        (
+            "go-unheld",
+            support_go::assert_parity_with("go-unheld", &suite, unheld(), &options),
+        ),
+        (
+            "ts-unheld",
+            typescript_parity("ts-unheld", &suite, unheld()),
+        ),
+    ] {
+        assert_eq!(verdicts[SCHEDULED], "unsupported", "{label}: {verdicts:#?}");
+    }
+}
+
+/// Acceptance `target_without_the_capability`, in all three runners: against the suite synthesis
+/// writes, a target without `hold_now` has only the held scenario reported unsupported, and that
+/// scenario does not turn its run red. The Rust verdict is `Passed`, `go test` and the TypeScript
+/// run exit 0 under report/2, and each keeps the scenario `unsupported` in its outcomes.
+#[test]
+fn runners_agree_a_target_without_hold_now_keeps_its_passing_run() {
+    use support_held_jobs::{synthesized_suite, Jobs};
+    let suite = synthesized_suite();
+    let unheld = || {
+        let mut jobs = Jobs::new(WALL_MS);
+        jobs.holding = false;
+        jobs
+    };
+    let held: Vec<String> = suite
+        .scenarios
+        .keys()
+        .map(ToString::to_string)
+        .filter(|id| id.contains("/held/"))
+        .collect();
+    assert_eq!(held.len(), 1, "{:#?}", suite.scenarios.keys());
+
+    let admitted = AdmittedSuite::from_suite(&suite).unwrap_or_else(|error| panic!("{error}"));
+    let report = Runner::new(
+        RunnerConfig::default(),
+        now_offset::WithWall::new(AdvancingClock::default(), || {
+            Timestamp::from_epoch_millis(WALL_MS)
+        }),
+        Ids::for_suite(&suite),
+    )
+    .run_admitted(&admitted, &unheld())
+    .into_report();
+    assert_eq!(
+        report.status,
+        ess_conformance::report::ConformanceStatus::Passed,
+        "{report}"
+    );
+
+    let options = support_go::Options {
+        wall_millis: Some(WALL_MS),
+        ..support_go::Options::default()
+    };
+    let (rust, replayed) = support_go::compare_with("go-unheld-only", &suite, unheld(), &options);
+    let go_passed = replayed.go.success;
+    let log = replayed.go.log.clone();
+    let go = support_go::assert_compared("go-unheld-only", (rust, replayed));
+    let (typescript, typescript_passed) = typescript_run("ts-unheld-only", &suite, unheld());
+    for (label, verdicts, passed) in [
+        ("go-unheld-only", go, go_passed),
+        ("ts-unheld-only", typescript, typescript_passed),
+    ] {
+        assert_eq!(
+            support_go::not_passed(&verdicts),
+            vec![held[0].as_str()],
+            "{label}: {verdicts:#?}"
+        );
+        assert_eq!(verdicts[&held[0]], "unsupported", "{label}");
+        assert!(passed, "{label}: the run turned red (Go log):\n{log}");
     }
 }

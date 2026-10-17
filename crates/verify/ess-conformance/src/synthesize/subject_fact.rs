@@ -2346,11 +2346,20 @@ fn external_setup(
         if let ResolvedInstance::Supplied { field } = &subject.instance {
             bound.insert(field.name.clone(), arrangement.instance);
         }
+        // A complete external refusal (ess/26, beyond10x/ess#587) reads the row back, so the
+        // state and fields it was left in are kept for its snapshot; below ess/26 nothing is.
+        let complete = outcome.complete_refusal;
         return Setup {
             steps: arrangement.steps,
             bound,
             source: arrangement.source,
             unobserved: arrangement.unobserved,
+            before: complete.then_some(arrangement.state),
+            settled: if complete {
+                arrangement.settled
+            } else {
+                BTreeMap::new()
+            },
             ..Setup::none()
         };
     }

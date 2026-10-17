@@ -23,7 +23,12 @@ use support_now_stored::{Fault, Steered, LEASES, WALL_MS};
 use support_occurrence_clock::model;
 
 fn run(fault: Option<Fault>) -> BTreeMap<String, Status> {
-    let suite = synthesize(&model(LEASES)).suite;
+    let mut suite = synthesize(&model(LEASES)).suite;
+    // The scenarios on a boundary need a target that holds the clock; this one does not
+    // (`runners_agree_on_the_fixed_instant` and `current_time_guard` run them).
+    suite
+        .scenarios
+        .retain(|id, _| !id.to_string().contains("/held/"));
     let admitted = AdmittedSuite::from_suite(&suite).unwrap();
     let runner = Runner::new(
         RunnerConfig::default(),

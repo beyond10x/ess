@@ -154,7 +154,8 @@ fn go(directory: &Path, requests: &Path, arguments: &[&str]) -> Output {
         .env("GOPROXY", "off")
         .env("GOTOOLCHAIN", "local");
     // The caller's `GOCACHE` where it sets one (the tree's `target/go-build`), else one of this
-    // run's own beside the generated module.
+    // run's own beside the generated module. That one is shared by every test of the process that
+    // runs `go`, so no test removes it: one test's removal broke another's build mid-run.
     if std::env::var_os("GOCACHE").is_none() {
         command.env("GOCACHE", scratch("gocache"));
     }
@@ -199,7 +200,6 @@ fn go_answers() -> &'static BTreeMap<String, Answer> {
         );
         let _ = std::fs::remove_dir_all(&directory);
         let _ = std::fs::remove_file(&requests);
-        let _ = std::fs::remove_dir_all(scratch("gocache"));
         assert!(ran.status.success(), "the Go harness builds and runs");
         let stdout = String::from_utf8_lossy(&ran.stdout).into_owned();
         shared::parsed(
@@ -245,7 +245,6 @@ fn the_bound_go_server_builds_and_is_vet_clean() {
             String::from_utf8_lossy(&vetted.stderr)
         );
     }
-    let _ = std::fs::remove_dir_all(scratch("gocache"));
 }
 
 /// One example directory under `examples/`, compiled where it lives, as `ess generate synthesize

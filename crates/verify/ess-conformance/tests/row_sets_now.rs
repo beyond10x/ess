@@ -201,22 +201,69 @@ fn without_a_clock_only_a_decision_needing_now_is_unknown() {
     );
 }
 
-fn run(clock: Arc<Fixed>) -> BTreeMap<String, Status> {
-    let suite = synthesize(&model(&timed())).suite;
-    let admitted = AdmittedSuite::from_suite(&suite).unwrap();
+/// A scenario's status, and whether it ended `unsupported` only because the target cannot hold
+/// its `now` ([`ess_conformance::report::ScenarioResult::wants_only_hold_now`]).
+type Statuses = BTreeMap<String, (Status, bool)>;
+
+fn runner(suite: &ess_conformance::ConformanceSuite) -> Runner<impl ess_conformance::Clock> {
     Runner::new(
         RunnerConfig::default(),
         now_offset::WithWall::new(AdvancingClock::default(), || {
             Timestamp::from_epoch_millis(WALL_MS)
         }),
-        Ids::for_suite(&suite),
+        Ids::for_suite(suite),
     )
-    .run_admitted(&admitted, &timed_target(Some(clock)))
-    .into_report()
-    .scenarios
-    .into_iter()
-    .map(|scenario| (scenario.scenario.to_string(), scenario.status))
-    .collect()
+}
+
+fn statuses(report: ess_conformance::report::ConformanceReport) -> Statuses {
+    report
+        .scenarios
+        .into_iter()
+        .map(|scenario| {
+            let held = scenario.wants_only_hold_now();
+            (scenario.scenario.to_string(), (scenario.status, held))
+        })
+        .collect()
+}
+
+/// The suite run against a target deciding with `clock`, its own: the runner cannot hold it.
+fn run(clock: Arc<Fixed>) -> Statuses {
+    let suite = synthesize(&model(&timed())).suite;
+    let admitted = AdmittedSuite::from_suite(&suite).unwrap();
+    statuses(
+        runner(&suite)
+            .run_admitted(&admitted, &timed_target(Some(clock)))
+            .into_report(),
+    )
+}
+
+/// The suite run against a target deciding with the runner's own command clock, the one a
+/// `hold_now` step holds (beyond10x/ess#586).
+fn run_held() -> Statuses {
+    let suite = synthesize(&model(&timed())).suite;
+    let admitted = AdmittedSuite::from_suite(&suite).unwrap();
+    let mut runner = runner(&suite);
+    let target = Interpreted::for_model(model(&timed())).with_command_clock(runner.command_clock());
+    begin(&target);
+    statuses(runner.run_admitted(&admitted, &target).into_report())
+}
+
+fn not_passed(statuses: &Statuses) -> BTreeSet<&str> {
+    statuses
+        .iter()
+        .filter(|(_, (status, _))| *status != Status::Passed)
+        .map(|(id, _)| id.as_str())
+        .collect()
+}
+
+/// The scenarios that fail a run: every one but a pass and a held scenario the target could not
+/// hold `now` for ([`ess_conformance::report::ConformanceReport::verdict`]).
+fn failing(statuses: &Statuses) -> BTreeSet<&str> {
+    statuses
+        .iter()
+        .filter(|(_, (status, held))| *status != Status::Passed && !held)
+        .map(|(id, _)| id.as_str())
+        .collect()
 }
 
 #[test]
@@ -239,20 +286,31 @@ fn the_synthesized_row_set_scenarios_reading_now_pass_at_the_decision_instant() 
             synthesis.refusals
         );
     }
-    let statuses = run(Fixed::new(T1));
-    let failed: BTreeSet<&str> = statuses
+    // Synthesis holds `now` on a boundary `Expire` decides by (beyond10x/ess#586), but never on
+    // `now - 1h`: the `due_at` it would move there, a decoy `now + 864001s` no selector reads,
+    // crosses `now - 30s` on the way, joins the selection and turns `on-time` into `overdue`.
+    let held: BTreeSet<&str> = ids
         .iter()
-        .filter(|(_, status)| **status != Status::Passed)
-        .map(|(id, _)| id.as_str())
+        .map(String::as_str)
+        .filter(|id| id.contains("/held/"))
         .collect();
-    assert_eq!(failed, BTreeSet::new(), "{statuses:#?}");
+    assert!(!held.is_empty(), "{ids:#?}");
+    assert!(
+        held.iter().all(|id| !id.ends_with("/held/due_at/-3600")),
+        "{held:#?}"
+    );
+    // Deciding with the runner's command clock, which the runner holds: every scenario passes,
+    // the held ones included.
+    let statuses = run_held();
+    assert_eq!(not_passed(&statuses), BTreeSet::new(), "{statuses:#?}");
+    // Deciding with its own clock, which no runner can hold: only the held scenarios are
+    // unsupported, each for `hold_now` alone, and none fails the run.
+    let statuses = run(Fixed::new(T1));
+    assert_eq!(failing(&statuses), BTreeSet::new(), "{statuses:#?}");
+    assert_eq!(not_passed(&statuses), held, "{statuses:#?}");
     // A target deciding with an instant a day earlier — the arrangement's, reused — fails.
     let statuses = run(Fixed::new("2026-10-03T12:00:00.5Z"));
-    let failed: BTreeSet<&str> = statuses
-        .iter()
-        .filter(|(_, status)| **status != Status::Passed)
-        .map(|(id, _)| id.as_str())
-        .collect();
+    let failed = failing(&statuses);
     assert!(
         failed.contains("demo.jobs.Expire/outcome/overdue")
             || failed.contains("demo.jobs.Expire/outcome/pending"),

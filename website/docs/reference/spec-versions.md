@@ -65,6 +65,7 @@ prints the same history from the `ess` you run, offline.
 | `ess/23` | [0.54.0][r54] | An `updates:` whose `sets:` writes the entity's identity re-keys the record: the row read under `instance:` comes to rest under the written identity, every field `sets:` does not name carried over, and the old identity names nothing (beyond10x/ess#429). The command must declare its collision answer, a refusal guarded by `when_related: {entity: <the entity>, where: <identity> == input.<field>, exists: true}` over the input the identity is written from, or validate refuses the outcome as `missing_declaration`; the identity write is refused by name beside `compensates:`, in a create-or-update pair, on an entity a declared relation carries and on a struct identity, and below `ess/23` it is refused naming `ess/23`. A value may read the held lifecycle state, `{subject: state}`, wherever `{subject: …}` is admitted — an error payload, an event payload and `sets:` — the state before the move (beyond10x/ess#458); below `ess/23` it is refused naming `ess/23`. `deletes:` takes `instances:`, removing every stored row a filter selects and counting them with `{count: changed}`; an `affects:` entry may declare `deletes: <Entity>` over an entity of the outcome's own domain, and `affects:` is admitted beside a `deletes:` subject (beyond10x/ess#452). An enum may declare typed variant attributes, `attributes: [{name, type}]`, each variant filling them with typed literals; guards, invariants and view filters read `<fact>.<attribute>`, lowered to variant membership (beyond10x/ess#450). A refusal selected by `when_subject: {predicate: …}` asserts the whole record unchanged, as a state-guarded refusal does, and a predicate on `state` is witnessed in each state it claims that no earlier branch answers (beyond10x/ess#461). Synthesis scopes a row-set selector by an equality between a `String` or `Uuid` member of a struct identity and the input or the subject, `at.region == input.place.region`, reads each row's literal identity member by member, arranges its decoys under other identities and never creates an identity a row already carries; the whole-struct `at == input.place` stays a type mismatch, and below `ess/23` such a selector validates and is refused by synthesis as unscoped, as before (beyond10x/ess#463). A row-set selector that compares with the input is decided on a command that also names an existing record through the input, an update, a delete or an upsert; below `ess/23` such a branch stays refused (beyond10x/ess#462). An `affects:` entry may write one record per element of an input list with `each: {in: input.<list>, as: <name>}` and `instance: <name>.<member>`: it updates the record an element names when it is held and creates it in the initial state when not, admitted only where a declared `distinct:` keeps that member distinct (beyond10x/ess#459). |
 | `ess/24` | [0.58.0][r58] | `undeclared_fields: ignored \| refused` (default `refused`) on a `kind: struct` type and on a command with a non-empty `response:`, where it governs the response only: `ignored` admits fields the declaration does not declare, while every declared field stays required and typed; the key is refused by name on a command without `response:` (`missing_declaration`), on an event, an error and every other declaration, and below `ess/24` it is refused naming `ess/24` (beyond10x/ess#500). |
 | `ess/25` | [0.60.0][r60] | A create-or-update command may select among its update branches with `when_subject:` predicates over the stored row's fields and held state beside an `unknown_instance:` branch that `creates:` the row: the creating branch answers an identity no row carries, before any predicate reads a row, and the predicates must partition the stored rows alone; below `ess/25` the pairing is refused as `conflicting_declaration`, its hint naming `ess/25` (beyond10x/ess#530). An outcome with `instances:` may publish an event once per row it changed, listed in `emits:` as `{event: <name>, each: changed}` with an optional `when_state:` naming the states a row held before the outcome; its payload reads that row with `{changed: <field>}` and `{changed: state}`, as it was before the outcome, and occurrences follow in ascending order of identity; the entry is refused by name on any other outcome, and below `ess/25` it is refused naming `ess/25` (beyond10x/ess#531). An `external:` refusal may declare `before_row: true`: the implementation decides it from the request alone, before it reads the addressed row, so it answers at step 2 of the precedence order, among the input-guarded refusals in declaration order, before existence and the held state, and the branches the held state selects may be declared after it; the key is refused as `conflicting_declaration` on a branch that is not `external:`, on one naming no `error:`, beside `compensates: true`, where the error payload reads a row, declared after a branch a later step answers and on a command with a `when_related:` branch, and below `ess/25` as `unsupported_format_version` naming `ess/25` (beyond10x/ess#534). A command guard may compare a text fact with its surrounding ASCII whitespace removed, `{trimmed: {<text operator>: …}}` around `equals`, `in`, `equals_ignore_case`, `in_ignore_case`, `starts_with`, `ends_with` or `contains`; below `ess/25` it is refused naming `ess/25`, and outside a command guard as `unsupported_construct` (beyond10x/ess#532). A view whose filter is the one comparison `<identity> == param.<name>` may declare `absent: {row: {<field>: <literal>…}}`, its answer for an identity no row carries: one default row holding the requested identity, each literal typed as a `sets:` literal is, and nothing in the `Optional` fields it leaves out; refused as `conflicting_declaration` on any other filter, beside an aggregate or `paging:`, and on the identity field in `row:`, as `missing_declaration` where a required projected field has no value, and below `ess/25` as `unsupported_format_version` naming `ess/25` (beyond10x/ess#533). |
+| `ess/26` | [0.62.0][r62] | A named `external:` refusal of a command that addresses an existing row, `before_row: true` included, changes nothing on that row: its scenario snapshots the complete row before forcing the branch and requires it unchanged afterwards, as a held-state refusal's does, so a target that deletes or rewrites the row on the forced branch fails; a `compensates: true` refusal keeps its read-back of the declared change, and below `ess/26` the scenario keeps its bytes (beyond10x/ess#587). |
 
 [ess-format-history-end]: #
 
@@ -302,6 +303,14 @@ and nothing in the `Optional` fields it leaves out. The key is refused on any ot
 beside an aggregate or `paging:`, and below `ess/25` as `unsupported_format_version` naming
 `ess/25`. A document without the key keeps its meaning, its IR bytes and its compiled digest.
 
+From `ess/26` a named `external:` refusal of a command that addresses an existing row changes
+nothing on that row, `before_row: true` included (beyond10x/ess#587). Its scenario snapshots the
+complete row before it forces the branch and requires it unchanged afterwards, as a held-state
+refusal's does, so a target that deletes or rewrites the row on the forced branch fails. The IR
+marks such a refusal `complete_refusal`. A `compensates: true` refusal keeps its own read-back of
+the declared change. Under `ess/25` and earlier the scenario keeps its steps and its bytes; no key
+is added.
+
 ## `ess-diff/` — what moved between two revisions
 
 | Version | Released in | What changed | An older reader |
@@ -533,6 +542,18 @@ below it, the constrained pair included. Rust, Go and TypeScript execute both wi
 by version, every reader refuses either member under a lower major, and a suite with no opened
 object keeps its earlier format and bytes.
 
+`ess-conformance/50` and `ess-conformance/51`, added in [0.62.0][r62], carry the `hold_now` step
+(beyond10x/ess#586): `{step: hold_now, seconds: <n>}`, immediately before the `execute_command` it
+holds, asks the target to decide that one command at the instant the scenario's `now_offset` of
+`n` names, so a value sent as a `now_offset` can sit exactly on a `now` boundary. The runner writes
+the instant into the command clock it handed out, or calls the target's optional `hold_now`; a
+target without it reports the scenario `unsupported`, naming `hold_now`. A `hold_now` anywhere but
+before an `execute_command` is refused at admission. A suite carrying one is written at 50
+(ordinary) or 51 (declared coverage); each implies every major below it, the opened pair included.
+Rust, Go and TypeScript execute both with report/2: the generated Go runtime asks a target
+implementing `NowHolder`, the TypeScript one a target with `holdNow`. Older readers refuse these
+envelopes by version. A suite without the step keeps its earlier format and bytes.
+
 For `ess/7`, generated held-state refusals include ordinary `wrong_state` outcomes:
 they compare the complete subject before and after the call and refuse every
 direct event, including undeclared names. Incomplete subject views cause a named
@@ -695,6 +716,12 @@ does not have. An emission or a report is `/6` only where some mutant carries it
 one keeps `/5`, `/4` or `/3` and its earlier bytes. `--collect` still reads `/5` and earlier,
 and refuses any of them that carries `overlap_taken_by`, naming `/6`.
 
+`ess-mutation-report/7` was added in [0.62.0][r62]. It is `/6` with `unchanged_suite` on a mutant that is
+`unwitnessed` because its synthesized suite asks what the baseline's asks (beyond10x/ess#586),
+which the `/6` that 0.60.0 and later releases wrote does not have. A report is `/7` only where
+some mutant carries it; every other one keeps `/6`, `/5`, `/4` or `/3` and its earlier bytes. No
+manifest version moves: `--collect` decides it from the suites themselves.
+
 ## Every other family
 
 Each family below is read by a build that admits only the versions listed, and refuses a document
@@ -719,7 +746,7 @@ claiming a higher number. [Formats and digests](./formats.md) says what each doc
 | `ess-prototrace/1` | [0.53.0][r53] (experimental) | Ordered protocol actions and observations bound to a model digest, with explicit model or target origin and capture completeness. |
 | `ess-build/1`, `ess-build-ir/1` | [0.9.0][r9] | An authored build and its compiled form. |
 | `ess-runtime/1`, `ess-runtime-ir/1` | [0.9.0][r9] | An authored runtime mapping and its compiled form. |
-| `ess-runtime/2`, `ess-runtime-ir/2` | Unreleased | Adds scheduled workloads, rendered as a Kubernetes `CronJob`, and pod settings (resources, security context, service-account token, secret volumes, images pinned by digest). A reader of the previous version refuses it; a version 1 document keeps its bytes and digest. |
+| `ess-runtime/2`, `ess-runtime-ir/2` | [0.62.0][r62] | Adds scheduled workloads, rendered as a Kubernetes `CronJob`, and pod settings (resources, security context, service-account token, secret volumes, images pinned by digest). A reader of the previous version refuses it; a version 1 document keeps its bytes and digest. |
 | `ess-release/1`, `ess-release-catalog/1` | [0.9.0][r9] | A release manifest, and the catalog of candidate releases. |
 | `ess-stack/1`, `ess-stack-lock/1` | [0.9.0][r9] | Stack constraints, and the exact releases a resolution selected. |
 | `ess-environment/1`, `ess-deployment/1`, `ess-deployment-diff/1` | [0.9.0][r9] | An environment, the deployment compiled for it, and the difference between two deployments. |
@@ -809,3 +836,4 @@ published release that carries them.
 [r59]: https://github.com/beyond10x/ess/releases/tag/0.59.0
 [r60]: https://github.com/beyond10x/ess/releases/tag/0.60.0
 [r61]: https://github.com/beyond10x/ess/releases/tag/0.61.0
+[r62]: https://github.com/beyond10x/ess/releases/tag/0.62.0

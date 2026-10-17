@@ -217,7 +217,7 @@ refusal[ESS-SYNTH-011]: entity billing.invoice.Invoice has no scenario `…`
 | `ESS-MUTATE-001` | A baseline scenario failed or ended `error` against the target, so no failure under a mutant can be shown to be because of the mutant. | Make the unmutated suite pass against the target first; a scenario reported `unsupported` or `skipped` is not scored and does not cause this. |
 | `ESS-MUTATE-002` | A mutant was refused by `assemble` or `compile`, so there was nothing to run. | Nothing to repair in the specification; the mutant is reported and not scored. |
 | `ESS-MUTATE-003` | The selected mutant classes found no site in this specification, so the audit would run nothing. | Select classes that apply to the specification, or leave `--class` out to run every class. |
-| `ESS-MUTATE-004` | A mutant's suite gained synthesis refusals the baseline's does not have and no scored scenario failed, so passing what is left says nothing about the mutant. | Repair the synthesis refusal the verdict names, so the suite has a scenario for what the mutant changed. |
+| `ESS-MUTATE-004` | A mutant's suite gained synthesis refusals the baseline's does not have, or asks exactly what the baseline's asks, and no scored scenario failed, so passing it says nothing about the mutant. | Repair the synthesis refusal the verdict names, or declare what makes the change observable, so the suite has a scenario for what the mutant changed. |
 | `ESS-MUTATE-005` | A guard mutant left its outcome's guard satisfied by no input: the rule it wrote is dead, not missed. | Nothing to repair in the implementation; read the named guard, which no input can satisfy under the mutation. |
 
 ## Recorded histories: `history.*`

@@ -652,8 +652,9 @@ enum ConformCommand {
         /// established only for a generated obligation no bounded arrangement reaches, and the
         /// real command and assertions follow it. Any seed selects suite/42 (or /43 with
         /// `--suite-format 5`), suite/44 (/45) where an act also claims one event more than once,
-        /// suite/46 (/47) where a response reaches a constrained String newtype, or suite/48 (/49)
-        /// where a response or a struct it reaches ignores undeclared fields, and records its
+        /// suite/46 (/47) where a response reaches a constrained String newtype, suite/48 (/49)
+        /// where a response or a struct it reaches ignores undeclared fields, or suite/50 (/51) where
+        /// a scenario holds `now` for a command, and records its
         /// source, row and uses.
         #[arg(
             long = "synthesis-seed",
@@ -882,8 +883,9 @@ enum ConformCommand {
     /// input is unknown); otherwise unwitnessed (ESS-MUTATE-004) when its suite gained synthesis refusals
     /// the baseline does not have, when it is on an outcome whose scenario the baseline refused,
     /// or when it is a from-drop or transition-to mutant on a transition only such outcomes
-    /// perform. It survives when every scored scenario passed and each scenario it left unscored
-    /// is the baseline's own, unchanged.
+    /// perform, or when its synthesized suite asks what the baseline's asks (the suite does not
+    /// change), unless authored scenarios ran. It survives when every scored scenario passed and
+    /// each scenario it left unscored is the baseline's own, unchanged.
     ///
     /// emit-swap replaces an outcome's only event with another declared event of exactly the same
     /// fields that every component accepting the command publishes. A site with no such event is

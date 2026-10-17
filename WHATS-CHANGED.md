@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.62.0](#a-suite-holds-a-command-at-a-fixed-now-so-a-guard-on-a-time-boundary-is-tested-exactly-there) | A suite holds a command at a fixed now, so a guard on a time boundary is tested exactly there | capability | notable |
 | [0.61.0](#concurrent-histories-record-each-calls-input-and-events-and-check-history-holds-them) | Concurrent histories record each call's input and events, and check-history holds them | capability | notable |
 | [0.60.0](#a-composition-states-which-component-plays-anothers-role-and-which-command-implements-or-gates-it) | A composition states which component plays another's role, and which command implements or gates it | capability | notable |
 | [0.60.0](#source-format-ess25-and-an-http-binding-that-generates-rust-and-go-servers) | Source format ess/25, and an HTTP binding that generates Rust and Go servers | capability | significant |
@@ -70,6 +71,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.62.0 — 2026-10-16
+
+### A suite holds a command at a fixed now, so a guard on a time boundary is tested exactly there
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.62.0)
+
+A conformance suite can hold the instant a target reads as `now` for one command, and synthesis adds a scenario on each `now` boundary a command decides by. Format `ess/26` holds an external refusal beside an existing row to leave it unchanged. Generated Rust decoders enforce a newtype's alphabet and length; the Go and TypeScript explorers draw timestamps.
 
 ## 0.61.0 — 2026-10-15
 

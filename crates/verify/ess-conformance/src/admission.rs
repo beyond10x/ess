@@ -206,7 +206,7 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
     if !crate::go::admitted_major(version.major()) {
         return Err(p["suite_version"].error(
             "UnsupportedSuiteVersion",
-            "execution readers admit suite majors 1–49",
+            "execution readers admit suite majors 1–51",
         ));
     }
     match p.get("synthesis_seeds") {
@@ -265,11 +265,12 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
             | 45
             | 47
             | 49
+            | 51
     ) != root.contains_key("coverage")
     {
         return Err(value.error(
             "InvalidCoverage",
-            "coverage is required exactly for odd suite majors from /5 through /49",
+            "coverage is required exactly for odd suite majors from /5 through /51",
         ));
     }
     for scenario in root["scenarios"].object()?.values() {
@@ -549,6 +550,12 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
     {
         return Err(value.error("UnsupportedVocabulary", "step requires a newer suite major"));
     }
+    if major < crate::hold_now::ORDINARY && tag == "hold_now" {
+        return Err(value.error(
+            "UnsupportedVocabulary",
+            "hold_now steps require suite/50 or /51",
+        ));
+    }
     let (required, optional): (&[&str], &[&str]) = match tag {
         _ if crate::delivery_context::step_keys(tag).is_some() => {
             crate::delivery_context::step_keys(tag).unwrap_or_default()
@@ -596,6 +603,7 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
         "expect_view" => (&["step", "view", "expectation"], &[]),
         "eventually_view" => (&["step", "view", "expectation"], &["params"]),
         "mark_instant" => (&["step", "instant"], &[]),
+        "hold_now" => (&["step", "seconds"], &[]),
         "expect_not_before" | "expect_within" => (&["step", "instant", "elapsed"], &[]),
         "check_periodic" if major >= 6 => (&["step", "check"], &[]),
         "expect_quiet" => (&["step", "event", "instant", "elapsed"], &[]),
@@ -759,6 +767,7 @@ fn construct_formats(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
     crate::one_time_response::admit(suite)?;
     crate::direct_response::admit(suite)?;
     crate::undeclared_fields::admit(suite)?;
+    crate::hold_now::admit(suite)?;
     crate::delivery_context::admit(suite)?;
     crate::no_invocation::admit(suite)?;
     crate::refusal_policy::admit(suite)?;
