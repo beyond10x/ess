@@ -885,8 +885,11 @@ mod identical_suite {
     use super::*;
 
     /// `expiry < now` to `expiry <= now`: the two differ only where the stored expiry is the
-    /// target's `now`, which synthesis never places.
+    /// target's `now`. Synthesis places that instant in a held scenario, so this mutant's suite is
+    /// not the baseline's and it is no longer an unchanged-suite mutant.
     const BOUNDARY: &str = "guard-boundary/demo.codes.Redeem/expired/when_subject/0";
+    /// The baseline's held scenario on that boundary: there `expiry < now` redeems.
+    const HELD: &str = "demo.codes.Redeem/outcome/redeemed/held/expiry/0";
     const UNCHANGED: &str = " — ESS-MUTATE-004: the suite does not change";
 
     /// `explore.yaml`'s `score >= 50` to `score > 50`: its suite writes a witness at 50, so it
@@ -948,7 +951,7 @@ mod identical_suite {
     }
 
     fn assert_unwitnessed(json: &Value, text: &str) {
-        let entry = mutant(json, BOUNDARY);
+        let entry = mutant(json, CHECK);
         assert_eq!(entry["verdict"], "unwitnessed", "{entry:#}\n{text}");
         assert_eq!(entry["unchanged_suite"], true, "{entry:#}");
         assert_eq!(json["counts"]["survived"], 0, "{text}");
@@ -958,44 +961,70 @@ mod identical_suite {
             "`ess-mutation-report/6`, which 0.60.0 wrote, has no `unchanged_suite`"
         );
         assert!(
-            text.lines().any(
-                |line| line.starts_with(&format!("unwitnessed {BOUNDARY}: "))
-                    && line.contains(UNCHANGED)
-            ),
+            text.lines()
+                .any(|line| line.starts_with(&format!("unwitnessed {CHECK}: "))
+                    && line.contains(UNCHANGED)),
             "{text}"
         );
     }
 
+    /// `CHECK`: two refusals with the same error, whose payloads read inputs no synthesized
+    /// scenario tells apart, so the swap's suite is the baseline's, scenario for scenario.
     #[test]
     fn identical_suite_mutant_is_unwitnessed() {
+        let report = audit(&[MutantClass::PrecedenceSwap]);
+        let text = report.render_text();
+        let json: Value = serde_json::from_str(&report.to_canonical_json()).unwrap();
+        assert_unwitnessed(&json, &text);
+
+        // `--emit`, then `--collect`: the manifest carries nothing new, the collector decides it.
+        let written = emitted_and_run(fixture(), &[MutantClass::PrecedenceSwap]);
+        assert_eq!(
+            scenarios(&written, BASELINE_DIR),
+            scenarios(&written, CHECK),
+            "the swap's suite is the baseline's"
+        );
+        let manifest: Value = serde_json::from_str(&written[MANIFEST_FILE]).unwrap();
+        assert_eq!(
+            manifest["format"], "ess-mutation-manifest/5",
+            "`OPEN` carries `identical_answer`, nothing carries `unchanged_suite`: {manifest:#}"
+        );
+        assert!(mutant(&manifest, CHECK).get("unchanged_suite").is_none());
+        let collected =
+            mutate::collect(|path| written.get(path).cloned()).unwrap_or_else(|it| panic!("{it}"));
+        let text = collected.render_text();
+        let json: Value = serde_json::from_str(&collected.to_canonical_json()).unwrap();
+        assert_unwitnessed(&json, &text);
+    }
+
+    /// `expiry < now` to `expiry <= now` was the unchanged-suite reproduction until synthesis held
+    /// the clock on each `now` boundary (beyond10x/ess#586): the baseline's suite now carries a
+    /// held scenario on the expiry boundary and the mutant's does not, so the mutant is not scored
+    /// as an unchanged suite.
+    #[test]
+    fn a_held_now_boundary_changes_the_boundary_mutants_suite() {
+        let written = emitted_and_run(clocked(), &[MutantClass::GuardBoundary]);
+        let baseline = scenarios(&written, BASELINE_DIR);
+        let boundary = scenarios(&written, BOUNDARY);
+        assert!(baseline.get(HELD).is_some(), "{baseline:#}");
+        assert!(boundary.get(HELD).is_none(), "{boundary:#}");
+        assert_ne!(baseline, boundary, "the held scenario tells the two apart");
+
         let (files, texts) = clocked();
         let ir = mutate::compile(files.clone(), &texts).expect("the fixture compiles");
         let report = mutate::audit(&files, &texts, &[MutantClass::GuardBoundary], || {
             Interpreted::for_model(ir.clone())
         })
         .unwrap_or_else(|refusal| panic!("{refusal}"));
-        let text = report.render_text();
-        let json: Value = serde_json::from_str(&report.to_canonical_json()).unwrap();
-        assert_unwitnessed(&json, &text);
-
-        // `--emit`, then `--collect`: the manifest carries nothing new, the collector decides it.
-        let written = emitted_and_run(clocked(), &[MutantClass::GuardBoundary]);
-        assert_eq!(
-            scenarios(&written, BASELINE_DIR),
-            scenarios(&written, BOUNDARY),
-            "the reproduction's mutant suite is the baseline's"
-        );
-        let manifest: Value = serde_json::from_str(&written[MANIFEST_FILE]).unwrap();
-        assert_eq!(
-            manifest["format"], "ess-mutation-manifest/3",
-            "{manifest:#}"
-        );
-        assert!(mutant(&manifest, BOUNDARY).get("unchanged_suite").is_none());
         let collected =
             mutate::collect(|path| written.get(path).cloned()).unwrap_or_else(|it| panic!("{it}"));
-        let text = collected.render_text();
-        let json: Value = serde_json::from_str(&collected.to_canonical_json()).unwrap();
-        assert_unwitnessed(&json, &text);
+        for report in [report, collected] {
+            let text = report.render_text();
+            let json: Value = serde_json::from_str(&report.to_canonical_json()).unwrap();
+            let entry = mutant(&json, BOUNDARY);
+            assert!(entry.get("unchanged_suite").is_none(), "{entry:#}\n{text}");
+            assert_ne!(entry["verdict"], "unwitnessed", "{entry:#}\n{text}");
+        }
     }
 
     #[test]

@@ -10,6 +10,12 @@
 //! its three overlapping input refusals now give the earlier one a witness outside the later
 //! guards and send each overlap separately, requiring the first declared. Its IR and refusal
 //! digests are unchanged, and the old suite digest is what the released 0.53.0 synthesizes.
+//!
+//! `current-time-guard.yaml`'s suite digest is re-pinned for beyond10x/ess#586: synthesis holds
+//! the clock on its `starts_at < now - 60s` boundary, so its suite gains the one scenario
+//! `demo.jobs.ScheduleJob/outcome/scheduled/held/starts_at/-60` and moves from
+//! `ess-conformance/34` to `/50`; every other scenario keeps its bytes. Its IR and refusal digests
+//! are unchanged, and the old suite digest is what the released 0.60.0 synthesizes.
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 

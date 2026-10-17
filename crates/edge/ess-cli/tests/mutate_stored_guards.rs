@@ -133,20 +133,22 @@ fn the_manifest_lists_the_stored_guard_mutants_in_the_unchanged_format() {
     }
 }
 
-/// `expiry < now` to `expiry <= now` on a stored `Timestamp`: the mutant's suite is the baseline's,
-/// so it is `unwitnessed` naming that, and the audit exits 3 rather than 1
-/// (<https://github.com/beyond10x/ess/issues/586>). The emit and collect route is decided in
-/// `crates/verify/ess-conformance/tests/mutation_identical_answer.rs`.
+/// A swap of two refusals with the same error, whose payloads read inputs no synthesized scenario
+/// tells apart: the mutant's suite is the baseline's, so it is `unwitnessed` naming that, and the
+/// audit exits 3 rather than 1 (<https://github.com/beyond10x/ess/issues/586>). `expiry < now` to
+/// `expiry <= now` was this case until synthesis held the clock on each `now` boundary; its suite
+/// now differs from the baseline's. The emit and collect route, and that boundary mutant, are
+/// decided in `crates/verify/ess-conformance/tests/mutation_identical_answer.rs`.
 #[test]
 fn identical_suite_mutant_is_unwitnessed() {
-    const CLOCKED: &str =
-        "crates/verify/ess-conformance/tests/fixtures/mutation-clocked-expiry.yaml";
-    const BOUNDARY: &str = "guard-boundary/demo.codes.Redeem/expired/when_subject/0";
+    const IDENTICAL: &str =
+        "crates/verify/ess-conformance/tests/fixtures/mutation-identical-answer.yaml";
+    const CHECK: &str = "precedence-swap/desk.entry.Check/leading-hold/trailing-hold";
     let run = |args: &[&str]| {
         Command::new(env!("CARGO_BIN_EXE_ess"))
             .current_dir(root())
-            .args(["verify", "conform", "mutate", "--path", CLOCKED])
-            .args(["--class", "guard-boundary", "--target", "interpreted"])
+            .args(["verify", "conform", "mutate", "--path", IDENTICAL])
+            .args(["--class", "precedence-swap", "--target", "interpreted"])
             .args(args)
             .output()
             .expect("the `ess` binary runs")
@@ -155,8 +157,13 @@ fn identical_suite_mutant_is_unwitnessed() {
     assert_eq!(output.status.code(), Some(3), "{}", text(&output.stderr));
     let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(report["format"], "ess-mutation-report/7", "{report:#}");
-    let entry = &report["mutants"][0];
-    assert_eq!(entry["id"], BOUNDARY, "{report:#}");
+    assert_eq!(report["counts"]["unwitnessed"], 1, "{report:#}");
+    let entry = report["mutants"]
+        .as_array()
+        .expect("mutants")
+        .iter()
+        .find(|entry| entry["id"] == CHECK)
+        .unwrap_or_else(|| panic!("no {CHECK} in {report:#}"));
     assert_eq!(entry["verdict"], "unwitnessed", "{entry:#}");
     assert_eq!(entry["unchanged_suite"], true, "{entry:#}");
 
@@ -164,10 +171,10 @@ fn identical_suite_mutant_is_unwitnessed() {
     let stdout = text(&output.stdout);
     assert_eq!(output.status.code(), Some(3), "{stdout}");
     assert!(
-        stdout.lines().any(
-            |line| line.starts_with(&format!("unwitnessed {BOUNDARY}: "))
-                && line.contains(" — ESS-MUTATE-004: the suite does not change")
-        ),
+        stdout
+            .lines()
+            .any(|line| line.starts_with(&format!("unwitnessed {CHECK}: "))
+                && line.contains(" — ESS-MUTATE-004: the suite does not change")),
         "{stdout}"
     );
 }
