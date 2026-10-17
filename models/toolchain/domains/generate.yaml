@@ -37,6 +37,17 @@ types:
     of: String
     invariants: ['value != ""']
 
+  # `--schema-id-base`: the absolute URI an adopter chooses under which every document
+  # `--kind schema` writes gets a root `$id`, the base followed by the document's path under
+  # `schema/` (beyond10x/ess#590). Without it no `$id` is written and the bytes are unchanged.
+  # Only `schema` takes it. The base names a directory or a namespace, so it ends in `/` or `:`,
+  # and it has no query or fragment; one that breaks either is refused before anything is
+  # computed, which is a grammar no predicate over this input states.
+  - name: toolchain.generate.SchemaIdBase
+    kind: newtype
+    of: String
+    invariants: ['value != ""']
+
   # `crates/edge/ess-cli/src/main.rs` `enum Projection`. Omitting `--kind` combines the five default
   # generators and excludes `docs-ir`.
   - name: toolchain.generate.ProjectionKind
@@ -176,6 +187,15 @@ errors:
   - name: toolchain.generate.BindingRefused
     summary: The HTTP binding does not compile against the model, or leaves a route open.
 
+  # `ess generate --schema-id-base`: only the JSON Schema projection writes a root `$id`.
+  - name: toolchain.generate.SchemaIdWithoutSchema
+    summary: A schema identity base was given for a projection other than JSON Schema.
+
+  - name: toolchain.generate.SchemaIdBaseRefused
+    summary: >-
+      The schema identity base is not an absolute URI ending in `/` or `:` without a query or a
+      fragment.
+
   # `ess generate synthesize --http`: only the `rust` and `go` targets serve an `ess-http/1`
   # binding; every other target refuses the flag by name before anything is planned.
   - name: toolchain.generate.BindingWithoutServer
@@ -206,11 +226,23 @@ commands:
         type: toolchain.generate.ProjectionKind
       - name: http
         type: Optional<toolchain.generate.BindingPath>
+      - name: schema_id_base
+        type: Optional<toolchain.generate.SchemaIdBase>
 
     outcomes:
       - name: binding-without-openapi
         when: {all: [defined(http), kind != openapi]}
         error: toolchain.generate.BindingWithoutOpenApi
+
+      # Disjoint from the branch above: `--http` with `--kind schema` is refused there, and
+      # `--schema-id-base` beside an `--http` given to another kind is refused there first.
+      - name: schema-id-without-schema
+        when: {all: [defined(schema_id_base), kind != schema, not: defined(http)]}
+        error: toolchain.generate.SchemaIdWithoutSchema
+
+      - name: schema-id-base-refused
+        external: the base is not an absolute URI ending in `/` or `:` without a query or fragment
+        error: toolchain.generate.SchemaIdBaseRefused
 
       - name: planned
         creates: toolchain.generate.Projection

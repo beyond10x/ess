@@ -587,7 +587,20 @@ fn transform(
             | "type" | "enum" | "const" | "required" | "dependentRequired" | "minimum"
             | "maximum" | "exclusiveMinimum" | "exclusiveMaximum" | "multipleOf" | "minLength"
             | "maxLength" | "pattern" | "minItems" | "maxItems" | "uniqueItems" | "minContains"
-            | "maxContains" | "minProperties" | "maxProperties" => {}
+            | "maxContains" | "minProperties" | "maxProperties"
+            // The annotations `ess generate --kind schema` writes beside the assertions
+            // (beyond10x/ess#593), named one by one. Retained as written and never descended into,
+            // since a value here is a record rather than a schema. They are inert here: no
+            // validator asserts them, and a bundle realization refuses them, because only a
+            // checked model (`Plan::from_model`) reads them as identity, wire mapping or
+            // obligations. Every other `x-ess-` keyword stays refused, above all those that would
+            // carry authority if an import could mint them: `x-ess-binary64` (a finite codec is
+            // the compiler's `binary64_locations`, never an annotation) and `x-ess-source` (the
+            // import record this module writes itself). Any other `x-` keyword is still refused:
+            // it is a vocabulary this importer has no account of.
+            | "x-ess-provenance" | "x-ess-name" | "x-ess-kind" | "x-ess-field" | "x-ess-map-key"
+            | "x-ess-union-tag" | "x-ess-attributes" | "x-ess-alphabet" | "x-ess-invariants"
+            | "x-ess-relation" | "x-ess-reading" | "x-ess-one-time-response" => {}
             other => errors.push(diagnostic(
                 &location,
                 format!("unsupported schema keyword `{other}`"),

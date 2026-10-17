@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+### Added
+
+- `ess generate --kind schema --schema-id-base <URI>` gives every projected JSON Schema document a
+  root `$id`: the base, an absolute URI ending in `/` or `:` without a query or fragment,
+  followed by the document's path under `schema/` (`types/<name>.schema.json`, …). The documents
+  are then registry resources `ess generate schema validate` accepts as written. The base is the
+  adopter's; any other `--kind`, or none, refuses the option, and without it no byte of the
+  projection moves (https://github.com/beyond10x/ess/issues/590).
+- `ess generate schema validate` and `validate-bundle` read an instance file ending `.yaml` or
+  `.yml` as the JSON value its YAML denotes, through the reader ESS sources are read with. A tag,
+  a key that is not a string, a number that is not finite, a key written twice or a second
+  document is refused, naming the file and pointer. `validate-bundle` now reads JSON numbers as
+  `validate` does (https://github.com/beyond10x/ess/issues/591).
+
+### Fixed
+
+- `ess generate schema import-document` and `import-bundle` accept the `x-ess-*` annotations
+  `ess generate --kind schema` writes, retaining them as written and asserting none, so a
+  projected document imports and `validate-bundle` checks instances against it. An `x-ess-*`
+  keyword the projector does not write, such as `x-ess-binary64` or `x-ess-source`, is refused like
+  any other unknown keyword, so an import cannot mint a codec or an import record. A document
+  without `x-ess-*` keywords imports to the same bundle bytes (https://github.com/beyond10x/ess/issues/593).
+
 ## [0.62.0] — 2026-10-16
 
 ### Added
