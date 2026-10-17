@@ -1207,8 +1207,14 @@ impl TypeChange {
     /// does not — and telling those apart is a rule this slice does not have.
     pub fn relation(&self) -> SemanticRelation {
         match self {
-            Self::VariantAdded { .. } => SemanticRelation::Expanded,
-            Self::VariantRemoved { .. } => SemanticRelation::Narrowed,
+            Self::VariantAdded { .. }
+            | Self::ShorthandChanged {
+                before: None,
+                after: Some(_),
+            } => SemanticRelation::Expanded,
+            Self::VariantRemoved { .. } | Self::ShorthandChanged { .. } => {
+                SemanticRelation::Narrowed
+            }
             Self::AlphabetChanged { before, after } => {
                 alphabet_relation(before.as_deref(), after.as_deref())
             }
@@ -1216,11 +1222,6 @@ impl TypeChange {
             Self::PrefixRemoved { before } => prefix_relation(Some(before), None),
             Self::PrefixChanged { before, after } => prefix_relation(Some(before), Some(after)),
             Self::UndeclaredFieldsChanged { after, .. } => undeclared_fields_relation(*after),
-            Self::ShorthandChanged {
-                before: None,
-                after: Some(_),
-            } => SemanticRelation::Expanded,
-            Self::ShorthandChanged { .. } => SemanticRelation::Narrowed,
             _ => SemanticRelation::Changed,
         }
     }

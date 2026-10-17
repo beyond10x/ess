@@ -126,6 +126,6 @@ fn diff_classifies_a_shorthand_change() {
     );
 
     // An unmoved shorthand is no change, and a model without one keeps its delta format.
-    assert!(diff(&short, &short).unwrap().changes().is_empty());
-    assert!(diff(&plain, &plain).unwrap().changes().is_empty());
+    assert_eq!(diff(&short, &short).unwrap().changes().len(), 0);
+    assert_eq!(diff(&plain, &plain).unwrap().changes().len(), 0);
 }
