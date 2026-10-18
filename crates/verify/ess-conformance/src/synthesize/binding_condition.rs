@@ -42,8 +42,9 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use ess_compiler::ir::{
-    EssIr, EventHandle, ResolvedBinding, ResolvedBindingCondition, ResolvedCommand, ResolvedField,
-    ResolvedOutcome, ResolvedPayloadValue, ResolvedTypeRef,
+    EssIr, EventHandle, ResolvedBinding, ResolvedBindingCondition, ResolvedCommand,
+    ResolvedCondition, ResolvedField, ResolvedOutcome, ResolvedPayloadValue, ResolvedRelatedVia,
+    ResolvedTypeRef,
 };
 use ess_domain::binding::condition::{ConditionRead, Leaf};
 use ess_domain::name::QualifiedName;
@@ -90,6 +91,14 @@ enum Source {
     Input(String),
     /// Written by the branch, and fixed.
     Literal,
+    /// Read from a field of the row a trigger input names, `{related: {via: input.<via>, field}}`
+    /// (downstream report, 2026-10-18): varied by creating that row with another value.
+    Related {
+        /// The trigger input naming the row.
+        via: String,
+        /// The row's field read.
+        field: String,
+    },
 }
 
 /// One member of the event the condition reads.
@@ -105,8 +114,8 @@ struct Member {
 enum Choice {
     /// Whatever the base value holds.
     Base,
-    /// A present text leaf.
-    Text(String),
+    /// A present leaf: text, or from `ess/27` a Boolean.
+    Value(Node),
     /// The Optional member at this many members into the path is absent.
     Absent(usize),
 }
@@ -237,7 +246,7 @@ impl Search<'_> {
                 })
             });
         Witnesses {
-            holds: varied(holding, self.event, &payload),
+            holds: varied(self.ir, holding, self.event, &payload),
             fails: fails.map_or_else(
                 || {
                     Err(self
@@ -252,7 +261,7 @@ impl Search<'_> {
                             },
                         ))
                 },
-                |(candidate, payload)| varied(candidate, self.event, &payload),
+                |(candidate, payload)| varied(self.ir, candidate, self.event, &payload),
             ),
             absent: self
                 .proves_optional()
@@ -323,6 +332,27 @@ impl Search<'_> {
                         ))
                     }
                 },
+                Source::Related { via, field } => {
+                    let (step, input) = created_row(self.ir, &trigger, via, field)?;
+                    match &trigger.run.setup[step] {
+                        ScenarioStep::ExecuteCommand { input: sent, .. } => {
+                            match sent.get(&input) {
+                                Some(ScenarioValue::Literal { value })
+                                    if !matches!(value, Node::Null) =>
+                                {
+                                    value.clone()
+                                }
+                                _ => {
+                                    return Err(format!(
+                                        "the row `input.{via}` names is created without a value \
+                                     this synthesis chooses for `{field}`"
+                                    ))
+                                }
+                            }
+                        }
+                        _ => unreachable!("`created_row` answers a command step"),
+                    }
+                }
             };
             base.insert(member.name.clone(), value);
         }
@@ -379,9 +409,23 @@ impl Search<'_> {
                             Source::Input(input.clone())
                         }
                         ResolvedPayloadValue::Literal { .. } => Source::Literal,
+                        ResolvedPayloadValue::RelatedField {
+                            via: ResolvedRelatedVia::Input { field: via, .. },
+                            through,
+                            field,
+                            ..
+                        } if through.is_empty()
+                            && !ess_domain::command::input_path::is_path(via) =>
+                        {
+                            Source::Related {
+                                via: via.clone(),
+                                field: field.clone(),
+                            }
+                        }
                         _ => {
                             return Err(format!(
-                                "`{}` fills `event.{name}` from neither an input nor a literal",
+                                "`{}` fills `event.{name}` from neither an input, a literal nor \
+                                 a field of a row an input names",
                                 trigger.published_by.name
                             ))
                         }
@@ -418,8 +462,8 @@ impl Search<'_> {
                 index /= options.len();
                 match choice {
                     Choice::Base => {}
-                    Choice::Text(text) => {
-                        set_leaf(&mut payload, &read.members, Node::Text(text.clone()));
+                    Choice::Value(value) => {
+                        set_leaf(&mut payload, &read.members, value.clone());
                     }
                     Choice::Absent(depth) => absences.push(read.members[..=*depth].to_vec()),
                 }
@@ -444,11 +488,11 @@ impl Search<'_> {
             .zip(&candidate.choices)
             .find_map(|(read, options)| {
                 options.iter().find_map(|choice| {
-                    let Choice::Text(text) = choice else {
+                    let Choice::Value(value) = choice else {
                         return None;
                     };
                     let mut payload = holds.clone();
-                    (set_leaf(&mut payload, &read.members, Node::Text(text.clone()))
+                    (set_leaf(&mut payload, &read.members, value.clone())
                         && self.condition.plan.evaluate(&payload) == Ok(Truth::False)
                         && self
                             .reads
@@ -482,7 +526,7 @@ impl Search<'_> {
                 if let Some(why) = self.republishes(candidate, &payload) {
                     return Err(gap(format!("with `{path}` left out, {why}")));
                 }
-                varied(candidate, self.event, &payload)
+                varied(self.ir, candidate, self.event, &payload)
             })
             .collect()
     }
@@ -701,8 +745,8 @@ impl Varied<'_> {
                 index /= options.len();
                 match choice {
                     Choice::Base => {}
-                    Choice::Text(text) => {
-                        set_leaf(&mut payload, &read.members, Node::Text(text.clone()));
+                    Choice::Value(value) => {
+                        set_leaf(&mut payload, &read.members, value.clone());
                     }
                     Choice::Absent(depth) => absences.push(read.members[..=*depth].to_vec()),
                 }
@@ -722,11 +766,11 @@ impl Varied<'_> {
             .zip(&self.choices)
             .find_map(|(read, options)| {
                 options.iter().find_map(|choice| {
-                    let Choice::Text(text) = choice else {
+                    let Choice::Value(value) = choice else {
                         return None;
                     };
                     let mut payload = holds.clone();
-                    (set_leaf(&mut payload, &read.members, Node::Text(text.clone()))
+                    (set_leaf(&mut payload, &read.members, value.clone())
                         && self.condition.plan.evaluate(&payload) == Ok(Truth::False)
                         && self.complete(&payload))
                     .then_some(payload)
@@ -889,6 +933,32 @@ fn unguarded(trigger: &Trigger<'_>, members: &[Member]) -> Result<(), String> {
     }
     let branch = serde_json::to_value(trigger.published_by).unwrap_or_default();
     for member in members {
+        if let Source::Related { via, .. } = &member.source {
+            // Only a guard reading the row decides by its value: `when_related` through `via`,
+            // or a row set, which may select it. A guard over the input itself does not.
+            let reads_row =
+                trigger
+                    .publisher
+                    .outcomes
+                    .iter()
+                    .any(|outcome| match &outcome.condition {
+                        ResolvedCondition::Related {
+                            via: ResolvedRelatedVia::Input { field, .. },
+                            ..
+                        } => field == via,
+                        ResolvedCondition::Related { .. }
+                        | ResolvedCondition::RelatedSet { .. } => true,
+                        _ => false,
+                    });
+            if reads_row {
+                return Err(format!(
+                    "`{}` may guard on the row `{via}` names, which fills `event.{}`, so varying \
+                     that row may change its branch",
+                    trigger.publisher.name, member.name
+                ));
+            }
+            continue;
+        }
         let Source::Input(input) = &member.source else {
             continue;
         };
@@ -927,6 +997,141 @@ fn literal(trigger: &Trigger<'_>, event: &EventHandle, member: &str) -> Option<N
             }
             _ => None,
         })
+}
+
+/// The arrangement step that creates the row the trigger's input `via` names, and the input of
+/// that creating command the row's `field` is stored from unchanged: the row's value is chosen
+/// there. The creating command must not guard on that input, and nothing after the creation may
+/// act on the row.
+fn created_row(
+    ir: &EssIr,
+    trigger: &Trigger<'_>,
+    via: &str,
+    field: &str,
+) -> Result<(usize, String), String> {
+    let unarranged = |why: &str| format!("the row `input.{via}` names {why}");
+    let Some(ScenarioValue::Instance { instance }) = sent(trigger, via) else {
+        return Err(unarranged("is not a row the scenario arranges"));
+    };
+    let steps = &trigger.run.setup;
+    let captured = steps
+        .iter()
+        .position(|step| {
+            matches!(step, ScenarioStep::CaptureInstance { instance: named, .. } if named == instance)
+        })
+        .ok_or_else(|| unarranged("is not captured by the arrangement"))?;
+    let created = steps[..captured]
+        .iter()
+        .rposition(|step| matches!(step, ScenarioStep::ExecuteCommand { .. }))
+        .ok_or_else(|| unarranged("is created by no command"))?;
+    let Some(ScenarioStep::ExpectOutcome { outcome: taken }) = steps.get(created + 1) else {
+        return Err(unarranged("is created by no expected outcome"));
+    };
+    let (command, creating) = ir
+        .commands()
+        .values()
+        .filter(|command| CommandRef::new(command.name.clone()) == taken.command)
+        .find_map(|command| {
+            command
+                .outcomes
+                .iter()
+                .find(|outcome| outcome.name == taken.outcome)
+                .map(|outcome| (command, outcome))
+        })
+        .ok_or_else(|| unarranged("is created by no declared branch"))?;
+    let input = super::related::set_from_input(creating, field)
+        .ok_or_else(|| unarranged(&format!("stores `{field}` from no input unchanged")))?
+        .to_owned();
+    let mut guarded = BTreeSet::new();
+    for outcome in &command.outcomes {
+        tokens(
+            &serde_json::to_value(&outcome.condition).unwrap_or_default(),
+            &mut guarded,
+        );
+    }
+    if guarded.contains(&input) {
+        return Err(unarranged(&format!(
+            "is created by `{}`, which may guard on `{input}`",
+            command.name
+        )));
+    }
+    let pointed = ScenarioValue::instance(instance.clone());
+    let named_later = steps[captured..].iter().any(|step| {
+        matches!(step, ScenarioStep::ExecuteCommand { input, .. } if input.values().any(|value| *value == pointed))
+    });
+    if named_later {
+        return Err(unarranged("is acted on again after it is created"));
+    }
+    Ok((created, input))
+}
+
+/// `run` with the row the trigger's input `via` names created holding `value` in `field`, or
+/// absent where `value` is and the creating input is Optional.
+fn vary_related(
+    ir: &EssIr,
+    trigger: &Trigger<'_>,
+    run: &mut Run,
+    (via, field): (&str, &str),
+    value: Option<&Node>,
+) -> Result<(), String> {
+    let (step, input) = created_row(ir, trigger, via, field)?;
+    let ScenarioStep::ExecuteCommand {
+        command,
+        input: sent,
+        ..
+    } = &mut run.setup[step]
+    else {
+        unreachable!("`created_row` answers a command step")
+    };
+    if let Some(value) = value {
+        sent.insert(
+            input,
+            ScenarioValue::Literal {
+                value: value.clone(),
+            },
+        );
+    } else {
+        let optional = ir
+            .commands()
+            .values()
+            .find(|declared| declared.name == *command.name())
+            .and_then(|declared| declared.input.iter().find(|field| field.name == input))
+            .is_some_and(|declared| declared.type_ref.is_optional());
+        if !optional {
+            return Err(format!(
+                "leaving `{field}` of the row `input.{via}` names absent needs the required \
+                 input `{input}` left out"
+            ));
+        }
+        sent.remove(&input);
+    }
+    Ok(())
+}
+
+/// Every expectation of `member` of `event` in the trigger's own steps, set to `value`.
+fn adjust_expectations(run: &mut Run, event: &EventHandle, member: &str, value: Option<&Node>) {
+    for step in run.invoke.iter_mut().chain(run.after_steps.iter_mut()) {
+        match step {
+            ScenarioStep::ExpectEvent {
+                event: expected,
+                payload,
+                ..
+            }
+            | ScenarioStep::EventuallyEvent {
+                event: expected,
+                payload,
+                ..
+            } if expected.name() == event.name() && payload.contains_key(member) => match value {
+                Some(value) => {
+                    payload.insert(member.to_owned(), value.clone());
+                }
+                None => {
+                    payload.remove(member);
+                }
+            },
+            _ => {}
+        }
+    }
 }
 
 /// The trigger's own input value for `name`.
@@ -970,21 +1175,29 @@ fn present_witness(ir: &EssIr, publisher: &ResolvedCommand, input: &str) -> Resu
     })
 }
 
-/// What a read path may be set to: the base value, each compared literal or enum variant, and
-/// absence of each Optional member on it.
+/// What a read path may be set to: the base value, each compared literal, every enum variant or
+/// both Booleans (ess/27), and absence of each Optional member on it.
 fn choices(read: &ConditionRead, predicate: &Predicate) -> Vec<Choice> {
     let mut options = vec![Choice::Base];
-    let mut texts: Vec<String> = Vec::new();
-    compared(predicate, &read.path(), &mut texts);
-    if let Leaf::Enum { variants } = &read.leaf {
-        texts.extend(variants.iter().cloned());
+    let mut values: Vec<Node> = Vec::new();
+    compared(predicate, &read.path(), &mut values);
+    match &read.leaf {
+        Leaf::Enum { variants } => values.extend(variants.iter().cloned().map(Node::Text)),
+        Leaf::Boolean => values.extend([Node::Bool(true), Node::Bool(false)]),
+        Leaf::String | Leaf::Other => {}
     }
-    let mut seen = BTreeSet::new();
+    let mut seen = Vec::new();
     options.extend(
-        texts
+        values
             .into_iter()
-            .filter(|text| seen.insert(text.clone()))
-            .map(Choice::Text),
+            .filter(|value| {
+                let fresh = !seen.contains(value);
+                if fresh {
+                    seen.push(value.clone());
+                }
+                fresh
+            })
+            .map(Choice::Value),
     );
     options.extend(
         read.optional
@@ -996,13 +1209,19 @@ fn choices(read: &ConditionRead, predicate: &Predicate) -> Vec<Choice> {
     options
 }
 
-fn compared(predicate: &Predicate, path: &str, into: &mut Vec<String>) {
+fn compared(predicate: &Predicate, path: &str, into: &mut Vec<Node>) {
+    use ess_primitives::facts::FactValue;
     match predicate {
         Predicate::Compare {
             left: Operand::Fact(read),
-            right: Operand::Literal(ess_primitives::facts::FactValue::Text(text)),
+            right: Operand::Literal(FactValue::Text(text)),
             ..
-        } if read.to_string() == path => into.push(text.clone()),
+        } if read.to_string() == path => into.push(Node::Text(text.clone())),
+        Predicate::Compare {
+            left: Operand::Fact(read),
+            right: Operand::Literal(FactValue::Bool(flag)),
+            ..
+        } if read.to_string() == path => into.push(Node::Bool(*flag)),
         Predicate::All(children) | Predicate::Any(children) => {
             for child in children {
                 compared(child, path, into);
@@ -1079,6 +1298,7 @@ fn first_absent(payload: &Payload, read: &ConditionRead) -> Option<Vec<String>> 
 /// reads, with every expectation of those members on the event adjusted to what it now carries.
 /// A literal member is never varied: the payload holds the branch's own literal there.
 fn varied<'ir>(
+    ir: &EssIr,
     candidate: &Candidate<'ir>,
     event: &EventHandle,
     payload: &Payload,
@@ -1087,6 +1307,12 @@ fn varied<'ir>(
     let mut run = trigger.run.clone();
     let publishing = CommandRef::new(trigger.publisher.name.clone());
     for member in &candidate.members {
+        if let Source::Related { via, field } = &member.source {
+            let value = payload.get(&member.name).cloned();
+            vary_related(ir, trigger, &mut run, (via, field), value.as_ref()).map_err(gap)?;
+            adjust_expectations(&mut run, event, &member.name, value.as_ref());
+            continue;
+        }
         let Source::Input(input) = &member.source else {
             continue;
         };
@@ -1155,7 +1381,7 @@ fn varied<'ir>(
 /// trigger sends or writes as a literal, and whether that is every member it fills: a member
 /// filled any other way leaves it incomplete. An Optional input the trigger leaves out leaves its
 /// member absent, which is known.
-pub(super) fn published(trigger: &Trigger<'_>, event: &EventHandle) -> (Payload, bool) {
+pub(super) fn published(ir: &EssIr, trigger: &Trigger<'_>, event: &EventHandle) -> (Payload, bool) {
     let mut payload = Payload::new();
     let mut complete = true;
     for field in trigger
@@ -1182,6 +1408,28 @@ pub(super) fn published(trigger: &Trigger<'_>, event: &EventHandle) -> (Payload,
             ResolvedPayloadValue::Literal { value } => {
                 payload.insert(field.target.clone(), Node::Text(value.clone()));
             }
+            // A field of the row a trigger input names, which the arrangement created with a
+            // value it chose (downstream report, 2026-10-18).
+            ResolvedPayloadValue::RelatedField {
+                via: ResolvedRelatedVia::Input { field: via, .. },
+                through,
+                field: read,
+                ..
+            } if through.is_empty() => match created_row(ir, trigger, via, read) {
+                Ok((step, input)) => match &trigger.run.setup[step] {
+                    ScenarioStep::ExecuteCommand { input: sent, .. } => match sent.get(&input) {
+                        Some(ScenarioValue::Literal { value }) => {
+                            if !matches!(value, Node::Null) {
+                                payload.insert(field.target.clone(), value.clone());
+                            }
+                        }
+                        None => {}
+                        Some(_) => complete = false,
+                    },
+                    _ => complete = false,
+                },
+                Err(_) => complete = false,
+            },
             _ => complete = false,
         }
     }

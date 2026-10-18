@@ -11007,9 +11007,6 @@ export class SelectionObservation {
           }
           path = condition.left.path;
           const literal = condition.right.literal;
-          if (typeof literal !== 'string') {
-            throw new Error('selection literal must be text');
-          }
           const plan = reads[path];
           if (
             plan === undefined ||
@@ -11029,8 +11026,17 @@ export class SelectionObservation {
             }
             break;
           }
+          // A Boolean item leaf (ess/27) is compared with `true` or `false`, every other leaf
+          // with text.
+          if (held === 'Boolean') {
+            if (typeof literal !== 'boolean') {
+              throw new Error('selection Boolean leaf needs a Boolean literal');
+            }
+          } else if (typeof literal !== 'string') {
+            throw new Error('selection literal must be text');
+          }
           const body = this.declarations[held];
-          if (body !== undefined && body.kind === 'enum') {
+          if (body !== undefined && body.kind === 'enum' && typeof literal === 'string') {
             const variants = variantList(body.variants);
             if (!variants.includes(literal)) {
               throw new Error('selection enum literal is undeclared');
@@ -11317,6 +11323,8 @@ export class SelectionObservation {
                 throw selectionFailure('resource', input, index, selector);
               }
               observations.set(path, value);
+            } else if (typeof value === 'boolean' && present) {
+              observations.set(path, value);
             }
           }
           const condition = fromNode(plan.operation.predicate);
@@ -11570,8 +11578,12 @@ export function admitSelection(value: Node): SelectionObservation {
           }
           leaf = selection.transparent(inner);
         }
-        if (leaf !== 'String' && (selection.declarations[leaf]?.kind ?? '') !== 'enum') {
-          throw new Error('selection predicate requires String or enum');
+        if (
+          leaf !== 'String' &&
+          leaf !== 'Boolean' &&
+          (selection.declarations[leaf]?.kind ?? '') !== 'enum'
+        ) {
+          throw new Error('selection predicate requires String, Boolean or enum');
         }
       }
       const condition = fromNode(written.predicate);

@@ -289,6 +289,11 @@ the `ess/24` key `undeclared_fields:` is refused at `<kind> <name>.undeclared_fi
 is no struct, on any other declaration, on a command without `response:` and below `ess/24`, each
 from one `ConstructRef` helper, so it adds no head literal below.
 
+`selection.rs` rose from 2 to 3 with the `ess/27` Boolean selection comparison (downstream report,
+2026-10-18): a Boolean literal compared under an earlier format is refused at the selection's own
+location as `unsupported_format_version`, naming `ess/27`, beside the selection refusals that were
+already string-located there.
+
 <!-- inventory:begin -->
 ```text
 accessor.rs 1 0
@@ -301,7 +306,7 @@ entity.rs 17 5
 expression.rs 1 0
 outcome_group.rs 17 0
 primitive_admission.rs 16 8
-selection.rs 2 0
+selection.rs 3 0
 spec.rs 7 0
 system.rs 10 0
 topology.rs 10 0

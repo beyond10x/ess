@@ -274,6 +274,9 @@ impl Observation {
             &registry,
             &ess_domain::types::ConversionRegistry::default(),
             "selection observation",
+            // A retained plan was admitted under its document's format; rebuilding it only
+            // checks that it agrees with its declarations.
+            ess_domain::binding::condition::BOOLEAN_FORMAT,
         )
         .map_err(|e| e.to_string())?;
         if rebuilt != self.plan {
@@ -485,11 +488,11 @@ impl Observation {
                                     Some(selector),
                                 ));
                             }
-                            facts.set(
-                                FactPath::new(path).map_err(|e| e.to_string())?,
-                                FactValue::Text(text.clone()),
-                            );
                         }
+                        let Some(fact) = fact_of(projected) else {
+                            continue;
+                        };
+                        facts.set(FactPath::new(path).map_err(|e| e.to_string())?, fact);
                     }
                     truth[selector].push(match predicate.evaluate(&facts) {
                         Truth::True => true,
@@ -988,6 +991,16 @@ fn validate_direct_json(value: &Node, bytes: &mut usize, depth: usize) -> Result
         return Err("resource");
     }
     Ok(())
+}
+
+/// The fact a projected item leaf binds: its text, or a Boolean item leaf's flag (ess/27).
+/// Nothing for an absent leaf, which leaves the comparison reading it Unknown.
+fn fact_of(projected: Option<&Node>) -> Option<FactValue> {
+    match projected {
+        Some(Node::Text(text)) => Some(FactValue::Text(text.clone())),
+        Some(Node::Bool(flag)) => Some(FactValue::Bool(*flag)),
+        _ => None,
+    }
 }
 
 #[cfg(test)]

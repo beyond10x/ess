@@ -99,6 +99,10 @@ fn scalar(ir: &EssIr, layout: &Layout, types: &str, ty: &ResolvedTypeRef, value:
             }
             _ => unreachable!("admitted scalar"),
         },
+        // A Boolean leaf (ess/27) is read as the text `true` or `false`.
+        ResolvedTypeRef::Primitive {
+            name: ess_domain::Primitive::Boolean,
+        } => format!("Some((*{value}).to_string())"),
         ResolvedTypeRef::Primitive { .. } => format!("Some(({value}).to_owned())"),
         _ => unreachable!("admitted scalar"),
     }
@@ -115,8 +119,11 @@ fn predicate(predicate: &Predicate, reads: &BTreeMap<String, usize>) -> String {
             right: Operand::Literal(value),
             ..
         } => {
-            let ess_primitives::facts::FactValue::Text(value) = value else {
-                unreachable!()
+            // A Boolean leaf (ess/27) is read as the text `true` or `false`.
+            let value = match value {
+                ess_primitives::facts::FactValue::Text(value) => value.clone(),
+                ess_primitives::facts::FactValue::Bool(flag) => flag.to_string(),
+                ess_primitives::facts::FactValue::Number(_) => unreachable!(),
             };
             format!(
                 "read_{}.as_ref().map(|value| value.as_str() {} {value:?})",

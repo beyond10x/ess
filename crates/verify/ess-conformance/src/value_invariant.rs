@@ -570,15 +570,19 @@ impl<'a> Contract<'a> {
             site: None,
         };
         contract.closure()?;
-        match contract.types.get(&contract.value) {
-            Some(Body::Newtype { invariants, .. } | Body::Struct { invariants, .. })
-                if !invariants.is_empty() => {}
-            _ => {
-                return Err(format!(
-                    "`{}` is no declared newtype or struct with invariants",
-                    contract.value
-                ))
+        // The expectation asserts the invariants themselves, so it asks for them after binding
+        // them, not for `is_constrained()`: an alphabet alone gives it nothing to assert.
+        let asserted = match contract.types.get(&contract.value) {
+            Some(Body::Newtype { invariants, .. } | Body::Struct { invariants, .. }) => {
+                invariants.len()
             }
+            _ => 0,
+        };
+        if asserted == 0 {
+            return Err(format!(
+                "`{}` is no declared newtype or struct with invariants",
+                contract.value
+            ));
         }
         for (name, body) in &contract.types {
             if let Body::Newtype { invariants, .. } | Body::Struct { invariants, .. } = body {

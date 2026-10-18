@@ -119,7 +119,9 @@ indistinguishable to bindings, as they are to other event consumers.
 Use the existing bounded selection predicate AST and evaluator, with root `event` instead of
 `item`: Always, Never, Defined, equality/inequality to a typed literal, All, Any and Not. Reads
 traverse at most three declared field segments through structs and Optional structs; comparisons
-end at String or enum leaves and use their existing nominal/literal validation. Defined can test
+end at String or enum leaves and use their existing nominal/literal validation, and from `ess/27`
+also at Boolean leaves compared with `true` or `false` (IR leaf `boolean`, minted only from that
+format so earlier IR keeps its bytes; the selection `where` admits the same). Defined can test
 an Optional struct or scalar path, so it can express #194 without a fabricated leaf comparison.
 No functions, ordering, fact-to-fact comparison, lists, maps or quantifiers enter this slice.
 Locations name the authored `when.where` operand, not an unrelated mapping field.

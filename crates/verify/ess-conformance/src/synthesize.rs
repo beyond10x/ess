@@ -15897,7 +15897,7 @@ fn never_invoked(
     let event_handle = binding.cause.event().expect("event cause");
     let published: Vec<_> = triggers
         .iter()
-        .map(|trigger| binding_condition::published(trigger, event_handle))
+        .map(|trigger| binding_condition::published(ir, trigger, event_handle))
         .collect();
     let complete: Vec<_> = published
         .iter()
@@ -16229,7 +16229,10 @@ fn on_failure(
     let forced = invoked
         .outcomes
         .iter()
-        .find(|outcome| outcome.test_strategy == TestStrategy::InjectFault)
+        // A refusal: an `external:` branch that accepts is no failure to force.
+        .find(|outcome| {
+            outcome.test_strategy == TestStrategy::InjectFault && outcome.error.is_some()
+        })
         .ok_or_else(|| BindingGap::NoForcibleFailure {
             command: CommandRef::new(invoked.name.clone()),
         })?;

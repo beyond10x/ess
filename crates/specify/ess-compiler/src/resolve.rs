@@ -4592,6 +4592,7 @@ impl<'a> Resolver<'a> {
             self.spec.events().get(event)?,
             &self.registry,
             &format!("{path}.when.where"),
+            self.spec.system().format,
         )
         .ok()?;
         Some(Some(crate::ir::ResolvedBindingCondition::of(plan)))
@@ -4904,6 +4905,7 @@ impl<'a> Resolver<'a> {
             &self.registry,
             self.spec.conversions(),
             &format!("binding.{}.selections", binding.name),
+            self.spec.system().format,
         ) {
             Ok(plan) => Some(plan),
             Err(error) => {
@@ -5163,7 +5165,14 @@ impl<'a> Resolver<'a> {
         }
         let predicate = binding.condition.as_ref()?;
         let event = self.spec.events().get(binding.cause.event()?)?;
-        let plan = condition::ConditionPlan::resolve(predicate, event, &self.registry, "").ok()?;
+        let plan = condition::ConditionPlan::resolve(
+            predicate,
+            event,
+            &self.registry,
+            "",
+            self.spec.system().format,
+        )
+        .ok()?;
         let optional = condition::optional_positions(members, event, &self.registry)?;
         condition::covers(&plan.proves_present(), members, &optional)
             .then(|| condition::present_type(from))

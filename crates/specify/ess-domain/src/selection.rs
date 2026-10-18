@@ -272,7 +272,15 @@ fn transparent<'a>(
     Ok(ty)
 }
 
-fn predicate_count(predicate: &Predicate, at: &str) -> Result<usize, ValidationError> {
+/// Counts the nodes of a selection predicate and admits its vocabulary. A Boolean literal compared
+/// with `==` or `!=` is admitted where `booleans` says the document's format is `ess/27` or later
+/// (always for a retained plan, which a source admitted first).
+fn predicate_count(
+    predicate: &Predicate,
+    at: &str,
+    booleans: bool,
+) -> Result<usize, ValidationError> {
+    use ess_primitives::facts::FactValue;
     let mut pending = vec![predicate];
     let mut count = 0;
     while let Some(node) = pending.pop() {
@@ -282,19 +290,36 @@ fn predicate_count(predicate: &Predicate, at: &str) -> Result<usize, ValidationE
 
             Predicate::All(children) | Predicate::Any(children) => pending.extend(children),
             Predicate::Not(child) => pending.push(child),
-            Predicate::Always | Predicate::Never | Predicate::Defined(_) | Predicate::Compare { left: Operand::Fact(_), op: CompareOp::Eq | CompareOp::Ne, right: Operand::Literal(ess_primitives::facts::FactValue::Text(_)) , .. } => {}
+            Predicate::Always | Predicate::Never | Predicate::Defined(_) | Predicate::Compare { left: Operand::Fact(_), op: CompareOp::Eq | CompareOp::Ne, right: Operand::Literal(FactValue::Text(_)) , .. } => {}
+            Predicate::Compare { left: Operand::Fact(_), op: CompareOp::Eq | CompareOp::Ne, right: Operand::Literal(FactValue::Bool(_)), .. } if booleans => {}
+            Predicate::Compare { left: Operand::Fact(path), op: CompareOp::Eq | CompareOp::Ne, right: Operand::Literal(FactValue::Bool(_)), .. } => {
+                return Err(ValidationError::new(
+                    ValidationCode::UnsupportedFormatVersion,
+                    at,
+                    format!(
+                        "`{path}` is compared with a Boolean literal; a selection compares a \
+                         Boolean item leaf with `true` or `false` from specification format ess/{}",
+                        crate::binding::condition::BOOLEAN_FORMAT.major()
+                    ),
+                )
+                .with_hint(format!(
+                    "declare `format: ess/{}`",
+                    crate::binding::condition::BOOLEAN_FORMAT.major()
+                )))
+            }
             // The bounded contract for string operators (docs/design/string-predicate-operators.md,
             // *Selection*): a text literal, not empty, and no longer than any admitted read, so one
             // pass over a read the selection already bounds decides it.
             Predicate::TextMatch { value: ess_primitives::predicate::TextOperand::Literal(ess_primitives::facts::FactValue::Text(text)), .. } if !text.is_empty() && text.len() <= MAX_TEXT_BYTES => {}
-            _ => return Err(err(at, "selection admits only Always/Never/Defined, String or enum Eq/Ne literals, String starts_with/ends_with/contains a non-empty text literal of at most 4096 bytes, All/Any/Not")),
+            _ => return Err(err(at, "selection admits only Always/Never/Defined, String or enum Eq/Ne literals, Boolean Eq/Ne true or false (ess/27), String starts_with/ends_with/contains a non-empty text literal of at most 4096 bytes, All/Any/Not")),
         }
     }
     Ok(count)
 }
 
 impl SelectionPlan {
-    /// Resolve declarations and all predicate reads, even for unused selectors.
+    /// Resolve declarations and all predicate reads, even for unused selectors, under the
+    /// document's `format`: a Boolean item leaf compared with `true` or `false` from `ess/27`.
     pub fn resolve(
         inputs: &[SelectionInput],
         selections: &[Selection],
@@ -302,7 +327,9 @@ impl SelectionPlan {
         types: &TypeRegistry,
         conversions: &ConversionRegistry,
         at: &str,
+        format: crate::system::FormatVersion,
     ) -> Result<Self, ValidationError> {
+        let booleans = format.major() >= crate::binding::condition::BOOLEAN_FORMAT.major();
         bound(at, "inputs", inputs.len(), MAX_INPUTS)?;
         bound(at, "selectors", selections.len(), MAX_SELECTORS)?;
         let mut plan = Self {
@@ -329,15 +356,20 @@ impl SelectionPlan {
                             err(at, format!("undeclared selection input {}", first.input))
                         })?;
                     let excluding = plan.references(&first.excluding, Some(input), at)?;
-                    count += predicate_count(&first.predicate, at)?;
+                    count += predicate_count(&first.predicate, at, booleans)?;
                     bound(
                         at,
                         "total predicate nodes",
                         count,
                         MAX_TOTAL_PREDICATE_NODES,
                     )?;
-                    let reads =
-                        resolve_reads(&plan.inputs[input].item_type, &first.predicate, types, at)?;
+                    let reads = resolve_reads(
+                        &plan.inputs[input].item_type,
+                        &first.predicate,
+                        types,
+                        at,
+                        booleans,
+                    )?;
                     (
                         input,
                         SelectionOperation::First {
@@ -463,7 +495,7 @@ impl SelectionPlan {
                     predicate,
                     reads,
                 } => {
-                    nodes += predicate_count(predicate, at)?;
+                    nodes += predicate_count(predicate, at, true)?;
                     bound(
                         at,
                         "total predicate nodes",
@@ -656,6 +688,7 @@ fn resolve_reads(
     predicate: &Predicate,
     types: &TypeRegistry,
     at: &str,
+    booleans: bool,
 ) -> Result<BTreeMap<String, ProjectionPlan>, ValidationError> {
     let fields = [Field::new("item", item_type.clone())];
     let environment = DomainEnvironment::new(types, &fields);
@@ -670,7 +703,8 @@ fn resolve_reads(
             || parts.len() < 2
             || parts.len() > 4
             || read.resolution.access.collection
-            || read.resolution.scalar != Some(ScalarKind::Text)
+            || !(read.resolution.scalar == Some(ScalarKind::Text)
+                || (booleans && read.resolution.scalar == Some(ScalarKind::Bool)))
         {
             return Err(err(
                 at,
@@ -682,10 +716,13 @@ fn resolve_reads(
         }
         let projection = ProjectionPlan::resolve(item_type, &parts[1..], types, at)?;
         let terminal = transparent(&read.resolution.terminal, types, at)?;
-        if !matches!(
-            terminal,
-            TypeRef::Primitive(Primitive::String) | TypeRef::Named(_)
-        ) {
+        let boolean = booleans && matches!(terminal, TypeRef::Primitive(Primitive::Boolean));
+        if !boolean
+            && !matches!(
+                terminal,
+                TypeRef::Primitive(Primitive::String) | TypeRef::Named(_)
+            )
+        {
             return Err(err(
                 at,
                 "selection predicates require String or enum leaves",

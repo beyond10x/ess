@@ -866,7 +866,7 @@ fn only_compared(
 
 /// Whether a stored-field predicate compares the row with the command's input: a path rooted at
 /// `input.`, where the entity declares no field of that name (beyond10x/ess#157).
-fn reads_input(ir: &EssIr, entity: &EntityHandle, predicate: &Predicate) -> bool {
+pub(super) fn reads_input(ir: &EssIr, entity: &EntityHandle, predicate: &Predicate) -> bool {
     let namespace = ess_domain::command::subject_fact::INPUT_NAMESPACE;
     !ir.entity(entity)
         .fields

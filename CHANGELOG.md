@@ -21,6 +21,14 @@
   Go and TypeScript runners admit the suite and report that scenario `unsupported`, naming
   `value_invariants`. A position reached only across a recursive type is refused by name. A suite
   without such a position keeps its format and bytes (downstream report, 2026-10-18).
+- Source format `ess/27`: a binding condition and a binding selection may compare a `Boolean`
+  leaf with `true` or `false`, `where: [event.direction == inbound, event.bridged == false]` and
+  `first: {in: legs, where: item.held == false}`. `condition-false` flips the flag; the
+  interpreter, the generated Rust and Go dispatch and selection helpers, and the Go and TypeScript
+  conformance runners evaluate it. A text literal against a Boolean leaf stays a type mismatch and a
+  bare Boolean path stays refused. Below `ess/27` the comparison is refused as
+  `unsupported_format_version` naming `ess/27`, and a Boolean read only by `defined(...)` keeps
+  its `{kind: other}` IR leaf and its bytes (downstream report, 2026-10-18).
 
 ### Fixed
 
@@ -58,6 +66,25 @@
   declaring the rule on the element's type. The ESS-SYNTH-013 help names only remedies that answer
   the case: publishing the type somewhere a view reads it, or an outcome that leaves a row there with
   the field set from what the command sends (downstream report, 2026-10-18).
+- A binding whose invoked command chooses its branch by a `when_related` guard over the row an
+  input names (`exists: false`, a predicate over the row's stored fields, the default) gets its
+  `flow`, `mapping` and `delivery` scenarios instead of the `ESS-SYNTH-010` refusal "whose branch
+  is decided by an input the event fills". Where the binding maps that input unconverted from an
+  event field the trigger copies from its own input, synthesis creates the row through its
+  creating command so the accepting branch is taken, and sends the trigger naming it. A guard that
+  also reads the invoked command's input, or a row named by an identity the implementation mints,
+  keeps the refusal. A model without such a binding keeps its suite bytes
+  (downstream report, 2026-10-18).
+- A binding condition over an event member the trigger fills from the row an input names,
+  `{related: {via: input.<field>, field: <field>}}`, gets its `flow`, `mapping`, `delivery` and
+  `condition-false` scenarios instead of `ESS-SYNTH-010` "fills `event.<member>` from neither an
+  input nor a literal". Synthesis creates the row through its creating command with a value the
+  condition holds for, or fails for, and sends the trigger naming it; an enum leaf works under every
+  format with binding conditions, a Boolean leaf from `ess/27` (downstream report, 2026-10-18).
+- A binding's `on-failure` scenario, and a `drop` or delivery-context one, forces only an
+  `external:` branch that refuses. It forced the first `external:` branch even where that branch
+  accepts, and then required a consequence the honest system never publishes; such a binding is now
+  refused with the reason that no branch can be forced to fail (downstream report, 2026-10-18).
 
 ## [0.62.0] — 2026-10-16
 
