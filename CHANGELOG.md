@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+### Added
+
+- Format `ess/27`: a command guarding on a related row (`when_related:`) may declare an
+  `unknown_instance:` branch for the row its input addresses. It answers at step 3 of the
+  precedence order, after `exists: false` over the related row and the input-guarded refusals and
+  before the related row's predicate refusals, which then answer before every accepting branch.
+  Synthesis sends the branch an identity no row carries beside a present related row that selects
+  the first predicate refusal, so a target reading the related row first fails; the interpreter and
+  generated Rust and Go answer in that order. Below `ess/27` the pairing stays
+  `conflicting_declaration`, its hint now naming `ess/27`; older documents keep their bytes
+  (downstream report, 2026-10-18).
+
+### Fixed
+
+- Synthesis arranges the rows of a row-set guard over a field a creating branch copies from another
+  row with `{related: {via: input.<field>, field: …}}`: that row is arranged first, holding the value
+  the selected row or a decoy needs, and the creating command is sent its identity. Both branches of
+  such a guard were refused as `ESS-SYNTH-001` ("its own row set is Unknown"); suites of models
+  without such a copy keep their bytes (downstream report, 2026-10-18).
+- A bare `<binder>.utf8_bytes` under a quantifier over a list written `input.<list>` in a command
+  guard is the UTF-8 byte length, as `{utf8_bytes: <binder>}` is: `exists: {in: input.tags, as: s,
+  that: "s.utf8_bytes != s.count"}` compiles to the same predicate as the structured form instead of
+  being refused as `ESS-COMMAND-002` (downstream report, 2026-10-18).
+
 ## [0.62.0] — 2026-10-16
 
 ### Added
