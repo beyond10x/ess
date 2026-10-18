@@ -370,3 +370,32 @@ fn utf8_a_selector_assembled_directly_is_rechecked_against_the_format() {
         "{refused:?}"
     );
 }
+
+/// A binder over a list the guard writes `input.<list>` reads `<binder>.utf8_bytes` as the derived
+/// operand, as it does over `<list>` and as the structured `{utf8_bytes: <binder>}` does: both
+/// spellings resolve to one predicate, on either side and against another fact of the binder
+/// (downstream report, 2026-10-18). Before, only the binder over `<list>` was typed, so the bare
+/// form under `input.<list>` was refused as a path while the structured one was admitted.
+#[test]
+fn a_bare_selector_under_a_binder_over_an_input_list_is_the_structured_operand() {
+    for (bare, structured) in [
+        (
+            "{exists: {in: input.tags, as: s, that: \"s.utf8_bytes != s.count\"}}",
+            "{exists: {in: input.tags, as: s, that: {compare: {left: {utf8_bytes: s}, op: ne, right: s.count}}}}",
+        ),
+        (
+            "{exists: {in: input.tags, as: s, that: \"s.count != s.utf8_bytes\"}}",
+            "{exists: {in: tags, as: s, that: \"s.count != s.utf8_bytes\"}}",
+        ),
+        (
+            "{forall: {in: input.tags, as: s, that: \"s.utf8_bytes <= 4\"}}",
+            "{forall: {in: tags, as: s, that: s.utf8_bytes <= 4}}",
+        ),
+    ] {
+        assert_eq!(
+            guard(&admitted(&guarded(24, bare))),
+            guard(&admitted(&guarded(24, structured))),
+            "{bare}"
+        );
+    }
+}

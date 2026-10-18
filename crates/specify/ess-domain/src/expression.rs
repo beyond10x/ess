@@ -1174,7 +1174,11 @@ fn derive_quantified<E: TypeEnvironment>(
     scope: &mut Vec<(FactPath, String)>,
     input_namespace: bool,
 ) -> Quantified {
-    scope.push((quantified.over.clone(), quantified.bind.clone()));
+    // The binder is typed where `key_kinds` types it: a collection written `input.<path>` in a
+    // plain input guard is the input `<path>`, so `s.utf8_bytes` over `input.tags` reads the text
+    // `s` as `{utf8_bytes: s}` does.
+    let typed = typed_over(&quantified.over, scope, input_namespace);
+    scope.push((typed, quantified.bind.clone()));
     let body = derive_selectors(environment, quantified.body, scope, input_namespace);
     scope.pop();
     Quantified {
