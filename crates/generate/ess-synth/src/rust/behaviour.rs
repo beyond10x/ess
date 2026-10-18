@@ -2116,7 +2116,13 @@ impl<'a> Writer<'a> {
                     "            let Some(held) = {storage}::get(&self.ports, &input.{identity}) \
                      else {{\n{unknown}            }};\n            let _ = &held;"
                 );
-                let reads_before = outcome_reads_before(outcome);
+                out.push_str(&self.affected_reads(outcome, entity, &identity));
+                let reads_before = outcome_reads_before(outcome)
+                    || outcome
+                        .affects
+                        .iter()
+                        .flat_map(|affect| &affect.sets)
+                        .any(|set| reads_subject(&set.value));
                 let reads_state = outcome_reads_state(outcome);
                 let mut commit = String::new();
                 match effect {
@@ -2191,6 +2197,7 @@ impl<'a> Writer<'a> {
                         unreachable!("a creation whose identity is supplied is an obligation")
                     }
                 }
+                self.affected_changes(&mut out, &mut commit, outcome);
                 let answer = self.variant(outcome, held, None);
                 let _ = writeln!(
                     out,
@@ -2202,6 +2209,184 @@ impl<'a> Writer<'a> {
             }
         }
         out
+    }
+
+    /// The rows `outcome`'s `affects:` entries pin (ess/27, beyond10x/ess#547, D5), each read by
+    /// identity through its entity's storage port as `affected_<n>`: an `Option` of the identity
+    /// and the row, read from the subject `held` as it was before the outcome, or from the input,
+    /// and read before anything is written. An absent reference, an identity no row carries and,
+    /// over the subject's own entity, the subject's own identity read none. `subject` is the
+    /// subject's entity and `identity` the input field naming it.
+    fn affected_reads(
+        &mut self,
+        outcome: &ResolvedOutcome,
+        subject: &ResolvedEntity,
+        identity: &str,
+    ) -> String {
+        let mut out = String::new();
+        for (index, affect) in outcome.affects.iter().enumerate() {
+            let filter = affect
+                .filter
+                .as_ref()
+                .expect("a generated `affects:` entry has a filter");
+            let pin = determined::pin(self.ir, &affect.entity, filter)
+                .expect("a generated `affects:` entry pins the identity");
+            let entity = self.ir.entity(&affect.entity);
+            let storage = self.storage(&entity.name);
+            let (place, optional, named) = match pin.source {
+                determined::PinSource::Subject(field) => (
+                    format!("held.data.{}", name::value_ident(field)),
+                    subject
+                        .field(field)
+                        .is_some_and(|field| field.type_ref.is_optional()),
+                    format!("subject.{field}"),
+                ),
+                determined::PinSource::Input(field) => (
+                    format!("input.{}", name::value_ident(field)),
+                    self.command
+                        .input
+                        .iter()
+                        .any(|input| input.name == field && input.type_ref.is_optional()),
+                    format!("input.{field}"),
+                ),
+            };
+            let reference = if optional {
+                format!("{place}.as_ref()")
+            } else {
+                format!("Some(&{place})")
+            };
+            // Every `affects:` entry excepts the subject (`set-effects-over-filtered-instances.md`).
+            let except = if affect.entity == *Self::subject_entity(outcome) {
+                format!(".filter(|identity| *identity != input.{identity})")
+            } else {
+                String::new()
+            };
+            let _ = writeln!(
+                out,
+                "            // `affects[{index}]`: the `{}` row `{named}` names, read through its \
+                 storage port before\n            // any write; a reference naming no row changes \
+                 nothing.\n            let affected_{index} = {reference}.cloned(){except}\
+                 .and_then(|identity| {storage}::get(&self.ports, &identity).map(|row| (identity, \
+                 row)));",
+                entity.name
+            );
+        }
+        out
+    }
+
+    /// The entity of `outcome`'s subject.
+    fn subject_entity(outcome: &ResolvedOutcome) -> &EntityHandle {
+        &outcome
+            .subject
+            .as_ref()
+            .expect("an `affects:` branch has a subject")
+            .entity
+    }
+
+    /// What each row [`Self::affected_reads`] read becomes, computed before any write — the other
+    /// conjuncts hold on it, a move takes it from one of its `from` states, `sets:` is written and
+    /// the entity's invariants checked — and, appended to `commit` after the subject's own write,
+    /// the writes in the order the entries are written: `put`, or `delete` for `deletes:`. A row
+    /// the other conjuncts leave out, or resting outside the move's `from` states, is left as it is.
+    fn affected_changes(
+        &mut self,
+        out: &mut String,
+        commit: &mut String,
+        outcome: &ResolvedOutcome,
+    ) {
+        let command = self.command;
+        for (index, affect) in outcome.affects.iter().enumerate() {
+            let filter = affect
+                .filter
+                .as_ref()
+                .expect("a generated `affects:` entry has a filter");
+            let pin = determined::pin(self.ir, &affect.entity, filter)
+                .expect("a generated `affects:` entry pins the identity");
+            let entity = self.ir.entity(&affect.entity);
+            let storage = self.storage(&entity.name);
+            let truths: Vec<String> = pin
+                .rest
+                .iter()
+                .map(|conjunct| {
+                    self.guards_on("row")
+                        .predicate(&Env::Subject(command, entity), conjunct)
+                })
+                .collect();
+            let selects = match truths.as_slice() {
+                [] => String::new(),
+                [only] => format!(" if matches!({only}, Some(true))"),
+                _ => {
+                    self.uses.helpers.insert("all");
+                    format!(" if matches!(all(&[{}]), Some(true))", truths.join(", "))
+                }
+            };
+            let variable = format!("affected_{index}");
+            if affect.deletes {
+                let _ = writeln!(
+                    out,
+                    "            let {variable} = match {variable} {{\n                \
+                     Some((identity, row)){selects} => {{\n                    let _ = &row;\n    \
+                                     Some(identity)\n                }}\n                _ => \
+                     None,\n            }};"
+                );
+                let _ = writeln!(
+                    commit,
+                    "            if let Some(identity) = {variable} {{\n                \
+                     {storage}::delete(&mut self.ports, &identity);\n            }}"
+                );
+                continue;
+            }
+            let mut written = String::new();
+            for set in &affect.sets {
+                let value = self.value(set, Some("before"));
+                let _ = writeln!(
+                    written,
+                    "                    next.data.{} = {value};",
+                    name::value_ident(&set.target)
+                );
+            }
+            let check = Self::invariant_check(entity, "next.data");
+            let mutable = if affect.sets.is_empty() { "" } else { "mut " };
+            // The row the change starts from: the row itself, or the row moved where it rests in
+            // one of the move's `from` states, and `None` elsewhere.
+            let start = match &affect.moves {
+                Some(transition) => {
+                    let any = format!(
+                        "crate::{}::Any{}",
+                        self.layout.module(self.layout.owner(&entity.name)),
+                        self.layout.type_name(&entity.name)
+                    );
+                    let mut arms = String::new();
+                    for from in &transition.from {
+                        let _ = writeln!(
+                            arms,
+                            "                    {any}::{from}(instance) => \
+                             Some({any}::{}(instance.{}()).snapshot()),",
+                            transition.to,
+                            name::value_ident(&transition.name)
+                        );
+                    }
+                    if transition.from.len() < entity.lifecycle.states.len() {
+                        arms.push_str("                    _ => None,\n");
+                    }
+                    format!("match row.refine() {{\n{arms}                }}")
+                }
+                None => "Some(row)".to_owned(),
+            };
+            let _ = writeln!(
+                out,
+                "            let {variable} = match {variable} {{\n                Some((_, \
+                 row)){selects} => {start},\n                _ => None,\n            }};\n            \
+                 let {variable} = match {variable} {{\n                Some(start) => {{\n            \
+                 let {mutable}next = start;\n{written}{check}            Some(next)\n               \
+                 }}\n                None => None,\n            }};"
+            );
+            let _ = writeln!(
+                commit,
+                "            if let Some(next) = {variable} {{\n                \
+                 {storage}::put(&mut self.ports, next);\n            }}"
+            );
+        }
     }
 
     /// Whether the wrong-state answer reads the held state, and whether it reads stored fields.
@@ -2551,7 +2736,12 @@ impl<'a> Writer<'a> {
             ResolvedPayloadValue::Literal { value } => literal(self.ir, self.layout, target, value),
             // The implementation supplies the value, an optional one included: its port answers
             // `Option<T>`, `None` where there is nothing to report (beyond10x/ess#467).
-            ResolvedPayloadValue::Generated => self.generate(target),
+            // A present mint (ess/27, beyond10x/ess#545) asks the required port and wraps its
+            // answer present.
+            ResolvedPayloadValue::Generated { present: true } if target.is_optional() => {
+                format!("Some({})", self.generate(target.required()))
+            }
+            ResolvedPayloadValue::Generated { .. } => self.generate(target),
             ResolvedPayloadValue::Cleared => "None".to_owned(),
             ResolvedPayloadValue::Increment { by } => increment(
                 self.ir,
@@ -2642,7 +2832,9 @@ impl<'a> Writer<'a> {
             }
             ResolvedPayloadValue::RelatedField { .. }
             | ResolvedPayloadValue::RelatedSelection { .. }
+            | ResolvedPayloadValue::RelatedHead { .. }
             | ResolvedPayloadValue::ChangedCount
+            | ResolvedPayloadValue::PayloadRead { .. }
             | ResolvedPayloadValue::ChangedField { .. }
             | ResolvedPayloadValue::ChangedState { .. }
             | ResolvedPayloadValue::ResponseField { .. } => {

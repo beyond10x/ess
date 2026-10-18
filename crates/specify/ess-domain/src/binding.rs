@@ -2806,6 +2806,7 @@ on_failure: {escalate: {emits: billing.email.DeliveryEscalated}}
                 .collect(),
             response: Vec::new(),
             undeclared_fields: None,
+            await_within: None,
             fixture_inputs: BTreeMap::new(),
             outcomes: Vec::new(),
             naming: Naming::default(),

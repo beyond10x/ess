@@ -294,10 +294,17 @@ from one `ConstructRef` helper, so it adds no head literal below.
 location as `unsupported_format_version`, naming `ess/27`, beside the selection refusals that were
 already string-located there.
 
+`system_issued.rs` is new with beyond10x/ess#542, three typed sites and no string-located one:
+`await_within:` below `ess/27` and on a command that is not system-issued, at
+`command.<name>.await_within`, and a binding invoking a system-issued command, at
+`binding.<id>.invoke`. `actor.rs` gains two typed sites with it, `system: true` below `ess/27`
+at `actor.<name>.system` and beside `attributes:` at `actor.<name>.attributes`. None adds a head
+literal below.
+
 <!-- inventory:begin -->
 ```text
 accessor.rs 1 0
-actor.rs 3 2
+actor.rs 3 4
 binding.rs 36 0
 command.rs 13 61
 component.rs 15 9
@@ -309,6 +316,7 @@ primitive_admission.rs 16 8
 selection.rs 3 0
 spec.rs 7 0
 system.rs 10 0
+system_issued.rs 0 3
 topology.rs 10 0
 types.rs 23 1
 undeclared_fields.rs 0 4

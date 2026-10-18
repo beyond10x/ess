@@ -181,6 +181,10 @@ pub enum CheckCode {
     Target,
     /// The suite asked for something it cannot mean — a defect in the suite, not in the target.
     Suite,
+    /// A command the system issues itself reached the declared outcome on its instance within
+    /// the bound, or reached none where the specification says it does not happen
+    /// (beyond10x/ess#542).
+    Await,
 }
 
 impl CheckCode {
@@ -188,7 +192,7 @@ impl CheckCode {
     ///
     /// Public for the reason `BindingAspect::ALL` is: a list nobody iterates is a list that goes
     /// stale, and this is what makes "every rule the runner checks has a name" assertable.
-    pub const ALL: [Self; 18] = [
+    pub const ALL: [Self; 19] = [
         Self::Disclosure,
         Self::Reading,
         Self::Outcome,
@@ -207,6 +211,7 @@ impl CheckCode {
         Self::Halt,
         Self::Target,
         Self::Suite,
+        Self::Await,
     ];
 
     /// How the code is written: `ESS-CF-OUTCOME`.
@@ -230,6 +235,7 @@ impl CheckCode {
             Self::Halt => "ESS-CF-HALT",
             Self::Target => "ESS-CF-TARGET",
             Self::Suite => "ESS-CF-SUITE",
+            Self::Await => "ESS-CF-AWAIT",
         }
     }
 
@@ -289,6 +295,11 @@ impl CheckCode {
             }
             Self::Target => "the target can carry out what a scenario asks of it",
             Self::Suite => "a scenario asks only for what its own earlier steps established",
+            Self::Await => {
+                "a command the system issues itself reaches the declared outcome on its \
+                           instance within the bound, and reaches none where the specification \
+                           says it does not happen"
+            }
         }
     }
 

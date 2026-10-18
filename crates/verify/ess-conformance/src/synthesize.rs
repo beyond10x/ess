@@ -188,6 +188,7 @@ mod disclosure;
 mod existence;
 mod grant;
 mod identity;
+mod ordered_head;
 mod paging;
 pub(crate) mod precedence;
 mod refusal_policy;
@@ -199,6 +200,7 @@ mod seeds;
 mod set_effects;
 mod singleton;
 mod subject_fact;
+pub(crate) mod system_issued;
 mod value_invariant;
 mod view_grant;
 
@@ -1054,7 +1056,45 @@ pub enum RefusalCause {
         /// The input the step sends, by field, as it reads.
         input: String,
     },
+    /// A scenario needs a step of a command the system issues itself whose outcome addresses no
+    /// existing record — it creates one, or it names no `instance:` — so there is no instance to
+    /// await its outcome on, and the command is never driven in its place (beyond10x/ess#542,
+    /// `docs/design/system-issued-commands.md`, *The instance*).
+    SystemIssuedUnaddressed {
+        /// The system-issued command.
+        command: CommandRef,
+        /// Why it names no one existing record.
+        reason: crate::system_issued::Unaddressed,
+    },
+    /// A refusal of a command the system issues itself that its input, or the rows its input
+    /// names, decides (beyond10x/ess#542, *Which branches a scenario can claim*): the system
+    /// chooses that input, so a refusal another choice would avoid is not an obligation a scenario
+    /// can claim.
+    SystemDecidedRefusal {
+        /// The refusing branch.
+        outcome: OutcomeRef,
+        /// What decides it, as the specification spells it.
+        decided_by: &'static str,
+    },
 }
+
+/// `RefusalCause::SystemIssuedUnaddressed`'s number in the `SYNTH` family, the next after
+/// [`CHILD_UNWITNESSED`] (beyond10x/ess#542).
+pub const SYSTEM_ISSUED_UNADDRESSED: u16 = 23;
+
+/// `RefusalCause::SystemDecidedRefusal`'s number in the `SYNTH` family, the next after
+/// [`SYSTEM_ISSUED_UNADDRESSED`] (beyond10x/ess#542).
+pub const SYSTEM_DECIDED_REFUSAL: u16 = 24;
+
+/// The repair for a system-issued step with no existing record to await (beyond10x/ess#542).
+const UNADDRESSED_REPAIR: &str = "a step the system takes to create a record, or over rows with \
+     no subject, is not awaited in this release; grant the command to a caller as well to keep it \
+     driven, or move the step onto an existing record that its outcomes name with `instance:`";
+
+/// The repair for a refusal of a system-issued command its input decides (beyond10x/ess#542).
+const SYSTEM_DECIDED_REPAIR: &str = "cover the refusal with an authored scenario \
+     (ess-scenario/1) that arranges the rows the system chooses among, so that every choice is \
+     refused, and expects nothing to be issued";
 
 /// `RefusalCause::PrecedenceContradicted`'s number in the `SYNTH` family, the next after
 /// [`COUNT_UNWITNESSED`].
@@ -1071,6 +1111,25 @@ pub const INSTANT_UNTAGGED: u16 = 21;
 /// `RefusalCause::ChildUnwitnessed`'s number in the `SYNTH` family, the next after
 /// [`INSTANT_UNTAGGED`] (<https://github.com/beyond10x/ess/issues/501>).
 pub const CHILD_UNWITNESSED: u16 = 22;
+
+/// The entries of [`RefusalCause::CATALOGUE`] a coverage inventory records as `check_not_emitted`:
+/// the candidate was written, and a check inside it was left out. Every other entry is
+/// `candidate_not_emitted`.
+///
+/// One list for the writer (`coverage_build`) and the Rust reader (`coverage`); the Go, TypeScript
+/// and browser readers restate it, and `tests/coverage_refusal_catalogue.rs` holds each of them to
+/// this one for every code of the catalogue.
+pub const CHECK_NOT_EMITTED: [u16; 9] = [
+    5,
+    11,
+    12,
+    14,
+    crate::aggregate::UNSCOPED,
+    crate::aggregate::UNWITNESSED,
+    ABSENCE_UNWITNESSED,
+    INSTANT_UNTAGGED,
+    CHILD_UNWITNESSED,
+];
 
 /// The repair for a family asked to send a command guarded by a related row (ess/18, #211): only the
 /// command's own outcome scenarios and its drivers arrange that row, and any other family has none
@@ -1206,6 +1265,10 @@ impl RefusalCause {
                 "the line above names what the cell lacks; a `read/<view>` cell for an actor not \
                  granted the originating command is refused by design and needs no change"
             }
+            // A head no scenario arranges refuses its branch alone (beyond10x/ess#552).
+            Self::NoWitness(gap) if ordered_head::unarranged(gap.reason) => {
+                ordered_head::HEAD_REPAIR
+            }
             Self::NoWitness(_) => {
                 "give the field a type that has a finite value, or drop it from the command's input"
             }
@@ -1310,6 +1373,8 @@ impl RefusalCause {
             }
             Self::AbsenceUnwitnessed { .. } => ABSENCE_REPAIR,
             Self::ChildUnwitnessed { .. } => CHILD_REPAIR,
+            Self::SystemIssuedUnaddressed { .. } => UNADDRESSED_REPAIR,
+            Self::SystemDecidedRefusal { .. } => SYSTEM_DECIDED_REPAIR,
         }
     }
 }
@@ -1461,6 +1526,15 @@ crate::authored::diagnostic_catalogue! {
             "No input was found where one child of an `any`/`all` alone decides it and it decides \
              the guard; the branch's scenario stands without that input.",
             CHILD_REPAIR;
+        Self::SystemIssuedUnaddressed { .. } => SYSTEM_ISSUED_UNADDRESSED,
+            "A command the system issues itself, whose outcome addresses no existing record \
+             (`creates:`, or no `instance:`), has no awaited scenario, and is not driven in its \
+             place.",
+            UNADDRESSED_REPAIR;
+        Self::SystemDecidedRefusal { .. } => SYSTEM_DECIDED_REFUSAL,
+            "A refusal of a command the system issues itself is decided by its input, or by rows \
+             its input names, which the system chooses; no scenario claims it.",
+            SYSTEM_DECIDED_REPAIR;
     }
 }
 
@@ -1621,6 +1695,20 @@ impl fmt::Display for RefusalCause {
             Self::ChildUnwitnessed { predicate, tried } => write!(
                 f,
                 "no solved candidate of the {tried} tried satisfies `{predicate}`"
+            ),
+            Self::SystemIssuedUnaddressed { command, reason } => write!(
+                f,
+                "`{command}` is issued by the system itself, and {reason}; a scenario awaits a \
+                 system-issued step on an existing record and never drives one"
+            ),
+            Self::SystemDecidedRefusal {
+                outcome,
+                decided_by,
+            } => write!(
+                f,
+                "`{outcome}` refuses a step the system issues itself, and {decided_by} decides \
+                 it: the system chooses that input, so a refusal another choice would avoid is \
+                 not observable as an obligation"
             ),
             Self::InvariantUnobservable { .. } => invariant_unobservable(f, self),
             Self::ValueInvariantUnwitnessed {
@@ -2327,17 +2415,22 @@ fn synthesize_in(ir: &EssIr, seeds: &AdmittedSeeds) -> Synthesis {
 /// naming a scenario the suite does not hold points at nothing.
 fn withdraw(synthesis: &mut Synthesis, id: &ScenarioId, cause: RefusalCause) {
     synthesis.suite.scenarios.remove(id);
-    synthesis.notes.retain(|note| match note {
+    synthesis.notes.retain(|note| !about_scenario(note, id));
+    synthesis.refusals.push(Refusal::about(id, cause));
+}
+
+/// Whether `note` is about the scenario `id`.
+fn about_scenario(note: &Note, id: &ScenarioId) -> bool {
+    match note {
         Note::PartialObservation { scenario, .. }
         | Note::UnseparatedSources { scenario, .. }
         | Note::UnwitnessedOverlap { scenario, .. }
         | Note::UnswappedCallers { scenario, .. }
         | Note::CrossCallerUnswapped { scenario, .. }
         | Note::CrossCallerUnwitnessed { scenario, .. }
-        | Note::UnaccompaniedRelatedCopy { scenario, .. } => scenario != id,
-        _ => true,
-    });
-    synthesis.refusals.push(Refusal::about(id, cause));
+        | Note::UnaccompaniedRelatedCopy { scenario, .. } => scenario == id,
+        _ => false,
+    }
 }
 
 /// Which scenarios a synthesis writes.
@@ -2522,6 +2615,13 @@ fn synthesize_invocations(models: &caller::InvocationModels<'_>, focus: Focus<'_
                 });
             }
         }
+    }
+    // A command the system issues itself is awaited, never driven: the last rewrite of the suite,
+    // over every family's scenarios and the grant refusals built from them (beyond10x/ess#542).
+    for (id, cause) in system_issued::await_system_issued(ir, &mut suite) {
+        notes.retain(|note| !about_scenario(note, &id));
+        refusals.retain(|refusal| !(refusal.stands && refusal.scenario.as_ref() == Some(&id)));
+        refusals.push(Refusal::about(&id, cause));
     }
     suite.select_fresh_format_for(ir);
 
@@ -2717,7 +2817,11 @@ pub(crate) fn needs_of(
             | ScenarioStep::ExpectInvocation { command, .. }
             | ScenarioStep::ExpectEveryInvocation { command, .. }
             | ScenarioStep::ExpectNoInvocation { command, .. }
-            | ScenarioStep::ExecuteCommandWithoutInput { command, .. } => {
+            | ScenarioStep::ExecuteCommandWithoutInput { command, .. }
+            // The component the system's own scheduler sends the command to still serves it
+            // (beyond10x/ess#542).
+            | ScenarioStep::AwaitOutcome { command, .. }
+            | ScenarioStep::ExpectNotIssued { command, .. } => {
                 if !handles(ir, component, command.name()) {
                     needs.insert(command.clone().into());
                 }
@@ -2843,6 +2947,8 @@ fn outcome_scenario_noting(
     let id = ScenarioId::Outcome {
         outcome: OutcomeRef::new(CommandRef::new(command.name.clone()), outcome.name.clone()),
     };
+    // Every further run below is this branch again (beyond10x/ess#546).
+    let _under_test = crate::witness::under_test(models.arrangement, command, outcome);
     let (mut steps, mut source, run) = exercise_as(
         models,
         command,
@@ -3246,6 +3352,9 @@ fn exercise_as(
     refusals: &mut Vec<Refusal>,
     witness: Witness,
 ) -> Option<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>, Run)> {
+    // The branch run here is the one the scenario observes: an Optional input it copies is sent
+    // present, while the steps arranging it leave theirs absent (beyond10x/ess#546).
+    let _under_test = crate::witness::under_test(models.arrangement, command, outcome);
     let run = match run_as(models, command, outcome, actors, witness) {
         Ok(run) => run,
         Err(cause) => {
@@ -3633,12 +3742,17 @@ fn run_as(
     // is arranged with the rows its selector selects, for every branch they decide.
     let rows = row_set::routes(command, outcome);
     let mut related_at = Distinction::PLAIN;
+    // ess/27 (beyond10x/ess#543): the ties of a ranked head no creating input steers, each a gap
+    // the scenario stands with.
+    let mut row_gaps: Vec<RefusalCause> = Vec::new();
     let (setup, input) =
         if rows {
             if witness != Witness::Full {
                 return Err(row_set::unarranged());
             }
-            row_set::prepare(models, command, outcome, actors)?
+            let (setup, input, gaps) = row_set::prepare(models, command, outcome, actors)?;
+            row_gaps = gaps;
+            (setup, input)
         } else if related {
             match witness {
                 Witness::Full => related_guard::prepare_at_in(
@@ -3817,7 +3931,7 @@ fn run_as(
     if (subject_fact::uses(command) || related || rows) && outcome.error.is_none() {
         invoke.push(ScenarioStep::ExpectNoError);
     }
-    let (mut after_steps, refused, unclaimed, mut unobserved) = if routed {
+    let (mut after_steps, mut refused, unclaimed, mut unobserved) = if routed {
         let around = subject_fact::around(models, command, outcome, actors, &mut setup, &supplied)?;
         (
             around.steps,
@@ -3828,6 +3942,7 @@ fn run_as(
     } else {
         (Vec::new(), Vec::new(), Vec::new(), BTreeSet::new())
     };
+    refused.extend(row_gaps);
     accepts_nothing(ir, outcome, &mut setup, &mut invoke, &mut after_steps);
     collision_witness(
         ir,
@@ -7559,8 +7674,10 @@ fn determined_fields(
             // matched with the other two that determine nothing rather than by a wildcard, so a
             // fifth source has to be decided rather than silently ignored.
             ResolvedPayloadValue::ResponseField { .. }
-            | ResolvedPayloadValue::Generated
+            | ResolvedPayloadValue::Generated { .. }
             | ResolvedPayloadValue::Cleared
+            // ess/27 (#545): a `sets:` source only, refused in a payload by `ess-domain`.
+            | ResolvedPayloadValue::PayloadRead { .. }
             // ess/16 (#167): the rows one scenario changed, asserted by `set_effects` alone.
             | ResolvedPayloadValue::ChangedCount
             // ess/25 (#531): the row one occurrence is for, asserted by `set_effects` alone.
@@ -7587,6 +7704,7 @@ fn determined_fields(
             | ResolvedPayloadValue::Struct { .. }
             | ResolvedPayloadValue::RelatedField { .. }
             | ResolvedPayloadValue::RelatedSelection { .. }
+            | ResolvedPayloadValue::RelatedHead { .. }
             | ResolvedPayloadValue::CallerAttribute { .. } => {
                 if let Some(ScenarioValue::Literal { value }) =
                     expression_value(ir, field, supplied, before)
@@ -7932,6 +8050,16 @@ fn view_expectations(
         out.source.extend(companion.source.iter().cloned());
     }
 
+    // ess/27 (#545): the events a step before the branch under test may already have published,
+    // which a row claim reading the published value must not name.
+    let earlier = earlier_events(
+        ir,
+        run.setup.iter().chain(
+            companions
+                .iter()
+                .flat_map(|companion| companion.steps.iter()),
+        ),
+    );
     for (view, admits_subject) in &decided {
         let name = ViewRef::new(view.name.clone());
         let fields = naming(view);
@@ -7942,7 +8070,9 @@ fn view_expectations(
             // that reads them. It is sound on a target §8 permits to be shared, where a claim
             // about which row comes *first* would not be: a row this scenario did not make cannot
             // stop one it did from holding what it was given.
-            subject_row(ir, view, outcome, run, &subject.entity, &fields, state)
+            let mut row = subject_row(ir, view, outcome, run, &subject.entity, &fields, state);
+            row.extend(minted_row(view, outcome, &fields, &earlier));
+            row
         } else {
             // A cancelled invoice that stays in `OutstandingInvoices` is the defect the positive
             // assertion cannot see, and an entity that has not reached the filtered state yet is
@@ -8737,6 +8867,16 @@ fn expression_value_at(
         } => before
             .get(&row_set::key(selection, read))
             .map(|held| held.value.clone()),
+        // ess/27 (#543): the head's value, which `row_set` settled where the rows it arranged rank
+        // one row first.
+        ResolvedPayloadValue::RelatedHead {
+            selection,
+            order_by,
+            field: read,
+            ..
+        } => before
+            .get(&ordered_head::key(selection, order_by, read))
+            .map(|held| held.value.clone()),
         ResolvedPayloadValue::Increment { by } => {
             let Node::Number(held) = before_literal_at(before, target_location)? else {
                 return None;
@@ -8786,8 +8926,10 @@ fn expression_value_at(
         ResolvedPayloadValue::Literal { .. }
         | ResolvedPayloadValue::InputField { .. }
         | ResolvedPayloadValue::ResponseField { .. }
-        | ResolvedPayloadValue::Generated
+        | ResolvedPayloadValue::Generated { .. }
         | ResolvedPayloadValue::Cleared
+        // ess/27 (#545): the published value, which `subject_row` claims where it is safe to.
+        | ResolvedPayloadValue::PayloadRead { .. }
         // ess/16 (#168): read only through `caller::synthesize`, which writes the caller's value in.
         | ResolvedPayloadValue::CallerAttribute { .. }
         | ResolvedPayloadValue::ChangedCount => None,
@@ -9455,19 +9597,22 @@ fn reads<'a>(target: &'a ess_compiler::ir::ResolvedPayloadField, out: &mut Vec<(
                 reads(leaf, out);
             }
         }
-        // A selector reads its inputs to select the row, not as the value.
-        ResolvedPayloadValue::RelatedSelection { selection, .. } => {
+        // A selector reads its inputs to select the row, not as the value; a ranked one too.
+        ResolvedPayloadValue::RelatedSelection { selection, .. }
+        | ResolvedPayloadValue::RelatedHead { selection, .. } => {
             out.extend(row_set::input_reads(&selection.filter).map(|field| (field, Read::Needed)));
         }
         ResolvedPayloadValue::Literal { .. }
         | ResolvedPayloadValue::ResponseField { .. }
-        | ResolvedPayloadValue::Generated
+        | ResolvedPayloadValue::Generated { .. }
         | ResolvedPayloadValue::Cleared
         | ResolvedPayloadValue::SubjectField { .. }
         | ResolvedPayloadValue::RelatedField { .. }
         | ResolvedPayloadValue::Increment { .. }
         | ResolvedPayloadValue::SubjectState { .. }
         | ResolvedPayloadValue::CallerAttribute { .. }
+        // ess/27 (#545): what the payload field reads is collected from the payload itself.
+        | ResolvedPayloadValue::PayloadRead { .. }
         | ResolvedPayloadValue::ChangedField { .. }
         | ResolvedPayloadValue::ChangedState { .. }
         | ResolvedPayloadValue::ChangedCount => {}
@@ -9807,6 +9952,92 @@ fn subject_row(
     expectations
 }
 
+/// What a branch under test that mints into its row claims of a view showing it (ess/27,
+/// beyond10x/ess#545, `docs/design/minted-value-sources.md`):
+///
+/// * a `{payload: <Event>.<field>}` entry: the row holds the value the event published, an
+///   [`ScenarioValue::Observed`] the runner resolves against the event's first occurrence in the
+///   scenario — so only where no earlier step may have published that event;
+/// * a `{generated: true, present: true}` entry: the row does not hold the field null.
+///
+/// Nothing where the view does not project the identity (the claim would be about every row) or
+/// shows the field at another type.
+fn minted_row(
+    view: &ResolvedView,
+    outcome: &ResolvedOutcome,
+    identity: &BTreeMap<String, ScenarioValue>,
+    earlier: &BTreeSet<QualifiedName>,
+) -> Vec<ViewExpectation> {
+    if identity.is_empty() {
+        return Vec::new();
+    }
+    let mut claims = Vec::new();
+    for set in &outcome.sets {
+        if set.conversion.is_some()
+            || view.field(&set.target).map(|shown| &shown.type_ref) != Some(&set.target_type)
+        {
+            continue;
+        }
+        match &set.value {
+            ResolvedPayloadValue::PayloadRead { event, field, .. }
+                if !earlier.contains(event.name()) =>
+            {
+                let mut fields = identity.clone();
+                fields.insert(
+                    set.target.clone(),
+                    ScenarioValue::observed(EventRef::from(event), field.clone()),
+                );
+                claims.push(ViewExpectation::Contains { fields });
+            }
+            ResolvedPayloadValue::Generated { present: true } => {
+                let mut fields = identity.clone();
+                fields.insert(set.target.clone(), ScenarioValue::literal(Node::Null));
+                claims.push(ViewExpectation::Excludes { fields });
+            }
+            _ => {}
+        }
+    }
+    claims
+}
+
+/// The events the commands these steps send may publish, and every event a binding's command may
+/// publish, since a binding may run on any of them (ess/27, #545).
+fn earlier_events<'s>(
+    ir: &EssIr,
+    steps: impl Iterator<Item = &'s ScenarioStep>,
+) -> BTreeSet<QualifiedName> {
+    let emitted = |command: &ResolvedCommand| -> Vec<QualifiedName> {
+        command
+            .outcomes
+            .iter()
+            .flat_map(|outcome| outcome.emits.iter().map(|event| event.name().clone()))
+            .collect()
+    };
+    let mut events = BTreeSet::new();
+    let mut sent = false;
+    for step in steps {
+        let (ScenarioStep::ExecuteCommand { command, .. }
+        | ScenarioStep::ExecuteCommandWithoutInput { command, .. }) = step
+        else {
+            continue;
+        };
+        sent = true;
+        if let Some(declared) = ir
+            .commands()
+            .values()
+            .find(|declared| declared.name.to_string() == command.to_string())
+        {
+            events.extend(emitted(declared));
+        }
+    }
+    if sent {
+        for binding in ir.bindings().values() {
+            events.extend(emitted(ir.command(&binding.command)));
+        }
+    }
+    events
+}
+
 /// One `Excludes` per always-present undetermined leaf: no row of **this** subject holds that leaf
 /// null or absent (beyond10x/ess#179). The runner reads an absent dotted path as `null`, so a row
 /// that never wrote `lead.rank` matches and fails. Nothing when the view does not project the
@@ -9911,13 +10142,18 @@ fn settled(
             | ResolvedPayloadValue::Struct { .. }
             | ResolvedPayloadValue::RelatedField { .. }
             | ResolvedPayloadValue::RelatedSelection { .. }
+            | ResolvedPayloadValue::RelatedHead { .. }
             | ResolvedPayloadValue::CallerAttribute { .. } => {
                 match expression_value(ir, field, supplied, before) {
                     Some(value) => value,
                     None => continue,
                 }
             }
-            ResolvedPayloadValue::Generated
+            // ess/27 (#545): the published value is a reference to an observation, which
+            // `subject_row` claims for the branch under test alone; carried forward as a settled
+            // value it would name another act's occurrence of the event.
+            ResolvedPayloadValue::Generated { .. }
+            | ResolvedPayloadValue::PayloadRead { .. }
             | ResolvedPayloadValue::ResponseField { .. }
             // ess/25 (#531): an event payload source only, never a row's.
             | ResolvedPayloadValue::ChangedField { .. }
@@ -11757,6 +11993,8 @@ fn lifecycle(
                         driver.outcome.name.clone(),
                     ),
                 };
+                // The move's further sources are this branch again (beyond10x/ess#546).
+                let _under_test = crate::witness::under_test(ir, driver.command, driver.outcome);
                 let Some((mut steps, mut source, run)) = exercise_as(
                     models,
                     driver.command,

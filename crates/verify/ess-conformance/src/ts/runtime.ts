@@ -899,6 +899,16 @@ export function predicateNumbers(value: Node): Node {
 
 // ---- exact coverage inventory and original parent admission ------------------------------------
 
+/**
+ * The last entries of the ESS-SYNTH and ESS-AUTHOR catalogues a coverage inventory may name, and
+ * the generated codes whose effect is check_not_emitted (ess_conformance's
+ * synthesize::CHECK_NOT_EMITTED). tests/coverage_refusal_catalogue.rs holds all three to the Rust
+ * catalogues, vector by vector.
+ */
+const NEWEST_GENERATED_REFUSAL = 24;
+const NEWEST_AUTHORED_REFUSAL = 46;
+const CHECK_NOT_EMITTED = new Set([5, 11, 12, 14, 16, 17, 20, 21, 22]);
+
 export function coverageError(): Error {
   return new Error('inconsistent closed coverage inventory');
 }
@@ -1185,7 +1195,7 @@ export function checkedRefusal(
         throw coverageError();
       }
       let number = 0;
-      for (let n = 1; n <= 17; n += 1) {
+      for (let n = 1; n <= NEWEST_GENERATED_REFUSAL; n += 1) {
         if (code === `ESS-SYNTH-${String(n).padStart(3, '0')}`) {
           number = n;
         }
@@ -1193,17 +1203,7 @@ export function checkedRefusal(
       if (number === 0) {
         throw coverageError();
       }
-      let effect = 'candidate_not_emitted';
-      if (
-        number === 5 ||
-        number === 11 ||
-        number === 12 ||
-        number === 14 ||
-        number === 16 ||
-        number === 17
-      ) {
-        effect = 'check_not_emitted';
-      }
+      const effect = CHECK_NOT_EMITTED.has(number) ? 'check_not_emitted' : 'candidate_not_emitted';
       if (refusal.effect !== effect) {
         throw coverageError();
       }
@@ -1212,7 +1212,7 @@ export function checkedRefusal(
     case 'authored': {
       sourceIdentity(refusal.source);
       let valid = false;
-      for (let n = 1; n <= 41; n += 1) {
+      for (let n = 1; n <= NEWEST_AUTHORED_REFUSAL; n += 1) {
         if (n === 36) {
           continue;
         }
@@ -2002,10 +2002,28 @@ export interface Target {
    * executeCommand invokes one command and reports the branch it took, the error it declared and
    * the events it emitted directly.
    *
-   * Throw ErrUnsupported where the implementation offers no way to invoke it — a command whose
-   * actor is the implementation itself has no caller a target can be.
+   * Throw ErrUnsupported where the implementation offers no way to invoke it. A command whose every
+   * actor is declared `system: true` is never invoked: the runner awaits it (`awaitOutcome`).
    */
   executeCommand(request: CommandRequest): Answer<CommandResult>;
+
+  /**
+   * awaitOutcome reports a step the system takes itself (suite/52 and /53, ess/27 `system: true`,
+   * beyond10x/ess#542): the outcome it reached on `request.instance` after the scenario's preceding
+   * steps, with the input it issued the command with and what it published, or that nothing was
+   * reached.
+   *
+   * The hold: a target that defines it does not let its system take the step on a scenario's
+   * records until the runner awaits it — a controlled scheduler, or a tick the target drives. A
+   * target that cannot hold its system throws ErrUnsupported: a step taken early satisfies no
+   * await. The bound: with `within`, report the target's own clock reading in `elapsedMillis`, as
+   * `observeElapsed` does; without it, answer when the step is taken or when `deadline` runs out,
+   * and the runner asks again while its own deadline has not.
+   *
+   * Optional: a target that does not define it, or throws ErrUnsupported, has each scenario that
+   * awaits reported unsupported, never passed.
+   */
+  awaitOutcome?(request: AwaitRequest): Answer<AwaitAnswer>;
 
   /**
    * executeCommandWithoutInput invokes one command with no input at all (suite/26,
@@ -2060,6 +2078,34 @@ export interface Target {
    */
   observeInvocations(request: InvocationObservationRequest): Answer<Invocation[]>;
 }
+
+/** AwaitRequest asks for the outcome the system itself reached for a command it issues. */
+export interface AwaitRequest {
+  /** The system-issued command. */
+  command: string;
+  /** The identity of the record the outcome addresses, resolved by the runner. */
+  instance: Node;
+  /** The declared bound in whole seconds (`await_within:`), absent where there is none. */
+  within?: number;
+  /** The runner's budget, where there is no declared bound. */
+  deadline: Deadline;
+  /** The input fields whose values the scenario will compare: names only, never values. */
+  compared: string[];
+  correlation: string;
+}
+
+/** AwaitAnswer is what the system did about an awaited command. */
+export type AwaitAnswer =
+  | {
+      reached: true;
+      /** The branch, its error and what the command published, as an invoked command's. */
+      result: CommandResult;
+      /** The input the system issued the command with, by declared field name. */
+      input: Record<string, Node>;
+      /** The target's clock reading since the await began, where it keeps one. */
+      elapsedMillis?: number;
+    }
+  | { reached: false; elapsedMillis?: number };
 
 /**
  * EntitySetupTarget validates fixture values against the actual entity contract and establishes
@@ -2617,6 +2663,16 @@ export interface Step {
   seconds?: number;
   /** How many rows a reader takes from an ordered view before it says stop. Never zero. */
   after: number;
+  /**
+   * A system-issued command's declared bound, `PT<seconds>S`, absent where it declares none
+   * (`await_outcome`, `expect_not_issued`, suite/52, beyond10x/ess#542).
+   */
+  within?: string;
+  /**
+   * The record an await step addresses: a captured instance or a literal identity. The two await
+   * steps write it under `instance`, which every other step spells as a name.
+   */
+  awaited?: Value;
 }
 
 /**
@@ -3326,6 +3382,11 @@ export class ScenarioRun {
 
   /** What `capture_instance` bound, by name. */
   readonly instances: { [instance: string]: Node } = {};
+  /**
+   * The input the most recent `await_outcome` answer carried, undefined before one: what a
+   * `{kind: awaited}` value reads (suite/52, beyond10x/ess#542).
+   */
+  awaited: Record<string, Node> | undefined;
   readonly established: EntitySetupRequest[] = [];
   /**
    * The instants `mark_instant` named, so a window measured from one nothing marked is a suite
@@ -3490,8 +3551,13 @@ export class ScenarioRun {
           return;
         }
         // A command opens an act: no claim of it is made yet, and its claims are kept for matching
-        // them to the occurrences the command publishes (beyond10x/ess#427).
-        if (step.step === 'execute_command' || step.step === 'execute_command_without_input') {
+        // them to the occurrences the command publishes (beyond10x/ess#427). An awaited command
+        // opens one too (beyond10x/ess#542).
+        if (
+          step.step === 'execute_command' ||
+          step.step === 'execute_command_without_input' ||
+          step.step === 'await_outcome'
+        ) {
           this.claimed = {};
           this.assigned = {};
           this.claims = actClaims(scenario.steps.slice(index + 1));
@@ -3721,6 +3787,10 @@ export class ScenarioRun {
       case 'execute_command':
       case 'execute_command_without_input':
         return this.executeCommand(index, step);
+      case 'await_outcome':
+        return this.awaitOutcome(index, step);
+      case 'expect_not_issued':
+        return this.expectNotIssued(index, step);
       case 'expect_outcome':
         return this.expectOutcome(index, step);
       case 'expect_not_granted':
@@ -3890,6 +3960,230 @@ export class ScenarioRun {
     for (const event of normalized.directEvents) {
       (this.observed[event.event] ??= []).push(event);
       this.remember(event);
+    }
+    return true;
+  }
+
+  // ---- a command the system issues itself (suite/52 and /53, beyond10x/ess#542) ----------------
+  //
+  // The same checks, in the same order, as ess_conformance's runner/await_outcome.rs:
+  //
+  //   answer                                 await_outcome                expect_not_issued
+  //   reached, reading within the bound      passes; the current result  fails
+  //   reached, reading above it, or none     fails; still the result     fails
+  //   nothing, reading at least the bound    fails                        passes
+  //   nothing, reading short of it, or none  fails                        fails
+  //   nothing, no declared bound             asked to the deadline,       asked to the deadline,
+  //                                          then fails                   then passes
+
+  /** askAwait asks the target for the outcome its system reached. */
+  private async askAwait(request: AwaitRequest): Promise<AwaitAnswer> {
+    if (typeof this.target.awaitOutcome !== 'function') {
+      throw unsupported('this target cannot observe, or hold, a step its system takes itself');
+    }
+    return await this.target.awaitOutcome(request);
+  }
+
+  /** awaitSetup resolves an await step's record and reads its declared bound, or stops. */
+  private awaitSetup(index: number, step: Step): [Node, number | undefined] | null {
+    if (step.awaited === undefined) {
+      this.targetError(index, `ESS-CF-SUITE: the await of \`${step.command}\` names no instance`);
+      return null;
+    }
+    let instance: Node;
+    try {
+      instance = this.resolve(step.awaited);
+    } catch (error) {
+      this.targetError(index, `ESS-CF-SUITE: \`instance\`: ${errorText(error)}`);
+      return null;
+    }
+    try {
+      return [instance, step.within === undefined ? undefined : awaitSeconds(step.within)];
+    } catch (error) {
+      this.targetError(index, `ESS-CF-SUITE: ${errorText(error)}`);
+      return null;
+    }
+  }
+
+  /** awaitFailure records a target's error answering an await, as an invoked command's. */
+  private awaitFailure(index: number, step: Step, error: unknown): boolean {
+    if (isUnsupported(error)) {
+      this.unsupported(
+        `step ${index}: the target cannot await \`${step.command}\`: ${errorText(error)}`,
+      );
+    }
+    return this.targetError(index, `awaiting \`${step.command}\`: ${errorText(error)}`);
+  }
+
+  async awaitOutcome(index: number, step: Step): Promise<boolean> {
+    const setup = this.awaitSetup(index, step);
+    if (setup === null) return false;
+    const [instance, within] = setup;
+    const stated = this.resolveAll(index, step.input);
+    if (stated === null) return false;
+    const compared = sortStrings(Object.keys(stated));
+    const attempts = this.harness.noInvocationDeadline().attempts;
+    for (let attempt = 0; ; attempt += 1) {
+      let answer: AwaitAnswer;
+      try {
+        const request: AwaitRequest = {
+          command: step.command,
+          instance,
+          deadline: { attempts: attempts - attempt },
+          compared,
+          correlation: this.correlation,
+        };
+        if (within !== undefined) request.within = within;
+        answer = await this.askAwait(request);
+      } catch (error) {
+        return this.awaitFailure(index, step, error);
+      }
+      if (answer.reached) {
+        return this.awaitReached(index, step, instance, stated, within, answer);
+      }
+      // Not believed before the deadline: a target may answer before it has held anything.
+      if (within === undefined && attempt + 1 < attempts) continue;
+      let observed = `nothing reached by the runner's deadline, after ${attempt + 1} await(s)`;
+      if (within !== undefined) {
+        const reading = answer.elapsedMillis;
+        observed =
+          reading === undefined || reading === null
+            ? `nothing reached, with no reading of the target's clock against the PT${within}S bound`
+            : reading < within * 1000
+              ? `nothing reached, answered after ${reading} ms, short of the PT${within}S bound`
+              : `nothing reached within PT${within}S; the target's clock read ${reading} ms`;
+      }
+      return this.fail(
+        index,
+        `ESS-CF-AWAIT: \`${step.command}\` awaited on ${render(instance)}: ${observed}`,
+      );
+    }
+  }
+
+  /**
+   * awaitReached holds a reached answer to the step and makes it the scenario's current command
+   * result. The steps after it run whatever it found, as they do after an invoked command.
+   */
+  private awaitReached(
+    index: number,
+    step: Step,
+    instance: Node,
+    stated: Record<string, Node>,
+    within: number | undefined,
+    answer: AwaitAnswer & { reached: true },
+  ): boolean {
+    const wrong: string[] = [];
+    const reading = answer.elapsedMillis;
+    if (within !== undefined) {
+      if (reading === undefined || reading === null) {
+        wrong.push(`no reading of the target's clock against the PT${within}S bound`);
+      } else if (reading > within * 1000) {
+        wrong.push(`reached after ${reading} ms, later than PT${within}S`);
+      }
+    }
+    const input: Record<string, Node> = answer.input ?? {};
+    const identity = typeof step.identity === 'string' ? step.identity : '';
+    if (!Object.hasOwn(input, identity)) {
+      wrong.push(`the answer carries no \`${identity}\`, the input naming the instance`);
+    } else if (!equal(input[identity], instance)) {
+      wrong.push(
+        `the answer is about ${identity} = ${render(input[identity])}, not the awaited instance`,
+      );
+    }
+    for (const field of sortStrings(Object.keys(stated))) {
+      if (!Object.hasOwn(input, field)) {
+        wrong.push(`${field} was not carried, where the scenario states ${render(stated[field])}`);
+      } else if (!equal(input[field], stated[field])) {
+        wrong.push(
+          `${field} = ${render(input[field])}, where the scenario states ${render(stated[field])}`,
+        );
+      }
+    }
+    const normalized = normalizeResult(answer.result);
+    this.consistency = normalized.consistency;
+    this.last = normalized;
+    this.lastCommand = step.command;
+    this.lastInput = input;
+    this.lastActor = '';
+    this.awaited = input;
+    this.observed = {};
+    for (const event of normalized.directEvents) {
+      (this.observed[event.event] ??= []).push(event);
+      this.remember(event);
+    }
+    if (wrong.length > 0) {
+      this.fail(
+        index,
+        `ESS-CF-AWAIT: \`${step.command}\` awaited on ${render(instance)}: ${wrong.join('; ')}`,
+      );
+    }
+    const reason = holds(input, step.shape ?? {});
+    if (reason !== '') {
+      this.fail(
+        index,
+        `ESS-CF-PAYLOAD: the input of \`${step.command}\`, as the system issued it: ${reason}`,
+      );
+    }
+    return true;
+  }
+
+  async expectNotIssued(index: number, step: Step): Promise<boolean> {
+    const setup = this.awaitSetup(index, step);
+    if (setup === null) return false;
+    const [instance, within] = setup;
+    if (!(await this.countBefore(index, step.unpublished ?? []))) return false;
+    const attempts = this.harness.noInvocationDeadline().attempts;
+    let failure = '';
+    for (let attempt = 0; ; attempt += 1) {
+      let answer: AwaitAnswer;
+      try {
+        const request: AwaitRequest = {
+          command: step.command,
+          instance,
+          deadline: { attempts: attempts - attempt },
+          compared: [],
+          correlation: this.correlation,
+        };
+        if (within !== undefined) request.within = within;
+        answer = await this.askAwait(request);
+      } catch (error) {
+        return this.awaitFailure(index, step, error);
+      }
+      if (answer.reached) {
+        for (const event of normalizeResult(answer.result).directEvents) this.remember(event);
+        failure = `the system issued it: outcome = ${orNone(answer.result?.outcome ?? '')}`;
+        break;
+      }
+      if (within === undefined) {
+        if (attempt + 1 < attempts) continue;
+        break;
+      }
+      const reading = answer.elapsedMillis;
+      if (reading === undefined || reading === null) {
+        failure = `nothing reached, with no reading of the target's clock against the PT${within}S bound`;
+      } else if (reading < within * 1000) {
+        failure = `nothing reached, answered after ${reading} ms, before the PT${within}S window closed`;
+      }
+      break;
+    }
+    if (failure !== '') {
+      this.fail(
+        index,
+        `ESS-CF-AWAIT: \`${step.command}\` on ${render(instance)}, which the specification says is not issued: ${failure}`,
+      );
+    }
+    // What the step must not have set in motion anywhere: the log may hold no more occurrences of
+    // each event after the window than it held before it.
+    for (const event of step.unpublished ?? []) {
+      const after = await this.logCount(index, event, 'after');
+      if (after === undefined) return false;
+      const before = this.logBefore[event] ?? 0;
+      if (after > before) {
+        this.fail(
+          index,
+          `ESS-CF-EVENT: ${after} occurrence(s) of \`${event}\` in the target's log after \`${step.command}\` was not to be issued, ${before} before it`,
+        );
+      }
     }
     return true;
   }
@@ -5534,6 +5828,18 @@ export class ScenarioRun {
           `\`${String(value.event)}\` was not observed carrying \`${String(value.field)}\``,
         );
       }
+      case 'awaited': {
+        // What the system reported it issued its own command with (beyond10x/ess#542).
+        if (this.awaited === undefined) {
+          throw new Error(
+            `\`{kind: awaited, field: ${String(value.field)}}\` is read before any await_outcome`,
+          );
+        }
+        if (!Object.hasOwn(this.awaited, value.field as string)) {
+          throw new Error(`the awaited answer carried no \`${String(value.field)}\``);
+        }
+        return this.awaited[value.field as string];
+      }
       default:
         throw new Error(
           `\`${value.kind}\` is a value kind this generated runner does not implement`,
@@ -6616,7 +6922,9 @@ const SUITE_MAJORS: { [version: string]: number } = {
   'ess-conformance/50': 50,
   'ess-conformance/51': 51,
   // A value type's invariants at a wrapped view position (`value_invariants`): admitted, and a
-  // scenario observing one is reported unsupported. Cumulative over every major below.
+  // scenario observing one is reported unsupported. Awaiting a command the system issues itself
+  // (beyond10x/ess#542): await_outcome, expect_not_issued and {kind: awaited}. Cumulative over
+  // every major below, the held-now pair included.
   'ess-conformance/52': 52,
   'ess-conformance/53': 53,
 };
@@ -6626,7 +6934,7 @@ const COVERAGE_MAJORS = new Set([
   5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 33, 35, 37,
   // The coverage majors of the conditional measure, expression, seed-bearing and counted-claim
   // pairs, of the constrained-response and opened-response pairs, of the held-now pair and of the
-  // wrapped value-invariant pair.
+  // pair carrying wrapped value-invariant observations and awaits.
   39, 41, 43, 45, 47, 49, 51, 53,
 ]);
 
@@ -6769,6 +7077,14 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
           major < 17
         ) {
           throw new Error('aggregate view refusals require suite/17');
+        }
+        // A refusal of a system-issued command (beyond10x/ess#542).
+        if (
+          isObject(item) &&
+          (item.code === 'ESS-SYNTH-023' || item.code === 'ESS-SYNTH-024') &&
+          major < 53
+        ) {
+          throw new Error('system-issued command refusals require suite/53');
         }
       }
     }
@@ -7164,6 +7480,12 @@ function decodeStep(value: Node): Step {
   if (Object.prototype.hasOwnProperty.call(written, 'right')) {
     step.right = plainNumbers(written.right) as ReadingReference;
   }
+  // The record an await addresses and its declared bound (suite/52, beyond10x/ess#542).
+  if (step.step === 'await_outcome' || step.step === 'expect_not_issued') {
+    const awaited = decodeValues({ instance: written.instance })?.instance;
+    if (awaited !== undefined) step.awaited = awaited;
+    if (typeof written.within === 'string') step.within = written.within;
+  }
   return step;
 }
 
@@ -7267,6 +7589,14 @@ export function admitValues(value: Node, major: number, accessors: boolean): voi
       case 'observed':
         closed(written, 'kind event field', '');
         name(written.event, false);
+        text(written.field);
+        break;
+      case 'awaited':
+        // The input an awaited answer carried (suite/52, beyond10x/ess#542).
+        if (major < 52) {
+          throw new Error('awaiting a system-issued command requires suite/52 or /53');
+        }
+        closed(written, 'kind field', '');
         text(written.field);
         break;
       case 'now_offset': {
@@ -7909,6 +8239,20 @@ export function admitStep(value: Node, major: number): void {
     case 'expect_outcome':
       required += ' outcome';
       break;
+    case 'await_outcome':
+      if (major < 52) {
+        throw new Error('awaiting a system-issued command requires suite/52 or /53');
+      }
+      required += ' command instance identity';
+      optional = 'within input shape';
+      break;
+    case 'expect_not_issued':
+      if (major < 52) {
+        throw new Error('awaiting a system-issued command requires suite/52 or /53');
+      }
+      required += ' command instance';
+      optional = 'within unpublished';
+      break;
     case 'expect_not_granted':
       if (major < 26) {
         throw new Error('the refusal an ungranted actor gets requires suite/26 or /27');
@@ -8055,8 +8399,15 @@ export function admitStep(value: Node, major: number): void {
     }
   }
   closed(value, required, optional);
+  const awaiting = tag === 'await_outcome' || tag === 'expect_not_issued';
   for (const key of Object.keys(value)) {
     const held = value[key];
+    // The record an await addresses, the input naming it, the declared bound and what the window
+    // must not publish (suite/52, beyond10x/ess#542).
+    if (awaiting && ['instance', 'identity', 'within', 'unpublished'].includes(key)) {
+      admitAwaitKey(key, held, major);
+      continue;
+    }
     switch (key) {
       case 'fixtures':
         admitFixtures(held);
@@ -8184,6 +8535,36 @@ export function admitStep(value: Node, major: number): void {
       default:
         break;
     }
+  }
+}
+
+/** awaitSeconds reads a declared `await_within:` bound, `PT<seconds>S`, as ess_domain's Period. */
+export function awaitSeconds(value: string): number {
+  const match = /^PT(0|[1-9][0-9]*)S$/.exec(value);
+  const seconds = match === null ? 0 : Number(match[1]);
+  if (!Number.isSafeInteger(seconds) || seconds <= 0 || seconds > 4294967295) {
+    throw new Error('an await bound is a positive number of seconds written PT<seconds>S');
+  }
+  return seconds;
+}
+
+/** admitAwaitKey admits one key the two await steps spell their own way (beyond10x/ess#542). */
+function admitAwaitKey(key: string, held: Node, major: number): void {
+  switch (key) {
+    case 'instance':
+      if (!isObject(held) || (held.kind !== 'instance' && held.kind !== 'literal')) {
+        throw new Error('an awaited instance is a captured instance or a literal identity');
+      }
+      admitValues({ instance: held }, major, false);
+      break;
+    case 'identity':
+      text(held);
+      break;
+    case 'within':
+      awaitSeconds(text(held));
+      break;
+    default:
+      for (const event of array(held)) name(event, false);
   }
 }
 

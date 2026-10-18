@@ -241,7 +241,7 @@ pub struct Ranking {
 
 impl Ranking {
     /// Parses one key, written `<field>` or `<field> asc|desc`.
-    fn parse(value: &str) -> Result<Self, ParseError> {
+    pub(crate) fn parse(value: &str) -> Result<Self, ParseError> {
         let mut words = value.split_whitespace();
         let Some(field) = words.next() else {
             return Err(ParseError::shape(

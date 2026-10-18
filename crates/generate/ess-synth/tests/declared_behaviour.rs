@@ -548,8 +548,9 @@ fn every_construct_the_story_keeps_owed_keeps_its_whole_command_an_obligation() 
     ];
     for case in cases {
         let ir = compile_text(case.model);
-        // The plan, not a target: `instances:` and `affects:` are refused by the Rust target as a
-        // whole, and the plan still names the construct that keeps the command owed.
+        // The plan, not a target: the plan names the construct that keeps the command owed, and
+        // every target reads it from there (`tests/set_effects.rs` holds the targets to it for
+        // `instances:` and `affects:`).
         let plan = SynthesisPlan::of(&ir);
         match plan.disposition_of(CapabilityKind::CommandBehavior, case.command) {
             Some(SynthesisDisposition::Obligation(obligation)) => {

@@ -421,12 +421,13 @@ fn reads_other_rows(command: &ResolvedCommand) -> bool {
     fn cross(value: &ResolvedPayloadValue) -> bool {
         match value {
             ResolvedPayloadValue::RelatedField { .. }
-            | ResolvedPayloadValue::RelatedSelection { .. } => true,
+            | ResolvedPayloadValue::RelatedSelection { .. }
+            | ResolvedPayloadValue::RelatedHead { .. } => true,
             ResolvedPayloadValue::Struct { fields } => {
                 fields.iter().any(|field| cross(&field.value))
             }
             ResolvedPayloadValue::ResponseField { .. }
-            | ResolvedPayloadValue::Generated
+            | ResolvedPayloadValue::Generated { .. }
             | ResolvedPayloadValue::InputField { .. }
             | ResolvedPayloadValue::Literal { .. }
             | ResolvedPayloadValue::Cleared
@@ -435,6 +436,7 @@ fn reads_other_rows(command: &ResolvedCommand) -> bool {
             | ResolvedPayloadValue::Increment { .. }
             | ResolvedPayloadValue::InputOrGenerated { .. }
             | ResolvedPayloadValue::CallerAttribute { .. }
+            | ResolvedPayloadValue::PayloadRead { .. }
             | ResolvedPayloadValue::ChangedField { .. }
             | ResolvedPayloadValue::ChangedState { .. }
             | ResolvedPayloadValue::ChangedCount => false,

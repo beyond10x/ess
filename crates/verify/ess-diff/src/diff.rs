@@ -930,6 +930,14 @@ fn actor_changes(before: &EssIr, after: &EssIr, changes: &mut Vec<SemanticChange
                         command: command.clone(),
                     });
                 }
+                // Whether the actor is the system itself (ess/27, beyond10x/ess#542). A command
+                // becoming system-issued follows from this and the grants, and is not compared.
+                if was.system != is.system {
+                    push(ActorChange::SystemChanged {
+                        before: was.system,
+                        after: is.system,
+                    });
+                }
                 for delta in naming_deltas(&was.naming, &is.naming, name.local()) {
                     match delta {
                         NamingDelta::Wire(a, b) => push(ActorChange::WireNameChanged {
@@ -1204,9 +1212,6 @@ fn written_fields(owner: &str, fields: &[ess_compiler::ir::ResolvedPayloadField]
                 ess_compiler::ir::ResolvedPayloadValue::ResponseField { field, .. } => {
                     format!("response field `{field}`")
                 }
-                ess_compiler::ir::ResolvedPayloadValue::Generated => {
-                    "implementation-generated".to_owned()
-                }
                 ess_compiler::ir::ResolvedPayloadValue::InputField { field: name, .. } => {
                     format!("input.{name}")
                 }
@@ -1221,7 +1226,11 @@ fn written_fields(owner: &str, fields: &[ess_compiler::ir::ResolvedPayloadField]
                 | ess_compiler::ir::ResolvedPayloadValue::Struct { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::RelatedField { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::RelatedSelection { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::RelatedHead { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::CallerAttribute { .. }
+                // `implementation-generated`, and `…, present` for an ess/27 present mint.
+                | ess_compiler::ir::ResolvedPayloadValue::Generated { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::PayloadRead { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::ChangedField { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::ChangedState { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::ChangedCount) => other.describe(),
@@ -1551,6 +1560,12 @@ fn compare_commands(
         push(CommandChange::ResponseChanged {
             before: parameter_contracts(&was.response),
             after: parameter_contracts(&is.response),
+        });
+    }
+    if was.await_within != is.await_within {
+        push(CommandChange::AwaitWithinChanged {
+            before: was.await_within,
+            after: is.await_within,
         });
     }
     if was.undeclared_fields != is.undeclared_fields {
@@ -2245,9 +2260,6 @@ fn written_sets(
                 ess_compiler::ir::ResolvedPayloadValue::ResponseField { field, .. } => {
                     format!("response field `{field}`")
                 }
-                ess_compiler::ir::ResolvedPayloadValue::Generated => {
-                    "implementation-generated".to_owned()
-                }
                 ess_compiler::ir::ResolvedPayloadValue::InputField { field, .. } => {
                     format!("input.{field}")
                 }
@@ -2262,7 +2274,11 @@ fn written_sets(
                 | ess_compiler::ir::ResolvedPayloadValue::Struct { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::RelatedField { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::RelatedSelection { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::RelatedHead { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::CallerAttribute { .. }
+                // `implementation-generated`, and `…, present` for an ess/27 present mint.
+                | ess_compiler::ir::ResolvedPayloadValue::Generated { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::PayloadRead { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::ChangedField { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::ChangedState { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::ChangedCount) => other.describe(),
@@ -2651,7 +2667,8 @@ fn residual_construct(declaration: &mut serde_json::Value, family: &str) {
                 ],
             );
         }
-        "actors" => remove_keys(declaration, &["may"]),
+        // `system` is `system-changed` (ess/27, beyond10x/ess#542).
+        "actors" => remove_keys(declaration, &["may", "system"]),
         "bindings" => {
             remove_keys(
                 declaration,
@@ -2708,6 +2725,9 @@ fn residual_command(declaration: &mut serde_json::Value) {
     residual_fields(declaration, "input");
     // Compared as `ResponseUndeclaredFieldsChanged` (`ess/24`).
     remove_keys(declaration, &["undeclared_fields"]);
+    // `await_within` is `await-within-changed`; `system_issued` is a pure function of the grants
+    // and the actors' `system`, both compared on the actor (ess/27, beyond10x/ess#542).
+    remove_keys(declaration, &["await_within", "system_issued"]);
     // Compared as `InputExampleChanged`, input by input.
     remove_keys(declaration, &["examples"]);
     if let Some(outcomes) = declaration
@@ -2824,7 +2844,7 @@ fn outcome_payload_change(
             matches!(
                 f.value,
                 ess_compiler::ir::ResolvedPayloadValue::ResponseField { .. }
-                    | ess_compiler::ir::ResolvedPayloadValue::Generated
+                    | ess_compiler::ir::ResolvedPayloadValue::Generated { .. }
             )
         });
     let outcome = name.to_owned();

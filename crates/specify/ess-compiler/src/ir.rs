@@ -75,6 +75,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use ess_domain::binding::{BindingName, Delivery, Failure};
+use ess_domain::command::ordered_head::Ties;
 use ess_domain::command::{OutcomeName, TestStrategy};
 use ess_domain::component::{environment_variable, CliName, ComponentName, Reach};
 use ess_domain::entity::{
@@ -1117,8 +1118,27 @@ pub enum ResolvedPayloadValue {
         /// Its resolved type.
         type_ref: ResolvedTypeRef,
     },
-    /// Explicit implementation ownership, retaining ordinary type assertions.
-    Generated,
+    /// Explicit implementation ownership, retaining ordinary type assertions: `{generated: true}`,
+    /// or from `ess/27` `{generated: true, present: true}` over an `Optional` field, whose minted
+    /// value is present (beyond10x/ess#545, `docs/design/minted-value-sources.md`).
+    Generated {
+        /// Whether the minted value of an `Optional` target is present. Serialized only when set,
+        /// so a model without a present mint keeps its IR bytes.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        present: bool,
+    },
+    /// The value this outcome publishes in `field` of `event` (`ess/27`, beyond10x/ess#545):
+    /// `{payload: <Event>.<field>}` in `sets:`, so one mint feeds the event and the row.
+    /// `ess-domain` admitted it only where this outcome fills that field under `payload:`, at a type
+    /// assignable to the target's without a conversion.
+    PayloadRead {
+        /// The event, one this outcome emits.
+        event: EventHandle,
+        /// Its field.
+        field: String,
+        /// The field's declared type.
+        type_ref: ResolvedTypeRef,
+    },
     /// A field of the command's input, or from ess/22 (Family F A4) a member of a struct input
     /// reached by a path.
     InputField {
@@ -1240,6 +1260,30 @@ pub enum ResolvedPayloadValue {
         /// The entity and the predicate selecting its rows.
         selection: ResolvedRowSelection,
         /// The field of the selected row read.
+        field: String,
+        /// The field's resolved type as declared.
+        type_ref: ResolvedTypeRef,
+    },
+    /// A field of the first row a selector selects, ranked by `order_by`, as the store held it
+    /// before this outcome (ess/27, beyond10x/ess#543, `docs/design/ordered-related-head.md`):
+    /// `{related: {entity, where, order_by, first}}`.
+    ///
+    /// `ess-domain` admitted the order only where it is total — the last key is the entity's
+    /// identity, a struct one ranked by its members in declaration order, and no key follows it —
+    /// or where it declares `ties: unordered` and holds no identity; every key a required,
+    /// orderable field of the candidate row. An empty selection supplies no value. A variant of
+    /// its own, rather than an order on [`Self::RelatedSelection`], so no reader of the
+    /// exactly-one read takes a head for one.
+    RelatedHead {
+        /// The entity and the predicate selecting its rows.
+        selection: ResolvedRowSelection,
+        /// The ranking keys, most significant first, written as a view's are.
+        order_by: Vec<Ranking>,
+        /// How rows tying on every key rank: recorded only as `unordered`, so a total order's head
+        /// keeps its bytes.
+        #[serde(skip_serializing_if = "Ties::is_total")]
+        ties: Ties,
+        /// The field of the head row read.
         field: String,
         /// The field's resolved type as declared.
         type_ref: ResolvedTypeRef,
@@ -1379,6 +1423,11 @@ pub fn related_sentence(
 /// `state` bare, the command's input under `input.` and the addressed subject, as it was before the
 /// outcome, under `subject.`; `now` is the decision's one instant. The rows are the store as it was
 /// immediately before the branch is selected.
+///
+/// From `ess/27` (beyond10x/ess#549, `docs/design/published-value-operand.md`) the selector of a
+/// value source may also read what its outcome publishes, `payload.<Event>.<field>`. Those reads
+/// are listed in [`reads`](Self::reads), so an evaluator routes the `payload` namespace by the list
+/// and never by the candidate entity's fields. A guard's selection reads none.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ResolvedRowSelection {
     /// The entity whose rows are candidates.
@@ -1386,6 +1435,25 @@ pub struct ResolvedRowSelection {
     /// What a candidate must satisfy to be selected.
     #[serde(rename = "where")]
     pub filter: Predicate,
+    /// The values of this outcome's payload the predicate reads, in dependency order: a read whose
+    /// field's own selectors read another of the list comes after it. Omitted when empty, so a
+    /// selection reading none keeps its bytes.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub reads: Vec<ResolvedPublishedRead>,
+}
+
+/// A value of its own outcome's payload that a selector reads: `payload.<event>.<field>` in its
+/// predicate, where the path may continue into the members of a struct field (ess/27,
+/// beyond10x/ess#549). The value is the one the outcome publishes, resolved before the field
+/// whose selector reads it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ResolvedPublishedRead {
+    /// The event the outcome emits and fills.
+    pub event: EventHandle,
+    /// The event field read.
+    pub field: String,
+    /// The field's declared type.
+    pub type_ref: ResolvedTypeRef,
 }
 
 /// What a [`ResolvedCondition::RelatedSet`] branch requires of the rows its selector selects,
@@ -1644,7 +1712,11 @@ impl ResolvedPayloadValue {
             Self::InputField { field, .. } => format!("input.{field}"),
             Self::Literal { value } => format!("\"{value}\""),
             Self::ResponseField { field, .. } => format!("response field `{field}`"),
-            Self::Generated => "implementation-generated".to_owned(),
+            Self::Generated { present: false } => "implementation-generated".to_owned(),
+            Self::Generated { present: true } => "implementation-generated, present".to_owned(),
+            Self::PayloadRead { event, field, .. } => {
+                format!("the published `{}.{field}`", event.name())
+            }
             Self::Cleared => "cleared".to_owned(),
             Self::SubjectField { field, .. } => format!("subject.{field} before the outcome"),
             Self::SubjectState { .. } => "the state the subject held before the outcome".to_owned(),
@@ -1674,6 +1746,28 @@ impl ResolvedPayloadValue {
             } => format!(
                 "{}.{field} of the one row whose stored fields satisfy `{}` before the outcome",
                 selection.entity.name(),
+                selection.filter
+            ),
+            Self::RelatedHead {
+                selection,
+                order_by,
+                ties,
+                field,
+                ..
+            } => format!(
+                "{}.{field} of the first row by `{}`{} whose stored fields satisfy `{}` before \
+                 the outcome",
+                selection.entity.name(),
+                order_by
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                if ties.is_total() {
+                    ""
+                } else {
+                    " (rows tying on every key in no order the model fixes)"
+                },
                 selection.filter
             ),
             Self::ChangedCount => "how many rows the outcome changed".to_owned(),
@@ -1778,6 +1872,19 @@ pub struct ResolvedCommand {
     /// Carried through from the declaration so a projection can publish it. Empty by default.
     #[serde(default, skip_serializing_if = "ess_domain::refs::is_empty")]
     pub refs: Refs,
+    /// Whether the system issues this command itself: it has at least one grant and every actor
+    /// granting it is declared `system: true` (ess/27, beyond10x/ess#542,
+    /// `docs/design/system-issued-commands.md`).
+    ///
+    /// A pure function of the grants, written anyway so a consumer can refuse it by name without
+    /// deriving it again. Conformance awaits such a command rather than invoking it. Omitted when
+    /// `false`, so a model without a system actor keeps its IR bytes.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub system_issued: bool,
+    /// How soon the system takes this step, where it declares a bound (ess/27). Omitted when
+    /// absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub await_within: Option<ess_domain::binding::periodic::Period>,
 }
 
 /// One configuration input a component declares, with its type resolved.
@@ -2299,6 +2406,10 @@ pub struct ResolvedActor {
     /// Left out of the document when empty, so a model without them keeps its bytes.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub attributes: Vec<ResolvedField>,
+    /// Whether this actor is the system itself (ess/27, beyond10x/ess#542). Omitted when
+    /// `false`, so a model without a system actor keeps its IR bytes.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub system: bool,
 }
 
 impl ResolvedActor {

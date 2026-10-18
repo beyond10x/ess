@@ -579,7 +579,8 @@ fn stored_reference(
 }
 
 /// The field a filtered read takes from the one row its selector selected (ess/22,
-/// beyond10x/ess#299): the identity, or the stored field as the row held it before the outcome.
+/// beyond10x/ess#299), or a head read from the first row it ranks (ess/27, beyond10x/ess#543): the
+/// identity, or the stored field as the row held it before the outcome.
 pub(super) fn selected(
     ir: &EssIr,
     target: &ResolvedPayloadField,
@@ -587,11 +588,14 @@ pub(super) fn selected(
     key: &Node,
     row: &Row,
 ) -> Result<Option<Value>, Undetermined> {
-    let ResolvedPayloadValue::RelatedSelection {
+    let (ResolvedPayloadValue::RelatedSelection {
         field, type_ref, ..
-    } = &target.value
+    }
+    | ResolvedPayloadValue::RelatedHead {
+        field, type_ref, ..
+    }) = &target.value
     else {
-        unreachable!("only filtered reads use this evaluator")
+        unreachable!("only filtered and head reads use this evaluator")
     };
     let value = if *field == entity.identity.name {
         Some(Value::Known(key.clone()))

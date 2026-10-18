@@ -22,9 +22,14 @@ use ess_synth::SynthesisPlan;
 
 /// The focused contract fixture at ess/22, with each `(file, before, after)` edit applied once.
 fn contract(changes: &[(&str, &str, &str)]) -> EssIr {
+    contract_at("format: ess/22", changes)
+}
+
+/// The focused contract fixture at `format`, with each `(file, before, after)` edit applied once.
+fn contract_at(format: &str, changes: &[(&str, &str, &str)]) -> EssIr {
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/contract");
     let mut changes = changes.to_vec();
-    changes.push(("system.yaml", "format: ess/4", "format: ess/22"));
+    changes.push(("system.yaml", "format: ess/4", format));
     let mut paths = Vec::new();
     let mut pending = vec![base.clone()];
     while let Some(directory) = pending.pop() {
@@ -128,6 +133,31 @@ fn a_row_set_guard_and_a_filtered_read_are_refused_by_name() {
             "{diagnostics:#?}"
         );
     }
+}
+
+/// `Run` stores the memo of the first `Child` of the owner by identity (ess/27, beyond10x/ess#543).
+const HEAD: (&str, &str, &str) = (
+    "domains/local.yaml",
+    "          note: input.note\n        summary: The child is stored",
+    "          note: input.note\n          memo:\n            related:\n              entity: contract.local.Child\n              where: owner_id == input.owner_id\n              order_by: [child_id desc]\n              first: memo\n        summary: The child is stored",
+);
+
+/// The head of an ordered selection reads other rows as a filtered read does, and is refused with
+/// the same row-set limitation, by name (`docs/design/ordered-related-head.md`, "Targets").
+#[test]
+fn a_head_read_is_refused_with_the_row_set_limitation() {
+    let diagnostics = refused(&contract_at("format: ess/27", &[HEAD]));
+    let found = named(&diagnostics);
+    assert_eq!(found.len(), 1, "{diagnostics:#?}");
+    assert_eq!(
+        found[0].path, "contract.local.Run.completed.when_related",
+        "{diagnostics:#?}"
+    );
+    assert!(
+        found[0].message.contains("selector"),
+        "{}",
+        found[0].message
+    );
 }
 
 #[test]

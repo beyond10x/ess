@@ -172,12 +172,14 @@ impl ConformanceSuite {
     /// Raises the format to suite/44 when an act claims one event more than once
     /// (beyond10x/ess#427), to suite/46 when a response observation carries String-newtype
     /// constraints (beyond10x/ess#499), to suite/48 when a response observation ignores
-    /// undeclared fields (beyond10x/ess#500), and to suite/50 when a scenario holds `now` for a
-    /// command (beyond10x/ess#586), and to suite/52 when a view expectation observes a value
-    /// type's invariants at a wrapped position. Each pair is cumulative over every major below
-    /// it, so nothing may lower it.
+    /// undeclared fields (beyond10x/ess#500), to suite/50 when a scenario holds `now` for a command
+    /// (beyond10x/ess#586), and to suite/52 when a view expectation observes a value type's
+    /// invariants at a wrapped position or a scenario awaits a system-issued command
+    /// (beyond10x/ess#542). Each pair is cumulative over every major below it, so nothing may
+    /// lower it.
     fn raise_for_counted_claims(&mut self) {
         let floor = crate::value_invariant::ordinary_floor(self)
+            .or_else(|| crate::system_issued::ordinary_floor(self))
             .or_else(|| crate::hold_now::ordinary_floor(self))
             .or_else(|| crate::undeclared_fields::ordinary_floor(self))
             .or_else(|| crate::direct_response::constrained_ordinary_floor(self))
@@ -1814,6 +1816,17 @@ pub enum ScenarioValue {
         /// The members, by field name or map key.
         members: BTreeMap<String, ScenarioValue>,
     },
+    /// The value the most recent [`AwaitOutcome`](ScenarioStep::AwaitOutcome)'s answer carried in
+    /// this input field (suite/[`ORDINARY`](crate::system_issued::ORDINARY), beyond10x/ess#542).
+    ///
+    /// The input of a system-issued command is decided by the system, so no suite can state it; a
+    /// later expectation reading the event the command published or the row it stored compares
+    /// against what the target reported instead. The sibling of [`Observed`](Self::Observed), which
+    /// reads what an earlier event published. Read before any await, it is a suite defect.
+    Awaited {
+        /// The input field of the awaited command.
+        field: String,
+    },
 }
 
 impl ScenarioValue {
@@ -1846,7 +1859,8 @@ impl ScenarioValue {
             | Self::ObservedSelection { .. }
             | Self::NowOffset { .. }
             | Self::List { .. }
-            | Self::Members { .. } => None,
+            | Self::Members { .. }
+            | Self::Awaited { .. } => None,
         }
     }
 }
@@ -2268,6 +2282,54 @@ pub enum ScenarioStep {
         /// The attributes the caller it is sent as carries (suite/26, [`crate::caller_values`]).
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         caller: BTreeMap<String, Node>,
+    },
+    /// Await an outcome of a command the system issues itself on one instance, within a bound
+    /// (suite/[`ORDINARY`](crate::system_issued::ORDINARY), beyond10x/ess#542).
+    ///
+    /// The runner never asks a target to invoke a system-issued command: it asks the target to
+    /// report the outcome its system reached on `instance` after the scenario's preceding steps.
+    /// The answer becomes the scenario's current command result, so every expectation that reads
+    /// the preceding command — [`ExpectOutcome`](Self::ExpectOutcome),
+    /// [`ExpectError`](Self::ExpectError), [`ExpectEvent`](Self::ExpectEvent) and the rest — reads
+    /// the awaited one. The input the system used is the answer's, and later values read it as
+    /// [`ScenarioValue::Awaited`].
+    AwaitOutcome {
+        /// The system-issued command.
+        command: CommandRef,
+        /// The identity of the record the outcome addresses: its `instance:` input.
+        instance: ScenarioValue,
+        /// The input field that names the record: the outcome's `instance:`. The answer's value of
+        /// it must be the awaited instance. Carried because the runner holds the suite, not the
+        /// model.
+        identity: String,
+        /// The command's declared `await_within:`, exactly when it declares one. Without it the
+        /// bound is the runner's own eventual deadline.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        within: Option<ess_domain::binding::periodic::Period>,
+        /// Input values the scenario states and the answer must carry: partial, authored only.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        input: BTreeMap<String, ScenarioValue>,
+        /// The command's declared input, flattened as an event payload's is: the answer's input
+        /// holds each field at its declared type (`ESS-CF-PAYLOAD`).
+        #[serde(default, skip_serializing_if = "PayloadShape::is_empty")]
+        shape: PayloadShape,
+    },
+    /// Require that no outcome of a system-issued command is reached on one instance within the
+    /// bound (suite/[`ORDINARY`](crate::system_issued::ORDINARY), beyond10x/ess#542): the
+    /// specification's refusal of the system's own step, read as "does not happen".
+    ExpectNotIssued {
+        /// The system-issued command.
+        command: CommandRef,
+        /// The identity of the record the command would address.
+        instance: ScenarioValue,
+        /// The command's declared `await_within:`, exactly when it declares one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        within: Option<ess_domain::binding::periodic::Period>,
+        /// Every event any outcome of the command emits: after the window closes each is observed
+        /// once, and an occurrence the scenario had not seen before fails the step, as
+        /// [`ExpectNotGranted`](Self::ExpectNotGranted)'s field of that name.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        unpublished: Vec<EventRef>,
     },
     /// Require that the command took this declared branch (§10).
     ///

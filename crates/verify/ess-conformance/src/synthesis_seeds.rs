@@ -102,6 +102,7 @@ pub(crate) fn admitted_in(major: u32) -> bool {
         || crate::undeclared_fields::ADMITTED.contains(&major)
         || crate::hold_now::ADMITTED.contains(&major)
         || crate::value_invariant::ADMITTED.contains(&major)
+        || crate::system_issued::ADMITTED.contains(&major)
 }
 
 /// What refuses seed provenance under any other major.
@@ -176,7 +177,7 @@ fn addressed(steps: &[ScenarioStep], at: usize, instance: &InstanceName) -> Opti
     .then_some(position)
 }
 
-/// Refuse seed provenance outside suite/42 through /51, its absence in /42 and /43, and any record
+/// Refuse seed provenance outside suite/42 through /53, its absence in /42 and /43, and any record
 /// that is not bound to the suite's own steps. `coverage` is the admitted inventory, where there
 /// is one: a selected coverage suite may name an application whose scenario its selection filter
 /// moved outside, and its retained parent proves that use.

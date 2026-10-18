@@ -292,7 +292,31 @@ var suiteJSON string
 "#;
 
 /// How to wire the package up, written against this suite's own numbers.
+/// The README: what every package says, and the await section where the suite awaits a command
+/// the system issues itself (beyond10x/ess#542). A suite that does not keeps its README bytes.
 fn readme(suite: &ConformanceSuite) -> String {
+    let mut readme = readme_body(suite);
+    if crate::system_issued::used_by(suite) {
+        readme.push_str(AWAIT_README);
+    }
+    readme
+}
+
+/// The README section of a package whose suite awaits a command the system issues itself.
+const AWAIT_README: &str = r"
+## A command the system issues itself
+
+A command every actor of which is declared `system: true` is never sent through
+`ExecuteCommand`: no caller can be the system. The suite awaits it instead. Implement
+`AwaitTarget`, whose `AwaitOutcome` reports the outcome your system reached on the requested
+instance, the input it issued the command with and what it published, or that nothing was reached
+(`Reached: false`). Hold the step until the runner awaits it — a controlled scheduler, or a tick
+the target drives — and report your clock's reading in `ElapsedMillis` where the request carries a
+bound (`Within`). A target without `AwaitTarget`, or one that returns `ErrUnsupported`, has each
+such scenario reported unsupported, never passed.
+";
+
+fn readme_body(suite: &ConformanceSuite) -> String {
     let provenance = &suite.provenance;
     let scope = match &provenance.component {
         None => String::new(),
@@ -407,8 +431,9 @@ pub(crate) const NEWEST_ADMITTED_SUITE_MAJOR: u32 = 53;
 /// seed-bearing pair `/42` and `/43` (beyond10x/ess#413), the counted event-claim pair `/44` and
 /// `/45` (beyond10x/ess#427), the constrained-response pair `/46` and `/47` (beyond10x/ess#499),
 /// the opened-response pair `/48` and `/49` (beyond10x/ess#500), the held-now pair `/50` and `/51`
-/// (beyond10x/ess#586), and the wrapped value-invariant pair `/52` and `/53`, which both generated
-/// runtimes admit and report `unsupported` where a scenario observes one.
+/// (beyond10x/ess#586), and the pair `/52` and `/53`: its wrapped value-invariant observations,
+/// which both generated runtimes admit and report `unsupported` where a scenario observes one, and
+/// its await vocabulary (beyond10x/ess#542).
 pub(crate) fn admitted_major(major: u32) -> bool {
     (1..=37).contains(&major)
         || crate::conditional_measures::ADMITTED.contains(&major)
@@ -419,6 +444,7 @@ pub(crate) fn admitted_major(major: u32) -> bool {
         || crate::undeclared_fields::ADMITTED.contains(&major)
         || crate::hold_now::ADMITTED.contains(&major)
         || crate::value_invariant::ADMITTED.contains(&major)
+        || crate::system_issued::ADMITTED.contains(&major)
 }
 
 /// The refusal both emitters write for a suite major their runtime does not admit.
@@ -494,13 +520,14 @@ pub(crate) fn report_format_requirement(
 
 fn runtime() -> String {
     format!(
-        "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
+        "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
         include_str!("runtime.go"),
         include_str!("reading.go"),
         include_str!("response.go"),
         include_str!("replay.go"),
         include_str!("fixtures.go"),
         include_str!("prerequisites.go"),
+        include_str!("await.go"),
         include_str!("one_time.go"),
         include_str!("one_time_identity.go"),
         include_str!("one_time_execution.go"),

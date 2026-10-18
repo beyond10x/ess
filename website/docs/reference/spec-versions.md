@@ -312,14 +312,27 @@ marks such a refusal `complete_refusal`. A `compensates: true` refusal keeps its
 the declared change. Under `ess/25` and earlier the scenario keeps its steps and its bytes; no key
 is added.
 
-From `ess/27` a binding condition and a binding selection compare a `Boolean` leaf with `true` or
-`false`: `where: [event.direction == inbound, event.bridged == false]` on a binding cause, and
+`ess/27` is not yet released. From it a binding condition and a binding selection compare a
+`Boolean` leaf with `true` or `false`: `where: [event.direction == inbound, event.bridged == false]` on a binding cause, and
 `where: item.held != true` on a selector. A definite comparison proves its path present, as the
 String and enum comparisons do, and the condition's IR read of the leaf is `{kind: boolean}`.
 `condition-false` flips the flag. A text literal against a Boolean leaf stays `type_mismatch`, and a
 bare Boolean path, `event.bridged`, stays outside the bounded fragment. Under `ess/26` and earlier
 the comparison is refused as `unsupported_format_version` naming `ess/27`, and a Boolean read only
 by `defined(...)` keeps `{kind: other}` and its IR bytes.
+
+From `ess/27` a minted value may be required present in an `Optional`
+field, `{generated: true, present: true}`, and a `sets:` entry may store the value its own outcome
+publishes, `{payload: <Event>.<field>}` (beyond10x/ess#545); under `ess/26` and earlier both keep
+the nested-mapping reading they had. An actor may declare `system: true`, and a command every grant
+of which is a system actor is system-issued: conformance awaits its outcome rather than invoking
+it, within an optional `await_within: PT<seconds>S` (beyond10x/ess#542). A value may read the head
+of an ordered selection, `{related: {entity, where, order_by, first}}`, the identity the last key
+(beyond10x/ess#543). A set effect's `instances:` or `affects:` filter may read the candidate row's
+identity (beyond10x/ess#547), and a selector's `where:` may read a value its own outcome publishes,
+`payload.<Event>.<field>` (beyond10x/ess#549). Under `ess/26` and earlier each new key or shape is
+refused as `unsupported_format_version` naming `ess/27`, or keeps the meaning it had, and a document
+using none of them keeps its meaning, its IR bytes and its compiled digest.
 
 ## `ess-diff/` — what moved between two revisions
 
@@ -342,6 +355,7 @@ by `defined(...)` keeps `{kind: other}` and its IR bytes.
 | `ess-diff/17` | [0.57.0][r57] | `narrows` beside a command change's `compatibility`: `required-input` on an added input whose type is not `Optional`, `refusal-added` on an added refusal and `refusal-widened` on a refusal whose `when:` guard changed, each recorded only where the change refuses an input the earlier revision accepted (the refusals only where plain `when:` and `otherwise` branches decide it; an input the earlier revision already refused does not count). Such a change is `breaking` for callers, `unknown` for readers and `compatible` for history, where it was `unknown` for callers. Anything else records nothing and keeps its earlier answer and format. | Refuses a delta carrying it. |
 | `ess-diff/18` | [0.58.0][r58] | `UndeclaredFieldsChanged` on `TypeChange` and `ResponseUndeclaredFieldsChanged` on `CommandChange`, each `{before, after}` of `refused` and `ignored`: an `ess/24` struct's, or a command response's, `undeclared_fields:` moved (beyond10x/ess#500), which the residual reported as `unclassified-changed` before. Opening is `expanded` and closing `narrowed`; a struct is answered through its uses like any widened or narrowed type, an opened response is `breaking` for readers and a closed one `compatible`. | Refuses a delta carrying it. |
 | `ess-diff/19` | [0.60.0][r60] | `AbsentChanged` on `ViewChange`, `{before, after}`, each side the default row (field to literal text) or `null`: an `ess/25` view's `absent:` gained, lost or changed (beyond10x/ess#533), which the residual would report as `unclassified-changed`. Relation `changed`; `breaking` for readers, `compatible` for callers and history. | Refuses a delta carrying it. |
+| `ess-diff/20` | unreleased | `SystemChanged` on `ActorChange` and `AwaitWithinChanged` on `CommandChange`, each `{before, after}`: an `ess/27` actor became the system itself or stopped being it, and a system-issued command's `await_within:` moved (beyond10x/ess#542). An actor becoming the system is `breaking` for callers; the reverse and every `await_within:` move are `compatible`. | Refuses a delta carrying it. |
 
 `ess-diff/5` exists because a variant's own name does not move when its wire spelling does. Before
 it, the variant set and the variant order both said nothing, and the comparison returned an empty
@@ -574,6 +588,17 @@ written at 52 (ordinary) or 53 (declared coverage); each implies every major bel
 pair included. The reference runner executes it; the generated Go and TypeScript runtimes admit both
 majors and report such a scenario `unsupported`, naming `value_invariants`. Older readers refuse
 these envelopes by version. A suite without it keeps its earlier format and bytes.
+
+The same pair carries the await vocabulary of a
+command the system issues itself (beyond10x/ess#542): `await_outcome` asks for an outcome of the
+command on an instance within the declared bound, `expect_not_issued` for none, and a
+`{kind: awaited}` value reads the input the most recent await's answer carried. A coverage suite
+whose inventory refuses a system-issued command (`ESS-SYNTH-023`, `ESS-SYNTH-024`) is written at 53.
+A suite carrying any of them is written at 52 (ordinary) or 53 (declared coverage); each implies
+every major below it, the held-now pair included. Rust, Go and TypeScript execute both with
+report/2: the generated Go runtime asks a target implementing `AwaitTarget`, the TypeScript one a
+target with `awaitOutcome`. Older readers refuse these envelopes by version. A suite without the
+vocabulary keeps its earlier format and bytes.
 
 For `ess/7`, generated held-state refusals include ordinary `wrong_state` outcomes:
 they compare the complete subject before and after the call and refuse every
