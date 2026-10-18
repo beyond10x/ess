@@ -12379,19 +12379,42 @@ pub(crate) fn declared_not_found<'a>(
     }
 }
 
-/// The scenario itself: the command, sent for an identity no record carries, answering `declared`.
-///
-/// The input is the one that reaches a branch acting on an existing instance, for the reason
-/// [`refused_here`] gives: a branch decided by input first (`PayInvoice/rejected`) answers its
-/// own error whatever the instance names, and sending that input would prove nothing about the
-/// rule. The identity in it is then replaced by one no other scenario sends.
-fn unknown_instance(
+/// A declared `unknown_instance:` beside a guard over the row a required input names (ess/27): that
+/// row arranged present — `exists: false` answers first — and selecting a present-related branch,
+/// which the unknown identity answers before; its steps, the input chosen on it and the input
+/// pointed at it. `None` for every other command and answer, which [`unknown_instance`] reaches as
+/// it did.
+#[allow(clippy::type_complexity)]
+fn unknown_beside_related(
     ir: &EssIr,
     command: &ResolvedCommand,
-    acting: &[&ResolvedOutcome],
     declared: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
-) -> Result<ConformanceScenario, RefusalCause> {
+) -> Option<
+    Result<
+        (
+            Arrangement,
+            (BTreeMap<String, Node>, BTreeMap<String, InstanceName>),
+        ),
+        RefusalCause,
+    >,
+> {
+    (declared.condition == ResolvedCondition::UnknownInstance
+        && related_guard::uses(command)
+        && !related_guard::optional(command)
+        && related_guard::stored::field(command).is_none())
+    .then(|| related_guard::unknown_identity_overlap(ir, command, actors))
+}
+
+/// The first branch of `acting` an input reaches, and that input, for [`unknown_instance`]: by the
+/// reference left out where the related row is read only when present or after existence, by the
+/// row-set search's input, and otherwise as [`reach`] reaches it.
+fn unknown_reached<'c>(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    acting: &[&'c ResolvedOutcome],
+    declared: &ResolvedOutcome,
+) -> Result<(&'c ResolvedOutcome, BTreeMap<String, Node>), RefusalCause> {
     let mut last = None;
     let mut reached = None;
     for outcome in acting {
@@ -12419,10 +12442,33 @@ fn unknown_instance(
             Err(cause) => last = Some(cause),
         }
     }
-    let Some((attempt, mut input)) = reached else {
-        return Err(last.unwrap_or(RefusalCause::StrategyWithoutGuard {
+    reached.ok_or_else(|| {
+        last.unwrap_or(RefusalCause::StrategyWithoutGuard {
             strategy: declared.test_strategy,
-        }));
+        })
+    })
+}
+
+/// The scenario itself: the command, sent for an identity no record carries, answering `declared`.
+///
+/// The input is the one that reaches a branch acting on an existing instance, for the reason
+/// [`refused_here`] gives: a branch decided by input first (`PayInvoice/rejected`) answers its
+/// own error whatever the instance names, and sending that input would prove nothing about the
+/// rule. The identity in it is then replaced by one no other scenario sends.
+fn unknown_instance(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    acting: &[&ResolvedOutcome],
+    declared: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+) -> Result<ConformanceScenario, RefusalCause> {
+    let related_row = unknown_beside_related(ir, command, declared, actors).transpose()?;
+    let (attempt, mut input) = match &related_row {
+        Some((_, (input, _))) => (
+            *acting.first().ok_or_else(related_guard::unarranged)?,
+            input.clone(),
+        ),
+        None => unknown_reached(ir, command, acting, declared)?,
     };
     let field = names_existing(attempt)
         .or_else(|| preserves_supplied(attempt))
@@ -12432,8 +12478,12 @@ fn unknown_instance(
 
     let command_ref = CommandRef::new(command.name.clone());
     let branch = OutcomeRef::new(command_ref.clone(), declared.name.clone());
-    let supplied = supply(ir, command, &input, None, None, &BTreeMap::new());
-    let mut steps = vec![
+    let (mut steps, mut source, bound) = match related_row {
+        Some((row, (_, bound))) => (row.steps, row.source, bound),
+        None => (Vec::new(), BTreeSet::new(), BTreeMap::new()),
+    };
+    let supplied = supply(ir, command, &input, None, None, &bound);
+    steps.extend([
         ScenarioStep::ExecuteCommand {
             caller: std::collections::BTreeMap::new(),
             command: command_ref.clone(),
@@ -12443,8 +12493,7 @@ fn unknown_instance(
         ScenarioStep::ExpectOutcome {
             outcome: branch.clone(),
         },
-    ];
-    let mut source: BTreeSet<EssSemanticRef> = BTreeSet::new();
+    ]);
     source.insert(command_ref.into());
     source.insert(branch.into());
     if let Some(subject) = &attempt.subject {

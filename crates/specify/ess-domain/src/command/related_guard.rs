@@ -573,13 +573,56 @@ fn site(command: &CommandSpec, outcome: &super::Outcome) -> ConstructRef {
 /// Local declaration checks, which need no registry and no entity: one default at most, one
 /// `exists: false` branch at most per related row, one stored-field row per command, a branch a
 /// scenario can reach, and no second selection strategy beside this one.
-pub fn validate_shape(command: &CommandSpec) -> ValidationErrors {
+///
+/// From `ess/27` an `unknown_instance:` branch sits beside the related guards: the precedence order
+/// answers it at step 3, after an `exists: false` over a row the input names and the input-guarded
+/// refusals, and before the held state and every present related row's predicate. Below `ess/27`
+/// the pairing is refused as before, the hint naming `ess/27`. Where `types` is not yet known the
+/// format is not either, so a command declaring one is left to the pass that knows it.
+pub fn validate_shape(command: &CommandSpec, types: Option<&TypeRegistry>) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
-    if let Some(other) = command
+    let unknown_instance = command
         .outcomes
         .iter()
-        .find_map(|outcome| other_authority(&outcome.condition))
-    {
+        .any(|outcome| matches!(outcome.condition, OutcomeCondition::UnknownInstance));
+    let Some(types) = types else {
+        if unknown_instance {
+            return errors;
+        }
+        return validate_declared(command, errors);
+    };
+    let admits_unknown_instance = types
+        .format()
+        .is_none_or(|format| format.major() >= crate::system::FormatVersion::V27.major());
+    if unknown_instance && !admits_unknown_instance {
+        errors.push(
+            ValidationError::at(
+                command.site().key("outcomes"),
+                ValidationCode::ConflictingDeclaration,
+                format!(
+                    "`{}` selects on a related row (`when_related`) and on an `unknown_instance` \
+                     branch; which of the two answers first is not stated before `ess/27`",
+                    command.name
+                ),
+            )
+            .with_hint(
+                "declare `format: ess/27`, where the unknown addressed identity answers after an \
+                 `exists: false` over the input's row and before the related row's predicates, or \
+                 split the other guard into a command of its own",
+            ),
+        );
+        return errors;
+    }
+    validate_declared(command, errors)
+}
+
+/// [`validate_shape`] once an `unknown_instance:` branch is admitted or absent.
+fn validate_declared(command: &CommandSpec, mut errors: ValidationErrors) -> ValidationErrors {
+    if let Some(other) = command.outcomes.iter().find_map(|outcome| {
+        (!matches!(outcome.condition, OutcomeCondition::UnknownInstance))
+            .then(|| other_authority(&outcome.condition))
+            .flatten()
+    }) {
         errors.push(
             ValidationError::at(
                 command.site().key("outcomes"),
@@ -898,8 +941,16 @@ fn orders_present_refusals(
                 .as_ref()
                 .is_some_and(|subject| matches!(subject.effect, super::Effect::Moves { .. }))
     });
+    // From ess/27 an unknown addressed identity answers at step 3, before the present related row's
+    // refusals, exactly as the held state does beside `wrong_state:`.
+    let has_unknown_instance = spec.system().format.major()
+        >= crate::system::FormatVersion::V27.major()
+        && command
+            .outcomes
+            .iter()
+            .any(|outcome| matches!(outcome.condition, OutcomeCondition::UnknownInstance));
     let orders = (matches!(via, RelatedVia::Subject(_)) && !accepting_related_move)
-        || (has_wrong_state
+        || ((has_wrong_state || has_unknown_instance)
             && spec.system().format.major() >= crate::system::FormatVersion::V22.major()
             && present_related_count > 0
             && all_present_related_refuse);

@@ -1,0 +1,85 @@
+format: ess/24
+system: demo
+version: v1
+domain: demo.seats
+summary: Seats copy whether they qualify from the tier they are issued under; a check counts the qualifying seats of a holder.
+types:
+  - {name: demo.seats.HolderRef, kind: newtype, of: Uuid}
+  - {name: demo.seats.SeatId, kind: newtype, of: Uuid}
+  - {name: demo.seats.TierId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.seats.Tier
+    identity: {name: tier_id, type: demo.seats.TierId}
+    fields:
+      - {name: qualifies, type: Boolean}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: demo.seats.Seat
+    identity: {name: seat_id, type: demo.seats.SeatId}
+    fields:
+      - {name: holder, type: demo.seats.HolderRef}
+      - {name: qualifies, type: Boolean}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+actors:
+  - name: demo.seats.Operator
+    may: [demo.seats.DefineTier, demo.seats.Issue, demo.seats.Check]
+events:
+  - name: demo.seats.TierDefined
+    fields:
+      - {name: tier_id, type: demo.seats.TierId}
+  - name: demo.seats.Issued
+    fields:
+      - {name: seat_id, type: demo.seats.SeatId}
+  - name: demo.seats.Qualified
+    fields:
+      - {name: holder, type: demo.seats.HolderRef}
+  - name: demo.seats.NotQualified
+    fields:
+      - {name: holder, type: demo.seats.HolderRef}
+commands:
+  - name: demo.seats.DefineTier
+    input:
+      - {name: qualifies, type: Boolean}
+    outcomes:
+      - name: defined
+        creates: demo.seats.Tier
+        instance: tier_id
+        sets: {qualifies: input.qualifies}
+        emits: [demo.seats.TierDefined]
+        payload:
+          demo.seats.TierDefined: {tier_id: {generated: true}}
+  - name: demo.seats.Issue
+    input:
+      - {name: holder, type: demo.seats.HolderRef}
+      - {name: tier_id, type: demo.seats.TierId}
+    outcomes:
+      - name: issued
+        creates: demo.seats.Seat
+        instance: seat_id
+        sets: {holder: input.holder, qualifies: {related: {via: input.tier_id, field: qualifies}}}
+        emits: [demo.seats.Issued]
+        payload:
+          demo.seats.Issued: {seat_id: {generated: true}}
+  - name: demo.seats.Check
+    input:
+      - {name: holder, type: demo.seats.HolderRef}
+    outcomes:
+      - name: qualified
+        when_related:
+          entity: demo.seats.Seat
+          where: {all: [holder == input.holder, qualifies == true]}
+          exists: true
+        emits: [demo.seats.Qualified]
+        payload:
+          demo.seats.Qualified: {holder: input.holder}
+      - name: not-qualified
+        emits: [demo.seats.NotQualified]
+        payload:
+          demo.seats.NotQualified: {holder: input.holder}
+views:
+  - name: demo.seats.Seats
+    source: demo.seats.Seat
+    consistency: read_your_writes
+    fields:
+      - {name: seat_id, type: demo.seats.SeatId}
+      - {name: holder, type: demo.seats.HolderRef}
+      - {name: qualifies, type: Boolean}

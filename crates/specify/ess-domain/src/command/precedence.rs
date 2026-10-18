@@ -288,8 +288,8 @@ impl Composition {
     ///
     /// Its present-related refusals answer at step 5, after the addressed row's existence and
     /// held state and before every accepting branch: on a row-set command; from `ess/22` beside
-    /// `wrong_state:` (beyond10x/ess#282) or over several input rows (#283); and through a stored
-    /// reference (#304).
+    /// `wrong_state:` (beyond10x/ess#282) or over several input rows (#283); from `ess/27` beside
+    /// `unknown_instance:`; and through a stored reference (#304).
     pub fn new(branches: &[BranchShape], input_rows: usize, format: FormatVersion) -> Self {
         let any = |test: fn(&BranchShape) -> bool| branches.iter().any(test);
         let row_set = any(|branch| matches!(branch.condition, ConditionShape::RelatedSet));
@@ -306,7 +306,11 @@ impl Composition {
             format.major() >= FormatVersion::V22.major()
                 && present_related_refusal
                 && (input_rows > 1
-                    || any(|branch| matches!(branch.condition, ConditionShape::WrongState)))
+                    || any(|branch| matches!(branch.condition, ConditionShape::WrongState))
+                    || (format.major() >= FormatVersion::V27.major()
+                        && any(|branch| {
+                            matches!(branch.condition, ConditionShape::UnknownInstance)
+                        })))
         };
         Self {
             reads_related: any(|branch| {

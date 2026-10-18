@@ -272,6 +272,7 @@ pub const FORMAT_HISTORY: &[FormatHistoryEntry] = &[
         release: None,
         added: &[
             "A binding condition and a binding selection `where` may compare a `Boolean` leaf with `true` or `false`, `event.<path> == false` or `item.<path> != true`, beside the String and enum comparisons and under `all`/`any`/`not`; a definite comparison proves its path present as any comparison does, and the condition's IR read of such a leaf is `{kind: boolean}`. A text literal against a Boolean leaf stays `type_mismatch` and a bare Boolean path stays outside the bounded fragment; below `ess/27` the comparison is refused as `unsupported_format_version` naming `ess/27`, and a Boolean leaf read only by `defined(...)` keeps `{kind: other}` and its bytes (downstream report, 2026-10-18).",
+            "A command guarding on a related row (`when_related:`) may declare an `unknown_instance:` branch for the row it addresses through its input: the precedence order places it, an `exists: false` over a row the input names answering first, then the input-guarded refusals, then the unknown addressed identity, then the held state and the present related row's predicates; below `ess/27` the pairing is refused as `conflicting_declaration`, its hint naming `ess/27`.",
         ],
         stricter: &[],
     },
@@ -377,7 +378,9 @@ impl FormatVersion {
     /// refusal's scenario reads the row back and requires it unchanged (beyond10x/ess#587).
     pub const V26: Self = Self(26);
     /// A binding condition and a binding selection compare a Boolean leaf with `true` or
-    /// `false` (downstream report, 2026-10-18).
+    /// `false`, and a command guarding on a related row may answer an unknown addressed identity
+    /// with an `unknown_instance:` branch, at step 3 of the precedence order (downstream report,
+    /// 2026-10-18).
     pub const V27: Self = Self(27);
 
     /// How a format version is written.

@@ -544,6 +544,8 @@ fn answers_before(
             ..
         }
         | ResolvedCondition::WrongState
+        // The addressed row's existence, at step 3 from ess/27: before any present row's predicate.
+        | ResolvedCondition::UnknownInstance
         | ResolvedCondition::ExistingInstance => false,
         _ if super::is_input_guarded_refusal(outcome) => false,
         ResolvedCondition::Related {
@@ -892,6 +894,9 @@ fn selects<'c>(
                     | ResolvedCondition::ExistingInstance
                     // Selected from the addressed row's held state, before this row is read.
                     | ResolvedCondition::WrongState
+                    // Selected from the addressed row's existence (ess/27), before this row's
+                    // predicates are read.
+                    | ResolvedCondition::UnknownInstance
             )
     }) {
         if let ResolvedCondition::Related { test, .. } = &branch.condition {
@@ -1088,6 +1093,55 @@ pub(super) fn wrong_state_overlap(
     addressed.source.insert(entity_ref(entity));
     let bound = BTreeMap::from([(via.field().to_owned(), row.instance)]);
     Ok((input, bound))
+}
+
+/// The related row an `unknown_instance:` scenario sends beside an identity no row carries (ess/27):
+/// present, so the `exists: false` branch answered at step 1 is not selected, and selecting the
+/// first present-related refusal where the command declares one — else the first branch a present
+/// row's predicate selects — so a target reading the related row before the addressed row's
+/// existence answers that branch and fails. Its steps, the constructs they read, the input chosen
+/// on it, and the input field pointed at it. A command reading several rows, or reading its row
+/// through an Optional input or a stored field, is not arranged here.
+pub(super) fn unknown_identity_overlap(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+) -> Result<(Arrangement, BoundInput), RefusalCause> {
+    if several(command) || optional(command) || stored::field(command).is_some() {
+        return Err(unarranged());
+    }
+    let holds = |outcome: &&ResolvedOutcome| {
+        matches!(
+            outcome.condition,
+            ResolvedCondition::Related {
+                test: ResolvedRelatedTest::Holds { .. },
+                ..
+            }
+        )
+    };
+    let chosen = command
+        .outcomes
+        .iter()
+        .filter(holds)
+        .find(|outcome| outcome.error.is_some())
+        .or_else(|| command.outcomes.iter().find(holds))
+        .ok_or_else(unarranged)?;
+    let (via, entity) = read(command).ok_or_else(unarranged)?;
+    let (mut row, _, input) = with_row(
+        ir,
+        command,
+        chosen,
+        entity,
+        actors,
+        (OWN, Distinction::PLAIN, &[]),
+        None,
+        None,
+        None,
+        (&BTreeMap::new(), &[], &BTreeMap::new()),
+    )?;
+    row.source.insert(entity_ref(entity));
+    let bound = BTreeMap::from([(via.field().to_owned(), row.instance.clone())]);
+    Ok((row, (input, bound)))
 }
 
 /// The first branch of the command acting on an existing row the input names, and that input.
