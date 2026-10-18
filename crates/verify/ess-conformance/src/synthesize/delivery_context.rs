@@ -533,6 +533,7 @@ pub(super) fn synthesize(
                     scenario: None,
                     cause: RefusalCause::NoWitness(gap),
                     stands: false,
+                    caused_by: None,
                 });
                 return;
             }

@@ -69,6 +69,31 @@ out. The common refusals are:
 - Any cell whose arrangement is refused for the same reason the ordinary outcome scenario would
   be.
 
+A cell refused for the same cause as an ordinary outcome scenario it sends or arranges through
+(its follow-up outcome, the command it is denied, or its origin) is reported under that outcome's
+refusal, not as a refusal of its own. A gap such as an entity no command creates then reads once,
+however many actors and follow-ups repeat it. A cell refused for its own reason is linked to the
+first cell of the same field and aspect refused for that reason. Each `read/<view>` cell of an
+actor not granted the origin is linked that way. In this model `vault.keys.EditNote` updates a
+`vault.keys.Note` that no command creates, and two of three actors are granted nothing:
+
+```shell-session
+$ ess verify conform synthesize --path system.yaml
+refused: refusal[ESS-SYNTH-004]: outcome vault.keys.EditNote/edited has no scenario `vault.keys.EditNote/outcome/edited`
+  it needs an instance of `vault.keys.Note` to change without moving, and no outcome creates one
+  help: give some command outcome `creates:` for this entity; nothing can act on an instance nothing brings into existence
+  and 3 disclosure scenario(s) that send `vault.keys.EditNote`, refused for the same cause
+refused: refusal[ESS-SYNTH-001]: outcome vault.keys.IssueToken/issued has no scenario `vault.keys.IssueToken/disclosure/issued/secret/read/vault.keys.Notes/as/actor/vault.keys.Auditor`
+  the disclosure cell cannot be arranged or observed: the read's originating caller has no grant to issue this value
+  help: the line above names what the cell lacks; a `read/<view>` cell for an actor not granted the originating command is refused by design and needs no change
+  and 1 more disclosure scenario(s) refused for the same cause
+8 scenario(s) (0 authored), 6 refusal(s), 2 distinct cause(s), nothing written
+```
+
+The refusal count still counts every refused cell. `ess specify validate --format json` lists
+each one under `completeness.unscenarioed`. A linked cell carries `caused_by`, the id of the
+refusal it repeats.
+
 The number of cells per marked field grows as
 actors × (outcomes + commands + views), where outcomes counts the outcomes of the commands each
 actor is granted and commands counts the commands it is not granted, plus up to three cells for

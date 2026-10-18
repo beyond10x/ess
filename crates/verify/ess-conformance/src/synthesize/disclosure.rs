@@ -94,7 +94,109 @@ pub(super) fn augment(ir: &EssIr, synthesis: &mut Synthesis) {
             }
         }
     }
+    link_causes(&mut synthesis.refusals);
     synthesis.suite.select_fresh_format_for(ir);
+}
+
+/// Links each refused disclosure cell to the refusal whose cause it repeats, so a reader can print
+/// one block per cause rather than one per actor and follow-up. Every cell keeps its own refusal.
+///
+/// First to the ordinary outcome scenario refused for the same cause, one the cell sends: its
+/// follow-up branch, then any branch of its follow-up or denied command, then its origin. A
+/// missing creation then reads once, under the outcome that needs it. The cause must be equal,
+/// not merely present.
+///
+/// Then, among the cells of one marked field still unlinked, to the first cell of the same aspect
+/// refused for the same reason: the read cells of every actor not granted the origin, the retries
+/// the model does not answer.
+fn link_causes(refusals: &mut [Refusal]) {
+    let ordinary: Vec<(OutcomeRef, ScenarioId, RefusalCause)> = refusals
+        .iter()
+        .filter(|refusal| !refusal.stands && refusal.caused_by.is_none())
+        .filter_map(|refusal| match &refusal.scenario {
+            Some(id @ ScenarioId::Outcome { outcome }) => {
+                Some((outcome.clone(), id.clone(), refusal.cause.clone()))
+            }
+            _ => None,
+        })
+        .collect();
+    for refusal in refusals.iter_mut() {
+        let Some(ScenarioId::Disclosure { cell }) = &refusal.scenario else {
+            continue;
+        };
+        let same = |entry: &&(OutcomeRef, ScenarioId, RefusalCause)| entry.2 == refusal.cause;
+        let exact = match &cell.aspect {
+            Aspect::Command(outcome) => ordinary
+                .iter()
+                .filter(same)
+                .find(|(declared, _, _)| declared == outcome),
+            _ => None,
+        };
+        let sent: Vec<&CommandRef> = match &cell.aspect {
+            Aspect::Command(outcome) => vec![&outcome.command, &cell.origin.command],
+            Aspect::Denied(command) => vec![command, &cell.origin.command],
+            _ => vec![&cell.origin.command],
+        };
+        let found = exact.or_else(|| {
+            sent.iter().find_map(|command| {
+                ordinary
+                    .iter()
+                    .filter(same)
+                    .find(|(declared, _, _)| &declared.command == *command)
+            })
+        });
+        refusal.caused_by = found.map(|(_, id, _)| id.clone());
+    }
+    let mut first: Vec<(SameReason, ScenarioId)> = Vec::new();
+    for refusal in refusals.iter_mut() {
+        if refusal.caused_by.is_some() || refusal.stands {
+            continue;
+        }
+        let Some(id @ ScenarioId::Disclosure { cell }) = &refusal.scenario else {
+            continue;
+        };
+        let key = (
+            cell.origin.clone(),
+            cell.field.clone(),
+            aspect_kind(&cell.aspect),
+            reason(&refusal.cause),
+        );
+        match first.iter().find(|(seen, _)| *seen == key) {
+            Some((_, cause)) => refusal.caused_by = Some(cause.clone()),
+            None => first.push((key, id.clone())),
+        }
+    }
+}
+
+/// What two cells refused for one reason share: their origin, marked field and aspect keyword, and
+/// the cause without the cell's own id.
+type SameReason = (OutcomeRef, String, &'static str, RefusalCause);
+
+/// The aspect's keyword, without the view, command or outcome it names.
+fn aspect_kind(aspect: &Aspect) -> &'static str {
+    match aspect {
+        Aspect::Origin => "origin",
+        Aspect::Retry => "retry",
+        Aspect::Rotation => "rotation",
+        Aspect::Read(_) => "read",
+        Aspect::Command(_) => "command",
+        Aspect::Denied(_) => "denied",
+    }
+}
+
+/// A cell's cause without the cell's own id, which a disclosure cell's own reason carries in its
+/// path: two cells refused for one reason then compare equal.
+fn reason(cause: &RefusalCause) -> RefusalCause {
+    match cause {
+        RefusalCause::NoWitness(gap) if gap.type_ref == INVENTORY => {
+            let mut gap = gap.clone();
+            if let Some((_, detail)) = gap.path.split_once(": ") {
+                gap.path = detail.to_owned();
+            }
+            RefusalCause::NoWitness(gap)
+        }
+        other => other.clone(),
+    }
 }
 
 fn originating_actors(ir: &EssIr, command: &ResolvedCommand) -> Vec<Option<ActorRef>> {
@@ -614,12 +716,15 @@ fn insert(
     synthesis.suite.scenarios.insert(id, scenario);
 }
 
+/// The type a disclosure cell's own refusal names, which is what [`RefusalCause`] reads it by.
+pub(super) const INVENTORY: &str = "one-time disclosure inventory";
+
 fn refusal(id: &ScenarioId, detail: &str) -> Refusal {
     Refusal::about(
         id,
         RefusalCause::NoWitness(WitnessGap {
             path: format!("{id}: {detail}"),
-            type_ref: "one-time disclosure inventory".into(),
+            type_ref: INVENTORY.into(),
             reason: "the source-owned disclosure cell cannot be arranged or observed",
         }),
     )

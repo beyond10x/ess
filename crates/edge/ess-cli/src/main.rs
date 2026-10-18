@@ -4882,9 +4882,7 @@ fn synthesize_suite(
             // tells a reader that something is unchecked without telling them what — which
             // is the same "generated tests are green" failure the refusal list exists to
             // rule out, one step further back.
-            for refusal in &synthesis.refusals {
-                println!("refused: {refusal}");
-            }
+            print!("{}", refusal_blocks(&synthesis.refusals));
             // Listed for the same reason: a scenario the specification obliges and this
             // suite does not hold has to be visible somewhere other than by its absence.
             for outside in &synthesis.outside {
@@ -4908,18 +4906,17 @@ fn synthesize_suite(
             // obligation the specification derived; an authored one is what a person asserted about
             // an algorithm the model cannot derive, and it is only as good as the person. One
             // number covering both would report coverage a specification never promised.
+            let refused = refusal_count(&synthesis.refusals);
             match component {
                 None => println!(
-                    "{} scenario(s) ({authored} authored), {} refusal(s), {written}",
+                    "{} scenario(s) ({authored} authored), {refused}, {written}",
                     synthesis.suite.len(),
-                    synthesis.refusals.len(),
                 ),
                 Some(name) => println!(
-                    "{} scenario(s) for `{name}` ({authored} authored), {} outside it, {} \
-                     refusal(s), {written}",
+                    "{} scenario(s) for `{name}` ({authored} authored), {} outside it, {refused}, \
+                     {written}",
                     synthesis.suite.len(),
                     synthesis.outside.len(),
-                    synthesis.refusals.len(),
                 ),
             }
         }
@@ -4927,6 +4924,66 @@ fn synthesize_suite(
         Format::Yaml => render(&synthesis.suite, Format::Yaml)?,
     }
     Ok(ExitCode::SUCCESS)
+}
+
+/// The `refused:` lines of `conform synthesize`, one block per cause.
+///
+/// A refusal linked to the ordinary scenario refused for the same cause (`caused_by`) is not
+/// printed again: its cause's block ends with one line counting the derived scenarios it also
+/// refuses, by family, so a missing creation reads once rather than once per actor and follow-up.
+/// The machine-readable report (`ess specify validate --format json`) still lists every id.
+fn refusal_blocks(refusals: &[ess_conformance::Refusal]) -> String {
+    use std::collections::BTreeMap;
+    use std::fmt::Write as _;
+    let mut derived: BTreeMap<&ess_conformance::ScenarioId, BTreeMap<&str, usize>> =
+        BTreeMap::new();
+    for refusal in refusals {
+        if let Some(cause) = &refusal.caused_by {
+            *derived
+                .entry(cause)
+                .or_default()
+                .entry(refusal.derived_family().unwrap_or("derived"))
+                .or_default() += 1;
+        }
+    }
+    let mut out = String::new();
+    for refusal in refusals
+        .iter()
+        .filter(|refusal| refusal.caused_by.is_none())
+    {
+        let _ = writeln!(out, "refused: {refusal}");
+        let Some(families) = refusal.scenario.as_ref().and_then(|id| derived.get(id)) else {
+            continue;
+        };
+        // Under an ordinary outcome, the cells that send its command; under a cell of its own
+        // reason, the further cells refused for that reason.
+        let (more, sent) = match &refusal.scenario {
+            Some(ess_conformance::ScenarioId::Outcome { outcome }) => {
+                ("", format!(" that send `{}`,", outcome.command))
+            }
+            _ => (" more", String::new()),
+        };
+        for (family, count) in families {
+            let _ = writeln!(
+                out,
+                "  and {count}{more} {family} scenario(s){sent} refused for the same cause"
+            );
+        }
+    }
+    out
+}
+
+/// `N refusal(s)`, and how many distinct causes they come from where derived scenarios repeat one.
+fn refusal_count(refusals: &[ess_conformance::Refusal]) -> String {
+    let causes = refusals
+        .iter()
+        .filter(|refusal| refusal.caused_by.is_none())
+        .count();
+    if causes == refusals.len() {
+        format!("{} refusal(s)", refusals.len())
+    } else {
+        format!("{} refusal(s), {causes} distinct cause(s)", refusals.len())
+    }
 }
 
 /// `ess conform author`: the authored scenarios alone, compiled against the model.
@@ -5227,6 +5284,9 @@ struct Unscenarioed {
     subject: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     scenario: Option<String>,
+    /// The ordinary scenario refused for the same cause, where this one is derived from it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    caused_by: Option<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -5299,6 +5359,7 @@ impl Completeness {
                 code: refusal.code().to_string(),
                 subject: refusal.subject.to_string(),
                 scenario: refusal.scenario.as_ref().map(ToString::to_string),
+                caused_by: refusal.caused_by.as_ref().map(ToString::to_string),
             })
             .collect();
         let outside: Vec<OutsideScenario> = synthesis
