@@ -1191,6 +1191,17 @@ impl RefusalCause {
                  literal or a generated value, so the arranged rows can hold values on both sides \
                  of the filter"
             }
+            // A value type reached through itself (downstream report, 2026-10-18): what is missing
+            // is the observation of a recursive position, not a value of an input type.
+            Self::NoWitness(gap) if gap.reason == value_invariant::RECURSIVE => {
+                "the type reaches itself through this field; the invariant is still observed at \
+                 every position outside the recursion, and a recursive position is checked only \
+                 by an authored scenario (ess-scenario/1) that reads such a row"
+            }
+            Self::NoWitness(gap) if gap.reason == value_invariant::OVERFLOW => {
+                "split the field's type so the view publishes fewer nested positions, or check \
+                 the invariant with an authored scenario (ess-scenario/1)"
+            }
             Self::NoWitness(gap) if gap.type_ref == disclosure::INVENTORY => {
                 "the line above names what the cell lacks; a `read/<view>` cell for an actor not \
                  granted the originating command is refused by design and needs no change"

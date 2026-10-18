@@ -37,6 +37,14 @@ use crate::value_invariant::{
 };
 use crate::witness::WitnessGap;
 
+/// The reason a value-invariant site reached across a recursive back-edge is refused.
+pub(super) const RECURSIVE: &str = "is a value-invariant site reached across a recursive \
+                                    back-edge, which this build does not synthesize";
+
+/// The reason a view field whose type expands past [`MAX_EDGES`] is refused.
+pub(super) const OVERFLOW: &str = "expands past 16384 typed edges, so its value-invariant \
+                                   positions are not all known";
+
 /// One root's expansion: its ordinary sites, its recursive (back-edge, site) pairs, and whether it
 /// outgrew [`MAX_EDGES`].
 #[derive(Default)]
@@ -318,8 +326,7 @@ pub(super) fn wrapped(
                     &id,
                     gap(
                         format!("{}.{}", view.name, readable(&field.name, site)),
-                        "is a value-invariant site reached across a recursive back-edge, which \
-                         this build does not synthesize",
+                        RECURSIVE,
                     ),
                 ));
             }
@@ -329,11 +336,7 @@ pub(super) fn wrapped(
                     subject: DeclaredTypeRef::new(declared.name.clone()).into(),
                     scenario: None,
                     stands: false,
-                    cause: gap(
-                        format!("{}.{}", view.name, field.name),
-                        "expands past 16384 typed edges, so its value-invariant positions are not \
-                         all known",
-                    ),
+                    cause: gap(format!("{}.{}", view.name, field.name), OVERFLOW),
                     caused_by: None,
                 });
             }
