@@ -129,6 +129,10 @@ pub(super) fn unarranged() -> RefusalCause {
     )
 }
 
+/// Why no rows were arranged that take a row-set branch.
+const ROWS_UNARRANGED: &str = "has no arrangement of rows the declared commands \
+     produce on which the rows its selector selects take this branch";
+
 fn gap(path: String, reason: &'static str) -> RefusalCause {
     RefusalCause::NoWitness(WitnessGap {
         path,
@@ -1342,11 +1346,18 @@ pub(super) fn prepare(
             return Ok((found, input));
         }
     }
-    Err(gap(
-        first_failure.map_or_else(at, |why| format!("{}: {why}", at())),
-        "has no arrangement of rows the declared commands produce on which the rows its selector \
-         selects take this branch",
-    ))
+    // A selector reading a field no declared command writes is refused by that field
+    // (downstream report, 2026-10-18).
+    Err(
+        super::set_effects::unwritten(ir, &selection.entity, &selection.filter).unwrap_or_else(
+            || {
+                gap(
+                    first_failure.map_or_else(at, |why| format!("{}: {why}", at())),
+                    ROWS_UNARRANGED,
+                )
+            },
+        ),
+    )
 }
 
 /// The conjunct of a selector comparing its rows' owner link with the input naming the subject the

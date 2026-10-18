@@ -250,6 +250,108 @@ fn gap(path: String, type_ref: String, reason: &'static str) -> RefusalCause {
     })
 }
 
+/// Why the rows a filter selects cannot be arranged, where it reads a stored field no declared
+/// command writes (downstream report, 2026-10-18): every row holds the same value of it, whatever
+/// the arranging commands are sent.
+pub(super) const UNWRITTEN: &str = "a filter reads and no declared command writes, so no \
+     arrangement leaves rows on both sides of the filter";
+
+/// Every reason a row of a filter could not be arranged for, which no input type repairs.
+pub(super) const UNARRANGED: [&str; 3] = [NO_MATCHING, NO_MISS, NO_PUBLISHED];
+
+/// Too few rows the filter selects.
+const NO_MATCHING: &str =
+    "has no three rows the filter selects that the arranging commands can produce";
+
+/// No row leaving one conjunct out.
+const NO_MISS: &str = "has no row leaving out exactly one conjunct of the filter that the \
+     arranging commands can produce";
+
+/// No changed row where a per-row event publishes.
+const NO_PUBLISHED: &str = "has no row the filter selects, resting where a per-row event's \
+     `when_state:` publishes it, that the arranging commands can produce";
+
+/// `reason`, or — where it is one of [`UNARRANGED`] and `filter` reads a stored field of
+/// `entity` no declared command writes — the refusal naming that field ([`unwritten`]).
+fn unarranged(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    filter: &Predicate,
+    at: String,
+    reason: &'static str,
+) -> RefusalCause {
+    UNARRANGED
+        .contains(&reason)
+        .then(|| unwritten(ir, entity, filter))
+        .flatten()
+        .unwrap_or_else(|| gap(at, entity.to_string(), reason))
+}
+
+/// The refusal naming the first stored field of `entity` that `filter` reads and no declared
+/// command writes in `sets:`, an `affects:` entry or an `each:` read: every row holds one value
+/// of it, so no arrangement puts rows on both sides of the filter. `None` where every field it
+/// reads is written somewhere.
+pub(super) fn unwritten(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    filter: &Predicate,
+) -> Option<RefusalCause> {
+    let declared = ir.entity(entity);
+    let read: BTreeSet<&str> = filter
+        .fact_paths()
+        .into_iter()
+        .filter_map(|path| path.segments().first().map(String::as_str))
+        .collect();
+    let mut written: BTreeSet<&str> = BTreeSet::new();
+    for command in ir.commands().values() {
+        for outcome in &command.outcomes {
+            let on_entity = outcome
+                .subject
+                .as_ref()
+                .is_some_and(|subject| subject.entity == *entity)
+                || outcome
+                    .instances
+                    .as_ref()
+                    .is_some_and(|set| set.entity == *entity);
+            if on_entity {
+                written.extend(
+                    outcome
+                        .sets
+                        .iter()
+                        .map(|field| first_segment(&field.target)),
+                );
+            }
+            for affect in outcome
+                .affects
+                .iter()
+                .filter(|affect| affect.entity == *entity)
+            {
+                written.extend(affect.sets.iter().map(|field| first_segment(&field.target)));
+                written.extend(
+                    affect
+                        .each
+                        .iter()
+                        .flat_map(|each| &each.reads)
+                        .map(|read| first_segment(&read.target)),
+                );
+            }
+        }
+    }
+    let field = declared.fields.iter().find(|field| {
+        read.contains(field.name.as_str()) && !written.contains(field.name.as_str())
+    })?;
+    Some(gap(
+        format!("{}.{}", declared.name, field.name),
+        field.type_ref.to_string(),
+        UNWRITTEN,
+    ))
+}
+
+/// The field a `sets:` target names: its first segment.
+fn first_segment(target: &str) -> &str {
+    target.split('.').next().unwrap_or(target)
+}
+
 /// The value a path under `input.` names in the input a scenario sends.
 pub(super) fn input_value(path: &FactPath, input: &BTreeMap<String, Node>) -> Option<FactValue> {
     let (root, rest) = path.segments().split_first()?;
@@ -635,9 +737,7 @@ fn rows_preferring(
         changed.push(
             preferred
                 .or_else(|| selection.row(actors, taken, movable, visible))
-                .ok_or(
-                    "has no three rows the filter selects that the arranging commands can produce",
-                )?,
+                .ok_or(NO_MATCHING)?,
         );
     }
     let mut kept = Vec::new();
@@ -648,10 +748,7 @@ fn rows_preferring(
         kept.push(
             selection
                 .row_meeting(actors, taken, &miss, movable, visible)
-                .ok_or(
-                    "has no row leaving out exactly one conjunct of the filter that the \
-                     arranging commands can produce",
-                )?,
+                .ok_or(NO_MISS)?,
         );
     }
     if let Some((outside, to)) = outside {
@@ -823,10 +920,7 @@ fn set_rows<'s>(
         .iter()
         .any(|entry| !rows.changed.iter().any(|row| publishes(entry, &row.state)))
     {
-        return Err(
-            "has no row the filter selects, resting where a per-row event's `when_state:` \
-             publishes it, that the arranging commands can produce",
-        );
+        return Err(NO_PUBLISHED);
     }
     Ok((rows, to))
 }
@@ -1102,7 +1196,7 @@ fn set_scenario(
         other: None,
     };
     let (arranged, to) = set_rows(&selection, actors, set)
-        .map_err(|reason| gap(at(), entity.to_string(), reason))?;
+        .map_err(|reason| unarranged(ir, entity, &set.filter, at(), reason))?;
 
     let mut steps = Vec::new();
     let mut source: BTreeSet<EssSemanticRef> = BTreeSet::new();
@@ -1580,8 +1674,9 @@ fn affects_segment(
             symbols: operands.symbols.clone(),
             other: other.clone(),
         };
-        let rows = affect_rows(&selection, actors, taken, affect)
-            .map_err(|reason| gap(at(index), affect.entity.to_string(), reason))?;
+        let rows = affect_rows(&selection, actors, taken, affect).map_err(|reason| {
+            unarranged(ir, &affect.entity, &selection.filter, at(index), reason)
+        })?;
         let (filter, closed) = (selection.filter.clone(), selection.closed.clone());
         for row in rows.changed.iter().chain(&rows.kept) {
             steps.extend(row.steps.iter().cloned());

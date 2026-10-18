@@ -90,6 +90,62 @@ pub(super) fn denied(
     }
 }
 
+/// Each refusal [`denied`] withheld for want of an accepting send, built where a scenario added to
+/// the suite since sends the command into an accepting branch: rows arranged by callers chosen for
+/// them (`caller::arranged`, downstream report, 2026-10-18). `stamp` sends the refused send as the
+/// caller its actor carries; the note goes with the refusal it named.
+pub(super) fn denied_since(
+    ir: &EssIr,
+    suite: &mut ConformanceSuite,
+    refusals: &mut Vec<Refusal>,
+    notes: &mut Vec<Note>,
+    stamp: &dyn Fn(&mut ScenarioStep),
+) {
+    let unwitnessed: Vec<CommandRef> = notes
+        .iter()
+        .filter_map(|note| match note {
+            Note::GrantDeniedUnwitnessed { command } => Some(command.clone()),
+            _ => None,
+        })
+        .collect();
+    for command_ref in unwitnessed {
+        let Some(command) = ir.commands().get(command_ref.name()) else {
+            continue;
+        };
+        let Some(sender) = ir
+            .actors()
+            .values()
+            .find(|actor| !grants(actor, &command.name))
+        else {
+            continue;
+        };
+        let sender = ActorRef::new(sender.name.clone());
+        let Some(mut scenario) = refused_from_template(ir, command, &sender, suite) else {
+            continue;
+        };
+        // The refused send only: every step before it keeps the caller it was arranged as.
+        let refused = scenario
+            .steps
+            .iter()
+            .position(|step| matches!(step, ScenarioStep::ExpectNotGranted { .. }))
+            .and_then(|at| at.checked_sub(1));
+        if let Some(send) = refused.and_then(|at| scenario.steps.get_mut(at)) {
+            stamp(send);
+        }
+        notes.retain(|note| {
+            !matches!(note, Note::GrantDeniedUnwitnessed { command } if *command == command_ref)
+        });
+        insert(
+            suite,
+            ScenarioId::Grant {
+                command: command_ref,
+            },
+            scenario,
+            refusals,
+        );
+    }
+}
+
 /// The commands whose scenarios [`admit_every_granted_actor`] sends in turn as each actor granted
 /// them: served, held by two actors or more, none of them carrying attributes. Which actor one such
 /// scenario is sent as depends on every other scenario of the suite sending the command, so a

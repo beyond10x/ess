@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Synthesis witnesses a set effect, an `affects:` entry or a `when_related:` row set whose filter
+  reads a field the arranging command writes from its caller (`sets: {owner: {caller: user_id}}`):
+  each arranging act is sent as a caller whose attribute carries the value its record needs, so
+  records sit on both sides of the filter. Such a branch was refused with `ESS-SYNTH-001` (`no three
+  rows the filter selects`). A served command witnessed this way also gets its
+  `<command>/grant/denied` scenario. A suite that did not refuse such a branch keeps its bytes
+  (downstream report, 2026-10-18).
+- A filter reading a stored field no declared command writes is refused naming the field
+  (`` `<entity>.<field>` is `<type>`, which a filter reads and no declared command writes ``), with a
+  help line saying to declare a `sets:` for it. A filter whose records the arranging commands cannot
+  produce no longer gets the help line about the command's input; it says to write each field the
+  filter reads from an input or a caller attribute. The `ESS-SYNTH-001` repair in the diagnostics
+  reference says the same (downstream report, 2026-10-18).
+
 ## [0.62.0] — 2026-10-16
 
 ### Added
