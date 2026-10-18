@@ -883,7 +883,10 @@ fn on_failure(ir: &EssIr, delivered: &Delivered<'_>) -> Built {
     let forced = invoked
         .outcomes
         .iter()
-        .find(|outcome| outcome.test_strategy == TestStrategy::InjectFault)
+        // A refusal: an `external:` branch that accepts is no failure to force.
+        .find(|outcome| {
+            outcome.test_strategy == TestStrategy::InjectFault && outcome.error.is_some()
+        })
         .ok_or_else(|| BindingGap::NoForcibleFailure {
             command: delivered.command(),
         })?;

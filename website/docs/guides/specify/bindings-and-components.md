@@ -59,6 +59,10 @@ the difference between specifying a system and specifying a demo. `drop` is lega
 decision, and the decision has to be findable in the document that made it. `escalate` must name a
 declared event, because "surface it to a person" is not something a generated test can observe.
 
+The conformance suite forces a failure only through an `external:` branch that refuses, one that
+names an `error:`. An `external:` branch that accepts, such as "the user already holds it", is not a
+failure, and a command whose only `external:` branches accept has no failure a scenario can force.
+
 `delivery:` accepts two values, and they are not two points on one scale — they say which side of
 the invocation carries the risk.
 

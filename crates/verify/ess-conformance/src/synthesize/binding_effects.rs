@@ -1377,7 +1377,10 @@ pub(super) fn dropped(
     let forced = invoked
         .outcomes
         .iter()
-        .find(|outcome| outcome.test_strategy == TestStrategy::InjectFault)
+        // A refusal: an `external:` branch that accepts is no failure to force.
+        .find(|outcome| {
+            outcome.test_strategy == TestStrategy::InjectFault && outcome.error.is_some()
+        })
         .ok_or_else(|| BindingGap::NoForcibleFailure {
             command: CommandRef::new(invoked.name.clone()),
         })?;

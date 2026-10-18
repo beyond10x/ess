@@ -51,7 +51,11 @@ The rules:
   is refused.
 
 Conformance witnesses both sides. Every branch that publishes the event is a candidate trigger,
-and a value it writes as a literal counts as written. The flow, mapping, delivery and failure
+and a value it writes as a literal counts as written. A member it fills from its own input is
+varied by sending another input. A member it fills from the row an input names,
+`{related: {via: input.<field>, field: <field>}}`, is varied by creating that row with another
+value through its creating command, which must store the field from its input unchanged and not
+guard on it; the trigger must not guard on that row either. The flow, mapping, delivery and failure
 scenarios publish a payload the condition holds for. Two more scenarios follow the event and
 require zero invocations for the whole window:
 

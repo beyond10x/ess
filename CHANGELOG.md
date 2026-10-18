@@ -24,6 +24,16 @@
   also reads the invoked command's input, or a row named by an identity the implementation mints,
   keeps the refusal. A model without such a binding keeps its suite bytes
   (downstream report, 2026-10-18).
+- A binding condition over an event member the trigger fills from the row an input names,
+  `{related: {via: input.<field>, field: <field>}}`, gets its `flow`, `mapping`, `delivery` and
+  `condition-false` scenarios instead of `ESS-SYNTH-010` "fills `event.<member>` from neither an
+  input nor a literal". Synthesis creates the row through its creating command with a value the
+  condition holds for, or fails for, and sends the trigger naming it; an enum leaf works under every
+  format with binding conditions, a Boolean leaf from `ess/27` (downstream report, 2026-10-18).
+- A binding's `on-failure` scenario, and a `drop` or delivery-context one, forces only an
+  `external:` branch that refuses. It forced the first `external:` branch even where that branch
+  accepts, and then required a consequence the honest system never publishes; such a binding is now
+  refused with the reason that no branch can be forced to fail (downstream report, 2026-10-18).
 
 ## [0.62.0] — 2026-10-16
 
