@@ -1158,6 +1158,19 @@ impl RefusalCause {
                  the branch with an authored scenario (ess-scenario/1) that names each row by an \
                  identity of its own"
             }
+            // Rows a filter selects, not a value of an input type (downstream report,
+            // 2026-10-18): what is missing is a command that writes the field the filter reads.
+            Self::NoWitness(gap) if gap.reason == set_effects::UNWRITTEN => {
+                "declare a `sets:` for the field on a command that creates the entity, from an \
+                 input or from a caller attribute (`{caller: <attribute>}`), so the arranged rows \
+                 can hold values on both sides of the filter"
+            }
+            Self::NoWitness(gap) if set_effects::UNARRANGED.contains(&gap.reason) => {
+                "let a command that creates the entity write each field the filter reads from an \
+                 input or from a caller attribute (`{caller: <attribute>}`) rather than from a \
+                 literal or a generated value, so the arranged rows can hold values on both sides \
+                 of the filter"
+            }
             Self::NoWitness(_) => {
                 "give the field a type that has a finite value, or drop it from the command's input"
             }
@@ -1285,7 +1298,9 @@ crate::authored::diagnostic_catalogue! {
             "No value of the command's declared input type could be constructed at all.",
             "give the field a type that has a finite value, or drop it from the command's input; \
              where the reason names a view, declare the view of the entity it asks for, \
-             projecting its identity, its state and the fields named";
+             projecting its identity, its state and the fields named; where it names rows a \
+             filter selects, let a command that creates the entity write each field the filter \
+             reads, from an input or from a caller attribute";
         Self::GuardUnevaluable(_) => 2,
             "The guard could not be decided against a candidate, and no other candidate would \
              change it.",

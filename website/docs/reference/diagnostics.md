@@ -185,7 +185,7 @@ refusal[ESS-SYNTH-011]: entity billing.invoice.Invoice has no scenario `…`
 
 | Code | Meaning | Repair |
 |---|---|---|
-| `ESS-SYNTH-001` | No value of the command's declared input type could be constructed at all. | Give the field a type that has a finite value, or drop it from the command's input; where the reason names a view, declare the view of the entity it asks for, projecting its identity, its state and the fields named. |
+| `ESS-SYNTH-001` | No value of the command's declared input type could be constructed at all. | Give the field a type that has a finite value, or drop it from the command's input; where the reason names a view, declare the view of the entity it asks for, projecting its identity, its state and the fields named; where it names rows a filter selects, let a command that creates the entity write each field the filter reads, from an input or from a caller attribute. |
 | `ESS-SYNTH-002` | The guard could not be decided against a candidate, and no other candidate would change it. | The guard reads something no input can supply; correct the path or the type it walks into. |
 | `ESS-SYNTH-003` | Every candidate this synthesizer knows how to try was refuted. | Write the branch's condition over values a candidate can carry, or supply a fixture for it. |
 | `ESS-SYNTH-004` | The scenario needed an instance of an entity, and the specification cannot arrange one. | Give some outcome `creates:` for the entity, or declare a transition and an outcome that reach the state; where the route runs through a branch no input reaches, repair that branch's own refusal. |

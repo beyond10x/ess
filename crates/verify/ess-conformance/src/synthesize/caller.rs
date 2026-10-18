@@ -27,6 +27,8 @@
 //! the half in which that caller's role is the other one. A scenario whose steps cannot be run twice
 //! in one scenario (a fixture prelude, a retained replay, a periodic check) keeps its first run only.
 
+mod arranged;
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use ess_compiler::ir::{
@@ -316,6 +318,7 @@ pub(super) fn synthesize(ir: &EssIr) -> Synthesis {
         }
     }
     cross_single_command(ir, &callers, &mut whole);
+    arranged_by_callers(ir, &callers, &reading, &mut identities, &mut whole);
     // Every reading above is synthesized from a rewritten copy of the model, whose digests are not
     // the model's; the suite names the model it came from, the one a target and an adapter digest
     // (beyond10x/ess#216).
@@ -510,6 +513,76 @@ fn run(
         }
     }
     synthesis
+}
+
+/// Every scenario the readings above left refused, synthesized from the model whose arranging
+/// commands are sent as callers chosen for the rows they arrange ([`arranged`]), with its run under
+/// the swapped callers appended as for any other scenario. Last, so a scenario another reading
+/// witnesses keeps that witness and its bytes.
+fn arranged_by_callers(
+    ir: &EssIr,
+    callers: &Callers,
+    reading: &BTreeSet<QualifiedName>,
+    identities: &mut Identities<'_>,
+    whole: &mut Synthesis,
+) {
+    let mut any = false;
+    for command in arranged::refused_commands(ir, whole) {
+        let Some((model, lifted)) = arranged::lifted_model(ir, callers, &|_| Who::First, &command)
+        else {
+            continue;
+        };
+        let first = synthesize_plain(&model, Focus::About(&command));
+        let held: BTreeSet<ScenarioId> = whole.suite.scenarios.keys().cloned().collect();
+        any |= arranged::adopt(whole, first, &command, &lifted, &|step| {
+            mark(ir, callers, &|_| Who::First, step);
+        });
+        let adopted: Vec<ScenarioId> = whole
+            .suite
+            .scenarios
+            .keys()
+            .filter(|id| !held.contains(*id))
+            .cloned()
+            .collect();
+        if adopted.is_empty() {
+            continue;
+        }
+        let swapped = arranged::lifted_model(ir, callers, &|_| Who::Second, &command).map(
+            |(model, lifted)| {
+                let mut again = synthesize_plain(&model, Focus::About(&command));
+                arranged::finish(&mut again, &lifted, &|step| {
+                    mark(ir, callers, &|_| Who::Second, step);
+                });
+                again
+            },
+        );
+        for id in adopted {
+            let scenario = whole.suite.scenarios.get_mut(&id).expect("adopted above");
+            identities.take(&scenario.steps);
+            if !sends_any(scenario, reading) {
+                continue;
+            }
+            let Some(again) = swapped
+                .as_ref()
+                .and_then(|swapped| swapped.suite.scenarios.get(&id))
+            else {
+                continue;
+            };
+            if let Err(exhausted) = append(ir, scenario, again, identities) {
+                whole.notes.push(unswapped(&id, exhausted));
+            }
+        }
+    }
+    // A refusal of the grant withheld for want of an accepting send may have one now.
+    if any {
+        super::grant::denied_since(
+            ir,
+            &mut whole.suite,
+            &mut whole.refusals,
+            &mut whole.notes,
+            &|step| mark(ir, callers, &|_| Who::First, step),
+        );
+    }
 }
 
 /// The caller a command step is sent as: the assigned caller's value of every attribute the

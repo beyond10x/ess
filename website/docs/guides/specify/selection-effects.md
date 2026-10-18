@@ -86,7 +86,12 @@ back from an immediate, unfiltered view that publishes the identity, the state a
 effect writes: the changed ones in their new state with what `sets:` wrote, the others as they
 were, and `{count: changed}` equal to the records changed. It then sends the command again with an
 input the filter selects no record by, and requires the same outcome, a count of 0 and no record
-changed. Where no such view exists the scenario is refused by name. A `sets:` entry writing the
+changed. Where no such view exists the scenario is refused by name. The records are arranged by the
+declared commands, so every field the filter reads must be written by one of them: from an input,
+or from a caller attribute (`{caller: user_id}`), in which case each arranging command is sent as a
+caller whose attribute carries the value its record needs. A filter reading a field no declared
+command writes is refused naming that field and saying no declared command writes it. An
+`affects:` entry and a `when_related:` row set are arranged the same way. A `sets:` entry writing the
 entity's identity is refused. No new
 suite step is used. Every generated code target (Rust, Go, Web, Clap) refuses both constructs by
 name, and Entity Runtime lowering refuses them with `SetEffectUnsupported`. Below `ess/16` both are
