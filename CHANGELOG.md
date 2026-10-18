@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- `ess specify validate --format json` links each refused disclosure scenario to the refusal whose
+  cause it repeats: an entry of `completeness.unscenarioed` carries `caused_by`, the scenario id
+  of that refusal. Every refused id is still listed and `counts.unscenarioed` is unchanged; the
+  key is additive and absent where a refusal is its own cause. Suite bytes do not change
+  (downstream report, 2026-10-18).
+
 ### Fixed
 
 - Synthesis witnesses a set effect, an `affects:` entry or a `when_related:` row set whose filter
@@ -17,6 +25,16 @@
   produce no longer gets the help line about the command's input; it says to write each field the
   filter reads from an input or a caller attribute. The `ESS-SYNTH-001` repair in the diagnostics
   reference says the same (downstream report, 2026-10-18).
+- `ess verify conform synthesize` prints one block per refusal cause, not one per one-time
+  disclosure cell. A cell refused for the same cause as an ordinary outcome scenario it sends or
+  arranges through, such as an update of an entity no command creates, is counted under that
+  outcome's refusal (`and 3 disclosure scenario(s) that send <command>, refused for the same
+  cause`). Cells of one marked field and aspect refused for one reason of their own, such as the
+  `read/<view>` cells of every actor not granted the origin, are counted under the first of them.
+  The summary line adds `N distinct cause(s)` when the two numbers differ. A disclosure cell's
+  own refusal now reads `the disclosure cell cannot be arranged or observed: <reason>`, in place
+  of a `no witness` line about an inventory type and a hint about input field types
+  (downstream report, 2026-10-18).
 
 ## [0.62.0] — 2026-10-16
 

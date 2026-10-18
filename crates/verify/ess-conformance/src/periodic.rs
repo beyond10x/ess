@@ -735,7 +735,7 @@ pub(crate) fn synthesize(
                 }
             }
             _ => {
-                refusals.push(crate::synthesize::Refusal { subject: subject.clone().into(), scenario: None, cause: crate::synthesize::RefusalCause::NoWitness(crate::witness::WitnessGap { path: format!("binding.{}.mapping.{}", binding.name, entry.target), type_ref: entry.target_type.to_string(), reason: "PeriodicHostMapping: executable observations require identity host-context/read mappings" }), stands: false });
+                refusals.push(crate::synthesize::Refusal { subject: subject.clone().into(), scenario: None, cause: crate::synthesize::RefusalCause::NoWitness(crate::witness::WitnessGap { path: format!("binding.{}.mapping.{}", binding.name, entry.target), type_ref: entry.target_type.to_string(), reason: "PeriodicHostMapping: executable observations require identity host-context/read mappings" }), stands: false, caused_by: None });
                 return;
             }
         };
@@ -808,6 +808,7 @@ fn refuse_window(
             reason: "PeriodicResource: required host inputs or five-period window exceed the bounded witness contract",
         }),
         stands: false,
+        caused_by: None,
     });
 }
 

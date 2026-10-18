@@ -636,6 +636,15 @@ pub struct Refusal {
     /// The scenario `scenario` names was written and stands; this refusal names a row of it that
     /// could not be arranged — a held state a complete refusal claims (ess/23, beyond10x/ess#461).
     pub stands: bool,
+    /// The refused scenario whose cause this refusal repeats, where this one is of a derived
+    /// scenario: for a disclosure cell, the ordinary `<command>/outcome/<outcome>` scenario it
+    /// sends, or arranges through, refused for the same cause; failing that, the first cell of the
+    /// same marked field and aspect refused for the same reason. `None` for a refusal that is its
+    /// own cause.
+    ///
+    /// The derived refusal is still listed, one per scenario id, so nothing counted by id
+    /// disappears; the link lets a reader print one block per cause rather than one per cell.
+    pub caused_by: Option<ScenarioId>,
 }
 
 impl Refusal {
@@ -646,6 +655,16 @@ impl Refusal {
             scenario: Some(id.clone()),
             cause,
             stands: false,
+            caused_by: None,
+        }
+    }
+
+    /// The family of the derived scenario this refusal is about, as a reader names it: `disclosure`
+    /// for a one-time-response cell. `None` for an ordinary scenario, or for no scenario.
+    pub fn derived_family(&self) -> Option<&'static str> {
+        match self.scenario.as_ref()? {
+            ScenarioId::Disclosure { .. } => Some("disclosure"),
+            _ => None,
         }
     }
 
@@ -1171,6 +1190,10 @@ impl RefusalCause {
                  literal or a generated value, so the arranged rows can hold values on both sides \
                  of the filter"
             }
+            Self::NoWitness(gap) if gap.type_ref == disclosure::INVENTORY => {
+                "the line above names what the cell lacks; a `read/<view>` cell for an actor not \
+                 granted the originating command is refused by design and needs no change"
+            }
             Self::NoWitness(_) => {
                 "give the field a type that has a finite value, or drop it from the command's input"
             }
@@ -1430,6 +1453,18 @@ impl fmt::Display for RefusalCause {
     #[allow(clippy::too_many_lines)]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            // A disclosure cell's own reason, which is no input type at all: the path is the
+            // cell's id and the reason, and the id already heads the refusal.
+            Self::NoWitness(gap) if gap.type_ref == disclosure::INVENTORY => {
+                let detail = gap
+                    .path
+                    .split_once(": ")
+                    .map_or(gap.path.as_str(), |(_, why)| why);
+                write!(
+                    f,
+                    "the disclosure cell cannot be arranged or observed: {detail}"
+                )
+            }
             Self::NoWitness(gap) => write!(f, "no witness: {gap}"),
             Self::GuardUnevaluable(refusal) => write!(f, "{refusal}"),
             Self::GuardUnsatisfiable { predicate, tried } => write!(
@@ -2347,7 +2382,7 @@ fn synthesize_invocations(models: &caller::InvocationModels<'_>, focus: Focus<'_
     let mut suite = ConformanceSuite::new(SuiteProvenance::of(ir));
     let mut refusals = Vec::new();
     for (path, subject) in ess_compiler::binary64::uses(ir) {
-        refusals.push(Refusal { subject, scenario: None, stands: false, cause: RefusalCause::NoWitness(WitnessGap {
+        refusals.push(Refusal { subject, scenario: None, stands: false, caused_by: None, cause: RefusalCause::NoWitness(WitnessGap {
             path, type_ref: "Binary64".to_owned(), reason: "requires a qualified finite Binary64 suite and codec that this conformance format does not admit",
         }) });
     }
@@ -15104,6 +15139,7 @@ fn value_object_invariants(
                 subject: DeclaredTypeRef::new(declared.name.clone()).into(),
                 scenario: None,
                 stands: false,
+                caused_by: None,
                 cause: RefusalCause::ValueInvariantUnwitnessed {
                     value: DeclaredTypeRef::new(declared.name.clone()),
                     invariants: invariants
@@ -15594,6 +15630,7 @@ fn bindings(
                 subject: subject.clone().into(),
                 scenario: None,
                 stands: false,
+                caused_by: None,
                 cause: RefusalCause::BindingUnobservable {
                     binding: subject,
                     gap: BindingGap::NothingPublishes {
@@ -15616,6 +15653,7 @@ fn bindings(
                 subject: subject.into(),
                 scenario: None,
                 stands: false,
+                caused_by: None,
                 cause,
             }),
         }
@@ -15722,6 +15760,7 @@ fn conditioned(
                 subject: subject.into(),
                 scenario: None,
                 stands: false,
+                caused_by: None,
                 cause,
             });
             return;
@@ -16571,6 +16610,7 @@ mod tests {
             },
             scenario: None,
             stands: false,
+            caused_by: None,
             cause: RefusalCause::InstanceRequired {
                 entity: EntityRef::new(
                     QualifiedName::new("billing.invoice.Invoice").expect("valid"),

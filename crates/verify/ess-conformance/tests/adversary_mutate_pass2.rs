@@ -566,6 +566,7 @@ fn two_undecidable_views_at_one_scenario_are_two_keys() {
         subject: subject.clone(),
         scenario: Some(template.clone()),
         stands: false,
+        caused_by: None,
         cause: ess_conformance::RefusalCause::ViewUndecidable {
             view: ViewRef::new(view.clone()),
             filter: "status == Issued".to_owned(),
