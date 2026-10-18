@@ -7,7 +7,7 @@ title: Predicates and value expressions apply sha256, base64url and ascii
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 2
+revision: 4
 ---
 ## Outcome
 
@@ -69,3 +69,13 @@ Added acceptance:
 - `s256_digest_guard_witnessed_beside_a_held_state_refusal`: the reproduction gains a
   `redirect-mismatch` held-state refusal declared after `mismatch`; synthesis writes a scenario
   where both hold and requires `mismatch`'s error, and the targets agree.
+
+## Order
+
+G1 wave of `release-plan:ess-063-downstream` § "After this release" (format B, `docs/design/generic-language-features.md`
+§ Delivery, wave 2 item 5, text functions): the digest and encoding functions join grid O as a
+text/bytes family. Not in the 0.63.0 batch: the function family needs the shared evaluator, the
+Go and TypeScript runtimes and a synthesis witness that computes the matching challenge, none of
+which the batch's units touch. Until then the reporter of #584 keeps the plain method witnessed and
+S256 as an `external:` cause; the ordering half of that report (option 2) is
+`story:external-branch-narrowed-by-subject-guard` under the G4 wave.
