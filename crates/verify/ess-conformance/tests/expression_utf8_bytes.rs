@@ -906,8 +906,10 @@ fn utf8_a_text_count_beside_a_byte_length_is_asserted_on_view_rows() {
     );
 }
 
+/// A text's `.count` alone is asserted on view rows too (downstream report, 2026-10-18): the model
+/// tells it from a member named `count`, and the suite takes /40 for it.
 #[test]
-fn utf8_a_text_count_alone_stays_out_of_satisfies() {
+fn utf8_a_text_count_alone_is_asserted_on_view_rows() {
     let text = MODEL
         .replace(
             "      - label.utf8_bytes <= 64\n",
@@ -917,15 +919,28 @@ fn utf8_a_text_count_alone_stays_out_of_satisfies() {
         .replace("when: code.utf8_bytes == 4", "when: code == \"y\"");
     let synthesis = ess_conformance::synthesize::synthesize(&ir_of(&text));
     assert!(
-        synthesis
+        !synthesis
             .refusals
             .iter()
             .any(|refusal| format!("{refusal:?}").contains("InvariantUnobservable")),
         "{:#?}",
         synthesis.refusals
     );
-    assert_ne!(
+    assert_eq!(
         synthesis.suite.provenance.suite_version.to_string(),
         "ess-conformance/40"
+    );
+    let json = synthesis.suite.to_canonical_json().expect("admitted");
+    assert!(json.contains("label.count <= 40"), "{json}");
+    let failing = not_passed(&run(
+        &synthesis.suite,
+        &Rows {
+            inner: Interpreted::for_model(ir_of(&text)),
+            label: Some("a".repeat(41)),
+        },
+    ));
+    assert!(
+        failing.iter().any(|line| line.contains("/invariant/")),
+        "{failing:#?}"
     );
 }

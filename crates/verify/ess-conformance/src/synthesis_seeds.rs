@@ -101,11 +101,12 @@ pub(crate) fn admitted_in(major: u32) -> bool {
         || crate::direct_response::CONSTRAINED_ADMITTED.contains(&major)
         || crate::undeclared_fields::ADMITTED.contains(&major)
         || crate::hold_now::ADMITTED.contains(&major)
+        || crate::value_invariant::ADMITTED.contains(&major)
 }
 
 /// What refuses seed provenance under any other major.
 pub(crate) const OUTSIDE: &str =
-    "synthesis seeds require suite/42 or /43, or a cumulative pair above them: /44 or /45, /46 or /47, /48 or /49, /50 or /51";
+    "synthesis seeds require suite/42 or /43, or a cumulative pair above them: /44 or /45, /46 or /47, /48 or /49, /50 or /51, /52 or /53";
 
 fn refuse(path: &str, detail: impl Into<String>) -> AdmissionError {
     AdmissionError::new("InvalidSynthesisSeeds", path, detail)

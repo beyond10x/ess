@@ -90,7 +90,7 @@ func suiteReference(value any) error {
 //
 // Keep this aligned with the emitter's capability boundary. New majors require admission,
 // execution and report parity; changing this number alone supplies none of those semantics.
-const newestSuiteMajor = 51
+const newestSuiteMajor = 53
 
 // suiteMajorsNotRead are the majors below newestSuiteMajor that other work has allocated and this
 // runtime has no reader for yet. A suite labelled with one is refused by version, never read as
@@ -1800,7 +1800,7 @@ func Run(t *testing.T, newTarget func() Target) {
 		t.Fatalf("suite admission: %v", err)
 	}
 	if suiteMajor(suite.Provenance.SuiteVersion) >= 8 && config.version != "2" {
-		t.Fatalf("suite/8 through /51 require explicit ESS_REPORT_FORMAT=2 before execution")
+		t.Fatalf("suite/8 through /53 require explicit ESS_REPORT_FORMAT=2 before execution")
 	}
 	if (suite.Provenance.SuiteVersion == "ess-conformance/5" || suite.Provenance.SuiteVersion == "ess-conformance/6" || suite.Provenance.SuiteVersion == "ess-conformance/7") && config.version != "2" {
 		t.Fatalf("suite/5, /6 and /7 require explicit ESS_REPORT_FORMAT=2 before execution")
@@ -2910,6 +2910,13 @@ func (r *run) snapshotSubject(index int, step Step) bool {
 }
 
 func (r *run) expectView(index int, step Step, retry bool) bool {
+	// A value type's invariants at a wrapped position (suite/52) are observed by the reference
+	// runner, which carries the typed observer; this runtime admits the expectation and reports the
+	// scenario unsupported, naming it, rather than passing or guessing.
+	if step.Expectation != nil && step.Expectation.Expect == "value_invariants" {
+		r.skip("step %d: this runner does not observe `value_invariants` expectations", index)
+		return false
+	}
 	if !retry && r.unreadableView == step.View {
 		return r.assertionFailure(
 			index,
@@ -4341,6 +4348,7 @@ func unsigned(value any) (uint64, error) {
 
 var qualifiedName = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*(\.[A-Za-z][A-Za-z0-9_-]*)*$`)
 var kebabName = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*$`)
+var positionDigest = regexp.MustCompile(`^[0-9a-f]{64}$`)
 var stateName = regexp.MustCompile(`^[A-Z][A-Za-z0-9]*$`)
 var modelDigest = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
@@ -4389,6 +4397,9 @@ func scenarioIdentity(id string) error {
 		valid = q(p[0]) && q(p[3]) && k(p[4])
 	case len(p) == 5 && p[1] == "invariant" && p[2] == "at":
 		valid = q(p[0]) && q(p[3]) && p[4] != ""
+	case len(p) == 6 && p[1] == "invariant-wrapped" && p[2] == "at":
+		// A value type's invariants at a wrapped view position (suite/52): the position's digest.
+		valid = q(p[0]) && q(p[3]) && p[4] != "" && positionDigest.MatchString(p[5])
 	case len(p) == 2 && p[1] == "aggregate":
 		valid = q(p[0])
 	case len(p) == 3 && p[1] == "grant":
@@ -4918,6 +4929,18 @@ func admitExpectation(value any, major int) error {
 			return fmt.Errorf("a page of a paged view requires suite/26 or /27")
 		}
 		return admitPage(value)
+	case "value_invariants":
+		// Admitted by its closed members; the scenario carrying it is reported unsupported.
+		if major < 52 {
+			return fmt.Errorf("value_invariants expectations require suite/52 or /53")
+		}
+		if _, err := closed(value, "expect root declarations value position witness work_limit", ""); err != nil {
+			return err
+		}
+		if _, err := unsigned(f["work_limit"]); err != nil {
+			return err
+		}
+		return nil
 	}
 	required, optional := "expect", ""
 	switch tag {
@@ -8968,6 +8991,9 @@ func decodeExpectation(raw []byte, exact bool) (*Expectation, error) {
 			return nil, err
 		}
 		return &Expectation{Expect: tag.Expect, Paged: &page}, nil
+	case "value_invariants":
+		// Read by its tag alone: this runtime reports the scenario unsupported (suite/52).
+		return &Expectation{Expect: tag.Expect}, nil
 	}
 	expectation := &Expectation{}
 	decoder := json.NewDecoder(bytes.NewReader(raw))

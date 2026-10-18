@@ -206,7 +206,7 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
     if !crate::go::admitted_major(version.major()) {
         return Err(p["suite_version"].error(
             "UnsupportedSuiteVersion",
-            "execution readers admit suite majors 1–51",
+            "execution readers admit suite majors 1–53",
         ));
     }
     match p.get("synthesis_seeds") {
@@ -266,11 +266,12 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
             | 47
             | 49
             | 51
+            | 53
     ) != root.contains_key("coverage")
     {
         return Err(value.error(
             "InvalidCoverage",
-            "coverage is required exactly for odd suite majors from /5 through /51",
+            "coverage is required exactly for odd suite majors from /5 through /53",
         ));
     }
     for scenario in root["scenarios"].object()?.values() {
@@ -518,6 +519,7 @@ fn expectation(value: &Json, major: u32) -> Result<(), AdmissionError> {
         }
         "changed_by" => crate::aggregate_delta::admit_json(value)?,
         "page" => crate::view_paging::admit_json(value)?,
+        crate::value_invariant::TAG => crate::value_invariant::admit_json(value, major)?,
         _ => return Err(value.error("UnsupportedViewExpectation", tag)),
     }
     Ok(())
@@ -768,6 +770,7 @@ fn construct_formats(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
     crate::direct_response::admit(suite)?;
     crate::undeclared_fields::admit(suite)?;
     crate::hold_now::admit(suite)?;
+    crate::value_invariant::admit(suite)?;
     crate::delivery_context::admit(suite)?;
     crate::no_invocation::admit(suite)?;
     crate::refusal_policy::admit(suite)?;

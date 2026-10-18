@@ -199,6 +199,7 @@ mod seeds;
 mod set_effects;
 mod singleton;
 mod subject_fact;
+mod value_invariant;
 mod view_grant;
 
 pub use seeds::{AdmittedSeeds, SeedAdmissionError, SeedSelection};
@@ -882,8 +883,8 @@ pub enum RefusalCause {
         /// [`unassertable`](Self::InvariantUnobservable::unassertable) is not here: a view does
         /// publish its field.
         unpublished: Vec<FactPath>,
-        /// The `.count` reads — of a list or of a text — whose field some view does publish, and
-        /// which no view-row assertion in this suite format can carry
+        /// The reads whose field some view does publish and no view-row assertion carries: a
+        /// list's `.count`, and a list read whole or through a quantifier
         /// (`docs/design/string-alphabet-and-length.md`, section 3). Before this field they were
         /// reported as published by no view, which blamed the view for the suite format.
         unassertable: Vec<FactPath>,
@@ -1237,8 +1238,10 @@ impl RefusalCause {
                 ..
             } => {
                 if !unassertable.is_empty() {
-                    "a `.count` is not asserted on a view row in this suite format; the value is \
-                     held to it where it is built, on command input and setup"
+                    "a view row does not assert a list read this way; the value is held to it \
+                     where it is built, on command input and setup. A rule of every element is \
+                     observed on rows when the element's type declares it: an `invariants:` on \
+                     the element's newtype or struct"
                 } else if unpublished.is_empty() {
                     "declare a view that holds an instance in this state, or the invariant cannot \
                      be read after this branch"
@@ -1257,13 +1260,13 @@ impl RefusalCause {
                  timestamp}}`"
             }
             Self::ValueInvariantUnwitnessed { at: None, .. } => {
-                "publish a field that holds a value of this type in some view — outside a list, a \
-                 map, a union and an `Optional` — or state the claim as an entity invariant over \
-                 what a view already publishes"
+                "publish a field that holds a value of this type in some view, directly or inside \
+                 a list, a map, a union or an `Optional`: every position a view publishes is \
+                 observed"
             }
             Self::ValueInvariantUnwitnessed { at: Some(_), .. } => {
-                "declare an outcome that leaves an instance in a state this view's filter holds, \
-                 or widen the filter"
+                "declare an outcome that leaves an instance in a state this view's filter holds \
+                 and sets this field from a value the command sends, or widen the filter"
             }
             Self::DuplicateScenario => {
                 "two declarations produced one scenario id; rename one of them"
@@ -1395,9 +1398,10 @@ crate::authored::diagnostic_catalogue! {
              it answers in are already declared, as the states its transitions do not run from";
         Self::ValueInvariantUnwitnessed { .. } => 13,
             "A value object's declared invariants, with nowhere observable to read them.",
-            "publish a field that holds a value of this type in some view, outside a list, a \
-             map, a union and an `Optional`; or declare an outcome that leaves an instance in a \
-             state the view's filter holds";
+            "publish a field that holds a value of this type in some view, directly or inside a \
+             list, a map, a union or an `Optional`; where one is published, declare an outcome \
+             that leaves an instance the view shows, with that field set from a value the command \
+             sends";
         Self::OrderUnwitnessed { .. } => 14,
             "A view declares an order and the scenario cannot put two rows in it.",
             "declare an outcome that can leave a second instance where this view shows one, or \
@@ -1649,10 +1653,18 @@ fn invariant_unobservable(f: &mut fmt::Formatter<'_>, cause: &RefusalCause) -> f
         )?;
     }
     for path in unassertable {
-        write!(
-            f,
-            "\n  - `{path}` is a `.count`, which a view row does not assert in this suite format"
-        )?;
+        if path.segments().last().is_some_and(|last| last == "count") {
+            write!(
+                f,
+                "\n  - `{path}` is a list's `.count`, which a view row does not assert"
+            )?;
+        } else {
+            write!(
+                f,
+                "\n  - `{path}` is published, and read as a whole or element by element (a \
+                 `forall` or `exists` over it), which a view row does not assert"
+            )?;
+        }
     }
     for path in unpublished {
         write!(f, "\n  - `{path}` is published by no view of the entity")?;
@@ -1683,34 +1695,13 @@ fn value_unwitnessed(
     at: Option<&(ViewRef, String)>,
 ) -> fmt::Result {
     match at {
-        None => {
-            write!(
-                f,
-                "no view publishes a field position that can answer what `{value}` declares of \
-                 every value"
-            )?;
-            // A `.count` is never projectable onto a row, so an invariant reading one has no
-            // position whatever the views publish; saying so names the real limit.
-            let counts: BTreeSet<String> = invariants
-                .iter()
-                .filter_map(|statement| Predicate::parse_expression(statement).ok())
-                .flat_map(|predicate| {
-                    predicate
-                        .fact_paths()
-                        .into_iter()
-                        .filter(|path| path.segments().last().is_some_and(|last| last == "count"))
-                        .map(ToString::to_string)
-                        .collect::<Vec<_>>()
-                })
-                .collect();
-            if !counts.is_empty() {
-                write!(
-                    f,
-                    "; `{}` is a `.count`, which a view row does not assert in this suite format",
-                    counts.into_iter().collect::<Vec<_>>().join("`, `")
-                )?;
-            }
-        }
+        // A wrapped position and a `.count` are both observed now (suite/40 and /52), so the one
+        // reason left is that no view publishes a value of the type at all.
+        None => write!(
+            f,
+            "no view publishes a field position that can answer what `{value}` declares of every \
+             value"
+        )?,
         Some((view, field)) => write!(
             f,
             "`{view}.{field}` holds a `{value}` and no declared outcome leaves a row there for \
@@ -15134,7 +15125,15 @@ fn value_object_invariants(
             continue;
         }
         let positions = positions_of(ir, declared, invariants);
-        if positions.is_empty() {
+        // Every other site — inside a `List`, a `Map`, an `Optional` or a `Union`, or a direct
+        // one whose predicates a row cannot answer — is observed by `value_invariants` (suite/52).
+        let direct: BTreeSet<(QualifiedName, String)> = positions
+            .iter()
+            .map(|(view, field)| (view.name.clone(), field.clone()))
+            .collect();
+        let wrapped =
+            value_invariant::wrapped(ir, declared, invariants, &direct, actors, suite, refusals);
+        if positions.is_empty() && wrapped == 0 {
             refusals.push(Refusal {
                 subject: DeclaredTypeRef::new(declared.name.clone()).into(),
                 scenario: None,
@@ -15492,9 +15491,10 @@ fn witnesses_for<'a>(
         .collect()
 }
 
-/// Every path an invariant reads that no view of the entity resolves to a scalar, split in two:
-/// those no view declares at all, and those some view declares as a collection or a text length —
-/// a `.count` no view-row assertion in this suite format carries.
+/// Every path an invariant reads that no view of the entity resolves to a scalar or a text length,
+/// split in two: those no view declares at all, and those some view publishes and no view-row
+/// assertion carries — a list's `.count`, or a list read whole or through a quantifier. A text's
+/// `.count` is asserted on a row (suite `/40`, [`crate::input::lifted_text_length`]).
 ///
 /// The difference between "no view holds a row here" and "no view could ever answer this", which is
 /// the difference between a filter an author might widen and a field an author has to publish —
@@ -15517,16 +15517,22 @@ fn unobserved(
     .filter(|read| read.free)
     .map(|read| read.path)
     .filter(|path| {
-        !views
-            .iter()
-            .any(|view| resolve_path(ir, &view.fields, path).is_scalar())
-    })
-    .collect();
-    reads.into_iter().partition(|path| {
         !views.iter().any(|view| {
             matches!(
                 resolve_path(ir, &view.fields, path),
-                crate::input::Target::Aggregate("a collection" | "a text length")
+                crate::input::Target::Scalar | crate::input::Target::Aggregate("a text length")
+            )
+        })
+    })
+    .collect();
+    // Unpublished only where no view declares the path at all: a list some view publishes and the
+    // invariant reads through a quantifier, or a list's `.count`, is published and unassertable,
+    // not "published by no view" (downstream report, 2026-10-18).
+    reads.into_iter().partition(|path| {
+        views.iter().all(|view| {
+            matches!(
+                resolve_path(ir, &view.fields, path),
+                crate::input::Target::Undeclared(_)
             )
         })
     })
@@ -16486,7 +16492,8 @@ fn subject_of(id: &ScenarioId) -> EssSemanticRef {
         ScenarioId::Refusal { entity, .. } | ScenarioId::Invariant { entity, .. } => {
             entity.clone().into()
         }
-        ScenarioId::ValueInvariant { value, .. } => value.clone().into(),
+        ScenarioId::ValueInvariant { value, .. }
+        | ScenarioId::ValueInvariantWrapped { value, .. } => value.clone().into(),
         ScenarioId::Binding { binding, .. } | ScenarioId::BindingRefusal { binding, .. } => {
             binding.clone().into()
         }

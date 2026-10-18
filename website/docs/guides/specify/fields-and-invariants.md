@@ -226,6 +226,48 @@ The prefix is literal text, not a pattern. The published JSON Schema carries it 
 declare a longer prefix that starts with the inner one. Entity Runtime lowers the prefix to a
 `starts_with` rule.
 
+### A value type's invariants hold wherever a view publishes one
+
+A newtype or a struct that declares `invariants:` makes a claim about every value of the type, and a
+generated suite reads it wherever a view publishes a value of the type: directly in a field, or as
+the element of a `List`, the value of a `Map`, the present value of an `Optional` or the payload of
+one `Union` variant.
+
+```yaml
+types:
+  - name: demo.tags.Tag
+    kind: newtype
+    of: String
+    alphabet: "abcdefghijklmnopqrstuvwxyz0123456789.-"
+    invariants: [value.count >= 1]
+views:
+  - name: demo.tags.Boards
+    source: demo.tags.Board
+    fields:
+      - {name: board_id, type: demo.tags.BoardId}
+      - {name: tags, type: List<demo.tags.Tag>}
+```
+
+A direct position is asserted on the row: `value.count >= 1` at a field `tag` becomes `satisfies:
+tag.count >= 1` over every row, and a text's `.count` read this way takes suite format
+`ess-conformance/40`. Any other position is observed by the `value_invariants` expectation (suite
+format `ess-conformance/52`): the runner checks every actual element of `tags` against the type's
+invariants and against its `alphabet:` and `prefix:`, so an empty element or one outside the alphabet
+fails, and so does a bad element after a good one. An empty list, an absent `Optional` and another
+`Union` variant are legal, but a row has to hold at least one actual value of the type at the
+position, so a target that publishes none fails too. The scenario is
+`<type>/invariant-wrapped/at/<view>/<field>/<digest>`, the digest naming the position.
+
+The reference runner behind `ess verify conform run`, the interpreted target and the browser product
+execute the observation. The generated Go and TypeScript runners admit the suite and report that
+scenario `unsupported`, naming `value_invariants`. A position reached only across a recursive type is
+refused by name (ESS-SYNTH-001), as is one whose arranged row the scenario does not know (ESS-SYNTH-013).
+
+Declare a rule of every element on the element's type, as above. The same rule written as an entity
+invariant over the list, `forall: {in: tags, as: t, that: 't != ""'}`, reads the list element by
+element, which a view row does not assert: it is refused with ESS-SYNTH-011, which names the list
+as published and read that way.
+
 ### Carry any JSON value
 
 `Json` is a primitive for a value the specification does not structure: a body delivered as it

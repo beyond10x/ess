@@ -653,9 +653,9 @@ enum ConformCommand {
         /// real command and assertions follow it. Any seed selects suite/42 (or /43 with
         /// `--suite-format 5`), suite/44 (/45) where an act also claims one event more than once,
         /// suite/46 (/47) where a response reaches a constrained String newtype, suite/48 (/49)
-        /// where a response or a struct it reaches ignores undeclared fields, or suite/50 (/51) where
-        /// a scenario holds `now` for a command, and records its
-        /// source, row and uses.
+        /// where a response or a struct it reaches ignores undeclared fields, suite/50 (/51) where a
+        /// scenario holds `now` for a command, or suite/52 (/53) where a view observes a value
+        /// type's invariants at a wrapped position, and records its source, row and uses.
         #[arg(
             long = "synthesis-seed",
             num_args = 2,

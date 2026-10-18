@@ -1451,8 +1451,8 @@ pub(crate) fn projection_target(
     if resolved.access.collection {
         return Target::Aggregate("a collection");
     }
-    // A text length is a leaf the evaluator derives, and no suite format carries one to a view
-    // row: it is asserted where values are built, on command input and setup.
+    // A text length is a leaf the evaluator derives rather than a field a row publishes: it is no
+    // scalar here, and a view row asserts one only through [`lifted_text_length`] (suite `/40`).
     if resolved.access.text_length {
         return Target::Aggregate("a text length");
     }
@@ -1487,7 +1487,7 @@ pub(crate) fn predicate_projectable(
             projection_target(ir, &read.resolution).is_scalar()
                 || aggregate_presence(ir, read, &presence)
                 || (sequences && sequence_read(ir, read))
-                || lifted_text_length(ir, read, predicate)
+                || lifted_text_length(ir, read)
         })
 }
 
@@ -1509,18 +1509,16 @@ fn sequence_read(ir: &EssIr, read: &ess_domain::expression::Read<ResolvedTypeRef
         )
 }
 
-/// Whether `read` is a text's `.count` in a predicate that already needs suite `/40`
-/// (`docs/design/expression-family-source22.md`, final review decision 1): every runner derives a
-/// text's length from the text a row publishes, so `/40` and `/41` carry it in `satisfies` beside
-/// `{utf8_bytes: …}`. A predicate needing no `/40` vocabulary keeps refusing it, so a suite that
-/// carried none keeps its format and bytes.
+/// Whether `read` is a text's `.count` (`docs/design/expression-family-source22.md`, final review
+/// decision 1): every runner derives a text's length from the text a row publishes, so `/40` and
+/// `/41` carry it in `satisfies`. Lifted on its own as well, not only beside other `/40`
+/// vocabulary (downstream report, 2026-10-18): a suite carrying one is selected `/40` or `/41`
+/// against the model ([`crate::expression_format::text_lengths_used_by`]).
 pub(crate) fn lifted_text_length(
     ir: &EssIr,
     read: &ess_domain::expression::Read<ResolvedTypeRef>,
-    predicate: &Predicate,
 ) -> bool {
     projection_target(ir, &read.resolution) == Target::Aggregate("a text length")
-        && crate::expression_format::reads(predicate)
 }
 
 /// Whether `read` is a `defined()` (or `missing()`) of an `Optional` struct, union, list, map or

@@ -9,6 +9,18 @@
   of that refusal. Every refused id is still listed and `counts.unscenarioed` is unchanged; the
   key is additive and absent where a refusal is its own cause. Suite bytes do not change
   (downstream report, 2026-10-18).
+- A value type's invariants are observed wherever a view publishes a value of the type inside a
+  wrapper: the element of a `List`, the value of a `Map`, the present value of an `Optional` or the
+  payload of one `Union` variant. The new `value_invariants` view expectation (suite
+  `ess-conformance/52`, or `/53` with coverage) carries the declarations the position reaches, and
+  the runner checks every actual occurrence against the type's invariants, `alphabet:` and
+  `prefix:`, so an empty element, one outside the alphabet, or a bad element after a good one
+  fails; an empty list, an absent `Optional` or another variant is legal but no witness, and a row
+  must hold at least one value there. Filed as `<type>/invariant-wrapped/at/<view>/<field>/<digest>`.
+  The reference runner, the interpreted target and the browser product execute it; the generated
+  Go and TypeScript runners admit the suite and report that scenario `unsupported`, naming
+  `value_invariants`. A position reached only across a recursive type is refused by name. A suite
+  without such a position keeps its format and bytes (downstream report, 2026-10-18).
 
 ### Fixed
 
@@ -35,6 +47,17 @@
   own refusal now reads `the disclosure cell cannot be arranged or observed: <reason>`, in place
   of a `no witness` line about an inventory type and a hint about input field types
   (downstream report, 2026-10-18).
+- A value or entity invariant reading a text's `.count`, such as `value.count >= 1` on a `String`
+  newtype a view publishes directly, is asserted on the view row (suite `ess-conformance/40`, or
+  `/41` with coverage) instead of being refused with ESS-SYNTH-013 or ESS-SYNTH-011 as "a `.count`,
+  which a view row does not assert in this suite format". A list's `.count` is still refused, named
+  as such (downstream report, 2026-10-18).
+- ESS-SYNTH-011 no longer says a list field is "published by no view of the entity" when a view
+  publishes it and the invariant reads it through `forall` or `exists`: it names the list as
+  published and read element by element, which a view row does not assert, and its help points to
+  declaring the rule on the element's type. The ESS-SYNTH-013 help names only remedies that answer
+  the case: publishing the type somewhere a view reads it, or an outcome that leaves a row there with
+  the field set from what the command sends (downstream report, 2026-10-18).
 
 ## [0.62.0] — 2026-10-16
 
