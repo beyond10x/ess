@@ -188,6 +188,7 @@ pub mod text_match_format;
 pub mod ts;
 mod typed_fields;
 pub mod undeclared_fields;
+pub mod value_invariant;
 pub mod view_grant;
 pub mod view_paging;
 pub mod web;

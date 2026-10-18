@@ -219,6 +219,9 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     // A held `now` for one command (beyond10x/ess#586).
     ("ess-conformance", 50, Some("0.62.0")),
     ("ess-conformance", 51, Some("0.62.0")),
+    // A value type's invariants observed at a wrapped view position (`value_invariants`).
+    ("ess-conformance", 52, None),
+    ("ess-conformance", 53, None),
     ("ess-composition", 1, Some("0.4.0")),
     ("ess-composition", 2, Some("0.38.0")),
     ("ess-composition", 3, Some("0.40.0")),

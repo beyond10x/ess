@@ -35,16 +35,15 @@ fn run(command: &mut Command, root: &Path) {
 
 fn suite(ir: &ess_compiler::ir::EssIr, case: &str) -> ess_conformance::scenario::ConformanceSuite {
     let synthesis = ess_conformance::synthesize(ir);
+    assert!(synthesis.refusals.is_empty(), "{:?}", synthesis.refusals);
     if case == "demo.items.Bounded" {
-        // The fixed-suite producer cannot observe this invariant through an Optional view field.
-        // Preserve that separate refusal; concurrent histories are judged by the native checker.
-        assert_eq!(synthesis.refusals.len(), 1, "{:?}", synthesis.refusals);
-        assert!(matches!(
-            &synthesis.refusals[0].cause,
-            ess_conformance::synthesize::RefusalCause::ValueInvariantUnwitnessed { at: None, .. }
-        ));
-    } else {
-        assert!(synthesis.refusals.is_empty(), "{:?}", synthesis.refusals);
+        // The fixed-suite producer observes this invariant through the Optional view field
+        // (`value_invariants`, suite/52); concurrent histories are judged by the native checker.
+        assert!(synthesis
+            .suite
+            .scenarios
+            .keys()
+            .any(|id| id.to_string().contains("/invariant-wrapped/")));
     }
     let mut suite = synthesis.suite;
     suite.select_fresh_format_for(ir);

@@ -447,14 +447,24 @@ fn an_example_is_the_first_instance_and_a_further_instance_is_its_own() {
     assert!(labels[1..].iter().all(|label| label != "Ann"), "{labels:?}");
 }
 
-// ---- a `.count` no view row asserts ----------------------------------------------------------------
+// ---- a `.count` on a view row ----------------------------------------------------------------------
 
 fn all_refusals(result: &Synthesis) -> Vec<String> {
     result.refusals.iter().map(ToString::to_string).collect()
 }
 
+/// Whether some `satisfies` of the suite reads `path`.
+fn asserts(suite: &ConformanceSuite, path: &str) -> bool {
+    suite
+        .to_canonical_json()
+        .expect("serializes")
+        .contains(&format!("\"{path}"))
+}
+
+/// A text's `.count` is asserted on a view row (suite/40); a list's is still a `.count` no view row
+/// asserts, named as such rather than as unpublished.
 #[test]
-fn an_entity_invariant_over_a_published_field_s_count_is_unassertable_not_unpublished() {
+fn an_entity_invariant_over_a_text_count_is_asserted_and_a_list_count_is_unassertable() {
     for (field, invariant) in [("label", "label.count >= 1"), ("tags", "tags.count >= 0")] {
         let model = SESSIONS
             .replace(
@@ -478,10 +488,19 @@ fn an_entity_invariant_over_a_published_field_s_count_is_unassertable_not_unpubl
             .into_iter()
             .filter(|refusal| refusal.contains("ESS-SYNTH-011"))
             .collect();
+        if field == "label" {
+            assert!(about.is_empty(), "{about:?}");
+            assert!(asserts(&result.suite, "label.count"), "{field}");
+            assert_eq!(
+                result.suite.provenance.suite_version.to_string(),
+                "ess-conformance/40"
+            );
+            continue;
+        }
         assert!(!about.is_empty(), "{field}: {:?}", all_refusals(&result));
         for refusal in &about {
             assert!(
-                refusal.contains(&format!("`{field}.count` is a `.count`")),
+                refusal.contains(&format!("`{field}.count` is a list's `.count`")),
                 "{refusal}"
             );
             assert!(!refusal.contains("published by no view"), "{refusal}");
@@ -493,22 +512,25 @@ fn an_entity_invariant_over_a_published_field_s_count_is_unassertable_not_unpubl
     }
 }
 
+/// A value object's invariant reading a text's length is asserted where a view publishes one.
 #[test]
-fn a_value_object_whose_invariant_reads_a_length_names_the_count() {
+fn a_value_object_whose_invariant_reads_a_length_is_asserted_on_the_row() {
     let model = SESSIONS.replace(
         "  - name: keypad.dial.Label\n    kind: newtype\n    of: String\n",
         "  - name: keypad.dial.Label\n    kind: newtype\n    of: String\n    invariants: [value.count <= 64]\n",
     );
     let result = synthesis(&model);
-    let about: Vec<String> = all_refusals(&result)
-        .into_iter()
-        .filter(|refusal| refusal.contains("ESS-SYNTH-013"))
-        .collect();
     assert!(
-        about
+        all_refusals(&result)
             .iter()
-            .any(|refusal| refusal.contains("`value.count` is a `.count`")),
+            .all(|refusal| !refusal.contains("ESS-SYNTH-013")),
         "{:?}",
         all_refusals(&result)
     );
+    assert!(scenario(
+        &result.suite,
+        "keypad.dial.Label/invariant/at/keypad.dial.Sessions/label"
+    )
+    .is_some());
+    assert!(asserts(&result.suite, "label.count <= 64"));
 }

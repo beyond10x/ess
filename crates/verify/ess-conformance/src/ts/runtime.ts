@@ -2772,7 +2772,7 @@ export async function runWith(
   }
   const version = suite.provenance.suite_version;
   if ((SUITE_MAJORS[version] ?? 0) >= 8 && config.version !== '2') {
-    throw new Error('suite/8 through /51 require explicit ESS_REPORT_FORMAT=2 before execution');
+    throw new Error('suite/8 through /53 require explicit ESS_REPORT_FORMAT=2 before execution');
   }
   if (
     (version === 'ess-conformance/5' ||
@@ -4469,6 +4469,12 @@ export class ScenarioRun {
   }
 
   async expectView(index: number, step: Step, retry: boolean): Promise<boolean> {
+    // A value type's invariants at a wrapped position (suite/52) are observed by the reference
+    // runner, which carries the typed observer; this runtime admits the expectation and reports the
+    // scenario unsupported, naming it, rather than passing or guessing.
+    if (step.expectation?.expect === 'value_invariants') {
+      this.skip(`step ${index}: this runner does not observe \`value_invariants\` expectations`);
+    }
     if (!retry && this.unreadableView === step.view) {
       return this.fail(
         index,
@@ -6521,6 +6527,13 @@ export function scenarioIdentity(id: string, major = 21): void {
     valid = q(segment(0)) && q(segment(3)) && k(segment(4));
   } else if (parts.length === 5 && segment(1) === 'invariant' && segment(2) === 'at') {
     valid = q(segment(0)) && q(segment(3)) && segment(4) !== '';
+  } else if (parts.length === 6 && segment(1) === 'invariant-wrapped' && segment(2) === 'at') {
+    // A value type's invariants at a wrapped view position (suite/52): the position's digest.
+    if (major < 52) {
+      throw new Error('a wrapped value-invariant scenario requires suite/52 or /53');
+    }
+    valid =
+      q(segment(0)) && q(segment(3)) && segment(4) !== '' && /^[0-9a-f]{64}$/.test(segment(5));
   }
   if (!valid) {
     throw new Error(`malformed scenario ID ${quoteGo(id)}`);
@@ -6602,14 +6615,19 @@ const SUITE_MAJORS: { [version: string]: number } = {
   // opened-response pair included.
   'ess-conformance/50': 50,
   'ess-conformance/51': 51,
+  // A value type's invariants at a wrapped view position (`value_invariants`): admitted, and a
+  // scenario observing one is reported unsupported. Cumulative over every major below.
+  'ess-conformance/52': 52,
+  'ess-conformance/53': 53,
 };
 
 /** The suite majors that carry a coverage inventory, each beside the ordinary major below it. */
 const COVERAGE_MAJORS = new Set([
   5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 33, 35, 37,
   // The coverage majors of the conditional measure, expression, seed-bearing and counted-claim
-  // pairs, of the constrained-response and opened-response pairs, and of the held-now pair.
-  39, 41, 43, 45, 47, 49, 51,
+  // pairs, of the constrained-response and opened-response pairs, of the held-now pair and of the
+  // wrapped value-invariant pair.
+  39, 41, 43, 45, 47, 49, 51, 53,
 ]);
 
 /** coverageMajor reports whether a suite major carries a coverage inventory. */
@@ -6648,7 +6666,7 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
   }
   const carriesCoverage = Object.prototype.hasOwnProperty.call(root, 'coverage');
   if (carriesCoverage !== coverageMajor(major)) {
-    throw new Error('coverage is required exactly for odd suite majors from /5 through /51');
+    throw new Error('coverage is required exactly for odd suite majors from /5 through /53');
   }
   for (const key of ['system', 'specification_version', 'spec_digest', 'contract_digest']) {
     const held = text(provenance[key]);
@@ -6950,6 +6968,10 @@ function decodeExpectation(value: Node): Expectation | undefined {
     return undefined;
   }
   const expectation: Expectation = { expect: value.expect as string };
+  if (expectation.expect === 'value_invariants') {
+    // Read by its tag alone: this runtime reports the scenario unsupported (suite/52).
+    return expectation;
+  }
   if (expectation.expect === 'page') {
     const follows = isObject(value.follows) ? value.follows : undefined;
     expectation.paged = {
@@ -7510,6 +7532,16 @@ export function admitExpectation(value: Node, major: number): void {
       if (defect !== '') {
         throw new Error(defect);
       }
+      return;
+    }
+    case 'value_invariants': {
+      // A value type's invariants at a wrapped view position (suite/52): admitted by its closed
+      // members, and the scenario carrying it is reported unsupported.
+      if (major < 52) {
+        throw new Error('value_invariants expectations require suite/52 or /53');
+      }
+      closed(value, 'expect root declarations value position witness work_limit', '');
+      unsigned(value.work_limit);
       return;
     }
     default:

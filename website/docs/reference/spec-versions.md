@@ -554,6 +554,17 @@ Rust, Go and TypeScript execute both with report/2: the generated Go runtime ask
 implementing `NowHolder`, the TypeScript one a target with `holdNow`. Older readers refuse these
 envelopes by version. A suite without the step keeps its earlier format and bytes.
 
+`ess-conformance/52` and `ess-conformance/53`, unreleased, carry the `value_invariants` view
+expectation: a value type's invariants observed at a typed position inside a view field — a `List`
+element, a `Map` value, an `Optional`'s present value or a `Union` variant's payload. The
+expectation carries the declarations the position reaches, so the runner checks every actual
+occurrence against the type's invariants, `alphabet:` and `prefix:`, and requires at least one; an
+empty collection, an absent `Optional` and another variant witness nothing. A suite carrying one is
+written at 52 (ordinary) or 53 (declared coverage); each implies every major below it, the held-now
+pair included. The reference runner executes it; the generated Go and TypeScript runtimes admit both
+majors and report such a scenario `unsupported`, naming `value_invariants`. Older readers refuse
+these envelopes by version. A suite without it keeps its earlier format and bytes.
+
 For `ess/7`, generated held-state refusals include ordinary `wrong_state` outcomes:
 they compare the complete subject before and after the call and refuse every
 direct event, including undeclared names. Incomplete subject views cause a named

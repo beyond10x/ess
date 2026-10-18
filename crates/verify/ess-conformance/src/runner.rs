@@ -1142,6 +1142,10 @@ impl<C: Clock> Runner<C> {
         run: &mut Run,
         target: &T,
     ) -> Flow {
+        if let Some(unsupported) = unexecuted_observation(view, expectation, run) {
+            run.record(unsupported);
+            return Flow::Stop;
+        }
         let Ok(bound) = resolve_params(view, params, run) else {
             return Flow::Stop;
         };
@@ -1188,7 +1192,7 @@ impl<C: Clock> Runner<C> {
             }
             let verdict = decide(&required, &result);
             match verdict {
-                Verdict::Satisfied | Verdict::Undecidable { .. } => {
+                Verdict::Satisfied | Verdict::Undecidable { .. } | Verdict::Broken(_) => {
                     run.last_view = Some((view.clone(), result));
                     run.record(view_check(
                         CheckCode::EventualView,
@@ -2701,6 +2705,10 @@ fn expect_view(view: &ViewRef, expectation: &ViewExpectation, run: &mut Run) -> 
         ));
         return Flow::Continue;
     }
+    if let Some(unsupported) = unexecuted_observation(view, expectation, run) {
+        run.record(unsupported);
+        return Flow::Stop;
+    }
     let required = match Required::of_view(view, expectation, run) {
         Ok(required) => required,
         Err(reason) => {
@@ -3409,6 +3417,9 @@ enum Verdict {
         /// The paths the row does not publish.
         missing: String,
     },
+    /// The observation could not be made at all: an undecidable invariant, an exhausted work
+    /// budget, or an expectation whose contract does not admit. Not retried.
+    Broken(String),
 }
 
 /// Decides a view expectation against what a view holds.
@@ -3447,7 +3458,57 @@ fn decide(required: &Required, result: &SemanticViewResult) -> Verdict {
             absent_is_zero,
         } => changed_by(before, fields, absent_is_zero, result),
         Required::Page(page) => page_of(page, result),
+        Required::ValueInvariants { observed, identity } => {
+            value_invariants(observed, identity.as_ref(), result)
+        }
     }
+}
+
+/// Every actual occurrence of the value type at its position holds, and a witness row holds one
+/// (suite/52). One snapshot decides both: an `EventuallyView` reads a fresh one per poll.
+fn value_invariants(
+    observed: &crate::value_invariant::ValueInvariants,
+    identity: Option<&(String, Node)>,
+    result: &SemanticViewResult,
+) -> Verdict {
+    let contract = match crate::value_invariant::Contract::admit(observed) {
+        Ok(contract) => contract,
+        Err(reason) => return Verdict::Broken(reason),
+    };
+    let eligible = |row: &ViewRow| match identity {
+        None => true,
+        Some((field, expected)) => row.get(field) == Some(expected),
+    };
+    match contract.observe(&result.rows, &eligible) {
+        crate::value_invariant::Observed::Held => Verdict::Satisfied,
+        crate::value_invariant::Observed::Unsatisfied(reason) => Verdict::Unsatisfied(reason),
+        crate::value_invariant::Observed::Broken(reason) => Verdict::Broken(reason),
+    }
+}
+
+/// The scenario a `value_invariants` expectation this runner does not execute stops at, reported
+/// `unsupported` and naming the expectation.
+fn unexecuted_observation(
+    view: &ViewRef,
+    expectation: &ViewExpectation,
+    run: &Run,
+) -> Option<CheckResult> {
+    let ViewExpectation::ValueInvariants(observed) = expectation else {
+        return None;
+    };
+    let contract = crate::value_invariant::Contract::admit(observed).ok()?;
+    let reason = contract.unsupported()?;
+    Some(CheckResult::unsupported(
+        crate::value_invariant::TAG.to_owned(),
+        Diagnostic::new(CheckCode::View, run.id.clone())
+            .declared_by(view.clone())
+            .expected(format!("the runner observes {reason} of `{view}`"))
+            .observed(format!(
+                "this runner does not execute {reason}; the `{}` expectation is reported \
+                 unsupported",
+                crate::value_invariant::TAG
+            )),
+    ))
 }
 
 /// The view's one row moved by exactly the stated amounts since its snapshot (suite/26).
@@ -3665,6 +3726,15 @@ enum Required {
     },
     /// The read was one page of a paged view (suite/26).
     Page(PageRequired),
+    /// Every actual occurrence of a value type at one position satisfies its invariants, and a
+    /// witness row holds one (suite/52, [`crate::value_invariant`]).
+    ValueInvariants {
+        /// The admitted expectation.
+        observed: Box<crate::value_invariant::ValueInvariants>,
+        /// The identity field and resolved instance a witness row must carry, where the witness
+        /// is an arranged row.
+        identity: Option<(String, Node)>,
+    },
 }
 
 impl Required {
@@ -3752,6 +3822,29 @@ impl Required {
             // Read only through `of_view`, which knows whose snapshot a continuation reads.
             ViewExpectation::Page { .. } => {
                 return Err("a page is read against the view it names".to_owned())
+            }
+            ViewExpectation::ValueInvariants(observed) => {
+                use crate::value_invariant::{Selector, Witness};
+                let identity = match &observed.witness {
+                    Witness::AnyObservedOccurrence => None,
+                    Witness::ArrangedRow {
+                        selector:
+                            Selector::ProjectedIdentity {
+                                identity, expected, ..
+                            }
+                            | Selector::IdentityQuery {
+                                identity, expected, ..
+                            },
+                    } => Some((
+                        identity.name.clone(),
+                        run.resolve(expected)
+                            .map_err(|reason| format!("the witness row: {reason}"))?,
+                    )),
+                };
+                Self::ValueInvariants {
+                    observed: observed.clone(),
+                    identity,
+                }
             }
         })
     }
@@ -3846,6 +3939,12 @@ fn view_check(
                 .expected(format!("`{view}` publishes every path `{predicate}` reads"))
                 .observed(format!("{row} binds nothing for {missing}")),
         ),
+        Verdict::Broken(observed) => CheckResult::errored(
+            about,
+            diagnostic
+                .expected(wanted(view, required))
+                .observed(observed.clone()),
+        ),
     }
 }
 
@@ -3916,7 +4015,26 @@ fn wanted(view: &ViewRef, required: &Required) -> String {
             format!("{view}'s one row changed since its snapshot: {amounts}")
         }
         Required::Page(page) => page.wanted(view),
+        Required::ValueInvariants { observed, .. } => format!(
+            "every `{}` {view} holds at `{}` {} satisfies what the type declares, and a {} row \
+             holds one (value_invariants)",
+            observed.value,
+            observed.root.name,
+            serde_json::to_string(&observed.position).unwrap_or_default(),
+            if identity_witness(observed) {
+                "selected"
+            } else {
+                "returned"
+            }
+        ),
     }
+}
+
+fn identity_witness(observed: &crate::value_invariant::ValueInvariants) -> bool {
+    matches!(
+        observed.witness,
+        crate::value_invariant::Witness::ArrangedRow { .. }
+    )
 }
 
 /// `field = value, …`, for a required or observed row.

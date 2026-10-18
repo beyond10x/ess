@@ -400,14 +400,15 @@ ESS_REPORT_OUT=$PWD/report.json go test ./...
 
 /// The newest suite major the generated Go runtime admits and executes.
 /// Keep this with `newestSuiteMajor` in the embedded runtime; TypeScript owns its admission cap.
-pub(crate) const NEWEST_ADMITTED_SUITE_MAJOR: u32 = 51;
+pub(crate) const NEWEST_ADMITTED_SUITE_MAJOR: u32 = 53;
 
 /// Whether the generated runtimes admit `major`: `/1` through `/37`, the conditional aggregate
 /// measure pair `/38` and `/39` (beyond10x/ess#363), the expression pair `/40` and `/41`, the
 /// seed-bearing pair `/42` and `/43` (beyond10x/ess#413), the counted event-claim pair `/44` and
 /// `/45` (beyond10x/ess#427), the constrained-response pair `/46` and `/47` (beyond10x/ess#499),
-/// the opened-response pair `/48` and `/49` (beyond10x/ess#500), and the held-now pair `/50` and
-/// `/51` (beyond10x/ess#586).
+/// the opened-response pair `/48` and `/49` (beyond10x/ess#500), the held-now pair `/50` and `/51`
+/// (beyond10x/ess#586), and the wrapped value-invariant pair `/52` and `/53`, which both generated
+/// runtimes admit and report `unsupported` where a scenario observes one.
 pub(crate) fn admitted_major(major: u32) -> bool {
     (1..=37).contains(&major)
         || crate::conditional_measures::ADMITTED.contains(&major)
@@ -417,12 +418,13 @@ pub(crate) fn admitted_major(major: u32) -> bool {
         || crate::direct_response::CONSTRAINED_ADMITTED.contains(&major)
         || crate::undeclared_fields::ADMITTED.contains(&major)
         || crate::hold_now::ADMITTED.contains(&major)
+        || crate::value_invariant::ADMITTED.contains(&major)
 }
 
 /// The refusal both emitters write for a suite major their runtime does not admit.
 pub(crate) fn unadmitted_message(target: &str, version: crate::scenario::SuiteFormat) -> String {
     format!(
-        "the generated {target} runner admits suite versions up to `ess-conformance/51`, and \
+        "the generated {target} runner admits suite versions up to `ess-conformance/53`, and \
          would refuse `{version}`; regenerate using a supported suite version"
     )
 }
