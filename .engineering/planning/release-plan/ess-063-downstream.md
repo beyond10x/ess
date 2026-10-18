@@ -23,7 +23,7 @@ relations:
 - delivers: story:payload-source-reads-the-head-of-an-ordered-selection
 - delivers: story:authored-exact-value-on-generated-field-is-refused
 - delivers: story:minted-value-present-and-shared-with-its-payload
-revision: 1
+revision: 2
 ---
 ## Intent
 
@@ -88,3 +88,15 @@ nothing allocates it first" is overtaken (`ess/26` shipped in 0.62.0).
 As `release-plan:ess-062`: one full gate on the final head, one push, one pull request with a
 `Fixes` line per issue closed, one release; `aep plan artifact validate` after every store merge;
 the stories above moved to `implemented` with the gate as evidence.
+
+## Decisions
+
+## Decisions
+
+- **D1, 2026-10-19 (operator).** The local branches and the stash that
+  `review-result:reconcile-20261018-r2` § B lists as shipped or superseded stay until 0.63.0 ships,
+  then are deleted. Nothing in this release needs them gone, and each is local-only.
+- **D2, 2026-10-19 (operator).** Unit checks are the unit's own tests, the test binaries of the code
+  it touches, Clippy on the touched crates and `task fmt-check`. The full gate runs on the
+  integration head only, by pushing it to `queue/ess-integrate-20261018`, whose push runs `ci.yml`:
+  after wave 1, after wave 2 and on the final head.
