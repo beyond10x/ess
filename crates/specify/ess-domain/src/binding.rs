@@ -1644,12 +1644,14 @@ pub fn validate_bindings(
         types,
         conversions,
         &crate::spec::Refused::default(),
+        condition::BOOLEAN_FORMAT,
     )
 }
 
 /// [`validate_bindings`], after some declarations were refused by their own conversion: a binding
 /// naming a refused event or command is not refused again for naming an undeclared one
-/// (beyond10x/ess#79).
+/// (beyond10x/ess#79). `format` is the document's: it decides whether a condition or a selection
+/// may compare a Boolean leaf ([`condition::BOOLEAN_FORMAT`]).
 pub(crate) fn validate_bindings_after(
     bindings: &BTreeMap<BindingName, BindingSpec>,
     events: &BTreeMap<QualifiedName, EventSpec>,
@@ -1657,6 +1659,7 @@ pub(crate) fn validate_bindings_after(
     types: &TypeRegistry,
     conversions: &ConversionRegistry,
     refused: &crate::spec::Refused,
+    format: crate::system::FormatVersion,
 ) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
     let mut account = crate::accessor::Account::default();
@@ -1673,6 +1676,7 @@ pub(crate) fn validate_bindings_after(
                 types,
                 conversions,
                 &format!("binding.{}.selections", binding.name),
+                format,
             ) {
                 for input in &plan.inputs {
                     if let crate::selection::InputSource::Accessor { plan } = &input.source {
@@ -1740,6 +1744,7 @@ pub(crate) fn validate_bindings_after(
                 conversions,
                 inhabitation: &inhabitation,
                 refused,
+                format,
             }
             .check(),
         );
@@ -1763,6 +1768,8 @@ struct Ends<'a> {
     /// Declarations refused by their own conversion, which a reference here is not refused for
     /// naming again.
     refused: &'a crate::spec::Refused,
+    /// The document's source format.
+    format: crate::system::FormatVersion,
 }
 
 impl Ends<'_> {
@@ -1784,7 +1791,7 @@ impl Ends<'_> {
     fn proved(&self) -> std::collections::BTreeSet<Vec<String>> {
         match (&self.binding.condition, self.event()) {
             (Some(condition), Some(event)) => {
-                condition::ConditionPlan::resolve(condition, event, self.types, "")
+                condition::ConditionPlan::resolve(condition, event, self.types, "", self.format)
                     .map(|plan| plan.proves_present())
                     .unwrap_or_default()
             }
@@ -1871,6 +1878,7 @@ impl Ends<'_> {
                 event,
                 self.types,
                 &self.at("when.where"),
+                self.format,
             ) {
                 errors.extend(refused);
             }
@@ -1883,6 +1891,7 @@ impl Ends<'_> {
                 self.types,
                 self.conversions,
                 &self.at("selections"),
+                self.format,
             ) {
                 errors.push(error);
             }
@@ -2123,6 +2132,7 @@ impl Ends<'_> {
             self.types,
             self.conversions,
             at,
+            self.format,
         ) {
             match plan.projection(selection, path, self.types, at) {
                 Ok((_, _, ty)) => {

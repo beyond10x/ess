@@ -111,9 +111,29 @@ fn predicate(
                         emit.layout.variant(of.name(), literal)
                     )
                 ),
-                End::Other => unreachable!("admission compares String and enum leaves only"),
+                End::Boolean | End::Other => {
+                    unreachable!("admission compares String and enum leaves with text only")
+                }
             };
             format!("func() int8 {{ {statements}{test}; return {fails} }}()")
+        }
+        // A Boolean leaf (ess/27): the stored flag against the literal.
+        Predicate::Compare {
+            left: Operand::Fact(path),
+            op,
+            right: Operand::Literal(FactValue::Bool(literal)),
+            ..
+        } => {
+            let walk = &walks[&path.to_string()];
+            let (statements, last) = read(walk, emit, binding, "-1");
+            let (holds, fails) = if *op == CompareOp::Ne {
+                ("0", "1")
+            } else {
+                ("1", "0")
+            };
+            format!(
+                "func() int8 {{ {statements}if {last} == {literal} {{ return {holds} }}; return {fails} }}()"
+            )
         }
         other => unreachable!("`{other}` is outside the admitted binding condition"),
     }

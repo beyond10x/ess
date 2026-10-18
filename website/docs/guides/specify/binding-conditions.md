@@ -23,8 +23,9 @@ on_failure: retry
 
 `where` reads only the event payload, as `event.<member>`, through one to three declared members
 of structs and Optional structs. It admits `true`, `false`, `defined(...)`, `missing(...)`, `==`
-and `!=` of a String or enum leaf against a literal, and `all`, `any` and `not` of those. An enum
-literal must name a variant. Outcome names, command input, stored rows, the caller and the
+and `!=` of a String or enum leaf against a literal, from `ess/27` `==` and `!=` of a Boolean
+leaf against `true` or `false`, and `all`, `any` and `not` of those. An enum literal must name a
+variant. Outcome names, command input, stored rows, the caller and the
 delivery context cannot be read. Two branches that publish the same payload cannot be told apart
 by a binding. Add the field its consumers need to the event.
 
@@ -74,3 +75,22 @@ rather than unwrapped, in a selection binding too. A delivery-context field is n
 present: the condition reads the payload only. `ess verify diff` reports an added,
 changed or removed condition as `predicate-changed`, an `ess-diff/14` change.
 
+## Compare a Boolean flag the event carries
+
+From `ess/27` a flag on the event splits one event between bindings:
+
+```yaml
+when:
+  event: example.calls.CallFinished
+  where: [event.direction == inbound, event.bridged == false]
+```
+
+Write the comparison out. A bare `event.bridged` or `not event.bridged` is no comparison and is
+refused, and `event.bridged == "false"` compares a Boolean with text and is refused as a type
+mismatch. `condition-false` flips the flag. A selection's `where` compares a Boolean item leaf the
+same way, `item.held == false`. Below `ess/27` both are refused, naming `ess/27`.
+
+A condition reads only the event. A flag stored on another entity, such as an eligibility flag on
+the role a user was assigned, is not in the payload. Read it in the invoked command with a
+`when_related` guard over the row the event names, and let that command choose to do the work or
+to skip it. See [read stored state in the command a binding invokes](bindings-and-components.md#read-stored-state-in-the-command-a-binding-invokes).

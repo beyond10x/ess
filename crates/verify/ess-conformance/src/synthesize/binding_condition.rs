@@ -105,8 +105,8 @@ struct Member {
 enum Choice {
     /// Whatever the base value holds.
     Base,
-    /// A present text leaf.
-    Text(String),
+    /// A present leaf: text, or from `ess/27` a Boolean.
+    Value(Node),
     /// The Optional member at this many members into the path is absent.
     Absent(usize),
 }
@@ -418,8 +418,8 @@ impl Search<'_> {
                 index /= options.len();
                 match choice {
                     Choice::Base => {}
-                    Choice::Text(text) => {
-                        set_leaf(&mut payload, &read.members, Node::Text(text.clone()));
+                    Choice::Value(value) => {
+                        set_leaf(&mut payload, &read.members, value.clone());
                     }
                     Choice::Absent(depth) => absences.push(read.members[..=*depth].to_vec()),
                 }
@@ -444,11 +444,11 @@ impl Search<'_> {
             .zip(&candidate.choices)
             .find_map(|(read, options)| {
                 options.iter().find_map(|choice| {
-                    let Choice::Text(text) = choice else {
+                    let Choice::Value(value) = choice else {
                         return None;
                     };
                     let mut payload = holds.clone();
-                    (set_leaf(&mut payload, &read.members, Node::Text(text.clone()))
+                    (set_leaf(&mut payload, &read.members, value.clone())
                         && self.condition.plan.evaluate(&payload) == Ok(Truth::False)
                         && self
                             .reads
@@ -701,8 +701,8 @@ impl Varied<'_> {
                 index /= options.len();
                 match choice {
                     Choice::Base => {}
-                    Choice::Text(text) => {
-                        set_leaf(&mut payload, &read.members, Node::Text(text.clone()));
+                    Choice::Value(value) => {
+                        set_leaf(&mut payload, &read.members, value.clone());
                     }
                     Choice::Absent(depth) => absences.push(read.members[..=*depth].to_vec()),
                 }
@@ -722,11 +722,11 @@ impl Varied<'_> {
             .zip(&self.choices)
             .find_map(|(read, options)| {
                 options.iter().find_map(|choice| {
-                    let Choice::Text(text) = choice else {
+                    let Choice::Value(value) = choice else {
                         return None;
                     };
                     let mut payload = holds.clone();
-                    (set_leaf(&mut payload, &read.members, Node::Text(text.clone()))
+                    (set_leaf(&mut payload, &read.members, value.clone())
                         && self.condition.plan.evaluate(&payload) == Ok(Truth::False)
                         && self.complete(&payload))
                     .then_some(payload)
@@ -970,21 +970,29 @@ fn present_witness(ir: &EssIr, publisher: &ResolvedCommand, input: &str) -> Resu
     })
 }
 
-/// What a read path may be set to: the base value, each compared literal or enum variant, and
-/// absence of each Optional member on it.
+/// What a read path may be set to: the base value, each compared literal, every enum variant or
+/// both Booleans (ess/27), and absence of each Optional member on it.
 fn choices(read: &ConditionRead, predicate: &Predicate) -> Vec<Choice> {
     let mut options = vec![Choice::Base];
-    let mut texts: Vec<String> = Vec::new();
-    compared(predicate, &read.path(), &mut texts);
-    if let Leaf::Enum { variants } = &read.leaf {
-        texts.extend(variants.iter().cloned());
+    let mut values: Vec<Node> = Vec::new();
+    compared(predicate, &read.path(), &mut values);
+    match &read.leaf {
+        Leaf::Enum { variants } => values.extend(variants.iter().cloned().map(Node::Text)),
+        Leaf::Boolean => values.extend([Node::Bool(true), Node::Bool(false)]),
+        Leaf::String | Leaf::Other => {}
     }
-    let mut seen = BTreeSet::new();
+    let mut seen = Vec::new();
     options.extend(
-        texts
+        values
             .into_iter()
-            .filter(|text| seen.insert(text.clone()))
-            .map(Choice::Text),
+            .filter(|value| {
+                let fresh = !seen.contains(value);
+                if fresh {
+                    seen.push(value.clone());
+                }
+                fresh
+            })
+            .map(Choice::Value),
     );
     options.extend(
         read.optional
@@ -996,13 +1004,19 @@ fn choices(read: &ConditionRead, predicate: &Predicate) -> Vec<Choice> {
     options
 }
 
-fn compared(predicate: &Predicate, path: &str, into: &mut Vec<String>) {
+fn compared(predicate: &Predicate, path: &str, into: &mut Vec<Node>) {
+    use ess_primitives::facts::FactValue;
     match predicate {
         Predicate::Compare {
             left: Operand::Fact(read),
-            right: Operand::Literal(ess_primitives::facts::FactValue::Text(text)),
+            right: Operand::Literal(FactValue::Text(text)),
             ..
-        } if read.to_string() == path => into.push(text.clone()),
+        } if read.to_string() == path => into.push(Node::Text(text.clone())),
+        Predicate::Compare {
+            left: Operand::Fact(read),
+            right: Operand::Literal(FactValue::Bool(flag)),
+            ..
+        } if read.to_string() == path => into.push(Node::Bool(*flag)),
         Predicate::All(children) | Predicate::Any(children) => {
             for child in children {
                 compared(child, path, into);

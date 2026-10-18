@@ -52,6 +52,7 @@ use crate::types::{NamedType, TypeBody, TypeRef, TypeRegistry};
 /// Specification format major versions this build implements.
 pub const SUPPORTED_FORMATS: &[u32] = &[
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
+    27,
 ];
 
 /// What one specification format admits that the format before it did not.
@@ -266,6 +267,14 @@ pub const FORMAT_HISTORY: &[FormatHistoryEntry] = &[
         ],
         stricter: &[],
     },
+    FormatHistoryEntry {
+        major: 27,
+        release: None,
+        added: &[
+            "A binding condition and a binding selection `where` may compare a `Boolean` leaf with `true` or `false`, `event.<path> == false` or `item.<path> != true`, beside the String and enum comparisons and under `all`/`any`/`not`; a definite comparison proves its path present as any comparison does, and the condition's IR read of such a leaf is `{kind: boolean}`. A text literal against a Boolean leaf stays `type_mismatch` and a bare Boolean path stays outside the bounded fragment; below `ess/27` the comparison is refused as `unsupported_format_version` naming `ess/27`, and a Boolean leaf read only by `defined(...)` keeps `{kind: other}` and its bytes (downstream report, 2026-10-18).",
+        ],
+        stricter: &[],
+    },
 ];
 
 // `FORMAT_HISTORY` and `SUPPORTED_FORMATS` name the same majors in the same order, and every row
@@ -367,6 +376,9 @@ impl FormatVersion {
     /// A named refusal that addresses an existing row is witnessed on the whole row: an `external:`
     /// refusal's scenario reads the row back and requires it unchanged (beyond10x/ess#587).
     pub const V26: Self = Self(26);
+    /// A binding condition and a binding selection compare a Boolean leaf with `true` or
+    /// `false` (downstream report, 2026-10-18).
+    pub const V27: Self = Self(27);
 
     /// How a format version is written.
     pub const PREFIX: &'static str = "ess/";

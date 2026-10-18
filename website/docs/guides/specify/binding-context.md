@@ -42,7 +42,8 @@ Malformed records are refused before selection, including records after an early
 match. Executable selection currently refuses inputs with unsupported declared
 invariants or clock-reading attachments, including nested members and list
 aliases, instead of dropping their constraints. Predicates use a bounded declared fragment: defined checks, typed literal
-equality/inequality and Boolean combinations. Selection does not sort or invent
+equality/inequality (a Boolean item leaf against `true` or `false` from `ess/27`) and Boolean
+combinations. Selection does not sort or invent
 values. If the event carries a different representation, declare the exact
 conversion to the local list type. The host prepares that value once and can
 pass it to generated Rust/Go selection helpers; the local list is not a new

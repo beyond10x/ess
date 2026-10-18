@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added
+
+- Source format `ess/27`: a binding condition and a binding selection may compare a `Boolean`
+  leaf with `true` or `false`, `where: [event.direction == inbound, event.bridged == false]` and
+  `first: {in: legs, where: item.held == false}`. `condition-false` flips the flag; the
+  interpreter, the generated Rust and Go dispatch and selection helpers, and the Go and TypeScript
+  conformance runners evaluate it. A text literal against a Boolean leaf stays a type mismatch and a
+  bare Boolean path stays refused. Below `ess/27` the comparison is refused as
+  `unsupported_format_version` naming `ess/27`, and a Boolean read only by `defined(...)` keeps
+  its `{kind: other}` IR leaf and its bytes (downstream report, 2026-10-18).
+
 ### Fixed
 
 - A binding whose invoked command chooses its branch by a `when_related` guard over the row an

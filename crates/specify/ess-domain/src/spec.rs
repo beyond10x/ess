@@ -581,6 +581,7 @@ impl Specification {
             &registry,
             &self.conversions,
             refused,
+            self.system.format,
         ));
 
         let component_names: BTreeSet<crate::component::ComponentName> = Refused::with(

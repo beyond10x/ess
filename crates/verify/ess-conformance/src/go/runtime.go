@@ -7986,10 +7986,6 @@ func (s selectionObservation) checkPredicate(condition predicate, reads map[stri
 				return fmt.Errorf("selection requires fact/literal Eq/Ne")
 			}
 			path = condition.left.path
-			literal, ok := condition.right.literal.(string)
-			if !ok {
-				return fmt.Errorf("selection literal must be text")
-			}
 			plan, ok := reads[path]
 			if !ok || plan.Start < 0 || plan.Start >= len(plan.Nodes) || plan.Nodes[plan.Start].Leaf == nil {
 				return fmt.Errorf("selection read is undeclared")
@@ -8006,6 +8002,14 @@ func (s selectionObservation) checkPredicate(condition predicate, reads map[stri
 					continue
 				}
 				break
+			}
+			// A Boolean item leaf (ess/27) is compared with `true` or `false`, every other leaf
+			// with text.
+			literal, text := condition.right.literal.(string)
+			if _, flag := condition.right.literal.(bool); ty == "Boolean" && !flag {
+				return fmt.Errorf("selection Boolean leaf needs a Boolean literal")
+			} else if ty != "Boolean" && !text {
+				return fmt.Errorf("selection literal must be text")
 			}
 			if body, ok := s.Declarations[ty]; ok && body.Kind == "enum" {
 				var variants []string
@@ -8250,8 +8254,8 @@ func admitSelection(value any) (*selectionObservation, error) {
 						return nil, err
 					}
 				}
-				if leaf != "String" && s.Declarations[leaf].Kind != "enum" {
-					return nil, fmt.Errorf("selection predicate requires String or enum")
+				if leaf != "String" && leaf != "Boolean" && s.Declarations[leaf].Kind != "enum" {
+					return nil, fmt.Errorf("selection predicate requires String, Boolean or enum")
 				}
 			}
 			condition, err := fromNode(op["predicate"])
@@ -8550,6 +8554,8 @@ func (s selectionObservation) evaluate(payload map[string]Node) (Node, bool, err
 							return nil, false, selectionFailure("resource", input, index, selector)
 						}
 						observations[path] = text
+					} else if flag, ok := value.(bool); ok && present {
+						observations[path] = flag
 					}
 				}
 				condition, err := fromNode(plan.Operation.Predicate)
