@@ -303,6 +303,55 @@ types:
       - {name: label, type: probe.units.Label}
 "##;
 
+/// The rules a realization's report leaves on one definition's alphabet: its `model_alphabet`
+/// annotation and any `pattern` beside it.
+fn alphabet_obligations(report: &schema_contract::realize::Report, name: &str) -> Vec<String> {
+    let report = serde_json::to_value(report).expect("report");
+    report["obligations"]
+        .as_array()
+        .expect("obligations")
+        .iter()
+        .filter(|item| {
+            let pointer = item["pointer"].as_str().unwrap_or_default();
+            pointer.ends_with(&format!("/{name}/x-ess-alphabet"))
+                || pointer.ends_with(&format!("/{name}/pattern"))
+        })
+        .map(|item| item["rule"].as_str().unwrap_or_default().to_owned())
+        .collect()
+}
+
+/// The projection now carries the alphabet twice, as `x-ess-alphabet` and as the `pattern` derived
+/// from it (beyond10x/ess#592); the types-only realizer reports it once. A prefix still adds a
+/// pattern the alphabet does not state, so that newtype keeps its `pattern` obligation.
+#[test]
+fn issue_592_the_types_only_realizer_reports_the_alphabet_once() {
+    let source = UNITS.replacen(
+        "  - name: probe.units.Label\n    kind: newtype\n    of: String\n",
+        "  - name: probe.units.Label\n    kind: newtype\n    of: String\n    alphabet: \"abcm\"\n    \
+         prefix: \"m\"\n",
+        1,
+    );
+    let plan =
+        Plan::from_model(&model::selection(&source, &["probe.units.Reading"])).expect("plan");
+    let typescript = plan.typescript();
+    assert_eq!(
+        alphabet_obligations(&typescript.report, "probe.units.Unit"),
+        ["model_alphabet"],
+        "{}",
+        serde_json::to_string(&typescript.report).unwrap()
+    );
+    assert_eq!(
+        alphabet_obligations(&typescript.report, "probe.units.Label"),
+        ["pattern", "model_alphabet"]
+    );
+    let rust = plan.rust("probe-units").expect("rust");
+    assert_eq!(
+        alphabet_obligations(&rust.report, "probe.units.Unit"),
+        Vec::<String>::new(),
+        "the Rust decoder checks the alphabet, and the pattern states nothing more"
+    );
+}
+
 #[test]
 fn rust_refuses_a_value_outside_a_declared_alphabet_or_length() {
     let plan = Plan::from_model(&model::selection(UNITS, &["probe.units.Reading"])).expect("plan");

@@ -120,6 +120,18 @@
   keyword the projector does not write, such as `x-ess-binary64` or `x-ess-source`, is refused like
   any other unknown keyword, so an import cannot mint a codec or an import record. A document
   without `x-ess-*` keywords imports to the same bundle bytes (https://github.com/beyond10x/ess/issues/593).
+- A `String` newtype's `alphabet:` is asserted by its projected JSON Schema, OpenAPI and AsyncAPI
+  definition as an anchored `pattern` beside `x-ess-alphabet`, so `ess generate schema validate`
+  refuses a value outside the alphabet as the generated Rust decoder does. The class is sorted, a
+  run of three or more characters is a range, and every character other than an ASCII letter or
+  digit is a four-digit `\u` escape: `0123456789abcdef` projects to `^[0-9a-f]*$`. With a
+  `prefix:` the two are one pattern, `^0x[0-9a-fx]*$`; a length invariant stays an annotation.
+  An alphabet holding a character outside the Basic Multilingual Plane keeps the annotation only
+  (and its prefix's `^<prefix>`), since no class reads it alike with and without the `u` flag.
+  `ess generate types` reports the alphabet once, as `model_alphabet`, and no separate `pattern`
+  obligation for it. Projections of models without an alphabet keep their bytes; adopters'
+  `--check` reports drift once for each alphabet newtype
+  (https://github.com/beyond10x/ess/issues/592).
 
 ## [0.62.0] — 2026-10-16
 

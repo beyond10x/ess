@@ -307,9 +307,10 @@ pub(crate) struct Node {
     /// Conditions every value satisfies, as the author wrote them. An annotation, not an assertion.
     #[serde(rename = "x-ess-invariants", skip_serializing_if = "Vec::is_empty")]
     pub(crate) invariants: Vec<String>,
-    /// The characters every value is drawn from, as the author wrote them (ess/11). An annotation:
-    /// no `pattern` is derived, because an ECMA-262 character class is not certainly right for a
-    /// supplementary-plane character without the `u` flag.
+    /// The characters every value is drawn from, as the author wrote them (ess/11). Kept for the
+    /// importer and the realizers; the `pattern` beside it is what a validator asserts
+    /// (beyond10x/ess#592), except for an alphabet with a supplementary-plane character, which no
+    /// class reads alike with and without the `u` flag.
     #[serde(rename = "x-ess-alphabet", skip_serializing_if = "Option::is_none")]
     pub(crate) alphabet: Option<String>,
     /// An enum's typed variant attributes (ess/23, beyond10x/ess#450): one entry per attribute in
@@ -782,6 +783,73 @@ pub(crate) fn prefix_pattern(prefix: &str) -> String {
     pattern
 }
 
+/// The pattern a `String` newtype publishes for its own `prefix:` and `alphabet:`, or `None` when
+/// it declares neither (beyond10x/ess#592).
+///
+/// The prefix and the alphabet are one anchored pattern, `^<prefix>[<class>]*$`, because validation
+/// keeps a prefix's characters inside the alphabet; without a prefix it is `^[<class>]*$`. The
+/// pattern bounds no length: a `value.count` invariant stays the annotation it was. An alphabet
+/// holding a character outside the Basic Multilingual Plane publishes no class, because no class
+/// reads it alike with and without the `u` flag, and the prefix keeps its own pattern.
+pub(crate) fn text_pattern(prefix: Option<&str>, alphabet: Option<&str>) -> Option<String> {
+    match (prefix, alphabet.and_then(alphabet_class)) {
+        (None, None) => None,
+        (Some(prefix), None) => Some(prefix_pattern(prefix)),
+        (prefix, Some(class)) => {
+            let mut pattern = prefix.map_or_else(|| "^".to_owned(), prefix_pattern);
+            pattern.push('[');
+            pattern.push_str(&class);
+            pattern.push_str("]*$");
+            Some(pattern)
+        }
+    }
+}
+
+/// The members of an ECMA-262 character class holding exactly `alphabet`'s characters, or `None`
+/// for an empty alphabet or one with a supplementary-plane character.
+///
+/// Sorted by code point, a run of three or more written as a range. An ASCII letter or digit is
+/// written as itself; every other character as its four-digit UTF-16 escape, which no dialect reads
+/// as syntax inside a class and which means the same with and without the `u` flag.
+fn alphabet_class(alphabet: &str) -> Option<String> {
+    let mut points: Vec<u32> = alphabet.chars().map(u32::from).collect();
+    if points.is_empty() || points.iter().any(|point| *point > 0xFFFF) {
+        return None;
+    }
+    points.sort_unstable();
+    points.dedup();
+    let mut class = String::new();
+    let mut index = 0;
+    while index < points.len() {
+        let start = points[index];
+        let mut end = start;
+        while points.get(index + 1) == Some(&(end + 1)) {
+            index += 1;
+            end = points[index];
+        }
+        index += 1;
+        class_member(&mut class, start);
+        if end > start + 1 {
+            class.push('-');
+        }
+        if end > start {
+            class_member(&mut class, end);
+        }
+    }
+    Some(class)
+}
+
+fn class_member(class: &mut String, point: u32) {
+    use std::fmt::Write as _;
+    if let Some(character) = char::from_u32(point).filter(char::is_ascii_alphanumeric) {
+        class.push(character);
+    } else {
+        class.push('\\');
+        class.push('u');
+        write!(class, "{point:04X}").expect("String write");
+    }
+}
+
 /// The schema for one named type, as it appears in a document's definitions.
 pub(crate) fn body(ir: &EssIr, declared: &ResolvedType) -> Node {
     let mut node = match &declared.body {
@@ -798,12 +866,13 @@ pub(crate) fn body(ir: &EssIr, declared: &ResolvedType) -> Node {
             let mut node = Node {
                 invariants: statements(invariants),
                 alphabet: alphabet.clone(),
-                // A literal prefix is a grammar small enough to be certainly right: `^` and the
-                // prefix with every metacharacter escaped (beyond10x/ess#146). Only a newtype of
-                // `String` takes one, and `String` publishes no pattern of its own to collide with.
-                pattern: prefix
-                    .as_deref()
-                    .map(|prefix| std::borrow::Cow::Owned(prefix_pattern(prefix)))
+                // A literal prefix and an alphabet are grammars small enough to be certainly right:
+                // `^`, the prefix with every metacharacter escaped (beyond10x/ess#146), and the
+                // alphabet as an escaped class to the end (beyond10x/ess#592). Only a newtype of
+                // `String` takes either, and `String` publishes no pattern of its own to collide
+                // with.
+                pattern: text_pattern(prefix.as_deref(), alphabet.as_deref())
+                    .map(std::borrow::Cow::Owned)
                     .or(wrapped.pattern.clone()),
                 ..wrapped
             };

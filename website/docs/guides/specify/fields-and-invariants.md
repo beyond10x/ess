@@ -203,8 +203,13 @@ Every character of a value is one of the alphabet's, compared exactly, with no n
 folding. Synthesis builds the input's witness from those characters, and a guard such as
 `keys.count > 64` from texts of 65 and 64 characters. An `example:` on a command input is the value
 the first witness starts from. It is not a constraint, it has to be a value of the input's type, and
-only a scalar input takes one. Generated code documents an alphabet and does not enforce it, and
-Entity Runtime refuses both an alphabet and a text length by name.
+only a scalar input takes one. The published JSON Schema, OpenAPI and AsyncAPI assert the alphabet
+as an anchored `pattern` beside the `x-ess-alphabet` annotation, so a schema validator refuses a
+value outside it: `0123456789abcdef` is `^[0-9a-f]*$`, and every character other than an ASCII
+letter or digit is written as a four-digit `\u` escape. An alphabet holding a character outside the
+Basic Multilingual Plane stays an annotation, since no class reads it alike with and without the
+`u` flag. Generated code documents an alphabet and does not enforce it, and Entity Runtime refuses
+both an alphabet and a text length by name.
 
 ### Say what a text starts with
 
@@ -222,7 +227,8 @@ types:
 The prefix is literal text, not a pattern. The published JSON Schema carries it as an anchored
 `pattern` (`^/`), every witness synthesis builds starts with it (`/channel` for a field named
 `channel`), and a literal written for the field that does not start with it is refused. Beside an
-`alphabet:` every character of the prefix has to be in the alphabet, and a newtype of a newtype may
+`alphabet:` every character of the prefix has to be in the alphabet, and the two are one pattern
+(`^0x[0-9a-fx]*$` for the prefix `0x` and the alphabet `0123456789abcdefx`). A newtype of a newtype may
 declare a longer prefix that starts with the inner one. Entity Runtime lowers the prefix to a
 `starts_with` rule.
 

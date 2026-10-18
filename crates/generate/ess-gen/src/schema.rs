@@ -84,6 +84,15 @@ pub fn wire_field_name(field: &ess_compiler::ir::ResolvedField) -> &str {
     types::wire_name(field)
 }
 
+/// The `pattern` a `String` newtype declaring `alphabet` and no prefix publishes beside its
+/// `x-ess-alphabet`, or `None` where no class can state it (beyond10x/ess#592).
+///
+/// Public for [`union_content_key`]'s reason: `schema-contract` recognises this pattern as the
+/// alphabet it already reports, rather than reporting the one constraint twice.
+pub fn alphabet_pattern(alphabet: &str) -> Option<String> {
+    types::text_pattern(None, Some(alphabet))
+}
+
 /// JSON Schema per command input, event payload and error payload.
 pub struct JsonSchema;
 

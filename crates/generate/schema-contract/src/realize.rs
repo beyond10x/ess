@@ -208,6 +208,19 @@ impl TextConstraint {
     }
 }
 
+/// Whether a model string schema's `pattern` is exactly the one its `x-ess-alphabet` projects to,
+/// with no prefix in it (beyond10x/ess#592).
+fn alphabet_pattern(object: &Map<String, Value>) -> bool {
+    let alphabet = object.get("x-ess-alphabet").and_then(Value::as_str);
+    let pattern = object.get("pattern").and_then(Value::as_str);
+    match (alphabet, pattern) {
+        (Some(alphabet), Some(pattern)) => {
+            ess_gen::schema::alphabet_pattern(alphabet).as_deref() == Some(pattern)
+        }
+        _ => false,
+    }
+}
+
 /// `value.count <op> <integer>`, or the same with the literal on the left, as the comparison of
 /// the count with the literal.
 fn length_comparison(statement: &str) -> Option<(ess_primitives::predicate::CompareOp, i64)> {
@@ -963,6 +976,10 @@ impl Builder {
                         },
                     ));
                 }
+                // A model newtype's alphabet is projected twice, as `x-ess-alphabet` and as the
+                // pattern derived from it (beyond10x/ess#592). The `model_alphabet` obligation is
+                // that constraint, so the pattern adds none; a prefix in it still does.
+                "pattern" if self.model && alphabet_pattern(object) => {}
                 "pattern" => {
                     if object[keyword].is_string() {
                         self.obligations.insert(finding(
